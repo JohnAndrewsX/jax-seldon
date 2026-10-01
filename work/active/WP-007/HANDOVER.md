@@ -229,7 +229,7 @@ $ loop: 25 × cargo test --test index --test status --test commands --test log -
    a logbook file. `index` writes the views but never commits; they go into
    the next commit.
 6. **Index format.** `index.json` is written compact (one line), where the
-   fixture is pretty-printed. That is about 37 KB versus about 80 KB for the
+   fixture is pretty-printed. That is about 37 KB versus 62 KB for the
    sample, which matters for the size budget.
 7. **Size budget (CONTRACT rule 5).**
    - Open drift and open cases are uncapped by the schema.
