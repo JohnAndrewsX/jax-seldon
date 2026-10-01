@@ -7,7 +7,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | Path | What | Schema |
 |---|---|---|
 | `index.sample.json` | canonical index; the plugin develops against it | `schema/index.schema.json` |
-| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0011), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
+| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0011), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
@@ -111,6 +111,9 @@ add a banner state, add an overlay and run `--write-index`.
 | `index-stale` | `state.status: indexStale` only; `generatedAt` and `lastCapture` stay the sample's. The engine never writes `indexStale`; `plugin/Model.js` derives it, and this variant exercises its data-driven branch | stale banner from the data; with **`SELDON_NOW=2026-10-01T20:05:12+02:00`** (`STALE_NOW` in the script, also the plugin harness's clock) stale by the clock too — the check requires both times more than 2 h before it |
 | `plugins-degraded` | collector `plugins`: `ok: false`, `message` `omarchy plugin list --json: timed out` (the engine's text for a shell IPC timeout) | a failing non-snapper collector |
 | `omarchy-git-checkout` | `system.omarchy.repoHead: 3f9c2e1` (short hash, like `logbook.git.head`) | Omarchy run from a git checkout of `$OMARCHY_PATH` (SPEC-ENGINE §4) |
+| `drift-explained-case` | btop's event (`01M1MB2M…`, `resolution: explained`) gets `case: C-2026-002`; jq: `.events \|= map(if .id == "01M1MB2M1GWZYF485HTGVZ1KS3" then .case = "C-2026-002" else . end)`. Index only: the logbook's explained lines stay caseless and C-2026-002's `events:` does not list btop | ADR-0021: the row reads `explained · C-2026-002: Kleines Monitoring-Tool, bewusst ohne Case.` and names the case |
+| `drift-capped` | `summary.openDrift: 250`, `drift` unchanged (4 items); jq: `.summary.openDrift = 250` | ADR-0020: "+246 more open drift items not listed here" under the drift rows; pill `⟡ 2 · 250` |
+| `drift-members-capped` | noto-fonts (`01M3SXBRV0E7…`) removed from `events`; the firefox group keeps `members: 3`; jq: `.events \|= map(select(.id != "01M3SXBRV0E702XKBM22HEV1B8"))` | CONTRACT.md rule 4: the drift sheet lists firefox and libinput plus "… and 1 more", then asks `seldon drift show <firefox> --json` for all three (the fallback) |
 
 Not derivable from the logbook and therefore not checked beyond the index
 times above: `generatedAt`, `engineVersion`, `logbook.path`, `logbook.git`,
