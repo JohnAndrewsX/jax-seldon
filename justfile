@@ -108,6 +108,7 @@ plugin-test:
     fi
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
     node tests/plugin/model.test.js
+    node tests/plugin/model.bench.js
     bash tests/plugin/service-states.sh
     bash tests/plugin/panel-view.sh
     bash tests/plugin/overlay-view.sh
