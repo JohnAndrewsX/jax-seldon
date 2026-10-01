@@ -31,6 +31,12 @@ codegen-units = 1
 strip = true
 panic = "abort"
 
+# `cargo bench` / `just bench` (CI): inherits release, but compiles in a
+# fraction of the time; the index timing keeps ~20× headroom (WP-007).
+[profile.bench]
+lto = "thin"
+codegen-units = 16
+
 [dev-dependencies]
 jsonschema = { version = "0.58.3", default-features = false }
 
