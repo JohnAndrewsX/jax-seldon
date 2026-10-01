@@ -112,6 +112,11 @@ plugin-test:
     bash tests/plugin/panel-view.sh
     echo "plugin-test: ok"
 
+# Not part of `check` (it needs a release compile); CI runs it as its own step.
+# Index build on the fixture logbook scaled x10, release; fails over 100 ms.
+bench:
+    cargo bench --manifest-path engine/Cargo.toml --locked --bench index
+
 # Static release binary (needs `rustup target add x86_64-unknown-linux-musl`).
 build-release:
     cargo build --manifest-path engine/Cargo.toml --locked --release --target {{ musl_target }}

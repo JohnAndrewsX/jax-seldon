@@ -181,6 +181,7 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
     // never the subject: it is not redacted and must not reach a command line
     let summary = format!("event {}/{}", event.source, event.kind);
     let commit = autocommit(ctx, &config, &logbook, &summary);
+    crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
     let mut human = format!(

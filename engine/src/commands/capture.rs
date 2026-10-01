@@ -101,6 +101,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         cursors.collectors.insert(name.to_string(), state);
     }
     cursors.save(&cursors_path)?;
+    crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
     Ok(render(&logbook, &written, &reports, &since_ignored))

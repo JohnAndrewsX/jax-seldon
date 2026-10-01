@@ -5,10 +5,12 @@ pub mod capture;
 pub mod decide;
 pub mod doctor;
 pub mod event;
+pub mod index;
 pub mod init;
 pub mod log;
 pub mod open;
 pub mod plan;
+pub mod status;
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};

@@ -200,3 +200,51 @@ Append-only. One bullet per finding, newest section last.
 - **`#[serde(flatten)]` on a struct field** keeps a nested struct's keys at
   the top level (`Manifest { current: Generation, previous }` →
   `{"hash", "files", "skipped", "previous"}`).
+
+## 2026-10-01 · WP-007 (index, status, views)
+
+**Conventions**
+- **The index is typed structs** (`index::model`), not `serde_json::Value`:
+  without `preserve_order` a `Value` map is sorted, a struct keeps the
+  fixture's key order. `IndexEvent` implements `Serialize` by hand
+  (`serialize_map`) so `resolutionDetail` sits between `resolution` and
+  `meta` without adding an index-only field to the ledger `Event`.
+- **Absent, null or a value:** `Option<Option<String>>` with
+  `skip_serializing_if = "Option::is_none"` (timeline `end`: absent for
+  releases, `null` for an open case).
+- **Index pipeline:** `index::load::load` (read once, skip broken files with
+  a warning) → `index::build::build` (pure, testable in-process by
+  mutating `Loaded`) → `index::write` (atomic). Tests port the mutation
+  self-checks of `scripts/validate-fixtures.py` this way, without touching
+  the fixture files.
+- **Writing commands call `index::rebuild_if_initialised(ctx)` after the
+  autocommit**, still under the lock; before it, `logbook.git.dirty` would
+  always be true.
+- **Generated Markdown is written only when its text changed**
+  (`views::write_if_changed`), so `status` commits only real changes.
+
+**Crate behaviour**
+- **jsonschema 0.58 with `$ref`s across files:** implement
+  `jsonschema::Retrieve` over the schema files keyed by `$id` and pass it
+  with `.with_retriever(...)` (`tests/common::index_errors`).
+- **The engine binary cannot use jsonschema** (test-only crate):
+  `index::check` is a small Draft 2020-12 validator over the
+  `include_str!`-ed schemas that fails on any keyword it does not know;
+  `tests/index.rs` holds it to jsonschema on the sample and on
+  `fixtures/invalid/`.
+- **Benches without a bench crate:** `[[bench]] harness = false` plus a
+  `fn main()` timed with `std::time`; share test helpers with
+  `#[path = "../tests/common/scale.rs"] mod scale;`.
+- **`regex` has no look-around**, so the ADR-0015 token rule is a scan over
+  every match with explicit neighbour checks (`index::drift::names_token`).
+- **clippy 1.98:** `unnecessary_sort_by` wants
+  `sort_by_key(|x| Reverse(..))`; `type_complexity` fires on a tuple of
+  boxed closures in a test, so use a local `type` alias.
+- **`[profile.bench]` inherits `release`.** Overriding only `lto = "thin"`
+  and `codegen-units = 16` halves the CI bench compile (58 s → 28 s here)
+  and leaves the index timing where it was (×10 median 4.7 ms).
+- **Reading `HEAD` without git** (`index::git_head_fast`): `.git/HEAD` is
+  `ref: refs/heads/x` or a bare hash; the ref is a loose file or a line
+  `<sha> <ref>` in `packed-refs`; a `.git` *file* (`gitdir:`) and
+  `commondir` cover worktrees. The first 7 hex characters match
+  `git rev-parse --short=7`.

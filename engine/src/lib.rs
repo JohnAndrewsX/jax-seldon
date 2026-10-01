@@ -8,6 +8,7 @@ pub mod commands;
 pub mod config;
 pub mod error;
 pub mod frontmatter;
+pub mod index;
 pub mod ledger;
 pub mod logbook;
 pub mod model;

@@ -49,6 +49,7 @@ pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
     let path = logbook.path(&rel);
     write_new(&path, &model::render_new(&decision, &body))?;
     let commit = autocommit(ctx, &config, &logbook, &format!("{id} proposed"));
+    crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
     // after the lock is released: the editor may stay open for a long time

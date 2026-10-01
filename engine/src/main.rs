@@ -99,6 +99,12 @@ enum Command {
 
     /// Print the path of a logbook file; --editor opens it
     Open(commands::open::OpenArgs),
+
+    /// Rebuild index.json and the ledger/*.md views; --check validates
+    Index(commands::index::IndexArgs),
+
+    /// Regenerate STATUS.md, the ledger views and index.json; print a summary
+    Status(commands::status::StatusArgs),
 }
 
 #[derive(Debug, Args)]
@@ -206,6 +212,8 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Plan(a) => commands::plan::run(&ctx, a),
         Command::Decide(a) => commands::decide::run(&ctx, a),
         Command::Open(a) => commands::open::run(&ctx, a),
+        Command::Index(a) => commands::index::run(&ctx, a),
+        Command::Status(a) => commands::status::run(&ctx, a),
     }
 }
 

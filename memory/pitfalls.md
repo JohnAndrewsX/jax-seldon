@@ -220,3 +220,36 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   holding a `tee ~/.config/…` string, or a `sed` pattern with `| pacman -S…`
   in it, is blocked as a red-zone write or a package command. Edit Markdown
   with the Edit tool. Write edit scripts with the Write tool.
+
+## 2026-10-01 · WP-007 (Engine)
+
+- **Fixture ULIDs do not sort by time within one second** (their random
+  part is a hash). The ledger views keep ledger order for events of the
+  same second (stable sort by day, then `ts`); sorting by id reorders
+  `snapshot-delete 108/109` and the 09-30 upgrades.
+- **The golden test needs more than `SELDON_NOW`:** `logbook.path` is not
+  derivable either (compare modulo it), and `state` comes from a
+  `cursors.json` the test writes, bound to the *canonical* path of the copy
+  (capture canonicalises the logbook root).
+- **A timestamp of "now" in STATUS.md means a commit every plugin cycle**
+  (`capture` + `status` every 15 min). STATUS.md stamps the day and the
+  last event instead; an unchanged logbook writes nothing.
+- **`fixtures/logbook/STATUS.md` is stale** (3 open drift, 35 events in 7
+  days, German headings); it is not a test target. The ledger views
+  `fixtures/logbook/ledger/*.md` are, byte for byte.
+- **Index size grows with open drift and open cases, which are not
+  capped.** ×150 of the fixture (10 050 lines, 1 200 cases) gives an
+  897 KB index, close to the 1 MB budget of CONTRACT.md rule 5;
+  truncation needs `meta.truncated` and a contract bump.
+- **Importing `scripts/validate-fixtures.py` from python3 leaves
+  `scripts/__pycache__/`.** Delete it before committing.
+- **A test of an atomic write needs a negative control.** Swapping
+  `index::write` for `std::fs::write` made the in-process reader test fail
+  3/3 (empty reads); the CLI variant caught it only 1/3, so the in-process
+  loop is the proof and the CLI loop a smoke test.
+- **Fixture counts hard-coded in tests break on every fixture update.**
+  After WP-015 (67 → 71 ledger lines), `lines == 670` and the expected
+  STATUS.md (27/38 events) failed, while the golden test, which compares
+  against the sample, passed unchanged. Take numbers from the sample where
+  you can. And run the whole suite after a rebase: `cargo test` stops at
+  the first failing test binary, so later failures stay hidden.
