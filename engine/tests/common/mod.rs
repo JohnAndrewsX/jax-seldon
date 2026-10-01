@@ -108,6 +108,9 @@ impl Env {
             .env("GIT_CONFIG_NOSYSTEM", "1")
             // the engine refuses to run when its dirs leave the temp dir
             .env("SELDON_TEST_GUARD", self.tmp.path())
+            // Omarchy's package lists (dossier, WP-036): the fixture copies,
+            // never the host's `/usr/share/omarchy`
+            .env("SELDON_OMARCHY_PACKAGES", omarchy_packages())
             .current_dir(self.tmp.path());
         cmd
     }
@@ -226,6 +229,13 @@ impl Env {
 /// `hardware.summary` reads (`SELDON_HARDWARE_ROOT`).
 pub fn hardware_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/logs/hardware")
+}
+
+/// `fixtures/logs/omarchy-packages/`: copies of Omarchy's
+/// `omarchy-base.packages` and `omarchy-other.packages`
+/// (`SELDON_OMARCHY_PACKAGES`).
+pub fn omarchy_packages() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/logs/omarchy-packages")
 }
 
 /// Copies a directory tree (files and folders only).

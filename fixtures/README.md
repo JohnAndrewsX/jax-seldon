@@ -11,6 +11,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
+| `logs/omarchy-packages/` | verbatim copies of Omarchy's `install/omarchy-base.packages` and `omarchy-other.packages` (dev host, 2026-10-01); the dossier's `SELDON_OMARCHY_PACKAGES` in tests (WP-036) | — |
 | `hooks/` | Claude Code hook payloads | `schema/external/claude-code-hook.schema.json` |
 
 Fixture prose is German (user content); keys, enums, paths and file names are English.

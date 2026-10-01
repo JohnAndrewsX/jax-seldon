@@ -15,13 +15,14 @@ Explizit installierte Pakete seit Beginn des Logbuchs (2026-09-01), nach Case; i
 Explizite Pakete laut Dossier: 15.
 
 ### Before the logbook
-Explizite Pakete von vor dem Logbuch (Dossier `packages.explicit`): 9 aus den Repositories, 2 aus dem AUR. Eine frische Omarchy-Installation bringt viele davon schon mit; die Befehle überspringen, was schon installiert ist.
+Deine eigenen expliziten Pakete von vor dem Logbuch (Dossier `packages.explicit`, Klasse `user`): 4 aus den Repositories, 1 aus dem AUR. Die Befehle überspringen, was schon installiert ist.
 
 ```sh
-omarchy pkg add \
-  base base-devel firefox git hyprland linux linux-firmware neovim omarchy
-omarchy pkg aur add brave-bin yay
+omarchy pkg add firefox linux neovim omarchy
+omarchy pkg aur add brave-bin
 ```
+
+6 weitere bringt Omarchy 4.0.7-1 mit (Klasse `omarchy-base`).
 
 ### [[C-2026-004]] Zed als zweiten Editor installieren
 - `omarchy pkg add zed` — 0.198.4-1 · agent:claude-code · `01M3V8AJ08NT7N105393XZXCP7`

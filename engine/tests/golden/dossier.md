@@ -58,21 +58,21 @@ Paketinstallation (`/usr/share/omarchy`), kein Git-Checkout.
 ## Explizite Pakete
 
 <!-- seldon:begin packages.explicit -->
-- base · repo · pre-logbook
-- base-devel · repo · pre-logbook
-- brave-bin · aur · pre-logbook
-- btop · repo · since 2026-09-03
-- firefox · repo · pre-logbook
-- git · repo · pre-logbook
-- hyprland · repo · pre-logbook
-- linux · repo · pre-logbook
-- linux-firmware · repo · pre-logbook
-- neovim · repo · pre-logbook
-- ollama · repo · since 2026-10-01
-- omarchy · repo · pre-logbook
-- tailscale · repo · since 2026-10-01 [[C-2026-008]]
-- yay · aur · pre-logbook
-- zed · repo · since 2026-10-01 [[C-2026-004]]
+- base · repo · omarchy-base · pre-logbook
+- base-devel · repo · omarchy-base · pre-logbook
+- brave-bin · aur · user · pre-logbook
+- btop · repo · omarchy-base · since 2026-09-03
+- firefox · repo · user · pre-logbook
+- git · repo · omarchy-base · pre-logbook
+- hyprland · repo · omarchy-base · pre-logbook
+- linux · repo · user · pre-logbook
+- linux-firmware · repo · omarchy-base · pre-logbook
+- neovim · repo · user · pre-logbook
+- ollama · repo · user · since 2026-10-01
+- omarchy · repo · user · pre-logbook
+- tailscale · repo · user · since 2026-10-01 [[C-2026-008]]
+- yay · aur · omarchy-base · pre-logbook
+- zed · repo · user · since 2026-10-01 [[C-2026-004]]
 <!-- seldon:end -->
 ==> system/plugins.md <==
 # Plugins

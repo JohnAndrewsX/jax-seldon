@@ -3,7 +3,9 @@
 //! shim on the test PATH (`Env::query_shims`, inputs in `fixtures/logs/`):
 //! no package manager, `systemctl` or `omarchy` of the host ever runs, and
 //! the shims log their arguments so the tests prove that only read-only
-//! queries were asked. Always through `common::Env` (temp home,
+//! queries were asked. Omarchy's package lists are the fixture copies in
+//! `fixtures/logs/omarchy-packages/` (`SELDON_OMARCHY_PACKAGES`, set by
+//! `common::Env`). Always through `common::Env` (temp home,
 //! `SELDON_TEST_GUARD`), never the real XDG dirs.
 
 mod common;
@@ -176,7 +178,7 @@ fn the_fixture_dossier_is_golden_and_keeps_user_text() {
     );
     assert_eq!(
         out["counts"],
-        json!({"explicit": 15, "preLogbook": 11, "total": 23, "aur": 3, "units": 9, "plugins": 40})
+        json!({"explicit": 15, "preLogbook": 11, "omarchyBase": 7, "total": 23, "aur": 3, "units": 9, "plugins": 40})
     );
     assert_eq!(out["warnings"], json!([]), "{out}");
 
@@ -206,6 +208,10 @@ fn the_fixture_dossier_is_golden_and_keeps_user_text() {
     let all = bodies(&lb);
     let got: Vec<&str> = all.keys().map(String::as_str).collect();
     assert_eq!(got, ALL_FENCES);
+    // both origin classes: Omarchy's lists name git, the user added firefox
+    let explicit: Vec<&str> = all["packages.explicit"].lines().collect();
+    assert!(explicit.contains(&"- git · repo · omarchy-base · pre-logbook"));
+    assert!(explicit.contains(&"- firefox · repo · user · pre-logbook"));
     // the engine's four hardware keys are refreshed; the fixture's
     // hand-written lines stay where they were
     assert_eq!(
@@ -279,13 +285,13 @@ fn empty_fences_are_filled_and_the_ledger_marks_known_packages() {
     let explicit: Vec<&str> = b["packages.explicit"].lines().collect();
     assert_eq!(explicit.len(), 15);
     for line in [
-        "- btop · repo · since 2026-09-03",
-        "- ollama · repo · since 2026-10-01",
-        "- tailscale · repo · since 2026-10-01 [[C-2026-008]]",
-        "- zed · repo · since 2026-10-01 [[C-2026-004]]",
-        "- brave-bin · aur · pre-logbook",
-        "- yay · aur · pre-logbook",
-        "- omarchy · repo · pre-logbook",
+        "- btop · repo · omarchy-base · since 2026-09-03",
+        "- ollama · repo · user · since 2026-10-01",
+        "- tailscale · repo · user · since 2026-10-01 [[C-2026-008]]",
+        "- zed · repo · user · since 2026-10-01 [[C-2026-004]]",
+        "- brave-bin · aur · user · pre-logbook",
+        "- yay · aur · omarchy-base · pre-logbook",
+        "- omarchy · repo · user · pre-logbook",
     ] {
         assert!(explicit.contains(&line), "{line} missing: {explicit:#?}");
     }
@@ -295,6 +301,14 @@ fn empty_fences_are_filled_and_the_ledger_marks_known_packages() {
             .filter(|l| l.ends_with("pre-logbook"))
             .count(),
         11
+    );
+    assert_eq!(
+        explicit
+            .iter()
+            .filter(|l| l.contains(" · omarchy-base · "))
+            .count(),
+        7,
+        "base, base-devel, btop, git, hyprland, linux-firmware, yay"
     );
     assert_eq!(
         b["packages.summary"],
@@ -473,6 +487,54 @@ fn cased_changes_add_deviation_rows_and_unit_cases() {
         "{services}"
     );
     assert!(services.contains("| ollama.service | user | — |"));
+}
+
+#[test]
+fn without_omarchys_lists_every_package_is_the_users() {
+    let env = Env::new(Snapper::Missing);
+    let calls = env.query_shims();
+    let lb = fixture_copy(&env);
+    let lists = env.tmp.path().join("no-lists");
+    let run = || {
+        let out = env
+            .command(&[
+                "--logbook",
+                lb.to_str().unwrap(),
+                "--json",
+                "dossier",
+                "--section",
+                "packages",
+            ])
+            .env("SELDON_NOW", NOW)
+            .env("SELDON_OMARCHY_PACKAGES", &lists)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        json(&out)
+    };
+    let out = run();
+    let warnings = out["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{out}");
+    let w = warnings[0].as_str().unwrap();
+    assert!(
+        w.starts_with("packages: Omarchy's package list(s) ")
+            && w.contains("omarchy-base.packages")
+            && w.contains("omarchy-other.packages")
+            && w.ends_with("their packages count as `user`"),
+        "{w}"
+    );
+    assert_eq!(out["counts"]["omarchyBase"], 0);
+    let explicit = bodies(&lb)["packages.explicit"].clone();
+    assert_eq!(explicit.lines().count(), 15);
+    assert!(
+        explicit.lines().all(|l| l.contains(" · user · ")),
+        "{explicit}"
+    );
+    // only the package queries ran: the lists are files, not programs
+    assert_eq!(read_only_calls(&calls).len(), 3);
+    // the same answer again: nothing changed
+    let again = run();
+    assert_eq!(again["files"], json!([]), "{again}");
 }
 
 #[test]

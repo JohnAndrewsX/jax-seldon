@@ -456,8 +456,9 @@ fn ensure_newline(s: &str) -> String {
 }
 
 /// `packages.explicit`: one line per explicit package, sorted:
-/// `- <name> · repo|aur · since <date> [[C-…]]` when the ledger saw the
-/// install, else `- <name> · repo|aur · pre-logbook`.
+/// `- <name> · repo|aur · omarchy-base|user · since <date> [[C-…]]` when
+/// the ledger saw the install, else `… · pre-logbook`. The class is
+/// `omarchy-base` when Omarchy's package lists name the package.
 pub fn packages_explicit(p: &Packages, known: &BTreeMap<String, Known>) -> String {
     let mut t = String::new();
     for name in &p.explicit {
@@ -466,7 +467,12 @@ pub fn packages_explicit(p: &Packages, known: &BTreeMap<String, Known>) -> Strin
         } else {
             "repo"
         };
-        let _ = write!(t, "- {name} · {origin} · ");
+        let class = if p.omarchy.contains(name) {
+            OMARCHY_BASE
+        } else {
+            USER
+        };
+        let _ = write!(t, "- {name} · {origin} · {class} · ");
         match known.get(name) {
             Some(k) => {
                 let _ = write!(t, "since {}", k.date);
@@ -483,12 +489,19 @@ pub fn packages_explicit(p: &Packages, known: &BTreeMap<String, Known>) -> Strin
 
 /// The mark of a package the ledger does not know.
 pub const PRE_LOGBOOK: &str = "pre-logbook";
+/// The class of a package Omarchy's package lists name.
+pub const OMARCHY_BASE: &str = "omarchy-base";
+/// The class of every other explicit package: the user's own addition.
+pub const USER: &str = "user";
 
 /// An entry of the `packages.explicit` fence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Explicit {
     pub name: String,
     pub aur: bool,
+    /// Class `omarchy-base` (a line without a class, as WP-035 wrote
+    /// them, counts as `user`).
+    pub omarchy: bool,
     pub pre_logbook: bool,
 }
 
@@ -497,19 +510,25 @@ pub struct Explicit {
 pub fn parse_explicit(body: &str) -> Vec<Explicit> {
     body.lines()
         .filter_map(|l| {
-            let mut parts = l.strip_prefix("- ")?.split(" · ");
-            let (name, origin, since) = (parts.next()?, parts.next()?, parts.next()?);
+            let mut parts = l.strip_prefix("- ")?.split(" · ").map(str::trim);
+            let (name, origin) = (parts.next()?, parts.next()?);
+            let (omarchy, since) = match parts.next()? {
+                OMARCHY_BASE => (true, parts.next()?),
+                USER => (false, parts.next()?),
+                since => (false, since),
+            };
             if name.is_empty() || name.contains(char::is_whitespace) {
                 return None;
             }
             Some(Explicit {
                 name: name.to_string(),
-                aur: match origin.trim() {
+                aur: match origin {
                     "aur" => true,
                     "repo" => false,
                     _ => return None,
                 },
-                pre_logbook: since.trim() == PRE_LOGBOOK,
+                omarchy,
+                pre_logbook: since == PRE_LOGBOOK,
             })
         })
         .collect()
@@ -676,6 +695,7 @@ mod tests {
             explicit: explicit.iter().map(|s| s.to_string()).collect(),
             foreign: foreign.iter().map(|s| s.to_string()).collect(),
             total,
+            omarchy: Default::default(),
         }
     }
 
@@ -701,7 +721,8 @@ mod tests {
 
     #[test]
     fn explicit_lines_round_trip() {
-        let p = pkgs(&["btop", "yay", "zed"], &["yay", "yay-debug"], 40);
+        let lists = std::collections::BTreeSet::from(["btop".to_string(), "yay".to_string()]);
+        let p = pkgs(&["btop", "yay", "zed"], &["yay", "yay-debug"], 40).classify(&lists);
         let known = BTreeMap::from([
             (
                 "zed".to_string(),
@@ -721,7 +742,7 @@ mod tests {
         let body = packages_explicit(&p, &known);
         assert_eq!(
             body,
-            "- btop · repo · since 2026-09-03\n- yay · aur · pre-logbook\n- zed · repo · since 2026-10-01 [[C-2026-004]]\n"
+            "- btop · repo · omarchy-base · since 2026-09-03\n- yay · aur · omarchy-base · pre-logbook\n- zed · repo · user · since 2026-10-01 [[C-2026-004]]\n"
         );
         let parsed = parse_explicit(&body);
         assert_eq!(parsed.len(), 3);
@@ -730,10 +751,31 @@ mod tests {
             Explicit {
                 name: "yay".into(),
                 aur: true,
+                omarchy: true,
                 pre_logbook: true
             }
         );
         assert!(!parsed[2].pre_logbook);
+        assert!(!parsed[2].omarchy);
+        // a WP-035 line without a class is the user's
+        assert_eq!(
+            parse_explicit("- yay · aur · pre-logbook\n- zed · repo · since 2026-10-01\n"),
+            [
+                Explicit {
+                    name: "yay".into(),
+                    aur: true,
+                    omarchy: false,
+                    pre_logbook: true
+                },
+                Explicit {
+                    name: "zed".into(),
+                    aur: false,
+                    omarchy: false,
+                    pre_logbook: false
+                }
+            ]
+        );
+        assert!(parse_explicit("- yay · aur · user\n- x · git · user · pre-logbook\n").is_empty());
         assert_eq!(
             packages_summary(&p),
             "- explicit: 3\n- total: 40\n- aur: 2\n"
