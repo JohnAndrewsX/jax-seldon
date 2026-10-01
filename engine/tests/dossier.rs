@@ -206,6 +206,12 @@ fn the_fixture_dossier_is_golden_and_keeps_user_text() {
     let all = bodies(&lb);
     let got: Vec<&str> = all.keys().map(String::as_str).collect();
     assert_eq!(got, ALL_FENCES);
+    // the engine's four hardware keys are refreshed; the fixture's
+    // hand-written lines stay where they were
+    assert_eq!(
+        all["hardware.summary"],
+        "- cpu: Intel(R) Core(TM) i7-14700K\n- memory: 63 GiB\n- gpu: Intel Arc B580\n- displays: 2 × 2560×1440 @ 144 Hz\n- disk: NVMe 2 TB, btrfs\n- machine: MS-7D91\n- rootfs: btrfs\n"
+    );
 
     // golden: every file of the dossier, in name order
     let mut text = String::new();
@@ -507,4 +513,66 @@ fn capture_and_status_leave_the_dossier_alone() {
     let calls = std::fs::read_to_string(calls).unwrap_or_default();
     assert!(!calls.contains("-Qqe"), "{calls}");
     assert!(!calls.contains("list-unit-files"), "{calls}");
+}
+
+#[test]
+fn a_damaged_marker_above_a_fence_never_appends_it_again() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let lb = fixture_copy(&env);
+    let path = lb.join("system/packages.md");
+    let damaged = read(&path).replacen(
+        "<!-- seldon:begin packages.summary -->",
+        "<!-- seldon:begin notes -->\nkaputt\n\n<!-- seldon:begin packages.summary -->",
+        1,
+    );
+    std::fs::write(&path, &damaged).unwrap();
+    let first = dossier(&env, &lb, &["--section", "packages"]);
+    assert_eq!(first["sections"]["packages.summary"], "written", "{first}");
+    let text = read(&path);
+    for name in ["packages.summary", "packages.history", "packages.explicit"] {
+        assert_eq!(
+            text.matches(&format!("seldon:begin {name} -->")).count(),
+            1,
+            "{name}: {text}"
+        );
+    }
+    assert!(text.starts_with("# Pakete\n\n<!-- seldon:begin notes -->\nkaputt\n"));
+    let again = dossier(&env, &lb, &["--section", "packages"]);
+    assert_eq!(again["files"], json!([]), "{again}");
+    assert_eq!(read(&path), text);
+}
+
+#[test]
+fn host_strings_go_through_the_users_redaction_patterns() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let lb = fixture_copy(&env);
+    let config = env.config_file();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        &config,
+        "[redaction]\npatterns = [\"MS-7D\\\\d+\", \"pipewire\", \"weather-plus\"]\n",
+    )
+    .unwrap();
+    let out = dossier(&env, &lb, &["--section", "hardware,services,plugins"]);
+    assert_eq!(out["warnings"], json!([]), "{out}");
+    let hardware = read(&lb.join("system/hardware.md"));
+    assert!(hardware.contains("- machine: ‹redacted›\n"), "{hardware}");
+    assert!(!hardware.contains("MS-7D91"));
+    let services = read(&lb.join("system/services.md"));
+    assert!(!services.contains("pipewire"), "{services}");
+    assert!(
+        services.contains("| ‹redacted›.socket | user | — |"),
+        "{services}"
+    );
+    let plugins = read(&lb.join("system/plugins.md"));
+    assert!(!plugins.contains("weather-plus"), "{plugins}");
+
+    // an invalid pattern refuses to write anything (exit 1)
+    std::fs::write(&config, "[redaction]\npatterns = [\"(\"]\n").unwrap();
+    let before = system_files(&lb);
+    let bad = command(&env, &lb, NOW, &["--json", "dossier"]);
+    assert_eq!(bad.status.code(), Some(1), "{}", stdout(&bad));
+    assert_eq!(system_files(&lb), before);
 }

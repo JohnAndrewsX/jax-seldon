@@ -22,7 +22,7 @@ use anyhow::Context as _;
 
 use crate::collectors::plugins::Listed;
 use crate::index::Built;
-use crate::index::load::{FENCE_BEGIN, FENCE_END, fence_kv, fence_table, fences};
+use crate::index::load::{FENCE_BEGIN, FENCE_END, fence_table};
 use crate::index::views;
 use crate::model::Language;
 use crate::model::event::{Kind, Resolution, Source, format_ts};
@@ -189,14 +189,12 @@ impl Files {
         })
     }
 
-    /// The body of the first fence `name`, if a file has one.
+    /// The body of the first fence `name`, if a file has one (found the
+    /// way [`views::replace_fence`] finds it).
     pub fn body(&self, name: &str) -> Option<String> {
-        self.files.iter().find_map(|f| {
-            fences(&f.text)
-                .into_iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, body)| body)
-        })
+        self.files
+            .iter()
+            .find_map(|f| views::fence_body(&f.text, name).map(String::from))
     }
 
     /// Sets the body of `fence` to `content`; `true` when that changed it.
@@ -206,9 +204,7 @@ impl Files {
             return false;
         }
         for f in &mut self.files {
-            if fences(&f.text).iter().any(|(n, _)| n == fence.name)
-                && let Some(text) = views::replace_fence(&f.text, fence.name, content)
-            {
+            if let Some(text) = views::replace_fence(&f.text, fence.name, content) {
                 f.text = text;
                 return true;
             }
@@ -396,7 +392,8 @@ pub fn enabled_by(command: &str) -> Vec<(String, Scope)> {
         if words.next().map(String::as_str) != Some("enable") {
             continue;
         }
-        for unit in words {
+        // a path (`systemctl enable /etc/…/x.service`) names no unit here
+        for unit in words.filter(|w| !w.contains('/')) {
             let unit = if unit.contains('.') {
                 unit.clone()
             } else {
@@ -578,13 +575,41 @@ pub fn plugins_list(listed: &[Listed]) -> String {
     t
 }
 
-/// A `- key: value` fence; a key without a new value keeps the value the
-/// existing body had, a key without either is left out.
+/// A `- key: value` fence. The engine owns the keys of `pairs`: each old
+/// line of such a key gets the new value (or keeps its own when there is
+/// none), in place. Every other line of the old body (a hand-written
+/// `- gpu: …`) is kept verbatim. Keys of `pairs` the body lacks are
+/// appended in `pairs` order; a key without any value is left out.
 pub fn key_values(pairs: &[(&str, Option<String>)], body: Option<&str>) -> String {
-    let old = body.map(fence_kv).unwrap_or_default();
+    let key_of = |line: &str| {
+        let (k, _) = line.strip_prefix("- ")?.split_once(": ")?;
+        Some(k.to_string())
+    };
     let mut t = String::new();
+    let mut done: Vec<&str> = Vec::new();
+    for line in body.unwrap_or_default().lines() {
+        let owned = key_of(line).and_then(|k| pairs.iter().find(|(p, _)| *p == k));
+        match owned {
+            Some((key, value)) if !done.contains(key) => {
+                done.push(key);
+                match value {
+                    Some(v) => {
+                        let _ = writeln!(t, "- {key}: {v}");
+                    }
+                    None => {
+                        let _ = writeln!(t, "{line}");
+                    }
+                }
+            }
+            // a second line of an engine key is stale: dropped
+            Some(_) => {}
+            None => {
+                let _ = writeln!(t, "{line}");
+            }
+        }
+    }
     for (key, value) in pairs {
-        if let Some(v) = value.clone().or_else(|| old.get(*key).cloned()) {
+        if let Some(v) = value.as_ref().filter(|_| !done.contains(key)) {
             let _ = writeln!(t, "- {key}: {v}");
         }
     }
@@ -608,8 +633,9 @@ pub fn omarchy_summary(
     )
 }
 
-/// `hardware.summary`: what [`query::hardware`] found, nothing else.
-pub fn hardware_summary(hw: &Hardware) -> String {
+/// `hardware.summary`: the four keys [`query::hardware`] reads; other
+/// lines of the old body (hand-written `gpu`, `displays`, `disk`) stay.
+pub fn hardware_summary(hw: &Hardware, body: Option<&str>) -> String {
     key_values(
         &[
             ("cpu", hw.cpu.clone()),
@@ -617,7 +643,7 @@ pub fn hardware_summary(hw: &Hardware) -> String {
             ("machine", hw.machine.clone()),
             ("rootfs", hw.rootfs.clone()),
         ],
-        None,
+        body,
     )
 }
 
@@ -747,6 +773,10 @@ mod tests {
         );
         assert!(enabled_by("systemctl --user status ollama").is_empty());
         assert!(enabled_by("systemctl is-enabled ollama").is_empty());
+        assert!(
+            enabled_by("sudo systemctl enable /etc/systemd/system/x.service").is_empty(),
+            "a path is not a unit name"
+        );
     }
 
     #[test]
@@ -781,6 +811,58 @@ mod tests {
             omarchy_summary(Some("4.0.8-1".into()), None, &facts, Some(old)),
             old.replace("4.0.7-1", "4.0.8-1")
         );
+    }
+
+    #[test]
+    fn hardware_keeps_hand_written_lines() {
+        let old = "- cpu: old cpu\n- memory: 64 GiB\n- gpu: Intel Arc B580\n- displays: 2 × 2560×1440 @ 144 Hz\n- disk: NVMe 2 TB, btrfs\n";
+        let hw = Hardware {
+            cpu: Some("Intel(R) Core(TM) i7-14700K".into()),
+            memory: Some("63 GiB".into()),
+            machine: None,
+            rootfs: Some("btrfs".into()),
+        };
+        assert_eq!(
+            hardware_summary(&hw, Some(old)),
+            "- cpu: Intel(R) Core(TM) i7-14700K\n- memory: 63 GiB\n- gpu: Intel Arc B580\n- displays: 2 × 2560×1440 @ 144 Hz\n- disk: NVMe 2 TB, btrfs\n- rootfs: btrfs\n"
+        );
+        let once = hardware_summary(&hw, Some(old));
+        assert_eq!(hardware_summary(&hw, Some(&once)), once, "idempotent");
+        // a stale duplicate of an engine key is dropped
+        assert_eq!(
+            hardware_summary(&hw, Some("- cpu: a\n- cpu: b\n")),
+            "- cpu: Intel(R) Core(TM) i7-14700K\n- memory: 63 GiB\n- rootfs: btrfs\n"
+        );
+    }
+
+    #[test]
+    fn a_damaged_marker_elsewhere_does_not_hide_the_fence() {
+        let dir = std::env::temp_dir().join(format!("seldon-dossier-dmg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // an unclosed fence above: a sequential scan reads it up to the
+        // real fence's end marker and would not see `packages.summary`
+        let text = "# P\n<!-- seldon:begin notes -->\nkaputt\n\n<!-- seldon:begin packages.summary -->\n- explicit: 1\n<!-- seldon:end -->\n";
+        std::fs::write(dir.join("packages.md"), text).unwrap();
+        let mut files = Files::read(&dir, Language::En).unwrap();
+        let fence = *FENCES
+            .iter()
+            .find(|f| f.name == "packages.summary")
+            .unwrap();
+        assert_eq!(
+            files.body("packages.summary").as_deref(),
+            Some("- explicit: 1\n")
+        );
+        assert!(!files.set(&fence, "- explicit: 1\n"));
+        assert!(files.set(&fence, "- explicit: 2\n"));
+        assert_eq!(files.changed(), ["system/packages.md"]);
+        files.write().unwrap();
+        let written = std::fs::read_to_string(dir.join("packages.md")).unwrap();
+        assert_eq!(written, text.replace("explicit: 1", "explicit: 2"));
+        let mut again = Files::read(&dir, Language::En).unwrap();
+        assert!(!again.set(&fence, "- explicit: 2\n"));
+        assert!(again.changed().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

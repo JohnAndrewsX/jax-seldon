@@ -20,6 +20,7 @@ use crate::dossier::query::{self, Hosts, Scope};
 use crate::dossier::{self, FENCES, Facts, Fence, Files, Section};
 use crate::error::Result;
 use crate::index;
+use crate::redact::Redactor;
 
 #[derive(Debug, Clone, Default, Args)]
 pub struct DossierArgs {
@@ -64,6 +65,9 @@ struct Counts {
 
 pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
+    // host strings go through the user's `[redaction]` patterns too
+    // (SPEC-ENGINE §7); an invalid pattern is a user error before any write
+    let redactor = Redactor::with_patterns(&config.redaction.patterns)?;
     let lock = ctx.lock()?;
     let built = index::derive(ctx, &config, &logbook)?;
     let facts = dossier::facts(&built);
@@ -95,7 +99,7 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
         let content = match fence.name {
             "packages.summary" | "packages.history" | "packages.explicit" => {
                 let p = packages.get_or_insert_with(|| {
-                    let p = query::packages(&hosts.sources.pacman);
+                    let p = query::packages(&hosts.sources.pacman).map(|p| p.redacted(&redactor));
                     match &p {
                         Ok(p) => {
                             counts.explicit = Some(p.explicit.len());
@@ -119,15 +123,17 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
                 })
             }
             "services.enabled" => {
-                services(&hosts, &facts, body.as_deref(), &mut warnings).map(|(text, n)| {
-                    counts.units = Some(n);
-                    text
-                })
+                services(&hosts, &facts, &redactor, body.as_deref(), &mut warnings).map(
+                    |(text, n)| {
+                        counts.units = Some(n);
+                        text
+                    },
+                )
             }
             "omarchy.summary" => {
                 let text = dossier::omarchy_summary(
-                    query::omarchy_version(&hosts.sources),
-                    query::theme(&hosts.sources, &ctx.dirs.home),
+                    query::omarchy_version(&hosts.sources).map(|v| redactor.redact(&v)),
+                    query::theme(&hosts.sources, &ctx.dirs.home).map(|t| redactor.redact(&t)),
                     &facts,
                     body.as_deref(),
                 );
@@ -137,16 +143,16 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
                 (!text.is_empty()).then_some(text)
             }
             "hardware.summary" => {
-                let hw = query::hardware(&hosts.hardware_root);
+                let hw = query::hardware(&hosts.hardware_root).redacted(&redactor);
                 if hw.is_empty() {
                     warnings.push(format!(
                         "hardware: nothing readable under {}; fence kept",
                         hosts.hardware_root.display()
                     ));
                 }
-                (!hw.is_empty()).then(|| dossier::hardware_summary(&hw))
+                (!hw.is_empty()).then(|| dossier::hardware_summary(&hw, body.as_deref()))
             }
-            "plugins.list" => match query::plugins(&hosts.sources.omarchy) {
+            "plugins.list" => match query::plugins(&hosts.sources.omarchy, &redactor) {
                 // a shell that lists nothing is not a shell without plugins
                 Ok(list)
                     if list.is_empty()
@@ -169,10 +175,17 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
                     None
                 }
             },
-            "deviations.table" => Some(dossier::deviations_table(
-                body.as_deref(),
-                &facts.cased_config,
-            )),
+            "deviations.table" => {
+                let cased: Vec<dossier::Cased> = facts
+                    .cased_config
+                    .iter()
+                    .map(|c| dossier::Cased {
+                        path: redactor.redact(&c.path),
+                        ..c.clone()
+                    })
+                    .collect();
+                Some(dossier::deviations_table(body.as_deref(), &cased))
+            }
             other => unreachable!("fence {other} has no renderer"),
         };
         set(&mut files, fence, content);
@@ -236,13 +249,14 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
 fn services(
     hosts: &Hosts,
     facts: &Facts,
+    redactor: &Redactor,
     body: Option<&str>,
     warnings: &mut Vec<String>,
 ) -> Option<(String, usize)> {
     let mut units = Vec::new();
     for scope in [Scope::System, Scope::User] {
         match query::enabled_units(&hosts.systemctl, scope) {
-            Ok(list) => units.extend(list.into_iter().map(|u| (u, scope))),
+            Ok(list) => units.extend(list.into_iter().map(|u| (redactor.redact(&u), scope))),
             Err(e) => {
                 warnings.push(format!("services: {e}; fence kept"));
                 return None;

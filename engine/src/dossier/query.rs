@@ -17,6 +17,7 @@ use crate::collectors::plugins::{self, Listed};
 use crate::collectors::theme::Theme;
 use crate::collectors::{RUN_TIMEOUT, Sources, omarchy};
 use crate::model::event::SUBJECT_MAX;
+use crate::redact::Redactor;
 use crate::sys::{self, Run};
 
 /// Where the dossier's queries go.
@@ -53,6 +54,16 @@ pub struct Packages {
 }
 
 impl Packages {
+    /// The names through `redactor` (the user's `[redaction]` patterns).
+    pub fn redacted(self, redactor: &Redactor) -> Self {
+        let explicit: BTreeSet<String> = self.explicit.iter().map(|n| redactor.redact(n)).collect();
+        Packages {
+            explicit: explicit.into_iter().collect(),
+            foreign: self.foreign.iter().map(|n| redactor.redact(n)).collect(),
+            total: self.total,
+        }
+    }
+
     /// Foreign packages, explicit or not (the `aur` count).
     pub fn aur(&self) -> usize {
         self.foreign.len()
@@ -127,7 +138,9 @@ pub fn enabled_units(systemctl: &str, scope: Scope) -> Result<Vec<String>, Strin
         .filter_map(|l| {
             let mut words = l.split_whitespace();
             match (words.next(), words.next()) {
-                (Some(unit), Some("enabled")) if unit.contains('.') => Some(unit.to_string()),
+                (Some(unit), Some("enabled")) if unit.contains('.') && !unit.contains('|') => {
+                    Some(unit.to_string())
+                }
                 _ => None,
             }
         })
@@ -135,9 +148,14 @@ pub fn enabled_units(systemctl: &str, scope: Scope) -> Result<Vec<String>, Strin
     Ok(units.into_iter().collect())
 }
 
-/// `omarchy plugin list --json` (the plugins collector's reader).
-pub fn plugins(omarchy: &str) -> Result<Vec<Listed>, String> {
+/// `omarchy plugin list --json` (the plugins collector's reader), ids
+/// and clone sources through `redactor`.
+pub fn plugins(omarchy: &str, redactor: &Redactor) -> Result<Vec<Listed>, String> {
     let mut listed = plugins::list(omarchy)?;
+    for p in &mut listed {
+        p.id = redactor.redact(&p.id);
+        p.cloned_from = redactor.redact(&p.cloned_from);
+    }
     listed.retain(|p| !p.id.is_empty() && !p.id.contains(['|', '\n']));
     listed.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(listed)
@@ -170,6 +188,17 @@ pub struct Hardware {
 }
 
 impl Hardware {
+    /// Every value through `redactor` (the user's `[redaction]` patterns).
+    pub fn redacted(self, redactor: &Redactor) -> Self {
+        let r = |v: Option<String>| v.map(|v| redactor.redact(&v));
+        Hardware {
+            cpu: r(self.cpu),
+            memory: r(self.memory),
+            machine: r(self.machine),
+            rootfs: r(self.rootfs),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         *self == Hardware::default()
     }

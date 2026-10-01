@@ -20,6 +20,9 @@ Eigene Notizen: Netzteil getauscht 2026-08.
 <!-- seldon:begin hardware.summary -->
 - cpu: Intel(R) Core(TM) i7-14700K
 - memory: 63 GiB
+- gpu: Intel Arc B580
+- displays: 2 × 2560×1440 @ 144 Hz
+- disk: NVMe 2 TB, btrfs
 - machine: MS-7D91
 - rootfs: btrfs
 <!-- seldon:end -->

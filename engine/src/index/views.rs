@@ -327,14 +327,23 @@ pub fn merge_status(existing: Option<&str>, content: &str) -> String {
 /// byte outside them stay as they are. `None` when `text` has no complete
 /// fence `name`.
 pub fn replace_fence(text: &str, name: &str, content: &str) -> Option<String> {
-    let begin = format!("{FENCE_BEGIN}{name} -->\n");
-    let start = text.find(&begin)? + begin.len();
-    let len = text[start..].find(FENCE_END)?;
+    let body = fence_body(text, name)?;
+    let start = body.as_ptr() as usize - text.as_ptr() as usize;
     Some(format!(
         "{}{content}{}",
         &text[..start],
-        &text[start + len..]
+        &text[start + body.len()..]
     ))
+}
+
+/// The body of the first fence `name` in `text`, found exactly the way
+/// [`replace_fence`] finds it, so "has the fence" and "can replace it"
+/// never disagree (a damaged marker elsewhere in the file cannot hide it).
+pub fn fence_body<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    let begin = format!("{FENCE_BEGIN}{name} -->\n");
+    let start = text.find(&begin)? + begin.len();
+    let len = text[start..].find(FENCE_END)?;
+    Some(&text[start..start + len])
 }
 
 /// A generated file (`STATUS.md`, `outputs/REBUILD.md`) with its fence
