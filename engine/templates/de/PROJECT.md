@@ -4,11 +4,13 @@ machineId: {{machineId}}
 ---
 # {{machineId}}
 
+## Purpose
 Wofür diese Maschine da ist, in ein paar Zeilen. Jeder Agent liest diese Datei.
 
-## Was hier nicht passieren soll
-- Keine Pakete ohne Case in der Red Zone.
+## Must not happen here
+- Keine Änderung in der Red Zone (Pakete, Dienste, `/etc`, Bootloader) ohne Case.
 - Keine Änderungen im Omarchy-Paket unter `/usr/share/omarchy`; Anpassungen nur unter `~/.config`.
 
-## Wer hier arbeitet
-- Ich (human)
+## Who works here
+- Ich (`human`)
+- Agenten, mit dem Namen, den sie in `--actor` angeben, z. B. `agent:claude-code`
