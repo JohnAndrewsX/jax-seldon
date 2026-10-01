@@ -1811,6 +1811,35 @@ var CHART_ZERO_ALPHA = 0.07
 var CHART_EMPTY_TEXT = "no data in this period"
 var DAY_MS = 86400000
 
+// Each chart's data when it has nothing to draw (`kind` is its slot id).
+// The builders start from it; emptyPeriodView uses it as it is.
+function emptyChart(kind) {
+  if (kind === "heatmap")
+    return { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Heatmap: " + CHART_EMPTY_TEXT,
+      numbers: { days: 0, events: 0, activeDays: 0, max: 0, busiest: "" },
+      firstDay: 0, offset: 0, weeks: 0, cells: [], months: [] }
+  if (kind === "series")
+    return { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Series: " + CHART_EMPTY_TEXT,
+      numbers: { samples: 0, explicitFirst: 0, explicitLast: 0, totalFirst: null, totalLast: null },
+      x0: 0, x1: 0, points: [], lanes: [] }
+  if (kind === "driftBars")
+    return { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "DriftBars: " + CHART_EMPTY_TEXT,
+      numbers: { weeks: 0, opened: 0, resolved: 0, max: 0, peak: "" }, max: 0, weeks: [] }
+  if (kind === "riskDonut") {
+    var numbers = { total: 0 }
+    for (var i = 0; i < RISKS.length; i++) numbers[RISKS[i]] = 0
+    return { empty: true, emptyText: "no cases yet · all time", summary: "RiskDonut: no cases yet · all time",
+      numbers: numbers, total: 0,
+      parts: RISKS.map(function(r) { return { risk: r, count: 0, share: 0, from: 0, to: 0 } }) }
+  }
+  if (kind === "timeline")
+    return { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Timeline: " + CHART_EMPTY_TEXT,
+      numbers: { cases: 0, open: 0, releases: 0, snapshots: 0, crises: 0, lanes: 0 },
+      x0: 0, x1: 0, lanes: 0, markers: [], spans: [], months: [] }
+  return { empty: true, emptyText: "no active cases", summary: "The Plan: no active cases",
+    numbers: { cases: 0, done: 0, steps: 0 }, rows: [] }
+}
+
 // YYYY-MM-DD → days since 1970-01-01 (proleptic Gregorian), NaN for
 // anything that is not a calendar date. Plain arithmetic (H. Hinnant's
 // days_from_civil): the period table parses thousands of dates per index.
@@ -1963,9 +1992,7 @@ function lastDay(win, today, newest) {
 // `offset` is the weekday of the first day; a day not in the series counts 0.
 function heatmapChart(rows, win, today) {
   aggregationRuns++
-  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Heatmap: " + CHART_EMPTY_TEXT,
-    numbers: { days: 0, events: 0, activeDays: 0, max: 0, busiest: "" },
-    firstDay: 0, offset: 0, weeks: 0, cells: [], months: [] }
+  var out = emptyChart("heatmap")
   if (rows.length === 0) return out
   var byDate = {}
   var oldest = rows[0].date
@@ -2046,9 +2073,7 @@ function heatmapCellAt(chart, layout, x, y) {
 // value range, padded when flat.
 function seriesChart(rows, win, today) {
   aggregationRuns++
-  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Series: " + CHART_EMPTY_TEXT,
-    numbers: { samples: 0, explicitFirst: 0, explicitLast: 0, totalFirst: null, totalLast: null },
-    x0: 0, x1: 0, points: [], lanes: [] }
+  var out = emptyChart("series")
   var points = rows.map(function(r) {
     return { date: r.date, day: dayNumber(r.date), explicit: count(r.explicit),
       total: typeof r.total === "number" && isFinite(r.total) ? count(r.total) : null }
@@ -2107,8 +2132,7 @@ function seriesPointText(p) {
 // opened, resolved }] }.
 function driftChart(rows) {
   aggregationRuns++
-  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "DriftBars: " + CHART_EMPTY_TEXT,
-    numbers: { weeks: 0, opened: 0, resolved: 0, max: 0, peak: "" }, max: 0, weeks: [] }
+  var out = emptyChart("driftBars")
   var byMonday = {}
   var mondays = []
   for (var i = 0; i < rows.length; i++) {
@@ -2155,7 +2179,7 @@ function driftWeekText(w) {
 function riskChart(risk) {
   aggregationRuns++
   var counts = risk || {}
-  var out = { empty: true, emptyText: "no cases yet · all time", summary: "", numbers: { total: 0 }, total: 0, parts: [] }
+  var out = emptyChart("riskDonut")
   for (var i = 0; i < RISKS.length; i++) {
     out.total += count(counts[RISKS[i]])
     out.numbers[RISKS[i]] = count(counts[RISKS[i]])
@@ -2163,10 +2187,12 @@ function riskChart(risk) {
   out.numbers.total = out.total
   var at = 0
   for (var k = 0; k < RISKS.length; k++) {
-    var c = count(counts[RISKS[k]])
-    var share = out.total > 0 ? c / out.total : 0
-    out.parts.push({ risk: RISKS[k], count: c, share: share, from: at, to: at + share })
-    at += share
+    var part = out.parts[k]
+    part.count = count(counts[RISKS[k]])
+    part.share = out.total > 0 ? part.count / out.total : 0
+    part.from = at
+    part.to = at + part.share
+    at = part.to
   }
   out.empty = out.total === 0
   out.summary = out.empty ? "RiskDonut: " + out.emptyText
@@ -2207,9 +2233,7 @@ function timelinePos(ts) {
 // `parsed` (optional, a Map) keeps each row's parsed days across calls.
 function timelineChart(rows, win, today, parsed) {
   aggregationRuns++
-  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Timeline: " + CHART_EMPTY_TEXT,
-    numbers: { cases: 0, open: 0, releases: 0, snapshots: 0, crises: 0, lanes: 0 },
-    x0: 0, x1: 0, lanes: 0, markers: [], spans: [], months: [] }
+  var out = emptyChart("timeline")
   if (rows.length === 0) return out
   var todayN = dayNumber(today)
   var lo = Infinity
@@ -2378,7 +2402,7 @@ function timelineItemAt(chart, layout, w, px, py, tolerance) {
 function planChart(index) {
   aggregationRuns++
   var cases = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
-  var out = { empty: true, emptyText: "no active cases", summary: "", numbers: { cases: 0, done: 0, steps: 0 }, rows: [] }
+  var out = emptyChart("plan")
   for (var i = 0; i < cases.length; i++) {
     var c = cases[i]
     if (!isObject(c)) continue
@@ -2405,10 +2429,30 @@ function planColumns(width, minWidth, gap, cards) {
   return Math.max(1, Math.min(fit, Math.max(1, cards)))
 }
 
-// One period of a periodTable(), the default one for an unknown id.
+// One period of a periodTable(), the default one for an unknown id. Without
+// a table (the shell creates the overlay first and injects `service` after,
+// SPEC-PLUGIN §6) it is emptyPeriodView's: no aggregation pass.
 function periodView(table, period) {
   var periods = table && isObject(table.periods) ? table.periods : {}
-  return periods[periodById(period).id] || periodTable(null).periods[periodById(period).id]
+  return periods[periodById(period).id] || emptyPeriodView(period)
+}
+
+// A period of periodTable(null), built from the empty shapes without any
+// aggregation pass and kept per period, so an overlay without a service
+// costs nothing and aggregationCount() stays where it was.
+var emptyPeriodViews = {}
+function emptyPeriodView(period) {
+  var id = periodById(period).id
+  if (emptyPeriodViews[id]) return emptyPeriodViews[id]
+  var plan = emptyChart("plan")
+  var data = { heatmap: [], packages: [], drift: [], timeline: [], risk: riskCounts(null), plan: plan }
+  var charts = {}
+  for (var i = 0; i < OVERLAY_SLOTS.length; i++) charts[OVERLAY_SLOTS[i].id] = emptyChart(OVERLAY_SLOTS[i].id)
+  charts.plan = plan
+  var slots = OVERLAY_SLOTS.map(function(slot) { return slotSummary(slot, data) })
+  delete data.plan
+  emptyPeriodViews[id] = { window: periodWindow(id, ""), series: data, charts: charts, slots: slots }
+  return emptyPeriodViews[id]
 }
 
 // "30 d · 2026-09-02 – 2026-10-01", or "All · everything in the index".

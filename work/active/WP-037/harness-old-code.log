@@ -1,0 +1,319 @@
+ok   ipc #1: .view.opened = false
+ok   ipc #2: .view.opened = true
+ok   ipc #2: .view.status = ok
+ok   ipc #2: .view.banner = 
+ok   ipc #2: .view.period = 90
+ok   ipc #2: [.view.slots[] | .rows | tostring] | join(",") = 90,3,5,3,18,2
+ok   ipc #2: .view.window.from + " " + .view.window.to = 2026-07-04 2026-10-01
+ok   ipc #2: .view.meta = workstation-7f3a · Omarchy 4.0.7-1 · generated 2026-10-01 17:05
+ok   ipc #2: [.texts[] | select(. == "Prime Radiant")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "workstation-7f3a · Omarchy 4.0.7-1 · generated 2026-10-01 17:05")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "90 d · 2026-07-04 – 2026-10-01")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "1–4 period · ←/→ previous / next · Esc close")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "Heatmap")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "Series")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "DriftBars")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "RiskDonut")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "Timeline")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "The Plan")] | length > 0 = true
+ok   ipc #2: [.view.slots[] | .chart.summary] | join(" | ") = 62 events on 13 of 90 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   ipc #2: [.texts[] | select(. == "62 events on 13 of 90 days · busiest 2026-10-01 (30)")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "2 active cases · 6 of 9 steps done")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "C-2026-003 · R2")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "Omarchy auf 4.0.7 aktualisieren")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "4/5 steps · agent: claude-code")] | length > 0 = true
+ok   ipc #2: [.texts[] | select(. == "2/4 steps · agent: claude-code")] | length > 0 = true
+ok   ipc #2: [.view.slots[] | .chart.empty] | any = false
+ok   ipc #2: .view.mode = wide
+ok   ipc #2: .view.slots | length = 6
+ok   ipc #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   ipc #2: .overflow | join(" | ") = 
+ok   ipc #2: .view.scrolls = false
+ok   ipc #3: .view.period = 30
+ok   ipc #3: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   ipc #3: [.view.slots[] | .chart.summary] | join(" | ") = 57 events on 12 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   ipc #3: .view.window.from + " " + .view.window.to = 2026-09-02 2026-10-01
+ok   ipc #3: [.texts[] | select(. == "57 events on 12 of 30 days · busiest 2026-10-01 (30)")] | length > 0 = true
+ok   ipc #3: [.texts[] | select(. == "30 d · 2026-09-02 – 2026-10-01")] | length > 0 = true
+ok   ipc #4: .view.period = 90
+ok   ipc #4: [.view.slots[] | .rows | tostring] | join(",") = 90,3,5,3,18,2
+ok   ipc #5: .view.period = 365
+ok   ipc #5: [.view.slots[] | .rows | tostring] | join(",") = 365,3,5,3,18,2
+ok   ipc #5: [.view.slots[] | .chart.summary] | join(" | ") = 62 events on 13 of 365 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   ipc #5: .view.window.from = 2025-10-02
+ok   ipc #6: .view.period = all
+ok   ipc #6: [.view.slots[] | .rows | tostring] | join(",") = 366,3,5,3,18,2
+ok   ipc #6: [.view.slots[] | .chart.summary] | join(" | ") = 62 events on 13 of 366 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   ipc #6: .view.window.from + "|" + .view.window.to = |
+ok   ipc #6: [.texts[] | select(. == "All · everything in the index")] | length > 0 = true
+ok   ipc #7: .view.period = 365
+ok   ipc #7: [.view.slots[] | .rows | tostring] | join(",") = 365,3,5,3,18,2
+ok   ipc #8: .view.period = all
+ok   ipc #8: [.view.slots[] | .rows | tostring] | join(",") = 366,3,5,3,18,2
+ok   ipc #9: .view.period = 30
+ok   ipc #9: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   ipc #10: .view.period = all
+ok   ipc #10: [.view.slots[] | .rows | tostring] | join(",") = 366,3,5,3,18,2
+ok   ipc #11: .view.period = 30
+ok   ipc #11: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   ipc #12: .view.opened = false
+ok   ipc #12: .hides | join(",") = jax.seldon
+ok   ipc #12: .texts | length = 0
+ok   ipc #13: .view.opened = true
+ok   ipc #14: .view.opened = false
+ok   ipc #14: .hides | length = 2
+ok   ipc #15: .view.opened = true
+ok   ipc #16: .view.opened = false
+ok   ipc #16: .hides | length = 3
+ok   ipc #17: .view.opened = true
+ok   ipc #17: .view.period = 365
+ok   ipc #17: [.view.slots[] | .rows | tostring] | join(",") = 365,3,5,3,18,2
+ok   ipc #18: .view.period = 30
+ok   ipc #18: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   ipc #18: .view.opened = true
+ok   ipc #19: .view.period = 365
+ok   ipc #19: [.view.slots[] | .rows | tostring] | join(",") = 365,3,5,3,18,2
+ok   ipc #20: .view.period = all
+ok   ipc #20: [.view.slots[] | .rows | tostring] | join(",") = 366,3,5,3,18,2
+ok   ipc #20: .call = all
+ok   ipc #21: .call = all
+ok   ipc #21: .view.period = all
+ok   ipc #22: .call | fromjson | .slots | length = 6
+ok   ipc #22: .call | fromjson | [.slots[] | .chart.summary] | join(" | ") = 62 events on 13 of 366 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   ipc #23: .view.opened = false
+ok   ipc #23: .hides | length = 4
+FAIL ipc #23: .view.aggregations.overlay = 23 (want 0)
+ok   ipc #23: .view.aggregations.service = 46
+ok   ipc: log clean
+ok   fresh #1: .firstFrame = null
+ok   fresh #2: .firstFrame.serviceBefore == .firstFrame.service = true
+ok   fresh #2: .firstFrame.service > 0 = true
+ok   fresh #2: .firstFrame.bare = true
+FAIL fresh #2: .firstFrame.overlay = 23 (want 0)
+ok   fresh #2: .firstFrame.opened = true
+ok   fresh #2: .firstFrame.paints | join(",") = 0,0,0,0,0,0
+ok   fresh #2: .firstFrame.paintedBy = 2
+ok   fresh #2: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   fresh #2: .view.aggregations.service == .firstFrame.service = true
+FAIL fresh #2: .view.aggregations.overlay = 23 (want 0)
+ok   fresh #3: .view.period = 30
+ok   fresh #3: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   fresh #4: [.view.slots[] | .chart.paints | tostring] | join(",") = 2,2,2,1,2,1
+ok   fresh #4: .view.aggregations.service == .firstFrame.service = true
+FAIL fresh #4: .view.aggregations.overlay = 23 (want 0)
+ok   fresh #5: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = heatmap=Thu 2026-10-01 · 30 events · pacman 7 · agent 6 · seldon 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1
+ok   fresh #5: [.texts[] | select(. == "Thu 2026-10-01 · 30 events · pacman 7 · agent 6 · seldon 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1")] | length > 0 = true
+ok   fresh #6: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = plan=C-2026-003 · Omarchy auf 4.0.7 aktualisieren · 4/5 steps · agent: claude-code · red R2
+ok   fresh #7: [.view.slots[] | .chart.hover] | join("") = 
+ok   fresh #8: [.view.slots[] | .chart.paints | tostring] | join(",") = 2,2,2,1,2,1
+ok   fresh #9: .view.size.w = 2560
+ok   fresh #10: [.view.slots[] | .chart.paints | tostring] | join(",") = 3,3,3,2,3,2
+ok   fresh #10: .view.slots | length = 6
+ok   fresh #10: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2560 or .y + .h > 1080)] | length = 0
+ok   fresh #10: .overflow | join(" | ") = 
+ok   fresh #10: .view.scrolls = false
+ok   fresh #12: .firstFrame.serviceBefore == .firstFrame.service = true
+ok   fresh #12: .firstFrame.bare = true
+FAIL fresh #12: .firstFrame.overlay = 23 (want 0)
+ok   fresh #12: .firstFrame.paints | join(",") = 0,0,0,0,0,0
+ok   fresh #12: .firstFrame.paintedBy = 2
+ok   fresh #12: .view.period = all
+ok   fresh #12: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   fresh: log clean
+ok   hover #3: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = heatmap=Sat 2026-07-04 · 0 events
+ok   hover #4: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = series=2026-09-03 · explicit 324 · total 2005
+ok   hover #5: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2
+ok   hover #6: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = riskDonut=R0 · 1 case · 13% · all time
+ok   hover #7: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = riskDonut=R2 · 4 cases · 50% · all time
+ok   hover #8: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = timeline=snapshot · 111 vor Snapshot-Aufräumen · 2026-09-30 19:00
+ok   hover #9: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = timeline=case · C-2026-002 Hyprland-Monitorlayout für Dual-WQHD · 2026-09-12 – 2026-09-13
+ok   hover #10: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = plan=C-2026-004 · Zed als zweiten Editor installieren · 2/4 steps · agent: claude-code · red R2
+ok   hover #11: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = plan=C-2026-004 · Zed als zweiten Editor installieren · 2/4 steps · agent: claude-code · red R2
+ok   hover #12: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = heatmap=Wed 2026-09-30 · 8 events · pacman 3 · snapper 3 · manual 1 · seldon 1
+ok   hover #13: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = timeline=case · C-2026-004 Zed als zweiten Editor installieren · 2026-09-28 – open
+ok   hover #14: .call | fromjson | .slot + "=" + .hover = riskDonut=
+ok   hover #15: .call | fromjson | .slot + "=" + .hover = driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2
+ok   hover #16: [.view.slots[] | .chart.hover] | join("") = 
+ok   hover #17: .call | fromjson | .error = no chart nope
+ok   hover #18: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2
+ok   hover #19: .call | fromjson | .error = expected "<slot> <x>,<y>" with x and y in [0, 1], or ""
+ok   hover #19: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2
+ok   hover #20: .call | fromjson | .error = expected "<slot> <x>,<y>" with x and y in [0, 1], or ""
+ok   hover #20: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2
+ok   hover #21: .call | fromjson | .error = expected "<slot> <x>,<y>" with x and y in [0, 1], or ""
+ok   hover #21: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2
+ok   hover #22: .call | fromjson | .error = expected "<slot> <x>,<y>" with x and y in [0, 1], or ""
+ok   hover #22: [.view.slots[] | select(.chart.hover != "") | .id + "=" + .chart.hover] | join(" | ") = driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2
+ok   hover #23: .call | fromjson | .slot + "=" + .hover = series=2026-09-03 · explicit 324 · total 2005
+ok   hover: log clean
+ok   size-2560x1440 #1: .view.slots | length = 6
+ok   size-2560x1440 #1: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2560 or .y + .h > 1440)] | length = 0
+ok   size-2560x1440 #1: .overflow | join(" | ") = 
+ok   size-2560x1440 #1: .view.scrolls = false
+ok   size-2560x1440 #2: .view.slots | length = 6
+ok   size-2560x1440 #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2560 or .y + .h > 1440)] | length = 0
+ok   size-2560x1440 #2: .overflow | join(" | ") = 
+ok   size-2560x1440 #2: .view.scrolls = false
+ok   size-2560x1440 #3: .view.slots | length = 6
+ok   size-2560x1440 #3: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2560 or .y + .h > 1440)] | length = 0
+ok   size-2560x1440 #3: .overflow | join(" | ") = 
+ok   size-2560x1440 #3: .view.scrolls = false
+ok   size-2560x1440 #4: .view.slots | length = 6
+ok   size-2560x1440 #4: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2560 or .y + .h > 1440)] | length = 0
+ok   size-2560x1440 #4: .overflow | join(" | ") = 
+ok   size-2560x1440 #4: .view.scrolls = false
+ok   size-2560x1440 #1: .view.mode = wide
+ok   size-2560x1440 #4: [.view.slots[] | select(.chart.w < 100 or .chart.h < 40)] | length = 0
+ok   size-2560x1440 #2: .view.period = 30
+ok   size-2560x1440 #2: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   size-2560x1440 #2: [.view.slots[] | .chart.summary] | join(" | ") = 57 events on 12 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   size-2560x1440: log clean
+ok   size-1536x864 #1: .view.slots | length = 6
+ok   size-1536x864 #1: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1536 or .y + .h > 864)] | length = 0
+ok   size-1536x864 #1: .overflow | join(" | ") = 
+ok   size-1536x864 #1: .view.scrolls = false
+ok   size-1536x864 #2: .view.slots | length = 6
+ok   size-1536x864 #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1536 or .y + .h > 864)] | length = 0
+ok   size-1536x864 #2: .overflow | join(" | ") = 
+ok   size-1536x864 #2: .view.scrolls = false
+ok   size-1536x864 #3: .view.slots | length = 6
+ok   size-1536x864 #3: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1536 or .y + .h > 864)] | length = 0
+ok   size-1536x864 #3: .overflow | join(" | ") = 
+ok   size-1536x864 #3: .view.scrolls = false
+ok   size-1536x864 #4: .view.slots | length = 6
+ok   size-1536x864 #4: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1536 or .y + .h > 864)] | length = 0
+ok   size-1536x864 #4: .overflow | join(" | ") = 
+ok   size-1536x864 #4: .view.scrolls = false
+ok   size-1536x864 #1: .view.mode = wide
+ok   size-1536x864 #4: [.view.slots[] | select(.chart.w < 100 or .chart.h < 40)] | length = 0
+ok   size-1536x864 #2: .view.period = 30
+ok   size-1536x864 #2: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   size-1536x864 #2: [.view.slots[] | .chart.summary] | join(" | ") = 57 events on 12 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   size-1536x864: log clean
+ok   size-2048x1152 #1: .view.slots | length = 6
+ok   size-2048x1152 #1: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2048 or .y + .h > 1152)] | length = 0
+ok   size-2048x1152 #1: .overflow | join(" | ") = 
+ok   size-2048x1152 #1: .view.scrolls = false
+ok   size-2048x1152 #2: .view.slots | length = 6
+ok   size-2048x1152 #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2048 or .y + .h > 1152)] | length = 0
+ok   size-2048x1152 #2: .overflow | join(" | ") = 
+ok   size-2048x1152 #2: .view.scrolls = false
+ok   size-2048x1152 #3: .view.slots | length = 6
+ok   size-2048x1152 #3: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2048 or .y + .h > 1152)] | length = 0
+ok   size-2048x1152 #3: .overflow | join(" | ") = 
+ok   size-2048x1152 #3: .view.scrolls = false
+ok   size-2048x1152 #4: .view.slots | length = 6
+ok   size-2048x1152 #4: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 2048 or .y + .h > 1152)] | length = 0
+ok   size-2048x1152 #4: .overflow | join(" | ") = 
+ok   size-2048x1152 #4: .view.scrolls = false
+ok   size-2048x1152 #1: .view.mode = wide
+ok   size-2048x1152 #4: [.view.slots[] | select(.chart.w < 100 or .chart.h < 40)] | length = 0
+ok   size-2048x1152 #2: .view.period = 30
+ok   size-2048x1152 #2: [.view.slots[] | .rows | tostring] | join(",") = 30,2,5,3,17,2
+ok   size-2048x1152 #2: [.view.slots[] | .chart.summary] | join(" | ") = 57 events on 12 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | 13 opened · 9 resolved in 5 weeks · peak 2026-W40 | 8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | 2 active cases · 6 of 9 steps done
+ok   size-2048x1152: log clean
+ok   scaled #1: .view.slots | length = 6
+ok   scaled #1: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1536 or .y + .h > 864)] | length = 0
+ok   scaled #1: .overflow | join(" | ") = 
+ok   scaled #1: .view.scrolls = false
+ok   scaled #2: .view.slots | length = 6
+ok   scaled #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1536 or .y + .h > 864)] | length = 0
+ok   scaled #2: .overflow | join(" | ") = 
+ok   scaled #2: .view.scrolls = false
+ok   scaled #2: .view.period = 90
+ok   scaled #2: [.view.slots[] | .rows | tostring] | join(",") = 90,3,5,3,18,2
+ok   scaled: log clean
+ok   medium #1: .view.mode = medium
+ok   medium #1: [.view.slots[] | select(.x < 0 or .x + .w > 760)] | length = 0
+ok   medium #1: [.view.slots | group_by(.y)[] | map(.id) | join(" ")] | join(" | ") = heatmap | series driftBars | riskDonut timeline | plan
+ok   medium #1: .overflow | join(" | ") = 
+ok   medium: log clean
+ok   narrow #1: .view.mode = narrow
+ok   narrow #1: .view.scrolls = true
+ok   narrow #1: [.overflow[] | select(endswith("@window") | not)] | length = 0
+ok   narrow #1: [.view.slots[] | select(.x < 0 or .x + .w > 560)] | length = 0
+ok   narrow #1: [.view.slots | group_by(.y)[] | map(.id) | join(" ")] | join(" | ") = heatmap | series | driftBars | riskDonut | timeline | plan
+ok   narrow: log clean
+ok   reflow #3: .view.mode = medium
+ok   reflow #4: [.view.slots[] | .chart.paints | tostring] | join(",") = 2,2,2,2,2,2
+ok   reflow #4: [.view.slots[] | select(.chart.w + 2 * 18 > .w)] | length = 0
+ok   reflow #5: .view.mode = narrow
+ok   reflow #6: [.view.slots[] | .chart.paints | tostring] | join(",") = 3,3,3,3,3,3
+FAIL reflow #6: .view.aggregations.overlay = 23 (want 0)
+ok   reflow: log clean
+ok   uninit #1: .view.status = notInitialised
+ok   uninit #1: .view.banner = Logbook not initialised
+ok   uninit #1: [.texts[] | select(. == "Logbook not initialised")] | length > 0 = true
+ok   uninit #1: [.texts[] | select(. == "Copy")] | length > 0 = true
+ok   uninit #1: [.texts[] | select(. == "Run in terminal" or . == "Check again")] | length = 0
+ok   uninit #1: [.texts[] | select(. == "Fix it from the Seldon panel (click ⟡ in the bar).")] | length > 0 = true
+ok   uninit #1: .view.slots | length = 6
+ok   uninit #1: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   uninit #1: .overflow | join(" | ") = 
+ok   uninit #1: .view.scrolls = false
+ok   uninit #1: .view.period = 90
+ok   uninit #1: [.view.slots[] | .rows | tostring] | join(",") = 0,0,0,0,0,0
+ok   uninit #1: [.view.slots[] | .chart.empty] | all = true
+ok   uninit #1: [.texts[] | select(. == "no data in this period")] | length = 4
+ok   uninit #1: [.texts[] | select(. == "no cases yet · all time")] | length > 0 = true
+ok   uninit #1: [.texts[] | select(. == "no active cases")] | length > 0 = true
+ok   uninit #1: [.view.slots[] | .chart.paints | tostring] | join(",") = 0,0,0,0,0,0
+ok   uninit #2: [.view.slots[] | .chart.hover] | join("") = 
+ok   uninit #3: .call | fromjson | .slot + "=" + .hover = timeline=
+ok   uninit: log clean
+ok   variant-drift-capped #2: [.view.slots[] | .chart.empty] | any = false
+ok   variant-drift-capped #2: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   variant-drift-capped #2: .view.slots | length = 6
+ok   variant-drift-capped #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   variant-drift-capped #2: .overflow | join(" | ") = 
+ok   variant-drift-capped #2: .view.scrolls = false
+ok   variant-drift-capped: log clean
+ok   variant-drift-explained-case #2: [.view.slots[] | .chart.empty] | any = false
+ok   variant-drift-explained-case #2: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   variant-drift-explained-case #2: .view.slots | length = 6
+ok   variant-drift-explained-case #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   variant-drift-explained-case #2: .overflow | join(" | ") = 
+ok   variant-drift-explained-case #2: .view.scrolls = false
+ok   variant-drift-explained-case: log clean
+ok   variant-drift-members-capped #2: [.view.slots[] | .chart.empty] | any = false
+ok   variant-drift-members-capped #2: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   variant-drift-members-capped #2: .view.slots | length = 6
+ok   variant-drift-members-capped #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   variant-drift-members-capped #2: .overflow | join(" | ") = 
+ok   variant-drift-members-capped #2: .view.scrolls = false
+ok   variant-drift-members-capped: log clean
+ok   variant-index-stale #2: [.view.slots[] | .chart.empty] | any = false
+ok   variant-index-stale #2: [.view.slots[] | .chart.paints] | min >= 1 and max <= 2 = true
+ok   variant-index-stale #2: .view.slots | length = 6
+ok   variant-index-stale #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   variant-index-stale #2: .overflow | join(" | ") = 
+ok   variant-index-stale #2: .view.scrolls = false
+ok   variant-index-stale: log clean
+ok   variant-omarchy-git-checkout #2: [.view.slots[] | .chart.empty] | any = false
+ok   variant-omarchy-git-checkout #2: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   variant-omarchy-git-checkout #2: .view.slots | length = 6
+ok   variant-omarchy-git-checkout #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   variant-omarchy-git-checkout #2: .overflow | join(" | ") = 
+ok   variant-omarchy-git-checkout #2: .view.scrolls = false
+ok   variant-omarchy-git-checkout: log clean
+ok   variant-plugins-degraded #2: [.view.slots[] | .chart.empty] | any = false
+ok   variant-plugins-degraded #2: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   variant-plugins-degraded #2: .view.slots | length = 6
+ok   variant-plugins-degraded #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   variant-plugins-degraded #2: .overflow | join(" | ") = 
+ok   variant-plugins-degraded #2: .view.scrolls = false
+ok   variant-plugins-degraded: log clean
+ok   variant-snapper-degraded #2: [.view.slots[] | .chart.empty] | any = false
+ok   variant-snapper-degraded #2: [.view.slots[] | .chart.paints | tostring] | join(",") = 1,1,1,1,1,1
+ok   variant-snapper-degraded #2: .view.slots | length = 6
+ok   variant-snapper-degraded #2: [.view.slots[] | select(.w <= 0 or .h <= 0 or .x < 0 or .y < 0 or .x + .w > 1920 or .y + .h > 1080)] | length = 0
+ok   variant-snapper-degraded #2: .overflow | join(" | ") = 
+ok   variant-snapper-degraded #2: .view.scrolls = false
+ok   variant-snapper-degraded: log clean
+ok   overlay-view: the real ~/.local/state/seldon and ~/.config/seldon are untouched
+overlay-view: 308 passed, 6 failed
+
+real	0m36.340s
+user	0m3.278s
+sys	0m1.096s

@@ -977,6 +977,22 @@ test("periodTable: no index, empty series", () => {
   assert.strictEqual(one.periods["30"].slots[1].detail, "7 explicit")
 })
 
+test("periodView without a table: periodTable(null)'s period, no aggregation", () => {
+  // The shell injects `service` after creating the overlay, so Overlay.qml's
+  // periodData first asks for a view of no table (SPEC-PLUGIN §6).
+  const empty = M.periodTable(null)
+  const before = M.aggregationCount()
+  for (const p of M.PERIODS) {
+    same(M.periodView(null, p.id), empty.periods[p.id])
+    same(M.emptyPeriodView(p.id), empty.periods[p.id])
+  }
+  same(M.periodView({ periods: {} }, "30"), empty.periods["30"])
+  assert.strictEqual(M.periodView(null, "nope").window.period, "90")
+  // Kept per period: the same object on every call.
+  assert.strictEqual(M.periodView(null, "30"), M.periodView(undefined, "30"))
+  assert.strictEqual(M.aggregationCount() - before, 0)
+})
+
 test("overlayMeta and overlayBanner", () => {
   assert.strictEqual(M.overlayMeta(ok.index), "workstation-7f3a · Omarchy 4.0.7-1 · generated 2026-10-01 17:05")
   assert.strictEqual(M.overlayMeta(null), "")

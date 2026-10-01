@@ -233,8 +233,10 @@ expect ipc 23 '.view.aggregations.service' "$(sed -n 1p "$work/ipc.steps" | jq .
 clean_log ipc
 
 # 2. A fresh open, as the shell's Loader does it (a new Overlay.qml on every
-#    summon): the first frame runs no aggregation — the service's count is
-#    the one from before the overlay existed, the overlay's own is 0 — and
+#    summon, created bare with `service` injected afterwards, so its bindings
+#    first run with service === null; `bare` proves the harness did that):
+#    the first frame runs no aggregation — the service's count is the one
+#    from before the overlay existed, the overlay's own is 0 — and
 #    has painted nothing yet (Canvas gets its context on the first frame);
 #    every chart has painted once by frame 2. Switching periods aggregates
 #    nothing and repaints only the charts whose data changed (RiskDonut and
@@ -248,6 +250,7 @@ run fresh "$sample" 1920x1080 \
 expect fresh 1 .firstFrame null
 expect fresh 2 '.firstFrame.serviceBefore == .firstFrame.service' true
 expect fresh 2 '.firstFrame.service > 0' true
+expect fresh 2 .firstFrame.bare true
 expect fresh 2 .firstFrame.overlay 0
 expect fresh 2 .firstFrame.opened true
 expect fresh 2 '.firstFrame.paints | join(",")' "0,0,0,0,0,0"
@@ -268,6 +271,7 @@ expect fresh 9 .view.size.w 2560
 paints fresh 10 "3,3,3,2,3,2"
 fits fresh 10 2560 1080
 expect fresh 12 '.firstFrame.serviceBefore == .firstFrame.service' true
+expect fresh 12 .firstFrame.bare true
 expect fresh 12 .firstFrame.overlay 0
 expect fresh 12 '.firstFrame.paints | join(",")' "0,0,0,0,0,0"
 expect fresh 12 .firstFrame.paintedBy 2
