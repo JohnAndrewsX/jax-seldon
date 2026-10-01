@@ -15,6 +15,7 @@ mod init {
         let mut args = vec![
             "init",
             "--non-interactive",
+            "--no-capture",
             "--path",
             path.to_str().unwrap(),
         ];
@@ -221,6 +222,7 @@ mod init {
             .command(&[
                 "init",
                 "--non-interactive",
+                "--no-capture",
                 "--no-git",
                 "--path",
                 path.to_str().unwrap(),
@@ -235,14 +237,14 @@ mod init {
     #[test]
     fn default_path_is_home_seldon_and_env_overrides_it() {
         let env = Env::new(Snapper::Allowed);
-        let out = env.seldon(&["init", "--non-interactive", "--no-git"]);
+        let out = env.seldon(&["init", "--non-interactive", "--no-capture", "--no-git"]);
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         assert!(Logbook::is_initialised(&env.home.join("Seldon")));
 
         let env = Env::new(Snapper::Allowed);
         let target = env.tmp.path().join("from-env");
         let out = env
-            .command(&["init", "--non-interactive", "--no-git"])
+            .command(&["init", "--non-interactive", "--no-capture", "--no-git"])
             .env("SELDON_LOGBOOK", &target)
             .output()
             .unwrap();

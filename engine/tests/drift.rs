@@ -493,6 +493,7 @@ fn a_dependency_of_a_cased_explicit_event_is_linked() {
         &[
             "init",
             "--non-interactive",
+            "--no-capture",
             "--no-git",
             "--path",
             lb.to_str().unwrap(),
@@ -603,6 +604,7 @@ fn a_caseless_install_is_one_group_and_links_as_one() {
         &[
             "init",
             "--non-interactive",
+            "--no-capture",
             "--no-git",
             "--path",
             lb.to_str().unwrap(),

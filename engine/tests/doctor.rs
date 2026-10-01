@@ -21,6 +21,7 @@ fn init(env: &Env) -> PathBuf {
     let out = env.seldon(&[
         "init",
         "--non-interactive",
+        "--no-capture",
         "--path",
         root.to_str().unwrap(),
     ]);

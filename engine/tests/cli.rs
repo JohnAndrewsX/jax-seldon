@@ -188,6 +188,7 @@ fn init_writes_the_overridden_config_only() {
         config.to_str().unwrap(),
         "init",
         "--non-interactive",
+        "--no-capture",
         "--path",
         root.to_str().unwrap(),
         "--json",
