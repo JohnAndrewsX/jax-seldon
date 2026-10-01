@@ -6,8 +6,8 @@ what the Seldon engine has recorded: active cases, unexplained changes
 `${XDG_STATE_HOME:-~/.local/state}/seldon/index.json`, which the engine
 writes.
 
-> Phase 2. The panel has the Today, Changelog, Work and System tabs;
-> Decisions, Memory and the Prime Radiant charts arrive in later releases.
+> Phase 2. The panel has all six tabs: Today, Changelog, Work, Decisions,
+> System and Memory; the Prime Radiant charts arrive in a later release.
 > Project home: https://github.com/JohnAndrewsX/jax-seldon
 
 ## Requirements
@@ -37,7 +37,9 @@ fixing. The tooltip says what and when the engine last captured.
 | Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), the QuickEntry (below), today's journal entries, yesterday's behind one row; *Open in editor* (today's journal) |
 | Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; *Ledger* (this month's ledger in the editor); *Capture now*; *Resolve…* on every unexplained change (the drift sheet, below) |
 | Work | your cases in three columns, Queued · Active (verification included) · Completed (the last 50, dropped ones struck through); the active cases against your limit ("2 / 3 active"); the card of the case under the cursor with its actions; *New case* |
+| Decisions | your decisions (ADRs), newest first: id, status (*proposed* marked with the accent stripe, *superseded* struck through), title, date and file; *Open* on the decision under the cursor; *New decision* |
 | System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine; a section appears only when the index has it; *Open in editor* (the logbook's `STATUS.md`) |
+| Memory | what your agents read at session start: the headings of `memory/lessons.md` (LESSONS) and the other memory files with their path and last update (TOPICS); *Open* (the logbook folder, see below) |
 
 **QuickEntry** (Today): type a note and press Enter; it goes to today's
 journal through `seldon log`, exactly as typed. Pick an open case below the
@@ -51,8 +53,24 @@ capture`, then `seldon status`; the button spins meanwhile and the line
 below says what the capture wrote. New rows arrive with the rewritten
 index, without a restart.
 
-**Open in editor** runs `seldon open <journal|ledger|status|case id>
---editor`; the engine starts your default editor (`omarchy-launch-editor`).
+**Open in editor** runs `seldon open <journal|ledger|status|logbook|case
+id|decision id> --editor`; the engine starts your default editor
+(`omarchy-launch-editor`).
+
+**Decisions**: Enter, `e`, a double click or *Open* opens the decision under
+the cursor (`seldon open ADR-NNNN --editor`). *New decision* (or `d`) shows
+a sheet with one field, the title. Enter arms it ("Press Enter again:
+create the decision “…”"), the second Enter sends `seldon decide --no-edit
+-- <title>`; a click on *Create* sends at once, and changing the title
+takes the first press back. The engine writes the decision as *proposed*
+and the plugin then opens it in your editor; the list shows it, with the
+cursor on it, once the engine rewrites the index. The title stays in the
+field until the engine has created the decision, so a refusal (shown in
+the sheet) loses nothing; Esc closes the sheet and keeps the title.
+
+**Memory**: the engine cannot open a single memory file yet, so Enter, `e`,
+a double click and *Open* all open the logbook folder (`seldon open
+logbook --editor`); the files are in its `memory/` folder.
 
 **Work** shows one tile per case: id, steps done/total, title, the zone as
 the stripe colour, *verification* or *dropped*, and "N proposed" when the
@@ -138,15 +156,16 @@ reason" (a click opens the drift sheet for the first of them).
 |---|---|
 | Tab / Shift-Tab | the bar's next / previous panel, as in every Omarchy panel |
 | ← / →, h / l | previous / next tab |
-| 1–6 | a tab by its fixed number: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 (a tab this version does not have yet: nothing happens) |
+| 1–6 | a tab by its fixed number: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 |
 | ↑ / ↓, k / j | move in the list; on Work, through the cases column by column |
-| Enter, Space | open the row (the full text, yesterday's entries); on an unexplained Changelog row, the drift sheet; on Work, the card's first action: *Open* at once, *Start*, *Verify* or *Done* on the second press |
+| Enter, Space | open the row (the full text, yesterday's entries); on an unexplained Changelog row, the drift sheet; on Work, the card's first action: *Open* at once, *Start*, *Verify* or *Done* on the second press; on Decisions and Memory, the file in the editor |
 | x | Work: drop the case under the cursor, on the second press |
 | f / F | Changelog: next / previous source filter |
 | c | capture now |
 | n | write a note: focuses the QuickEntry (from any tab) |
 | + | new case: opens the Work tab's sheet (from any tab) |
-| e | open this tab's file in the editor: journal, ledger, the case under the Work cursor, `STATUS.md` |
+| d | Decisions: new decision (the sheet) |
+| e | open this tab's file in the editor: journal, ledger, the case under the Work cursor, the decision under the Decisions cursor, `STATUS.md`, the logbook folder (Memory) |
 | Esc | close |
 
 On Work, the first Enter (or x) arms the action: its button is marked and
@@ -162,7 +181,9 @@ creates the case. And for the drift sheet: Tab walks the action (Link,
 Explain, Dismiss), then the case picker and *All / Only* (Link), the text,
 zone, risk and area (Explain) or the reason (Dismiss), then the action
 button, *Cancel* and *Open C-…*; Enter in a text field or on the action
-button arms, the second Enter sends.
+button arms, the second Enter sends. And for the new-decision sheet: Tab
+walks title, *Create*, *Cancel*; Enter in the title or on *Create* arms,
+the second Enter sends.
 
 ## States
 
@@ -187,8 +208,8 @@ again* (or `jax.seldon.service refresh`), not on every capture interval.
 | `omarchy-shell shell toggle jax.seldon` | the Prime Radiant overlay (also `summon`, `hide`) |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
-| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, pill, QuickEntry, the Work columns, card and sheet, the drift sheet, last action results), as JSON |
-| `omarchy-shell jax.seldon.panel tab today\|changelog\|work\|system` | show a tab |
+| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, pill, QuickEntry, the Work columns, card and sheet, the drift sheet, the decisions and their sheet, the memory rows, last action results), as JSON |
+| `omarchy-shell jax.seldon.panel tab today\|changelog\|work\|decisions\|system\|memory` | show a tab |
 | `omarchy-shell jax.seldon.panel filter all\|<source>` | set the Changelog source filter |
 | `omarchy-shell jax.seldon.panel resolve crisis\|<event id>` | open the drift sheet (the red strip's first crisis, or that event); sends nothing |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
@@ -220,9 +241,10 @@ Setup > Plugins > Seldon:
   never evaluated.
 - Runs the `seldon` engine only with fixed argument lists from the
   contract; ids are checked against their patterns first (a case id from
-  the index included, and event ids), free text (a QuickEntry note, a case
-  title, a drift explanation or reason) is one non-empty argument after
-  `--`. Never builds a shell command from logbook
+  the index included, event ids, and decision ids, also the one the engine
+  reports for a decision it just created), free text (a QuickEntry note, a
+  case title, a drift explanation or reason, a decision title) is one
+  non-empty argument after `--`. Never builds a shell command from logbook
   content. Writing to the logbook happens only
   through the engine, on your Enter or click.
 - Opens a terminal or touches the clipboard only when you click a banner

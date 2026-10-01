@@ -199,7 +199,18 @@ action; `validateArgs` accepts explain's options only in that order;
 `already` → "Already resolved: linked to C-…") and refusals;
 `driftShowResult`, `memberLines` ("… and N more"), `rowStatus` with
 `explained · C-…` (ADR-0021), `firstCrisis` and `moreDriftText` ("+N
-more", ADR-0020).
+more", ADR-0020). For Decisions and Memory (WP-023): `decisionRows` lists
+the sample's four decisions newest first (by id; ADR-0004 *proposed* with
+the accent tone), puts a malformed id last and never actionable, and
+survives broken entries; `decisionSummary` ("4 decisions · 1 proposed");
+`decideArgs` builds `decide --no-edit --json -- <title>` with the title
+one argument after `--` (`--help`, quotes, `-rf --case …`, `$(reboot)`,
+`--`) and refuses a blank, two-line or non-text title; `decideResult`
+reads the `decide --json` shape and passes on only an id matching
+`^ADR-[0-9]{4}$`; `openArgs` and `validateArgs` take `logbook` and a
+decision id (not `ADR-4`, `adr-0004`, a padded id, a path or `memory`);
+`memoryRows` gives the sample's three lessons and two topics (path and
+`updated`), every part optional, all opening the fixed target `logbook`.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -273,6 +284,20 @@ summary 1/1, the two new cases); the no-op alone ("Already resolved:
 linked to C-2026-005"); eight refusals that never reach the engine; a held
 lock; dev mode.
 
+Decisions (WP-023) use `["decide", title]`; the fake engine's `decide`
+adds the next ADR (status proposed, newest first) to the state index and
+answers in the SPEC-ENGINE §3 shape, its `open ADR-NNNN` opens the path
+the index lists for it and `open logbook` the logbook folder;
+`FAKE_SELDON_LOCKED` covers `decide` too. Checked: the exact argv of two
+`decide --no-edit --json -- <title>` calls (`--help`, a title with
+quotes), each followed by `open ADR-0005|ADR-0006 --editor --json` with
+the id from the answer, then `open ADR-0004` and `open logbook`; the new
+decisions in the fake's index; the editor launcher's paths; eight
+refusals that never reach the engine (blank, two-line and non-text
+titles, `ADR-4`, `ADR-0004; reboot`, a path, `memory`); a held lock (the
+decide result, nothing opened) and an unknown decision (the open result
+and the panel's error line); dev mode.
+
 Isolation: the scenarios run with a `PATH` made of symlinks to the few
 tools the fakes need, so a `seldon` installed system-wide never leaks in.
 Every run, here and in layer 3, gets its own `HOME`, `XDG_STATE_HOME` and
@@ -315,7 +340,7 @@ collapsed and opened with Enter; Changelog: 62 rows, Enter on the "+2"
 group opens its drift sheet with the three members, 7 folded resolution details, 6 highlighted snapshot rows,
 the pacman filter narrows to 12, `f` cycles; System: seven sections), the
 strip "2 changes in the red zone need a reason" on every tab, the keys
-(Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs, digits fixed per tab id (1, 2, 3, 5; 4 is absent and ignored), ↑/↓, Enter, Esc), the snapper banner on every
+(Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs and wrap over all six, digits fixed per tab id 1–6, ↑/↓, Enter, Esc), the snapper banner on every
 tab, the not-initialised variant, an empty and a sparse `system`, and a log
 free of warnings, `TypeError`s and binding loops. The shell's `Style.qml`
 asks `hyprctl` and `fc-match` for gaps and the font; the script gives it
@@ -371,6 +396,21 @@ text, Esc and reopening bring the draft back, another item gets its own
 defaults. Members: with one member missing from `index.events`, the sheet
 shows "… and 1 more", asks `seldon drift show` (always for the group's leader) and
 lists all three, also when opened from a member row.
+
+Decisions and Memory (WP-023) have three scenarios. On the sample (dev
+mode): `4` shows ADR-0004 (proposed) to ADR-0001 with id, status, title,
+date and file, ↑/↓ and a click on a title move the cursor, Enter and `e`
+are refused with dev mode's reason, `d` opens no sheet; `6` shows LESSONS
+(3) and TOPICS (2, with path and `updated`). Live, with real keys: `d`,
+the title `--help "q"` (no tab switch), Enter arms ("Press Enter again:
+create the decision “…”"), Backspace disarms, Enter twice sends `decide
+--no-edit --json -- '--help "q"'` and then `open ADR-0005`; the sheet
+closes, the keys come back and the cursor sits on ADR-0005 once the index
+lists it; Enter, *Open* and `e` open ADR-0003/ADR-0004; on Memory Enter
+and *Open* open the logbook folder; the exact argv and editor paths.
+Refused: Enter on a blank title is refused in the plugin; the engine's
+refusal (lock held) shows in the sheet and keeps the title; Esc gives the
+keys back, the tab shows the refusal, and `d` brings the title back.
 
 The step format is documented in the header of
 `tests/plugin/harness/panel.qml`, e.g.
@@ -442,7 +482,7 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    omarchy-shell jax.seldon.service status   # status, pill, banner, crisis, snapper, engine, lastError
    omarchy-shell jax.seldon.panel pill       # what the WidgetButton shows
    omarchy-shell jax.seldon.panel open
-   omarchy-shell jax.seldon.panel tab changelog       # today | changelog | work | system
+   omarchy-shell jax.seldon.panel tab changelog       # today | changelog | work | decisions | system | memory
    omarchy-shell jax.seldon.panel filter all          # or a source
    omarchy-shell jax.seldon.panel resolve crisis      # or an event id: the drift sheet
    omarchy-shell jax.seldon.panel view       # tab, cursor, rows, badges, banners, strip
@@ -491,6 +531,17 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    with the real engine over ssh and read the folded rows through `view`;
    the new sheet itself can then only be driven in a private offscreen
    instance (layer 3's harness with the real engine on `PATH`).
+   Decisions and Memory (WP-023): `jax.seldon.panel tab decisions` and
+   `view` show `decisions.rows` (the logbook's ADRs, newest first);
+   `wtype 4`, `wtype d`, `wtype -- "<title>"`, `wtype -k Return` twice
+   creates a decision: `view` shows `decisions.result` "Created ADR-…",
+   `~/Seldon-smoke/decisions/` has the file with `status: proposed`, and
+   the editor opens it (`hyprctl clients`). Enter on a row opens that
+   decision; on `tab memory`, Enter opens the logbook folder. Locked
+   session: run the plugin's argv (`decide --no-edit --json -- <title>`,
+   then `open <id> --editor --json`, `open logbook --editor --json`) over
+   ssh and read the rows through `view`; the sheet itself only in the
+   private offscreen instance.
 6. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
    the test host's output is scaled 1.25, so a region read off a full
    screenshot (physical pixels) must be divided by the scale. Over ssh also
@@ -533,7 +584,8 @@ changes what the panel draws repeats it:
    WP-021 that opens the drift sheet); since WP-020 also Work (the columns
    and a card) and its new-case sheet; since WP-021 the drift sheet in
    Link (theme item), Explain (a crisis, from the red strip) and Dismiss
-   (the group, with "Press Enter again: …" armed).
+   (the group, with "Press Enter again: …" armed); since WP-023 Decisions
+   (the list, and the new-decision sheet armed) and Memory.
 3. Look for: every colour follows the theme — panel border, tab and chip
    fills, the zone stripes (red = the theme's urgent colour, yellow = its
    accent), the red strip, banners, the snapshot row highlight; dim text
