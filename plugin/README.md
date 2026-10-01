@@ -101,7 +101,8 @@ glyph, the status line and the "+N" badge. Snapshot rows
 are highlighted. An explained, dismissed or linked event shows its
 resolution and the reason given. Open drift says *Unexplained* or, in the
 red zone, *Needs a reason*, with the proposed case when there is one. A
-package transaction that is open drift as one group shows "+N" on its
+package transaction that is open drift as one group shows "+N" (N more
+packages besides the one shown) on its
 leader; Enter or a click lists the members.
 
 Above every tab: the status banner (below), the snapper banner when

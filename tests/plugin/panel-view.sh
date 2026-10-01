@@ -116,7 +116,7 @@ shows sample 1 "09:25 · claude-code · C-2026-003"
 shows sample 1 "▸ Yesterday · 1 entry"
 expect sample 2 .view.tab changelog
 expect sample 2 .view.changelog.rows 62
-expect sample 2 '.view.changelog.badges | join(",")' "firefox +3"
+expect sample 2 '.view.changelog.badges | join(",")' "firefox +2"
 expect sample 2 .view.changelog.folded 7
 expect sample 2 .view.changelog.snapshots 8
 expect sample 2 '.view.changelog.driftTones | join(",")' \
@@ -134,7 +134,7 @@ expect sample 5 .view.changelog.rows 62
 expect sample 6 .view.cursorActive true
 expect sample 7 .view.cursor 32
 shows sample 7 "firefox"
-shows sample 7 "+3"
+shows sample 7 "+2"
 shows sample 7 "Unexplained"
 expect sample 8 .view.changelog.expanded 01M3SXBQVR7AW8PJQC1YXDCQ14
 shows sample 8 "· upgrade libinput  1.29.1-1 → 1.29.2-1"

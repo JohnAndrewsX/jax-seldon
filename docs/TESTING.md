@@ -164,7 +164,7 @@ and colour rules, status precedence, tooltip wording, one banner with a
 constant fix per non-ok status, that `validateArgs` accepts exactly the
 command forms of CONTRACT.md (free text one non-empty argument after `--`,
 `drift show <id> --json`, `[--only]`), the `XDG_STATE_HOME` index path, and
-the tab helpers against the fixture: 62 Changelog rows, one "+3" group, 7
+the tab helpers against the fixture: 62 Changelog rows, one "+2" group (3 members), 7
 folded resolution details, 6 snapshot rows, the source filter, the crisis
 strip text, the snapper banner, the Today view and the System sections with
 every field optional. For the panel actions (WP-012): the case picker lists
@@ -275,7 +275,7 @@ opens it and runs `HARNESS_STEPS`: real key presses through the shell's own
 step it prints `Panel.view()` and every visible text.
 
 Checks: with the sample every tab renders (Today: 4 entries, yesterday
-collapsed and opened with Enter; Changelog: 62 rows, the "+3" group expanded
+collapsed and opened with Enter; Changelog: 62 rows, the "+2" group expanded
 to its members, 7 folded resolution details, 6 highlighted snapshot rows,
 the pacman filter narrows to 12, `f` cycles; System: seven sections), the
 strip "2 changes in the red zone need a reason" on every tab, the keys
@@ -441,7 +441,7 @@ changes what the panel draws repeats it:
    Night*, *Catppuccin Latte* (`omarchy theme list`):
    `omarchy theme set "<theme>"`, wait about 6 s (the shell restarts), open
    the panel and capture Today, Changelog, System and the Changelog filtered
-   to pacman with the cursor on the "+3" row and Enter pressed; since
+   to pacman with the cursor on the "+2" row and Enter pressed; since
    WP-020 also Work (the columns and a card) and its new-case sheet.
 3. Look for: every colour follows the theme — panel border, tab and chip
    fills, the zone stripes (red = the theme's urgent colour, yellow = its

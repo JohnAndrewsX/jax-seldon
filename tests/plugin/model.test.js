@@ -241,13 +241,13 @@ test("snapperBanner: only for an enabled snapper collector that fails (ADR-0011)
   assert.ok(M.snapperBanner(bare).detail !== "")
 })
 
-test("changelogRows: 62 events newest first, one +3 group, folded resolutions, snapshots", () => {
+test("changelogRows: 62 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
   assert.strictEqual(rows.length, 62)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
-  assert.strictEqual(badged[0].badge, "+3")
+  assert.strictEqual(badged[0].badge, "+2")
   assert.strictEqual(badged[0].subject, "firefox")
   assert.strictEqual(badged[0].txId, "tx-20260930T214115")
   same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["libinput", "noto-fonts"])
@@ -460,6 +460,16 @@ test("logResult, openResult, captureResult read the SPEC-ENGINE §3 shapes", () 
   same(M.captureResult(0, cap({ written: 12, collectors: [{ name: "pacman", ok: true }, { name: "snapper", ok: false, fix: "x" }] }), ""),
     { ok: true, text: "12 new events · failing: snapper" })
   same(M.captureResult(4, '{"error":{"code":4,"message":"lock held"}}', ""), { ok: false, text: "lock held" })
+})
+
+test("group badge: +(members - 1), the leader not counted twice", () => {
+  const badge = (members) => M.changelogRows({
+    events: [{ id: "01M3W0000000000000000000AA", source: "pacman", kind: "upgrade", subject: "a", txId: "t" }],
+    drift: [{ eventId: "01M3W0000000000000000000AA", txId: "t", members: members }]
+  }, "all")[0].badge
+  assert.strictEqual(badge(3), "+2")
+  assert.strictEqual(badge(2), "+1")
+  assert.strictEqual(badge(1), "")
 })
 
 test("validateArgs: plan new takes --area and --priority, in that order, each optional", () => {

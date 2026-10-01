@@ -723,8 +723,9 @@ function changelogRows(index, filter) {
       drift: item !== null,
       crisis: item !== null && item.crisis === true,
       proposedCase: leader && typeof leader.proposedCase === "string" ? leader.proposedCase : "",
-      // "+N" on the group's leader row; N counts every member (ADR-0013 §2).
-      badge: grouped ? "+" + leader.members : "",
+      // "+N" on the group's leader row: the leader plus N more. `members`
+      // counts the leader too (ADR-0013 §2), so a group of 3 reads "+2".
+      badge: grouped && leader.members > 1 ? "+" + (leader.members - 1) : "",
       txId: grouped ? str(leader.txId) : "",
       groupLeader: group ? str(group.eventId) : "",
       groupSubject: group ? str(group.subject) : ""
