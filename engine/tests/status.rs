@@ -125,7 +125,7 @@ Stand: 2026-10-01 · letztes Ereignis 17:00 · Omarchy 4.0.7-1 · Theme tokyo-ni
 ## Overview
 - Aktive Cases: 2 · in Prüfung: 1 · geplant: 3
 - Offene Drift: 4, davon Krise: 2
-- Ereignisse heute: 27 · letzte 7 Tage: 38
+- Ereignisse heute: 30 · letzte 7 Tage: 41
 
 ## Active cases
 - [[C-2026-003]] Omarchy auf 4.0.7 aktualisieren — red/R2 — 4/5 Schritte — agent:claude-code
@@ -269,4 +269,54 @@ fn a_broken_case_file_is_skipped_with_a_warning() {
             .starts_with("work/queued/C-2026-009-broken.md: ")
     );
     assert_eq!(index(&env)["cases"]["queued"], json!([]));
+}
+
+#[test]
+fn the_fast_rebuild_reads_head_without_git() {
+    let env = Env::new(Snapper::Missing);
+    if !env.has_git {
+        eprintln!("skipped: no git on this host");
+        return;
+    }
+    let root = env.init_logbook();
+    let short = |env: &Env| {
+        common::stdout(&env.git(&root, &["rev-parse", "--short=7", "HEAD"]))
+            .trim()
+            .to_string()
+    };
+    let head = |root: &Path| seldon::index::git_head_fast(root).unwrap().head.unwrap();
+    // loose ref
+    assert_eq!(head(&root), short(&env));
+    // packed ref, and a detached HEAD
+    assert!(env.git(&root, &["pack-refs", "--all"]).status.success());
+    assert_eq!(head(&root), short(&env));
+    assert!(
+        env.git(&root, &["checkout", "-q", "--detach"])
+            .status
+            .success()
+    );
+    assert_eq!(head(&root), short(&env));
+    assert!(seldon::index::git_head_fast(&env.tmp.path().join("nothing")).is_none());
+
+    // the fast rebuild writes `head` and leaves `dirty` out
+    let dirs = seldon::config::Dirs {
+        home: env.home.clone(),
+        xdg_config_home: env.home.join(".config"),
+        state_dir: env.home.join(".local/state/seldon"),
+    };
+    let ctx = seldon::commands::Context {
+        dirs,
+        json: false,
+        quiet: false,
+        no_commit: false,
+        logbook_flag: Some(root.clone()),
+        logbook_env: None,
+        config_file: env.config_file(),
+        now: chrono::DateTime::parse_from_rfc3339(NOW).unwrap(),
+    };
+    seldon::index::rebuild_if_initialised_fast(&ctx);
+    let ix = index(&env);
+    common::assert_valid_index(&ix);
+    assert_eq!(ix["generatedAt"], json!(NOW));
+    assert_eq!(ix["logbook"]["git"], json!({ "head": short(&env) }));
 }

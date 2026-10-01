@@ -85,17 +85,17 @@ fn normalise(v: &mut Value) {
 }
 
 /// `cursors.json` of a capture at 17:05:00 with every collector ok (the
-/// sample's `state`), bound to `logbook`; `snapper` optionally degraded.
-fn write_cursors(env: &Env, logbook: &Path, snapper_message: Option<&str>) {
+/// sample's `state`), bound to `logbook`; one collector optionally
+/// degraded with the engine's message: `(name, message)`.
+fn write_cursors(env: &Env, logbook: &Path, degraded: Option<(&str, &str)>) {
     let mut collectors = serde_json::Map::new();
     for name in ["snapper", "pacman", "omarchy", "plugins", "theme", "config"] {
         let mut c = json!({ "ok": true, "lastRun": "2026-10-01T17:05:00+02:00", "events": 0 });
-        if name == "snapper"
-            && let Some(m) = snapper_message
+        if let Some((which, message)) = degraded
+            && which == name
         {
             c["ok"] = json!(false);
-            c["message"] = json!(m);
-            c["fix"] = json!("sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes");
+            c["message"] = json!(message);
         }
         collectors.insert(name.into(), c);
     }
@@ -108,11 +108,17 @@ fn write_cursors(env: &Env, logbook: &Path, snapper_message: Option<&str>) {
     std::fs::write(state.join("cursors.json"), cursors.to_string()).unwrap();
 }
 
-/// A copy of the fixture logbook in `env`, indexed at the sample's time.
-fn golden_run(env: &Env, snapper_message: Option<&str>) -> (PathBuf, Value, Value) {
+/// A copy of the fixture logbook in `env` (changed by `prepare`), indexed
+/// at the sample's time.
+fn golden_run(
+    env: &Env,
+    degraded: Option<(&str, &str)>,
+    prepare: impl FnOnce(&Path),
+) -> (PathBuf, Value, Value) {
     let lb = env.tmp.path().join("logbook");
     copy_dir(&fixture_logbook(), &lb);
-    write_cursors(env, &lb, snapper_message);
+    prepare(&lb);
+    write_cursors(env, &lb, degraded);
     let out = env.at(
         GENERATED_AT,
         &[
@@ -150,7 +156,7 @@ fn assert_same(mut want: Value, mut got: Value, what: &str) {
 #[test]
 fn golden_index_equals_the_sample() {
     let env = Env::new(Snapper::Missing);
-    let (lb, out, index) = golden_run(&env, None);
+    let (lb, out, index) = golden_run(&env, None, |_| {});
     assert_eq!(out["valid"], json!(true));
     assert_eq!(index["generatedAt"], json!(GENERATED_AT));
     assert_eq!(index["engineVersion"], json!(env!("CARGO_PKG_VERSION")));
@@ -170,7 +176,7 @@ fn golden_index_equals_the_sample() {
 #[test]
 fn ledger_views_equal_the_fixture_views() {
     let env = Env::new(Snapper::Missing);
-    let (lb, out, _) = golden_run(&env, None);
+    let (lb, out, _) = golden_run(&env, None, |_| {});
     for month in ["2026-09", "2026-10"] {
         let rel = format!("ledger/{month}.md");
         assert_eq!(
@@ -187,12 +193,50 @@ fn ledger_views_equal_the_fixture_views() {
 fn snapper_degraded_equals_the_variant() {
     let env = Env::new(Snapper::Missing);
     let message = "snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see `seldon doctor`.";
-    let (_, _, index) = golden_run(&env, Some(message));
+    let (_, _, index) = golden_run(&env, Some(("snapper", message)), |_| {});
     common::assert_valid_index(&index);
     assert_same(
         json_file(&repo("fixtures/index-variants/snapper-degraded.json")),
         index,
         "snapper-degraded",
+    );
+}
+
+#[test]
+fn plugins_degraded_equals_the_variant() {
+    // the plugins collector's own message for a timed-out shell IPC call
+    // (collectors/plugins.rs: `{WHAT}: timed out`)
+    let env = Env::new(Snapper::Missing);
+    let degraded = Some(("plugins", "omarchy plugin list --json: timed out"));
+    let (_, _, index) = golden_run(&env, degraded, |_| {});
+    common::assert_valid_index(&index);
+    assert_same(
+        json_file(&repo("fixtures/index-variants/plugins-degraded.json")),
+        index,
+        "plugins-degraded",
+    );
+}
+
+#[test]
+fn omarchy_git_checkout_equals_the_variant() {
+    // `repoHead` comes from the dossier fence `omarchy.summary`, which the
+    // omarchy collector fills on a git checkout (SPEC-ENGINE §4)
+    let env = Env::new(Snapper::Missing);
+    let (_, _, index) = golden_run(&env, None, |lb| {
+        let path = lb.join("system/omarchy.md");
+        let text = read(&path).replacen(
+            "- version: 4.0.7-1\n",
+            "- version: 4.0.7-1\n- repoHead: 3f9c2e1\n",
+            1,
+        );
+        assert!(text.contains("repoHead"));
+        std::fs::write(&path, text).unwrap();
+    });
+    common::assert_valid_index(&index);
+    assert_same(
+        json_file(&repo("fixtures/index-variants/omarchy-git-checkout.json")),
+        index,
+        "omarchy-git-checkout",
     );
 }
 
@@ -231,10 +275,20 @@ fn the_engine_checker_agrees_with_jsonschema() {
         Vec::<String>::new()
     );
     assert!(common::index_errors(&sample).is_empty());
-    for variant in ["not-initialised", "snapper-degraded"] {
-        let x = json_file(&repo(&format!("fixtures/index-variants/{variant}.json")));
-        assert!(v.validate(&x, "index.schema.json").is_empty(), "{variant}");
+    // every banner variant, whatever WP-015 adds
+    let mut variants = 0;
+    for entry in std::fs::read_dir(repo("fixtures/index-variants")).unwrap() {
+        let path = entry.unwrap().path();
+        let x = json_file(&path);
+        assert!(
+            v.validate(&x, "index.schema.json").is_empty(),
+            "{}",
+            path.display()
+        );
+        assert!(common::index_errors(&x).is_empty(), "{}", path.display());
+        variants += 1;
     }
+    assert!(variants >= 5, "{variants} variants");
     // every must-fail fixture fails both
     let invalid = repo("fixtures/invalid");
     let mut n = 0;
@@ -646,7 +700,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     let tmp = TempDir::new("x10");
     let root = tmp.path().join("logbook");
     let lines = common::scale::scaled_logbook(&fixture_logbook(), &root, 10);
-    assert_eq!(lines, 670);
+    assert_eq!(lines, 710, "71 ledger lines ×10");
     let logbook = Logbook::open(&root).unwrap();
     let dirs = Dirs {
         home: tmp.path().into(),
@@ -677,4 +731,94 @@ fn index_build_on_x10_fixtures_is_fast() {
     if !cfg!(debug_assertions) {
         assert!(median < Duration::from_millis(100), "median {median:?}");
     }
+}
+
+#[test]
+fn at_most_ten_snapshots_newest_first() {
+    let ix = derive(|l| {
+        for i in 0..15u32 {
+            let ts = format!("2026-09-20T10:{i:02}:00+02:00");
+            let e: Event = serde_json::from_value(json!({
+                "id": ulid::Ulid::from_parts(1, u128::from(i) + 1), "ts": ts,
+                "source": "snapper", "kind": "snapshot", "subject": (200 + i).to_string(),
+                "detail": "bulk", "actor": "system", "meta": {"type": "single"},
+            }))
+            .unwrap();
+            l.events.push(e);
+        }
+    });
+    let snaps = ix.system.snapshots.as_ref().unwrap();
+    assert_eq!(snaps.len(), 10);
+    let numbers: Vec<i64> = snaps.iter().map(|s| s.number).collect();
+    assert!(numbers.contains(&214), "the newest added one: {numbers:?}");
+    assert!(
+        !numbers.contains(&200),
+        "the oldest added one is cut: {numbers:?}"
+    );
+    let ts: Vec<DateTime<FixedOffset>> = snaps
+        .iter()
+        .map(|s| DateTime::parse_from_rfc3339(&s.ts).unwrap())
+        .collect();
+    assert!(ts.windows(2).all(|w| w[0] >= w[1]), "newest first");
+    // the timeline shows the same ten
+    let in_timeline = ix
+        .series
+        .timeline
+        .as_ref()
+        .unwrap()
+        .iter()
+        .filter(|t| t.kind == "snapshot")
+        .count();
+    assert_eq!(in_timeline, 10);
+}
+
+#[test]
+fn drift_is_capped_at_200_crises_first() {
+    let base = derive(|_| {});
+    let (crises0, open0) = (base.summary.crisis, base.summary.open_drift);
+    let ix = derive(|l| {
+        // 30 old crises (caseless explicit installs) and 220 newer yellow items
+        for i in 0..30u32 {
+            let e: Event = serde_json::from_value(json!({
+                "id": ulid::Ulid::from_parts(1, u128::from(i) + 1),
+                "ts": format!("2026-08-01T10:{i:02}:00+02:00"),
+                "source": "pacman", "kind": "install", "subject": format!("pkg{i}"),
+                "actor": "system", "zone": "red", "explicit": true,
+            }))
+            .unwrap();
+            l.events.push(e);
+        }
+        for i in 0..220u32 {
+            let e: Event = serde_json::from_value(json!({
+                "id": ulid::Ulid::from_parts(2, u128::from(i) + 1),
+                "ts": format!("2026-09-25T{:02}:{:02}:00+02:00", i / 60, i % 60),
+                "source": "theme", "kind": "theme-set", "subject": format!("theme-{i}"),
+                "actor": "human", "zone": "yellow",
+            }))
+            .unwrap();
+            l.events.push(e);
+        }
+    });
+    assert_eq!(
+        ix.summary.open_drift,
+        open0 + 250,
+        "the summary counts every item"
+    );
+    assert_eq!(ix.summary.crisis, crises0 + 30);
+    assert_eq!(ix.drift.len(), 200);
+    assert_eq!(
+        ix.drift.iter().filter(|d| d.crisis).count(),
+        crises0 + 30,
+        "every crisis is kept, even the oldest"
+    );
+    let ts: Vec<DateTime<FixedOffset>> = ix
+        .drift
+        .iter()
+        .map(|d| DateTime::parse_from_rfc3339(&d.ts).unwrap())
+        .collect();
+    assert!(ts.windows(2).all(|w| w[0] >= w[1]), "still newest first");
+    // the yellow items cut are the oldest ones
+    assert!(ix.drift.iter().any(|d| d.subject == "theme-219"));
+    assert!(!ix.drift.iter().any(|d| d.subject == "theme-0"));
+    common::assert_valid_index(&serde_json::to_value(&ix).unwrap());
 }
