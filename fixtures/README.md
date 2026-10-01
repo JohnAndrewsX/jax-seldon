@@ -2,12 +2,12 @@
 
 Test data for both tracks. Validate with `bash scripts/validate-fixtures.sh`
 (every JSON fixture against its schema, plus: the sample index derives from
-the sample logbook). Owner: Schema Keeper (WP-002, WP-014).
+the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 
 | Path | What | Schema |
 |---|---|---|
 | `index.sample.json` | canonical index; the plugin develops against it | `schema/index.schema.json` |
-| `index-variants/*.json` | banner states: `snapper-degraded` (ADR-0011), `not-initialised`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
+| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0011), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
@@ -21,7 +21,7 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 
 | Date | What happens | Shows |
 |---|---|---|
-| 09-01 | `seldon init`, C-2026-001 opened and closed | case lifecycle, note from `seldon log` |
+| 09-01 | `seldon init`, C-2026-001 opened, verified (`seldon doctor` green) and closed | case lifecycle (`queued → active → verification → completed`, WP-015), note from `seldon log` |
 | 09-03 | `pacman -S btop` without a case → drift → *explained* | red-zone drift, resolution |
 | 09-05 | plugin `io.github.example.weather-plus` added → *explained* | plugin-add |
 | 09-12/13 | C-2026-002 monitors: pre/post snapshots 108/109; Claude edits `monitors.conf` with the Edit tool (no Bash hook) → drift with proposal → *linked*; a note and its correction | `linked`, `correction`, `pairOf` |
@@ -29,11 +29,12 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-20/21 | theme `kanagawa` tried → *dismissed* | `dismissed` |
 | 09-24 | plugin update → *explained* | plugin-update |
 | 09-26…30 | cases 003–006 created; snapshot 111; snapshots 108/109 deleted | snapshot-delete |
-| 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays open | **one yellow drift group** (`members: 3`, `txId`), ADR-0013 |
-| 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (**two crises**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. | everything the plugin renders |
+| 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays open (WP-014) | **one yellow drift group** (`members: 3`, `txId`), ADR-0013 |
+| 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (**two crises**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
 
-Result: 67 ledger lines (9 resolutions), 58 index events (7 with
-`resolutionDetail`), 4 open drift items — 3 single (2 crises) and 1 yellow group
+Result: 71 ledger lines (9 resolutions), 62 index events (7 with
+`resolutionDetail`; 1 with `zone: green`), 6 snapshots in `system.snapshots`
+(1 pre/post pair), 4 open drift items — 3 single (2 crises) and 1 yellow group
 of 3 —, 8 cases (3 queued, 2 active, 1 verification, 2 completed), 4 decisions
 (1 proposed).
 
@@ -83,6 +84,19 @@ Rules the fixture check implements beyond the plain field copies:
   count is not what ADR-0013 says. Three more add an open caseless `zed`
   upgrade, replace every open case's Plan, and check the token rule end to
   end: `Install zed.` and `` `extra/zed` `` propose, `Edit zed.conf` does not.
+- **Case lifecycle** (SPEC-LOGBOOK §3, the engine's `Transition::target`):
+  every case's Log lines are walked through `created` → queued, `started`
+  (queued → active), `verification` (active → verification), `completed`
+  (verification → completed), `dropped: …` (any open status → dropped); other
+  Log lines are free text. The walk must end in the frontmatter `status`, its
+  steps must be the case's `case-*` ledger events (kind, minute, actor, in
+  order), `created`/`started`/`closed` are the dates of their steps, and
+  `started (snapshot N)` is `snapshotBefore`. A 22nd self-check removes
+  C-2026-001's verification step (the fixture before WP-015) and requires the
+  walk to reject `completed` from active.
+- **Index times.** `generatedAt` is not before any event in `events`, and
+  `state.lastCapture` is not before any collector event (the engine stamps
+  both when it writes). This holds for the sample and every variant.
 
 **Index variants** are overlays: `VARIANTS` in `scripts/validate-fixtures.py`
 lists, per variant, RFC 6902 operations (`test`, `add`, `replace`, `remove`)
@@ -90,10 +104,22 @@ applied to `index.sample.json`. The check fails when a variant file differs
 from sample + overlay, and when a file in `index-variants/` has no overlay. To
 add a banner state, add an overlay and run `--write-index`.
 
-Not derivable from the logbook and therefore not checked: `generatedAt`,
-`engineVersion`, `logbook.path`, `logbook.git`, `state` (engine state under
-`~/.local/state/seldon`). The golden test must inject or normalise them;
-"today" is the date of `generatedAt`.
+| Variant | Overlay | Plugin state it drives |
+|---|---|---|
+| `snapper-degraded` | collector `snapper`: `ok: false` + the ADR-0011 message | degraded collector with a fix command |
+| `not-initialised` | `state.status: notInitialised`, every section empty | "Run `seldon init`" |
+| `index-stale` | `state.status: indexStale`; `generatedAt` 17:05:12 and `lastCapture` 17:05:00 (tested, not changed) | stale banner from the data; with **`SELDON_NOW=2026-10-01T20:05:12+02:00`** (`STALE_NOW` in the script, also the plugin harness's clock) stale by the clock too — the check requires both times more than 2 h before it |
+| `plugins-degraded` | collector `plugins`: `ok: false`, `message` `omarchy plugin list --json: timed out` (the engine's text for a shell IPC timeout) | a failing non-snapper collector |
+| `omarchy-git-checkout` | `system.omarchy.repoHead: 3f9c2e1` (short hash, like `logbook.git.head`) | Omarchy run from a git checkout of `$OMARCHY_PATH` (SPEC-ENGINE §4) |
+
+Not derivable from the logbook and therefore not checked beyond the index
+times above: `generatedAt`, `engineVersion`, `logbook.path`, `logbook.git`,
+`state` (engine state under `~/.local/state/seldon`). The golden test must
+inject or normalise them; "today" is the date of `generatedAt`. The sample was
+written at 2026-10-01 17:05:12 (`lastCapture` 17:05:00, the time of
+`logs/snapper.json`), after the story's last event (17:00). A reader on that
+day before 17:05 sees a future timestamp; the plugin counts it as fresh. Pin
+the clock with `SELDON_NOW` (with `SELDON_INDEX`) for anything time-relative.
 
 Dossier fences the index reads (`system/*.md`, format `- key: value` or a
 Markdown table):
@@ -123,6 +149,10 @@ Markdown table):
   Ledger events keep this zone; only the drift *item* of a pacman transaction
   gets the computed zone (ADR-0013 §3), so the 09-30 members are `red` in the
   ledger and in `index.events`, and their group is yellow in `index.drift`.
+  **Green** has no row in ADR-0014 §2. The fixture assumes (WP-015, open
+  decision) that a hook `command` whose target no collector watches is green:
+  Claude's `tee ~/.config/zed/settings.json` on 10-01 (`~/.config/zed` is not in
+  the default `watchPaths`).
 - `seldon log` writes a journal entry **and** a `manual note` event (subject = case
   id or `journal`). Journal entries typed in an editor have no event.
 - A full upgrade without a case yields **one drift item per transaction**
@@ -149,7 +179,7 @@ Markdown table):
   **unterminated last line** (an interrupted write; the cursor must stop before it).
   - Baseline cursor of `seldon init`: byte offset **6129** (first line after it is
     the 09-03 btop transaction). From there the parser must produce exactly the
-    pacman events of `logbook/ledger/*.jsonl` (ids and attribution aside) and
+    pacman events of `logbook/ledger/*.jsonl` (12 lines; ids and attribution aside) and
     nothing for the malformed lines. Complete lines end at byte 11159.
   - The 09-30 `pacman -Syu` block (WP-014) is a plain full upgrade: three
     `upgraded` lines, `explicit: false`, `meta.command` `pacman -Syu`. It is the
@@ -160,8 +190,9 @@ Markdown table):
   with the 09-30 `-Syu` to 10-01. Expected: restart from 0 on the inode change, dedupe by
   `(ts, kind, subject, version)`, so the 09-15 upgrade is not emitted twice.
 - `snapper-before.json` (2026-09-30 18:00, has pre/post 108/109) and `snapper.json`
-  (2026-10-01 17:05). Diff: +111, −108, −109, +112, +113 — the snapper events of
-  the ledger. `date` is local time without offset; snapshot 0 is `current`.
+  (2026-10-01 17:05, has pre/post 114/115 with `userdata.case`). Diff: +111, −108,
+  −109, +112, +113, +114, +115 — the snapper events of the ledger. `date` is
+  local time without offset; snapshot 0 is `current`.
   Shape from snapper upstream; **not verified on the dev host** (ADR-0011).
 - `snapper-no-permissions.stderr` — what snapper prints unprivileged: exit code 1,
   this on stderr, nothing on stdout, also with `--jsonout`.

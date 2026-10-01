@@ -191,3 +191,32 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The guard also matches the Omarchy update command inside a python
   heredoc** (e.g. in a code comment being inserted). Put such edit scripts
   in a scratchpad file (Write tool) and run the file.
+
+## 2026-10-01 · WP-015 (Schema Keeper)
+
+- **A fixture ledger line is pinned by engine tests, not only by the
+  validator.** One snapper event or one ledger line moves
+  `engine/src/model/event.rs` (line count), `collectors/snapper.rs` (snapshot
+  numbers), `tests/support/mod.rs` `story()`, `tests/idempotency.rs` (written
+  and per-source counts) and `tests/golden/snapper.jsonl`
+  (`SELDON_BLESS=1 cargo test --test collectors fixture_story`). Snapper events
+  also need the entry in `logs/snapper.json`, or the collector golden test
+  cannot reproduce them. Run `cargo test --no-fail-fast` after a fixture edit:
+  a failing lib test hides every integration test.
+- **Build fixture ledger lines in the engine's key order.** The round-trip
+  test compares `Event::to_line()` byte for byte. Copy the key order of an
+  existing line of the same kind (`id, ts, source, kind, subject, detail,
+  actor, case, zone, explicit, txId, refersTo, resolution, meta`).
+- **A case event without `source: seldon` belongs in the case's `events:`
+  frontmatter**, in ts order. Case lifecycle events (`source: seldon`) do not.
+- **`generatedAt` cannot be earlier than the story.** An index stamped 09:30
+  cannot list events from 17:00, and `lastCapture` cannot be earlier than a
+  collector event. The validator now checks both. A "fresh for a live clock"
+  sample is impossible: fresh lasts only 2 h. Pin the clock with `SELDON_NOW`.
+- **ADR-0014 §2 has no producer for `zone: green`.** The fixture's green
+  event is an assumption (hook command on a path no collector watches), not
+  a rule. Check the decision before you copy it into the engine.
+- **The guard reads file content in Bash arguments as commands.** A heredoc
+  holding a `tee ~/.config/…` string, or a `sed` pattern with `| pacman -S…`
+  in it, is blocked as a red-zone write or a package command. Edit Markdown
+  with the Edit tool. Write edit scripts with the Write tool.
