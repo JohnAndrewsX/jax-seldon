@@ -75,10 +75,11 @@ theme, config. Rules:
   zed'` line gives `meta.command`; packages in the command are `explicit`,
   others in the same transaction are `dependency` and inherit the case of
   the explicit ones.
-- **snapper** — `snapper --jsonout list` (or Omarchy's `omarchy-snapshot
-  list` if it emits JSON; read the script first). New snapshot numbers
-  become `snapshot` events with description; a `pre`/`post` pair is linked
-  via `meta.pairOf`.
+- **snapper** — `snapper --jsonout list`. New snapshot numbers become
+  `snapshot` events with description; a `pre`/`post` pair is linked via
+  `meta.pairOf`. Without `ALLOW_USERS` the command fails with a permission
+  error; the collector then reports `ok: false` and the fix command, never
+  sudo (ADR-0011).
 - **omarchy** — version from `omarchy --version` (or
   `~/.local/share/omarchy/version`); git HEAD of the omarchy repo; change
   → `update` event with `from`/`to`.
@@ -158,7 +159,8 @@ STATUS summary, active case (id, title, plan steps), last 5 journal lines,
 ## 9. Wizard (`seldon init`)
 
 Interactive via `dialoguer` (no `gum` dependency; gum is optional eye candy
-later). Steps: path → language → Obsidian config yes/no → collectors
+later). Steps: path (the options of ADR-0010: `~/Seldon`,
+`~/Documents/Seldon`, a detected project folder, custom) → language → Obsidian config yes/no → collectors
 (all on by default) → watched config paths (defaults shown) → agent
 harnesses (Claude Code hooks; optional Omarchy-Agent kit guard/skills if
 present as a template dir) → git init + first commit → run first capture →

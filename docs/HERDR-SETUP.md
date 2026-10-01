@@ -70,9 +70,8 @@ when a WP completes or blocks; otherwise keep working through the loop in
 
 ## 4. Testing on the test host
 
-The plugin installs from a git root that contains `manifest.json`
-(`omarchy plugin add` is a plain `git clone`; see memory/host.md §7). Until
-the plugin-root decision is made, test by copying:
+The installable plugin repo (`jax-seldon-plugin`, ADR-0009) exists only
+from the first release on. Until then, test by copying:
 
 ```bash
 rsync -a --delete plugin/ test:~/.config/omarchy/plugins/jax.seldon/

@@ -25,18 +25,15 @@ WP-001 repo scaffold · WP-002 contract & fixtures · WP-003 engine core
 ## Recently completed
 *(none)*
 
+## Decided 2026-10-01
+- Default logbook path `~/Seldon`, wizard options → ADR-0010.
+- Binary name `seldon` with `jax-seldon` symlink → ADR-0001 confirmed.
+- Monorepo `jax-seldon`, installable plugin published as
+  `jax-seldon-plugin` via subtree split → ADR-0009.
+- Snapper collector degraded by default, user opts in with one command
+  → ADR-0011.
+
 ## Open questions for the operator
-- Default logbook path: `~/Seldon` (proposed) — confirm.
-- Binary name `seldon` vs `jax-seldon` (ADR-0001 proposes `seldon`, with a
-  `jax-seldon` symlink from the package).
-- **Plugin git root.** `omarchy plugin add` clones a URL and expects
-  `manifest.json` at the repo root; ours is in `plugin/`. Options:
-  (a) separate repo `JohnAndrewsX/omarchy-seldon` holding only the plugin,
-  (b) monorepo plus a published `plugin` branch via `git subtree split`,
-  (c) move the plugin to the repo root. ADR-0004 leans to (a). Needs an ADR.
-- **snapper permissions.** `snapper list` needs root or `ALLOW_USERS` in
-  `/etc/snapper/configs/root`. Collector degrades gracefully either way;
-  the question is whether the operator wants to grant the user account that access.
 - **Omarchy is a package install, not a git checkout.** Version comes from
   `omarchy-version`; WP-033 (update-impact from release notes) needs
   another source. Decide in Phase 3.

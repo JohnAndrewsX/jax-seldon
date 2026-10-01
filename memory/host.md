@@ -57,7 +57,7 @@ from `omarchy install dev-env rust` (= rustup, user-space, no sudo).
    branch or subdirectory syntax. The manifest must be at the **repo root**.
    This repo's manifest is in `plugin/` → the installable plugin needs its
    own git root (separate repo, or a published branch made with
-   `git subtree split --prefix=plugin`). Decision open, see STATUS.md.
+   `git subtree split --prefix=plugin`). Decided: ADR-0009.
 8. Confirmed to exist as the specs assume: `omarchy plugin validate <dir>`,
    `omarchy plugin add|update|remove|enable|disable|clone|catalog`,
    `omarchy pkg add|aur add|drop`, `omarchy agent prompt [--inline] <text>`,

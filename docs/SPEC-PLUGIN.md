@@ -81,7 +81,9 @@ toggles Panel; middle click opens Prime Radiant; right click runs capture.
 | Memory | lessons headings, memory topics | "Open" |
 
 Banner states (top of every tab): engine missing → "Install the engine:
-`omarchy pkg add jax-seldon`" with *Copy* and *Open terminal*; not
+`omarchy pkg add jax-seldon`" with *Copy* and *Open terminal*; snapshots
+not readable (ADR-0011) → the one-line snapper fix with *Copy* and *Open
+terminal*; not
 initialised → "Run `seldon init`" with *Open terminal*; index stale →
 *Capture now*; crisis → red strip "N changes in the red zone need a reason".
 
