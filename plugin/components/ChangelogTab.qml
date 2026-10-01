@@ -48,8 +48,6 @@ Item {
     var row = root.rows[root.cursor]
     if (!row) return
     root.expandedId = root.expandedId === row.id ? "" : row.id
-    // The row grew or shrank; keep all of it in view.
-    Qt.callLater(list.keepCurrentVisible)
   }
 
   function setFilter(id) {
@@ -159,6 +157,8 @@ Item {
 
         width: ListView.view.width
         spacing: Style.spacing.xxs
+        // An expanded row grows after its layout pass; keep all of it in view.
+        onHeightChanged: if (delegateRoot.index === list.currentIndex) Qt.callLater(list.keepCurrentVisible)
 
         PanelSectionHeader {
           visible: delegateRoot.firstOfDay
