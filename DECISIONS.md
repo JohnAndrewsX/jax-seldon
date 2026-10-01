@@ -16,5 +16,6 @@
 | ADR-0012 | Contract v1: schema clarifications and index derivation rules | accepted |
 | ADR-0013 | Drift is grouped per pacman transaction; routine upgrades are yellow | accepted |
 | ADR-0014 | Event attribution, zones, plugin version source, agent file edits | accepted |
+| ADR-0015 | Drift-group schema rules and the proposal token rule (supersedes ADR-0012 §13) | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
