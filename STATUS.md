@@ -142,6 +142,11 @@ the operator's release-notes source decision)
 - **Stray `~/.config/seldon/config.toml`** on the dev host from WP-024's
   pty test (points at a scratch logbook). The guard blocks the
   orchestrator; please `rm -r ~/.config/seldon`. The state dir was removed.
+- **Live frame profile of the Prime Radiant (WP-031)** needs
+  `QSG_RENDER_TIMING` in Hyprland's environment on the test host
+  (`hyprctl keyword env …`) plus a shell restart — a runtime change on the
+  test host, so your call. The offscreen profile (4–7 ms frames) is the
+  acceptance record; the live check via `call view` needs no env change.
 - **FYI, veto possible:** the Prime Radiant's default period is 90 days
   (30/90/365/All available; resets to 90 d on every open). 365 d would
   leave the drift bars and timeline sparse on every logbook younger than
