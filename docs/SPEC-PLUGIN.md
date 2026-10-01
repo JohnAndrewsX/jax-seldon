@@ -112,8 +112,10 @@ run `open logbook --editor --json` until the engine gains a memory target
 (`open memory[/<topic>]`, queued). Linked cases per decision need a
 contract field (`decisions[].cases`) and are deferred to the next contract
 bump. Width `Style.space(380)` (WP-011). Files: one component per tab,
-`components/TodayTab.qml`, `ChangelogTab.qml`, `SystemTab.qml`, plus
-`EventRow.qml`, `Tabs.qml`, `Banner.qml`. The Changelog source filter has
+`components/TodayTab.qml`, `ChangelogTab.qml`, `WorkTab.qml`,
+`DecisionsTab.qml`, `SystemTab.qml`, `MemoryTab.qml`, plus `EventRow.qml`,
+`Tabs.qml`, `Banner.qml`, `QuickEntry.qml`, `CaseCard.qml`,
+`NewCaseSheet.qml`, `DriftSheet.qml`, `NewDecisionSheet.qml`. The Changelog source filter has
 one chip per schema source (all nine, including `manual`, `agent`,
 `seldon`). While an event is open drift, its row is coloured by the drift
 item's computed zone (ADR-0013 §3) — stripe, glyph, status and badge from

@@ -102,9 +102,11 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
 ```
 
-`log`, `event`, `plan *`, `decide`, `open` with `--json` return `{"event":
+`log`, `event`, `plan *`, `open` with `--json` return `{"event":
 <ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
-`movedFrom`, `activeCase`, `journal` (WP-006). `plan new` defaults:
+`movedFrom`, `activeCase`, `journal` (WP-006); `decide --json` returns
+`{"decision": {id, title, status, date, cases, path}, "editor", "git"}`
+(no ledger event). `plan new` defaults:
 `--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
 plan step so agents identify themselves; `log --tag T` stores `meta.tags`
 (comma-joined) and a `#tag` line in the journal; `open` also takes
