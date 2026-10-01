@@ -379,3 +379,24 @@ Append-only. One bullet per finding, newest section last.
   old head and `dirty: true` until the next write. A negative control
   needs a step that actually commits: with nothing to commit the stale and
   the fresh index agree.
+
+## 2026-10-01 · WP-032 (seldon rebuild)
+
+- **`Built` carries no dossier fences.** `index::build` consumes
+  `Loaded.fences`; a consumer that needs the rows (not just the index
+  counts) reads `system/*.md` again with the public
+  `index::load::{fences, fence_table, fence_kv}`. That is a second read of
+  the files, not a second derivation; events, drift and resolutions still
+  come from `Built` only (`rebuild::read_dossier`).
+- **"Latest state" walks over `Built.folded` go oldest first with
+  `.iter().rev()`**: `folded` is newest first, ties by id descending, so
+  the reverse is ledger order (ties by id ascending). Each folded event
+  already carries its winning resolution, `resolutionDetail` and the
+  resolution's case (ADR-0021), and `index::build::is_open_drift` is public.
+- **The index caps completed cases at 50**, so a title lookup for an
+  older case falls back to `logbook::cases::find`. A lazily filled cache
+  behind an `Fn` closure is a `RefCell<HashMap>` captured by reference.
+- **A generated document with a fence of its own** reuses the
+  `merge_status` pattern (`rebuild::merge`): header first, fence replaced,
+  text outside kept, a hand-written file kept below the fence. No clock in
+  the content, or every run writes and commits.

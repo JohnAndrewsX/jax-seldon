@@ -13,6 +13,7 @@ pub mod init;
 pub mod log;
 pub mod open;
 pub mod plan;
+pub mod rebuild;
 pub mod setup;
 pub mod status;
 

@@ -415,3 +415,13 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **`seldon … | head` panics** ("failed printing to stdout: Broken pipe"):
   `println!` on a closed pipe, pre-existing and harmless. Redirect to a
   file when only the start is needed.
+
+## 2026-10-01 · WP-032 (Engine)
+
+- **A hand-written ledger line with an invalid ULID is skipped, not an
+  error.** Crockford base32 has no `I L O U`; test ids like `…AUR01` made
+  the loader drop the lines with a warning, and the test failed on a count
+  as if the logic were wrong. Check `warnings` in the command's JSON first.
+- **`just check` takes longer than the 2-minute foreground tool limit**
+  (plugin tests in headless Quickshell); run it in the background and wait
+  for the notification instead of re-running it.
