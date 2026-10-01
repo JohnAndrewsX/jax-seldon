@@ -1,10 +1,11 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Phase:** 3 code-complete (WP-030/031/032/034/035 merged 2026-10-02);
-Phase 0 exit G3 still pending the operator's run (`work/PHASE-0-EXIT.md`);
-Phase 1/2 live sweeps and the WP-013 full e2e runs wait for the test
-host unlock. Phase 4 (packaging, docs) starting.
+**Phase:** 4 — packaging and docs merged (WP-040/041, 2026-10-02);
+Phase 3 code-complete. Open: Phase 0 exit G3 (operator's run,
+`work/PHASE-0-EXIT.md`), the WP-013 full e2e runs and live sweeps (test
+host unlock), WP-042 marketplace submission (after the operator's release
+setup), WP-033 and WP-043 (operator decisions).
 **Contract version:** 1 (draft)
 **Last updated:** 2026-10-01
 
@@ -12,7 +13,6 @@ host unlock. Phase 4 (packaging, docs) starting.
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
-| WP-040 | AUR package `jax-seldon` (PKGBUILD, .SRCINFO), release workflow | Scaffold | `scaffold-040` (opus, high) | `wt/WP-040` · `wp/040-packaging` | 2026-10-02 |
 
 ## Queued (next up)
 WP-033 (update-impact, needs the operator's release-notes source decision)
@@ -31,6 +31,13 @@ logbook migration)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-040 AUR package `jax-seldon` (PKGBUILD with the `watch`
+  feature, `.SRCINFO`, user unit installed not enabled), release workflow
+  (tag → musl asset + checksums, PKGBUILD bump, AUR push and plugin
+  subtree split skipped without secrets, `workflow_dispatch` dry run),
+  packaging/README.md with the operator's one-time setup — merged after
+  one review round; ADR-0022 accepted. Test-host `makepkg` and the first
+  real workflow run wait for the operator (guard exception, secrets).
 - 2026-10-02 WP-041 Plugin README along the marketplace template,
   preview.png from offscreen renders (no bar pill until a live shot),
   Security section cross-checked against the plugin's three non-engine
