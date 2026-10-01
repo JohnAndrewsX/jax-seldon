@@ -11,3 +11,8 @@ Your own notes go outside the `seldon:begin`/`seldon:end` fences; Seldon keeps t
 | date | explicit | total |
 |---|---|---|
 <!-- seldon:end -->
+
+## Explicit packages
+
+<!-- seldon:begin packages.explicit -->
+<!-- seldon:end -->

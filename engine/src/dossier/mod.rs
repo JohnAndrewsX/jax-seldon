@@ -456,8 +456,9 @@ fn ensure_newline(s: &str) -> String {
 }
 
 /// `packages.explicit`: one line per explicit package, sorted:
-/// `- <name> · repo|aur · since <date> [[C-…]]` when the ledger saw the
-/// install, else `- <name> · repo|aur · pre-logbook`.
+/// `- <name> · repo|aur · omarchy-base|user · since <date> [[C-…]]` when
+/// the ledger saw the install, else `… · pre-logbook`. The class is
+/// `omarchy-base` when Omarchy's package lists name the package.
 pub fn packages_explicit(p: &Packages, known: &BTreeMap<String, Known>) -> String {
     let mut t = String::new();
     for name in &p.explicit {
@@ -466,7 +467,12 @@ pub fn packages_explicit(p: &Packages, known: &BTreeMap<String, Known>) -> Strin
         } else {
             "repo"
         };
-        let _ = write!(t, "- {name} · {origin} · ");
+        let class = if p.omarchy.contains(name) {
+            OMARCHY_BASE
+        } else {
+            USER
+        };
+        let _ = write!(t, "- {name} · {origin} · {class} · ");
         match known.get(name) {
             Some(k) => {
                 let _ = write!(t, "since {}", k.date);
@@ -483,12 +489,19 @@ pub fn packages_explicit(p: &Packages, known: &BTreeMap<String, Known>) -> Strin
 
 /// The mark of a package the ledger does not know.
 pub const PRE_LOGBOOK: &str = "pre-logbook";
+/// The class of a package Omarchy's package lists name.
+pub const OMARCHY_BASE: &str = "omarchy-base";
+/// The class of every other explicit package: the user's own addition.
+pub const USER: &str = "user";
 
 /// An entry of the `packages.explicit` fence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Explicit {
     pub name: String,
     pub aur: bool,
+    /// Class `omarchy-base` (a line without a class, as WP-035 wrote
+    /// them, counts as `user`).
+    pub omarchy: bool,
     pub pre_logbook: bool,
 }
 
@@ -497,19 +510,25 @@ pub struct Explicit {
 pub fn parse_explicit(body: &str) -> Vec<Explicit> {
     body.lines()
         .filter_map(|l| {
-            let mut parts = l.strip_prefix("- ")?.split(" · ");
-            let (name, origin, since) = (parts.next()?, parts.next()?, parts.next()?);
+            let mut parts = l.strip_prefix("- ")?.split(" · ").map(str::trim);
+            let (name, origin) = (parts.next()?, parts.next()?);
+            let (omarchy, since) = match parts.next()? {
+                OMARCHY_BASE => (true, parts.next()?),
+                USER => (false, parts.next()?),
+                since => (false, since),
+            };
             if name.is_empty() || name.contains(char::is_whitespace) {
                 return None;
             }
             Some(Explicit {
                 name: name.to_string(),
-                aur: match origin.trim() {
+                aur: match origin {
                     "aur" => true,
                     "repo" => false,
                     _ => return None,
                 },
-                pre_logbook: since.trim() == PRE_LOGBOOK,
+                omarchy,
+                pre_logbook: since == PRE_LOGBOOK,
             })
         })
         .collect()
@@ -649,7 +668,9 @@ pub fn hardware_summary(hw: &Hardware, body: Option<&str>) -> String {
 
 /// `deviations.table`: the existing lines byte for byte (the user's
 /// reasons), plus a row for each cased config file without one, keyed by
-/// path. The reason of a new row is empty: the user writes it.
+/// path. The reason of a new row is empty: the user writes it. A row whose
+/// case cell is empty (blank, `—` or `-`) gets the case of its path when
+/// that event is not older than the row's date; only that cell changes.
 pub fn deviations_table(body: Option<&str>, cased: &[Cased]) -> String {
     const HEAD: &str = "| path | reason | date | case |\n|---|---|---|---|\n";
     let body = body.filter(|b| b.contains("|---")).unwrap_or(HEAD);
@@ -657,7 +678,28 @@ pub fn deviations_table(body: Option<&str>, cased: &[Cased]) -> String {
         .into_iter()
         .filter_map(|r| r.get("path").cloned())
         .collect();
-    let mut t = ensure_newline(body);
+    // the header is the first table line, the separator the second; a case
+    // is filled in only when the columns are path first and case last
+    let mut rows = body.split_inclusive('\n').filter(|l| l.starts_with('|'));
+    let fillable = rows.next().is_some_and(|head| {
+        let cells = cells(head);
+        cells.first() == Some(&"path") && cells.last() == Some(&"case")
+    });
+    let mut t = String::new();
+    let mut table = 0;
+    for line in body.split_inclusive('\n') {
+        if line.starts_with('|') {
+            table += 1;
+        }
+        match (fillable && table > 2 && line.starts_with('|'))
+            .then(|| fill_case(line, cased))
+            .flatten()
+        {
+            Some(filled) => t.push_str(&filled),
+            None => t.push_str(line),
+        }
+    }
+    let mut t = ensure_newline(&t);
     for c in cased {
         if listed.contains(&c.path) || c.path.contains('|') {
             continue;
@@ -665,6 +707,41 @@ pub fn deviations_table(body: Option<&str>, cased: &[Cased]) -> String {
         let _ = writeln!(t, "| {} |  | {} | [[{}]] |", c.path, c.date, c.case);
     }
     t
+}
+
+/// The trimmed cells of a table line.
+fn cells(line: &str) -> Vec<&str> {
+    line.trim()
+        .trim_matches('|')
+        .split('|')
+        .map(str::trim)
+        .collect()
+}
+
+/// `line` (a `deviations.table` row, line ending included) with its empty
+/// last cell set to the case `cased` knows for its path; `None` when the
+/// cell is not empty, the path has no case, or the case event is older
+/// than the row's date. The path is the first cell and the date the one
+/// before the case, so a reason that contains `|` does not matter. Every
+/// other byte of the line stays.
+fn fill_case(line: &str, cased: &[Cased]) -> Option<String> {
+    let (core, tail) = line.split_at(line.trim_end().len());
+    let inner = core.strip_prefix('|')?.strip_suffix('|')?;
+    let (path, _) = inner.split_once('|')?;
+    let c = cased.iter().find(|c| c.path == path.trim())?;
+    let start = inner.rfind('|')?;
+    let case = inner[start + 1..].trim();
+    if !(case.is_empty() || case == "—" || case == "-") {
+        return None;
+    }
+    let before = &inner[..start];
+    let date = before.rsplit('|').next().unwrap_or_default().trim();
+    let is_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok();
+    // path, date and case are three different cells
+    if before.matches('|').count() < 1 || (is_date && c.date.as_str() < date) {
+        return None;
+    }
+    Some(format!("|{before}| [[{}]] |{tail}", c.case))
 }
 
 #[cfg(test)]
@@ -676,6 +753,7 @@ mod tests {
             explicit: explicit.iter().map(|s| s.to_string()).collect(),
             foreign: foreign.iter().map(|s| s.to_string()).collect(),
             total,
+            omarchy: Default::default(),
         }
     }
 
@@ -701,7 +779,8 @@ mod tests {
 
     #[test]
     fn explicit_lines_round_trip() {
-        let p = pkgs(&["btop", "yay", "zed"], &["yay", "yay-debug"], 40);
+        let lists = std::collections::BTreeSet::from(["btop".to_string(), "yay".to_string()]);
+        let p = pkgs(&["btop", "yay", "zed"], &["yay", "yay-debug"], 40).classify(&lists);
         let known = BTreeMap::from([
             (
                 "zed".to_string(),
@@ -721,7 +800,7 @@ mod tests {
         let body = packages_explicit(&p, &known);
         assert_eq!(
             body,
-            "- btop · repo · since 2026-09-03\n- yay · aur · pre-logbook\n- zed · repo · since 2026-10-01 [[C-2026-004]]\n"
+            "- btop · repo · omarchy-base · since 2026-09-03\n- yay · aur · omarchy-base · pre-logbook\n- zed · repo · user · since 2026-10-01 [[C-2026-004]]\n"
         );
         let parsed = parse_explicit(&body);
         assert_eq!(parsed.len(), 3);
@@ -730,10 +809,31 @@ mod tests {
             Explicit {
                 name: "yay".into(),
                 aur: true,
+                omarchy: true,
                 pre_logbook: true
             }
         );
         assert!(!parsed[2].pre_logbook);
+        assert!(!parsed[2].omarchy);
+        // a WP-035 line without a class is the user's
+        assert_eq!(
+            parse_explicit("- yay · aur · pre-logbook\n- zed · repo · since 2026-10-01\n"),
+            [
+                Explicit {
+                    name: "yay".into(),
+                    aur: true,
+                    omarchy: false,
+                    pre_logbook: true
+                },
+                Explicit {
+                    name: "zed".into(),
+                    aur: false,
+                    omarchy: false,
+                    pre_logbook: false
+                }
+            ]
+        );
+        assert!(parse_explicit("- yay · aur · user\n- x · git · user · pre-logbook\n").is_empty());
         assert_eq!(
             packages_summary(&p),
             "- explicit: 3\n- total: 40\n- aur: 2\n"
@@ -781,7 +881,7 @@ mod tests {
 
     #[test]
     fn deviations_keep_rows_and_add_cased_paths() {
-        let old = "| path | reason | date | case |\n|---|---|---|---|\n| ~/.bashrc | mise | 2026-09-01 | — |\n";
+        let old = "| path | reason | date | case |\n|---|---|---|---|\n| ~/.bashrc | mise | 2026-09-01 | [[C-0]] |\n";
         let cased = [
             Cased {
                 path: "~/.bashrc".into(),
@@ -796,9 +896,42 @@ mod tests {
         ];
         assert_eq!(
             deviations_table(Some(old), &cased),
-            format!("{old}| ~/.config/hypr/a.conf |  | 2026-10-01 | [[C-2]] |\n")
+            format!("{old}| ~/.config/hypr/a.conf |  | 2026-10-01 | [[C-2]] |\n"),
+            "a row with a case keeps it"
         );
         assert_eq!(deviations_table(Some(old), &[]), old);
+    }
+
+    #[test]
+    fn deviations_fill_only_an_empty_case_cell() {
+        let cased = |path: &str, date: &str| Cased {
+            path: path.into(),
+            date: date.into(),
+            case: "C-7".into(),
+        };
+        let head = "| path | reason | date | case |\n|---|---|---|---|\n";
+        let old = format!(
+            "{head}| ~/.bashrc | mise | a|b  | 2026-09-01 |  —  |\n|  ~/.zshrc |  | 2026-09-01 |  |  \n| ~/.vimrc | x | 2026-09-01 | - |\n| ~/.inputrc | y | 2026-10-05 | — |\n| ~/.profile | z | 2026-09-01 | [[C-3]] |"
+        );
+        let all = [
+            cased("~/.bashrc", "2026-10-01"),
+            cased("~/.zshrc", "2026-09-01"),
+            cased("~/.vimrc", "2026-10-01"),
+            // older than the row: not the row's case
+            cased("~/.inputrc", "2026-10-01"),
+            cased("~/.profile", "2026-10-01"),
+        ];
+        let new = deviations_table(Some(&old), &all);
+        assert_eq!(
+            new,
+            format!(
+                "{head}| ~/.bashrc | mise | a|b  | 2026-09-01 | [[C-7]] |\n|  ~/.zshrc |  | 2026-09-01 | [[C-7]] |  \n| ~/.vimrc | x | 2026-09-01 | [[C-7]] |\n| ~/.inputrc | y | 2026-10-05 | — |\n| ~/.profile | z | 2026-09-01 | [[C-3]] |\n"
+            )
+        );
+        assert_eq!(deviations_table(Some(&new), &all), new, "idempotent");
+        // another column order: the row is listed, and nothing is filled
+        let odd = "| case | path |\n|---|---|\n| — | ~/.bashrc |\n";
+        assert_eq!(deviations_table(Some(odd), &all[..1]), odd);
     }
 
     #[test]

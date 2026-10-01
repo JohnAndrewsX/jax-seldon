@@ -116,17 +116,29 @@ fn the_fixture_document_is_golden_and_traces_every_package() {
     assert!(text.contains("Installiere Omarchy und führe dann `omarchy update` aus"));
 
     assert_eq!(packages_trace(&lb, &text), 4);
-    assert_eq!(before_trace(&lb, &text), 11);
+    // 11 packages predate the logbook: 5 are the user's, 6 Omarchy's
+    assert_eq!(before_trace(&lb, &text), 5);
 }
 
 /// Asserts that the "Before the logbook" group of section 2 lists every
-/// `pre-logbook` package of the dossier's `packages.explicit` fence, each
-/// under the command of its origin, and nothing else; returns the count.
+/// `pre-logbook` package of class `user` of the dossier's
+/// `packages.explicit` fence, each under the command of its origin, and
+/// nothing else, and that one line counts the `omarchy-base` ones (WP-036);
+/// returns the number of listed packages.
 fn before_trace(lb: &Path, text: &str) -> usize {
     let dossier = read(&lb.join("system/packages.md"));
-    let expected: Vec<(String, &str)> = dossier
+    let pre: Vec<&str> = dossier
         .lines()
         .filter(|l| l.ends_with(" · pre-logbook"))
+        .collect();
+    let base = pre
+        .iter()
+        .filter(|l| l.contains(" · omarchy-base · "))
+        .count();
+    assert!(base > 0, "the fixture has Omarchy's packages");
+    let expected: Vec<(String, &str)> = pre
+        .iter()
+        .filter(|l| l.contains(" · user · "))
         .map(|l| {
             let mut parts = l.trim_start_matches("- ").split(" · ");
             let name = parts.next().unwrap().to_string();
@@ -141,8 +153,18 @@ fn before_trace(lb: &Path, text: &str) -> usize {
     let start = packages
         .find("### Before the logbook\n")
         .expect("a Before the logbook group");
-    let block = &packages[start..];
-    let block = &block[block.find("```sh\n").unwrap() + 6..];
+    let group = &packages[start..];
+    let group = &group[..group[1..].find("\n### ").map_or(group.len(), |i| i + 1)];
+    let base_line = format!("{base} weitere bringt Omarchy 4.0.7-1 mit (Klasse `omarchy-base`).");
+    assert_eq!(
+        group
+            .lines()
+            .filter(|l| l.contains("omarchy-base"))
+            .collect::<Vec<_>>(),
+        [base_line.as_str()],
+        "{group}"
+    );
+    let block = &group[group.find("```sh\n").unwrap() + 6..];
     let block = &block[..block.find("```").unwrap()];
     let mut listed: Vec<(String, &str)> = Vec::new();
     let mut cmd = "";

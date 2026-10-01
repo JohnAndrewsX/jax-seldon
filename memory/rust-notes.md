@@ -478,3 +478,38 @@ Append-only. One bullet per finding, newest section last.
   `init` keeps the first human line and the JSON (`json["ran"] = true`).
   It takes and releases the lock itself, commits on its own and rebuilds
   the index after the commit, so the tree stays clean.
+
+## 2026-10-01 · WP-036 (dossier follow-ups)
+
+- **Classify by the real name, then redact.** `Packages::classify(&lists)`
+  runs before `Packages::redacted`, and `redacted` maps the `omarchy` set
+  too. The other order would turn a redacted name into `user`.
+- **A new field in a fence line, kept readable when the line is old:**
+  `parse_explicit` matches the third ` · ` part against the class words
+  (`omarchy-base`, `user`). Anything else is the old WP-035 `since …` /
+  `pre-logbook` part, and the class is `user`. A generated fence is
+  rewritten on the next run anyway; the reader only has to bridge the
+  time until then.
+- **Rewrite one cell of a user's table row without a table parser.** The
+  approach is in `fill_case`:
+  - Split the line ending off with `split_at(line.trim_end().len())`.
+  - Strip the outer `|`.
+  - The path is the text before the first `|`, the case the text after
+    the last `|`, the date the cell before it.
+  - A reason containing `|` cannot shift any of them.
+  - Iterate the body with `split_inclusive('\n')`, not `lines()`, so CRLF
+    and a missing final newline survive byte for byte.
+- **An empty fence is "not written yet", not "nothing there".** The
+  rebuild treats a blank `packages.explicit` body like a missing one.
+  That way the empty fence in the templates and the fixture keeps the
+  old §2 sentence until the first `seldon dossier`.
+- **Staging part of a file without `git add -p`** (interactive git is
+  unavailable). Two ways:
+  - `git diff -U3 -- f`, split at `^@@ `, and pipe the kept hunks to
+    `git apply --cached --recount -`;
+  - or write a crafted intermediate text with `git hash-object -w
+    --stdin` plus `git update-index --cacheinfo 100644,<blob>,<path>`.
+
+  Check every intermediate commit with `git checkout-index -a
+  --prefix=<scratch>/` and a separate `CARGO_TARGET_DIR`, so the
+  worktree's target is not shared.

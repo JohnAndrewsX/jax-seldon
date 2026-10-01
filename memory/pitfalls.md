@@ -515,3 +515,28 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   forbidden call into the code under test and see the suite fail
   (WP-031's aggregation count missed the chart files until the reviewer
   did this).
+
+## 2026-10-01 · WP-036 (Engine)
+
+- **`common::Env` clears the environment, so `OMARCHY_PATH` is unset in
+  tests.** The engine then falls back to `/usr/share/omarchy/install`:
+  the host's real lists. `Env::command` therefore sets
+  `SELDON_OMARCHY_PACKAGES` to `fixtures/logs/omarchy-packages/` for
+  every test. Without it, `init`'s dossier run would classify packages
+  according to whatever Omarchy the test machine has installed.
+- **Omarchy's package lists are not "what a fresh install has".**
+  `omarchy-base.packages` is the ISO's core list. `omarchy-other.packages`
+  also holds hardware-specific packages (nvidia, T2, Surface drivers).
+  `linux` and `omarchy` themselves are in neither (the lists have
+  `linux-omarchy`). So `omarchy-base` means "named by Omarchy's lists",
+  and a `user` package may still come with Omarchy some other way. The
+  rebuild text says "the commands skip what is installed" for exactly
+  that reason.
+- **The dev host's `$OMARCHY_PATH/version` says `4.0.0.alpha`, while
+  `omarchy-version` reports the packaged version.** The rebuild's base
+  count line takes the version from `omarchy.summary` (the same dossier
+  run). It does not read the file.
+- **An empty fence added to the fixture moves the "outside the fences"
+  comparison.** The golden test no longer needs the "appended heading"
+  special case. The dossier golden itself did not change shape: the
+  fixture puts the fence exactly where the append used to.

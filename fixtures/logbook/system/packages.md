@@ -15,3 +15,8 @@
 | 2026-09-03 | 324 | 2005 |
 | 2026-10-01 | 327 | 2009 |
 <!-- seldon:end -->
+
+## Explizite Pakete
+
+<!-- seldon:begin packages.explicit -->
+<!-- seldon:end -->

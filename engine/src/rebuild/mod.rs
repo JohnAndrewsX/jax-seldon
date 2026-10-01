@@ -140,11 +140,17 @@ pub struct Dismissed {
 }
 
 /// Explicit packages that predate the logbook (the dossier's
-/// `packages.explicit` lines marked `pre-logbook`), by origin and name.
+/// `packages.explicit` lines marked `pre-logbook`): the user's own by
+/// origin and name, Omarchy's (class `omarchy-base`) only counted.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Before {
     pub repo: Vec<String>,
     pub aur: Vec<String>,
+    /// Pre-logbook packages Omarchy's package lists name.
+    pub omarchy: usize,
+    /// The Omarchy version those lists belong to (`omarchy.summary`, else
+    /// the base of section 1).
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -166,8 +172,8 @@ pub struct Rebuild {
     pub base: Base,
     /// `explicit` of the dossier's `packages.summary`.
     pub explicit_total: Option<i64>,
-    /// `None` when the dossier has no `packages.explicit` fence (written
-    /// by `seldon dossier`, WP-035).
+    /// `None` when the dossier has no `packages.explicit` fence, or an
+    /// empty one (written by `seldon dossier`, WP-035).
     pub before: Option<Before>,
     pub packages: Vec<Package>,
     pub deviations: Vec<Deviation>,
@@ -560,6 +566,34 @@ pub fn collect(
         });
     }
 
+    let before = dossier
+        .get("packages.explicit")
+        .filter(|f| !f.trim().is_empty())
+        .map(|f| {
+            let mut before = Before {
+                version: summary
+                    .get("version")
+                    .cloned()
+                    .or_else(|| base.version.clone()),
+                ..Before::default()
+            };
+            for p in dossier::parse_explicit(f)
+                .into_iter()
+                .filter(|p| p.pre_logbook)
+            {
+                if p.omarchy {
+                    before.omarchy += 1;
+                } else if p.aur {
+                    before.aur.push(p.name);
+                } else {
+                    before.repo.push(p.name);
+                }
+            }
+            before.repo.sort();
+            before.aur.sort();
+            before
+        });
+
     let ix = &built.index;
     Rebuild {
         machine: ix.logbook.machine.clone(),
@@ -572,22 +606,7 @@ pub fn collect(
         explicit_total: dossier
             .get("packages.summary")
             .and_then(|f| fence_kv(f).get("explicit")?.parse().ok()),
-        before: dossier.get("packages.explicit").map(|f| {
-            let mut before = Before::default();
-            for p in dossier::parse_explicit(f)
-                .into_iter()
-                .filter(|p| p.pre_logbook)
-            {
-                if p.aur {
-                    before.aur.push(p.name);
-                } else {
-                    before.repo.push(p.name);
-                }
-            }
-            before.repo.sort();
-            before.aur.sort();
-            before
-        }),
+        before,
         packages,
         deviations,
         plugins,

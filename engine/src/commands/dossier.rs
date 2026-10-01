@@ -57,6 +57,7 @@ impl Status {
 struct Counts {
     explicit: Option<usize>,
     pre_logbook: Option<usize>,
+    omarchy_base: Option<usize>,
     total: Option<usize>,
     aur: Option<usize>,
     units: Option<usize>,
@@ -99,10 +100,23 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
         let content = match fence.name {
             "packages.summary" | "packages.history" | "packages.explicit" => {
                 let p = packages.get_or_insert_with(|| {
-                    let p = query::packages(&hosts.sources.pacman).map(|p| p.redacted(&redactor));
+                    let p = query::packages(&hosts.sources.pacman).map(|p| {
+                        // classified by the real names, then redacted
+                        let (lists, missing) = query::omarchy_packages(&hosts.omarchy_packages);
+                        if !missing.is_empty() {
+                            let missing: Vec<String> =
+                                missing.iter().map(|m| m.display().to_string()).collect();
+                            warnings.push(format!(
+                                "packages: Omarchy's package list(s) {} not readable; their packages count as `user`",
+                                missing.join(", ")
+                            ));
+                        }
+                        p.classify(&lists).redacted(&redactor)
+                    });
                     match &p {
                         Ok(p) => {
                             counts.explicit = Some(p.explicit.len());
+                            counts.omarchy_base = Some(p.omarchy.len());
                             counts.pre_logbook = Some(
                                 p.explicit
                                     .iter()
@@ -208,14 +222,15 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
         let n = status.values().filter(|s| **s == Status::Written).count();
         format!("Wrote {} ({n} fence(s) changed)", written.join(", "))
     };
-    if let (Some(e), Some(pre), Some(t), Some(a)) = (
+    if let (Some(e), Some(pre), Some(base), Some(t), Some(a)) = (
         counts.explicit,
         counts.pre_logbook,
+        counts.omarchy_base,
         counts.total,
         counts.aur,
     ) {
         human.push_str(&format!(
-            "\nPackages: {e} explicit ({pre} from before the logbook), {t} total, {a} AUR"
+            "\nPackages: {e} explicit ({pre} from before the logbook, {base} on Omarchy's lists), {t} total, {a} AUR"
         ));
     }
     human.push_str(&commit.human());
@@ -233,6 +248,7 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
             "counts": {
                 "explicit": counts.explicit,
                 "preLogbook": counts.pre_logbook,
+                "omarchyBase": counts.omarchy_base,
                 "total": counts.total,
                 "aur": counts.aur,
                 "units": counts.units,

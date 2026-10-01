@@ -11,3 +11,8 @@ Eigene Notizen gehören außerhalb der `seldon:begin`/`seldon:end`-Zäune; Seldo
 | date | explicit | total |
 |---|---|---|
 <!-- seldon:end -->
+
+## Explicit packages
+
+<!-- seldon:begin packages.explicit -->
+<!-- seldon:end -->

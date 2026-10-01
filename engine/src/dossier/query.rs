@@ -2,13 +2,16 @@
 //! §6): the package manager is only ever asked `-Qqe`, `-Qqm` and `-Q`,
 //! systemd only `list-unit-files --state=enabled`, the Omarchy CLI only
 //! `plugin list --json` and `omarchy-version`, and the hardware comes from
-//! files under `/proc` and `/sys` (no `lscpu`). Every program is a fixed
-//! name with a fixed argument list ([`crate::sys::run`], no shell).
+//! files under `/proc` and `/sys` (no `lscpu`). Omarchy's own package
+//! lists (`omarchy-base.packages`, `omarchy-other.packages`) are plain file
+//! reads. Every program is a fixed name with a fixed argument list
+//! ([`crate::sys::run`], no shell).
 //!
 //! The programs and the file root can be pointed elsewhere for tests and
 //! demos: `SELDON_PACMAN`, `SELDON_OMARCHY`, `SELDON_OMARCHY_VERSION`,
 //! `SELDON_THEME_FILE` (shared with the collectors), `SELDON_SYSTEMCTL`
-//! and `SELDON_HARDWARE_ROOT` (default `/`).
+//! `SELDON_HARDWARE_ROOT` (default `/`) and `SELDON_OMARCHY_PACKAGES` (the
+//! directory of Omarchy's package lists, default `$OMARCHY_PATH/install`).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -29,6 +32,10 @@ pub struct Hosts {
     /// `SELDON_HARDWARE_ROOT`, default `/`: `proc/…` and `sys/…` are read
     /// below it.
     pub hardware_root: PathBuf,
+    /// `SELDON_OMARCHY_PACKAGES`, default `$OMARCHY_PATH/install` (and
+    /// `/usr/share/omarchy/install` without `OMARCHY_PATH`): the directory
+    /// of Omarchy's package lists.
+    pub omarchy_packages: PathBuf,
 }
 
 impl Hosts {
@@ -38,6 +45,13 @@ impl Hosts {
             sources: Sources::from_env(),
             systemctl: var("SELDON_SYSTEMCTL").unwrap_or_else(|| "systemctl".into()),
             hardware_root: var("SELDON_HARDWARE_ROOT").map_or_else(|| "/".into(), PathBuf::from),
+            omarchy_packages: var("SELDON_OMARCHY_PACKAGES").map_or_else(
+                || {
+                    Path::new(&var("OMARCHY_PATH").unwrap_or_else(|| "/usr/share/omarchy".into()))
+                        .join("install")
+                },
+                PathBuf::from,
+            ),
         }
     }
 }
@@ -51,6 +65,9 @@ pub struct Packages {
     pub foreign: BTreeSet<String>,
     /// Every installed package (`-Q`).
     pub total: usize,
+    /// The explicit packages Omarchy's package lists name (origin class
+    /// `omarchy-base`; [`Packages::classify`]).
+    pub omarchy: BTreeSet<String>,
 }
 
 impl Packages {
@@ -61,7 +78,19 @@ impl Packages {
             explicit: explicit.into_iter().collect(),
             foreign: self.foreign.iter().map(|n| redactor.redact(n)).collect(),
             total: self.total,
+            omarchy: self.omarchy.iter().map(|n| redactor.redact(n)).collect(),
         }
+    }
+
+    /// Marks the explicit packages `lists` names as Omarchy's own.
+    pub fn classify(mut self, lists: &BTreeSet<String>) -> Self {
+        self.omarchy = self
+            .explicit
+            .iter()
+            .filter(|n| lists.contains(*n))
+            .cloned()
+            .collect();
+        self
     }
 
     /// Foreign packages, explicit or not (the `aur` count).
@@ -85,7 +114,34 @@ pub fn packages(pacman: &str) -> Result<Packages, String> {
         explicit: explicit.into_iter().collect(),
         foreign,
         total,
+        omarchy: BTreeSet::new(),
     })
+}
+
+/// The files of Omarchy's package lists: what its installer puts on every
+/// machine (`base`) and what it installs outside that list or on certain
+/// hardware (`other`).
+pub const OMARCHY_LISTS: [&str; 2] = ["omarchy-base.packages", "omarchy-other.packages"];
+
+/// The package names of Omarchy's lists in `dir` (one per line, `#`
+/// comments and blank lines skipped), and the lists that could not be
+/// read. A plain file read; nothing runs.
+pub fn omarchy_packages(dir: &Path) -> (BTreeSet<String>, Vec<PathBuf>) {
+    let mut names = BTreeSet::new();
+    let mut missing = Vec::new();
+    for file in OMARCHY_LISTS {
+        let path = dir.join(file);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => names.extend(
+                text.lines()
+                    .map(|l| l.split('#').next().unwrap_or_default().trim())
+                    .filter(|l| !l.is_empty() && !l.contains(char::is_whitespace))
+                    .map(String::from),
+            ),
+            Err(_) => missing.push(path),
+        }
+    }
+    (names, missing)
 }
 
 /// One package name per line; anything with whitespace inside is not one.
@@ -314,6 +370,29 @@ mod tests {
         assert_eq!(hw.rootfs.as_deref(), Some("btrfs"));
         assert_eq!(hw.machine, None, "blank product name");
         assert!(hardware(&dir.join("missing")).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn omarchy_lists_skip_comments_and_report_missing_files() {
+        let dir = std::env::temp_dir().join(format!("seldon-lists-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("omarchy-base.packages"),
+            "# Omarchy core\n\nbtop\ngit  # inline\nnot a name\n",
+        )
+        .unwrap();
+        let (names, missing) = omarchy_packages(&dir);
+        assert_eq!(names.into_iter().collect::<Vec<_>>(), ["btop", "git"]);
+        assert_eq!(missing, [dir.join("omarchy-other.packages")]);
+        std::fs::write(dir.join("omarchy-other.packages"), "snapper\n").unwrap();
+        let (names, missing) = omarchy_packages(&dir);
+        assert_eq!(names.len(), 3);
+        assert!(missing.is_empty());
+        let (names, missing) = omarchy_packages(&dir.join("absent"));
+        assert!(names.is_empty());
+        assert_eq!(missing.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

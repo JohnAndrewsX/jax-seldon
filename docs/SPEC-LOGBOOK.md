@@ -142,19 +142,23 @@ Text outside fences is user-owned and preserved. `seldon dossier`
 |---|---|---|
 | `packages.summary` | `packages.md` | `- explicit: N`, `- total: N`, `- aur: N` |
 | `packages.history` | `packages.md` | table `date \| explicit \| total`, a row per day the counts changed |
-| `packages.explicit` | `packages.md` | `- <name> · repo\|aur · since <date> [[C-…]]`, or `· pre-logbook` when the ledger has no install of it; sorted |
+| `packages.explicit` | `packages.md` | `- <name> · repo\|aur · omarchy-base\|user · since <date> [[C-…]]`, or `· pre-logbook` when the ledger has no install of it; sorted. `omarchy-base`: Omarchy's package lists name it; `user`: the user's own addition |
 | `services.enabled` | `services.md` | table `unit \| scope \| case` (system, then user) |
 | `omarchy.summary` | `omarchy.md` | `- version`, `- theme`, `- lastUpdate` |
 | `hardware.summary` | `hardware.md` | `- cpu`, `- memory`, `- machine`, `- rootfs` |
 | `plugins.list` | `plugins.md` | table `id \| enabled \| firstParty \| clonedFrom` |
 | `deviations.table` | `deviations.md` | table `path \| reason \| date \| case` |
 
-A fence missing from every file is appended to its file under a `##`
-heading in the logbook language. `deviations.md` has one row per
-deviation: path, reason, date, case. The engine adds rows for config
-events whose case is known and never changes an existing row; the user
-fills the reason. `seldon rebuild` lists the `pre-logbook` packages of
-`packages.explicit` under "Before the logbook".
+A new logbook's `packages.md` carries every `packages.*` fence, empty
+until the first `seldon dossier`. A fence missing from every file is
+appended to its file under a `##` heading in the logbook language.
+`deviations.md` has one row per deviation: path, reason, date, case. The
+engine adds rows for config events whose case is known; in an existing
+row it changes only an empty case cell (blank, `—` or `-`), which gets
+the case of a later cased config event on that path; the user fills the
+reason. `seldon rebuild` lists the `pre-logbook` packages of class `user`
+of `packages.explicit` under "Before the logbook" and counts the
+`omarchy-base` ones in one line.
 
 ### Memory (`memory/*.md`)
 

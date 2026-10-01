@@ -26,6 +26,7 @@ struct Words {
     from_repos: &'static str,
     from_aur: &'static str,
     before_skip: &'static str,
+    more_with_omarchy: [&'static str; 2],
     repo_unknown: &'static str,
     all_repo: &'static str,
     all_aur: &'static str,
@@ -68,10 +69,11 @@ const EN: Words = Words {
     packages_intro_end: "), grouped by case; their dependencies come along.",
     packages_before: "Packages from before the logbook are not listed. Explicit packages in the dossier:",
     explicit_in_dossier: "Explicit packages in the dossier:",
-    before_intro: "Explicit packages from before the logbook (dossier `packages.explicit`):",
+    before_intro: "Your own explicit packages from before the logbook (dossier `packages.explicit`, class `user`):",
     from_repos: "from the repositories",
     from_aur: "from the AUR",
-    before_skip: "A fresh Omarchy install already has many of them; the commands skip what is installed.",
+    before_skip: "The commands skip what is already installed.",
+    more_with_omarchy: ["more come with Omarchy", "(class `omarchy-base`)."],
     repo_unknown: "repository unknown; from the AUR:",
     all_repo: "All repository packages at once (open ones left out)",
     all_aur: "All AUR packages at once (open ones left out)",
@@ -114,10 +116,11 @@ const DE: Words = Words {
     packages_intro_end: "), nach Case; ihre Abhängigkeiten kommen von selbst mit.",
     packages_before: "Pakete von vor dem Logbuch fehlen hier. Explizite Pakete laut Dossier:",
     explicit_in_dossier: "Explizite Pakete laut Dossier:",
-    before_intro: "Explizite Pakete von vor dem Logbuch (Dossier `packages.explicit`):",
+    before_intro: "Deine eigenen expliziten Pakete von vor dem Logbuch (Dossier `packages.explicit`, Klasse `user`):",
     from_repos: "aus den Repositories",
     from_aur: "aus dem AUR",
-    before_skip: "Eine frische Omarchy-Installation bringt viele davon schon mit; die Befehle überspringen, was schon installiert ist.",
+    before_skip: "Die Befehle überspringen, was schon installiert ist.",
+    more_with_omarchy: ["weitere bringt Omarchy", "mit (Klasse `omarchy-base`)."],
     repo_unknown: "Quelle unbekannt; aus dem AUR:",
     all_repo: "Alle Repo-Pakete auf einmal (ohne offene)",
     all_aur: "Alle AUR-Pakete auf einmal (ohne offene)",
@@ -211,6 +214,14 @@ pub fn text(r: &Rebuild, language: Language) -> String {
             t.push_str(&command_lines("omarchy pkg add", &before.repo));
             t.push_str(&command_lines("omarchy pkg aur add", &before.aur));
             t.push_str("```\n");
+        }
+        if before.omarchy > 0 {
+            let [more, class] = w.more_with_omarchy;
+            let _ = write!(t, "\n{} {more}", before.omarchy);
+            if let Some(v) = &before.version {
+                let _ = write!(t, " {v}");
+            }
+            let _ = writeln!(t, " {class}");
         }
     }
     if r.packages.is_empty() {
