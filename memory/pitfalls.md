@@ -611,3 +611,35 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `jq '… select(length > 0)' ~/.config/omarchy/shell.json` over ssh was
   blocked as a write under `~/.config`. That was reported, not worked
   around.
+
+## 2026-10-01 · WP-013 live session (QA)
+
+- **Gate every live keystroke on a Seldon surface being open, not only
+  on the lock.** A pointer click closed the panel, and the next `wtype`
+  text went into the operator's terminal, where bash ran it
+  (`work/active/WP-013/live/INCIDENT.md`). Before any key, check that
+  `jax.seldon.panel view` or `shell call jax.seldon view ""` reports
+  `opened: true`. Type text only while the target field reports
+  `editing: true`.
+- **`hyprctl activewindow` does not show layer-shell keyboard focus.** It
+  keeps naming the client window while our panel has the keys. Use the
+  plugin's own `opened` / `editing` flags.
+- **`ydotool mousemove --absolute` doubles the coordinates on the test
+  host;** pass half the logical value. `hyprctl dispatch movecursor` warps
+  without a motion event, so Quickshell sees no hover; `ydotool` moves
+  do produce one.
+- **The guard's theme-sweep exception matches only a bare
+  `ssh <host> '… omarchy theme set "<theme>"'`.** Anything after it (`;
+  echo …`) makes it a blocked system change. Run the theme command alone.
+  A block is reported, not retried in another form.
+- **`seldon init` runs the first capture now (WP-024).** Backfill with
+  `init --since`. A later `capture --since` is ignored by every collector
+  that has a cursor (`sinceIgnored`).
+- **The drift sheet's action buttons are keyboard-reachable** from the
+  text field with Backtab ×2, then ←/→ and Enter (as `panel-view.sh`
+  does). Space selects only the focused option, it does not move.
+- **Screenshots for the repo come from a fixture-based scratch logbook.**
+  Copy `fixtures/logbook/` over the `init`ed scratch logbook (its
+  `logbook.toml` carries `workstation-7f3a`). Crop away the bar (window
+  titles) and the desktop, and grep the logs for the host name and
+  `/home/<user>` before committing.
