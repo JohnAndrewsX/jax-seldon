@@ -37,7 +37,7 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/src/**` (`#[cfg(test)]`) | unit tests: frontmatter parser and writer, models, config precedence, lock, templates, subprocess runner |
 | `engine/tests/cli.rs` | `--version`, `contract-version`, parse errors (exit 1, JSON error shape, `--json` detection past free text), `--help`, `--config` > `SELDON_CONFIG` > XDG config |
 | `engine/tests/frontmatter.rs` | `round_trip::` every case, journal, decision, area, memory file and `PROJECT.md` of `fixtures/logbook/` parses into its typed record and re-serialises byte-identical; a lossless update changes only the edited lines |
-| `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, no terminal), lock held → exit 4 |
+| `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, no terminal), lock held → exit 4. `setup::` (WP-024): the first capture (stubbed sources, cursors set, a second capture writes nothing, `--no-capture`), `--since` backfill → open drift, `--baseline` → zero open drift with one `dismissed` "pre-Seldon baseline" line per member and the commit `seldon: first capture and pre-Seldon baseline`, flag errors before anything is written, `--harness claude-code` (settings in the first commit, `hook install` afterwards changes nothing), `--harness omarchy-agent` with a kit (copied, modes kept, merged with Claude Code's hooks) and without one, the theme hook (a recording `omarchy` stub: exactly one `hook install theme-set <script>` on opt-in, none without, a failure with its fix, an existing hook not reinstalled), the templates (written as rendered; frontmatter keys, headings, fences and table headers identical in `en` and `de` and equal to `tests/golden/init-skeleton.txt`, `SELDON_BLESS=1` rewrites it; German prose) |
 | `engine/tests/plan.rs` | `plan::` new (template, canonical frontmatter, area on first use, ids never reused), start/verify/done/drop (folder moves per ADR-0012 §9, `started`/`closed`/`snapshotBefore`, `.seldon/active-case`, body byte-identical outside the Log), invalid transitions → exit 1 and nothing written, list/show against `case.schema.json`, the fixture logbook (a copy), git autocommit with `--no-commit` and `git.autocommit = false` |
 | `engine/tests/log.rs` | `log::` notes with and without a case (`case.events`, `agents`), the Log section append-only over three steps, the journal appended not rewritten, free text as one argument (spaces, quotes, `$(…)`, `--json` after `--`), month and day by timestamp, redaction, exit 3/4 |
 | `engine/tests/journal.rs` | `journal::` appends to a fixture day (only the `cases:` line changes), CRLF days, the `plan done` stub in the logbook language |
@@ -54,7 +54,13 @@ live under it), and a `PATH` that contains only:
 - a link to the host's `git`.
 
 So the results do not depend on what the host has installed or how snapper
-is configured. Two engine variables make tests deterministic:
+is configured. Every run also gets `SELDON_TEST_GUARD=<temp dir>`: the
+engine then refuses to start (exit 2, "refusing to run outside the test
+guard") unless its home, config and state directories, resolved with
+symbolic links and `..`, all lie under that directory
+(`config::Dirs::from_vars`, unit test
+`config::tests::the_test_guard_checks_the_resolved_dirs`, integration test
+`init.rs::setup::the_test_guard_refuses_a_home_outside_it`). Two engine variables make tests deterministic:
 - `SELDON_NOW` (RFC 3339 with offset) fixes the clock of one invocation:
   event `ts`, journal headings, Log lines, the case id year
   (`Env::at(now, args)`). Not for normal use.
@@ -89,18 +95,90 @@ that ships only the engine):
 The packaging WP (WP-040) has to either ship those directories or build
 with `cargo build` only (no tests).
 
-**Manual acceptance (WP-003).** To try `init` and `doctor` against the real
-`snapper`/`omarchy-version` without writing the operator's
-`~/.config/seldon`, redirect the XDG dirs:
+**Manual runs: scratch dirs and the test guard.** Every manual run of the
+engine on a dev or test host starts with one scratch directory that holds
+home, config, state and data, and `SELDON_TEST_GUARD` set to it:
 
 ```
-export XDG_CONFIG_HOME=$(mktemp -d) XDG_STATE_HOME=$(mktemp -d)
-engine/target/debug/seldon init --non-interactive --path /tmp/seldon-wp003
-engine/target/debug/seldon doctor --path /tmp/seldon-wp003 --json   # "ok": true, snapper "degraded"
+S=$(mktemp -d)
+export SELDON_TEST_GUARD=$S HOME=$S/home \
+       XDG_CONFIG_HOME=$S/config XDG_STATE_HOME=$S/state XDG_DATA_HOME=$S/data
+mkdir -p $HOME
+B=$PWD/engine/target/debug/seldon
+$B --json doctor     # the "config" check names $S/config/seldon/config.toml
 ```
 
-`seldon init` refuses an existing logbook, so remove `/tmp/seldon-wp003`
+Set all four, not only `HOME`: a desktop session usually exports
+`XDG_CONFIG_HOME`/`XDG_STATE_HOME`/`XDG_DATA_HOME` pointing into the real
+home, and an absolute XDG variable wins over `HOME`. With the guard set, a
+run whose directories still point outside `$S` exits 2 before it reads or
+writes anything. The real package log and `snapper` are still read (they
+are absolute paths); the theme file and the watched config paths are read
+under `$S/home` (point `SELDON_THEME_FILE` at the real `theme.name` to read
+that one).
+
+**Manual acceptance (WP-003).** With the scratch environment above:
+
+```
+$B init --non-interactive --no-capture --path $S/logbook
+$B doctor --path $S/logbook --json   # "ok": true, snapper "degraded"
+```
+
+`seldon init` refuses an existing logbook, so remove `$S/logbook`
 before running it again.
+
+**Tests that need a logbook without a capture.** Since WP-024, `init` runs
+the first capture, which records the first state of every diff collector
+(config, theme, plugins) and the pacman cursor. A test that builds the
+machine state *after* `init` and expects its own first capture to be the
+baseline passes `--no-capture`; `Env::init_logbook*` does so for every
+test. Only `tests/init.rs` exercises the wizard's capture.
+
+**Real-host run of the wizard (WP-024).** With the scratch environment
+above. It reads the real package log and `snapper` (read-only) and writes
+only under `$S`. Never pass `--theme-hook` on the dev host: it runs
+`omarchy hook install`, a red-zone write under `~/.config/omarchy/hooks/`
+(the repository's guard blocks it; the tests stub `omarchy`).
+
+```
+$B init --non-interactive --path $S/logbook --language de \
+   --harness claude-code --harness omarchy-agent --since "$(date -d '-7 days' +%F)"
+#   First capture: N event(s) since …; M open drift item(s), M crisis  (dev host
+#   2026-10-01: 1230 events, 22 items, all crises — WP-013 FINDINGS §2.2)
+#   Harness omarchy-agent: no kit at $S/data/seldon/harness/omarchy-agent; nothing copied …
+rm -rf $S/logbook $S/state $S/config
+$B --json init --non-interactive --path $S/logbook --since "$(date -d '-7 days' +%F)" --baseline
+#   capture.baseline {"items": 22, "events": 1230, "reason": "pre-Seldon baseline"}, openDrift 0
+$B --json drift          # "openDrift": 0, "crisis": 0
+$B --json capture --all  # "written": 0
+git -C $S/logbook log --format=%s   # first capture and pre-Seldon baseline / init logbook
+jq .logbook.git $S/state/seldon/index.json   # head = git rev-parse --short HEAD, dirty false
+```
+
+The interactive wizard needs a terminal; `script` provides one. Keys:
+Enter takes the default, Space toggles a multi-select item, `y`/`n` answer a
+confirmation. Export the scratch environment and `SELDON_TEST_GUARD`
+*before* `script` (as above; `script` passes the environment on), pass
+`--path` so the path step is skipped (its default is `~/Seldon`), and stub
+`omarchy` with `SELDON_OMARCHY` in case the theme hook is answered with yes:
+
+```
+export SELDON_OMARCHY=$S/omarchy-stub    # a script that only records "$*"
+(sleep 1; for k in '\r' '\r' '\r' '\r' '\r' ' ' '\r' '\r' '\r'; do printf "$k"; sleep 0.4; done
+ printf "$(date -d '-3 days' +%F)\r"; sleep 4; printf '\r'; sleep 3) \
+  | script -qec "$B init --path $S/logbook" /dev/null
+# language, Obsidian, collectors, watched paths, more paths, harnesses (Space:
+# claude-code), theme hook (no), git (yes), backfill date, then after the
+# capture: "The backfill opened N drift item(s) … Mark them as the pre-Seldon
+# baseline?" (Enter: yes)
+```
+
+Why the guard: on 2026-10-01 a wizard run with only `HOME` overridden
+(`env HOME=<scratch> script -qec "seldon init …"`) wrote the real
+`~/.config/seldon/config.toml` and `~/.local/state/seldon/`. The session
+exported `XDG_CONFIG_HOME` and `XDG_STATE_HOME` into the real home, and
+those win over `HOME` (WP-024 handover). With `SELDON_TEST_GUARD` set, the
+same command exits 2 and writes nothing.
 
 The engine needs Rust ≥ 1.89 (`File::try_lock`, let-chains); both hosts
 have 1.98.

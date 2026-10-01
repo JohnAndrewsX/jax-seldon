@@ -1085,10 +1085,12 @@ mod capture {
         fn new() -> Self {
             let env = Env::new(Snapper::NoPermissions);
             let root = env.tmp.path().to_path_buf();
+            // no first capture: the test's own first capture is the baseline
             let out = env.seldon(&[
                 "init",
                 "--non-interactive",
                 "--no-git",
+                "--no-capture",
                 "--path",
                 root.join("logbook").to_str().unwrap(),
             ]);

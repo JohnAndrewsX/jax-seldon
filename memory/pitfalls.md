@@ -387,3 +387,31 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   - A manual demo of a command that launches programs needs a `PATH` of
     stubs only. With `/usr/bin` on it, a removed stub falls through to the
     real program.
+## 2026-10-01 · WP-024 (Engine)
+
+- **Overriding `HOME` alone does not redirect the engine.** The desktop
+  session exports `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `XDG_DATA_HOME`
+  into the real home, and an absolute XDG variable wins over `HOME`. A pty
+  run as `env HOME=<scratch> script -qec "seldon init …"` therefore wrote
+  the real `~/.config/seldon/config.toml` and `~/.local/state/seldon/`.
+  `script` itself passes the environment on; I first blamed it, wrongly.
+  The guard then (rightly) blocked the `rm` under `~/.config`, so the
+  files were left for the operator. Since the review follow-up:
+  - export `HOME` *and* all three `XDG_*` into one scratch dir;
+  - set `SELDON_TEST_GUARD` to that dir: the engine exits 2 when its
+    resolved home/config/state dirs leave it (`common::Env` sets it for
+    every test);
+  - probe with `seldon --json doctor` (the `config` check names the file).
+- **`init` runs the first capture now.** A test that builds machine state
+  after `init` and expects its own first capture to be the baseline must
+  pass `--no-capture` (the shared `Env::init_logbook*` does); otherwise new
+  files show up as `config-add` instead of the silent first state.
+- **`fixtures/logs/pacman.log` ends on 2026-10-01 17:04 +0200**, and
+  `init` stamps `created` with the real clock: on that day a test without
+  `--since` may or may not pick lines up. Use an empty log, or `--since`.
+- **A backfill is big.** Dev host, 7 days: 1230 pacman events, 22 items,
+  all crises; the baseline writes one resolution per member (ADR-0013 §4),
+  so 1230 more ledger lines. Correct, but the ledger doubles.
+- **`seldon … | head` panics** ("failed printing to stdout: Broken pipe"):
+  `println!` on a closed pipe, pre-existing and harmless. Redirect to a
+  file when only the start is needed.

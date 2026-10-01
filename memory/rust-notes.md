@@ -338,3 +338,44 @@ Append-only. One bullet per finding, newest section last.
   `match v.iter().enumerate().filter(..).collect::<Vec<_>>().as_slice()
   { [(i, a)] if … => …, [] => …, [_] => …, _ => … }` reads the
   "exactly once, as a whole element" rule in one expression.
+## 2026-10-01 · WP-024 (wizard steps, templates)
+
+- **One command calling another in-process** (`init` → `capture::run`,
+  `setup::baseline`): clone the `Context` and pin `logbook_flag` to the
+  logbook just created, or `--logbook`/`SELDON_LOGBOOK` would send the
+  capture elsewhere. Release your own flock first: a second
+  `lock::acquire` in the same process is a new open file description and
+  sees `WouldBlock` (exit 4).
+- **Bulk resolutions reuse WP-008:** iterate `Built::open_drift` (every
+  open member; `index.drift` is capped at 200, ADR-0020), oldest first,
+  `reconcile::select(built, id, false)` per event not yet covered, then
+  `reconcile::resolutions`; one `emit` for all lines.
+- **Files outside `src/` in the binary:** `include_str!(concat!(env!(
+  "CARGO_MANIFEST_DIR"), "/hooks/theme-set.sh"))`; a unit test pins the
+  shebang and the one command so a moved file fails loudly.
+- **Copying a tree:** `DirEntry::file_type()` does not follow symlinks, so
+  `is_file()`/`is_dir()` skip links for free; `std::fs::copy` keeps the
+  permission bits (an executable guard stays executable).
+- **clap `requires`/`conflicts_with`** turn flag combinations into parse
+  errors (exit 1, the flag names in the message) before anything is
+  written; cheaper than checking in `run`.
+- **dialoguer `Input::validate_with`** needs the closure typed:
+  `|s: &String| -> std::result::Result<(), String>`.
+- **Snapshot of a template skeleton:** frontmatter keys, `#` headings,
+  fence names and table header rows per file, the machine id normalised;
+  equal across languages and to `tests/golden/init-skeleton.txt`
+  (`SELDON_BLESS=1` rewrites). Prose may change without touching it.
+- **Environment as a function for testable setup:**
+  `Dirs::from_vars(|name| …)` lets a unit test feed `HOME`/`XDG_*`/
+  `SELDON_TEST_GUARD` without `std::env::set_var` (unsafe in edition 2024,
+  and racy across test threads); `from_env` passes `std::env::var_os`.
+- **Path containment checks:** `starts_with` on raw paths is fooled by `..`
+  and symbolic links. Fold `.`/`..` component by component and
+  `canonicalize` each prefix that exists (the tail may not exist yet), for
+  both the guard and the checked path.
+- **A rebuild after the commit, not before:** the index's `logbook.git`
+  (head, dirty) is taken at rebuild time. A command that commits must
+  rebuild after the commit, under the same lock, or the index shows the
+  old head and `dirty: true` until the next write. A negative control
+  needs a step that actually commits: with nothing to commit the stale and
+  the fresh index agree.

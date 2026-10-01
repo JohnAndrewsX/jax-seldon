@@ -18,6 +18,30 @@ use crate::sys;
 /// Environment variable that overrides the logbook path.
 pub const LOGBOOK_ENV: &str = "SELDON_LOGBOOK";
 
+/// Environment variable naming the directory every engine directory must
+/// lie under ([`Dirs::from_vars`]); set by tests and manual test runs.
+pub const TEST_GUARD_ENV: &str = "SELDON_TEST_GUARD";
+
+/// `path` made absolute, `.`/`..` folded, and symbolic links resolved as
+/// far as the path exists (the rest need not exist yet).
+fn resolved(path: &Path) -> PathBuf {
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut out = PathBuf::new();
+    for c in abs.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => out.push(c),
+        }
+        if let Ok(real) = std::fs::canonicalize(&out) {
+            out = real;
+        }
+    }
+    out
+}
+
 /// Default logbook directory name under `$HOME` (ADR-0010 option 1).
 pub const DEFAULT_LOGBOOK_DIR: &str = "Seldon";
 
@@ -33,21 +57,58 @@ pub struct Dirs {
 
 impl Dirs {
     pub fn from_env() -> anyhow::Result<Self> {
-        let home = std::env::var_os("HOME")
+        Self::from_vars(|name| std::env::var_os(name))
+    }
+
+    /// [`Dirs::from_env`] with the environment as a function (tests).
+    ///
+    /// With `SELDON_TEST_GUARD=<dir>` set, the resolved home, config and
+    /// state directories must all lie under `<dir>` (symbolic links and
+    /// `..` resolved), else this fails and every command exits 2 before it
+    /// reads or writes anything. Tests and the manual recipes in
+    /// docs/TESTING.md set it, so a run whose `HOME` or `XDG_*` override
+    /// got lost on the way (WP-024: through `script`) cannot touch the
+    /// real `~/.config/seldon` or `~/.local/state/seldon`.
+    pub fn from_vars(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> anyhow::Result<Self> {
+        let home = var("HOME")
             .filter(|h| !h.is_empty())
             .map(PathBuf::from)
             .ok_or_else(|| anyhow!("HOME is not set"))?;
-        let xdg = |var: &str, fallback: &str| {
-            std::env::var_os(var)
+        let xdg = |name: &str, fallback: &str| {
+            var(name)
                 .map(PathBuf::from)
                 .filter(|p| p.is_absolute())
                 .unwrap_or_else(|| home.join(fallback))
         };
-        Ok(Dirs {
+        let dirs = Dirs {
             xdg_config_home: xdg("XDG_CONFIG_HOME", ".config"),
             state_dir: xdg("XDG_STATE_HOME", ".local/state").join("seldon"),
             home,
-        })
+        };
+        if let Some(guard) = var(TEST_GUARD_ENV).filter(|g| !g.is_empty()) {
+            dirs.check_guard(Path::new(&guard))?;
+        }
+        Ok(dirs)
+    }
+
+    /// Fails unless home, config and state directories lie under `guard`.
+    fn check_guard(&self, guard: &Path) -> anyhow::Result<()> {
+        let guard = resolved(guard);
+        for (what, dir) in [
+            ("home", &self.home),
+            ("config", &self.xdg_config_home),
+            ("state", &self.state_dir),
+        ] {
+            let dir = resolved(dir);
+            if !dir.starts_with(&guard) {
+                return Err(anyhow!(
+                    "refusing to run outside the test guard: the {what} directory {} is not under {} ({TEST_GUARD_ENV})",
+                    dir.display(),
+                    guard.display()
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub fn config_dir(&self) -> PathBuf {
@@ -174,7 +235,7 @@ pub struct Config {
     pub language: Language,
     /// Paths the config collector hashes; `~` is expanded at use.
     pub watch_paths: Vec<String>,
-    /// Agent harnesses chosen in the wizard (`claude-code`).
+    /// Agent harnesses chosen in the wizard (`claude-code`, `omarchy-agent`).
     pub harnesses: Vec<String>,
     pub collectors: Collectors,
     pub git: GitConfig,
@@ -211,8 +272,10 @@ pub const DEFAULT_WATCH_PATHS: [&str; 5] = [
     "~/.zshrc",
 ];
 
-/// Harnesses the wizard can set up.
-pub const HARNESSES: [&str; 1] = ["claude-code"];
+/// Harnesses the wizard can set up: Claude Code's hooks
+/// (`.claude/settings.json`) and the Omarchy-Agent kit's guard and skills
+/// (copied into `.claude/` from a template directory, `commands::setup`).
+pub const HARNESSES: [&str; 2] = ["claude-code", "omarchy-agent"];
 
 /// Collectors on/off, all on by default (SPEC-ENGINE §9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -395,6 +458,61 @@ fn merge_unknown(new: &mut toml::Table, old: toml::Table) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Dirs::from_vars` over a fixed environment.
+    fn dirs_with(vars: &[(&str, &Path)]) -> anyhow::Result<Dirs> {
+        let vars: Vec<(String, std::ffi::OsString)> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.as_os_str().to_os_string()))
+            .collect();
+        Dirs::from_vars(|name| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone()))
+    }
+
+    #[test]
+    fn the_test_guard_checks_the_resolved_dirs() {
+        let tmp = std::env::temp_dir().join(format!("seldon-guard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let (guard, home, outside) = (tmp.join("guard"), tmp.join("guard/home"), tmp.join("out"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let refused = |r: anyhow::Result<Dirs>| {
+            let e = r.expect_err("outside the guard").to_string();
+            assert!(e.contains("refusing to run outside the test guard"), "{e}");
+        };
+
+        // without the variable nothing is checked
+        assert!(dirs_with(&[("HOME", &outside)]).is_ok());
+        // home under the guard; XDG dirs default under home
+        let d = dirs_with(&[("HOME", &home), (TEST_GUARD_ENV, &guard)]).unwrap();
+        assert_eq!(d.state_dir, home.join(".local/state/seldon"));
+        // the real-home case: HOME lost, XDG still redirected
+        refused(dirs_with(&[
+            ("HOME", &outside),
+            ("XDG_CONFIG_HOME", &guard.join("config")),
+            ("XDG_STATE_HOME", &guard.join("state")),
+            (TEST_GUARD_ENV, &guard),
+        ]));
+        // home inside, one XDG dir outside
+        refused(dirs_with(&[
+            ("HOME", &home),
+            ("XDG_STATE_HOME", &outside),
+            (TEST_GUARD_ENV, &guard),
+        ]));
+        // `..` and a symbolic link out of the guard are resolved, not trusted
+        refused(dirs_with(&[
+            ("HOME", &guard.join("home/../../out")),
+            (TEST_GUARD_ENV, &guard),
+        ]));
+        std::os::unix::fs::symlink(&outside, guard.join("escape")).unwrap();
+        refused(dirs_with(&[
+            ("HOME", &guard.join("escape")),
+            (TEST_GUARD_ENV, &guard),
+        ]));
+        // a guard given through a link still contains what lies under it
+        std::os::unix::fs::symlink(&guard, tmp.join("guard-link")).unwrap();
+        assert!(dirs_with(&[("HOME", &home), (TEST_GUARD_ENV, &tmp.join("guard-link"))]).is_ok());
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 
     fn dirs() -> Dirs {
         Dirs {

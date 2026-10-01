@@ -227,10 +227,12 @@ impl Cli {
     fn new() -> Self {
         let env = common::Env::new(common::Snapper::Missing);
         let logbook = env.tmp.path().join("logbook");
+        // no first capture: the test's own first capture is the baseline
         let out = env.seldon(&[
             "init",
             "--non-interactive",
             "--no-git",
+            "--no-capture",
             "--path",
             logbook.to_str().unwrap(),
         ]);

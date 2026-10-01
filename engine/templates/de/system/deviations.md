@@ -1,4 +1,4 @@
-# Abweichungen vom Omarchy-Standard
+# Deviations from Omarchy defaults
 
 Eigene Notizen gehören außerhalb der `seldon:begin`/`seldon:end`-Zäune; Seldon lässt sie stehen.
 
