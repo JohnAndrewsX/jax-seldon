@@ -79,8 +79,15 @@ for an absent tab is ignored), `←/→` and `h/l` move between tabs, `↑/↓`
 and `j/k` move in lists, `Esc` closes, `Tab`/`Shift-Tab` hand over to the
 neighbouring Omarchy panel (never cycle tabs, like every first-party
 panel). `n` focuses the QuickEntry from any tab, `e` opens the current
-tab's file in the editor, `c` captures (WP-012). While a text field has
-focus the panel blocks the key catcher; `Esc` hands the keys back. Width `Style.space(380)` (WP-011). Files: one component per tab,
+tab's file in the editor, `c` captures (WP-012). Work tab (WP-020): `+`
+opens the new-case sheet from any tab; Enter runs a card's first action,
+but writing actions (Start, Verify, Done) need Enter twice — the first
+press arms and shows a hint, any other key disarms; `x x` drops; a mouse
+click on Drop turns into "Confirm drop". The WIP text counts `active`
+cases against the bar-widget setting `wipLimit` (default 3; warns, never
+blocks). Completed shows the index's last 50 (scrollable). While a text
+field or the sheet has focus the panel blocks the key catcher; `Esc`
+hands the keys back and keeps the draft. Width `Style.space(380)` (WP-011). Files: one component per tab,
 `components/TodayTab.qml`, `ChangelogTab.qml`, `SystemTab.qml`, plus
 `EventRow.qml`, `Tabs.qml`, `Banner.qml`. The Changelog source filter has
 one chip per schema source (all nine, including `manual`, `agent`,

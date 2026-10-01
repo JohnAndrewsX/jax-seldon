@@ -157,6 +157,12 @@ as two subagents; both are allowed for this bounded fan-out.
   copying a script elsewhere, not by rephrasing the command. The guard's
   false positives are fixed in `scripts/guard.sh` (with a row in
   `scripts/guard-test.sh`), not bypassed.
+- Before driving a live shell with keys (`wtype`) or screenshots
+  (`grim`), a worker checks `omarchy-shell lock status` and stops when
+  `locked` or `secure` is true: keys typed into a lock screen are failed
+  unlock attempts (faillock). Restart the shell only on an unlocked
+  session, and only after the plugin reloads have settled (a restart
+  during the reload storm crashed Quickshell and left a stranded lock).
 - A worker in state `blocked` is inspected (`herdr agent read`). An
   ordinary question inside the worker's own task is answered from the WP
   brief; a question that needs a decision goes through §10; a permission

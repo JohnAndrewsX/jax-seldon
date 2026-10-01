@@ -48,8 +48,8 @@ seldon status --json
 seldon capture --all --json --quiet
 seldon log [--case <id>] --json -- <text>       # free text is one argument after `--`; --json before it
 seldon open <journal|ledger|status|caseId> --editor --json   # path reported as JSON; the engine launches the editor
-seldon plan new --zone <z> --risk <r> -- <title>
-seldon plan start|verify|done|drop <id>
+seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
+seldon plan start|verify|done|drop <id> --json   # id validated by the schema regex; the engine enforces the transition
 seldon drift link <eventId> <caseId> [--only]
 seldon drift explain <eventId> [--only] -- <text>
 seldon drift dismiss <eventId> [--only] -- <reason>   # same rule as explain: text after `--`
