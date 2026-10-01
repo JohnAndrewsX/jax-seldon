@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use serde::ser::SerializeMap as _;
 use serde::{Serialize, Serializer};
 
-use crate::model::event::{Event, Resolution, format_ts};
+use crate::model::event::{Event, format_ts};
 
 /// The whole index.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -154,12 +154,6 @@ impl Serialize for IndexEvent {
             m.serialize_entry("meta", &e.meta)?;
         }
         m.end()
-    }
-}
-
-impl IndexEvent {
-    pub fn resolution(&self) -> Option<Resolution> {
-        self.event.resolution
     }
 }
 
