@@ -35,7 +35,7 @@ fixing. The tooltip says what and when the engine last captured.
 | Tab | Shows |
 |---|---|
 | Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), the QuickEntry (below), today's journal entries, yesterday's behind one row; *Open in editor* (today's journal) |
-| Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; *Ledger* (this month's ledger in the editor); *Capture now* |
+| Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; *Ledger* (this month's ledger in the editor); *Capture now*; *Resolve…* on every unexplained change (the drift sheet, below) |
 | Work | your cases in three columns, Queued · Active (verification included) · Completed (the last 50, dropped ones struck through); the active cases against your limit ("2 / 3 active"); the card of the case under the cursor with its actions; *New case* |
 | System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine; a section appears only when the index has it; *Open in editor* (the logbook's `STATUS.md`) |
 
@@ -98,16 +98,41 @@ urgent, yellow = accent, green = muted): while the event is open drift, the
 zone of its drift item (a routine upgrade group is yellow), otherwise the
 event's own zone. It paints the stripe on the left and, for open drift, the
 glyph, the status line and the "+N" badge. Snapshot rows
-are highlighted. An explained, dismissed or linked event shows its
-resolution and the reason given. Open drift says *Unexplained* or, in the
-red zone, *Needs a reason*, with the proposed case when there is one. A
-package transaction that is open drift as one group shows "+N" (N more
-packages besides the one shown) on its
-leader; Enter or a click lists the members.
+are highlighted. A resolved event shows how and why: `linked to C-…`,
+`explained · C-…: <why>` (the case `explain` created), `dismissed:
+<reason>`. Open drift says *Unexplained* or, in the red zone, *Needs a
+reason*, with the proposed case when there is one, and has a *Resolve…*
+button. A package transaction that is open drift as one group shows "+N"
+(N more packages besides the one shown) on its leader. When the index
+lists only the newest 200 unexplained changes and you have more, a line
+above the list says "+N more open drift items not listed here".
+
+**Resolve drift** (Enter on an unexplained row, its *Resolve…* button, or
+a click on the red strip, which picks the first red-zone change). The
+sheet shows the change: what, who, when, its zone, the proposed case, and
+for a package transaction every package in it. Three ways to resolve it:
+
+| Action | Runs | Afterwards |
+|---|---|---|
+| *Link* | `seldon drift link <id> <case>`; the case picker starts on the proposed case, otherwise on "Pick a case"; open cases only | the row says `linked to C-…` |
+| *Explain* | `seldon drift explain <id> [--zone] [--risk] [--area] -- <why>`; the zone starts at the change's zone, the risk at R1, the area is optional | the engine creates a completed case for it; the row says `explained · C-…`, the case shows in Work, *Open C-…* opens it |
+| *Dismiss* | `seldon drift dismiss <id> -- <reason>` | the row says `dismissed: <reason>` |
+
+A package transaction resolves as one (*All N*); *Only <package>* resolves
+just the row you opened the sheet from (`--only`) and leaves the others as
+a smaller group. Press Enter twice to send (the first press shows "Press
+Enter again: Link firefox and 2 more to C-2026-004"), or click the button
+once; changing anything in the form takes the first press back. Your text
+stays until the engine has resolved the change, so a refusal loses
+nothing, and Esc closes the sheet and keeps what you typed for that
+change. The resolved rows, the pill and the red strip update when the
+engine rewrites the index. If your logbook resolved the change already
+(say, in a terminal), the sheet says "Already resolved: …" and nothing is
+written.
 
 Above every tab: the status banner (below), the snapper banner when
 snapshots cannot be read, and a red strip "N changes in the red zone need a
-reason" (a click opens the Changelog).
+reason" (a click opens the drift sheet for the first of them).
 
 | Key | Does |
 |---|---|
@@ -115,7 +140,7 @@ reason" (a click opens the Changelog).
 | ← / →, h / l | previous / next tab |
 | 1–6 | a tab by its fixed number: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 (a tab this version does not have yet: nothing happens) |
 | ↑ / ↓, k / j | move in the list; on Work, through the cases column by column |
-| Enter, Space | open the row (a group's members, the full text, yesterday's entries); on Work, the card's first action: *Open* at once, *Start*, *Verify* or *Done* on the second press |
+| Enter, Space | open the row (the full text, yesterday's entries); on an unexplained Changelog row, the drift sheet; on Work, the card's first action: *Open* at once, *Start*, *Verify* or *Done* on the second press |
 | x | Work: drop the case under the cursor, on the second press |
 | f / F | Changelog: next / previous source filter |
 | c | capture now |
@@ -133,7 +158,11 @@ it: Enter saves, Tab moves between field and picker (↓ opens the picker),
 Esc gives the keys back to the panel. The same holds for the new-case
 sheet: Tab walks title, zone, risk, priority, area, *Create*, *Cancel*; in
 a picker ←/→ (h/l) move and Enter or Space picks; Enter in a text field
-creates the case.
+creates the case. And for the drift sheet: Tab walks the action (Link,
+Explain, Dismiss), then the case picker and *All / Only* (Link), the text,
+zone, risk and area (Explain) or the reason (Dismiss), then the action
+button, *Cancel* and *Open C-…*; Enter in a text field or on the action
+button arms, the second Enter sends.
 
 ## States
 
@@ -158,9 +187,10 @@ again* (or `jax.seldon.service refresh`), not on every capture interval.
 | `omarchy-shell shell toggle jax.seldon` | the Prime Radiant overlay (also `summon`, `hide`) |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
-| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, QuickEntry, the Work columns, card and sheet, last action results), as JSON |
+| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, pill, QuickEntry, the Work columns, card and sheet, the drift sheet, last action results), as JSON |
 | `omarchy-shell jax.seldon.panel tab today\|changelog\|work\|system` | show a tab |
 | `omarchy-shell jax.seldon.panel filter all\|<source>` | set the Changelog source filter |
+| `omarchy-shell jax.seldon.panel resolve crisis\|<event id>` | open the drift sheet (the red strip's first crisis, or that event); sends nothing |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
 | `omarchy-shell jax.seldon.service refresh` | look for the engine again and re-read the index |
 | `omarchy-shell jax.seldon.service capture` | capture now |
@@ -190,8 +220,9 @@ Setup > Plugins > Seldon:
   never evaluated.
 - Runs the `seldon` engine only with fixed argument lists from the
   contract; ids are checked against their patterns first (a case id from
-  the index included), free text (a QuickEntry note, a case title) is one
-  non-empty argument after `--`. Never builds a shell command from logbook
+  the index included, and event ids), free text (a QuickEntry note, a case
+  title, a drift explanation or reason) is one non-empty argument after
+  `--`. Never builds a shell command from logbook
   content. Writing to the logbook happens only
   through the engine, on your Enter or click.
 - Opens a terminal or touches the clipboard only when you click a banner

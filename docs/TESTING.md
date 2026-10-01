@@ -184,7 +184,22 @@ tone at and over the limit; `caseActions` gives each status its actions;
 blank title, a bad zone, risk, priority or area slug, a malformed id and
 any other step; `validateArgs` accepts `--area` and `--priority` only in
 that order; `planResult` reads both `plan --json` shapes and the engine's
-refusal.
+refusal. For the drift sheet (WP-021): `driftItemFor` finds the four
+sample items (the theme item with its proposed C-2026-005, the two
+crises, the firefox group with 3 members oldest first) and a group
+member's item named by that member, and nothing for resolved events;
+`caseOptionsFor` puts the proposed case first, else "Pick a case";
+`driftArgs` builds `drift link <id> <case> [--only] --json`, `drift
+explain <id> [--only] [--zone] [--risk] [--area] --json -- <text>` (zone
+only when it differs from the item's, risk only when not R1) and `drift
+dismiss <id> [--only] --json -- <text>`, and refuses a malformed id or
+case, no case, blank or two-line text, a bad zone or slug and any other
+action; `validateArgs` accepts explain's options only in that order;
+`driftResult` reads the resolving shape, the no-op (`resolved: 0`,
+`already` → "Already resolved: linked to C-…") and refusals;
+`driftShowResult`, `memberLines` ("… and N more"), `rowStatus` with
+`explained · C-…` (ADR-0021), `firstCrisis` and `moreDriftText` ("+N
+more", ADR-0020).
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -237,6 +252,27 @@ refused with the engine's message as `planResult`, `lastError` empty; five
 refusals in the plugin that never reach the engine; a held lock (exit 4);
 dev mode.
 
+The drift sheet's calls (WP-021) use `["drift", action, form]` and
+`["driftShow", eventId]`. The fake engine's `drift link|explain|dismiss`
+works on the same state index with the engine's checks and messages (a
+link's case first, then the event), selects a group's open members or,
+with `--only`, the named event, folds the resolution (`resolution`,
+`resolutionDetail`, `case`, also for explain per ADR-0021), drops the item
+or re-keys the rest of a group to a new leader, recounts the summary,
+creates explain's completed case, and answers a re-run with the engine's
+no-op (`resolved: 0`, `already`); `$HOME/resolved` stands for a logbook the
+index has not caught up with. `drift show` lists the open members plus
+those in `$HOME/extra-events.json`. Checked: the exact argv of `drift
+show`, a link with the proposed case, an explain with the text `--help`
+(zone as the item's, so no `--zone`), a dismiss of a group member with
+`--only` and the text `say "hi"; $(reboot)`, an explain of the rest of
+that group with zone, risk and area, the re-run, and a link to an unknown
+case (the engine's refusal is `driftResult`, `lastError` stays empty); the
+fake engine's index afterwards (five folded events, one item left,
+summary 1/1, the two new cases); the no-op alone ("Already resolved:
+linked to C-2026-005"); eight refusals that never reach the engine; a held
+lock; dev mode.
+
 Isolation: the scenarios run with a `PATH` made of symlinks to the few
 tools the fakes need, so a `seldon` installed system-wide never leaks in.
 Every run, here and in layer 3, gets its own `HOME`, `XDG_STATE_HOME` and
@@ -275,8 +311,8 @@ opens it and runs `HARNESS_STEPS`: real key presses through the shell's own
 step it prints `Panel.view()` and every visible text.
 
 Checks: with the sample every tab renders (Today: 4 entries, yesterday
-collapsed and opened with Enter; Changelog: 62 rows, the "+2" group expanded
-to its members, 7 folded resolution details, 6 highlighted snapshot rows,
+collapsed and opened with Enter; Changelog: 62 rows, Enter on the "+2"
+group opens its drift sheet with the three members, 7 folded resolution details, 6 highlighted snapshot rows,
 the pacman filter narrows to 12, `f` cycles; System: seven sections), the
 strip "2 changes in the red zone need a reason" on every tab, the keys
 (Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs, digits fixed per tab id (1, 2, 3, 5; 4 is absent and ignored), ↑/↓, Enter, Esc), the snapper banner on every
@@ -311,12 +347,45 @@ opens it; the exact argv of all of it. Locked: the engine refuses the new
 case (exit 4), the sheet shows the message and keeps the title, Esc and
 `+` bring it back intact.
 
+The drift sheet (WP-021) has seven scenarios. On the sample (dev mode):
+Enter on the theme row and `resolve:<id>` for the other three items open
+the sheet with Link and C-2026-005 preselected for the theme item, Explain
+with the item's zone for the two crises and the group, the group's three
+members and "All 3 / Only firefox", a member row naming its own package,
+and a click on the red strip opening the first crisis with the cursor on
+its row; nothing can be sent. Capped: `summary.openDrift` 250 shows "+246
+more open drift items not listed here". Live, with real keys: Enter,
+Enter, Enter links the theme item to C-2026-005 (hint "Press Enter again:
+Link tokyo-night to C-2026-005", then `linked to C-2026-005` folded, pill
+`⟡ 2 · 3`); a click on the strip opens the first crisis, which is
+explained with the text `--help`, risk R2 (the change disarms) and area
+`dev-env`; the strip drops to "1 change …", *Open C-2026-009* opens the
+new case and Work lists it as completed; the firefox group is dismissed
+as one (three rows `dismissed: routine update`, no badge, pill `⟡ 2 ·
+1`); the exact argv. `--only`: Link without a case is refused in the
+plugin, C-2026-004 is picked in the case picker by keys, *Only firefox*
+links the leader alone and the rest returns as "noto-fonts +1" with two
+members. Already: an item `$HOME/resolved` lists shows "Already resolved:
+linked to C-2026-005" and nothing changes. Locked: the refusal keeps the
+text, Esc and reopening bring the draft back, another item gets its own
+defaults. Members: with one member missing from `index.events`, the sheet
+shows "… and 1 more", asks `seldon drift show` and lists all three.
+
 The step format is documented in the header of
 `tests/plugin/harness/panel.qml`, e.g.
 `HARNESS_STEPS="view;tab:changelog;key:Down*5;key:Return"`, plus
-`type:<text>`, `settle` (no engine call queued or running) and
-`wait:<view path>=<value>`; a new scenario is one `run` line plus its
-`expect`/`shows` checks in `panel-view.sh`.
+`type:<text>`, `settle` (no engine call queued or running),
+`wait:<view path>=<value>`, `resolve:<event id|crisis>`, `click:<text>`
+(the centre of the first visible item with that text) and `shot:<name>`
+(saves the window to `$HARNESS_SHOTS/<name>.png`); a new scenario is one
+`run` line plus its `expect`/`shows` checks in `panel-view.sh`.
+
+Offscreen theme renders: copy a theme's `colors.toml` from
+`$OMARCHY_PATH/themes/<theme>/` to
+`<harness HOME>/.local/state/omarchy/current/theme/colors.toml` and add
+`shot:` steps; the harness paints the theme's background under the panel.
+They show the real components in the theme's colours, not the live
+layer-shell window; the live sweep below stays the acceptance check.
 
 ### 4. Runtime smoke test in the shell
 
@@ -372,8 +441,9 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    omarchy-shell jax.seldon.service status   # status, pill, banner, crisis, snapper, engine, lastError
    omarchy-shell jax.seldon.panel pill       # what the WidgetButton shows
    omarchy-shell jax.seldon.panel open
-   omarchy-shell jax.seldon.panel tab changelog       # today | changelog | system
+   omarchy-shell jax.seldon.panel tab changelog       # today | changelog | work | system
    omarchy-shell jax.seldon.panel filter all          # or a source
+   omarchy-shell jax.seldon.panel resolve crisis      # or an event id: the drift sheet
    omarchy-shell jax.seldon.panel view       # tab, cursor, rows, badges, banners, strip
    omarchy-shell shell toggle jax.seldon     # Prime Radiant
    ```
@@ -403,6 +473,23 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    of start, verify and done: the file moves to `work/active/`, stays there
    for verification, and moves to `work/completed/`; `work.columns` follows
    each step without a restart.
+   Drift sheet (WP-021) needs open drift, which a fresh logbook does not
+   have: after `seldon init`, copy the fixture logbook over it (`rsync -a
+   fixtures/logbook/ test:Seldon-smoke/`, no `--delete`, so init's
+   `.seldon/templates` stay), set `created` in its `.seldon/logbook.toml`
+   to now (so the start-up capture baselines instead of importing the
+   host's history) and run `seldon status --json`; the panel then shows the
+   sample's four items. `jax.seldon.panel resolve <event id>` (or
+   `crisis`) opens the sheet without keys; `view` shows `drift` (action,
+   case, members, hint, result). With keys: Enter twice on the action
+   button, `wtype -- "<text>"` in a text field. Check the ledger lines
+   (`resolution`, `refersTo`, `meta.txId` on a group), the explain case in
+   `work/completed/`, and that `changelog.resolved`, `pill` and `crisis`
+   follow. While the screen is locked the running shell keeps its old
+   plugin code (`omarchy-restart-shell` refuses), so run the plugin's argv
+   with the real engine over ssh and read the folded rows through `view`;
+   the new sheet itself can then only be driven in a private offscreen
+   instance (layer 3's harness with the real engine on `PATH`).
 6. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
    the test host's output is scaled 1.25, so a region read off a full
    screenshot (physical pixels) must be divided by the scale. Over ssh also
@@ -441,8 +528,11 @@ changes what the panel draws repeats it:
    Night*, *Catppuccin Latte* (`omarchy theme list`):
    `omarchy theme set "<theme>"`, wait about 6 s (the shell restarts), open
    the panel and capture Today, Changelog, System and the Changelog filtered
-   to pacman with the cursor on the "+2" row and Enter pressed; since
-   WP-020 also Work (the columns and a card) and its new-case sheet.
+   to pacman with the cursor on the "+2" row and Enter pressed (since
+   WP-021 that opens the drift sheet); since WP-020 also Work (the columns
+   and a card) and its new-case sheet; since WP-021 the drift sheet in
+   Link (theme item), Explain (a crisis, from the red strip) and Dismiss
+   (the group, with "Press Enter again: …" armed).
 3. Look for: every colour follows the theme — panel border, tab and chip
    fills, the zone stripes (red = the theme's urgent colour, yellow = its
    accent), the red strip, banners, the snapshot row highlight; dim text
