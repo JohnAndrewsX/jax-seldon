@@ -18,6 +18,64 @@ Other recipes: `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine
 builds an index).
 
+## Engine tests
+
+Run them all with `just test`, or directly:
+
+```
+cargo test --manifest-path engine/Cargo.toml --locked            # everything
+cargo test --manifest-path engine/Cargo.toml round_trip::         # frontmatter vs fixtures/logbook
+cargo test --manifest-path engine/Cargo.toml --test init          # `seldon init`
+cargo test --manifest-path engine/Cargo.toml --test doctor        # `seldon doctor`
+```
+
+| Where | What |
+|---|---|
+| `engine/src/**` (`#[cfg(test)]`) | unit tests: frontmatter parser and writer, models, config precedence, lock, templates, subprocess runner |
+| `engine/tests/cli.rs` | `--version`, `contract-version`, parse errors (exit 1, JSON error shape, `--json` detection), `--help` |
+| `engine/tests/frontmatter.rs` | `round_trip::` every case, journal, decision, area, memory file and `PROJECT.md` of `fixtures/logbook/` parses into its typed record and re-serialises byte-identical; a lossless update changes only the edited lines |
+| `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, no terminal), lock held → exit 4 |
+| `engine/tests/doctor.rs` | `doctor::` green after init with snapper degraded, exit 3 when not initialised, invalid frontmatter, misplaced case, the fixture logbook (and that doctor leaves it untouched) |
+
+**Isolation.** The integration tests never see the real home, config,
+state or logbook (AGENTS.md §6). `engine/tests/common/mod.rs` gives each
+test a temporary `HOME` (so `~/.config/seldon` and `~/.local/state/seldon`
+live under it), and a `PATH` that contains only:
+- stub `omarchy-version` and `snapper` scripts (the snapper stub prints
+  `No permissions.`, a snapshot list, or is absent, per test);
+- a link to the host's `git`.
+
+So the results do not depend on what the host has installed or how snapper
+is configured. Tests that need git skip themselves when the host has none.
+`fixtures/logbook/` is read-only input.
+
+**Monorepo layout.** Some tests read files outside the crate, so they only
+compile and pass in a checkout of the whole repository, not from the
+`engine/` directory alone (for example a crate tarball or an AUR source
+that ships only the engine):
+- `cli.rs::contract_version_matches_plugin_manifest` embeds
+  `plugin/manifest.json` with `include_str!`;
+- `frontmatter.rs` and `doctor.rs` read `fixtures/logbook/`.
+
+The packaging WP (WP-040) has to either ship those directories or build
+with `cargo build` only (no tests).
+
+**Manual acceptance (WP-003).** To try `init` and `doctor` against the real
+`snapper`/`omarchy-version` without writing the operator's
+`~/.config/seldon`, redirect the XDG dirs:
+
+```
+export XDG_CONFIG_HOME=$(mktemp -d) XDG_STATE_HOME=$(mktemp -d)
+engine/target/debug/seldon init --non-interactive --path /tmp/seldon-wp003
+engine/target/debug/seldon doctor --path /tmp/seldon-wp003 --json   # "ok": true, snapper "degraded"
+```
+
+`seldon init` refuses an existing logbook, so remove `/tmp/seldon-wp003`
+before running it again.
+
+The engine needs Rust ≥ 1.89 (`File::try_lock`, let-chains); both hosts
+have 1.98.
+
 ## What CI cannot run, and where it runs instead
 
 CI (`.github/workflows/ci.yml`) runs `just check` in an `archlinux:base-devel`
