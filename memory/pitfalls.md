@@ -90,3 +90,30 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Scripted edits and `cargo fmt` make the editor's file state stale.**
   After a python/sed edit or `cargo fmt`, Read the file again before using
   the Edit tool.
+
+## 2026-10-01 · WP-004 (Engine)
+
+- **The guard blocks the package-manager word even inside code comments and
+  memory text in a heredoc or `python3 -` edit.** Edits to the package-log
+  collector, its tests, or notes about it need the Edit/Write tools, or a
+  script file written with Write. Env names like `SELDON_PACMAN_LOG` pass.
+  The lowercase word between spaces does not.
+- **Count fixture events; do not trust memory.** The fixture ledger has
+  **12** package-log lines (source `pacman`), not 13. Count them in the file
+  before you write an expected number.
+- **Capture-time events need the fixture's `now`.** The omarchy `update` and
+  `snapshot-delete` events carry capture time. Run the collector at the `ts`
+  the fixture gives them. The golden comparison then needs no ts
+  normalisation.
+- **The ADR-0014 10-minute window alone cannot produce the fixture.** The
+  10-01 `omarchy update` event (09:21:00) is 10:58 after the hook command. It
+  inherits from the package upgrade of `omarchy` to the same version instead.
+- **A Claude Code PostToolUse hook fires after the command has finished.**
+  The hook event's `ts` then lies *after* the package lines it caused. The
+  ADR-0014 rule ("the command precedes") would then never match. The fixture
+  has the command first. WP-009 must record the start time, or the ADR needs
+  an amendment.
+- **Running `seldon capture` against the real host needs redirected XDG dirs
+  and a throw-away logbook.** Otherwise it writes
+  `~/.local/state/seldon/cursors.json`. Reading the system log, `snapper` and
+  `omarchy-version` is fine (read-only).

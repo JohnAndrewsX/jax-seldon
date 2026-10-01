@@ -74,3 +74,54 @@ Append-only. One bullet per finding, newest section last.
 - **Driving the wizard without a terminal:**
   `(sleep 1; printf '\r'; …) | script -qec "seldon init" /dev/null`.
   `script` provides the pty that dialoguer needs. Arrow down is `\033[B`.
+
+## 2026-10-01 · WP-004 (collectors core)
+
+**Layout and conventions**
+- **Events reach the logbook only through the ledger.** Build an event with
+  `Event::new(ts, source, kind, subject)` and the builder methods, then call
+  `Ledger::append(&lock, events)`. `append`:
+  - assigns ULIDs, monotonic within one call (an id you set is overwritten);
+  - redacts `detail` and `meta.command`;
+  - validates each event, and writes nothing if one is invalid;
+  - appends to the month file of `ts`, in the event's own offset.
+
+  See `work/active/WP-004/FOUNDATION.md`.
+- **Collectors never write.** `Collector::collect(ctx, cursor)` returns an
+  `Outcome`. `capture` appends first and saves `cursors.json` after, so a
+  failed write never moves a cursor. A collector without a cursor takes a
+  baseline at `Ctx::baseline`: the logbook's `created`, or `--since`.
+- **Host paths and programs are in `collectors::Sources`.** They are read once
+  from `SELDON_PACMAN_LOG`, `SELDON_PACMAN_DB_LOCK`, `SELDON_SNAPPER`,
+  `SELDON_OMARCHY_VERSION` and `SELDON_PACMAN`. Tests and acceptance runs
+  point them at fixtures.
+- **Time zones are injected.** Naive local times (snapper `date`, old log
+  lines) go through `collectors::Tz`. Tests use `Tz::Fixed(+02:00)`. The CLI
+  test sets `TZ=Europe/Berlin` on the child process, and chrono's `Local`
+  honours it.
+- **The test bench is `engine/tests/support/`**, separate from WP-003's
+  `common/`. It runs collectors in-process at a chosen `now`, with stub
+  programs in a scratch `bin/`. `SELDON_BLESS=1 cargo test` rewrites
+  `tests/golden/`.
+- **Superseded:** the "random suffix without the rand crate" note above.
+  `sys::random_hex` now takes ULID randomness, and `rand` arrives with `ulid`.
+
+**Crate behaviour**
+- **ulid 3:**
+  - The constructor is `Ulid::generate()`; `Ulid::new` does not exist in 3.x.
+  - `Generator::generate()` is monotonic.
+  - `Ulid::nil()` passes a pattern check (`000…`), so test `is_nil()` explicitly.
+  - The `serde` feature serialises a ULID as the 26-character string.
+- **serde_json without `preserve_order` sorts `Value` maps.** To keep the
+  ledger's key order, `meta` is a typed struct: the conventional keys in
+  fixture order, plus `#[serde(flatten)] extra: BTreeMap`. All 67 fixture
+  lines round-trip byte for byte.
+- **`regex` has no look-around.** To keep a delimiter, capture it and use a
+  replacement template (`${1}‹redacted›${2}`). A "keep prefix" flag silently
+  ate the `@` of `https://user:pw@host`.
+- **jsonschema 0.58 with `default-features = false`** works offline:
+  `jsonschema::options().should_validate_formats(true).build(&schema)`, then
+  `iter_errors(&v)`. It is a dev-dependency only (about 40 transitive crates).
+- **`DateTime<FixedOffset>` equality compares instants.** Dedupe keys use
+  `ts.timestamp()`. `to_rfc3339_opts(AutoSi, false)` keeps `+00:00` (no `Z`)
+  and prints no fraction for whole seconds.
