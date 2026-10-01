@@ -11,8 +11,11 @@ import "../Model.js" as Model
 //   ▌        detail · actor · case
 //   ▌        resolution: why        (folded, ADR-0012 §8 §11)
 //
-// The stripe on the left is the event's zone in theme colours (red = urgent,
-// yellow = accent, green = muted). Snapshot rows carry the theme's selected
+// The stripe on the left is the event's own zone in theme colours (red =
+// urgent, yellow = accent, green = muted). Open drift colours the glyph and
+// the status line by the drift item instead: urgent for a crisis, else
+// accent, so the members of a yellow group (ADR-0013 §3: red in the ledger,
+// yellow as an item) do not read as crises. Snapshot rows carry the theme's selected
 // fill. A drift group's leader shows "+N"; expanded, it lists the members
 // that index.events still holds. Every string is plain text.
 CursorSurface {
@@ -69,7 +72,7 @@ CursorSurface {
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: root.row ? root.row.glyph : ""
-        color: root.row && root.row.drift ? root.toneColor : root.foreground
+        color: root.row && root.row.drift ? root.statusColor : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
       }
@@ -109,8 +112,8 @@ CursorSurface {
         implicitWidth: badgeText.implicitWidth + Style.spacing.md * 2
         implicitHeight: badgeText.implicitHeight + Style.spacing.xxs * 2
         radius: Style.cornerRadius
-        color: Style.selectedFillFor(root.toneColor, root.toneColor)
-        borderSpec: Border.controlSpec("normal", root.toneColor, root.toneColor)
+        color: Style.selectedFillFor(root.statusColor, root.statusColor)
+        borderSpec: Border.controlSpec("normal", root.statusColor, root.statusColor)
 
         Text {
           id: badgeText

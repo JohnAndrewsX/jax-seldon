@@ -46,7 +46,10 @@ Item {
 
   function activate() {
     var row = root.rows[root.cursor]
-    if (row) root.expandedId = root.expandedId === row.id ? "" : row.id
+    if (!row) return
+    root.expandedId = root.expandedId === row.id ? "" : row.id
+    // The row grew or shrank; keep all of it in view.
+    Qt.callLater(list.keepCurrentVisible)
   }
 
   function setFilter(id) {

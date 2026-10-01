@@ -56,26 +56,16 @@ Item {
 
   onRowsChanged: if (root.cursor >= root.rows.length) root.cursor = Math.max(0, root.rows.length - 1)
 
-  ListView {
-    id: list
+  // The heading sits outside the list: a ListView header scrolls away when
+  // the model is replaced (a new index), which hid it on the test host.
+  Column {
     anchors.fill: parent
-    clip: true
-    spacing: Style.spacing.sm
-    boundsBehavior: Flickable.StopAtBounds
-    interactive: contentHeight > height
-    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+    spacing: Style.spacing.lg
 
-    model: root.rows
-    currentIndex: root.cursorActive ? root.cursor : -1
-    onCurrentIndexChanged: if (currentIndex >= 0) Qt.callLater(keepCurrentVisible)
-    function keepCurrentVisible() {
-      if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
-    }
-
-    header: Column {
-      width: ListView.view.width
+    Column {
+      id: head
+      width: parent.width
       spacing: Style.spacing.lg
-      bottomPadding: Style.spacing.lg
 
       Item {
         width: parent.width
@@ -151,59 +141,77 @@ Item {
       }
     }
 
-    delegate: CursorSurface {
-      id: rowItem
+    ListView {
+      id: list
+      width: parent.width
+      height: Math.max(0, parent.height - head.height - parent.spacing)
+      clip: true
+      spacing: Style.spacing.sm
+      boundsBehavior: Flickable.StopAtBounds
+      interactive: contentHeight > height
+      ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-      required property var modelData
-      required property int index
-
-      width: ListView.view.width
-      implicitHeight: rowColumn.implicitHeight + Style.spacing.md * 2
-      hasCursor: root.cursorActive && index === root.cursor
-      foreground: root.foreground
-      accent: root.accent
-
-      Column {
-        id: rowColumn
-        x: Style.spacing.lg
-        y: Style.spacing.md
-        width: parent.width - Style.spacing.lg * 2
-        spacing: Style.spacing.xxs
-
-        Text {
-          width: parent.width
-          visible: rowItem.modelData.type === "entry"
-          textFormat: Text.PlainText
-          text: rowItem.modelData.type === "entry" ? Model.entryMeta(rowItem.modelData.entry) : ""
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: rowItem.modelData.type === "entry" ? rowItem.modelData.entry.text
-            : rowItem.modelData.type === "toggle"
-              ? (root.yesterdayOpen ? "▾ " : "▸ ") + "Yesterday · " + Model.plural(root.view.yesterday.length, "entry", "entries")
-              : root.indexData ? "Nothing in today's journal yet." : "No index to show"
-          color: rowItem.modelData.type === "entry" ? root.foreground : root.dim
-          wrapMode: Text.Wrap
-          font.family: root.fontFamily
-          font.pixelSize: rowItem.modelData.type === "entry" ? Style.font.body : Style.font.bodySmall
-        }
+      model: root.rows
+      currentIndex: root.cursorActive ? root.cursor : -1
+      onCurrentIndexChanged: if (currentIndex >= 0) Qt.callLater(keepCurrentVisible)
+      function keepCurrentVisible() {
+        if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
       }
 
-      MouseArea {
-        anchors.fill: parent
-        hoverEnabled: true
-        onEntered: {
-          root.cursor = rowItem.index
-          root.cursorWanted()
+      delegate: CursorSurface {
+        id: rowItem
+
+        required property var modelData
+        required property int index
+
+        width: ListView.view.width
+        implicitHeight: rowColumn.implicitHeight + Style.spacing.md * 2
+        hasCursor: root.cursorActive && index === root.cursor
+        foreground: root.foreground
+        accent: root.accent
+
+        Column {
+          id: rowColumn
+          x: Style.spacing.lg
+          y: Style.spacing.md
+          width: parent.width - Style.spacing.lg * 2
+          spacing: Style.spacing.xxs
+
+          Text {
+            width: parent.width
+            visible: rowItem.modelData.type === "entry"
+            textFormat: Text.PlainText
+            text: rowItem.modelData.type === "entry" ? Model.entryMeta(rowItem.modelData.entry) : ""
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: rowItem.modelData.type === "entry" ? rowItem.modelData.entry.text
+              : rowItem.modelData.type === "toggle"
+                ? (root.yesterdayOpen ? "▾ " : "▸ ") + "Yesterday · " + Model.plural(root.view.yesterday.length, "entry", "entries")
+                : root.indexData ? "Nothing in today's journal yet." : "No index to show"
+            color: rowItem.modelData.type === "entry" ? root.foreground : root.dim
+            wrapMode: Text.Wrap
+            font.family: root.fontFamily
+            font.pixelSize: rowItem.modelData.type === "entry" ? Style.font.body : Style.font.bodySmall
+          }
         }
-        onClicked: {
-          root.cursor = rowItem.index
-          root.activate()
+
+        MouseArea {
+          anchors.fill: parent
+          hoverEnabled: true
+          onEntered: {
+            root.cursor = rowItem.index
+            root.cursorWanted()
+          }
+          onClicked: {
+            root.cursor = rowItem.index
+            root.activate()
+          }
         }
       }
     }
