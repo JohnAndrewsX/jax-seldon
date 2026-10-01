@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test schema-validate plugin-validate qmllint
+check: fmt-check clippy test schema-validate plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -92,7 +92,24 @@ qmllint:
     files=(plugin/*.qml plugin/components/*.qml)
     "$lint" --max-warnings 0 --missing-property info --uncreatable-type info \
       -I "$root" -I "$shell_dir" "${files[@]}"
+    # The demoted missing-property makes qmllint blind to token typos
+    # (Style.font.bodySmal); check every Style/Color/Border/Util reference
+    # against the shell's Commons singletons instead.
+    python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
+
+# Plugin logic: Model.js under node, Service.qml states in a private headless Quickshell (host only).
+plugin-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -n "{{ skip_host }}" ]]; then
+      echo "plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set; needs node, quickshell and jq)"
+      exit 0
+    fi
+    command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
+    node tests/plugin/model.test.js
+    bash tests/plugin/service-states.sh
+    echo "plugin-test: ok"
 
 # Static release binary (needs `rustup target add x86_64-unknown-linux-musl`).
 build-release:
