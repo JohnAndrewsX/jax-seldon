@@ -391,3 +391,35 @@ Verified in the shell source and live on the test host.
   `open --editor` end to end without a window on the seat; the recorder
   receives the detached launcher's argv because the engine's child
   inherits the harness environment.
+
+## WP-030 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **The overlay item lives only while open.** `shell.hide(id)` calls
+  `close()` and then drops the id from `openPanelIds`, which deactivates
+  the async Loader: the Overlay.qml instance is destroyed on every hide and
+  created anew on the next summon/toggle (unless the manifest sets
+  `keepLoaded`). State that must survive a close (the period) or work
+  that should not run on open (aggregation) belongs in the service, which
+  stays loaded; the overlay binds to it.
+- **`shell call <id> <method> <arg>` stringifies the result** (`String(result)`,
+  `undefined`/`null` → `"ok"`): return JSON text from a read-out method, not
+  an object (`[object Object]`). It answers `unknown` while the overlay is
+  not loaded or has no such method. A side-effect-free load probe does not
+  exist; `call <id> close ""` answers `ok` when loaded but also closes it.
+- **`PanelWindow` cannot be swapped like `KeyboardPanel`:** it comes from the
+  `Quickshell` module, not from `qs.Ui`. Wrap it in a plugin file of its
+  own (`components/overlay/OverlayWindow.qml`) and let the harness run a
+  copy of `plugin/` with that one file replaced by a plain Item that fills
+  the harness window; the overlay's geometry is then that of a window of
+  the harness size.
+- **Locked test host:** `shell toggle jax.seldon` and `hide` over IPC work
+  while `secure: true` (the overlay loads, `call … close` reaches it, `hide`
+  unloads it) and log nothing; whether the surface would show above the
+  lock is untested (no screenshots while locked).
+- **`Style.space(n)` scales with the font size** (`effectiveSpacingScale` =
+  `spacingScale × fontBaseSize/12`), so minimum slot sizes given in
+  `Style.space` grow with a large font; a fixed-size layout needs a scroll
+  fallback rather than a hard minimum.
+- **qs.Ui `ButtonGroup` with `focusable: false`** works as a mouse-only
+  selector next to a key catcher: a chip click emits `changed(value)`
+  without taking keyboard focus, and a binding on `value` survives.

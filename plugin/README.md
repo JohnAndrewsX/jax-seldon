@@ -6,8 +6,9 @@ what the Seldon engine has recorded: active cases, unexplained changes
 `${XDG_STATE_HOME:-~/.local/state}/seldon/index.json`, which the engine
 writes.
 
-> Phase 2. The panel has all six tabs: Today, Changelog, Work, Decisions,
-> System and Memory; the Prime Radiant charts arrive in a later release.
+> Phase 3. The panel has all six tabs: Today, Changelog, Work, Decisions,
+> System and Memory. The Prime Radiant opens with its layout and period
+> selector; its charts arrive in a later release.
 > Project home: https://github.com/JohnAndrewsX/jax-seldon
 
 ## Requirements
@@ -197,6 +198,36 @@ button arms, the second Enter sends. And for the new-decision sheet: Tab
 walks title, *Create*, *Cancel*; Enter in the title or on *Create* arms,
 the second Enter sends.
 
+## The Prime Radiant
+
+A fullscreen overlay over a dimmed screen: `omarchy-shell shell toggle
+jax.seldon` (or the suggested binding below) or a middle click on the pill.
+
+- **Header:** "Prime Radiant", the machine, the Omarchy version and when the
+  index was written; on the right the period selector (30 d · 90 d · 365 d ·
+  All, default 90 d), *Close*, and the period's dates.
+- **Grid** of five slots on 12 columns: Heatmap (full width); Series,
+  DriftBars and RiskDonut side by side; Timeline (full width). On a narrow
+  screen the grid uses two columns, then one, and scrolls. Until the charts
+  arrive each slot shows the number of rows its chart will draw for the
+  period (days, package samples, weeks, cases by risk, timeline entries) and
+  one line about them.
+- A period covers the days up to the index's today: 30 d is today and the
+  29 days before it; a drift week counts when any of its days does, a case
+  when its span overlaps. *All* is everything the index carries. Cases by
+  risk have no dates and are the same for every period ("all time").
+- When the panel shows a banner, the overlay shows it too, with only the
+  fix that runs no command (*Copy*); the other fixes are in the panel.
+
+| Key | Action |
+|---|---|
+| `1` `2` `3` `4` | 30 d · 90 d · 365 d · All |
+| ← → (`h` `l`) | previous / next period (wraps) |
+| Esc | close |
+
+A click on the dimmed area or on *Close* closes it too. The overlay reads
+the service's index only and never runs the engine.
+
 ## States
 
 When something is wrong the panel shows one banner with a one-click fix.
@@ -218,6 +249,9 @@ again* (or `jax.seldon.service refresh`), not on every capture interval.
 | Command | Reaches |
 |---|---|
 | `omarchy-shell shell toggle jax.seldon` | the Prime Radiant overlay (also `summon`, `hide`) |
+| `omarchy-shell shell summon jax.seldon '{"period":"30"}'` | open the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
+| `omarchy-shell shell call jax.seldon view ""` | what the open Prime Radiant shows (period, window, banner, grid mode, each slot's counts and geometry), as JSON; `unknown` while it is closed |
+| `omarchy-shell shell call jax.seldon setPeriod 30` | pick a period in the open Prime Radiant |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
 | `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, pill, QuickEntry, the Work columns, card and sheet, the drift sheet, the decisions and their sheet, the memory rows, last action results), as JSON |
