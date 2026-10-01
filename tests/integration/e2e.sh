@@ -19,9 +19,10 @@
 #
 # Environment:
 #   SELDON_TEST_HOST        ssh alias of the test host (default: test)
-#   SELDON_E2E_SINCE_DAYS   capture baseline, days back (default: 7); a fresh
-#                           logbook records nothing older than its creation
-#                           without --since, and the run needs package events
+#   SELDON_E2E_SINCE_DAYS   backfill of init's first capture, days back
+#                           (default: 7); a fresh logbook records nothing older
+#                           than its creation otherwise, and the run needs
+#                           package events
 #   SELDON_E2E_OUT          if set, a local dir that receives the index, the
 #                           service status, the pill and the panel views of
 #                           the run (they name the host: never commit them)
@@ -374,17 +375,20 @@ eq "seldon --version: name" "$(jq -r .name <<<"$out")" seldon
 out=$(seldon contract-version --json) || die "seldon contract-version"
 eq "contract-version = manifest seldon.contractVersion" "$(jq -r .contractVersion <<<"$out")" "$contract"
 
-out=$(seldon init --non-interactive --path "$logbook_arg" --json) || die "seldon init --non-interactive --path $logbook"
-ok "seldon init --path $logbook"
-
+# `init` runs the first capture (WP-024); `--since` backfills it. A fresh
+# logbook records nothing older than its creation otherwise, and a later
+# `capture --since` is ignored by collectors that already have a cursor.
 since=$(date -d "-$since_days days" --iso-8601=seconds)
-out=$(seldon capture --all --json --since "$since") || die "seldon capture --all --since $since"
-pkg_events=$(jq -r '[.collectors[] | select(.name == "pacman") | .events] | add // 0' <<<"$out")
-ge "capture --since -${since_days}d: package events written" "$pkg_events" 1
-degraded=$(jq -r '[.collectors[] | select(.ok == false) | .name] | join(",")' <<<"$out")
-echo "   written $(jq -r .written <<<"$out"), degraded collectors: ${degraded:-none}"
-out=$(seldon capture --all --json) || die "second seldon capture --all"
-eq "second capture writes nothing (idempotent)" "$(jq -r .written <<<"$out")" 0
+out=$(seldon init --non-interactive --path "$logbook_arg" --since "$since" --json) \
+  || die "seldon init --non-interactive --path $logbook --since $since"
+ok "seldon init --path $logbook --since -${since_days}d"
+eq "init: first capture ran" "$(jq -r .capture.ran <<<"$out")" true
+pkg_events=$(jq -r '[.capture.collectors[] | select(.name == "pacman") | .events] | add // 0' <<<"$out")
+ge "init --since -${since_days}d: package events written" "$pkg_events" 1
+degraded=$(jq -r '[.capture.collectors[] | select(.ok == false) | .name] | join(",")' <<<"$out")
+echo "   written $(jq -r .capture.written <<<"$out"), open drift $(jq -r .capture.openDrift <<<"$out"), degraded collectors: ${degraded:-none}"
+out=$(seldon capture --all --json) || die "seldon capture --all"
+eq "capture after init writes nothing (idempotent)" "$(jq -r .written <<<"$out")" 0
 
 out=$(seldon plan new --zone yellow --risk R1 --json -- "e2e integration case $run_id") || die "seldon plan new"
 case_id=$(jq -r .case.id <<<"$out")
