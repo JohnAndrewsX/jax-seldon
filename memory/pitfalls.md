@@ -296,3 +296,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The guard also reads `git commit -m` text.** A message with
   `… && pacman -S …` as an example is blocked like a command. Write the
   message with the Write tool and commit with `-F`.
+
+## 2026-10-01 · WP-008 (Engine)
+
+- **A heredoc that appends Rust test code is read as commands by the
+  guard.** A test string such as an agent's in-place edit command on a
+  `~/.config/hypr` file (the test only touches a temp HOME) was blocked
+  as a red-zone write. I reported it and did not reword it. Plan tests
+  like that with the orchestrator first, or keep such strings out of
+  Bash arguments from the start.
+- **Stub programs see only the stub dir on PATH.** `sleep 12` in a stub
+  exits 127 at once, and with the detached launcher that shows up as
+  "exited with 127", not as a hang. Resolve host tools to absolute paths
+  in the test (the same as the `bash` note above).
+- **`seldon init` stamps `created` with the real clock, not
+  `SELDON_NOW`.** So a pacman capture of log lines from "today 10:01"
+  writes nothing (they are before the baseline). Pass `--since`.
+- **Test helpers that add `--json` must put it before the subcommand.**
+  Appended after `-- <text>`, it becomes part of the free text or an
+  unexpected argument.
+- **An old leader id is not a handle for its group.** After `--only` on
+  the leader, the remaining members form a new item with a new leader.
+  `drift <verb> <old leader>` writes nothing, by design.
