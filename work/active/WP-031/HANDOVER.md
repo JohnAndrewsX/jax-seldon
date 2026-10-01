@@ -4,8 +4,43 @@ Branch `wp/031-charts`, worktree `wt/WP-031`, on top of `main` at
 `a651a76`. Not pushed, no PR. Commits `main..HEAD`:
 `e1fb988` Model helpers and one-pass period table · `f927f55` charts and
 The Plan · `a913219` harness · `370adae` README, TESTING, memory ·
-`731652c` renders · then `work: WP-031 handover` (this file).
-`just check` exits 0 at `731652c` (see Verified by).
+`731652c` renders · `a87d5e4` handover · then the review fixes
+`plugin: per-file aggregation counts, drift peak, hover argument checks
+(WP-031)` and `work: WP-031 handover after review` (this file).
+`just check` exits 0 at the fix commit (see Verified by).
+
+## Review fixes (round 2)
+
+1. **Aggregation proof covered only ChartCanvas.qml's Model.js** (blocking).
+   Each chart file imports Model.js as a document of its own and so has its
+   own instance per object. Now `ChartCanvas.aggregationCount()` emits
+   `countRequested()`, every chart file answers
+   `onCountRequested: root.ownCount = Model.aggregationCount()`, and the
+   base returns its own count plus `ownCount`; `Overlay.aggregationCount()`
+   sums the charts as before. **Mutation check:** with
+   `Model.heatmapChart([], { from: "", to: "" }, "")` added to
+   `Heatmap.onPaintRequested` on a scratch copy, the suite was 302/302
+   before the fix; after it, 308 passed, 4 failed:
+   `ipc #23 .view.aggregations.overlay = 17`, **`fresh #2
+   .view.aggregations.overlay = 1`**, `fresh #4 … = 2`, `reflow #6 … = 3`
+   (want 0). The memory note is corrected (one instance per importing
+   document per object).
+2. **`driftChart` peak** (blocking): it compared against `n.max`, which is
+   set after the loop, so it named the last week with any opened. Now a
+   running maximum over `opened` (ties go to the later week). The
+   reviewer's case gives `peak 2026-W36`; node tests for it and a tie.
+3. **Bench gate** on the plain number: fastest of 31 plain runs on ×10
+   under 10 ms (now 1.68–1.86 ms); the sandbox number is only reported.
+   Negative check: with the budget set to 0.5 ms the bench exits 1
+   ("over the 0.5 ms budget (plain, fastest run 1.68 ms)").
+4. **`hover` IPC:** strict argument parsing (`<slot> <x>,<y>`, numbers like
+   `0.5`, `.5`, `1`); `ChartCanvas.probe()` returns null without changing
+   anything unless both values are finite and in [0, 1]. A malformed
+   argument or unknown slot returns `{"error": …}` and leaves every hover as
+   it was; only `hover ""` clears. Harness: `nope`, `.`, `1.2.3`, `1.5`,
+   one number, each an error with the previous hover kept; `.5,1` works.
+5. **Series left of the first sample:** a sentence in the proposed §6 text
+   (Decisions, now taken).
 
 ## Done
 
@@ -49,7 +84,8 @@ The Plan · `a913219` harness · `370adae` README, TESTING, memory ·
   `periodData.charts.<slot>`, a Loader per slot (`placeholder: false`);
   `view()` adds `aggregations { service, overlay }` and per slot `chart {
   summary, numbers, empty, hover, paints, paintMs, w, h }`; new IPC method
-  `hover "<slot> <fx>,<fy>"` (`hover ""` clears).
+  `hover "<slot> <fx>,<fy>"` (`hover ""` clears; a malformed argument
+  returns `{ error }`).
 - **Grid:** `GRID_ROWS` has The Plan as a fourth row in every mode (wide
   weights 3:4:2:2). `overlayGrid` now gives rows that would fall under the
   minimum height their minimum and shares the rest by weight (new
@@ -68,14 +104,16 @@ The Plan · `a913219` harness · `370adae` README, TESTING, memory ·
   `riskPartText`, `timelineItemText`; dates `dayNumber`/`dateOfDay`
   (calendar arithmetic, no `Date.parse`), `isoWeekOf`, `weekdayOfDay`;
   `colourStep`; `aggregationCount()` (counts table/chart passes per script
-  instance). `isDate` now rejects impossible dates (2026-02-30), which V8's
+  instance; the overlay sums the service's, its own and every chart
+  file's). `isDate` now rejects impossible dates (2026-02-30), which V8's
   `Date.parse` rolled over.
 - **Tests**
-  - `model.test.js`: 72 (+10): six slots, `rowHeights`, every chart helper
+  - `model.test.js`: 72 (+10; the drift test now also covers a
+    non-monotonic series and a tie): six slots, `rowHeights`, every chart helper
     on the sample and edge rows, date arithmetic against `Date` for every
     day 1899–2101, `splitSeries` ≡ `seriesInPeriod`, the aggregation count.
   - `model.bench.js` (new, in `just plugin-test`): see the profile note.
-  - `overlay-view.sh`: 302 checks (332 with `OVERLAY_SHOTS`), new harness
+  - `overlay-view.sh`: 312 checks (342 with `OVERLAY_SHOTS`), new harness
     steps `fresh[:json]` (a new Overlay.qml per open, as the shell's Loader
     does; `firstFrame` sampled on the window's first `frameSwapped`),
     `hover`, `hoverItem` (real mouse moves onto `chart.locate(i)`),
@@ -120,9 +158,11 @@ The Plan · `a913219` harness · `370adae` README, TESTING, memory ·
   | 7000 timeline rows | 34.9 / 5.4 ms | 43.3 / 3.9 ms |
 
   "sandbox" is Model.js in a node `vm` context as model.test.js loads it
-  (every top-level name a slow contextified lookup, ~8× slower); "plain" is
-  one function scope. The budget (×10 under 20 ms) holds in the stricter
-  sandbox and is a gate in `just plugin-test` (fastest of 31 runs). The new
+  (every top-level name a slow contextified lookup, ~8× slower, 14–32 ms
+  depending on the host's load: reported only); "plain" is one function
+  scope. The gate in `just plugin-test` (since the review): fastest of 31
+  plain runs on ×10 under 10 ms (1.7–1.9 ms idle, ~4 ms under full load).
+  The original budget (×10 under 20 ms) also holds in the sandbox. The new
   table does strictly more than the old cut (it also builds all chart data)
   and is still faster than the old cut alone on ×10 and at 7000 rows in the
   sandbox. 7000 timeline rows exceed 20 ms in the sandbox (5.4 ms plain); it
@@ -163,19 +203,28 @@ The Plan · `a913219` harness · `370adae` README, TESTING, memory ·
 ## Verified by
 
 ```
-$ just check                                   → exit 0 (at 731652c's code)
+$ just check                                   → exit 0 (review fix commit)
   validate-fixtures: ok — 109 instances, 8 variants, 23 self-checks
-  plugin-validate: ok · tokens: ok (520 references) · qmllint: ok (28 files)
-  model.test.js: 72 passed · model.bench: ×10 14.09 ms sandbox (median)
+  plugin-validate: ok · tokens: ok · qmllint: ok (28 files)
+  model.test.js: 72 passed · model.bench: ×10 plain under the 10 ms gate
   service-states: 189 passed · panel-view: 548 passed
-  overlay-view: 302 passed, 0 failed · plugin-test: ok · check: ok
+  overlay-view: 312 passed, 0 failed · plugin-test: ok · check: ok
+$ node tests/plugin/model.test.js              → 72 passed
+$ bash tests/plugin/overlay-view.sh            → 312 passed, 0 failed
+$ (scratch copy, Heatmap.onPaintRequested calls Model.heatmapChart(...))
+  bash tests/plugin/overlay-view.sh            → before the fix 302 passed, 0 failed;
+                                                 after: 308 passed, 4 failed, among them
+                                                 fresh #2 .view.aggregations.overlay = 1 (want 0)
+$ (bench with BUDGET_MS = 0.5)                 → exit 1, "over the 0.5 ms budget (plain …)"
 $ OVERLAY_SHOTS=work/active/WP-031/screenshots bash tests/plugin/overlay-view.sh
-                                               → 332 passed, 0 failed (12 renders)
+                                               → 332 passed, 0 failed (12 renders; before the review fixes,
+                                                 which change no drawing)
 $ find plugin -type l | wc -l                  → 0
 $ grep -nE '"#[0-9a-fA-F]{3,8}"|Qt\.(rgba|rgb|hsla|hsva|color)\(|olor\s*[:=]\s*"[a-z]+"|Style\s*=\s*"' \
     plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml
                                                → only OverlayWindow.qml `color: "transparent"` (accepted)
-$ ssh test 'omarchy-shell lock status'         → {"locked":true,"secure":true} at 16:23Z and 16:58Z
+$ ssh test 'omarchy-shell lock status'         → {"locked":true,"secure":true} at 16:23Z and 16:58Z;
+                                                 not touched in the review round
 ```
 
 The token check (`check-tokens.py`) checks token *names* only; the
@@ -193,9 +242,20 @@ clean; non-library JS imports have per-instance state; offscreen
 environment. In `memory/pitfalls.md`: the node `vm` sandbox ~8× slowdown;
 V8 `Date.parse` rolls impossible dates over; first-fit lane packing is
 quadratic; the harness's `toggle` overlay is long-lived (use `fresh`); jq
-`input` in `expect`.
+`input` in `expect`. After the review: the per-document-per-object JS
+instance note is corrected in `omarchy-shell.md`; `pitfalls.md` gains the
+"peak against a field set after the loop" bug and the mutation check as
+the way to prove a counter test is not blind.
 
 ## Decisions needed
+
+None open. Taken at review: the spec wording below is accepted (with the
+hover notes; Series sentence added); the live frame profile on the test
+host is the operator's call and the offscreen profile is the acceptance
+record; no separate 7000-row budget; the stale-banner second paint (≤ 2)
+is accepted, a non-positioner `Banner.qml` height is a follow-up.
+
+Proposed and accepted (for the record):
 
 1. **SPEC-PLUGIN §6 wording** (spec owner's edit; code and spec differ in
    detail). Proposed text for rows 2–5:
@@ -203,8 +263,11 @@ quadratic; the harness's `toggle` overlay is long-lived (use `fresh`); jq
      weeks × 7 days (53 × 7 at 365 d and All), five steps of the theme
      accent; hover shows the date and counts by source.
    - Row 3: **Series** explicit and total packages over time (step lines,
-     one lane each) · **DriftBars** drift opened vs resolved per ISO week ·
-     **RiskDonut** cases by risk, all time.
+     one lane each; a count holds until the next sample, and left of the
+     first sample in the period no line is drawn but the hover reads out
+     that first sample) · **DriftBars** drift opened vs resolved per ISO
+     week (the peak is the week with the most opened) · **RiskDonut** cases
+     by risk, all time.
    - Row 4 (full width): **Timeline** — Omarchy releases, snapshots and
      crisis markers on one band; cases as spans from created to closed
      (open cases run to today), packed in lanes.
@@ -218,13 +281,9 @@ quadratic; the harness's `toggle` overlay is long-lived (use `fresh`); jq
      changes; the overlay only draws (one paint per chart per data or size
      change)."
    - §7: "error for crisis" → "`Color.urgent` for crises and R3".
-   - §8 IPC: add `shell call jax.seldon hover "<slot> <fx>,<fy>"`.
-2. **Live frame profile on the test host** needs `QSG_RENDER_TIMING` in
-   Hyprland's runtime environment (`hyprctl keyword env …`) plus a shell
-   restart once the host is unlocked. Allowed, or keep the offscreen
-   profile above as the record?
-3. The 7000-timeline-row case is 35 ms in the node sandbox (5 ms plain).
-   Fine as is, or should it get a budget of its own?
+   - §8 IPC: add `shell call jax.seldon hover "<slot> <fx>,<fy>"` (x, y
+     fractions in [0, 1]; `""` clears; anything else returns `{ error }`
+     and changes nothing).
 
 ## Touched outside WP scope
 
