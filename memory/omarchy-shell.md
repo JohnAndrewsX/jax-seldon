@@ -210,3 +210,52 @@ Verified in the shell source and live on the test host.
 - **Headless harness:** `QT_QPA_PLATFORM=offscreen quickshell -p file.qml`
   runs non-visual QML (Service.qml) in a private instance. Files importing
   `qs.*` cannot load there: `qs` is the config root of the running shell.
+  (Corrected in WP-011, below: `qs` is the config root of *that* instance.)
+
+## WP-011 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **`qs.*` in a private instance:** Quickshell serves `qs.<Dir>` from the
+  config root of the instance it runs, so `quickshell -p <root>/shell.qml`
+  resolves `import qs.Commons` to `<root>/Commons/` (no qmldir needed;
+  `pragma Singleton` files work). Copies of `$OMARCHY_PATH/shell/Commons`
+  and `shell/Ui` in a temp root run offscreen; only `Ui/KeyboardPanel.qml`
+  (a layer-shell `PanelWindow`) must be replaced. `Style.qml` runs `hyprctl
+  getoption` and `fc-match` at load and keeps its defaults when they fail.
+- **Real key events offscreen:** `import QtTest` and a `TestCase { when:
+  false; running: false }` in any Quickshell config; `keyClick(Qt.Key_Tab)`,
+  `keyClick(Qt.Key_Tab, Qt.ShiftModifier)`, `keyClick("f")` reach the item
+  with active focus in a `QtQuick.Window` on the offscreen platform.
+- **ListView `header` scrolls away** when the model is replaced (new index):
+  the view repositions on the first delegate and the header ends up above
+  the viewport. Keep headings outside the ListView (seen live, Today tab).
+- **`positionViewAtIndex(i, ListView.Contain)` right after a row grows**
+  (Qt.callLater) can run before the delegate's relayout; re-contain from
+  the delegate's `onHeightChanged` instead.
+- **Column skips invisible children**; binding `height: visible ?
+  implicitHeight : 0` on a `PanelSectionHeader` inside a ListView delegate
+  Column gave a binding loop. Drop the height binding.
+- **QML lists are not JS arrays:** `item.children.indexOf` is a TypeError;
+  index with a for loop.
+- **Tab handover:** `Bar.switchPanelFrom(owner, dir)` calls `open()` on the
+  neighbouring slot's widget and returns true. The popout coordinator closes
+  our KeyboardPanel only when the neighbour opens a KeyboardPanel too; a
+  neighbour that opens its own window (OmaSettings on the test host) leaves
+  ours open.
+- **`omarchy theme set`** restarts the shell (new pid, about 5 s); check
+  logs of every instance under `/run/user/<uid>/quickshell/by-pid/<pid>/`
+  (`quickshell log <path>/log.qslog`).
+- **grim regions are logical pixels.** The test host's output is scaled 1.25:
+  divide coordinates read off a full screenshot by the scale. Over ssh grim
+  needs `XDG_RUNTIME_DIR=/run/user/<uid>` and `WAYLAND_DISPLAY=wayland-1`;
+  `hyprctl` also needs `HYPRLAND_INSTANCE_SIGNATURE` (name of the dir in
+  `/run/user/<uid>/hypr/`).
+- **An index that appears after shell start** is picked up by Service.qml's
+  5 s missing-file poll (verified live; the FileView watch alone was not
+  tested for this case).
+- **Colour tokens:** `Color.muted` exists next to `foreground`, `background`,
+  `accent`, `urgent`. There is no yellow/warning token; zone yellow maps to
+  `accent`. `Util.alpha(fg, a)` dims text in light and dark themes alike;
+  `Qt.darker(fg)` makes a light theme's dark text darker, not dimmer.
+- **Nerd Font glyphs** in the bar font (JetBrainsMono Nerd Font): verify a
+  codepoint with `fc-list ":charset=f03d7" family`. `⟡` (U+27E1) is not in
+  it and comes from fontconfig fallback.
