@@ -147,3 +147,37 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   when both branches add the same crates (`ulid`, `jsonschema`): take
   main's manifest (`git checkout --ours` during a rebase is *main*), then
   `cargo build` regenerates the lock.
+
+## 2026-10-01 · WP-005 (Engine)
+
+- **A collector that keeps its own state file runs ahead of the ledger.**
+  The config manifest is written during `collect`, but `capture` appends the
+  events afterwards and only then saves `cursors.json`. If the append fails,
+  a single-generation manifest has already moved on and the change is lost.
+  `manifest.json` therefore keeps the generation the cursor names as
+  `previous` until the ledger has caught up. Do the same for any future
+  collector-owned state.
+- **`git rev-parse` in a plugin directory answers for the enclosing repo.**
+  A dotfiles repository in `~/.config` would give every plugin the same
+  "version". Run git only when the plugin directory itself has `.git`.
+- **First-party plugin manifests all carry `"version": "1.0.0"`** on Omarchy
+  4.0.4 (`$OMARCHY_PATH/shell/plugins/**/manifest.json`). If an Omarchy
+  update bumps them, every first-party plugin yields a `plugin-update`.
+- **A failing `omarchy plugin catalog` must not look like a downgrade.** A
+  version that cannot be read this time keeps the last one seen;
+  `plugin-update` fires only when both sides are known.
+- **Copied files keep old mtimes** (`cp -p`, `rsync -a`, `git checkout`). An
+  event time taken from the mtime must be clamped to the time since the
+  last check, or it lands in an old ledger month.
+- **The theme-set hook and the theme collector see the same change.** The
+  collector looks for a `theme-set` to the current slug in the ledger since
+  its last check and stays quiet when it finds one.
+- **`common::Env` runs seldon with PATH = its stub dir only**: no `cat`, no
+  `sh` lookup by name inside stubs that call other tools. Stubs print files
+  with builtins: `while IFS= read -r l || [ -n "$l" ]; do printf '%s\n'
+  "$l"; done < file`.
+- **`git show main:dir/*.md` does not glob**; list with
+  `git ls-tree --name-only main dir/` first.
+- **Main moves while a WP runs.** Before the handover, diff
+  `$(git merge-base main HEAD)..main -- docs/ decisions/` for spec changes
+  that touch the WP (WP-005: ADR-0017 did not).
