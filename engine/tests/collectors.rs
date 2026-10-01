@@ -212,10 +212,10 @@ mod collectors {
             e.meta.command = Some(command.into());
             e
         };
-        let lock = seldon::logbook::lock::acquire(&b.scratch.path("l")).unwrap();
+        let lock = &b.lock;
         b.ledger
             .append(
-                &lock,
+                lock,
                 vec![
                     // names another package: proximity alone is no proof
                     hook(
@@ -234,7 +234,6 @@ mod collectors {
                 ],
             )
             .unwrap();
-        drop(lock);
         std::fs::write(
             &log,
             "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -S zed'\n\
@@ -269,10 +268,10 @@ mod collectors {
         let mut b2 = Bench::new("attribution-ok");
         b2.sources.pacman_log = log.clone();
         b2.baseline = b.baseline;
-        let lock = seldon::logbook::lock::acquire(&b2.scratch.path("l")).unwrap();
+        let lock = &b2.lock;
         b2.ledger
             .append(
-                &lock,
+                lock,
                 vec![hook(
                     "2026-10-01T09:51:00+02:00",
                     "agent:claude-code",
@@ -281,7 +280,6 @@ mod collectors {
                 )],
             )
             .unwrap();
-        drop(lock);
         let out = b2.run(&Pacman, "2026-10-01T12:00:00+02:00");
         let actors: Vec<_> = out
             .events
@@ -297,6 +295,130 @@ mod collectors {
             ]
         );
         drop(b);
+    }
+
+    #[test]
+    fn a_full_upgrade_command_does_not_cover_a_separate_install() {
+        // ADR-0017 §3: an agent's `omarchy update` at 12:00 causes the keyring
+        // reinstall and the full upgrade, not a human's install at 12:05
+        let mut b = Bench::new("full-upgrade-scope");
+        append(
+            &b,
+            vec![hook_event(
+                "2026-10-01T12:00:00+02:00",
+                "agent:claude-code",
+                Some("C-2026-003"),
+                "omarchy update",
+            )],
+        );
+        let log = b.scratch.path("pkg.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(
+            &log,
+            "[2026-10-01T12:00:05+0200] [PACMAN] Running 'pacman -Sy --noconfirm archlinux-keyring'\n\
+             [2026-10-01T12:00:06+0200] [ALPM] transaction started\n\
+             [2026-10-01T12:00:06+0200] [ALPM] reinstalled archlinux-keyring (20260902-1)\n\
+             [2026-10-01T12:00:06+0200] [ALPM] transaction completed\n\
+             [2026-10-01T12:00:11+0200] [PACMAN] Running 'pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*'\n\
+             [2026-10-01T12:03:00+0200] [ALPM] transaction started\n\
+             [2026-10-01T12:03:00+0200] [ALPM] upgraded hyprland (0.52.1-1 -> 0.53.0-1)\n\
+             [2026-10-01T12:03:01+0200] [ALPM] transaction completed\n\
+             [2026-10-01T12:05:00+0200] [PACMAN] Running 'pacman -S tailscale'\n\
+             [2026-10-01T12:05:01+0200] [ALPM] transaction started\n\
+             [2026-10-01T12:05:01+0200] [ALPM] installed tailscale (1.102.3-1)\n\
+             [2026-10-01T12:05:01+0200] [ALPM] transaction completed\n",
+        )
+        .unwrap();
+        b.baseline = support::ts("2026-10-01T00:00:00+02:00");
+        let out = b.run(&Pacman, "2026-10-01T12:10:00+02:00");
+        assert_eq!(
+            attribution(&out.events),
+            [
+                ("archlinux-keyring", "agent:claude-code", Some("C-2026-003")),
+                ("hyprland", "agent:claude-code", Some("C-2026-003")),
+                ("tailscale", "system", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn queries_and_late_commands_never_attribute() {
+        let mut b = Bench::new("queries");
+        append(
+            &b,
+            vec![
+                // ADR-0017 §5: a search names zed but changes nothing
+                hook_event(
+                    "2026-10-01T10:00:00+02:00",
+                    "agent:codex",
+                    None,
+                    "pacman -Ss zed",
+                ),
+                // ADR-0017 §2: started after the transaction began
+                hook_event(
+                    "2026-10-01T11:00:30+02:00",
+                    "agent:codex",
+                    None,
+                    "sudo pacman -S btop",
+                ),
+            ],
+        );
+        let log = b.scratch.path("pkg.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(
+            &log,
+            "[2026-10-01T10:01:00+0200] [PACMAN] Running 'pacman -S zed'\n\
+             [2026-10-01T10:01:01+0200] [ALPM] transaction started\n\
+             [2026-10-01T10:01:01+0200] [ALPM] installed zed (0.198.4-1)\n\
+             [2026-10-01T10:01:01+0200] [ALPM] transaction completed\n\
+             [2026-10-01T11:00:00+0200] [PACMAN] Running 'pacman -S btop'\n\
+             [2026-10-01T11:00:31+0200] [ALPM] transaction started\n\
+             [2026-10-01T11:00:31+0200] [ALPM] installed btop (1.4.5-1)\n\
+             [2026-10-01T11:00:31+0200] [ALPM] transaction completed\n",
+        )
+        .unwrap();
+        b.baseline = support::ts("2026-10-01T00:00:00+02:00");
+        let out = b.run(&Pacman, "2026-10-01T12:00:00+02:00");
+        assert_eq!(
+            attribution(&out.events),
+            [("zed", "system", None), ("btop", "system", None)]
+        );
+    }
+
+    #[test]
+    fn a_running_line_during_the_download_is_read_again() {
+        let mut b = Bench::new("download");
+        let log = b.scratch.path("pkg.log");
+        b.sources.pacman_log = log.clone();
+        b.baseline = support::ts("2026-10-01T00:00:00+02:00");
+        std::fs::write(
+            &log,
+            "[2026-10-01T09:10:44+0200] [PACMAN] Running 'pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*'\n\
+             [2026-10-01T09:10:44+0200] [PACMAN] synchronizing package lists\n",
+        )
+        .unwrap();
+        std::fs::write(&b.sources.pacman_db_lock, "").unwrap();
+        let out = b.run(&Pacman, "2026-10-01T09:11:00+02:00");
+        assert!(out.events.is_empty());
+        assert_eq!(out.cursor.as_ref().unwrap()["offset"], 0);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&log)
+            .unwrap()
+            .write_all(
+                b"[2026-10-01T09:13:58+0200] [ALPM] transaction started\n\
+                  [2026-10-01T09:13:58+0200] [ALPM] upgraded hyprland (0.52.1-1 -> 0.53.0-1)\n\
+                  [2026-10-01T09:13:59+0200] [ALPM] transaction completed\n",
+            )
+            .unwrap();
+        std::fs::remove_file(&b.sources.pacman_db_lock).unwrap();
+        let out = b.run(&Pacman, "2026-10-01T09:14:00+02:00");
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(out.events[0].explicit, Some(false));
+        assert_eq!(
+            out.events[0].meta.command.as_deref(),
+            Some("pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*")
+        );
     }
 
     #[test]
@@ -349,7 +471,7 @@ mod collectors {
         // no package event for omarchy (log not captured), but an agent ran
         // `omarchy update` 5 minutes ago: the update is attributed
         let mut b = Bench::new("omarchy-hook");
-        let lock = seldon::logbook::lock::acquire(&b.scratch.path("l")).unwrap();
+        let lock = &b.lock;
         let mut e = Event::new(
             support::ts("2026-10-01T09:55:00+02:00"),
             Source::Agent,
@@ -359,8 +481,7 @@ mod collectors {
         .actor("agent:claude-code")
         .case(Some("C-2026-003".into()));
         e.meta.command = Some("omarchy update".into());
-        b.ledger.append(&lock, vec![e]).unwrap();
-        drop(lock);
+        b.ledger.append(lock, vec![e]).unwrap();
         b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.6-1");
         b.run(&Omarchy, "2026-10-01T09:00:00+02:00");
         b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.7-1");
@@ -382,6 +503,27 @@ mod collectors {
         assert!(seldon::collectors::find("pacman").is_some());
         assert!(seldon::collectors::find("nope").is_none());
     }
+}
+
+/// A hook `command` event as WP-009 writes it (ts = the command's start).
+fn hook_event(ts: &str, actor: &str, case: Option<&str>, command: &str) -> Event {
+    let mut e = Event::new(support::ts(ts), Source::Agent, Kind::Command, "x")
+        .actor(actor)
+        .case(case.map(String::from));
+    e.meta.command = Some(command.into());
+    e
+}
+
+fn append(b: &Bench, events: Vec<Event>) {
+    let lock = &b.lock;
+    b.ledger.append(lock, events).unwrap();
+}
+
+fn attribution(events: &[Event]) -> Vec<(&str, &str, Option<&str>)> {
+    events
+        .iter()
+        .map(|e| (e.subject.as_str(), e.actor.as_str(), e.case.as_deref()))
+        .collect()
 }
 
 fn find(hay: &[u8], needle: &[u8]) -> usize {

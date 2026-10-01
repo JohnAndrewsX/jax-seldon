@@ -27,11 +27,16 @@
 //!   then the new log from 0. If the file shrank, it is read from 0. In
 //!   every case events already in the ledger are dropped by
 //!   `(ts, kind, subject, version)`, so a repeated block is not emitted twice.
-//! - **Attribution** (ADR-0014 §1). An event takes `actor` and `case` from
-//!   a hook `command` event in the ledger that named its package, or ran a
-//!   full upgrade, and came at most 10 minutes before the transaction
-//!   began. A dependency without such a command inherits from the
-//!   transaction's attributed explicit package. Time alone is never proof.
+//! - **Attribution** (ADR-0014 §1, ADR-0017 §2 §3 §5). An event takes
+//!   `actor` and `case` from a hook `command` event in the ledger whose
+//!   `ts` (the command's start) lies at most 10 minutes before the
+//!   transaction began (its Running line, else `transaction started`) and
+//!   not after it. The command must name the package; a full upgrade
+//!   (`-Syu`, `omarchy update`, bare `yay`) only counts for a transaction
+//!   whose own command is a full upgrade, or that has none. `omarchy update`
+//!   also names the keyrings it installs first. Query commands (`-Ss`, `-Q`,
+//!   …) never count. Every other member of an attributed transaction
+//!   inherits. Time alone is never proof.
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -383,12 +388,18 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
         }
     }
     let mut resume = base + pos as u64;
-    if let Some(o) = open {
-        if lock_present {
-            resume = o.rewind;
-        } else {
-            txs.push(o.tx);
+    match open {
+        Some(o) if lock_present => resume = o.rewind,
+        Some(o) => txs.push(o.tx),
+        // a Running line whose transaction has not started yet (pacman is
+        // still downloading): read it again next time, or the transaction
+        // would lose its command line
+        None if lock_present => {
+            if let Some((off, ..)) = command {
+                resume = off;
+            }
         }
+        None => {}
     }
     txs.retain(|t| !t.lines.is_empty());
     Parsed { txs, resume }
@@ -417,6 +428,9 @@ pub struct PacmanCommand {
     pub op: Option<Op>,
     /// `-u`/`--sysupgrade` with `-S`.
     pub sysupgrade: bool,
+    /// A query or no-op form of the operation (ADR-0017 §5): `-S` with
+    /// `s|i|l|g|p|w|c`, `-R`/`-U` with `p`, and their long forms.
+    pub query: bool,
     /// Package names the command names (`repo/` and version constraints
     /// stripped; for `-U`, the name from the package file name).
     pub targets: Vec<String>,
@@ -466,8 +480,11 @@ pub fn parse_command(argv: &[&str]) -> Option<PacmanCommand> {
         program: program.to_string(),
         op: None,
         sysupgrade: false,
+        query: false,
         targets: Vec::new(),
     };
+    // query letters/long names seen; which count depends on the operation
+    let mut flags: Vec<char> = Vec::new();
     let mut words = Vec::new();
     let mut it = args.iter();
     while let Some(&a) = it.next() {
@@ -489,6 +506,13 @@ pub fn parse_command(argv: &[&str]) -> Option<PacmanCommand> {
                 "deptest" => cmd.op = Some(Op::DepTest),
                 "files" => cmd.op = Some(Op::Files),
                 "sysupgrade" => cmd.sysupgrade = true,
+                "search" => flags.push('s'),
+                "info" => flags.push('i'),
+                "list" => flags.push('l'),
+                "groups" => flags.push('g'),
+                "print" => flags.push('p'),
+                "downloadonly" => flags.push('w'),
+                "clean" => flags.push('c'),
                 _ if LONG_WITH_ARG.contains(&name) && !inline => {
                     it.next();
                 }
@@ -512,7 +536,7 @@ pub fn parse_command(argv: &[&str]) -> Option<PacmanCommand> {
                         }
                         break;
                     }
-                    _ => {}
+                    c => flags.push(c),
                 }
             }
         } else {
@@ -528,6 +552,13 @@ pub fn parse_command(argv: &[&str]) -> Option<PacmanCommand> {
     if cmd.op != Some(Op::Sync) {
         cmd.sysupgrade = false;
     }
+    // with -R, `s` and `c` are --recursive/--cascade, not queries
+    let query_letters: &[char] = match cmd.op {
+        Some(Op::Sync) => &['s', 'i', 'l', 'g', 'p', 'w', 'c'],
+        Some(Op::Remove | Op::Upgrade) => &['p'],
+        _ => &[],
+    };
+    cmd.query = flags.iter().any(|f| query_letters.contains(f));
     cmd.targets = words
         .into_iter()
         .map(|w| {
@@ -558,9 +589,10 @@ impl PacmanCommand {
         self.is_full_upgrade() && self.targets.is_empty()
     }
 
-    /// Operations that change packages.
+    /// Operations that change packages: `-S`, `-R`, `-U` without a query
+    /// form (ADR-0017 §5). `-Q`, `-T`, `-F`, `-D` never are.
     pub fn is_mutating(&self) -> bool {
-        matches!(self.op, Some(Op::Sync | Op::Remove | Op::Upgrade))
+        matches!(self.op, Some(Op::Sync | Op::Remove | Op::Upgrade)) && !self.query
     }
 }
 
@@ -644,7 +676,14 @@ pub fn command_intent(line: &str) -> Intent {
                 .collect()
         };
         match (program, rest.as_slice()) {
-            ("omarchy", ["update", ..]) | ("omarchy-update", _) => intent.full_upgrade = true,
+            ("omarchy", ["update", ..]) | ("omarchy-update", _) => {
+                intent.full_upgrade = true;
+                // `omarchy-update-keyring` installs these before the upgrade
+                // (ADR-0017 §3)
+                intent
+                    .packages
+                    .extend(OMARCHY_UPDATE_NAMES.map(String::from));
+            }
             ("omarchy", ["pkg", "aur", "add", pkgs @ ..])
             | ("omarchy", ["pkg", "add" | "install" | "drop" | "remove", pkgs @ ..]) => {
                 intent.packages.extend(names(pkgs));
@@ -655,6 +694,9 @@ pub fn command_intent(line: &str) -> Intent {
     }
     intent
 }
+
+/// Packages `omarchy update` names besides the full upgrade.
+pub const OMARCHY_UPDATE_NAMES: [&str; 2] = ["archlinux-keyring", "omarchy-keyring"];
 
 fn is_assignment(word: &str) -> bool {
     word.split_once('=').is_some_and(|(k, _)| {
@@ -721,25 +763,39 @@ pub fn causes(events: &[Event]) -> Vec<Cause> {
         .collect()
 }
 
-/// The latest cause that names `package` (or upgrades everything) and lies
-/// in `[began − 10 min, at]`.
+/// The latest cause for `package` in a transaction that `began` at that
+/// instant (ADR-0017 §2 §3): the command started at most 10 minutes before
+/// `began` and not after it, and either names `package`, or is a full
+/// upgrade while the transaction's own command is one too
+/// (`tx_full_upgrade`, also true when the transaction has no command line).
 pub fn find_cause<'c>(
     causes: &'c [Cause],
     package: &str,
     began: DateTime<FixedOffset>,
-    at: DateTime<FixedOffset>,
+    tx_full_upgrade: bool,
 ) -> Option<&'c Cause> {
     causes
         .iter()
-        .filter(|c| c.ts <= at && c.ts >= began - ATTRIBUTION_WINDOW)
-        .filter(|c| c.intent.full_upgrade || c.intent.packages.iter().any(|p| p == package))
+        .filter(|c| c.ts <= began && began - c.ts <= ATTRIBUTION_WINDOW)
+        .filter(|c| {
+            c.intent.packages.iter().any(|p| p == package)
+                || (c.intent.full_upgrade && tx_full_upgrade)
+        })
         .max_by_key(|c| c.ts)
 }
 
+/// Whether a transaction with this logged command may be caused by a
+/// full-upgrade command: its own command is a full upgrade, or it has none.
+fn tx_is_full_upgrade(command: Option<&str>) -> bool {
+    command.is_none_or(|c| parse_command(&split_logged(c)).is_some_and(|p| p.is_full_upgrade()))
+}
+
 /// Sets `actor`/`case` from the hook command that caused each event
-/// (ADR-0014 §1). `began` maps a txId to the time its pacman invocation
-/// began (the Running line); an event outside a transaction began at its
-/// own `ts`.
+/// (ADR-0014 §1, ADR-0017 §2 §3). `began` maps a txId to the time its
+/// pacman invocation began (the Running line, else `transaction started`);
+/// an event outside a transaction begins at its own `ts`. A member without
+/// a cause of its own inherits from an attributed member of its
+/// transaction, explicit ones first.
 pub fn attribute(
     ctx: &Ctx,
     mut events: Vec<Event>,
@@ -766,19 +822,19 @@ pub fn attribute(
     let mut found: Vec<Option<(String, Option<String>)>> = events
         .iter()
         .map(|e| {
-            find_cause(&causes, &e.subject, start(e), e.ts)
+            let full = tx_is_full_upgrade(e.meta.command.as_deref());
+            find_cause(&causes, &e.subject, start(e), full)
                 .map(|c| (c.actor.clone(), c.case.clone()))
         })
         .collect();
-    // dependencies inherit from the transaction's attributed explicit member
+    // every member of an attributed transaction inherits (ADR-0017 §2)
     for i in 0..events.len() {
-        if found[i].is_none() && events[i].explicit == Some(false) && events[i].tx_id.is_some() {
+        if found[i].is_none() && events[i].tx_id.is_some() {
+            let same_tx = |j: &usize| events[*j].tx_id == events[i].tx_id && found[*j].is_some();
             found[i] = (0..events.len())
-                .find(|&j| {
-                    events[j].tx_id == events[i].tx_id
-                        && events[j].explicit == Some(true)
-                        && found[j].is_some()
-                })
+                .filter(same_tx)
+                .find(|&j| events[j].explicit == Some(true))
+                .or_else(|| (0..events.len()).find(same_tx))
                 .and_then(|j| found[j].clone());
         }
     }
@@ -883,9 +939,49 @@ mod tests {
     }
 
     #[test]
+    fn query_forms_are_not_mutating() {
+        for q in [
+            "pacman -Ss zed",
+            "pacman -Si zed",
+            "pacman -Sl extra",
+            "pacman -Sg base-devel",
+            "pacman -Sp zed",
+            "pacman -Sw zed",
+            "pacman -Scc",
+            "pacman -S --search zed",
+            "pacman --sync --info zed",
+            "pacman -S --downloadonly zed",
+            "pacman -S --clean",
+            "pacman -Qi zed",
+            "pacman -Qdtq",
+            "pacman --query zed",
+            "pacman -T zed",
+            "pacman -Rp zed",
+            "pacman -U --print foo-1-1-x86_64.pkg.tar.zst",
+            "yay -Ss zed",
+            "yay -Qi zed",
+        ] {
+            assert!(!argv(q).is_mutating(), "{q}");
+            assert_eq!(command_intent(q), Intent::default(), "{q}");
+        }
+        for m in [
+            "pacman -S zed",
+            "pacman -Syu",
+            "pacman -Rns zed",
+            "pacman -Rc zed",
+            "pacman -U foo-1-1-x86_64.pkg.tar.zst",
+            "yay",
+            "yay zed",
+        ] {
+            assert!(argv(m).is_mutating(), "{m}");
+        }
+    }
+
+    #[test]
     fn hook_intents() {
         let i = command_intent("omarchy update");
         assert!(i.full_upgrade);
+        assert_eq!(i.packages, ["archlinux-keyring", "omarchy-keyring"]);
         let i = command_intent("sudo pacman -S --noconfirm ollama");
         assert_eq!(i.packages, ["ollama"]);
         assert!(!i.full_upgrade);
@@ -923,6 +1019,16 @@ mod tests {
         let p = parse(&log, 100, true, tz());
         assert!(p.txs.is_empty());
         assert_eq!(p.resume, 100);
+        // only the Running line so far (downloading): cursor stays before it
+        let running = lines("[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n");
+        let p = parse(&running, 100, true, tz());
+        assert!(p.txs.is_empty());
+        assert_eq!(p.resume, 100, "the Running line is read again");
+        // ... unless pacman is not running (a no-op or failed invocation)
+        assert_eq!(
+            parse(&running, 100, false, tz()).resume,
+            100 + running.len() as u64
+        );
         // lock gone: emitted as is
         let p = parse(&log, 100, false, tz());
         assert_eq!(p.txs.len(), 1);
