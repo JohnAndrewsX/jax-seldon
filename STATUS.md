@@ -9,6 +9,7 @@
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-004 | Collectors: pacman, snapper, omarchy (+ event model, ledger, collector registry) | Engine | `engine-004` (opus, high) | `wt/WP-004` · `wp/004-collectors-core` | 2026-10-01 |
+| WP-005 | Collectors: plugins, theme, config manifest | Engine | `engine-005` (opus, high) | `wt/WP-005` · `wp/005-collectors-user` | 2026-10-01 |
 | WP-006 | `log`, `event`, `plan` commands, case state machine, journal | Engine | `engine-006` (opus, high) | `wt/WP-006` · `wp/006-commands` | 2026-10-01 |
 | WP-011 | Panel: Today, Changelog, System tabs | Plugin | `plugin-011` (opus, high) | `wt/WP-011` · `wp/011-panel-tabs` | 2026-10-01 |
 
