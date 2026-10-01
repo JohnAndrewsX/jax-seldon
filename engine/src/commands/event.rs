@@ -6,17 +6,20 @@
 //! `detail` to the schema limit and validates every event before anything
 //! is written. Nothing here redacts or numbers events itself.
 
+use chrono::DateTime;
 use clap::Args;
 use serde_json::{Value, json};
 
 use super::{Context, Output, autocommit};
+use crate::attribution;
+use crate::collectors::{self, Cursors};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::ledger::Ledger;
 use crate::logbook::Logbook;
 use crate::logbook::cases::{self, CaseFile};
 use crate::logbook::lock::Lock;
-use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, SUBJECT_MAX, Source};
+use crate::model::event::{ACTOR_SYSTEM, DETAIL_MAX, Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::model::{is_agent, is_case_id};
 use crate::redact::Redactor;
 
@@ -125,8 +128,9 @@ pub struct EventArgs {
     #[arg(long = "case", value_name = "ID", value_parser = parse_case_id)]
     pub case_id: Option<String>,
 
-    /// Who did it
-    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_actor)]
+    /// Who did it (default: system, like a collector; hooks and scripts
+    /// name the agent or human they act for)
+    #[arg(long, value_name = "A", default_value = "system", value_parser = parse_actor)]
     pub actor: String,
 
     /// Extra key=value (repeatable); `enabled` takes true or false
@@ -155,10 +159,19 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
             "--detail is longer than {DETAIL_MAX} characters"
         )));
     }
-    let meta = parse_meta(&args.meta)?;
+    let mut meta = parse_meta(&args.meta)?;
+    let mut detail = args.detail.filter(|d| !d.trim().is_empty());
 
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
+    if args.kind == Kind::ThemeSet
+        && meta.from.is_none()
+        && let Some(from) = previous_theme(ctx, &logbook, subject)?
+    {
+        detail.get_or_insert_with(|| format!("{from} → {subject}"));
+        meta.to.get_or_insert_with(|| subject.to_string());
+        meta.from = Some(from);
+    }
     let mut case_file: Option<CaseFile> = args
         .case_id
         .as_deref()
@@ -169,8 +182,18 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
         .actor(&args.actor)
         .case(args.case_id.clone())
         .meta(meta);
-    if let Some(d) = args.detail.filter(|d| !d.trim().is_empty()) {
+    if let Some(d) = detail {
         event = event.detail(d);
+    }
+    // a hook-recorded change (theme-set.sh) takes the agent command that
+    // caused it, as the capture would: the collector skips it afterwards
+    if event.actor == ACTOR_SYSTEM && event.case.is_none() {
+        let ledger = Ledger::new(&logbook, Redactor::builtin());
+        attribution::attribute_from_ledger(
+            &ledger,
+            std::slice::from_mut(&mut event),
+            &ctx.dirs.home,
+        )?;
     }
     // the ledger first: it assigns the id the case file records
     let event = emit_one(&lock, &config, &logbook, event)?;
@@ -205,6 +228,42 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
             "git": commit.json(),
         }),
     ))
+}
+
+/// The theme a `theme-set` to `subject` replaces (the theme-set hook passes
+/// only the new slug): the theme collector's cursor, unless the ledger
+/// holds a `theme-set` newer than the cursor's last check, then that one's
+/// theme; `None` when neither is known or it is `subject` itself.
+fn previous_theme(ctx: &Context, logbook: &Logbook, subject: &str) -> Result<Option<String>> {
+    let root = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
+    let cursors = Cursors::load(&collectors::cursors_file(&ctx.dirs)).unwrap_or_default();
+    let cursor = cursors.cursor(&root, "theme").and_then(|c| {
+        let theme = c.get("theme")?.as_str()?.to_string();
+        let checked = DateTime::parse_from_rfc3339(c.get("checked")?.as_str()?).ok()?;
+        Some((theme, checked))
+    });
+
+    let ledger = Ledger::new(logbook, Redactor::builtin());
+    let mut latest = None;
+    for month in ledger.months()?.iter().rev() {
+        latest = ledger
+            .read_month(month)?
+            .events
+            .into_iter()
+            .filter(|e| e.kind == Kind::ThemeSet)
+            .max_by_key(|e| e.ts);
+        if latest.is_some() {
+            break;
+        }
+    }
+
+    let from = match (cursor, latest) {
+        (Some((theme, checked)), Some(e)) if e.ts <= checked => Some(theme),
+        (_, Some(e)) => Some(e.subject),
+        (Some((theme, _)), None) => Some(theme),
+        (None, None) => None,
+    };
+    Ok(from.filter(|f| f != subject))
 }
 
 /// `key=value` pairs into the typed meta keys (`event.schema.json`):

@@ -734,3 +734,100 @@ mod install {
         }
     }
 }
+
+/// `seldon event` as the theme-set hook calls it (WP-005 decision 7).
+mod event {
+    use super::*;
+
+    fn theme_set(h: &Hooks, now: &str, subject: &str, extra: &[&str]) -> Value {
+        let mut args = vec![
+            "event",
+            "theme",
+            "theme-set",
+            "--subject",
+            subject,
+            "--json",
+        ];
+        args.extend(extra);
+        let out = h.command(&args, Some(now)).output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        json(&out)["event"].clone()
+    }
+
+    #[test]
+    fn the_default_actor_is_system() {
+        let h = Hooks::new();
+        let out = h.run(&["event", "manual", "note", "--subject", "x", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(json(&out)["event"]["actor"], "system");
+    }
+
+    #[test]
+    fn theme_set_fills_from_with_the_theme_it_replaces() {
+        let h = Hooks::new();
+        // nothing known yet: no from
+        let e = theme_set(&h, "2026-10-01T08:00:00+02:00", "catppuccin", &[]);
+        assert!(e.get("meta").is_none(), "{e}");
+        assert!(e.get("detail").is_none(), "{e}");
+
+        // the theme collector last saw kanagawa at 09:00 (after 08:00)
+        let root = std::fs::canonicalize(&h.logbook).unwrap();
+        let cursors = json!({
+            "logbook": root,
+            "collectors": {"theme": {
+                "cursor": {"theme": "kanagawa", "checked": "2026-10-01T09:00:00+02:00"},
+                "ok": true, "lastRun": "2026-10-01T09:00:00+02:00", "events": 0,
+            }},
+        });
+        let state = h.home().join(".local/state/seldon");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("cursors.json"), cursors.to_string()).unwrap();
+        let e = theme_set(&h, "2026-10-01T15:30:00+02:00", "tokyo-night", &[]);
+        assert_eq!(e["actor"], "system");
+        assert_eq!(e["detail"], "kanagawa → tokyo-night");
+        assert_eq!(e["meta"], json!({"from": "kanagawa", "to": "tokyo-night"}));
+
+        // a theme-set newer than the cursor wins
+        let e = theme_set(&h, "2026-10-01T16:00:00+02:00", "rose-pine", &[]);
+        assert_eq!(e["meta"]["from"], "tokyo-night");
+
+        // given values are kept
+        let e = theme_set(
+            &h,
+            "2026-10-01T16:30:00+02:00",
+            "nord",
+            &["--meta", "from=matte-black", "--detail", "by hand"],
+        );
+        assert_eq!(e["meta"], json!({"from": "matte-black"}));
+        assert_eq!(e["detail"], "by hand");
+
+        // never the theme itself
+        let e = theme_set(&h, "2026-10-01T17:00:00+02:00", "matte-black", &[]);
+        assert_eq!(e["meta"]["from"], "nord");
+        let e = theme_set(&h, "2026-10-01T17:01:00+02:00", "matte-black", &[]);
+        assert!(e.get("meta").is_none(), "{e}");
+    }
+
+    #[test]
+    fn an_agents_theme_switch_is_attributed() {
+        // the theme-set hook records the switch before any capture sees it
+        let h = Hooks::new();
+        let case = h.active_case();
+        let out = h.piped(
+            &["hook", "claude-code"],
+            &tool_call(
+                "Bash",
+                json!({"command": "omarchy theme set 'Tokyo Night'"}),
+                "toolu_theme",
+            ),
+            Some("2026-10-01T15:29:40+02:00"),
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let e = theme_set(&h, "2026-10-01T15:30:00+02:00", "tokyo-night", &[]);
+        assert_eq!(e["actor"], "agent:claude-code");
+        assert_eq!(e["case"], case.as_str());
+        // a switch nobody's command named stays system
+        let e = theme_set(&h, "2026-10-01T15:31:00+02:00", "nord", &[]);
+        assert_eq!(e["actor"], "system");
+    }
+}
