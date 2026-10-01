@@ -43,7 +43,7 @@ engine and plugin → one coordinated merge → `seldon contract-version` and
 ## Commands the plugin may run (fixed argument lists)
 
 ```
-seldon --version
+seldon --version --json
 seldon status --json
 seldon capture --all --json --quiet
 seldon log [--case <id>] --json -- <text>       # free text is one argument after `--`; --json before it

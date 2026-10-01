@@ -127,7 +127,7 @@ one source; once resolved, by the event's own zone.
 | Changelog | ledger rows newest first, source filter chips, snapshot rows highlighted, drift rows marked | row → link/explain/dismiss sheet; "Capture now" |
 | Work | three columns queued/active/completed (last 50, scrollable) | "New case" (title + zone + risk + optional area/priority), start/verify/done/drop with two-press arming, Open in editor on every card; "Start agent" (runs `omarchy agent prompt` or the configured launcher with the case context) is WP-022 |
 | Decisions | ADR list with status | "New decision" |
-| System | omarchy version, package counts, deviations, snapshots, plugins, theme | "Rebuild doc", "Update impact" |
+| System | omarchy version, package counts, deviations, snapshots, plugins, theme | "Open in editor" (rebuild/update-impact actions are Phase 3 engine commands, allowed by CONTRACT.md, not wired in v1) |
 | Memory | lessons headings, memory topics | "Open" |
 
 Banner states (top of every tab): engine missing → "Install the engine:
@@ -244,5 +244,8 @@ Quickshell 0.3.1 does not reload plugin code on file change.
 ## 10. Security posture (for the marketplace listing)
 
 No network. No bundled binaries, units or installers. Reads one JSON file.
-Runs the `seldon` engine with fixed arguments. Opens a terminal only on
-explicit click. Documented in README under "Security, privacy, privileges".
+Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md).
+Besides the engine it starts only `wl-copy` and Omarchy's floating-terminal
+launcher, each with one constant command, only on a banner click. Never a
+shell string built from logbook content. Documented in README under
+"Security, privacy, privileges" (WP-041).
