@@ -574,3 +574,40 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   build dir under the `source` entry's file name, so a `git archive`
   tarball named like the release asset tests a PKGBUILD before any tag
   exists.
+
+## 2026-10-01 · WP-013 (QA)
+
+- **The ssh alias `test` does not exist on the dev host.** The docs write
+  `test:`, but `~/.ssh/config` has no such host. Pass the real name from
+  `memory/local.md` through `SELDON_TEST_HOST`, and never commit it.
+- **A fresh logbook's first capture records no history.** Collectors
+  without a cursor start at the logbook's `created`. A test that needs
+  package events must pass `capture --since <ts>`. With a window, every
+  package change in it becomes open drift, and a named package becomes a
+  red crisis.
+- **`pgrep -x quickshell` also matches a Quickshell crash-report window.**
+  A log check on that pid reads the wrong log and passes vacuously. Take
+  the pid from `quickshell list -a -j` (match `config_path`), and require a
+  positive line ("Configuration Loaded") before you trust a clean log.
+- **Restarting the shell right after an rsync into the plugin dir can crash
+  it.** Every rewritten file triggers one hot reload; the old instance
+  segfaulted on exit in the middle of them, and the crash handler left a
+  crash-report window open. Rsync with `--checksum`, and wait until the
+  shell answers `ping` plus about 5 s before `omarchy-restart-shell`. Check
+  `~/.cache/quickshell/crashes` before and after.
+- **A locked test-host session breaks both the restart and the keys.**
+  `omarchy-restart-shell` refuses while the session is locked, and it
+  re-locks after a restart when the session was locked. `wtype` would type
+  into the lock screen. Check `omarchy-shell lock status` (`.locked`)
+  before every restart and every keystroke. Unlocking needs the operator.
+- **A killed run's ssh command keeps running on the remote side.** A
+  SIGKILL of the local script does not stop the remote `bash -c`. The next
+  run's restore then races its restart. Wait about 10 s before rerunning.
+- **Send remote scripts as an argument, not on stdin.** `ssh host bash -s
+  <<< script` lets any command in the script read the rest of the script
+  from stdin. `ssh -n host "bash -c \"\$(echo <base64> | base64 -d)\""`
+  keeps stdin at /dev/null and needs no quoting of the script.
+- **The guard reads `> 0` in a jq filter as a redirection.** A read-only
+  `jq '… select(length > 0)' ~/.config/omarchy/shell.json` over ssh was
+  blocked as a write under `~/.config`. That was reported, not worked
+  around.
