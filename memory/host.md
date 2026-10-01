@@ -84,3 +84,38 @@ Recorded here because Seldon does not exist yet to record them.
 - Repo harness added: `.claude/settings.json` + `scripts/guard.sh` (red-zone guard).
 - Claude only: the operator has no Codex subscription; debates use two Claude sessions.
 - Nothing under `/etc`, no pacman, no sudo, no systemd changes.
+
+## Verified during WP-002 (2026-10-01)
+
+Corrections and additions to "Where the kit's assumptions differ" above.
+
+- **Item 3, correction:** `omarchy plugin catalog` has **no `version` either**.
+  `omarchy-plugin-catalog` is a jq projection of each manifest that keeps only
+  id, name, description, kinds, firstParty, manifestPath, sourceDir,
+  entryPoints, barWidget, bar, barWidgetPath, barPath. For `plugin-update`
+  detection read `version` from the file at `manifestPath` (or the git HEAD of
+  the plugin dir — `plugin add` is a clone).
+- `omarchy plugin list --json` is the shell IPC call `listPlugins`
+  (`omarchy-shell shell listPlugins`): it needs a **running shell**. Output is
+  one line; `enabled` for a bar widget means "placed in the bar"; `active` is
+  only true for the active bar; `clonedFrom` is the source id of a clone
+  (`omarchy plugin clone` creates `<username>.<id>`). 37 first-party plugins on 4.0.4.
+- **Item 6, refinement:** pacman.log offsets are `+0000` only for the
+  install-time (archinstall) lines; after first boot they are local (`+0200`).
+  Both appear in one file. Seen on the host: yay/`omarchy pkg` style
+  `pacman -S --needed --noconfirm --config /etc/pacman.conf -- omarchy/brave-bin`
+  followed by `pacman -D -q --asexplicit … -- brave-bin` (no transaction);
+  `--ask 4` with a separate argument; `-Rns` removing extra dependencies; a
+  `removed` + `installed` pair in one transaction for replacements
+  (`quickshell-git` → `quickshell`, `mise` → `mise-bin`); ANSI colour codes in
+  scriptlet lines; `omarchy update` = `pacman -Sy archlinux-keyring` (a
+  `reinstalled` line) then `pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*`.
+- **Item 5, detail:** unprivileged `snapper --jsonout list` exits **1**, prints
+  `No permissions.` on **stderr**, nothing on stdout. `omarchy update` creates
+  its snapshot with `snapper create -c number -d "$(omarchy-version)"`, i.e.
+  type `single`, cleanup `number`, description = the version *before* the update.
+- Current theme: `omarchy-theme-set` writes the slug to
+  `~/.local/state/omarchy/current/theme.name` and then runs `omarchy-hook theme-set <slug>`.
+- No python `jsonschema` module and no `check-jsonschema` on the dev host;
+  `python3` with PyYAML is there. `scripts/validate-fixtures.sh` falls back
+  to its builtin validator.
