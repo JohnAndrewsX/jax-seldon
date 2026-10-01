@@ -425,3 +425,27 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **`just check` takes longer than the 2-minute foreground tool limit**
   (plugin tests in headless Quickshell); run it in the background and wait
   for the notification instead of re-running it.
+
+## 2026-10-01 · WP-034 (Engine)
+
+- **A file watcher sees its own reads.** notify's inotify backend reports
+  open and close-without-write. `seldon watch` drops every `Access` event
+  and writes only `index.json` (state dir, outside the watch), so its
+  rebuild cannot trigger the next one. The generated logbook files
+  (`ledger/*.md`, `STATUS.md`) and hidden or temp files (`.<name>.tmp-<pid>`
+  from `sys::write_atomic`, editor swap files, `~` backups) are filtered
+  by path.
+- **Never enable or start the unit on the dev host.** `systemctl --user
+  enable|start` is red zone (the guard blocks it). The read-only check is
+  `systemd-analyze --user verify <unit>`. On a host without
+  `~/.local/bin/seldon` it reports only "is not executable"; verify a
+  scratch copy whose `ExecStart` points at `/usr/bin/true` to see the
+  other warnings.
+- **The default release build has no watcher.** `just build-release`
+  leaves the `watch` feature out, so `seldon watch` exits 1. The unit's
+  `RestartPreventExitStatus=1 3` stops systemd from restarting it forever
+  in that case, and before `seldon init`.
+- **Under parallel test load the debounce timing stretches.** The watch
+  tests allow 4 s of slack over the 2 s interval and wait for the
+  `watching` line before they write anything. A sleep after spawning is
+  not enough.

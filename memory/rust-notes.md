@@ -400,3 +400,47 @@ Append-only. One bullet per finding, newest section last.
   `merge_status` pattern (`rebuild::merge`): header first, fence replaced,
   text outside kept, a hand-written file kept below the fence. No clock in
   the content, or every run writes and commits.
+
+## 2026-10-01 · WP-034 (seldon watch)
+
+- **An optional cargo feature with an optional dependency:**
+  `notify = { …, optional = true }` plus `[features] watch =
+  ["dep:notify"]`. The subcommand and its args struct exist in every build
+  (so `seldon watch` parses and fails clearly with exit 1); only `run` is
+  `#[cfg(feature = "watch")]`, the real code sits in a `mod imp`.
+  Imports used only by one variant need the same `cfg`, or clippy
+  `-D warnings` fails on the other build. An integration test file can
+  hold both variants (`#[cfg(not(feature = "watch"))]` test plus a
+  `#[cfg(feature = "watch")] mod`), so `just test` covers the refusal and
+  `just check-watch` the watcher.
+- **notify 8.2 with `default-features = false`** (the default is only the
+  macOS FSEvents backend). On Linux it pulls inotify, mio (its own poll
+  thread, not an async runtime), walkdir, libc. `recommended_watcher(tx)`
+  accepts a `std::sync::mpsc::Sender` as the handler; loop on
+  `recv_timeout` so the loop can also poll a signal flag and a debounce
+  deadline.
+- **notify's inotify mask includes OPEN and CLOSE_NOWRITE:** every read
+  arrives as `EventKind::Access(_)`. A watcher that rebuilds by reading
+  the watched files must drop `Access` events, or it triggers itself
+  forever. Recursive mode adds a watch for a folder created later on its
+  create event. A file written into that folder before the watch exists
+  is missed, so a test waits ~300 ms after `create_dir`.
+- **SIGTERM/SIGINT without a crate:** `unsafe extern "C" { fn
+  signal(signum: c_int, handler: usize) -> usize; }`. The handler stores
+  the signal number in an `AtomicI32` and resets the signal to `SIG_DFL`
+  (both async-signal-safe), so a second Ctrl-C kills the process at once.
+  glibc and musl `signal()` both use SA_RESTART, so a blocking `recv`
+  is not interrupted. Poll the flag with a short `recv_timeout` (200 ms).
+- **A long-running command must not reuse `ctx.now`.** `Context::now` is
+  fixed at process start. `watch` takes the real clock per rebuild, or,
+  under `SELDON_NOW`, that time plus the time elapsed since start, and
+  calls `index::derive_at` with it.
+- **`Command::get_envs()` / `get_current_dir()`** copy the environment of
+  `common::Env::command` onto another program (`SELDON_WATCH_BIN`)
+  without touching `tests/common`.
+- **Measuring RSS of a child:** read `VmRSS`/`VmHWM` from
+  `/proc/<pid>/status`. A debug binary maps about 6 MB more code than the
+  release build (idle 12.5 MB against 5–6 MB). An absolute memory bound
+  therefore needs an optimised test run: `cargo test --profile bench`
+  (thin LTO, about 10 s incremental) works and sets `CARGO_BIN_EXE_*` to
+  the optimised binary.
