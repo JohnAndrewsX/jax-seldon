@@ -67,3 +67,7 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   trailing sentence period; the fixture's proposals are the same under both,
   so the change was invisible in the diff. Write Plan items without trailing
   punctuation after a package name, or raise it with the orchestrator.
+- **Correction (same day): ADR-0015 §4 supersedes the item above.** A final
+  `.` not followed by a word character is punctuation, so `Install zed.`
+  proposes `zed` again; `zed.conf` does not. A rule change that leaves the
+  sample index identical needs an end-to-end self-check, not just a clean diff.

@@ -51,11 +51,13 @@ Rules the fixture check implements beyond the plain field copies:
   `resolutionDetail` (the resolution's `detail`, when it has one; index only,
   never in a ledger line) and `case` when linked; the latest resolution wins
   (ADR-0012 §8, §11).
-- **Proposals** (ADR-0012 §7, §13): the event's subject must occur in an open
-  case's `## Plan` section as a whole word, case-sensitive, where word
-  characters are `[A-Za-z0-9._+-]`; the lowest case id wins. Consequence: a
-  subject directly followed by a sentence period (`zed.`) is *not* a match,
-  because `.` is a word character (package names contain dots).
+- **Proposals** (ADR-0012 §7; token rule ADR-0015 §4, which supersedes
+  ADR-0012 §13): the event's subject must occur in an open case's `## Plan`
+  section as a whole word, case-sensitive, where word characters are
+  `[A-Za-z0-9._+-]`, except that a final `.` not followed by a word character
+  is punctuation; the lowest case id wins. So `Install zed.` proposes `zed`,
+  `zed.conf` does not, and `extra/zed` does (`/` is not a word character —
+  which also makes a path like `~/.config/zed/settings.json` name `zed`).
 - **Drift grouping** (ADR-0013 §1–§3): open, caseless, drift-eligible `pacman`
   events that share a `txId` form one item. Its `eventId`, `ts`, `subject`,
   `detail`, `actor` and `proposedCase` are the leader's (lowest-id explicit
@@ -78,7 +80,9 @@ Rules the fixture check implements beyond the plain field copies:
   as subject, an `install` member, commands naming a package or lacking `-u`,
   `--overwrite`/`-r` arguments, an unknown option, `yay`, a `--only`
   resolution, a fan-out resolution) and fails if the zone, crisis or member
-  count is not what ADR-0013 says.
+  count is not what ADR-0013 says. Three more add an open caseless `zed`
+  upgrade, replace every open case's Plan, and check the token rule end to
+  end: `Install zed.` and `` `extra/zed` `` propose, `Edit zed.conf` does not.
 
 **Index variants** are overlays: `VARIANTS` in `scripts/validate-fixtures.py`
 lists, per variant, RFC 6902 operations (`test`, `add`, `replace`, `remove`)

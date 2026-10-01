@@ -16,7 +16,8 @@ grouping of ADR-0013 for the parts that come from the logbook. It is a fixture
 consistency check, not the engine; the engine's golden test (WP-007) compares
 real `seldon index` output with the same fixture. `--write-index` rewrites those
 parts of fixtures/index.sample.json and regenerates fixtures/index-variants/ from
-the sample (VARIANTS). Every run also executes the ADR-0013 mutation self-checks.
+the sample (VARIANTS). Every run also executes the mutation self-checks of
+ADR-0013 (drift groups) and ADR-0015 §4 (proposal token rule).
 """
 import argparse
 import copy
@@ -56,8 +57,13 @@ DRIFT_KEYS = ["eventId", "ts", "source", "kind", "subject", "detail", "actor", "
 # ADR-0013 §3: default of config.toml [drift] alwaysRed (fnmatch globs, case-sensitive).
 ALWAYS_RED = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell"]
 
-# ADR-0012 §13: whole-word, case-sensitive; word characters are [A-Za-z0-9._+-].
+# ADR-0015 §4 (supersedes ADR-0012 §13): whole-word, case-sensitive; word characters are
+# [A-Za-z0-9._+-], except that a final `.` not followed by a word character is punctuation.
 TOKEN_CHARS = r"A-Za-z0-9._+\-"
+
+
+def token_pattern(subject):
+    return re.compile(f"(?<![{TOKEN_CHARS}])" + re.escape(subject) + f"(?=\\.?(?![{TOKEN_CHARS}]))")
 
 # pacman options that take a separate argument word (`--opt value`; `--opt=value` is one word).
 # An unknown option is assumed to take none, so its argument counts as a package name and the
@@ -482,8 +488,9 @@ def order_event(e):
 
 # --------------------------------------------------------------------------- derivation (ADR-0012)
 
-def load_logbook(lb, problems, mutate=None):
-    """mutate(ledger) may edit or append (where, event) pairs before derivation (self-checks)."""
+def load_logbook(lb, problems, mutate=None, mutate_cases=None):
+    """Self-checks only: mutate(ledger) may edit or append (where, event) pairs, and
+    mutate_cases(cases) may return changed (path, frontmatter, body) triples, before derivation."""
     ledger = []
     for f in sorted(glob.glob(os.path.join(lb, "ledger", "*.jsonl"))):
         month = os.path.basename(f)[:-6]
@@ -502,11 +509,13 @@ def load_logbook(lb, problems, mutate=None):
     for f in sorted(glob.glob(os.path.join(lb, "work", "*", "C-*.md"))):
         fm, body = frontmatter(f)
         cases.append((f, fm, body))
+    if mutate_cases:
+        cases = mutate_cases(cases)
     return ledger, cases
 
 
-def derive(lb, today, problems, mutate=None):
-    ledger, case_files = load_logbook(lb, problems, mutate)
+def derive(lb, today, problems, mutate=None, mutate_cases=None):
+    ledger, case_files = load_logbook(lb, problems, mutate, mutate_cases)
     events = [e for _, e in ledger]
     by_id = {}
     for where, e in ledger:
@@ -571,8 +580,8 @@ def derive(lb, today, problems, mutate=None):
                          if fm["status"] in ("queued", "active", "verification")))
 
     def proposed(subject):
-        # ADR-0012 §7, §13 (the reference implementation of the token rule)
-        pat = re.compile(f"(?<![{TOKEN_CHARS}])" + re.escape(subject) + f"(?![{TOKEN_CHARS}])")
+        # ADR-0012 §7, ADR-0015 §4 (the reference implementation of the token rule)
+        pat = token_pattern(subject)
         for cid in open_cases:
             if pat.search(plan_section(cases_by_id[cid][2])):
                 return cid
@@ -878,7 +887,8 @@ GROUP_TX = "tx-20260930T214115"  # the open caseless `-Syu` of 2026-09-30 in the
 
 
 def self_checks(today):
-    """Mutation tests of the ADR-0013 rules on in-memory copies of the sample logbook.
+    """Mutation tests of the ADR-0013 drift rules and the ADR-0015 §4 token rule on in-memory
+    copies of the sample logbook.
     Each case: (label, mutate(ledger), expect(group item or None, derived) -> error or None)."""
     def members(ledger):
         return [e for _, e in ledger if e.get("txId") == GROUP_TX]
@@ -948,7 +958,39 @@ def self_checks(today):
             e = expect(g, derived)
             err = [e] if e else []
         out += [f"self-check '{label}': {e}" for e in err]
-    return out, len(cases)
+
+    # ADR-0015 §4 token rule, end to end: an open caseless `zed` upgrade, every open case's Plan
+    # replaced by a neutral one (the sample's Plans name zed in other forms), and one Plan line
+    # in C-2026-007.
+    def add_zed(ledger):
+        ledger.append(("<self-check>:zed", {
+            "id": "7" + "Z" * 23 + "ZD", "ts": "2026-10-01T16:55:00+02:00", "source": "pacman", "kind": "upgrade",
+            "subject": "zed", "detail": "0.198.4-1 → 0.198.5-1", "actor": "system", "zone": "red", "explicit": False,
+            "txId": "tx-20261001T165500", "meta": {"command": "pacman -Syu", "from": "0.198.4-1", "to": "0.198.5-1"}}))
+
+    def plan_line(line):
+        def m(cases):
+            out = []
+            for f, fm, body in cases:
+                if fm["status"] in ("queued", "active", "verification"):
+                    plan = f"- [ ] {line}\n" if fm["id"] == "C-2026-007" else "- [ ] nothing to see\n"
+                    body = re.sub(r"^## Plan\n.*?(?=^## |\Z)", lambda _: f"## Plan\n{plan}\n", body, flags=re.S | re.M)
+                out.append((f, fm, body))
+            return out
+        return m
+
+    proposals = [
+        ("Plan 'Install zed.' proposes zed", "Install zed.", "C-2026-007"),
+        ("Plan 'Edit zed.conf' does not propose zed", "Edit zed.conf", None),
+        ("Plan 'extra/zed' proposes zed", "`extra/zed` from the repo", "C-2026-007"),
+    ]
+    for label, line, want in proposals:
+        problems = []
+        derived, _, _ = derive(LOGBOOK, today, problems, add_zed, plan_line(line))
+        got = [d.get("proposedCase") for d in derived["drift"] if d["subject"] == "zed"]
+        err = problems[:1] or ([] if got == [want] else [f"proposedCase {got}, want [{want!r}]"])
+        out += [f"self-check '{label}': {e}" for e in err]
+    return out, len(cases) + len(proposals)
 
 
 # --------------------------------------------------------------------------- main
@@ -1077,7 +1119,7 @@ def main():
         n_ev = len(ledger)
         print(f"validate-fixtures: ok — {ok} instances ({len(items)} incl. {sum(i[3] for i in items)} expected failures), "
               f"{n_ev} ledger events traced to index.sample.json, {len(VARIANTS)} variants, "
-              f"{n_checks} drift self-checks; backend {backend.name}")
+              f"{n_checks} self-checks; backend {backend.name}")
     return 0
 
 
