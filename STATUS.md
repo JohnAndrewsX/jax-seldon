@@ -11,7 +11,7 @@
 | WP-007 | `index`, `status`, ledger `.md` view, STATUS.md | Engine | `engine-007` (opus, high) | `wt/WP-007` · `wp/007-index-status` | 2026-10-01 |
 | WP-009 | Hooks: claude-code, generic, session-start/stop, attribution pass | Engine | `engine-009` (opus, high) | `wt/WP-009` · `wp/009-hooks` | 2026-10-01 |
 | WP-015 | Fixture corrections (verification step, index-stale variant, gaps) | Schema Keeper | `schema-015` (opus, high) | `wt/WP-015` · `wp/015-fixture-corrections` | 2026-10-01 |
-| WP-011 | Panel: Today, Changelog, System tabs | Plugin | `plugin-011` (opus, high) | `wt/WP-011` · `wp/011-panel-tabs` | 2026-10-01 |
+| WP-012 | Panel actions: QuickEntry, Capture now, Open in editor | Plugin | `plugin-012` (opus, high) | `wt/WP-012` · `wp/012-panel-actions` | 2026-10-01 |
 
 ## Queued (next up)
 After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
@@ -29,6 +29,9 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-011 Panel tabs Today/Changelog/System, crisis strip,
+  snapper banner, keyboard per §5, panel harness (86 checks), event-driven
+  test waits, three-theme sweep on the test host — merged.
 - 2026-10-01 WP-005 Collectors plugins/theme/config, SHA-256 in `sys`,
   theme-set hook script — merged; ADR-0018 applied; 21 collector tests;
   real-host read-only run: 38 plugins, 25 config files, second run 0.

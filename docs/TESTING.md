@@ -225,7 +225,7 @@ collapsed and opened with Enter; Changelog: 58 rows, the "+3" group expanded
 to its members, 7 folded resolution details, 6 highlighted snapshot rows,
 the pacman filter narrows to 12, `f` cycles; System: seven sections), the
 strip "2 changes in the red zone need a reason" on every tab, the keys
-(Tab, Shift-Tab, ←/→, 1–3, ↑/↓, Enter, Esc), the snapper banner on every
+(Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs, digits fixed per tab id (1, 2, 5), ↑/↓, Enter, Esc), the snapper banner on every
 tab, the not-initialised variant, an empty and a sparse `system`, and a log
 free of warnings, `TypeError`s and binding loops. The shell's `Style.qml`
 asks `hyprctl` and `fc-match` for gaps and the font; the script gives it
@@ -297,7 +297,7 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    ```
    Keys: `wtype -k Tab`, `wtype -M shift -k Tab -m shift`, `wtype -k Down`,
    `wtype -k Return`, `wtype f`, `wtype -k Escape`, each followed by
-   `jax.seldon.panel view`. Tab on the last tab opens the bar's next panel
+   `jax.seldon.panel view`. Tab opens the bar's next panel
    (`Bar.switchPanelFrom`); if that neighbour opens a window instead of a
    popup panel (OmaSettings on the test host), the Seldon panel stays open.
 5. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
