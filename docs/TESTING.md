@@ -37,7 +37,7 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/src/**` (`#[cfg(test)]`) | unit tests: frontmatter parser and writer, models, config precedence, lock, templates, subprocess runner |
 | `engine/tests/cli.rs` | `--version`, `contract-version`, parse errors (exit 1, JSON error shape, `--json` detection past free text), `--help`, `--config` > `SELDON_CONFIG` > XDG config |
 | `engine/tests/frontmatter.rs` | `round_trip::` every case, journal, decision, area, memory file and `PROJECT.md` of `fixtures/logbook/` parses into its typed record and re-serialises byte-identical; a lossless update changes only the edited lines |
-| `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, no terminal), lock held → exit 4 |
+| `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, no terminal), lock held → exit 4. `setup::` (WP-024): the first capture (stubbed sources, cursors set, a second capture writes nothing, `--no-capture`), `--since` backfill → open drift, `--baseline` → zero open drift with one `dismissed` "pre-Seldon baseline" line per member and the commit `seldon: first capture and pre-Seldon baseline`, flag errors before anything is written, `--harness claude-code` (settings in the first commit, `hook install` afterwards changes nothing), `--harness omarchy-agent` with a kit (copied, modes kept, merged with Claude Code's hooks) and without one, the theme hook (a recording `omarchy` stub: exactly one `hook install theme-set <script>` on opt-in, none without, a failure with its fix, an existing hook not reinstalled), the templates (written as rendered; frontmatter keys, headings, fences and table headers identical in `en` and `de` and equal to `tests/golden/init-skeleton.txt`, `SELDON_BLESS=1` rewrites it; German prose) |
 | `engine/tests/plan.rs` | `plan::` new (template, canonical frontmatter, area on first use, ids never reused), start/verify/done/drop (folder moves per ADR-0012 §9, `started`/`closed`/`snapshotBefore`, `.seldon/active-case`, body byte-identical outside the Log), invalid transitions → exit 1 and nothing written, list/show against `case.schema.json`, the fixture logbook (a copy), git autocommit with `--no-commit` and `git.autocommit = false` |
 | `engine/tests/log.rs` | `log::` notes with and without a case (`case.events`, `agents`), the Log section append-only over three steps, the journal appended not rewritten, free text as one argument (spaces, quotes, `$(…)`, `--json` after `--`), month and day by timestamp, redaction, exit 3/4 |
 | `engine/tests/journal.rs` | `journal::` appends to a fixture day (only the `cases:` line changes), CRLF days, the `plan done` stub in the logbook language |
@@ -91,6 +91,60 @@ engine/target/debug/seldon doctor --path /tmp/seldon-wp003 --json   # "ok": true
 
 `seldon init` refuses an existing logbook, so remove `/tmp/seldon-wp003`
 before running it again.
+
+**Tests that need a logbook without a capture.** Since WP-024, `init` runs
+the first capture, which records the first state of every diff collector
+(config, theme, plugins) and the pacman cursor. A test that builds the
+machine state *after* `init` and expects its own first capture to be the
+baseline passes `--no-capture`; `Env::init_logbook*` does so for every
+test. Only `tests/init.rs` exercises the wizard's capture.
+
+**Real-host run of the wizard (WP-024).** Reads the real package log,
+`snapper`, `omarchy plugin list` and the theme file (read-only), writes only
+under scratch dirs. Never pass `--theme-hook` on the dev host: it runs
+`omarchy hook install`, a red-zone write under `~/.config/omarchy/hooks/`
+(the guard blocks it; the tests stub `omarchy`).
+
+```
+S=$(mktemp -d)
+export XDG_CONFIG_HOME=$S/config XDG_STATE_HOME=$S/state XDG_DATA_HOME=$S/data
+B=engine/target/debug/seldon
+$B init --non-interactive --path $S/logbook --language de \
+   --harness claude-code --harness omarchy-agent --since "$(date -d '-7 days' +%F)"
+#   First capture: N event(s) since …; M open drift item(s), M crisis  (dev host
+#   2026-10-01: 1230 events, 22 items, all crises — WP-013 FINDINGS §2.2)
+#   Harness omarchy-agent: no kit at $S/data/seldon/harness/omarchy-agent; nothing copied …
+rm -rf $S/logbook $S/state $S/config
+$B --json init --non-interactive --path $S/logbook --since "$(date -d '-7 days' +%F)" --baseline
+#   capture.baseline {"items": 22, "events": 1230, "reason": "pre-Seldon baseline"}, openDrift 0
+$B --json drift          # "openDrift": 0, "crisis": 0
+$B --json capture --all  # "written": 0
+git -C $S/logbook log --format=%s   # first capture and pre-Seldon baseline / init logbook
+```
+
+The interactive wizard needs a terminal; `script` provides one. Keys:
+Enter takes the default, Space toggles a multi-select item, `y`/`n` answer a
+confirmation. Pass `--path` so the path step is skipped (its default is
+`~/Seldon`), and stub `omarchy` with `SELDON_OMARCHY` in case the theme
+hook is answered with yes:
+
+```
+export SELDON_OMARCHY=$S/omarchy-stub    # a script that only records "$*"
+(sleep 1; for k in '\r' '\r' '\r' '\r' '\r' ' ' '\r' '\r' '\r'; do printf "$k"; sleep 0.4; done
+ printf "$(date -d '-3 days' +%F)\r"; sleep 4; printf '\r'; sleep 3) \
+  | script -qec "$B init --path $S/logbook" /dev/null
+# language, Obsidian, collectors, watched paths, more paths, harnesses (Space:
+# claude-code), theme hook (no), git (yes), backfill date, then after the
+# capture: "The backfill opened N drift item(s) … Mark them as the pre-Seldon
+# baseline?" (Enter: yes)
+```
+
+Set the variables with `export` *before* `script`, as above. A `HOME=…`
+given to `env` in front of `script` did not reach the engine on the dev host
+(`script` starts `$SHELL`, and the engine then used the real home): on
+2026-10-01 such a run wrote `~/.config/seldon/config.toml` and
+`~/.local/state/seldon/` (WP-024 handover). Check with a harmless command
+(`$B doctor --json` prints the config path) before a wizard run.
 
 The engine needs Rust ≥ 1.89 (`File::try_lock`, let-chains); both hosts
 have 1.98.
