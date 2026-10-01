@@ -368,4 +368,78 @@ mod open {
         );
         assert_eq!(json(&out)["editor"]["program"], "omarchy-launch-editor");
     }
+
+    /// `omarchy-launch-editor` stays in the foreground while a terminal
+    /// editor runs (WP-012, decision 1): the engine starts it detached,
+    /// reports it launched at once and never kills it (WP-008).
+    #[test]
+    fn a_launcher_that_keeps_running_is_launched_and_left_alone() {
+        let env = Env::new(Snapper::Missing);
+        env.init_logbook();
+        let pid_file = env.tmp.path().join("editor-pid");
+        // PATH is the stub directory only: the host's sleep by its path
+        let sleep = std::env::var("PATH")
+            .unwrap_or_default()
+            .split(':')
+            .map(|d| std::path::Path::new(d).join("sleep"))
+            .find(|p| p.is_file())
+            .expect("sleep on the host");
+        env.stub(
+            "omarchy-launch-editor",
+            &format!(
+                "echo $$ > '{}'; '{}' 12",
+                pid_file.display(),
+                sleep.display()
+            ),
+        );
+        let start = std::time::Instant::now();
+        // output() waits for stdout/stderr to close: an inherited pipe
+        // would hold it until the editor exits
+        let out = env.at(T0, &["open", "status", "--editor", "--json"]);
+        let took = start.elapsed();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(took < std::time::Duration::from_secs(1), "took {took:?}");
+        let v = json(&out);
+        assert_eq!(v["editor"]["launched"], true);
+        assert_eq!(v["editor"]["program"], "omarchy-launch-editor");
+
+        let pid = read(&pid_file).trim().to_string();
+        let stat = |pid: &str| std::fs::read_to_string(format!("/proc/{pid}/stat")).ok();
+        // `pid (comm) state ppid pgrp …`: its own process group
+        let fields: Vec<String> = stat(&pid)
+            .expect("the launcher runs")
+            .rsplit_once(')')
+            .unwrap()
+            .1
+            .split_whitespace()
+            .map(String::from)
+            .collect();
+        assert_eq!(fields[2], pid, "process group of its own");
+        std::thread::sleep(std::time::Duration::from_millis(10_500));
+        let state = stat(&pid).and_then(|s| {
+            s.rsplit_once(')')
+                .and_then(|(_, rest)| rest.split_whitespace().next().map(String::from))
+        });
+        assert!(
+            state.as_deref().is_some_and(|s| s != "Z" && s != "X"),
+            "the launcher survives 10 s: {state:?}"
+        );
+        let _ = std::process::Command::new("kill")
+            .args(["--", &format!("-{pid}")])
+            .status();
+    }
+
+    #[test]
+    fn a_launcher_that_fails_at_once_is_an_error() {
+        let env = Env::new(Snapper::Missing);
+        env.init_logbook();
+        env.stub("omarchy-launch-editor", "echo 'no display' >&2; exit 3");
+        let out = env.at(T0, &["open", "status", "--editor", "--json"]);
+        assert_eq!(out.status.code(), Some(1));
+        let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(
+            message.contains("omarchy-launch-editor exited with 3"),
+            "{message}"
+        );
+    }
 }
