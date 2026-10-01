@@ -52,7 +52,7 @@ pub struct WatchArgs {
 #[cfg(not(feature = "watch"))]
 pub fn run(_ctx: &Context, _args: WatchArgs) -> Result<Output> {
     Err(Error::user(
-        "seldon was built without the watch feature; rebuild it with `cargo build --release --features watch`",
+        "built without the watch feature; rebuild seldon with `cargo build --release --features watch`",
     ))
 }
 
