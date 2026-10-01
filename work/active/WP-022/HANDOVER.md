@@ -223,3 +223,58 @@ Branch `wp/022-start-agent`, worktree `wt/WP-022`, based on `main` at
 - `engine/src/commands/open.rs`: the `launch_detached` signature (reuse,
   as the brief asks), and `engine/src/config.rs` (`[agent]`).
 - `tests/plugin/harness/shell.qml`: one action line.
+
+## Review round 1 (SEND BACK → fixed)
+
+Commit `58e3575` (and this update). `just check` → `check: ok`, exit 0:
+model 48, service-states 166, panel-view 448. `bad_launchers_are_refused`
+and `a_launcher_that_fails_at_once_reports_its_message` pass with their new
+cases.
+
+1. **Blocking: more shell-string launchers, and the `omarchy` route.**
+   - `SHELL_STRING_RUNNERS` gains:
+     - `omarchy-launch-or-focus-tui`: it builds
+       `LAUNCH_COMMAND="omarchy-launch-tui $@"` for
+       `omarchy-launch-or-focus`, which runs `eval exec setsid
+       $LAUNCH_COMMAND`;
+     - `omarchy-launch-or-focus-webapp`: the same pattern, found by
+       grepping every `omarchy-launch-*` for `$@`/`$*` inside a string;
+     - `hyprctl`: `dispatch exec` takes a shell string.
+   - `omarchy launch …` before `{prompt}` is refused outright, whether
+     `omarchy` comes first, has a path, or follows another program such
+     as `env X=1 omarchy launch …`. The `omarchy` CLI resolves routes of
+     several words, e.g. `launch or-focus-tui` and possibly `launch or
+     focus tui`, so checking `omarchy-launch-<argv[2]>` would miss some.
+     Other routes, such as `omarchy agent prompt`, stay allowed.
+   - `bad_launchers_are_refused` covers:
+     - all five new launchers: or-focus-tui, or-focus-webapp, or-focus
+       with a path, terminal-tmux and `hyprctl dispatch exec`;
+     - four `omarchy launch` forms;
+     - two allowed forms: `omarchy agent prompt` and `launch` after the
+       prompt.
+   - The rules in `engine/hooks/README.md` list each launcher and what it
+     does with its arguments.
+2. **Launch log and README.**
+   - `agent-launch.log` is opened with `create + append`, never
+     truncated.
+   - The length before the spawn is remembered, and the error message
+     reads only the lines written after it. Without that, a silent
+     failure would report an earlier launch's stderr.
+   - `tests/agent.rs` has a second, silent failure after a noisy one. Its
+     message has no stale text, and the log still holds the first
+     launch's line.
+   - The README says the refusal list is a heuristic and does not cover
+     `python -c`, `perl -e`, `node -e`, `xargs`, `ssh`, or the user's own
+     wrapper scripts.
+   - The README also says `omarchy-launch-terminal-tmux` drops the
+     prompt (a fixed `bash -c "tmux attach || tmux new …"`).
+3. **TESTING.md:** under "Isolation", a manual `agent start` demo on the
+   dev host uses a `PATH` of stub launchers only (no `/usr/bin`), with
+   other tools called by absolute path, and a temp `HOME`. This records
+   the earlier disclosure.
+
+Memory: four more lines in `memory/pitfalls.md`, under "Review round 1".
+
+Settled by the review, no change: the default without `--inline`; the
+`bash -c` launchers stay refused; no ledger event; key `a`. The real-home
+leftovers are with the orchestrator and operator.
