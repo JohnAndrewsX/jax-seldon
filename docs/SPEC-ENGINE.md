@@ -55,7 +55,16 @@ seldon decide "<title>" [--case ID]            # creates ADR, opens $EDITOR unle
 seldon status                                  # regenerates STATUS.md + index
 seldon index [--check]                         # rebuild index; --check validates against schema
 seldon dossier [--section packages|services|omarchy|plugins|deviations|all]
-seldon rebuild                                 # outputs/REBUILD.md
+seldon rebuild [--json]                        # outputs/REBUILD.md (WP-032): 1 base, 2 explicit packages by
+                                               # case (`omarchy pkg add|aur add` from meta.command: pacman -S →
+                                               # repo, -U → AUR, else "repository unknown"), 3 deviations, 4 plugins,
+                                               # 5 theme, 6 units (incl. cased `services.enabled` rows; system scope
+                                               # separately), 7 open drift (marked in place too) + dismissed
+                                               # ("deliberately not reproduced"); English headings, prose in the
+                                               # logbook language; fence `rebuild`, text outside kept; written
+                                               # atomically and only on change, autocommit `seldon: rebuild`; no
+                                               # ledger write, no index rebuild. --json → {path, sections:
+                                               # {packages, deviations, plugins, units, open}, files, git, warnings}
 seldon update-impact [--target VERSION]        # outputs/UPDATE-IMPACT.md  (Phase 3)
 seldon hook install <claude-code|generic> [--settings PATH]
 seldon hook claude-code                        # stdin: Claude Code hook JSON
