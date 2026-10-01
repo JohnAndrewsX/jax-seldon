@@ -302,9 +302,10 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A heredoc that appends Rust test code is read as commands by the
   guard.** A test string such as an agent's in-place edit command on a
   `~/.config/hypr` file (the test only touches a temp HOME) was blocked
-  as a red-zone write. I reported it and did not reword it. Plan tests
-  like that with the orchestrator first, or keep such strings out of
-  Bash arguments from the start.
+  as a red-zone write. I reported it and did not reword it. Fixed on
+  `main` in `8ca0dd9`: the `~/.config` rule now applies only at command
+  position, and the same heredoc passed in the review follow-up. A
+  block is still reported, never reworded.
 - **Stub programs see only the stub dir on PATH.** `sleep 12` in a stub
   exits 127 at once, and with the detached launcher that shows up as
   "exited with 127", not as a hang. Resolve host tools to absolute paths

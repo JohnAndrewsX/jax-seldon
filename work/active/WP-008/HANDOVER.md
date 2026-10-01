@@ -1,19 +1,70 @@
 WP-008 HANDOVER
 
 Branch `wp/008-drift`, worktree `wt/WP-008`. It is **rebased onto `main` at
-`8d714a0`**, with WP-009 merged. Not pushed, no PR.
+`8d66b35`**, with WP-009, ADR-0021 and the guard fix merged. Not pushed,
+no PR.
 
 Commits `main..HEAD`:
-- `c6fd584` drift commands and the reconcile module;
-- `6c64714` the capture pass;
-- `ae816f3` the detached editor;
-- `136bcaa` tests;
-- `6692d14` memory;
-- then this handover.
+- `e63b599` drift commands and the reconcile module;
+- `bec43a6` the capture pass;
+- `8605bc8` the detached editor;
+- `eb6f76f` tests;
+- `a059de7` memory;
+- `e7ace06` the first handover;
+- then the review follow-ups: `0b8cb2d` ADR-0021 fold, `feffa5d` tests;
+- then this update.
 
-The rebase had two conflicts, `lib.rs` and `main.rs`. Both were additive
-(WP-009's `pkgcmd`/`Hook` and my `reconcile`/`Drift`), and I kept both
-sides. `just check` exits 0 at HEAD after the rebase.
+The first rebase onto `8d714a0` had two conflicts, in `lib.rs` and
+`main.rs`. Both were additive, and I kept both sides. The second rebase,
+onto `8d66b35`, was clean. `just check` exits 0 at HEAD.
+
+## Review follow-ups (after APPROVE)
+
+1. **ADR-0021: fold `case` from any resolution that carries one.**
+   - `engine/src/index/build.rs` (`fold`) now copies `r.case` whenever
+     it is `Some`. The `Linked` test is gone, and so is the then-unused
+     `Resolution` import. The doc comment cites ADR-0021.
+   - `scripts/validate-fixtures.py`: the same one rule (`if
+     r.get("case")`), plus one new self-check, "explained with a case
+     folds it (ADR-0021)". It adds an `explained` line with `case:
+     C-2026-004` for the ollama install and checks:
+     - ollama is folded as `explained` with that case;
+     - ollama is no longer drift;
+     - the sample's btop explained line still folds no case.
+
+     The script also cross-checks each case's `events:` against the
+     ledger. So the self-check lists the event in C-2026-004's
+     frontmatter in time order, as `drift explain` does. The script now
+     reports 23 self-checks, up from 22. `scripts/__pycache__` is
+     removed.
+   - **Negative control:** with the old `linked`-only rule restored in
+     the script, the new self-check fails (the case's `events:` no
+     longer match the folded ledger). I put the rule back afterwards.
+   - `engine/tests/index.rs` has a new test,
+     `a_resolution_folds_its_case_whether_linked_or_explained`. It
+     checks:
+     - an explained line with a case folds it, and the event leaves
+       `drift`;
+     - btop stays explained without a case;
+     - a later explained line without a case wins and folds none.
+   - `tests/drift.rs`: the explain test now asserts that the explained
+     ollama event carries `case: C-2026-009` in the rebuilt index.
+   - The fixture and the golden test are unchanged, and the golden test
+     passes. The fixture's explained lines carry no case.
+2. **The end-to-end config attribution test is back:**
+   `a_hooked_config_edit_lands_in_the_case_file` in `tests/drift.rs`.
+   - It runs `plan new` + `start`, a baseline `capture --source config`,
+     and then a real `seldon hook claude-code` PreToolUse payload. The
+     Bash command is an in-place `sed` of `~/.config/hypr/bindings.conf`,
+     inside the temp HOME. Then the file changes and `capture` runs.
+   - It checks:
+     - the `config-change` carries `agent:claude-code` and C-2026-001;
+     - the case's `events:` is `[hook command id, config-change id]`;
+     - `agents` is `[agent:claude-code]`;
+     - drift is 0.
+   - The guard did not block the heredoc this time.
+   - **Negative control:** without the `after_capture` call, the test
+     fails (`events:` holds only the command). I restored the call.
 
 ## Done
 
@@ -150,29 +201,21 @@ go before `--`.
   WP-009 already added the green `agent` case and its test, and nothing
   else was missing for drift. The resolution lines' missing zone is
   asserted in `tests/drift.rs`.
-- **Config attribution test.** An extra end-to-end test (an agent's
-  in-place edit of a watched config file → the case file) was blocked by
-  the guard. See Decision 5. Rule 1 for config, theme and plugins is
-  covered by WP-009's `tests/attribution.rs`. My `after_capture` path is
-  covered by the pacman test, which uses the same code.
 - **`capture` autocommit.** `capture` still does not commit; the spec
   says "the commit helper … follow". I did not add it, because it is not
   in the brief.
-- **SPEC-ENGINE §3 command lines.** They still show `drift explain <EVENT>
-  "<intent>"` and `drift dismiss <EVENT> --reason TEXT`. I implemented
-  CONTRACT.md: free text as a positional after `--`, no `--reason`.
-  `docs/` belongs to the orchestrator.
 
 ## Verified by
 
 ```
-$ just check   → exit 0 (rebased on 8d714a0)
-  fmt-check ok · clippy -D warnings ok · 290 tests passed across 20 test-result lines
-  validate-fixtures: ok — 101 instances, 71 ledger events traced … 22 self-checks
-  plugin-validate ok · qmllint ok · plugin-test ok (panel-view 87 passed) · check: ok
+$ just check   → exit 0 (rebased on 8d66b35, after the review follow-ups)
+  fmt-check ok · clippy -D warnings ok · 292 tests passed across 20 test-result lines
+  validate-fixtures: ok — 101 instances, 71 ledger events traced … 23 self-checks
+  plugin-validate ok · qmllint ok · plugin-test ok (panel-view 130 passed) · check: ok
 ```
 
-**New tests.** `engine/tests/drift.rs` has 8 tests, all through
+**New tests.** `engine/tests/drift.rs` has 9 tests (8 from the first
+handover, plus the hooked config edit from follow-up 2), all through
 `common::Env` (temp HOME, temp XDG dirs).
 
 - **`lists_the_four_fixture_items`**: `drift --json` on a fixture copy
@@ -272,49 +315,15 @@ real logbook.
 
 ## Decisions needed
 
-1. **`explain` creates a case: confirm the reading.** I followed the brief
-   and SPEC-ENGINE §3: a retroactive case, **completed**,
-   created/started on the event's day, `explained` resolution lines that
-   carry `case`.
-   - ADR-0012 §8 folds `case` onto the index event only for `linked`.
-     So an explained event shows `resolution: explained` but no `case`,
-     although the case lists it in `events:`.
-   - The fixture's explained resolutions (btop, the plugins, omarchy)
-     have no case; they say "deliberately without a case".
-   - **Options:**
-     - (a) keep this behaviour, and amend ADR-0012 §8 so that the index
-       also folds `case` for `explained`;
-     - (b) make the case optional, for example `explain --no-case`, or
-       create one only with `--zone`/`--risk`/`--area`;
-     - (c) write `linked` lines for an explain.
+None open. The review settled them:
 
-   I recommend (a). The plugin's "Explain" then always leaves a record
-   the human can open.
-2. **A stale leader id writes nothing.** After `--only` on a leader,
-   `drift <verb> <that id>` resolves nothing; the rest is a new item with
-   its own leader, and the plugin uses the new id. ADR-0013 §4 could also
-   be read as "resolve the open members of its transaction". Confirm, or
-   I change one line in `reconcile::select`.
-3. **`--only` and rule 2.** `drift link <explicit> --only` does not also
-   link the explicit event's dependencies. That is literally what `--only`
-   says, and the fan-out without `--only` covers rule 2. Confirm.
-4. **SPEC-ENGINE §3.**
-   - The `drift` lines should match CONTRACT.md: `explain <id> [--only]
-     [--zone --risk --area] -- <intent>`, `dismiss <id> [--only] --
-     <reason>`, `link … [--only]`, `show <id>`, and `[--json]`.
-   - Add the JSON shapes of `drift`, `drift show` and the resolving
-     commands (listed under Done).
-   - §3 should also mention that the no-terminal `open --editor` path is
-     detached.
-5. **Guard block (reported, not worked around).** A Bash heredoc that
-   appends a Rust test to `engine/tests/drift.rs` was blocked: "write
-   under ~/.config outside the jax.seldon plugin dir". The test's text
-   contained an agent command string, an in-place edit of a watched
-   `~/.config/hypr` file. The test itself only writes inside a temp HOME.
-   - I dropped that optional test and did not rephrase or reroute it.
-   - If the orchestrator wants it, either allow it, or fix the false
-     positive in `scripts/guard.sh` with a `guard-test.sh` row. I add the
-     test in a follow-up.
+1. `explain` creates a case, and its case is folded: ADR-0021, now
+   implemented.
+2. A stale leader id writes nothing: kept.
+3. `--only` stays literal: kept.
+4. The spec edits are done by the orchestrator.
+5. The guard false positive: fixed on `main`. The dropped test is back
+   (follow-up 2).
 
 ## Touched outside WP scope
 
@@ -325,6 +334,11 @@ real logbook.
 - `engine/tests/commands.rs`: two tests in `mod open` for the launcher
   fix, next to the existing open/editor tests.
 - `memory/rust-notes.md` and `memory/pitfalls.md`: appended.
-- I did not touch `index/`, `hook.rs`, `pkgcmd.rs`, `attribution.rs`,
-  `schema/`, `fixtures/`, `docs/` or `plugin/`. `Cargo.toml` and
+- Review follow-up 1, as the reviewer asked:
+  - `engine/src/index/build.rs`: the ADR-0021 fold line and its doc
+    comment;
+  - `scripts/validate-fixtures.py`: the same rule and one self-check;
+  - `engine/tests/index.rs`: one test.
+- I did not touch `hook.rs`, `pkgcmd.rs`, `attribution.rs`, `schema/`,
+  `fixtures/`, `docs/` or `plugin/`. `Cargo.toml` and
   `Cargo.lock` are unchanged: no new crate.
