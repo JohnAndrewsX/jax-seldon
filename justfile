@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test schema-validate plugin-validate qmllint plugin-test
+check: fmt-check clippy test check-watch schema-validate plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -30,6 +30,13 @@ clippy:
 # Engine tests.
 test:
     cargo test --manifest-path engine/Cargo.toml --locked
+
+# The optional `watch` feature (WP-034): clippy and tests with it, then the
+# RSS bound (< 10 MB on the x10 fixture) on an optimised build (bench profile).
+check-watch:
+    cargo clippy --manifest-path engine/Cargo.toml --locked --all-targets --features watch -- -D warnings
+    cargo test --manifest-path engine/Cargo.toml --locked --features watch
+    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_10_mb
 
 # Validate fixtures against schema/ (script owned by WP-002).
 schema-validate:
