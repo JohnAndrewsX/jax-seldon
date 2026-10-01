@@ -11,7 +11,7 @@ use ulid::Ulid;
 use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
-use crate::model::event::{Event, Kind, Resolution, Source, format_ts};
+use crate::model::event::{Event, Kind, Source, format_ts};
 use crate::model::{CaseStatus, Journal};
 
 /// Most events the index lists (CONTRACT.md rule 4).
@@ -246,7 +246,7 @@ fn newest_first(a: &Event, b: &Event) -> std::cmp::Ordering {
 
 /// Every event except resolutions, with the latest resolution of each
 /// folded onto its target: `resolution`, `resolutionDetail` and, when
-/// linked, `case` (ADR-0012 §8, §11). A resolution counts only for an
+/// the resolution carries one, `case` (ADR-0012 §8, §11, ADR-0021). A resolution counts only for an
 /// event earlier in the ledger.
 fn fold(events: &[Event]) -> Vec<IndexEvent> {
     let mut seen: HashSet<Ulid> = HashSet::with_capacity(events.len());
@@ -269,7 +269,8 @@ fn fold(events: &[Event]) -> Vec<IndexEvent> {
             if let Some(r) = resolutions.get(&e.id) {
                 event.resolution = r.resolution;
                 resolution_detail = r.detail.clone();
-                if r.resolution == Some(Resolution::Linked) {
+                // ADR-0021: any resolution that carries a case folds it
+                if r.case.is_some() {
                     event.case = r.case.clone();
                 }
             }
