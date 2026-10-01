@@ -1,0 +1,23 @@
+[package]
+name = "seldon"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Flight recorder and planning desk for an Omarchy system (engine)"
+license = "MIT"
+repository = "https://github.com/JohnAndrewsX/jax-seldon"
+publish = false
+
+[[bin]]
+name = "seldon"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
