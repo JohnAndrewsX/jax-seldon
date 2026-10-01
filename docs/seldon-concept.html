@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Seldon — Konzept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF0F5; --surface:#FFFFFF; --surface-2:#E3E6EE; --line:#C9CDD9;
+  --ink:#141828; --ink-2:#4B5168; --ink-3:#7A8099;
+  --radiant:#B97A12; --radiant-soft:#F2B544; --observed:#2B8FA3; --planned:#5A5DD6; --drift:#C9475E;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1424; --surface:#171D33; --surface-2:#1F2642; --line:#2C3454;
+    --ink:#E8E6DF; --ink-2:#AEB3C8; --ink-3:#7C83A0;
+    --radiant:#F2B544; --radiant-soft:#F2B544; --observed:#7FC8D6; --planned:#9A9CFF; --drift:#E07A8A;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1424; --surface:#171D33; --surface-2:#1F2642; --line:#2C3454;
+  --ink:#E8E6DF; --ink-2:#AEB3C8; --ink-3:#7C83A0;
+  --radiant:#F2B544; --radiant-soft:#F2B544; --observed:#7FC8D6; --planned:#9A9CFF; --drift:#E07A8A;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px); scroll-behavior:smooth}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased}
+img,svg{max-width:100%}
+a{color:var(--planned)}
+code,pre,.mono{font-family:var(--mono);font-size:.86em}
+pre{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px;overflow-x:auto;line-height:1.5;margin:0}
+h1,h2,h3{font-weight:700;letter-spacing:-.01em;line-height:1.15;margin:0}
+h1{font-size:clamp(2.6rem,7vw,5.2rem)}
+h2{font-size:clamp(1.5rem,3vw,2.1rem);margin-bottom:.6rem}
+h3{font-size:1.1rem;margin-bottom:.4rem}
+p{margin:.5rem 0 1rem}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px}
+.wide{max-width:1120px}
+section{padding:56px 0;border-top:1px solid var(--line)}
+section:first-of-type{border-top:0}
+.lede{font-size:1.25rem;color:var(--ink-2);max-width:40ch}
+.muted{color:var(--ink-3)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media (max-width:760px){.grid2,.grid3{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 20px}
+.tag{display:inline-block;font-family:var(--mono);font-size:.74rem;padding:2px 8px;border-radius:999px;border:1px solid currentColor;line-height:1.5;vertical-align:middle}
+.tag.observed{color:var(--observed)} .tag.planned{color:var(--planned)} .tag.drift{color:var(--drift)} .tag.radiant{color:var(--radiant)}
+table{width:100%;border-collapse:collapse;font-size:.95rem}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--ink-2);font-weight:500}
+.scroll{overflow-x:auto}
+/* hero */
+.hero{padding:72px 0 40px}
+.hero .top{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:28px;color:var(--ink-3);font-family:var(--mono);font-size:.8rem}
+.hero .title{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:end}
+@media (max-width:860px){.hero .title{grid-template-columns:1fr}}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-family:var(--mono);font-size:.95rem}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--drift)}
+.radiant-preview{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px 10px;position:relative;overflow:hidden}
+.radiant-preview::after{content:"";position:absolute;inset:auto -40% -60% -40%;height:60%;background:radial-gradient(ellipse at center,color-mix(in srgb,var(--radiant-soft) 22%,transparent),transparent 70%);pointer-events:none}
+.radiant-preview .cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.78rem;color:var(--ink-3);margin-bottom:10px}
+.heat rect{fill:var(--surface-2);transition:fill .5s ease}
+.heat rect[data-l="1"]{fill:color-mix(in srgb,var(--radiant-soft) 30%,var(--surface-2))}
+.heat rect[data-l="2"]{fill:color-mix(in srgb,var(--radiant-soft) 55%,var(--surface-2))}
+.heat rect[data-l="3"]{fill:color-mix(in srgb,var(--radiant-soft) 80%,var(--surface-2))}
+.heat rect[data-l="4"]{fill:var(--radiant-soft)}
+.heat rect.lit{fill:var(--surface-2)}
+@media (prefers-reduced-motion:reduce){.heat rect{transition:none}}
+/* streams diagram */
+.streams text{font-family:var(--mono);font-size:12px;fill:var(--ink-2)}
+.streams .h{font-family:var(--sans);font-size:15px;font-weight:700;fill:var(--ink)}
+.streams .pl{stroke:var(--planned)} .streams .ob{stroke:var(--observed)} .streams .dr{stroke:var(--drift)}
+.streams .box{fill:var(--surface);stroke:var(--line)}
+/* panel mockup */
+.mock{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:.9rem}
+.mock .tabs{display:flex;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:.78rem}
+.mock .tabs span{padding:9px 12px;color:var(--ink-3)}
+.mock .tabs span.on{color:var(--ink);border-bottom:2px solid var(--radiant)}
+.mock .row{display:grid;grid-template-columns:52px 70px 1fr auto;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);align-items:center}
+.mock .row:last-child{border-bottom:0}
+.mock .t{font-family:var(--mono);color:var(--ink-3);font-size:.8rem}
+.mock .src{font-family:var(--mono);font-size:.78rem}
+.mock .act{font-family:var(--mono);font-size:.74rem;color:var(--ink-3)}
+.mock .banner{background:color-mix(in srgb,var(--drift) 14%,var(--surface));color:var(--drift);padding:8px 14px;font-size:.85rem;border-bottom:1px solid var(--line)}
+.kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px}
+.kanban .col h4{margin:0 0 8px;font-size:.78rem;font-family:var(--mono);color:var(--ink-3);font-weight:400}
+.kcard{background:var(--surface-2);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:.84rem}
+.kcard .id{font-family:var(--mono);font-size:.74rem;color:var(--ink-3)}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-top:6px}
+.bar i{display:block;height:4px;background:var(--planned);border-radius:2px}
+/* tree */
+.tree{font-family:var(--mono);font-size:.85rem;line-height:1.6}
+.tree b{font-weight:600;color:var(--ink)}
+.tree span{color:var(--ink-3)}
+/* phases */
+.phases{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+@media (max-width:860px){.phases{grid-template-columns:1fr 1fr}}
+@media (max-width:520px){.phases{grid-template-columns:1fr}}
+.phase{border-top:3px solid var(--line);padding-top:10px}
+.phase.now{border-top-color:var(--radiant)}
+.phase .n{font-family:var(--mono);color:var(--ink-3);font-size:.78rem}
+.phase h3{font-size:1rem}
+.phase p{font-size:.9rem;color:var(--ink-2);margin:.3rem 0 0}
+/* hook timeline */
+.hooks{display:grid;grid-template-columns:120px 1fr;gap:6px 18px;font-size:.95rem}
+.hooks .k{font-family:var(--mono);font-size:.82rem;color:var(--planned);padding-top:2px}
+.hooks .v{padding-bottom:10px;border-bottom:1px dashed var(--line)}
+footer{padding:40px 0 60px;color:var(--ink-3);font-size:.85rem;font-family:var(--mono)}
+.toggle{background:none;border:1px solid var(--line);color:var(--ink-2);border-radius:999px;padding:4px 12px;font:inherit;font-size:.8rem;cursor:pointer}
+.toggle:focus-visible{outline:2px solid var(--radiant);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap wide">
+    <div class="top">
+      <span>jax.seldon · JohnAndrewsX · Konzept v1 · 1. Oktober 2026</span>
+      <button class="toggle" id="themeToggle" type="button">Hell/Dunkel</button>
+    </div>
+    <div class="title">
+      <div>
+        <h1>Seldon</h1>
+        <p class="lede">Der Flugschreiber und Planungstisch für dein Omarchy-System. Zeichnet jede Änderung auf, gleicht sie mit dem Plan ab und zeigt die Abweichung.</p>
+        <p class="muted" style="margin-top:18px">In der Bar sieht es so aus:</p>
+        <span class="pill"><span>⟡</span><span>2</span><span class="muted">·</span><span>3</span><span class="dot" aria-hidden="true"></span></span>
+        <p class="muted" style="font-size:.9rem;margin-top:8px">2 aktive Cases, 3 unerklärte Änderungen, davon eine im roten Bereich.</p>
+      </div>
+      <div class="radiant-preview" aria-label="Vorschau des Prime Radiant: Aktivitäts-Heatmap">
+        <div class="cap"><span>Prime Radiant</span><span>ideacentre · Omarchy 4.0.7 · 365 Tage</span></div>
+        <svg class="heat" id="heat" viewBox="0 0 530 84" role="img" aria-label="Heatmap der Systemereignisse pro Tag"></svg>
+        <div class="cap" style="margin-top:8px;margin-bottom:0"><span>Ereignisse pro Tag</span><span>heute 11 · 7 Tage 27</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>Das Problem</h2>
+    <p>Omarchy ist ein Agenten-first-System. Auf einem Entwickler-Rechner ändern Agenten und Mensch täglich Pakete, Dotfiles, Themes, Shell-Plugins, Hyprland-Regeln. Nach drei Monaten kann niemand mehr sagen, warum das System so aussieht, was der Agent am Dienstag getan hat, oder welche Overrides das nächste Omarchy-Update bricht.</p>
+    <p>Handgeschriebene Changelogs sterben nach zwei Wochen. Systemlogs kennen Fakten, aber keine Absicht. Seldon verbindet beides.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap wide">
+    <h2>Die Idee: Plan trifft Realität</h2>
+    <p class="lede" style="margin-bottom:24px">Links das, was geplant war. Rechts das, was passiert ist. In der Mitte der Abgleich. Was zusammenpasst, wird zur Spur. Was übrig bleibt, ist Drift.</p>
+    <svg class="streams" viewBox="0 0 1080 330" role="img" aria-label="Diagramm: geplante Cases und beobachtete Ereignisse werden abgeglichen; Treffer werden zur Spur, Reste zu Drift">
+      <text class="h" x="40" y="34">Geplant · work/</text>
+      <rect class="box" x="40" y="48" width="300" height="34" rx="6"/><text x="52" y="70">C-2026-003 Omarchy 4.0.7 · red · R2</text>
+      <rect class="box" x="40" y="90" width="300" height="34" rx="6"/><text x="52" y="112">C-2026-004 Zed installieren · red · R2</text>
+      <rect class="box" x="40" y="132" width="300" height="34" rx="6"/><text x="52" y="154">C-2026-005 Theme Tokyo Night · yellow · R1</text>
+
+      <text class="h" x="740" y="34">Beobachtet · ledger/</text>
+      <rect class="box" x="740" y="48" width="300" height="34" rx="6"/><text x="752" y="70">pacman: upgrade hyprland 0.53</text>
+      <rect class="box" x="740" y="90" width="300" height="34" rx="6"/><text x="752" y="112">pacman: install zed · agent:claude-code</text>
+      <rect class="box" x="740" y="132" width="300" height="34" rx="6"/><text x="752" y="154">theme-set: tokyo-night · human</text>
+      <rect class="box" x="740" y="174" width="300" height="34" rx="6"/><text x="752" y="196">pacman: install ollama · agent:codex</text>
+      <rect class="box" x="740" y="216" width="300" height="34" rx="6"/><text x="752" y="238">config-add: ollama.service · agent:codex</text>
+
+      <rect class="box" x="455" y="100" width="170" height="60" rx="8"/>
+      <text class="h" x="540" y="126" text-anchor="middle">Abgleich</text>
+      <text x="540" y="146" text-anchor="middle">seldon capture</text>
+
+      <path class="pl" d="M340 65 C400 65 410 130 455 130" fill="none" stroke-width="2"/>
+      <path class="pl" d="M340 107 C400 107 410 130 455 130" fill="none" stroke-width="2"/>
+      <path class="pl" d="M340 149 C400 149 410 130 455 130" fill="none" stroke-width="2"/>
+      <path class="ob" d="M740 65 C680 65 670 130 625 130" fill="none" stroke-width="2"/>
+      <path class="ob" d="M740 107 C680 107 670 130 625 130" fill="none" stroke-width="2"/>
+      <path class="ob" d="M740 149 C680 149 670 130 625 130" fill="none" stroke-width="2"/>
+      <path class="dr" d="M740 191 C680 191 660 300 540 300" fill="none" stroke-width="2" stroke-dasharray="5 4"/>
+      <path class="dr" d="M740 233 C690 233 660 300 540 300" fill="none" stroke-width="2" stroke-dasharray="5 4"/>
+
+      <path class="pl" d="M540 160 L540 230" fill="none" stroke-width="2"/>
+      <rect class="box" x="360" y="230" width="360" height="34" rx="6"/>
+      <text x="540" y="252" text-anchor="middle">Spur: Case ↔ Ereignisse ↔ Agent ↔ Snapshot 112</text>
+
+      <rect x="360" y="282" width="360" height="36" rx="6" fill="none" stroke="var(--drift)" stroke-width="1.5"/>
+      <text x="540" y="305" text-anchor="middle" fill="var(--drift)">Drift: 2 Änderungen ohne Case · rote Zone · Krise</text>
+    </svg>
+    <div class="grid3" style="margin-top:20px">
+      <div class="card"><span class="tag planned">Case</span><h3 style="margin-top:8px">Was gewollt war</h3><p class="muted" style="margin:0">Eine Markdown-Datei pro Vorhaben mit Zone, Risiko, Plan, Rollback und Verifikation. Agenten bekommen den Case als Kontext.</p></div>
+      <div class="card"><span class="tag observed">Ereignis</span><h3 style="margin-top:8px">Was passiert ist</h3><p class="muted" style="margin:0">Automatisch aus pacman, Snapper, Omarchy, Plugins, Theme, Config und Agenten-Hooks. Append-only, lückenlos, langweilig.</p></div>
+      <div class="card"><span class="tag drift">Drift</span><h3 style="margin-top:8px">Was keiner erklärt hat</h3><p class="muted" style="margin:0">Jedes Ereignis ohne Case. Drei Aktionen: verknüpfen, nachträglich erklären, abtun. Rote Zone heißt Krise und steht ganz oben.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Drei Schichten, eine Richtung</h2>
+    <div class="scroll"><table>
+      <tr><th style="width:22%">Schicht</th><th>Rolle</th><th style="width:28%">Technik</th></tr>
+      <tr><td><strong>Logbuch</strong><br><span class="mono muted">~/Seldon</span></td><td>Die Wahrheit. Markdown mit Frontmatter für alles Geschriebene, JSONL für Maschinenereignisse. Git-Repo. Öffnet sich als Obsidian-Vault, braucht aber kein Obsidian.</td><td>Hermes-Projektstruktur</td></tr>
+      <tr><td><strong>Engine</strong><br><span class="mono muted">seldon</span></td><td>Der einzige Schreiber. Setup-Wizard, Collectors, Journal- und Case-Befehle, Drift-Abgleich, Index-Erzeugung, Agenten-Hooks, Rebuild-Dokument.</td><td>Rust, ein statisches Binary, kein Netz, kein Daemon. AUR-Paket <span class="mono">jax-seldon</span></td></tr>
+      <tr><td><strong>Plugin</strong><br><span class="mono muted">jax.seldon</span></td><td>Das Gesicht. Liest ausschließlich <span class="mono">index.json</span>, ruft die Engine für Schreibvorgänge mit festen Argumenten auf. Bar-Pill, Panel, Prime Radiant.</td><td>Quickshell QML, Omarchy-Theme-Farben</td></tr>
+    </table></div>
+    <p class="muted" style="margin-top:14px">Der Index ist ein Cache. Löschen, <span class="mono">seldon index</span>, fertig. Das Plugin parst nie Markdown. Agenten fassen den Index nie an. Der JSON-Vertrag zwischen Engine und Plugin ist die Versicherung gegen jedes spätere Umschreiben.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap wide">
+    <h2>Ledger und Journal</h2>
+    <p class="lede" style="margin-bottom:22px">Ein Ledger ohne Journal ist ein Syslog. Ein Journal ohne Ledger ist Fiktion.</p>
+    <div class="grid2">
+      <div>
+        <h3><span class="tag observed">ledger/2026-10.md</span></h3>
+<pre>## 2026-10-01
+- 09:14 pacman · upgrade hyprland 0.52.1 → 0.53.0 · [[C-2026-003]]
+- 09:14 snapper · snapshot 112 "pre: omarchy-update"
+- 10:12 pacman · install zed 0.198.4 · [[C-2026-004]] · agent:claude-code
+- 10:40 config · ~/.config/hypr/bindings.conf · [[C-2026-004]]
+- 14:02 pacman · install ollama 0.6.1 · **drift** · agent:codex
+- 14:30 snapper · snapshot 113 "pre: ollama"
+- 15:30 theme · tokyo-night · **drift** · human</pre>
+        <p class="muted" style="font-size:.9rem">Generiert aus <span class="mono">ledger/2026-10.jsonl</span>. Nie von Hand editiert. Wikilinks, damit Obsidians Graph funktioniert.</p>
+      </div>
+      <div>
+        <h3><span class="tag planned">journal/2026/2026-10-01.md</span></h3>
+<pre>## 10:40 · agent:claude-code · C-2026-004
+Zed installiert, Keybindings nach Omarchy-Defaults
+gesetzt. Gelernt: `omarchy pkg add` statt yay,
+dann landet es sauber im Ledger.
+
+## 17:00 · human · C-2026-004
+Zed fühlt sich gut an. Theme-Sync fehlt noch,
+siehe Inbox.</pre>
+        <p class="muted" style="font-size:.9rem">Geschrieben, in deiner Sprache. Agenten hängen am Sitzungsende einen Eintrag an, du ergänzt das Warum. Obsidian Daily Notes kompatibel.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap wide">
+    <h2>Die Oberflächen</h2>
+    <div class="grid2">
+      <div>
+        <h3>Panel · Changelog</h3>
+        <div class="mock" aria-label="Mockup des Panels, Tab Changelog">
+          <div class="tabs"><span>Heute</span><span class="on">Changelog</span><span>Work</span><span>Decisions</span><span>System</span><span>Memory</span></div>
+          <div class="banner">2 Änderungen in der roten Zone brauchen einen Grund</div>
+          <div class="row"><span class="t">15:30</span><span class="src" style="color:var(--observed)">theme</span><span>tokyo-night</span><span class="act" style="color:var(--drift)">drift</span></div>
+          <div class="row"><span class="t">14:30</span><span class="src" style="color:var(--observed)">snapper</span><span>113 pre: ollama</span><span class="act">—</span></div>
+          <div class="row"><span class="t">14:03</span><span class="src" style="color:var(--observed)">config</span><span>ollama.service</span><span class="act" style="color:var(--drift)">Krise</span></div>
+          <div class="row"><span class="t">14:02</span><span class="src" style="color:var(--observed)">pacman</span><span>install ollama 0.6.1 · agent:codex</span><span class="act" style="color:var(--drift)">Krise</span></div>
+          <div class="row"><span class="t">10:12</span><span class="src" style="color:var(--observed)">pacman</span><span>install zed 0.198.4 · agent:claude-code</span><span class="act" style="color:var(--planned)">C-2026-004</span></div>
+          <div class="row"><span class="t">09:21</span><span class="src" style="color:var(--observed)">omarchy</span><span>4.0.6 → 4.0.7</span><span class="act" style="color:var(--planned)">C-2026-003</span></div>
+        </div>
+        <p class="muted" style="font-size:.9rem;margin-top:10px">Tasten 1–6 für Tabs, Pfeile, Esc, Tab springt zwischen Omarchy-Panels. Klick auf eine Drift-Zeile öffnet verknüpfen / erklären / abtun.</p>
+      </div>
+      <div>
+        <h3>Panel · Work</h3>
+        <div class="mock" aria-label="Mockup des Panels, Tab Work mit drei Spalten">
+          <div class="tabs"><span>Heute</span><span>Changelog</span><span class="on">Work</span><span>Decisions</span><span>System</span><span>Memory</span></div>
+          <div class="kanban">
+            <div class="col"><h4>queued 3</h4>
+              <div class="kcard"><span class="id">C-2026-007 · R1</span><br>Herdr als Default-Agent</div>
+              <div class="kcard"><span class="id">C-2026-005 · R1</span><br>Theme Tokyo Night durchziehen</div>
+              <div class="kcard"><span class="id">C-2026-006 · R2</span><br>Snapper-Retention 14 Tage</div>
+            </div>
+            <div class="col"><h4>active 2</h4>
+              <div class="kcard"><span class="id">C-2026-003 · R2 · claude-code</span><br>Omarchy 4.0.7<div class="bar"><i style="width:80%"></i></div></div>
+              <div class="kcard"><span class="id">C-2026-004 · R2 · claude-code</span><br>Zed installieren<div class="bar"><i style="width:50%"></i></div></div>
+            </div>
+            <div class="col"><h4>completed</h4>
+              <div class="kcard"><span class="id">C-2026-002</span><br>Monitorlayout Dual-WQHD</div>
+              <div class="kcard"><span class="id">C-2026-001</span><br>Logbuch anlegen</div>
+            </div>
+          </div>
+        </div>
+        <p class="muted" style="font-size:.9rem;margin-top:10px">Neuer Case aus dem Panel. „Agent starten“ übergibt den Case als Kontext an den Omarchy-Default-Agenten. Die Spur entsteht von selbst.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:36px"><span class="tag radiant">Prime Radiant</span> &nbsp;Das Vollbild</h3>
+    <p>Benannt nach dem Gerät, auf dem Seldons Plan sichtbar wird. Hier gehört die Visualisierung hin, das Panel ist dafür zu klein. Fünf Zeilen: Kopf mit Maschine, Version und Zeitraum. Heatmap über 365 Tage. Paketanzahl als Stufenlinie, Drift geöffnet gegen gelöst pro Woche, Cases nach Risiko. Zeitstrahl mit Omarchy-Releases, Snapshots, Case-Spannen und Krisenmarkern. Und der Plan: aktive Cases mit Fortschritt und Agent.</p>
+    <svg viewBox="0 0 1080 150" role="img" aria-label="Zeitstrahl mit Releases, Snapshots, Case-Spannen und einem Krisenmarker" style="margin-top:8px">
+      <line x1="40" y1="100" x2="1040" y2="100" stroke="var(--line)" stroke-width="2"/>
+      <g font-family="JetBrains Mono, monospace" font-size="11" fill="var(--ink-3)">
+        <text x="40" y="125">Sep 12</text><text x="520" y="125">Sep 30</text><text x="980" y="125">Okt 1</text>
+      </g>
+      <rect x="40" y="56" width="60" height="10" rx="5" fill="var(--planned)"/><text x="40" y="48" font-size="11" fill="var(--ink-2)" font-family="JetBrains Mono, monospace">C-2026-002</text>
+      <rect x="520" y="56" width="520" height="10" rx="5" fill="var(--planned)" opacity=".7"/><text x="520" y="48" font-size="11" fill="var(--ink-2)" font-family="JetBrains Mono, monospace">C-2026-003 Omarchy 4.0.7</text>
+      <rect x="900" y="72" width="140" height="10" rx="5" fill="var(--planned)" opacity=".7"/><text x="900" y="90" font-size="11" fill="var(--ink-2)" font-family="JetBrains Mono, monospace" text-anchor="start">C-2026-004 Zed</text>
+      <polygon points="300,100 306,92 312,100 306,108" fill="var(--radiant)"/><text x="300" y="138" font-size="11" fill="var(--ink-3)" font-family="JetBrains Mono, monospace">4.0.6</text>
+      <polygon points="900,100 906,92 912,100 906,108" fill="var(--radiant)"/><text x="892" y="138" font-size="11" fill="var(--ink-3)" font-family="JetBrains Mono, monospace">4.0.7</text>
+      <circle cx="905" cy="100" r="4" fill="var(--observed)"/><circle cx="960" cy="100" r="4" fill="var(--observed)"/>
+      <line x1="950" y1="86" x2="950" y2="114" stroke="var(--drift)" stroke-width="3"/><text x="956" y="90" font-size="11" fill="var(--drift)" font-family="JetBrains Mono, monospace">Krise: ollama</text>
+    </svg>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Das Logbuch auf der Platte</h2>
+    <p>Ein Hermes-Projekt, benannt nach der Maschine. Jeder Agent, der <span class="mono">AGENTS.md</span> liest, kann hier arbeiten. Agenten wohnen nicht hier, sie arbeiten hier. Ihre Werkzeuge liegen in <span class="mono">.claude/</span> und <span class="mono">.codex/</span>, für Obsidian ausgeblendet.</p>
+<pre class="tree"><b>Seldon/</b>
+├── <b>AGENTS.md</b>            <span>Regeln für jeden Agenten: Zonen, Gates, Sprache</span>
+├── <b>PROJECT.md</b>           <span>wofür diese Maschine da ist</span>
+├── <b>STATUS.md</b>            <span>generiert von seldon status</span>
+├── <b>DECISIONS.md</b>         <span>Index der Entscheidungen</span>
+├── inbox/               <span>noch nicht triagiert: Ideen, Findings, Drift-Notizen</span>
+├── journal/2026/        <span>Daily Notes, geschrieben</span>
+├── ledger/              <span>2026-10.jsonl (Maschine) + 2026-10.md (generiert)</span>
+├── decisions/           <span>ADR-0001-… bis …</span>
+├── work/                <span>queued/ active/ completed/ — Cases C-2026-NNN</span>
+├── areas/               <span>hyprland/ themes/ packages/ dev-env/ plugins/ shell/ — je README.md, optional AGENTS.md</span>
+├── system/              <span>Dossier: hardware packages deviations services omarchy plugins</span>
+├── memory/              <span>was Agenten gelernt haben; lessons.md liest jeder zuerst</span>
+├── resources/ outputs/ archive/
+├── .seldon/             <span>logbook.toml, active-case, templates</span>
+└── .claude/ .codex/     <span>optionale Harnesses, z. B. guard.py aus dem Omarchy-Agent-Kit</span></pre>
+    <p class="muted" style="font-size:.9rem;margin-top:12px"><span class="mono">system/deviations.md</span> bleibt die wichtigste Datei: jede Abweichung vom Omarchy-Default mit Grund, Datum und Case. Sie macht Updates vorhersehbar und das System rekonstruierbar.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Agenten hinterlassen eine Spur</h2>
+    <p>Claude-Code-Hooks, installiert mit einem Befehl. Codex und der Omarchy-Default-Agent nutzen die generische Form: eine JSON-Zeile in <span class="mono">seldon hook generic</span>.</p>
+    <div class="hooks">
+      <div class="k">SessionStart</div><div class="v">Druckt STATUS, den aktiven Case mit Planschritten, die letzten Journalzeilen und die Überschriften aus <span class="mono">memory/lessons.md</span> als Kontext.</div>
+      <div class="k">PostToolUse</div><div class="v">Jeder Bash-Befehl wird klassifiziert. Mutiert er das System (pacman, yay, omarchy, systemctl, Schreiben in beobachtete Pfade), entsteht ein Ereignis mit <span class="mono">actor: agent:claude-code</span> und dem aktiven Case. Geheimnisse werden vorher entfernt. Dauer: ein bis zwei Millisekunden.</div>
+      <div class="k">Stop</div><div class="v">Journal-Eintrag für die Sitzung, Capture, Index, Commit.</div>
+    </div>
+    <p style="margin-top:18px">Das Ergebnis pro Case ist die <strong>Spur</strong>: die geordnete Liste dessen, was der Agent tatsächlich getan hat, neben dem, was er tun sollte. Mit dem Snapper-Snapshot davor als Rückweg.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Was das System reproduzierbar macht</h2>
+    <div class="grid2">
+      <div class="card"><h3>seldon rebuild</h3><p class="muted" style="margin:0">Erzeugt <span class="mono">outputs/REBUILD.md</span>: explizite Pakete (Repo und AUR getrennt, mit dem Case, der sie gebracht hat), Abweichungen mit Gründen, Plugins, Theme, User-Units. Eine frische Installation kann dem Dokument folgen.</p></div>
+      <div class="card"><h3>seldon update-impact</h3><p class="muted" style="margin:0">Vor <span class="mono">omarchy-update</span>: vergleicht die Änderungen zwischen installierter und verfügbarer Version mit deinen Abweichungen. „4.1 fasst das shell.json-Schema an, du hast drei Overrides dort.“</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Techstack und Entscheidungen</h2>
+    <div class="scroll"><table>
+      <tr><th style="width:34%">Entscheidung</th><th>Warum</th></tr>
+      <tr><td>Engine in Rust, ein statisches Binary</td><td>Hooks laufen bei jedem Agenten-Befehl: 1–2 ms statt 30–50 ms. Kein Interpreter, kein Daemon, einstelliger MB-Footprint. Mit Agenten ist Rust kein Mehraufwand mehr. Kein SIMD, kein Assembly: der Workload rechtfertigt es nicht.</td></tr>
+      <tr><td>Plugin in QML, liest nur JSON</td><td>Das ist das Omarchy-Plugin-System. Plugins laufen unsandboxed im Shell-Prozess, also so wenig Logik wie möglich dort.</td></tr>
+      <tr><td>JSON-Schema als Vertrag</td><td>Engine und Plugin lassen sich unabhängig entwickeln und ersetzen. Das Plugin-Team startet am ersten Tag gegen eine Fixture.</td></tr>
+      <tr><td>Engine über AUR, Plugin bleibt dünn</td><td>Vorbild Basecamp-Plugin von 37signals: erst <span class="mono">omarchy pkg add</span>, dann Plugin. Keine Binaries im Git, nichts wird beim Install heruntergeladen, Security-Scans bleiben grün.</td></tr>
+      <tr><td>Markdown ist die Akte, JSONL die Maschinenquelle</td><td>Lesbar ohne Werkzeug, Obsidian-tauglich ohne Dataview-Zwang. Alles Generierte ist aus Markdown + JSONL rekonstruierbar.</td></tr>
+      <tr><td>Kein Daemon per Default</td><td>Timer in <span class="mono">Service.qml</span> wie bei den Agent-Collectors: Shell-Start und alle 15 Minuten. Watcher optional.</td></tr>
+      <tr><td>Setup-Wizard im Terminal</td><td>Terminal-first passt zu Omarchy und ist zehnmal schneller gebaut als ein QML-Wizard. Das Panel zeigt im Leerzustand einen Button, der ihn öffnet.</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap wide">
+    <h2>Der Weg</h2>
+    <p class="lede" style="margin-bottom:22px">Jede Phase endet mit etwas, das du benutzen kannst.</p>
+    <div class="phases">
+      <div class="phase now"><div class="n">Phase 0</div><h3>Fundament</h3><p>Logbuch, <span class="mono">seldon init</span>, Collectors, Cases, Drift, Hooks. Nutzbar aus Terminal und Obsidian, ohne Plugin. Ein Wochenende.</p></div>
+      <div class="phase"><div class="n">Phase 1</div><h3>Sichtbar</h3><p>Pill in der Bar, Panel mit Heute, Changelog, System. Quick-Entry und Capture.</p></div>
+      <div class="phase"><div class="n">Phase 2</div><h3>Planungstisch</h3><p>Work-Spalten, Agent aus dem Case starten, Drift im Panel lösen, Decisions und Memory.</p></div>
+      <div class="phase"><div class="n">Phase 3</div><h3>Prime Radiant</h3><p>Das Vollbild mit allen Charts. Rebuild- und Update-Impact-Dokumente.</p></div>
+      <div class="phase"><div class="n">Phase 4</div><h3>Release</h3><p>AUR-Paket, README, Preview, Listung auf plugins.omarchy.org und omahub.dev.</p></div>
+    </div>
+    <p class="muted" style="font-size:.9rem;margin-top:22px">Das Dev-Team: ein Herdr-Orchestrator, ein Engine-Agent (Rust), ein Plugin-Agent (QML), ein Reviewer. Engine- und Plugin-Spur laufen dank Fixture von Tag eins parallel. Details in <span class="mono">docs/PLAN.md</span> und <span class="mono">docs/ORCHESTRATION.md</span>.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Begriffe</h2>
+    <div class="scroll"><table>
+      <tr><td class="mono">Logbuch</td><td>der Projektordner, Standard <span class="mono">~/Seldon</span></td></tr>
+      <tr><td class="mono">Ledger</td><td>maschinell erfasste Ereignisse, append-only</td></tr>
+      <tr><td class="mono">Journal</td><td>geschriebene Daily Notes</td></tr>
+      <tr><td class="mono">Case</td><td>geplante Änderung, <span class="mono">C-2026-NNN</span>, lebt in <span class="mono">work/</span></td></tr>
+      <tr><td class="mono">Plan</td><td>alle offenen Cases (Foundation-Vokabular, im UI)</td></tr>
+      <tr><td class="mono">Drift</td><td>Ereignis ohne Case und ohne Auflösung</td></tr>
+      <tr><td class="mono">Krise</td><td>Drift in der roten Zone</td></tr>
+      <tr><td class="mono">Spur</td><td>die geordneten Ereignisse und Sitzungen eines Case</td></tr>
+      <tr><td class="mono">Dossier</td><td><span class="mono">system/</span>, der dokumentierte Ist-Zustand</td></tr>
+      <tr><td class="mono">Memory</td><td>was Agenten über diese Maschine gelernt haben</td></tr>
+      <tr><td class="mono">Prime Radiant</td><td>das Vollbild-Overlay</td></tr>
+      <tr><td class="mono">Index</td><td><span class="mono">~/.local/state/seldon/index.json</span>, einziger Input des Plugins</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<footer><div class="wrap">Seldon · jax.seldon · github.com/JohnAndrewsX/jax-seldon · MIT · Konzeptstand 2026-10-01 · Diese Seite ist offline und ohne Abhängigkeiten lesbar.</div></footer>
+
+<script>
+(function(){
+  var btn=document.getElementById('themeToggle');
+  var root=document.documentElement;
+  try{var saved=localStorage.getItem('seldon-theme'); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  btn.addEventListener('click',function(){
+    var dark=root.getAttribute('data-theme')==='dark' || (!root.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    var next=dark?'light':'dark'; root.setAttribute('data-theme',next);
+    try{localStorage.setItem('seldon-theme',next);}catch(e){}
+  });
+  // heatmap: 53 weeks x 7 days, deterministic pseudo-random, activity only from late August
+  var svg=document.getElementById('heat'); var NS='http://www.w3.org/2000/svg';
+  var seed=7; function rnd(){seed=(seed*9301+49297)%233280; return seed/233280;}
+  var cells=[]; var weeks=53, cell=8, gap=2;
+  for(var w=0;w<weeks;w++){for(var d=0;d<7;d++){
+    var r=document.createElementNS(NS,'rect'); r.setAttribute('x',w*(cell+gap)); r.setAttribute('y',d*(cell+gap)+6);
+    r.setAttribute('width',cell); r.setAttribute('height',cell); r.setAttribute('rx',1.5);
+    var level=0; if(w>=46){var v=rnd(); level=v<.3?0:v<.6?1:v<.8?2:v<.93?3:4;} if(w===52&&d===3) level=4;
+    r.setAttribute('data-l',level); r.classList.add('lit'); svg.appendChild(r); cells.push(r);
+  }}
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  cells.forEach(function(r,i){ if(reduce){r.classList.remove('lit');} else { setTimeout(function(){r.classList.remove('lit');}, 200+ (i%7)*20 + Math.floor(i/7)*14); } });
+})();
+</script>
+</body>
+</html>

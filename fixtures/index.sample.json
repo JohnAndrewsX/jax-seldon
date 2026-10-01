@@ -1,0 +1,4031 @@
+{
+ "contractVersion": 1,
+ "generatedAt": "2026-10-01T17:05:12+02:00",
+ "engineVersion": "0.1.0",
+ "logbook": {
+  "path": "/home/eandres/Seldon",
+  "language": "de",
+  "machine": "ideacentre",
+  "git": {
+   "head": "a1b2c3d",
+   "dirty": false
+  }
+ },
+ "state": {
+  "status": "ok",
+  "lastCapture": "2026-10-01T17:05:00+02:00",
+  "collectors": [
+   {
+    "name": "pacman",
+    "enabled": true,
+    "ok": true,
+    "lastRun": "2026-10-01T17:05:00+02:00"
+   },
+   {
+    "name": "snapper",
+    "enabled": true,
+    "ok": true,
+    "lastRun": "2026-10-01T17:05:00+02:00"
+   },
+   {
+    "name": "omarchy",
+    "enabled": true,
+    "ok": true,
+    "lastRun": "2026-10-01T17:05:00+02:00"
+   },
+   {
+    "name": "plugins",
+    "enabled": true,
+    "ok": true,
+    "lastRun": "2026-10-01T17:05:00+02:00"
+   },
+   {
+    "name": "theme",
+    "enabled": true,
+    "ok": true,
+    "lastRun": "2026-10-01T17:05:00+02:00"
+   },
+   {
+    "name": "config",
+    "enabled": true,
+    "ok": true,
+    "lastRun": "2026-10-01T17:05:00+02:00"
+   }
+  ]
+ },
+ "summary": {
+  "activeCases": 2,
+  "queuedCases": 3,
+  "openDrift": 3,
+  "crisis": 2,
+  "eventsToday": 11,
+  "events7d": 27
+ },
+ "today": {
+  "date": "2026-10-01",
+  "path": "journal/2026/2026-10-01.md",
+  "entries": [
+   {
+    "time": "10:40",
+    "actor": "agent:claude-code",
+    "case": "C-2026-004",
+    "text": "Zed installiert, Keybindings nach Omarchy-Defaults gesetzt. Gelernt: `omarchy pkg add` statt yay, dann landet es sauber im Ledger."
+   },
+   {
+    "time": "17:00",
+    "actor": "human",
+    "case": "C-2026-004",
+    "text": "Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox."
+   }
+  ],
+  "yesterday": [
+   {
+    "time": "19:10",
+    "actor": "human",
+    "case": null,
+    "text": "Snapshots aufgeräumt, 100–109 gelöscht."
+   }
+  ]
+ },
+ "events": [
+  {
+   "id": "01K6N5SXS5AA819X9YP981068V",
+   "ts": "2026-10-01T17:00:00+02:00",
+   "source": "manual",
+   "kind": "note",
+   "subject": "C-2026-004",
+   "actor": "human",
+   "detail": "Keybindings für Zed an Omarchy-Defaults angeglichen.",
+   "case": "C-2026-004"
+  },
+  {
+   "id": "01K6WPQ5E6EYCNDY0YP57RCYBV",
+   "ts": "2026-10-01T16:10:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-add",
+   "subject": "io.github.jheuing.tyme",
+   "actor": "human",
+   "detail": "1.1.0",
+   "zone": "yellow"
+  },
+  {
+   "id": "01K65GQAPENECFSECZP11HYGCP",
+   "ts": "2026-10-01T15:30:00+02:00",
+   "source": "theme",
+   "kind": "theme-set",
+   "subject": "tokyo-night",
+   "actor": "human",
+   "zone": "yellow"
+  },
+  {
+   "id": "01K6QY77ZXYYK596NGYA1DQ91K",
+   "ts": "2026-10-01T14:03:00+02:00",
+   "source": "config",
+   "kind": "config-add",
+   "subject": "~/.config/systemd/user/ollama.service",
+   "actor": "agent:codex",
+   "zone": "red"
+  },
+  {
+   "id": "01K6S3C4DWA7N36096Q14DR9GP",
+   "ts": "2026-10-01T14:02:00+02:00",
+   "source": "pacman",
+   "kind": "install",
+   "subject": "ollama",
+   "actor": "agent:codex",
+   "detail": "0.6.1",
+   "explicit": true,
+   "txId": "t3",
+   "zone": "red",
+   "meta": {
+    "command": "sudo pacman -S ollama"
+   }
+  },
+  {
+   "id": "01K69EE0ZBGJ09TQM83XSSSS6Y",
+   "ts": "2026-10-01T10:40:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "~/.config/hypr/bindings.conf",
+   "actor": "agent:claude-code",
+   "detail": "sha 3f2a… → 91cc…",
+   "case": "C-2026-004",
+   "zone": "yellow"
+  },
+  {
+   "id": "01K6NPZX45HY43KWJRP1XPA7Z3",
+   "ts": "2026-10-01T10:12:00+02:00",
+   "source": "pacman",
+   "kind": "install",
+   "subject": "zed",
+   "actor": "agent:claude-code",
+   "detail": "0.198.4",
+   "case": "C-2026-004",
+   "explicit": true,
+   "txId": "t2",
+   "zone": "red",
+   "meta": {
+    "command": "yay -S zed"
+   }
+  },
+  {
+   "id": "01K6DJ8FSSZ5AWSH8VHTPRE95B",
+   "ts": "2026-10-01T10:12:00+02:00",
+   "source": "pacman",
+   "kind": "install",
+   "subject": "alsa-lib",
+   "actor": "agent:claude-code",
+   "detail": "1.2.13 (dependency)",
+   "case": "C-2026-004",
+   "explicit": false,
+   "txId": "t2",
+   "zone": "red"
+  },
+  {
+   "id": "01K6QKFBF5KZNWJ47TAN9ZT24M",
+   "ts": "2026-10-01T09:21:00+02:00",
+   "source": "omarchy",
+   "kind": "update",
+   "subject": "omarchy",
+   "actor": "system",
+   "detail": "4.0.6 → 4.0.7",
+   "case": "C-2026-003"
+  },
+  {
+   "id": "01K6M9S346Q3D25VT4F5V37E3S",
+   "ts": "2026-10-01T09:14:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "hyprland",
+   "actor": "system",
+   "detail": "0.52.1 → 0.53.0",
+   "case": "C-2026-003",
+   "explicit": true,
+   "txId": "t1"
+  },
+  {
+   "id": "01K63E28JT97KB6CQ643DZVMXX",
+   "ts": "2026-10-01T09:14:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "112",
+   "actor": "system",
+   "detail": "pre: omarchy-update",
+   "case": "C-2026-003"
+  },
+  {
+   "id": "01K663FCH26W14WMCHWYFGCW8T",
+   "ts": "2026-09-30T18:33:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "omarchy.agents",
+   "actor": "system"
+  },
+  {
+   "id": "01K6FV4DK79Q9G8XE6SZAEAVSN",
+   "ts": "2026-09-30T14:28:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "110",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6Q1NXW1RNJ47E65GH2BH8VG",
+   "ts": "2026-09-30T11:22:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "110",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6JFMGT83PXT891WB09B9Y73",
+   "ts": "2026-09-30T11:01:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "jax.quadrat",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6M5H3BV4H15G5E4G7X0NTH8",
+   "ts": "2026-09-30T10:34:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "omarchy.agents",
+   "actor": "system"
+  },
+  {
+   "id": "01K6NC8SP3804GVA35RJFJ2XBA",
+   "ts": "2026-09-28T16:19:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6BCKKDJWBHP1G201CYFW6VZ",
+   "ts": "2026-09-28T09:10:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "jax.quadrat",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6MF2KDPB0NR5YHCF05G59S2",
+   "ts": "2026-09-27T08:16:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "110",
+   "actor": "system"
+  },
+  {
+   "id": "01K69RMZ9J92V81E5128Q6RW31",
+   "ts": "2026-09-26T12:19:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6Y3ZH6DZJJXXX7CK5Y1JX4W",
+   "ts": "2026-09-25T17:36:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "qt6-base",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6454YG4GFDEXZR4YJ2C49NG",
+   "ts": "2026-09-25T15:16:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "linux",
+   "actor": "system"
+  },
+  {
+   "id": "01K659GQ8H7QEZZS1A0ZWSK9TP",
+   "ts": "2026-09-25T14:13:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6MNS7C0JGQ4SR4QVH3H63J9",
+   "ts": "2026-09-24T09:53:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "110",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6V1SD53TW8JZ38AYTNJKGGS",
+   "ts": "2026-09-22T16:20:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system"
+  },
+  {
+   "id": "01K604SXWF6E996X5208E2K8GV",
+   "ts": "2026-09-21T19:48:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "firefox",
+   "actor": "system"
+  },
+  {
+   "id": "01K67AA4DZEWNWV8CF5BN5MFQG",
+   "ts": "2026-09-21T12:30:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "omarchy.agents",
+   "actor": "system"
+  },
+  {
+   "id": "01K6TDRHN3ZHQ8D5HFRSWVK182",
+   "ts": "2026-09-21T08:47:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "111",
+   "actor": "system"
+  },
+  {
+   "id": "01K6T39S3D19T33BSWM75ANCBX",
+   "ts": "2026-09-20T17:11:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system"
+  },
+  {
+   "id": "01K6EZ2NTQSC0J4DZCKCEXEGJ6",
+   "ts": "2026-09-20T11:42:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "111",
+   "actor": "system"
+  },
+  {
+   "id": "01K6RGE00KXHMFYFF1TK31CZT5",
+   "ts": "2026-09-20T09:04:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "jax.quadrat",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6605H5PT7DRPKV53YCQWCMQ",
+   "ts": "2026-09-18T13:21:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "firefox",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6V64G5D6TZWBE8TXF7JJHHQ",
+   "ts": "2026-09-17T16:34:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "110",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6GVZ8ZB0K9FMMXQ5CSAFT42",
+   "ts": "2026-09-17T09:30:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "firefox",
+   "actor": "system"
+  },
+  {
+   "id": "01K6S2R2X43GC4NQHN2GMHK041",
+   "ts": "2026-09-17T08:40:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "111",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6FF9JCM4SGFE6X260YEWQ2J",
+   "ts": "2026-09-16T11:28:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6WG06PD2QN92DG2D0MTQBK4",
+   "ts": "2026-09-11T09:23:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "omarchy.agents",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K64T6S95ASHTJKT3KPTT1QCS",
+   "ts": "2026-09-11T08:50:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "firefox",
+   "actor": "system"
+  },
+  {
+   "id": "01K682YM3R5AESCYBD2SARP79F",
+   "ts": "2026-09-10T15:48:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system"
+  },
+  {
+   "id": "01K6V75SQXA8039S5QA9PJAA46",
+   "ts": "2026-09-10T11:00:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "111",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6M7RXKTKFVRQWWB10ZXFWXB",
+   "ts": "2026-09-10T08:56:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "omarchy.agents",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K6W6GSQGRQ9QN5WEB3JGKM02",
+   "ts": "2026-09-09T20:33:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "linux",
+   "actor": "system"
+  },
+  {
+   "id": "01K6649HSG03PWZFA0231SBFA3",
+   "ts": "2026-09-09T20:15:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "qt6-base",
+   "actor": "system"
+  },
+  {
+   "id": "01K6PVQ5W2285M53R8147C8ZJA",
+   "ts": "2026-09-09T14:06:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "mesa",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6Q38ZE2130PK6PETK8DQYA8",
+   "ts": "2026-09-09T10:18:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "111",
+   "actor": "system"
+  },
+  {
+   "id": "01K6AMHX9GYDGFMQ2CBSAHMRAG",
+   "ts": "2026-09-09T09:53:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "110",
+   "actor": "system"
+  },
+  {
+   "id": "01K6S4A92176AP911282424QC4",
+   "ts": "2026-09-08T19:14:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "jax.quadrat",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6HVGJD50AGFCAMCRNFRYY01",
+   "ts": "2026-09-08T13:57:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "jax.quadrat",
+   "actor": "system",
+   "case": "C-2026-001"
+  },
+  {
+   "id": "01K61V6PY3D5JAV0CJ30PZ6ZBZ",
+   "ts": "2026-09-08T12:39:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "linux",
+   "actor": "system"
+  },
+  {
+   "id": "01K67225JY686DJMNVG1PGJ3QM",
+   "ts": "2026-09-08T09:15:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K69TCTBK4K3Y0RVX5WBE6GE2",
+   "ts": "2026-09-08T08:39:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "omarchy.agents",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K62PM9WMAXWGE8NXFCHK99FM",
+   "ts": "2026-09-07T18:14:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "firefox",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6DEZA75Z6MP6SS5V1QDKGVA",
+   "ts": "2026-09-07T16:16:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "qt6-base",
+   "actor": "system"
+  },
+  {
+   "id": "01K6X19GS0FVTEEB7XVMG6TFSA",
+   "ts": "2026-09-06T19:14:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "omarchy.agents",
+   "actor": "system"
+  },
+  {
+   "id": "01K6G6A6CR99KKVHC66HDRX20S",
+   "ts": "2026-09-06T10:15:00+02:00",
+   "source": "plugins",
+   "kind": "plugin-update",
+   "subject": "110",
+   "actor": "system",
+   "case": "C-2026-002"
+  },
+  {
+   "id": "01K6BM0RZ62GDACP6XDY1QNTXD",
+   "ts": "2026-09-05T15:29:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "linux",
+   "actor": "system"
+  },
+  {
+   "id": "01K6E9PTXJ8YPEHRGVBY0HPFKM",
+   "ts": "2026-09-04T20:51:00+02:00",
+   "source": "pacman",
+   "kind": "upgrade",
+   "subject": "~/.config/hypr/monitors.conf",
+   "actor": "system"
+  },
+  {
+   "id": "01K69KR35M8P00D4JG69EBWP9D",
+   "ts": "2026-09-04T15:27:00+02:00",
+   "source": "snapper",
+   "kind": "snapshot",
+   "subject": "mesa",
+   "actor": "system"
+  },
+  {
+   "id": "01K63GHRS304TTPG6EKSESXDA8",
+   "ts": "2026-09-04T14:32:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "mesa",
+   "actor": "system"
+  },
+  {
+   "id": "01K6CZD5W77GTE8YZ3YX9ZFZA0",
+   "ts": "2026-09-03T17:57:00+02:00",
+   "source": "config",
+   "kind": "config-change",
+   "subject": "mesa",
+   "actor": "system"
+  }
+ ],
+ "drift": [
+  {
+   "eventId": "01K6S3C4DWA7N36096Q14DR9GP",
+   "ts": "2026-10-01T14:02:00+02:00",
+   "source": "pacman",
+   "kind": "install",
+   "subject": "ollama",
+   "detail": "0.6.1",
+   "actor": "agent:codex",
+   "zone": "red",
+   "crisis": true,
+   "proposedCase": null
+  },
+  {
+   "eventId": "01K6QY77ZXYYK596NGYA1DQ91K",
+   "ts": "2026-10-01T14:03:00+02:00",
+   "source": "config",
+   "kind": "config-add",
+   "subject": "~/.config/systemd/user/ollama.service",
+   "actor": "agent:codex",
+   "zone": "red",
+   "crisis": true,
+   "proposedCase": null
+  },
+  {
+   "eventId": "01K65GQAPENECFSECZP11HYGCP",
+   "ts": "2026-10-01T15:30:00+02:00",
+   "source": "theme",
+   "kind": "theme-set",
+   "subject": "tokyo-night",
+   "actor": "human",
+   "zone": "yellow",
+   "crisis": false,
+   "proposedCase": "C-2026-005"
+  }
+ ],
+ "cases": {
+  "queued": [
+   {
+    "id": "C-2026-005",
+    "title": "Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim)",
+    "status": "queued",
+    "zone": "yellow",
+    "risk": "R1",
+    "priority": "normal",
+    "area": "themes",
+    "created": "2026-09-30",
+    "agents": [],
+    "events": [],
+    "tags": [],
+    "path": "work/queued/C-2026-005-tokyo-night.md",
+    "steps": {
+     "total": 4,
+     "done": 0
+    }
+   },
+   {
+    "id": "C-2026-006",
+    "title": "Snapper-Retention auf 14 Tage",
+    "status": "queued",
+    "zone": "red",
+    "risk": "R2",
+    "priority": "low",
+    "area": "packages",
+    "created": "2026-09-28",
+    "agents": [],
+    "events": [],
+    "tags": [],
+    "path": "work/queued/C-2026-006-snapper-retention.md",
+    "steps": {
+     "total": 3,
+     "done": 0
+    }
+   },
+   {
+    "id": "C-2026-007",
+    "title": "Herdr-Orchestrator als Default-Agent registrieren",
+    "status": "queued",
+    "zone": "yellow",
+    "risk": "R1",
+    "priority": "high",
+    "area": "dev-env",
+    "created": "2026-10-01",
+    "agents": [],
+    "events": [],
+    "tags": [],
+    "path": "work/queued/C-2026-007-herdr-default-agent.md",
+    "steps": {
+     "total": 5,
+     "done": 0
+    }
+   }
+  ],
+  "active": [
+   {
+    "id": "C-2026-003",
+    "title": "Omarchy auf 4.0.7 aktualisieren",
+    "status": "active",
+    "zone": "red",
+    "risk": "R2",
+    "priority": "high",
+    "area": "shell",
+    "created": "2026-09-30",
+    "started": "2026-10-01",
+    "snapshotBefore": 112,
+    "agents": [
+     "agent:claude-code"
+    ],
+    "events": [
+     "01K6N5SXS5AA819X9YP981068V"
+    ],
+    "tags": [
+     "update"
+    ],
+    "path": "work/active/C-2026-003-omarchy-407.md",
+    "steps": {
+     "total": 5,
+     "done": 4
+    }
+   },
+   {
+    "id": "C-2026-004",
+    "title": "Zed als zweiten Editor installieren",
+    "status": "active",
+    "zone": "red",
+    "risk": "R2",
+    "priority": "normal",
+    "area": "dev-env",
+    "created": "2026-10-01",
+    "started": "2026-10-01",
+    "snapshotBefore": 112,
+    "agents": [
+     "agent:claude-code"
+    ],
+    "events": [
+     "01K6NPZX45HY43KWJRP1XPA7Z3"
+    ],
+    "tags": [],
+    "path": "work/active/C-2026-004-zed.md",
+    "steps": {
+     "total": 4,
+     "done": 2
+    }
+   }
+  ],
+  "verification": [],
+  "completed": [
+   {
+    "id": "C-2026-002",
+    "title": "Hyprland-Monitorlayout für Dual-WQHD",
+    "status": "completed",
+    "zone": "yellow",
+    "risk": "R1",
+    "priority": "normal",
+    "area": "hyprland",
+    "created": "2026-09-12",
+    "started": "2026-09-12",
+    "closed": "2026-09-13",
+    "agents": [
+     "agent:claude-code"
+    ],
+    "events": [],
+    "tags": [],
+    "path": "work/completed/C-2026-002-monitors.md",
+    "steps": {
+     "total": 3,
+     "done": 3
+    }
+   },
+   {
+    "id": "C-2026-001",
+    "title": "Seldon-Logbuch anlegen",
+    "status": "completed",
+    "zone": "green",
+    "risk": "R0",
+    "priority": "high",
+    "area": "dev-env",
+    "created": "2026-08-20",
+    "started": "2026-08-20",
+    "closed": "2026-08-20",
+    "agents": [],
+    "events": [],
+    "tags": [],
+    "path": "work/completed/C-2026-001-init.md",
+    "steps": {
+     "total": 2,
+     "done": 2
+    }
+   }
+  ]
+ },
+ "decisions": [
+  {
+   "id": "ADR-0003",
+   "title": "Zed statt VS Code als Zweiteditor",
+   "status": "accepted",
+   "date": "2026-10-01",
+   "path": "decisions/ADR-0003-zed.md"
+  },
+  {
+   "id": "ADR-0002",
+   "title": "Snapshots vor jedem Red-Zone-Eingriff",
+   "status": "accepted",
+   "date": "2026-08-21",
+   "path": "decisions/ADR-0002-snapshots.md"
+  },
+  {
+   "id": "ADR-0001",
+   "title": "Logbuch-Sprache Deutsch, Struktur Englisch",
+   "status": "accepted",
+   "date": "2026-08-20",
+   "path": "decisions/ADR-0001-language.md"
+  }
+ ],
+ "system": {
+  "omarchy": {
+   "version": "4.0.7",
+   "repoHead": "9f1e2d3",
+   "theme": "tokyo-night",
+   "lastUpdate": "2026-10-01T09:21:00+02:00"
+  },
+  "packages": {
+   "explicit": 327,
+   "total": 2012,
+   "aur": 41
+  },
+  "deviations": 18,
+  "snapshots": [
+   {
+    "number": 113,
+    "ts": "2026-10-01T14:30:00+02:00",
+    "description": "pre: ollama",
+    "type": "pre"
+   },
+   {
+    "number": 112,
+    "ts": "2026-10-01T09:14:00+02:00",
+    "description": "pre: omarchy-update",
+    "type": "pre"
+   },
+   {
+    "number": 111,
+    "ts": "2026-09-29T20:00:00+02:00",
+    "description": "timeline",
+    "type": "single"
+   }
+  ],
+  "plugins": {
+   "enabled": 9,
+   "installed": 12
+  },
+  "areas": [
+   {
+    "name": "hyprland",
+    "hasAgentsMd": true,
+    "cases": 1
+   },
+   {
+    "name": "themes",
+    "hasAgentsMd": true,
+    "cases": 1
+   },
+   {
+    "name": "packages",
+    "hasAgentsMd": false,
+    "cases": 1
+   },
+   {
+    "name": "dev-env",
+    "hasAgentsMd": false,
+    "cases": 3
+   },
+   {
+    "name": "plugins",
+    "hasAgentsMd": false,
+    "cases": 0
+   },
+   {
+    "name": "shell",
+    "hasAgentsMd": false,
+    "cases": 1
+   }
+  ]
+ },
+ "memory": {
+  "lessons": [
+   "`omarchy pkg add` statt yay direkt",
+   "Theme-Overrides nie im Omarchy-Repo",
+   "Hyprland reload nach bindings.conf"
+  ],
+  "topics": [
+   {
+    "topic": "omarchy",
+    "updated": "2026-10-01",
+    "path": "memory/omarchy.md"
+   },
+   {
+    "topic": "hyprland",
+    "updated": "2026-09-13",
+    "path": "memory/hyprland.md"
+   }
+  ]
+ },
+ "series": {
+  "heatmap": [
+   {
+    "date": "2025-10-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-10-31",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-11-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2025-12-31",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-01-31",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-02-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-03-31",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-04-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-05-31",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-06-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-20",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-22",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-24",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-25",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-26",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-27",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-28",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-29",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-30",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-07-31",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-02",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-03",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-04",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-05",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-08",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-10",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-11",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-13",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-14",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-15",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-18",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-19",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-08-20",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-08-21",
+    "total": 3,
+    "bySource": {
+     "pacman": 1,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-08-22",
+    "total": 6,
+    "bySource": {
+     "pacman": 3,
+     "config": 3
+    }
+   },
+   {
+    "date": "2026-08-23",
+    "total": 3,
+    "bySource": {
+     "pacman": 1,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-08-24",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-08-25",
+    "total": 1,
+    "bySource": {
+     "pacman": 0,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-08-26",
+    "total": 3,
+    "bySource": {
+     "pacman": 1,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-08-27",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-08-28",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-08-29",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-08-30",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-08-31",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-01",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-02",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-09-03",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-09-04",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-09-05",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-09-06",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-07",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-08",
+    "total": 6,
+    "bySource": {
+     "pacman": 3,
+     "config": 3
+    }
+   },
+   {
+    "date": "2026-09-09",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-10",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-09-11",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-09-12",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-13",
+    "total": 4,
+    "bySource": {
+     "pacman": 2,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-09-14",
+    "total": 3,
+    "bySource": {
+     "pacman": 1,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-09-15",
+    "total": 3,
+    "bySource": {
+     "pacman": 1,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-09-16",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-17",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-18",
+    "total": 1,
+    "bySource": {
+     "pacman": 0,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-09-19",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-09-20",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-09-21",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-22",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-09-23",
+    "total": 0,
+    "bySource": {
+     "pacman": 0,
+     "config": 0
+    }
+   },
+   {
+    "date": "2026-09-24",
+    "total": 9,
+    "bySource": {
+     "pacman": 4,
+     "config": 5
+    }
+   },
+   {
+    "date": "2026-09-25",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-09-26",
+    "total": 2,
+    "bySource": {
+     "pacman": 1,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-09-27",
+    "total": 3,
+    "bySource": {
+     "pacman": 1,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-09-28",
+    "total": 4,
+    "bySource": {
+     "pacman": 2,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-09-29",
+    "total": 4,
+    "bySource": {
+     "pacman": 2,
+     "config": 2
+    }
+   },
+   {
+    "date": "2026-09-30",
+    "total": 1,
+    "bySource": {
+     "pacman": 0,
+     "config": 1
+    }
+   },
+   {
+    "date": "2026-10-01",
+    "total": 11,
+    "bySource": {
+     "pacman": 5,
+     "config": 6
+    }
+   }
+  ],
+  "packages": [
+   {
+    "date": "2026-07-03",
+    "explicit": 315,
+    "total": 1960
+   },
+   {
+    "date": "2026-07-10",
+    "explicit": 317,
+    "total": 1968
+   },
+   {
+    "date": "2026-07-17",
+    "explicit": 320,
+    "total": 1980
+   },
+   {
+    "date": "2026-07-24",
+    "explicit": 322,
+    "total": 1988
+   },
+   {
+    "date": "2026-07-31",
+    "explicit": 322,
+    "total": 1988
+   },
+   {
+    "date": "2026-08-07",
+    "explicit": 324,
+    "total": 1996
+   },
+   {
+    "date": "2026-08-14",
+    "explicit": 326,
+    "total": 2004
+   },
+   {
+    "date": "2026-08-21",
+    "explicit": 328,
+    "total": 2012
+   },
+   {
+    "date": "2026-08-28",
+    "explicit": 331,
+    "total": 2024
+   },
+   {
+    "date": "2026-09-04",
+    "explicit": 334,
+    "total": 2036
+   },
+   {
+    "date": "2026-09-11",
+    "explicit": 336,
+    "total": 2044
+   },
+   {
+    "date": "2026-09-18",
+    "explicit": 338,
+    "total": 2052
+   },
+   {
+    "date": "2026-09-25",
+    "explicit": 340,
+    "total": 2060
+   }
+  ],
+  "drift": [
+   {
+    "week": "2026-W34",
+    "opened": 1,
+    "resolved": 3
+   },
+   {
+    "week": "2026-W35",
+    "opened": 0,
+    "resolved": 2
+   },
+   {
+    "week": "2026-W36",
+    "opened": 1,
+    "resolved": 2
+   },
+   {
+    "week": "2026-W37",
+    "opened": 5,
+    "resolved": 2
+   },
+   {
+    "week": "2026-W38",
+    "opened": 1,
+    "resolved": 4
+   },
+   {
+    "week": "2026-W39",
+    "opened": 5,
+    "resolved": 0
+   },
+   {
+    "week": "2026-W40",
+    "opened": 0,
+    "resolved": 3
+   }
+  ],
+  "risk": {
+   "R0": 1,
+   "R1": 3,
+   "R2": 3,
+   "R3": 0
+  },
+  "timeline": [
+   {
+    "kind": "release",
+    "ts": "2026-09-15",
+    "label": "Omarchy 4.0.6",
+    "ref": "4.0.6"
+   },
+   {
+    "kind": "release",
+    "ts": "2026-10-01",
+    "label": "Omarchy 4.0.7",
+    "ref": "4.0.7"
+   },
+   {
+    "kind": "snapshot",
+    "ts": "2026-10-01T09:14:00+02:00",
+    "label": "112 pre: omarchy-update",
+    "ref": "112"
+   },
+   {
+    "kind": "snapshot",
+    "ts": "2026-10-01T14:30:00+02:00",
+    "label": "113 pre: ollama",
+    "ref": "113"
+   },
+   {
+    "kind": "case",
+    "ts": "2026-09-12",
+    "end": "2026-09-13",
+    "label": "C-2026-002 Monitorlayout",
+    "ref": "C-2026-002"
+   },
+   {
+    "kind": "case",
+    "ts": "2026-09-30",
+    "end": null,
+    "label": "C-2026-003 Omarchy 4.0.7",
+    "ref": "C-2026-003"
+   },
+   {
+    "kind": "case",
+    "ts": "2026-10-01",
+    "end": null,
+    "label": "C-2026-004 Zed",
+    "ref": "C-2026-004"
+   },
+   {
+    "kind": "crisis",
+    "ts": "2026-10-01T14:02:00+02:00",
+    "label": "ollama ohne Case",
+    "ref": "01K6S3C4DWA7N36096Q14DR9GP"
+   }
+  ]
+ }
+}

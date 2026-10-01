@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/event.schema.json",
+  "title": "Seldon ledger event",
+  "type": "object",
+  "required": ["id", "ts", "source", "kind", "subject", "actor"],
+  "additionalProperties": false,
+  "properties": {
+    "id":      { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "description": "ULID" },
+    "ts":      { "type": "string", "format": "date-time" },
+    "source":  { "enum": ["pacman", "snapper", "omarchy", "plugins", "theme", "config", "agent", "manual", "seldon"] },
+    "kind":    { "enum": ["install", "remove", "upgrade", "downgrade", "reinstall",
+                          "snapshot", "snapshot-delete", "update",
+                          "plugin-add", "plugin-remove", "plugin-enable", "plugin-disable", "plugin-update",
+                          "theme-set", "config-change", "config-add", "config-remove",
+                          "command", "note", "resolution", "correction",
+                          "case-created", "case-started", "case-verified", "case-completed", "case-dropped"] },
+    "subject": { "type": "string", "maxLength": 512, "description": "package name, path, theme, plugin id, case id" },
+    "detail":  { "type": "string", "maxLength": 4096 },
+    "actor":   { "type": "string", "pattern": "^(human|system|agent:[a-z0-9-]+)$" },
+    "case":    { "type": "string", "pattern": "^C-[0-9]{4}-[0-9]{3,}$" },
+    "zone":    { "enum": ["green", "yellow", "red"] },
+    "explicit": { "type": "boolean", "description": "pacman: named on the command line" },
+    "txId":    { "type": "string" },
+    "refersTo": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "description": "resolution/correction target" },
+    "resolution": { "enum": ["linked", "explained", "dismissed"] },
+    "meta":    { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean", "null"] } }
+  },
+  "allOf": [
+    { "if": { "properties": { "kind": { "const": "resolution" } } },
+      "then": { "required": ["refersTo", "resolution"] } }
+  ]
+}

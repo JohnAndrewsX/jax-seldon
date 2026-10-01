@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/index.schema.json",
+  "title": "Seldon index — the only input of the plugin",
+  "type": "object",
+  "required": ["contractVersion", "generatedAt", "engineVersion", "logbook", "state", "summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"],
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": { "const": 1 },
+    "generatedAt":   { "type": "string", "format": "date-time" },
+    "engineVersion": { "type": "string" },
+    "logbook": {
+      "type": "object", "required": ["path", "language", "machine"],
+      "properties": {
+        "path": { "type": "string" }, "language": { "type": "string" },
+        "machine": { "type": "string" }, "git": { "type": "object", "properties": { "head": { "type": "string" }, "dirty": { "type": "boolean" } } }
+      }
+    },
+    "state": {
+      "type": "object", "required": ["status"],
+      "properties": {
+        "status":  { "enum": ["ok", "notInitialised", "indexStale"] },
+        "lastCapture": { "type": ["string", "null"], "format": "date-time" },
+        "collectors": { "type": "array", "items": { "type": "object", "required": ["name", "enabled", "ok"],
+          "properties": { "name": { "type": "string" }, "enabled": { "type": "boolean" }, "ok": { "type": "boolean" }, "message": { "type": "string" }, "lastRun": { "type": ["string", "null"] } } } }
+      }
+    },
+    "summary": {
+      "type": "object", "required": ["activeCases", "queuedCases", "openDrift", "crisis", "eventsToday", "events7d"],
+      "properties": {
+        "activeCases": { "type": "integer" }, "queuedCases": { "type": "integer" },
+        "openDrift": { "type": "integer" }, "crisis": { "type": "integer" },
+        "eventsToday": { "type": "integer" }, "events7d": { "type": "integer" }
+      }
+    },
+    "today": {
+      "type": "object", "required": ["date", "entries"],
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "path": { "type": "string" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/journalEntry" } },
+        "yesterday": { "type": "array", "items": { "$ref": "#/$defs/journalEntry" } }
+      }
+    },
+    "events": { "type": "array", "maxItems": 500, "items": { "$ref": "event.schema.json" }, "description": "newest first, resolutions already applied as fields on the target" },
+    "drift":  { "type": "array", "items": { "$ref": "#/$defs/drift" } },
+    "cases":  { "type": "object", "required": ["queued", "active", "verification", "completed"],
+      "properties": {
+        "queued": { "type": "array", "items": { "$ref": "case.schema.json" } },
+        "active": { "type": "array", "items": { "$ref": "case.schema.json" } },
+        "verification": { "type": "array", "items": { "$ref": "case.schema.json" } },
+        "completed": { "type": "array", "maxItems": 50, "items": { "$ref": "case.schema.json" } }
+      } },
+    "decisions": { "type": "array", "items": { "type": "object", "required": ["id", "title", "status", "date"],
+      "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "status": { "enum": ["proposed", "accepted", "superseded"] }, "date": { "type": "string" }, "path": { "type": "string" } } } },
+    "system": {
+      "type": "object",
+      "properties": {
+        "omarchy": { "type": "object", "properties": { "version": { "type": "string" }, "repoHead": { "type": "string" }, "theme": { "type": "string" }, "lastUpdate": { "type": ["string", "null"] } } },
+        "packages": { "type": "object", "properties": { "explicit": { "type": "integer" }, "total": { "type": "integer" }, "aur": { "type": "integer" } } },
+        "deviations": { "type": "integer" },
+        "snapshots": { "type": "array", "maxItems": 10, "items": { "type": "object", "properties": { "number": { "type": "integer" }, "ts": { "type": "string" }, "description": { "type": "string" }, "type": { "type": "string" } } } },
+        "plugins": { "type": "object", "properties": { "enabled": { "type": "integer" }, "installed": { "type": "integer" } } },
+        "areas": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "hasAgentsMd": { "type": "boolean" }, "cases": { "type": "integer" } } } }
+      }
+    },
+    "memory": { "type": "object", "properties": {
+      "lessons": { "type": "array", "items": { "type": "string" }, "description": "headings of memory/lessons.md" },
+      "topics": { "type": "array", "items": { "type": "object", "properties": { "topic": { "type": "string" }, "updated": { "type": "string" }, "path": { "type": "string" } } } } } },
+    "series": {
+      "type": "object", "required": ["heatmap", "packages", "drift"],
+      "properties": {
+        "heatmap":  { "type": "array", "maxItems": 366, "items": { "type": "object", "required": ["date", "total"], "properties": { "date": { "type": "string" }, "total": { "type": "integer" }, "bySource": { "type": "object", "additionalProperties": { "type": "integer" } } } } },
+        "packages": { "type": "array", "items": { "type": "object", "required": ["date", "explicit"], "properties": { "date": { "type": "string" }, "explicit": { "type": "integer" }, "total": { "type": "integer" } } } },
+        "drift":    { "type": "array", "items": { "type": "object", "required": ["week", "opened", "resolved"], "properties": { "week": { "type": "string" }, "opened": { "type": "integer" }, "resolved": { "type": "integer" } } } },
+        "risk":     { "type": "object", "additionalProperties": { "type": "integer" } },
+        "timeline": { "type": "array", "items": { "type": "object", "required": ["kind", "ts", "label"], "properties": { "kind": { "enum": ["release", "snapshot", "case", "crisis"] }, "ts": { "type": "string" }, "end": { "type": ["string", "null"] }, "label": { "type": "string" }, "ref": { "type": "string" } } } }
+      }
+    }
+  },
+  "$defs": {
+    "journalEntry": { "type": "object", "required": ["time", "actor", "text"],
+      "properties": { "time": { "type": "string" }, "actor": { "type": "string" }, "case": { "type": ["string", "null"] }, "text": { "type": "string" } } },
+    "drift": { "type": "object", "required": ["eventId", "ts", "source", "kind", "subject", "actor", "crisis"],
+      "properties": { "eventId": { "type": "string" }, "ts": { "type": "string" }, "source": { "type": "string" }, "kind": { "type": "string" }, "subject": { "type": "string" }, "detail": { "type": "string" }, "actor": { "type": "string" }, "zone": { "type": "string" }, "crisis": { "type": "boolean" }, "proposedCase": { "type": ["string", "null"] } } }
+  }
+}
