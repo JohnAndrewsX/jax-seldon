@@ -99,7 +99,16 @@ writes use two-press arming where any change to the form disarms; the
 draft is kept per event; a no-op shows "Already resolved: …"; above the
 list "+N more open drift items not listed here" when `summary.openDrift`
 exceeds `drift.length` (ADR-0020). Folded rows read `linked to C-…`,
-`explained · C-…: <intent>` (ADR-0021), `dismissed: <reason>`. Width `Style.space(380)` (WP-011). Files: one component per tab,
+`explained · C-…: <intent>` (ADR-0021), `dismissed: <reason>`. Decisions tab (WP-023, digit 4): newest first by
+id; Enter, `e`, double click or *Open* run `open ADR-NNNN --editor --json`
+(id validated); `d` opens the new-decision sheet (title → `decide
+--no-edit --json -- <title>`, then `open <newId> --editor --json` from the
+result; two-press arming; title kept on refusal). Memory tab (digit 6):
+lessons headings and memory topics with `updated`; Enter, `e` or *Open*
+run `open logbook --editor --json` until the engine gains a memory target
+(`open memory[/<topic>]`, queued). Linked cases per decision need a
+contract field (`decisions[].cases`) and are deferred to the next contract
+bump. Width `Style.space(380)` (WP-011). Files: one component per tab,
 `components/TodayTab.qml`, `ChangelogTab.qml`, `SystemTab.qml`, plus
 `EventRow.qml`, `Tabs.qml`, `Banner.qml`. The Changelog source filter has
 one chip per schema source (all nine, including `manual`, `agent`,
@@ -167,7 +176,7 @@ item and only while it is loaded. Routes the plugin must honour:
   what the keybinding above hits.
 - Bar panel: `IpcHandler` target **`jax.seldon.panel`** owned by the bar
   widget (`open`, `close`, `show`, `hide`, `toggle`, `pill`, and the
-  read-out/navigation methods `view`, `tab <id>`, `filter <source>`,
+  read-out/navigation methods `view`, `tab <today|changelog|work|decisions|system|memory>`, `filter <source>`,
   `resolve crisis|<eventId>` (opens the drift sheet, WP-021) — none runs
   the engine; WP-011), following the
   first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close

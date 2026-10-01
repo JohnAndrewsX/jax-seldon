@@ -47,14 +47,14 @@ seldon --version
 seldon status --json
 seldon capture --all --json --quiet
 seldon log [--case <id>] --json -- <text>       # free text is one argument after `--`; --json before it
-seldon open <journal|ledger|status|caseId> --editor --json   # path reported as JSON; the engine launches the editor
+seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # path reported as JSON; the engine launches the editor
 seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
 seldon plan start|verify|done|drop <id> --json   # id validated by the schema regex; the engine enforces the transition
 seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
 seldon drift dismiss <eventId> [--only] --json -- <reason>   # same rule as explain: text after `--`
 seldon drift show <eventId> --json          # full member list of a group (ADR-0013)
-seldon decide --no-edit -- <title>
+seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
 seldon rebuild --json
 seldon update-impact --json
 ```
