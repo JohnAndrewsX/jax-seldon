@@ -13,7 +13,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml` and `plugin/components/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `bash tests/plugin/service-states.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine
@@ -134,16 +134,22 @@ build itself needs no network (`cargo build --offline` works).
 
 ## Plugin
 
-Three layers, cheapest first. The first two run in `just check`; the third
-is the hard acceptance gate of every plugin WP (SPEC-PLUGIN §9).
+Four layers, cheapest first. The first three run in `just check`
+(`just plugin-test`); the fourth is the hard acceptance gate of every plugin
+WP (SPEC-PLUGIN §9).
 
 ### 1. `Model.js` under node
 
 `node tests/plugin/model.test.js` loads `plugin/Model.js` into a plain VM
 context (the file has no Qt dependencies, by design) and checks pill text
 and colour rules, status precedence, tooltip wording, one banner with a
-constant fix per non-ok status, and that `validateArgs` accepts exactly the
-command forms of CONTRACT.md.
+constant fix per non-ok status, that `validateArgs` accepts exactly the
+command forms of CONTRACT.md (free text one non-empty argument after `--`,
+`drift show <id> --json`, `[--only]`), the `XDG_STATE_HOME` index path, and
+the tab helpers against the fixture: 58 Changelog rows, one "+3" group, 7
+folded resolution details, 6 snapshot rows, the source filter, the crisis
+strip text, the snapper banner, the Today view and the System sections with
+every field optional.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -161,9 +167,13 @@ a relative `SELDON_INDEX`, an index that appears after start, an atomic
 replace (temp file + rename), an engine installed while running ("Check
 again"), the live loop without the dev override (capture, then status
 writes the index; calls never overlap), engine exit 3, the exact argv of
-the banner fixes (fake `wl-copy` and terminal launcher record it), and dev
-mode never running the engine. `tests/plugin/fake-seldon` stands in for the
-engine.
+the banner fixes (fake `wl-copy` and terminal launcher record it), the
+crisis strip text, `index-variants/snapper-degraded.json` with the argv of
+its *Copy* and *Run in terminal*, `XDG_STATE_HOME` (absolute and the
+ignored relative form), and dev mode never running the engine.
+`tests/plugin/fake-seldon` stands in for the engine. The scenarios run with
+a `PATH` made of symlinks to the few tools the fakes need, so a `seldon`
+installed system-wide never leaks in.
 
 To watch one case by hand:
 
@@ -175,12 +185,44 @@ QT_QPA_PLATFORM=offscreen HARNESS_PLUGIN_DIR=$PWD/plugin \
 
 A missing engine makes Quickshell log `WARN: Process failed to start,
 likely because the binary could not be found` — expected, and the only log
-line the plugin may cause.
+line the plugin may cause. The service probes for the engine once at start
+and again only on *Check again*, so it appears once per shell start.
 
-### 3. Runtime smoke test in the shell
+### 3. `Panel.qml` in a private headless Quickshell
+
+`bash tests/plugin/panel-view.sh` runs the real panel against the real shell
+components. Quickshell serves `qs.*` from the config root of the instance,
+so the script builds a temp root with copies of `$OMARCHY_PATH/shell/Commons`
+and `shell/Ui`, replaces only `Ui/KeyboardPanel.qml` (a layer-shell window,
+which an offscreen instance cannot create) with
+`tests/plugin/harness/KeyboardPanel.qml`, and starts
+`tests/plugin/harness/panel.qml` as its `shell.qml`. That harness loads
+Service.qml (dev mode, a fixture), puts Panel.qml in an offscreen window,
+opens it and runs `HARNESS_STEPS`: real key presses through the shell's own
+`PanelKeyCatcher` (QtTest `keyClick`), tab and filter selection. After each
+step it prints `Panel.view()` and every visible text.
+
+Checks: with the sample every tab renders (Today: 4 entries, yesterday
+collapsed and opened with Enter; Changelog: 58 rows, the "+3" group expanded
+to its members, 7 folded resolution details, 6 highlighted snapshot rows,
+the pacman filter narrows to 12, `f` cycles; System: seven sections), the
+strip "2 changes in the red zone need a reason" on every tab, the keys
+(Tab, Shift-Tab, ←/→, 1–3, ↑/↓, Enter, Esc), the snapper banner on every
+tab, the not-initialised variant, an empty and a sparse `system`, and a log
+free of warnings, `TypeError`s and binding loops. The shell's `Style.qml`
+asks `hyprctl` and `fc-match` for gaps and the font; the script gives it
+stubs that fail, and Style keeps its defaults.
+
+The step format is documented in the header of
+`tests/plugin/harness/panel.qml`, e.g.
+`HARNESS_STEPS="view;tab:changelog;key:Down*5;key:Return"`; a new scenario
+is one `run` line plus its `expect`/`shows` checks in `panel-view.sh`.
+
+### 4. Runtime smoke test in the shell
 
 The bar widget, panel and banner import `qs.Ui`/`qs.Commons`, which only the
-running shell provides, so they are checked live.
+running shell provides; layer 3 covers them against copies, the live shell
+is the final check (layer-shell window, bar anchoring, focus, theme).
 
 **Dev host.** You may copy the plugin to its dev install and validate it
 there, nothing more: enabling it writes `~/.config/omarchy/shell.json` (red
@@ -213,29 +255,74 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    (on the test host only):
    - engine: copy a `seldon` binary (`just build-release`) to `~/.local/bin`
      (on the shell's `PATH`) or remove it, then
-     `omarchy-shell jax.seldon.service refresh`;
+     `omarchy-shell jax.seldon.service refresh`. For screenshots in status
+     `ok` before the engine writes indexes, a stand-in script that answers
+     `--version` with `{"name":"seldon","version":"…"}` and exits 0 on
+     `capture`/`status` without writing anything is enough; remove it after;
    - index: `cp` a fixture to `~/.local/state/seldon/index.json.tmp`, then
-     `mv` it over `index.json` (the watch picks it up). For `ok`, rewrite
-     `generatedAt` to now first; for `indexStale`, to three hours ago; use
-     `index-variants/not-initialised.json` and `invalid/index.contract-v2.json`
-     as they are, and delete the file for `indexMissing`.
+     `mv` it over `index.json` (the watch picks it up; a file that did not
+     exist at start is found by the 5 s poll). For `ok`, rewrite
+     `generatedAt` (and `state.lastCapture`) to now first; for `indexStale`,
+     to three hours ago; use `index-variants/not-initialised.json`,
+     `index-variants/snapper-degraded.json` and
+     `invalid/index.contract-v2.json` as they are, and delete the file for
+     `indexMissing`.
 4. Read the result:
    ```bash
-   omarchy-shell jax.seldon.service status   # status, pill, banner, engine, lastError
+   omarchy-shell jax.seldon.service status   # status, pill, banner, crisis, snapper, engine, lastError
    omarchy-shell jax.seldon.panel pill       # what the WidgetButton shows
-   omarchy-shell jax.seldon.panel open       # then look, or:
-   WAYLAND_DISPLAY=wayland-1 grim -g "450,0 750x460" /tmp/panel.png
+   omarchy-shell jax.seldon.panel open
+   omarchy-shell jax.seldon.panel tab changelog       # today | changelog | system
+   omarchy-shell jax.seldon.panel filter all          # or a source
+   omarchy-shell jax.seldon.panel view       # tab, cursor, rows, badges, banners, strip
    omarchy-shell shell toggle jax.seldon     # Prime Radiant
    ```
-5. Check the log of the running shell:
+   Keys: `wtype -k Tab`, `wtype -M shift -k Tab -m shift`, `wtype -k Down`,
+   `wtype -k Return`, `wtype f`, `wtype -k Escape`, each followed by
+   `jax.seldon.panel view`. Tab on the last tab opens the bar's next panel
+   (`Bar.switchPanelFrom`); if that neighbour opens a window instead of a
+   popup panel (OmaSettings on the test host), the Seldon panel stays open.
+5. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
+   the test host's output is scaled 1.25, so a region read off a full
+   screenshot (physical pixels) must be divided by the scale. Over ssh also
+   export `XDG_RUNTIME_DIR=/run/user/$(id -u)` and `WAYLAND_DISPLAY=wayland-1`.
+   Shrink before committing: `magick in.png -strip -resize 80% -colors 64 out.png`.
+6. Check the log of the running shell:
    ```bash
    quickshell log --pid "$(pgrep -x quickshell)" | grep -E "WARN|ERROR"
    ```
+   `omarchy theme set` and `omarchy-restart-shell` start a new shell
+   process, so check every instance of the run: the logs are under
+   `/run/user/$(id -u)/quickshell/by-pid/<pid>/`, and
+   `quickshell log <path>/log.qslog` reads one.
    Pass: nothing naming `jax.seldon` or a plugin file except the expected
-   "Process failed to start" while the engine is missing. Not ours: on
-   every bar rebuild the shell logs two `QObject::connect(QJSEngine,
-   QtObject): invalid nullptr parameter` lines and "Handler was registered
-   but will not be used" for other plugins' IPC targets; both appear with
-   jax.seldon disabled too.
-6. Clean up: remove `~/.local/bin/seldon` and `~/.local/state/seldon/` unless
+   "Process failed to start" while the engine is missing (once per shell
+   start). Not ours: on every bar rebuild the shell logs two
+   `QObject::connect(QJSEngine, QtObject): invalid nullptr parameter` lines
+   and "Handler was registered but will not be used" for other plugins' IPC
+   targets; both appear with jax.seldon disabled too. Other third-party
+   plugins on the test host log their own warnings (superproductivity,
+   omalauncher, finder); filter by path.
+7. Clean up: remove `~/.local/bin/seldon` and `~/.local/state/seldon/` unless
    the next WP needs them.
+
+**Three themes (SPEC-PLUGIN §7)**, on the test host only — switching the
+theme is a system change, so never on the dev host. Every plugin WP that
+changes what the panel draws repeats it:
+
+1. Note the current theme: `omarchy theme current`.
+2. With the sample index in status `ok` (step 3 above), for each of a dark
+   theme, a second dark theme and a light theme — e.g. *Osaka Jade*, *Tokyo
+   Night*, *Catppuccin Latte* (`omarchy theme list`):
+   `omarchy theme set "<theme>"`, wait about 6 s (the shell restarts), open
+   the panel and capture Today, Changelog, System and the Changelog filtered
+   to pacman with the cursor on the "+3" row and Enter pressed.
+3. Look for: every colour follows the theme — panel border, tab and chip
+   fills, the zone stripes (red = the theme's urgent colour, yellow = its
+   accent), the red strip, banners, the snapshot row highlight; dim text
+   stays legible on the light theme; nothing keeps a colour of the previous
+   theme.
+4. Restore the noted theme with `omarchy theme set "<noted>"` and check it
+   with `omarchy theme current`.
+5. Save the shrunk PNGs under `work/active/WP-NNN/screenshots/`, named
+   `<theme>-<view>.png`.
