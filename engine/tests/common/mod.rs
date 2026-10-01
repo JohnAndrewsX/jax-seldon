@@ -128,6 +128,122 @@ impl Env {
     pub fn lock_file(&self) -> PathBuf {
         self.home.join(".local/state/seldon/lock")
     }
+
+    /// Adds a stub program to this environment's PATH.
+    pub fn stub(&self, name: &str, body: &str) {
+        stub(&self.bin, name, body);
+    }
+
+    /// `seldon init --non-interactive` of a fresh logbook at `<tmp>/<dir>`.
+    pub fn init_logbook_at(&self, dir: &str, language: &str) -> PathBuf {
+        let root = self.tmp.path().join(dir);
+        let out = self.seldon(&[
+            "init",
+            "--non-interactive",
+            "--path",
+            root.to_str().unwrap(),
+            "--language",
+            language,
+        ]);
+        assert_eq!(out.status.code(), Some(0), "init: {}", stderr(&out));
+        root
+    }
+
+    /// A fresh English logbook at `<tmp>/logbook` (the config points at it).
+    pub fn init_logbook(&self) -> PathBuf {
+        self.init_logbook_at("logbook", "en")
+    }
+
+    /// `seldon args…` with the clock fixed at `now` (`SELDON_NOW`).
+    pub fn at(&self, now: &str, args: &[&str]) -> Output {
+        self.command(args)
+            .env("SELDON_NOW", now)
+            .output()
+            .expect("run seldon")
+    }
+}
+
+/// Copies a directory tree (files and folders only).
+pub fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+pub fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn schema(name: &str) -> serde_json::Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../schema")
+        .join(name);
+    serde_json::from_str(&read(&path)).unwrap()
+}
+
+/// Panics unless `instance` validates against `schema` (formats checked).
+fn assert_valid(schema: &serde_json::Value, instance: &serde_json::Value, what: &str) {
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .build(schema)
+        .expect("schema compiles");
+    let errors: Vec<String> = validator
+        .iter_errors(instance)
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "{what} is invalid: {errors:?}\n{instance}"
+    );
+}
+
+/// Every line of every `ledger/*.jsonl`, in file order, each validated
+/// against `schema/event.schema.json`.
+pub fn ledger(root: &Path) -> Vec<serde_json::Value> {
+    let event_schema = schema("event.schema.json");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(root.join("ledger"))
+        .map(|r| r.map(|e| e.unwrap().path()).collect())
+        .unwrap_or_default();
+    files.retain(|p| p.extension().is_some_and(|e| e == "jsonl"));
+    files.sort();
+    let mut out = Vec::new();
+    for file in files {
+        for (n, line) in read(&file).lines().enumerate() {
+            let v: serde_json::Value = serde_json::from_str(line)
+                .unwrap_or_else(|e| panic!("{}:{}: {e}", file.display(), n + 1));
+            assert_valid(&event_schema, &v, &format!("{}:{}", file.display(), n + 1));
+            out.push(v);
+        }
+    }
+    out
+}
+
+/// Panics unless `case` validates against `schema/case.schema.json` (its
+/// `$ref`s into the event schema are inlined).
+pub fn assert_valid_case(case: &serde_json::Value) {
+    let text = read(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../schema/case.schema.json"))
+        .replace("event.schema.json#/$defs/", "#/$defs/");
+    let mut case_schema: serde_json::Value = serde_json::from_str(&text).unwrap();
+    case_schema["$defs"] = schema("event.schema.json")["$defs"].clone();
+    assert_valid(&case_schema, case, "case");
+}
+
+/// The one file in `dir` whose name starts with `prefix`.
+pub fn find_file(dir: &Path, prefix: &str) -> PathBuf {
+    let found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
+        .collect();
+    assert_eq!(found.len(), 1, "{prefix}* in {}: {found:?}", dir.display());
+    found[0].clone()
 }
 
 /// The host's `git`, if any.

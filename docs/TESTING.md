@@ -28,14 +28,20 @@ cargo test --manifest-path engine/Cargo.toml --locked            # everything
 cargo test --manifest-path engine/Cargo.toml round_trip::         # frontmatter vs fixtures/logbook
 cargo test --manifest-path engine/Cargo.toml --test init          # `seldon init`
 cargo test --manifest-path engine/Cargo.toml --test doctor        # `seldon doctor`
+cargo test --manifest-path engine/Cargo.toml plan::               # case state machine, folder moves
+cargo test --manifest-path engine/Cargo.toml log::                # notes, journal, Log section
 ```
 
 | Where | What |
 |---|---|
 | `engine/src/**` (`#[cfg(test)]`) | unit tests: frontmatter parser and writer, models, config precedence, lock, templates, subprocess runner |
-| `engine/tests/cli.rs` | `--version`, `contract-version`, parse errors (exit 1, JSON error shape, `--json` detection), `--help` |
+| `engine/tests/cli.rs` | `--version`, `contract-version`, parse errors (exit 1, JSON error shape, `--json` detection past free text), `--help`, `--config` > `SELDON_CONFIG` > XDG config |
 | `engine/tests/frontmatter.rs` | `round_trip::` every case, journal, decision, area, memory file and `PROJECT.md` of `fixtures/logbook/` parses into its typed record and re-serialises byte-identical; a lossless update changes only the edited lines |
 | `engine/tests/init.rs` | `init::` layout (SPEC-LOGBOOK §2), JSON output, git first commit, `--no-commit`, German templates, Obsidian, path precedence, refusals (existing logbook, non-empty dir, no terminal), lock held → exit 4 |
+| `engine/tests/plan.rs` | `plan::` new (template, canonical frontmatter, area on first use, ids never reused), start/verify/done/drop (folder moves per ADR-0012 §9, `started`/`closed`/`snapshotBefore`, `.seldon/active-case`, body byte-identical outside the Log), invalid transitions → exit 1 and nothing written, list/show against `case.schema.json`, the fixture logbook (a copy), git autocommit with `--no-commit` and `git.autocommit = false` |
+| `engine/tests/log.rs` | `log::` notes with and without a case (`case.events`, `agents`), the Log section append-only over three steps, the journal appended not rewritten, free text as one argument (spaces, quotes, `$(…)`, `--json` after `--`), month and day by timestamp, redaction, exit 3/4 |
+| `engine/tests/journal.rs` | `journal::` appends to a fixture day (only the `cases:` line changes), CRLF days, the `plan done` stub in the logbook language |
+| `engine/tests/commands.rs` | `event::` (fixture line shape, typed meta, engine-only kinds refused), `decide::` (ADR numbering, the logbook's own template, the editor gets the path as one argument), `open::` (paths, `--editor` without a terminal) |
 | `engine/tests/doctor.rs` | `doctor::` green after init with snapper degraded, exit 3 when not initialised, invalid frontmatter, misplaced case, the fixture logbook (and that doctor leaves it untouched) |
 
 **Isolation.** The integration tests never see the real home, config,
@@ -47,7 +53,19 @@ live under it), and a `PATH` that contains only:
 - a link to the host's `git`.
 
 So the results do not depend on what the host has installed or how snapper
-is configured. Tests that need git skip themselves when the host has none.
+is configured. Two engine variables make tests deterministic:
+- `SELDON_NOW` (RFC 3339 with offset) fixes the clock of one invocation:
+  event `ts`, journal headings, Log lines, the case id year
+  (`Env::at(now, args)`). Not for normal use.
+- `SELDON_CONFIG` (or the global `--config FILE`) points the engine at
+  another `config.toml`; `--config` wins over the variable, which wins over
+  `$XDG_CONFIG_HOME/seldon/config.toml`.
+
+Every line any test writes to a ledger is validated against
+`schema/event.schema.json` (`common::ledger`, `jsonschema` with formats),
+and case JSON against `schema/case.schema.json` (`common::assert_valid_case`).
+Editors are never started: tests run without a terminal, so `--editor`
+goes to `omarchy-launch-editor`, which a test stubs to record its argv. Tests that need git skip themselves when the host has none.
 `fixtures/logbook/` is read-only input.
 
 **Monorepo layout.** Some tests read files outside the crate, so they only

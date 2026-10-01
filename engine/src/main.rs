@@ -44,6 +44,10 @@ struct Cli {
     #[arg(long, global = true)]
     no_commit: bool,
 
+    /// Config file (overrides SELDON_CONFIG and ~/.config/seldon/config.toml)
+    #[arg(long, global = true, value_name = "FILE")]
+    config: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -80,6 +84,21 @@ enum Command {
         #[arg(long, value_name = "TS")]
         since: Option<String>,
     },
+
+    /// Write a note: a ledger event and a journal entry
+    Log(commands::log::LogArgs),
+
+    /// Record an event by hand (hooks, scripts)
+    Event(commands::event::EventArgs),
+
+    /// Cases: new, start, verify, done, drop, list, show
+    Plan(commands::plan::PlanArgs),
+
+    /// Create a decision record (ADR) and open it in the editor
+    Decide(commands::decide::DecideArgs),
+
+    /// Print the path of a logbook file; --editor opens it
+    Open(commands::open::OpenArgs),
 }
 
 #[derive(Debug, Args)]
@@ -150,7 +169,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         ));
     }
 
-    let ctx = Context::from_env(cli.json, cli.quiet, cli.no_commit, cli.logbook)?;
+    let ctx = Context::from_env(cli.json, cli.quiet, cli.no_commit, cli.logbook, cli.config)?;
     match command {
         Command::ContractVersion => unreachable!("handled above"),
         Command::Init(c) => commands::init::run(
@@ -181,6 +200,12 @@ fn run(cli: Cli) -> Result<Output, Error> {
                 since,
             },
         ),
+
+        Command::Log(a) => commands::log::run(&ctx, a),
+        Command::Event(a) => commands::event::run(&ctx, a),
+        Command::Plan(a) => commands::plan::run(&ctx, a),
+        Command::Decide(a) => commands::decide::run(&ctx, a),
+        Command::Open(a) => commands::open::run(&ctx, a),
     }
 }
 
@@ -215,41 +240,69 @@ fn parse_error(err: &clap::Error, argv: &[OsString]) -> ExitCode {
 
 /// Whether the failed command line asked for `--json`. Not a search for
 /// the string: the tokens are read with the CLI's own definition, the way
-/// clap reads them, so that a value is never mistaken for the flag
-/// (`--detail --json` with a hyphen-accepting option, or anything after
-/// `--`, as in `seldon log -- --json`). Unlike a re-parse it keeps going past
-/// invalid values and unknown subcommands, which stop clap.
+/// clap reads them, so that a value is never mistaken for the flag:
+///
+/// - the value of an option (`--reason --json` when the option accepts
+///   hyphen values; `--path json`);
+/// - a positional value (`seldon log -x`: free text accepts hyphen values
+///   unless the token is a known option, exactly as clap decides);
+/// - anything after `--` (`seldon log -- --json`).
+///
+/// Unlike a re-parse it keeps going past invalid values and unknown
+/// subcommands, which stop clap.
 fn wants_json(argv: &[OsString]) -> bool {
     let mut root = Cli::command();
     root.build();
     let mut cmd = &root;
+    // positional slots of `cmd` filled so far
+    let mut filled = 0;
     let mut tokens = argv.iter().skip(1).map(|t| t.to_string_lossy()).peekable();
     while let Some(token) = tokens.next() {
         if token == "--" {
             return false;
         }
-        if token == "--json" {
-            return true;
-        }
-        let option = if let Some(long) = token.strip_prefix("--") {
-            (!long.contains('=')).then(|| cmd.get_arguments().find(|a| a.get_long() == Some(long)))
-        } else if let Some(short) = token.strip_prefix('-').filter(|s| s.chars().count() == 1) {
+        let pending = cmd.get_positionals().nth(filled);
+        let (known, attached) = if let Some(long) = token.strip_prefix("--") {
+            let (name, value) = long
+                .split_once('=')
+                .map_or((long, None), |(n, v)| (n, Some(v)));
+            if name == "json" {
+                return true;
+            }
+            (
+                cmd.get_arguments().find(|a| a.get_long() == Some(name)),
+                value.is_some(),
+            )
+        } else if let Some(short) = token.strip_prefix('-').filter(|s| !s.is_empty()) {
             let c = short.chars().next();
-            Some(cmd.get_arguments().find(|a| a.get_short() == c))
+            (
+                cmd.get_arguments()
+                    .find(|a| a.get_short() == c && !a.is_positional()),
+                short.chars().count() > 1,
+            )
         } else {
             if let Some(sub) = cmd.find_subcommand(token.as_ref()) {
                 cmd = sub;
+                filled = 0;
+            } else if pending.is_some() {
+                filled += 1;
             }
-            None
+            continue;
         };
-        if let Some(Some(arg)) = option {
-            let takes_value = arg.get_action().takes_values();
-            let next_is_value = tokens
-                .peek()
-                .is_some_and(|n| !n.starts_with('-') || arg.is_allow_hyphen_values_set());
-            if takes_value && next_is_value {
-                tokens.next();
+        match known {
+            Some(arg) => {
+                let next_is_value = tokens
+                    .peek()
+                    .is_some_and(|n| !n.starts_with('-') || arg.is_allow_hyphen_values_set());
+                if arg.get_action().takes_values() && !attached && next_is_value {
+                    tokens.next();
+                }
             }
+            // an unknown option-like token is the value of a positional
+            // that accepts hyphen values (clap's rule), else an error clap
+            // has already reported
+            None if pending.is_some_and(|p| p.is_allow_hyphen_values_set()) => filled += 1,
+            None => {}
         }
     }
     false
@@ -266,4 +319,65 @@ fn detail(err: &clap::Error) -> String {
         .min()
         .unwrap_or(text.len());
     text[..end].trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wants(args: &[&str]) -> bool {
+        let argv: Vec<OsString> = std::iter::once("seldon")
+            .chain(args.iter().copied())
+            .map(OsString::from)
+            .collect();
+        wants_json(&argv)
+    }
+
+    #[test]
+    fn json_flag_is_found_where_clap_reads_it() {
+        assert!(wants(&["--json", "log"]));
+        assert!(wants(&["log", "text", "--json"]));
+        assert!(wants(&["log", "--json", "text"]));
+        assert!(wants(&["plan", "new", "t", "--zone", "purple", "--json"]));
+        assert!(wants(&["log", "-x", "--actor", "Bad", "--json"]));
+        assert!(wants(&["--config", "c.toml", "log", "--json"]));
+    }
+
+    #[test]
+    fn values_are_not_the_flag() {
+        // after `--`
+        assert!(!wants(&["log", "--", "--json"]));
+        assert!(!wants(&["log", "--actor", "Bad", "--", "--json"]));
+        // option values that accept hyphens
+        assert!(!wants(&[
+            "plan",
+            "drop",
+            "C-2026-001",
+            "--reason",
+            "--json"
+        ]));
+        assert!(!wants(&[
+            "event",
+            "pacman",
+            "install",
+            "--subject",
+            "s",
+            "--detail",
+            "--json"
+        ]));
+        assert!(!wants(&[
+            "event",
+            "theme",
+            "theme-set",
+            "--subject",
+            "--json"
+        ]));
+        // `json` as the value of an option, and as a positional
+        assert!(!wants(&["init", "--path", "json", "--language", "xx"]));
+        assert!(!wants(&["log", "json", "--actor", "Bad"]));
+        // a positional value that is a subcommand name elsewhere
+        assert!(!wants(&["plan", "new", "list", "--zone", "purple"]));
+        // `--json=…` attached to another option's name is not the flag
+        assert!(!wants(&["log", "--reason=--json"]));
+    }
 }

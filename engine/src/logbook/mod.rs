@@ -1,7 +1,9 @@
 //! The logbook on disk (SPEC-LOGBOOK): its root, `.seldon/logbook.toml`,
 //! the paths inside it, and creating a fresh one.
 
+pub mod cases;
 pub mod git;
+pub mod journal;
 pub mod layout;
 pub mod lock;
 pub mod templates;

@@ -82,7 +82,7 @@ pub fn path_options(dirs: &crate::config::Dirs) -> Vec<PathOption> {
 }
 
 pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
-    let config_file = ctx.dirs.config_file();
+    let config_file = ctx.config_file.clone();
     let existing = ctx.load_config()?;
     let interactive = !args.non_interactive;
     if interactive && !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {

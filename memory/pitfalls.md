@@ -125,3 +125,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   and a throw-away logbook.** Otherwise it writes
   `~/.local/state/seldon/cursors.json`. Reading the system log, `snapper` and
   `omarchy-version` is fine (read-only).
+## 2026-10-01 · WP-006 (Engine)
+
+- **A test helper that searches Markdown must skip code fences too.**
+  `body.find("## Result")` hit a `## Result` inside a fenced block that the
+  test itself had put into the case; the engine was right, the helper was
+  wrong. Use `rfind` for the last section, or the engine's
+  `cases::section`.
+- **Do not assume `plan done` works from `active`.** The state machine is
+  `queued → active → verification → completed` (SPEC-LOGBOOK §3), but the
+  fixture case C-2026-001 went active → completed without verification.
+  The engine is strict; the fixture contradicts it (handover question).
+- **The plugin's free text must come after `--`.** A note that is exactly
+  `--help` or `--json` would otherwise be read as the flag (clap rule
+  above). CONTRACT.md was changed to `seldon log [--case <id>] -- <text>`.
+- **`seldon open --editor` from the plugin has no terminal.** `$EDITOR`
+  (nvim) is useless there; the engine calls `omarchy-launch-editor <path>`,
+  which opens the default editor in its own window. On a terminal it uses
+  `$VISUAL`/`$EDITOR`. Tests stub `omarchy-launch-editor`.
+- **Rebasing onto WP-004's foundation conflicts in `Cargo.toml`/`Cargo.lock`**
+  when both branches add the same crates (`ulid`, `jsonschema`): take
+  main's manifest (`git checkout --ours` during a rebase is *main*), then
+  `cargo build` regenerates the lock.

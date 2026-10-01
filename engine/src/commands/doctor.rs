@@ -78,7 +78,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
         format!("seldon {VERSION}, contract {CONTRACT_VERSION}"),
     )];
 
-    let config_file = ctx.dirs.config_file();
+    let config_file = ctx.config_file.clone();
     let shown = ctx.dirs.display(&config_file);
     let config = match ctx.load_config() {
         Ok(Some(c)) => {
