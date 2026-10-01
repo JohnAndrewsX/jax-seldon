@@ -23,6 +23,11 @@ import Quickshell
 //                       ready; an id may name its banner: "snapper:copy"
 //   HARNESS_UNTIL       "field=value": also wait until the snapshot's field
 //                       has that value (e.g. "status=ok")
+//   HARNESS_ACTIONS     a JSON array of panel actions, run in order once the
+//                       start-up engine calls are done:
+//                       ["log", text, caseId] → Service.log(text, caseId)
+//                       ["open", what]        → Service.openInEditor(what)
+//                       ["capture"]           → Service.captureNow()
 ShellRoot {
   id: root
 
@@ -32,12 +37,14 @@ ShellRoot {
   readonly property int recheckMs: Number(Quickshell.env("HARNESS_RECHECK_MS") || 0)
   readonly property string fixes: Quickshell.env("HARNESS_FIX") || ""
   readonly property string until: Quickshell.env("HARNESS_UNTIL") || ""
+  readonly property var actions: JSON.parse(Quickshell.env("HARNESS_ACTIONS") || "[]")
   readonly property int graceMs: 15000
 
   readonly property double startMs: Date.now()
   readonly property bool serviceReady: !!root.service && root.service.ready
   property bool fixesDone: fixes === ""
   property bool recheckDone: recheckMs === 0
+  property bool actionsDone: actions.length === 0
 
   function emit(tag) {
     if (!root.service) return
@@ -48,7 +55,7 @@ ShellRoot {
     var s = root.service
     if (!s) return true
     if (!s.ready || s.busy || s.probing || s.queue.length > 0) return false
-    if (!root.fixesDone || !root.recheckDone) return false
+    if (!root.fixesDone || !root.recheckDone || !root.actionsDone) return false
     if (root.until !== "") {
       var eq = root.until.indexOf("=")
       if (String(s.snapshot()[root.until.slice(0, eq)]) !== root.until.slice(eq + 1)) return false
@@ -90,6 +97,27 @@ ShellRoot {
         console.log("HARNESS fix " + ids[i] + " " + (root.service ? root.service.fix(action, banner) : false))
       }
       root.fixesDone = true
+    }
+  }
+
+  // Actions queue behind the start-up capture, so wait for it to finish:
+  // the recorded argv order is then deterministic.
+  Timer {
+    interval: 200
+    repeat: true
+    running: !root.actionsDone && !!root.service
+    onTriggered: {
+      var s = root.service
+      if (!s.ready || s.busy || s.probing || s.queue.length > 0) return
+      for (var i = 0; i < root.actions.length; i++) {
+        var a = root.actions[i]
+        var done = a[0] === "log" ? s.log(a[1], a[2])
+          : a[0] === "open" ? s.openInEditor(a[1])
+          : a[0] === "capture" ? s.captureNow()
+          : false
+        console.log("HARNESS action " + JSON.stringify(a) + " " + done)
+      }
+      root.actionsDone = true
     }
   }
 

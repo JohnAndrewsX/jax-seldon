@@ -259,3 +259,36 @@ Verified in the shell source and live on the test host.
 - **Nerd Font glyphs** in the bar font (JetBrainsMono Nerd Font): verify a
   codepoint with `fc-list ":charset=f03d7" family`. `⟡` (U+27E1) is not in
   it and comes from fontconfig fallback.
+
+## WP-012 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **A TextField inside `PanelKeyCatcher`:** set `blocked` while the field
+  has focus, or h/j/k/l, digits and `c` drive the panel while typing. Esc
+  must hand focus back to the catcher (`forceActiveFocus()`), as the
+  weather panel does. Verified live with `wtype` and offscreen with QtTest.
+- **`qs.Ui` Dropdown focus:** the focus item is its inner trigger, not the
+  Dropdown root (an Item), so `dropdown.activeFocus` stays false. Wrap the
+  field and the Dropdown in a `FocusScope`, whose `activeFocus` covers
+  both; add `popupOpen` (the popup lives in the window overlay, outside
+  the scope). Keys: Tab from the TextField reaches the trigger
+  (`activeFocusOnTab`), ↓ opens, ↑/↓ move, Enter picks. The popup renders
+  inside the layer-shell `KeyboardPanel` on the test host and in the
+  offscreen harness alike. Once the user picks, `value` is assigned inside
+  the Dropdown and a binding on it is gone; set `value` imperatively to
+  reset it.
+- **Spinner:** `qs.Ui` Button has `iconText` and `iconSpinning` (a
+  RotationAnimation); `"󰦖"` is the glyph first-party panels spin.
+- **A replaced ListView model starts at the top:** keep the cursor row in
+  view with `onCountChanged: Qt.callLater(keepCurrentVisible)`. The
+  scrolled delegates exist only after the next layout pass, so a harness
+  report in the same tick does not see them yet.
+- **`omarchy-launch-editor` does not return for a terminal editor** (nvim,
+  the default): it execs `omarchy-launch-tui` → `exec setsid uwsm-app --
+  xdg-terminal-exec …`. A caller that is not a process-group leader is not
+  forked by `setsid`, so the launcher process lives as long as the editor.
+  A caller that waits with a timeout and then kills the child kills the
+  editor window (seen live: `seldon open --editor` from the plugin, 10 s).
+  Spawn it detached and do not wait for it.
+- **`wtype` into a panel TextField** over ssh works once the panel has
+  keyboard focus (`jax.seldon.panel open`, then `wtype n`); `wtype --
+  "<text>"` for text starting with `-`.

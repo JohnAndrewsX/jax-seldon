@@ -89,6 +89,23 @@ Item {
   property string lastError: ""
   property int captureIntervalMin: Model.CAPTURE_INTERVAL_MIN_DEFAULT
 
+  // Capture (and the status that follows it) is queued or running.
+  readonly property bool capturing: root.queued("capture") || root.queued("status")
+
+  // Panel actions write through the engine; this says whether they can, and
+  // if not, why (shown in place of the action).
+  readonly property string writeBlocker: root.devMode ? "Dev mode is read-only"
+    : root.engineState !== "present" ? "Needs the Seldon engine"
+    : root.status === "notInitialised" ? "Run seldon init first"
+    : ""
+  readonly property bool canWrite: root.writeBlocker === ""
+
+  // The last result of each panel action, { ok, pending, text } or null:
+  // QuickEntry (`log`), Open in editor (`open`), Capture now (`capture`).
+  property var logResult: null
+  property var openResult: null
+  property var captureResult: null
+
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
 
@@ -168,6 +185,52 @@ Item {
     return true
   }
 
+  // ---- Panel actions (SPEC-PLUGIN §5). Each takes user input, builds a fixed
+  // argument list in Model.js and reports into its result property.
+
+  // QuickEntry: `seldon log [--case <id>] --json -- <text>`.
+  function log(text, caseId) {
+    var built = Model.logArgs(text, caseId)
+    if (built.error) {
+      root.logResult = { ok: false, pending: false, text: built.error }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.logResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError }
+      return false
+    }
+    root.logResult = { ok: true, pending: true, text: "Saving…" }
+    return true
+  }
+
+  // Open in editor: journal | ledger | status | <caseId>.
+  function openInEditor(what) {
+    var args = Model.openArgs(what)
+    if (args === null) {
+      console.warn("jax.seldon: refused to open " + JSON.stringify(String(what)))
+      return false
+    }
+    if (!root.run(args)) {
+      root.openResult = { ok: false, pending: false, text: root.lastError }
+      return false
+    }
+    root.openResult = { ok: true, pending: true, text: "Opening " + what + "…" }
+    return true
+  }
+
+  function setResult(args, result) {
+    if (args[0] === "log") root.logResult = result
+    else if (args[0] === "open") root.openResult = result
+    else if (args[0] === "capture") root.captureResult = result
+  }
+
+  // Calls that will never run still owe their result line an answer.
+  function dropQueue(reason) {
+    for (var i = 0; i < root.queue.length; i++)
+      root.setResult(root.queue[i], { ok: false, pending: false, text: "Not run: " + reason })
+    root.queue = []
+  }
+
   function queued(head) {
     if (root.busy && root.currentArgs[0] === head) return true
     for (var i = 0; i < root.queue.length; i++)
@@ -190,6 +253,14 @@ Item {
     watchdog.stop()
     root.busy = false
     root.currentArgs = []
+    var result = args[0] === "log" ? Model.logResult(exitCode, out, err)
+      : args[0] === "open" ? Model.openResult(exitCode, out, err)
+      : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
+      : null
+    if (result) {
+      result.pending = false
+      root.setResult(args, result)
+    }
     if (exitCode === 0) {
       root.lastError = ""
       root.engineNotInitialised = false
@@ -197,9 +268,10 @@ Item {
       // Nothing else can succeed until `seldon init` has run.
       root.notInitialisedAtMs = Date.now()
       root.engineNotInitialised = true
-      root.queue = []
+      root.dropQueue("the logbook is not initialised")
       root.lastError = ""
-    } else {
+    } else if (args[0] !== "log") {
+      // QuickEntry shows its own error next to the field.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
@@ -210,10 +282,12 @@ Item {
   }
 
   function runnerFailedToStart() {
+    var args = root.currentArgs
     watchdog.stop()
     root.busy = false
     root.currentArgs = []
-    root.queue = []
+    root.setResult(args, { ok: false, pending: false, text: "seldon not found on PATH" })
+    root.dropQueue("seldon not found on PATH")
     root.lastError = ""
     root.engineVersion = ""
     root.engineDetail = "seldon not found on PATH"
@@ -274,7 +348,12 @@ Item {
       engineVersion: root.engineVersion,
       engineDetail: root.engineDetail,
       busy: root.busy,
+      capturing: root.capturing,
+      canWrite: root.canWrite,
       lastError: root.lastError,
+      logResult: root.logResult,
+      openResult: root.openResult,
+      captureResult: root.captureResult,
       pill: Model.pillText(root.counts),
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),

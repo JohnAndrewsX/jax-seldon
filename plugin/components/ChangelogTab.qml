@@ -11,7 +11,10 @@ import "../Model.js" as Model
 // EventRow.qml for what one row shows.
 //
 // Keyboard (forwarded by Panel.qml): ↑/↓ move the cursor, Enter expands the
-// row (full text, a group's members), f / F cycle the source filter.
+// row (full text, a group's members), f / F cycle the source filter, `e`
+// opens this month's ledger in the editor. *Capture now* spins while the
+// capture and the status after it run; the new rows arrive with the index
+// (Service.qml's FileView), not from the capture's output.
 Item {
   id: root
 
@@ -22,12 +25,15 @@ Item {
   property color urgent: Color.urgent
   property color muted: Color.muted
   property string fontFamily: Style.font.family
+  property bool capturing: false
+  property var captureResult: null
 
   property string filter: "all"
   property int cursor: 0
   property string expandedId: ""
 
   signal captureRequested()
+  signal openLedgerRequested()
   signal cursorWanted()
 
   readonly property var rows: Model.changelogRows(indexData, filter)
@@ -57,6 +63,10 @@ Item {
   function textKey(t) {
     if (t === "f" || t === "F") {
       root.setFilter(Model.cycleFilter(root.filter, t === "F" ? -1 : 1))
+      return true
+    }
+    if (t === "e") {
+      root.openLedgerRequested()
       return true
     }
     return false
@@ -105,34 +115,68 @@ Item {
       Text {
         id: countText
         anchors.left: parent.left
+        anchors.right: ledgerButton.left
+        anchors.rightMargin: Style.spacing.sm
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: Model.plural(root.rows.length, "event", "events")
           + (root.filter !== "all" ? " from " + root.filter : "") + " · newest first"
         color: root.dim
+        elide: Text.ElideRight
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
+      }
+
+      Button {
+        id: ledgerButton
+        anchors.right: captureButton.left
+        anchors.rightMargin: Style.spacing.sm
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Ledger"
+        tooltipText: "Open this month's ledger in the editor (key e)"
+        bordered: true
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        fontSize: Style.font.caption
+        verticalPadding: Style.spacing.xs
+        onClicked: root.openLedgerRequested()
       }
 
       Button {
         id: captureButton
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: "Capture now"
+        text: root.capturing ? "Capturing" : "Capture now"
+        iconText: root.capturing ? "󰦖" : ""
+        iconSpinning: root.capturing
+        iconSize: Style.font.caption
         tooltipText: "Key c"
         bordered: true
         foreground: root.foreground
         fontFamily: root.fontFamily
         fontSize: Style.font.caption
         verticalPadding: Style.spacing.xs
-        onClicked: root.captureRequested()
+        onClicked: if (!root.capturing) root.captureRequested()
       }
+    }
+
+    Text {
+      id: captureLine
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      text: root.captureResult && !root.captureResult.pending ? "Last capture: " + root.captureResult.text : ""
+      color: root.captureResult && !root.captureResult.ok ? root.urgent : root.dim
+      elide: Text.ElideRight
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
     }
 
     ListView {
       id: list
       width: parent.width
-      height: Math.max(0, parent.height - chipFlow.height - header.height - parent.spacing * 2)
+      height: Math.max(0, parent.height - chipFlow.height - header.height - parent.spacing * 2
+        - (captureLine.visible ? captureLine.height + parent.spacing : 0))
       clip: true
       spacing: Style.spacing.xxs
       boundsBehavior: Flickable.StopAtBounds

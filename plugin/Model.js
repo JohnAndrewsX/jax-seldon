@@ -410,6 +410,103 @@ function stateIndexPath(xdgStateHome, home) {
   return base.replace(/\/+$/, "") + "/seldon/index.json"
 }
 
+// ---- Panel actions: QuickEntry, Capture now, Open in editor ------------------
+
+// Open cases for the QuickEntry case picker, active first, then verification,
+// then queued. A case whose id does not match the schema pattern is left out:
+// the id goes into an argument list.
+function openCases(index) {
+  var out = []
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  var groups = ["active", "verification", "queued"]
+  for (var g = 0; g < groups.length; g++) {
+    var list = cases[groups[g]]
+    if (!Array.isArray(list)) continue
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i]
+      if (!isObject(c) || typeof c.id !== "string" || !CASE_ID.test(c.id)) continue
+      out.push({ id: c.id, title: str(c.title), status: groups[g] })
+    }
+  }
+  return out
+}
+
+// The picker's options: "No case" first, then one per open case.
+function caseOptions(index) {
+  var cases = openCases(index)
+  var out = [{ value: "", label: "No case" }]
+  for (var i = 0; i < cases.length; i++)
+    out.push({ value: cases[i].id, label: cases[i].id + (cases[i].title !== "" ? " · " + cases[i].title : "") })
+  return out
+}
+
+// `seldon log [--case <id>] --json -- <text>` (CONTRACT.md): the text is one
+// argument after `--`, exactly as typed. Returns { args } or { error }; blank
+// text is refused here, before the engine is asked.
+function logArgs(text, caseId) {
+  if (!hasText(text)) return { error: "Write something first" }
+  if (String(text).indexOf("\u0000") !== -1) return { error: "The note contains a NUL character" }
+  var id = String(caseId || "")
+  if (id !== "" && !CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  var args = id !== "" ? ["log", "--case", id, "--json", "--", text] : ["log", "--json", "--", text]
+  return { args: args }
+}
+
+// `seldon open <what> --editor --json`: journal (today), ledger (this month),
+// status (STATUS.md) or a case id. Anything else is refused (null).
+function openArgs(what) {
+  var w = String(what || "")
+  if (!matches(OPEN_TARGETS, w) && !CASE_ID.test(w)) return null
+  return ["open", w, "--editor", "--json"]
+}
+
+function parseJson(text) {
+  try {
+    var data = JSON.parse(String(text || ""))
+    return isObject(data) ? data : null
+  } catch (e) {
+    return null
+  }
+}
+
+// Result lines: { ok, text }. `text` is plain text (CONTRACT.md rule 6).
+
+// `seldon log --json` → {"event": <ledger line>, "git": …} (SPEC-ENGINE §3).
+function logResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  var data = parseJson(stdoutText)
+  var e = data && isObject(data.event) ? data.event : null
+  var where = e && typeof e.case === "string" && CASE_ID.test(e.case) ? e.case : "the journal"
+  var id = e && typeof e.id === "string" && EVENT_ID.test(e.id) ? " · " + e.id : ""
+  return { ok: true, text: "Saved to " + where + id }
+}
+
+// `seldon open --json` → {"what", "path", "editor": {"launched", "program"}}.
+function openResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  var data = parseJson(stdoutText)
+  var path = data && typeof data.path === "string" ? data.path : ""
+  var editor = data && isObject(data.editor) ? data.editor : null
+  if (editor && editor.launched === false)
+    return { ok: false, text: typeof editor.error === "string" ? editor.error : "The editor did not start" }
+  var program = editor && typeof editor.program === "string" ? editor.program : "the editor"
+  return { ok: true, path: path, text: path !== "" ? "Opened " + path + " in " + program : "Opened in " + program }
+}
+
+// `seldon capture --json` → {"written": N, "collectors": [{"name", "ok", …}]}.
+function captureResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  var data = parseJson(stdoutText)
+  var written = data ? count(data.written) : 0
+  var failing = []
+  var list = data && Array.isArray(data.collectors) ? data.collectors : []
+  for (var i = 0; i < list.length; i++)
+    if (isObject(list[i]) && list[i].ok === false && typeof list[i].name === "string") failing.push(list[i].name)
+  var text = written === 0 ? "nothing new" : plural(written, "new event", "new events")
+  if (failing.length > 0) text += " · failing: " + failing.join(", ")
+  return { ok: true, text: text }
+}
+
 // ---- Panel: strips and banners under the status banner ----------------------
 
 // SPEC-PLUGIN §5: the red strip "N changes in the red zone need a reason".

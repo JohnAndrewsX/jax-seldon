@@ -34,9 +34,27 @@ fixing. The tooltip says what and when the engine last captured.
 
 | Tab | Shows |
 |---|---|
-| Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), today's journal entries, yesterday's behind one row; *Open in editor* |
-| Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; *Capture now* |
-| System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine; a section appears only when the index has it |
+| Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), the QuickEntry (below), today's journal entries, yesterday's behind one row; *Open in editor* (today's journal) |
+| Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; *Ledger* (this month's ledger in the editor); *Capture now* |
+| System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine; a section appears only when the index has it; *Open in editor* (the logbook's `STATUS.md`) |
+
+**QuickEntry** (Today): type a note and press Enter; it goes to today's
+journal through `seldon log`, exactly as typed. Pick an open case below the
+field to file the note under it (*Open case* opens that case in the
+editor). The line below shows the saved event's id or the engine's error;
+the field empties only once the note is saved. A blank note is refused.
+The note appears in the journal list when the engine rewrites the index.
+
+**Capture now** (Changelog, `c`, right click on the pill) runs `seldon
+capture`, then `seldon status`; the button spins meanwhile and the line
+below says what the capture wrote. New rows arrive with the rewritten
+index, without a restart.
+
+**Open in editor** runs `seldon open <journal|ledger|status|case id>
+--editor`; the engine starts your default editor (`omarchy-launch-editor`).
+
+The actions need the engine and an initialised logbook; otherwise the
+field says why. In dev mode (`SELDON_INDEX`) they are disabled.
 
 A Changelog row shows the source glyph, kind, subject and time, then what
 changed, who, and the case. Each row has one colour, in theme colours (red =
@@ -63,7 +81,13 @@ reason" (a click opens the Changelog).
 | Enter, Space | open the row (a group's members, the full text, yesterday's entries) |
 | f / F | Changelog: next / previous source filter |
 | c | capture now |
+| n | write a note: focuses the QuickEntry (from any tab) |
+| e | open this tab's file in the editor: journal, ledger, `STATUS.md` |
 | Esc | close |
+
+While the QuickEntry field or its case picker has focus, every key goes to
+it: Enter saves, Tab moves between field and picker (↓ opens the picker),
+Esc gives the keys back to the panel.
 
 ## States
 
@@ -88,7 +112,7 @@ again* (or `jax.seldon.service refresh`), not on every capture interval.
 | `omarchy-shell shell toggle jax.seldon` | the Prime Radiant overlay (also `summon`, `hide`) |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
-| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip), as JSON |
+| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, QuickEntry, last action results), as JSON |
 | `omarchy-shell jax.seldon.panel tab today\|changelog\|system` | show a tab |
 | `omarchy-shell jax.seldon.panel filter all\|<source>` | set the Changelog source filter |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
@@ -115,9 +139,10 @@ Setup > Plugins > Seldon: **Capture interval (minutes)**, 5–120, default 15.
 - Reads one JSON file. Everything shown from it is displayed as plain text,
   never evaluated.
 - Runs the `seldon` engine only with fixed argument lists from the
-  contract; ids are checked against their patterns first, free text is one
-  non-empty argument after `--`. Never builds a shell command from logbook
-  content.
+  contract; ids are checked against their patterns first, free text (a
+  QuickEntry note) is one non-empty argument after `--`. Never builds a
+  shell command from logbook content. Writing to the logbook happens only
+  through the engine, on your Enter or click.
 - Opens a terminal or touches the clipboard only when you click a banner
   button, and then only with a constant command.
 

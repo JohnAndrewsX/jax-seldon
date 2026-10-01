@@ -2,7 +2,8 @@
 # Drive plugin/Service.qml through every status of its state machine in a
 # private, headless Quickshell instance (tests/plugin/harness/shell.qml).
 # Nothing here talks to the running omarchy-shell or writes outside a temp
-# dir. Needs quickshell and jq (host check; see docs/TESTING.md).
+# dir: every run gets its own HOME, XDG_STATE_HOME and XDG_CONFIG_HOME
+# there, and the real ones are checked at the end (real-home-guard.sh). Needs quickshell and jq (host check; see docs/TESTING.md).
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -16,6 +17,7 @@ command -v jq >/dev/null || { echo "service-states: jq not found" >&2; exit 1; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+source "$root/tests/plugin/real-home-guard.sh"
 
 # A PATH with the tools the fakes need but never a seldon, even when one is
 # installed system-wide: a private dir of symlinks to exactly those tools.
@@ -34,11 +36,18 @@ pass=0
 fail=0
 
 # run <case> <ms> [VAR=value ...] — one harness run; the final snapshot lands
-# in $work/<case>.json, the whole log in $work/<case>.log.
+# in $work/<case>.json, the whole log in $work/<case>.log. HOME is
+# $work/home-<case> unless the case names one (HOME=… among the variables);
+# XDG_STATE_HOME and XDG_CONFIG_HOME default to that HOME's, so neither the
+# fake engine nor anything else can reach the real user's files.
 run() {
-  local name=$1 ms=$2
+  local name=$1 ms=$2 home arg
   shift 2
-  env -u SELDON_INDEX -u SELDON_NOW -u XDG_STATE_HOME QT_QPA_PLATFORM=offscreen \
+  home="$work/home-$name"
+  for arg in "$@"; do [[ $arg == HOME=* ]] && home=${arg#HOME=}; done
+  mkdir -p "$home"
+  env -u SELDON_INDEX -u SELDON_NOW -u SELDON_CONFIG -u SELDON_LOGBOOK QT_QPA_PLATFORM=offscreen \
+    HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_MS="$ms" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$harness" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS final " | sed 's/.*HARNESS final //' | tail -n 1 >"$work/$name.json" || true
@@ -160,7 +169,9 @@ expect engine-appears .engine present
 # 12. Live loop without the dev override: capture, then status writes the
 #     index, which the service picks up. Calls never overlap.
 mkdir -p "$work/home-live"
-run live 9000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+#     An empty XDG_STATE_HOME counts as unset: plugin and engine use HOME's.
+run live 9000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-live" XDG_STATE_HOME= FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect live .indexPath "$work/home-live/.local/state/seldon/index.json"
 expect live .status ok
 expect live .devMode false
 expect live .pill "⟡ 2 · 4"
@@ -279,6 +290,105 @@ expect xdg .pill "⟡ 2 · 4"
 mkdir -p "$work/home-xdg-rel"
 run xdg-relative 2500 PATH="$fake_path" HOME="$work/home-xdg-rel" XDG_STATE_HOME="relative/state" FAKE_SELDON_MODE=uninit
 expect xdg-relative .indexPath "$work/home-xdg-rel/.local/state/seldon/index.json"
+
+# 18. Panel actions (WP-012): the exact argv of every engine call, in order.
+#     The note is one argument after `--`, byte for byte: an option-like
+#     text, quotes, a newline. Capture runs before status; a second "Capture
+#     now" while one is queued is dropped. Open hands the engine's path to
+#     the editor launcher (a recorder here) and the result line reads the
+#     engine's `open --json` output.
+# argv_check <case> <expected argv lines, as `printf '%q '` writes them>
+argv_check() {
+  local got want
+  got=$(cat "$work/home-$1/argv.log" 2>/dev/null || true)
+  want=$2
+  if [[ $got == "$want" ]]; then
+    pass=$((pass + 1)); echo "ok   $1: engine argv ($(wc -l <<<"$got") calls)"
+  else
+    fail=$((fail + 1)); echo "FAIL $1: engine argv differs"
+    diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fi
+}
+q() { printf '%q ' "$@"; }
+install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-tools/omarchy-launch-editor"
+mkdir -p "$work/home-actions"
+note2='a "b" c'
+note3=$'line one\nline two'
+actions=$(jq -cn --arg n2 "$note2" --arg n3 "$note3" '[
+  ["log", "--help", ""], ["log", $n2, "C-2026-004"], ["log", $n3, ""],
+  ["open", "journal"], ["open", "ledger"], ["open", "status"], ["open", "C-2026-004"],
+  ["capture"], ["capture"]
+]')
+run actions 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-actions" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  FAKE_SELDON_WRITTEN=3 HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/actions.record" HARNESS_UNTIL=capturing=false
+argv_check actions "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q log --json -- --help)" "$(q log --case C-2026-004 --json -- "$note2")" "$(q log --json -- "$note3")" \
+  "$(q open journal --editor --json)" "$(q open ledger --editor --json)" "$(q open status --editor --json)" \
+  "$(q open C-2026-004 --editor --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+expect actions .logResult.text "Saved to the journal · 01M3W1FAKE0000000000000NTE"
+expect actions .logResult.ok true
+expect actions .openResult.text "Opened $work/home-actions/Seldon/work/active/C-2026-004.md in omarchy-launch-editor"
+expect actions .captureResult.text "3 new events"
+expect actions .lastError ""
+if grep -a -q 'HARNESS action \["capture"\] false' "$work/actions.log"; then
+  pass=$((pass + 1)); echo "ok   actions: a second Capture now while one is queued is dropped"
+else
+  fail=$((fail + 1)); echo "FAIL actions: the second capture was not dropped"
+fi
+if awk 'NR % 2 == 1 { if ($1 != "start") bad = 1; c = $2 } NR % 2 == 0 { if ($1 != "end" || $2 != c) bad = 1 } END { exit bad }' \
+    "$work/home-actions/calls.log"; then
+  pass=$((pass + 1)); echo "ok   actions: engine calls never overlap"
+else
+  fail=$((fail + 1)); echo "FAIL actions: overlapping engine calls: $(tr '\n' ' ' <"$work/home-actions/calls.log")"
+fi
+record_check actions "$(printf '%s\n' \
+  omarchy-launch-editor "$work/home-actions/Seldon/journal/2026/2026-10-01.md" -- \
+  omarchy-launch-editor "$work/home-actions/Seldon/ledger/2026-10.jsonl" -- \
+  omarchy-launch-editor "$work/home-actions/Seldon/STATUS.md" -- \
+  omarchy-launch-editor "$work/home-actions/Seldon/work/active/C-2026-004.md" --)"
+clean_log actions
+
+# 19. Refused before the engine is asked: blank notes, an id that is not a
+#     case id, an open target outside journal|ledger|status|<caseId>. The
+#     engine sees nothing but the start-up calls.
+mkdir -p "$work/home-refused"
+actions=$(jq -cn '[["log", "", ""], ["log", "x", "C-26-1; rm -rf ~"], ["open", "../../etc/passwd"], ["open", "logbook"], ["log", " \n\t ", ""]]')
+run refused 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/refused.record"
+argv_check refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+expect refused .logResult.text "Write something first"
+expect refused .logResult.ok false
+expect refused .openResult null
+if [[ $(grep -a -c 'HARNESS action .* false$' "$work/refused.log") == 5 ]]; then
+  pass=$((pass + 1)); echo "ok   refused: all five refused"
+else
+  fail=$((fail + 1)); echo "FAIL refused: $(grep -a 'HARNESS action' "$work/refused.log")"
+fi
+
+# 20. The engine's errors reach the result lines: an unknown case for log
+#     (shown by the QuickEntry only) and for open (also the panel's error line).
+mkdir -p "$work/home-errors"
+actions=$(jq -cn '[["log", "x", "C-2026-999"], ["open", "C-2026-999"]]')
+run errors 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-errors" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/errors.record"
+expect errors .logResult.text "unknown case C-2026-999"
+expect errors .logResult.ok false
+expect errors .openResult.text "unknown case C-2026-999"
+expect errors .lastError "seldon open: unknown case C-2026-999"
+clean_log errors
+
+# 21. Dev mode and a missing engine: actions are refused with a reason.
+mkdir -p "$work/home-act-dev"
+actions=$(jq -cn '[["log", "hello", ""], ["open", "journal"]]')
+run actions-devmode 2500 PATH="$fake_path" HOME="$work/home-act-dev" SELDON_INDEX="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect actions-devmode .canWrite false
+expect actions-devmode .logResult.text "Dev mode is read-only"
+expect actions-devmode .openResult.text "dev mode (SELDON_INDEX): engine calls are disabled"
+argv_check act-dev "$(q --version --json)"
+run actions-noengine 2500 PATH="$base_path" HOME="$work/home-act-dev" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect actions-noengine .logResult.text "Needs the Seldon engine"
+
+real_home_check service-states
 
 echo "service-states: $pass passed, $fail failed"
 ((fail == 0))

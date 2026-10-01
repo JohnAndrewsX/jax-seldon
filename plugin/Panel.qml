@@ -12,6 +12,11 @@ import "Model.js" as Model
 // tab. The banners and the strip sit above the tabs, so every tab shows them.
 // Tabs: Today, Changelog, System (Work, Decisions and Memory arrive later).
 //
+// Actions (WP-012) go through the service's queue with fixed argument lists:
+// the QuickEntry note (`seldon log`), *Capture now* (capture, then status;
+// the index refresh arrives through the FileView), and *Open in editor* per
+// tab (`seldon open journal|ledger|status|<caseId> --editor`).
+//
 // Keyboard (SPEC-PLUGIN §5):
 //   Tab / Shift-Tab  the bar's next / previous panel, as every Omarchy panel
 //   ← / →, h / l     previous / next tab
@@ -22,6 +27,8 @@ import "Model.js" as Model
 //   Enter, Space     open the row under the cursor (a group, the yesterday row)
 //   f / F            Changelog: next / previous source filter
 //   c                capture now
+//   n                write a note (Today's QuickEntry; Esc gives the keys back)
+//   e                open this tab's file in the editor (journal, ledger, status)
 //   Esc              close
 Panel {
   id: root
@@ -77,6 +84,9 @@ Panel {
       root.selectTabById(Model.TAB_KEYS[t])
     } else if (t === "c" || t === "C") {
       root.captureNow()
+    } else if (t === "n") {
+      root.selectTabById("today")
+      todayTab.quickEntry.focusField()
     } else {
       root.currentTab.textKey(t)
     }
@@ -90,8 +100,14 @@ Panel {
     if (root.service) root.service.captureNow()
   }
 
-  function openJournal() {
-    if (root.service) root.service.run(["open", "journal", "--editor"])
+  // journal | ledger | status | <caseId>; Service.openInEditor validates it.
+  function openInEditor(what) {
+    if (root.service) root.service.openInEditor(what)
+  }
+
+  // The QuickEntry gives the keys back, or its field was hidden with the tab.
+  function restoreKeys() {
+    if (root.opened && !todayTab.editing && !keyCatcher.activeFocus) keyCatcher.forceActiveFocus()
   }
 
   // Tab walks the bar's panels from the slot's widget, not from this item.
@@ -114,7 +130,23 @@ Panel {
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
       snapper: snapperBanner.visible && root.service.snapperBanner ? root.service.snapperBanner.title : "",
       crisis: crisisStrip.visible ? crisisLabel.text : "",
-      today: { entries: todayTab.view.entries.length, yesterday: todayTab.view.yesterday.length, rows: todayTab.rowCount },
+      today: {
+        entries: todayTab.view.entries.length,
+        yesterday: todayTab.view.yesterday.length,
+        rows: todayTab.rowCount,
+        quickEntry: {
+          enabled: todayTab.quickEntry.enabledHere,
+          editing: todayTab.editing,
+          text: todayTab.quickEntry.text,
+          caseId: todayTab.quickEntry.caseId,
+          cases: todayTab.quickEntry.options.length - 1,
+          result: todayTab.quickEntry.resultText
+        }
+      },
+      capturing: root.service ? root.service.capturing : false,
+      captureResult: root.service && root.service.captureResult ? root.service.captureResult.text : "",
+      openResult: root.service && root.service.openResult ? root.service.openResult.text : "",
+      lastError: root.service ? root.service.lastError : "",
       changelog: {
         filter: changelogTab.filter,
         rows: rows.length,
@@ -147,6 +179,8 @@ Panel {
       id: keyCatcher
       objectName: "seldonKeys"
       anchors.fill: parent
+      // The QuickEntry field and case picker take every key while focused.
+      blocked: todayTab.editing
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onMoveRequested: function(dx, dy) {
@@ -281,12 +315,16 @@ Panel {
             id: todayTab
             anchors.fill: parent
             visible: root.tabIndex === 0
+            service: root.service
             indexData: root.indexData
             cursorActive: root.cursorActive && visible
             foreground: root.foreground
+            urgent: root.urgent
             fontFamily: root.fontFamily
-            onOpenJournalRequested: root.openJournal()
+            onOpenJournalRequested: root.openInEditor("journal")
             onCursorWanted: root.cursorActive = true
+            onLeaveRequested: keyCatcher.forceActiveFocus()
+            onEditingChanged: if (!editing) Qt.callLater(root.restoreKeys)
           }
 
           ChangelogTab {
@@ -298,7 +336,10 @@ Panel {
             foreground: root.foreground
             urgent: root.urgent
             fontFamily: root.fontFamily
+            capturing: !!root.service && root.service.capturing
+            captureResult: root.service ? root.service.captureResult : null
             onCaptureRequested: root.captureNow()
+            onOpenLedgerRequested: root.openInEditor("ledger")
             onCursorWanted: root.cursorActive = true
           }
 
@@ -312,6 +353,7 @@ Panel {
             foreground: root.foreground
             fontFamily: root.fontFamily
             onCursorWanted: root.cursorActive = true
+            onOpenStatusRequested: root.openInEditor("status")
           }
         }
 
