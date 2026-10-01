@@ -8,10 +8,14 @@
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-002 | Contract and fixtures | Schema Keeper | `schema-002` (opus, high) | `wt/WP-002` · `wp/002-contract-fixtures` | 2026-10-01 |
+| WP-003 | Engine core: config, logbook model, frontmatter, init | Engine | `engine-003` (opus, high) | `wt/WP-003` · `wp/003-engine-core` | 2026-10-01 |
+| WP-010 | Plugin skeleton: manifest, Service, BarWidget, states | Plugin | `plugin-010` (opus, high) | `wt/WP-010` · `wp/010-plugin-skeleton` | 2026-10-01 |
+| WP-014 | Contract v1 follow-ups (ADR-0012 edits, ADR-0013 fields, fixture group) | Schema Keeper | `schema-014` (opus, high) | `wt/WP-014` · `wp/014-contract-followups` | 2026-10-01 |
 
 ## Queued (next up)
-WP-003 engine core (needs WP-002) · WP-004 … WP-009 (see `work/queued/`)
+After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
+· then WP-007, WP-009 · then WP-008. Plugin track: WP-011 after WP-010.
+(see `work/queued/`)
 
 ## Preparation done (2026-10-01)
 - Kickoff checklist steps 1–3: repo + first commit, WP files, host verified
@@ -24,6 +28,10 @@ WP-003 engine core (needs WP-002) · WP-004 … WP-009 (see `work/queued/`)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-002 Contract and fixtures — merged `wp/002-contract-fixtures`;
+  `just check` incl. schema-validate green on main; ADR-0012 accepted with
+  review edits; ADR-0013 (drift grouping, debate) and ADR-0014 (attribution,
+  zones) decided; follow-ups in WP-014.
 - 2026-10-01 WP-001 Repo scaffold, CI, toolchain — merged `wp/001-scaffold`;
   `just check` green on main; handover in `work/completed/WP-001/`.
 

@@ -1,6 +1,7 @@
 # ADR-0012 — Contract v1: schema clarifications and index derivation rules
 
-**Status:** proposed
+**Status:** accepted (2026-10-01, with items 11–15 added at review; drift
+grouping and zones are in ADR-0013 and ADR-0014)
 **Date:** 2026-10-01
 
 ## Context
@@ -80,6 +81,27 @@ become part of the contract.
       `series.timeline`: omarchy `update` events (release), current
       snapshots, all non-dropped cases (`created` → `closed`), open crises;
       sorted by `ts` string, then kind.
+
+**Added at review (orchestrator, 2026-10-01)**
+11. *Resolution detail:* a folded event carries the index-only optional
+    field `resolutionDetail` (the `detail` of the winning resolution), so
+    the plugin can show *why* an event was explained or dismissed.
+    Precedent for index-only fields: `case.path`, `case.steps`.
+12. *Timeline timestamps:* `series.timeline[].ts` and `end` are plain
+    strings in two forms — `YYYY-MM-DD` for case spans (`created` →
+    `closed`), RFC 3339 date-time for snapshots, releases and crises. The
+    schema description states both; the chart parses both.
+13. *Proposal token rule (item 7):* "the subject appears as a token in `##
+    Plan`" means a whole-word match of the subject against the Plan
+    section's text, case-sensitive, where word characters are
+    `[A-Za-z0-9._+-]`; the reference implementation is the regex in
+    `scripts/validate-fixtures.py`, and the WP-007 golden test is the
+    arbiter.
+14. *Known gap:* an agent `command` without a case that produces no
+    collector event is never drift (consequence of item 6). Acknowledged;
+    see ADR-0014 §5.
+15. *`meta.enabled`* (boolean) is a documented conventional key on
+    `plugin-add` and `plugin-enable|disable` events.
 
 ## Consequences
 - Every fixture case file now validates; `scripts/validate-fixtures.sh`

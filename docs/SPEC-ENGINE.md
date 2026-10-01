@@ -90,18 +90,27 @@ theme, config. Rules:
   `transaction completed` share a `txId`; the `[PACMAN] Running 'pacman -S
   zed'` line gives `meta.command`; packages in the command are `explicit`,
   others in the same transaction are `dependency` and inherit the case of
-  the explicit ones.
+  the explicit ones. A transaction is emitted only after `transaction
+  completed`, the next `transaction started`, or when
+  `/var/lib/pacman/db.lck` is absent at capture time; until then the
+  cursor stays at `transaction started` (ADR-0013 §5). `meta.command` is
+  parsed as argv, never matched as a substring.
 - **snapper** — `snapper --jsonout list`. New snapshot numbers become
   `snapshot` events with description; a `pre`/`post` pair is linked via
   `meta.pairOf`. Without `ALLOW_USERS` the command fails with a permission
   error; the collector then reports `ok: false` and the fix command, never
   sudo (ADR-0011).
-- **omarchy** — version from `omarchy --version` (or
-  `~/.local/share/omarchy/version`); git HEAD of the omarchy repo; change
-  → `update` event with `from`/`to`.
-- **plugins** — `omarchy plugin list --json`; diff against last snapshot
-  (stored by hash) → `plugin-add|plugin-remove|plugin-enable|plugin-disable
-  |plugin-update` with id and version.
+- **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
+  `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
+  stale); `repoHead` only when `$OMARCHY_PATH` is a git checkout, omitted
+  on package installs; change → `update` event with `from`/`to`.
+- **plugins** — `omarchy plugin list --json` (shell IPC; fails when the
+  shell is not running → `ok: false`); diff against last snapshot (stored
+  by hash) → `plugin-add|plugin-remove|plugin-enable|plugin-disable
+  |plugin-update` with id and version. Neither `list` nor `catalog`
+  carries a version: read it from the manifest at the plugin's
+  `manifestPath`, else the plugin directory's git HEAD short hash
+  (ADR-0014 §3).
 - **theme** — current theme name (read how Omarchy stores it from
   `~/.local/share/omarchy/bin/omarchy-theme-set`); diff → `theme-set`.
   Optional hook script installed by the wizard into `theme-set.d/` calls
@@ -113,9 +122,19 @@ theme, config. Rules:
   files > 1 MB are skipped. Known secret-bearing files are listed in
   `config.toml [redaction] skipPaths` and never hashed.
 
-All events get `actor: system` unless the collector can prove otherwise
-(pacman's command line inside an agent-tagged time window is *not* proof;
-only hooks set agent actors).
+All events get `actor: system` unless the collector can prove otherwise.
+Proof is an agent hook `command` event that (a) named the subject
+(package, path, or a full upgrade — `-Syu`/`-Su`/`omarchy update` — for
+every member of the resulting transaction) and (b) precedes the collector
+event within the same pacman transaction or by at most 10 minutes; then
+the collector event inherits that command's `actor` and `case`. Time
+proximity alone is never proof (ADR-0014 §1).
+
+Zones (ADR-0014 §2): red = `pacman`, `omarchy`, systemd units including
+`config-change` under `~/.config/systemd/`; yellow = other `config`,
+`theme`, `plugins`; none = `snapper`, `seldon` notes and case events,
+`resolution`. Hook `command` events take the zone of what the command
+would produce. `crisis` derives from the zone (ADR-0008, ADR-0013).
 
 ## 5. Reconciliation (drift)
 
@@ -126,13 +145,30 @@ After every capture:
    event directly, so this only covers collector-found events), link.
 2. If the event is a pacman `dependency` of an explicit event with a case,
    link.
-3. If an active case lists the event's subject in *Affected paths* or the
-   package name in *Steps*, propose (not link) — stored as `proposedCase`
-   in the index for one-click confirmation.
-4. Otherwise it is drift. Red zone → `crisis: true`.
+3. If an **open** case (queued, active, verification) lists the event's
+   subject as a whole-word token in its `## Plan` section, propose (not
+   link) — stored as `proposedCase` in the index for one-click
+   confirmation; the lowest case id wins (ADR-0012 §7, §13).
+4. Otherwise it is drift, if the event is drift-eligible: only `pacman`,
+   `omarchy`, `plugins`, `theme` and `config` events can be drift;
+   snapshots, notes, hook `command` events and case events never are
+   (ADR-0012 §6).
+5. **Grouping (ADR-0013).** Open drift `pacman` events that share a `txId`
+   form one drift item keyed by the leader's event id (lowest-id explicit
+   member, else lowest-id member); the index row carries `txId` and
+   `members`. The item's zone is yellow iff every member is *routine*
+   (kind `upgrade`/`reinstall`, not explicit, transaction command is `-S`
+   with `-u`/`--sysupgrade` naming no package, subject not matching
+   `config.toml [drift] alwaysRed` — default `linux*`, `systemd`, `glibc`,
+   `hyprland`, `omarchy`, `quickshell`), else red. Other sources are
+   never grouped.
+6. Red zone → `crisis: true`.
 
 Resolution events (`kind: resolution`, `refersTo`) are applied when the
-index is built; an event with a resolution is not drift.
+index is built; an event with a resolution is not drift. `seldon drift
+link|explain|dismiss <id>` on a group member resolves every member that is
+open at that moment, one resolution line per member in one write with
+`meta.txId`; `--only` resolves the named event alone (ADR-0013 §4).
 
 ## 6. Index build
 

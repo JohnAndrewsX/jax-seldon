@@ -49,6 +49,10 @@ language. Dates `YYYY-MM-DD`, timestamps RFC 3339 with offset.
 
 ### Case (`work/*/C-YYYY-NNN-slug.md`)
 
+Folder by status: `queued` → `work/queued/`, `active` and `verification`
+→ `work/active/`, `completed` and `dropped` → `work/completed/`
+(ADR-0012 §9).
+
 ```yaml
 ---
 id: C-2026-004
