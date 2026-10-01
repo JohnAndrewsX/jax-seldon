@@ -532,7 +532,12 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `cargo test --lib --bins` (111 + 2); `--bins` alone runs 2.
 - **cargo under rustup with `HOME` redirected** fails with "rustup could
   not choose a version"; keep `RUSTUP_HOME`/`CARGO_HOME` pointing at the
-  real ones when running cargo in a scratch home.
+  real ones when running cargo in a scratch home. With
+  `RUSTUP_TOOLCHAIN=stable` set, rustup instead **auto-installs a 1.5 GB
+  toolchain into the scratch home**, and then cargo `--frozen` fails
+  (exit 101, "no matching package") because the registry is in the real
+  `~/.cargo`. The PKGBUILD's `check()` had exactly this bug (review of
+  WP-040): pin `CARGO_HOME`/`RUSTUP_HOME` before moving `HOME`.
 - **GitHub Actions:** the implicit `run` shell is `bash -e` without
   `pipefail` (`defaults.run.shell: bash` adds it); `actions/checkout`
   persists an `http.<github>.extraheader` with `GITHUB_TOKEN` that would
