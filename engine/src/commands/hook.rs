@@ -1043,22 +1043,20 @@ pub const CLAUDE_HOOKS: [(&str, Option<&str>, &str, u64); 3] = [
     ("SessionEnd", None, "seldon hook session-stop", 60),
 ];
 
-/// `seldon hook install claude-code [--settings PATH]`: adds each of
-/// [`CLAUDE_HOOKS`] that is not there yet; everything else in the file is
-/// kept. A file that is not a JSON object is refused, never overwritten.
-fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
-    let (path, logbook) = match settings {
-        Some(p) => (ctx.dirs.expand(&p.to_string_lossy()), None),
-        None => {
-            let (config, logbook) = ctx.open_logbook()?;
-            (
-                logbook.path(".claude/settings.json"),
-                Some((config, logbook)),
-            )
-        }
-    };
-    let shown = ctx.dirs.display(&path);
-    let text = match std::fs::read_to_string(&path) {
+/// What [`merge_claude_hooks`] did: one label per hook of [`CLAUDE_HOOKS`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Merged {
+    pub added: Vec<String>,
+    pub present: Vec<String>,
+}
+
+/// Merges [`CLAUDE_HOOKS`] into the Claude Code settings file at `path`
+/// (created when missing): adds each hook that is not there yet and keeps
+/// everything else; the file is written only when something was added.
+/// A file that is not a JSON object is refused, never overwritten. `shown`
+/// names the file in messages. Used by `hook install` and `seldon init`.
+pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
+    let text = match std::fs::read_to_string(path) {
         Ok(t) if t.trim().is_empty() => "{}".to_string(),
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_string(),
@@ -1079,8 +1077,7 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
         .as_object_mut()
         .ok_or_else(|| refuse("`hooks` is not an object".into()))?;
 
-    let mut added = Vec::new();
-    let mut present = Vec::new();
+    let mut merged = Merged::default();
     for (event, matcher, command, timeout) in CLAUDE_HOOKS {
         let groups = hooks
             .entry(event)
@@ -1101,7 +1098,7 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
                     .is_some_and(|hs| hs.iter().any(|h| h.get("command") == Some(&json!(command))))
         });
         if has {
-            present.push(label);
+            merged.present.push(label);
             continue;
         }
         let mut group = json!({
@@ -1111,20 +1108,41 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
             group["matcher"] = json!(m);
         }
         groups.push(group);
-        added.push(label);
+        merged.added.push(label);
     }
 
-    let mut commit = None;
-    if !added.is_empty() {
+    if !merged.added.is_empty() {
         let mut text = serde_json::to_string_pretty(&root).map_err(anyhow::Error::from)?;
         text.push('\n');
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        crate::sys::write_atomic(&path, text.as_bytes())?;
-        if let Some((config, logbook)) = &logbook {
-            commit = Some(autocommit(ctx, config, logbook, "hook install claude-code"));
+        crate::sys::write_atomic(path, text.as_bytes())?;
+    }
+    Ok(merged)
+}
+
+/// `seldon hook install claude-code [--settings PATH]`: adds each of
+/// [`CLAUDE_HOOKS`] that is not there yet ([`merge_claude_hooks`]) and
+/// commits the logbook when its own settings file changed.
+fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
+    let (path, logbook) = match settings {
+        Some(p) => (ctx.dirs.expand(&p.to_string_lossy()), None),
+        None => {
+            let (config, logbook) = ctx.open_logbook()?;
+            (
+                logbook.path(".claude/settings.json"),
+                Some((config, logbook)),
+            )
         }
+    };
+    let shown = ctx.dirs.display(&path);
+    let Merged { added, present } = merge_claude_hooks(&path, &shown)?;
+    let mut commit = None;
+    if !added.is_empty()
+        && let Some((config, logbook)) = &logbook
+    {
+        commit = Some(autocommit(ctx, config, logbook, "hook install claude-code"));
     }
 
     let mut human = if added.is_empty() {
