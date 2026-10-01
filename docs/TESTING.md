@@ -167,7 +167,12 @@ command forms of CONTRACT.md (free text one non-empty argument after `--`,
 the tab helpers against the fixture: 58 Changelog rows, one "+3" group, 7
 folded resolution details, 6 snapshot rows, the source filter, the crisis
 strip text, the snapper banner, the Today view and the System sections with
-every field optional.
+every field optional. For the panel actions (WP-012): the case picker lists
+the open cases only, active first, with ids checked; `logArgs` keeps the
+note one argument after `--` (`--help`, quotes, a newline, `$(…)`) and
+refuses blank text and a malformed case id; `openArgs` takes journal,
+ledger, status or a case id and nothing else; the result lines read the
+`log`, `open` and `capture` JSON of SPEC-ENGINE §3.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -189,7 +194,21 @@ the banner fixes (fake `wl-copy` and terminal launcher record it), the
 crisis strip text, `index-variants/snapper-degraded.json` with the argv of
 its *Copy* and *Run in terminal*, `XDG_STATE_HOME` (absolute and the
 ignored relative form), and dev mode never running the engine.
-`tests/plugin/fake-seldon` stands in for the engine. The scenarios run with
+`tests/plugin/fake-seldon` stands in for the engine.
+
+The panel actions (WP-012) run through `HARNESS_ACTIONS`, a JSON array of
+`["log", text, caseId]`, `["open", what]` and `["capture"]`, started once
+the start-up capture is done. The fake engine appends each call's exact
+argv to `$HOME/argv.log` (`printf %q`, one line per call), and its `open`
+hands the path to a recorded `omarchy-launch-editor`, as the real engine
+does without a terminal. Checked: the note is one argument after `--` for
+`--help`, `a "b" c` and a two-line text, with and without `--case`; capture
+runs before status and a second *Capture now* while one is queued is
+dropped; the four open variants reach the launcher with the right path and
+the result line reads `open --json`; calls never overlap; blank notes, a
+malformed case id and an unknown open target never reach the engine; the
+engine's errors reach the result lines; dev mode and a missing engine
+refuse with a reason. The scenarios run with
 a `PATH` made of symlinks to the few tools the fakes need, so a `seldon`
 installed system-wide never leaks in.
 
@@ -231,10 +250,21 @@ free of warnings, `TypeError`s and binding loops. The shell's `Style.qml`
 asks `hyprctl` and `fc-match` for gaps and the font; the script gives it
 stubs that fail, and Style keeps its defaults.
 
+Two live scenarios (WP-012) run without `SELDON_INDEX`: the service reads
+the state index the fake engine writes. They type into the QuickEntry with
+real keys (`--help` would switch tabs if a key leaked to the panel), refuse
+a blank note, pick a case with Tab, ↓ and Enter, open the journal, ledger
+and STATUS.md with `e`, and press `c`: the fake engine's next `status`
+writes an index with one more event, and the Changelog shows 59 rows
+through the FileView, without a restart. The exact argv and the editor
+paths are compared, and a note the engine refuses keeps its text.
+
 The step format is documented in the header of
 `tests/plugin/harness/panel.qml`, e.g.
-`HARNESS_STEPS="view;tab:changelog;key:Down*5;key:Return"`; a new scenario
-is one `run` line plus its `expect`/`shows` checks in `panel-view.sh`.
+`HARNESS_STEPS="view;tab:changelog;key:Down*5;key:Return"`, plus
+`type:<text>`, `settle` (no engine call queued or running) and
+`wait:<view path>=<value>`; a new scenario is one `run` line plus its
+`expect`/`shows` checks in `panel-view.sh`.
 
 ### 4. Runtime smoke test in the shell
 
@@ -300,12 +330,25 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    `jax.seldon.panel view`. Tab opens the bar's next panel
    (`Bar.switchPanelFrom`); if that neighbour opens a window instead of a
    popup panel (OmaSettings on the test host), the Seldon panel stays open.
-5. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
+5. Panel actions (WP-012), with the real engine (`just build-release`, copy
+   to `~/.local/bin/seldon`, `chmod 755`; `seldon init --non-interactive
+   --path ~/Seldon-smoke`; restart the shell): `jax.seldon.panel open`,
+   `wtype n`, `wtype -- "<note>"`, `wtype -k Return`, then `view` shows
+   `today.quickEntry.result` with the event id; check the line in
+   `~/Seldon-smoke/ledger/*.jsonl` and the journal. `wtype c` on the
+   Changelog shows `capturing: true`, then the capture result. `wtype e`
+   opens the tab's file through `omarchy-launch-editor` (see
+   `hyprctl clients`); with a terminal editor (nvim, the Omarchy default)
+   the engine on main waits 10 s for the launcher, then kills it and
+   reports "did not return" (WP-012 handover). To see the case picker, put a fixture index in place
+   (step 3): its cases are unknown to the smoke logbook, so a case note
+   shows the engine's "unknown case" and keeps its text.
+6. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
    the test host's output is scaled 1.25, so a region read off a full
    screenshot (physical pixels) must be divided by the scale. Over ssh also
    export `XDG_RUNTIME_DIR=/run/user/$(id -u)` and `WAYLAND_DISPLAY=wayland-1`.
    Shrink before committing: `magick in.png -strip -resize 80% -colors 64 out.png`.
-6. Check the log of the running shell:
+7. Check the log of the running shell:
    ```bash
    quickshell log --pid "$(pgrep -x quickshell)" | grep -E "WARN|ERROR"
    ```
@@ -321,8 +364,12 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    targets; both appear with jax.seldon disabled too. Other third-party
    plugins on the test host log their own warnings (superproductivity,
    omalauncher, finder); filter by path.
-7. Clean up: remove `~/.local/bin/seldon` and `~/.local/state/seldon/` unless
-   the next WP needs them.
+8. Clean up: remove `~/.local/bin/seldon` and `~/.local/state/seldon/` unless
+   the next WP needs them; after step 5 also `~/Seldon-smoke` and the
+   `~/.config/seldon/` that `seldon init` wrote, then restart the shell (the
+   plugin shows engineMissing again). The guard hook blocks commands that
+   touch `~/.config/seldon` on the test host; ask the orchestrator for that
+   path.
 
 **Three themes (SPEC-PLUGIN §7)**, on the test host only — switching the
 theme is a system change, so never on the dev host. Every plugin WP that
