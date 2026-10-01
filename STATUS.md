@@ -82,6 +82,16 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
   → ADR-0011.
 
 ## Open questions for the operator
+- **Test host is locked** (since 15:03, a stranded lock after a shell
+  crash during a plugin reload, now hardened in the e2e script). Please
+  unlock it and enable stay-awake there (`omarchy-toggle-idle`) or raise
+  `idle.lock` in its shell.json, so unattended e2e runs work. Then WP-013
+  re-runs the full e2e twice (G2 gate).
+- **ssh alias `test`**: docs and the e2e script default to `ssh test`; this
+  dev host has no such alias. Add `Host test` to `~/.ssh/config` (name in
+  `memory/local.md`) or keep passing `SELDON_TEST_HOST=<alias>`.
+- **Phase 0 exit**: `work/PHASE-0-EXIT.md` has the procedure; it needs you
+  (real logbook, `~/.config/seldon`).
 - **AGENTS.md §7 exit codes** say 0/1/2/3; SPEC-ENGINE §3 and the code add
   `4 lock held`. AGENTS.md needs a one-line fix on operator instruction.
 - **`scripts/guard.sh` false positives** (operator-owned): the "write under
