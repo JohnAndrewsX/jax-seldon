@@ -152,6 +152,11 @@ as two subagents; both are allowed for this bounded fan-out.
   orchestration loop (ORCHESTRATION.md §2)" and lets it pace itself:
   short delays while workers are active, 20–30 minutes while waiting on
   nothing in particular.
+- A command the guard hook blocks is reported to the orchestrator (under
+  "Decisions needed" or as a question), never worked around — not by
+  copying a script elsewhere, not by rephrasing the command. The guard's
+  false positives are fixed in `scripts/guard.sh` (with a row in
+  `scripts/guard-test.sh`), not bypassed.
 - A worker in state `blocked` is inspected (`herdr agent read`). An
   ordinary question inside the worker's own task is answered from the WP
   brief; a question that needs a decision goes through §10; a permission

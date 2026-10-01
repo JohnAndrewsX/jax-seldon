@@ -73,8 +73,18 @@ toggles Panel; middle click opens Prime Radiant; right click runs capture.
 
 ## 5. Panel.qml
 
-`KeyboardPanel` anchored to the pill. Tabs `1`–`6`, `←/→`, `Esc`,
-`Tab` switches Omarchy panels. Width `Style.space(360)`.
+`KeyboardPanel` anchored to the pill. Digits select tabs by fixed id
+(Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6; a digit
+for an absent tab is ignored), `←/→` and `h/l` move between tabs, `↑/↓`
+and `j/k` move in lists, `Esc` closes, `Tab`/`Shift-Tab` hand over to the
+neighbouring Omarchy panel (never cycle tabs, like every first-party
+panel). Width `Style.space(380)` (WP-011). Files: one component per tab,
+`components/TodayTab.qml`, `ChangelogTab.qml`, `SystemTab.qml`, plus
+`EventRow.qml`, `Tabs.qml`, `Banner.qml`. The Changelog source filter has
+one chip per schema source (all nine, including `manual`, `agent`,
+`seldon`). While an event is open drift, its row is coloured by the drift
+item's computed zone (ADR-0013 §3) — stripe, glyph, status and badge from
+one source; once resolved, by the event's own zone.
 
 | Tab | Content | Actions |
 |---|---|---|
@@ -135,7 +145,9 @@ item and only while it is loaded. Routes the plugin must honour:
 - Overlay entry point: `open(payloadJson)`, `close()`, `opened` — this is
   what the keybinding above hits.
 - Bar panel: `IpcHandler` target **`jax.seldon.panel`** owned by the bar
-  widget (`open`, `close`, `show`, `hide`, `toggle`, `pill`), following the
+  widget (`open`, `close`, `show`, `hide`, `toggle`, `pill`, and the
+  read-out/navigation methods `view`, `tab <id>`, `filter <source>` —
+  none runs the engine; WP-011), following the
   first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
   and toggle the panel independently of the overlay (WP-010).
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,

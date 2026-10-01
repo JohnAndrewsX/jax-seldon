@@ -46,7 +46,7 @@ seldon plan new --zone <z> --risk <r> -- <title>
 seldon plan start|verify|done|drop <id>
 seldon drift link <eventId> <caseId> [--only]
 seldon drift explain <eventId> [--only] -- <text>
-seldon drift dismiss <eventId> [--only] --reason <text>
+seldon drift dismiss <eventId> [--only] -- <reason>   # same rule as explain: text after `--`
 seldon drift show <eventId> --json          # full member list of a group (ADR-0013)
 seldon decide --no-edit -- <title>
 seldon rebuild --json
