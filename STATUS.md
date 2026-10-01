@@ -160,11 +160,11 @@ logbook migration)
   → ADR-0011.
 
 ## Open questions for the operator
-- **Test host is locked** (since 15:03, a stranded lock after a shell
-  crash during a plugin reload, now hardened in the e2e script). Please
-  unlock it and enable stay-awake there (`omarchy-toggle-idle`) or raise
-  `idle.lock` in its shell.json, so unattended e2e runs work. Then WP-013
-  re-runs the full e2e twice (G2 gate).
+- **Test host unlocked by the operator (2026-10-01 21:04 UTC, stay-awake
+  on).** WP-013 now runs the two full e2e runs (G2 gate) and the live
+  steps the merged plugin WPs left pending. A helper
+  `/tmp/seldon-unlock.sh` on the test host types the lock password over
+  ssh (operator-run only).
 - **ssh alias `test`**: docs and the e2e script default to `ssh test`; this
   dev host has no such alias. Add `Host test` to `~/.ssh/config` (name in
   `memory/local.md`) or keep passing `SELDON_TEST_HOST=<alias>`.
