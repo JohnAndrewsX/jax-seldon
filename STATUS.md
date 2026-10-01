@@ -10,7 +10,8 @@
 |---|---|---|---|---|---|
 | WP-008 | Reconciliation and `drift` commands (+ `open --editor` fix) | Engine | `engine-008` (opus, high) | `wt/WP-008` · `wp/008-drift` | 2026-10-01 |
 | WP-009 | Hooks: claude-code, generic, session-start/stop, attribution pass | Engine | `engine-009` (opus, high) | `wt/WP-009` · `wp/009-hooks` | 2026-10-01 |
-| WP-012 | Panel actions: QuickEntry, Capture now, Open in editor | Plugin | `plugin-012` (opus, high) | `wt/WP-012` · `wp/012-panel-actions` | 2026-10-01 |
+| WP-013 | Engine ↔ plugin integration test on a real logbook | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
+| WP-020 | Work tab: three-column list, case card, new-case sheet | Plugin | `plugin-020` (opus, high) | `wt/WP-020` · `wp/020-work-tab` | 2026-10-01 |
 
 ## Queued (next up)
 After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
@@ -28,6 +29,10 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-012 Panel actions: QuickEntry, Capture now, Open in
+  editor; harness HOME isolation and real-dir guard — merged; smoke on the
+  test host with the real engine found the `open --editor` launcher bug
+  (fix in WP-008).
 - 2026-10-01 WP-007 Index builder, `index`/`status`, ledger views,
   STATUS.md, drift cap (ADR-0020), fast rebuild — merged; golden test
   zero differences against the fixture; ×10 build 4.7 ms, ×150 78 ms.

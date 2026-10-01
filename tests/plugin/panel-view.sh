@@ -229,7 +229,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$fx/index.sample.json" >"$work/after.json"
 mkdir -p "$work/home-live"
 run live "" \
-  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=59;tab:system;text:e;settle" \
+  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=63;tab:system;text:e;settle" \
   HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/live.record"
 expect live 1 .view.status ok
@@ -257,7 +257,7 @@ expect live 19 .view.tab today
 expect live 20 .view.tab changelog
 expect live 22 .view.capturing true
 shows live 22 "Capturing"
-expect live 24 .view.changelog.rows 59
+expect live 24 .view.changelog.rows 63
 shows live 24 "Written by the harness after Capture now · human"
 expect live 24 .view.captureResult "1 new event"
 shows live 24 "Last capture: 1 new event"
