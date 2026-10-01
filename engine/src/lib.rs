@@ -14,6 +14,7 @@ pub mod ledger;
 pub mod logbook;
 pub mod model;
 pub mod pkgcmd;
+pub mod rebuild;
 pub mod reconcile;
 pub mod redact;
 pub mod sys;

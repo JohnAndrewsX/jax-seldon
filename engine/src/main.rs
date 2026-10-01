@@ -114,6 +114,9 @@ enum Command {
 
     /// Start an agent on an active case
     Agent(commands::agent::AgentArgs),
+
+    /// Write outputs/REBUILD.md: the steps to rebuild this machine
+    Rebuild(commands::rebuild::RebuildArgs),
 }
 
 #[derive(Debug, Args)]
@@ -271,6 +274,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Hook(a) => commands::hook::run(&ctx, a),
         Command::Drift(a) => commands::drift::run(&ctx, a),
         Command::Agent(a) => commands::agent::run(&ctx, a),
+        Command::Rebuild(a) => commands::rebuild::run(&ctx, a),
     }
 }
 
