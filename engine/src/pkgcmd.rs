@@ -668,6 +668,269 @@ pub fn command_argv(words: &[String]) -> &[String] {
     &words[i.min(words.len())..]
 }
 
+/// How deep `sh -c '…'` and `eval '…'` are opened ([`simple_commands`]).
+const NESTING_MAX: usize = 3;
+
+/// The simple commands of `line`, where `sh|bash|zsh|dash -c '<script>'`
+/// and `eval <words>` are replaced by the simple commands of their script
+/// (up to `NESTING_MAX` levels; a redirection of the outer command stays
+/// as a segment of its own). Read only: nothing is expanded or run.
+pub fn simple_commands(line: &ShellLine) -> Vec<Segment> {
+    fn open(segment: &Segment, depth: usize, out: &mut Vec<Segment>) {
+        match nested_script(segment.argv()).filter(|_| depth < NESTING_MAX) {
+            Some(script) => {
+                for inner in &parse_shell(&script).segments {
+                    open(inner, depth + 1, out);
+                }
+                if !segment.writes.is_empty() {
+                    out.push(Segment {
+                        words: Vec::new(),
+                        writes: segment.writes.clone(),
+                    });
+                }
+            }
+            None => out.push(segment.clone()),
+        }
+    }
+    let mut out = Vec::new();
+    for segment in &line.segments {
+        open(segment, 0, &mut out);
+    }
+    out
+}
+
+/// The script of `sh -c '<script>'` (any of `sh`, `bash`, `zsh`, `dash`,
+/// `-c` alone or in a cluster like `-lc`) or the words of `eval`.
+fn nested_script(argv: &[String]) -> Option<String> {
+    let (program, args) = argv.split_first()?;
+    match program.rsplit('/').next().unwrap_or(program) {
+        "eval" => (!args.is_empty()).then(|| args.join(" ")),
+        "sh" | "bash" | "zsh" | "dash" => {
+            let mut command_mode = false;
+            let mut it = args.iter();
+            while let Some(a) = it.next() {
+                if a == "-o" || a == "+o" || a == "-O" || a == "+O" {
+                    it.next();
+                } else if a == "--" {
+                    break;
+                } else if let Some(cluster) = a.strip_prefix('-').filter(|c| !c.starts_with('-')) {
+                    command_mode |= cluster.contains('c');
+                } else if a.starts_with('-') || a.starts_with('+') {
+                    // a long option (`--norc`) or `+x`
+                } else {
+                    return command_mode.then(|| a.clone());
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// A path a simple command writes or removes, as the word it was given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target<'a> {
+    /// The file itself: a redirection, `tee`, `sed -i`, an `mv` source,
+    /// `install -d`, `unlink`, `truncate`, or a hook's `Edit|Write <path>`.
+    File(&'a str),
+    /// A destination of `cp|mv|install|ln`: the path itself, or a file
+    /// directly in it when it is a directory.
+    Into(&'a str),
+    /// `rm|rmdir`: the path and everything below it.
+    Tree(&'a str),
+}
+
+impl<'a> Target<'a> {
+    pub fn word(&self) -> &'a str {
+        match *self {
+            Target::File(w) | Target::Into(w) | Target::Tree(w) => w,
+        }
+    }
+
+    /// Whether a change of `path` is this target's doing, with the target's
+    /// word resolved to `at`.
+    pub fn covers(&self, at: &std::path::Path, path: &std::path::Path) -> bool {
+        match self {
+            Target::File(_) => path == at,
+            Target::Into(_) => path == at || path.parent() == Some(at),
+            Target::Tree(_) => path.starts_with(at),
+        }
+    }
+}
+
+/// What one simple command writes or removes: its redirection targets and
+/// the file operands of the writers Seldon knows (`tee`, `sed -i`,
+/// `cp|mv|install|ln`, `rm|rmdir|unlink|truncate`; `Edit|Write|MultiEdit
+/// <path>` as a hook writes an edit). Words it only reads are not targets.
+pub fn write_targets<'a>(argv: &'a [String], writes: &'a [String]) -> Vec<Target<'a>> {
+    let mut out: Vec<Target> = writes.iter().map(|w| Target::File(w)).collect();
+    let Some((program, args)) = argv.split_first() else {
+        return out;
+    };
+    match program.rsplit('/').next().unwrap_or(program) {
+        "tee" => out.extend(operands(args).into_iter().map(Target::File)),
+        "sed" => out.extend(
+            sed_in_place_files(args)
+                .unwrap_or_default()
+                .into_iter()
+                .map(Target::File),
+        ),
+        "install" if args.iter().any(|a| is_directory_option(a)) => {
+            out.extend(
+                operands_after_values(args, &COPY_WITH_VALUE)
+                    .into_iter()
+                    .map(Target::File),
+            );
+        }
+        p @ ("cp" | "mv" | "install" | "ln") => {
+            if let Some((dest, sources)) = copy_parts(args) {
+                out.push(Target::Into(dest));
+                // a move removes its sources
+                if p == "mv" {
+                    out.extend(sources.into_iter().map(Target::File));
+                }
+            }
+        }
+        "rm" | "rmdir" => out.extend(operands(args).into_iter().map(Target::Tree)),
+        "unlink" => out.extend(operands(args).into_iter().map(Target::File)),
+        "truncate" => out.extend(
+            operands_after_values(args, &["-s", "-r", "--size", "--reference"])
+                .into_iter()
+                .map(Target::File),
+        ),
+        "Edit" | "Write" | "MultiEdit" => out.extend(args.first().map(|a| Target::File(a))),
+        _ => {}
+    }
+    out
+}
+
+/// `install -d` / `--directory` (a cluster like `-dm755` too).
+fn is_directory_option(a: &str) -> bool {
+    a == "--directory"
+        || a.strip_prefix('-').is_some_and(|c| {
+            !c.starts_with('-') && c.split('m').next().is_some_and(|c| c.contains('d'))
+        })
+}
+
+/// Options of `cp`, `mv`, `install` and `ln` that take the next word.
+const COPY_WITH_VALUE: [&str; 8] = [
+    "-m", "-o", "-g", "-S", "--mode", "--owner", "--group", "--suffix",
+];
+
+/// The destination and the sources of `cp|mv|install|ln`: `-t DIR` or
+/// `--target-directory`, else the last of at least two operands.
+fn copy_parts(args: &[String]) -> Option<(&str, Vec<&str>)> {
+    let mut dest = None;
+    let mut operands = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--" {
+            operands.extend(it.by_ref().map(String::as_str));
+            break;
+        }
+        if a == "-t" || a == "--target-directory" {
+            dest = it.next().map(String::as_str);
+        } else if let Some(dir) = a.strip_prefix("--target-directory=") {
+            dest = Some(dir);
+        } else if a.starts_with('-') && a.len() > 1 {
+            if COPY_WITH_VALUE.contains(&a.as_str()) {
+                it.next();
+            }
+        } else {
+            operands.push(a.as_str());
+        }
+    }
+    match dest {
+        Some(d) => Some((d, operands)),
+        None if operands.len() >= 2 => {
+            let d = operands.pop()?;
+            Some((d, operands))
+        }
+        None => None,
+    }
+}
+
+/// Words that are not options (everything after `--`).
+fn operands(args: &[String]) -> Vec<&str> {
+    operands_after_values(args, &[])
+}
+
+/// Words that are not options, skipping the value of each option in
+/// `with_value`.
+fn operands_after_values<'a>(args: &'a [String], with_value: &[&str]) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--" {
+            out.extend(it.by_ref().map(String::as_str));
+            break;
+        }
+        if with_value.contains(&a.as_str()) {
+            it.next();
+        } else if !a.starts_with('-') || a == "-" {
+            out.push(a.as_str());
+        }
+    }
+    out
+}
+
+/// The files `sed` edits in place, or `None` without `-i`/`--in-place`.
+fn sed_in_place_files(args: &[String]) -> Option<Vec<&str>> {
+    let mut in_place = false;
+    let mut script_given = false;
+    let mut words = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--" {
+            words.extend(it.by_ref().map(String::as_str));
+            break;
+        }
+        if let Some(long) = a.strip_prefix("--") {
+            let name = long.split('=').next().unwrap_or(long);
+            match name {
+                "in-place" => in_place = true,
+                "expression" | "file" => {
+                    script_given = true;
+                    if !long.contains('=') {
+                        it.next();
+                    }
+                }
+                "line-length" if !long.contains('=') => {
+                    it.next();
+                }
+                _ => {}
+            }
+        } else if let Some(cluster) = a.strip_prefix('-').filter(|c| !c.is_empty()) {
+            for (i, c) in cluster.char_indices() {
+                match c {
+                    // the rest of the cluster is the backup suffix
+                    'i' => {
+                        in_place = true;
+                        break;
+                    }
+                    'e' | 'f' | 'l' => {
+                        script_given |= c != 'l';
+                        if i + 1 == cluster.len() {
+                            it.next();
+                        }
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            words.push(a.as_str());
+        }
+    }
+    if !in_place {
+        return None;
+    }
+    if !script_given && !words.is_empty() {
+        words.remove(0);
+    }
+    Some(words)
+}
+
 /// Whether `option` turns `wrapper` into a probe that runs nothing:
 /// `command -v|-V` (print what a name is) and `sudo -l|-v|-k|-K` (list,
 /// validate, drop credentials). `command -v yay` must never read as `yay`,
@@ -807,5 +1070,81 @@ mod tests {
             ["zed"]
         );
         assert!(!command_intent("command -v yay && yay -S zed").full_upgrade);
+    }
+
+    /// `write_targets` of the first simple command of `line`, as strings.
+    fn targets(line: &str) -> Vec<String> {
+        let line = parse_shell(line);
+        let s = &line.segments[0];
+        write_targets(s.argv(), &s.writes)
+            .iter()
+            .map(|t| match t {
+                Target::File(w) => format!("file {w}"),
+                Target::Into(w) => format!("into {w}"),
+                Target::Tree(w) => format!("tree {w}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn what_writers_write() {
+        assert_eq!(
+            targets("sed -i -e s/a/b/ -e s/c/d/ f1 f2"),
+            ["file f1", "file f2"]
+        );
+        assert_eq!(targets("sed -Ei s/a/b/ f1"), ["file f1"]);
+        assert!(targets("sed -n s/a/b/p f1").is_empty(), "not in place");
+        assert_eq!(targets("tee -a x y"), ["file x", "file y"]);
+        assert_eq!(targets("cp a b dir/"), ["into dir/"]);
+        assert_eq!(targets("cp -t dir a b"), ["into dir"]);
+        assert_eq!(targets("cp --target-directory=dir a"), ["into dir"]);
+        assert!(targets("cp a").is_empty());
+        // a move removes its sources
+        assert_eq!(targets("mv a b c"), ["into c", "file a", "file b"]);
+        assert_eq!(targets("install -m 644 a b"), ["into b"]);
+        assert_eq!(targets("install -d -m 755 d1 d2"), ["file d1", "file d2"]);
+        assert_eq!(targets("install -dm755 d1"), ["file d1"]);
+        assert_eq!(targets("install -Dm644 a b"), ["into b"], "-D is not -d");
+        assert_eq!(targets("ln -sf a b"), ["into b"]);
+        assert_eq!(targets("rm -rf a b"), ["tree a", "tree b"]);
+        assert_eq!(targets("truncate -s 0 f"), ["file f"]);
+        assert_eq!(targets("echo x > a 2>&1 >> b"), ["file a", "file b"]);
+        assert_eq!(
+            targets("Edit ~/.config/hypr/a.conf"),
+            ["file ~/.config/hypr/a.conf"]
+        );
+        // reading is not writing
+        assert!(targets("cat ~/.config/hypr/a.conf").is_empty());
+        assert!(targets("grep -r x ~/.config").is_empty());
+    }
+
+    #[test]
+    fn nested_shells_are_opened() {
+        let words = |line: &str| -> Vec<Vec<String>> {
+            simple_commands(&parse_shell(line))
+                .into_iter()
+                .map(|s| s.argv().to_vec())
+                .collect()
+        };
+        assert_eq!(
+            words("bash -c 'sed -i s/a/b/ x && yay -S zed'"),
+            [vec!["sed", "-i", "s/a/b/", "x"], vec!["yay", "-S", "zed"]]
+        );
+        assert_eq!(
+            words("sudo sh -lc \"pacman -Syu\""),
+            [vec!["pacman", "-Syu"]]
+        );
+        assert_eq!(words("zsh -o pipefail -c 'tee x'"), [vec!["tee", "x"]]);
+        assert_eq!(words("eval 'rm -rf' y"), [vec!["rm", "-rf", "y"]]);
+        // a script file, not a command string
+        assert_eq!(words("bash script.sh"), [vec!["bash", "script.sh"]]);
+        // the outer redirection stays
+        let line = parse_shell("sh -c 'echo x' > out");
+        let segments = simple_commands(&line);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[1].writes, ["out"]);
+        // nesting is bounded
+        let deep = "sh -c \"sh -c 'sh -c \\\"sh -c yay\\\"'\"";
+        assert_eq!(words(deep)[0][0], "sh");
     }
 }

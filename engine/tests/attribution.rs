@@ -326,6 +326,115 @@ mod rules {
             [system(BINDINGS)]
         );
     }
+
+    /// The reviewer's scenario: an agent command that only *reads* a config
+    /// file never claims a later edit of it.
+    #[test]
+    fn a_read_is_no_proof() {
+        for command in [
+            "cat ~/.config/hypr/bindings.conf && sudo pacman -S zed",
+            "grep -n bindd ~/.config/hypr/bindings.conf",
+            "cp ~/.config/hypr/bindings.conf /tmp/backup.conf",
+            "sed s/a/b/ ~/.config/hypr/bindings.conf",
+            "vim ~/.config/hypr/bindings.conf",
+        ] {
+            let known = [hook(
+                "2026-10-01T10:39:15+02:00",
+                "agent:claude-code",
+                Some("C-2026-004"),
+                command,
+            )];
+            assert_eq!(
+                run(
+                    vec![config_change("2026-10-01T10:40:02+02:00", BINDINGS)],
+                    &known
+                ),
+                [system(BINDINGS)],
+                "{command}"
+            );
+        }
+    }
+
+    #[test]
+    fn writers_prove_what_they_write() {
+        let event = |kind, path: &str| {
+            Event::new(ts("2026-10-01T10:40:00+02:00"), Source::Config, kind, path)
+        };
+        let agent_ = |path: &str| agent(path, "agent:claude-code", Some("C-2026-004"));
+        for (command, kind, path, proves) in [
+            // a directory destination proves the files directly in it
+            (
+                "cp new.conf ~/.config/hypr/",
+                Kind::ConfigAdd,
+                "~/.config/hypr/new.conf",
+                true,
+            ),
+            (
+                "cp -t ~/.config/hypr a.conf",
+                Kind::ConfigAdd,
+                "~/.config/hypr/a.conf",
+                true,
+            ),
+            (
+                "cp new.conf ~/.config/hypr/",
+                Kind::ConfigAdd,
+                "~/.config/hypr/sub/new.conf",
+                false,
+            ),
+            // a move removes its source
+            (
+                "mv ~/.config/hypr/old.conf /tmp/",
+                Kind::ConfigRemove,
+                "~/.config/hypr/old.conf",
+                true,
+            ),
+            // a removal covers everything below it
+            (
+                "rm -rf ~/.config/hypr/scripts",
+                Kind::ConfigRemove,
+                "~/.config/hypr/scripts/a.sh",
+                true,
+            ),
+            (
+                "rm ~/.config/hypr/a.conf",
+                Kind::ConfigRemove,
+                "~/.config/hypr/b.conf",
+                false,
+            ),
+            (
+                "truncate -s 0 ~/.config/hypr/a.conf",
+                Kind::ConfigChange,
+                "~/.config/hypr/a.conf",
+                true,
+            ),
+            // shells are opened
+            (
+                "bash -c 'sed -i s/a/b/ ~/.config/hypr/a.conf'",
+                Kind::ConfigChange,
+                "~/.config/hypr/a.conf",
+                true,
+            ),
+            (
+                "eval \"echo x >> ~/.bashrc\"",
+                Kind::ConfigChange,
+                "~/.bashrc",
+                true,
+            ),
+        ] {
+            let known = [hook(
+                "2026-10-01T10:39:00+02:00",
+                "agent:claude-code",
+                Some("C-2026-004"),
+                command,
+            )];
+            let expected = if proves { agent_(path) } else { system(path) };
+            assert_eq!(
+                run(vec![event(kind, path)], &known),
+                [expected],
+                "{command}"
+            );
+        }
+    }
 }
 
 /// End to end: the hook writes the command event, the change happens, the

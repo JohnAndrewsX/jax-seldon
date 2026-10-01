@@ -14,10 +14,12 @@
 //!   pass that `seldon capture` runs over all events of a run before it
 //!   appends them. The event must lie at most [`ATTRIBUTION_WINDOW`] after
 //!   the command's start and not before it, and the command must prove it:
-//!   - config: the event's path is an argv word of the command (or a
-//!     redirection target), written `~/…`, `$HOME/…`, absolute, or relative
-//!     to the home directory; an `Edit`/`Write` hook event names the path
-//!     the same way (`meta.command` `Edit ~/.config/hypr/x.conf`);
+//!   - config: the event's path is a path the command *writes*
+//!     ([`write_targets`]: a redirection, `tee`, `sed -i`, the destination
+//!     of `cp|mv|install|ln` or a file directly in it, an `mv` source,
+//!     `rm|truncate` operands, an `Edit`/`Write` hook event's path), written
+//!     `~/…`, `$HOME/…`, absolute, or relative to the home directory. A path
+//!     the command only reads (`cat x && pacman -S y`) is no proof;
 //!   - theme: `omarchy theme set <name>` or `omarchy-theme-set <name>`,
 //!     where `<name>` becomes the slug the way `omarchy-theme-set` makes it;
 //!   - plugins: `omarchy plugin add|remove|enable|disable|update <id>` (or
@@ -33,7 +35,7 @@ use chrono::{DateTime, Duration, FixedOffset};
 
 use crate::ledger::Ledger;
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source};
-use crate::pkgcmd::{Intent, command_intent, parse_shell};
+use crate::pkgcmd::{Intent, command_intent, parse_shell, simple_commands, write_targets};
 
 /// How long before a collector event (a pacman transaction's start) an
 /// agent command still counts as its cause (ADR-0014 §1, ADR-0017 §2).
@@ -47,8 +49,8 @@ pub struct Cause {
     pub case: Option<String>,
     /// What the command asks of the package manager.
     pub intent: Intent,
-    /// The argv of each simple command, and the files each one writes by
-    /// redirection, as words (quotes removed).
+    /// The argv of each simple command (`sh -c '…'` and `eval` opened), and
+    /// the files each one writes by redirection, as words (quotes removed).
     pub segments: Vec<(Vec<String>, Vec<String>)>,
 }
 
@@ -64,8 +66,7 @@ pub fn causes(events: &[Event]) -> Vec<Cause> {
                 actor: e.actor.clone(),
                 case: e.case.clone(),
                 intent: command_intent(command),
-                segments: parse_shell(command)
-                    .segments
+                segments: simple_commands(&parse_shell(command))
                     .iter()
                     .map(|s| (s.argv().to_vec(), s.writes.clone()))
                     .collect(),
@@ -153,11 +154,11 @@ pub fn attribute_from_ledger(
 fn proves(cause: &Cause, event: &Event, home: &Path) -> bool {
     match event.source {
         Source::Config => {
-            let target = normalise(Path::new(&home_path(&event.subject, home)));
+            let path = normalise(Path::new(&home_path(&event.subject, home)));
             cause.segments.iter().any(|(argv, writes)| {
-                argv.iter()
-                    .chain(writes)
-                    .any(|w| normalise(Path::new(&home_path(w, home))) == target)
+                write_targets(argv, writes)
+                    .iter()
+                    .any(|t| t.covers(&normalise(Path::new(&home_path(t.word(), home))), &path))
             })
         }
         Source::Theme => cause.segments.iter().any(|(argv, _)| {
