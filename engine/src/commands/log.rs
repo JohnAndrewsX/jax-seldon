@@ -96,6 +96,7 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         None => "note".to_string(),
     };
     let commit = autocommit(ctx, &config, &logbook, &summary);
+    crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
     let mut human = format!(

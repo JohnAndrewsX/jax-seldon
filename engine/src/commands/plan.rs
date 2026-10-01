@@ -183,6 +183,7 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
         .flatten();
     write_new(&file.path, &text)?;
     let commit = autocommit(ctx, &config, &logbook, &format!("{id} created"));
+    crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
     let mut human = format!("Created {id} \"{title}\" in {}", file.relative(&logbook));
@@ -271,6 +272,7 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
         None => None,
     };
     let commit = autocommit(ctx, &config, &logbook, &format!("{} {}", args.id, to));
+    crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
     let mut human = format!(
