@@ -4,6 +4,9 @@
 # check`). Renders the fields this PKGBUILD can carry in the order of
 # makepkg's srcinfo.sh and diffs. The authoritative check is
 # `makepkg --printsrcinfo`, which the release workflow runs.
+# The PKGBUILD's variables come from `source`, which shellcheck cannot
+# follow: SC1090 (non-constant source), SC2154 (pkgname etc. unassigned).
+# shellcheck disable=SC1090,SC2154
 set -euo pipefail
 
 dir=$(dirname "$0")
@@ -11,7 +14,6 @@ dir=$(dirname "$0")
 render() (
   # a PKGBUILD only assigns variables at the top level; the functions are
   # defined, not run
-  # shellcheck disable=SC1091
   source "$dir/PKGBUILD"
   printf 'pkgbase = %s\n' "$pkgname"
   for f in pkgdesc pkgver pkgrel epoch url install changelog; do

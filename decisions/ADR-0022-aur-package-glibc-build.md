@@ -1,7 +1,7 @@
 # ADR-0022 — The AUR package builds against glibc; the static musl binary is a release asset
 
 **Status:** proposed
-**Date:** 2026-10-01
+**Date:** 2026-10-02
 
 ## Context
 AGENTS.md §7 asks for a static musl release build. The AUR package
@@ -19,8 +19,9 @@ package guidelines build for the host target (glibc).
   `--features watch`.
 - The static musl binary (`x86_64-unknown-linux-musl`, `--features
   watch`) is built by the release workflow and published as a GitHub
-  release asset with checksums. That is the release build AGENTS.md §7
-  means.
+  release asset with checksums. This ADR reads AGENTS.md §7's static
+  musl release build as the GitHub release asset; AGENTS.md is
+  unchanged. Supersedes nothing.
 
 ## Consequences
 `omarchy pkg aur add jax-seldon` works with either `rust` or `rustup`

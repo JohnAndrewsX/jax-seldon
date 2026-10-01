@@ -35,7 +35,10 @@ any home directory. `seldon init` (run by the user) creates the logbook
 and config; the package never does.
 
 `check()` runs the engine's unit tests (`--lib --bins`, with the feature)
-in a scratch `HOME` under `$srcdir`. The integration tests stay in CI.
+in a scratch `HOME` under `$srcdir`; `CARGO_HOME` and `RUSTUP_HOME` keep
+pointing at the builder's own (the registry `prepare()` fetched, the
+installed toolchain). The integration tests stay in CI. Cargo strips the
+binary, so `options=('!debug')`.
 
 **glibc, not musl** (ADR-0022): the package builds for the host target
 with `makedepends=(cargo)`, which `rust` and `rustup` both satisfy. The
@@ -49,7 +52,9 @@ The first tag, `v0.1.0`, is the operator's call.
    update `engine/Cargo.lock`), move the `[Unreleased]` notes in
    `CHANGELOG.md` under the new version, commit, push. `just check` is
    green.
-2. Dry run (below) on `main`. Read its summary.
+2. Dry run (below) on `main`. Read its summary. **It must be green
+   before the tag**: otherwise the AUR copy ships a PKGBUILD whose
+   `check()` (or build) fails for every user.
 3. Tag and push:
 
    ```
@@ -151,7 +156,12 @@ When `bump` was skipped, or for a packaging-only change (`pkgrel`):
 6. **Actions may push to `main`.** `bump` pushes with the workflow's own
    token. If `main` is protected, allow GitHub Actions to bypass the rule
    or bump by hand after each release.
-7. Run the dry run; the summary must say `true` for both secrets.
+7. **Maintainer address.** `packaging/PKGBUILD` starts with
+   `# Maintainer: JohnAndrewsX <EMAIL>`. The AUR convention is
+   `Name <email>`; replace `EMAIL` with the address you want public on
+   the AUR (often obfuscated, `name at example dot org`) and commit it
+   before the first tag. Agents never fill it in.
+8. Run the dry run; the summary must say `true` for both secrets.
 
 Without steps 2–5 a tag still builds, tests and publishes the GitHub
 release; `aur` and `plugin` end with a notice.
@@ -164,22 +174,38 @@ host the red-zone guard blocks it (AGENTS.md §6). Use a disposable host
 (`rust` or `rustup` with a stable toolchain). Never pass `-s`, `-i`,
 `--syncdeps` or `--install`; installing is the operator's step.
 
-```
-# on the dev host: a source tarball under the release asset's name
-git archive --format=tar.gz --prefix=jax-seldon-0.1.0/ -o jax-seldon-0.1.0.tar.gz HEAD
-ssh <test-host> 'mkdir /tmp/seldon-pkg'
-scp packaging/PKGBUILD packaging/.SRCINFO packaging/expected-files.txt \
-    jax-seldon-0.1.0.tar.gz <test-host>:/tmp/seldon-pkg/
+Only these two makepkg forms, each as its own ssh command (the forms
+the guard's planned ssh exception allows; until then the operator runs
+them, or the CI dry run stands in):
 
-# on the test host, in /tmp/seldon-pkg
-makepkg --printsrcinfo | cmp - .SRCINFO && echo ".SRCINFO identical"
-makepkg -f
-tar tf jax-seldon-0.1.0-1-x86_64.pkg.tar.zst | grep -v '^\.' | LC_ALL=C sort | diff expected-files.txt - && echo "file list ok"
-mkdir root && tar xf jax-seldon-0.1.0-1-x86_64.pkg.tar.zst -C root
-root/usr/bin/seldon --version
-root/usr/bin/jax-seldon --version --json
-root/usr/bin/seldon watch --help
-cd / && rm -rf /tmp/seldon-pkg
+```
+ssh <test-host> 'cd /tmp/<dir> && makepkg -f'
+ssh <test-host> 'cd /tmp/<dir> && makepkg --printsrcinfo > SRCINFO.new'
+```
+
+The whole procedure, from the repository root on the dev host:
+
+```
+git archive --format=tar.gz --prefix=jax-seldon-0.1.0/ -o /tmp/jax-seldon-0.1.0.tar.gz HEAD
+ssh <test-host> 'mkdir /tmp/seldon-pkg'
+scp packaging/PKGBUILD /tmp/jax-seldon-0.1.0.tar.gz <test-host>:/tmp/seldon-pkg/
+
+# .SRCINFO: generate there, compare here
+ssh <test-host> 'cd /tmp/seldon-pkg && makepkg --printsrcinfo > SRCINFO.new'
+scp <test-host>:/tmp/seldon-pkg/SRCINFO.new /tmp/SRCINFO.new
+cmp /tmp/SRCINFO.new packaging/.SRCINFO && echo ".SRCINFO identical"
+
+# build, then list and run what it packaged
+ssh <test-host> 'cd /tmp/seldon-pkg && makepkg -f'
+ssh <test-host> 'tar tf /tmp/seldon-pkg/jax-seldon-0.1.0-1-x86_64.pkg.tar.zst' \
+  | grep -v '^\.' | LC_ALL=C sort | diff packaging/expected-files.txt - && echo "file list ok"
+ssh <test-host> 'mkdir /tmp/seldon-pkg/root && tar xf /tmp/seldon-pkg/jax-seldon-0.1.0-1-x86_64.pkg.tar.zst -C /tmp/seldon-pkg/root'
+ssh <test-host> '/tmp/seldon-pkg/root/usr/bin/seldon --version'
+ssh <test-host> '/tmp/seldon-pkg/root/usr/bin/jax-seldon --version --json'
+ssh <test-host> '/tmp/seldon-pkg/root/usr/bin/seldon watch --help'
+
+ssh <test-host> 'rm -rf /tmp/seldon-pkg'
+rm /tmp/jax-seldon-0.1.0.tar.gz /tmp/SRCINFO.new
 ```
 
 makepkg uses the tarball in the build directory instead of downloading

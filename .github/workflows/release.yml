@@ -51,9 +51,10 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       # Arch's `rust` ships cargo, clippy and rustfmt; `rust-musl` adds the
-      # musl target for the static release asset (AGENTS.md §7).
+      # musl target for the static release asset (AGENTS.md §7); shellcheck
+      # makes `just check-packaging` lint the PKGBUILD and its scripts.
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq
+        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck
 
       - uses: actions/checkout@v4
         with:
@@ -66,7 +67,7 @@ jobs:
       - name: Version
         id: version
         run: |
-          version=$(cargo metadata --manifest-path engine/Cargo.toml --no-deps --format-version 1 \
+          version=$(cargo metadata --manifest-path engine/Cargo.toml --locked --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "seldon") | .version')
           if [[ $GITHUB_EVENT_NAME == push && $GITHUB_REF_NAME != "v$version" ]]; then
             echo "::error::tag $GITHUB_REF_NAME does not match engine/Cargo.toml version $version"
@@ -233,6 +234,8 @@ jobs:
           name: packaging
           path: packaging-new
 
+      # pushed with GITHUB_TOKEN, so this commit does not trigger ci.yml
+      # (GitHub's rule against recursive runs); it changes packaging/ only
       - name: Commit PKGBUILD and .SRCINFO to main
         run: |
           if ! git diff --quiet "$GITHUB_REF_NAME" HEAD -- packaging/PKGBUILD packaging/.SRCINFO; then
