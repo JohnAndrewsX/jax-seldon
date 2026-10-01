@@ -133,24 +133,23 @@ pub fn edit(path: &Path) -> Result<String, String> {
         let argv: Vec<&str> = args.iter().map(String::as_str).collect();
         return outcome(&program, sys::run_attached(&program, &argv));
     }
-    outcome(
-        OMARCHY_EDITOR,
-        launch_detached(OMARCHY_EDITOR, &[&path_arg]),
-    )
+    let mut cmd = Command::new(OMARCHY_EDITOR);
+    cmd.arg(&*path_arg);
+    outcome(OMARCHY_EDITOR, launch_detached(cmd, Stdio::null()))
 }
 
-/// Starts `program args…` detached: stdin, stdout and stderr null (an
-/// inherited pipe would keep the caller, e.g. the plugin's process queue,
-/// waiting for the editor), its own process group (a signal to ours does
-/// not reach it), never killed, never waited for. It is watched for
+/// Starts `cmd` (program, arguments, and whatever directory or environment
+/// the caller set) detached: stdin and stdout null, stderr `stderr` (null
+/// or a file, never a pipe: an inherited pipe would keep the caller, e.g.
+/// the plugin's process queue, waiting for the editor or agent), its own
+/// process group (a signal to ours does not
+/// reach it), never killed, never waited for. It is watched for
 /// [`LAUNCH_GRACE`]: an exit in that time is its result (a non-zero exit
 /// is an error), otherwise it counts as launched (`code: Some(0)`).
-fn launch_detached(program: &str, args: &[&str]) -> Run {
-    let mut cmd = Command::new(program);
-    cmd.args(args)
-        .stdin(Stdio::null())
+pub(crate) fn launch_detached(mut cmd: Command, stderr: Stdio) -> Run {
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(stderr)
         .process_group(0);
     // ETXTBSY (as in `sys::run`): a just-written program still open for
     // writing in another thread's forked child; brief, retry

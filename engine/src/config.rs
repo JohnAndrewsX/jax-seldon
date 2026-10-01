@@ -4,6 +4,7 @@
 //! Logbook path precedence: `--logbook` > `SELDON_LOGBOOK` > `logbook` in
 //! config.toml > `~/Seldon` (ADR-0010).
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -179,6 +180,9 @@ pub struct Config {
     pub git: GitConfig,
     pub redaction: Redaction,
     pub drift: DriftConfig,
+    /// `seldon agent start` (WP-022); not written while it is the default.
+    #[serde(skip_serializing_if = "AgentConfig::is_default")]
+    pub agent: AgentConfig,
 }
 
 impl Default for Config {
@@ -192,6 +196,7 @@ impl Default for Config {
             git: GitConfig::default(),
             redaction: Redaction::default(),
             drift: DriftConfig::default(),
+            agent: AgentConfig::default(),
         }
     }
 }
@@ -300,6 +305,39 @@ impl Default for DriftConfig {
             .map(String::from)
             .to_vec(),
         }
+    }
+}
+
+/// The agent launcher of `seldon agent start` (WP-022): argv lists, never
+/// a shell string; the element `{prompt}` becomes the prompt, as one
+/// argument. Validated where it is used (`commands::agent`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgentConfig {
+    /// The launcher `agent start` runs without `--launcher`.
+    pub launcher: Vec<String>,
+    /// More launchers, by name, for `agent start --launcher NAME`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub launchers: BTreeMap<String, Vec<String>>,
+}
+
+/// `omarchy agent prompt <prompt>`: Omarchy's default coding agent in a
+/// terminal window of its own (no `--inline`: that runs the agent in the
+/// caller's terminal, and a detached launch has none).
+pub const DEFAULT_AGENT_LAUNCHER: [&str; 4] = ["omarchy", "agent", "prompt", "{prompt}"];
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        AgentConfig {
+            launcher: DEFAULT_AGENT_LAUNCHER.map(String::from).to_vec(),
+            launchers: BTreeMap::new(),
+        }
+    }
+}
+
+impl AgentConfig {
+    fn is_default(&self) -> bool {
+        *self == AgentConfig::default()
     }
 }
 
@@ -420,7 +458,7 @@ mod tests {
         let path = dir.join("config.toml");
         std::fs::write(
             &path,
-            "future = 1\nlanguage = \"de\"\n[git]\nautocommit = false\nsignoff = true\n[agent]\nlauncher = \"x\"\n",
+            "future = 1\nlanguage = \"de\"\n[git]\nautocommit = false\nsignoff = true\n[agent]\nlauncher = [\"x\"]\n",
         )
         .unwrap();
         let mut config = Config::load(&path).unwrap().unwrap();
@@ -431,7 +469,8 @@ mod tests {
         let table: toml::Table = std::fs::read_to_string(&path).unwrap().parse().unwrap();
         assert_eq!(table["future"].as_integer(), Some(1));
         assert_eq!(table["git"]["signoff"].as_bool(), Some(true));
-        assert_eq!(table["agent"]["launcher"].as_str(), Some("x"));
+        assert_eq!(table["agent"]["launcher"][0].as_str(), Some("x"));
+        assert_eq!(config.agent.launcher, ["x"]);
         assert_eq!(table["logbook"].as_str(), Some("/tmp/lb"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
