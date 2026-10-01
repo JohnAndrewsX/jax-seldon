@@ -53,6 +53,13 @@ if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])omarchy([[:space:]]+(pkg[[:s
    && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]][^;&|]*omarchy[[:space:]]+theme[[:space:]]+(set|current)([^;&|]*)$'; then
   block "omarchy command that changes the system"
 fi
+# agent launches and app launchers on the dev host: an unattended agent or a
+# terminal window is the operator's seat, never a worker's (WP-022). Allowed
+# only over ssh to the test host. `omarchy agent usage` (budget) stays allowed.
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(omarchy[[:space:]]+(agent[[:space:]]+(prompt|launch|start|run|chat|ask)|launch[[:space:]])|omarchy-agent(-[a-z-]+)?([[:space:]]|$)|omarchy-launch-[a-z-]+([[:space:]]|$))' \
+   && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]]'; then
+  block "agent or app launcher on the dev host"
+fi
 # writes under /etc or /usr
 # redirections and tee: the system path right after the operator; file
 # commands: only when the system path is the LAST argument of the segment

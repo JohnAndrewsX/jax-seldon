@@ -85,4 +85,11 @@ sudo pacman -Syu'
 check A 'python3 - <<EOF
 print("pacman -Syu is just text here")
 EOF'
+check B 'omarchy agent prompt "work the case"'
+check B 'omarchy-agent-prompt --prompt x'
+check B 'omarchy-launch-tui claude'
+check B 'cd x && omarchy launch floating-terminal-with-presentation claude'
+check A 'omarchy agent usage claude --limits-only'
+check A 'ssh test-host omarchy agent prompt "work the case"'
+check A 'grep -rn "omarchy-launch-tui" engine/src/commands/agent.rs'
 exit $fail
