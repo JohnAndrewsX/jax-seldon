@@ -147,14 +147,20 @@ Fullscreen `Overlay`, opened by `omarchy-shell shell toggle jax.seldon`
 Layout: 12-column grid, `Style.space` gutters.
 
 - Row 1: title "Prime Radiant", machine name, Omarchy version, period
-  selector (30 / 90 / 365 days), close hint.
+  selector (30 / 90 / 365 days / All; default 90 d, resets on every open;
+  WP-030), close hint.
 - Row 2 (full width): **Heatmap** — events per day, 53 × 7, theme accent
   ramp; hover shows date, counts by source.
 - Row 3: **Series** packages explicit over time (step line) · **DriftBars**
   drift opened vs resolved per week · **RiskDonut** cases by risk.
 - Row 4: **Timeline** — Omarchy releases, snapshots, cases as spans
   (queued→completed), crisis markers.
-- Row 5: **The Plan** — active cases with step progress and agent.
+- Row 5: **The Plan** — active cases with step progress and agent (no
+  period; the sixth slot, WP-031).
+
+Period windows follow ADR-0012 §10: inclusive day windows ending on
+`today`; drift weeks and case spans count when they overlap the window;
+`series.risk` is all-time and the donut says so.
 
 All charts are drawn with `Canvas` or `Shape` from arrays prepared by
 `Model.js`; no external QML modules.

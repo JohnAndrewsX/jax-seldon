@@ -11,14 +11,14 @@ Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
-| WP-030 | Overlay skeleton, grid, period selector, keyboard (Prime Radiant) | Plugin | `plugin-030` (opus, high) | `wt/WP-030` · `wp/030-overlay-skeleton` | 2026-10-02 |
+| WP-031 | Charts: Heatmap, Series, DriftBars, RiskDonut, Timeline (+ The Plan) | Plugin | `plugin-031` (opus, high) | `wt/WP-031` · `wp/031-charts` | 2026-10-02 |
 | WP-032 | `seldon rebuild` → outputs/REBUILD.md | Engine | `engine-032` (opus, high) | `wt/WP-032` · `wp/032-rebuild` | 2026-10-02 |
 | WP-034 | `seldon watch` (feature-gated) and systemd user unit template | Engine | `engine-034` (opus, high) | `wt/WP-034` · `wp/034-watch` | 2026-10-02 |
 
 ## Queued (next up)
-After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
-· then WP-007, WP-009 · then WP-008. Plugin track: WP-011 after WP-010.
-(see `work/queued/`)
+WP-035 (`seldon dossier` + pre-logbook package list, after WP-032) ·
+WP-033 (update-impact, needs the operator's release-notes source decision)
+· WP-040/041 (packaging, docs) after WP-031. (see `work/queued/`)
 
 ## Preparation done (2026-10-01)
 - Kickoff checklist steps 1–3: repo + first commit, WP files, host verified
@@ -31,6 +31,11 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-030 Prime Radiant overlay skeleton (five-slot 12-column
+  grid with reflow, period selector 30/90/365/All, keyboard, precomputed
+  period table in the service, overlay harness at 1080p/1440p/1.25 scale)
+  — merged; 62 node + 180 overlay checks; live keys/screenshots on the
+  test host pending the unlock.
 - 2026-10-02 WP-024 Logbook templates en/de (English keys and headings,
   prose per language), logbook AGENTS.md, wizard first capture with
   `--since` backfill and pre-Seldon baseline, Claude Code / Omarchy-Agent
@@ -126,6 +131,10 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 - **Stray `~/.config/seldon/config.toml`** on the dev host from WP-024's
   pty test (points at a scratch logbook). The guard blocks the
   orchestrator; please `rm -r ~/.config/seldon`. The state dir was removed.
+- **FYI, veto possible:** the Prime Radiant's default period is 90 days
+  (30/90/365/All available; resets to 90 d on every open). 365 d would
+  leave the drift bars and timeline sparse on every logbook younger than
+  a year. Say so if you prefer 365 d.
 - **FYI, veto possible:** generated logbooks use English headings in every
   language (`# Decisions`, `## Purpose`, `## History` …) with German prose
   (ADR-0007, WP-024). The fixture logbook still has German headings; the
