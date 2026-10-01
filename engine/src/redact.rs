@@ -63,10 +63,11 @@ impl Redactor {
         };
         Redactor {
             rules: vec![
-                // scheme://user:pass@host → scheme://‹redacted›@host
+                // scheme://user:pass@host → scheme://‹redacted›@host; up to
+                // the last `@` before the path, as a password may hold `@`
                 rule(
                     "url-userinfo",
-                    r"(?i)(\b[a-z][a-z0-9+.-]*://)[^/\s@'\x22]+(@)",
+                    r"(?i)(\b[a-z][a-z0-9+.-]*://)[^/\s'\x22]+(@)",
                     "${1}‹redacted›${2}",
                 ),
                 rule(

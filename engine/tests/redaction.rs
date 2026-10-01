@@ -103,6 +103,18 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "me:pw",
         "https://‹redacted›@mirror.example/",
     ),
+    (
+        "url-userinfo",
+        "curl https://user:p@ss@h.example/path?q=1",
+        "ss@h",
+        "curl https://‹redacted›@h.example/path?q=1",
+    ),
+    (
+        "url-userinfo",
+        "git clone ssh://git:se@cr@t@host.example:22/repo.git",
+        "se@cr",
+        "ssh://‹redacted›@host.example:22/repo.git",
+    ),
 ];
 
 mod redaction {
