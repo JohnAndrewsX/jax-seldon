@@ -113,6 +113,10 @@ fn assert_matches_fixture(event: &Event, kind: &str, subject: &str, keys: &[&str
 /// A scratch home, ledger and state directory; runs collectors in-process
 /// the way `seldon capture` does.
 struct Bench {
+    /// Taken once and held: re-acquiring per run races with stub processes
+    /// that other test threads fork, because a child holds the inherited
+    /// flock until it execs. Declared first, so it is released first.
+    lock: lock::Lock,
     tmp: TempDir,
     dirs: Dirs,
     config: Config,
@@ -134,6 +138,7 @@ impl Bench {
             home,
         };
         Bench {
+            lock: lock::acquire(&tmp.path().join("lock")).unwrap(),
             ledger: Ledger::at(tmp.path().join("logbook/ledger"), Redactor::builtin()),
             tmp,
             dirs,
@@ -162,8 +167,7 @@ impl Bench {
         collect: impl FnOnce(&Ctx, Option<&Value>) -> Outcome,
     ) -> Outcome {
         let out = self.collect(name, now, collect);
-        let lock = lock::acquire(&self.path("lock")).unwrap();
-        let written = self.ledger.append(&lock, out.events.clone()).unwrap();
+        let written = self.ledger.append(&self.lock, out.events.clone()).unwrap();
         for e in &written {
             assert_schema_valid(e);
         }
@@ -621,9 +625,7 @@ mod theme {
             to: Some("tokyo-night".into()),
             ..Meta::default()
         });
-        let lock = lock::acquire(&b.path("lock")).unwrap();
-        b.ledger.append(&lock, vec![hook]).unwrap();
-        drop(lock);
+        b.ledger.append(&b.lock, vec![hook]).unwrap();
 
         let out = run(&mut b, "2026-10-01T16:00:00+02:00");
         assert!(out.ok);
