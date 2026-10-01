@@ -125,6 +125,38 @@
       "cleanup": "",
       "description": "pre: ollama",
       "userdata": null
+    },
+    {
+      "subvolume": "/",
+      "number": 114,
+      "default": false,
+      "active": false,
+      "type": "pre",
+      "pre-number": null,
+      "date": "2026-10-01 16:30:00",
+      "user": "root",
+      "used-space": 16384,
+      "cleanup": "",
+      "description": "tailscale: MagicDNS",
+      "userdata": {
+        "case": "C-2026-008"
+      }
+    },
+    {
+      "subvolume": "/",
+      "number": 115,
+      "default": false,
+      "active": false,
+      "type": "post",
+      "pre-number": 114,
+      "date": "2026-10-01 16:30:04",
+      "user": "root",
+      "used-space": null,
+      "cleanup": "",
+      "description": "tailscale: MagicDNS",
+      "userdata": {
+        "case": "C-2026-008"
+      }
     }
   ]
 }

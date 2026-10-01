@@ -12,7 +12,7 @@
     }
   },
   "state": {
-    "status": "ok",
+    "status": "indexStale",
     "lastCapture": "2026-10-01T17:05:00+02:00",
     "collectors": [
       {

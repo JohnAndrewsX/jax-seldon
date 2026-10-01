@@ -59,8 +59,8 @@
     "queuedCases": 3,
     "openDrift": 4,
     "crisis": 2,
-    "eventsToday": 27,
-    "events7d": 38
+    "eventsToday": 30,
+    "events7d": 41
   },
   "today": {
     "date": "2026-10-01",
@@ -110,6 +110,33 @@
       "detail": "Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.",
       "actor": "human",
       "case": "C-2026-004"
+    },
+    {
+      "id": "01M3VXYNF0XTBDWFTZP1412REN",
+      "ts": "2026-10-01T16:30:04+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "115",
+      "detail": "tailscale: MagicDNS",
+      "actor": "system",
+      "meta": {
+        "type": "post",
+        "cleanup": "",
+        "pairOf": 114
+      }
+    },
+    {
+      "id": "01M3VXYHJ0CDTAWEV5WRW4C0C2",
+      "ts": "2026-10-01T16:30:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "114",
+      "detail": "tailscale: MagicDNS",
+      "actor": "system",
+      "meta": {
+        "type": "pre",
+        "cleanup": ""
+      }
     },
     {
       "id": "01M3VWSXP0SCPF5TBS4PCB12ZC",
@@ -298,6 +325,19 @@
       "zone": "yellow",
       "meta": {
         "command": "sed -i 's/^bindd = SUPER, E, Editor, exec, .*/bindd = SUPER, E, Editor, exec, zeditor/' ~/.config/hypr/bindings.conf"
+      }
+    },
+    {
+      "id": "01M3V9VHCGTNRG2J62SMNR51TG",
+      "ts": "2026-10-01T10:38:50+02:00",
+      "source": "agent",
+      "kind": "command",
+      "subject": "tee",
+      "actor": "agent:claude-code",
+      "case": "C-2026-004",
+      "zone": "green",
+      "meta": {
+        "command": "tee ~/.config/zed/settings.json"
       }
     },
     {
@@ -821,6 +861,15 @@
       "case": "C-2026-001"
     },
     {
+      "id": "01M1F1DGK8N56T9EW6KFSQX1PC",
+      "ts": "2026-09-01T19:49:05+02:00",
+      "source": "seldon",
+      "kind": "case-verified",
+      "subject": "C-2026-001",
+      "actor": "human",
+      "case": "C-2026-001"
+    },
+    {
       "id": "01M1F161B0EJ8KHDPZAK9M0GTD",
       "ts": "2026-09-01T19:45:00+02:00",
       "source": "manual",
@@ -1022,6 +1071,7 @@
           "01M3V896207DAXT81MX8G98WZW",
           "01M3V8AH10ZEXZ7FAKN156ZB0D",
           "01M3V8AJ08NT7N105393XZXCP7",
+          "01M3V9VHCGTNRG2J62SMNR51TG",
           "01M3V9W9SRGN5446Q2PXBRP7VK",
           "01M3V9XQPG3XSQHDE1KSNTZRQA",
           "01M3VZNFC0M2FQVGJBZGX9KDF7"
@@ -1157,6 +1207,18 @@
     },
     "deviations": 5,
     "snapshots": [
+      {
+        "number": 115,
+        "ts": "2026-10-01T16:30:04+02:00",
+        "description": "tailscale: MagicDNS",
+        "type": "post"
+      },
+      {
+        "number": 114,
+        "ts": "2026-10-01T16:30:00+02:00",
+        "description": "tailscale: MagicDNS",
+        "type": "pre"
+      },
       {
         "number": 113,
         "ts": "2026-10-01T14:30:00+02:00",
@@ -2582,10 +2644,10 @@
       },
       {
         "date": "2026-09-01",
-        "total": 4,
+        "total": 5,
         "bySource": {
           "manual": 1,
-          "seldon": 3
+          "seldon": 4
         }
       },
       {
@@ -2747,16 +2809,16 @@
       },
       {
         "date": "2026-10-01",
-        "total": 27,
+        "total": 30,
         "bySource": {
-          "agent": 5,
+          "agent": 6,
           "config": 2,
           "manual": 2,
           "omarchy": 1,
           "pacman": 7,
           "plugins": 1,
           "seldon": 6,
-          "snapper": 2,
+          "snapper": 4,
           "theme": 1
         }
       }
@@ -2915,6 +2977,18 @@
         "ts": "2026-10-01T14:30:00+02:00",
         "label": "113 pre: ollama",
         "ref": "113"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-10-01T16:30:00+02:00",
+        "label": "114 tailscale: MagicDNS",
+        "ref": "114"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-10-01T16:30:04+02:00",
+        "label": "115 tailscale: MagicDNS",
+        "ref": "115"
       }
     ]
   }

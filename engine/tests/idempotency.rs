@@ -145,8 +145,8 @@ mod idempotency {
         cli.stub_version("4.0.7-1");
         let third = cli.capture(&[]);
         assert_eq!(
-            third["written"], 6,
-            "+111 +112 +113 −108 −109, one update: {third}"
+            third["written"], 8,
+            "+111 +112 +113 +114 +115 −108 −109, one update: {third}"
         );
         assert_eq!(cli.capture(&[])["written"], 0);
 
@@ -165,7 +165,7 @@ mod idempotency {
                 count(Source::Snapper),
                 count(Source::Omarchy)
             ),
-            (12, 8, 1)
+            (12, 10, 1)
         );
         // state stays in the fake home
         assert!(

@@ -95,7 +95,7 @@ clean_log() {
 
 # 1. The sample: every tab renders its data; the strip is on every tab.
 run sample "$fx/index.sample.json" \
-  "view;tab:changelog;filter:pacman;text:f;filter:all;key:Down;key:Down*29;key:Return;tab:system;key:Down*40"
+  "view;tab:changelog;filter:pacman;text:f;filter:all;key:Down;key:Down*32;key:Return;tab:system;key:Down*40"
 expect sample 1 .view.status ok
 expect sample 1 .view.tab today
 expect sample 1 .view.banner ""
@@ -107,24 +107,24 @@ shows sample 1 "Thursday, 1 Oct 2026"
 shows sample 1 "09:25 · claude-code · C-2026-003"
 shows sample 1 "▸ Yesterday · 1 entry"
 expect sample 2 .view.tab changelog
-expect sample 2 .view.changelog.rows 58
+expect sample 2 .view.changelog.rows 62
 expect sample 2 '.view.changelog.badges | join(",")' "firefox +3"
 expect sample 2 .view.changelog.folded 7
-expect sample 2 .view.changelog.snapshots 6
+expect sample 2 .view.changelog.snapshots 8
 expect sample 2 '.view.changelog.driftTones | join(",")' \
   "tokyo-night accent,~/.config/systemd/user/ollama.service urgent,ollama urgent,libinput accent,noto-fonts accent,firefox accent"
 shows sample 2 "2 changes in the red zone need a reason"
-shows sample 2 "58 events · newest first"
+shows sample 2 "62 events · newest first"
 shows sample 2 "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar."
 shows sample 2 "Unexplained · proposed for C-2026-005"
 expect sample 3 .view.changelog.filter pacman
 expect sample 3 .view.changelog.rows 12
 shows sample 3 "12 events from pacman · newest first"
 expect sample 4 .view.changelog.filter snapper
-expect sample 4 .view.changelog.rows 8
-expect sample 5 .view.changelog.rows 58
+expect sample 4 .view.changelog.rows 10
+expect sample 5 .view.changelog.rows 62
 expect sample 6 .view.cursorActive true
-expect sample 7 .view.cursor 29
+expect sample 7 .view.cursor 32
 shows sample 7 "firefox"
 shows sample 7 "+3"
 shows sample 7 "Unexplained"
@@ -133,8 +133,9 @@ shows sample 8 "· upgrade libinput  1.29.1-1 → 1.29.2-1"
 expect sample 9 .view.tab system
 expect sample 9 '.view.system | join(",")' "OMARCHY,PACKAGES,PLUGINS,SNAPSHOTS,AREAS,COLLECTORS,SELDON"
 shows sample 9 "33 of 40 enabled"
+shows sample 9 "2026-10-01 16:30 · tailscale: MagicDNS · pre"
 shows sample 9 "2 changes in the red zone need a reason"
-expect sample 10 .view.cursor 26
+expect sample 10 .view.cursor 28
 clean_log sample
 
 # 2. Keyboard (SPEC-PLUGIN §5): Tab / Shift-Tab only hand over to the
