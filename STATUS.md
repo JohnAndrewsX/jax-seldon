@@ -11,7 +11,8 @@ Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
-| WP-024 | Logbook templates, logbook AGENTS.md, harness install, wizard first capture | Engine + Docs | `engine-024` (opus, high) | `wt/WP-024` · `wp/024-templates-wizard` | 2026-10-01 |
+| WP-030 | Overlay skeleton, grid, period selector, keyboard (Prime Radiant) | Plugin | `plugin-030` (opus, high) | `wt/WP-030` · `wp/030-overlay-skeleton` | 2026-10-02 |
+| WP-032 | `seldon rebuild` → outputs/REBUILD.md | Engine | `engine-032` (opus, high) | `wt/WP-032` · `wp/032-rebuild` | 2026-10-02 |
 
 ## Queued (next up)
 After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
@@ -29,6 +30,12 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-024 Logbook templates en/de (English keys and headings,
+  prose per language), logbook AGENTS.md, wizard first capture with
+  `--since` backfill and pre-Seldon baseline, Claude Code / Omarchy-Agent
+  harness installs, theme hook opt-in, `SELDON_TEST_GUARD` — merged; 308
+  engine tests. **Phase 2 is code-complete** (live sweeps pending the
+  test host unlock).
 - 2026-10-01 WP-022 `seldon agent start` (config-driven launcher argv,
   `{prompt}` as one argument, detached, shell-string launchers refused)
   and the *Start agent* card action (key `a`) — merged after one review
