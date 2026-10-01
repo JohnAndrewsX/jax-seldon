@@ -1,7 +1,7 @@
 WP-003 HANDOVER
 
 Branch `wp/003-engine-core`, worktree `wt/WP-003`. Not pushed, no PR.
-Five commits on top of `b4a5eb3`. Each commit builds, is clippy-clean and passes its tests. This was checked in a throw-away worktree.
+Commits `0d91627..HEAD` on top of `b4a5eb3`. I checked the first two in a throw-away worktree: each builds, is clippy-clean and passes its tests. At HEAD, `just check` exits 0. Commit 3 (`c670c6a`) is not fmt-clean on its own; `ce40a7e` is the rustfmt fix.
 
 ## Done
 
