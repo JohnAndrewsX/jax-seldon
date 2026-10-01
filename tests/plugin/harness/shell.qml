@@ -35,6 +35,7 @@ import Quickshell
 //                                             (input: the sheet's form object)
 //                       ["driftShow", eventId] → Service.driftShow(eventId)
 //                       ["decide", title]     → Service.decide(title)
+//                       ["agent", caseId]     → Service.startAgent(caseId)
 //                       ["wait"]              wait until no engine call is
 //                                             queued or running, then go on
 ShellRoot {

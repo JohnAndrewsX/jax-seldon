@@ -648,7 +648,7 @@ run decide-devmode 2500 PATH="$fake_path" HOME="$work/home-decide-dev" SELDON_IN
 expect decide-devmode .decideResult.text "Dev mode is read-only"
 argv_check decide-dev "$(q --version --json)"
 
-# 29. Start agent (WP-022): the exact argv `agent start <id> --json` for a
+# 30. Start agent (WP-022): the exact argv `agent start <id> --json` for a
 #     validated id only; a malformed id never reaches the engine; one call at
 #     a time; the engine's answer (the launcher) and its refusals (a queued
 #     case's hint, a missing launcher) land on the plan result line with
