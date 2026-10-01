@@ -54,10 +54,33 @@ seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
 seldon decide "<title>" [--case ID]            # creates ADR, opens $EDITOR unless --no-edit
 seldon status                                  # regenerates STATUS.md + index
 seldon index [--check]                         # rebuild index; --check validates against schema
-seldon dossier [--section packages|services|omarchy|plugins|deviations|all]
+seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|all] [--json]
+                                               # WP-035: rewrites only the bodies of the selected generated
+                                               # fences of system/*.md (comma list or repeated; default all):
+                                               # packages.summary (explicit/total/aur), packages.history (a row
+                                               # for today when the counts changed; today's row is replaced),
+                                               # packages.explicit (sorted, `- <name> · repo|aur · since <date>
+                                               # [[C-…]]` from the ledger's latest install, else `pre-logbook`),
+                                               # services.enabled (system then user units; case from the ledger:
+                                               # a user unit file's config event or an agent's cased `systemctl
+                                               # [--user] enable`, else the old row's, else —), omarchy.summary
+                                               # (version, theme, lastUpdate), hardware.summary (cpu, memory,
+                                               # machine, rootfs from /proc and /sys files only), plugins.list,
+                                               # deviations.table (old lines kept byte for byte, a row added per
+                                               # cased config path without one, reason left empty). Text outside
+                                               # the fences is never changed; a missing fence is appended to its
+                                               # default file under a heading in the logbook language. A failed
+                                               # query skips its fences (warning, fence kept). Files written
+                                               # atomically and only on change, autocommit `seldon: dossier`,
+                                               # index rebuilt; no ledger write. `init` runs it once after the
+                                               # first capture; `capture` and `status` never do. --json →
+                                               # {files, sections: {<fence>: written|unchanged|skipped}, counts:
+                                               # {explicit, preLogbook, total, aur, units, plugins}, git, warnings}
 seldon rebuild [--json]                        # outputs/REBUILD.md (WP-032): 1 base, 2 explicit packages by
                                                # case (`omarchy pkg add|aur add` from meta.command: pacman -S →
-                                               # repo, -U → AUR, else "repository unknown"), 3 deviations, 4 plugins,
+                                               # repo, -U → AUR, else "repository unknown"; "Before the logbook":
+                                               # the `pre-logbook` lines of `packages.explicit` as one `omarchy pkg
+                                               # add` and one `omarchy pkg aur add` block, WP-035), 3 deviations, 4 plugins,
                                                # 5 theme, 6 units (incl. cased `services.enabled` rows; system scope
                                                # separately), 7 open drift (marked in place too) + dismissed
                                                # ("deliberately not reproduced"); English headings, prose in the
@@ -131,6 +154,7 @@ seldon init --json   → {logbook, config, machineId, language, files, obsidian,
                         harnesses, harnessSetup:{<name>:{…}}, git, snapper,
                         capture:{ran, since, written, files, collectors, sinceIgnored, openDrift, crisis,
                                  baseline:{reason, items, events}|null, git} | {ran:false, reason|error},
+                        dossier:{ran:true, files, sections, counts, git, warnings} | {ran:false, reason|error},
                         themeHook:{requested, installed, already?, script?, hook?, error?, fix?}, nextSteps}
 seldon agent start <caseId> --json → {launched, launcher, program, argv (with the "{prompt}" placeholder,
                         never the prompt), case, cwd, previousActiveCase}; exit 1 for a case that is not
@@ -180,7 +204,10 @@ may contain it.
 
 Each collector implements `fn collect(ctx) -> Vec<Event>` and
 `fn cursor(&self) -> Cursor`. Run order: snapper, pacman, omarchy, plugins,
-theme, config. Rules:
+theme, config. `seldon dossier` (§3) is not a collector and writes no
+events; it queries pacman read-only (`-Qqe`, `-Qqm`, `-Q`) and systemd
+read-only (`list-unit-files --state=enabled`); no package manager or
+`systemctl` is ever invoked with a mutating verb. Rules:
 
 - **pacman** — parse `/var/log/pacman.log` from the saved byte offset; verify
   inode; on rotation restart from 0 and dedupe by `(ts, kind, subject,
@@ -407,8 +434,10 @@ groups, one ledger write over every open item (not capped), events stay
 install theme-set <script>` runs once (skipped when
 `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` exists; a
 failure prints the manual command) → commit `seldon: first capture[ and
-pre-Seldon baseline]` → index rebuild → next steps (`seldon drift` when
-drift stays open). A failure after the layout is reported, never fatal.
+pre-Seldon baseline]` → index rebuild → `seldon dossier` once, all
+sections, its own commit `seldon: dossier` (only after a first capture;
+`--no-capture` adds `seldon dossier` to the next steps, WP-035) → next
+steps (`seldon drift` when drift stays open). A failure after the layout is reported, never fatal.
 `--non-interactive`: flags, then the existing config, then: `~/Seldon`,
 language from the locale, all collectors, default watched paths,
 harnesses from the config (none on a fresh machine), git on, first
