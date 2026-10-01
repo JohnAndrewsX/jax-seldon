@@ -16,7 +16,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
@@ -27,7 +27,11 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 ```
 seldon init [--path DIR] [--non-interactive] [--language de|en] [--obsidian]
-            [--harness claude-code] [--git/--no-git]
+            [--harness claude-code|omarchy-agent]… [--git/--no-git]
+            [--since TS [--baseline]] [--no-capture] [--theme-hook]
+            # --since: YYYY-MM-DD (local midnight) or RFC 3339; --baseline requires
+            # --since; --no-capture conflicts with --since (WP-024)
+seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case only
 seldon capture [--source pacman,snapper,omarchy,plugins,theme,config | --all] [--since TS]
 seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]
 seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [--meta k=v]
@@ -110,6 +114,25 @@ the clock for tests and demos; `SELDON_CONFIG=FILE` is the config
 override. `decide` writes no ledger event (no fitting kind; revisit with
 WP-008). `.seldon/active-case` names the case started last; `done`/`drop`
 clear it only when it names that case.
+
+```
+seldon init --json   → {logbook, config, machineId, language, files, obsidian, collectors, watchPaths,
+                        harnesses, harnessSetup:{<name>:{…}}, git, snapper,
+                        capture:{ran, since, written, files, collectors, sinceIgnored, openDrift, crisis,
+                                 baseline:{reason, items, events}|null, git} | {ran:false, reason|error},
+                        themeHook:{requested, installed, already?, script?, hook?, error?, fix?}, nextSteps}
+seldon agent start <caseId> --json → {launched, launcher, program, argv (with the "{prompt}" placeholder,
+                        never the prompt), case, cwd, previousActiveCase}; exit 1 for a case that is not
+                        active (queued → hint `seldon plan start`), an unknown launcher, or a launcher
+                        that fails within 200 ms; 3 not initialised; 4 lock held. The launcher argv
+                        comes from config.toml `[agent] launcher` / `[agent.launchers] NAME`, default
+                        ["omarchy","agent","prompt","{prompt}"] (no --inline: detached with null stdio,
+                        --inline would run the agent without a terminal); `{prompt}` is exactly one
+                        element; first element a program name without `/` or an absolute path; shells and
+                        the Omarchy launchers that build `bash -c` strings are refused; stderr goes to
+                        `$XDG_STATE_HOME/seldon/agent-launch.log`; `.seldon/active-case` is set and
+                        restored on failure; no ledger event (WP-022).
+```
 
 `capture` selection: no flag or `--all` = every collector enabled in
 `config.toml [collectors]`; `--source a,b` = exactly those, even if disabled.
@@ -352,12 +375,37 @@ above a line count and let the next `capture`/`status` catch up.
 ## 9. Wizard (`seldon init`)
 
 Interactive via `dialoguer` (no `gum` dependency; gum is optional eye candy
-later). Steps: path (the options of ADR-0010: `~/Seldon`,
-`~/Documents/Seldon`, a detected project folder, custom) → language → Obsidian config yes/no → collectors
-(all on by default) → watched config paths (defaults shown) → agent
-harnesses (Claude Code hooks; optional Omarchy-Agent kit guard/skills if
-present as a template dir) → git init + first commit → run first capture →
-print next steps. `--non-interactive` takes flags, then the existing
+later). The wizard asks: path (the options of ADR-0010: `~/Seldon`,
+`~/Documents/Seldon`, a detected project folder, custom) → language →
+Obsidian config yes/no → collectors (all on by default) → watched config
+paths (defaults shown) → harnesses (`claude-code`, `omarchy-agent`) →
+theme hook yes/no (default no) → git → backfill (a note explains the
+drift consequence, then a date or empty). Then `init` runs, in order
+(WP-024): layout + harness files (the Omarchy-Agent kit from
+`${XDG_DATA_HOME:-~/.local/share}/seldon/harness/omarchy-agent/` or
+`$SELDON_OMARCHY_AGENT_KIT`, copied into `<logbook>/.claude/` without
+overwriting, symlinks skipped, modes kept, before the Claude Code hook
+merge of §8; without the dir `init` reports what it would copy) → git init
++ first commit → `capture --all [--since]` in-process, pinned to the new
+logbook → pre-Seldon baseline (`--baseline`, or asked interactively with
+the item count, default yes): one `dismissed` resolution per open drift
+*member*, reason `pre-Seldon baseline`, actor `human`, `meta.txId` on
+groups, one ledger write over every open item (not capped), events stay
+→ theme hook on opt-in only: the embedded script is written to
+`$XDG_STATE_HOME/seldon/hooks/seldon-theme-set.sh` and `omarchy hook
+install theme-set <script>` runs once (skipped when
+`~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` exists; a
+failure prints the manual command) → commit `seldon: first capture[ and
+pre-Seldon baseline]` → index rebuild → next steps (`seldon drift` when
+drift stays open). A failure after the layout is reported, never fatal.
+`--non-interactive`: flags, then the existing config, then: `~/Seldon`,
+language from the locale, all collectors, default watched paths,
+harnesses from the config (none on a fresh machine), git on, first
+capture from now (no backfill, no baseline), no Obsidian, no theme hook.
+`SELDON_TEST_GUARD=<dir>`: the engine refuses to run (exit 2) when its
+resolved home/config/state dirs lie outside that dir — set by every test
+harness and manual recipe so a lost environment can never reach the real
+home. `--non-interactive` takes flags, then the existing
 config, then the defaults. The default language is deterministic:
 `--language` > config > `LC_ALL`/`LC_MESSAGES`/`LANG` (`de*` → `de`) >
 `en`; the interactive wizard pre-selects the same. Every flag skips its
@@ -366,9 +414,13 @@ and never overwrites a file; only `config.toml` is rewritten, with unknown
 keys preserved. Empty layout directories get a `.gitkeep`.
 
 The wizard writes templates from `engine/templates/{en,de}/` into the
-logbook: `AGENTS.md`, `PROJECT.md`, `DECISIONS.md`, `areas/*/README.md`
-for the default areas (`hyprland`, `themes`, `packages`, `dev-env`,
-`plugins`, `shell`), `memory/lessons.md`, `system/*.md` skeletons.
+logbook: `AGENTS.md` (the rules for agents: engine is the only writer,
+cases, zones, hooks, never edit the ledger), `PROJECT.md`, `STATUS.md`,
+`DECISIONS.md`, `areas/*/README.md` for the default areas (`hyprland`,
+`themes`, `packages`, `dev-env`, `plugins`, `shell`), `memory/lessons.md`,
+`system/*.md` skeletons and `.seldon/templates/{case,decision}.md`.
+English keys and headings in every language, prose per language
+(ADR-0007); `engine/tests/golden/init-skeleton.txt` pins the skeleton.
 
 ## 10. Testing
 

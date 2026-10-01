@@ -110,6 +110,13 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
   `memory/local.md`) or keep passing `SELDON_TEST_HOST=<alias>`.
 - **Phase 0 exit**: `work/PHASE-0-EXIT.md` has the procedure; it needs you
   (real logbook, `~/.config/seldon`).
+- **Stray `~/.config/seldon/config.toml`** on the dev host from WP-024's
+  pty test (points at a scratch logbook). The guard blocks the
+  orchestrator; please `rm -r ~/.config/seldon`. The state dir was removed.
+- **FYI, veto possible:** generated logbooks use English headings in every
+  language (`# Decisions`, `## Purpose`, `## History` …) with German prose
+  (ADR-0007, WP-024). The fixture logbook still has German headings; the
+  schema track aligns it.
 - **AGENTS.md §7 exit codes** say 0/1/2/3; SPEC-ENGINE §3 and the code add
   `4 lock held`. AGENTS.md needs a one-line fix on operator instruction.
 - **`scripts/guard.sh` false positives** (operator-owned): the "write under

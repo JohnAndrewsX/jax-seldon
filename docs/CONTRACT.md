@@ -50,6 +50,7 @@ seldon log [--case <id>] --json -- <text>       # free text is one argument afte
 seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # path reported as JSON; the engine launches the editor
 seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
 seldon plan start|verify|done|drop <id> --json   # id validated by the schema regex; the engine enforces the transition
+seldon agent start <caseId> --json              # active case only; the engine launches the configured agent launcher detached (WP-022)
 seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
 seldon drift dismiss <eventId> [--only] --json -- <reason>   # same rule as explain: text after `--`

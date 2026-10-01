@@ -87,7 +87,10 @@ is navigation; in a form — the sheets — only a change to the form
 disarms, so Tab between fields keeps the arm); `x x` drops; a mouse
 click on Drop turns into "Confirm drop". The WIP text counts `active`
 cases against the bar-widget setting `wipLimit` (default 3; warns, never
-blocks). Completed shows the index's last 50 (scrollable). While a text
+blocks). Completed shows the index's last 50 (scrollable). *Start agent*
+(WP-022) on an active case's card: key `a` twice or click + Confirm →
+`seldon agent start <id> --json`; the card shows "agent: <name>" from the
+case's `agents`; refused on queued/verification/closed cases. While a text
 field or the sheet has focus the panel blocks the key catcher; `Esc`
 hands the keys back and keeps the draft. Drift sheet (WP-021): Enter or
 a click on an open drift row, the row's *Resolve…* button, or a click on
