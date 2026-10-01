@@ -1118,3 +1118,73 @@ mod capture {
         assert_eq!(theme["ok"], true);
     }
 }
+
+/// `engine/hooks/theme-set.sh`, as `omarchy-hook theme-set <slug>` runs it.
+mod hook {
+    use super::*;
+
+    fn bash() -> Option<PathBuf> {
+        std::env::var("PATH")
+            .unwrap_or_default()
+            .split(':')
+            .map(|dir| Path::new(dir).join("bash"))
+            .find(|p| p.is_file())
+    }
+
+    /// Runs the hook with `args` and PATH = `bin` only.
+    fn run_hook(bin: &Path, args: &[&str]) -> std::process::Output {
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("hooks/theme-set.sh");
+        std::process::Command::new(bash().expect("bash"))
+            .arg(script)
+            .args(args)
+            .env_clear()
+            .env("PATH", bin)
+            .output()
+            .unwrap()
+    }
+
+    #[test]
+    fn records_the_slug_silently() {
+        if bash().is_none() {
+            eprintln!("skipped: no bash on this host");
+            return;
+        }
+        let tmp = TempDir::new("hook");
+        let bin = tmp.path().join("bin");
+        let argv = tmp.path().join("argv");
+        script(
+            &bin.join("seldon"),
+            &format!(
+                "printf '%s\\n' \"$@\" > '{}'; echo noise; echo noise >&2; exit 2",
+                argv.display()
+            ),
+        );
+        let out = run_hook(&bin, &["tokyo-night"]);
+        assert_eq!(out.status.code(), Some(0));
+        assert!(out.stdout.is_empty() && out.stderr.is_empty());
+        assert_eq!(
+            std::fs::read_to_string(&argv).unwrap(),
+            "event\ntheme\ntheme-set\n--subject\ntokyo-night\n"
+        );
+
+        // a slug is one argument, never evaluated
+        let out = run_hook(&bin, &["$(touch pwned) x"]);
+        assert_eq!(out.status.code(), Some(0));
+        assert!(
+            std::fs::read_to_string(&argv)
+                .unwrap()
+                .ends_with("--subject\n$(touch pwned) x\n")
+        );
+
+        // no slug: nothing runs
+        std::fs::remove_file(&argv).unwrap();
+        assert_eq!(run_hook(&bin, &[]).status.code(), Some(0));
+        assert!(!argv.exists());
+
+        // no seldon on PATH: still exit 0, silent
+        std::fs::remove_file(bin.join("seldon")).unwrap();
+        let out = run_hook(&bin, &["kanagawa"]);
+        assert_eq!(out.status.code(), Some(0));
+        assert!(out.stdout.is_empty() && out.stderr.is_empty());
+    }
+}
