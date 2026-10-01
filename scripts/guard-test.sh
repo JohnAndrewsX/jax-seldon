@@ -58,4 +58,6 @@ EOF'
 check A 'git commit -m "engine: attribute sed -i ~/.config/hypr edits"'
 check B 'sed -i s/a/b/ ~/.config/hypr/bindings.conf'
 check B 'cd x && cp y ~/.config/omarchy/shell.json'
+check A "ssh test-host 'jq -r \".idle | select(length > 0)\" ~/.config/omarchy/shell.json'"
+check A 'test "$(jq ".n > 0" x.json)" = true && cat ~/.config/omarchy/shell.json'
 exit $fail
