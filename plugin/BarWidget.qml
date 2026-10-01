@@ -141,6 +141,12 @@ BarWidget {
     function tab(name: string): string {
       return panelLoader.item && panelLoader.item.selectTabById(name) ? "ok" : "unknown tab"
     }
+    // Open the Changelog's drift sheet: `crisis` (the red strip's target) or
+    // an event id. Navigation only; the sheet's actions need a key or click.
+    function resolve(target: string): string {
+      if (!panelLoader.item || (target !== "crisis" && !Model.EVENT_ID.test(target))) return "unknown target"
+      return panelLoader.item.resolve(target) ? "ok" : "not open drift"
+    }
     // Set the Changelog source filter: all | pacman | snapper | …
     function filter(source: string): string {
       if (!panelLoader.item || (source !== "all" && Model.SOURCES.indexOf(source) === -1)) return "unknown source"

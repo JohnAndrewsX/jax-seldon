@@ -10,14 +10,20 @@ import "../Model.js" as Model
 // with source filter chips. Rows come from Model.changelogRows(); see
 // EventRow.qml for what one row shows.
 //
-// Keyboard (forwarded by Panel.qml): ↑/↓ move the cursor, Enter expands the
-// row (full text, a group's members), f / F cycle the source filter, `e`
-// opens this month's ledger in the editor. *Capture now* spins while the
-// capture and the status after it run; the new rows arrive with the index
-// (Service.qml's FileView), not from the capture's output.
+// Keyboard (forwarded by Panel.qml): ↑/↓ move the cursor, Enter on an open
+// drift row opens the DriftSheet (link / explain / dismiss, WP-021), on any
+// other row expands it (full text), f / F cycle the source filter, `e` opens
+// this month's ledger in the editor. *Capture now* spins while the capture
+// and the status after it run; the new rows arrive with the index
+// (Service.qml's FileView), not from the capture's output. So do resolved
+// drift rows: they show the folded resolution once the engine has rebuilt
+// the index. While the sheet is open it takes the tab's place; when the
+// index lists fewer drift items than it counts (ADR-0020) a line says how
+// many more there are.
 Item {
   id: root
 
+  property var service: null
   property var indexData: null
   property bool cursorActive: false
   property color foreground: Color.foreground
@@ -31,14 +37,20 @@ Item {
   property string filter: "all"
   property int cursor: 0
   property string expandedId: ""
+  property bool sheetOpen: false
+  property alias sheet: sheet
 
   signal captureRequested()
   signal openLedgerRequested()
   signal cursorWanted()
+  // The sheet gives the keys back (Esc, Cancel, Close).
+  signal leaveRequested()
 
   readonly property var rows: Model.changelogRows(indexData, filter)
   readonly property var chips: Model.filterChips(indexData)
   readonly property int rowCount: rows.length
+  readonly property string moreDrift: Model.moreDriftText(indexData)
+  readonly property bool editing: sheetOpen && sheet.editing
   readonly property color dim: Util.alpha(foreground, 0.65)
 
   function clampCursor(i) {
@@ -53,7 +65,35 @@ Item {
   function activate() {
     var row = root.rows[root.cursor]
     if (!row) return
-    root.expandedId = root.expandedId === row.id ? "" : row.id
+    if (row.drift) root.openSheet(row.id)
+    else root.expandedId = root.expandedId === row.id ? "" : row.id
+  }
+
+  // The drift sheet for event `id` (an open drift row, or a group member).
+  function openSheet(id) {
+    if (!Model.driftItemFor(root.indexData, id)) return false
+    root.sheetOpen = true
+    sheet.openFor(id)
+    return true
+  }
+
+  // The crisis strip: the first crisis, with the cursor on its row.
+  function openCrisis() {
+    var id = Model.firstCrisis(root.indexData)
+    if (id === "") return false
+    root.setFilter("all")
+    for (var i = 0; i < root.rows.length; i++) {
+      if (root.rows[i].id === id) {
+        root.cursor = i
+        break
+      }
+    }
+    return root.openSheet(id)
+  }
+
+  function closeSheet() {
+    root.sheetOpen = false
+    root.leaveRequested()
   }
 
   function setFilter(id) {
@@ -78,10 +118,14 @@ Item {
     list.positionViewAtBeginning()
   }
   onRowsChanged: if (root.cursor >= root.rows.length) root.cursor = Math.max(0, root.rows.length - 1)
+  // Another tab shown (a click on the tab strip, IPC): the sheet stays open
+  // but gives the keys back.
+  onVisibleChanged: if (!visible && root.editing) root.leaveRequested()
 
   Column {
     anchors.fill: parent
     spacing: Style.spacing.lg
+    visible: !root.sheetOpen
 
     Flow {
       id: chipFlow
@@ -161,6 +205,18 @@ Item {
     }
 
     Text {
+      id: moreLine
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      text: root.moreDrift
+      color: root.dim
+      elide: Text.ElideRight
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
       id: captureLine
       width: parent.width
       visible: text !== ""
@@ -176,7 +232,8 @@ Item {
       id: list
       width: parent.width
       height: Math.max(0, parent.height - chipFlow.height - header.height - parent.spacing * 2
-        - (captureLine.visible ? captureLine.height + parent.spacing : 0))
+        - (captureLine.visible ? captureLine.height + parent.spacing : 0)
+        - (moreLine.visible ? moreLine.height + parent.spacing : 0))
       clip: true
       spacing: Style.spacing.xxs
       boundsBehavior: Flickable.StopAtBounds
@@ -232,14 +289,46 @@ Item {
             root.cursor = delegateRoot.index
             root.cursorWanted()
           }
+          onResolveRequested: {
+            root.cursor = delegateRoot.index
+            root.cursorWanted()
+            root.openSheet(delegateRoot.modelData.id)
+          }
         }
       }
     }
   }
 
+  // The sheet in the tab's place, scrollable if a long group needs it.
+  Flickable {
+    id: sheetView
+    anchors.fill: parent
+    visible: root.sheetOpen
+    clip: true
+    contentWidth: width
+    contentHeight: sheet.implicitHeight
+    boundsBehavior: Flickable.StopAtBounds
+    interactive: contentHeight > height
+    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+    DriftSheet {
+      id: sheet
+      width: sheetView.width
+      visible: root.sheetOpen
+      service: root.service
+      indexData: root.indexData
+      foreground: root.foreground
+      accent: root.accent
+      urgent: root.urgent
+      muted: root.muted
+      fontFamily: root.fontFamily
+      onLeaveRequested: root.closeSheet()
+    }
+  }
+
   Text {
     anchors.centerIn: parent
-    visible: root.rows.length === 0
+    visible: root.rows.length === 0 && !root.sheetOpen
     textFormat: Text.PlainText
     text: root.indexData ? "No events from " + root.filter : "No index to show"
     color: root.dim

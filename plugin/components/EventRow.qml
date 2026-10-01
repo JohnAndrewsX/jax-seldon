@@ -9,7 +9,7 @@ import "../Model.js" as Model
 //
 //   ▌ glyph  kind  subject  [+N]                         time
 //   ▌        detail · actor · case
-//   ▌        resolution: why        (folded, ADR-0012 §8 §11)
+//   ▌        resolution: why        (folded, ADR-0012 §8 §11)   [Resolve…]
 //
 // One colour per row, `row.tone` from Model.changelogRows(), in theme colours
 // (red = urgent, yellow = accent, green = muted): the zone of the open drift
@@ -18,7 +18,8 @@ import "../Model.js" as Model
 // paints the stripe and, for open drift, the glyph, status line and "+N"
 // badge. Snapshot rows carry the theme's selected
 // fill. A drift group's leader shows "+N", N the members besides it; expanded, it lists the members
-// that index.events still holds. Every string is plain text.
+// that index.events still holds. An open drift row carries *Resolve…*
+// (`resolveRequested`), which opens the DriftSheet. Every string is plain text.
 CursorSurface {
   id: root
 
@@ -31,6 +32,7 @@ CursorSurface {
 
   signal clicked()
   signal hoveredRow()
+  signal resolveRequested()
 
   readonly property color dim: Util.alpha(foreground, 0.65)
   readonly property string tone: row ? row.tone : ""
@@ -42,6 +44,16 @@ CursorSurface {
 
   current: !!row && row.snapshot
   implicitHeight: content.implicitHeight + Style.spacing.md * 2
+
+  // Under the content, so the Resolve button gets its own clicks; the texts
+  // let theirs through to here.
+  MouseArea {
+    anchors.fill: parent
+    hoverEnabled: true
+    cursorShape: Qt.PointingHandCursor
+    onEntered: root.hoveredRow()
+    onClicked: root.clicked()
+  }
 
   Rectangle {
     id: stripe
@@ -151,19 +163,45 @@ CursorSurface {
       font.pixelSize: Style.font.caption
     }
 
-    Text {
+    Item {
       width: parent.width
-      leftPadding: glyph.width
       visible: root.status !== ""
-      textFormat: Text.PlainText
-      text: root.status
-      color: root.statusColor
-      wrapMode: Text.Wrap
-      maximumLineCount: root.expanded ? 50 : 2
-      elide: Text.ElideRight
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      font.italic: !!root.row && root.row.resolution !== ""
+      implicitHeight: Math.max(statusText.implicitHeight, resolveButton.visible ? resolveButton.implicitHeight : 0)
+
+      Text {
+        id: statusText
+        anchors.left: parent.left
+        anchors.right: resolveButton.visible ? resolveButton.left : parent.right
+        anchors.rightMargin: resolveButton.visible ? Style.spacing.md : 0
+        anchors.verticalCenter: parent.verticalCenter
+        leftPadding: glyph.width
+        textFormat: Text.PlainText
+        text: root.status
+        color: root.statusColor
+        wrapMode: Text.Wrap
+        maximumLineCount: root.expanded ? 50 : 2
+        elide: Text.ElideRight
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        font.italic: !!root.row && root.row.resolution !== ""
+      }
+
+      Button {
+        id: resolveButton
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        visible: !!root.row && root.row.drift
+        text: "Resolve…"
+        bordered: true
+        foreground: root.statusColor
+        accent: root.accent
+        fontFamily: root.fontFamily
+        fontSize: Style.font.caption
+        horizontalPadding: Style.spacing.md
+        verticalPadding: Style.spacing.xxs
+        tooltipText: "Link, explain or dismiss (Enter)"
+        onClicked: root.resolveRequested()
+      }
     }
 
     Repeater {
@@ -182,13 +220,5 @@ CursorSurface {
         font.pixelSize: Style.font.caption
       }
     }
-  }
-
-  MouseArea {
-    anchors.fill: parent
-    hoverEnabled: true
-    cursorShape: Qt.PointingHandCursor
-    onEntered: root.hoveredRow()
-    onClicked: root.clicked()
   }
 }
