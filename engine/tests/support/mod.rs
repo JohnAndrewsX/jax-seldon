@@ -100,12 +100,17 @@ pub struct Bench {
     pub dirs: Dirs,
     pub baseline: DateTime<FixedOffset>,
     pub cursors: std::collections::BTreeMap<&'static str, Value>,
+    /// The state lock, taken once for the bench's lifetime. Re-taking it
+    /// per run races with stub programs other test threads fork: a child
+    /// holds the inherited flock until it execs.
+    pub lock: lock::Lock,
 }
 
 impl Bench {
     pub fn new(tag: &str) -> Self {
         let scratch = Scratch::new(tag);
         let home = scratch.path("home");
+        let lock = lock::acquire(&scratch.path("lock")).unwrap();
         let sources = Sources {
             pacman_log: fixture("logs/pacman.log"),
             pacman_db_lock: scratch.path("db.lck"),
@@ -128,6 +133,7 @@ impl Bench {
             config: Config::default(),
             baseline: ts(FIXTURE_CREATED),
             cursors: Default::default(),
+            lock,
         }
     }
 
@@ -168,10 +174,9 @@ impl Bench {
             earlier,
         };
         let mut out = collector.collect(&ctx, self.cursors.get(collector.name()));
-        let lock = lock::acquire(&self.scratch.path("lock")).unwrap();
         out.events = self
             .ledger
-            .append(&lock, std::mem::take(&mut out.events))
+            .append(&self.lock, std::mem::take(&mut out.events))
             .unwrap();
         if let Some(c) = &out.cursor {
             self.cursors.insert(collector.name(), c.clone());

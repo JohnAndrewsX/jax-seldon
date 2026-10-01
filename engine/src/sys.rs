@@ -48,6 +48,9 @@ impl Run {
     }
 }
 
+/// `ETXTBSY` on Linux ("Text file busy").
+const ETXTBSY: i32 = 26;
+
 /// Runs `program args…` with stdin closed and a timeout, capturing output.
 pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) -> Run {
     let mut cmd = Command::new(program);
@@ -58,7 +61,19 @@ pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) 
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
-    let mut child = match cmd.spawn() {
+    // ETXTBSY: the program was just written and another thread's forked
+    // child still holds the write descriptor until it execs. Brief; retry.
+    let mut spawned = cmd.spawn();
+    for _ in 0..20 {
+        match &spawned {
+            Err(e) if e.raw_os_error() == Some(ETXTBSY) => {
+                thread::sleep(Duration::from_millis(5));
+                spawned = cmd.spawn();
+            }
+            _ => break,
+        }
+    }
+    let mut child = match spawned {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Run::NotFound,
         Err(e) => return Run::Failed(e.to_string()),
