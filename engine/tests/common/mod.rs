@@ -106,6 +106,8 @@ impl Env {
             .env("PATH", &self.bin)
             .env("LANG", "C")
             .env("GIT_CONFIG_NOSYSTEM", "1")
+            // the engine refuses to run when its dirs leave the temp dir
+            .env("SELDON_TEST_GUARD", self.tmp.path())
             .current_dir(self.tmp.path());
         cmd
     }

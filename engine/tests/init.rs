@@ -666,6 +666,40 @@ mod setup {
         }
     }
 
+    /// WP-024 review: the incident's shape — `HOME` lost on the way, the
+    /// XDG dirs still redirected — is refused before anything is written.
+    #[test]
+    fn the_test_guard_refuses_a_home_outside_it() {
+        let env = Env::new(Snapper::Allowed);
+        let outside = common::TempDir::new("outside-home");
+        let path = env.tmp.path().join("logbook");
+        let out = env
+            .command(&[
+                "--json",
+                "init",
+                "--non-interactive",
+                "--path",
+                path.to_str().unwrap(),
+            ])
+            .env("HOME", outside.path())
+            .env("XDG_CONFIG_HOME", env.home.join(".config"))
+            .env("XDG_STATE_HOME", env.home.join(".local/state"))
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["error"]["code"], 2);
+        let message = v["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains("refusing to run outside the test guard")
+                && message.contains("home directory"),
+            "{message}"
+        );
+        assert!(!path.exists());
+        assert!(!env.home.join(".config/seldon").exists());
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
     // -- harnesses ---------------------------------------------------------
 
     #[test]
