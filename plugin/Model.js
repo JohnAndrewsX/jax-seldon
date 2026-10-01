@@ -384,10 +384,20 @@ function validateArgs(args) {
     if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
     // dismiss takes its reason like explain its text, after `--` (WP-011
     // review: the contract form replacing `--reason <text>`).
-    if (id && withText && (a[1] === "explain" || a[1] === "dismiss") && (n === 3 || only(3))) return ""
+    if (id && withText && a[1] === "dismiss" && (n === 3 || only(3))) return ""
+    if (id && withText && a[1] === "explain") {
+      // Then optionally --only, --zone <z>, --risk <r>, --area <slug>, in that
+      // order (SPEC-ENGINE §3, WP-021).
+      var j = 3
+      if (j < n && a[j] === "--only") j += 1
+      if (j + 1 < n && a[j] === "--zone" && matches(ZONES, a[j + 1])) j += 2
+      if (j + 1 < n && a[j] === "--risk" && matches(RISKS, a[j + 1])) j += 2
+      if (j + 1 < n && a[j] === "--area" && AREA.test(a[j + 1])) j += 2
+      if (j === n) return ""
+    }
     if (id && !withText && a[1] === "show" && n === 3 && json) return ""
-    return "drift must be: drift link <eventId> <caseId> [--only] | explain|dismiss <eventId> [--only] -- <text>"
-      + " | show <eventId> --json"
+    return "drift must be: drift link <eventId> <caseId> [--only] | explain <eventId> [--only] [--zone <z>]"
+      + " [--risk <r>] [--area <a>] -- <text> | dismiss <eventId> [--only] -- <text> | show <eventId> --json"
   case "decide":
     return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
   case "open":
@@ -791,10 +801,18 @@ function rowMeta(r) {
   return parts.join(" · ")
 }
 
+// "linked to C-…", "explained · C-…" (the retroactive case `drift explain`
+// created, ADR-0021), or the resolution alone.
+function resolutionHead(resolution, caseId) {
+  if (resolution === "linked" && caseId !== "") return "linked to " + caseId
+  if (resolution === "explained" && caseId !== "") return "explained · " + caseId
+  return resolution
+}
+
 // The folded resolution (ADR-0012 §8, §11), or the open-drift note.
 function rowStatus(r) {
   if (r.resolution !== "") {
-    var head = r.resolution === "linked" && r.caseId !== "" ? "linked to " + r.caseId : r.resolution
+    var head = resolutionHead(r.resolution, r.caseId)
     return r.resolutionDetail !== "" ? head + ": " + r.resolutionDetail : head
   }
   if (!r.drift) return ""
@@ -1136,4 +1154,234 @@ function planResult(exitCode, stdoutText, stderrText) {
   var created = (id !== "" ? "Created " + id : "Case created") + (c && typeof c.title === "string" && c.title !== "" ? " · " + c.title : "")
   if (data && typeof data.areaCreated === "string" && data.areaCreated !== "") created += " · new area " + data.areaCreated
   return { ok: true, text: created, caseId: id }
+}
+
+// ---- Drift sheet (WP-021) ---------------------------------------------------
+//
+// One open drift item resolved from the Changelog: linked to a case,
+// explained (a retroactive completed case, ADR-0021) or dismissed with a
+// reason (SPEC-ENGINE §3, §5). A group (ADR-0013) resolves as one; `--only`
+// resolves the named event alone.
+
+var DRIFT_ACTIONS = ["link", "explain", "dismiss"]
+var DRIFT_ACTION_LABELS = { link: "Link", explain: "Explain", dismiss: "Dismiss" }
+// `drift explain` without --risk (SPEC-ENGINE §3); --zone defaults to the item's.
+var EXPLAIN_RISK_DEFAULT = "R1"
+// Member lines the sheet shows before "… and N more".
+var DRIFT_MEMBERS_SHOWN = 8
+
+function findEvent(index, id) {
+  var all = events(index)
+  for (var i = 0; i < all.length; i++)
+    if (isObject(all[i]) && all[i].id === id) return all[i]
+  return null
+}
+
+// The drift item event `eventId` belongs to, as the sheet shows it, or null
+// when the event is not open drift in this index. The event may be the
+// item's own (a single item or a group's leader) or an open member of a
+// group; the sheet names that event in the engine call, so `--only`
+// resolves exactly the row it was opened from.
+function driftItemFor(index, eventId) {
+  var id = String(eventId || "")
+  if (!EVENT_ID.test(id)) return null
+  var drift = driftLookup(index)
+  var event = findEvent(index, id)
+  var item = drift.byId[id] || null
+  if (!item && event && typeof event.txId === "string" && isOpenMember(event, event.txId))
+    item = drift.byTx[event.txId] || null
+  if (!item || typeof item.eventId !== "string" || !EVENT_ID.test(item.eventId)) return null
+  var grouped = typeof item.members === "number" && item.members > 1 && typeof item.txId === "string"
+  var zone = typeof item.zone === "string" ? item.zone : item.crisis === true ? "red" : str(event && event.zone)
+  return {
+    eventId: id,
+    leaderId: item.eventId,
+    day: dayOf(item.ts),
+    time: clockTime(item.ts),
+    source: str(item.source),
+    glyph: sourceGlyph(item.source),
+    kind: str(item.kind),
+    subject: str(item.subject),
+    detail: str(item.detail),
+    actor: actorLabel(item.actor),
+    zone: zone,
+    tone: zoneTone(zone),
+    crisis: item.crisis === true,
+    proposedCase: typeof item.proposedCase === "string" && CASE_ID.test(item.proposedCase) ? item.proposedCase : "",
+    grouped: grouped,
+    txId: grouped ? item.txId : "",
+    members: grouped ? item.members : 1,
+    // What index.events still lists (CONTRACT.md rule 4 caps it); the sheet
+    // asks `seldon drift show` for the rest.
+    memberList: grouped ? groupMembers(index, item.txId).reverse() : [],
+    badge: grouped ? "+" + (item.members - 1) : "",
+    namedSubject: event ? str(event.subject) : str(item.subject)
+  }
+}
+
+// The Link picker: the proposed case first, preselected, then every other
+// open case (active, verification, queued). Without a proposal the first
+// option is "Pick a case", which Link refuses.
+function caseOptionsFor(index, item) {
+  var proposed = item && item.proposedCase ? item.proposedCase : ""
+  var cases = openCases(index)
+  var out = []
+  var label = function(c) { return c.id + (c.title !== "" ? " · " + c.title : "") }
+  if (proposed !== "") {
+    var found = null
+    for (var i = 0; i < cases.length; i++) if (cases[i].id === proposed) found = cases[i]
+    out.push({ value: proposed, label: (found ? label(found) : proposed) + " · proposed" })
+  } else {
+    out.push({ value: "", label: "Pick a case" })
+  }
+  for (var k = 0; k < cases.length; k++)
+    if (cases[k].id !== proposed) out.push({ value: cases[k].id, label: label(cases[k]) })
+  return out
+}
+
+// The sheet's starting action: Link when the engine proposes a case, else
+// Explain (a crisis "needs a reason").
+function driftDefaultAction(item) {
+  return item && item.proposedCase !== "" ? "link" : "explain"
+}
+
+// `seldon drift link|explain|dismiss …` (CONTRACT.md, SPEC-ENGINE §3).
+// Returns { args } or { error }; nothing reaches the engine unchecked.
+//   driftArgs("link", { eventId, caseId, only })
+//     → drift link <eventId> <caseId> [--only] --json
+//   driftArgs("explain", { eventId, only, text, zone, risk, area, itemZone })
+//     → drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <a>] --json -- <text>
+//     --zone only when it differs from the item's zone (the engine's
+//     default), --risk only when not R1, --area only when given
+//   driftArgs("dismiss", { eventId, only, text })
+//     → drift dismiss <eventId> [--only] --json -- <text>
+// The text is one argument after `--`, exactly as typed, and one line (the
+// engine refuses more).
+function driftArgs(action, input) {
+  var f = isObject(input) ? input : {}
+  if (!matches(DRIFT_ACTIONS, action)) return { error: "Not a drift action: " + action }
+  var id = String(f.eventId || "")
+  if (!EVENT_ID.test(id)) return { error: "Not an event id: " + id }
+  var only = f.only === true ? ["--only"] : []
+  if (action === "link") {
+    var caseId = String(f.caseId || "")
+    if (caseId === "") return { error: "Pick a case first" }
+    if (!CASE_ID.test(caseId)) return { error: "Not a case id: " + caseId }
+    return { args: ["drift", "link", id, caseId].concat(only, ["--json"]) }
+  }
+  var text = f.text
+  if (!hasText(text)) return { error: action === "explain" ? "Say why it changed first" : "Give a reason first" }
+  if (/[\r\n\u0000]/.test(text)) return { error: "The text must be one line" }
+  var args = ["drift", action, id].concat(only)
+  if (action === "explain") {
+    var zone = f.zone === undefined || f.zone === null ? "" : String(f.zone)
+    var risk = f.risk === undefined || f.risk === null ? "" : String(f.risk)
+    var area = f.area === undefined || f.area === null ? "" : String(f.area)
+    if (zone !== "" && !matches(ZONES, zone)) return { error: "Not a zone: " + zone }
+    if (risk !== "" && !matches(RISKS, risk)) return { error: "Not a risk: " + risk }
+    if (area !== "" && !AREA.test(area)) return { error: "Area must be a lowercase slug: letters, digits and -" }
+    if (zone !== "" && zone !== String(f.itemZone || "")) args.push("--zone", zone)
+    if (risk !== "" && risk !== EXPLAIN_RISK_DEFAULT) args.push("--risk", risk)
+    if (area !== "") args.push("--area", area)
+  }
+  return { args: args.concat(["--json", "--", text]) }
+}
+
+// What a call would resolve, for the button hint: "Link firefox and 2 more
+// to C-2026-005", "Dismiss libinput only", "Explain tokyo-night as a new
+// completed case".
+function driftSummary(action, item, form) {
+  if (!item || !matches(DRIFT_ACTIONS, action)) return ""
+  var f = isObject(form) ? form : {}
+  var what = !item.grouped ? item.namedSubject
+    : f.only === true ? item.namedSubject + " only"
+    : item.subject + " and " + (item.members - 1) + " more"
+  if (action === "link") return "Link " + what + (f.caseId ? " to " + f.caseId : "")
+  if (action === "explain") return "Explain " + what + " as a new completed case"
+  return "Dismiss " + what
+}
+
+// `seldon drift link|explain|dismiss --json` (SPEC-ENGINE §3) → {eventId,
+// resolution, only, txId, resolved, events, case, areaCreated, git}; a
+// no-op (nothing open any more) → {resolved: 0, events: [], already:
+// {resolution, case}}, exit 0. Returns { ok, already, text, caseId, resolved }.
+function driftResult(action, exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0)
+    return { ok: false, already: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "", resolved: 0 }
+  var data = parseJson(stdoutText)
+  var resolved = data ? count(data.resolved) : 0
+  if (data && resolved === 0) {
+    var a = isObject(data.already) ? data.already : {}
+    var how = typeof a.resolution === "string" ? a.resolution : ""
+    var owner = typeof a.case === "string" && CASE_ID.test(a.case) ? a.case : ""
+    var text = how !== "" ? "Already resolved: " + resolutionHead(how, owner)
+      : owner !== "" ? "Nothing to resolve: it belongs to " + owner
+      : "Nothing to resolve: not open drift"
+    return { ok: true, already: true, text: text, caseId: owner, resolved: 0 }
+  }
+  var c = data && isObject(data.case) ? data.case : null
+  var caseId = c && typeof c.id === "string" && CASE_ID.test(c.id) ? c.id : ""
+  var n = plural(resolved, "event", "events")
+  var out = action === "link" ? "Linked " + n + (caseId !== "" ? " to " + caseId : "")
+    : action === "explain" ? "Explained " + n + (caseId !== "" ? " · created " + caseId : "")
+    : "Dismissed " + n
+  if (data && typeof data.areaCreated === "string" && data.areaCreated !== "") out += " · new area " + data.areaCreated
+  return { ok: true, already: false, text: out, caseId: caseId, resolved: resolved }
+}
+
+// `seldon drift show <id> --json` → {event, open, item, txId, members}: every
+// open member of the group, oldest first. Returns { ok, text, members }.
+function driftShowResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), members: [] }
+  var data = parseJson(stdoutText)
+  var list = data && Array.isArray(data.members) ? data.members : []
+  var members = []
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i]
+    if (isObject(m) && typeof m.id === "string" && EVENT_ID.test(m.id))
+      members.push({ id: m.id, kind: str(m.kind), subject: str(m.subject), detail: str(m.detail) })
+  }
+  return { ok: true, text: "", members: members }
+}
+
+// The member lines the sheet shows: at most DRIFT_MEMBERS_SHOWN, then
+// "… and N more".
+function memberLines(members, total) {
+  var list = Array.isArray(members) ? members : []
+  var out = []
+  for (var i = 0; i < list.length && i < DRIFT_MEMBERS_SHOWN; i++) out.push("· " + memberLine(list[i]))
+  var rest = Math.max(count(total), list.length) - out.length
+  if (rest > 0) out.push("… and " + rest + " more")
+  return out
+}
+
+// The folded resolution of event `id` in this index ("linked to C-…",
+// "dismissed: <reason>"), "" when it has none.
+function eventResolution(index, id) {
+  var e = findEvent(index, id)
+  if (!e || typeof e.resolution !== "string" || e.resolution === "") return ""
+  return rowStatus({ resolution: e.resolution, resolutionDetail: str(e.resolutionDetail), caseId: str(e.case) })
+}
+
+// The crisis strip's target: the first crisis item (the index lists crises
+// first, ADR-0020), else the first item, else "".
+function firstCrisis(index) {
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  var first = ""
+  for (var i = 0; i < list.length; i++) {
+    var d = list[i]
+    if (!isObject(d) || typeof d.eventId !== "string" || !EVENT_ID.test(d.eventId)) continue
+    if (d.crisis === true) return d.eventId
+    if (first === "") first = d.eventId
+  }
+  return first
+}
+
+// ADR-0020: the index lists the newest 200 open drift items; the summary
+// counts all. "+N more open drift items not listed here", or "".
+function moreDriftText(index) {
+  var c = counts(index)
+  var listed = index && Array.isArray(index.drift) ? index.drift.length : 0
+  var more = c ? c.drift - listed : 0
+  return more > 0 ? "+" + more + " more open drift " + (more === 1 ? "item" : "items") + " not listed here" : ""
 }

@@ -103,11 +103,17 @@ Item {
   // The last result of each panel action, { ok, pending, text } or null:
   // QuickEntry (`log`), Open in editor (`open`), Capture now (`capture`),
   // the Work tab's case actions and new-case sheet (`plan`; also `action`
-  // and `caseId`, the case the result is about).
+  // and `caseId`, the case the result is about), the drift sheet (`drift`;
+  // also `action`, `eventId`, `caseId` — the linked or created case — and
+  // `already` for a no-op re-run).
   property var logResult: null
   property var openResult: null
   property var captureResult: null
   property var planResult: null
+  property var driftResult: null
+  // The drift sheet's `seldon drift show` answer: { eventId, pending, ok,
+  // text, members } — a group's members beyond what index.events lists.
+  property var driftShown: null
 
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
@@ -242,6 +248,37 @@ Item {
     return true
   }
 
+  // Drift sheet: `seldon drift link|explain|dismiss …` (input: { eventId,
+  // caseId, only, text, zone, risk, area, itemZone }, see Model.driftArgs).
+  // One drift call at a time; the resolved rows arrive with the index.
+  function drift(action, input) {
+    if (root.driftResult && root.driftResult.pending) return false
+    var built = Model.driftArgs(action, input)
+    var eventId = input && typeof input.eventId === "string" ? input.eventId : ""
+    if (built.error) {
+      root.driftResult = { ok: false, pending: false, text: built.error, action: action, eventId: eventId, caseId: "", already: false }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.driftResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, action: action,
+        eventId: eventId, caseId: "", already: false }
+      return false
+    }
+    var doing = { link: "Linking", explain: "Explaining", dismiss: "Dismissing" }
+    root.driftResult = { ok: true, pending: true, text: doing[action] + "…", action: action, eventId: eventId, caseId: "", already: false }
+    return true
+  }
+
+  // `seldon drift show <id> --json`: the full member list of a group whose
+  // members index.events no longer lists all of (ADR-0013 §2). Read-only.
+  function driftShow(eventId) {
+    var id = String(eventId || "")
+    if (root.driftShown && root.driftShown.pending) return false
+    if (!Model.EVENT_ID.test(id) || !root.canWrite || !root.run(["drift", "show", id, "--json"])) return false
+    root.driftShown = { eventId: id, pending: true, ok: true, text: "", members: [] }
+    return true
+  }
+
   function setResult(args, result) {
     if (args[0] === "log") root.logResult = result
     else if (args[0] === "open") root.openResult = result
@@ -250,6 +287,16 @@ Item {
       result.action = args[1]
       if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
       root.planResult = result
+    } else if (args[0] === "drift" && args[1] === "show") {
+      result.eventId = args[2]
+      if (result.members === undefined) result.members = []
+      root.driftShown = result
+    } else if (args[0] === "drift") {
+      result.action = args[1]
+      result.eventId = args[2]
+      if (result.caseId === undefined) result.caseId = ""
+      if (result.already === undefined) result.already = false
+      root.driftResult = result
     }
   }
 
@@ -286,6 +333,8 @@ Item {
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
+      : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
+      : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
       : null
     if (result) {
       result.pending = false
@@ -300,8 +349,8 @@ Item {
       root.engineNotInitialised = true
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
-    } else if (args[0] !== "log" && args[0] !== "plan") {
-      // QuickEntry and the Work tab show their own errors in place.
+    } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "drift") {
+      // QuickEntry, the Work tab and the drift sheet show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
@@ -385,6 +434,8 @@ Item {
       openResult: root.openResult,
       captureResult: root.captureResult,
       planResult: root.planResult,
+      driftResult: root.driftResult,
+      driftShown: root.driftShown,
       pill: Model.pillText(root.counts),
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),

@@ -590,4 +590,159 @@ test("planResult reads the SPEC-ENGINE §3 plan shapes", () => {
   same(M.planResult(4, "", "lock held"), { ok: false, text: "lock held", caseId: "" })
 })
 
+// ---- Drift sheet (WP-021) ----
+const THEME = "01M3VTGNY0NZG4AY80814WSKGR"
+const UNIT = "01M3VNJ9JGZ9169T01XCW16FT0"
+const OLLAMA = "01M3VNFTF8EVHWFFZ687N14Q0C"
+const FIREFOX = "01M3SXBQVR7AW8PJQC1YXDCQ14"
+const LIBINPUT = "01M3SXBRV0WPNQ721VWGG2WXZ1"
+const NOTO = "01M3SXBRV0E702XKBM22HEV1B8"
+
+test("validateArgs: drift explain takes --only, --zone, --risk, --area, in that order, each optional", () => {
+  const ok = [
+    ["drift", "explain", EID, "--json", "--", "x"],
+    ["drift", "explain", EID, "--only", "--zone", "red", "--risk", "R2", "--area", "dev-env", "--json", "--", "x"],
+    ["drift", "explain", EID, "--zone", "green", "--json", "--", "x"],
+    ["drift", "explain", EID, "--risk", "R0", "--json", "--", "x"],
+    ["drift", "explain", EID, "--area", "a1", "--", "x"],
+    ["drift", "link", EID, "C-2026-005", "--only", "--json"], ["drift", "dismiss", EID, "--only", "--json", "--", "x"]
+  ]
+  for (const a of ok) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
+  const bad = [
+    ["drift", "explain", EID, "--risk", "R2", "--zone", "red", "--", "x"],
+    ["drift", "explain", EID, "--zone", "red", "--only", "--", "x"],
+    ["drift", "explain", EID, "--zone", "purple", "--", "x"], ["drift", "explain", EID, "--risk", "R7", "--", "x"],
+    ["drift", "explain", EID, "--area", "Dev Env", "--", "x"], ["drift", "explain", EID, "--area", "-x", "--", "x"],
+    ["drift", "explain", EID, "--zone", "--", "x"], ["drift", "explain", EID, "--actor", "human", "--", "x"],
+    ["drift", "dismiss", EID, "--zone", "red", "--", "x"], ["drift", "link", EID, "C-2026-005", "--zone", "red"]
+  ]
+  for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
+})
+
+test("driftItemFor: the four sample items, a group member, and events that are not open drift", () => {
+  const theme = M.driftItemFor(sampleIndex, THEME)
+  assert.strictEqual(theme.subject, "tokyo-night")
+  assert.strictEqual(theme.proposedCase, "C-2026-005")
+  assert.strictEqual(theme.grouped, false)
+  assert.strictEqual(theme.tone, "accent")
+  assert.strictEqual(M.driftDefaultAction(theme), "link")
+  const unit = M.driftItemFor(sampleIndex, UNIT)
+  assert.strictEqual(unit.crisis, true)
+  assert.strictEqual(unit.zone, "red")
+  assert.strictEqual(M.driftDefaultAction(unit), "explain")
+  assert.strictEqual(M.driftItemFor(sampleIndex, OLLAMA).subject, "ollama")
+  const group = M.driftItemFor(sampleIndex, FIREFOX)
+  assert.strictEqual(group.grouped, true)
+  assert.strictEqual(group.members, 3)
+  assert.strictEqual(group.badge, "+2")
+  assert.strictEqual(group.zone, "yellow")
+  same(group.memberList.map((m) => m.subject), ["firefox", "noto-fonts", "libinput"])
+  // Opened from a member row: the group's item, named by that member.
+  const member = M.driftItemFor(sampleIndex, LIBINPUT)
+  assert.strictEqual(member.eventId, LIBINPUT)
+  assert.strictEqual(member.leaderId, FIREFOX)
+  assert.strictEqual(member.namedSubject, "libinput")
+  assert.strictEqual(member.subject, "firefox")
+  assert.strictEqual(M.driftItemFor(sampleIndex, "01M3VDBX30F5DH0JNY7S0K95GC"), null) // tailscale, linked
+  assert.strictEqual(M.driftItemFor(sampleIndex, "01M1MB2M1GWZYF485HTGVZ1KS3"), null) // btop, explained
+  assert.strictEqual(M.driftItemFor(sampleIndex, "not an id"), null)
+  assert.strictEqual(M.driftItemFor(null, THEME), null)
+})
+
+test("caseOptionsFor: the proposed case first, else 'Pick a case'; open cases only", () => {
+  const theme = M.caseOptionsFor(sampleIndex, M.driftItemFor(sampleIndex, THEME))
+  same(theme.map((o) => o.value), ["C-2026-005", "C-2026-003", "C-2026-004", "C-2026-008", "C-2026-006", "C-2026-007"])
+  assert.strictEqual(theme[0].label, "C-2026-005 · Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim) · proposed")
+  const unit = M.caseOptionsFor(sampleIndex, M.driftItemFor(sampleIndex, UNIT))
+  same(unit.map((o) => o.value), ["", "C-2026-003", "C-2026-004", "C-2026-008", "C-2026-005", "C-2026-006", "C-2026-007"])
+  assert.strictEqual(unit[0].label, "Pick a case")
+})
+
+test("driftArgs: fixed argv, ids checked, the text one argument after `--`", () => {
+  same(M.driftArgs("link", { eventId: THEME, caseId: "C-2026-005" }).args, ["drift", "link", THEME, "C-2026-005", "--json"])
+  same(M.driftArgs("link", { eventId: FIREFOX, caseId: "C-2026-004", only: true }).args,
+    ["drift", "link", FIREFOX, "C-2026-004", "--only", "--json"])
+  same(M.driftArgs("dismiss", { eventId: LIBINPUT, only: true, text: "--help" }).args,
+    ["drift", "dismiss", LIBINPUT, "--only", "--json", "--", "--help"])
+  same(M.driftArgs("explain", { eventId: UNIT, text: 'say "hi"; $(reboot)', zone: "red", risk: "R1", area: "", itemZone: "red" }).args,
+    ["drift", "explain", UNIT, "--json", "--", 'say "hi"; $(reboot)'])
+  same(M.driftArgs("explain", { eventId: FIREFOX, only: true, text: "x", zone: "red", risk: "R3", area: "browser", itemZone: "yellow" }).args,
+    ["drift", "explain", FIREFOX, "--only", "--zone", "red", "--risk", "R3", "--area", "browser", "--json", "--", "x"])
+  for (const [action, f] of [["link", { eventId: THEME, caseId: "C-2026-005", only: true }],
+    ["explain", { eventId: THEME, text: "-rf --zone red", zone: "green", risk: "R2", area: "a", itemZone: "yellow" }],
+    ["dismiss", { eventId: THEME, text: "--" }]])
+    assert.strictEqual(M.validateArgs(M.driftArgs(action, f).args), "", action)
+  assert.strictEqual(M.driftArgs("link", { eventId: THEME, caseId: "" }).error, "Pick a case first")
+  assert.strictEqual(M.driftArgs("link", { eventId: THEME, caseId: "C-26-1; rm -rf ~" }).error, "Not a case id: C-26-1; rm -rf ~")
+  assert.strictEqual(M.driftArgs("link", { eventId: THEME.toLowerCase(), caseId: "C-2026-005" }).error,
+    "Not an event id: " + THEME.toLowerCase())
+  assert.strictEqual(M.driftArgs("explain", { eventId: THEME, text: " \t " }).error, "Say why it changed first")
+  assert.strictEqual(M.driftArgs("dismiss", { eventId: THEME, text: "" }).error, "Give a reason first")
+  assert.strictEqual(M.driftArgs("dismiss", { eventId: THEME, text: "two\nlines" }).error, "The text must be one line")
+  assert.strictEqual(M.driftArgs("explain", { eventId: THEME, text: "x", area: "Dev Env" }).error,
+    "Area must be a lowercase slug: letters, digits and -")
+  assert.strictEqual(M.driftArgs("explain", { eventId: THEME, text: "x", zone: "purple" }).error, "Not a zone: purple")
+  assert.strictEqual(M.driftArgs("purge", { eventId: THEME }).error, "Not a drift action: purge")
+})
+
+test("driftSummary names what a call resolves", () => {
+  const group = M.driftItemFor(sampleIndex, LIBINPUT)
+  assert.strictEqual(M.driftSummary("link", M.driftItemFor(sampleIndex, THEME), { caseId: "C-2026-005" }),
+    "Link tokyo-night to C-2026-005")
+  assert.strictEqual(M.driftSummary("dismiss", group, {}), "Dismiss firefox and 2 more")
+  assert.strictEqual(M.driftSummary("dismiss", group, { only: true }), "Dismiss libinput only")
+  assert.strictEqual(M.driftSummary("explain", M.driftItemFor(sampleIndex, OLLAMA), {}), "Explain ollama as a new completed case")
+})
+
+test("driftResult reads the SPEC-ENGINE §3 drift shapes, the no-op and refusals", () => {
+  const out = (o) => JSON.stringify(Object.assign({ eventId: THEME, resolution: "linked", only: false, txId: null,
+    events: [], case: null, areaCreated: null, git: null }, o))
+  same(M.driftResult("link", 0, out({ resolved: 1, case: { id: "C-2026-005" } }), ""),
+    { ok: true, already: false, text: "Linked 1 event to C-2026-005", caseId: "C-2026-005", resolved: 1 })
+  same(M.driftResult("explain", 0, out({ resolution: "explained", resolved: 3, case: { id: "C-2026-009" }, areaCreated: "dev-env" }), ""),
+    { ok: true, already: false, text: "Explained 3 events · created C-2026-009 · new area dev-env", caseId: "C-2026-009", resolved: 3 })
+  same(M.driftResult("dismiss", 0, out({ resolution: "dismissed", resolved: 3 }), ""),
+    { ok: true, already: false, text: "Dismissed 3 events", caseId: "", resolved: 3 })
+  const noop = (already) => JSON.stringify({ eventId: THEME, resolution: "linked", resolved: 0, events: [], already: already })
+  same(M.driftResult("link", 0, noop({ resolution: "linked", case: "C-2026-005" }), ""),
+    { ok: true, already: true, text: "Already resolved: linked to C-2026-005", caseId: "C-2026-005", resolved: 0 })
+  assert.strictEqual(M.driftResult("explain", 0, noop({ resolution: "explained", case: "C-2026-009" }), "").text,
+    "Already resolved: explained · C-2026-009")
+  assert.strictEqual(M.driftResult("dismiss", 0, noop({ resolution: "dismissed", case: null }), "").text, "Already resolved: dismissed")
+  assert.strictEqual(M.driftResult("link", 0, noop({ resolution: null, case: "C-2026-004" }), "").text,
+    "Nothing to resolve: it belongs to C-2026-004")
+  assert.strictEqual(M.driftResult("link", 0, noop({ resolution: null, case: null }), "").text, "Nothing to resolve: not open drift")
+  same(M.driftResult("link", 1, JSON.stringify({ error: { code: 1, message: "unknown case C-2026-999" } }), ""),
+    { ok: false, already: false, text: "unknown case C-2026-999", caseId: "", resolved: 0 })
+})
+
+test("driftShowResult, memberLines: the full member list of a group", () => {
+  const shown = M.driftShowResult(0, JSON.stringify({ event: {}, open: true, item: null, txId: "t",
+    members: [{ id: FIREFOX, kind: "upgrade", subject: "firefox", detail: "a → b" }, { id: "bad" }, { id: NOTO, kind: "upgrade", subject: "noto-fonts" }] }), "")
+  same(shown.members.map((m) => m.subject), ["firefox", "noto-fonts"])
+  assert.strictEqual(M.driftShowResult(1, "", "boom").ok, false)
+  same(M.memberLines(shown.members, 2), ["· upgrade firefox  a → b", "· upgrade noto-fonts"])
+  same(M.memberLines(shown.members, 3), ["· upgrade firefox  a → b", "· upgrade noto-fonts", "… and 1 more"])
+  const many = Array.from({ length: 12 }, (_, i) => ({ kind: "upgrade", subject: "p" + i, detail: "" }))
+  const lines = M.memberLines(many, 12)
+  assert.strictEqual(lines.length, 9)
+  assert.strictEqual(lines[8], "… and 4 more")
+})
+
+test("folded resolutions: explained · C-… (ADR-0021), the crisis target, +N more (ADR-0020)", () => {
+  assert.strictEqual(M.rowStatus({ resolution: "explained", caseId: "C-2026-009", resolutionDetail: "why" }), "explained · C-2026-009: why")
+  assert.strictEqual(M.rowStatus({ resolution: "dismissed", caseId: "", resolutionDetail: "tried it" }), "dismissed: tried it")
+  assert.strictEqual(M.eventResolution(sampleIndex, "01M3VDBX30F5DH0JNY7S0K95GC"), "linked to C-2026-008")
+  assert.strictEqual(M.eventResolution(sampleIndex, THEME), "")
+  assert.strictEqual(M.firstCrisis(sampleIndex), UNIT)
+  assert.strictEqual(M.firstCrisis({ drift: [{ eventId: THEME, crisis: false }] }), THEME)
+  assert.strictEqual(M.firstCrisis({ drift: [] }), "")
+  assert.strictEqual(M.moreDriftText(sampleIndex), "")
+  const capped = JSON.parse(sample)
+  capped.summary.openDrift = 250
+  assert.strictEqual(M.moreDriftText(capped), "+246 more open drift items not listed here")
+  capped.summary.openDrift = 5
+  assert.strictEqual(M.moreDriftText(capped), "+1 more open drift item not listed here")
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
