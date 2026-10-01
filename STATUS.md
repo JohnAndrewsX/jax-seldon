@@ -9,7 +9,6 @@
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-005 | Collectors: plugins, theme, config manifest | Engine | `engine-005` (opus, high) | `wt/WP-005` · `wp/005-collectors-user` | 2026-10-01 |
-| WP-006 | `log`, `event`, `plan` commands, case state machine, journal | Engine | `engine-006` (opus, high) | `wt/WP-006` · `wp/006-commands` | 2026-10-01 |
 | WP-011 | Panel: Today, Changelog, System tabs | Plugin | `plugin-011` (opus, high) | `wt/WP-011` · `wp/011-panel-tabs` | 2026-10-01 |
 
 ## Queued (next up)
@@ -28,6 +27,9 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-006 `log`, `event`, `plan`, `decide`, `open`; case state
+  machine; journal; `--config`; `--` forms — merged; 130 engine tests;
+  ledger-first plan steps; specs amended (SPEC-ENGINE §3, SPEC-LOGBOOK §3).
 - 2026-10-01 WP-004 Collectors pacman/snapper/omarchy + event model, ledger,
   redaction, collector registry, `capture` — merged after two review rounds
   (attribution per ADR-0017, Running-line rewind, greedy userinfo

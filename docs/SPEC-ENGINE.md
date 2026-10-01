@@ -19,7 +19,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`fix`/`lastRun` (WP-007) |
-| `~/.local/state/seldon/manifest.json` | path → sha256 for watched config files |
+| `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
 
@@ -158,8 +158,14 @@ theme, config. Rules:
   by hash) → `plugin-add|plugin-remove|plugin-enable|plugin-disable
   |plugin-update` with id and version. Neither `list` nor `catalog`
   carries a version: read it from the manifest at the plugin's
-  `manifestPath`, else the plugin directory's git HEAD short hash
-  (ADR-0014 §3).
+  `manifestPath`, else `~/.config/omarchy/plugins/<id>/manifest.json`, else
+  the plugin directory's own git HEAD short hash, else the last version
+  seen (ADR-0014 §3). `plugin-update` only for `firstParty: false`
+  (ADR-0018); enable/disable fire for every plugin. `plugin-add|update`
+  `ts` = the plugin directory's mtime clamped to [last check, now], like
+  theme and config, so the ADR-0017 window can match the agent's command.
+  A non-zero exit, a timeout, non-JSON output or an empty list after a
+  non-empty one → degraded, cursor kept.
 - **theme** — current theme name (read how Omarchy stores it from
   `~/.local/share/omarchy/bin/omarchy-theme-set`); diff → `theme-set`.
   Optional hook script installed by the wizard into `theme-set.d/` calls
@@ -167,9 +173,15 @@ theme, config. Rules:
 - **config** — sha256 manifest of files under `watchPaths` (default
   `~/.config/hypr`, `~/.config/omarchy` excluding `plugins/`, `~/.config/
   waybar` if present, `~/.bashrc`, `~/.zshrc`, user list). Changed/added/
-  removed → `config-change` with path and both hashes. Binary files and
-  files > 1 MB are skipped. Known secret-bearing files are listed in
-  `config.toml [redaction] skipPaths` and never hashed.
+  removed → `config-add|config-change|config-remove` with the path written
+  with `~` and both hashes (`detail` `sha256 <8> → <8>`). Binary files (a
+  NUL in the first 8000 bytes) and files over 1 MiB are listed as
+  `skipped` without a hash, so growing past the limit is not a removal;
+  `.git` directories are never walked, symlinked directories are not
+  followed, `~/.config/omarchy/plugins/` is excluded. Known secret-bearing
+  files are listed in `config.toml [redaction] skipPaths` and are never
+  opened, hashed or named (pattern rules in §7). Event `ts` is the file's
+  mtime clamped to [last check, now]; a removal gets the capture time.
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
@@ -237,7 +249,21 @@ redaction: `--password`, `token=`, `Authorization:`, `AKIA[0-9A-Z]{16}`,
 `ghp_[A-Za-z0-9]{36}`, `sk-[A-Za-z0-9]{20,}`, anything after `-p ` for
 `mysql|psql|smbclient`, URLs with userinfo, and user-supplied patterns in
 `config.toml [redaction] patterns`. Replacement: `‹redacted›`. The hook
-never records stdin/stdout of commands, only the command line.
+never records stdin/stdout of commands, only the command line. Redaction
+over-matches by design (WP-004): `sk-` also matches `sk_`/`sk-proj-`,
+`token=` is case-insensitive, quoted values are redacted whole, mysql's
+attached `-pSECRET` and psql's `-p` port are both redacted, URL userinfo is
+cut up to the last `@` before the path. An invalid user pattern is a user
+error (exit 1): Seldon refuses to write rather than leak. `detail` is cut
+at 4096 characters.
+
+`[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
+pattern with `/` matches the full path (`~/` = home), as a file or as a
+directory with everything below it; a relative pattern matches at any
+directory boundary; a pattern without `/` matches a file or directory
+name; `*` and `?` stay within one path component, `**` crosses them.
+Matching files are never opened, hashed or named; a hook path that matches
+is recorded redacted.
 
 ## 8. Hooks
 
