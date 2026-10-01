@@ -92,14 +92,16 @@ dev agents in parallel on independent WPs.
 
 Engine (Rust):
 - Edition 2024, `cargo clippy -- -D warnings` clean, `cargo fmt` clean.
-- Allowed crates: `clap`, `serde`, `serde_json`, `serde_yaml` (or
-  `gray_matter`), `chrono`, `anyhow`, `thiserror`, `regex`, `ulid`,
+- Allowed crates: `clap`, `serde`, `serde_json`, `serde_yaml` or its
+  maintained fork `serde_yaml_ng` (same API; `serde_yaml` is deprecated
+  upstream — swap before packaging) (or `gray_matter`), `chrono`,
+  `anyhow`, `thiserror`, `regex`, `ulid`,
   `jsonschema` (tests), `notify` (feature `watch` only), `toml`,
   `dialoguer` (wizard). Anything else needs a one-line justification in
   the PR and reviewer approval.
 - No async runtime. No network. Static musl release build.
 - Every command supports `--json`. Exit codes: 0 ok, 1 user error, 2 engine
-  error, 3 logbook not initialised.
+  error, 3 logbook not initialised, 4 lock held.
 - Idempotency is a feature: running any collector twice produces no new
   events. Tests prove it.
 - Append-only files are never rewritten. Generated files (`STATUS.md`,

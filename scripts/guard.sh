@@ -11,7 +11,10 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 block() { echo "guard: blocked (AGENTS.md §6 red zone): $1" >&2; exit 2; }
 
 # privilege and package management
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])(sudo|doas|su|pkexec|pacman|yay|paru|makepkg|pacstrap)([[:space:]]|$)'; then
+# only as the first word of a command segment (after ; & | && || or at the
+# start), optionally behind `env`/`command`/`nice`/`time` — not as a word inside
+# heredoc text, comments or file contents
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*|\$\([[:space:]]*|`[[:space:]]*)((env|command|nice|time|exec)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(sudo|doas|su|pkexec|pacman|yay|paru|makepkg|pacstrap)([[:space:]]|$)'; then
   block "privileged or package command"
 fi
 # services and boot
@@ -22,11 +25,18 @@ if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])(systemctl|loginctl|reboot|s
   fi
 fi
 # omarchy commands that change the system (observing is fine)
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])omarchy([[:space:]]+(pkg[[:space:]]+(add|aur|drop|install|remove)|update|install|theme[[:space:]]+set|plugin[[:space:]]+(add|remove|update|clone)|snapshot|migrate|refresh|hook[[:space:]]+install|dev[[:space:]]+link))'; then
+# exception: `ssh <test-host> ... omarchy theme set ...` — the theme sweep on
+# the test host is allowed (docs/HERDR-SETUP.md §5); everything else stays
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])omarchy([[:space:]]+(pkg[[:space:]]+(add|aur|drop|install|remove)|update|install|theme[[:space:]]+set|plugin[[:space:]]+(add|remove|update|clone)|snapshot|migrate|refresh|hook[[:space:]]+install|dev[[:space:]]+link))' \
+   && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]][^;&|]*omarchy[[:space:]]+theme[[:space:]]+(set|current)([^;&|]*)$'; then
   block "omarchy command that changes the system"
 fi
 # writes under /etc or /usr
-if printf '%s' "$cmd" | grep -Eq '(>|>>|tee|cp|mv|install|rm|sed[[:space:]]+-i|chmod|chown|ln)[^|;&]*[[:space:]]/(etc|usr|boot|var)/'; then
+# redirections and tee: the system path right after the operator; file
+# commands: only when the system path is the LAST argument of the segment
+# (the destination) — a /usr or /var path used as a read-only source is fine
+if printf '%s' "$cmd" | grep -Eq '(>|>>|tee([[:space:]]+-[a-z]+)*)[[:space:]]*/(etc|usr|boot|var)/' \
+   || printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(sudo[[:space:]]+)?(cp|mv|install|rm|rmdir|sed[[:space:]]+-i[^[:space:]]*|chmod|chown|ln|mkdir|touch|truncate)([[:space:]]+[^|;&[:space:]]+)*[[:space:]]+/(etc|usr|boot|var)/[^|;&[:space:]]*[[:space:]]*($|[|;&])'; then
   block "write under /etc, /usr, /boot or /var"
 fi
 # writes under ~/.config outside the plugin dev install
