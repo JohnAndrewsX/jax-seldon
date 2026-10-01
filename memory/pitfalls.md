@@ -113,6 +113,14 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   ADR-0014 rule ("the command precedes") would then never match. The fixture
   has the command first. WP-009 must record the start time, or the ADR needs
   an amendment.
+- **In-process tests that fork stub programs flake in parallel.** A forked
+  child holds every inherited descriptor until it execs, so two races appear:
+  - a stub written a moment ago fails with `ETXTBSY` ("text file busy");
+  - a flock that was just released still looks held.
+
+  `sys::run` retries `ETXTBSY`. The test bench takes its lock once. Do not
+  re-acquire locks per step in a test, and loop the suite (e.g. 50 runs)
+  after adding stub-heavy tests.
 - **Running `seldon capture` against the real host needs redirected XDG dirs
   and a throw-away logbook.** Otherwise it writes
   `~/.local/state/seldon/cursors.json`. Reading the system log, `snapper` and
