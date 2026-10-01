@@ -10,7 +10,8 @@ import "Model.js" as Model
 // Top to bottom: title, tab strip, the status banner (WP-010), the
 // snapper-degraded banner (ADR-0011), the red crisis strip, then the current
 // tab. The banners and the strip sit above the tabs, so every tab shows them.
-// Tabs: Today, Changelog, Work, System (Decisions and Memory arrive later).
+// Tabs: Today, Changelog, Work, Decisions, System, Memory, in the order of
+// their fixed digits.
 //
 // Actions (WP-012) go through the service's queue with fixed argument lists:
 // the QuickEntry note (`seldon log`), *Capture now* (capture, then status;
@@ -19,7 +20,9 @@ import "Model.js" as Model
 // (WP-020) adds `seldon plan new|start|verify|done|drop`; the Changelog's
 // drift sheet (WP-021) `seldon drift link|explain|dismiss` (and `drift show`
 // for a group's members). A click on the red strip opens the sheet for the
-// first crisis.
+// first crisis. The Decisions tab (WP-023) opens `seldon open ADR-NNNN` and
+// sends `seldon decide --no-edit` (then opens the new decision); the Memory
+// tab opens `seldon open logbook`.
 //
 // Keyboard (SPEC-PLUGIN §5):
 //   Tab / Shift-Tab  the bar's next / previous panel, as every Omarchy panel
@@ -29,15 +32,18 @@ import "Model.js" as Model
 //                    the digit of a tab this version lacks does nothing
 //   ↑ / ↓, k / j     move in the tab's list
 //   Enter, Space     open the row under the cursor (the yesterday row, a
-//                    Changelog row; an open drift row opens its sheet); on
-//                    Work, the card's first action (twice to write)
+//                    Changelog row; an open drift row opens its sheet; a
+//                    decision or memory row in the editor); on Work, the
+//                    card's first action (twice to write)
 //   x                Work: drop the case under the cursor (twice)
 //   f / F            Changelog: next / previous source filter
 //   c                capture now
 //   n                write a note (Today's QuickEntry; Esc gives the keys back)
 //   +                new case (Work's sheet; Esc gives the keys back)
+//   d                Decisions: new decision (its sheet; Enter twice creates)
 //   e                open this tab's file in the editor (journal, ledger, the
-//                    case under the Work cursor, status)
+//                    case under the Work cursor, the decision under the
+//                    cursor, status, the logbook for Memory)
 //   Esc              close
 Panel {
   id: root
@@ -58,16 +64,17 @@ Panel {
   readonly property color dim: Util.alpha(foreground, 0.65)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  readonly property var tabNames: ["Today", "Changelog", "Work", "System"]
-  readonly property var tabIds: ["today", "changelog", "work", "system"]
+  readonly property var tabNames: ["Today", "Changelog", "Work", "Decisions", "System", "Memory"]
+  readonly property var tabIds: ["today", "changelog", "work", "decisions", "system", "memory"]
   property int tabIndex: 0
   property bool cursorActive: false
 
   // The index only when its contents mean something in this status.
   readonly property var indexData: service && service.indexShown ? service.index : null
-  readonly property var tabItems: [todayTab, changelogTab, workTab, systemTab]
+  readonly property var tabItems: [todayTab, changelogTab, workTab, decisionsTab, systemTab, memoryTab]
+  readonly property string tabId: tabIds[tabIndex]
   // A text field or picker of a tab has the keys.
-  readonly property bool editing: todayTab.editing || workTab.editing || changelogTab.editing
+  readonly property bool editing: todayTab.editing || workTab.editing || changelogTab.editing || decisionsTab.editing
   // The bar widget setting `wipLimit` (Work tab).
   readonly property int wipLimit: Model.clampWipLimit(setting("wipLimit", Model.WIP_LIMIT_DEFAULT))
   readonly property var currentTab: tabItems[tabIndex]
@@ -131,7 +138,8 @@ Panel {
     if (workTab.canWrite) workTab.openSheet()
   }
 
-  // journal | ledger | status | <caseId>; Service.openInEditor validates it.
+  // journal | ledger | status | logbook | <caseId> | <ADR id>;
+  // Service.openInEditor validates it.
   function openInEditor(what) {
     if (root.service) root.service.openInEditor(what)
   }
@@ -192,7 +200,33 @@ Panel {
       },
       drift: root.driftView(),
       work: root.workView(),
-      system: systemTab.sections.map(function(s) { return s.title })
+      decisions: root.decisionsView(),
+      system: systemTab.sections.map(function(s) { return s.title }),
+      memory: {
+        rows: memoryTab.rows.map(function(r) { return r.kind + " " + r.title }),
+        sections: memoryTab.rows.filter(function(r) { return r.section !== "" }).map(function(r) { return r.section }),
+        cursor: memoryTab.current ? memoryTab.current.title : ""
+      }
+    }
+  }
+
+  function decisionsView() {
+    var d = decisionsTab
+    var r = root.service ? root.service.decideResult : null
+    return {
+      rows: d.rows.map(function(x) { return x.id + " " + x.status }),
+      cursor: d.current ? d.current.id : "",
+      result: r ? r.text : "",
+      resultOk: r ? r.ok : null,
+      pending: !!r && r.pending,
+      sheet: {
+        open: d.sheetOpen,
+        editing: d.sheet.editing,
+        title: d.sheet.title,
+        armed: d.sheet.armed,
+        hint: d.sheet.hint,
+        result: d.sheet.resultText
+      }
     }
   }
 
@@ -340,6 +374,8 @@ Panel {
           currentIndex: root.tabIndex
           foreground: root.foreground
           fontFamily: root.fontFamily
+          // Six tabs share Style.space(380).
+          fontSize: Style.font.caption
           onActivated: function(i) { root.selectTab(i) }
         }
 
@@ -414,7 +450,7 @@ Panel {
           TodayTab {
             id: todayTab
             anchors.fill: parent
-            visible: root.tabIndex === 0
+            visible: root.tabId === "today"
             service: root.service
             indexData: root.indexData
             cursorActive: root.cursorActive && visible
@@ -430,7 +466,7 @@ Panel {
           ChangelogTab {
             id: changelogTab
             anchors.fill: parent
-            visible: root.tabIndex === 1
+            visible: root.tabId === "changelog"
             service: root.service
             indexData: root.indexData
             cursorActive: root.cursorActive && visible
@@ -449,7 +485,7 @@ Panel {
           WorkTab {
             id: workTab
             anchors.fill: parent
-            visible: root.tabIndex === 2
+            visible: root.tabId === "work"
             service: root.service
             indexData: root.indexData
             wipLimit: root.wipLimit
@@ -462,10 +498,25 @@ Panel {
             onEditingChanged: if (!editing) Qt.callLater(root.restoreKeys)
           }
 
+          DecisionsTab {
+            id: decisionsTab
+            anchors.fill: parent
+            visible: root.tabId === "decisions"
+            service: root.service
+            indexData: root.indexData
+            cursorActive: root.cursorActive && visible
+            foreground: root.foreground
+            urgent: root.urgent
+            fontFamily: root.fontFamily
+            onCursorWanted: root.cursorActive = true
+            onLeaveRequested: keyCatcher.forceActiveFocus()
+            onEditingChanged: if (!editing) Qt.callLater(root.restoreKeys)
+          }
+
           SystemTab {
             id: systemTab
             anchors.fill: parent
-            visible: root.tabIndex === 3
+            visible: root.tabId === "system"
             indexData: root.indexData
             nowMs: root.service ? root.service.nowMs : Date.now()
             cursorActive: root.cursorActive && visible
@@ -473,6 +524,18 @@ Panel {
             fontFamily: root.fontFamily
             onCursorWanted: root.cursorActive = true
             onOpenStatusRequested: root.openInEditor("status")
+          }
+
+          MemoryTab {
+            id: memoryTab
+            anchors.fill: parent
+            visible: root.tabId === "memory"
+            service: root.service
+            indexData: root.indexData
+            cursorActive: root.cursorActive && visible
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onCursorWanted: root.cursorActive = true
           }
         }
 

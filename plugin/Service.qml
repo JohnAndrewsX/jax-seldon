@@ -105,12 +105,14 @@ Item {
   // the Work tab's case actions and new-case sheet (`plan`; also `action`
   // and `caseId`, the case the result is about), the drift sheet (`drift`;
   // also `action`, `eventId`, `caseId` — the linked or created case — and
-  // `already` for a no-op re-run).
+  // `already` for a no-op re-run), the new-decision sheet (`decide`; also
+  // `decisionId`, the created decision, which is then opened in the editor).
   property var logResult: null
   property var openResult: null
   property var captureResult: null
   property var planResult: null
   property var driftResult: null
+  property var decideResult: null
   // The drift sheet's `seldon drift show` answer: { eventId, pending, ok,
   // text, members } — a group's members beyond what index.events lists.
   property var driftShown: null
@@ -212,7 +214,7 @@ Item {
     return true
   }
 
-  // Open in editor: journal | ledger | status | <caseId>.
+  // Open in editor: journal | ledger | status | logbook | <caseId> | <ADR id>.
   function openInEditor(what) {
     var args = Model.openArgs(what)
     if (args === null) {
@@ -269,6 +271,25 @@ Item {
     return true
   }
 
+  // New decision: `seldon decide --no-edit --json -- <title>`, then, once the
+  // engine has created it, `seldon open <id> --editor --json` with the id
+  // from its answer (checked against the schema pattern by Model.decideResult).
+  // One decide call at a time.
+  function decide(title) {
+    if (root.decideResult && root.decideResult.pending) return false
+    var built = Model.decideArgs(title)
+    if (built.error) {
+      root.decideResult = { ok: false, pending: false, text: built.error, decisionId: "" }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.decideResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, decisionId: "" }
+      return false
+    }
+    root.decideResult = { ok: true, pending: true, text: "Creating the decision…", decisionId: "" }
+    return true
+  }
+
   // `seldon drift show <id> --json`: the full member list of a group whose
   // members index.events no longer lists all of (ADR-0013 §2). Read-only.
   function driftShow(eventId) {
@@ -291,6 +312,9 @@ Item {
       result.eventId = args[2]
       if (result.members === undefined) result.members = []
       root.driftShown = result
+    } else if (args[0] === "decide") {
+      if (result.decisionId === undefined) result.decisionId = ""
+      root.decideResult = result
     } else if (args[0] === "drift") {
       result.action = args[1]
       result.eventId = args[2]
@@ -335,6 +359,7 @@ Item {
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
       : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
+      : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
       : null
     if (result) {
       result.pending = false
@@ -349,13 +374,16 @@ Item {
       root.engineNotInitialised = true
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
-    } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "drift") {
-      // QuickEntry, the Work tab and the drift sheet show their own errors in place.
+    } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "drift" && args[0] !== "decide") {
+      // QuickEntry, the Work tab, the drift sheet and the new-decision sheet
+      // show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
     // missed the rename.
     indexFile.reload()
+    // A created decision opens in the editor (the id is checked).
+    if (args[0] === "decide" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
     root.finished(args, exitCode, out)
     root.pump()
   }
@@ -436,6 +464,7 @@ Item {
       planResult: root.planResult,
       driftResult: root.driftResult,
       driftShown: root.driftShown,
+      decideResult: root.decideResult,
       pill: Model.pillText(root.counts),
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),

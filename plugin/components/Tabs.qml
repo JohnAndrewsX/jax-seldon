@@ -17,6 +17,7 @@ Row {
   property int currentIndex: 0
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  property real fontSize: Style.font.bodySmall
 
   signal activated(int index)
 
@@ -38,7 +39,7 @@ Row {
       bordered: true
       foreground: root.foreground
       fontFamily: root.fontFamily
-      fontSize: Style.font.bodySmall
+      fontSize: root.fontSize
       onClicked: root.activated(index)
     }
   }

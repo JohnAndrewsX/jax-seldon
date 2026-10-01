@@ -362,3 +362,32 @@ Verified in the shell source and live on the test host.
 - **Harness keys: a non-ASCII `keyClick` ("ü") under `env -i` (locale C)
   crashed Quickshell.** Type ASCII in scenarios, or give the run a UTF-8
   locale.
+
+## WP-023 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **Six tabs in `Style.space(380)`:** six bordered `qs.Ui` Buttons with
+  `Style.font.bodySmall` leave "Changelog"/"Decisions" touching their
+  borders in the fallback monospace font; `Style.font.caption` fits
+  (Tabs.qml takes `fontSize`, Panel.qml passes caption).
+- **`omarchy-launch-editor <dir>`** (the target of `seldon open logbook
+  --editor`) passes the folder to the editor unchanged: terminal editors
+  (nvim, the default) run in `omarchy-launch-tui` and show their directory
+  view; GUI editors get it through `uwsm-app --`. Read from
+  `$OMARCHY_PATH/bin/omarchy-launch-editor`; not tried on a live seat
+  (the test host stayed locked).
+- **A row MouseArea with `onClicked` and `onDoubleClicked`** declared first
+  inside a `CursorSurface` selects on the first click and opens on the
+  double click, and a `Button` declared after it keeps its own clicks
+  (confirms the WP-021 finding).
+- **Harness `click:<text>`** finds the first *visible* item in tree order,
+  so a button label shared by several tabs ("Open") hits the one on the
+  current tab; hidden tabs are skipped.
+- **Harness `shows`:** the text is spliced into a jq string literal; a `"`
+  in it must be written `\"`.
+- **Real-engine smoke on a locked test host (repeatable):** the WP-021
+  recipe (private offscreen Quickshell, `env -i`, temp `HOME` with its own
+  `.gitconfig` so the engine's autocommits work, the musl `seldon` and a
+  recorder named `omarchy-launch-editor` on `PATH`) runs `decide` and
+  `open --editor` end to end without a window on the seat; the recorder
+  receives the detached launcher's argv because the engine's child
+  inherits the harness environment.

@@ -349,10 +349,10 @@ record_check actions "$(printf '%s\n' \
 clean_log actions
 
 # 19. Refused before the engine is asked: blank notes, an id that is not a
-#     case id, an open target outside journal|ledger|status|<caseId>. The
-#     engine sees nothing but the start-up calls.
+#     case id, an open target outside journal|ledger|status|logbook|<caseId>|
+#     <ADR id>. The engine sees nothing but the start-up calls.
 mkdir -p "$work/home-refused"
-actions=$(jq -cn '[["log", "", ""], ["log", "x", "C-26-1; rm -rf ~"], ["open", "../../etc/passwd"], ["open", "logbook"], ["log", " \n\t ", ""]]')
+actions=$(jq -cn '[["log", "", ""], ["log", "x", "C-26-1; rm -rf ~"], ["open", "../../etc/passwd"], ["open", "memory"], ["log", " \n\t ", ""]]')
 run refused 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/refused.record"
 argv_check refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
@@ -569,6 +569,84 @@ mkdir -p "$work/home-drift-dev"
 run drift-devmode 2500 PATH="$fake_path" HOME="$work/home-drift-dev" SELDON_INDEX="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 expect drift-devmode .driftResult.text "Dev mode is read-only"
 argv_check drift-dev "$(q --version --json)"
+
+# 28. Decisions (WP-023): the exact argv of `decide --no-edit --json --
+#     <title>` (an option-like title, one with quotes) and the `open <id>`
+#     the service sends with the id from each answer; then `open ADR-0004`
+#     and `open logbook` (the Memory tab's target). The fake engine adds
+#     ADR-0005 and ADR-0006 to the index it writes; the editor launcher (a
+#     recorder) gets each path.
+mkdir -p "$work/home-decide"
+dtitle='Zed "second" editor'
+actions=$(jq -cn --arg t "$dtitle" '[["decide", "--help"], ["wait"], ["decide", $t], ["wait"],
+  ["open", "ADR-0004"], ["open", "logbook"]]')
+run decide 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide.record"
+argv_check decide "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q decide --no-edit --json -- --help)" "$(q open ADR-0005 --editor --json)" \
+  "$(q decide --no-edit --json -- "$dtitle")" "$(q open ADR-0006 --editor --json)" \
+  "$(q open ADR-0004 --editor --json)" "$(q open logbook --editor --json)")"
+expect decide .decideResult.text "Created ADR-0006 · $dtitle"
+expect decide .decideResult.ok true
+expect decide .decideResult.decisionId ADR-0006
+expect decide .openResult.text "Opened $work/home-decide/Seldon in omarchy-launch-editor"
+expect decide .lastError ""
+if [[ $(grep -a -c 'HARNESS action .* true$' "$work/decide.log") == 4 ]]; then
+  pass=$((pass + 1)); echo "ok   decide: all four calls queued"
+else
+  fail=$((fail + 1)); echo "FAIL decide: $(grep -a 'HARNESS action' "$work/decide.log")"
+fi
+decisions=$(jq -c '[.decisions[] | .id + " " + .status + " " + .path]' "$work/home-decide/.local/state/seldon/index.json" 2>/dev/null || true)
+want='["ADR-0006 proposed decisions/ADR-0006-zed-second-editor.md","ADR-0005 proposed decisions/ADR-0005-help.md","ADR-0004 proposed decisions/ADR-0004-ollama-user-service.md","ADR-0003 accepted decisions/ADR-0003-zed.md","ADR-0002 accepted decisions/ADR-0002-snapshots.md","ADR-0001 accepted decisions/ADR-0001-language.md"]'
+if [[ $decisions == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   decide: the fake engine's index lists the new decisions"
+else
+  fail=$((fail + 1)); echo "FAIL decide: index decisions $decisions"
+fi
+record_check decide "$(printf '%s\n' \
+  omarchy-launch-editor "$work/home-decide/Seldon/decisions/ADR-0005-help.md" -- \
+  omarchy-launch-editor "$work/home-decide/Seldon/decisions/ADR-0006-zed-second-editor.md" -- \
+  omarchy-launch-editor "$work/home-decide/Seldon/decisions/ADR-0004-ollama-user-service.md" -- \
+  omarchy-launch-editor "$work/home-decide/Seldon" --)"
+clean_log decide
+
+# 29. Refused before the engine is asked: a blank, two-line or non-text
+#     title, and open targets that are no decision id (a short or padded id,
+#     shell syntax, a path) or not a target at all (memory).
+mkdir -p "$work/home-decide-refused"
+actions=$(jq -cn '[["decide", ""], ["decide", " \t "], ["decide", "two\nlines"], ["decide", 42],
+  ["open", "ADR-4"], ["open", "ADR-0004; reboot"], ["open", "decisions/ADR-0001-language.md"], ["open", "memory"]]')
+run decide-refused 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide-refused.record"
+argv_check decide-refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+expect decide-refused .decideResult.text "Give the decision a title"
+expect decide-refused .decideResult.ok false
+expect decide-refused .openResult null
+if [[ $(grep -a -c 'HARNESS action .* false$' "$work/decide-refused.log") == 8 ]]; then
+  pass=$((pass + 1)); echo "ok   decide-refused: all eight refused"
+else
+  fail=$((fail + 1)); echo "FAIL decide-refused: $(grep -a 'HARNESS action' "$work/decide-refused.log")"
+fi
+
+# 30. The engine refuses: a held lock (exit 4) is the decide result and
+#     nothing is opened; an unknown decision is the open result (and the
+#     panel's error line). Dev mode refuses decide.
+mkdir -p "$work/home-decide-locked"
+actions=$(jq -cn '[["decide", "keep me"], ["wait"], ["open", "ADR-0009"]]')
+run decide-locked 2500 PATH="$work/bin-tools:$fake_path" HOME="$work/home-decide-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  FAKE_SELDON_LOCKED=1 HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/decide-locked.record"
+argv_check decide-locked "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q decide --no-edit --json -- "keep me")" "$(q open ADR-0009 --editor --json)")"
+expect decide-locked .decideResult.text "the logbook is locked by another seldon (pid 4242)"
+expect decide-locked .decideResult.ok false
+expect decide-locked .decideResult.decisionId ""
+expect decide-locked .openResult.text "unknown decision ADR-0009"
+expect decide-locked .lastError "seldon open: unknown decision ADR-0009"
+mkdir -p "$work/home-decide-dev"
+actions=$(jq -cn '[["decide", "x"]]')
+run decide-devmode 2500 PATH="$fake_path" HOME="$work/home-decide-dev" SELDON_INDEX="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect decide-devmode .decideResult.text "Dev mode is read-only"
+argv_check decide-dev "$(q --version --json)"
 
 real_home_check service-states
 

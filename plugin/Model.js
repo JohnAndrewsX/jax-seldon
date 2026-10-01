@@ -24,7 +24,11 @@ var CASE_ID = /^C-[0-9]{4}-[0-9]{3,}$/
 var EVENT_ID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/
 var ZONES = ["green", "yellow", "red"]
 var RISKS = ["R0", "R1", "R2", "R3"]
-var OPEN_TARGETS = ["journal", "ledger", "status"]
+// `seldon open` targets the panel uses; `logbook` (the logbook folder) stands
+// in for the memory files until the engine can open them (WP-023).
+var OPEN_TARGETS = ["journal", "ledger", "status", "logbook"]
+// schema/index.schema.json decisions[].id.
+var DECISION_ID = /^ADR-[0-9]{4}$/
 // schema/case.schema.json: priority, area; the steps of `seldon plan`.
 var PRIORITIES = ["high", "normal", "low"]
 var AREA = /^[a-z0-9][a-z0-9-]*$/
@@ -401,8 +405,8 @@ function validateArgs(args) {
   case "decide":
     return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
   case "open":
-    return !withText && n === 3 && (matches(OPEN_TARGETS, a[1]) || CASE_ID.test(a[1])) && a[2] === "--editor"
-      ? "" : "open must be: open journal|ledger|status|<caseId> --editor"
+    return !withText && n === 3 && (matches(OPEN_TARGETS, a[1]) || CASE_ID.test(a[1]) || DECISION_ID.test(a[1]))
+      && a[2] === "--editor" ? "" : "open must be: open journal|ledger|status|logbook|<caseId>|<ADR id> --editor"
   default:
     return "command not allowed: " + a[0]
   }
@@ -474,10 +478,11 @@ function logArgs(text, caseId) {
 }
 
 // `seldon open <what> --editor --json`: journal (today), ledger (this month),
-// status (STATUS.md) or a case id. Anything else is refused (null).
+// status (STATUS.md), logbook (the folder), a case id or a decision id.
+// Anything else is refused (null).
 function openArgs(what) {
   var w = String(what || "")
-  if (!matches(OPEN_TARGETS, w) && !CASE_ID.test(w)) return null
+  if (!matches(OPEN_TARGETS, w) && !CASE_ID.test(w) && !DECISION_ID.test(w)) return null
   return ["open", w, "--editor", "--json"]
 }
 
@@ -1384,4 +1389,123 @@ function moreDriftText(index) {
   var listed = index && Array.isArray(index.drift) ? index.drift.length : 0
   var more = c ? c.drift - listed : 0
   return more > 0 ? "+" + more + " more open drift " + (more === 1 ? "item" : "items") + " not listed here" : ""
+}
+
+// ---- Decisions (WP-023) -----------------------------------------------------
+
+// schema/index.schema.json decisions[].status.
+var DECISION_STATUSES = ["proposed", "accepted", "superseded"]
+
+// One row per decision, newest first: by id, highest number first (the
+// engine numbers decisions in the order they are made; the date is the
+// user's to edit). A row whose id does not match the schema pattern is
+// shown last and never opened (`actionable` false): the id goes into an
+// argument list. tone: "accent" for proposed (it waits for a decision),
+// "muted" for superseded.
+function decisionRows(index) {
+  var list = index && Array.isArray(index.decisions) ? index.decisions : []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var d = list[i]
+    if (!isObject(d)) continue
+    var id = str(d.id)
+    var status = matches(DECISION_STATUSES, d.status) ? d.status : ""
+    out.push({
+      id: id,
+      title: str(d.title),
+      status: status,
+      date: str(d.date),
+      path: str(d.path),
+      tone: status === "proposed" ? "accent" : status === "superseded" ? "muted" : "",
+      actionable: DECISION_ID.test(id)
+    })
+  }
+  out.sort(function(a, b) {
+    if (a.actionable !== b.actionable) return a.actionable ? -1 : 1
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
+  })
+  return out
+}
+
+// "4 decisions · 1 proposed", or "No decisions yet".
+function decisionSummary(rows) {
+  var n = Array.isArray(rows) ? rows.length : 0
+  if (n === 0) return "No decisions yet"
+  var proposed = rows.filter(function(r) { return r.status === "proposed" }).length
+  return plural(n, "decision", "decisions") + (proposed > 0 ? " · " + proposed + " proposed" : "")
+}
+
+// "2026-10-01 · decisions/ADR-0004-ollama-user-service.md"
+function decisionMeta(row) {
+  var parts = []
+  if (row.date !== "") parts.push(row.date)
+  if (row.path !== "") parts.push(row.path)
+  return parts.join(" · ")
+}
+
+// `seldon decide --no-edit --json -- <title>` (CONTRACT.md, SPEC-ENGINE §3):
+// the title is one argument after `--`, exactly as typed; the engine refuses
+// a title of more than one line, so the plugin does too. Returns { args } or
+// { error }.
+function decideArgs(title) {
+  if (!hasText(title)) return { error: "Give the decision a title" }
+  if (title.indexOf("\u0000") !== -1) return { error: "The title contains a NUL character" }
+  if (/[\r\n]/.test(title)) return { error: "The title must be one line" }
+  return { args: ["decide", "--no-edit", "--json", "--", title] }
+}
+
+// `seldon decide --json` → {"decision": {"id", "title", "status", "date",
+// "cases", "path"}, "editor", "git"}. Returns { ok, text, decisionId };
+// decisionId is "" unless the id matches the schema pattern, so only a
+// checked id is ever opened.
+function decideResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), decisionId: "" }
+  var data = parseJson(stdoutText)
+  var d = data && isObject(data.decision) ? data.decision : null
+  var id = d && typeof d.id === "string" && DECISION_ID.test(d.id) ? d.id : ""
+  var text = (id !== "" ? "Created " + id : "Decision created")
+    + (d && typeof d.title === "string" && d.title !== "" ? " · " + d.title : "")
+  return { ok: true, text: text, decisionId: id }
+}
+
+// ---- Memory (WP-023) --------------------------------------------------------
+
+// What the Memory tab opens. The engine's `seldon open` has no memory target
+// (SPEC-ENGINE §3), so every row opens the logbook folder for now; once the
+// engine has one, this and memoryRows() change, nothing else.
+var MEMORY_OPEN_TARGET = "logbook"
+
+// SPEC-PLUGIN §5, Memory: the `## ` headings of memory/lessons.md, then the
+// other memory files as the index lists them (most recently updated first).
+// Rows: { section, kind: "lesson"|"topic", title, meta, target }; `section`
+// is set on the first row of each section.
+function memoryRows(index) {
+  var m = index && isObject(index.memory) ? index.memory : {}
+  var lessons = Array.isArray(m.lessons) ? m.lessons : []
+  var topics = Array.isArray(m.topics) ? m.topics : []
+  var out = []
+  for (var i = 0; i < lessons.length; i++) {
+    if (!hasText(lessons[i])) continue
+    out.push({ section: "", kind: "lesson", title: lessons[i], meta: "", target: MEMORY_OPEN_TARGET })
+  }
+  if (out.length > 0) out[0].section = "LESSONS"
+  var first = out.length
+  for (var j = 0; j < topics.length; j++) {
+    var t = topics[j]
+    if (!isObject(t) || !hasText(t.topic)) continue
+    var meta = []
+    if (hasText(t.path)) meta.push(t.path)
+    if (hasText(t.updated)) meta.push("updated " + t.updated)
+    out.push({ section: "", kind: "topic", title: t.topic, meta: meta.join(" · "), target: MEMORY_OPEN_TARGET })
+  }
+  if (out.length > first) out[first].section = "TOPICS"
+  return out
+}
+
+// "3 lessons · 2 topics", or "".
+function memorySummary(rows) {
+  var list = Array.isArray(rows) ? rows : []
+  var lessons = list.filter(function(r) { return r.kind === "lesson" }).length
+  var topics = list.length - lessons
+  return list.length === 0 ? "" : plural(lessons, "lesson", "lessons") + " · " + plural(topics, "topic", "topics")
 }

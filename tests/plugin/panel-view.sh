@@ -83,6 +83,7 @@ expect() {
 }
 
 # shows <case> <step> <text> — the text is visible on screen at that step.
+# The text goes into a jq string literal: write a `"` in it as `\"`.
 shows() {
   expect "$1" "$2" "[.texts[] | select(. == \"$3\")] | length > 0" true
 }
@@ -151,11 +152,10 @@ clean_log sample
 
 # 2. Keyboard (SPEC-PLUGIN §5): Tab / Shift-Tab only hand over to the
 #    neighbouring bar panel (a stand-in bar records the direction); ←/→ and
-#    h/l switch tabs; digits are fixed per tab id (Today 1, Changelog 2,
-#    Work 3, System 5) and the digit of an absent tab (4 = Decisions) does
-#    nothing.
+#    h/l switch tabs and wrap; digits are fixed per tab id (Today 1,
+#    Changelog 2, Work 3, Decisions 4, System 5, Memory 6).
 run keys "$fx/index.sample.json" \
-  "key:Tab;key:Backtab;key:Right;key:Right;key:Right;key:Right;key:Left;text:l;text:h;text:5;text:4;text:3;text:1;text:2;key:Down;key:Down*2;text:k;text:j;key:Return;key:Escape" \
+  "key:Tab;key:Backtab;key:Right;key:Right;key:Right;key:Right;key:Right;key:Right;key:Left;text:l;text:h;text:5;text:4;text:6;text:3;text:1;text:2;key:Down;key:Down*2;text:k;text:j;key:Return;key:Escape" \
   HARNESS_BAR=1
 expect keys 1 .view.tab today
 expect keys 1 '.switches | join(",")' 1
@@ -163,22 +163,25 @@ expect keys 2 .view.tab today
 expect keys 2 '.switches | join(",")' "1,-1"
 expect keys 3 .view.tab changelog
 expect keys 4 .view.tab work
-expect keys 5 .view.tab system
-expect keys 6 .view.tab today
-expect keys 7 .view.tab system
+expect keys 5 .view.tab decisions
+expect keys 6 .view.tab system
+expect keys 7 .view.tab memory
 expect keys 8 .view.tab today
-expect keys 9 .view.tab system
-expect keys 10 .view.tab system
-expect keys 11 .view.tab system
-expect keys 12 .view.tab work
-expect keys 13 .view.tab today
-expect keys 14 .view.tab changelog
-expect keys 14 '.switches | length' 2
-expect keys 15 .view.cursorActive true
-expect keys 16 .view.cursor 2
-expect keys 17 .view.cursor 1
-expect keys 18 .view.cursor 2
-expect keys 20 .view.opened false
+expect keys 9 .view.tab memory
+expect keys 10 .view.tab today
+expect keys 11 .view.tab memory
+expect keys 12 .view.tab system
+expect keys 13 .view.tab decisions
+expect keys 14 .view.tab memory
+expect keys 15 .view.tab work
+expect keys 16 .view.tab today
+expect keys 17 .view.tab changelog
+expect keys 17 '.switches | length' 2
+expect keys 18 .view.cursorActive true
+expect keys 19 .view.cursor 2
+expect keys 20 .view.cursor 1
+expect keys 21 .view.cursor 2
+expect keys 23 .view.opened false
 clean_log keys
 
 # 3. The yesterday row opens with Enter and stays in view (the list scrolls
@@ -202,7 +205,7 @@ shows snapper 3 "failing · snapper: No permissions. The snapper config does not
 clean_log snapper
 
 # 5. Not initialised: the banner, no strip, empty tabs.
-run uninit "$fx/index-variants/not-initialised.json" "view;tab:changelog;tab:system;tab:work;text:+"
+run uninit "$fx/index-variants/not-initialised.json" "view;tab:changelog;tab:system;tab:work;text:+;tab:decisions;text:d;tab:memory"
 expect uninit 1 .view.banner "Logbook not initialised"
 expect uninit 1 .view.crisis ""
 shows uninit 1 "No index to show"
@@ -212,6 +215,11 @@ expect uninit 4 '.view.work.columns | join(",")' "queued 0,active 0,completed 0"
 expect uninit 4 .view.work.card null
 shows uninit 4 "No index to show"
 expect uninit 5 .view.work.sheet.open false
+expect uninit 6 '.view.decisions.rows | length' 0
+shows uninit 6 "No index to show"
+expect uninit 7 .view.decisions.sheet.open false
+expect uninit 8 '.view.memory.rows | length' 0
+shows uninit 8 "No index to show"
 clean_log uninit
 
 # 6. Every system field is optional: an empty section and none at all.
@@ -716,6 +724,147 @@ else
   fail=$((fail + 1)); echo "FAIL drift-show-member: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
 fi
 clean_log drift-show-member
+
+# 20. Decisions and Memory on the sample (dev mode, read-only; WP-023): `4`
+#     shows the four decisions newest first with id, status, title, date and
+#     file, the proposed one first; ↑/↓ and a click on a title move the
+#     cursor; Enter and `e` try to open the decision and are refused with
+#     dev mode's reason; `d` opens no sheet without an engine to write. `6`
+#     shows three lessons and two topics with path and date (the cursor
+#     stays active across tabs, so ↓ moves at once).
+run decisions "$fx/index.sample.json" \
+  "text:4;key:Down;key:Down*2;key:Down*5;key:Up;click:Zed statt VS Code als Zweiteditor;key:Return;text:e;text:d;text:6;key:Down;key:Down*2;key:Down*9;key:Return"
+expect decisions 1 .view.tab decisions
+expect decisions 1 '.view.decisions.rows | join(",")' "ADR-0004 proposed,ADR-0003 accepted,ADR-0002 accepted,ADR-0001 accepted"
+expect decisions 1 .view.decisions.cursor ADR-0004
+for text in "4 decisions · 1 proposed" "New decision" "ADR-0004" "proposed" "Ollama nur als User-Service mit Case" \
+  "2026-10-01 · decisions/ADR-0004-ollama-user-service.md" "ADR-0001" "accepted" "Logbuch-Sprache Deutsch, Struktur Englisch" \
+  "2026-09-01 · decisions/ADR-0001-language.md" "2 changes in the red zone need a reason"; do
+  shows decisions 1 "$text"
+done
+expect decisions 2 .view.cursorActive true
+expect decisions 2 .view.decisions.cursor ADR-0004
+expect decisions 3 .view.decisions.cursor ADR-0002
+shows decisions 3 "Open"
+expect decisions 4 .view.decisions.cursor ADR-0001
+expect decisions 5 .view.decisions.cursor ADR-0002
+expect decisions 6 .view.decisions.cursor ADR-0003
+expect decisions 7 .view.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
+expect decisions 8 .view.openResult "dev mode (SELDON_INDEX): engine calls are disabled"
+expect decisions 9 .view.decisions.sheet.open false
+expect decisions 10 .view.tab memory
+expect decisions 10 '.view.memory.rows | join(" | ")' \
+  "lesson \`omarchy pkg add\` statt yay direkt | lesson Theme-Overrides nie im Omarchy-Repo | lesson Hyprland reload nach bindings.conf | topic omarchy | topic hyprland"
+expect decisions 10 '.view.memory.sections | join(",")' "LESSONS,TOPICS"
+for text in "3 lessons · 2 topics" "Opens the logbook folder; the files are in memory/" "LESSONS" "TOPICS" \
+  "Theme-Overrides nie im Omarchy-Repo" "omarchy" "memory/omarchy.md · updated 2026-10-01" \
+  "hyprland" "memory/hyprland.md · updated 2026-09-13" "Open"; do
+  shows decisions 10 "$text"
+done
+expect decisions 12 .view.memory.cursor omarchy
+expect decisions 13 .view.memory.cursor hyprland
+expect decisions 14 .view.lastError "dev mode (SELDON_INDEX): engine calls are disabled"
+clean_log decisions
+
+# 21. Decisions live, against the fake engine, with real keys: `d` opens the
+#     sheet; the title `--help "q"` is typed into it (no tab switch, no
+#     digit); Enter arms ("Press Enter again: …"), a change to the title
+#     disarms, Enter twice creates it: `decide --no-edit --json -- <title>`,
+#     then `open ADR-0005 --editor --json` from the answer; the sheet closes,
+#     the keys come back and the cursor sits on ADR-0005 once the index
+#     lists it. Then Enter, *Open* and `e` open decisions, and on Memory
+#     Enter and *Open* open the logbook. The exact argv and editor paths.
+mkdir -p "$work/home-decisions-live"
+run decisions-live "" \
+  "text:4;text:d;type:--help \"q\";key:Return;key:Backspace;type:\";key:Return;key:Return;settle;wait:decisions.cursor=ADR-0005;key:Down;key:Down*2;key:Return;settle;click:Open;settle;key:Up;text:e;settle;text:6;key:Down;key:Down*4;key:Return;settle;click:Open;settle" \
+  HOME="$work/home-decisions-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECORD="$work/decisions-live.record"
+expect decisions-live 1 .view.tab decisions
+expect decisions-live 2 .view.decisions.sheet.open true
+expect decisions-live 2 .view.decisions.sheet.editing true
+shows decisions-live 2 "NEW DECISION"
+shows decisions-live 2 "Title, Enter twice creates the decision"
+expect decisions-live 3 .view.decisions.sheet.title '--help "q"'
+expect decisions-live 3 .view.tab decisions
+expect decisions-live 4 .view.decisions.sheet.armed true
+expect decisions-live 4 .view.decisions.sheet.hint 'Press Enter again: create the decision “--help "q"”'
+shows decisions-live 4 'Press Enter again: create the decision “--help \"q\"”'
+expect decisions-live 5 .view.decisions.sheet.armed false
+expect decisions-live 5 .view.decisions.sheet.title '--help "q'
+expect decisions-live 6 .view.decisions.sheet.armed false
+expect decisions-live 7 .view.decisions.sheet.armed true
+expect decisions-live 10 .view.decisions.sheet.open false
+expect decisions-live 10 .view.decisions.sheet.editing false
+expect decisions-live 10 .view.decisions.sheet.title ""
+expect decisions-live 10 .view.decisions.result 'Created ADR-0005 · --help "q"'
+expect decisions-live 10 '.view.decisions.rows | join(",")' \
+  "ADR-0005 proposed,ADR-0004 proposed,ADR-0003 accepted,ADR-0002 accepted,ADR-0001 accepted"
+shows decisions-live 10 'Created ADR-0005 · --help \"q\"'
+shows decisions-live 10 "5 decisions · 2 proposed"
+shows decisions-live 10 "2026-10-01 · decisions/ADR-0005-help-q.md"
+expect decisions-live 11 .view.cursorActive true
+expect decisions-live 12 .view.decisions.cursor ADR-0003
+expect decisions-live 14 .view.openResult "Opened $work/home-decisions-live/Seldon/decisions/ADR-0003-zed.md in omarchy-launch-editor"
+expect decisions-live 17 .view.decisions.cursor ADR-0004
+expect decisions-live 19 .view.openResult "Opened $work/home-decisions-live/Seldon/decisions/ADR-0004-ollama-user-service.md in omarchy-launch-editor"
+expect decisions-live 21 .view.memory.cursor "Theme-Overrides nie im Omarchy-Repo"
+expect decisions-live 22 .view.memory.cursor hyprland
+expect decisions-live 24 .view.openResult "Opened $work/home-decisions-live/Seldon in omarchy-launch-editor"
+expect decisions-live 26 .view.lastError ""
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q decide --no-edit --json -- '--help "q"')" "$(q open ADR-0005 --editor --json)" \
+  "$(q open ADR-0003 --editor --json)" "$(q open ADR-0003 --editor --json)" "$(q open ADR-0004 --editor --json)" \
+  "$(q open logbook --editor --json)" "$(q open logbook --editor --json)")
+got=$(cat "$work/home-decisions-live/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   decisions-live: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL decisions-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+d="$work/home-decisions-live/Seldon"
+want=$(printf '%s\n' omarchy-launch-editor "$d/decisions/ADR-0005-help-q.md" -- \
+  omarchy-launch-editor "$d/decisions/ADR-0003-zed.md" -- omarchy-launch-editor "$d/decisions/ADR-0003-zed.md" -- \
+  omarchy-launch-editor "$d/decisions/ADR-0004-ollama-user-service.md" -- \
+  omarchy-launch-editor "$d" -- omarchy-launch-editor "$d" --)
+got=$(cat "$work/decisions-live.record" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   decisions-live: editor paths"
+else
+  fail=$((fail + 1)); echo "FAIL decisions-live: editor launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log decisions-live
+
+# 22. Refusals keep the title: Enter on a blank title is refused in the
+#     plugin; the engine refuses the decision (lock held, exit 4): the sheet
+#     shows its message and keeps the title, nothing is opened; Esc gives the
+#     keys back and the tab shows the refusal; `d` brings the sheet back with
+#     the title.
+mkdir -p "$work/home-decisions-locked"
+run decisions-locked "" "text:4;text:d;key:Return;type:keep me;key:Return;key:Return;settle;key:Escape;view;text:d" \
+  HOME="$work/home-decisions-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_LOCKED=1
+expect decisions-locked 3 .view.decisions.sheet.result "Give the decision a title"
+expect decisions-locked 3 .view.decisions.sheet.armed false
+expect decisions-locked 4 .view.decisions.sheet.result ""
+expect decisions-locked 7 .view.decisions.sheet.result "the logbook is locked by another seldon (pid 4242)"
+expect decisions-locked 7 .view.decisions.sheet.title "keep me"
+expect decisions-locked 7 .view.decisions.sheet.editing true
+expect decisions-locked 7 .view.decisions.resultOk false
+shows decisions-locked 7 "the logbook is locked by another seldon (pid 4242)"
+expect decisions-locked 8 .view.decisions.sheet.open false
+expect decisions-locked 8 .view.decisions.sheet.editing false
+shows decisions-locked 9 "the logbook is locked by another seldon (pid 4242)"
+expect decisions-locked 9 .view.lastError ""
+expect decisions-locked 10 .view.decisions.sheet.open true
+expect decisions-locked 10 .view.decisions.sheet.title "keep me"
+expect decisions-locked 10 .view.decisions.sheet.editing true
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q decide --no-edit --json -- "keep me")")
+got=$(cat "$work/home-decisions-locked/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   decisions-locked: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL decisions-locked: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log decisions-locked
 
 real_home_check panel-view
 
