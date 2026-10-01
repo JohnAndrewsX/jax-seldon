@@ -1,0 +1,2995 @@
+{
+  "contractVersion": 1,
+  "generatedAt": "2026-10-01T17:05:12+02:00",
+  "engineVersion": "0.1.0",
+  "logbook": {
+    "path": "/home/user/Seldon",
+    "language": "de",
+    "machine": "workstation-7f3a",
+    "git": {
+      "head": "a1b2c3d",
+      "dirty": false
+    }
+  },
+  "state": {
+    "status": "ok",
+    "lastCapture": "2026-10-01T17:05:00+02:00",
+    "collectors": [
+      {
+        "name": "pacman",
+        "enabled": true,
+        "ok": true,
+        "lastRun": "2026-10-01T17:05:00+02:00"
+      },
+      {
+        "name": "snapper",
+        "enabled": true,
+        "ok": true,
+        "lastRun": "2026-10-01T17:05:00+02:00"
+      },
+      {
+        "name": "omarchy",
+        "enabled": true,
+        "ok": true,
+        "lastRun": "2026-10-01T17:05:00+02:00"
+      },
+      {
+        "name": "plugins",
+        "enabled": true,
+        "ok": false,
+        "lastRun": "2026-10-01T17:05:00+02:00",
+        "message": "omarchy plugin list --json: timed out"
+      },
+      {
+        "name": "theme",
+        "enabled": true,
+        "ok": true,
+        "lastRun": "2026-10-01T17:05:00+02:00"
+      },
+      {
+        "name": "config",
+        "enabled": true,
+        "ok": true,
+        "lastRun": "2026-10-01T17:05:00+02:00"
+      }
+    ]
+  },
+  "summary": {
+    "activeCases": 2,
+    "queuedCases": 3,
+    "openDrift": 4,
+    "crisis": 2,
+    "eventsToday": 30,
+    "events7d": 41
+  },
+  "today": {
+    "date": "2026-10-01",
+    "path": "journal/2026/2026-10-01.md",
+    "entries": [
+      {
+        "time": "09:25",
+        "actor": "agent:claude-code",
+        "case": "C-2026-003",
+        "text": "`omarchy update` durchgelaufen (4.0.6-1 → 4.0.7-1), Snapshot 112 vorher. Hyprland 0.53 läuft. Offen: Release-Notes gegen die eigenen Bindings abgleichen."
+      },
+      {
+        "time": "10:40",
+        "actor": "agent:claude-code",
+        "case": "C-2026-004",
+        "text": "Zed installiert, Keybindings nach Omarchy-Defaults gesetzt. Gelernt: `omarchy pkg add` statt yay, dann landet es sauber im Ledger."
+      },
+      {
+        "time": "14:40",
+        "actor": "human",
+        "case": null,
+        "text": "Codex hat ollama ohne Case installiert, samt User-Service. Snapshot 113 gemacht; morgen entscheiden, ob es bleibt (Vorschlag ADR-0004)."
+      },
+      {
+        "time": "17:00",
+        "actor": "human",
+        "case": "C-2026-004",
+        "text": "Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox."
+      }
+    ],
+    "yesterday": [
+      {
+        "time": "19:10",
+        "actor": "human",
+        "case": null,
+        "text": "Snapshots aufgeräumt, 108 und 109 gelöscht."
+      }
+    ]
+  },
+  "events": [
+    {
+      "id": "01M3VZNFC0M2FQVGJBZGX9KDF7",
+      "ts": "2026-10-01T17:00:00+02:00",
+      "source": "manual",
+      "kind": "note",
+      "subject": "C-2026-004",
+      "detail": "Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.",
+      "actor": "human",
+      "case": "C-2026-004"
+    },
+    {
+      "id": "01M3VXYNF0XTBDWFTZP1412REN",
+      "ts": "2026-10-01T16:30:04+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "115",
+      "detail": "tailscale: MagicDNS",
+      "actor": "system",
+      "meta": {
+        "type": "post",
+        "cleanup": "",
+        "pairOf": 114
+      }
+    },
+    {
+      "id": "01M3VXYHJ0CDTAWEV5WRW4C0C2",
+      "ts": "2026-10-01T16:30:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "114",
+      "detail": "tailscale: MagicDNS",
+      "actor": "system",
+      "meta": {
+        "type": "pre",
+        "cleanup": ""
+      }
+    },
+    {
+      "id": "01M3VWSXP0SCPF5TBS4PCB12ZC",
+      "ts": "2026-10-01T16:10:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-add",
+      "subject": "io.github.example.tyme",
+      "detail": "1.1.0",
+      "actor": "system",
+      "zone": "yellow",
+      "resolution": "explained",
+      "resolutionDetail": "Zeiterfassung nur zum Testen, noch nicht in der Bar.",
+      "meta": {
+        "version": "1.1.0",
+        "enabled": false
+      }
+    },
+    {
+      "id": "01M3VTGNY0NZG4AY80814WSKGR",
+      "ts": "2026-10-01T15:30:00+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "tokyo-night",
+      "detail": "kanagawa → tokyo-night",
+      "actor": "human",
+      "zone": "yellow",
+      "meta": {
+        "from": "kanagawa",
+        "to": "tokyo-night"
+      }
+    },
+    {
+      "id": "01M3VQN4807PWS1QE2RYRV2E4E",
+      "ts": "2026-10-01T14:40:00+02:00",
+      "source": "manual",
+      "kind": "note",
+      "subject": "journal",
+      "detail": "Codex hat ollama ohne Case installiert, samt User-Service. Snapshot 113 gemacht; morgen entscheiden, ob es bleibt (Vorschlag ADR-0004).",
+      "actor": "human"
+    },
+    {
+      "id": "01M3VQ2TA0HFEWFW5PT72E64FK",
+      "ts": "2026-10-01T14:30:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "113",
+      "detail": "pre: ollama",
+      "actor": "system",
+      "meta": {
+        "type": "single",
+        "cleanup": ""
+      }
+    },
+    {
+      "id": "01M3VNJ9JGZ9169T01XCW16FT0",
+      "ts": "2026-10-01T14:03:30+02:00",
+      "source": "config",
+      "kind": "config-add",
+      "subject": "~/.config/systemd/user/ollama.service",
+      "detail": "sha256 — → c0243ca5",
+      "actor": "agent:codex",
+      "zone": "red",
+      "meta": {
+        "hashTo": "c0243ca5c3421df489cb0d4a060f3f4c47490a2a9752c20ce5f6ef84665827bc"
+      }
+    },
+    {
+      "id": "01M3VNHD88HSQHSVJ6ZNCXDK1W",
+      "ts": "2026-10-01T14:03:01+02:00",
+      "source": "agent",
+      "kind": "command",
+      "subject": "tee",
+      "actor": "agent:codex",
+      "zone": "red",
+      "meta": {
+        "command": "tee ~/.config/systemd/user/ollama.service"
+      }
+    },
+    {
+      "id": "01M3VNFTF8EVHWFFZ687N14Q0C",
+      "ts": "2026-10-01T14:02:09+02:00",
+      "source": "pacman",
+      "kind": "install",
+      "subject": "ollama",
+      "detail": "0.6.1-1",
+      "actor": "agent:codex",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20261001T140209",
+      "meta": {
+        "command": "pacman -S --noconfirm ollama",
+        "version": "0.6.1-1"
+      }
+    },
+    {
+      "id": "01M3VNF5Z06QEBJEEMHS802D2F",
+      "ts": "2026-10-01T14:01:48+02:00",
+      "source": "agent",
+      "kind": "command",
+      "subject": "pacman",
+      "actor": "agent:codex",
+      "zone": "red",
+      "meta": {
+        "command": "sudo pacman -S --noconfirm ollama"
+      }
+    },
+    {
+      "id": "01M3VF44WRRE97RKE4HY66YBV0",
+      "ts": "2026-10-01T12:10:55+02:00",
+      "source": "seldon",
+      "kind": "case-verified",
+      "subject": "C-2026-008",
+      "actor": "human",
+      "case": "C-2026-008"
+    },
+    {
+      "id": "01M3VDBX30F5DH0JNY7S0K95GC",
+      "ts": "2026-10-01T11:40:12+02:00",
+      "source": "pacman",
+      "kind": "install",
+      "subject": "tailscale",
+      "detail": "1.102.3-1",
+      "actor": "system",
+      "case": "C-2026-008",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20261001T114012",
+      "resolution": "linked",
+      "meta": {
+        "command": "pacman -S --noconfirm --needed tailscale",
+        "version": "1.102.3-1"
+      }
+    },
+    {
+      "id": "01M3VC9Z50ZYXN39KS9VY1T5VJ",
+      "ts": "2026-10-01T11:21:40+02:00",
+      "source": "seldon",
+      "kind": "case-started",
+      "subject": "C-2026-008",
+      "actor": "human",
+      "case": "C-2026-008"
+    },
+    {
+      "id": "01M3VC74ARPB23HG486VS0V52M",
+      "ts": "2026-10-01T11:20:07+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-008",
+      "detail": "Tailscale für Fernzugriff einrichten",
+      "actor": "human",
+      "case": "C-2026-008"
+    },
+    {
+      "id": "01M3VB2V6G1EE4HHZ9SB8SRKMS",
+      "ts": "2026-10-01T11:00:18+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-007",
+      "detail": "Herdr-Orchestrator als Default-Agent registrieren",
+      "actor": "human",
+      "case": "C-2026-007"
+    },
+    {
+      "id": "01M3V9XQPG3XSQHDE1KSNTZRQA",
+      "ts": "2026-10-01T10:40:02+02:00",
+      "source": "config",
+      "kind": "config-change",
+      "subject": "~/.config/hypr/bindings.conf",
+      "detail": "sha256 3b385861 → 09688c64",
+      "actor": "agent:claude-code",
+      "case": "C-2026-004",
+      "zone": "yellow",
+      "meta": {
+        "hashFrom": "3b385861a45434b52df011d29bd162931e7669d3401c29a1f0da128c9694d90c",
+        "hashTo": "09688c642450e34eccc5ca90f344b9165a92dce56a26945306987fe927acf33f"
+      }
+    },
+    {
+      "id": "01M3V9W9SRGN5446Q2PXBRP7VK",
+      "ts": "2026-10-01T10:39:15+02:00",
+      "source": "agent",
+      "kind": "command",
+      "subject": "sed",
+      "actor": "agent:claude-code",
+      "case": "C-2026-004",
+      "zone": "yellow",
+      "meta": {
+        "command": "sed -i 's/^bindd = SUPER, E, Editor, exec, .*/bindd = SUPER, E, Editor, exec, zeditor/' ~/.config/hypr/bindings.conf"
+      }
+    },
+    {
+      "id": "01M3V9VHCGTNRG2J62SMNR51TG",
+      "ts": "2026-10-01T10:38:50+02:00",
+      "source": "agent",
+      "kind": "command",
+      "subject": "tee",
+      "actor": "agent:claude-code",
+      "case": "C-2026-004",
+      "zone": "green",
+      "meta": {
+        "command": "tee ~/.config/zed/settings.json"
+      }
+    },
+    {
+      "id": "01M3V8AJ08NT7N105393XZXCP7",
+      "ts": "2026-10-01T10:12:05+02:00",
+      "source": "pacman",
+      "kind": "install",
+      "subject": "zed",
+      "detail": "0.198.4-1",
+      "actor": "agent:claude-code",
+      "case": "C-2026-004",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20261001T101204",
+      "meta": {
+        "command": "pacman -S --needed --noconfirm --config /etc/pacman.conf -- extra/zed",
+        "version": "0.198.4-1"
+      }
+    },
+    {
+      "id": "01M3V8AH10ZEXZ7FAKN156ZB0D",
+      "ts": "2026-10-01T10:12:04+02:00",
+      "source": "pacman",
+      "kind": "install",
+      "subject": "alsa-lib",
+      "detail": "1.2.14-1",
+      "actor": "agent:claude-code",
+      "case": "C-2026-004",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20261001T101204",
+      "meta": {
+        "command": "pacman -S --needed --noconfirm --config /etc/pacman.conf -- extra/zed",
+        "version": "1.2.14-1"
+      }
+    },
+    {
+      "id": "01M3V896207DAXT81MX8G98WZW",
+      "ts": "2026-10-01T10:11:20+02:00",
+      "source": "agent",
+      "kind": "command",
+      "subject": "yay",
+      "actor": "agent:claude-code",
+      "case": "C-2026-004",
+      "zone": "red",
+      "meta": {
+        "command": "yay -S --noconfirm zed"
+      }
+    },
+    {
+      "id": "01M3V7YK6891ZSJXXNNRGHJPWN",
+      "ts": "2026-10-01T10:05:33+02:00",
+      "source": "seldon",
+      "kind": "case-started",
+      "subject": "C-2026-004",
+      "actor": "human",
+      "case": "C-2026-004"
+    },
+    {
+      "id": "01M3V5D0V0YT5KRGAHD1VQDF2Q",
+      "ts": "2026-10-01T09:21:00+02:00",
+      "source": "omarchy",
+      "kind": "update",
+      "subject": "omarchy",
+      "detail": "4.0.6-1 → 4.0.7-1",
+      "actor": "agent:claude-code",
+      "case": "C-2026-003",
+      "zone": "red",
+      "meta": {
+        "from": "4.0.6-1",
+        "to": "4.0.7-1"
+      }
+    },
+    {
+      "id": "01M3V505PRK95EXCMDQW91M9FG",
+      "ts": "2026-10-01T09:13:59+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "omarchy",
+      "detail": "4.0.6-1 → 4.0.7-1",
+      "actor": "agent:claude-code",
+      "case": "C-2026-003",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20261001T091358",
+      "meta": {
+        "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
+        "from": "4.0.6-1",
+        "to": "4.0.7-1"
+      }
+    },
+    {
+      "id": "01M3V504QG60MBGRBA2257PVQC",
+      "ts": "2026-10-01T09:13:58+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "hyprland",
+      "detail": "0.52.1-1 → 0.53.0-1",
+      "actor": "agent:claude-code",
+      "case": "C-2026-003",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20261001T091358",
+      "meta": {
+        "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
+        "from": "0.52.1-1",
+        "to": "0.53.0-1"
+      }
+    },
+    {
+      "id": "01M3V4T4B8J32CE6CP7FQ4SS42",
+      "ts": "2026-10-01T09:10:41+02:00",
+      "source": "pacman",
+      "kind": "reinstall",
+      "subject": "archlinux-keyring",
+      "detail": "20260902-1",
+      "actor": "agent:claude-code",
+      "case": "C-2026-003",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20261001T091041",
+      "meta": {
+        "command": "pacman -Sy --noconfirm archlinux-keyring",
+        "version": "20260902-1"
+      }
+    },
+    {
+      "id": "01M3V4SFV0S2FYJVNPZBA4M4WH",
+      "ts": "2026-10-01T09:10:20+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "112",
+      "detail": "4.0.6-1",
+      "actor": "system",
+      "meta": {
+        "type": "single",
+        "cleanup": "number"
+      }
+    },
+    {
+      "id": "01M3V4RY8GW92AWEZ8KFTHZRAW",
+      "ts": "2026-10-01T09:10:02+02:00",
+      "source": "agent",
+      "kind": "command",
+      "subject": "omarchy",
+      "actor": "agent:claude-code",
+      "case": "C-2026-003",
+      "zone": "red",
+      "meta": {
+        "command": "omarchy update"
+      }
+    },
+    {
+      "id": "01M3V4G320A9GP84AK3T0Y9E3Z",
+      "ts": "2026-10-01T09:05:12+02:00",
+      "source": "seldon",
+      "kind": "case-started",
+      "subject": "C-2026-003",
+      "actor": "human",
+      "case": "C-2026-003"
+    },
+    {
+      "id": "01M3SXBRV0WPNQ721VWGG2WXZ1",
+      "ts": "2026-09-30T21:41:16+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "libinput",
+      "detail": "1.29.1-1 → 1.29.2-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260930T214115",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1.29.1-1",
+        "to": "1.29.2-1"
+      }
+    },
+    {
+      "id": "01M3SXBRV0E702XKBM22HEV1B8",
+      "ts": "2026-09-30T21:41:16+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "noto-fonts",
+      "detail": "1:2026.09.01-1 → 1:2026.09.15-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260930T214115",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1:2026.09.01-1",
+        "to": "1:2026.09.15-1"
+      }
+    },
+    {
+      "id": "01M3SXBQVR7AW8PJQC1YXDCQ14",
+      "ts": "2026-09-30T21:41:15+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "firefox",
+      "detail": "143.0.1-1 → 143.0.2-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260930T214115",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "143.0.1-1",
+        "to": "143.0.2-1"
+      }
+    },
+    {
+      "id": "01M3SMPSJ0P7PCQDY2VZ7K3VSX",
+      "ts": "2026-09-30T19:10:00+02:00",
+      "source": "manual",
+      "kind": "note",
+      "subject": "journal",
+      "detail": "Snapshots aufgeräumt, 108 und 109 gelöscht.",
+      "actor": "human"
+    },
+    {
+      "id": "01M3SMDMK0RCJ6PPV42KCVBEDJ",
+      "ts": "2026-09-30T19:05:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot-delete",
+      "subject": "108",
+      "detail": "monitors",
+      "actor": "system",
+      "meta": {
+        "type": "pre"
+      }
+    },
+    {
+      "id": "01M3SMDMK0GFCBHX2HAVHMNZES",
+      "ts": "2026-09-30T19:05:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot-delete",
+      "subject": "109",
+      "detail": "monitors",
+      "actor": "system",
+      "meta": {
+        "type": "post"
+      }
+    },
+    {
+      "id": "01M3SM4FM0WHVDBXC52CDDPXR7",
+      "ts": "2026-09-30T19:00:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "111",
+      "detail": "vor Snapshot-Aufräumen",
+      "actor": "system",
+      "meta": {
+        "type": "single",
+        "cleanup": ""
+      }
+    },
+    {
+      "id": "01M3RN7VW8CQ743JX06DX94K2D",
+      "ts": "2026-09-30T10:00:05+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-006",
+      "detail": "Snapper-Retention auf 14 Tage",
+      "actor": "human",
+      "case": "C-2026-006"
+    },
+    {
+      "id": "01M3Q3F9Z08J1QW989HBCEGTNR",
+      "ts": "2026-09-29T19:30:20+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-005",
+      "detail": "Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim)",
+      "actor": "human",
+      "case": "C-2026-005"
+    },
+    {
+      "id": "01M3MKEDQ8MXG8VM5YXX5RMHBT",
+      "ts": "2026-09-28T20:11:45+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-004",
+      "detail": "Zed als zweiten Editor installieren",
+      "actor": "human",
+      "case": "C-2026-004"
+    },
+    {
+      "id": "01M3F79KG03PMFQ1ERMRS9VRP7",
+      "ts": "2026-09-26T18:03:12+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-003",
+      "detail": "Omarchy auf 4.0.7 aktualisieren",
+      "actor": "human",
+      "case": "C-2026-003"
+    },
+    {
+      "id": "01M3A5RK9GGCM0KRRCQ47NGCN0",
+      "ts": "2026-09-24T19:00:14+02:00",
+      "source": "plugins",
+      "kind": "plugin-update",
+      "subject": "io.github.example.weather-plus",
+      "detail": "1.2.0 → 1.3.0",
+      "actor": "system",
+      "zone": "yellow",
+      "resolution": "explained",
+      "resolutionDetail": "omarchy plugin update, nur das Widget.",
+      "meta": {
+        "from": "1.2.0",
+        "to": "1.3.0"
+      }
+    },
+    {
+      "id": "01M30363YR87Y4YKAVFT0SPZPX",
+      "ts": "2026-09-20T21:02:47+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "kanagawa",
+      "detail": "osaka-jade → kanagawa",
+      "actor": "human",
+      "zone": "yellow",
+      "resolution": "dismissed",
+      "resolutionDetail": "Nur ausprobiert.",
+      "meta": {
+        "from": "osaka-jade",
+        "to": "kanagawa"
+      }
+    },
+    {
+      "id": "01M2K4BGV8HSKV60FDZBSG4SEV",
+      "ts": "2026-09-15T20:13:05+02:00",
+      "source": "omarchy",
+      "kind": "update",
+      "subject": "omarchy",
+      "detail": "4.0.5-1 → 4.0.6-1",
+      "actor": "system",
+      "zone": "red",
+      "resolution": "explained",
+      "resolutionDetail": "Routine-Update mit omarchy update, Snapshot 110 davor.",
+      "meta": {
+        "from": "4.0.5-1",
+        "to": "4.0.6-1"
+      }
+    },
+    {
+      "id": "01M2K48N1RZTPJP2Y9NY802TZV",
+      "ts": "2026-09-15T20:11:31+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "omarchy",
+      "detail": "4.0.5-1 → 4.0.6-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260915T201131",
+      "resolution": "explained",
+      "resolutionDetail": "Routine-Update mit omarchy update, Snapshot 110 davor.",
+      "meta": {
+        "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
+        "from": "4.0.5-1",
+        "to": "4.0.6-1"
+      }
+    },
+    {
+      "id": "01M2K467X05E02JGGCDQ5VJ2FT",
+      "ts": "2026-09-15T20:10:12+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "110",
+      "detail": "4.0.5-1",
+      "actor": "system",
+      "meta": {
+        "type": "single",
+        "cleanup": "number"
+      }
+    },
+    {
+      "id": "01M2CZYKN89SZ965H0WQHWVT9R",
+      "ts": "2026-09-13T11:00:41+02:00",
+      "source": "seldon",
+      "kind": "case-completed",
+      "subject": "C-2026-002",
+      "actor": "human",
+      "case": "C-2026-002"
+    },
+    {
+      "id": "01M2CZTKQGYDYRBHNCVJA5W315",
+      "ts": "2026-09-13T10:58:30+02:00",
+      "source": "seldon",
+      "kind": "case-verified",
+      "subject": "C-2026-002",
+      "actor": "human",
+      "case": "C-2026-002"
+    },
+    {
+      "id": "01M2ADMJK8H2NCRVDF2RA9WA56",
+      "ts": "2026-09-12T11:02:09+02:00",
+      "source": "manual",
+      "kind": "correction",
+      "subject": "C-2026-002",
+      "detail": "Skalierung ist 1.25, nicht 1.5.",
+      "actor": "human",
+      "case": "C-2026-002",
+      "refersTo": "01M2ACN5Q043TW9W44NJEZ4K9S"
+    },
+    {
+      "id": "01M2ACN5Q043TW9W44NJEZ4K9S",
+      "ts": "2026-09-12T10:45:00+02:00",
+      "source": "manual",
+      "kind": "note",
+      "subject": "C-2026-002",
+      "detail": "Sieht gut aus, Skalierung 1.5 auf beiden. Morgen nach dem Neustart prüfen.",
+      "actor": "human",
+      "case": "C-2026-002"
+    },
+    {
+      "id": "01M2ABVHD0SVBF5WCN07HWGE3Z",
+      "ts": "2026-09-12T10:31:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "109",
+      "detail": "monitors",
+      "actor": "system",
+      "meta": {
+        "type": "post",
+        "cleanup": "",
+        "pairOf": 108
+      }
+    },
+    {
+      "id": "01M2A9MNTG5XQ4EPAYSBBYJ92N",
+      "ts": "2026-09-12T09:52:18+02:00",
+      "source": "config",
+      "kind": "config-change",
+      "subject": "~/.config/hypr/monitors.conf",
+      "detail": "sha256 40ab1178 → 6d81c412",
+      "actor": "system",
+      "case": "C-2026-002",
+      "zone": "yellow",
+      "resolution": "linked",
+      "meta": {
+        "hashFrom": "40ab11785348bf1cffab050d004553182199194be2fdc677b92a17e0454f6e3b",
+        "hashTo": "6d81c41202034fff47fdb480400142b8472fcfed536bab61a1fd785d6315c272"
+      }
+    },
+    {
+      "id": "01M2A8DZHGYV0QS6NJBV0BGQNY",
+      "ts": "2026-09-12T09:31:10+02:00",
+      "source": "seldon",
+      "kind": "case-started",
+      "subject": "C-2026-002",
+      "actor": "human",
+      "case": "C-2026-002"
+    },
+    {
+      "id": "01M2A8BV605P9VX6EY68J69A9F",
+      "ts": "2026-09-12T09:30:00+02:00",
+      "source": "snapper",
+      "kind": "snapshot",
+      "subject": "108",
+      "detail": "monitors",
+      "actor": "system",
+      "meta": {
+        "type": "pre",
+        "cleanup": ""
+      }
+    },
+    {
+      "id": "01M2A6Z9D0VP5H08KCSQ2EV1HK",
+      "ts": "2026-09-12T09:05:40+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-002",
+      "detail": "Hyprland-Monitorlayout für Dual-WQHD",
+      "actor": "human",
+      "case": "C-2026-002"
+    },
+    {
+      "id": "01M1S72J7GGHJGP6KVV6T0ZDXC",
+      "ts": "2026-09-05T18:40:22+02:00",
+      "source": "plugins",
+      "kind": "plugin-add",
+      "subject": "io.github.example.weather-plus",
+      "detail": "1.2.0",
+      "actor": "system",
+      "zone": "yellow",
+      "resolution": "explained",
+      "resolutionDetail": "Wetter-Widget für die Bar, kleine Spielerei ohne Case.",
+      "meta": {
+        "version": "1.2.0",
+        "enabled": true
+      }
+    },
+    {
+      "id": "01M1MB2M1GWZYF485HTGVZ1KS3",
+      "ts": "2026-09-03T21:14:06+02:00",
+      "source": "pacman",
+      "kind": "install",
+      "subject": "btop",
+      "detail": "1.4.5-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20260903T211406",
+      "resolution": "explained",
+      "resolutionDetail": "Kleines Monitoring-Tool, bewusst ohne Case.",
+      "meta": {
+        "command": "pacman -S btop",
+        "version": "1.4.5-1"
+      }
+    },
+    {
+      "id": "01M1F1FJ107DNM0BRPWM9FMAVF",
+      "ts": "2026-09-01T19:50:12+02:00",
+      "source": "seldon",
+      "kind": "case-completed",
+      "subject": "C-2026-001",
+      "actor": "human",
+      "case": "C-2026-001"
+    },
+    {
+      "id": "01M1F1DGK8N56T9EW6KFSQX1PC",
+      "ts": "2026-09-01T19:49:05+02:00",
+      "source": "seldon",
+      "kind": "case-verified",
+      "subject": "C-2026-001",
+      "actor": "human",
+      "case": "C-2026-001"
+    },
+    {
+      "id": "01M1F161B0EJ8KHDPZAK9M0GTD",
+      "ts": "2026-09-01T19:45:00+02:00",
+      "source": "manual",
+      "kind": "note",
+      "subject": "C-2026-001",
+      "detail": "Logbuch angelegt. Erste Erfassung als Baseline übernommen: Snapshots 1 und 105–107, Theme osaka-jade, 39 Plugins. Nichts davon ist Drift.",
+      "actor": "human",
+      "case": "C-2026-001"
+    },
+    {
+      "id": "01M1EYR82RVZRK49NVC00FYCHA",
+      "ts": "2026-09-01T19:02:31+02:00",
+      "source": "seldon",
+      "kind": "case-started",
+      "subject": "C-2026-001",
+      "actor": "human",
+      "case": "C-2026-001"
+    },
+    {
+      "id": "01M1EYQKJG8TM2NKCJG3MH3CQS",
+      "ts": "2026-09-01T19:02:10+02:00",
+      "source": "seldon",
+      "kind": "case-created",
+      "subject": "C-2026-001",
+      "detail": "Seldon-Logbuch anlegen",
+      "actor": "human",
+      "case": "C-2026-001"
+    }
+  ],
+  "drift": [
+    {
+      "eventId": "01M3VTGNY0NZG4AY80814WSKGR",
+      "ts": "2026-10-01T15:30:00+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "tokyo-night",
+      "detail": "kanagawa → tokyo-night",
+      "actor": "human",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": "C-2026-005"
+    },
+    {
+      "eventId": "01M3VNJ9JGZ9169T01XCW16FT0",
+      "ts": "2026-10-01T14:03:30+02:00",
+      "source": "config",
+      "kind": "config-add",
+      "subject": "~/.config/systemd/user/ollama.service",
+      "detail": "sha256 — → c0243ca5",
+      "actor": "agent:codex",
+      "zone": "red",
+      "crisis": true,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3VNFTF8EVHWFFZ687N14Q0C",
+      "ts": "2026-10-01T14:02:09+02:00",
+      "source": "pacman",
+      "kind": "install",
+      "subject": "ollama",
+      "detail": "0.6.1-1",
+      "actor": "agent:codex",
+      "zone": "red",
+      "crisis": true,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3SXBQVR7AW8PJQC1YXDCQ14",
+      "ts": "2026-09-30T21:41:15+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "firefox",
+      "detail": "143.0.1-1 → 143.0.2-1",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": null,
+      "txId": "tx-20260930T214115",
+      "members": 3
+    }
+  ],
+  "cases": {
+    "queued": [
+      {
+        "id": "C-2026-005",
+        "title": "Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim)",
+        "status": "queued",
+        "zone": "yellow",
+        "risk": "R1",
+        "priority": "normal",
+        "area": "themes",
+        "created": "2026-09-29",
+        "started": null,
+        "closed": null,
+        "snapshotBefore": null,
+        "agents": [],
+        "events": [],
+        "tags": [],
+        "path": "work/queued/C-2026-005-tokyo-night.md",
+        "steps": {
+          "total": 4,
+          "done": 0
+        },
+        "proposedEvents": [
+          "01M3VTGNY0NZG4AY80814WSKGR"
+        ]
+      },
+      {
+        "id": "C-2026-006",
+        "title": "Snapper-Retention auf 14 Tage",
+        "status": "queued",
+        "zone": "red",
+        "risk": "R2",
+        "priority": "low",
+        "area": "packages",
+        "created": "2026-09-30",
+        "started": null,
+        "closed": null,
+        "snapshotBefore": null,
+        "agents": [],
+        "events": [],
+        "tags": [],
+        "path": "work/queued/C-2026-006-snapper-retention.md",
+        "steps": {
+          "total": 3,
+          "done": 0
+        }
+      },
+      {
+        "id": "C-2026-007",
+        "title": "Herdr-Orchestrator als Default-Agent registrieren",
+        "status": "queued",
+        "zone": "yellow",
+        "risk": "R1",
+        "priority": "high",
+        "area": "dev-env",
+        "created": "2026-10-01",
+        "started": null,
+        "closed": null,
+        "snapshotBefore": null,
+        "agents": [],
+        "events": [],
+        "tags": [],
+        "path": "work/queued/C-2026-007-herdr-default-agent.md",
+        "steps": {
+          "total": 5,
+          "done": 0
+        }
+      }
+    ],
+    "active": [
+      {
+        "id": "C-2026-003",
+        "title": "Omarchy auf 4.0.7 aktualisieren",
+        "status": "active",
+        "zone": "red",
+        "risk": "R2",
+        "priority": "high",
+        "area": "shell",
+        "created": "2026-09-26",
+        "started": "2026-10-01",
+        "closed": null,
+        "snapshotBefore": 111,
+        "agents": [
+          "agent:claude-code"
+        ],
+        "events": [
+          "01M3V4RY8GW92AWEZ8KFTHZRAW",
+          "01M3V4T4B8J32CE6CP7FQ4SS42",
+          "01M3V504QG60MBGRBA2257PVQC",
+          "01M3V505PRK95EXCMDQW91M9FG",
+          "01M3V5D0V0YT5KRGAHD1VQDF2Q"
+        ],
+        "tags": [
+          "update"
+        ],
+        "path": "work/active/C-2026-003-omarchy-407.md",
+        "steps": {
+          "total": 5,
+          "done": 4
+        }
+      },
+      {
+        "id": "C-2026-004",
+        "title": "Zed als zweiten Editor installieren",
+        "status": "active",
+        "zone": "red",
+        "risk": "R2",
+        "priority": "normal",
+        "area": "dev-env",
+        "created": "2026-09-28",
+        "started": "2026-10-01",
+        "closed": null,
+        "snapshotBefore": 112,
+        "agents": [
+          "agent:claude-code"
+        ],
+        "events": [
+          "01M3V896207DAXT81MX8G98WZW",
+          "01M3V8AH10ZEXZ7FAKN156ZB0D",
+          "01M3V8AJ08NT7N105393XZXCP7",
+          "01M3V9VHCGTNRG2J62SMNR51TG",
+          "01M3V9W9SRGN5446Q2PXBRP7VK",
+          "01M3V9XQPG3XSQHDE1KSNTZRQA",
+          "01M3VZNFC0M2FQVGJBZGX9KDF7"
+        ],
+        "tags": [],
+        "path": "work/active/C-2026-004-zed.md",
+        "steps": {
+          "total": 4,
+          "done": 2
+        }
+      }
+    ],
+    "verification": [
+      {
+        "id": "C-2026-008",
+        "title": "Tailscale für Fernzugriff einrichten",
+        "status": "verification",
+        "zone": "red",
+        "risk": "R2",
+        "priority": "normal",
+        "area": "dev-env",
+        "created": "2026-10-01",
+        "started": "2026-10-01",
+        "closed": null,
+        "snapshotBefore": 112,
+        "agents": [],
+        "events": [
+          "01M3VDBX30F5DH0JNY7S0K95GC"
+        ],
+        "tags": [],
+        "path": "work/active/C-2026-008-tailscale.md",
+        "steps": {
+          "total": 4,
+          "done": 3
+        }
+      }
+    ],
+    "completed": [
+      {
+        "id": "C-2026-002",
+        "title": "Hyprland-Monitorlayout für Dual-WQHD",
+        "status": "completed",
+        "zone": "yellow",
+        "risk": "R1",
+        "priority": "normal",
+        "area": "hyprland",
+        "created": "2026-09-12",
+        "started": "2026-09-12",
+        "closed": "2026-09-13",
+        "snapshotBefore": 108,
+        "agents": [
+          "agent:claude-code"
+        ],
+        "events": [
+          "01M2A9MNTG5XQ4EPAYSBBYJ92N",
+          "01M2ACN5Q043TW9W44NJEZ4K9S",
+          "01M2ADMJK8H2NCRVDF2RA9WA56"
+        ],
+        "tags": [],
+        "path": "work/completed/C-2026-002-monitors.md",
+        "steps": {
+          "total": 3,
+          "done": 3
+        }
+      },
+      {
+        "id": "C-2026-001",
+        "title": "Seldon-Logbuch anlegen",
+        "status": "completed",
+        "zone": "green",
+        "risk": "R0",
+        "priority": "high",
+        "area": "dev-env",
+        "created": "2026-09-01",
+        "started": "2026-09-01",
+        "closed": "2026-09-01",
+        "snapshotBefore": null,
+        "agents": [],
+        "events": [
+          "01M1F161B0EJ8KHDPZAK9M0GTD"
+        ],
+        "tags": [
+          "setup"
+        ],
+        "path": "work/completed/C-2026-001-init.md",
+        "steps": {
+          "total": 2,
+          "done": 2
+        }
+      }
+    ]
+  },
+  "decisions": [
+    {
+      "id": "ADR-0004",
+      "title": "Ollama nur als User-Service mit Case",
+      "status": "proposed",
+      "date": "2026-10-01",
+      "path": "decisions/ADR-0004-ollama-user-service.md"
+    },
+    {
+      "id": "ADR-0003",
+      "title": "Zed statt VS Code als Zweiteditor",
+      "status": "accepted",
+      "date": "2026-10-01",
+      "path": "decisions/ADR-0003-zed.md"
+    },
+    {
+      "id": "ADR-0002",
+      "title": "Snapshots vor jedem Red-Zone-Eingriff",
+      "status": "accepted",
+      "date": "2026-09-02",
+      "path": "decisions/ADR-0002-snapshots.md"
+    },
+    {
+      "id": "ADR-0001",
+      "title": "Logbuch-Sprache Deutsch, Struktur Englisch",
+      "status": "accepted",
+      "date": "2026-09-01",
+      "path": "decisions/ADR-0001-language.md"
+    }
+  ],
+  "system": {
+    "omarchy": {
+      "version": "4.0.7-1",
+      "theme": "tokyo-night",
+      "lastUpdate": "2026-10-01T09:21:00+02:00"
+    },
+    "packages": {
+      "explicit": 327,
+      "total": 2009,
+      "aur": 41
+    },
+    "deviations": 5,
+    "snapshots": [
+      {
+        "number": 115,
+        "ts": "2026-10-01T16:30:04+02:00",
+        "description": "tailscale: MagicDNS",
+        "type": "post"
+      },
+      {
+        "number": 114,
+        "ts": "2026-10-01T16:30:00+02:00",
+        "description": "tailscale: MagicDNS",
+        "type": "pre"
+      },
+      {
+        "number": 113,
+        "ts": "2026-10-01T14:30:00+02:00",
+        "description": "pre: ollama",
+        "type": "single"
+      },
+      {
+        "number": 112,
+        "ts": "2026-10-01T09:10:20+02:00",
+        "description": "4.0.6-1",
+        "type": "single"
+      },
+      {
+        "number": 111,
+        "ts": "2026-09-30T19:00:00+02:00",
+        "description": "vor Snapshot-Aufräumen",
+        "type": "single"
+      },
+      {
+        "number": 110,
+        "ts": "2026-09-15T20:10:12+02:00",
+        "description": "4.0.5-1",
+        "type": "single"
+      }
+    ],
+    "plugins": {
+      "enabled": 33,
+      "installed": 40
+    },
+    "areas": [
+      {
+        "name": "dev-env",
+        "hasAgentsMd": false,
+        "cases": 4
+      },
+      {
+        "name": "hyprland",
+        "hasAgentsMd": true,
+        "cases": 1
+      },
+      {
+        "name": "packages",
+        "hasAgentsMd": false,
+        "cases": 1
+      },
+      {
+        "name": "plugins",
+        "hasAgentsMd": false,
+        "cases": 0
+      },
+      {
+        "name": "shell",
+        "hasAgentsMd": false,
+        "cases": 1
+      },
+      {
+        "name": "themes",
+        "hasAgentsMd": true,
+        "cases": 1
+      }
+    ]
+  },
+  "memory": {
+    "lessons": [
+      "`omarchy pkg add` statt yay direkt",
+      "Theme-Overrides nie im Omarchy-Repo",
+      "Hyprland reload nach bindings.conf"
+    ],
+    "topics": [
+      {
+        "topic": "omarchy",
+        "updated": "2026-10-01",
+        "path": "memory/omarchy.md"
+      },
+      {
+        "topic": "hyprland",
+        "updated": "2026-09-13",
+        "path": "memory/hyprland.md"
+      }
+    ]
+  },
+  "series": {
+    "heatmap": [
+      {
+        "date": "2025-10-01",
+        "total": 0
+      },
+      {
+        "date": "2025-10-02",
+        "total": 0
+      },
+      {
+        "date": "2025-10-03",
+        "total": 0
+      },
+      {
+        "date": "2025-10-04",
+        "total": 0
+      },
+      {
+        "date": "2025-10-05",
+        "total": 0
+      },
+      {
+        "date": "2025-10-06",
+        "total": 0
+      },
+      {
+        "date": "2025-10-07",
+        "total": 0
+      },
+      {
+        "date": "2025-10-08",
+        "total": 0
+      },
+      {
+        "date": "2025-10-09",
+        "total": 0
+      },
+      {
+        "date": "2025-10-10",
+        "total": 0
+      },
+      {
+        "date": "2025-10-11",
+        "total": 0
+      },
+      {
+        "date": "2025-10-12",
+        "total": 0
+      },
+      {
+        "date": "2025-10-13",
+        "total": 0
+      },
+      {
+        "date": "2025-10-14",
+        "total": 0
+      },
+      {
+        "date": "2025-10-15",
+        "total": 0
+      },
+      {
+        "date": "2025-10-16",
+        "total": 0
+      },
+      {
+        "date": "2025-10-17",
+        "total": 0
+      },
+      {
+        "date": "2025-10-18",
+        "total": 0
+      },
+      {
+        "date": "2025-10-19",
+        "total": 0
+      },
+      {
+        "date": "2025-10-20",
+        "total": 0
+      },
+      {
+        "date": "2025-10-21",
+        "total": 0
+      },
+      {
+        "date": "2025-10-22",
+        "total": 0
+      },
+      {
+        "date": "2025-10-23",
+        "total": 0
+      },
+      {
+        "date": "2025-10-24",
+        "total": 0
+      },
+      {
+        "date": "2025-10-25",
+        "total": 0
+      },
+      {
+        "date": "2025-10-26",
+        "total": 0
+      },
+      {
+        "date": "2025-10-27",
+        "total": 0
+      },
+      {
+        "date": "2025-10-28",
+        "total": 0
+      },
+      {
+        "date": "2025-10-29",
+        "total": 0
+      },
+      {
+        "date": "2025-10-30",
+        "total": 0
+      },
+      {
+        "date": "2025-10-31",
+        "total": 0
+      },
+      {
+        "date": "2025-11-01",
+        "total": 0
+      },
+      {
+        "date": "2025-11-02",
+        "total": 0
+      },
+      {
+        "date": "2025-11-03",
+        "total": 0
+      },
+      {
+        "date": "2025-11-04",
+        "total": 0
+      },
+      {
+        "date": "2025-11-05",
+        "total": 0
+      },
+      {
+        "date": "2025-11-06",
+        "total": 0
+      },
+      {
+        "date": "2025-11-07",
+        "total": 0
+      },
+      {
+        "date": "2025-11-08",
+        "total": 0
+      },
+      {
+        "date": "2025-11-09",
+        "total": 0
+      },
+      {
+        "date": "2025-11-10",
+        "total": 0
+      },
+      {
+        "date": "2025-11-11",
+        "total": 0
+      },
+      {
+        "date": "2025-11-12",
+        "total": 0
+      },
+      {
+        "date": "2025-11-13",
+        "total": 0
+      },
+      {
+        "date": "2025-11-14",
+        "total": 0
+      },
+      {
+        "date": "2025-11-15",
+        "total": 0
+      },
+      {
+        "date": "2025-11-16",
+        "total": 0
+      },
+      {
+        "date": "2025-11-17",
+        "total": 0
+      },
+      {
+        "date": "2025-11-18",
+        "total": 0
+      },
+      {
+        "date": "2025-11-19",
+        "total": 0
+      },
+      {
+        "date": "2025-11-20",
+        "total": 0
+      },
+      {
+        "date": "2025-11-21",
+        "total": 0
+      },
+      {
+        "date": "2025-11-22",
+        "total": 0
+      },
+      {
+        "date": "2025-11-23",
+        "total": 0
+      },
+      {
+        "date": "2025-11-24",
+        "total": 0
+      },
+      {
+        "date": "2025-11-25",
+        "total": 0
+      },
+      {
+        "date": "2025-11-26",
+        "total": 0
+      },
+      {
+        "date": "2025-11-27",
+        "total": 0
+      },
+      {
+        "date": "2025-11-28",
+        "total": 0
+      },
+      {
+        "date": "2025-11-29",
+        "total": 0
+      },
+      {
+        "date": "2025-11-30",
+        "total": 0
+      },
+      {
+        "date": "2025-12-01",
+        "total": 0
+      },
+      {
+        "date": "2025-12-02",
+        "total": 0
+      },
+      {
+        "date": "2025-12-03",
+        "total": 0
+      },
+      {
+        "date": "2025-12-04",
+        "total": 0
+      },
+      {
+        "date": "2025-12-05",
+        "total": 0
+      },
+      {
+        "date": "2025-12-06",
+        "total": 0
+      },
+      {
+        "date": "2025-12-07",
+        "total": 0
+      },
+      {
+        "date": "2025-12-08",
+        "total": 0
+      },
+      {
+        "date": "2025-12-09",
+        "total": 0
+      },
+      {
+        "date": "2025-12-10",
+        "total": 0
+      },
+      {
+        "date": "2025-12-11",
+        "total": 0
+      },
+      {
+        "date": "2025-12-12",
+        "total": 0
+      },
+      {
+        "date": "2025-12-13",
+        "total": 0
+      },
+      {
+        "date": "2025-12-14",
+        "total": 0
+      },
+      {
+        "date": "2025-12-15",
+        "total": 0
+      },
+      {
+        "date": "2025-12-16",
+        "total": 0
+      },
+      {
+        "date": "2025-12-17",
+        "total": 0
+      },
+      {
+        "date": "2025-12-18",
+        "total": 0
+      },
+      {
+        "date": "2025-12-19",
+        "total": 0
+      },
+      {
+        "date": "2025-12-20",
+        "total": 0
+      },
+      {
+        "date": "2025-12-21",
+        "total": 0
+      },
+      {
+        "date": "2025-12-22",
+        "total": 0
+      },
+      {
+        "date": "2025-12-23",
+        "total": 0
+      },
+      {
+        "date": "2025-12-24",
+        "total": 0
+      },
+      {
+        "date": "2025-12-25",
+        "total": 0
+      },
+      {
+        "date": "2025-12-26",
+        "total": 0
+      },
+      {
+        "date": "2025-12-27",
+        "total": 0
+      },
+      {
+        "date": "2025-12-28",
+        "total": 0
+      },
+      {
+        "date": "2025-12-29",
+        "total": 0
+      },
+      {
+        "date": "2025-12-30",
+        "total": 0
+      },
+      {
+        "date": "2025-12-31",
+        "total": 0
+      },
+      {
+        "date": "2026-01-01",
+        "total": 0
+      },
+      {
+        "date": "2026-01-02",
+        "total": 0
+      },
+      {
+        "date": "2026-01-03",
+        "total": 0
+      },
+      {
+        "date": "2026-01-04",
+        "total": 0
+      },
+      {
+        "date": "2026-01-05",
+        "total": 0
+      },
+      {
+        "date": "2026-01-06",
+        "total": 0
+      },
+      {
+        "date": "2026-01-07",
+        "total": 0
+      },
+      {
+        "date": "2026-01-08",
+        "total": 0
+      },
+      {
+        "date": "2026-01-09",
+        "total": 0
+      },
+      {
+        "date": "2026-01-10",
+        "total": 0
+      },
+      {
+        "date": "2026-01-11",
+        "total": 0
+      },
+      {
+        "date": "2026-01-12",
+        "total": 0
+      },
+      {
+        "date": "2026-01-13",
+        "total": 0
+      },
+      {
+        "date": "2026-01-14",
+        "total": 0
+      },
+      {
+        "date": "2026-01-15",
+        "total": 0
+      },
+      {
+        "date": "2026-01-16",
+        "total": 0
+      },
+      {
+        "date": "2026-01-17",
+        "total": 0
+      },
+      {
+        "date": "2026-01-18",
+        "total": 0
+      },
+      {
+        "date": "2026-01-19",
+        "total": 0
+      },
+      {
+        "date": "2026-01-20",
+        "total": 0
+      },
+      {
+        "date": "2026-01-21",
+        "total": 0
+      },
+      {
+        "date": "2026-01-22",
+        "total": 0
+      },
+      {
+        "date": "2026-01-23",
+        "total": 0
+      },
+      {
+        "date": "2026-01-24",
+        "total": 0
+      },
+      {
+        "date": "2026-01-25",
+        "total": 0
+      },
+      {
+        "date": "2026-01-26",
+        "total": 0
+      },
+      {
+        "date": "2026-01-27",
+        "total": 0
+      },
+      {
+        "date": "2026-01-28",
+        "total": 0
+      },
+      {
+        "date": "2026-01-29",
+        "total": 0
+      },
+      {
+        "date": "2026-01-30",
+        "total": 0
+      },
+      {
+        "date": "2026-01-31",
+        "total": 0
+      },
+      {
+        "date": "2026-02-01",
+        "total": 0
+      },
+      {
+        "date": "2026-02-02",
+        "total": 0
+      },
+      {
+        "date": "2026-02-03",
+        "total": 0
+      },
+      {
+        "date": "2026-02-04",
+        "total": 0
+      },
+      {
+        "date": "2026-02-05",
+        "total": 0
+      },
+      {
+        "date": "2026-02-06",
+        "total": 0
+      },
+      {
+        "date": "2026-02-07",
+        "total": 0
+      },
+      {
+        "date": "2026-02-08",
+        "total": 0
+      },
+      {
+        "date": "2026-02-09",
+        "total": 0
+      },
+      {
+        "date": "2026-02-10",
+        "total": 0
+      },
+      {
+        "date": "2026-02-11",
+        "total": 0
+      },
+      {
+        "date": "2026-02-12",
+        "total": 0
+      },
+      {
+        "date": "2026-02-13",
+        "total": 0
+      },
+      {
+        "date": "2026-02-14",
+        "total": 0
+      },
+      {
+        "date": "2026-02-15",
+        "total": 0
+      },
+      {
+        "date": "2026-02-16",
+        "total": 0
+      },
+      {
+        "date": "2026-02-17",
+        "total": 0
+      },
+      {
+        "date": "2026-02-18",
+        "total": 0
+      },
+      {
+        "date": "2026-02-19",
+        "total": 0
+      },
+      {
+        "date": "2026-02-20",
+        "total": 0
+      },
+      {
+        "date": "2026-02-21",
+        "total": 0
+      },
+      {
+        "date": "2026-02-22",
+        "total": 0
+      },
+      {
+        "date": "2026-02-23",
+        "total": 0
+      },
+      {
+        "date": "2026-02-24",
+        "total": 0
+      },
+      {
+        "date": "2026-02-25",
+        "total": 0
+      },
+      {
+        "date": "2026-02-26",
+        "total": 0
+      },
+      {
+        "date": "2026-02-27",
+        "total": 0
+      },
+      {
+        "date": "2026-02-28",
+        "total": 0
+      },
+      {
+        "date": "2026-03-01",
+        "total": 0
+      },
+      {
+        "date": "2026-03-02",
+        "total": 0
+      },
+      {
+        "date": "2026-03-03",
+        "total": 0
+      },
+      {
+        "date": "2026-03-04",
+        "total": 0
+      },
+      {
+        "date": "2026-03-05",
+        "total": 0
+      },
+      {
+        "date": "2026-03-06",
+        "total": 0
+      },
+      {
+        "date": "2026-03-07",
+        "total": 0
+      },
+      {
+        "date": "2026-03-08",
+        "total": 0
+      },
+      {
+        "date": "2026-03-09",
+        "total": 0
+      },
+      {
+        "date": "2026-03-10",
+        "total": 0
+      },
+      {
+        "date": "2026-03-11",
+        "total": 0
+      },
+      {
+        "date": "2026-03-12",
+        "total": 0
+      },
+      {
+        "date": "2026-03-13",
+        "total": 0
+      },
+      {
+        "date": "2026-03-14",
+        "total": 0
+      },
+      {
+        "date": "2026-03-15",
+        "total": 0
+      },
+      {
+        "date": "2026-03-16",
+        "total": 0
+      },
+      {
+        "date": "2026-03-17",
+        "total": 0
+      },
+      {
+        "date": "2026-03-18",
+        "total": 0
+      },
+      {
+        "date": "2026-03-19",
+        "total": 0
+      },
+      {
+        "date": "2026-03-20",
+        "total": 0
+      },
+      {
+        "date": "2026-03-21",
+        "total": 0
+      },
+      {
+        "date": "2026-03-22",
+        "total": 0
+      },
+      {
+        "date": "2026-03-23",
+        "total": 0
+      },
+      {
+        "date": "2026-03-24",
+        "total": 0
+      },
+      {
+        "date": "2026-03-25",
+        "total": 0
+      },
+      {
+        "date": "2026-03-26",
+        "total": 0
+      },
+      {
+        "date": "2026-03-27",
+        "total": 0
+      },
+      {
+        "date": "2026-03-28",
+        "total": 0
+      },
+      {
+        "date": "2026-03-29",
+        "total": 0
+      },
+      {
+        "date": "2026-03-30",
+        "total": 0
+      },
+      {
+        "date": "2026-03-31",
+        "total": 0
+      },
+      {
+        "date": "2026-04-01",
+        "total": 0
+      },
+      {
+        "date": "2026-04-02",
+        "total": 0
+      },
+      {
+        "date": "2026-04-03",
+        "total": 0
+      },
+      {
+        "date": "2026-04-04",
+        "total": 0
+      },
+      {
+        "date": "2026-04-05",
+        "total": 0
+      },
+      {
+        "date": "2026-04-06",
+        "total": 0
+      },
+      {
+        "date": "2026-04-07",
+        "total": 0
+      },
+      {
+        "date": "2026-04-08",
+        "total": 0
+      },
+      {
+        "date": "2026-04-09",
+        "total": 0
+      },
+      {
+        "date": "2026-04-10",
+        "total": 0
+      },
+      {
+        "date": "2026-04-11",
+        "total": 0
+      },
+      {
+        "date": "2026-04-12",
+        "total": 0
+      },
+      {
+        "date": "2026-04-13",
+        "total": 0
+      },
+      {
+        "date": "2026-04-14",
+        "total": 0
+      },
+      {
+        "date": "2026-04-15",
+        "total": 0
+      },
+      {
+        "date": "2026-04-16",
+        "total": 0
+      },
+      {
+        "date": "2026-04-17",
+        "total": 0
+      },
+      {
+        "date": "2026-04-18",
+        "total": 0
+      },
+      {
+        "date": "2026-04-19",
+        "total": 0
+      },
+      {
+        "date": "2026-04-20",
+        "total": 0
+      },
+      {
+        "date": "2026-04-21",
+        "total": 0
+      },
+      {
+        "date": "2026-04-22",
+        "total": 0
+      },
+      {
+        "date": "2026-04-23",
+        "total": 0
+      },
+      {
+        "date": "2026-04-24",
+        "total": 0
+      },
+      {
+        "date": "2026-04-25",
+        "total": 0
+      },
+      {
+        "date": "2026-04-26",
+        "total": 0
+      },
+      {
+        "date": "2026-04-27",
+        "total": 0
+      },
+      {
+        "date": "2026-04-28",
+        "total": 0
+      },
+      {
+        "date": "2026-04-29",
+        "total": 0
+      },
+      {
+        "date": "2026-04-30",
+        "total": 0
+      },
+      {
+        "date": "2026-05-01",
+        "total": 0
+      },
+      {
+        "date": "2026-05-02",
+        "total": 0
+      },
+      {
+        "date": "2026-05-03",
+        "total": 0
+      },
+      {
+        "date": "2026-05-04",
+        "total": 0
+      },
+      {
+        "date": "2026-05-05",
+        "total": 0
+      },
+      {
+        "date": "2026-05-06",
+        "total": 0
+      },
+      {
+        "date": "2026-05-07",
+        "total": 0
+      },
+      {
+        "date": "2026-05-08",
+        "total": 0
+      },
+      {
+        "date": "2026-05-09",
+        "total": 0
+      },
+      {
+        "date": "2026-05-10",
+        "total": 0
+      },
+      {
+        "date": "2026-05-11",
+        "total": 0
+      },
+      {
+        "date": "2026-05-12",
+        "total": 0
+      },
+      {
+        "date": "2026-05-13",
+        "total": 0
+      },
+      {
+        "date": "2026-05-14",
+        "total": 0
+      },
+      {
+        "date": "2026-05-15",
+        "total": 0
+      },
+      {
+        "date": "2026-05-16",
+        "total": 0
+      },
+      {
+        "date": "2026-05-17",
+        "total": 0
+      },
+      {
+        "date": "2026-05-18",
+        "total": 0
+      },
+      {
+        "date": "2026-05-19",
+        "total": 0
+      },
+      {
+        "date": "2026-05-20",
+        "total": 0
+      },
+      {
+        "date": "2026-05-21",
+        "total": 0
+      },
+      {
+        "date": "2026-05-22",
+        "total": 0
+      },
+      {
+        "date": "2026-05-23",
+        "total": 0
+      },
+      {
+        "date": "2026-05-24",
+        "total": 0
+      },
+      {
+        "date": "2026-05-25",
+        "total": 0
+      },
+      {
+        "date": "2026-05-26",
+        "total": 0
+      },
+      {
+        "date": "2026-05-27",
+        "total": 0
+      },
+      {
+        "date": "2026-05-28",
+        "total": 0
+      },
+      {
+        "date": "2026-05-29",
+        "total": 0
+      },
+      {
+        "date": "2026-05-30",
+        "total": 0
+      },
+      {
+        "date": "2026-05-31",
+        "total": 0
+      },
+      {
+        "date": "2026-06-01",
+        "total": 0
+      },
+      {
+        "date": "2026-06-02",
+        "total": 0
+      },
+      {
+        "date": "2026-06-03",
+        "total": 0
+      },
+      {
+        "date": "2026-06-04",
+        "total": 0
+      },
+      {
+        "date": "2026-06-05",
+        "total": 0
+      },
+      {
+        "date": "2026-06-06",
+        "total": 0
+      },
+      {
+        "date": "2026-06-07",
+        "total": 0
+      },
+      {
+        "date": "2026-06-08",
+        "total": 0
+      },
+      {
+        "date": "2026-06-09",
+        "total": 0
+      },
+      {
+        "date": "2026-06-10",
+        "total": 0
+      },
+      {
+        "date": "2026-06-11",
+        "total": 0
+      },
+      {
+        "date": "2026-06-12",
+        "total": 0
+      },
+      {
+        "date": "2026-06-13",
+        "total": 0
+      },
+      {
+        "date": "2026-06-14",
+        "total": 0
+      },
+      {
+        "date": "2026-06-15",
+        "total": 0
+      },
+      {
+        "date": "2026-06-16",
+        "total": 0
+      },
+      {
+        "date": "2026-06-17",
+        "total": 0
+      },
+      {
+        "date": "2026-06-18",
+        "total": 0
+      },
+      {
+        "date": "2026-06-19",
+        "total": 0
+      },
+      {
+        "date": "2026-06-20",
+        "total": 0
+      },
+      {
+        "date": "2026-06-21",
+        "total": 0
+      },
+      {
+        "date": "2026-06-22",
+        "total": 0
+      },
+      {
+        "date": "2026-06-23",
+        "total": 0
+      },
+      {
+        "date": "2026-06-24",
+        "total": 0
+      },
+      {
+        "date": "2026-06-25",
+        "total": 0
+      },
+      {
+        "date": "2026-06-26",
+        "total": 0
+      },
+      {
+        "date": "2026-06-27",
+        "total": 0
+      },
+      {
+        "date": "2026-06-28",
+        "total": 0
+      },
+      {
+        "date": "2026-06-29",
+        "total": 0
+      },
+      {
+        "date": "2026-06-30",
+        "total": 0
+      },
+      {
+        "date": "2026-07-01",
+        "total": 0
+      },
+      {
+        "date": "2026-07-02",
+        "total": 0
+      },
+      {
+        "date": "2026-07-03",
+        "total": 0
+      },
+      {
+        "date": "2026-07-04",
+        "total": 0
+      },
+      {
+        "date": "2026-07-05",
+        "total": 0
+      },
+      {
+        "date": "2026-07-06",
+        "total": 0
+      },
+      {
+        "date": "2026-07-07",
+        "total": 0
+      },
+      {
+        "date": "2026-07-08",
+        "total": 0
+      },
+      {
+        "date": "2026-07-09",
+        "total": 0
+      },
+      {
+        "date": "2026-07-10",
+        "total": 0
+      },
+      {
+        "date": "2026-07-11",
+        "total": 0
+      },
+      {
+        "date": "2026-07-12",
+        "total": 0
+      },
+      {
+        "date": "2026-07-13",
+        "total": 0
+      },
+      {
+        "date": "2026-07-14",
+        "total": 0
+      },
+      {
+        "date": "2026-07-15",
+        "total": 0
+      },
+      {
+        "date": "2026-07-16",
+        "total": 0
+      },
+      {
+        "date": "2026-07-17",
+        "total": 0
+      },
+      {
+        "date": "2026-07-18",
+        "total": 0
+      },
+      {
+        "date": "2026-07-19",
+        "total": 0
+      },
+      {
+        "date": "2026-07-20",
+        "total": 0
+      },
+      {
+        "date": "2026-07-21",
+        "total": 0
+      },
+      {
+        "date": "2026-07-22",
+        "total": 0
+      },
+      {
+        "date": "2026-07-23",
+        "total": 0
+      },
+      {
+        "date": "2026-07-24",
+        "total": 0
+      },
+      {
+        "date": "2026-07-25",
+        "total": 0
+      },
+      {
+        "date": "2026-07-26",
+        "total": 0
+      },
+      {
+        "date": "2026-07-27",
+        "total": 0
+      },
+      {
+        "date": "2026-07-28",
+        "total": 0
+      },
+      {
+        "date": "2026-07-29",
+        "total": 0
+      },
+      {
+        "date": "2026-07-30",
+        "total": 0
+      },
+      {
+        "date": "2026-07-31",
+        "total": 0
+      },
+      {
+        "date": "2026-08-01",
+        "total": 0
+      },
+      {
+        "date": "2026-08-02",
+        "total": 0
+      },
+      {
+        "date": "2026-08-03",
+        "total": 0
+      },
+      {
+        "date": "2026-08-04",
+        "total": 0
+      },
+      {
+        "date": "2026-08-05",
+        "total": 0
+      },
+      {
+        "date": "2026-08-06",
+        "total": 0
+      },
+      {
+        "date": "2026-08-07",
+        "total": 0
+      },
+      {
+        "date": "2026-08-08",
+        "total": 0
+      },
+      {
+        "date": "2026-08-09",
+        "total": 0
+      },
+      {
+        "date": "2026-08-10",
+        "total": 0
+      },
+      {
+        "date": "2026-08-11",
+        "total": 0
+      },
+      {
+        "date": "2026-08-12",
+        "total": 0
+      },
+      {
+        "date": "2026-08-13",
+        "total": 0
+      },
+      {
+        "date": "2026-08-14",
+        "total": 0
+      },
+      {
+        "date": "2026-08-15",
+        "total": 0
+      },
+      {
+        "date": "2026-08-16",
+        "total": 0
+      },
+      {
+        "date": "2026-08-17",
+        "total": 0
+      },
+      {
+        "date": "2026-08-18",
+        "total": 0
+      },
+      {
+        "date": "2026-08-19",
+        "total": 0
+      },
+      {
+        "date": "2026-08-20",
+        "total": 0
+      },
+      {
+        "date": "2026-08-21",
+        "total": 0
+      },
+      {
+        "date": "2026-08-22",
+        "total": 0
+      },
+      {
+        "date": "2026-08-23",
+        "total": 0
+      },
+      {
+        "date": "2026-08-24",
+        "total": 0
+      },
+      {
+        "date": "2026-08-25",
+        "total": 0
+      },
+      {
+        "date": "2026-08-26",
+        "total": 0
+      },
+      {
+        "date": "2026-08-27",
+        "total": 0
+      },
+      {
+        "date": "2026-08-28",
+        "total": 0
+      },
+      {
+        "date": "2026-08-29",
+        "total": 0
+      },
+      {
+        "date": "2026-08-30",
+        "total": 0
+      },
+      {
+        "date": "2026-08-31",
+        "total": 0
+      },
+      {
+        "date": "2026-09-01",
+        "total": 5,
+        "bySource": {
+          "manual": 1,
+          "seldon": 4
+        }
+      },
+      {
+        "date": "2026-09-02",
+        "total": 0
+      },
+      {
+        "date": "2026-09-03",
+        "total": 1,
+        "bySource": {
+          "pacman": 1
+        }
+      },
+      {
+        "date": "2026-09-04",
+        "total": 0
+      },
+      {
+        "date": "2026-09-05",
+        "total": 1,
+        "bySource": {
+          "plugins": 1
+        }
+      },
+      {
+        "date": "2026-09-06",
+        "total": 0
+      },
+      {
+        "date": "2026-09-07",
+        "total": 0
+      },
+      {
+        "date": "2026-09-08",
+        "total": 0
+      },
+      {
+        "date": "2026-09-09",
+        "total": 0
+      },
+      {
+        "date": "2026-09-10",
+        "total": 0
+      },
+      {
+        "date": "2026-09-11",
+        "total": 0
+      },
+      {
+        "date": "2026-09-12",
+        "total": 7,
+        "bySource": {
+          "config": 1,
+          "manual": 2,
+          "seldon": 2,
+          "snapper": 2
+        }
+      },
+      {
+        "date": "2026-09-13",
+        "total": 2,
+        "bySource": {
+          "seldon": 2
+        }
+      },
+      {
+        "date": "2026-09-14",
+        "total": 0
+      },
+      {
+        "date": "2026-09-15",
+        "total": 3,
+        "bySource": {
+          "omarchy": 1,
+          "pacman": 1,
+          "snapper": 1
+        }
+      },
+      {
+        "date": "2026-09-16",
+        "total": 0
+      },
+      {
+        "date": "2026-09-17",
+        "total": 0
+      },
+      {
+        "date": "2026-09-18",
+        "total": 0
+      },
+      {
+        "date": "2026-09-19",
+        "total": 0
+      },
+      {
+        "date": "2026-09-20",
+        "total": 1,
+        "bySource": {
+          "theme": 1
+        }
+      },
+      {
+        "date": "2026-09-21",
+        "total": 0
+      },
+      {
+        "date": "2026-09-22",
+        "total": 0
+      },
+      {
+        "date": "2026-09-23",
+        "total": 0
+      },
+      {
+        "date": "2026-09-24",
+        "total": 1,
+        "bySource": {
+          "plugins": 1
+        }
+      },
+      {
+        "date": "2026-09-25",
+        "total": 0
+      },
+      {
+        "date": "2026-09-26",
+        "total": 1,
+        "bySource": {
+          "seldon": 1
+        }
+      },
+      {
+        "date": "2026-09-27",
+        "total": 0
+      },
+      {
+        "date": "2026-09-28",
+        "total": 1,
+        "bySource": {
+          "seldon": 1
+        }
+      },
+      {
+        "date": "2026-09-29",
+        "total": 1,
+        "bySource": {
+          "seldon": 1
+        }
+      },
+      {
+        "date": "2026-09-30",
+        "total": 8,
+        "bySource": {
+          "manual": 1,
+          "pacman": 3,
+          "seldon": 1,
+          "snapper": 3
+        }
+      },
+      {
+        "date": "2026-10-01",
+        "total": 30,
+        "bySource": {
+          "agent": 6,
+          "config": 2,
+          "manual": 2,
+          "omarchy": 1,
+          "pacman": 7,
+          "plugins": 1,
+          "seldon": 6,
+          "snapper": 4,
+          "theme": 1
+        }
+      }
+    ],
+    "packages": [
+      {
+        "date": "2026-09-01",
+        "explicit": 323,
+        "total": 2004
+      },
+      {
+        "date": "2026-09-03",
+        "explicit": 324,
+        "total": 2005
+      },
+      {
+        "date": "2026-10-01",
+        "explicit": 327,
+        "total": 2009
+      }
+    ],
+    "drift": [
+      {
+        "week": "2026-W36",
+        "opened": 2,
+        "resolved": 2
+      },
+      {
+        "week": "2026-W37",
+        "opened": 1,
+        "resolved": 1
+      },
+      {
+        "week": "2026-W38",
+        "opened": 3,
+        "resolved": 2
+      },
+      {
+        "week": "2026-W39",
+        "opened": 1,
+        "resolved": 2
+      },
+      {
+        "week": "2026-W40",
+        "opened": 6,
+        "resolved": 2
+      }
+    ],
+    "risk": {
+      "R0": 1,
+      "R1": 3,
+      "R2": 4,
+      "R3": 0
+    },
+    "timeline": [
+      {
+        "kind": "case",
+        "ts": "2026-09-01",
+        "end": "2026-09-01",
+        "label": "C-2026-001 Seldon-Logbuch anlegen",
+        "ref": "C-2026-001"
+      },
+      {
+        "kind": "case",
+        "ts": "2026-09-12",
+        "end": "2026-09-13",
+        "label": "C-2026-002 Hyprland-Monitorlayout für Dual-WQHD",
+        "ref": "C-2026-002"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-09-15T20:10:12+02:00",
+        "label": "110 4.0.5-1",
+        "ref": "110"
+      },
+      {
+        "kind": "release",
+        "ts": "2026-09-15T20:13:05+02:00",
+        "label": "Omarchy 4.0.6-1",
+        "ref": "4.0.6-1"
+      },
+      {
+        "kind": "case",
+        "ts": "2026-09-26",
+        "end": null,
+        "label": "C-2026-003 Omarchy auf 4.0.7 aktualisieren",
+        "ref": "C-2026-003"
+      },
+      {
+        "kind": "case",
+        "ts": "2026-09-28",
+        "end": null,
+        "label": "C-2026-004 Zed als zweiten Editor installieren",
+        "ref": "C-2026-004"
+      },
+      {
+        "kind": "case",
+        "ts": "2026-09-29",
+        "end": null,
+        "label": "C-2026-005 Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim)",
+        "ref": "C-2026-005"
+      },
+      {
+        "kind": "case",
+        "ts": "2026-09-30",
+        "end": null,
+        "label": "C-2026-006 Snapper-Retention auf 14 Tage",
+        "ref": "C-2026-006"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-09-30T19:00:00+02:00",
+        "label": "111 vor Snapshot-Aufräumen",
+        "ref": "111"
+      },
+      {
+        "kind": "case",
+        "ts": "2026-10-01",
+        "end": null,
+        "label": "C-2026-007 Herdr-Orchestrator als Default-Agent registrieren",
+        "ref": "C-2026-007"
+      },
+      {
+        "kind": "case",
+        "ts": "2026-10-01",
+        "end": null,
+        "label": "C-2026-008 Tailscale für Fernzugriff einrichten",
+        "ref": "C-2026-008"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-10-01T09:10:20+02:00",
+        "label": "112 4.0.6-1",
+        "ref": "112"
+      },
+      {
+        "kind": "release",
+        "ts": "2026-10-01T09:21:00+02:00",
+        "label": "Omarchy 4.0.7-1",
+        "ref": "4.0.7-1"
+      },
+      {
+        "kind": "crisis",
+        "ts": "2026-10-01T14:02:09+02:00",
+        "label": "pacman install ollama",
+        "ref": "01M3VNFTF8EVHWFFZ687N14Q0C"
+      },
+      {
+        "kind": "crisis",
+        "ts": "2026-10-01T14:03:30+02:00",
+        "label": "config config-add ~/.config/systemd/user/ollama.service",
+        "ref": "01M3VNJ9JGZ9169T01XCW16FT0"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-10-01T14:30:00+02:00",
+        "label": "113 pre: ollama",
+        "ref": "113"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-10-01T16:30:00+02:00",
+        "label": "114 tailscale: MagicDNS",
+        "ref": "114"
+      },
+      {
+        "kind": "snapshot",
+        "ts": "2026-10-01T16:30:04+02:00",
+        "label": "115 tailscale: MagicDNS",
+        "ref": "115"
+      }
+    ]
+  }
+}

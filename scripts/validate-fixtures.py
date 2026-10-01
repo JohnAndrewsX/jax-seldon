@@ -927,7 +927,30 @@ VARIANTS = {
         {"op": "replace", "path": "/memory", "value": {}},
         {"op": "replace", "path": "/series", "value": {"heatmap": [], "packages": [], "drift": []}},
     ],
+    # The index as the engine wrote it, read later: stale by its status and, with SELDON_NOW =
+    # STALE_NOW, by the clock too (generatedAt and lastCapture more than 2 h before it).
+    "index-stale": [
+        {"op": "test", "path": "/generatedAt", "value": "2026-10-01T17:05:12+02:00"},
+        {"op": "test", "path": "/state/lastCapture", "value": "2026-10-01T17:05:00+02:00"},
+        {"op": "replace", "path": "/state/status", "value": "indexStale"},
+    ],
+    # A non-snapper collector failed (SPEC-ENGINE §4 plugins: the shell IPC call timed out).
+    "plugins-degraded": [
+        {"op": "test", "path": "/state/collectors/3/name", "value": "plugins"},
+        {"op": "replace", "path": "/state/collectors/3/ok", "value": False},
+        {"op": "add", "path": "/state/collectors/3/message", "value": "omarchy plugin list --json: timed out"},
+    ],
+    # Omarchy run from a git checkout of $OMARCHY_PATH: the dossier carries its HEAD (short hash).
+    "omarchy-git-checkout": [
+        {"op": "test", "path": "/system/omarchy/version", "value": "4.0.7-1"},
+        {"op": "add", "path": "/system/omarchy/repoHead", "value": "3f9c2e1"},
+    ],
 }
+
+# SELDON_NOW for index-variants/index-stale.json (fixtures/README.md); the plugin harness pins
+# the same clock for its clock-driven stale case.
+STALE_NOW = "2026-10-01T20:05:12+02:00"
+STALE_AFTER = dt.timedelta(hours=2)  # SPEC-PLUGIN §3
 
 
 def apply_overlay(doc, ops, name):
@@ -1205,6 +1228,10 @@ def main():
         problems += [f"{rel(path)} {d} (regenerate with --write-index)"
                      for d in diff(have, apply_overlay(sample, ops, name))]
         problems += check_times(have, rel(path))
+    stale = apply_overlay(sample, VARIANTS["index-stale"], "index-stale")
+    for k, v in (("generatedAt", stale["generatedAt"]), ("state.lastCapture", stale["state"]["lastCapture"])):
+        if instant(STALE_NOW) - instant(v) <= STALE_AFTER:
+            problems.append(f"index-variants/index-stale {k} {v} is not more than 2 h before STALE_NOW {STALE_NOW}")
 
     # 4. ADR-0013 mutation self-checks on the sample logbook
     errs, n_checks = self_checks(today)
