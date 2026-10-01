@@ -14,16 +14,30 @@
 //! `git clone`). A version that cannot be read this time keeps the last one
 //! seen, so a failing catalog never looks like an update.
 //!
-//! The cursor is the snapshot `{id: {enabled, version}}` and its SHA-256.
-//! Without a cursor the collector takes a baseline (no events).
+//! `plugin-update` fires only for plugins with `firstParty: false`
+//! (ADR-0018): first-party plugins ship inside the `omarchy` package, whose
+//! `update` event covers them; their versions are tracked in the cursor
+//! only. Enabling and disabling fire for every plugin.
+//!
+//! `plugin-add` and `plugin-update` are timed by the later mtime of the
+//! plugin directory and its manifest, clamped to `[last check, now]`, so
+//! attribution (ADR-0017) can match the agent command that cloned or
+//! pulled it. Removal, enabling and disabling get the capture time.
+//!
+//! The cursor is the snapshot `{id: {enabled, version}}`, its SHA-256 and the
+//! time of the last check. Without a cursor the collector takes a baseline
+//! (no events).
 
 use std::collections::BTreeMap;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
+use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::config::changed_at;
 use super::{Collector, Ctx, Outcome, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys::{self, Run};
@@ -46,6 +60,8 @@ struct Listed {
     id: String,
     #[serde(default)]
     enabled: bool,
+    #[serde(default, rename = "firstParty")]
+    first_party: bool,
 }
 
 /// One entry of `omarchy plugin catalog` (other fields ignored).
@@ -65,21 +81,35 @@ struct PluginState {
     version: Option<String>,
 }
 
-/// The plugins collector's cursor: the last snapshot and its hash.
+/// The plugins collector's cursor: the last snapshot, its hash and the
+/// time of the last check.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct PluginsCursor {
     hash: String,
     plugins: BTreeMap<String, PluginState>,
+    /// Capture time of the last check (missing in older cursors: the
+    /// capture time is used then).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checked: Option<DateTime<FixedOffset>>,
 }
 
 impl PluginsCursor {
-    fn new(plugins: BTreeMap<String, PluginState>) -> Self {
+    fn new(plugins: BTreeMap<String, PluginState>, checked: DateTime<FixedOffset>) -> Self {
         let body = serde_json::to_vec(&plugins).expect("a snapshot always serialises");
         PluginsCursor {
             hash: sys::sha256_hex(&body),
             plugins,
+            checked: Some(checked),
         }
     }
+}
+
+/// What this run saw of a plugin beyond its cursor state.
+#[derive(Debug, Clone, Copy, Default)]
+struct Seen {
+    first_party: bool,
+    /// Later mtime of the plugin directory and its manifest.
+    touched: Option<SystemTime>,
 }
 
 impl Plugins {
@@ -113,20 +143,37 @@ impl Plugins {
 
         let manifests = catalog(ctx, omarchy);
         let mut snapshot = BTreeMap::new();
+        let mut seen = BTreeMap::new();
         for p in listed {
             if p.id.is_empty() || p.id.chars().count() > SUBJECT_MAX {
                 continue;
             }
             let fallback = plugins_dir.join(&p.id).join("manifest.json");
-            let version = manifests
+            let candidates: Vec<&PathBuf> = manifests
                 .get(&p.id)
                 .into_iter()
                 .chain([&fallback])
-                .find_map(|m| version(ctx, m))
-                .or_else(|| {
-                    // unreadable this time: keep the last one seen
-                    prev.as_ref()?.plugins.get(&p.id)?.version.clone()
-                });
+                .collect();
+            let found = candidates
+                .iter()
+                .find_map(|m| version(ctx, m).map(|v| (v, *m)));
+            // the manifest that answered, else the first one that exists
+            let manifest = found
+                .as_ref()
+                .map(|(_, m)| *m)
+                .or_else(|| candidates.iter().copied().find(|m| m.exists()));
+            let touched = manifest.and_then(|m| touched(m));
+            let version = found.map(|(v, _)| v).or_else(|| {
+                // unreadable this time: keep the last one seen
+                prev.as_ref()?.plugins.get(&p.id)?.version.clone()
+            });
+            seen.insert(
+                p.id.clone(),
+                Seen {
+                    first_party: p.first_party,
+                    touched,
+                },
+            );
             snapshot.insert(
                 p.id,
                 PluginState {
@@ -135,10 +182,13 @@ impl Plugins {
                 },
             );
         }
-        let next = PluginsCursor::new(snapshot);
+        let next = PluginsCursor::new(snapshot, ctx.now);
 
         let events = match &prev {
-            Some(prev) if prev.hash != next.hash => diff(ctx, &prev.plugins, &next.plugins),
+            Some(prev) if prev.hash != next.hash => {
+                let since = prev.checked.unwrap_or(ctx.now);
+                diff(ctx, &prev.plugins, &next.plugins, &seen, since)
+            }
             _ => Vec::new(), // baseline, or nothing changed
         };
         Outcome::ok(events, to_cursor(&next))
@@ -229,14 +279,33 @@ fn version(ctx: &Ctx, manifest: &Path) -> Option<String> {
     })
 }
 
-/// Events for the step from `old` to `new`, ordered by plugin id.
+/// The later mtime of `manifest` and its directory (a clone or a pull
+/// touches at least one of them).
+fn touched(manifest: &Path) -> Option<SystemTime> {
+    let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let dir = manifest.parent().and_then(mtime);
+    mtime(manifest).max(dir)
+}
+
+/// Events for the step from `old` to `new`, ordered by plugin id. `seen`
+/// holds what this run saw of the plugins in `new`; `since` is the last
+/// check.
 fn diff(
     ctx: &Ctx,
     old: &BTreeMap<String, PluginState>,
     new: &BTreeMap<String, PluginState>,
+    seen: &BTreeMap<String, Seen>,
+    since: DateTime<FixedOffset>,
 ) -> Vec<Event> {
+    let seen_of = |id: &str| seen.get(id).copied().unwrap_or_default();
+    // add and update: when the plugin directory changed (ADR-0017 window)
+    let changed = |id: &str| changed_at(ctx, seen_of(id).touched, since);
     let event = |kind, id: &str, meta: Meta| {
-        let mut e = Event::new(ctx.now, Source::Plugins, kind, id);
+        let ts = match kind {
+            Kind::PluginAdd => changed(id),
+            _ => ctx.now,
+        };
+        let mut e = Event::new(ts, Source::Plugins, kind, id);
         e.detail = meta.version.clone();
         e.meta(meta)
     };
@@ -264,17 +333,24 @@ fn diff(
                 },
             )),
             (Some(o), Some(n)) => {
+                // first-party versions belong to the omarchy package (ADR-0018)
                 if let (Some(from), Some(to)) = (&o.version, &n.version)
                     && from != to
+                    && !seen_of(id).first_party
                 {
                     events.push(
-                        Event::new(ctx.now, Source::Plugins, Kind::PluginUpdate, id.as_str())
-                            .detail(format!("{from} → {to}"))
-                            .meta(Meta {
-                                from: Some(from.clone()),
-                                to: Some(to.clone()),
-                                ..Meta::default()
-                            }),
+                        Event::new(
+                            changed(id),
+                            Source::Plugins,
+                            Kind::PluginUpdate,
+                            id.as_str(),
+                        )
+                        .detail(format!("{from} → {to}"))
+                        .meta(Meta {
+                            from: Some(from.clone()),
+                            to: Some(to.clone()),
+                            ..Meta::default()
+                        }),
                     );
                 }
                 if o.enabled != n.enabled {

@@ -259,6 +259,15 @@ mod plugins {
             write(&self.b.path("catalog.json"), text);
         }
 
+        /// Sets the mtime of a plugin's manifest and directory.
+        fn touch(&self, id: &str, at: &str) {
+            let t: SystemTime = ts(at).into();
+            let dir = self.plugins_dir.join(id);
+            for path in [dir.join("manifest.json"), dir] {
+                std::fs::File::open(&path).unwrap().set_modified(t).unwrap();
+            }
+        }
+
         fn manifest(&self, id: &str, version: Option<&str>) {
             let mut m = json!({"id": id, "name": id, "kinds": ["bar-widget"]});
             if let Some(v) = version {
@@ -296,12 +305,14 @@ mod plugins {
         assert!(first.ok, "{:?}", first.message);
         assert!(first.events.is_empty(), "the first run is a baseline");
 
+        // `omarchy plugin add` (a clone) at 16:05
         p.list_fixture("logs/plugin-list-after.json");
+        p.touch("io.github.example.tyme", "2026-10-01T16:05:00+02:00");
         let second = p.run("2026-10-01T16:10:00+02:00");
         assert!(second.ok);
         assert_eq!(second.events.len(), 1, "{:?}", second.events);
         let e = &p.b.written[0];
-        assert_eq!(e.ts, ts("2026-10-01T16:10:00+02:00"));
+        assert_eq!(e.ts, ts("2026-10-01T16:05:00+02:00"), "the clone's time");
         assert_matches_fixture(
             e,
             "plugin-add",
@@ -330,6 +341,10 @@ mod plugins {
         // weather-plus 1.2.0 → 1.3.0, omarchy.clock enabled, omarchy.agents
         // disabled, user.clock removed
         p.manifest("io.github.example.weather-plus", Some("1.3.0"));
+        p.touch(
+            "io.github.example.weather-plus",
+            "2026-09-24T19:00:14+02:00",
+        );
         let mut list: Vec<Value> = serde_json::from_str(
             &std::fs::read_to_string(fixture("logs/plugin-list-after.json")).unwrap(),
         )
@@ -380,6 +395,113 @@ mod plugins {
         assert!(p.b.written.iter().all(|e| e.zone.is_some()));
 
         assert!(p.run("2026-09-24T19:10:00+02:00").events.is_empty());
+    }
+
+    #[test]
+    fn first_party_version_changes_are_not_events() {
+        // ADR-0018: first-party plugins ship with Omarchy; only third-party
+        // plugins get plugin-update
+        let mut p = story();
+        p.list_fixture("logs/plugin-list-after.json");
+        let clock = p.b.path("omarchy/shell/plugins/clock/manifest.json");
+        write(&clock, r#"{"id":"omarchy.clock","version":"1.0.0"}"#);
+        let mut catalog: Vec<Value> =
+            serde_json::from_str(&std::fs::read_to_string(p.b.path("catalog.json")).unwrap())
+                .unwrap();
+        for c in &mut catalog {
+            if c["id"] == "omarchy.clock" {
+                c["manifestPath"] = json!(clock);
+            }
+        }
+        write(
+            &p.b.path("catalog.json"),
+            serde_json::to_string(&catalog).unwrap(),
+        );
+        p.run("2026-10-01T16:00:00+02:00");
+
+        // a first-party bump alone: tracked, not reported
+        write(&clock, r#"{"id":"omarchy.clock","version":"1.1.0"}"#);
+        let out = p.run("2026-10-01T16:10:00+02:00");
+        assert!(out.ok);
+        assert!(out.events.is_empty(), "{:?}", out.events);
+        assert_eq!(
+            p.b.cursors["plugins"]["plugins"]["omarchy.clock"]["version"],
+            "1.1.0"
+        );
+
+        // a third-party bump next to a first-party one: one plugin-update
+        write(&clock, r#"{"id":"omarchy.clock","version":"1.2.0"}"#);
+        p.manifest("io.github.example.weather-plus", Some("1.4.0"));
+        let out = p.run("2026-10-01T16:20:00+02:00");
+        let got: Vec<(Kind, &str)> = out
+            .events
+            .iter()
+            .map(|e| (e.kind, e.subject.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [(Kind::PluginUpdate, "io.github.example.weather-plus")]
+        );
+        assert_eq!(out.events[0].detail.as_deref(), Some("1.3.0 → 1.4.0"));
+
+        // enabling and disabling still fire for first-party plugins
+        let mut list: Vec<Value> =
+            serde_json::from_str(&std::fs::read_to_string(p.b.path("list.json")).unwrap()).unwrap();
+        for entry in &mut list {
+            if entry["id"] == "omarchy.clock" {
+                entry["enabled"] = json!(true);
+            }
+        }
+        p.list(&serde_json::to_string(&list).unwrap());
+        let out = p.run("2026-10-01T16:30:00+02:00");
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(out.events[0].kind, Kind::PluginEnable);
+        assert_eq!(out.events[0].subject, "omarchy.clock");
+    }
+
+    #[test]
+    fn add_and_update_are_timed_by_the_plugin_directory() {
+        let mut p = story();
+        p.list_fixture("logs/plugin-list-before.json");
+        p.run("2026-10-01T16:00:00+02:00");
+
+        // an mtime from before the last check (a copied directory) is the
+        // last check; one from the future is now
+        p.list_fixture("logs/plugin-list-after.json");
+        p.touch("io.github.example.tyme", "2026-09-01T10:00:00+02:00");
+        let out = p.run("2026-10-01T16:10:00+02:00");
+        assert_eq!(out.events[0].ts, ts("2026-10-01T16:00:00+02:00"));
+
+        p.manifest("io.github.example.weather-plus", Some("1.4.0"));
+        p.touch(
+            "io.github.example.weather-plus",
+            "2030-01-01T00:00:00+01:00",
+        );
+        let out = p.run("2026-10-01T16:20:00+02:00");
+        assert_eq!(out.events[0].kind, Kind::PluginUpdate);
+        assert_eq!(out.events[0].ts, ts("2026-10-01T16:20:00+02:00"));
+
+        // a pull at 16:25 that only rewrote the manifest
+        p.manifest("io.github.example.weather-plus", Some("1.5.0"));
+        let manifest = p
+            .plugins_dir
+            .join("io.github.example.weather-plus/manifest.json");
+        std::fs::File::open(&manifest)
+            .unwrap()
+            .set_modified(ts("2026-10-01T16:25:00+02:00").into())
+            .unwrap();
+        std::fs::File::open(manifest.parent().unwrap())
+            .unwrap()
+            .set_modified(ts("2026-09-01T10:00:00+02:00").into())
+            .unwrap();
+        let out = p.run("2026-10-01T16:30:00+02:00");
+        assert_eq!(out.events[0].ts, ts("2026-10-01T16:25:00+02:00"));
+
+        // removal, enabling and disabling: the capture time
+        p.list_fixture("logs/plugin-list-before.json");
+        let out = p.run("2026-10-01T16:40:00+02:00");
+        assert_eq!(out.events[0].kind, Kind::PluginRemove);
+        assert_eq!(out.events[0].ts, ts("2026-10-01T16:40:00+02:00"));
     }
 
     #[test]
