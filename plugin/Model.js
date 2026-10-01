@@ -371,14 +371,12 @@ function validateArgs(args) {
   case "drift":
     var id = n >= 3 && EVENT_ID.test(a[2])
     if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
-    if (id && withText && a[1] === "explain" && (n === 3 || only(3))) return ""
-    if (id && !withText && a[1] === "dismiss") {
-      var r = n >= 4 && a[3] === "--only" ? 4 : 3
-      if (n === r + 2 && a[r] === "--reason" && hasText(a[r + 1])) return ""
-    }
+    // dismiss takes its reason like explain its text, after `--` (WP-011
+    // review: the contract form replacing `--reason <text>`).
+    if (id && withText && (a[1] === "explain" || a[1] === "dismiss") && (n === 3 || only(3))) return ""
     if (id && !withText && a[1] === "show" && n === 3 && json) return ""
-    return "drift must be: drift link <eventId> <caseId> [--only] | explain <eventId> [--only] -- <text>"
-      + " | dismiss <eventId> [--only] --reason <text> | show <eventId> --json"
+    return "drift must be: drift link <eventId> <caseId> [--only] | explain|dismiss <eventId> [--only] -- <text>"
+      + " | show <eventId> --json"
   case "decide":
     return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
   case "open":
@@ -449,6 +447,19 @@ function snapperBanner(index) {
     }
   }
   return null
+}
+
+// ---- Panel: tab keys ----------------------------------------------------------
+
+// SPEC-PLUGIN §5: digits 1–6 select tabs by a fixed number, so a key keeps
+// its tab when later versions add tabs. A digit whose tab is absent does
+// nothing.
+var TAB_KEYS = { "1": "today", "2": "changelog", "3": "work", "4": "decisions", "5": "system", "6": "memory" }
+
+function tabKeyFor(id) {
+  for (var key in TAB_KEYS)
+    if (TAB_KEYS[key] === id) return key
+  return ""
 }
 
 // ---- Shared formatting ------------------------------------------------------
@@ -577,6 +588,12 @@ function changelogRows(index, filter) {
     var group = !leader && typeof e.txId === "string" && isOpenMember(e, e.txId) ? drift.byTx[e.txId] || null : null
     var item = leader || group
     var grouped = leader !== null && typeof leader.members === "number"
+    // One colour source per row: open drift by its item's computed zone
+    // (ADR-0013 §3: a routine group is yellow although its members are red in
+    // the ledger), anything else by the event's own zone.
+    var zone = item === null ? e.zone
+      : typeof item.zone === "string" ? item.zone
+      : item.crisis === true ? "red" : e.zone
     var day = dayOf(e.ts)
     rows.push({
       id: str(e.id),
@@ -591,7 +608,7 @@ function changelogRows(index, filter) {
       actor: actorLabel(e.actor),
       caseId: str(e.case),
       zone: str(e.zone),
-      tone: zoneTone(e.zone),
+      tone: zoneTone(zone),
       resolution: str(e.resolution),
       resolutionDetail: str(e.resolutionDetail),
       snapshot: e.source === "snapper" && e.kind === "snapshot",
@@ -771,9 +788,10 @@ function systemSections(index, nowMs) {
   for (var i = 0; i < snaps.length; i++) {
     var s = snaps[i]
     if (!isObject(s) || !isInt(s.number)) continue
-    var what = str(s.description)
-    if (str(s.type) !== "" && s.type !== "single") what = what !== "" ? what + " · " + s.type : s.type
-    rows.push(pair("#" + s.number + "  " + stamp(s.ts), what))
+    // The time goes with the value: the label column is too narrow for it.
+    var snapParts = [stamp(s.ts), str(s.description)]
+    if (str(s.type) !== "" && s.type !== "single") snapParts.push(s.type)
+    rows.push(pair("#" + s.number, snapParts.filter(function(p) { return p !== "" }).join(" · ")))
   }
   if (rows.length) sections.push({ title: "SNAPSHOTS", rows: rows })
 

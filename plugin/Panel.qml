@@ -12,11 +12,13 @@ import "Model.js" as Model
 // tab. The banners and the strip sit above the tabs, so every tab shows them.
 // Tabs: Today, Changelog, System (Work, Decisions and Memory arrive later).
 //
-// Keyboard:
-//   Tab / Shift-Tab  next / previous tab; past the last (or first) tab, on to
-//                    the bar's next (previous) panel, as every Omarchy panel
-//   ← / →, 1–3       previous / next tab, or a tab directly
-//   ↑ / ↓            move in the tab's list
+// Keyboard (SPEC-PLUGIN §5):
+//   Tab / Shift-Tab  the bar's next / previous panel, as every Omarchy panel
+//   ← / →, h / l     previous / next tab
+//   1–6              a tab by its fixed number (Model.TAB_KEYS: Today 1,
+//                    Changelog 2, Work 3, Decisions 4, System 5, Memory 6);
+//                    the digit of a tab this version lacks does nothing
+//   ↑ / ↓, k / j     move in the tab's list
 //   Enter, Space     open the row under the cursor (a group, the yesterday row)
 //   f / F            Changelog: next / previous source filter
 //   c                capture now
@@ -62,16 +64,6 @@ Panel {
     return true
   }
 
-  // Tab walks the tabs; past either end it hands over to the bar's panel
-  // switch, and wraps when there is no other panel.
-  function tabKey(direction) {
-    var next = root.tabIndex + direction
-    if (next < 0 || next >= root.tabNames.length) {
-      if (root.switchPanel(direction)) return
-    }
-    root.selectTab(next)
-  }
-
   function moveCursor(dy) {
     if (!root.cursorActive) {
       root.cursorActive = true
@@ -81,9 +73,8 @@ Panel {
   }
 
   function textKey(t) {
-    var digit = "123456789".indexOf(t)
-    if (digit !== -1 && digit < root.tabNames.length) {
-      root.selectTab(digit)
+    if (Model.TAB_KEYS[t] !== undefined) {
+      root.selectTabById(Model.TAB_KEYS[t])
     } else if (t === "c" || t === "C") {
       root.captureNow()
     } else {
@@ -130,6 +121,7 @@ Panel {
         badges: rows.filter(function(r) { return r.badge !== "" }).map(function(r) { return r.subject + " " + r.badge }),
         folded: rows.filter(function(r) { return r.resolutionDetail !== "" }).length,
         snapshots: rows.filter(function(r) { return r.snapshot }).length,
+        driftTones: rows.filter(function(r) { return r.drift }).map(function(r) { return r.subject + " " + r.tone }),
         expanded: changelogTab.expandedId
       },
       system: systemTab.sections.map(function(s) { return s.title })
@@ -156,7 +148,7 @@ Panel {
       objectName: "seldonKeys"
       anchors.fill: parent
       onCloseRequested: root.close()
-      onTabRequested: function(direction) { root.tabKey(direction) }
+      onTabRequested: function(direction) { root.switchPanel(direction) }
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.selectTab(root.tabIndex + dx)
         else if (dy !== 0) root.moveCursor(dy)
@@ -208,6 +200,7 @@ Panel {
         Tabs {
           width: parent.width
           tabs: root.tabNames
+          keys: root.tabIds.map(Model.tabKeyFor)
           currentIndex: root.tabIndex
           foreground: root.foreground
           fontFamily: root.fontFamily

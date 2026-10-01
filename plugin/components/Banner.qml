@@ -64,7 +64,8 @@ BorderSurface {
       visible: root.command !== ""
       textFormat: Text.PlainText
       text: root.command
-      color: Qt.darker(root.foreground, 1.2)
+      // Util.alpha dims on light and dark themes; Qt.darker only darkens.
+      color: Util.alpha(root.foreground, 0.65)
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       wrapMode: Text.WrapAnywhere

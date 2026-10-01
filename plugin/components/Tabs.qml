@@ -12,6 +12,8 @@ Row {
   id: root
 
   property var tabs: []
+  // The digit that selects each tab (Model.TAB_KEYS), for the tooltip.
+  property var keys: []
   property int currentIndex: 0
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
@@ -31,7 +33,7 @@ Row {
 
       width: root.cellWidth
       text: modelData
-      tooltipText: "Key " + (index + 1)
+      tooltipText: root.keys[index] ? "Key " + root.keys[index] : ""
       selected: index === root.currentIndex
       bordered: true
       foreground: root.foreground

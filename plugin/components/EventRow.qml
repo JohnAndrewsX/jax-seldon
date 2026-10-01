@@ -11,11 +11,12 @@ import "../Model.js" as Model
 //   ▌        detail · actor · case
 //   ▌        resolution: why        (folded, ADR-0012 §8 §11)
 //
-// The stripe on the left is the event's own zone in theme colours (red =
-// urgent, yellow = accent, green = muted). Open drift colours the glyph and
-// the status line by the drift item instead: urgent for a crisis, else
-// accent, so the members of a yellow group (ADR-0013 §3: red in the ledger,
-// yellow as an item) do not read as crises. Snapshot rows carry the theme's selected
+// One colour per row, `row.tone` from Model.changelogRows(), in theme colours
+// (red = urgent, yellow = accent, green = muted): the zone of the open drift
+// item while the event is open drift (a routine group is yellow although its
+// members are red in the ledger, ADR-0013 §3), else the event's own zone. It
+// paints the stripe and, for open drift, the glyph, status line and "+N"
+// badge. Snapshot rows carry the theme's selected
 // fill. A drift group's leader shows "+N"; expanded, it lists the members
 // that index.events still holds. Every string is plain text.
 CursorSurface {
@@ -36,10 +37,8 @@ CursorSurface {
   readonly property color toneColor: tone === "urgent" ? urgent : tone === "accent" ? accent : muted
   readonly property string meta: row ? Model.rowMeta(row) : ""
   readonly property string status: row ? Model.rowStatus(row) : ""
-  readonly property color statusColor: !row ? dim
-    : row.crisis ? urgent
-    : row.drift ? accent
-    : dim
+  // Open drift speaks in the row's tone; a resolution or note stays dim.
+  readonly property color statusColor: row && row.drift ? toneColor : dim
 
   current: !!row && row.snapshot
   implicitHeight: content.implicitHeight + Style.spacing.md * 2
