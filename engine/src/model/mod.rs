@@ -8,6 +8,7 @@
 pub mod area;
 pub mod case;
 pub mod decision;
+pub mod event;
 pub mod journal;
 pub mod memory;
 pub mod project;
@@ -25,6 +26,7 @@ use crate::frontmatter::{Document, FmValue, Frontmatter, FrontmatterError};
 pub use area::Area;
 pub use case::{Case, CaseStatus, Priority, Risk, Zone};
 pub use decision::{Decision, DecisionStatus};
+pub use event::{Event, Kind, Meta, Source};
 pub use journal::{Journal, JournalEntry};
 pub use memory::Memory;
 pub use project::Project;

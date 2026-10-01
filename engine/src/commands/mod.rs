@@ -1,6 +1,7 @@
 //! Command implementations. Each returns an [`Output`] with a human and a
 //! JSON rendering (SPEC-ENGINE §1.4); `main.rs` picks one.
 
+pub mod capture;
 pub mod doctor;
 pub mod init;
 

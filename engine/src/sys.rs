@@ -3,7 +3,6 @@
 //! Subprocesses are always fixed programs with fixed argument lists
 //! (AGENTS.md §8); nothing here goes through a shell.
 
-use std::hash::{BuildHasher, Hasher};
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -106,14 +105,13 @@ pub fn hostname() -> String {
         .unwrap_or_else(|| "machine".to_string())
 }
 
-/// `n` random lowercase hex digits (std's randomly keyed SipHash; not for
-/// cryptography, only for ids that must not collide by accident).
+/// `n` random lowercase hex digits, from the 80 random bits of fresh ULIDs
+/// (the `ulid` crate's OS-seeded generator; not for cryptography, only for
+/// ids that must not collide by accident).
 pub fn random_hex(n: usize) -> String {
     let mut out = String::new();
     while out.len() < n {
-        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-        h.write_u128(Instant::now().elapsed().as_nanos());
-        out.push_str(&format!("{:016x}", h.finish()));
+        out.push_str(&format!("{:020x}", ulid::Ulid::generate().random()));
     }
     out.truncate(n);
     out

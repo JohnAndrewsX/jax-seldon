@@ -3,12 +3,15 @@
 //! The binary (`src/main.rs`) is a thin CLI over this library so that the
 //! integration tests in `tests/` can use the types directly.
 
+pub mod collectors;
 pub mod commands;
 pub mod config;
 pub mod error;
 pub mod frontmatter;
+pub mod ledger;
 pub mod logbook;
 pub mod model;
+pub mod redact;
 pub mod sys;
 
 /// Engine version, from Cargo.toml.
