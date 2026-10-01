@@ -215,7 +215,8 @@ payloads come in pairs: the `PostToolUse` original (with `tool_response`) and
 its `-pre` variant (`PreToolUse`, the same `tool_use_id`, no `tool_response`).
 The engine records on `PreToolUse` (ADR-0017 §1); a `PostToolUse` whose
 `tool_use_id` is already in the ledger writes nothing, a `PostToolUse` alone is
-recorded. `Edit`/`Write` are `PreToolUse` only and carry an absolute
+recorded. `validate-fixtures` fails when a `-pre` payload is not its sibling
+with `hook_event_name: PreToolUse` and without `tool_response`. `Edit`/`Write` are `PreToolUse` only and carry an absolute
 `file_path` under the fixture user's home `/home/user`.
 
 Every recorded event: `source: agent`, `kind: command`, `actor:

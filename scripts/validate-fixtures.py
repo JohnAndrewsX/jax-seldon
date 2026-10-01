@@ -1296,6 +1296,21 @@ def main():
                 if instant(STALE_NOW) - instant(v) <= STALE_AFTER:
                     problems.append(f"{rel(path)} {k} {v} is not more than 2 h before STALE_NOW {STALE_NOW}")
 
+    # 3b. a `-pre` hook payload is its PostToolUse sibling as PreToolUse, without tool_response
+    for pre in sorted(glob.glob(os.path.join(FIX, "hooks", "*-pre.json"))):
+        post = pre[:-len("-pre.json")] + ".json"
+        if not os.path.exists(post):
+            problems.append(f"{rel(pre)}: no PostToolUse sibling {os.path.basename(post)}")
+            continue
+        with open(pre, encoding="utf-8") as f:
+            have = json.load(f)
+        with open(post, encoding="utf-8") as f:
+            want = json.load(f)
+        want["hook_event_name"] = "PreToolUse"
+        want.pop("tool_response", None)
+        problems += [f"{rel(pre)} {d} (must equal {os.path.basename(post)} as PreToolUse without tool_response)"
+                     for d in diff(have, want)]
+
     # 4. ADR-0013 mutation self-checks on the sample logbook
     errs, n_checks = self_checks(today)
     problems += errs
