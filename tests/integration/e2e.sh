@@ -43,6 +43,7 @@ done
 
 host=${SELDON_TEST_HOST:-test}
 since_days=${SELDON_E2E_SINCE_DAYS:-7}
+[[ $since_days =~ ^[0-9]+$ ]] || { echo "e2e: SELDON_E2E_SINCE_DAYS must be a whole number of days, got '$since_days'" >&2; exit 1; }
 target=x86_64-unknown-linux-musl
 bin="$root/engine/target/$target/release/seldon"
 run_id=$(date +%Y%m%dT%H%M%S)-$$
@@ -148,7 +149,16 @@ plugin_hash() {
     (cd "$plugin_dir" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
   else echo absent; fi
 }
-plugin_enabled() { omarchy-shell shell listPlugins 2>/dev/null | jq -r ".[] | select(.id == \"jax.seldon\") | .enabled"; }
+# true, false, or empty when the shell does not answer (busy rescanning):
+# empty means unknown and never leads to a change.
+plugin_enabled() {
+  local i v
+  for i in 1 2 3 4 5; do
+    v=$(omarchy-shell shell listPlugins 2>/dev/null | jq -r ".[] | select(.id == \"jax.seldon\") | .enabled" 2>/dev/null)
+    [[ $v == true || $v == false ]] && { echo "$v"; return; }
+    sleep 1
+  done
+}
 # The omarchy-shell instance; pgrep also finds crash-report windows.
 shell_pid() { quickshell list -a -j 2>/dev/null | jq -r "[.[] | select(.config_path == \"$OMARCHY_PATH/shell/shell.qml\")] | last | .pid // empty"; }
 # Every rsync into the plugin dir makes the shell hot-reload once per file;
@@ -193,16 +203,28 @@ remote_restore() {
 source "$backup/found.env"
 omarchy-shell jax.seldon.panel close >/dev/null 2>&1 || true
 running_hash=$(plugin_hash)
+# put_back <path> — remove the run'"'"'s copy only when the path was absent at
+# the backup or was moved aside; a path the backup had not reached yet (a run
+# killed inside the loop) is the found one and stays.
+put_back() {
+  if [[ -e $backup/saved/$1 || -L $backup/saved/$1 ]]; then
+    rm -rf "$1"; mkdir -p "$(dirname "$1")"; mv "$backup/saved/$1" "$1"
+  elif [[ " ${absent-} " == *" $1 "* ]]; then
+    rm -rf "$1"
+  else
+    echo "restore: kept ~/$1 (found there, not moved aside)"
+  fi
+}
 # The engine binary first, so a plugin reloaded by the steps below finds no
 # engine and writes nothing while the state dirs are removed.
-rm -f .local/bin/seldon
-[[ -e $backup/saved/.local/bin/seldon ]] && mv "$backup/saved/.local/bin/seldon" .local/bin/seldon
+put_back .local/bin/seldon
 if [[ $plugin_existed == 1 ]]; then
   rsync -a --checksum --delete "$backup/plugin/" "$plugin_dir/"
 else
   rm -rf "$plugin_dir"
 fi
-if [[ $found_enabled != true && $(plugin_enabled) == true ]]; then omarchy plugin disable jax.seldon >/dev/null 2>&1 || true; fi
+# Disable only when the run found it disabled for certain; unknown stays as is.
+if [[ $found_enabled == false && $(plugin_enabled) == true ]]; then omarchy plugin disable jax.seldon >/dev/null 2>&1 || true; fi
 if [[ -n $(shell_pid) ]]; then
   if [[ $(plugin_hash) != "$running_hash" ]]; then
     # Other plugin code than the shell runs: only a restart loads it.
@@ -217,9 +239,7 @@ if [[ -n $(shell_pid) ]]; then
   service_idle || echo "restore: the plugin is still running an engine call"
 fi
 for p in "${paths[@]}"; do
-  [[ $p == .local/bin/seldon ]] && continue
-  rm -rf "$p"
-  if [[ -e $backup/saved/$p ]]; then mkdir -p "$(dirname "$p")"; mv "$backup/saved/$p" "$p"; fi
+  [[ $p == .local/bin/seldon ]] || put_back "$p"
 done
 rm -rf "$backup"
 echo "restore: done"'
@@ -231,10 +251,14 @@ mkdir -p "$backup/saved"
 plugin_existed=0
 if [[ -d $plugin_dir ]]; then plugin_existed=1; rsync -a "$plugin_dir/" "$backup/plugin/"; fi
 found_enabled=$(plugin_enabled)
+absent=""
+for p in "${paths[@]}"; do [[ -e $p || -L $p ]] || absent+=" $p"; done
+# found.env first: a run killed inside the loop below is still restored by
+# the next one (put_back keeps a found path the loop had not moved yet).
+printf "plugin_existed=%s\nfound_enabled=%s\nabsent=\"%s\"\n" "$plugin_existed" "$found_enabled" "$absent" > "$backup/found.env"
 for p in "${paths[@]}"; do
   if [[ -e $p || -L $p ]]; then mkdir -p "$backup/saved/$(dirname "$p")"; mv "$p" "$backup/saved/$p"; echo "backup: moved aside ~/$p"; fi
-done
-printf "plugin_existed=%s\nfound_enabled=%s\n" "$plugin_existed" "${found_enabled:-false}" > "$backup/found.env"'
+done'
 }
 
 # restore_and_verify — restore, then compare with the fingerprint taken
@@ -301,6 +325,14 @@ file_out=$(file -b "$bin" 2>/dev/null || echo "?")
 if [[ -n $remote ]]; then
   step "test host: baseline and backup ($host)"
   rsh 'true' || die "ssh $host"
+  # Never the dev host: an alias or localhost that leads back here would run
+  # the steps above (copy to ~/.local/bin, ~/.config/seldon, shell restart)
+  # on this machine.
+  local_id=$(cat /etc/machine-id 2>/dev/null || hostname)
+  remote_id=$(rsh 'cat /etc/machine-id 2>/dev/null || hostname')
+  [[ -n $remote_id && $remote_id != "$local_id" ]] \
+    || die "SELDON_TEST_HOST=$host is this machine (same machine id); the full run only targets the test host"
+  ok "test host is another machine"
   rsh 'command -v omarchy-shell wtype jq rsync quickshell >/dev/null' || die "test host tools (omarchy-shell wtype jq rsync quickshell)"
   # Nothing is changed while the session is locked: the shell cannot be
   # restarted and keys would go to the lock screen.
@@ -457,7 +489,7 @@ view=$(wait_view '.opened == true and .tab == "today"' 10) || bad "panel open on
 keep view-today.json "$view"
 eq "view status" "$(jq -r .status <<<"$view")" ok
 eq "Today entries = index today.entries" "$(jq -r .today.entries <<<"$view")" "$(jq -r '.today.entries | length' <<<"$index")"
-eq "index today has the note" "$(jq -r --arg t "$note" '[.today.entries[] | select(.text == $t)] | length' <<<"$index")" 1
+eq "index after the plugin's capture still has the note in today" "$(jq -r --arg t "$note" '[.today.entries[] | select(.text == $t)] | length' <<<"$index")" 1
 eq "view banner" "$(jq -r .banner <<<"$view")" ""
 ipc jax.seldon.panel tab changelog >/dev/null
 eq "filter pacman" "$(ipc jax.seldon.panel filter pacman)" ok
