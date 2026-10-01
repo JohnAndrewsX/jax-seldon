@@ -1,10 +1,47 @@
 WP-005 HANDOVER
 
 Branch `wp/005-collectors-user`, worktree `wt/WP-005`. Not pushed, no PR.
-The commits sit on `aae3ef1` (WP-004 foundation on main). Each commit builds;
-at HEAD `just check` exits 0. `git merge-tree` against `wp/004-collectors-core`
-and `wp/006-commands` reports no code conflicts. Expect a trivial conflict
-at the end of `memory/*.md` with WP-004, because both branches append.
+Rebased on `main` at `beb7005`, which has the full WP-004 and WP-006 merged.
+The `memory/*.md` conflicts were resolved by keeping both sections. Each
+commit builds; at HEAD `just check` exits 0.
+
+## Review round 1 fix-up (APPROVE, conditional)
+
+Four commits on top of the rebased branch:
+
+1. **Flaky test harness (blocking).** Fixed in `79d5bb6`.
+   - Before: `Bench::run` re-acquired the flock on every run. A stub process forked by another test thread holds the inherited lock fd until it execs, which gave a sporadic `LockHeld`.
+   - Now: `Bench` takes the lock once in `new`, keeps it as its first field (released first) and hands it to `Ledger::append`. The manual acquire in the theme hook test is gone. Engine code is unchanged.
+   - Stress run: the `collectors_user` binary 150× with `--test-threads=16` → 0 failures; the full `cargo test` 10× → 0 failures. I did not reproduce the old failure rate myself; the fix follows the reviewer's diagnosis, which matches how WP-004's `support::Bench` already holds its lock.
+2. **Overrides in `Sources`.** Done in `9e2374d`.
+   - New fields in `collectors/mod.rs`, read once per process in `Sources::from_env`:
+     - `omarchy` (`SELDON_OMARCHY`, default `omarchy`);
+     - `plugins_dir` (`SELDON_OMARCHY_PLUGINS_DIR`; `None` = `~/.config/omarchy/plugins`);
+     - `theme_file` (`SELDON_THEME_FILE`; `None` = Omarchy's `theme.name`).
+   - `Plugins::dir(sources, home)` and `Theme::file(sources, home)` resolve the defaults. The env readers in the collector modules are removed.
+   - The rebase surfaced a failure in WP-004's `tests/idempotency.rs::capture_writes_the_ledger_once`. Its `capture --all` now runs the real plugins, theme and config collectors: they reported degraded (no `omarchy`, no theme file), and they keep cursors, so they show up in `sinceIgnored`. Fixes:
+     - its `Cli` now feeds them fixture inputs (`plugin-list-before.json`, a theme file, an empty plugins dir);
+     - the three `sinceIgnored` expectations list all six collectors;
+     - event counts are unchanged.
+   - `tests/support/mod.rs` gets `..Sources::default()` in its `Sources` literal.
+3. **ADR-0018.** Done in `7e385fd`. `plugin-update` is emitted only for `firstParty: false`, read from the list's `firstParty` field.
+   - First-party version changes are tracked in the cursor only.
+   - Enable and disable still fire for first-party plugins.
+   - Test `first_party_version_changes_are_not_events`:
+     - a first-party bump → 0 events, cursor updated;
+     - a first-party and a third-party bump together → exactly one `plugin-update` for the third-party plugin;
+     - enabling a first-party plugin → `plugin-enable`.
+   - I read ADR-0018 from the main checkout, where it is still uncommitted; it is not in `main`'s history yet.
+4. **Timing of `plugin-add` and `plugin-update`.** Done in `7e385fd`.
+   - `ts` = the later mtime of the plugin directory and the manifest that gave the version (else the first manifest that exists), clamped to `[last check, now]` with the same `changed_at` as theme and config.
+   - The plugins cursor gains `checked`. Cursors without it fall back to the capture time.
+   - Removal, enable and disable keep the capture time.
+   - Test `add_and_update_are_timed_by_the_plugin_directory` covers: clone time, an mtime in the past clamped to the last check, one in the future clamped to now, a pull that only touched the manifest, and a removal at capture time. The fixture-pair tests now set the clone/pull mtime, and the 09-24 `plugin-update` still matches the fixture line including `ts`.
+- **Mutation checks.** Each was caught by a test:
+  - drop the first-party filter;
+  - time `plugin-add` at now;
+  - time `plugin-update` at now;
+  - use only the directory mtime.
 
 ## Done
 
@@ -20,13 +57,14 @@ at the end of `memory/*.md` with WP-004, because both branches append.
     2. `version` in `~/.config/omarchy/plugins/<id>/manifest.json`;
     3. `git -C <dir> rev-parse --short HEAD`, only when the plugin directory has its own `.git`;
     4. the last version seen, so a failing catalog never looks like an update.
-  - **Cursor:** `{hash, plugins: {id: {enabled, version}}}`. The hash is the SHA-256 of the snapshot.
+  - **Cursor:** `{hash, plugins: {id: {enabled, version}}, checked}`. The hash is the SHA-256 of the snapshot.
   - **First run:** baseline, no events.
   - **Diff events:**
     - `plugin-add`: `meta.version`, `meta.enabled`, `detail` = version;
     - `plugin-remove`: `meta.version`;
     - `plugin-enable|disable`: `meta.enabled` and `meta.version`;
-    - `plugin-update`: `detail` "from → to", `meta.from`/`meta.to`, as in the fixture line of 09-24.
+    - `plugin-update`: `detail` "from → to", `meta.from`/`meta.to`, as in the fixture line of 09-24; third-party plugins only (ADR-0018).
+    - `plugin-add` and `plugin-update` are timed by the plugin directory (see review item 4); the others get the capture time.
   - **Degraded** (`ok: false`, cursor kept):
     - The command exits non-zero. The message carries the first stderr line, e.g. `omarchy plugin list --json: omarchy-shell is not running (it needs the running Omarchy shell)`.
     - `omarchy` is missing, the run times out, or the output is not JSON.
@@ -46,7 +84,7 @@ at the end of `memory/*.md` with WP-004, because both branches append.
     - `.git` directories;
     - symlinked directories. Symlinked files are followed.
   - **Not files:** sockets, FIFOs and devices are ignored.
-  - **`[redaction] skipPaths`** (`SkipPaths`): matching files and directories are never opened and never named in the manifest. Pattern syntax is in the doc comment, and is my proposal (see Decisions needed):
+  - **`[redaction] skipPaths`** (`SkipPaths`): matching files and directories are never opened and never named in the manifest. Pattern syntax is in the doc comment; the orchestrator moves it into SPEC-ENGINE §7:
     - a pattern with `/` matches the full path (`~/` = home), as a file or as a directory with everything below it;
     - a pattern without `/` matches a file or directory name;
     - `*` and `?` stay within one path component; `**` crosses them.
@@ -65,7 +103,7 @@ at the end of `memory/*.md` with WP-004, because both branches append.
   - Does nothing without `seldon` on PATH or without a slug.
   - The slug is one argument and is never evaluated.
   - **`engine/hooks/README.md`** documents the install, done by the wizard on opt-in only (`omarchy hook install theme-set <file>` → `~/.config/omarchy/hooks/theme-set.d/`; WP-024 makes that call), and the interplay with the collector.
-- **`engine/tests/collectors_user.rs`** — 21 tests: in-process `Bench`, CLI, and the hook.
+- **`engine/tests/collectors_user.rs`** — 23 tests after the review fix-up: in-process `Bench`, CLI, and the hook.
   - **Fixture pairs:**
     - plugins: `plugin-list-before` → `-after` gives exactly the fixture's `plugin-add io.github.example.tyme` line, ignoring id and ts;
     - plugins: weather-plus 1.2.0 → 1.3.0 gives the fixture's 09-24 `plugin-update` line, ts included;
@@ -88,16 +126,15 @@ at the end of `memory/*.md` with WP-004, because both branches append.
 
 ## Not done
 
-- **ADR-0014 §1 attribution for config, theme and plugins events.** The collectors always write `actor: system`. The fixture's 10-01 `bindings.conf` change carries `agent:claude-code` + case. ADR-0014 assigns rule 1 to WP-004 for pacman only (see Decisions needed 5).
+- **ADR-0014 §1 attribution for config, theme and plugins events.** The collectors always write `actor: system`. The fixture's 10-01 `bindings.conf` change carries `agent:claude-code` + case. The orchestrator assigned the shared attribution pass to WP-009.
 - **The wizard step that installs the hook.** That is WP-024; the script and the docs ship here.
-- **`docs/` amendments.** The orchestrator owns `docs/`. They are listed under Decisions needed.
-- **`Sources` fields.** Not added; I did not edit `collectors/mod.rs` (see Decisions needed 1).
+- **`docs/` amendments.** The orchestrator owns `docs/`: the manifest shape is amended there, and the `SkipPaths` rules go to SPEC-ENGINE §7.
 - **Golden files.** None. The tests compare against the fixture ledger lines directly, which is the stronger check.
 
 ## Verified by
 
 - `just check` → `check: ok`: fmt, clippy `-D warnings`, all tests, schema-validate, plugin-validate, qmllint, plugin-test.
-- `cargo test --locked`: lib 39 passed, `collectors_user` 21 passed. All other suites pass.
+- `cargo test --locked` (after the fix-up, on top of main): lib 58, `collectors_user` 23, and every other suite pass, including WP-004's `collectors`/`idempotency`/`redaction` and WP-006's `commands`.
 - **Mutation checks.** Six deliberate bugs, each caught by a test:
   - drop skipPaths;
   - drop the hook dedupe;
@@ -136,36 +173,21 @@ Appended to `memory/rust-notes.md` and `memory/pitfalls.md`:
 
 ## Decisions needed
 
-1. **Env overrides outside `Sources`.** The brief said not to touch `collectors/mod.rs`. `SELDON_OMARCHY`, `SELDON_OMARCHY_PLUGINS_DIR` and `SELDON_THEME_FILE` are read in `Plugins::program/dir` and `Theme::file`.
-   - Recommendation: after WP-004 merges, move them into `Sources` (3 fields, read once per process).
-   - The tests do not depend on where they live.
-2. **The config collector writes `manifest.json` during `collect`.** `mod.rs` says collectors never write. SPEC-ENGINE §2 puts the manifest in its own file, and the two-generation scheme makes that safe.
-   - Alternative: a trait change, where `Outcome` carries state files that `capture` writes after the append.
-   - Recommendation: keep it as is, and amend SPEC-ENGINE §2 ("path → sha256") to the actual shape `{hash, files, skipped, previous?}`.
-3. **SHA-256 implemented in `sys`** rather than a crate.
-   - The alternative would be `sha2`, which needs a justification and reviewer approval.
-   - Recommendation: keep `sys` (≈80 lines, vector-tested).
-4. **`skipPaths` pattern syntax.** The spec does not define it; mine is above and in `SkipPaths` docs.
-   - Recommendation: write it into SPEC-ENGINE §4/§7.
-   - WP-006/WP-009 should reuse `collectors::config::SkipPaths` for ADR-0014 §4, which redacts hook paths that match `skipPaths`.
-5. **Who implements ADR-0014 §1 attribution for config, theme and plugins?** The fixture's 10-01 `config-change` is attributed to `agent:claude-code` / C-2026-004 via the `sed -i` hook command.
-   - Recommendation: one shared attribution pass in `capture` or in reconciliation (WP-008), using the ADR-0017 window rules, not per collector.
-   - The collectors already use mtime timestamps, so the 10-minute window works.
-6. **First-party `plugin-update`s.** Every first-party manifest says `1.0.0`. An Omarchy update that bumps them would write ~37 yellow `plugin-update` drift items next to the red omarchy `update`.
-   - Option A (recommended): skip `plugin-update` for `firstParty` plugins, since the omarchy `update` event covers them.
-   - Option B: keep them, and let reconciliation fold them into the update.
-   - Current code: Option B (it records them).
-7. **The hook's event and `seldon event` (WP-006).**
-   - The hook passes only `--subject`. The fixture's hook lines carry `actor: human` and `meta.from/to`.
-   - WP-006 should decide the default actor for `seldon event theme theme-set` and whether it fills `meta.from` from the latest `theme-set` in the ledger.
-   - The collector's dedupe only needs `kind` + `subject`.
-8. **Small choices to confirm or veto:**
-   - `plugin-enable|disable` also carry `meta.version` and `detail` = version. ADR-0012 §15 only requires `meta.enabled`.
-   - `.git` directories are excluded from the config manifest, and symlinked directories are not followed. Both go beyond the spec text.
-   - Unreadable files are listed as `skipped`.
+None open. Settled by the orchestrator in review round 1:
+- 2: keep the collector-owned manifest (spec amended);
+- 3: keep `sys::sha256`;
+- 4: the `SkipPaths` rules go into SPEC-ENGINE §7;
+- 5: one shared attribution pass before append, in WP-009;
+- 6: ADR-0018, implemented above;
+- 7: the hook's actor default goes to WP-009;
+- 8: all three choices confirmed;
+- 1: implemented above.
 
 ## Touched outside WP scope
 
 - `engine/src/sys.rs`: SHA-256 added, as the brief allowed.
 - `memory/rust-notes.md`, `memory/pitfalls.md`: appended.
-- Not touched: `collectors/mod.rs`, `pacman/snapper/omarchy.rs`, `ledger.rs`, `capture.rs`, `commands/*`, `tests/common`, `docs/`, `fixtures/`, `schema/`.
+- `engine/src/collectors/mod.rs`: three `Sources` fields (review item 2).
+- `engine/tests/idempotency.rs` (WP-004's): fixture inputs for the three new collectors and the six-collector `sinceIgnored`, needed after the rebase (see review item 2).
+- `engine/tests/support/mod.rs` (WP-004's): `..Sources::default()`.
+- Not touched: `pacman/snapper/omarchy.rs`, `ledger.rs`, `capture.rs`, `commands/*`, `tests/common`, `docs/`, `decisions/`, `fixtures/`, `schema/`.
