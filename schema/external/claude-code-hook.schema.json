@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/external/claude-code-hook.schema.json",
   "title": "Claude Code PreToolUse / PostToolUse hook payload (stdin of `seldon hook claude-code`)",
-  "description": "Third-party input format, not part of the contract. Only tool_input.command (Bash) is read by the engine; tool_response is never recorded (SPEC-ENGINE §7). Extra fields may appear in newer Claude Code versions.",
+  "description": "Third-party input format, not part of the contract. The engine reads tool_input.command (Bash) and tool_input.file_path / edits[].file_path (Edit, Write, MultiEdit); tool_response and edit contents are never recorded (SPEC-ENGINE §7, ADR-0014 §4). Extra fields may appear in newer Claude Code versions.",
   "type": "object",
   "required": ["session_id", "hook_event_name", "tool_name", "tool_input", "cwd"],
   "properties": {
