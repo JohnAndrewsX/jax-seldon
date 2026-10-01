@@ -151,8 +151,9 @@ theme, config. Rules:
   sudo (ADR-0011).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
-  stale); `repoHead` only when `$OMARCHY_PATH` is a git checkout, omitted
-  on package installs; change → `update` event with `from`/`to`.
+  stale); `repoHead` (7-character short hash, like `logbook.git.head`)
+  only when `$OMARCHY_PATH` is a git checkout, omitted on package
+  installs; change → `update` event with `from`/`to`.
 - **plugins** — `omarchy plugin list --json` (shell IPC; fails when the
   shell is not running → `ok: false`); diff against last snapshot (stored
   by hash) → `plugin-add|plugin-remove|plugin-enable|plugin-disable

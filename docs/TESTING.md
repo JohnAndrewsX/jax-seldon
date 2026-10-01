@@ -164,7 +164,7 @@ and colour rules, status precedence, tooltip wording, one banner with a
 constant fix per non-ok status, that `validateArgs` accepts exactly the
 command forms of CONTRACT.md (free text one non-empty argument after `--`,
 `drift show <id> --json`, `[--only]`), the `XDG_STATE_HOME` index path, and
-the tab helpers against the fixture: 58 Changelog rows, one "+3" group, 7
+the tab helpers against the fixture: 62 Changelog rows, one "+3" group, 7
 folded resolution details, 6 snapshot rows, the source filter, the crisis
 strip text, the snapper banner, the Today view and the System sections with
 every field optional.
@@ -221,7 +221,7 @@ opens it and runs `HARNESS_STEPS`: real key presses through the shell's own
 step it prints `Panel.view()` and every visible text.
 
 Checks: with the sample every tab renders (Today: 4 entries, yesterday
-collapsed and opened with Enter; Changelog: 58 rows, the "+3" group expanded
+collapsed and opened with Enter; Changelog: 62 rows, the "+3" group expanded
 to its members, 7 folded resolution details, 6 highlighted snapshot rows,
 the pacman filter narrows to 12, `f` cycles; System: seven sections), the
 strip "2 changes in the red zone need a reason" on every tab, the keys
