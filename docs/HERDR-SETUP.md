@@ -10,6 +10,12 @@ paths are in `memory/local.md` (git-ignored).
 - Rust toolchain (rustup, musl target), `just`, `qmllint` verified.
 - Test host reachable over SSH; it has cargo (glibc only) and `qmllint`.
 - Herdr 0.9.1 with the Claude Code integration installed (`herdr integration status`).
+- Repo harness: `.claude/settings.json` (deny list for the red zone,
+  allow list for the usual tools, the guard hook) and `scripts/guard.sh`.
+  The hook runs before every Bash call, in every permission mode, and
+  blocks `sudo`, `pacman`, `yay`, `paru`, `systemctl` changes, mutating
+  `omarchy` commands, writes under `/etc`, and writes under `~/.config`
+  outside the plugin dev install. Worktrees inherit it.
 
 Still manual, interactive (the operator):
 
@@ -23,8 +29,13 @@ herdr machine add <ssh-target> --label test
 
 ```bash
 cd <repo>
-herdr --session seldon
+herdr --session seldon          # or the workspace you already have
+claude --model fable --effort high   # plus the permission mode you choose
 ```
+
+The permission mode is the operator's call and is typed by the operator;
+the orchestrator passes the same choice to its workers after `--`. The
+guard hook (§1) applies in every mode.
 
 Suggested layout inside the session — one workspace `seldon`, tabs:
 
@@ -46,8 +57,8 @@ herdr worktree create --cwd <repo> --branch wp/001-scaffold --path wt/WP-001 --l
 `wt/` is git-ignored. Workers are started in a pane of that workspace:
 
 ```bash
-herdr agent start engine-001 --kind claude --pane <pane-id>
-herdr agent prompt engine-001 "<brief from ORCHESTRATION.md §3>" --wait --timeout 600000
+herdr agent start engine-001 --kind claude --pane <pane-id> -- --model opus --effort high
+herdr agent prompt engine-001 "<brief from ORCHESTRATION.md §3>" --wait --timeout 1800000
 ```
 
 ## 3. Orchestrator kickoff prompt
@@ -56,19 +67,35 @@ Paste this as the first prompt of the `orchestrator` agent:
 
 ```
 You are the Seldon orchestrator (docs/ORCHESTRATION.md). Read, in order:
-AGENTS.md, PROJECT.md, STATUS.md, docs/PLAN.md, docs/ORCHESTRATION.md,
-memory/host.md, memory/omarchy-shell.md, memory/local.md.
+AGENTS.md, PROJECT.md, STATUS.md, docs/PLAN.md, docs/ORCHESTRATION.md
+(all sections, especially 10-12), memory/host.md, memory/omarchy-shell.md,
+memory/local.md.
 
-Kickoff checklist §9: steps 1–3 are done (see STATUS.md). Continue with
-step 4: assign WP-001 (Scaffold) and WP-002 (Schema Keeper) in parallel,
-each in its own worktree and Herdr workspace, with the brief format of §3.
-Before assigning, resolve the open questions in STATUS.md with the operator
-(German, one question each, options listed). Report to the operator in German
-when a WP completes or blocks; otherwise keep working through the loop in
-§2. Never run anything red-zone (AGENTS.md §6).
+You run on autopilot until the Phase 0 exit (G3). Kickoff checklist §9:
+steps 1-3 are done. Continue with step 4: assign WP-001 (Scaffold) and
+WP-002 (Schema Keeper) in parallel, each in its own worktree and Herdr
+workspace, with the brief format of §3 and the model matrix of §12. Start
+workers with the same permission mode this session was started with.
+
+Decisions are settled by debate (§10); you may use a workflow for the
+debate and for review fan-outs. After the first tick, start the /loop
+skill in self-paced mode with the instruction "run the orchestration loop
+(ORCHESTRATION.md §2)" and keep it running. Check the usage budget (§12)
+every tick. Log every tick in work/ORCHESTRATOR-LOG.md.
+
+Report to the operator in their language (German) only when a WP
+completes, a WP blocks, a §10 escalation is needed, or the phase exits.
+Never run anything red-zone (AGENTS.md §6).
 ```
 
-## 4. Testing on the test host
+## 4. Catching up as the operator
+
+- `work/ORCHESTRATOR-LOG.md` — one line per tick.
+- `STATUS.md` — active, queued, blocked, decisions.
+- `herdr agent list` and the workspace sidebar — who is doing what.
+- The orchestrator pane — questions addressed to you, in German.
+
+## 5. Testing on the test host
 
 The installable plugin repo (`jax-seldon-plugin`, ADR-0009) exists only
 from the first release on. Until then, test by copying:

@@ -81,4 +81,6 @@ Recorded here because Seldon does not exist yet to record them.
 - `mise use -g just@latest` → `just = "latest"` in `~/.config/mise/config.toml`.
 - Repository created at `~/Work/johnandrewsx/jax-seldon`, pushed to
   `github.com/JohnAndrewsX/jax-seldon` (private).
+- Repo harness added: `.claude/settings.json` + `scripts/guard.sh` (red-zone guard).
+- Codex is installed (mise) but not logged in; debates fall back to two Claude sessions.
 - Nothing under `/etc`, no pacman, no sudo, no systemd changes.

@@ -4,7 +4,7 @@
 
 ## Decision
 Repository, code, specs, UI strings, engine messages: **English**.
-Conversation with the operator: **German**. Logbook content: the user's language;
+Conversation with the operator: **the operator's language** (German for the current operator). Logbook content: the user's language;
 `seldon init` asks and stores `language` in the logbook's `PROJECT.md`
 frontmatter and in `config.toml`. Templates ship in English and German.
 

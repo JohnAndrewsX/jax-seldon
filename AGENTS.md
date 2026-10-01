@@ -6,20 +6,23 @@ anything. It is changed only on the operator's explicit instruction.
 
 ## 1. Who and what
 
-- **Operator:** the user of this machine (GitHub `JohnAndrewsX`). German speaker.
+- **Operator:** the user of this machine (GitHub `JohnAndrewsX`). Their
+  language is German; see §2.
 - **Project:** Seldon — engine (Rust), plugin (QML), logbook spec, contract.
 - **Target platform:** Omarchy 4 "Quattro" (Arch, Hyprland, Quickshell
-  shell process, plugin system). Reference: the local repo at
-  `~/.local/share/omarchy` (`shell/README.md`, `shell/plugins/`) — *code is
+  shell process, plugin system). Reference: the installed tree at
+  `$OMARCHY_PATH` (`/usr/share/omarchy`; `shell/README.md`, `shell/plugins/`) — *code is
   truth*; then https://plugins.omarchy.org/develop.html; then the Arch Wiki.
 
 ## 2. Language policy
 
-- Talk to the operator in **German**: briefings, questions, handovers, PR text
-  addressed to him.
-- **Everything in this repository is English**: code, comments, commit
-  messages, docs, schema, ADRs, file and folder names, identifiers, enum
-  values, log and error messages of the engine, UI strings of the plugin.
+- **Everything public is English by default**: code, comments, commit
+  messages, READMEs, docs, schema, ADRs, file and folder names, identifiers,
+  enum values, log and error messages of the engine, UI strings of the
+  plugin, PR titles and bodies.
+- **Talk to the operator in the operator's language** (German for the
+  current operator): briefings, questions, handovers, status reports. These
+  are conversation, not repository content.
 - The **logbook content** a user writes is in the user's language; Seldon
   never assumes English there. UI labels are English for v1
   (i18n is a later ADR).
