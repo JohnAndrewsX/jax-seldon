@@ -1,4 +1,4 @@
-//! CLI smoke tests for the WP-001 scaffold.
+//! CLI smoke tests: version, contract version, parse errors, exit codes.
 
 use std::process::{Command, Output};
 
@@ -71,4 +71,59 @@ fn unknown_command_json_is_user_error() {
 #[test]
 fn no_command_is_user_error() {
     assert_eq!(seldon(&[]).status.code(), Some(1));
+}
+
+// WP-001 review follow-ups (SPEC-ENGINE §3 "JSON shapes").
+
+#[test]
+fn json_error_carries_the_full_detail() {
+    let out = seldon(&["no-such-command", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains("no-such-command"), "{message}");
+    assert!(!message.starts_with("error:"), "{message}");
+    assert!(!message.contains("Usage:"), "{message}");
+}
+
+#[test]
+fn json_after_double_dash_is_not_the_flag() {
+    let out = seldon(&["no-such-command", "--", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(stdout(&out), "", "must not answer in JSON");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no-such-command"));
+}
+
+#[test]
+fn json_is_found_past_an_invalid_value() {
+    for args in [
+        &["init", "--language", "fr", "--json"][..],
+        &["--json", "init", "--language", "fr"][..],
+        &["init", "--path", "--json"][..],
+        &["doctor", "--bogus", "--json"][..],
+    ] {
+        let out = seldon(args);
+        assert_eq!(out.status.code(), Some(1), "{args:?}");
+        let v: serde_json::Value = serde_json::from_str(&stdout(&out))
+            .unwrap_or_else(|e| panic!("{args:?}: {e}: {}", stdout(&out)));
+        assert_eq!(v["error"]["code"], 1);
+    }
+}
+
+#[test]
+fn parse_error_without_the_flag_is_text() {
+    // `json` is the value of `--path`, not a flag spelled differently.
+    let out = seldon(&["init", "--path", "json", "--language", "xx"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(stdout(&out), "");
+}
+
+#[test]
+fn help_exits_zero() {
+    for args in [
+        &["--help"][..],
+        &["init", "--help"][..],
+        &["doctor", "--help"][..],
+    ] {
+        assert_eq!(seldon(args).status.code(), Some(0), "{args:?}");
+    }
 }
