@@ -91,7 +91,8 @@ seldon rebuild [--json]                        # outputs/REBUILD.md (WP-032): 1 
                                                # the `pre-logbook` lines of class `user` of `packages.explicit` as
                                                # one `omarchy pkg add` and one `omarchy pkg aur add` block, WP-035,
                                                # then one line "N more come with Omarchy <version>" counting the
-                                               # `pre-logbook` lines of class `omarchy-base`, WP-036; an empty fence
+                                               # `pre-logbook` lines of class `omarchy-base` (only when N > 0; the
+                                               # version from `omarchy.summary`, else section 1's base), WP-036; an empty fence
                                                # counts as none), 3 deviations, 4 plugins,
                                                # 5 theme, 6 units (incl. cased `services.enabled` rows; system scope
                                                # separately), 7 open drift (marked in place too) + dismissed

@@ -12,7 +12,6 @@ host unlock. Phase 4 (packaging, docs) starting.
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
-| WP-036 | Dossier follow-ups: Omarchy base split, `packages.explicit` in templates/fixture, deviation case fill | Engine | `engine-036` (opus, high) | `wt/WP-036` · `wp/036-dossier-followups` | 2026-10-02 |
 | WP-040 | AUR package `jax-seldon` (PKGBUILD, .SRCINFO), release workflow | Scaffold | `scaffold-040` (opus, high) | `wt/WP-040` · `wp/040-packaging` | 2026-10-02 |
 | WP-041 | Plugin README, preview.png, security section, keybinding docs | Docs | `docs-041` (opus, high) | `wt/WP-041` · `wp/041-plugin-docs` | 2026-10-02 |
 
@@ -33,6 +32,12 @@ logbook migration)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-036 Dossier follow-ups: `omarchy-base` vs `user` origin
+  from Omarchy's package lists (read-only), "Before the logbook" lists
+  only the user's packages plus a base-count line, `packages.explicit`
+  fence in the init templates and the fixture, empty deviation case
+  cells filled from later cased events — merged; 111 dossier-related
+  tests; real-host read-only run (counts only).
 - 2026-10-02 WP-031 Prime Radiant charts (Heatmap, Series, DriftBars,
   RiskDonut, Timeline) and The Plan as the sixth slot; one-pass period
   table; hover read-outs via IPC; first-frame rule proven in the harness
