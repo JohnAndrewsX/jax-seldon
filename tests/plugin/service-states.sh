@@ -131,21 +131,21 @@ expect relative .status ok
 
 # 9. The index appears after start.
 (sleep 1; cp "$fx/index.sample.json" "$work/late.json") &
-run appears-later 8000 PATH="$fake_path" SELDON_INDEX="$work/late.json"
+run appears-later 8000 HARNESS_UNTIL=status=ok PATH="$fake_path" SELDON_INDEX="$work/late.json"
 wait
 expect appears-later .status ok
 
 # 10. The index is replaced atomically (temp file + rename, CONTRACT.md rule 2).
 cp "$fx/index-variants/not-initialised.json" "$work/swap.json"
 (sleep 1; cp "$fx/index.sample.json" "$work/swap.json.tmp"; mv "$work/swap.json.tmp" "$work/swap.json") &
-run atomic-replace 4000 PATH="$fake_path" SELDON_INDEX="$work/swap.json"
+run atomic-replace 4000 HARNESS_UNTIL=status=ok PATH="$fake_path" SELDON_INDEX="$work/swap.json"
 wait
 expect atomic-replace .status ok
 expect atomic-replace .pill "⟡ 2 · 4"
 
 # 11. The engine is installed while the shell runs; "Check again" finds it.
 (sleep 1; install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin-late/seldon") &
-run engine-appears 4000 PATH="$work/bin-late:$base_path" SELDON_INDEX="$fx/index.sample.json" HARNESS_RECHECK_MS=2000
+run engine-appears 4000 HARNESS_UNTIL=status=ok PATH="$work/bin-late:$base_path" SELDON_INDEX="$fx/index.sample.json" HARNESS_RECHECK_MS=2000
 wait
 expect engine-appears .status ok
 expect engine-appears .engine present
@@ -153,7 +153,7 @@ expect engine-appears .engine present
 # 12. Live loop without the dev override: capture, then status writes the
 #     index, which the service picks up. Calls never overlap.
 mkdir -p "$work/home-live"
-run live 9000 PATH="$fake_path" HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+run live 9000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
 expect live .status ok
 expect live .devMode false
 expect live .pill "⟡ 2 · 4"
@@ -168,7 +168,7 @@ clean_log live
 
 # 13. Engine exit 3 (logbook not initialised) without any index.
 mkdir -p "$work/home-uninit"
-run live-uninit 4000 PATH="$fake_path" HOME="$work/home-uninit" FAKE_SELDON_MODE=uninit
+run live-uninit 4000 HARNESS_UNTIL=status=notInitialised PATH="$fake_path" HOME="$work/home-uninit" FAKE_SELDON_MODE=uninit
 expect live-uninit .status notInitialised
 expect live-uninit .banner "Logbook not initialised"
 
@@ -176,7 +176,7 @@ expect live-uninit .banner "Logbook not initialised"
 mkdir -p "$work/home-init"
 echo uninit >"$work/home-init/mode"
 (sleep 1.5; echo ok >"$work/home-init/mode") &
-run init-later 7000 PATH="$fake_path" HOME="$work/home-init" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECHECK_MS=2500
+run init-later 7000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-init" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECHECK_MS=2500
 wait
 expect init-later .status ok
 expect init-later .pill "⟡ 2 · 4"
@@ -186,10 +186,22 @@ mkdir -p "$work/bin-tools"
 for tool in wl-copy omarchy-launch-floating-terminal-with-presentation; do
   install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-tools/$tool"
 done
+# One line per recorded invocation, sorted: detached launches have no order.
+invocations() {
+  awk 'BEGIN { RS = "--\n" } NF { gsub(/\n/, "\x1f"); print }' | LC_ALL=C sort
+}
+# The fixes start detached processes that may still be running when the
+# harness quits, and a loaded machine slows them down: wait (up to 15 s) until
+# the record holds as many invocations as expected.
 record_check() { # record_check <case> <expected record>
-  local got
-  got=$(cat "$work/$1.record" 2>/dev/null || true)
-  if [[ $got == "$2" ]]; then
+  local got want deadline=$((SECONDS + 15))
+  want=$(invocations <<<"$2"$'\n' | wc -l)
+  while :; do
+    got=$(cat "$work/$1.record" 2>/dev/null || true)
+    (($(invocations <<<"$got"$'\n' | wc -l) >= want || SECONDS >= deadline)) && break
+    sleep 0.2
+  done
+  if [[ $(invocations <<<"$got"$'\n') == "$(invocations <<<"$2"$'\n')" ]]; then
     pass=$((pass + 1)); echo "ok   $1: fix commands"
   else
     fail=$((fail + 1)); echo "FAIL $1: fix commands were:"; echo "$got" | sed 's/^/     /'
@@ -238,7 +250,7 @@ fi
 # 16. The index path honours XDG_STATE_HOME (CONTRACT.md rule 1); the fake
 #     engine writes there too.
 mkdir -p "$work/home-xdg" "$work/xdg-state"
-run xdg 6000 PATH="$fake_path" HOME="$work/home-xdg" XDG_STATE_HOME="$work/xdg-state" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+run xdg 6000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-xdg" XDG_STATE_HOME="$work/xdg-state" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
 expect xdg .indexPath "$work/xdg-state/seldon/index.json"
 expect xdg .status ok
 expect xdg .pill "⟡ 2 · 4"

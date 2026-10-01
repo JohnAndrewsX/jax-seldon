@@ -93,12 +93,22 @@ ShellRoot {
     if (root.panel) root.panel.open()
   }
 
-  // Let the service read the index and probe the engine, then run the steps.
+  readonly property double startMs: Date.now()
+
+  // Let the service read the index and probe the engine (event-driven, up to
+  // 15 s on a loaded machine), then run the steps.
   Timer {
     id: stepper
-    interval: 1500
+    interval: 100
     running: true
     onTriggered: {
+      // At least 1 s, so the window has laid out and drawn its first frames.
+      var waited = Date.now() - root.startMs
+      if (root.step === 0 && waited < 15000
+          && (waited < 1000 || (root.service && !(root.service.ready && !root.service.probing)))) {
+        stepper.restart()
+        return
+      }
       if (root.step >= root.steps.length) {
         root.report("final")
         Qt.quit()

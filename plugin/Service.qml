@@ -45,6 +45,7 @@ Item {
   property string engineState: "unknown"   // unknown | present | missing
   property string engineVersion: ""
   property string engineDetail: ""
+  readonly property bool probing: probe.running
   // Set when the engine exits 3 (logbook not initialised); cleared by the
   // next successful call or by an index written after it was set.
   property bool engineNotInitialised: false
