@@ -9,11 +9,12 @@ use chrono::Datelike as _;
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
-use super::event::{Kind, NewEvent, Source, clip, emit, parse_case_id, parse_person};
-use super::{Context, Event, Output, autocommit, one_line, write_new};
+use super::event::{clip, emit_one, event_json, parse_case_id, parse_person};
+use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::{Error, Result};
 use crate::logbook::cases::{self, CaseFile, Transition};
 use crate::logbook::{Logbook, journal};
+use crate::model::event::{Event, Kind, Source};
 use crate::model::{Case, CaseStatus, Language, Priority, Risk, Zone};
 
 #[derive(Debug, Clone, Args)]
@@ -164,11 +165,11 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
         &crate::model::render_new(&file.case, &file.doc.body),
     )?;
 
-    let mut new = NewEvent::new(Source::Seldon, Kind::CaseCreated, &id, &args.actor);
-    new.detail = Some(title.clone());
-    new.case = Some(id.clone());
-    let event = Event::new(&ctx.now, new);
-    emit(&lock, &logbook, &event)?;
+    let event = Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
+        .detail(title.clone())
+        .actor(&args.actor)
+        .case(Some(id.clone()));
+    let event = emit_one(&lock, &config, &logbook, event)?;
     let commit = autocommit(ctx, &config, &logbook, &format!("{id} created"));
     drop(lock);
 
@@ -181,7 +182,7 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
         human,
         json!({
             "case": case_json(&logbook, &file),
-            "event": event.json(),
+            "event": event_json(&event),
             "areaCreated": area_created,
             "git": commit.json(),
         }),
@@ -249,11 +250,11 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
         None
     };
 
-    let mut new = NewEvent::new(Source::Seldon, kind(transition), &args.id, &args.actor);
-    new.detail = reason.clone();
-    new.case = Some(args.id.clone());
-    let event = Event::new(&ctx.now, new);
-    emit(&lock, &logbook, &event)?;
+    let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
+        .actor(&args.actor)
+        .case(Some(args.id.clone()));
+    event.detail = reason.clone();
+    let event = emit_one(&lock, &config, &logbook, event)?;
     let commit = autocommit(ctx, &config, &logbook, &format!("{} {}", args.id, to));
     drop(lock);
 
@@ -278,7 +279,7 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
             "movedFrom": moved_from,
             "activeCase": active_case,
             "journal": journal_entry,
-            "event": event.json(),
+            "event": event_json(&event),
             "git": commit.json(),
         }),
     ))

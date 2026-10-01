@@ -5,10 +5,11 @@
 use clap::Args;
 use serde_json::{Value, json};
 
-use super::event::{Kind, NewEvent, Source, clip, emit, parse_case_id, parse_person};
-use super::{Context, Event, Output, autocommit, required_text};
+use super::event::{clip, emit_one, event_json, parse_case_id, parse_person};
+use super::{Context, Output, autocommit, required_text};
 use crate::error::Result;
 use crate::logbook::{cases, journal};
+use crate::model::event::{Event, Kind, Meta, Source};
 
 /// Subject of a note without a case (`event.schema.json`).
 pub const JOURNAL_SUBJECT: &str = "journal";
@@ -55,19 +56,23 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         .map(|id| cases::find(&logbook, id))
         .transpose()?;
 
-    let mut new = NewEvent::new(
+    let mut meta = Meta::default();
+    if !args.tags.is_empty() {
+        meta.extra
+            .insert("tags".into(), Value::String(args.tags.join(",")));
+    }
+    let event = Event::new(
+        ctx.now,
         Source::Manual,
         Kind::Note,
         args.case_id.as_deref().unwrap_or(JOURNAL_SUBJECT),
-        &args.actor,
-    );
-    new.detail = Some(text.clone());
-    new.case = args.case_id.clone();
-    if !args.tags.is_empty() {
-        new.meta
-            .insert("tags".into(), Value::String(args.tags.join(",")));
-    }
-    let event = Event::new(&ctx.now, new);
+    )
+    .detail(text.clone())
+    .actor(&args.actor)
+    .case(args.case_id.clone())
+    .meta(meta);
+    // the ledger first: it assigns the id the case file records
+    let event = emit_one(&lock, &config, &logbook, event)?;
 
     let mut entry = text.clone();
     if !args.tags.is_empty() {
@@ -83,10 +88,9 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         &entry,
     )?;
     if let Some(file) = case_file.as_mut() {
-        file.attach(&event.id, &event.actor);
+        file.attach(&event.id.to_string(), &event.actor);
         file.save(&logbook)?;
     }
-    emit(&lock, &logbook, &event)?;
     let summary = match &args.case_id {
         Some(id) => format!("note {id}"),
         None => "note".to_string(),
@@ -107,8 +111,8 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     Ok(Output::ok(
         human,
         json!({
-            "event": event.json(),
-            "ledger": event.ledger_file(),
+            "event": event_json(&event),
+            "ledger": format!("ledger/{}.jsonl", event.month()),
             "journal": { "path": day.path, "created": day.created },
             "case": args.case_id,
             "git": commit.json(),

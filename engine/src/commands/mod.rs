@@ -21,7 +21,7 @@ use crate::config::{self, Config, Dirs, LogbookSource};
 use crate::error::{Error, Exit, Result};
 use crate::logbook::{Logbook, git, lock};
 
-pub use event::{Event, NewEvent, emit};
+pub use event::{emit, emit_one, event_json};
 
 /// Environment variable that overrides the config file (`--config` wins).
 pub const CONFIG_ENV: &str = "SELDON_CONFIG";
