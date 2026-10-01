@@ -94,6 +94,21 @@ pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) 
     }
 }
 
+/// Runs `program args…` on the user's terminal (stdin, stdout and stderr
+/// inherited) and waits for it, without a timeout: for `$EDITOR`. The
+/// result has empty `stdout`/`stderr`.
+pub fn run_attached(program: &str, args: &[&str]) -> Run {
+    match Command::new(program).args(args).status() {
+        Ok(status) => Run::Exited {
+            code: status.code(),
+            stdout: String::new(),
+            stderr: String::new(),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Run::NotFound,
+        Err(e) => Run::Failed(e.to_string()),
+    }
+}
+
 /// The machine's host name: `/etc/hostname`, else `$HOSTNAME`, else `machine`.
 /// Read-only; used for the logbook's `machineId`.
 pub fn hostname() -> String {

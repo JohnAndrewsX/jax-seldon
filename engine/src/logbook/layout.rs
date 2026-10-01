@@ -44,7 +44,6 @@ const KEEP_DIRS: &[&str] = &[
     "resources",
     "outputs",
     "archive",
-    ".seldon/templates",
 ];
 
 /// `.gitignore` of a new logbook (SPEC-LOGBOOK §2).

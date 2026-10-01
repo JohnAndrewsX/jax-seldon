@@ -2,6 +2,9 @@
 //! binary (single static binary, SPEC-ENGINE §1).
 //!
 //! Placeholders: `{{machineId}}`, `{{language}}`, `{{date}}` (YYYY-MM-DD).
+//! The body templates under `.seldon/templates/` are copied as they are;
+//! their `{{id}}` and `{{title}}` are filled by `plan new` and `decide`
+//! (`logbook::cases::fill`), from the logbook's copy if the user has one.
 
 use chrono::NaiveDate;
 
@@ -54,7 +57,14 @@ pub const TEMPLATES: &[Template] = &[
     template!("system/services.md"),
     template!("system/omarchy.md"),
     template!("system/plugins.md"),
+    template!(".seldon/templates/case.md"),
+    template!(".seldon/templates/decision.md"),
 ];
+
+/// The built-in template for `path` (relative to the logbook root).
+pub fn find(path: &str) -> Option<&'static Template> {
+    TEMPLATES.iter().find(|t| t.path == path)
+}
 
 /// Values for the placeholders.
 #[derive(Debug, Clone)]
@@ -90,6 +100,13 @@ mod tests {
         for language in Language::ALL {
             for t in TEMPLATES {
                 let text = render(t.text(language), &vars(language));
+                if t.path.starts_with(".seldon/templates/") {
+                    let filled =
+                        super::super::cases::fill(&text, &[("id", "C-2026-001"), ("title", "T")]);
+                    assert!(!filled.contains("{{"), "{} ({language})", t.path);
+                    assert!(filled.starts_with("# C-2026-001 — T\n"), "{}", t.path);
+                    continue;
+                }
                 assert!(
                     !text.contains("{{"),
                     "{} ({language}) has a placeholder left",

@@ -39,9 +39,22 @@ pub fn init(root: &Path) -> Result<(), String> {
     git(root, &["init", "-q"])
 }
 
-/// `git add -A` and `git commit -m "seldon: <summary>"` in `root`.
+/// `git add -A` and `git commit -m "seldon: <summary>"` in `root`. Nothing
+/// staged (only ignored files changed, e.g. `.seldon/active-case`) is not
+/// an error; nothing is committed then.
+///
+/// The whole work tree is committed, not only the files the engine wrote:
+/// the logbook's history is its backup, so edits made in an editor since
+/// the last command are recorded with the next engine write.
 pub fn commit_all(root: &Path, summary: &str) -> Result<(), String> {
     git(root, &["add", "-A"])?;
+    if matches!(
+        sys::run("git", &["diff", "--cached", "--quiet"], Some(root), TIMEOUT),
+        Run::Exited { code: Some(0), .. }
+    ) && has_head(root)
+    {
+        return Ok(());
+    }
     let message = format!("seldon: {summary}");
     let has_identity = matches!(
         sys::run("git", &["config", "--get", "user.email"], Some(root), TIMEOUT),
@@ -53,6 +66,18 @@ pub fn commit_all(root: &Path, summary: &str) -> Result<(), String> {
     }
     args.extend(["commit", "-q", "-m", &message]);
     git(root, &args)
+}
+
+/// Whether the repository has a first commit (`diff --cached` against an
+/// unborn HEAD says nothing useful).
+fn has_head(root: &Path) -> bool {
+    sys::run(
+        "git",
+        &["rev-parse", "--verify", "-q", "HEAD"],
+        Some(root),
+        TIMEOUT,
+    )
+    .success()
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<(), String> {
