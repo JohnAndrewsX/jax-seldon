@@ -15,13 +15,110 @@ Commits, oldest first:
 | `ffb7fda` | **redaction fix**: URL userinfo kept the `@` |
 | `260fb98` | tests and golden files |
 | `e063c04` | memory |
-| last | this handover |
+| `5d783a7` | first handover |
+| `6b97256` | review: test flakes (ETXTBSY retry in `sys::run`; the bench keeps one lock) |
+| `fc5c535` | review 1, 2, 4: pending Running line, ADR-0017 attribution, query forms |
+| `c83f9b4` | review 3: URL userinfo up to its last `@` |
+| `761dfbf` | review 5: dedupe of capture-time events |
+| `29c1c8e` | review nice-to-haves: `--since` notice, canonical logbook key |
+| last | this handover update |
 
 - **The foundation slice on its own:** I checked out `d973f19` in a throw-away
   worktree. fmt is clean, clippy `-D warnings` is clean, and 78 tests pass.
-- **Take `ffb7fda` with the slice.** The early-merged foundation has a
-  redaction bug: `https://user:pw@host` became `https://‹redacted›host`.
-  `ffb7fda` touches only `redact.rs`.
+- **Take `ffb7fda` and `c83f9b4` with the slice.** The early-merged foundation
+  has redaction bugs: `https://user:pw@host` became `https://‹redacted›host`,
+  and `https://user:p@ss@h/` leaked `ss@h`. Both commits touch only
+  `redact.rs` and `tests/redaction.rs`.
+
+## Review round 1 (send back) — what changed
+
+All five findings are fixed, and both nice-to-haves are done. `just check`
+exits 0 with **109 tests** (the first handover had 104).
+
+1. **Blocker: Running line during the download** (`collectors/pacman.rs`, `parse`).
+   - If `db.lck` is held, no transaction is open, and a Running line is pending,
+     the cursor now rewinds to that Running line.
+   - Without the lock it moves on as before, because the invocation was a
+     no-op or failed.
+   - Tests:
+     - unit `transaction_buffering`: Running line only, lock held → `resume == base`;
+     - `collectors::a_running_line_during_the_download_is_read_again`: the
+       transaction then keeps `meta.command` and `explicit: false`.
+2. **Blocker: full upgrades attributed any transaction** (ADR-0017 §2 §3).
+   - `find_cause(causes, package, began, tx_full_upgrade)`.
+   - **Window:** the command started at most 10 minutes before the transaction
+     *began*, and not after it. "Began" is its Running line, else
+     `transaction started`; an event outside a transaction begins at its own `ts`.
+   - **Full upgrades:** a full-upgrade cause counts only when the transaction's
+     own `meta.command` is a full upgrade, or the transaction has no command
+     line. Otherwise the cause must name the package.
+   - **Keyrings:** `command_intent("omarchy update")` also names
+     `archlinux-keyring` and `omarchy-keyring` (`OMARCHY_UPDATE_NAMES`).
+   - **Inheritance:** every member of an attributed transaction inherits,
+     explicit members first (§2 "every member … inherits"). Before, only
+     `explicit: false` members inherited.
+   - Test `collectors::a_full_upgrade_command_does_not_cover_a_separate_install`,
+     the 12:00/12:05 scenario: keyring and `-Syu` → `agent:claude-code`/C-2026-003;
+     the human's `pacman -S tailscale` at 12:05 → `system`, no case.
+   - The fixture story is unchanged and green.
+   - **§4 confirmed:** the omarchy `update` inherits from the pacman event that
+     moved `omarchy` to `meta.to` (same capture or ledger). It falls back to a
+     full-upgrade command at most 10 minutes before the capture time.
+     `omarchy.rs` already did exactly this; no change was needed.
+3. **URL userinfo with `@` in the password** (`redact.rs`).
+   - The class is now `[^/\s'"]+(@)`: greedy, up to the last `@` before the path.
+   - Two new table rows: `https://user:p@ss@h…` and `ssh://git:se@cr@t@host…`.
+4. **Query forms are not mutating** (ADR-0017 §5).
+   - `PacmanCommand.query` is set for `-S` with `s|i|l|g|p|w|c`, `-R`/`-U` with
+     `p`, and the long forms (`--search --info --list --groups --print
+     --downloadonly --clean`). `is_mutating()` is false for them, and `-Q`,
+     `-T`, `-F`, `-D` were never mutating.
+   - With `-R`, `s` and `c` mean `--recursive` and `--cascade`, so they still
+     mutate.
+   - Tests:
+     - unit `query_forms_are_not_mutating`: 19 query forms, 7 mutating forms;
+     - `collectors::queries_and_late_commands_never_attribute`: an agent's
+       `pacman -Ss zed`, then a human's `pacman -S zed` → `system`, no case.
+       The same test covers a command that started after its transaction
+       began → not attributed.
+5. **Dedupe of capture-time events:**
+   - **omarchy:** no `update` is written when the ledger's latest `update`
+     within the 31-day lookback already is `from → to`. It is the *latest*
+     one, so a real re-upgrade after a downgrade is still recorded.
+   - **snapper:** no `snapshot-delete` is written when the ledger's latest
+     snapper event for that number is already a deletion. This reads the whole
+     ledger, but only when a deletion is pending.
+   - Tests:
+     - `idempotency::a_crash_before_the_cursor_save_does_not_duplicate`: the
+       ledger is written, the old cursors are restored, and the next run writes
+       0 snapshot-deletes and 0 updates; it also covers the re-upgrade case;
+     - in `idempotency::capture_writes_the_ledger_once`: after the capture that
+       wrote the update and the deletions, `cursors.json` is deleted, and
+       `capture --all --since <fixture created>` writes 0.
+6. **Nice-to-haves** (`commands/capture.rs`):
+   - **`--since` notice.** `--since` with collectors that have a cursor
+     prints `note: --since ignored for snapper, pacman, omarchy (they continue
+     from their cursor)`, and the JSON carries `sinceIgnored: [...]`.
+   - **Canonical logbook key.** The logbook path is canonicalised before
+     `cursors.json` is bound to it, so `--logbook <lb>/../lb` keeps the
+     cursors. A test checks this through `sinceIgnored`.
+7. **Test flakes I found while doing this** (`6b97256`). Neither affects the
+   single-threaded engine.
+   - **`ETXTBSY`.** A freshly rewritten stub program can fail to exec while
+     another test thread's forked child still holds its write descriptor.
+     `sys::run` now retries a spawn that fails with `ETXTBSY`, up to 20 times
+     with 5 ms between tries. That is harmless on a real host.
+   - **Lock races.** The test bench re-took the state lock on every run and
+     raced with forked children that held the inherited flock until exec. The
+     bench now takes the lock once.
+   - After the fixes, 60 consecutive runs of `collectors`, `idempotency` and
+     `redaction` passed.
+
+Verified again after the fixes:
+- `just check` → exit 0.
+- The manual acceptance is unchanged: fixtures 15 → 0 → 6 → 0; the real host,
+  read-only into a throw-away logbook, 1230 → 0, with snapper degraded.
+- Real `~/.config/seldon` and `~/.local/state/seldon` are still absent.
 
 ## Done
 
@@ -178,6 +275,12 @@ $ seldon capture --all --json                → written 0
 
 ## Decisions needed
 
+**After review round 1: none open.**
+- Decision 1 is settled by ADR-0017 §1: WP-009 records the PreToolUse start time.
+- Decisions 2–11 are confirmed as implemented. Decision 2 is ADR-0017 §4.
+  The orchestrator writes 3–11 into SPEC-ENGINE.
+- The original text stays below for the record.
+
 1. **Hook timing vs ADR-0014 §1 (affects WP-009).**
    - Claude Code's `PostToolUse` hook fires *after* the command has finished, so a hook `command` event's `ts` would lie after the pacman lines it caused. The ADR requires the command to *precede* them, so attribution would never match real hook data.
    - The fixture has the command first; the code follows the ADR literally.
@@ -217,7 +320,9 @@ $ seldon capture --all --json                → written 0
 
 ## Touched outside WP scope
 
-- `engine/src/sys.rs`: `random_hex` (the nit the orchestrator assigned).
+- `engine/src/sys.rs`: `random_hex` (the nit the orchestrator assigned). In
+  review round 1, also the `ETXTBSY` spawn retry in `sys::run`.
+- `decisions/` and `docs/` were not touched; ADR-0017 was only read, from main.
 - `engine/src/model/mod.rs`: `pub mod event` and a re-export.
 - `engine/src/lib.rs` and `engine/src/commands/mod.rs`: module registration.
 - `engine/Cargo.toml` and `Cargo.lock`.
