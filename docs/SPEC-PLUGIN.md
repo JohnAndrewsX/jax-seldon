@@ -78,7 +78,9 @@ toggles Panel; middle click opens Prime Radiant; right click runs capture.
 for an absent tab is ignored), `←/→` and `h/l` move between tabs, `↑/↓`
 and `j/k` move in lists, `Esc` closes, `Tab`/`Shift-Tab` hand over to the
 neighbouring Omarchy panel (never cycle tabs, like every first-party
-panel). Width `Style.space(380)` (WP-011). Files: one component per tab,
+panel). `n` focuses the QuickEntry from any tab, `e` opens the current
+tab's file in the editor, `c` captures (WP-012). While a text field has
+focus the panel blocks the key catcher; `Esc` hands the keys back. Width `Style.space(380)` (WP-011). Files: one component per tab,
 `components/TodayTab.qml`, `ChangelogTab.qml`, `SystemTab.qml`, plus
 `EventRow.qml`, `Tabs.qml`, `Banner.qml`. The Changelog source filter has
 one chip per schema source (all nine, including `manual`, `agent`,

@@ -41,7 +41,10 @@ if printf '%s' "$cmd" | grep -Eq '(>|>>|tee([[:space:]]+-[a-z]+)*)[[:space:]]*/(
 fi
 # writes under ~/.config outside the plugin dev install
 if printf '%s' "$cmd" | grep -Eq '(>|>>|tee|cp|mv|install|rm|sed[[:space:]]+-i|ln|mkdir)[^|;&]*[[:space:]](~|\$HOME|/home/[^/]+)/\.config/'; then
-  if ! printf '%s' "$cmd" | grep -Eq '\.config/omarchy/plugins/jax\.seldon'; then
+  # exceptions: the plugin dev install, and — over ssh to the test host only —
+  # Seldon's own config dir there (smoke-test restore, docs/HERDR-SETUP.md §5)
+  if ! printf '%s' "$cmd" | grep -Eq '\.config/omarchy/plugins/jax\.seldon' \
+     && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]][^;&|]*\.config/seldon(/[^[:space:]]*)?([[:space:]]|$|["'"'"'])'; then
     block "write under ~/.config outside the jax.seldon plugin dir"
   fi
 fi

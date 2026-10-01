@@ -41,7 +41,8 @@ engine and plugin → one coordinated merge → `seldon contract-version` and
 seldon --version
 seldon status --json
 seldon capture --all --json --quiet
-seldon log [--case <id>] -- <text>              # free text is one argument after `--`
+seldon log [--case <id>] --json -- <text>       # free text is one argument after `--`; --json before it
+seldon open <journal|ledger|status|caseId> --editor --json   # path reported as JSON; the engine launches the editor
 seldon plan new --zone <z> --risk <r> -- <title>
 seldon plan start|verify|done|drop <id>
 seldon drift link <eventId> <caseId> [--only]

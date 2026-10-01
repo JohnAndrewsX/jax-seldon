@@ -48,4 +48,8 @@ check B 'ssh test-host "omarchy theme set x; pacman -Syu"'
 check B 'ssh test-host omarchy pkg add foo'
 check A 'rsync -a plugin/ test:~/.config/omarchy/plugins/jax.seldon/'
 check A 'echo "sudo is a word" '
+check A 'ssh test-host rm -rf ~/.config/seldon'
+check A 'ssh test-host "rm -rf ~/.config/seldon && ls ~/.config/seldon"'
+check B 'rm -rf ~/.config/seldon'
+check B 'ssh test-host rm -rf ~/.config/hypr'
 exit $fail
