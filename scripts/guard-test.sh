@@ -74,4 +74,15 @@ sudo pacman -Syu'
 check B 'cat <<EOF > /etc/motd
 hello
 EOF'
+check B 'bash <<'"'"'EOF'"'"'
+sudo pacman -Syu
+EOF'
+check B 'ssh test-host <<EOF
+omarchy pkg add foo
+EOF'
+check B 'grep "<<EOF" x.sh
+sudo pacman -Syu'
+check A 'python3 - <<EOF
+print("pacman -Syu is just text here")
+EOF'
 exit $fail

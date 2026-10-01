@@ -12,14 +12,21 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 # line between `<<[-]['"]?WORD['"]?` and its terminator before matching, so
 # file contents written through a heredoc cannot trigger the rules below.
 # The heredoc operator line itself stays and is still checked.
+# Exceptions: a heredoc fed to a shell, `eval`, `su`, `ssh` or `sudo` IS
+# executed, so its body stays and is matched; a `<<` inside quotes (an odd
+# number of quote characters before it on the line) is text, not a heredoc.
 cmd=$(printf '%s\n' "$cmd" | awk '
   BEGIN { term = "" }
-  term != "" { if ($0 == term || ($0 ~ /^[[:space:]]+/ && dash && $0 ~ ("^[[:space:]]*" term "$"))) { term = "" } ; next }
+  term != "" { if ($0 == term || ($0 ~ /^[[:space:]]+/ && dash && $0 ~ ("^[[:space:]]*" term "$"))) { term = ""; keep = 0 } ; if (keep) print; next }
   {
     print
     if (match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*["'"'"']?/)) {
+      pre = substr($0, 1, RSTART - 1)
+      nq = gsub(/["'"'"']/, "", pre)
+      if (nq % 2 == 1) next
       s = substr($0, RSTART, RLENGTH); dash = (s ~ /<<-/)
       gsub(/^<<-?[[:space:]]*["'"'"']?/, "", s); gsub(/["'"'"']$/, "", s); term = s
+      keep = ($0 ~ /(^|[;&|][[:space:]]*|[[:space:]])(bash|sh|zsh|dash|ksh|eval|su|ssh|sudo)([[:space:]]|$)/)
     }
   }')
 
