@@ -9,7 +9,7 @@ and the **Prime Radiant**, a fullscreen overlay with charts and the plan.
 You write notes, plan cases and explain unexpected changes from the panel;
 the engine does the writing.
 
-![The Prime Radiant at 1920×1080 and the panel's Today tab, Tokyo Night](preview.png)
+![Preview, 2400×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
 
 *Offscreen renders of the real QML on the sample index, Tokyo Night theme.*
 
@@ -300,7 +300,7 @@ shell plugin. This is everything it does outside its own window:
   (the project's `docs/CONTRACT.md`, "Commands the plugin may run"):
 
   ```
-  seldon --version
+  seldon --version --json
   seldon status --json
   seldon capture --all --json --quiet
   seldon log [--case <id>] --json -- <text>
@@ -317,7 +317,6 @@ shell plugin. This is everything it does outside its own window:
   seldon update-impact --json
   ```
 
-  The version probe passes `--json` too (`seldon --version --json`).
   `rebuild` and `update-impact` are allowed but not issued by this version.
   Every call goes through one check that refuses any argument list not on
   this list. Ids (case, event, decision, also the one the engine reports
@@ -325,12 +324,13 @@ shell plugin. This is everything it does outside its own window:
   risk, priority and area must be known values or a slug; free text (a
   note, a title, an explanation, a reason) is exactly one non-empty
   argument after `--`, without NUL characters.
-- **When it runs the engine:** `seldon --version` at shell start and on
-  *Check again*; `seldon capture` then `seldon status` at start and every
-  capture interval; everything else only on your click or key press. `seldon open` makes the
-  engine start your editor and `seldon agent start` makes it start the
-  agent launcher you configured in `~/.config/seldon/config.toml`; those
-  are the engine's actions, under your configuration.
+- **When it runs the engine:** `seldon --version --json` at shell start
+  and on *Check again*; `seldon capture` then `seldon status` at start and
+  every capture interval; everything else only on your click or key press.
+  `seldon open` makes the engine start your editor and `seldon agent
+  start` makes it start the agent launcher you configured in
+  `~/.config/seldon/config.toml`; those are the engine's actions, under
+  your configuration.
 - **Two other programs, only when you click a banner button:**
   `wl-copy -- <command>` (*Copy*) and
   `omarchy-launch-floating-terminal-with-presentation <command>` (*Install
@@ -347,13 +347,14 @@ shell plugin. This is everything it does outside its own window:
   are written by the engine, into your logbook, on your Enter or click.
 - **No network.** No sockets, no downloads, no update checks.
 - **No units, binaries or installers.** The plugin folder holds QML,
-  JavaScript, this README, the manifest and the preview image; no
+  JavaScript, this README, the licence, the manifest and the preview
+  image; no
   services, timers, scripts or symlinks. The engine comes from the AUR as
   its own package.
 - **No privileges.** The plugin never runs `sudo`, `pacman` or `systemctl`.
 - **Dev mode is read-only:** with `SELDON_INDEX` set, the plugin only
-  probes `seldon --version`; it never runs capture, status or any writing
-  command.
+  probes `seldon --version --json`; it never runs capture, status or any
+  writing command.
 
 ## Troubleshooting
 
@@ -377,8 +378,15 @@ omarchy plugin remove jax.seldon
 
 This removes the plugin only. The engine package `jax-seldon`, your logbook
 (`~/Seldon` unless you chose another place) and the index under
-`~/.local/state/seldon/` stay; remove the engine with your AUR helper
-(`yay -R jax-seldon`). Your logbook is yours: Seldon never deletes it.
+`~/.local/state/seldon/` stay. To remove the engine as well:
+
+```sh
+omarchy pkg drop jax-seldon
+```
+
+It runs `sudo pacman -Rns`, so it asks for your password (or use your AUR
+helper: `yay -R jax-seldon`). Your logbook is yours: Seldon never deletes
+it.
 
 ## Development
 
@@ -398,4 +406,4 @@ Project home, issues and the engine:
 generated from its `plugin/` folder; please file issues and pull requests
 there.
 
-MIT.
+MIT, see [`LICENSE`](LICENSE).
