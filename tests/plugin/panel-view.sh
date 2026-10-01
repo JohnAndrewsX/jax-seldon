@@ -33,10 +33,12 @@ cp "$root/tests/plugin/harness/KeyboardPanel.qml" "$config/Ui/KeyboardPanel.qml"
 cp "$root/tests/plugin/harness/panel.qml" "$config/shell.qml"
 
 # Tools for the fake engine, and the fake engine; never a real seldon.
-for tool in bash env cat sed date mkdir mv sleep; do
+for tool in bash env cat sed date mkdir mv sleep basename; do
   ln -s "$(command -v "$tool")" "$work/bin/$tool"
 done
 install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin/seldon"
+# The editor launcher the engine calls without a terminal records its argv.
+install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-launch-editor"
 # The shell's Style.qml asks Hyprland and fontconfig for gaps, rounding and
 # the font; outside Hyprland it keeps its defaults when they fail.
 printf '#!/bin/sh\nexit 1\n' >"$work/bin/hyprctl"
@@ -166,13 +168,14 @@ expect keys 16 .view.cursor 2
 expect keys 18 .view.opened false
 clean_log keys
 
-# 3. The yesterday row opens with Enter.
-run yesterday "$fx/index.sample.json" "key:Down;key:Down*10;key:Return;key:Down"
+# 3. The yesterday row opens with Enter and stays in view (the list scrolls
+#    to it once the new rows are laid out, one step later).
+run yesterday "$fx/index.sample.json" "key:Down;key:Down*10;key:Return;view;key:Down"
 expect yesterday 2 .view.cursor 4
 expect yesterday 3 .view.today.rows 6
-shows yesterday 3 "▾ Yesterday · 1 entry"
-expect yesterday 4 .view.cursor 5
-shows yesterday 4 "Snapshots aufgeräumt, 108 und 109 gelöscht."
+shows yesterday 4 "▾ Yesterday · 1 entry"
+expect yesterday 5 .view.cursor 5
+shows yesterday 5 "Snapshots aufgeräumt, 108 und 109 gelöscht."
 clean_log yesterday
 
 # 4. Snapper without permissions (ADR-0011): its banner on every tab.
@@ -207,6 +210,74 @@ expect sparse 1 .view.today.yesterday 0
 expect sparse 2 '.view.changelog.badges | length' 0
 expect sparse 3 '.view.system | join(",")' "PACKAGES,SELDON"
 clean_log sparse
+
+# 7. Live (no dev mode): the QuickEntry, Open in editor on every tab and
+#    Capture now, against the fake engine. Typing in the field never
+#    reaches the panel's keys ("--help" has h and l, which switch tabs
+#    otherwise). The case picker is driven by keys (Tab, Down, Return). After
+#    "Capture now" the fake engine's status writes an index with one more
+#    event; the Changelog shows it through the FileView, without a restart.
+jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00", source: "manual", kind: "note",
+  subject: "journal", detail: "Written by the harness after Capture now", zone: "green", actor: "human", case: null}] + .events' \
+  "$fx/index.sample.json" >"$work/after.json"
+mkdir -p "$work/home-live"
+run live "" \
+  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=59;tab:system;text:e;settle" \
+  HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
+  FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/live.record"
+expect live 1 .view.status ok
+expect live 1 .view.today.quickEntry.enabled true
+expect live 1 .view.today.quickEntry.cases 6
+expect live 1 .view.today.quickEntry.editing false
+shows live 1 "Note for today's journal, Enter saves"
+shows live 1 "No case"
+expect live 2 .view.today.quickEntry.editing true
+expect live 3 .view.today.quickEntry.text "--help"
+expect live 3 .view.tab today
+expect live 5 .view.today.quickEntry.result "Saved to the journal · 01M3W1FAKE0000000000000NTE"
+expect live 5 .view.today.quickEntry.text ""
+shows live 5 "Saved to the journal · 01M3W1FAKE0000000000000NTE"
+expect live 7 .view.today.quickEntry.result "Write something first"
+expect live 7 .view.today.quickEntry.text "   "
+expect live 8 .view.today.quickEntry.text ""
+expect live 13 .view.today.quickEntry.caseId C-2026-004
+shows live 13 "C-2026-004 · Zed als zweiten Editor installieren"
+shows live 13 "Open case"
+expect live 17 .view.today.quickEntry.result "Saved to C-2026-004 · 01M3W1FAKE0000000000000NTE"
+expect live 18 .view.today.quickEntry.editing false
+expect live 18 .view.opened true
+expect live 19 .view.tab today
+expect live 20 .view.tab changelog
+expect live 22 .view.capturing true
+shows live 22 "Capturing"
+expect live 24 .view.changelog.rows 59
+shows live 24 "Written by the harness after Capture now · human"
+expect live 24 .view.captureResult "1 new event"
+shows live 24 "Last capture: 1 new event"
+expect live 25 .view.tab system
+expect live 27 .view.openResult "Opened $work/home-live/Seldon/STATUS.md in omarchy-launch-editor"
+expect live 27 .view.lastError ""
+q() { printf '%q ' "$@"; }
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q log --json -- --help)" "$(q log --case C-2026-004 --json -- "for the case")" \
+  "$(q open journal --editor --json)" "$(q open ledger --editor --json)" \
+  "$(q capture --all --json --quiet)" "$(q status --json)" "$(q open status --editor --json)")
+got=$(cat "$work/home-live/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   live: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+want=$(printf '%s\n' omarchy-launch-editor "$work/home-live/Seldon/journal/2026/2026-10-01.md" -- \
+  omarchy-launch-editor "$work/home-live/Seldon/ledger/2026-10.jsonl" -- \
+  omarchy-launch-editor "$work/home-live/Seldon/STATUS.md" --)
+got=$(cat "$work/live.record" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   live: editor paths"
+else
+  fail=$((fail + 1)); echo "FAIL live: editor launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log live
 
 echo "panel-view: $pass passed, $fail failed"
 ((fail == 0))

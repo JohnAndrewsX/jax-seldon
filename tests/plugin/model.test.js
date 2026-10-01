@@ -397,4 +397,67 @@ test("engineVersion and engineError read the SPEC-ENGINE §3 JSON shapes", () =>
   assert.strictEqual(M.engineError("", "", 2), "seldon exited with code 2")
 })
 
+// ---- WP-012: panel actions
+
+test("openCases and caseOptions: open cases only, active first, ids checked", () => {
+  same(M.openCases(sampleIndex).map((c) => c.id + " " + c.status), [
+    "C-2026-003 active", "C-2026-004 active", "C-2026-008 verification",
+    "C-2026-005 queued", "C-2026-006 queued", "C-2026-007 queued"
+  ])
+  const opts = M.caseOptions(sampleIndex)
+  same(opts[0], { value: "", label: "No case" })
+  same(opts[2], { value: "C-2026-004", label: "C-2026-004 · Zed als zweiten Editor installieren" })
+  assert.strictEqual(opts.length, 7)
+  // no index, no cases, a malformed id: only "No case" survives
+  same(M.caseOptions(null), [{ value: "", label: "No case" }])
+  const odd = { cases: { active: [{ id: "C-2026-001; x", title: "x" }, { id: "C-2026-002" }, null], queued: "x" } }
+  same(M.openCases(odd).map((c) => c.id + "|" + c.title), ["C-2026-002|"])
+})
+
+test("logArgs: the text is one argument after `--`, exactly as typed", () => {
+  for (const text of ["--help", 'a "b" c', "line one\nline two", "-rf --case C-2026-001", "--", "  padded  ", "$(true)"]) {
+    same(M.logArgs(text, "").args, ["log", "--json", "--", text])
+    same(M.logArgs(text, "C-2026-004").args, ["log", "--case", "C-2026-004", "--json", "--", text])
+    assert.strictEqual(M.validateArgs(M.logArgs(text, "C-2026-004").args), "", text)
+  }
+  assert.strictEqual(M.logArgs("", "").error, "Write something first")
+  assert.strictEqual(M.logArgs("  \n\t ", "").error, "Write something first")
+  assert.strictEqual(M.logArgs(null, "").error, "Write something first")
+  assert.strictEqual(M.logArgs("x", "C-26-1").error, "Not a case id: C-26-1")
+  assert.strictEqual(M.logArgs("x", "C-2026-001 --tag y").error, "Not a case id: C-2026-001 --tag y")
+  assert.ok(M.logArgs("a\u0000b", "").error)
+})
+
+test("openArgs: journal, ledger, status or a case id, nothing else", () => {
+  for (const what of ["journal", "ledger", "status", "C-2026-004"]) {
+    same(M.openArgs(what), ["open", what, "--editor", "--json"])
+    assert.strictEqual(M.validateArgs(M.openArgs(what)), "", what)
+  }
+  for (const what of ["", "logbook", "case", "ADR-0001", "../../etc/passwd", "/etc/passwd", "C-2026-1", "journal --x", null])
+    assert.strictEqual(M.openArgs(what), null, String(what))
+})
+
+test("logResult, openResult, captureResult read the SPEC-ENGINE §3 shapes", () => {
+  const ev = (o) => JSON.stringify({ event: Object.assign({ id: EID, source: "manual", kind: "note" }, o), git: null })
+  same(M.logResult(0, ev({ subject: "journal", case: null }), ""), { ok: true, text: "Saved to the journal · " + EID })
+  same(M.logResult(0, ev({ subject: "C-2026-004", case: "C-2026-004" }), ""), { ok: true, text: "Saved to C-2026-004 · " + EID })
+  same(M.logResult(0, "not json", ""), { ok: true, text: "Saved to the journal" })
+  same(M.logResult(1, '{"error":{"code":1,"message":"unknown case C-2026-999"}}', ""), { ok: false, text: "unknown case C-2026-999" })
+  same(M.logResult(3, "", "logbook not initialised"), { ok: false, text: "logbook not initialised" })
+
+  const opened = M.openResult(0, JSON.stringify({ what: "journal", path: "/l/journal/2026/2026-10-01.md",
+    editor: { launched: true, program: "omarchy-launch-editor" } }), "")
+  same(opened, { ok: true, path: "/l/journal/2026/2026-10-01.md", text: "Opened /l/journal/2026/2026-10-01.md in omarchy-launch-editor" })
+  assert.strictEqual(M.openResult(0, "{}", "").text, "Opened in the editor")
+  same(M.openResult(0, JSON.stringify({ path: "/p", editor: { launched: false, error: "no editor" } }), ""), { ok: false, text: "no editor" })
+  same(M.openResult(1, '{"error":{"code":1,"message":"cannot open /p: no terminal"}}', ""), { ok: false, text: "cannot open /p: no terminal" })
+
+  const cap = (o) => JSON.stringify(Object.assign({ ok: true, logbook: "/l", files: [] }, o))
+  same(M.captureResult(0, cap({ written: 0, collectors: [] }), ""), { ok: true, text: "nothing new" })
+  same(M.captureResult(0, cap({ written: 1 }), ""), { ok: true, text: "1 new event" })
+  same(M.captureResult(0, cap({ written: 12, collectors: [{ name: "pacman", ok: true }, { name: "snapper", ok: false, fix: "x" }] }), ""),
+    { ok: true, text: "12 new events · failing: snapper" })
+  same(M.captureResult(4, '{"error":{"code":4,"message":"lock held"}}', ""), { ok: false, text: "lock held" })
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

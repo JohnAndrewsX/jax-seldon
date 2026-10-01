@@ -1,22 +1,45 @@
 #!/usr/bin/env bash
-# Fake `seldon` for tests/plugin/service-states.sh. Speaks just enough of the
-# CLI (SPEC-ENGINE §3) for the plugin service: --version, capture, status.
+# Fake `seldon` for the plugin harnesses (tests/plugin/service-states.sh,
+# panel-view.sh). Speaks just enough of the CLI (SPEC-ENGINE §3) for the
+# plugin: --version, capture, status, log, open.
 # Every call is logged to $HOME/calls.log as "start <cmd>" / "end <cmd>" so
-# the test can prove calls never overlap.
+# the test can prove calls never overlap, and its exact argv to
+# $HOME/argv.log, one line per call, each argument `printf %q`-quoted (a
+# newline shows as $'…\n…'), so the test can compare argument by argument.
 #
 #   FAKE_SELDON_MODE     ok (default) | uninit; $HOME/mode overrides it, so a
 #                        test can run `seldon init` halfway through
 #   FAKE_SELDON_FIXTURE  index written by `status` in mode ok to
 #                        ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json;
 #                        generatedAt is replaced with the current time
+#   FAKE_SELDON_FIXTURE_AFTER  if set, `status` writes this index instead
+#                        once `capture` has run twice (the user's
+#                        "Capture now" after the start-up capture)
+#   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
+#
+# `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. The case id
+# C-2026-999 is unknown to them (exit 1). `open … --editor` hands the path to
+# `omarchy-launch-editor` as the real engine does without a terminal; the
+# harness puts a recorder there.
 set -euo pipefail
 
 log="$HOME/calls.log"
 cmd="${1:-}"
 mode=${FAKE_SELDON_MODE:-ok}
 [[ -f $HOME/mode ]] && mode=$(<"$HOME/mode")
+printf '%s\n' "$(printf '%q ' "$@")" >>"$HOME/argv.log"
 echo "start $cmd" >>"$log"
 trap 'echo "end $cmd" >>"$log"' EXIT
+
+uninit() {
+  echo '{"error":{"code":3,"message":"logbook not initialised"}}'
+  exit 3
+}
+
+user_error() {
+  echo "{\"error\":{\"code\":1,\"message\":\"$1\"}}"
+  exit 1
+}
 
 case "$cmd" in
   --version)
@@ -24,29 +47,58 @@ case "$cmd" in
     ;;
   capture)
     sleep 0.3
-    if [[ $mode == uninit ]]; then
-      echo '{"error":{"code":3,"message":"logbook not initialised"}}'
-      exit 3
-    fi
-    echo '{"events":0}'
+    [[ $mode == uninit ]] && uninit
+    n=0
+    [[ -f $HOME/captures ]] && n=$(<"$HOME/captures")
+    echo $((n + 1)) >"$HOME/captures"
+    echo "{\"ok\":true,\"logbook\":\"$HOME/Seldon\",\"written\":${FAKE_SELDON_WRITTEN:-0},\"files\":[],\"collectors\":[{\"name\":\"pacman\",\"enabled\":true,\"ran\":true,\"ok\":true,\"events\":${FAKE_SELDON_WRITTEN:-0}}]}"
     ;;
   status)
     sleep 0.3
-    if [[ $mode == uninit ]]; then
-      echo '{"error":{"code":3,"message":"logbook not initialised"}}'
-      exit 3
-    fi
+    [[ $mode == uninit ]] && uninit
     state=${XDG_STATE_HOME:-}
     [[ $state == /* ]] || state="$HOME/.local/state"
     dir="$state/seldon"
     mkdir -p "$dir"
+    fixture=$FAKE_SELDON_FIXTURE
+    captures=0
+    [[ -f $HOME/captures ]] && captures=$(<"$HOME/captures")
+    [[ -n ${FAKE_SELDON_FIXTURE_AFTER:-} && $captures -ge 2 ]] && fixture=$FAKE_SELDON_FIXTURE_AFTER
     now=$(date --iso-8601=seconds)
-    sed "s/\"generatedAt\": \"[^\"]*\"/\"generatedAt\": \"$now\"/" "$FAKE_SELDON_FIXTURE" >"$dir/index.json.tmp"
+    sed "s/\"generatedAt\": \"[^\"]*\"/\"generatedAt\": \"$now\"/" "$fixture" >"$dir/index.json.tmp"
     mv "$dir/index.json.tmp" "$dir/index.json"
     echo '{"ok":true}'
     ;;
+  log)
+    sleep 0.2
+    [[ $mode == uninit ]] && uninit
+    shift
+    case_id=""
+    while (($# > 0)) && [[ $1 != -- ]]; do
+      [[ $1 == --case ]] && { case_id=$2; shift; }
+      shift
+    done
+    [[ $case_id == C-2026-999 ]] && user_error "unknown case C-2026-999"
+    if [[ -n $case_id ]]; then subject=$case_id; case_json="\"$case_id\""; else subject=journal; case_json=null; fi
+    echo "{\"event\":{\"id\":\"01M3W1FAKE0000000000000NTE\",\"ts\":\"2026-10-01T18:00:00+02:00\",\"source\":\"manual\",\"kind\":\"note\",\"subject\":\"$subject\",\"actor\":\"human\",\"case\":$case_json},\"git\":null}"
+    ;;
+  open)
+    [[ $mode == uninit ]] && uninit
+    what=${2:-}
+    case "$what" in
+      journal) path="$HOME/Seldon/journal/2026/2026-10-01.md" ;;
+      ledger) path="$HOME/Seldon/ledger/2026-10.jsonl" ;;
+      status) path="$HOME/Seldon/STATUS.md" ;;
+      C-2026-999) user_error "unknown case C-2026-999" ;;
+      C-*) path="$HOME/Seldon/work/active/$what.md" ;;
+      *) user_error "cannot open \`$what\`" ;;
+    esac
+    command -v omarchy-launch-editor >/dev/null \
+      || user_error "cannot open $path: no terminal and no omarchy-launch-editor; set \$EDITOR or open the path yourself"
+    omarchy-launch-editor "$path"
+    echo "{\"what\":\"$what\",\"path\":\"$path\",\"editor\":{\"launched\":true,\"program\":\"omarchy-launch-editor\"}}"
+    ;;
   *)
-    echo "{\"error\":{\"code\":1,\"message\":\"unrecognized subcommand\"}}"
-    exit 1
+    user_error "unrecognized subcommand"
     ;;
 esac

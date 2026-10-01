@@ -14,11 +14,19 @@ import Quickshell
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin folder (required)
 //   HARNESS_STEPS       ";"-separated steps, each optionally "*N" repeated:
-//                       key:<Tab|Backtab|Up|Down|Left|Right|Return|Space|Escape>
+//                       key:<Tab|Backtab|Up|Down|Left|Right|Return|Space|Escape|Backspace>
 //                       text:<character>   a typed character (f, F, c, 1, …)
+//                       type:<text>        each character of text, typed
 //                       tab:<id>           Panel.selectTabById(id)
 //                       filter:<source>    Panel.setFilter(source)
 //                       view               no action, just report
+//                       settle             wait (up to 15 s) until no engine
+//                                          call is queued or running
+//                       wait:<path>=<v>    wait (up to 15 s) until Panel.view()
+//                                          at the dotted path is v, e.g.
+//                                          wait:changelog.rows=59
+//   SELDON_INDEX        empty for a live run: the service then reads the
+//                       state index the fake engine writes and runs actions
 //   HARNESS_BAR         if set, give the panel a stand-in bar whose
 //                       switchPanelFrom() records its direction; each report
 //                       then carries `switches` (Tab hands over to the bar)
@@ -33,7 +41,8 @@ ShellRoot {
 
   readonly property var keys: ({
     Tab: Qt.Key_Tab, Backtab: Qt.Key_Backtab, Up: Qt.Key_Up, Down: Qt.Key_Down,
-    Left: Qt.Key_Left, Right: Qt.Key_Right, Return: Qt.Key_Return, Space: Qt.Key_Space, Escape: Qt.Key_Escape
+    Left: Qt.Key_Left, Right: Qt.Key_Right, Return: Qt.Key_Return, Space: Qt.Key_Space, Escape: Qt.Key_Escape,
+    Backspace: Qt.Key_Backspace
   })
 
   function load(file, parent, props) {
@@ -86,6 +95,11 @@ ShellRoot {
       else driver.keyClick(root.keys[arg])
     } else if (verb === "text") {
       driver.keyClick(arg)
+    } else if (verb === "type") {
+      for (var i = 0; i < arg.length; i++) {
+        if (arg[i] === " ") driver.keyClick(Qt.Key_Space)
+        else driver.keyClick(arg[i])
+      }
     } else if (verb === "tab") {
       root.panel.selectTabById(arg)
     } else if (verb === "filter") {
@@ -107,6 +121,22 @@ ShellRoot {
     running: false
   }
 
+  function idle() {
+    var s = root.service
+    return !s || (s.ready && !s.probing && !s.busy && s.queue.length === 0)
+  }
+
+  property double settleStartMs: 0
+
+  // "a.b=v": Panel.view().a.b, as a string, is v.
+  function viewHas(cond) {
+    var eq = cond.indexOf("=")
+    var value = root.panel ? root.panel.view() : null
+    var path = cond.slice(0, eq).split(".")
+    for (var i = 0; value !== null && value !== undefined && i < path.length; i++) value = value[path[i]]
+    return String(value) === cond.slice(eq + 1)
+  }
+
   Component.onCompleted: {
     root.service = root.load("Service.qml", null, {})
     var props = { service: root.service }
@@ -125,9 +155,9 @@ ShellRoot {
     running: true
     onTriggered: {
       // At least 1 s, so the window has laid out and drawn its first frames.
+      // A live run also waits for the start-up capture.
       var waited = Date.now() - root.startMs
-      if (root.step === 0 && waited < 15000
-          && (waited < 1000 || (root.service && !(root.service.ready && !root.service.probing)))) {
+      if (root.step === 0 && waited < 15000 && (waited < 1000 || !root.idle())) {
         stepper.restart()
         return
       }
@@ -137,6 +167,15 @@ ShellRoot {
         return
       }
       var spec = root.steps[root.step]
+      if (spec === "settle" || spec.indexOf("wait:") === 0) {
+        if (root.settleStartMs === 0) root.settleStartMs = Date.now()
+        var met = spec === "settle" ? root.idle() : root.viewHas(spec.slice(5))
+        if (!met && Date.now() - root.settleStartMs < 15000) {
+          stepper.restart()
+          return
+        }
+        root.settleStartMs = 0
+      }
       var times = 1
       var star = spec.lastIndexOf("*")
       if (star !== -1) {
