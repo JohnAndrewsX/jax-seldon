@@ -14,6 +14,8 @@
 //!   close-without-write: the rebuild reads every file it watches).
 //! - The rebuild writes `index.json` only (state dir, outside the watch),
 //!   never a logbook file, so it cannot trigger itself.
+//! - One rebuild right after start, so the index reflects edits made while
+//!   the watcher was down; after that it reacts to changes.
 //! - Debounce: a rebuild runs once the logbook has been quiet for
 //!   `--interval` seconds (default and minimum 2), at the latest five
 //!   intervals after the first change of a burst.
@@ -25,7 +27,11 @@
 //! - SIGTERM and SIGINT end the watcher after the rebuild in progress
 //!   (exit 0); a second signal kills it.
 //! - Exit 3 when the logbook is not initialised (at start, or when it
-//!   disappears).
+//!   disappears); exit 2 when the watches cannot be set up at start (the
+//!   inotify watch limit). A watch that fails later (a folder that vanished
+//!   or was replaced) is an `error` line; the watcher goes on.
+//! - After an inotify overflow (rescan) the six folders are watched afresh,
+//!   so a subfolder whose create event was lost is not left unwatched.
 
 use clap::Args;
 
@@ -85,7 +91,7 @@ mod imp {
     /// Generated at the root by `seldon status`.
     const GENERATED_ROOT: [&str; 1] = ["STATUS.md"];
     /// How often the loop looks at the signal flag while idle.
-    const TICK: Duration = Duration::from_millis(200);
+    const TICK: Duration = Duration::from_millis(500);
     /// Retry delay while another `seldon` holds the lock.
     const LOCK_RETRY: Duration = Duration::from_millis(250);
     /// A steady stream of changes still rebuilds after this many intervals.
@@ -109,7 +115,10 @@ mod imp {
         let mut watcher = notify::recommended_watcher(tx)
             .map_err(|e| anyhow::anyhow!("cannot start the file watcher: {e}"))?;
         let mut watched = BTreeSet::new();
-        watch_folders(&mut watcher, &root, &mut watched)?;
+        let failed = watch_folders(&mut watcher, &root, &mut watched);
+        if !failed.is_empty() {
+            return Err(anyhow::anyhow!("{}", failed.join("; ")).into());
+        }
         signals::install();
 
         let log = Log { json: ctx.json };
@@ -135,7 +144,8 @@ mod imp {
             ),
         );
 
-        let mut pending: Option<Pending> = None;
+        // the first rebuild runs at once: edits made while nothing watched
+        let mut pending = Some(Pending::start(Instant::now()));
         let mut rebuilds = 0usize;
         let signal = loop {
             if let Some(signal) = signals::received() {
@@ -151,18 +161,18 @@ mod imp {
                     let Some(paths) = relevant(&root, &event) else {
                         continue;
                     };
+                    // a watched folder appeared, went or was replaced: drop
+                    // its old watch and watch what is there now; after a
+                    // rescan (lost events) all six, for subfolders whose
+                    // create event was lost
                     let moved: Vec<&str> = DIRS
                         .into_iter()
-                        .filter(|d| paths.iter().any(|p| p == d))
+                        .filter(|d| event.need_rescan() || paths.iter().any(|p| p == d))
                         .collect();
                     if !moved.is_empty() {
-                        // a watched folder appeared, went or was replaced:
-                        // drop its old watch and watch what is there now
-                        for name in moved {
-                            let _ = watcher.unwatch(&root.join(name));
-                            watched.remove(name);
+                        for e in rewatch(&mut watcher, &root, &mut watched, &moved) {
+                            log.error(&e);
                         }
-                        watch_folders(&mut watcher, &root, &mut watched)?;
                     }
                     pending
                         .get_or_insert_with(|| Pending::new(Instant::now()))
@@ -226,6 +236,8 @@ mod imp {
         paths: BTreeSet<String>,
         /// Set while another writer holds the lock.
         retry_at: Option<Instant>,
+        /// The rebuild at start (no change behind it).
+        at_start: bool,
     }
 
     impl Pending {
@@ -235,6 +247,7 @@ mod imp {
                 last: now,
                 paths: BTreeSet::new(),
                 retry_at: None,
+                at_start: false,
             }
         }
 
@@ -243,23 +256,36 @@ mod imp {
             self.paths.extend(paths);
         }
 
-        /// When the rebuild runs: `interval` after the last change, at
-        /// the latest [`MAX_WAIT_INTERVALS`] after the first; while the
-        /// lock is held, not before the next retry.
+        /// The rebuild at start: due at once.
+        fn start(now: Instant) -> Self {
+            Pending {
+                at_start: true,
+                ..Pending::new(now)
+            }
+        }
+
+        /// When the rebuild runs: at once for the one at start, else
+        /// `interval` after the last change, at the latest
+        /// [`MAX_WAIT_INTERVALS`] after the first; while the lock is held,
+        /// not before the next retry.
         fn due(&self, interval: Duration) -> Instant {
-            let due = (self.last + interval).min(self.first + interval * MAX_WAIT_INTERVALS);
+            let due = if self.at_start {
+                self.first
+            } else {
+                (self.last + interval).min(self.first + interval * MAX_WAIT_INTERVALS)
+            };
             self.retry_at.map_or(due, |r| r.max(due))
         }
     }
 
     /// The paths of `event` that matter, relative to `root`, or `None` when
-    /// the event cannot change the index. An event without paths (a rescan
-    /// after an inotify overflow) matters.
+    /// the event cannot change the index. A rescan (inotify overflow: events
+    /// were lost) and an event without paths matter.
     pub(super) fn relevant(root: &Path, event: &notify::Event) -> Option<Vec<String>> {
         if matches!(event.kind, EventKind::Access(_)) {
             return None;
         }
-        if event.paths.is_empty() {
+        if event.paths.is_empty() || event.need_rescan() {
             return Some(Vec::new());
         }
         let paths: Vec<String> = event
@@ -297,12 +323,15 @@ mod imp {
     }
 
     /// Adds a watch for every watched folder that exists and is not watched
-    /// yet; the root and `.seldon/` once, not recursively.
+    /// yet; the root and `.seldon/` once, not recursively. Returns the
+    /// watches that failed (left out of `watched`, so the next try repeats
+    /// them).
     fn watch_folders(
         watcher: &mut notify::RecommendedWatcher,
         root: &Path,
         watched: &mut BTreeSet<String>,
-    ) -> Result<()> {
+    ) -> Vec<String> {
+        let mut failed = Vec::new();
         let flat = [(".", root.to_path_buf()), (".seldon", root.join(".seldon"))];
         let deep = DIRS.iter().map(|d| (*d, root.join(d)));
         for (name, path) in flat.into_iter().chain(deep) {
@@ -314,12 +343,30 @@ mod imp {
             } else {
                 RecursiveMode::NonRecursive
             };
-            watcher
-                .watch(&path, mode)
-                .map_err(|e| anyhow::anyhow!("cannot watch {}: {e}", path.display()))?;
-            watched.insert(name.to_string());
+            match watcher.watch(&path, mode) {
+                Ok(()) => {
+                    watched.insert(name.to_string());
+                }
+                Err(e) => failed.push(format!("cannot watch {}: {e}", path.display())),
+            }
         }
-        Ok(())
+        failed
+    }
+
+    /// Drops the watches of `names` (of [`DIRS`]) and watches what is there
+    /// now; returns the watches that failed.
+    fn rewatch(
+        watcher: &mut notify::RecommendedWatcher,
+        root: &Path,
+        watched: &mut BTreeSet<String>,
+        names: &[&str],
+    ) -> Vec<String> {
+        for name in names {
+            // fails for a folder that is gone (inotify dropped the watch)
+            let _ = watcher.unwatch(&root.join(name));
+            watched.remove(*name);
+        }
+        watch_folders(watcher, root, watched)
     }
 
     /// `index.json` from the logbook, under the state lock. Writes nothing
@@ -382,13 +429,18 @@ mod imp {
             let ix = &built.index;
             let shown: Vec<&String> = p.paths.iter().take(PATHS_SHOWN).collect();
             let more = p.paths.len().saturating_sub(PATHS_SHOWN);
+            let trigger = if p.at_start { "start" } else { "changes" };
             let mut text = format!(
-                "index rebuilt ({} event(s), {} open drift) in {} ms after {} change(s)",
+                "index rebuilt ({} event(s), {} open drift) in {} ms ",
                 ix.events.len(),
                 ix.summary.open_drift,
                 took.as_millis(),
-                p.paths.len()
             );
+            if p.at_start {
+                text.push_str("at start");
+            } else {
+                text.push_str(&format!("after {} change(s)", p.paths.len()));
+            }
             if !shown.is_empty() {
                 text.push_str(": ");
                 text.push_str(
@@ -408,6 +460,7 @@ mod imp {
             self.line(
                 json!({
                     "status": "rebuilt",
+                    "trigger": trigger,
                     "generatedAt": ix.generated_at,
                     "events": ix.events.len(),
                     "summary": ix.summary,
@@ -478,7 +531,7 @@ mod imp {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use notify::event::{AccessKind, AccessMode, CreateKind, DataChange, ModifyKind};
+    use notify::event::{AccessKind, AccessMode, CreateKind, DataChange, Flag, ModifyKind};
     use notify::{Event, EventKind};
 
     use super::imp::{relevant, relevant_path};
@@ -550,5 +603,7 @@ mod tests {
             relevant(root, &Event::new(EventKind::Other)),
             Some(Vec::new())
         );
+        let rescan = event(EventKind::Other, ".git/index").set_flag(Flag::Rescan);
+        assert_eq!(relevant(root, &rescan), Some(Vec::new()));
     }
 }

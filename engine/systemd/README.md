@@ -17,6 +17,8 @@ only if you want the watcher.
   `memory/` (recursively) and `.seldon/logbook.toml` in the logbook that
   `seldon` resolves (`--logbook` > `SELDON_LOGBOOK` > `config.toml` >
   `~/Seldon`).
+- Rebuilds once right after it starts, so the index reflects edits made
+  while it was not running; after that it reacts to changes.
 - Waits until the logbook has been quiet for `--interval` seconds (default
   and minimum 2), then rebuilds `index.json` under the state lock. A
   long burst of changes still rebuilds after at most five intervals.
@@ -32,9 +34,11 @@ only if you want the watcher.
 
 ## Install
 
-1. Build `seldon` with the `watch` feature. The default release build
-   (`just build-release`) leaves it out, and `seldon watch` then exits 1
-   with "built without the watch feature; rebuild seldon with …":
+1. Until the package ships it (the Phase 4 PKGBUILD builds `seldon` with
+   the feature), build `seldon` with the `watch` feature yourself. The
+   default release build (`just build-release`) leaves it out, and
+   `seldon watch` then exits 1 with "built without the watch feature;
+   rebuild seldon with …":
 
    ```
    cargo build --manifest-path engine/Cargo.toml --release --locked \
@@ -84,7 +88,7 @@ Environment=SELDON_LOGBOOK=%h/Seldon
 |---|---|---|
 | 0 | stopped by SIGTERM or SIGINT, after the rebuild in progress | no |
 | 1 | built without the `watch` feature, or a bad option (`--interval` below 2) | no (`RestartPreventExitStatus`) |
-| 2 | engine error, e.g. the inotify watch limit (`fs.inotify.max_user_watches`) | yes, after 10 s, at most 5 times in 5 minutes |
+| 2 | engine error, e.g. the watches cannot be set up at start (inotify watch limit, `fs.inotify.max_user_watches`) | yes, after 10 s, at most 5 times in 5 minutes |
 | 3 | the logbook is not initialised (run `seldon init`), or it disappeared | no |
 
 ## Hardening

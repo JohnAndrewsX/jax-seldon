@@ -31,11 +31,15 @@ clippy:
 test:
     cargo test --manifest-path engine/Cargo.toml --locked
 
-# The optional `watch` feature (WP-034): clippy and tests with it, then the
-# RSS bound (< 10 MB on the x10 fixture) on an optimised build (bench profile).
+# The optional `watch` feature (WP-034): clippy and tests with it.
 check-watch:
     cargo clippy --manifest-path engine/Cargo.toml --locked --all-targets --features watch -- -D warnings
     cargo test --manifest-path engine/Cargo.toml --locked --features watch
+
+# Not part of `check` (it needs an optimised compile); required before the
+# handover of a WP that touches engine/src/index/ or commands/watch.rs.
+# `seldon watch` RSS < 10 MB on the x10 fixture, bench profile.
+check-rss:
     cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_10_mb
 
 # Validate fixtures against schema/ (script owned by WP-002).

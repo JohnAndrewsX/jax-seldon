@@ -1,9 +1,9 @@
 //! `seldon watch` (WP-034, ADR-0005). With the `watch` feature
 //! (`cargo test --features watch`, `just check-watch`): a change triggers
-//! exactly one debounced rebuild, a burst one, generated files and reads
-//! none, a held lock delays the rebuild without failing, SIGTERM/SIGINT
-//! end it with exit 0, and the resident size stays under 10 MB on the ×10
-//! fixture. Without the feature: a clear user error (exit 1).
+//! exactly one debounced rebuild after the one at start, a burst one,
+//! generated files and reads none, a held lock delays the rebuild without
+//! failing, a replaced folder is watched again, SIGTERM/SIGINT end it with
+//! exit 0, and the resident size stays under 10 MB on the ×10 fixture. Without the feature: a clear user error (exit 1).
 //! Everything runs in a temp home (common::Env, SELDON_TEST_GUARD).
 
 mod common;
@@ -54,11 +54,15 @@ mod with_feature {
 
     impl Watch {
         /// Starts `seldon watch --json extra…` and waits for its
-        /// `watching` line.
+        /// `watching` line and the rebuild at start.
         fn start(env: &Env, extra: &[&str]) -> Self {
-            Self::spawn(env.command(&watch_args(extra)))
+            let w = Self::spawn(env.command(&watch_args(extra)));
+            let first = w.rebuilt(SLACK);
+            assert_eq!(first["trigger"], json!("start"), "{first}");
+            w
         }
 
+        /// Runs `cmd` and waits for the `watching` line only.
         fn spawn(mut cmd: Command) -> Self {
             let mut child = cmd
                 .stdin(Stdio::null())
@@ -192,7 +196,14 @@ mod with_feature {
     fn a_change_triggers_one_rebuild_after_the_quiet_interval() {
         let env = Env::new(Snapper::Missing);
         let root = env.init_logbook();
+        // an edit made while nothing watched: in the rebuild at start
+        std::fs::write(root.join("memory/before.md"), memory_file("before")).unwrap();
         let w = Watch::start(&env, &[]);
+        assert!(
+            topics(&env).contains(&"before".to_string()),
+            "{:?}",
+            topics(&env)
+        );
 
         let changed = Instant::now();
         std::fs::write(root.join("memory/watched.md"), memory_file("watched")).unwrap();
@@ -335,6 +346,26 @@ mod with_feature {
     }
 
     #[test]
+    fn a_replaced_folder_is_watched_again() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let w = Watch::start(&env, &[]);
+
+        std::fs::rename(root.join("memory"), root.join("memory.old")).unwrap();
+        std::fs::create_dir(root.join("memory")).unwrap();
+        let line = w.rebuilt(INTERVAL + SLACK);
+        assert_eq!(line["paths"], json!(["memory"]), "{line}");
+        // the old folder is no longer watched (under its old name or any)
+        std::fs::write(root.join("memory.old/stale.md"), memory_file("stale")).unwrap();
+        w.assert_quiet(INTERVAL + SLACK);
+        // the new one is
+        std::fs::write(root.join("memory/fresh.md"), memory_file("fresh")).unwrap();
+        let line = w.rebuilt(INTERVAL + SLACK);
+        assert_eq!(line["paths"], json!(["memory/fresh.md"]), "{line}");
+        assert_eq!(topics(&env), ["fresh"]);
+    }
+
+    #[test]
     fn sigterm_and_sigint_end_the_watcher_cleanly() {
         let env = Env::new(Snapper::Missing);
         env.init_logbook();
@@ -344,7 +375,7 @@ mod with_feature {
             assert_eq!(code, Some(0), "SIG{signal}");
             assert_eq!(
                 last,
-                Some(json!({"status": "stopped", "signal": format!("SIG{signal}"), "rebuilds": 0}))
+                Some(json!({"status": "stopped", "signal": format!("SIG{signal}"), "rebuilds": 1}))
             );
         }
     }
@@ -404,6 +435,8 @@ mod with_feature {
         common::scale::scaled_logbook(&fixture_logbook(), &root, 10);
         let args = watch_args(&["--logbook", root.to_str().unwrap()]);
         let other = std::env::var_os("SELDON_WATCH_BIN").filter(|b| !b.is_empty());
+        // the lock holds the rebuild at start back until the idle size is read
+        let lock = seldon::logbook::lock::acquire(&env.lock_file()).unwrap();
         let w = match &other {
             // the same environment as `Env::command`, another program
             Some(bin) => {
@@ -418,14 +451,18 @@ mod with_feature {
                 cmd.current_dir(template.get_current_dir().unwrap());
                 Watch::spawn(cmd)
             }
-            None => Watch::start(&env, &args[2..]),
+            None => Watch::spawn(env.command(&args)),
         };
         let optimised = other.is_some() || !cfg!(debug_assertions);
         let (idle, _) = memory_kb(w.pid());
+        drop(lock);
+        let line = w.rebuilt(SLACK);
+        assert_eq!(line["trigger"], json!("start"), "{line}");
+        assert_eq!(line["events"], json!(500), "the ×10 ledger: {line}");
 
         std::fs::write(root.join("memory/x10.md"), memory_file("x10")).unwrap();
         let line = w.rebuilt(INTERVAL + SLACK);
-        assert_eq!(line["events"], json!(500), "the ×10 ledger: {line}");
+        assert_eq!(line["trigger"], json!("changes"), "{line}");
         let (rss, peak) = memory_kb(w.pid());
         eprintln!(
             "watch on ×10 ({}): idle {idle} kB, after rebuild {rss} kB, peak {peak} kB",
