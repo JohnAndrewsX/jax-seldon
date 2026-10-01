@@ -5,11 +5,15 @@
 //! (AGENTS.md §8). On a terminal it is `$VISUAL`, else `$EDITOR` (split at
 //! whitespace, so `code --wait` works), else `omarchy-launch-editor
 //! --inline`. Without a terminal (the plugin) it is `omarchy-launch-editor`,
-//! which opens the user's default editor in its own window.
+//! which opens the user's default editor in its own window: started
+//! detached ([`launch_detached`]), because the launcher stays in the
+//! foreground while a terminal editor runs (WP-012, decision 1).
 
 use std::io::IsTerminal as _;
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use clap::Args;
 use serde_json::{Value, json};
@@ -23,7 +27,8 @@ use crate::sys::{self, Run};
 /// Omarchy's launcher for the default editor (`omarchy-launch-editor`).
 pub const OMARCHY_EDITOR: &str = "omarchy-launch-editor";
 
-const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a detached launcher is watched for a start-up failure.
+const LAUNCH_GRACE: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Args)]
 pub struct OpenArgs {
@@ -130,8 +135,54 @@ pub fn edit(path: &Path) -> Result<String, String> {
     }
     outcome(
         OMARCHY_EDITOR,
-        sys::run(OMARCHY_EDITOR, &[&path_arg], None, LAUNCH_TIMEOUT),
+        launch_detached(OMARCHY_EDITOR, &[&path_arg]),
     )
+}
+
+/// Starts `program args…` detached: stdin, stdout and stderr null (an
+/// inherited pipe would keep the caller, e.g. the plugin's process queue,
+/// waiting for the editor), its own process group (a signal to ours does
+/// not reach it), never killed, never waited for. It is watched for
+/// [`LAUNCH_GRACE`]: an exit in that time is its result (a non-zero exit
+/// is an error), otherwise it counts as launched (`code: Some(0)`).
+fn launch_detached(program: &str, args: &[&str]) -> Run {
+    let mut cmd = Command::new(program);
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0);
+    // ETXTBSY (as in `sys::run`): a just-written program still open for
+    // writing in another thread's forked child; brief, retry
+    let mut spawned = cmd.spawn();
+    for _ in 0..20 {
+        match &spawned {
+            Err(e) if e.raw_os_error() == Some(26) => {
+                std::thread::sleep(Duration::from_millis(5));
+                spawned = cmd.spawn();
+            }
+            _ => break,
+        }
+    }
+    let mut child = match spawned {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Run::NotFound,
+        Err(e) => return Run::Failed(e.to_string()),
+    };
+    let deadline = Instant::now() + LAUNCH_GRACE;
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.code(),
+            Ok(None) if Instant::now() >= deadline => break Some(0),
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(e) => return Run::Failed(e.to_string()),
+        }
+    };
+    Run::Exited {
+        code,
+        stdout: String::new(),
+        stderr: String::new(),
+    }
 }
 
 fn outcome(program: &str, run: Run) -> Result<String, String> {

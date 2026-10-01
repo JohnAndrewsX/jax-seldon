@@ -524,6 +524,51 @@ fn a_fan_out_resolution_counts_once() {
     }
 }
 
+/// ADR-0021: the winning resolution folds its `case` whether it is linked
+/// or explained; an explained line without a case folds none; a later
+/// resolution without a case wins and takes it away again.
+#[test]
+fn a_resolution_folds_its_case_whether_linked_or_explained() {
+    let event = |ix: &model::Index, id: &str| {
+        ix.events
+            .iter()
+            .find(|e| e.event.id.to_string() == id)
+            .cloned()
+            .unwrap()
+    };
+    let ollama = "01M3VNFTF8EVHWFFZ687N14Q0C";
+    let btop = "01M1MB2M1GWZYF485HTGVZ1KS3";
+    fn explained(l: &mut load::Loaded, target: &str, i: u8, case: Option<&str>) {
+        let t = l
+            .events
+            .iter()
+            .find(|e| e.id.to_string() == target)
+            .cloned()
+            .unwrap();
+        let mut r = resolution(&t, i, false);
+        r.case = case.map(String::from);
+        l.events.push(r);
+    }
+
+    let ix = derive(|l| explained(l, ollama, 0, Some("C-2026-004")));
+    let e = event(&ix, ollama);
+    assert_eq!(e.event.resolution, Some(Resolution::Explained));
+    assert_eq!(e.event.case.as_deref(), Some("C-2026-004"));
+    assert!(!ix.drift.iter().any(|d| d.event_id == ollama));
+    // the sample's explained lines carry no case and fold none
+    let b = event(&ix, btop);
+    assert_eq!(
+        (b.event.resolution, b.event.case),
+        (Some(Resolution::Explained), None)
+    );
+
+    let ix = derive(|l| {
+        explained(l, ollama, 0, Some("C-2026-004"));
+        explained(l, ollama, 1, None);
+    });
+    assert_eq!(event(&ix, ollama).event.case, None, "the later line wins");
+}
+
 #[test]
 fn proposal_token_rule_end_to_end() {
     for (line, want) in [

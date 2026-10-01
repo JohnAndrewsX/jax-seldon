@@ -291,3 +291,27 @@ Append-only. One bullet per finding, newest section last.
   dropping the child's stdout pipe before it writes.
 - **Test-only triggers behind `#[cfg(debug_assertions)]`** (an env var
   that forces a panic) never reach the release binary.
+
+## 2026-10-01 · WP-008 (drift commands, reconcile, detached editor)
+
+- **Reuse the index model instead of re-deriving.** `index::derive`
+  returns `Built { folded, open_drift, ledger, index }`. A group's open
+  members are `folded` events in `open_drift` with the same `txId`
+  (pacman only); the row is the `index.drift` item whose `eventId` is one
+  of them (it is absent when the 200-item cap cut it).
+- **clap: a bare command plus subcommands.** `#[command(
+  args_conflicts_with_subcommands = true)]` on the args struct with
+  `command: Option<Sub>` gives `drift [--crisis-only]` and
+  `drift link …` from one variant. Free text is a positional with
+  `allow_hyphen_values = true`, so `-- --user unit…` passes.
+- **Detached child:** `Command::process_group(0)` (std
+  `os::unix::process::CommandExt`) plus `Stdio::null()` on all three
+  streams, then poll `try_wait` for a short grace period and drop the
+  `Child` without waiting. A test caller's `output()` blocks until every
+  inherited pipe closes, so a test that times `output()` proves that no
+  pipe leaked.
+- **chrono overflow:** `ledger.read_range(from, MAX)` panics, because it
+  adds a day of slack. Use a far but finite bound (`from + 100 years`).
+- **`/proc/<pid>/stat`**: split after the last `)`; then field 0 is the
+  state and field 2 is the pgrp. That lets a test check "own process
+  group" and "still alive (not Z)" without a libc crate.

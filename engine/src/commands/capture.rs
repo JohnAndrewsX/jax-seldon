@@ -108,6 +108,9 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         cursors.collectors.insert(name.to_string(), state);
     }
     cursors.save(&cursors_path)?;
+    // WP-008: reconciliation, the attributed collector event ids into
+    // their case files (ADR-0012 §10); warnings only, the append is done
+    crate::reconcile::after_capture(&logbook, &ledger, &written);
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 

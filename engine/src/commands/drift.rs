@@ -1,0 +1,579 @@
+//! `seldon drift [--crisis-only]`, `drift link|explain|dismiss|show`
+//! (SPEC-ENGINE §3 §5, CONTRACT.md "Commands the plugin may run").
+//!
+//! The list is the index's drift model (WP-007), not a second derivation:
+//! the newest 200 open items, crises first (ADR-0020), with the totals of
+//! every open item. A resolving command appends one `resolution` line per
+//! open member of the named event's item in one ledger write (ADR-0008,
+//! ADR-0013 §4); `--only` resolves the named event alone; a re-run finds
+//! nothing open and writes nothing. `link` and `explain` record the
+//! resolved ids in the case's `events:` (ADR-0012 §10); `explain` creates
+//! a retroactive case through WP-006's case store (template, id, folder),
+//! completed at once. Every write rebuilds the index (CONTRACT.md rule 2).
+
+use std::fmt::Write as _;
+
+use chrono::Datelike as _;
+use clap::{Args, Subcommand};
+use serde_json::{Value, json};
+
+use super::event::{clip, emit, event_json, parse_case_id, parse_person};
+use super::plan::case_json;
+use super::{Context, Output, autocommit, one_line, write_new};
+use crate::error::{Error, Result};
+use crate::index::{self, Built};
+use crate::logbook::cases::{self, CaseFile};
+use crate::model::event::{Event, Kind, Resolution, Source};
+use crate::model::{Case, CaseStatus, Priority, Risk, Zone};
+use crate::reconcile::{self, Resolve, Selection};
+
+#[derive(Debug, Clone, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct DriftArgs {
+    #[command(subcommand)]
+    pub command: Option<DriftCommand>,
+
+    /// Only crises (red-zone items)
+    #[arg(long)]
+    pub crisis_only: bool,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum DriftCommand {
+    /// Link a drift event (and the open members of its group) to a case
+    Link(LinkArgs),
+    /// Explain drift: creates a retroactive, completed case for it
+    Explain(ExplainArgs),
+    /// Dismiss drift with a reason
+    Dismiss(DismissArgs),
+    /// Show a drift event and every open member of its group
+    Show {
+        #[arg(value_name = "EVENT", value_parser = parse_event_id)]
+        id: String,
+    },
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct LinkArgs {
+    #[arg(value_name = "EVENT", value_parser = parse_event_id)]
+    pub id: String,
+
+    #[arg(value_name = "CASE", value_parser = parse_case_id)]
+    pub case_id: String,
+
+    /// Resolve the named event only, not the rest of its group
+    #[arg(long)]
+    pub only: bool,
+
+    /// Who resolves it
+    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    pub actor: String,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ExplainArgs {
+    #[arg(value_name = "EVENT", value_parser = parse_event_id)]
+    pub id: String,
+
+    /// Why it happened, as one argument after `--`; the new case's title
+    #[arg(value_name = "INTENT", allow_hyphen_values = true)]
+    pub intent: String,
+
+    /// Resolve the named event only, not the rest of its group
+    #[arg(long)]
+    pub only: bool,
+
+    /// Zone of the new case (default: the drift item's zone)
+    #[arg(long, value_name = "Z")]
+    pub zone: Option<Zone>,
+
+    /// Risk of the new case
+    #[arg(long, value_name = "R", default_value = "R1")]
+    pub risk: Risk,
+
+    /// Area slug of the new case; created under areas/ on first use
+    #[arg(long, value_name = "A")]
+    pub area: Option<String>,
+
+    /// Who resolves it
+    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    pub actor: String,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct DismissArgs {
+    #[arg(value_name = "EVENT", value_parser = parse_event_id)]
+    pub id: String,
+
+    /// Why it can be ignored, as one argument after `--`
+    #[arg(value_name = "REASON", allow_hyphen_values = true)]
+    pub reason: String,
+
+    /// Resolve the named event only, not the rest of its group
+    #[arg(long)]
+    pub only: bool,
+
+    /// Who resolves it
+    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    pub actor: String,
+}
+
+/// clap value parser: an event id (ULID, `event.schema.json#/$defs/ulid`).
+pub fn parse_event_id(s: &str) -> Result<String, String> {
+    reconcile::check_event_id(s)
+        .map(|_| s.to_string())
+        .map_err(|e| e.to_string())
+}
+
+pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
+    match args.command {
+        None => list(ctx, args.crisis_only),
+        Some(DriftCommand::Show { id }) => show(ctx, &id),
+        Some(DriftCommand::Link(a)) => resolve(
+            ctx,
+            &a.id,
+            a.only,
+            &a.actor,
+            Action::Link { case: a.case_id },
+        ),
+        Some(DriftCommand::Explain(a)) => {
+            let intent = one_line("the intent", &a.intent)?;
+            if let Some(area) = a.area.as_deref()
+                && !crate::model::is_slug(area)
+            {
+                return Err(Error::user(format!(
+                    "area `{area}` is not a lowercase slug ([a-z0-9][a-z0-9-]*)"
+                )));
+            }
+            let action = Action::Explain(Explain {
+                intent,
+                zone: a.zone,
+                risk: a.risk,
+                area: a.area,
+            });
+            resolve(ctx, &a.id, a.only, &a.actor, action)
+        }
+        Some(DriftCommand::Dismiss(a)) => {
+            let reason = one_line("the reason", &a.reason)?;
+            resolve(ctx, &a.id, a.only, &a.actor, Action::Dismiss { reason })
+        }
+    }
+}
+
+/// The open drift items of the index model; `--crisis-only` keeps the red
+/// ones. `openDrift`/`crisis` count every open item, also past the cap.
+fn list(ctx: &Context, crisis_only: bool) -> Result<Output> {
+    let (config, logbook) = ctx.open_logbook()?;
+    let built = index::derive(ctx, &config, &logbook)?;
+    warn(&built);
+    let summary = &built.index.summary;
+    let items: Vec<&index::model::DriftItem> = built
+        .index
+        .drift
+        .iter()
+        .filter(|d| !crisis_only || d.crisis)
+        .collect();
+    let shown_total = if crisis_only {
+        summary.crisis
+    } else {
+        summary.open_drift
+    };
+
+    let mut human = String::new();
+    for d in &items {
+        let _ = writeln!(
+            human,
+            "{:<6}  {}  {}/{}  {}{}{}  {}",
+            if d.crisis {
+                "CRISIS"
+            } else {
+                d.zone.as_deref().unwrap_or("-")
+            },
+            short_ts(&d.ts),
+            d.source,
+            d.kind,
+            clip(&d.subject, 60),
+            d.members
+                .map(|n| format!(" (+{} more)", n - 1))
+                .unwrap_or_default(),
+            d.proposed_case
+                .as_deref()
+                .map(|c| format!(" → {c}?"))
+                .unwrap_or_default(),
+            d.event_id
+        );
+    }
+    if items.is_empty() {
+        human.push_str(if crisis_only {
+            "No crises."
+        } else {
+            "No open drift."
+        });
+    } else {
+        let _ = write!(
+            human,
+            "{} open drift item(s), {} crisis",
+            summary.open_drift, summary.crisis
+        );
+        if items.len() < shown_total {
+            let _ = write!(human, "; showing the newest {}", items.len());
+        }
+    }
+    Ok(Output::ok(
+        human.trim_end(),
+        json!({
+            "drift": items,
+            "openDrift": summary.open_drift,
+            "crisis": summary.crisis,
+        }),
+    ))
+}
+
+/// `drift show <id>`: the event as the index folds it, its item (when the
+/// capped index lists it) and every open member of its group, oldest first.
+fn show(ctx: &Context, id: &str) -> Result<Output> {
+    let (config, logbook) = ctx.open_logbook()?;
+    let built = index::derive(ctx, &config, &logbook)?;
+    warn(&built);
+    let event = reconcile::find(&built, id)?;
+    let members = reconcile::open_members(&built, &event.event);
+    let item = built
+        .index
+        .drift
+        .iter()
+        .find(|d| members.iter().any(|m| m.id.to_string() == d.event_id));
+    let folded = |m: &Event| -> Value {
+        built
+            .folded
+            .iter()
+            .find(|f| f.event.id == m.id)
+            .map(|f| serde_json::to_value(f).expect("an event always serialises"))
+            .unwrap_or_else(|| event_json(m))
+    };
+
+    let e = &event.event;
+    let mut human = format!("{}  {}\n", e.id, e);
+    if members.is_empty() {
+        human.push_str(&not_open(event));
+    } else {
+        let _ = writeln!(
+            human,
+            "Open drift{}:",
+            item.map(|d| format!(
+                " ({}{})",
+                d.zone.as_deref().unwrap_or("-"),
+                if d.crisis { ", crisis" } else { "" }
+            ))
+            .unwrap_or_default()
+        );
+        for m in &members {
+            let _ = writeln!(
+                human,
+                "  {}  {}{}",
+                m.id,
+                m,
+                if m.explicit == Some(true) {
+                    "  (explicit)"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+    Ok(Output::ok(
+        human.trim_end(),
+        json!({
+            "event": folded(e),
+            "open": !members.is_empty(),
+            "item": item,
+            "txId": e.tx_id.as_deref().filter(|_| members.len() > 1),
+            "members": members.iter().map(|m| folded(m)).collect::<Vec<_>>(),
+        }),
+    ))
+}
+
+/// `drift explain`'s options for the new case.
+struct Explain {
+    intent: String,
+    zone: Option<Zone>,
+    risk: Risk,
+    area: Option<String>,
+}
+
+/// What a resolving command does besides the resolution lines.
+enum Action {
+    Link { case: String },
+    Explain(Explain),
+    Dismiss { reason: String },
+}
+
+impl Action {
+    fn resolution(&self) -> Resolution {
+        match self {
+            Action::Link { .. } => Resolution::Linked,
+            Action::Explain(_) => Resolution::Explained,
+            Action::Dismiss { .. } => Resolution::Dismissed,
+        }
+    }
+}
+
+fn resolve(ctx: &Context, id: &str, only: bool, actor: &str, action: Action) -> Result<Output> {
+    let (config, logbook) = ctx.open_logbook()?;
+    let lock = ctx.lock()?;
+    let built = index::derive(ctx, &config, &logbook)?;
+    warn(&built);
+    // a link names an existing case, also when there is nothing to resolve
+    let mut case_file = match &action {
+        Action::Link { case } => Some(cases::find(&logbook, case)?),
+        _ => None,
+    };
+    let sel = reconcile::select(&built, id, only)?;
+    let resolution = action.resolution();
+    if sel.members.is_empty() {
+        drop(lock);
+        return Ok(nothing_to_do(&sel, resolution));
+    }
+
+    let mut area_created = None;
+    let (case_id, detail, case_events) = match &action {
+        Action::Link { case } => (Some(case.clone()), None, Vec::new()),
+        Action::Dismiss { reason } => (None, Some(reason.clone()), Vec::new()),
+        Action::Explain(explain) => {
+            let intent = &explain.intent;
+            let file = retroactive_case(ctx, &logbook, &built, &sel, explain, actor)?;
+            let id = file.case.id.clone();
+            let created = Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
+                .detail(intent.clone())
+                .actor(actor)
+                .case(Some(id.clone()));
+            let completed = Event::new(ctx.now, Source::Seldon, Kind::CaseCompleted, &id)
+                .actor(actor)
+                .case(Some(id.clone()));
+            case_file = Some(file);
+            (Some(id), Some(intent.clone()), vec![created, completed])
+        }
+    };
+    let lines = reconcile::resolutions(
+        &sel,
+        &Resolve {
+            resolution,
+            ts: ctx.now,
+            actor: actor.to_string(),
+            detail,
+            case: case_id.clone(),
+        },
+    );
+    let resolved = lines.len();
+
+    // one ledger write: (case-created,) one line per member (, case-completed)
+    let mut events = Vec::with_capacity(resolved + 2);
+    let mut case_events = case_events.into_iter();
+    events.extend(case_events.next());
+    events.extend(lines);
+    events.extend(case_events);
+    let written = emit(&lock, &config, &logbook, events)?;
+
+    if let Some(file) = case_file.as_mut() {
+        let ts = reconcile::ts_index(&built.ledger);
+        reconcile::attach(file, &sel.members, |id| ts.get(id).copied());
+        file.add_agent(actor);
+        match &action {
+            Action::Explain(explain) => {
+                area_created = explain
+                    .area
+                    .as_deref()
+                    .map(|a| cases::ensure_area(&logbook, a))
+                    .transpose()?
+                    .flatten();
+                let text = crate::model::render_new(&file.case, &file.doc.body);
+                write_new(&file.path, &text)?;
+            }
+            _ => {
+                file.save(&logbook)?;
+            }
+        }
+    }
+
+    let verb = match resolution {
+        Resolution::Linked => "linked",
+        Resolution::Explained => "explained",
+        Resolution::Dismissed => "dismissed",
+    };
+    // never the subject: it is not redacted and must not reach a command line
+    let summary = match &case_id {
+        Some(c) => format!("drift {verb}: {resolved} event(s), {c}"),
+        None => format!("drift {verb}: {resolved} event(s)"),
+    };
+    let commit = autocommit(ctx, &config, &logbook, &summary);
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
+
+    let mut human = format!(
+        "{} {resolved} event(s){}",
+        capitalise(verb),
+        match (&action, &case_id) {
+            (Action::Link { .. }, Some(c)) => format!(" to {c}"),
+            (Action::Explain(_), Some(c)) => format!(" with the new completed case {c}"),
+            _ => String::new(),
+        }
+    );
+    if let Some(tx) = sel.group {
+        let _ = write!(human, " (transaction {tx})");
+    }
+    if let (Some(file), Action::Explain(_)) = (&case_file, &action) {
+        let _ = write!(human, "\nCase: {}", file.relative(&logbook));
+    }
+    if let Some(area) = &area_created {
+        let _ = write!(human, "\nNew area: {area}");
+    }
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "eventId": sel.event.event.id.to_string(),
+            "resolution": resolution,
+            "only": only,
+            "txId": sel.group,
+            "resolved": resolved,
+            "events": written.iter().map(event_json).collect::<Vec<_>>(),
+            "case": case_file.as_ref().map(|f| case_json(&logbook, f)),
+            "areaCreated": area_created,
+            "git": commit.json(),
+        }),
+    ))
+}
+
+/// The case `drift explain` creates: WP-006's template and id sequence,
+/// title and `## Intent` from the intent, status completed (created and
+/// started on the day of the earliest resolved event, closed today), zone
+/// from `--zone` or the drift item.
+fn retroactive_case(
+    ctx: &Context,
+    logbook: &crate::logbook::Logbook,
+    built: &Built,
+    sel: &Selection,
+    explain: &Explain,
+    actor: &str,
+) -> Result<CaseFile> {
+    let first = sel
+        .members
+        .first()
+        .map_or(ctx.now.date_naive(), |m| m.ts.date_naive());
+    let zone = explain.zone.unwrap_or_else(|| item_zone(built, sel));
+    let risk = explain.risk;
+    let intent = explain.intent.as_str();
+    let id = cases::next_id(logbook, ctx.now.year())?;
+    let case = Case {
+        id: id.clone(),
+        title: intent.to_string(),
+        status: CaseStatus::Completed,
+        zone,
+        risk,
+        priority: Some(Priority::Normal),
+        area: explain.area.clone(),
+        created: first,
+        started: Some(first),
+        closed: Some(ctx.now.date_naive()),
+        snapshot_before: None,
+        agents: Vec::new(),
+        events: Vec::new(),
+        tags: Vec::new(),
+    };
+    let body = cases::new_body(logbook, &id, intent)?;
+    let body = reconcile::append_to_section(&body, "Intent", intent);
+    let path = logbook
+        .path("work")
+        .join(CaseStatus::Completed.folder())
+        .join(case.file_name(&cases::slug(intent, "case")));
+    let mut file = CaseFile {
+        path,
+        case,
+        doc: crate::frontmatter::Document {
+            frontmatter: None,
+            body,
+        },
+    };
+    file.log(
+        &ctx.now,
+        &format!(
+            "created retroactively for drift {} (zone {zone}, risk {risk})",
+            sel.event.event.id
+        ),
+        actor,
+    );
+    file.log(
+        &ctx.now,
+        &format!("completed: explained {} drift event(s)", sel.members.len()),
+        actor,
+    );
+    if file.path.exists() {
+        return Err(Error::user(format!(
+            "{} already exists",
+            file.path.display()
+        )));
+    }
+    Ok(file)
+}
+
+/// The zone of the drift item the selection belongs to (computed by the
+/// index, ADR-0013 §3), else the named event's own zone, else yellow.
+fn item_zone(built: &Built, sel: &Selection) -> Zone {
+    let ids: Vec<String> = sel.members.iter().map(|m| m.id.to_string()).collect();
+    built
+        .index
+        .drift
+        .iter()
+        .find(|d| ids.contains(&d.event_id))
+        .and_then(|d| d.zone.as_deref())
+        .and_then(|z| z.parse().ok())
+        .or(sel.event.event.zone)
+        .unwrap_or(Zone::Yellow)
+}
+
+/// Exit 0, nothing written: the named event is not open drift.
+fn nothing_to_do(sel: &Selection, resolution: Resolution) -> Output {
+    let e = &sel.event.event;
+    Output::ok(
+        format!("Nothing to resolve: {}", not_open(sel.event)),
+        json!({
+            "eventId": e.id.to_string(),
+            "resolution": resolution,
+            "resolved": 0,
+            "events": [],
+            "already": {
+                "resolution": e.resolution,
+                "case": e.case,
+            },
+        }),
+    )
+}
+
+/// Why an event is not open drift.
+fn not_open(event: &crate::index::model::IndexEvent) -> String {
+    let e = &event.event;
+    match (e.resolution, e.case.as_deref()) {
+        (Some(r), Some(c)) => format!("{} is already {r} ({c})", e.id),
+        (Some(r), None) => format!("{} is already {r}", e.id),
+        (None, Some(c)) => format!("{} belongs to {c}", e.id),
+        (None, None) => format!("{} is not drift", e.id),
+    }
+}
+
+/// Load warnings of the index model, on stderr (like the rebuild's).
+fn warn(built: &Built) {
+    for w in &built.warnings {
+        eprintln!("seldon: warning: {w}");
+    }
+}
+
+/// `2026-10-01 14:03` of an RFC 3339 timestamp.
+fn short_ts(ts: &str) -> String {
+    ts.get(..16).unwrap_or(ts).replace('T', " ")
+}
+
+fn capitalise(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}

@@ -573,7 +573,7 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None):
             e["resolution"] = r["resolution"]
             if "detail" in r:
                 e["resolutionDetail"] = r["detail"]
-            if r["resolution"] == "linked":
+            if r.get("case"):  # ADR-0021: linked or explained, whenever the line carries one
                 e["case"] = r["case"]
         folded.append(order_event(e))
     folded.sort(key=lambda e: (instant(e["ts"]), e["id"]), reverse=True)
@@ -1098,6 +1098,39 @@ def self_checks(today):
         err = problems[:1] or ([] if got == [want] else [f"proposedCase {got}, want [{want!r}]"])
         out += [f"self-check '{label}': {e}" for e in err]
 
+    # ADR-0021: the winning resolution folds its case whether linked or explained; an explained
+    # line without a case (the sample's btop) folds none.
+    OLLAMA = "01M3VNFTF8EVHWFFZ687N14Q0C"
+
+    def explain_with_case(ledger):
+        ledger.append(("<self-check>:explain", {
+            "id": "7" + "Z" * 23 + "EX", "ts": "2026-10-01T16:58:00+02:00", "source": "seldon",
+            "kind": "resolution", "subject": "ollama", "detail": "Lokale Modelle.", "actor": "human",
+            "case": "C-2026-004", "refersTo": OLLAMA, "resolution": "explained"}))
+
+    def list_in_case(cases):
+        # the engine records the event in the case's `events:`, in time order (ADR-0012 §10)
+        out = []
+        for f, fm, body in cases:
+            if fm["id"] == "C-2026-004":
+                fm = dict(fm)
+                ev = list(fm["events"])
+                ev.insert(ev.index("01M3VZNFC0M2FQVGJBZGX9KDF7"), OLLAMA)
+                fm["events"] = ev
+            out.append((f, fm, body))
+        return out
+
+    problems = []
+    derived, _, _ = derive(LOGBOOK, today, problems, explain_with_case, list_in_case)
+    by_id = {e["id"]: e for e in derived["events"]}
+    got = [(by_id[i].get("resolution"), by_id[i].get("case"))
+           for i in (OLLAMA, "01M1MB2M1GWZYF485HTGVZ1KS3")]
+    want = [("explained", "C-2026-004"), ("explained", None)]
+    open_ids = [d["eventId"] for d in derived["drift"]]
+    err = problems[:1] or ([] if got == want and OLLAMA not in open_ids
+                           else [f"(resolution, case) {got}, want {want}; drift {open_ids}"])
+    out += [f"self-check 'explained with a case folds it (ADR-0021)': {e}" for e in err]
+
     # SPEC-LOGBOOK §3: C-2026-001 without its verification step (as before WP-015) must fail the walk.
     def drop_verified(ledger):
         ledger[:] = [(w, e) for w, e in ledger if not (e["kind"] == "case-verified" and e["subject"] == "C-2026-001")]
@@ -1110,7 +1143,7 @@ def self_checks(today):
     errs = check_case_logs(ledger, case_files)
     if not any("C-2026-001" in e and "'completed' from active" in e for e in errs):
         out.append(f"self-check 'C-2026-001 active -> completed is rejected': walker reported {errs}")
-    return out, len(cases) + len(proposals) + 1
+    return out, len(cases) + len(proposals) + 2
 
 
 # --------------------------------------------------------------------------- main
