@@ -3,10 +3,12 @@
 Flight recorder and planning desk for your Omarchy system. The plugin shows
 what the Seldon engine has recorded: active cases, unexplained changes
 (drift) and the Prime Radiant overlay. It reads one file,
-`~/.local/state/seldon/index.json`, which the engine writes.
+`${XDG_STATE_HOME:-~/.local/state}/seldon/index.json`, which the engine
+writes.
 
-> Skeleton (Phase 1). The panel tabs and the Prime Radiant charts arrive in
-> later releases. Project home: https://github.com/JohnAndrewsX/jax-seldon
+> Phase 1. The panel has the Today, Changelog and System tabs; Work,
+> Decisions, Memory and the Prime Radiant charts arrive in later releases.
+> Project home: https://github.com/JohnAndrewsX/jax-seldon
 
 ## Requirements
 
@@ -28,6 +30,41 @@ fixing. The tooltip says what and when the engine last captured.
 | Middle | toggle the Prime Radiant |
 | Right | capture now (`seldon capture`, then `seldon status`) |
 
+## The panel
+
+| Tab | Shows |
+|---|---|
+| Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), today's journal entries, yesterday's behind one row; *Open in editor* |
+| Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; *Capture now* |
+| System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine; a section appears only when the index has it |
+
+A Changelog row shows the source glyph, kind, subject and time, then what
+changed, who, and the case. Each row has one colour, in theme colours (red =
+urgent, yellow = accent, green = muted): while the event is open drift, the
+zone of its drift item (a routine upgrade group is yellow), otherwise the
+event's own zone. It paints the stripe on the left and, for open drift, the
+glyph, the status line and the "+N" badge. Snapshot rows
+are highlighted. An explained, dismissed or linked event shows its
+resolution and the reason given. Open drift says *Unexplained* or, in the
+red zone, *Needs a reason*, with the proposed case when there is one. A
+package transaction that is open drift as one group shows "+N" on its
+leader; Enter or a click lists the members.
+
+Above every tab: the status banner (below), the snapper banner when
+snapshots cannot be read, and a red strip "N changes in the red zone need a
+reason" (a click opens the Changelog).
+
+| Key | Does |
+|---|---|
+| Tab / Shift-Tab | the bar's next / previous panel, as in every Omarchy panel |
+| ← / →, h / l | previous / next tab |
+| 1–6 | a tab by its fixed number: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 (a tab this version does not have yet: nothing happens) |
+| ↑ / ↓, k / j | move in the list |
+| Enter, Space | open the row (a group's members, the full text, yesterday's entries) |
+| f / F | Changelog: next / previous source filter |
+| c | capture now |
+| Esc | close |
+
 ## States
 
 When something is wrong the panel shows one banner with a one-click fix.
@@ -39,6 +76,10 @@ When something is wrong the panel shows one banner with a one-click fix.
 | `indexMissing` | No index yet / Index unreadable | *Build index* (`seldon status`) |
 | `indexStale` | Index is stale (older than 2 h) | *Capture now* |
 | `contractMismatch` | Index format mismatch | *Update in terminal* / *Copy* the plugin or engine update command |
+| snapper collector failing | Snapshots not readable (with the engine's message) | *Run in terminal* / *Copy* `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes` (once; Seldon never runs it) |
+
+The engine is looked for once when the shell starts and again on *Check
+again* (or `jax.seldon.service refresh`), not on every capture interval.
 
 ## IPC
 
@@ -47,6 +88,9 @@ When something is wrong the panel shows one banner with a one-click fix.
 | `omarchy-shell shell toggle jax.seldon` | the Prime Radiant overlay (also `summon`, `hide`) |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
+| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip), as JSON |
+| `omarchy-shell jax.seldon.panel tab today\|changelog\|system` | show a tab |
+| `omarchy-shell jax.seldon.panel filter all\|<source>` | set the Changelog source filter |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
 | `omarchy-shell jax.seldon.service refresh` | look for the engine again and re-read the index |
 | `omarchy-shell jax.seldon.service capture` | capture now |
@@ -72,7 +116,8 @@ Setup > Plugins > Seldon: **Capture interval (minutes)**, 5–120, default 15.
   never evaluated.
 - Runs the `seldon` engine only with fixed argument lists from the
   contract; ids are checked against their patterns first, free text is one
-  argument. Never builds a shell command from logbook content.
+  non-empty argument after `--`. Never builds a shell command from logbook
+  content.
 - Opens a terminal or touches the clipboard only when you click a banner
   button, and then only with a constant command.
 

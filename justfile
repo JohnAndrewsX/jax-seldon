@@ -98,17 +98,18 @@ qmllint:
     python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
 
-# Plugin logic: Model.js under node, Service.qml states in a private headless Quickshell (host only).
+# Plugin logic: Model.js under node; Service.qml states and Panel.qml tabs, keys and banners in a private headless Quickshell (host only).
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -n "{{ skip_host }}" ]]; then
-      echo "plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set; needs node, quickshell and jq)"
+      echo "plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set; needs node, quickshell, jq and the installed shell)"
       exit 0
     fi
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
     node tests/plugin/model.test.js
     bash tests/plugin/service-states.sh
+    bash tests/plugin/panel-view.sh
     echo "plugin-test: ok"
 
 # Static release binary (needs `rustup target add x86_64-unknown-linux-musl`).

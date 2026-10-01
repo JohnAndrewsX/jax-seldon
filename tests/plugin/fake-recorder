@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Stand-in for wl-copy and the Omarchy terminal launcher in
 # tests/plugin/service-states.sh: records its name and argv, one per line,
-# then "--", to $HARNESS_RECORD.
-{
-  basename "$0"
-  printf '%s\n' "$@"
-  echo "--"
-} >>"$HARNESS_RECORD"
+# then "--", to $HARNESS_RECORD. The service starts these detached and
+# concurrently, so the whole record goes out in one append (one write(2)).
+record="$(basename "$0")"$'\n'
+for arg in "$@"; do record+="$arg"$'\n'; done
+record+=$'--\n'
+printf '%s' "$record" >>"$HARNESS_RECORD"

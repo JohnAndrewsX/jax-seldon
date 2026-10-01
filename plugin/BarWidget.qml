@@ -133,6 +133,20 @@ BarWidget {
         opened: root.opened
       })
     }
+    // What the panel shows (tab, rows, banners, strip), for smoke tests.
+    function view(): string {
+      return JSON.stringify(panelLoader.item ? panelLoader.item.view() : null)
+    }
+    // Show one tab: today | changelog | system.
+    function tab(name: string): string {
+      return panelLoader.item && panelLoader.item.selectTabById(name) ? "ok" : "unknown tab"
+    }
+    // Set the Changelog source filter: all | pacman | snapper | …
+    function filter(source: string): string {
+      if (!panelLoader.item || (source !== "all" && Model.SOURCES.indexOf(source) === -1)) return "unknown source"
+      panelLoader.item.setFilter(source)
+      return "ok"
+    }
   }
 
   WidgetButton {
