@@ -164,7 +164,7 @@ test("validateArgs accepts every CONTRACT.md command form", () => {
     ["plan", "start", "C-2026-005"], ["plan", "drop", "C-2026-1234"],
     ["drift", "link", EID, "C-2026-005"], ["drift", "link", EID, "C-2026-005", "--only"],
     ["drift", "explain", EID, "--", "theme test"], ["drift", "explain", EID, "--only", "--", "only this one"],
-    ["drift", "dismiss", EID, "--reason", "tried it"], ["drift", "dismiss", EID, "--only", "--reason", "tried it"],
+    ["drift", "dismiss", EID, "--", "tried it"], ["drift", "dismiss", EID, "--only", "--", "--tried it"],
     ["drift", "show", EID, "--json"],
     ["decide", "--no-edit", "--", "Use zed"], ["rebuild", "--json"], ["update-impact", "--json"],
     ["open", "journal", "--editor"], ["open", "C-2026-003", "--editor"]
@@ -184,7 +184,7 @@ test("validateArgs refuses everything else", () => {
     // empty, blank or split free text
     ["log"], ["log", "--"], ["log", "--", ""], ["log", "--", "   "], ["log", "--", "a", "b"],
     ["decide", "--no-edit", "--", "\t"], ["drift", "explain", EID, "--", ""],
-    ["drift", "dismiss", EID, "--reason", ""], ["drift", "dismiss", EID, "--reason", "  "],
+    ["drift", "dismiss", EID, "--", ""], ["drift", "dismiss", EID, "--", "  "],
     ["log", "--case", "C-26-1", "--", "x"], ["log", "--case", "C-2026-001; reboot", "--", "x"],
     ["log", "--case", "--", "x"],
     ["plan", "new", "--zone", "purple", "--risk", "R1", "--", "t"],
@@ -193,8 +193,10 @@ test("validateArgs refuses everything else", () => {
     ["drift", "link", "01m3vtgny0nzg4ay80814wskgr", "C-2026-005"], ["drift", "link", "81M3VTGNY0NZG4AY80814WSKGR", "C-2026-005"],
     ["drift", "link", EID, "C-2026-005", "--all"], ["drift", "link", EID, "--only", "C-2026-005"],
     ["drift", "explain", EID], ["drift", "explain", EID, "--only"], ["drift", "explain", EID, "--force", "--", "x"],
-    ["drift", "dismiss", EID, "reason"], ["drift", "dismiss", EID, "--reason", "x", "--only"],
-    ["drift", "dismiss", EID, "--", "x"],
+    // the superseded `--reason <text>` form, and other shapes
+    ["drift", "dismiss", EID, "--reason", "tried it"], ["drift", "dismiss", EID, "--only", "--reason", "tried it"],
+    ["drift", "dismiss", EID, "reason"], ["drift", "dismiss", EID, "--", "x", "--only"],
+    ["drift", "dismiss", EID], ["drift", "dismiss", EID, "--only"],
     ["drift", "show", EID], ["drift", "show", "C-2026-005", "--json"], ["drift", "show", EID, "--only", "--json"],
     ["decide", "--", "t"], ["open", "/etc/passwd", "--editor"], ["open", "journal"],
     ["log", "--", 42], ["log", "--", "a\u0000b"]
@@ -269,6 +271,22 @@ test("changelogRows: 58 events newest first, one +3 group, folded resolutions, s
   assert.strictEqual(rows.find((r) => r.subject === "ollama").tone, "urgent")
   assert.strictEqual(theme.tone, "accent")
   assert.strictEqual(rows[0].tone, "")
+  // One colour source per row: open drift by its item's zone, so the routine
+  // group (members red in the ledger) is accent throughout; resolved or
+  // cased events by their own zone.
+  for (const s of ["firefox", "libinput", "noto-fonts"]) {
+    const r = rows.find((x) => x.subject === s)
+    assert.strictEqual(r.zone, "red", s + " ledger zone")
+    assert.strictEqual(r.tone, "accent", s)
+  }
+  assert.strictEqual(rows.find((r) => r.subject === "hyprland").tone, "urgent")
+  assert.strictEqual(rows.find((r) => r.subject === "btop").tone, "urgent")
+  assert.strictEqual(tyme.tone, "accent")
+  const noZone = JSON.parse(sample)
+  noZone.drift.forEach((d) => { delete d.zone })
+  const nz = M.changelogRows(noZone, "all")
+  assert.strictEqual(nz.find((r) => r.subject === "ollama").tone, "urgent", "crisis without zone")
+  assert.strictEqual(nz.find((r) => r.subject === "firefox").tone, "urgent", "falls back to the event zone")
   assert.strictEqual(M.rowMeta(rows.find((r) => r.subject === "zed")), "0.198.4-1 · claude-code · C-2026-004")
 })
 
@@ -303,6 +321,11 @@ test("groupMembers expands a drift group from index.events by txId", () => {
   same(M.groupMembers(sampleIndex, "tx-20261001T101204"), [])
 })
 
+test("tab keys are fixed per tab id (SPEC-PLUGIN §5)", () => {
+  same(M.TAB_KEYS, { 1: "today", 2: "changelog", 3: "work", 4: "decisions", 5: "system", 6: "memory" })
+  same(["today", "changelog", "system", "nope"].map((id) => M.tabKeyFor(id)), ["1", "2", "5", ""])
+})
+
 test("every source has a glyph; zones map to theme tones only", () => {
   for (const s of M.SOURCES) assert.ok(M.sourceGlyph(s).length >= 1, s)
   assert.strictEqual(M.sourceGlyph("nope"), "•")
@@ -330,7 +353,7 @@ test("systemSections: every field optional", () => {
     { label: "Last update", value: "2026-10-01 09:21 · 7 h ago" }])
   same(s[2].rows, [{ label: "Plugins", value: "33 of 40 enabled" }])
   assert.strictEqual(s[3].rows.length, 4)
-  same(s[3].rows[0], { label: "#113  2026-10-01 14:30", value: "pre: ollama" })
+  same(s[3].rows[0], { label: "#113", value: "2026-10-01 14:30 · pre: ollama" })
   same(s[4].rows[1], { label: "hyprland", value: "1 case · AGENTS.md" })
   const bare = JSON.parse(sample)
   bare.system = {}
@@ -338,7 +361,7 @@ test("systemSections: every field optional", () => {
   same(M.systemSections(bare, now).map((x) => x.title), ["SELDON"])
   bare.system = { packages: { aur: 3 }, plugins: { installed: 4 }, snapshots: [{ number: 7, ts: "2026-01-01T00:00:00Z", type: "pre" }] }
   same(M.systemSections(bare, now).slice(0, 3).map((x) => x.rows), [[{ label: "AUR", value: "3" }],
-    [{ label: "Plugins", value: "4 installed" }], [{ label: "#7  2026-01-01 00:00", value: "pre" }]])
+    [{ label: "Plugins", value: "4 installed" }], [{ label: "#7", value: "2026-01-01 00:00 · pre" }]])
   const failing = M.systemSections(degraded, now).find((x) => x.title === "COLLECTORS")
   assert.ok(failing.rows.find((r) => r.label === "snapper").value.indexOf("failing · snapper: No permissions") === 0)
   same(M.systemSections(null, now), [])

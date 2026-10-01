@@ -47,13 +47,14 @@ ln -s "$(command -v sh)" "$work/bin/sh"
 pass=0
 fail=0
 
-# run <case> <index file> <steps> — one harness run; step reports land in
+# run <case> <index file> <steps> [VAR=value ...] — one harness run; step reports land in
 # $work/<case>.steps (one JSON object per line), the whole log in <case>.log.
 run() {
   local name=$1 index=$2 steps=$3
+  shift 3
   env -i HOME="$work/home" PATH="$work/bin" QT_QPA_PLATFORM=offscreen \
     XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$work}" \
-    HARNESS_PLUGIN_DIR="$plugin" HARNESS_STEPS="$steps" SELDON_INDEX="$index" \
+    HARNESS_PLUGIN_DIR="$plugin" HARNESS_STEPS="$steps" SELDON_INDEX="$index" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$config/shell.qml" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS step " | sed 's/.*HARNESS step [^ ]* //' >"$work/$name.steps" || true
 }
@@ -110,6 +111,8 @@ expect sample 2 .view.changelog.rows 58
 expect sample 2 '.view.changelog.badges | join(",")' "firefox +3"
 expect sample 2 .view.changelog.folded 7
 expect sample 2 .view.changelog.snapshots 6
+expect sample 2 '.view.changelog.driftTones | join(",")' \
+  "tokyo-night accent,~/.config/systemd/user/ollama.service urgent,ollama urgent,libinput accent,noto-fonts accent,firefox accent"
 shows sample 2 "2 changes in the red zone need a reason"
 shows sample 2 "58 events · newest first"
 shows sample 2 "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar."
@@ -134,23 +137,33 @@ shows sample 9 "2 changes in the red zone need a reason"
 expect sample 10 .view.cursor 26
 clean_log sample
 
-# 2. Keyboard: Tab / Shift-Tab, arrows, digits, Esc.
+# 2. Keyboard (SPEC-PLUGIN §5): Tab / Shift-Tab only hand over to the
+#    neighbouring bar panel (a stand-in bar records the direction); ←/→ and
+#    h/l switch tabs; digits are fixed per tab id (Today 1, Changelog 2,
+#    System 5) and the digit of an absent tab (3 = Work) does nothing.
 run keys "$fx/index.sample.json" \
-  "key:Tab;key:Tab;key:Backtab;key:Right;key:Left;text:3;text:1;key:Backtab;key:Tab;key:Down;key:Down*2;key:Up;key:Return;key:Escape"
-expect keys 1 .view.tab changelog
-expect keys 2 .view.tab system
+  "key:Tab;key:Backtab;key:Right;key:Right;key:Right;key:Left;text:l;text:h;text:5;text:3;text:1;text:2;key:Down;key:Down*2;text:k;text:j;key:Return;key:Escape" \
+  HARNESS_BAR=1
+expect keys 1 .view.tab today
+expect keys 1 '.switches | join(",")' 1
+expect keys 2 .view.tab today
+expect keys 2 '.switches | join(",")' "1,-1"
 expect keys 3 .view.tab changelog
 expect keys 4 .view.tab system
-expect keys 5 .view.tab changelog
+expect keys 5 .view.tab today
 expect keys 6 .view.tab system
 expect keys 7 .view.tab today
-# Without another bar panel to hand over to, Tab wraps.
 expect keys 8 .view.tab system
-expect keys 9 .view.tab today
-expect keys 10 .view.cursorActive true
-expect keys 11 .view.cursor 2
-expect keys 12 .view.cursor 1
-expect keys 14 .view.opened false
+expect keys 9 .view.tab system
+expect keys 10 .view.tab system
+expect keys 11 .view.tab today
+expect keys 12 .view.tab changelog
+expect keys 12 '.switches | length' 2
+expect keys 13 .view.cursorActive true
+expect keys 14 .view.cursor 2
+expect keys 15 .view.cursor 1
+expect keys 16 .view.cursor 2
+expect keys 18 .view.opened false
 clean_log keys
 
 # 3. The yesterday row opens with Enter.

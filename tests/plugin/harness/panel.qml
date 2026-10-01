@@ -19,6 +19,9 @@ import Quickshell
 //                       tab:<id>           Panel.selectTabById(id)
 //                       filter:<source>    Panel.setFilter(source)
 //                       view               no action, just report
+//   HARNESS_BAR         if set, give the panel a stand-in bar whose
+//                       switchPanelFrom() records its direction; each report
+//                       then carries `switches` (Tab hands over to the bar)
 ShellRoot {
   id: root
 
@@ -54,7 +57,24 @@ ShellRoot {
 
   function report(tag) {
     var view = root.panel ? root.panel.view() : null
-    console.log("HARNESS step " + tag + " " + JSON.stringify({ view: view, texts: texts(win.contentItem, []) }))
+    console.log("HARNESS step " + tag + " " + JSON.stringify({
+      view: view, switches: fakeBar.switches, texts: texts(win.contentItem, [])
+    }))
+  }
+
+  // The part of the bar facade Panel.qml uses; colours are test values.
+  QtObject {
+    id: fakeBar
+    property color foreground: "#c0c0c0"
+    property color barForeground: "#c0c0c0"
+    property color urgent: "#c04040"
+    property string fontFamily: "monospace"
+    property string position: "top"
+    property var switches: []
+    function switchPanelFrom(owner, direction) {
+      fakeBar.switches = fakeBar.switches.concat([direction])
+      return true
+    }
   }
 
   function act(spec) {
@@ -89,7 +109,9 @@ ShellRoot {
 
   Component.onCompleted: {
     root.service = root.load("Service.qml", null, {})
-    root.panel = root.load("Panel.qml", win.contentItem, { service: root.service })
+    var props = { service: root.service }
+    if (Quickshell.env("HARNESS_BAR")) props.bar = fakeBar
+    root.panel = root.load("Panel.qml", win.contentItem, props)
     if (root.panel) root.panel.open()
   }
 
