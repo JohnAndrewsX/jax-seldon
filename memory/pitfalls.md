@@ -283,3 +283,16 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   itself (it does since WP-009).
 - **`~/.config/systemd` is red as a directory too**: `zone_for` checks the
   prefix `~/.config/systemd/`, so the hook tests a path with a trailing `/`.
+- **Unwrapping wrappers can invent a command** (WP-009 review blocker).
+  `command -v yay` stripped to `yay` is a full upgrade (`yay` alone =
+  `-Syu`): a red event *and* a cause that claims a human's later `-Syu`.
+  Probe options (`command -v|-V`, `sudo -l|-v|-k`) run nothing; every
+  wrapper-stripping path (`command_argv`, `command_intent`) must know them.
+- **An argv word is not a write.** Proving a config change by "the path
+  appears in the command" lets `cat x && pacman -S y` claim the user's
+  later edit of `x`. Attribution proves only through `pkgcmd::write_targets`.
+- **`2>/dev/null` is a redirection target.** Any "writes a file" rule must
+  ignore `/dev/*`, or every quiet command becomes a recorded write.
+- **The guard also reads `git commit -m` text.** A message with
+  `… && pacman -S …` as an example is blocked like a command. Write the
+  message with the Write tool and commit with `-F`.

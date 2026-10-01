@@ -278,3 +278,16 @@ Append-only. One bullet per finding, newest section last.
   measure): about 2.0 ms per mutating call, 1.1 ms per non-mutating call,
   of which about 0.65 ms is process spawn (`env -i … true`). The
   non-mutating path compiles no redaction regex and touches no ledger.
+  With WP-007's fast index rebuild after a write: about 3.1 ms on a fresh
+  logbook, 3.8 ms at about 200 ledger lines (it grows linearly).
+- **`catch_unwind` is a no-op under `panic = "abort"`** (our release
+  profile). To make a process exit 0 on any panic, install
+  `std::panic::set_hook` that writes to stderr with `writeln!` (not
+  `eprintln!`, which panics again on a closed stderr) and calls
+  `std::process::exit(0)`; the hook runs before the abort.
+- **`print!` panics on EPIPE** (Rust ignores SIGPIPE, so the write
+  returns an error and `print!` unwraps it). Output whose reader may go
+  away: `stdout().lock().write_all(..)` and ignore the result. Test it by
+  dropping the child's stdout pipe before it writes.
+- **Test-only triggers behind `#[cfg(debug_assertions)]`** (an env var
+  that forces a panic) never reach the release binary.

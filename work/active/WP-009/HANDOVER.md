@@ -1,18 +1,112 @@
 WP-009 HANDOVER
 
-Branch `wp/009-hooks`, worktree `wt/WP-009`, based on `main` at `9f91902`.
-Not pushed, no PR. Each commit builds; at HEAD `just check` exits 0.
-`main` has since moved to `13afe0c`. Only `docs/TESTING.md` changed
-(plugin harness), which does not touch this WP.
+Branch `wp/009-hooks`, worktree `wt/WP-009`, rebased on `main` at
+`f7a9a13` (WP-007 and WP-015 merged). Not pushed, no PR. At HEAD
+`just check` exits 0. The round-0 commits were rebased, so their hashes
+changed (table below); the round-0 sections after "Review round 1" keep
+their original text except where marked *(round 1)*.
 
 | Commit | What |
 |---|---|
-| `f51b057` | `pkgcmd.rs` (parser moved, plus a shell lexer), `attribution.rs` (causes moved); pacman re-exports both |
-| `b6177b1` | `capture` runs the shared attribution pass before `append` |
-| `9d5bc3d` | `commands/hook.rs`: `claude-code`, `generic`, `session-start`, `session-stop`, `install claude-code` |
-| `001c5b5` | `tests/hooks.rs`, golden `tests/golden/session-start.txt` |
-| `53b20d3` | `tests/attribution.rs` |
-| `e9dd9f7` | `seldon event`: actor default `system`, `theme-set` `meta.from`, attribution pass; `engine/hooks/README.md` |
+| `e41fe6e` | `pkgcmd.rs` (parser moved, plus a shell lexer), `attribution.rs` (causes moved); pacman re-exports both |
+| `2f0ca31` | `capture` runs the shared attribution pass before `append` |
+| `8ad5344` | `commands/hook.rs`: `claude-code`, `generic`, `session-start`, `session-stop`, `install claude-code` |
+| `7b6f400` | `tests/hooks.rs`, golden `tests/golden/session-start.txt` |
+| `054988d` | `tests/attribution.rs` |
+| `5b90d24` | `seldon event`: actor default `system`, `theme-set` `meta.from`, attribution pass; `engine/hooks/README.md` |
+| `30199f1` | round-0 handover, memory |
+| `e2e37bd` | review 1: `command -v`/`sudo -l` are probes (blocker) |
+| `8d06ae9` | review 2: config proof only through write targets; `write_targets`, `simple_commands` in `pkgcmd.rs` |
+| `e644913` | review 3–5: ADR-0019 green class, writer and nested-shell classification, panic/EPIPE safety, `SessionEnd` 60 s |
+| `0742db9` | review 6: index rebuilds (hook: fast, only after a write; session-stop: full, after the commit); `index/drift.rs` imports `pkgcmd` |
+
+Each commit was checked to build; `8d06ae9` was also checked alone in a
+temporary worktree (`cargo check --all-targets`).
+
+## Review round 1
+
+1. **Blocker: `command -v yay` read as `yay`** (`e2e37bd`).
+   - New `pkgcmd::is_probe`. `command -v|-V|-pv…` and `sudo -l|-ll|-v|-k|-K` (and their long forms) run nothing.
+   - The hook's `command_argv` returns no program for them. The attribution's `command_intent` skips the segment, so they are never a full-upgrade cause.
+   - `type`, `which`, `hash` and `whereis` are not wrappers, so their argument is never the program.
+   - My round-0 test asserted the bug (`command -v x` → `x`); it is replaced.
+   - Unit rows (`pkgcmd::tests::probes_run_nothing`):
+     - `command -v yay`, `command -V pacman`, `command -pv yay`, `sudo -l pacman -Syu`, `sudo -v`;
+     - `type yay`, `which pacman`, `hash yay`, `whereis paru`;
+     - `command -v yay && yay -S zed` → package `zed`, no full upgrade.
+   - Hook rows (`hook::tests::package_commands`): `command -v yay`, `command -v pacman`, `type yay`, `which pacman`, `command -v yay >/dev/null && echo ok` → nothing.
+2. **Config proof only through write targets** (`8d06ae9`).
+   - `pkgcmd::write_targets(argv, writes)` is shared by the hook and the attribution pass. It returns:
+     - `File`: redirections, `tee`, `sed -i`, `mv` sources, `install -d`, `unlink`, `truncate`, a hook's `Edit|Write|MultiEdit <path>`;
+     - `Into`: the destination of `cp|mv|install|ln`; it proves the path itself or a file directly in it;
+     - `Tree`: `rm|rmdir`; it proves the path and everything below.
+   - Words a command only reads never prove anything. Tests:
+     - `attribution::rules::a_read_is_no_proof` is the reviewer's scenario (`cat ~/.config/hypr/bindings.conf && sudo pacman -S zed`, plus `grep`, a copy *out of* the file, `sed` without `-i`, `vim`) → `system`;
+     - `rules::writers_prove_what_they_write`: `cp new.conf ~/.config/hypr/` proves `~/.config/hypr/new.conf` but not `…/sub/new.conf`; `mv` source; `rm -rf` dir; `truncate`; `bash -c`; `eval`.
+   - The fixture reproduction and the end-to-end test still pass. This closes the round-0 "copy into a watched directory" gap.
+3. **Hook classifier** (`e644913`):
+   - `SessionEnd` timeout 60. `engine/hooks/README.md` says Claude Code allows at most 60 s for a `SessionEnd` hook.
+   - An `mv` source inside a watched path is mutating (removal), and so is `install -d <watched>`. Both come through `write_targets`.
+   - `pkgcmd::simple_commands` opens `sh|bash|zsh|dash -c '<script>'` (also `-lc`, `-o opt -c`) and `eval '…'`, up to 3 levels. The script goes through the same classifier and the same attribution proofs. An outer redirection stays a segment of its own, and `bash script.sh` is not opened.
+   - `xargs`, `find -exec` and interpreters (`python -c`, `node -e`) are a documented follow-up (module doc and README).
+4. **Panic and EPIPE** (`e644913`):
+   - `run_agent_hook` installs a panic hook that writes `seldon hook: internal error: …` to stderr (ignoring write errors) and exits 0.
+   - I did not use `catch_unwind`: the release profile has `panic = "abort"`, under which `catch_unwind` catches nothing. The panic hook runs before the abort, so it covers debug and release alike.
+   - `session-start` writes its block with `write_all`/`flush` and ignores the error.
+   - Tests:
+     - `robustness::a_panic_exits_zero` uses a debug-only trigger, `SELDON_TEST_HOOK_PANIC`, compiled only under `debug_assertions`;
+     - `robustness::session_start_survives_a_closed_pipe` closes the reader before the hook writes. Mutation check: with the old `print!` that test fails.
+5. **ADR-0019 green class** (`e644913`), with the reviewer's scope:
+   - Green, recorded only while a case is set (`.seldon/active-case`; on the generic hook `--case ID` or a `"case"` field, `--case` first):
+     - a file writer whose targets are all outside `watchPaths`. `/dev/*` and the logbook itself are not news, so `cargo test 2>/dev/null` stays silent and writing the logbook's own notes is not recorded;
+     - a foreign package manager (`npm pnpm yarn bun pip pip3 pipx uv cargo go`) with `install|i|add|remove|rm|uninstall|un|update|upgrade|up|get|ci`, `uv pip|tool <verb>`, or bare `yarn`;
+     - a changing `git` sub-command outside `~/.config`.
+   - `git` in the logbook stays recorded without a case (SPEC-ENGINE §8); its zone is now green instead of none.
+   - `zone_for(Source::Agent, _)` = green. Red and yellow rules are unchanged, and a tracked change always wins over a green one in the same line.
+   - An unknown explicit case is reported on stderr. A tracked command is still recorded without the case; a green one is dropped.
+   - Tests:
+     - `green::recorded_with_a_case`: `tee ~/.config/zed/settings.json` (the WP-015 fixture line), `npm install`, `git push origin main` in a project, `Edit ~/Work/notes.md` → green, all with the case; `tee -a ~/.bashrc` → yellow; `npm run build 2>/dev/null` → nothing;
+     - `green::nothing_green_without_a_case`: only the yellow one;
+     - `green::the_generic_hook_takes_a_case`;
+     - unit rows `hook::tests::green_needs_a_case`.
+6. **WP-007 wiring** (`0742db9`), after rebasing on `main`:
+   - The hook calls `index::rebuild_if_initialised_fast(ctx)` once, at the end of `record`, under the lock. It runs only when an event was written; non-mutating calls and dropped green calls return before it.
+   - `session-stop` calls `index::rebuild_if_initialised(ctx)` after its autocommit, under the lock (WP-007's convention). `capture --all` inside it already rebuilds before the commit.
+   - `index/drift.rs` imports `crate::pkgcmd::{parse_command, split_logged}`.
+   - The rebase conflicts in `main.rs`, `commands/mod.rs` and `memory/*.md` were additive; I kept both sides.
+   - Test `index::a_hook_write_rebuilds_the_index`:
+     - a non-mutating call leaves `index.json` byte-for-byte unchanged;
+     - a mutating call puts the new event in `index.json` with no `git.dirty` (no git spawned);
+     - `session-stop` leaves `dirty: false`.
+
+### Verified by (round 1)
+
+- `just check` → `check: ok` (exit 0), on this host with the host-only checks.
+- `cargo test`: lib 84, `hooks` 28, `attribution` 10. All other binaries are green:
+  - cli 17, collectors 14, collectors_user 23, commands 9, doctor 7, frontmatter 9, idempotency 6, init 15, journal 3, log 10, plan 12, redaction 6;
+  - WP-007's index 16 and status 6.
+- Release timing, 100–200 runs each, temp HOME, `env -i` (process spawn ≈ 0.65 ms):
+
+  | Logbook | Mutating, with fast rebuild | Non-mutating |
+  |---|---|---|
+  | fresh | ≈ 3.1 ms | ≈ 1.1 ms |
+  | fixture logbook copy (≈ 70 lines at the start, ≈ 200 after the run) | ≈ 3.8 ms | — |
+
+  Before the rebuild was wired, a mutating call took ≈ 2.0 ms.
+
+### Decisions needed (round 1)
+
+1. **Hook rebuild cost grows with the ledger** (WP-007 decision 2). By WP-007's numbers and mine, the fast rebuild keeps a recording hook under 5 ms only up to roughly 500–700 ledger lines. Choose:
+   - keep a rebuild per hook write (as now);
+   - a deferred rebuild (the next `capture`/`status`; the plugin captures every 15 min);
+   - an incremental index later.
+
+   The switch is one line at the end of `hook.rs` `record`.
+2. **Guard false positive #3** (same class as round-0 item 9). A `git commit -m` whose message text contained `… && pacman -S y` was blocked by the `[;&|]\s*pacman` rule. I did not re-run it in another form. Both review commits were made with `git commit -F <file>`, the message written with the Write tool (content, not an action); the final message also no longer contains that example.
+
+### Settled by the review (no action)
+
+`SessionEnd`, the PostToolUse fallback, `meta.sessionId`, the classifier extensions, `seldon event` attribution, the `meta.from` rule, sorted `settings.json` keys and PreToolUse/Edit/Write fixtures (schema track) are all settled. `pacman -Sy` recorded red is accepted.
 
 ## Done
 
@@ -31,7 +125,7 @@ Not pushed, no PR. Each commit builds; at HEAD `just check` exits 0.
   - New `attribute(events, known, home)` and `attribute_from_ledger`. They apply to config, theme and plugins events that still have `actor: system` and no case. A cause attributes an event only when:
     - its `ts` lies in `[event ts − 10 min, event ts]`;
     - the command proves the subject, per source:
-      - **config:** the path is an argv word or a redirection target, written as `~/…`, `$HOME/…`, `${HOME}/…`, absolute, or home-relative (normalised lexically). An `Edit`/`Write` hook event proves it through its `meta.command` `Edit ~/…`;
+      - **config:** *(round 1: only a path the command writes, see Review round 1 item 2)*, written as `~/…`, `$HOME/…`, `${HOME}/…`, absolute, or home-relative (normalised lexically). An `Edit`/`Write` hook event proves it through its `meta.command` `Edit ~/…`;
       - **theme:** `omarchy theme set <name>` or `omarchy-theme-set <name>`, slugged the way `omarchy-theme-set` does it (tags stripped, lowercase, spaces → `-`);
       - **plugins:** `omarchy plugin add|remove|enable|disable|update <w>` or `omarchy-plugin-<verb> <w>`, where `w` is the id or a URL/path whose last component is the id (trailing `/` and `.git` ignored);
     - the latest proving cause wins.
@@ -76,7 +170,7 @@ Not pushed, no PR. Each commit builds; at HEAD `just check` exits 0.
 - **`seldon hook session-stop [--actor agent:NAME]`** (default `agent:claude-code`):
   1. Appends `## HH:MM · agent:NAME · CASE` / `session ended; N events recorded` to today's journal, under the lock. N = ledger events of that actor carrying the stdin `session_id` (no session id: the actor's events today).
   2. Runs `capture --all`.
-  3. Leaves the index/status rebuild as one marked call site (Decisions needed 8).
+  3. *(round 1)* Runs the full index rebuild after the commit (Review round 1, item 6).
   4. Autocommits `seldon: session ended (agent:NAME)`.
   - Every step runs even if an earlier one failed; failures go to stderr.
 - **Agent hooks always exit 0 and stay silent** (`run_agent_hook`, dispatched in `main` before `run`). Covered:
@@ -89,7 +183,7 @@ Not pushed, no PR. Each commit builds; at HEAD `just check` exits 0.
 - **`seldon hook install claude-code [--settings PATH]`** — default `<logbook>/.claude/settings.json`; adds what is missing:
   - `PreToolUse` with matcher `Bash|Edit|Write|MultiEdit` → `seldon hook claude-code`, timeout 10 s;
   - `SessionStart` → `seldon hook session-start`, timeout 10 s;
-  - `SessionEnd` → `seldon hook session-stop`, timeout 120 s.
+  - `SessionEnd` → `seldon hook session-stop`, timeout 60 s *(round 1; was 120)*.
   - Existing hooks and keys stay. Idempotent: a second run leaves the file byte-for-byte unchanged.
   - Prints `added`/`present` per entry (`--json`: `{settings, added, present, git}`).
   - Refuses (exit 1, file untouched) invalid JSON, a non-object root, `hooks` that is not an object, or an event entry that is not a list.
@@ -103,11 +197,11 @@ Not pushed, no PR. Each commit builds; at HEAD `just check` exits 0.
 ## Not done
 
 - **`seldon hook install generic`** (SPEC-ENGINE §3 lists it). Only `claude-code` is accepted; other agents call `hook generic` themselves (README).
-- **Index/status rebuild in `session-stop`.** `commands::status` is not on this branch (WP-007). The call site is marked in `commands/hook.rs` `session_stop`: `// WP-007: rebuild index.json and STATUS.md here …`.
+- ~~Index/status rebuild in `session-stop`.~~ *(round 1: done, Review round 1 item 6.)*
 - **Case files and attributed collector events.** Collector events attributed by the pass (or by pacman) are not added to the case file's `events`. `capture` never did this, and the fixture's C-2026-004 lists them, so this belongs to reconciliation (WP-008).
 - **Relative paths in a recorded command** cannot prove a config change later: a hook event stores no cwd, so e.g. `sed -i … bindings.conf` after `cd ~/.config/hypr` in an earlier tool call does not count.
 - **`config-remove` events** are timed at capture time (WP-005), so they rarely fall inside the 10-minute window.
-- **A copy *into* a watched directory** (`cp x ~/.config/hypr/`) is recorded as mutating by the hook. The pass does not attribute the resulting `config-add`, because the exact path is not an argv word, which is the rule as written.
+- ~~A copy *into* a watched directory is not attributed.~~ *(round 1: closed, an `Into` target proves files directly in the directory.)*
 
 ## Verified by
 
@@ -175,7 +269,7 @@ Not pushed, no PR. Each commit builds; at HEAD `just check` exits 0.
 5. **`seldon event` runs the attribution pass** (outside "actor default + theme meta.from only"). Without it, an agent's `omarchy theme set` stays `system` whenever `theme-set.sh` is installed: the hook writes the event first, and the theme collector then skips it as already recorded. One call in `event.rs`, test `hooks::event::an_agents_theme_switch_is_attributed`. Keep, or revert and accept the gap?
 6. **`theme-set` `meta.from`.** Implemented as "cursor, unless the ledger holds a newer `theme-set`". The literal rule "cursor, else ledger" gives the wrong `from` after two switches between captures. It also fills `meta.to` and `detail` (`from → to`) when not given, matching the fixture and collector lines. Confirm.
 7. **`.claude/settings.json` key order.** serde_json without `preserve_order` writes the merged file with its keys sorted; all values are kept. `preserve_order` needs `indexmap`, which is not on the allowed crate list. Accept, or approve `indexmap` via that feature?
-8. **WP-007 hand-off.** One line in `commands/hook.rs` `session_stop` at the marked comment: call the index/status rebuild before the autocommit.
+8. ~~WP-007 hand-off.~~ *(round 1: done.)*
 9. **Guard false positives**, reported, not worked around. Two Bash calls in this WP were blocked by `scripts/guard.sh` because of file *content* in a heredoc, not because of an action:
    - (a) a doc comment "…(`attribution.rs`; pacman and omarchy …)" matched `[;&|]\s*pacman`;
    - (b) Rust test strings with `> ~/.config/hypr/a.conf` matched the `~/.config` write rule.
