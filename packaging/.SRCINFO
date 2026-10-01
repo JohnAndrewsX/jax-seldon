@@ -10,6 +10,7 @@ pkgbase = jax-seldon
 	depends = git
 	depends = glibc
 	optdepends = snapper: snapshot events (needs ALLOW_USERS in the snapper config)
+	options = !debug
 	source = jax-seldon-0.1.0.tar.gz::https://github.com/JohnAndrewsX/jax-seldon/releases/download/v0.1.0/jax-seldon-0.1.0.tar.gz
 	sha256sums = SKIP
 
