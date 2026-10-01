@@ -466,3 +466,31 @@ Verified in the shell source and live on the test host.
   the live shell has to go into Hyprland's environment before
   `omarchy-restart-shell` (`hyprctl keyword env …`, runtime only). That is
   a change on the test host: the operator's call.
+
+## WP-041 findings (2026-10-01, Omarchy 4.0.4-1; marketplace template)
+
+- **Marketplace README template** (https://plugins.omarchy.org/develop.html,
+  read 2026-10-01): the finished example's README has, in order, a title
+  with a one-line description, `## Install` (`omarchy plugin add <git-url>
+  --enable`), `## Usage`, `## Configure` (`omarchy bar move <id> --section
+  …`), `## Remove` (`omarchy plugin remove <id>`). The page's one rule:
+  "Document every external dependency, setup step, privilege boundary,
+  service, installer, or remote build used by your plugin." It says
+  nothing about security scanning, preview size or dimensions; it calls
+  `preview.png` optional and "beside these files". Built-in READMEs
+  (`agents/`, `bar/`) are not a template: intro, Panel, Data,
+  Interactions, Settings (agents). Settings examples use `omarchy bar set
+  <id> <key> <value> [--json]` (numbers need `--json`).
+- **CLI forms** (`omarchy plugin --help`, `omarchy bar --help`): `plugin add
+  [git-url] [--enable] [--yes]`, `enable <id> [placement]`, `disable`,
+  `remove [id] [--yes]`, `update [id] [--yes]`, `list [--json]`,
+  `validate <folder>`; `bar move <id> [placement]`, placement like
+  `--section center --index 0`.
+- **`omarchy-launch-floating-terminal-with-presentation <command>`** joins
+  its arguments and runs them with `bash -c` in a floating terminal (after
+  `omarchy-show-logo`). So a banner's *Run in terminal* is a constant shell
+  command shown to the user; document it as such in a security section.
+- **Panel renders without a dev-mode footer:** a `panel-view.sh` run with
+  `SELDON_INDEX` empty and `FAKE_SELDON_FIXTURE` set renders the live panel;
+  a dev-mode run prints the absolute index path (a private path in a
+  committed image). `PANEL_SHOTS=<dir>` does this for the Today tab.
