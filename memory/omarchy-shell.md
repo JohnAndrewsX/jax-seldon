@@ -292,3 +292,38 @@ Verified in the shell source and live on the test host.
 - **`wtype` into a panel TextField** over ssh works once the panel has
   keyboard focus (`jax.seldon.panel open`, then `wtype n`); `wtype --
   "<text>"` for text starting with `-`.
+
+## WP-020 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **Check the lock before typing over ssh.** `omarchy-shell lock status`
+  (`secure: true`) means the lock screen has the keyboard: `wtype` goes to
+  its password field, not to the panel, and every Return is a failed unlock
+  attempt that pam_faillock counts (`faillock --user $USER`; deny = 10 on
+  the test host). `jax.seldon.panel view` and the service IPC still work
+  while locked; `grim` hangs (screencopy refused), so give it a `timeout`.
+- **`omarchy-restart-shell` and the lock:** with a secure locker it
+  refuses ("Refusing to restart … while the session is locked", exit 1);
+  with a compositor lock but no secure locker it restarts and re-locks.
+  After one restart a second `/usr/bin/quickshell` without arguments
+  (parent `systemd --user`, no `by-pid` dir) stayed running next to the
+  shell; origin unknown, left alone.
+- **Inline components have their own id scope:** a `component X: Item {}`
+  cannot read the enclosing file's ids (`root.…`); pass values in as
+  properties.
+- **`visible: childA.visible || childB.visible` on a parent never turns
+  true:** a hidden parent makes its children's `visible` false. Bind to the
+  data the children use instead.
+- **Nested delegates:** when a new model replaces an outer Repeater's
+  items, an inner ListView delegate can evaluate its bindings after the
+  outer delegate's id is already null (`TypeError: Cannot read property
+  … of null`); guard with `!!outer && …`.
+- **qs.Ui `ButtonGroup`** is one Tab stop; ←/→ or h/l walk the chips,
+  Enter/Space emit `changed(value)`. It does not assign `value` itself, so a
+  binding on `value` survives. **`Button { focusable: true }`** becomes a
+  Tab stop that Enter/Space click.
+- **Offscreen theme renders:** `Color.qml` reads
+  `$HOME/.local/state/omarchy/current/theme/colors.toml`; copying a theme's
+  `colors.toml` from `$OMARCHY_PATH/themes/<theme>/` into the harness HOME
+  renders the panel in that theme without touching the system.
+  `grabToImage` on `Window.contentItem` leaves out the window colour; put a
+  `Rectangle { color: Color.background }` under the content.
