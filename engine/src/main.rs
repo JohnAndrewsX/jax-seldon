@@ -12,7 +12,7 @@ use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use serde_json::json;
 
-use seldon::commands::{self, Context, Output, init::InitArgs};
+use seldon::commands::{self, Context, Output, capture::CaptureArgs, init::InitArgs};
 use seldon::error::{Error, Exit};
 use seldon::model::Language;
 use seldon::{CONTRACT_VERSION, VERSION};
@@ -61,6 +61,24 @@ enum Command {
         /// Logbook to check (same as the global --logbook)
         #[arg(long, value_name = "DIR")]
         path: Option<PathBuf>,
+    },
+
+    /// Run collectors and append new events to the ledger
+    Capture {
+        /// Collectors to run, comma-separated (default: every enabled one)
+        #[arg(
+            long,
+            value_name = "NAMES",
+            value_delimiter = ',',
+            conflicts_with = "all"
+        )]
+        source: Vec<String>,
+        /// Run every enabled collector (the default)
+        #[arg(long)]
+        all: bool,
+        /// Baseline for collectors without a cursor, RFC 3339 (default: logbook creation)
+        #[arg(long, value_name = "TS")]
+        since: Option<String>,
     },
 }
 
@@ -155,6 +173,14 @@ fn run(cli: Cli) -> Result<Output, Error> {
             },
         ),
         Command::Doctor { path } => commands::doctor::run(&ctx, path.as_deref()),
+        Command::Capture { source, all, since } => commands::capture::run(
+            &ctx,
+            CaptureArgs {
+                sources: source,
+                all,
+                since,
+            },
+        ),
     }
 }
 
