@@ -830,7 +830,7 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    omarchy-shell shell toggle jax.seldon     # Prime Radiant
    omarchy-shell shell call jax.seldon view ""   # while it is open: period, slots, geometry, charts
    omarchy-shell shell call jax.seldon setPeriod 30
-   omarchy-shell shell call jax.seldon hover "series 0.9,0.5"    # a chart's read-out at a point
+   omarchy-shell shell call jax.seldon hover "series 0.5,0.5"    # a chart's read-out at a point
    omarchy-shell shell call jax.seldon hover "heatmap 0.15,0.5"  # a heatmap cell: see below
    omarchy-shell shell hide jax.seldon
    ```
@@ -844,13 +844,16 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    lands on empty space except at 365 d/All on wide screens. Take the point
    from `Model.heatmapLayout(w, h, weeks, labelW, labelH)`: `w`, `h` are the
    heatmap slot's `chart.w`/`chart.h` in `view`, `weeks` the number of week
-   columns (5–6 at 30 d, 13–14 at 90 d, 53–54 at 365 d), `labelW` = 3 × `Style.font.caption`, `labelH` = `Style.font.caption`
-   + `Style.spacing.sm` (30 and 14 at the default tokens); then `pitch` =
+   columns (5–6 at 30 d, 13–14 at 90 d, 53–54 at 365 d), `labelW` =
+   3 × `Style.font.caption`, `labelH` = `Style.font.caption` +
+   `Style.spacing.sm` (30 and 14 at the default tokens); then `pitch` =
    ⌊min((w − labelW)/weeks, (h − labelH)/7)⌋ and the cell in column `c`
    (oldest week 0), row `r` (Monday 0) is at
    `fx = (labelW + (c + ½)·pitch)/w`, `fy = (labelH + (r + ½)·pitch)/h`.
-   `fy = 0.5` is a middle row while the grid is height-bound. In the headless harness use
-   `hoverItem:heatmap:<i>` instead (`chart.locate(i)`, `-1` = today).
+   `fy = 0.5` is a middle row while the grid is height-bound. Example (test
+   host, 1536×864 logical, 90 d, WP-037): `w` 1410, `h` 108 → `pitch` 13,
+   14 columns; today (column 13) is at `0.15,0.5`. In the headless harness
+   use `hoverItem:heatmap:<i>` instead (`chart.locate(i)`, `-1` = today).
 5. Panel actions (WP-012), with the real engine (`just build-release`, copy
    to `~/.local/bin/seldon`, `chmod 755`; `seldon init --non-interactive
    --path ~/Seldon-smoke`; restart the shell): `jax.seldon.panel open`,

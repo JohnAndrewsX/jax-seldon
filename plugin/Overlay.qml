@@ -34,7 +34,7 @@ import "Model.js" as Model
 //
 // Read-out for tests and the test host: `omarchy-shell shell call jax.seldon
 // view ""` (JSON, see view()); `shell call jax.seldon setPeriod 30`;
-// `shell call jax.seldon hover "series 0.9,0.5"` (the read-out at that
+// `shell call jax.seldon hover "series 0.5,0.5"` (the read-out at that
 // point of a chart, as fractions of its plot; "" clears every hover; a
 // malformed argument returns { error } and changes nothing).
 Item {
@@ -108,7 +108,7 @@ Item {
     return n
   }
 
-  // "series 0.9,0.5" → the read-out at that point of the chart's plot
+  // "series 0.5,0.5" → the read-out at that point of the chart's plot
   // (fractions in [0, 1]), as JSON { slot, hover }; "" clears every chart's
   // hover. Anything else (no such slot, a malformed or out-of-range point)
   // changes nothing and returns JSON { error }.
