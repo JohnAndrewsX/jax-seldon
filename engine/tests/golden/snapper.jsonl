@@ -1,0 +1,8 @@
+{"id":"<id>","ts":"2026-09-12T09:30:00+02:00","source":"snapper","kind":"snapshot","subject":"108","detail":"monitors","actor":"system","meta":{"type":"pre","cleanup":""}}
+{"id":"<id>","ts":"2026-09-12T10:31:00+02:00","source":"snapper","kind":"snapshot","subject":"109","detail":"monitors","actor":"system","meta":{"type":"post","cleanup":"","pairOf":108}}
+{"id":"<id>","ts":"2026-09-15T20:10:12+02:00","source":"snapper","kind":"snapshot","subject":"110","detail":"4.0.5-1","actor":"system","meta":{"type":"single","cleanup":"number"}}
+{"id":"<id>","ts":"2026-09-30T19:00:00+02:00","source":"snapper","kind":"snapshot","subject":"111","detail":"vor Snapshot-Aufräumen","actor":"system","meta":{"type":"single","cleanup":""}}
+{"id":"<id>","ts":"2026-09-30T19:05:00+02:00","source":"snapper","kind":"snapshot-delete","subject":"108","detail":"monitors","actor":"system","meta":{"type":"pre"}}
+{"id":"<id>","ts":"2026-09-30T19:05:00+02:00","source":"snapper","kind":"snapshot-delete","subject":"109","detail":"monitors","actor":"system","meta":{"type":"post"}}
+{"id":"<id>","ts":"2026-10-01T09:10:20+02:00","source":"snapper","kind":"snapshot","subject":"112","detail":"4.0.6-1","actor":"system","meta":{"type":"single","cleanup":"number"}}
+{"id":"<id>","ts":"2026-10-01T14:30:00+02:00","source":"snapper","kind":"snapshot","subject":"113","detail":"pre: ollama","actor":"system","meta":{"type":"single","cleanup":""}}
