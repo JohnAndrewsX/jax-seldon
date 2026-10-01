@@ -5,6 +5,7 @@ pub mod capture;
 pub mod decide;
 pub mod doctor;
 pub mod event;
+pub mod hook;
 pub mod index;
 pub mod init;
 pub mod log;
