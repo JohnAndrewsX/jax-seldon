@@ -4,13 +4,16 @@
 # Every call is logged to $HOME/calls.log as "start <cmd>" / "end <cmd>" so
 # the test can prove calls never overlap.
 #
-#   FAKE_SELDON_MODE     ok (default) | uninit
+#   FAKE_SELDON_MODE     ok (default) | uninit; $HOME/mode overrides it, so a
+#                        test can run `seldon init` halfway through
 #   FAKE_SELDON_FIXTURE  index written by `status` in mode ok; generatedAt is
 #                        replaced with the current time
 set -euo pipefail
 
 log="$HOME/calls.log"
 cmd="${1:-}"
+mode=${FAKE_SELDON_MODE:-ok}
+[[ -f $HOME/mode ]] && mode=$(<"$HOME/mode")
 echo "start $cmd" >>"$log"
 trap 'echo "end $cmd" >>"$log"' EXIT
 
@@ -20,7 +23,7 @@ case "$cmd" in
     ;;
   capture)
     sleep 0.3
-    if [[ ${FAKE_SELDON_MODE:-ok} == uninit ]]; then
+    if [[ $mode == uninit ]]; then
       echo '{"error":{"code":3,"message":"logbook not initialised"}}'
       exit 3
     fi
@@ -28,7 +31,7 @@ case "$cmd" in
     ;;
   status)
     sleep 0.3
-    if [[ ${FAKE_SELDON_MODE:-ok} == uninit ]]; then
+    if [[ $mode == uninit ]]; then
       echo '{"error":{"code":3,"message":"logbook not initialised"}}'
       exit 3
     fi

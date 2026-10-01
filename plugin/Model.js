@@ -242,7 +242,8 @@ function bannerFor(status, ctx) {
       command: INIT_COMMAND,
       actions: [
         { id: "terminal", label: "Run in terminal" },
-        { id: "copy", label: "Copy" }
+        { id: "copy", label: "Copy" },
+        { id: "recheck", label: "Check again" }
       ]
     }
   }

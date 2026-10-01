@@ -168,6 +168,15 @@ run live-uninit 4000 PATH="$fake_path" HOME="$work/home-uninit" FAKE_SELDON_MODE
 expect live-uninit .status notInitialised
 expect live-uninit .banner "Logbook not initialised"
 
+# 13b. The user runs `seldon init`; "Check again" clears the banner.
+mkdir -p "$work/home-init"
+echo uninit >"$work/home-init/mode"
+(sleep 1.5; echo ok >"$work/home-init/mode") &
+run init-later 7000 PATH="$fake_path" HOME="$work/home-init" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECHECK_MS=2500
+wait
+expect init-later .status ok
+expect init-later .pill "⟡ 2 · 3"
+
 # 14. Banner fixes run fixed argument lists with constant commands only.
 mkdir -p "$work/bin-tools"
 for tool in wl-copy omarchy-launch-floating-terminal-with-presentation; do

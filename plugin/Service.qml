@@ -41,8 +41,10 @@ Item {
   property string engineState: "unknown"   // unknown | present | missing
   property string engineVersion: ""
   property string engineDetail: ""
-  // Set when the engine exits 3 (logbook not initialised), cleared on success.
+  // Set when the engine exits 3 (logbook not initialised); cleared by the
+  // next successful call or by an index written after it was set.
   property bool engineNotInitialised: false
+  property double notInitialisedAtMs: 0
 
   // ---- Index file.
   property string fileState: "loading"     // loading | loaded | missing | invalid
@@ -88,6 +90,9 @@ Item {
 
   function ingest(text) {
     var result = Model.parseIndex(text)
+    if (root.engineNotInitialised && result.ok
+        && Model.timeMs(result.index.generatedAt) > root.notInitialisedAtMs)
+      root.engineNotInitialised = false
     root.parsed = result
     root.fileState = result.ok || result.error === "contract" ? "loaded" : "invalid"
     if (result.error === "parse" || result.error === "shape")
@@ -180,6 +185,7 @@ Item {
       root.engineNotInitialised = false
     } else if (exitCode === 3) {
       // Nothing else can succeed until `seldon init` has run.
+      root.notInitialisedAtMs = Date.now()
       root.engineNotInitialised = true
       root.queue = []
       root.lastError = ""

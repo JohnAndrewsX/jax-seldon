@@ -35,7 +35,7 @@ When something is wrong the panel shows one banner with a one-click fix.
 | Status | Banner | Fix |
 |---|---|---|
 | `engineMissing` | Seldon engine not installed | *Install in terminal*, *Copy* `omarchy pkg aur add jax-seldon`, *Check again* |
-| `notInitialised` | Logbook not initialised | *Run in terminal* / *Copy* `seldon init` |
+| `notInitialised` | Logbook not initialised | *Run in terminal* / *Copy* `seldon init`, *Check again* |
 | `indexMissing` | No index yet / Index unreadable | *Build index* (`seldon status`) |
 | `indexStale` | Index is stale (older than 2 h) | *Capture now* |
 | `contractMismatch` | Index format mismatch | *Update in terminal* / *Copy* the plugin or engine update command |
