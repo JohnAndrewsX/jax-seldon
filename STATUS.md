@@ -8,7 +8,6 @@
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-004 | Collectors: pacman, snapper, omarchy (+ event model, ledger, collector registry) | Engine | `engine-004` (opus, high) | `wt/WP-004` · `wp/004-collectors-core` | 2026-10-01 |
 | WP-005 | Collectors: plugins, theme, config manifest | Engine | `engine-005` (opus, high) | `wt/WP-005` · `wp/005-collectors-user` | 2026-10-01 |
 | WP-006 | `log`, `event`, `plan` commands, case state machine, journal | Engine | `engine-006` (opus, high) | `wt/WP-006` · `wp/006-commands` | 2026-10-01 |
 | WP-011 | Panel: Today, Changelog, System tabs | Plugin | `plugin-011` (opus, high) | `wt/WP-011` · `wp/011-panel-tabs` | 2026-10-01 |
@@ -29,6 +28,11 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-004 Collectors pacman/snapper/omarchy + event model, ledger,
+  redaction, collector registry, `capture` — merged after two review rounds
+  (attribution per ADR-0017, Running-line rewind, greedy userinfo
+  redaction, capture-time dedupe); 109 engine tests; real-host read-only
+  capture 1230 events, second run 0.
 - 2026-10-01 WP-010 Plugin skeleton — merged; Service state machine, pill,
   banners, headless harness (48 checks), token check; smoke-tested on the
   test host; ADR-0016 (install via AUR helper); plugin test expectations
