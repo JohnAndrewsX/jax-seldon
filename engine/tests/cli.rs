@@ -1,16 +1,15 @@
-//! CLI smoke tests: version, contract version, parse errors, exit codes.
+//! CLI smoke tests: version, contract version, parse errors, exit codes,
+//! the config file override. Every run goes through `common::Env` (a fake
+//! HOME and XDG dirs), so nothing here can touch the real config or state.
 
-use std::process::{Command, Output};
+mod common;
+
+use std::process::Output;
+
+use common::{Env, Snapper, json, stderr, stdout};
 
 fn seldon(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_seldon"))
-        .args(args)
-        .output()
-        .expect("run seldon")
-}
-
-fn stdout(out: &Output) -> String {
-    String::from_utf8(out.stdout.clone()).expect("utf-8 stdout")
+    Env::new(Snapper::Missing).seldon(args)
 }
 
 #[test]
@@ -125,5 +124,128 @@ fn help_exits_zero() {
         &["doctor", "--help"][..],
     ] {
         assert_eq!(seldon(args).status.code(), Some(0), "{args:?}");
+    }
+}
+
+// WP-003 review follow-up: `--config FILE` > `SELDON_CONFIG` > XDG default.
+
+fn config_with_logbook(env: &Env, name: &str, logbook: &std::path::Path) -> std::path::PathBuf {
+    let path = env.tmp.path().join(name);
+    std::fs::write(&path, format!("logbook = \"{}\"\n", logbook.display())).unwrap();
+    path
+}
+
+#[test]
+fn config_file_precedence() {
+    let env = Env::new(Snapper::Missing);
+    let a = env.init_logbook_at("a", "en"); // the XDG config points at a
+    let b = env.init_logbook_at("b", "en");
+    let c = env.init_logbook_at("c", "en");
+    // init rewrote the XDG config each time; point it back at a
+    let xdg = env.config_file();
+    std::fs::write(&xdg, format!("logbook = \"{}\"\n", a.display())).unwrap();
+    let from_env = config_with_logbook(&env, "env.toml", &b);
+    let from_flag = config_with_logbook(&env, "flag.toml", &c);
+
+    let doctor_logbook = |cmd: &mut std::process::Command| {
+        let out = cmd.output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        json(&out)["logbook"].as_str().unwrap().to_string()
+    };
+    let shown = |p: &std::path::Path| p.display().to_string();
+    assert_eq!(
+        doctor_logbook(&mut env.command(&["doctor", "--json"])),
+        shown(&a)
+    );
+    assert_eq!(
+        doctor_logbook(
+            env.command(&["doctor", "--json"])
+                .env("SELDON_CONFIG", &from_env)
+        ),
+        shown(&b)
+    );
+    assert_eq!(
+        doctor_logbook(
+            env.command(&["--config", from_flag.to_str().unwrap(), "doctor", "--json"])
+                .env("SELDON_CONFIG", &from_env)
+        ),
+        shown(&c)
+    );
+    // an empty SELDON_CONFIG is unset
+    assert_eq!(
+        doctor_logbook(env.command(&["doctor", "--json"]).env("SELDON_CONFIG", "")),
+        shown(&a)
+    );
+}
+
+#[test]
+fn init_writes_the_overridden_config_only() {
+    let env = Env::new(Snapper::Missing);
+    let config = env.tmp.path().join("conf/seldon.toml");
+    let root = env.tmp.path().join("lb");
+    let out = env.seldon(&[
+        "--config",
+        config.to_str().unwrap(),
+        "init",
+        "--non-interactive",
+        "--path",
+        root.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(json(&out)["config"], config.to_str().unwrap());
+    assert!(config.is_file());
+    assert!(!env.config_file().exists(), "the XDG config is untouched");
+}
+
+#[test]
+fn a_broken_overridden_config_is_a_user_error() {
+    let env = Env::new(Snapper::Missing);
+    let config = env.tmp.path().join("bad.toml");
+    std::fs::write(&config, "language = \"fr\"\n").unwrap();
+    let out = env.seldon(&[
+        "--config",
+        config.to_str().unwrap(),
+        "plan",
+        "list",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        json(&out)["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("bad.toml")
+    );
+}
+
+#[test]
+fn json_detection_skips_free_text() {
+    // parse errors after free text: `--json` after `--` is text, an option
+    // value that accepts hyphens is text
+    for (args, wants_json) in [
+        (&["log", "--actor", "Bad", "--", "--json"][..], false),
+        (
+            &[
+                "plan",
+                "drop",
+                "C-2026-001",
+                "--actor",
+                "x",
+                "--reason",
+                "--json",
+            ][..],
+            false,
+        ),
+        (&["log", "--actor", "Bad", "--json", "--", "text"][..], true),
+    ] {
+        let out = seldon(args);
+        assert_eq!(out.status.code(), Some(1), "{args:?}");
+        assert_eq!(
+            stdout(&out).starts_with('{'),
+            wants_json,
+            "{args:?}: {}",
+            stdout(&out)
+        );
     }
 }
