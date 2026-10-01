@@ -574,3 +574,72 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   build dir under the `source` entry's file name, so a `git archive`
   tarball named like the release asset tests a PKGBUILD before any tag
   exists.
+
+## 2026-10-01 · WP-013 (QA)
+
+- **The ssh alias `test` does not exist on the dev host.** The docs write
+  `test:`, but `~/.ssh/config` has no such host. Pass the real name from
+  `memory/local.md` through `SELDON_TEST_HOST`, and never commit it.
+- **A fresh logbook's first capture records no history.** Collectors
+  without a cursor start at the logbook's `created`. A test that needs
+  package events must pass `capture --since <ts>`. With a window, every
+  package change in it becomes open drift, and a named package becomes a
+  red crisis.
+- **`pgrep -x quickshell` also matches a Quickshell crash-report window.**
+  A log check on that pid reads the wrong log and passes vacuously. Take
+  the pid from `quickshell list -a -j` (match `config_path`), and require a
+  positive line ("Configuration Loaded") before you trust a clean log.
+- **Restarting the shell right after an rsync into the plugin dir can crash
+  it.** Every rewritten file triggers one hot reload; the old instance
+  segfaulted on exit in the middle of them, and the crash handler left a
+  crash-report window open. Rsync with `--checksum`, and wait until the
+  shell answers `ping` plus about 5 s before `omarchy-restart-shell`. Check
+  `~/.cache/quickshell/crashes` before and after.
+- **A locked test-host session breaks both the restart and the keys.**
+  `omarchy-restart-shell` refuses while the session is locked, and it
+  re-locks after a restart when the session was locked. `wtype` would type
+  into the lock screen. Check `omarchy-shell lock status` (`.locked`)
+  before every restart and every keystroke. Unlocking needs the operator.
+- **A killed run's ssh command keeps running on the remote side.** A
+  SIGKILL of the local script does not stop the remote `bash -c`. The next
+  run's restore then races its restart. Wait about 10 s before rerunning.
+- **Send remote scripts as an argument, not on stdin.** `ssh host bash -s
+  <<< script` lets any command in the script read the rest of the script
+  from stdin. `ssh -n host "bash -c \"\$(echo <base64> | base64 -d)\""`
+  keeps stdin at /dev/null and needs no quoting of the script.
+- **The guard reads `> 0` in a jq filter as a redirection.** A read-only
+  `jq '… select(length > 0)' ~/.config/omarchy/shell.json` over ssh was
+  blocked as a write under `~/.config`. That was reported, not worked
+  around.
+
+## 2026-10-01 · WP-013 live session (QA)
+
+- **Gate every live keystroke on a Seldon surface being open, not only
+  on the lock.** A pointer click closed the panel, and the next `wtype`
+  text went into the operator's terminal, where bash ran it
+  (`work/active/WP-013/live/INCIDENT.md`). Before any key, check that
+  `jax.seldon.panel view` or `shell call jax.seldon view ""` reports
+  `opened: true`. Type text only while the target field reports
+  `editing: true`.
+- **`hyprctl activewindow` does not show layer-shell keyboard focus.** It
+  keeps naming the client window while our panel has the keys. Use the
+  plugin's own `opened` / `editing` flags.
+- **`ydotool mousemove --absolute` doubles the coordinates on the test
+  host;** pass half the logical value. `hyprctl dispatch movecursor` warps
+  without a motion event, so Quickshell sees no hover; `ydotool` moves
+  do produce one.
+- **The guard's theme-sweep exception matches only a bare
+  `ssh <host> '… omarchy theme set "<theme>"'`.** Anything after it (`;
+  echo …`) makes it a blocked system change. Run the theme command alone.
+  A block is reported, not retried in another form.
+- **`seldon init` runs the first capture now (WP-024).** Backfill with
+  `init --since`. A later `capture --since` is ignored by every collector
+  that has a cursor (`sinceIgnored`).
+- **The drift sheet's action buttons are keyboard-reachable** from the
+  text field with Backtab ×2, then ←/→ and Enter (as `panel-view.sh`
+  does). Space selects only the focused option, it does not move.
+- **Screenshots for the repo come from a fixture-based scratch logbook.**
+  Copy `fixtures/logbook/` over the `init`ed scratch logbook (its
+  `logbook.toml` carries `workstation-7f3a`). Crop away the bar (window
+  titles) and the desktop, and grep the logs for the host name and
+  `/home/<user>` before committing.

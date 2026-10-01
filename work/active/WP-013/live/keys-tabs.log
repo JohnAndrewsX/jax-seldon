@@ -1,0 +1,13 @@
+open: {"opened":true,"tab":"today","status":"ok","pill":"⟡ 2 · 4","crisis":"2 changes in the red zone need a reason","snapper":"Snapshots not readable"}
+key 1 → today
+key 2 → changelog
+key 3 → work
+key 4 → decisions
+key 5 → system
+key 6 → memory
+l (from memory) → today
+h → memory
+Down (first) → cursorActive [true,0]
+Down (second) → [true,1]
+Right → work
+Left → changelog

@@ -21,7 +21,8 @@ optimised build; not in `check`, not in CI, required before the handover
 of a WP that touches `engine/src/index/` or `engine/src/commands/watch.rs`;
 see "The `watch` feature"), `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine
-builds an index).
+builds an index), `just e2e` (engine ↔ plugin end to end, host only; see
+"Integration").
 
 ## Engine tests
 
@@ -945,3 +946,159 @@ changes what the panel draws repeats it:
    with `omarchy theme current`.
 5. Save the shrunk PNGs under `work/active/WP-NNN/screenshots/`, named
    `<theme>-<view>.png`.
+
+## Integration
+
+`tests/integration/e2e.sh` checks the whole chain on a real machine: the
+engine writes a logbook and the index, and the plugin reads that index and
+shows it (WP-013). It is not part of `just check`. Run it before every
+phase exit.
+
+```bash
+just e2e --engine-only                    # dev host: engine steps in scratch dirs (about 50 s; the musl build dominates)
+SELDON_TEST_HOST=<alias> just e2e         # test host over ssh, full chain (about 30 s after the build)
+```
+
+`SELDON_TEST_HOST` is the ssh alias of the test host (default `test`). The
+real name is in the git-ignored `memory/local.md`; never commit it. Under
+`SELDON_SKIP_HOST_CHECKS` the recipe prints a skip notice and exits 0. The
+script exits 0 when every check passes and 1 otherwise. Either way it prints
+a summary with one line per failed check.
+
+The full run refuses to start when `SELDON_TEST_HOST` leads back to this
+machine (`localhost`, or an alias for the dev host). It compares
+`/etc/machine-id` on both sides (falling back to `hostname`) right after the
+first ssh call. That way the steps that write `~/.local/bin`,
+`~/.config/seldon` and restart the shell never run on the dev host.
+
+**Steps.** Both variants first build the static engine
+(`cargo build --release --target x86_64-unknown-linux-musl`) and run the
+same engine steps:
+1. `--version`, and `contract-version` = `plugin/manifest.json`
+   `seldon.contractVersion`;
+2. `init --non-interactive --path ~/Seldon-e2e --since <now − 7 days>`.
+   `init` runs the first capture itself (WP-024), and `--since` backfills
+   that capture. A fresh logbook records nothing older than its creation
+   otherwise, and a later `capture --since` is ignored by collectors that
+   already have a cursor. The first capture must record at least one
+   package event. `SELDON_E2E_SINCE_DAYS` changes the window; it must be a
+   whole number of days, and anything else stops the run before the build;
+3. `capture --all` after `init` must write 0 events (idempotency);
+4. `plan new`, then `plan start`;
+5. `log --case <id> -- <note>`. The note contains quotes and `$(…)` and must
+   arrive verbatim;
+6. `status`, which must give `state.status` `ok`;
+7. `index --check`, which must give `valid: true`;
+8. `doctor`, which must give `ok: true`.
+
+Then index.json must have the contract version, one active case, the note
+in `today.entries`, and at least one package event.
+
+- **`--engine-only`** (dev host):
+  - It sets `HOME`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME` to a temp dir.
+    The real `~/.config` and `~/.local/state` are never touched; the
+    script ends with `real-home-guard.sh` to prove it.
+  - It loads `plugin/Service.qml` into a private headless Quickshell
+    (`tests/plugin/harness/shell.qml`) in dev mode against the index the
+    engine just wrote. Status must be `ok` and the pill must equal the
+    index counts.
+  - It never touches the running shell, and it never enables the plugin.
+  - The theme collector reports degraded here, because it reads the
+    theme from the scratch `HOME`.
+- **Full run** (test host): after the engine steps on the test host, the
+  script:
+  1. rsyncs `plugin/` to the dev install (`--checksum`, so unchanged
+     files are not rewritten);
+  2. runs `omarchy plugin validate`, and enables the plugin if it was
+     disabled;
+  3. waits for the shell's hot reloads, then runs `omarchy-restart-shell`;
+  4. waits until `jax.seldon.service status` has settled in `ok`, after
+     the plugin's own start-up capture;
+  5. compares:
+     - `jax.seldon.panel pill` and the service pill with the pill
+       computed from `summary` (SPEC-PLUGIN §4), and the tone;
+     - Today's entry count in `jax.seldon.panel view` with
+       `index.today.entries`;
+     - the Changelog row count with the pacman filter and without it;
+  6. opens the QuickEntry with `wtype n`, types a note that starts like
+     an option, and presses Enter. The result line must say "Saved", and
+     after the FileView refresh Today must show one more entry. The note
+     must be in the index and in the ledger;
+  7. reads the log of the shell instance (`quickshell list -a -j`, not
+     `pgrep`, which also finds crash-report windows). The log must contain
+     "Configuration Loaded" and no WARN/ERROR line that names `jax.seldon`;
+  8. checks that no new crash report appeared under
+     `~/.cache/quickshell/crashes`.
+
+**Restore (test host).** Before it changes anything, the run:
+- writes a fingerprint of the test host:
+  - existence and content of `~/Seldon-e2e`, `~/.local/bin/seldon`,
+    `~/.local/state/seldon` and `~/.config/seldon`;
+  - the hash of the plugin dir and its enabled flag;
+  - the theme;
+  - the number of `quickshell` processes and of crash reports;
+- copies the plugin dir to `~/.cache/seldon-e2e/`;
+- writes `~/.cache/seldon-e2e/found.env`:
+  - whether the plugin dir existed;
+  - the enabled flag;
+  - which of the four Seldon paths were absent;
+- only then moves the Seldon paths that exist aside into
+  `~/.cache/seldon-e2e/saved/`.
+
+The enabled flag comes from `omarchy-shell shell listPlugins`, which
+answers empty while the shell rescans. The script asks up to five times.
+If it still gets no answer, the flag is recorded as unknown, and the
+restore never changes it.
+
+At the end, or on any failure through an EXIT trap, it restores the test
+host in this order:
+1. it removes the engine binary;
+2. it restores the plugin dir;
+3. it disables the plugin, but only when the flag was found `false` for
+   certain and is `true` now;
+4. it restarts the shell if the plugin code differs from what the shell
+   runs, and otherwise sends `jax.seldon.service refresh`;
+5. it waits until the service has no engine call in flight;
+6. only then it removes the state, config and logbook dirs and moves the
+   saved paths back.
+
+A path is removed only when it was absent at the backup or was moved
+aside. A path that the backup found but had not moved yet (a run killed
+inside the loop) is the original, so the restore keeps it and says so.
+
+It then compares the fingerprint, and checks that the service status is
+the one it found (`engineMissing` on a host without an engine).
+
+If a run was killed before its restore, `~/.cache/seldon-e2e/found.env` is
+still there. The next run then restores that state first. After you kill a
+run, wait about 10 s: its last ssh command may still be running on the test
+host.
+
+The lock check (below) comes before that recovery. So a run killed on a
+host that is locked, or that locks later, leaves its leftovers on the test
+host until the operator unlocks the session. These are `~/Seldon-e2e`,
+`~/.local/bin/seldon`, the Seldon state and config dirs, the run's plugin
+code and `~/.cache/seldon-e2e/`. The plugin may meanwhile keep capturing
+into `~/Seldon-e2e`. The next run after the unlock restores them.
+
+**Locked session.** The full run refuses to start while the test host's
+session is locked (`omarchy-shell lock status`), because:
+- `omarchy-restart-shell` refuses to restart a locked session (and
+  re-locks a session that is locked);
+- `wtype` would type into the lock screen.
+
+The script checks the lock again before the restart and before every
+keystroke. Unlock the test host, or keep it awake, before an unattended
+run.
+
+**Artifacts.** With `SELDON_E2E_OUT=<dir>`, the run saves these files into
+`<dir>`:
+- the index after the engine steps and after the plugin's capture;
+- the service status and the pill;
+- the panel views (Today, Changelog, Changelog with the pacman filter, and
+  after the QuickEntry);
+- on the dev host, the harness log.
+
+They contain the machine id, which names the host: keep them out of the
+repository. Mismatches go to the WP's `FINDINGS.md`, with the command and
+an index excerpt.

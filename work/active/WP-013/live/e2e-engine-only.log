@@ -1,0 +1,41 @@
+
+== build the static engine (x86_64-unknown-linux-musl)
+ok   musl release build
+ok   binary is static
+
+== dev host: scratch dirs
+   HOME=/tmp/seldon-e2e.nGhSla/home (XDG_CONFIG_HOME and XDG_STATE_HOME under it)
+
+== engine: init, capture, plan, log, status
+ok   seldon --version: name = seldon
+ok   contract-version = manifest seldon.contractVersion = 1
+ok   seldon init --path /tmp/seldon-e2e.nGhSla/home/Seldon-e2e --since -7d
+ok   init: first capture ran = true
+ok   init --since -7d: package events written = 1230 (>= 1)
+   written 1230, open drift 22, degraded collectors: snapper,theme
+ok   capture after init writes nothing (idempotent) = 0
+ok   plan new: C-2026-001
+ok   plan start: status = active
+ok   log: ledger detail = e2e note 20261001T230731-3096361: a "b" c $(true)
+ok   status: state.status = ok
+ok   index --check: valid = true
+ok   doctor: ok = true
+
+== engine: index.json
+ok   index contractVersion = 1
+ok   index summary.activeCases = 1
+ok   index: the case is active = active
+ok   index today has the note = 1
+ok   index events from pacman = 497 (>= 1)
+   summary {"activeCases":1,"queuedCases":0,"openDrift":22,"crisis":22,"eventsToday":8,"events7d":1233} → pill '⟡ 1 · 22'
+
+== plugin: Service.qml headless against this index (dev mode)
+ok   plugin status = ok
+ok   plugin engine = present
+ok   plugin pill = index counts = ⟡ 1 · 22
+ok   harness log clean
+
+== dev host: real Seldon dirs
+ok   e2e: the real ~/.local/state/seldon and ~/.config/seldon are untouched
+
+== e2e summary (engine): 24 passed, 0 failed

@@ -1,0 +1,84 @@
+
+== build the static engine (x86_64-unknown-linux-musl)
+ok   musl release build
+ok   binary is static
+
+== test host: baseline and backup (<test-host>)
+ok   test host is another machine
+   Seldon-e2e: absent
+   .local/bin/seldon: absent
+   .local/state/seldon: absent
+   .config/seldon: absent
+   plugin dir: 0a0c64c0c40b
+   plugin enabled: true
+   theme: Osaka Jade
+   quickshell processes: 2
+   shell crash reports: 4
+   service status: engineMissing
+ok   engine copied to ~/.local/bin/seldon
+
+== engine: init, capture, plan, log, status
+ok   seldon --version: name = seldon
+ok   contract-version = manifest seldon.contractVersion = 1
+ok   seldon init --path ~/Seldon-e2e --since -7d
+ok   init: first capture ran = true
+ok   init --since -7d: package events written = 4 (>= 1)
+   written 4, open drift 2, degraded collectors: snapper
+ok   capture after init writes nothing (idempotent) = 0
+ok   plan new: C-2026-001
+ok   plan start: status = active
+ok   log: ledger detail = e2e note 20261001T230816-3097579: a "b" c $(true)
+ok   status: state.status = ok
+ok   index --check: valid = true
+ok   doctor: ok = true
+
+== engine: index.json
+ok   index contractVersion = 1
+ok   index summary.activeCases = 1
+ok   index: the case is active = active
+ok   index today has the note = 1
+ok   index events from pacman = 4 (>= 1)
+   summary {"activeCases":1,"queuedCases":0,"openDrift":2,"crisis":1,"eventsToday":3,"events7d":7} → pill '⟡ 1 · 2'
+
+== plugin: install, validate, restart the shell
+ok   plugin rsynced to the dev install
+ok   omarchy plugin validate
+ok   plugin enabled = true
+ok   shell restarted (pid 1836671 → 1873153)
+
+== plugin: service state after its start-up capture
+ok   service status = ok
+ok   service lastError = 
+   summary {"activeCases":1,"queuedCases":0,"openDrift":2,"crisis":1,"eventsToday":3,"events7d":7} → pill '⟡ 1 · 2'
+ok   panel pill text = index counts = ⟡ 1 · 2
+ok   service pill = index counts = ⟡ 1 · 2
+ok   pill tone = urgent
+
+== plugin: panel view
+ok   view status = ok
+ok   Today entries = index today.entries = 1
+ok   index after the plugin's capture still has the note in today = 1
+ok   view banner = 
+ok   filter pacman = ok
+ok   Changelog rows (pacman) = 4 (>= 1)
+ok   Changelog rows (all) = 7 (>= 1)
+   changelog: {"rows":7,"folded":0,"snapshots":0,"badges":1,"drift":4}, crisis strip: '1 change in the red zone needs a reason', snapper: 'Snapshots not readable'
+
+== plugin: QuickEntry through wtype
+ok   n focuses the QuickEntry
+ok   QuickEntry result = true
+ok   Today entries after the FileView refresh = 2
+ok   index today has the QuickEntry note = 1
+ok   ledger has the QuickEntry note = 1
+
+== shell log
+ok   read the shell's log (pid 1873153, 31 lines)
+ok   shell log clean of jax.seldon warnings and errors
+ok   shell crash reports (no crash during the run) = 4
+
+== restore the test host
+restore: done
+ok   test host restored (Seldon paths, plugin dir, enabled flag, theme, shell processes, crash reports)
+ok   service status after restore = engineMissing
+
+== e2e summary (full, test host): 47 passed, 0 failed

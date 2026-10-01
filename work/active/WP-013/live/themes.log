@@ -1,0 +1,5 @@
+overlay osaka-jade: {"opened":true,"paints":[1,1,1,1,1,1],"paintMs":[1,1,0,2,1,0]}
+shots osaka-jade done: 11
+theme Osaka Jade, crashes 4, shell [1957859]
+overlay tokyo-night (THEME NOT SET: guard block; these were Osaka Jade, deleted): {"opened":true,"paints":[1,1,1,1,1,1],"paintMs":[1,1,1,1,1,0]}
+shots tokyo-night: deleted (theme was still Osaka Jade)

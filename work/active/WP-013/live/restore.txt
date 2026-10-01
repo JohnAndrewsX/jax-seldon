@@ -1,0 +1,11 @@
+editor windows: []
+service: {"status":"engineMissing","engine":"missing"}
+absent Seldon-e2e
+absent .local/bin/seldon
+absent .local/state/seldon
+absent .config/seldon
+absent .cache/seldon-e2e
+absent /tmp/seldon-wp013
+theme: Osaka Jade; quickshell procs: 2; crash reports: 4; locked: no
+plugin dir: 644fd01ae2c8
+seldon-unlock.sh

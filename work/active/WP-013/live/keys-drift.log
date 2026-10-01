@@ -1,0 +1,40 @@
+explain 1st Enter → {"action":"explain","intent":"Live smoke: ollama user service for local models","armed":true,"hint":"Press Enter again: Explain ~/.config/systemd/user/ollama.service as a new completed case"}
+explain 2nd Enter → {"result":"Explained 1 event · created C-2026-010","resultOk":true,"resolution":"explained · C-2026-010: Live smoke: ollama user service for local models","openCase":"C-2026-010"}
+pill/crisis → {"pill":"⟡ 1 · 3","crisis":"1 change in the red zone needs a reason"}
+{"kind":"case-created","source":"seldon","subject":"C-2026-010","resolution":null,"refersTo":null,"case":"C-2026-010"}
+{"kind":"resolution","source":"seldon","subject":"~/.config/systemd/user/ollama.service","resolution":"explained","refersTo":"01M3VNJ9JGZ9169T01XCW16FT0","case":"C-2026-010"}
+{"kind":"case-completed","source":"seldon","subject":"C-2026-010","resolution":null,"refersTo":null,"case":"C-2026-010"}
+resolve crisis → ok
+{"subject":"ollama","action":"explain","editing":true}
+S-Tab 1 → {"action":"explain","editing":true}
+S-Tab 2 → {"action":"explain","editing":true}
+S-Tab 3 → {"action":"explain","editing":true}
+Return → {"action":"explain","editing":true}
+crash reports: 4, quickshell procs: 2
+click Dismiss → {"action":"explain","editing":false}
+1st Enter → {"reason":"","armed":false,"hint":""}
+2nd Enter → {"result":"Say why it changed first","resultOk":false,"resolution":""}
+pill → {"pill":"⟡ 1 · 3","crisis":""}
+{"kind":"case-completed","subject":"C-2026-010","resolution":null,"refersTo":null,"detail":null}
+resolve → ok
+{"opened":false,"tab":"changelog","drift":{"subject":"tokyo-night","action":"link","caseId":"C-2026-005","cases":["C-2026-005","C-2026-003","C-2026-008","C-2026-006","C-2026-007"],"editing":false}}
+resolve → ok
+{"opened":true,"tab":"changelog","drift":{"subject":"tokyo-night","action":"link","caseId":"C-2026-005","editing":true}}
+active window: foot
+1st Enter → {"armed":true,"hint":"Press Enter again: Link tokyo-night to C-2026-005"}
+2nd Enter → {"result":"Linked 1 event to C-2026-005","resultOk":true,"resolution":"linked to C-2026-005","openCase":"C-2026-005"}
+pill → ⟡ 1 · 2
+{"kind":"resolution","subject":"tokyo-night","resolution":"linked","refersTo":"01M3VTGNY0NZG4AY80814WSKGR","case":"C-2026-005"}
+resolve → ok
+{"opened":true,"drift":{"subject":"firefox","badge":"+2","action":"explain","members":["· upgrade firefox  143.0.1-1 → 143.0.2-1","· upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1","· upgrade libinput  1.29.1-1 → 1.29.2-1"],"editing":true}}
+S-Tab×1 + Space → {"action":"explain","armed":false,"open":true,"editing":true}
+S-Tab×2 + Space → {"action":"explain","armed":false,"open":true,"editing":true}
+S-Tab×3 + Space → {"action":"explain","armed":false,"open":false,"editing":false}
+resolve → ok
+{"opened":true,"drift":{"subject":"firefox","action":"explain","intent":"","editing":true}}
+Backtab×2, Right, Return → {"action":"dismiss","editing":true,"open":true}
+Tab×2 → {"action":"dismiss","editing":true,"reason":""}
+typed → {"reason":"routine update (live smoke)"}
+1st Enter → {"armed":true,"hint":"Press Enter again: Dismiss firefox and 2 more"}
+2nd Enter → {"result":"Dismissed 3 events","resultOk":true,"resolution":"dismissed: routine update (live smoke)"}
+pill → {"pill":"⟡ 1 · 1","crisis":"1 change in the red zone needs a reason","resolved":["io.github.example.tyme: explained: Zeiterfassung nur zum Testen, noch nicht in der Bar.","tokyo-night: linked to C-2026-005","~/.config/systemd/user/ollama.service: explained · C-2026-010: Live smoke: ollama user service for local models","tailscale: linked to C-2026-008","libinput: dismissed: routine update (live smoke)","noto-fonts: dismissed: routine update (live smoke)","firefox: dismissed: routine update (live smoke)","io.github.example.weather-plus: explained: omarchy plugin update, nur das Widget.","kanagawa: dismissed: Nur ausprobiert.","omarchy: explained: Routine-Update mit omarchy update, Snapshot 110 davor.","omarchy: explained: Routine-Update mit omarchy update, Snapshot 110 davor.","~/.config/hypr/monitors.conf: linked to C-2026-002","io.github.example.weather-plus: explained: Wetter-Widget für die Bar, kleine Spielerei ohne Case.","btop: explained: Kleines Monitoring-Tool, bewusst ohne Case."]}
