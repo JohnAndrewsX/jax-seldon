@@ -1,0 +1,15 @@
+usr/
+usr/bin/
+usr/bin/jax-seldon
+usr/bin/seldon
+usr/lib/
+usr/lib/systemd/
+usr/lib/systemd/user/
+usr/lib/systemd/user/seldon-watch.service
+usr/share/
+usr/share/doc/
+usr/share/doc/jax-seldon/
+usr/share/doc/jax-seldon/README.md
+usr/share/licenses/
+usr/share/licenses/jax-seldon/
+usr/share/licenses/jax-seldon/LICENSE
