@@ -24,6 +24,15 @@ serde_yaml = "0.9.34"
 thiserror = "2.0.21"
 toml = "1.1.6"
 ulid = { version = "3", features = ["serde"] }
+# `seldon watch` only (WP-034): the one watcher crate AGENTS.md §7 allows;
+# its inotify backend runs on its own thread, no async runtime.
+notify = { version = "8.2.0", default-features = false, optional = true }
+
+[features]
+default = []
+# `seldon watch`: rebuild index.json when the logbook changes (ADR-0005:
+# optional, off by default; the release build leaves it out).
+watch = ["dep:notify"]
 
 [profile.release]
 lto = true

@@ -10,12 +10,16 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Format | `fmt-check` | `cargo fmt --check` on `engine/` | yes |
 | Lint | `clippy` | `cargo clippy --all-targets -- -D warnings` | yes |
 | Tests | `test` | `cargo test` (unit + CLI tests in `engine/tests/`) | yes |
+| Watch feature | `check-watch` | `cargo clippy --all-targets --features watch -- -D warnings`, `cargo test --features watch` (see "The `watch` feature") | yes |
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
 | Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh` (see "Plugin") | **no** (dev host) |
 
-Other recipes: `just build-release` (static musl binary,
+Other recipes: `just check-rss` (the `seldon watch` memory bound on an
+optimised build; not in `check`, not in CI, required before the handover
+of a WP that touches `engine/src/index/` or `engine/src/commands/watch.rs`;
+see "The `watch` feature"), `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine
 builds an index).
 
@@ -45,6 +49,8 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/tests/agent.rs` | `seldon agent start` (WP-022): a recording stub `omarchy` gets exactly one argv, the prompt one element (a title with quotes, `$(…)` and backticks stays text), cwd and `SELDON_LOGBOOK` the logbook, the case becomes the active case, under 1 s; `[agent] launcher` and `[agent.launchers]` from config; a shell launcher refused before anything changes; a queued case → exit 1 with the `seldon plan start` hint; verification, unknown and malformed ids; a missing launcher and one that exits 1 at once (its stderr is the message) → exit 1 with the previous active case restored; a launcher that keeps running is detached (own process group, alive); exit 3 without a logbook. Unit tests in `commands/agent.rs` check the launcher rules |
 | `engine/tests/rebuild.rs` | `seldon rebuild` (WP-032) on a copy of `fixtures/logbook/`: `outputs/REBUILD.md` equals `tests/golden/REBUILD.md` (`SELDON_BLESS=1 cargo test --test rebuild` rewrites it), the seven English headings in order, German prose, `--json` `sections` counts, and every package line's last code span is the id of an explicit `install` event of that package; a second run at a later clock writes nothing (`files: []`, same bytes, no commit); text above and below the `rebuild` fence survives a change; the autocommit `seldon: rebuild` happens once per change (git repository made in the test); `drift dismiss`/`explain` move items to "Deliberately not reproduced" and out of the open questions; appended ledger lines prove `pacman -U` → `omarchy pkg aur add`, no command → "repository unknown", a later `remove` drops the package (English logbook); an empty logbook says "none"; exit 3 without a logbook. Unit tests in `rebuild/mod.rs` check the repo/AUR rule and the fence merge |
 | `engine/tests/doctor.rs` | `doctor::` green after init with snapper degraded, exit 3 when not initialised, invalid frontmatter, misplaced case, the fixture logbook (and that doctor leaves it untouched) |
+
+| `engine/tests/watch.rs` | `seldon watch` (WP-034). Without the feature: exit 1, "built without the watch feature", JSON error. With `--features watch` (`just check-watch`): one rebuild at start (`trigger: "start"`; an edit made before the start is in it), then one change → exactly one rebuild after the 2 s quiet interval and nothing after it (the rebuild's own reads and its `index.json` write stay silent); a burst of 24 writes plus a new folder → one rebuild, and a later write in that folder is seen; generated `ledger/*.md`, `STATUS.md`, temp/backup files, `PROJECT.md`, reads of every watched file, and `seldon index`/`status` runs → none, while `.seldon/logbook.toml` counts; a held lock → no rebuild and still running, the rebuild within 2 s of the release; a folder renamed away and recreated → its watch moves to the new folder (a write in the old one is quiet, one in the new one counts); SIGTERM and SIGINT → exit 0 with a final `stopped` line; not initialised → exit 3; `--interval 1` → exit 1; RSS on the ×10 fixture (below) |
 
 **Isolation.** The integration tests never see the real home, config,
 state or logbook (AGENTS.md §6). `engine/tests/common/mod.rs` gives each
@@ -198,6 +204,51 @@ same command exits 2 and writes nothing.
 
 The engine needs Rust ≥ 1.89 (`File::try_lock`, let-chains); both hosts
 have 1.98.
+
+### The `watch` feature
+
+`seldon watch` is compiled only with `--features watch` (ADR-0005: optional,
+off by default); `just build-release` leaves it out. Its unit tests
+(`commands::watch::tests`: which paths and event kinds count) and
+`engine/tests/watch.rs` run with the feature:
+
+```
+cargo test --manifest-path engine/Cargo.toml --features watch --test watch
+cargo test --manifest-path engine/Cargo.toml --features watch watch::
+```
+
+The watcher tests wait for real inotify events and the 2 s debounce, so the
+file takes ~12 s; the timing assertions allow 4 s of slack for a loaded
+machine. `Watch::start` consumes the `watching` line and the rebuild at
+start, so each test sees only the rebuilds its own writes cause.
+
+**Memory bound (PLAN.md: RSS < 10 MB).** The test runs the watcher on the
+×10 fixture (`tests/common/scale.rs`) with the state lock held (so the
+rebuild at start waits), reads the idle size, releases the lock, lets the
+rebuild at start and one change-triggered rebuild run (500 events in the
+index) and reads `VmRSS` and `VmHWM` (peak) from
+`/proc/<pid>/status`. The bound is about the shipped, optimised binary; a
+debug binary carries ~6 MB more code, so under the test profile only the
+growth over the idle watcher is bounded (< 6 MB). `just check-rss` runs
+the test under `--profile bench`, where the peak must stay under 10 MB.
+It is not part of `just check` and CI does not run it; run it before the
+handover of any WP that touches `engine/src/index/` or
+`engine/src/commands/watch.rs`. To measure another binary, e.g. the musl release build with the
+feature:
+
+```
+cargo build --manifest-path engine/Cargo.toml --release --features watch --target x86_64-unknown-linux-musl
+SELDON_WATCH_BIN=$PWD/engine/target/x86_64-unknown-linux-musl/release/seldon \
+  cargo test --manifest-path engine/Cargo.toml --features watch --test watch rss -- --nocapture
+```
+
+Dev host, 2026-10-01 (idle → after the rebuild at start and one change,
+peak): debug 13.0 → 17.4 MB; bench profile 6.0 → 9.1 MB; musl release
+4.8 → 7.5 MB, peak 7.9 MB.
+
+The systemd user unit (`engine/systemd/seldon-watch.service`) is never
+enabled or started by a test or an agent (AGENTS.md §6); `systemd-analyze
+--user verify` checks its syntax.
 
 ## What CI cannot run, and where it runs instead
 

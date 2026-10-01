@@ -1,0 +1,37 @@
+# Seldon: rebuild index.json when the logbook changes (`seldon watch`).
+#
+# Optional and off by default (ADR-0005): the Seldon plugin's timer keeps
+# the index fresh without it. Needs a `seldon` built with the `watch`
+# feature at ~/.local/bin/seldon. Installed only by the user, never by
+# `seldon init`; see engine/systemd/README.md.
+
+[Unit]
+Description=Seldon logbook watcher (rebuilds index.json on change)
+Documentation=https://github.com/JohnAndrewsX/jax-seldon/blob/main/engine/systemd/README.md
+# give up after five failures in five minutes instead of looping
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/seldon watch
+Restart=on-failure
+RestartSec=10
+# 1: built without the watch feature (or a bad option); 3: no logbook yet
+# (run `seldon init`). Restarting cannot fix either.
+RestartPreventExitStatus=1 3
+# SIGTERM ends the watcher after the rebuild in progress (exit 0)
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Hardening that works in a user unit (no mount namespaces needed)
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target
