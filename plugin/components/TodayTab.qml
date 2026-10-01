@@ -6,18 +6,22 @@ import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
 
-// Today tab (SPEC-PLUGIN §5): the summary counts, today's journal entries
-// and yesterday's, collapsed behind one row. Data from Model.todayView().
+// Today tab (SPEC-PLUGIN §5): the summary counts, the QuickEntry, today's
+// journal entries and yesterday's, collapsed behind one row. Data from
+// Model.todayView().
 //
 // Keyboard (forwarded by Panel.qml): ↑/↓ move the cursor, Enter on the
-// yesterday row opens or closes it.
+// yesterday row opens or closes it, `e` opens today's journal in the editor.
+// `n` (Panel.qml, from any tab) focuses the QuickEntry.
 Item {
   id: root
 
+  property var service: null
   property var indexData: null
   property bool cursorActive: false
   property color foreground: Color.foreground
   property color accent: Color.accent
+  property color urgent: Color.urgent
   property string fontFamily: Style.font.family
 
   property bool yesterdayOpen: false
@@ -25,6 +29,11 @@ Item {
 
   signal openJournalRequested()
   signal cursorWanted()
+  // QuickEntry hands the keys back (Esc in the field).
+  signal leaveRequested()
+
+  readonly property bool editing: quickEntry.editing
+  property alias quickEntry: quickEntry
 
   readonly property var view: Model.todayView(indexData)
   readonly property color dim: Util.alpha(foreground, 0.65)
@@ -51,6 +60,10 @@ Item {
   }
 
   function textKey(t) {
+    if (t === "e") {
+      root.openJournalRequested()
+      return true
+    }
     return false
   }
 
@@ -88,6 +101,7 @@ Item {
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
           text: "Open in editor"
+          tooltipText: "Key e"
           bordered: true
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -134,6 +148,17 @@ Item {
         }
       }
 
+      QuickEntry {
+        id: quickEntry
+        width: parent.width
+        service: root.service
+        indexData: root.indexData
+        foreground: root.foreground
+        urgent: root.urgent
+        fontFamily: root.fontFamily
+        onLeaveRequested: root.leaveRequested()
+      }
+
       PanelSectionHeader {
         text: "JOURNAL"
         foreground: root.foreground
@@ -154,6 +179,9 @@ Item {
       model: root.rows
       currentIndex: root.cursorActive ? root.cursor : -1
       onCurrentIndexChanged: if (currentIndex >= 0) Qt.callLater(keepCurrentVisible)
+      // A new model (the yesterday row opened, a new index) starts at the top;
+      // keep the cursor row in view.
+      onCountChanged: if (currentIndex >= 0) Qt.callLater(keepCurrentVisible)
       function keepCurrentVisible() {
         if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
       }

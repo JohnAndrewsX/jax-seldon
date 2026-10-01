@@ -10,7 +10,8 @@ import "../Model.js" as Model
 // deviations, plugins, snapshots, areas, collectors. Every field of
 // index.system is optional; Model.systemSections() drops what is missing.
 //
-// Keyboard (forwarded by Panel.qml): ↑/↓ move the cursor.
+// Keyboard (forwarded by Panel.qml): ↑/↓ move the cursor, `e` opens the
+// logbook's STATUS.md in the editor.
 Item {
   id: root
 
@@ -24,6 +25,7 @@ Item {
   property int cursor: 0
 
   signal cursorWanted()
+  signal openStatusRequested()
 
   readonly property var sections: Model.systemSections(indexData, nowMs)
   readonly property color dim: Util.alpha(foreground, 0.65)
@@ -46,14 +48,56 @@ Item {
   }
 
   function textKey(t) {
+    if (t === "e") {
+      root.openStatusRequested()
+      return true
+    }
     return false
   }
 
   onRowsChanged: if (root.cursor >= root.rows.length) root.cursor = Math.max(0, root.rows.length - 1)
 
+  Item {
+    id: header
+    width: parent.width
+    implicitHeight: Math.max(headerText.implicitHeight, statusButton.implicitHeight)
+
+    Text {
+      id: headerText
+      anchors.left: parent.left
+      anchors.right: statusButton.left
+      anchors.rightMargin: Style.spacing.sm
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.PlainText
+      text: "From the index; the full report is STATUS.md"
+      color: root.dim
+      elide: Text.ElideRight
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Button {
+      id: statusButton
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      text: "Open in editor"
+      tooltipText: "Open STATUS.md in the editor (key e)"
+      bordered: true
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      fontSize: Style.font.caption
+      verticalPadding: Style.spacing.xs
+      onClicked: root.openStatusRequested()
+    }
+  }
+
   ListView {
     id: list
-    anchors.fill: parent
+    anchors.top: header.bottom
+    anchors.topMargin: Style.spacing.lg
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     interactive: contentHeight > height
@@ -129,7 +173,7 @@ Item {
   }
 
   Text {
-    anchors.centerIn: parent
+    anchors.centerIn: list
     visible: root.rows.length === 0
     textFormat: Text.PlainText
     text: root.indexData ? "The index has no system section" : "No index to show"
