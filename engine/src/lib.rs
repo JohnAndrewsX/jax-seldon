@@ -3,6 +3,7 @@
 //! The binary (`src/main.rs`) is a thin CLI over this library so that the
 //! integration tests in `tests/` can use the types directly.
 
+pub mod commands;
 pub mod config;
 pub mod error;
 pub mod frontmatter;
