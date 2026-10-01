@@ -116,7 +116,7 @@ mod idempotency {
         assert_eq!(again["written"], 0);
         assert_eq!(
             again["sinceIgnored"],
-            serde_json::json!(["snapper", "pacman", "omarchy"])
+            serde_json::json!(["snapper", "pacman", "omarchy", "plugins", "theme", "config"])
         );
         // another spelling of the same logbook keeps its cursors
         let detour = cli.logbook.join("../logbook");
@@ -132,13 +132,13 @@ mod idempotency {
         assert_eq!(out["written"], 0);
         assert_eq!(
             out["sinceIgnored"],
-            serde_json::json!(["snapper", "pacman", "omarchy"]),
+            serde_json::json!(["snapper", "pacman", "omarchy", "plugins", "theme", "config"]),
             "the cursors were not dropped as another logbook's"
         );
         let human = cli.run(&["capture", "--since", FIXTURE_CREATED]);
-        assert!(
-            common::stdout(&human).contains("note: --since ignored for snapper, pacman, omarchy")
-        );
+        assert!(common::stdout(&human).contains(
+            "note: --since ignored for snapper, pacman, omarchy, plugins, theme, config"
+        ));
 
         // later: snapper sees the newer list, Omarchy was updated
         cli.stub_snapper(&fixture("logs/snapper.json"));
@@ -252,6 +252,16 @@ impl Cli {
         let cli = Cli { env, logbook, log };
         cli.stub_snapper(&fixture("logs/snapper-before.json"));
         cli.stub_version("4.0.5-1");
+        // the user-space collectors (WP-005) on fixed fixture inputs: they
+        // record their first state silently and then see no change
+        cli.stub(
+            "omarchy",
+            &format!(
+                "[ \"$2\" = list ] && exec /bin/cat '{}'; exit 1",
+                fixture("logs/plugin-list-before.json").display()
+            ),
+        );
+        std::fs::write(cli.env.tmp.path().join("theme.name"), "osaka-jade\n").unwrap();
         cli
     }
 
@@ -288,6 +298,12 @@ impl Cli {
             .env("SELDON_SNAPPER", stub("snapper"))
             .env("SELDON_OMARCHY_VERSION", stub("omarchy-version"))
             .env("SELDON_PACMAN", stub("missing"))
+            .env("SELDON_OMARCHY", stub("omarchy"))
+            .env(
+                "SELDON_OMARCHY_PLUGINS_DIR",
+                self.env.tmp.path().join("plugins"),
+            )
+            .env("SELDON_THEME_FILE", self.env.tmp.path().join("theme.name"))
             .env("TZ", "Europe/Berlin")
             .output()
             .expect("run seldon")

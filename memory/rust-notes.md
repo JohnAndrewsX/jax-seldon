@@ -165,3 +165,38 @@ Append-only. One bullet per finding, newest section last.
   .should_validate_formats(true).build(&schema)`, then `iter_errors`.
   `case.schema.json` `$ref`s `event.schema.json#/$defs/…`; the test helper
   inlines the event `$defs` instead of building a registry.
+
+## 2026-10-01 · WP-005 (collectors: plugins, theme, config)
+
+**Conventions**
+- **`collect_from` for tests.** Each WP-005 collector has
+  `collect_from(ctx, cursor, <explicit sources>)`. `collect` only reads the
+  env overrides (`SELDON_OMARCHY`, `SELDON_OMARCHY_PLUGINS_DIR`,
+  `SELDON_THEME_FILE`) and calls it. In-process tests pass temp paths and
+  stub programs directly, so they need no env and no `Sources` field.
+- **Cursor timestamps.** `DateTime<FixedOffset>` serialises as RFC 3339 with
+  chrono's `serde` feature, so a cursor struct can hold `checked: DateTime<…>`
+  directly.
+- **mtime → event ts.** `DateTime::<Local>::from(SystemTime).fixed_offset()`
+  (or `DateTime::<Utc>::from(t).with_timezone(&off)` for `Tz::Fixed`), then
+  `with_nanosecond(0)`. Clamp to `[last check, now]` (`config::changed_at`).
+- **SHA-256 lives in `sys::sha256{,_hex}`** (no hashing crate is allowed).
+  Tested against the FIPS vectors and coreutils' `sha256sum`.
+
+**Crate and compiler behaviour**
+- **clippy rejects `chunks_exact(N)` with a constant N** ("using
+  `chunks_exact` with a constant chunk size"): use `slice.as_chunks::<N>()` (stable since 1.88,
+  inside `rust-version = 1.89`). It gives `&[[T; N]]`, so
+  `u32::from_be_bytes(*word)` needs no indexing.
+- **Returning a closure that must not borrow its argument** (edition 2024
+  captures every lifetime in `impl Trait`): write
+  `-> impl FnOnce(&Ctx, Option<&Value>) -> Outcome + use<>` and move owned
+  copies into it.
+- **`std::process::Command` searches the child's PATH** when the test sets
+  `.env("PATH", …)`. With PATH = a stub dir, `Command::new("bash")` fails;
+  resolve the host binary first and pass the absolute path.
+- **`File::set_modified`** (std 1.75) sets an mtime in tests; open the file
+  with `.write(true)`.
+- **`#[serde(flatten)]` on a struct field** keeps a nested struct's keys at
+  the top level (`Manifest { current: Generation, previous }` →
+  `{"hash", "files", "skipped", "previous"}`).
