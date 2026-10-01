@@ -5,3 +5,11 @@ wt/
 # build output
 engine/target/
 target/
+# editor and OS noise
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/
+# qmllint / qmlls local config
+.qmlls.ini

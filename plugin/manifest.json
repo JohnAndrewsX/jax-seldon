@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "jax.seldon",
+  "name": "JAX Seldon",
+  "version": "0.1.0",
+  "author": "JohnAndrewsX",
+  "license": "MIT",
+  "description": "Flight recorder and planning desk for your Omarchy system: ledger, journal, cases, drift, and the Prime Radiant overlay.",
+  "kinds": ["service", "bar-widget", "overlay"],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml",
+    "overlay": "Overlay.qml"
+  },
+  "barWidget": {
+    "displayName": "Seldon",
+    "description": "Active cases and open drift at a glance",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }
+}

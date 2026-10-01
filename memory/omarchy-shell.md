@@ -97,3 +97,53 @@ manageIpc: false }`, colours from `bar.foreground`, `bar.urgent`,
 - Lint: `/usr/lib/qt6/bin/qmllint -I /usr/share/omarchy/shell <files>`
   (dev host; `/usr/bin/qmllint` on the test host). The justfile must resolve
   the path.
+
+## WP-001 findings (2026-10-01, Omarchy 4.0.4-1)
+
+- **Answer to the routing question above** (`shell.qml`
+  `isBarWidgetPanelPlugin`, `summon`, `computePanelEntries`): a plugin whose
+  `kinds` contain `bar-widget` **and** any of `panel|overlay|menu` is owned by
+  the panel loader, not the bar. So `omarchy-shell shell summon|hide|toggle
+  jax.seldon` goes to **Overlay.qml**; the bar widget's `open/close/opened`
+  are never reached through `shell.*` for `jax.seldon`. The loader picks one
+  UI kind per id, in the order `panel > overlay > menu`, so declaring `panel`
+  as well would hide the overlay from `summon`. Opening the bar widget's
+  panel by IPC needs its own route (an `IpcHandler` in the widget, or
+  `call jax.seldon <method>`); WP-010/WP-030 decide.
+- **Overlay loader contract:** async `Loader`, active while open (or always
+  with `keepLoaded`). After load it injects `omarchyPath`, `shell`,
+  `manifest`, `barWidgetRegistry`, `pluginRegistry` and **`service`** (=
+  `shell.serviceFor(id)`, the plugin's own Service.qml instance) if the root
+  declares them. `summon` calls `open(payloadJson)` once per queued payload;
+  `hide` calls `close()`; `toggle` reads `item.opened`. Self-dismiss pattern
+  (emojis): `shell.hide(manifest.id)`.
+- **Overlay window pattern** (`plugins/emojis/Emojis.qml`): root `Item`,
+  `PanelWindow { visible: root.opened; anchors {top;bottom;left;right: true};
+  WlrLayershell.layer: WlrLayer.Overlay; WlrLayershell.keyboardFocus:
+  WlrKeyboardFocus.Exclusive; exclusionMode: ExclusionMode.Ignore }`, scrim
+  `Color.menu.scrim`, card `BorderSurface` with
+  `Border.surfaceSpec(section, key, color, width)`.
+- **Third-party services** are created with **no parent**
+  (`createObject(null)`); only first-party ones go under `serviceHost`. An
+  `Item` root works. Same injection list as above, minus `service`.
+- A root `Item` must not declare `property string state` (clashes with
+  `Item.state`, qmllint `property-override`); Service.qml uses `status`.
+- **qmllint:**
+  - Exits 0 on warnings by default; use `--max-warnings 0` to gate.
+  - `-I $OMARCHY_PATH/shell` alone does **not** resolve `qs.Ui` /
+    `qs.Commons`: Quickshell serves the shell root as prefix `qs`, but there
+    is no `qs/` dir and no `.qmlls.ini` in the package install. Fix used in
+    the justfile: a temp import root with `qs/<Module>/qmldir` files whose
+    entries are **relative** paths back into the shell (absolute paths in
+    qmldir entries are rejected; qmllint joins them onto the qmldir's dir).
+  - Unavoidable even for first-party plugins: `missing-property` on nested
+    tokens (`Style.font.body`, `Color.popups.text`: declared as `QtObject`
+    properties, so typed `QObject`) and `uncreatable-type` on `PanelWindow`
+    (`Quickshell/_Window/quickshell-window.qmltypes` marks it
+    `isCreatable: false`). The justfile demotes exactly these two to info.
+- `bin/omarchy-plugin-validate` is plain bash + jq (118 lines) and prints
+  nothing on success. It would run in CI if fetched from a pinned Omarchy
+  tag; today CI skips it.
+- SPEC-PLUGIN §1 points at `~/.local/share/omarchy/shell/README.md`; on a
+  package install the README is at `$OMARCHY_PATH/shell/README.md`
+  (`/usr/share/omarchy`).
