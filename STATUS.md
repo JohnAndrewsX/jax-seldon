@@ -12,7 +12,7 @@ setup), WP-033 and WP-043 (operator decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
+| WP-037 | Overlay live findings: `periodView` fallback on open, harness creation order, heatmap probe docs, theme shots | Plugin | `plugin-037` (opus, high) | `wt/WP-037` · `wp/037-overlay-live` | 2026-10-02 |
 
 ## Queued (next up)
 WP-033 (update-impact, needs the operator's release-notes source decision)
@@ -31,6 +31,14 @@ logbook migration)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-013 Engine ↔ plugin e2e on the test host: two full runs
+  47/47 after the unlock (gate G2), the live checklist of WP-020…031
+  (keys, arming, drift and decisions flows, overlay paint counters,
+  pill), FINDINGS with one real mismatch (overlay aggregates once on
+  open in the live shell because the shell injects `service` after
+  creation — WP-037) — merged. Incident: a `wtype` text ran in the test
+  host's terminal after a click closed the panel (exit 127, harmless);
+  rule added to ORCHESTRATION §11.
 - 2026-10-02 WP-040 AUR package `jax-seldon` (PKGBUILD with the `watch`
   feature, `.SRCINFO`, user unit installed not enabled), release workflow
   (tag → musl asset + checksums, PKGBUILD bump, AUR push and plugin
@@ -160,11 +168,13 @@ logbook migration)
   → ADR-0011.
 
 ## Open questions for the operator
-- **Test host unlocked by the operator (2026-10-01 21:04 UTC, stay-awake
-  on).** WP-013 now runs the two full e2e runs (G2 gate) and the live
-  steps the merged plugin WPs left pending. A helper
-  `/tmp/seldon-unlock.sh` on the test host types the lock password over
-  ssh (operator-run only).
+- **Test host:** unlocked 21:04 UTC, stay-awake on; G2 passed. The
+  helper `/tmp/seldon-unlock.sh` there is yours. An incident line
+  (`Live smoke: dismissed, test host package`, command not found) sits
+  only in the memory of the open foot bash on the test host; `history -d`
+  before closing it if you care. `scripts/guard.sh` comments cite
+  "HERDR-SETUP.md §5" for the theme-sweep exception, which that doc does
+  not mention — a comment fix in your file.
 - **ssh alias `test`**: docs and the e2e script default to `ssh test`; this
   dev host has no such alias. Add `Host test` to `~/.ssh/config` (name in
   `memory/local.md`) or keep passing `SELDON_TEST_HOST=<alias>`.
