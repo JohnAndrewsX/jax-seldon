@@ -19,7 +19,11 @@ Item {
   signal periodRequested(string period)
   signal closeRequested()
 
-  implicitHeight: Math.max(titles.implicitHeight, controls.implicitHeight)
+  // From the texts, not titles.implicitHeight: a Column sets that only in its
+  // polish, one frame late, which would resize the charts after their first
+  // paint (WP-031).
+  implicitHeight: Math.max(titleText.implicitHeight + (metaText.visible ? Style.spacing.xs + metaText.implicitHeight : 0),
+    controls.implicitHeight)
 
   Column {
     id: titles
@@ -30,6 +34,7 @@ Item {
     spacing: Style.spacing.xs
 
     Text {
+      id: titleText
       width: parent.width
       textFormat: Text.PlainText
       text: "Prime Radiant"
@@ -41,6 +46,7 @@ Item {
     }
 
     Text {
+      id: metaText
       width: parent.width
       visible: root.meta !== ""
       textFormat: Text.PlainText
