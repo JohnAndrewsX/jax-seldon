@@ -327,3 +327,38 @@ Verified in the shell source and live on the test host.
   renders the panel in that theme without touching the system.
   `grabToImage` on `Window.contentItem` leaves out the window colour; put a
   `Rectangle { color: Color.background }` under the content.
+
+## WP-021 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **Locked test host, new plugin code:** while `omarchy-shell lock status`
+  says `secure: true`, `omarchy-restart-shell` refuses, so the running shell
+  keeps the plugin code it loaded last; IPC (`view`) then shows the old
+  code. To run the *new* code with the real engine anyway, start a private
+  offscreen Quickshell on the test host (the panel harness: copies of
+  `$OMARCHY_PATH/shell/Commons` and `Ui`, `QT_QPA_PLATFORM=offscreen`,
+  `env -i`, own `HOME` and `XDG_RUNTIME_DIR`, the real `seldon` first on
+  `PATH`); it never touches the running shell and needs no keys on the
+  real seat.
+- **Deterministic drift on a real engine:** `seldon init --path X`, copy
+  `fixtures/logbook/` over X (no `--delete`, init's `.seldon/templates`
+  stay), set `created` in `X/.seldon/logbook.toml` to now, `seldon status`:
+  the sample's four drift items, and capture baselines instead of
+  importing the host's package history.
+- **qs.Ui `Button { focusable: true }` clicks on Enter/Space** (its own
+  `Keys` handlers). For a two-press (arm, then run) key path, wrap a
+  non-focusable Button in an `Item { activeFocusOnTab: true;
+  Keys.onReturnPressed: … }` and show the cursor with `hasCursor`.
+- **A row-wide MouseArea declared last swallows the clicks of Buttons
+  inside the row.** Declare it first (under the content); Texts let clicks
+  through to it, Buttons keep their own.
+- **Hiding a tab does not reliably take `activeFocus` from a FocusScope
+  inside it** (a programmatic tab switch left the hidden sheet "editing",
+  so the panel's key catcher stayed blocked). Hand the keys back in
+  `onVisibleChanged`.
+- **The FileView can deliver the rewritten index before the Process that
+  wrote it has exited** (the engine rebuilds the index before it prints).
+  UI that depends on both the result and the new index must handle either
+  order (e.g. move focus when the later of the two arrives).
+- **Harness keys: a non-ASCII `keyClick` ("ü") under `env -i` (locale C)
+  crashed Quickshell.** Type ASCII in scenarios, or give the run a UTF-8
+  locale.
