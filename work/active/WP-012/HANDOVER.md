@@ -7,6 +7,82 @@ spinner · `c479ed1` tests · `a0674e7` refused note keeps its text (found in
 the smoke) · `88adc41` README and TESTING · `acc5168` memory · then this
 handover. `just check` exits 0 at HEAD.
 
+## Review follow-up (APPROVE; investigation of the real state dir)
+
+The review asked who created the real `~/.local/state/seldon/` (only an
+empty `lock`, 14:08:14) on the dev host during a `just check`. Commit
+`0f447d3`.
+
+**What I found:**
+
+- **The plugin harness did not create it, as far as I can show.**
+  - No `seldon` binary exists on this host outside cargo `target/` dirs.
+    `type -a seldon` finds nothing, and a search of `/` excluding `target/`
+    finds nothing either.
+  - Every harness PATH is a private dir of symlinks plus the fake engine.
+  - The fake engine never creates a file named `lock`. Only the real
+    engine's `logbook/lock.rs` does, on capture, log, plan, hook, and
+    `open journal --editor`.
+  - I ran inotifywait on the real `~/.local/state` and
+    `~/.local/state/seldon` during a full `just plugin-test`
+    (14:30:38–14:32:43) and during `just test`, i.e. all engine suites on
+    this branch. Neither produced a single event.
+  - At 14:08:14 two things ran at the same time. One was my scratch run of
+    service-states scenarios 18–21 (started 14:07:43). All of those had
+    HOME inside `$work` and used only the fake. The other was the WP-009
+    worker's hook work in `wt/WP-009` (its "hook tests" commit is from
+    14:09:18). The engine's test helper (`tests/common/mod.rs`) uses
+    `env_clear` and a temp HOME, so a test there is unlikely. An engine
+    binary run by hand without a temp HOME is the remaining candidate. I
+    cannot prove who it was.
+- **The harness did leak elsewhere into the real HOME.**
+  - service-states.sh ran most dev-mode scenarios without their own HOME.
+    The fake engine's `--version` probe therefore appended to `~/calls.log`
+    (2,214 lines, created at 12:13:44, i.e. since the WP-010/WP-011
+    harness) and, with this WP's fake, to `~/argv.log` (90 lines, all
+    `--version --json`).
+  - These are harmless logs, but a real leak. `~/calls.log` still grows
+    while the other worktrees run the old harness. It grew between my runs
+    while `~/argv.log`, which only this branch writes, stayed unchanged.
+
+**Fix (`0f447d3`):**
+
+- In both scripts, every `run` gets `HOME`, `XDG_STATE_HOME` and
+  `XDG_CONFIG_HOME` inside `$work`. A case may name its own HOME, and the
+  XDG dirs follow it.
+- service-states also unsets `SELDON_CONFIG` and `SELDON_LOGBOOK`.
+- The live scenario passes an empty `XDG_STATE_HOME`, so the
+  unset-XDG fallback stays covered (new check: `indexPath` under HOME).
+- New `tests/plugin/real-home-guard.sh`, sourced by both scripts:
+  - it fingerprints the real `~/.local/state/seldon` and `~/.config/seldon`
+    before the run (absent, or every entry's type, size, mtime and ctime)
+    and compares after it; one check per script fails on any difference;
+  - negative test: creating `.local/state/seldon/lock` under a substitute
+    HOME makes it fail with a diff;
+  - HOME-level files (`calls.log`) are deliberately not guarded: the other
+    worktrees' older harness still writes them and would make the check
+    flaky until they rebase.
+- Proof of isolation: both scripts ran in full with `HOME` set to an empty
+  scratch dir (service-states 88/88, panel-view 129/129). Afterwards that
+  dir held only the empty dirs I had created, so nothing was written to
+  HOME.
+- `docs/TESTING.md` (plugin section) describes the isolation and the
+  check.
+- `just check` exit 0: model 32, service-states 88 (+2: indexPath, guard),
+  panel-view 129 (+1: guard).
+
+**Left as found (not deleted, for the orchestrator or operator):**
+
+- the real `~/.local/state/seldon/` with its empty `lock` (14:08:14);
+- `~/calls.log` and `~/argv.log` in the real HOME, fake-engine probe logs
+  from the old harness and from this branch before `0f447d3`.
+
+All three can go. `~/calls.log` will keep growing until WP-007 and WP-009
+rebase onto a main that has `0f447d3`.
+
+This branch is not rebased onto the current main (`d9428fd`, which already
+settled Decisions 2–4 below). `git merge-tree` reports a clean merge.
+
 ## Done
 
 - **`plugin/components/QuickEntry.qml`** on the Today tab, between the
