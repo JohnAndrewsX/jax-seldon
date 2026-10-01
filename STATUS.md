@@ -10,7 +10,6 @@
 |---|---|---|---|---|---|
 | WP-007 | `index`, `status`, ledger `.md` view, STATUS.md | Engine | `engine-007` (opus, high) | `wt/WP-007` · `wp/007-index-status` | 2026-10-01 |
 | WP-009 | Hooks: claude-code, generic, session-start/stop, attribution pass | Engine | `engine-009` (opus, high) | `wt/WP-009` · `wp/009-hooks` | 2026-10-01 |
-| WP-015 | Fixture corrections (verification step, index-stale variant, gaps) | Schema Keeper | `schema-015` (opus, high) | `wt/WP-015` · `wp/015-fixture-corrections` | 2026-10-01 |
 | WP-012 | Panel actions: QuickEntry, Capture now, Open in editor | Plugin | `plugin-012` (opus, high) | `wt/WP-012` · `wp/012-panel-actions` | 2026-10-01 |
 
 ## Queued (next up)
@@ -29,6 +28,9 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-015 Fixture corrections — merged; verification step for
+  C-2026-001, green `tee` event, pre/post snapshot pair, three index
+  variants, case walker and index-time checks (101 instances, 71 events).
 - 2026-10-01 WP-011 Panel tabs Today/Changelog/System, crisis strip,
   snapper banner, keyboard per §5, panel harness (86 checks), event-driven
   test waits, three-theme sweep on the test host — merged.
