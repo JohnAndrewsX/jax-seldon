@@ -111,14 +111,19 @@ fn the_fixture_document_is_golden_and_traces_every_package() {
     // prose in the logbook language (de)
     assert!(text.contains("Installiere Omarchy und führe dann `omarchy update` aus"));
 
-    // every listed package names an explicit, not removed install event
-    let ledger = common::ledger(&lb);
-    let packages: Vec<&str> = section(&text, "2. Packages")
+    assert_eq!(packages_trace(&lb, &text), 4);
+}
+
+/// Asserts that every package line of section 2 names an explicit
+/// install event of that package (`omarchy pkg add` or `omarchy pkg aur
+/// add`); returns the number of package lines.
+fn packages_trace(lb: &Path, text: &str) -> usize {
+    let ledger = common::ledger(lb);
+    let packages: Vec<&str> = section(text, "2. Packages")
         .into_iter()
         .filter(|l| l.starts_with("- `omarchy pkg"))
         .collect();
-    assert_eq!(packages.len(), 4, "{packages:?}");
-    for line in packages {
+    for line in &packages {
         let id = last_code(line);
         let event = ledger
             .iter()
@@ -129,10 +134,12 @@ fn the_fixture_document_is_golden_and_traces_every_package() {
         assert_eq!(event["explicit"], true, "{line}");
         let name = event["subject"].as_str().unwrap();
         assert!(
-            line.starts_with(&format!("- `omarchy pkg add {name}`")),
+            line.starts_with(&format!("- `omarchy pkg add {name}`"))
+                || line.starts_with(&format!("- `omarchy pkg aur add {name}`")),
             "{line}"
         );
     }
+    packages.len()
 }
 
 #[test]
@@ -338,6 +345,117 @@ fn aur_unknown_and_removed_packages_in_english() {
         "- Install Omarchy, then run `omarchy update` until at least this version runs."
     ));
     assert!(text.contains("\n## 3. Deviations\nFiles that differ from the Omarchy default."));
+    // the AUR line traces like the others
+    assert_eq!(packages_trace(&lb, &text), 5);
+}
+
+fn english_fixture(env: &Env) -> PathBuf {
+    let lb = fixture_copy(env);
+    let toml = lb.join(".seldon/logbook.toml");
+    std::fs::write(
+        &toml,
+        read(&toml).replace("language = \"de\"", "language = \"en\""),
+    )
+    .unwrap();
+    lb
+}
+
+fn config(id: &str, ts: &str, kind: &str, subject: &str) -> Value {
+    let (detail, meta) = match kind {
+        "config-remove" => (
+            "sha256 c0243ca5 → —",
+            json!({ "hashFrom": "c0".repeat(32) }),
+        ),
+        _ => ("sha256 — → c0243ca5", json!({ "hashTo": "c0".repeat(32) })),
+    };
+    json!({
+        "id": id, "ts": ts, "source": "config", "kind": kind, "subject": subject,
+        "detail": detail, "actor": "system", "zone": "red", "meta": meta
+    })
+}
+
+#[test]
+fn a_dismissed_transaction_counts_every_member_and_units_show_drop_ins_and_removals() {
+    let env = Env::new(Snapper::Missing);
+    let lb = english_fixture(&env);
+    let foo = "01M3W00000000000000000XP01";
+    let mut dep = pacman(
+        "01M3W00000000000000000DP01",
+        "2026-10-01T17:13:00+02:00",
+        "install",
+        "libfoo",
+        Some("pacman -S foo"),
+    );
+    dep["explicit"] = json!(false);
+    dep["txId"] = json!("tx-foo");
+    let mut explicit = pacman(
+        foo,
+        "2026-10-01T17:13:00+02:00",
+        "install",
+        "foo",
+        Some("pacman -S foo"),
+    );
+    explicit["txId"] = json!("tx-foo");
+    append(
+        &lb,
+        &[
+            dep,
+            explicit,
+            // a unit file from before the logbook, removed
+            config(
+                "01M3W00000000000000000CR01",
+                "2026-10-01T17:14:00+02:00",
+                "config-remove",
+                "~/.config/systemd/user/old.service",
+            ),
+            config(
+                "01M3W00000000000000000DR01",
+                "2026-10-01T17:15:00+02:00",
+                "config-add",
+                "~/.config/systemd/user/ollama.service.d/override.conf",
+            ),
+        ],
+    );
+    let dismissed = run_at(
+        &env,
+        &lb,
+        NOW,
+        &["drift", "dismiss", foo, "--", "Only a test"],
+        0,
+    );
+    assert_eq!(dismissed["resolved"], 2, "{dismissed}");
+    let out = rebuild(&env, &lb);
+    let text = doc(&lb);
+
+    // the dismissed transaction: once, with both members counted
+    let open = section(&text, "7. Open questions").join("\n");
+    assert!(
+        open.contains(&format!(
+            "- pacman install `foo` · 2 events in this transaction — Only a test · `{foo}`"
+        )),
+        "{open}"
+    );
+    assert!(!open.contains("libfoo"), "{open}");
+    assert!(
+        !section(&text, "2. Packages").join("\n").contains("`foo`"),
+        "a dismissed package is not reproduced"
+    );
+
+    // ollama.service, its drop-in, the removed unit, tailscaled
+    assert_eq!(out["sections"]["units"], 4, "{out}");
+    let units = section(&text, "6. User units").join("\n");
+    assert!(
+        units.contains(
+            "- `~/.config/systemd/user/old.service` — remove this file, then `systemctl --user daemon-reload` · **open**, see 7 · `01M3W00000000000000000CR01`"
+        ),
+        "{units}"
+    );
+    assert!(
+        units.contains(
+            "- `~/.config/systemd/user/ollama.service.d/override.conf` (drop-in for `ollama.service`) — restore the file, then `systemctl --user enable --now ollama.service` · **open**, see 7 · `01M3W00000000000000000DR01`"
+        ),
+        "{units}"
+    );
 }
 
 #[test]

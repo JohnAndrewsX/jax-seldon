@@ -34,6 +34,10 @@ struct Words {
     url_unknown: &'static str,
     then: &'static str,
     stays_disabled: &'static str,
+    username: &'static str,
+    becomes: &'static str,
+    enabled_by_clone: &'static str,
+    drop_in: &'static str,
     first_party_disabled: &'static str,
     theme_none: &'static str,
     theme_dossier: &'static str,
@@ -71,6 +75,10 @@ const EN: Words = Words {
     url_unknown: "source URL not recorded",
     then: "then",
     stays_disabled: "stays disabled",
+    username: "<username>",
+    becomes: "becomes",
+    enabled_by_clone: "enabled by the clone",
+    drop_in: "drop-in for",
     first_party_disabled: "First-party plugins disabled here; after the install, disable each with `omarchy plugin disable <id>`:",
     theme_none: "No theme recorded.",
     theme_dossier: "from the dossier",
@@ -108,6 +116,10 @@ const DE: Words = Words {
     url_unknown: "Quell-URL nicht erfasst",
     then: "dann",
     stays_disabled: "bleibt deaktiviert",
+    username: "<benutzername>",
+    becomes: "wird zu",
+    enabled_by_clone: "vom Klonen aktiviert",
+    drop_in: "Drop-in für",
     first_party_disabled: "Hier deaktivierte Erstanbieter-Plugins; nach der Installation jeweils mit `omarchy plugin disable <id>` abschalten:",
     theme_none: "Kein Theme erfasst.",
     theme_dossier: "laut Dossier",
@@ -251,7 +263,32 @@ pub fn text(r: &Rebuild, language: Language) -> String {
         let _ = write!(t, "- {} — ", code(&p.id));
         match (&p.cloned_from, &p.url) {
             (Some(from), _) => {
-                let _ = write!(t, "{}", code(&format!("omarchy plugin clone {from}")));
+                // `omarchy plugin clone` names the copy `$USER.<id without
+                // omarchy.>` and enables it (Omarchy 4.0.4)
+                let clone = format!(
+                    "{}.{}",
+                    w.username,
+                    from.strip_prefix("omarchy.").unwrap_or(from)
+                );
+                let _ = write!(
+                    t,
+                    "{} ({} {}, {})",
+                    code(&format!("omarchy plugin clone {from}")),
+                    w.becomes,
+                    code(&clone),
+                    w.enabled_by_clone
+                );
+                if p.enabled == Some(false) {
+                    let _ = write!(
+                        t,
+                        ", {} {}",
+                        w.then,
+                        code(&format!("omarchy plugin disable {clone}"))
+                    );
+                }
+                t.push_str(&suffix(&p.why, w, true));
+                t.push('\n');
+                continue;
             }
             (None, Some(url)) => {
                 let _ = write!(t, "{}", code(&format!("omarchy plugin add {url}")));
@@ -321,12 +358,17 @@ pub fn text(r: &Rebuild, language: Language) -> String {
         let enable = code(&format!("systemctl --user enable --now {}", u.unit));
         match &u.path {
             Some(path) => {
-                let then = if u.enabled {
-                    enable
-                } else {
-                    code("systemctl --user daemon-reload")
+                let reload = code("systemctl --user daemon-reload");
+                let (step, then) = match (u.removed, u.enabled) {
+                    (true, _) => (w.removed, reload),
+                    (false, true) => (w.restore, enable),
+                    (false, false) => (w.restore, reload),
                 };
-                let _ = write!(t, "- {} — {}, {} {then}", code(path), w.restore, w.then);
+                let _ = write!(t, "- {}", code(path));
+                if u.drop_in {
+                    let _ = write!(t, " ({} {})", w.drop_in, code(&u.unit));
+                }
+                let _ = write!(t, " — {step}, {} {then}", w.then);
             }
             None => {
                 let _ = write!(t, "- {} — {enable}", code(&u.unit));

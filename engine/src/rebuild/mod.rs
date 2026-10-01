@@ -106,10 +106,25 @@ pub struct Unit {
     /// The unit file (`~/.config/systemd/…`) when a config event has it.
     pub path: Option<String>,
     pub unit: String,
+    /// `path` is a drop-in (`<unit>.d/<file>`) of `unit`.
+    pub drop_in: bool,
+    /// The file existed before the logbook and was removed.
+    pub removed: bool,
     pub scope: Scope,
     /// Listed as enabled in the dossier's `services.enabled`.
     pub enabled: bool,
     pub why: Why,
+}
+
+/// The unit a file under `~/.config/systemd/` belongs to, and whether it
+/// is a drop-in: `…/foo.service.d/override.conf` → (`foo.service`, true).
+pub fn unit_of(path: &str) -> (String, bool) {
+    let mut parts = path.rsplit('/');
+    let file = parts.next().unwrap_or(path);
+    match parts.next().and_then(|dir| dir.strip_suffix(".d")) {
+        Some(unit) if !unit.is_empty() => (unit.to_string(), true),
+        _ => (file.to_string(), false),
+    }
 }
 
 /// A dismissed change: "deliberately not reproduced".
@@ -405,11 +420,17 @@ pub fn collect(
             id,
         });
     }
+    // a clone's source is switched off by `omarchy plugin clone` itself
     let first_party_disabled = plugin_rows
         .iter()
         .filter(|r| cell(r, "firstParty").as_deref() == Some("yes"))
         .filter(|r| cell(r, "enabled").as_deref() == Some("no"))
         .filter_map(|r| cell(r, "id"))
+        .filter(|id| {
+            !plugins
+                .iter()
+                .any(|p| p.cloned_from.as_deref() == Some(id.as_str()))
+        })
         .collect();
 
     // 5. theme: the last theme-set not dismissed, else the dossier's
@@ -443,14 +464,13 @@ pub fn collect(
         if !path.starts_with(UNIT_PREFIX) || !config_live(f, *existed) {
             continue;
         }
-        if f.event.kind == Kind::ConfigRemove {
-            continue;
-        }
-        let unit = path.rsplit('/').next().unwrap_or(path).to_string();
+        let (unit, drop_in) = unit_of(path);
         units.push(Unit {
             path: Some(path.to_string()),
             enabled: enabled_as(&unit, "user"),
             unit,
+            drop_in,
+            removed: f.event.kind == Kind::ConfigRemove,
             scope: Scope::User,
             why: why(f),
         });
@@ -471,6 +491,8 @@ pub fn collect(
         units.push(Unit {
             path: None,
             unit,
+            drop_in: false,
+            removed: false,
             scope,
             enabled: true,
             why: Why {
@@ -482,9 +504,16 @@ pub fn collect(
     }
 
     // 7. dismissed changes of state (version moves are left out: a fresh
-    // install gets current versions anyway); a pacman transaction once
+    // install gets current versions anyway); a pacman transaction once,
+    // with the count of every dismissed member (dependencies included)
+    let mut tx_members: BTreeMap<&str, usize> = BTreeMap::new();
+    for f in chrono.iter().filter(|f| dismissed_res(f)) {
+        if let Some(tx) = pacman_tx(f) {
+            *tx_members.entry(tx).or_default() += 1;
+        }
+    }
     let mut dismissed: Vec<Dismissed> = Vec::new();
-    let mut by_tx: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut seen_tx: Vec<&str> = Vec::new();
     for f in chrono.iter().filter(|f| dismissed_res(f)) {
         let e = &f.event;
         let stateful = match e.kind {
@@ -503,20 +532,19 @@ pub fn collect(
         if !stateful {
             continue;
         }
-        let tx = e.tx_id.as_deref().filter(|_| e.source == Source::Pacman);
-        if let Some(&i) = tx.and_then(|t| by_tx.get(t)) {
-            dismissed[i].members += 1;
-            continue;
-        }
+        let tx = pacman_tx(f);
         if let Some(t) = tx {
-            by_tx.insert(t, dismissed.len());
+            if seen_tx.contains(&t) {
+                continue;
+            }
+            seen_tx.push(t);
         }
         dismissed.push(Dismissed {
             source: e.source.as_str().to_string(),
             kind: e.kind.as_str().to_string(),
             subject: e.subject.clone(),
             reason: f.resolution_detail.clone().filter(|d| !d.trim().is_empty()),
-            members: 1,
+            members: tx.and_then(|t| tx_members.get(t).copied()).unwrap_or(1),
             event: e.id.to_string(),
         });
     }
@@ -543,6 +571,14 @@ pub fn collect(
         open_total: ix.summary.open_drift,
         dismissed,
     }
+}
+
+/// The transaction of a pacman event.
+fn pacman_tx(f: &IndexEvent) -> Option<&str> {
+    f.event
+        .tx_id
+        .as_deref()
+        .filter(|_| f.event.source == Source::Pacman)
 }
 
 fn why_of(f: &IndexEvent, title: &impl Fn(&str) -> Option<String>) -> Why {
@@ -625,6 +661,18 @@ mod tests {
         assert_eq!(origin(None), Origin::Unknown);
         assert_eq!(origin(Some("yay -S foo")), Origin::Unknown);
         assert_eq!(origin(Some("make install")), Origin::Unknown);
+    }
+
+    #[test]
+    fn a_drop_in_belongs_to_its_unit() {
+        assert_eq!(
+            unit_of("~/.config/systemd/user/foo.service.d/override.conf"),
+            ("foo.service".to_string(), true)
+        );
+        assert_eq!(
+            unit_of("~/.config/systemd/user/ollama.service"),
+            ("ollama.service".to_string(), false)
+        );
     }
 
     #[test]
