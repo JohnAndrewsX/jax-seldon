@@ -944,15 +944,15 @@ test("periodTable: the sample's counts per period", () => {
   const table = M.periodTable(ok.index)
   assert.strictEqual(table.today, "2026-10-01")
   const rows = (p) => table.periods[p].slots.map((s) => s.id + "=" + s.rows).join(",")
-  assert.strictEqual(rows("30"), "heatmap=30,series=2,driftBars=5,riskDonut=3,timeline=17")
-  assert.strictEqual(rows("90"), "heatmap=90,series=3,driftBars=5,riskDonut=3,timeline=18")
-  assert.strictEqual(rows("365"), "heatmap=365,series=3,driftBars=5,riskDonut=3,timeline=18")
-  assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=3,timeline=18")
+  assert.strictEqual(rows("30"), "heatmap=30,series=2,driftBars=5,riskDonut=3,timeline=17,plan=2")
+  assert.strictEqual(rows("90"), "heatmap=90,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
+  assert.strictEqual(rows("365"), "heatmap=365,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
+  assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
-  same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries"])
+  same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
   same(s30.map((s) => s.detail), ["57 events", "Explicit 324 → 327", "13 opened · 9 resolved",
-    "R0 1 · R1 3 · R2 4 · R3 0 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises"])
-  same(s30.map((s) => s.windowed), [true, true, true, false, true])
+    "R0 1 · R1 3 · R2 4 · R3 0 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
+  same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
   assert.strictEqual(table.periods["90"].slots[0].detail, "62 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 4, R3: 0 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
@@ -964,9 +964,14 @@ test("periodTable: the sample's counts per period", () => {
 test("periodTable: no index, empty series", () => {
   const table = M.periodTable(null)
   assert.strictEqual(table.today, "")
-  same(table.periods["30"].slots.map((s) => s.rows), [0, 0, 0, 0, 0])
+  same(table.periods["30"].slots.map((s) => s.rows), [0, 0, 0, 0, 0, 0])
   same(table.periods["30"].slots.map((s) => s.detail), ["0 events", "No package counts", "0 opened · 0 resolved",
-    "R0 0 · R1 0 · R2 0 · R3 0 · all time", "Nothing in this period"])
+    "R0 0 · R1 0 · R2 0 · R3 0 · all time", "Nothing in this period", "0 of 0 steps done"])
+  const charts = table.periods["all"].charts
+  same(Object.keys(charts).map((k) => k + "=" + charts[k].empty), ["heatmap=true", "series=true", "driftBars=true",
+    "riskDonut=true", "timeline=true", "plan=true"])
+  same([charts.heatmap.emptyText, charts.riskDonut.emptyText, charts.plan.emptyText],
+    ["no data in this period", "no cases yet · all time", "no active cases"])
   assert.strictEqual(M.periodView(null, "30").window.period, "30")
   const one = M.periodTable({ generatedAt: "2026-10-01T10:00:00Z", series: { packages: [{ date: "2026-09-30", explicit: 7 }] } })
   assert.strictEqual(one.periods["30"].slots[1].detail, "7 explicit")
@@ -985,29 +990,255 @@ test("overlayMeta and overlayBanner", () => {
   same(M.overlayBanner(M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00Z", nowMs: gen })).actions, [])
 })
 
-test("overlayGrid: 12 columns, three modes, minimum heights scroll", () => {
+test("overlayGrid: 12 columns, three modes, six slots, minimum heights first, then scroll", () => {
   const ids = (g) => g.slots.map((s) => s.id).join(",")
   const wide = M.overlayGrid(1500, 700, 8, 300, 120)
   assert.strictEqual(wide.mode, "wide")
-  assert.strictEqual(ids(wide), "heatmap,series,driftBars,riskDonut,timeline")
+  assert.strictEqual(ids(wide), "heatmap,series,driftBars,riskDonut,timeline,plan")
   assert.strictEqual(wide.contentHeight, 700)
   for (const s of wide.slots) assert.ok(s.x >= 0 && s.y >= 0 && s.x + s.w <= 1500 && s.y + s.h <= 700, JSON.stringify(s))
-  same(wide.slots.map((s) => s.w), [1500, 494, 495, 495, 1500])
-  same(wide.slots.map((s) => s.y), [0, 236, 236, 236, 548])
+  same(wide.slots.map((s) => s.w), [1500, 494, 495, 495, 1500, 1500])
+  // Weights 3:4:2:2 of 676; rows that fall under 120 get 120 and the
+  // rest share what is left; the rounding remainder goes to the heaviest.
+  same(wide.slots.map((s) => s.h), [184, 248, 248, 248, 122, 122])
+  same(wide.slots.map((s) => s.y), [0, 192, 192, 192, 448, 578])
   // Gaps between neighbours are exactly `gap`.
   assert.strictEqual(wide.slots[2].x - (wide.slots[1].x + wide.slots[1].w), 8)
   assert.strictEqual(wide.slots[3].x - (wide.slots[2].x + wide.slots[2].w), 8)
+  // Short: the two small rows hold their minimum, the others shrink, no scroll.
+  const short = M.overlayGrid(1500, 560, 8, 300, 120)
+  same(short.slots.map((s) => s.h), [126, 170, 170, 170, 120, 120])
+  assert.strictEqual(short.contentHeight, 560)
   const medium = M.overlayGrid(700, 700, 8, 300, 120)
   assert.strictEqual(medium.mode, "medium")
-  same(medium.slots.map((s) => s.y), [0, 213, 213, 494, 494])
-  same(medium.slots.map((s) => s.x + s.w <= 700), [true, true, true, true, true])
+  same(medium.slots.map((s) => s.y), [0, 174, 174, 406, 406, 580])
+  same(medium.slots.map((s) => s.x + s.w <= 700), [true, true, true, true, true, true])
   const narrow = M.overlayGrid(500, 400, 8, 300, 120)
   assert.strictEqual(narrow.mode, "narrow")
-  same(narrow.slots.map((s) => s.h), [120, 120, 120, 120, 120])
+  same(narrow.slots.map((s) => s.h), [120, 120, 120, 120, 120, 120])
   assert.ok(narrow.contentHeight > 400)
   const zero = M.overlayGrid(0, 0, 8, 300, 120)
-  assert.strictEqual(zero.slots.length, 5)
+  assert.strictEqual(zero.slots.length, 6)
   assert.ok(zero.slots.every((s) => s.w >= 0))
+})
+
+test("rowHeights: weights, minimums, exact fill", () => {
+  // 838 by 3:4:2:2 is 228.5 / 304.7 / 152.4 / 152.4; the two leftover
+  // pixels of rounding go to the heaviest row.
+  same(M.rowHeights([3, 4, 2, 2], 838, 120), [228, 306, 152, 152])
+  same(M.rowHeights([3, 4, 2, 2], 624, 120), [164, 220, 120, 120])
+  same(M.rowHeights([3, 4, 2, 2], 400, 120), [120, 120, 120, 120])
+  same(M.rowHeights([1], 50, 120), [120])
+  for (const free of [480, 500, 640, 700, 1000, 1333]) {
+    const h = M.rowHeights([3, 4, 2, 2], free, 120)
+    assert.strictEqual(h.reduce((a, b) => a + b, 0), free, String(free))
+    assert.ok(h.every((x) => x >= 120))
+  }
+})
+
+// ---- Charts (WP-031) --------------------------------------------------------
+
+test("day numbers, ISO weeks, colour steps, scale", () => {
+  assert.strictEqual(M.dayNumber("1970-01-01"), 0)
+  assert.strictEqual(M.dateOfDay(M.dayNumber("2026-10-01")), "2026-10-01")
+  assert.ok(Number.isNaN(M.dayNumber("2026-1-01")))
+  assert.ok(Number.isNaN(M.dayNumber(null)))
+  // Plain arithmetic, checked against Date for every day of 1899–2101, both
+  // ways; impossible dates are not dates.
+  for (let n = M.dayNumber("1899-01-01"); n <= M.dayNumber("2101-12-31"); n++) {
+    const date = new Date(n * 86400000).toISOString().slice(0, 10)
+    if (M.dateOfDay(n) !== date || M.dayNumber(date) !== n) assert.fail(n + " " + date)
+  }
+  same(["2026-02-29", "2026-02-30", "2024-02-29", "2100-02-29", "2000-02-29", "2026-04-31", "2026-13-01", "2026-00-10",
+    "2026-01-00", "2026-01-32", "2026-1a-01", "2026/01/01"].map((d) => Number.isFinite(M.dayNumber(d))),
+  [false, false, true, false, true, false, false, false, false, false, false, false])
+  same(["2026-02-30", "2026-09-30", "x"].map(M.isDate), [false, true, false])
+  // Monday = 0: 2026-09-28 is a Monday, 2026-10-04 a Sunday.
+  same(["2026-09-28", "2026-10-01", "2026-10-04", "1969-12-29"].map((d) => M.weekdayOfDay(M.dayNumber(d))), [0, 3, 6, 0])
+  same(["2026-09-28", "2026-10-04", "2024-12-30", "2021-01-03", "2020-12-31", "2027-01-01"].map(M.isoWeekOf),
+    ["2026-W40", "2026-W40", "2025-W01", "2020-W53", "2020-W53", "2026-W53"])
+  for (const w of ["2026-W01", "2026-W40", "2020-W53", "2025-W01"]) assert.strictEqual(M.isoWeekOf(M.isoWeekMonday(w)), w)
+  // 0 for none; sqrt steps 1–5 against the max.
+  same([0, 1, 3, 7, 8, 20, 30, 31].map((v) => M.colourStep(v, 30)), [0, 1, 2, 3, 3, 5, 5, 5])
+  same([M.colourStep(5, 0), M.colourStep(-1, 5), M.colourStep(1, 1)], [0, 0, 5])
+  assert.strictEqual(M.CHART_STEP_ALPHAS.length, 5)
+  assert.strictEqual(M.scale(5, 0, 10, 0, 100), 50)
+  assert.strictEqual(M.scale(5, 5, 5, 0, 100), 50)
+  assert.strictEqual(M.scale(0, 0, 10, 100, 0), 100)
+})
+
+test("splitSeries equals seriesInPeriod for every period and series", () => {
+  const today = "2026-10-01"
+  const wins = M.PERIODS.map((p) => M.periodWindow(p.id, today))
+  const odd = {
+    heatmap: [{ date: "2026-09-01", total: 1 }, { date: "bad" }, null, { date: "2026-10-02", total: 4 }, { date: "2025-01-01", total: 2 }],
+    packages: [{ date: "2026-08-01", explicit: 1 }, { date: "2026-09-30", explicit: 2 }],
+    drift: [{ week: "2026-W27", opened: 1, resolved: 0 }, { week: "2026-W36", opened: 1, resolved: 0 }, { week: "x" }, { week: "2026-W41" }],
+    timeline: [
+      { kind: "case", ts: "2026-06-01", end: "2026-07-04", label: "ends on the 90-day edge" },
+      { kind: "case", ts: "2026-06-01", end: "2026-07-03", label: "ends before" },
+      { kind: "case", ts: "2026-06-01", end: null, label: "open" },
+      { kind: "case", ts: "2026-09-10", end: "2026-09-01", label: "backwards" },
+      { kind: "snapshot", ts: "2026-07-04T00:00:00+02:00", label: "edge" },
+      { kind: "other", ts: "2026-09-20T00:00:00Z", label: "unknown" }
+    ]
+  }
+  for (const series of [ok.index.series, odd]) {
+    for (const key of ["heatmap", "packages", "drift", "timeline"]) {
+      const cut = M.splitSeries(series, key, wins)
+      wins.forEach((w, i) => same(cut[i], M.seriesInPeriod(series, key, w)))
+    }
+  }
+  same(M.splitSeries(null, "heatmap", wins), [[], [], [], []])
+})
+
+test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit test", () => {
+  const table = M.periodTable(ok.index)
+  const h30 = table.periods["30"].charts.heatmap
+  assert.strictEqual(h30.empty, false)
+  same(h30.numbers, { days: 30, events: 57, activeDays: 12, max: 30, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "57 events on 12 of 30 days · busiest 2026-10-01 (30)")
+  // 2026-09-02 is a Wednesday: the first column starts at row 2.
+  same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
+  same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
+  const last = h30.cells[29]
+  same([last.date, last.col, last.row, last.total, last.step], ["2026-10-01", 4, 3, 30, 5])
+  same(h30.months.map((m) => m.col + m.label), ["0Sep", "4Oct"])
+  assert.strictEqual(M.heatmapCellText(last),
+    "Thu 2026-10-01 · 30 events · pacman 7 · agent 6 · seldon 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1")
+  assert.strictEqual(M.heatmapCellText(h30.cells[1]), "Thu 2026-09-03 · 1 event · pacman 1")
+  assert.strictEqual(M.heatmapCellText(null), "")
+  same([365, 366].map((n) => table.periods[n === 365 ? "365" : "all"].charts.heatmap.weeks), [53, 53])
+  assert.strictEqual(table.periods["all"].charts.heatmap.numbers.days, 366)
+  // Layout: the smaller of width per week and height per weekday.
+  const L = M.heatmapLayout(530, 220, 5, 30, 10)
+  same([L.pitch, L.cell, L.x0, L.y0, L.width, L.height], [30, 26, 30, 10, 146, 206])
+  assert.strictEqual(M.heatmapLayout(1000, 220, 53, 30, 10).pitch, 18)
+  // Hit test: the last cell, the first (row 2 of column 0), the empty
+  // cells before it, outside.
+  assert.strictEqual(M.heatmapCellAt(h30, L, 30 + 4 * 30 + 5, 10 + 3 * 30 + 5), 29)
+  assert.strictEqual(M.heatmapCellAt(h30, L, 30 + 5, 10 + 2 * 30 + 5), 0)
+  assert.strictEqual(M.heatmapCellAt(h30, L, 30 + 5, 10 + 5), -1)
+  assert.strictEqual(M.heatmapCellAt(h30, L, 5, 15), -1)
+  assert.strictEqual(M.heatmapCellAt(h30, L, 30 + 5 * 30 + 5, 15), -1)
+  // Days missing from the series count 0 (All runs to today).
+  const gap = M.heatmapChart([{ date: "2026-09-28", total: 2 }], M.periodWindow("all", "2026-10-01"), "2026-10-01")
+  same(gap.cells.map((c) => c.total), [2, 0, 0, 0])
+  same(M.heatmapChart([], M.periodWindow("30", "2026-10-01"), "2026-10-01").empty, true)
+})
+
+test("seriesChart: step lines per lane, padded flat lanes, the sample at a day", () => {
+  const table = M.periodTable(ok.index)
+  const s30 = table.periods["30"].charts.series
+  same(s30.numbers, { samples: 2, explicitFirst: 324, explicitLast: 327, totalFirst: 2005, totalLast: 2009 })
+  same(s30.lanes.map((l) => [l.key, l.lo, l.hi, l.first, l.last]), [["explicit", 324, 327, 324, 327], ["total", 2005, 2009, 2005, 2009]])
+  same([M.dateOfDay(s30.x0), M.dateOfDay(s30.x1 - 1)], ["2026-09-02", "2026-10-01"])
+  assert.strictEqual(s30.summary, "explicit 324 → 327 · total 2005 → 2009 · 2 samples")
+  // The sample that holds: the last at or before the day, else the first.
+  same([M.dayNumber("2026-09-02"), M.dayNumber("2026-09-03"), M.dayNumber("2026-09-30"), M.dayNumber("2026-10-01") + 0.5]
+    .map((d) => M.seriesPointAt(s30, d)), [0, 0, 0, 1])
+  assert.strictEqual(M.seriesPointText(s30.points[1]), "2026-10-01 · explicit 327 · total 2009")
+  // No totals: one lane; a flat lane gets a padded range.
+  const flat = M.seriesChart([{ date: "2026-09-30", explicit: 7 }, { date: "2026-09-01", explicit: 7 }], M.periodWindow("all", "2026-10-01"), "2026-10-01")
+  same(flat.lanes.map((l) => [l.key, l.lo, l.hi]), [["explicit", 6, 8]])
+  same(flat.points.map((p) => p.date), ["2026-09-01", "2026-09-30"])
+  assert.strictEqual(flat.summary, "explicit 7 → 7 · 2 samples")
+  assert.strictEqual(M.seriesPointText({ date: "2026-09-01", explicit: 7, total: null }), "2026-09-01 · explicit 7")
+  assert.strictEqual(M.seriesPointAt(M.seriesChart([], M.periodWindow("30", ""), ""), 5), -1)
+})
+
+test("driftChart: weeks with gaps filled, peak, hover text", () => {
+  const d = M.periodTable(ok.index).periods["90"].charts.driftBars
+  same(d.numbers, { weeks: 5, opened: 13, resolved: 9, max: 6, peak: "2026-W40" })
+  assert.strictEqual(d.summary, "13 opened · 9 resolved in 5 weeks · peak 2026-W40")
+  assert.strictEqual(M.driftWeekText(d.weeks[4]), "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2")
+  const gaps = M.driftChart([{ week: "2026-W40", opened: 1, resolved: 0 }, { week: "2026-W37", opened: 0, resolved: 2 }])
+  same(gaps.weeks.map((w) => w.week + ":" + w.opened + "/" + w.resolved), ["2026-W37:0/2", "2026-W38:0/0", "2026-W39:0/0", "2026-W40:1/0"])
+  same([gaps.max, gaps.numbers.peak], [2, "2026-W40"])
+  // Across a year end with a week 53.
+  same(M.driftChart([{ week: "2020-W52", opened: 1, resolved: 0 }, { week: "2021-W02", opened: 1, resolved: 0 }]).weeks.map((w) => w.week),
+    ["2020-W52", "2020-W53", "2021-W01", "2021-W02"])
+  // The peak is the week with the most opened, not the last one with any.
+  const bumpy = M.driftChart([{ week: "2026-W36", opened: 5 }, { week: "2026-W37", opened: 1 }, { week: "2026-W38", opened: 0, resolved: 9 }])
+  same(bumpy.numbers, { weeks: 3, opened: 6, resolved: 9, max: 9, peak: "2026-W36" })
+  assert.strictEqual(bumpy.summary, "6 opened · 9 resolved in 3 weeks · peak 2026-W36")
+  // A tie goes to the later week.
+  same(M.driftChart([{ week: "2026-W36", opened: 2 }, { week: "2026-W37", opened: 3 }, { week: "2026-W38", opened: 3 },
+    { week: "2026-W39", opened: 1 }]).numbers.peak, "2026-W38")
+  same(M.driftChart([]).empty, true)
+  assert.strictEqual(M.driftChart([{ week: "2026-W40", opened: 0, resolved: 3 }]).summary, "0 opened · 3 resolved in 1 week")
+})
+
+test("riskChart: shares, part at an angle, all time", () => {
+  const r = M.periodTable(ok.index).periods["30"].charts.riskDonut
+  same(r.numbers, { total: 8, R0: 1, R1: 3, R2: 4, R3: 0 })
+  same(r.parts.map((p) => [p.risk, p.count, p.from, p.to]), [["R0", 1, 0, 0.125], ["R1", 3, 0.125, 0.5], ["R2", 4, 0.5, 1], ["R3", 0, 1, 1]])
+  assert.strictEqual(r.summary, "8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time")
+  same([0, 0.1, 0.125, 0.49, 0.5, 0.99, 1.0, -0.25].map((f) => M.riskPartAt(r, f)), [0, 0, 1, 1, 2, 2, 0, 2])
+  same([M.riskPartText(r.parts[0]), M.riskPartText(r.parts[2])], ["R0 · 1 case · 13% · all time", "R2 · 4 cases · 50% · all time"])
+  // The same object for every period (no dates).
+  const t = M.periodTable(ok.index)
+  assert.ok(t.periods["30"].charts.riskDonut === t.periods["all"].charts.riskDonut)
+  const none = M.riskChart({})
+  same([none.empty, none.summary, M.riskPartAt(none, 0.5)], [true, "RiskDonut: no cases yet · all time", -1])
+})
+
+test("timelineChart: markers, clipped spans in lanes, months, hit test", () => {
+  const t30 = M.periodTable(ok.index).periods["30"].charts.timeline
+  same(t30.numbers, { cases: 7, open: 6, releases: 2, snapshots: 6, crises: 2, lanes: 6 })
+  assert.strictEqual(t30.summary, "7 cases (6 open) · 2 releases · 6 snapshots · 2 crises")
+  same([M.dateOfDay(t30.x0), M.dateOfDay(t30.x1 - 1)], ["2026-09-02", "2026-10-01"])
+  same(t30.months.map((m) => M.dateOfDay(m.day) + m.label), ["2026-10-01Oct"])
+  // C-2026-002 (closed, 12–13 Sep) and C-2026-003 (open since 26 Sep) share
+  // lane 0; open cases run to the end of today.
+  const span = (ref) => t30.spans.find((s) => s.ref === ref)
+  same([span("C-2026-002").lane, span("C-2026-003").lane, span("C-2026-004").lane], [0, 0, 1])
+  same([span("C-2026-002").x1 - span("C-2026-002").x0, span("C-2026-003").x1, span("C-2026-003").open], [2, t30.x1, true])
+  const rel = t30.markers.find((m) => m.ref === "4.0.6-1")
+  assert.strictEqual(rel.x, M.dayNumber("2026-09-15") + (20 * 60 + 13) / 1440)
+  same([M.timelineItemText(rel), M.timelineItemText(span("C-2026-002")), M.timelineItemText(span("C-2026-003"))],
+    ["release · Omarchy 4.0.6-1 · 2026-09-15 20:13", "case · C-2026-002 Hyprland-Monitorlayout für Dual-WQHD · 2026-09-12 – 2026-09-13",
+      "case · C-2026-003 Omarchy auf 4.0.7 aktualisieren · 2026-09-26 – open"])
+  // A span that started before the window is clipped to it.
+  const t90 = M.periodTable(ok.index).periods["90"].charts.timeline
+  assert.strictEqual(t90.spans.find((s) => s.ref === "C-2026-001").x0, M.dayNumber("2026-09-01"))
+  const clipped = M.timelineChart([{ kind: "case", ts: "2026-08-01", end: null, label: "x" }], M.periodWindow("30", "2026-10-01"), "2026-10-01")
+  same([clipped.spans[0].x0, clipped.spans[0].x1], [M.dayNumber("2026-09-02"), M.dayNumber("2026-10-02")])
+  // Layout and hit test: 300 px for 30 days = 10 px a day.
+  const L = M.timelineLayout(100, t30.lanes, 20, 14)
+  same([L.bandY, L.laneY0, L.laneH], [10, 20, 80 / 6])
+  const relX = M.scale(rel.x, t30.x0, t30.x1, 0, 300)
+  same(M.timelineItemAt(t30, L, 300, relX + 3, 10, 5), { kind: "marker", index: t30.markers.indexOf(rel) })
+  assert.strictEqual(M.timelineItemAt(t30, L, 300, relX + 30, 10, 5), null)
+  const c2 = span("C-2026-002")
+  same(M.timelineItemAt(t30, L, 300, M.scale(c2.x0, t30.x0, t30.x1, 0, 300) + 5, 25, 5), { kind: "span", index: t30.spans.indexOf(c2) })
+  assert.strictEqual(M.timelineItemAt(t30, L, 300, 2, 25, 5), null)
+  same(M.timelineChart([], M.periodWindow("30", "2026-10-01"), "2026-10-01").empty, true)
+})
+
+test("planChart: active cases with steps and agent, columns", () => {
+  const p = M.periodTable(ok.index).plan
+  same(p.numbers, { cases: 2, done: 6, steps: 9 })
+  assert.strictEqual(p.summary, "2 active cases · 6 of 9 steps done")
+  same(p.rows.map((r) => [r.id, r.tone, r.stepsText, r.progress, r.agent]),
+    [["C-2026-003", "urgent", "4/5 steps", 0.8, "agent: claude-code"], ["C-2026-004", "urgent", "2/4 steps", 0.5, "agent: claude-code"]])
+  // Every period carries the same plan.
+  const t = M.periodTable(ok.index)
+  assert.ok(t.periods["30"].charts.plan === t.plan && t.periods["all"].charts.plan === t.plan)
+  const odd = M.planChart({ cases: { active: [{ id: "C-2026-009", title: "t", steps: { total: 2, done: 5 } }, { id: "C-2026-010", title: "u" }, null] } })
+  same(odd.rows.map((r) => [r.stepsText, r.progress, r.agent]), [["2/2 steps", 1, "no agent"], ["no steps", 0, "no agent"]])
+  same([M.planChart(null).empty, M.planChart(null).emptyText], [true, "no active cases"])
+  same([M.planColumns(1800, 240, 6, 2), M.planColumns(1800, 240, 6, 9), M.planColumns(400, 240, 6, 3), M.planColumns(0, 240, 6, 3)], [2, 7, 1, 1])
+})
+
+test("aggregationCount counts periodTable and chart passes", () => {
+  const before = M.aggregationCount()
+  M.periodTable(ok.index)
+  // periodTable, 4 splits, plan, risk, then 4 periods × 4 windowed charts.
+  assert.strictEqual(M.aggregationCount() - before, 1 + 4 + 2 + 16)
+  M.heatmapCellText(M.periodTable(ok.index).periods["30"].charts.heatmap.cells[0])
+  M.heatmapCellAt(null, {}, 0, 0)
+  assert.strictEqual(M.aggregationCount() - before, 2 * 23)
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

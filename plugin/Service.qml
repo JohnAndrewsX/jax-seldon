@@ -81,10 +81,18 @@ Item {
   readonly property bool indexShown: index !== null && Model.showsCounts(status)
   readonly property string crisisText: indexShown ? Model.crisisText(index) : ""
   readonly property var snapperBanner: indexShown ? Model.snapperBanner(index) : null
-  // The Prime Radiant's windows, series rows and slot counts for every period
-  // (Model.periodTable), computed when the index changes: the overlay is
-  // created anew on each open and then only looks them up (WP-030).
+  // The Prime Radiant's windows, series rows, slot counts and chart data for
+  // every period (Model.periodTable: one pass per series, then the charts),
+  // computed when the index changes: the overlay is created anew on each
+  // open and then only looks them up (WP-030, WP-031).
   readonly property var periods: Model.periodTable(index)
+
+  // How many aggregation passes this service's Model.js ran (periodTable and
+  // its chart builders); the overlay reports it so the harness can show that
+  // opening it and switching periods aggregate nothing (WP-031).
+  function aggregationCount() {
+    return Model.aggregationCount()
+  }
 
   // ---- Engine calls: one at a time, in order.
   property bool busy: false

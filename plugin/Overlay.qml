@@ -16,20 +16,27 @@ import "Model.js" as Model
 //
 // Layout: a scrim, then a card with the header (title, machine, Omarchy
 // version, index time, period selector, close), the status banner when the
-// service is not ok, a 12-column grid of five chart slots (Model.overlayGrid)
-// and the keys. WP-031 puts the charts into the slots; until then each slot
-// shows its series' row count for the selected period.
+// service is not ok, a 12-column grid of six slots (Model.overlayGrid) and
+// the keys. The slots hold the charts (WP-031, components/overlay/):
+// Heatmap, Series, DriftBars, RiskDonut, Timeline and The Plan, each drawn
+// from its entry in periodData.charts, with a caption that reads out the
+// hovered item or the chart's summary, and an empty state.
 //
 // Keys: 1–4 pick 30 d / 90 d / 365 d / All, ←/→ (h/l) the previous or next
 // period, Esc closes. A click on the scrim closes.
 //
-// Cheap to open: the service computes every period's rows and counts when
-// the index changes (Service.periods, Model.periodTable); this file only
-// looks them up. It reads only the service's index and runs no engine
+// Cheap to open: the service computes every period's rows, counts and chart
+// data when the index changes (Service.periods, Model.periodTable); this
+// file and the charts only look them up and draw. view() reports the
+// aggregation passes so the harness can prove that opening and switching
+// periods add none. It reads only the service's index and runs no engine
 // command (WP-030).
 //
 // Read-out for tests and the test host: `omarchy-shell shell call jax.seldon
-// view ""` (JSON, see view()); `shell call jax.seldon setPeriod 30`.
+// view ""` (JSON, see view()); `shell call jax.seldon setPeriod 30`;
+// `shell call jax.seldon hover "heatmap 0.9,0.5"` (the read-out at that
+// point of a chart, as fractions of its plot; "" clears every hover; a
+// malformed argument returns { error } and changes nothing).
 Item {
   id: root
 
@@ -82,6 +89,48 @@ Item {
     return null
   }
 
+  // The chart in slot `id`, or null.
+  function chartFor(id) {
+    for (var i = 0; i < slotRepeater.count; i++) {
+      var item = slotRepeater.itemAt(i) as OverlaySlot
+      if (item && item.summary && item.summary.id === id) return item.chart
+    }
+    return null
+  }
+
+  // Aggregation passes of this file's and the charts' Model.js instances.
+  function aggregationCount() {
+    var n = Model.aggregationCount()
+    for (var i = 0; i < slotRepeater.count; i++) {
+      var item = slotRepeater.itemAt(i) as OverlaySlot
+      if (item && item.chart) n += item.chart.aggregationCount()
+    }
+    return n
+  }
+
+  // "heatmap 0.9,0.5" → the read-out at that point of the chart's plot
+  // (fractions in [0, 1]), as JSON { slot, hover }; "" clears every chart's
+  // hover. Anything else (no such slot, a malformed or out-of-range point)
+  // changes nothing and returns JSON { error }.
+  function hover(arg) {
+    var text = String(arg).trim()
+    if (text === "") {
+      for (var i = 0; i < slotRepeater.count; i++) {
+        var item = slotRepeater.itemAt(i) as OverlaySlot
+        if (item && item.chart) item.chart.clearHover()
+      }
+      return JSON.stringify({ slot: "", hover: "" })
+    }
+    var usage = "expected \"<slot> <x>,<y>\" with x and y in [0, 1], or \"\""
+    var m = /^(\w+)\s+(\d+(?:\.\d+)?|\.\d+),(\d+(?:\.\d+)?|\.\d+)$/.exec(text)
+    if (!m) return JSON.stringify({ error: usage })
+    var chart = root.chartFor(m[1])
+    if (!chart) return JSON.stringify({ error: "no chart " + m[1] })
+    var read = chart.probe(Number(m[2]), Number(m[3]))
+    if (read === null) return JSON.stringify({ error: usage })
+    return JSON.stringify({ slot: m[1], hover: read })
+  }
+
   function rectFor(id) {
     var slots = root.grid.slots
     for (var i = 0; i < slots.length; i++) if (slots[i].id === id) return slots[i]
@@ -89,7 +138,8 @@ Item {
   }
 
   // What the overlay shows, as JSON: state, period and window, banner, grid
-  // mode, and each slot's counts and geometry in window coordinates.
+  // mode, aggregation passes, and each slot's counts, geometry in window
+  // coordinates and chart (summary, numbers, empty, hover, paints, paintMs).
   function view(arg) {
     var slots = []
     for (var i = 0; i < slotRepeater.count; i++) {
@@ -97,8 +147,11 @@ Item {
       if (!item || !item.summary) continue
       var at = item.mapToItem(frame, 0, 0)
       var s = item.summary
+      var c = item.chart
       slots.push({ id: s.id, title: s.title, rows: s.rows, count: s.count, detail: s.detail, windowed: s.windowed,
-        x: Math.round(at.x), y: Math.round(at.y), w: Math.round(item.width), h: Math.round(item.height) })
+        x: Math.round(at.x), y: Math.round(at.y), w: Math.round(item.width), h: Math.round(item.height),
+        chart: c ? { summary: c.summary, numbers: c.numbers, empty: c.empty, hover: c.hoverText, paints: c.paints, paintMs: c.paintMs,
+          w: Math.round(c.plot.width), h: Math.round(c.plot.height) } : null })
     }
     return JSON.stringify({
       opened: root.opened,
@@ -111,8 +164,35 @@ Item {
       mode: root.grid.mode,
       scrolls: gridArea.contentHeight > gridArea.height,
       size: { w: Math.round(frame.width), h: Math.round(frame.height) },
+      aggregations: { service: root.service ? root.service.aggregationCount() : 0, overlay: root.aggregationCount() },
       slots: slots
     })
+  }
+
+  // The charts, each bound to its precomputed entry for the period.
+  Component {
+    id: heatmapChart
+    Heatmap { chart: root.periodData.charts.heatmap; foreground: root.foreground; fontFamily: root.fontFamily }
+  }
+  Component {
+    id: seriesChart
+    Series { chart: root.periodData.charts.series; foreground: root.foreground; fontFamily: root.fontFamily }
+  }
+  Component {
+    id: driftChart
+    DriftBars { chart: root.periodData.charts.driftBars; foreground: root.foreground; fontFamily: root.fontFamily }
+  }
+  Component {
+    id: riskChart
+    RiskDonut { chart: root.periodData.charts.riskDonut; foreground: root.foreground; fontFamily: root.fontFamily }
+  }
+  Component {
+    id: timelineChart
+    Timeline { chart: root.periodData.charts.timeline; foreground: root.foreground; fontFamily: root.fontFamily }
+  }
+  Component {
+    id: planChart
+    ThePlan { chart: root.periodData.charts.plan; foreground: root.foreground; fontFamily: root.fontFamily }
   }
 
   OverlayWindow {
@@ -229,6 +309,8 @@ Item {
               model: Model.OVERLAY_SLOTS
 
               OverlaySlot {
+                id: slot
+
                 required property var modelData
                 readonly property var rect: root.rectFor(modelData.id)
 
@@ -240,6 +322,19 @@ Item {
                 summary: root.summaryFor(modelData.id)
                 foreground: root.foreground
                 fontFamily: root.fontFamily
+                placeholder: false
+                chart: chartLoader.item as ChartCanvas
+
+                Loader {
+                  id: chartLoader
+                  anchors.fill: parent
+                  sourceComponent: slot.modelData.id === "heatmap" ? heatmapChart
+                    : slot.modelData.id === "series" ? seriesChart
+                    : slot.modelData.id === "driftBars" ? driftChart
+                    : slot.modelData.id === "riskDonut" ? riskChart
+                    : slot.modelData.id === "timeline" ? timelineChart
+                    : planChart
+                }
               }
             }
           }

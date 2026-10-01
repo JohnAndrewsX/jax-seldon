@@ -1556,14 +1556,16 @@ var PERIODS = [
 ]
 var PERIOD_DEFAULT = "90"
 
-// The five chart slots (SPEC-PLUGIN §6), in grid order. `series` names the
-// `series.*` field the chart renders; WP-031 fills the slots.
+// The six slots (SPEC-PLUGIN §6), in grid order. `series` names the index
+// field the slot renders: five `series.*` charts (WP-031) and The Plan, which
+// reads `cases.active` and has no period.
 var OVERLAY_SLOTS = [
   { id: "heatmap", title: "Heatmap", subtitle: "Events per day", series: "heatmap" },
-  { id: "series", title: "Series", subtitle: "Explicit packages over time", series: "packages" },
+  { id: "series", title: "Series", subtitle: "Explicit and total packages over time", series: "packages" },
   { id: "driftBars", title: "DriftBars", subtitle: "Drift opened vs resolved per week", series: "drift" },
   { id: "riskDonut", title: "RiskDonut", subtitle: "Cases by risk", series: "risk" },
-  { id: "timeline", title: "Timeline", subtitle: "Releases, snapshots, cases, crises", series: "timeline" }
+  { id: "timeline", title: "Timeline", subtitle: "Releases, snapshots, cases, crises", series: "timeline" },
+  { id: "plan", title: "The Plan", subtitle: "Active cases, steps and agent", series: "cases" }
 ]
 
 var TIMELINE_KINDS = ["case", "release", "snapshot", "crisis"]
@@ -1602,8 +1604,9 @@ function overlayPayloadPeriod(payloadJson, fallback) {
   return data && isPeriod(data.period) ? data.period : fallback
 }
 
+// A real calendar date "YYYY-MM-DD" (no 2026-02-30).
 function isDate(value) {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && utcDate(value) !== null
+  return isFinite(dayNumber(value))
 }
 
 // The days a period covers, as inclusive YYYY-MM-DD bounds ending on the
@@ -1725,34 +1728,681 @@ function slotSummary(slot, data) {
       if (c > 0) byKind.push(plural(c, TIMELINE_KIND_NAMES[kind][0], TIMELINE_KIND_NAMES[kind][1]))
     }
     out.detail = byKind.length > 0 ? byKind.join(" · ") : "Nothing in this period"
+  } else if (slot.id === "plan") {
+    var plan = data.plan || planChart(null)
+    out.rows = plan.rows.length
+    out.count = plural(out.rows, "active case", "active cases")
+    out.detail = plan.numbers.done + " of " + plan.numbers.steps + " steps done"
+    out.windowed = false
   }
   return out
 }
 
-// Every period's window, series rows and slot summaries, computed once per
-// index (Service.qml binds it to the index), so opening the overlay or
-// switching periods only looks things up:
-// { today, periods: { <id>: { window, series: { heatmap, packages, drift,
-// timeline, risk }, slots: [slotSummary…] } } }.
+// Every period's window, series rows, slot summaries and chart data,
+// computed once per index (Service.qml rebuilds it when the index changes),
+// so opening the overlay or switching periods only looks things up:
+// { today, plan, periods: { <id>: { window, series: { heatmap, packages,
+// drift, timeline, risk }, charts: { heatmap, series, driftBars, riskDonut,
+// timeline, plan }, slots: [slotSummary…] } } }.
+// Each series is walked once for all four periods (splitSeries); the charts
+// then work on the rows of their period only.
 function periodTable(index) {
+  aggregationRuns++
   var series = index && isObject(index.series) ? index.series : {}
   var today = index ? todayDate(index) : ""
   var risk = riskCounts(series)
-  var table = { today: today, periods: {} }
+  var wins = PERIODS.map(function(p) { return periodWindow(p.id, today) })
+  // Timeline rows are parsed once, by splitSeries, for all four periods.
+  var parsed = new Map()
+  var cut = {
+    heatmap: splitSeries(series, "heatmap", wins),
+    packages: splitSeries(series, "packages", wins),
+    drift: splitSeries(series, "drift", wins),
+    timeline: splitSeries(series, "timeline", wins, parsed)
+  }
+  var plan = planChart(index)
+  var donut = riskChart(risk)
+  var table = { today: today, plan: plan, periods: {} }
   for (var i = 0; i < PERIODS.length; i++) {
-    var win = periodWindow(PERIODS[i].id, today)
+    var win = wins[i]
     var data = {
-      heatmap: seriesInPeriod(series, "heatmap", win),
-      packages: seriesInPeriod(series, "packages", win),
-      drift: seriesInPeriod(series, "drift", win),
-      timeline: seriesInPeriod(series, "timeline", win),
-      risk: risk
+      heatmap: cut.heatmap[i],
+      packages: cut.packages[i],
+      drift: cut.drift[i],
+      timeline: cut.timeline[i],
+      risk: risk,
+      plan: plan
+    }
+    var charts = {
+      heatmap: heatmapChart(data.heatmap, win, today),
+      series: seriesChart(data.packages, win, today),
+      driftBars: driftChart(data.drift),
+      riskDonut: donut,
+      timeline: timelineChart(data.timeline, win, today, parsed),
+      plan: plan
     }
     var slots = []
     for (var s = 0; s < OVERLAY_SLOTS.length; s++) slots.push(slotSummary(OVERLAY_SLOTS[s], data))
-    table.periods[PERIODS[i].id] = { window: win, series: data, slots: slots }
+    delete data.plan
+    table.periods[PERIODS[i].id] = { window: win, series: data, charts: charts, slots: slots }
   }
   return table
+}
+
+// ---- Prime Radiant charts (WP-031) -----------------------------------------
+//
+// Pure chart data for the overlay's slots: bins, domains, colour steps,
+// lanes, summaries and hover texts. The service builds it once per index
+// (periodTable); the QML charts only turn it into pixels (the *Layout and
+// *At helpers below are geometry, no aggregation).
+
+// Counts the aggregation passes of this script instance (periodTable and
+// the chart builders). The overlay reports it in `call view`, and the
+// harness asserts that opening the overlay and switching periods add none.
+var aggregationRuns = 0
+function aggregationCount() {
+  return aggregationRuns
+}
+
+// Colour steps 1–5 are the theme accent at these opacities (Util.alpha);
+// step 0 (no events) is the foreground at CHART_ZERO_ALPHA.
+var CHART_STEP_ALPHAS = [0.25, 0.42, 0.6, 0.8, 1.0]
+var CHART_ZERO_ALPHA = 0.07
+var CHART_EMPTY_TEXT = "no data in this period"
+var DAY_MS = 86400000
+
+// YYYY-MM-DD → days since 1970-01-01 (proleptic Gregorian), NaN for
+// anything that is not a calendar date. Plain arithmetic (H. Hinnant's
+// days_from_civil): the period table parses thousands of dates per index.
+function dayNumber(date) {
+  if (typeof date !== "string" || date.length !== 10 || date.charCodeAt(4) !== 45 || date.charCodeAt(7) !== 45) return NaN
+  var y = digitsAt(date, 0, 4)
+  var mo = digitsAt(date, 5, 2)
+  var d = digitsAt(date, 8, 2)
+  if (y < 0 || mo < 0 || d < 0) return NaN
+  var leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)
+  if (mo < 1 || mo > 12 || d < 1 || d > [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1]) return NaN
+  if (mo <= 2) y -= 1
+  var era = Math.floor(y / 400)
+  var yoe = y - era * 400
+  var doy = Math.floor((153 * (mo > 2 ? mo - 3 : mo + 9) + 2) / 5) + d - 1
+  return era * 146097 + yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy - 719468
+}
+
+// The decimal number of `n` ASCII digits at `at`, -1 if one is not a digit.
+function digitsAt(text, at, n) {
+  var v = 0
+  for (var i = at; i < at + n; i++) {
+    var c = text.charCodeAt(i) - 48
+    if (c < 0 || c > 9) return -1
+    v = v * 10 + c
+  }
+  return v
+}
+
+// Days since 1970-01-01 → "YYYY-MM-DD" (civil_from_days).
+function dateOfDay(n) {
+  var z = Math.floor(n) + 719468
+  var era = Math.floor(z / 146097)
+  var doe = z - era * 146097
+  var yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365)
+  var doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100))
+  var mp = Math.floor((5 * doy + 2) / 153)
+  var d = doy - Math.floor((153 * mp + 2) / 5) + 1
+  var mo = mp < 10 ? mp + 3 : mp - 9
+  var y = yoe + era * 400 + (mo <= 2 ? 1 : 0)
+  return (y < 1000 ? ("000" + y).slice(-4) : String(y)) + "-" + (mo < 10 ? "0" : "") + mo + "-" + (d < 10 ? "0" : "") + d
+}
+
+// 0 = Monday … 6 = Sunday (1970-01-01 was a Thursday).
+function weekdayOfDay(n) {
+  return ((n + 3) % 7 + 7) % 7
+}
+
+// "2026-09-28" → "2026-W40" (ISO 8601: the week of the Thursday).
+function isoWeekOf(date) {
+  var n = dayNumber(date)
+  if (!isFinite(n)) return ""
+  var thursday = n - weekdayOfDay(n) + 3
+  var year = dateOfDay(thursday).slice(0, 4)
+  var week = Math.floor((thursday - dayNumber(year + "-01-01")) / 7) + 1
+  return year + "-W" + (week < 10 ? "0" : "") + week
+}
+
+// "28 Sep"
+function shortDay(date) {
+  var n = dayNumber(date)
+  if (!isFinite(n)) return ""
+  return Number(date.slice(8, 10)) + " " + MONTHS[Number(date.slice(5, 7)) - 1]
+}
+
+// The colour step (0–5) of `value` against the period's `max`: 0 for none,
+// else 1–5 by the square root of value/max, so a single busy day does not
+// flatten every other day into step 1.
+function colourStep(value, max) {
+  var v = count(value)
+  var m = count(max)
+  if (v === 0 || m === 0) return 0
+  var n = CHART_STEP_ALPHAS.length
+  return Math.max(1, Math.min(n, Math.ceil(n * Math.sqrt(Math.min(v, m) / m) - 1e-9)))
+}
+
+// Maps v from [d0, d1] onto [r0, r1]; a zero-width domain maps to the middle.
+function scale(v, d0, d1, r0, r1) {
+  return d1 === d0 ? (r0 + r1) / 2 : r0 + (v - d0) * (r1 - r0) / (d1 - d0)
+}
+
+function inWindowDate(date, win) {
+  return (win.from === "" || date >= win.from) && (win.to === "" || date <= win.to)
+}
+
+function inWindowSpan(start, end, win) {
+  return (win.to === "" || start <= win.to) && (end === "" || win.from === "" || end >= win.from)
+}
+
+// The rows of one `series.*` list for every window of `wins`, in index
+// order: the same rows as seriesInPeriod(series, key, wins[i]), but each
+// row is checked once and then only compared against the window bounds.
+// `parsed` (optional, a Map) receives each kept timeline row's days for
+// timelineChart.
+function splitSeries(series, key, wins, parsed) {
+  aggregationRuns++
+  var list = isObject(series) && Array.isArray(series[key]) ? series[key] : []
+  var out = wins.map(function() { return [] })
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i]
+    if (!isObject(r)) continue
+    var start = ""
+    var end = ""
+    var span = false
+    if (key === "heatmap" || key === "packages") {
+      if (!isDate(r.date)) continue
+      start = r.date
+    } else if (key === "drift") {
+      start = isoWeekMonday(r.week)
+      if (start === "") continue
+      end = addDays(start, 6)
+      span = true
+    } else if (key === "timeline") {
+      if (r.kind === "case") {
+        start = str(r.ts)
+        end = r.end === null || r.end === undefined ? "" : str(r.end)
+        var startDay = dayNumber(start)
+        var endDay = end === "" ? NaN : dayNumber(end)
+        if (!isFinite(startDay) || (end !== "" && (!isFinite(endDay) || end < start))) continue
+        if (parsed) parsed.set(r, { start: startDay, end: endDay })
+        span = true
+      } else if (TIMELINE_KINDS.indexOf(r.kind) !== -1) {
+        var x = timelinePos(r.ts)
+        if (!isFinite(x)) continue
+        start = dayOf(r.ts)
+        if (parsed) parsed.set(r, { x: x, marker: null })
+      } else {
+        continue
+      }
+    } else {
+      continue
+    }
+    for (var w = 0; w < wins.length; w++)
+      if (span ? inWindowSpan(start, end, wins[w]) : inWindowDate(start, wins[w])) out[w].push(r)
+  }
+  return out
+}
+
+// The last day a chart's x axis covers: the window's end, else the later of
+// today and the newest row.
+function lastDay(win, today, newest) {
+  if (win.to !== "") return win.to
+  return isDate(today) && today >= newest ? today : newest
+}
+
+// Heatmap: one cell per day of the window (for All: from the oldest row),
+// laid out in ISO weeks (columns) × weekdays (rows, Monday on top).
+// { empty, emptyText, summary, numbers, firstDay, offset, weeks, cells:
+// [{ date, col, row, total, step, sources }], months: [{ col, label }] }.
+// `offset` is the weekday of the first day; a day not in the series counts 0.
+function heatmapChart(rows, win, today) {
+  aggregationRuns++
+  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Heatmap: " + CHART_EMPTY_TEXT,
+    numbers: { days: 0, events: 0, activeDays: 0, max: 0, busiest: "" },
+    firstDay: 0, offset: 0, weeks: 0, cells: [], months: [] }
+  if (rows.length === 0) return out
+  var byDate = {}
+  var oldest = rows[0].date
+  var newest = rows[0].date
+  for (var i = 0; i < rows.length; i++) {
+    byDate[rows[i].date] = rows[i]
+    if (rows[i].date < oldest) oldest = rows[i].date
+    if (rows[i].date > newest) newest = rows[i].date
+  }
+  var first = dayNumber(win.from !== "" ? win.from : oldest)
+  var last = dayNumber(lastDay(win, today, newest))
+  out.empty = false
+  out.firstDay = first
+  out.offset = weekdayOfDay(first)
+  out.weeks = Math.floor((last - first + out.offset) / 7) + 1
+  var n = out.numbers
+  for (var d = first; d <= last; d++) {
+    var date = dateOfDay(d)
+    var r = byDate[date]
+    var total = r ? count(r.total) : 0
+    var at = d - first + out.offset
+    out.cells.push({ date: date, col: Math.floor(at / 7), row: at % 7, total: total, step: 0,
+      sources: r && isObject(r.bySource) ? r.bySource : null })
+    if (date.slice(8) === "01" || d === first) out.months.push({ col: Math.floor(at / 7), label: MONTHS[Number(date.slice(5, 7)) - 1] })
+    n.events += total
+    if (total > 0) n.activeDays++
+    if (total > n.max || (total === n.max && total > 0)) {
+      n.max = total
+      n.busiest = date
+    }
+  }
+  n.days = out.cells.length
+  for (var c = 0; c < out.cells.length; c++) out.cells[c].step = colourStep(out.cells[c].total, n.max)
+  out.summary = plural(n.events, "event", "events") + " on " + n.activeDays + " of " + plural(n.days, "day", "days")
+    + (n.max > 0 ? " · busiest " + n.busiest + " (" + n.max + ")" : "")
+  return out
+}
+
+// "Wed 2026-10-01 · 30 events · pacman 7 · agent 6 · …" (sources by count,
+// then name).
+function heatmapCellText(cell) {
+  if (!cell) return ""
+  var d = utcDate(cell.date)
+  var parts = [(d ? WEEKDAYS[d.getUTCDay()].slice(0, 3) + " " : "") + cell.date, plural(cell.total, "event", "events")]
+  var src = cell.sources
+  if (src) {
+    var names = Object.keys(src).filter(function(k) { return count(src[k]) > 0 })
+    names.sort(function(a, b) { return count(src[b]) - count(src[a]) || (a < b ? -1 : a > b ? 1 : 0) })
+    for (var i = 0; i < names.length; i++) parts.push(names[i] + " " + count(src[names[i]]))
+  }
+  return parts.join(" · ")
+}
+
+// Cell pitch and origin of the heatmap in a w × h canvas, leaving `labelW`
+// on the left (weekday labels) and `labelH` on top (months).
+function heatmapLayout(w, h, weeks, labelW, labelH) {
+  var cols = Math.max(1, weeks)
+  var pitch = Math.max(2, Math.floor(Math.min((w - labelW) / cols, (h - labelH) / 7)))
+  var gap = Math.max(1, Math.round(pitch / 8))
+  return { x0: labelW, y0: labelH, pitch: pitch, cell: pitch - gap, width: cols * pitch - gap, height: 7 * pitch - gap }
+}
+
+// The index of the heatmap cell under (x, y), -1 for none.
+function heatmapCellAt(chart, layout, x, y) {
+  if (!chart || chart.empty) return -1
+  var col = Math.floor((x - layout.x0) / layout.pitch)
+  var row = Math.floor((y - layout.y0) / layout.pitch)
+  if (col < 0 || row < 0 || row > 6 || col >= chart.weeks) return -1
+  var i = col * 7 + row - chart.offset
+  return i >= 0 && i < chart.cells.length ? i : -1
+}
+
+// Series: package counts as step lines over the window (for All: from the
+// first sample to today), one lane each for explicit and, when the series
+// has it, total. { empty, emptyText, summary, numbers, x0, x1, points:
+// [{ date, day, explicit, total }], lanes: [{ key, label, lo, hi, first,
+// last }] }. Days are [x0, x1) in day numbers; a lane's [lo, hi] is its
+// value range, padded when flat.
+function seriesChart(rows, win, today) {
+  aggregationRuns++
+  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Series: " + CHART_EMPTY_TEXT,
+    numbers: { samples: 0, explicitFirst: 0, explicitLast: 0, totalFirst: null, totalLast: null },
+    x0: 0, x1: 0, points: [], lanes: [] }
+  var points = rows.map(function(r) {
+    return { date: r.date, day: dayNumber(r.date), explicit: count(r.explicit),
+      total: typeof r.total === "number" && isFinite(r.total) ? count(r.total) : null }
+  })
+  points.sort(function(a, b) { return a.day - b.day })
+  if (points.length === 0) return out
+  out.empty = false
+  out.points = points
+  out.x0 = dayNumber(win.from !== "" ? win.from : points[0].date)
+  out.x1 = dayNumber(lastDay(win, today, points[points.length - 1].date)) + 1
+  var keys = ["explicit", "total"]
+  for (var k = 0; k < keys.length; k++) {
+    var key = keys[k]
+    var have = points.filter(function(p) { return p[key] !== null })
+    if (have.length === 0) continue
+    var lo = have[0][key]
+    var hi = lo
+    for (var i = 0; i < have.length; i++) {
+      lo = Math.min(lo, have[i][key])
+      hi = Math.max(hi, have[i][key])
+    }
+    out.lanes.push({ key: key, label: key, lo: lo === hi ? lo - 1 : lo, hi: lo === hi ? hi + 1 : hi,
+      min: lo, max: hi, first: have[0][key], last: have[have.length - 1][key] })
+  }
+  var n = out.numbers
+  n.samples = points.length
+  n.explicitFirst = out.lanes[0].first
+  n.explicitLast = out.lanes[0].last
+  var total = out.lanes.length > 1 ? out.lanes[1] : null
+  if (total) {
+    n.totalFirst = total.first
+    n.totalLast = total.last
+  }
+  out.summary = "explicit " + n.explicitFirst + " → " + n.explicitLast
+    + (total ? " · total " + n.totalFirst + " → " + n.totalLast : "") + " · " + plural(n.samples, "sample", "samples")
+  return out
+}
+
+// The sample that holds on `day` (the last one at or before it; the first
+// one before the first sample), -1 for an empty chart.
+function seriesPointAt(chart, day) {
+  if (!chart || chart.empty) return -1
+  var at = 0
+  for (var i = 0; i < chart.points.length; i++) if (chart.points[i].day <= day) at = i
+  return at
+}
+
+function seriesPointText(p) {
+  if (!p) return ""
+  return p.date + " · explicit " + p.explicit + (p.total !== null ? " · total " + p.total : "")
+}
+
+// DriftBars: opened and resolved per ISO week, the weeks of the series in
+// the window with any gap between two weeks filled with zeros.
+// { empty, emptyText, summary, numbers, max, weeks: [{ week, monday,
+// opened, resolved }] }.
+function driftChart(rows) {
+  aggregationRuns++
+  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "DriftBars: " + CHART_EMPTY_TEXT,
+    numbers: { weeks: 0, opened: 0, resolved: 0, max: 0, peak: "" }, max: 0, weeks: [] }
+  var byMonday = {}
+  var mondays = []
+  for (var i = 0; i < rows.length; i++) {
+    var monday = isoWeekMonday(rows[i].week)
+    if (byMonday[monday] === undefined) mondays.push(monday)
+    byMonday[monday] = rows[i]
+  }
+  if (mondays.length === 0) return out
+  mondays.sort()
+  var n = out.numbers
+  var peakOpened = 0
+  for (var d = dayNumber(mondays[0]); d <= dayNumber(mondays[mondays.length - 1]); d += 7) {
+    var date = dateOfDay(d)
+    var r = byMonday[date]
+    var week = { week: r ? r.week : isoWeekOf(date), monday: date, opened: r ? count(r.opened) : 0, resolved: r ? count(r.resolved) : 0 }
+    out.weeks.push(week)
+    n.opened += week.opened
+    n.resolved += week.resolved
+    // The peak is the week with the most opened (the later one on a tie).
+    if (week.opened > 0 && week.opened >= peakOpened) {
+      peakOpened = week.opened
+      n.peak = week.week
+    }
+    out.max = Math.max(out.max, week.opened, week.resolved)
+  }
+  out.empty = false
+  n.weeks = out.weeks.length
+  n.max = out.max
+  out.summary = n.opened + " opened · " + n.resolved + " resolved in " + plural(n.weeks, "week", "weeks")
+    + (n.peak !== "" ? " · peak " + n.peak : "")
+  return out
+}
+
+// "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2"
+function driftWeekText(w) {
+  if (!w) return ""
+  return w.week + " · " + shortDay(w.monday) + " – " + shortDay(addDays(w.monday, 6))
+    + " · opened " + w.opened + " · resolved " + w.resolved
+}
+
+// RiskDonut: R0–R3 as shares of a full turn, all time (series.risk has no
+// dates). { empty, emptyText, summary, numbers, total, parts: [{ risk,
+// count, share, from, to }] } with from/to as fractions of the turn.
+function riskChart(risk) {
+  aggregationRuns++
+  var counts = risk || {}
+  var out = { empty: true, emptyText: "no cases yet · all time", summary: "", numbers: { total: 0 }, total: 0, parts: [] }
+  for (var i = 0; i < RISKS.length; i++) {
+    out.total += count(counts[RISKS[i]])
+    out.numbers[RISKS[i]] = count(counts[RISKS[i]])
+  }
+  out.numbers.total = out.total
+  var at = 0
+  for (var k = 0; k < RISKS.length; k++) {
+    var c = count(counts[RISKS[k]])
+    var share = out.total > 0 ? c / out.total : 0
+    out.parts.push({ risk: RISKS[k], count: c, share: share, from: at, to: at + share })
+    at += share
+  }
+  out.empty = out.total === 0
+  out.summary = out.empty ? "RiskDonut: " + out.emptyText
+    : plural(out.total, "case", "cases") + " · " + out.parts.map(function(p) { return p.risk + " " + p.count }).join(" · ") + " · all time"
+  return out
+}
+
+// The part at `fraction` (0 = 12 o'clock, clockwise), -1 for none.
+function riskPartAt(chart, fraction) {
+  if (!chart || chart.empty) return -1
+  var f = ((fraction % 1) + 1) % 1
+  for (var i = 0; i < chart.parts.length; i++)
+    if (chart.parts[i].count > 0 && f >= chart.parts[i].from && f < chart.parts[i].to) return i
+  return -1
+}
+
+// "R2 · 4 cases · 50% · all time"
+function riskPartText(p) {
+  if (!p) return ""
+  return p.risk + " · " + plural(p.count, "case", "cases") + " · " + Math.round(p.share * 100) + "% · all time"
+}
+
+// A timeline position: the day number plus the wall-clock time of the
+// string as a fraction of the day (like clockTime, not converted).
+function timelinePos(ts) {
+  var day = dayNumber(dayOf(ts))
+  if (!isFinite(day)) return NaN
+  var m = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/.exec(str(ts))
+  return m ? day + (Number(m[1]) * 60 + Number(m[2])) / 1440 : day
+}
+
+// Timeline: releases, snapshots and crises as markers on one band, case
+// spans below it, packed into lanes (an open case runs to the end of today;
+// spans are clipped to the window). Days are [x0, x1) in day numbers.
+// { empty, emptyText, summary, numbers, x0, x1, lanes, markers: [{ kind,
+// x, ts, label, ref }], spans: [{ x0, x1, lane, start, end, open, label,
+// ref }], months: [{ day, label }] } (months: the month starts after x0).
+// `parsed` (optional, a Map) keeps each row's parsed days across calls.
+function timelineChart(rows, win, today, parsed) {
+  aggregationRuns++
+  var out = { empty: true, emptyText: CHART_EMPTY_TEXT, summary: "Timeline: " + CHART_EMPTY_TEXT,
+    numbers: { cases: 0, open: 0, releases: 0, snapshots: 0, crises: 0, lanes: 0 },
+    x0: 0, x1: 0, lanes: 0, markers: [], spans: [], months: [] }
+  if (rows.length === 0) return out
+  var todayN = dayNumber(today)
+  var lo = Infinity
+  var hi = -Infinity
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    var at = parsed ? parsed.get(r) : undefined
+    if (at === undefined) {
+      at = r.kind === "case" ? { start: dayNumber(r.ts), end: r.end ? dayNumber(r.end) : NaN } : { x: timelinePos(r.ts), marker: null }
+      if (parsed) parsed.set(r, at)
+    }
+    if (r.kind === "case") {
+      var start = at.start
+      var open = r.end === null || r.end === undefined || r.end === ""
+      var end = open ? Math.max(isFinite(todayN) ? todayN : start, start) : at.end
+      out.spans.push({ x0: start, x1: end + 1, lane: 0, start: r.ts, end: open ? "" : r.end, open: open,
+        label: str(r.label), ref: str(r.ref) })
+      lo = Math.min(lo, start)
+      hi = Math.max(hi, end + 1)
+    } else {
+      // Markers do not change with the period: one object for all four.
+      var x = at.x
+      if (!at.marker) at.marker = { kind: r.kind, x: x, ts: r.ts, label: str(r.label), ref: str(r.ref) }
+      out.markers.push(at.marker)
+      lo = Math.min(lo, Math.floor(x))
+      hi = Math.max(hi, Math.floor(x) + 1)
+    }
+  }
+  out.x0 = win.from !== "" ? dayNumber(win.from) : lo
+  out.x1 = win.to !== "" ? dayNumber(win.to) + 1 : Math.max(hi, isFinite(todayN) ? todayN + 1 : hi)
+  for (var d = out.x0 + 1; d < out.x1; d++) {
+    var date = dateOfDay(d)
+    if (date.slice(8) === "01") out.months.push({ day: d, label: MONTHS[Number(date.slice(5, 7)) - 1] })
+  }
+  // Clip to the window, then pack (interval partitioning, by start, then
+  // index order): a span reuses the lane that frees up earliest when that
+  // one is free at its start, else opens a new lane. The fewest lanes, in
+  // O(n log n) for logbooks with many cases.
+  var order = []
+  for (var s = 0; s < out.spans.length; s++) {
+    var sp = out.spans[s]
+    sp.x0 = Math.max(sp.x0, out.x0)
+    sp.x1 = Math.min(sp.x1, out.x1)
+    order.push(s)
+  }
+  order.sort(function(a, b) { return out.spans[a].x0 - out.spans[b].x0 || a - b })
+  var heap = []
+  var lanes = 0
+  for (var o = 0; o < order.length; o++) {
+    var span = out.spans[order[o]]
+    if (heap.length > 0 && heap[0].end <= span.x0) {
+      span.lane = heap[0].lane
+      heap[0].end = span.x1
+      siftDown(heap, 0)
+    } else {
+      span.lane = lanes++
+      heap.push({ end: span.x1, lane: span.lane })
+      siftUp(heap, heap.length - 1)
+    }
+  }
+  out.lanes = lanes
+  out.empty = false
+  var n = out.numbers
+  n.cases = out.spans.length
+  n.open = out.spans.filter(function(p) { return p.open }).length
+  for (var m = 0; m < out.markers.length; m++) {
+    var kind = out.markers[m].kind
+    if (kind === "release") n.releases++
+    else if (kind === "snapshot") n.snapshots++
+    else if (kind === "crisis") n.crises++
+  }
+  n.lanes = out.lanes
+  var parts = []
+  if (n.cases > 0) parts.push(plural(n.cases, "case", "cases") + (n.open > 0 ? " (" + n.open + " open)" : ""))
+  if (n.releases > 0) parts.push(plural(n.releases, "release", "releases"))
+  if (n.snapshots > 0) parts.push(plural(n.snapshots, "snapshot", "snapshots"))
+  if (n.crises > 0) parts.push(plural(n.crises, "crisis", "crises"))
+  out.summary = parts.join(" · ")
+  return out
+}
+
+// Min-heap of { end, lane } by end, then lane.
+function heapLess(a, b) {
+  return a.end < b.end || (a.end === b.end && a.lane < b.lane)
+}
+
+function siftUp(heap, i) {
+  while (i > 0) {
+    var parent = (i - 1) >> 1
+    if (!heapLess(heap[i], heap[parent])) return
+    var t = heap[i]
+    heap[i] = heap[parent]
+    heap[parent] = t
+    i = parent
+  }
+}
+
+function siftDown(heap, i) {
+  for (;;) {
+    var l = 2 * i + 1
+    var m = i
+    if (l < heap.length && heapLess(heap[l], heap[m])) m = l
+    if (l + 1 < heap.length && heapLess(heap[l + 1], heap[m])) m = l + 1
+    if (m === i) return
+    var t = heap[i]
+    heap[i] = heap[m]
+    heap[m] = t
+    i = m
+  }
+}
+
+// Hover text of a timeline item: "release · Omarchy 4.0.6-1 · 2026-09-15
+// 20:13" or "case · C-2026-003 … · 2026-09-26 – open".
+function timelineItemText(item) {
+  if (!item) return ""
+  if (item.kind) return item.kind + " · " + item.label + " · " + dayOf(item.ts) + (clockTime(item.ts) !== "" ? " " + clockTime(item.ts) : "")
+  return "case · " + item.label + " · " + item.start + " – " + (item.open ? "open" : item.end)
+}
+
+// Rows of the timeline in an h-high canvas: the marker band on top, then
+// one row per lane (at most `maxLane` px each).
+function timelineLayout(h, lanes, band, maxLane) {
+  var laneY0 = band
+  var laneH = lanes > 0 ? Math.max(1, Math.min(maxLane, (h - band) / lanes)) : 0
+  return { bandY: band / 2, laneY0: laneY0, laneH: laneH }
+}
+
+// The timeline item under (px, py) in a w-wide canvas: { kind: "marker" |
+// "span", index } or null. Markers are hit within `tolerance` px of their
+// position in the band, spans within their lane row (and `tolerance` px
+// beyond their ends).
+function timelineItemAt(chart, layout, w, px, py, tolerance) {
+  if (!chart || chart.empty || w <= 0) return null
+  var best = null
+  var bestDist = Infinity
+  if (py < layout.laneY0) {
+    for (var i = 0; i < chart.markers.length; i++) {
+      var d = Math.abs(scale(chart.markers[i].x, chart.x0, chart.x1, 0, w) - px)
+      if (d <= tolerance && d < bestDist) {
+        best = { kind: "marker", index: i }
+        bestDist = d
+      }
+    }
+    return best
+  }
+  if (layout.laneH <= 0) return null
+  var lane = Math.floor((py - layout.laneY0) / layout.laneH)
+  for (var s = 0; s < chart.spans.length; s++) {
+    var sp = chart.spans[s]
+    if (sp.lane !== lane) continue
+    var a = scale(sp.x0, chart.x0, chart.x1, 0, w)
+    var b = scale(sp.x1, chart.x0, chart.x1, 0, w)
+    var dist = px < a ? a - px : px > b ? px - b : 0
+    if (dist <= tolerance && dist < bestDist) {
+      best = { kind: "span", index: s }
+      bestDist = dist
+    }
+  }
+  return best
+}
+
+// The Plan: the active cases (`cases.active`, no period) with their steps
+// and agent. { empty, emptyText, summary, numbers: { cases, done, steps },
+// rows: [{ id, title, zone, risk, tone, done, total, progress, stepsText,
+// agent }] }.
+function planChart(index) {
+  aggregationRuns++
+  var cases = index && isObject(index.cases) && Array.isArray(index.cases.active) ? index.cases.active : []
+  var out = { empty: true, emptyText: "no active cases", summary: "", numbers: { cases: 0, done: 0, steps: 0 }, rows: [] }
+  for (var i = 0; i < cases.length; i++) {
+    var c = cases[i]
+    if (!isObject(c)) continue
+    var steps = isObject(c.steps) ? c.steps : {}
+    var total = count(steps.total)
+    var done = Math.min(count(steps.done), total)
+    var agent = caseAgents(c)
+    out.rows.push({ id: str(c.id), title: str(c.title), zone: str(c.zone), risk: str(c.risk), tone: zoneTone(c.zone),
+      done: done, total: total, progress: total > 0 ? done / total : 0,
+      stepsText: total > 0 ? done + "/" + total + " steps" : "no steps", agent: agent !== "" ? agent : "no agent" })
+    out.numbers.done += done
+    out.numbers.steps += total
+  }
+  out.numbers.cases = out.rows.length
+  out.empty = out.rows.length === 0
+  out.summary = out.empty ? "The Plan: " + out.emptyText
+    : plural(out.rows.length, "active case", "active cases") + " · " + out.numbers.done + " of " + out.numbers.steps + " steps done"
+  return out
+}
+
+// Columns of plan cards that fit `width` with cards of at least `minWidth`.
+function planColumns(width, minWidth, gap, cards) {
+  var fit = Math.max(1, Math.floor((Math.max(0, width) + gap) / (Math.max(1, minWidth) + gap)))
+  return Math.max(1, Math.min(fit, Math.max(1, cards)))
 }
 
 // One period of a periodTable(), the default one for an unknown id.
@@ -1792,16 +2442,50 @@ function overlayBanner(banner) {
 
 // Slot geometry on a 12-column grid (SPEC-PLUGIN §6) inside `width` ×
 // `height`, `gap` between cells. The column count follows the width:
-//   wide   (≥ 3 slots of minWidth): Heatmap | Series DriftBars RiskDonut | Timeline
-//   medium (≥ 2):                  Heatmap | Series DriftBars | RiskDonut Timeline
+//   wide   (≥ 3 slots of minWidth): Heatmap | Series DriftBars RiskDonut | Timeline | The Plan
+//   medium (≥ 2):                  Heatmap | Series DriftBars | RiskDonut Timeline | The Plan
 //   narrow:                        one slot per row
-// Rows share the height by weight and never get less than minHeight; when
-// they would, contentHeight exceeds height and the grid scrolls.
+// Rows share the height by weight and never get less than minHeight: a row
+// that would gets minHeight and the others share the rest by weight. Only
+// when the minimum heights alone do not fit does contentHeight exceed height
+// and the grid scroll.
 // Returns { mode, contentHeight, slots: [{ id, x, y, w, h }] } in grid order.
 var GRID_ROWS = {
-  wide: { weights: [3, 4, 2], rows: [[["heatmap", 12]], [["series", 4], ["driftBars", 4], ["riskDonut", 4]], [["timeline", 12]]] },
-  medium: { weights: [3, 4, 3], rows: [[["heatmap", 12]], [["series", 6], ["driftBars", 6]], [["riskDonut", 4], ["timeline", 8]]] },
-  narrow: { weights: [3, 3, 3, 3, 2], rows: [[["heatmap", 12]], [["series", 12]], [["driftBars", 12]], [["riskDonut", 12]], [["timeline", 12]]] }
+  wide: { weights: [3, 4, 2, 2], rows: [[["heatmap", 12]], [["series", 4], ["driftBars", 4], ["riskDonut", 4]], [["timeline", 12]], [["plan", 12]]] },
+  medium: { weights: [3, 4, 3, 2], rows: [[["heatmap", 12]], [["series", 6], ["driftBars", 6]], [["riskDonut", 4], ["timeline", 8]], [["plan", 12]]] },
+  narrow: { weights: [3, 3, 3, 3, 2, 2], rows: [[["heatmap", 12]], [["series", 12]], [["driftBars", 12]], [["riskDonut", 12]], [["timeline", 12]], [["plan", 12]]] }
+}
+
+// Heights for rows of `weights` sharing `free`, each at least minH: rows
+// whose share falls below minH are fixed at it, the rest share what is left
+// by weight. When every row is fixed, the sum exceeds `free` (scrolling).
+function rowHeights(weights, free, minH) {
+  var fixed = weights.map(function() { return false })
+  for (;;) {
+    var left = free
+    var weightLeft = 0
+    for (var i = 0; i < weights.length; i++) {
+      if (fixed[i]) left -= minH
+      else weightLeft += weights[i]
+    }
+    var changed = false
+    for (var k = 0; k < weights.length; k++) {
+      if (!fixed[k] && (weightLeft <= 0 || Math.floor(left * weights[k] / weightLeft) < minH)) {
+        fixed[k] = true
+        changed = true
+      }
+    }
+    if (!changed) {
+      // Rounding leftovers go to the heaviest free row, so the rows fill
+      // `free` exactly.
+      var out = weights.map(function(wt, j) { return fixed[j] ? minH : Math.floor(left * wt / weightLeft) })
+      var heaviest = -1
+      for (var r = 0; r < weights.length; r++)
+        if (!fixed[r] && (heaviest === -1 || weights[r] > weights[heaviest])) heaviest = r
+      if (heaviest !== -1) out[heaviest] += free - out.reduce(function(a, b) { return a + b }, 0)
+      return out
+    }
+  }
 }
 
 function overlayGrid(width, height, gap, minWidth, minHeight) {
@@ -1813,9 +2497,8 @@ function overlayGrid(width, height, gap, minWidth, minHeight) {
   var mode = w >= 3 * minW + 2 * g ? "wide" : w >= 2 * minW + g ? "medium" : "narrow"
   var spec = GRID_ROWS[mode]
   var colW = (w - 11 * g) / 12
-  var weightSum = spec.weights.reduce(function(a, b) { return a + b }, 0)
   var free = h - (spec.rows.length - 1) * g
-  var heights = spec.weights.map(function(wt) { return Math.max(minH, Math.floor(free * wt / weightSum)) })
+  var heights = rowHeights(spec.weights, free, minH)
   var slots = []
   var y = 0
   for (var r = 0; r < spec.rows.length; r++) {

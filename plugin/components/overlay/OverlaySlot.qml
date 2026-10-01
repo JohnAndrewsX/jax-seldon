@@ -2,10 +2,10 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// One chart slot of the Prime Radiant grid (WP-030). Until WP-031 puts the
-// chart in, it shows the slot's name, what the chart will draw and the row
-// count of its series for the selected period (a Model.slotSummary object).
-// Every string is set as plain text.
+// One slot of the Prime Radiant grid (WP-030): the slot's name and what it
+// draws on top, the chart (WP-031) in the area under it. With `placeholder`
+// on it shows the row count of its series for the selected period instead
+// (a Model.slotSummary object). Every string is set as plain text.
 BorderSurface {
   id: root
 
@@ -13,10 +13,12 @@ BorderSurface {
   property color foreground: Color.popups.text
   property color accent: Color.accent
   property string fontFamily: Style.font.family
-  // WP-031 turns this off once the slot holds its chart.
+  // Off once the slot holds its chart.
   property bool placeholder: true
+  // The chart in this slot, for Overlay.view() and hover().
+  property ChartCanvas chart: null
 
-  // WP-031: the chart goes here, filling the area under the title.
+  // The chart goes here, filling the area under the title.
   default property alias content: chartArea.data
   readonly property alias chartArea: chartArea
 
@@ -45,11 +47,30 @@ BorderSurface {
       elide: Text.ElideRight
     }
 
+    // The chart's caption (its summary, or the hovered item), right-aligned;
+    // it wins over the subtitle, which elides or hides.
+    Text {
+      id: caption
+      anchors.right: parent.right
+      anchors.baseline: title.baseline
+      width: Math.min(implicitWidth, Math.max(0, parent.width - title.width - Style.spacing.lg))
+      visible: text !== ""
+      horizontalAlignment: Text.AlignRight
+      textFormat: Text.PlainText
+      text: root.chart ? root.chart.caption : ""
+      color: root.chart && root.chart.hoverText !== "" ? root.foreground : Color.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      elide: Text.ElideRight
+    }
+
     Text {
       anchors.left: title.right
       anchors.leftMargin: Style.spacing.lg
-      anchors.right: parent.right
+      anchors.right: caption.visible ? caption.left : parent.right
+      anchors.rightMargin: caption.visible ? Style.spacing.xl : 0
       anchors.baseline: title.baseline
+      visible: width >= Style.font.bodySmall * 4
       textFormat: Text.PlainText
       text: root.summary ? root.summary.subtitle : ""
       color: Color.muted
