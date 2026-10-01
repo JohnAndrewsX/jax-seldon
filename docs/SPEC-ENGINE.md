@@ -85,6 +85,19 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
 ```
 
+`log`, `event`, `plan *`, `decide`, `open` with `--json` return `{"event":
+<ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
+`movedFrom`, `activeCase`, `journal` (WP-006). `plan new` defaults:
+`--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
+plan step so agents identify themselves; `log --tag T` stores `meta.tags`
+(comma-joined) and a `#tag` line in the journal; `open` also takes
+`logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
+line to the case (the fixture agrees). `SELDON_NOW=<RFC 3339>` overrides
+the clock for tests and demos; `SELDON_CONFIG=FILE` is the config
+override. `decide` writes no ledger event (no fitting kind; revisit with
+WP-008). `.seldon/active-case` names the case started last; `done`/`drop`
+clear it only when it names that case.
+
 `capture` selection: no flag or `--all` = every collector enabled in
 `config.toml [collectors]`; `--source a,b` = exactly those, even if disabled.
 Baseline: a collector without a cursor emits only events at or after the

@@ -51,7 +51,15 @@ language. Dates `YYYY-MM-DD`, timestamps RFC 3339 with offset.
 
 Folder by status: `queued` → `work/queued/`, `active` and `verification`
 → `work/active/`, `completed` and `dropped` → `work/completed/`
-(ADR-0012 §9).
+(ADR-0012 §9). Transitions are engine-enforced: `queued → active →
+verification → completed`, and `queued | active | verification → dropped`;
+`completed` and `dropped` are terminal (corrections are new events,
+ADR-0003). The Log line words (`created`, `started`, `verification`,
+`completed`, `dropped: <reason>`) are English in every logbook language;
+journal stubs written by the engine follow the logbook language. The
+engine's autocommit stages the whole work tree (`git add -A`), so edits
+made in an editor since the last command are committed under that
+command's message: the logbook's history is its backup.
 
 ```yaml
 ---
