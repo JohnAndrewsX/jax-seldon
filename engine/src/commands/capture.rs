@@ -11,7 +11,7 @@
 //! `config.toml [collectors]`; `--source` runs exactly the named ones, also
 //! when disabled. `--since TS` sets the baseline for collectors that have no
 //! cursor yet (default: the logbook's `created` time); collectors with a
-//! cursor ignore it.
+//! cursor ignore it, and the output says so (`sinceIgnored`).
 
 use std::fmt::Write as _;
 
@@ -52,7 +52,11 @@ pub struct CollectorReport {
 pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     let config = ctx.load_config()?.unwrap_or_default();
     let (root, _) = ctx.resolve_logbook(None, Some(&config));
-    let logbook = Logbook::open(&root)?;
+    let mut logbook = Logbook::open(&root)?;
+    // one logbook, one key in cursors.json, however its path was spelled
+    if let Ok(canonical) = std::fs::canonicalize(&logbook.root) {
+        logbook.root = canonical;
+    }
     let since = args
         .since
         .as_deref()
@@ -71,6 +75,15 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     let cursors_path = collectors::cursors_file(&ctx.dirs);
     let mut cursors = Cursors::load(&cursors_path)?;
     cursors.bind(&logbook.root);
+    // --since only sets the baseline of collectors without a cursor
+    let since_ignored: Vec<&str> = match since {
+        Some(_) => selected
+            .iter()
+            .filter(|(name, run)| *run && cursors.cursor(&logbook.root, name).is_some())
+            .map(|(name, _)| *name)
+            .collect(),
+        None => Vec::new(),
+    };
 
     let now = Local::now().fixed_offset();
     let now = now.with_nanosecond(0).unwrap_or(now);
@@ -90,7 +103,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     cursors.save(&cursors_path)?;
     drop(lock);
 
-    Ok(render(&logbook, &written, &reports))
+    Ok(render(&logbook, &written, &reports, &since_ignored))
 }
 
 /// The collectors to run, in registry order.
@@ -201,7 +214,12 @@ fn created(logbook: &Logbook) -> Result<DateTime<FixedOffset>> {
     })
 }
 
-fn render(logbook: &Logbook, written: &[Event], reports: &[CollectorReport]) -> Output {
+fn render(
+    logbook: &Logbook,
+    written: &[Event],
+    reports: &[CollectorReport],
+    since_ignored: &[&str],
+) -> Output {
     let ok = reports.iter().all(|r| r.ok);
     let mut files: Vec<String> = written
         .iter()
@@ -229,6 +247,7 @@ fn render(logbook: &Logbook, written: &[Event], reports: &[CollectorReport]) -> 
         "written": written.len(),
         "files": files,
         "collectors": collectors,
+        "sinceIgnored": since_ignored,
     });
 
     let mut human = format!("Captured {} new event(s).", written.len());
@@ -243,6 +262,13 @@ fn render(logbook: &Logbook, written: &[Event], reports: &[CollectorReport]) -> 
         if let Some(f) = &r.fix {
             let _ = write!(human, "\n           fix: {f}");
         }
+    }
+    if !since_ignored.is_empty() {
+        let _ = write!(
+            human,
+            "\nnote: --since ignored for {} (they continue from their cursor)",
+            since_ignored.join(", ")
+        );
     }
     Output::ok(human, json)
 }

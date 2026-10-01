@@ -20,14 +20,20 @@ pub const REDACTED: &str = "‹redacted›";
 /// A quoted or bare value after a key.
 const VALUE: &str = r#"(?:"[^"]*"|'[^']*'|[^\s'"&;|]+)"#;
 
-/// One rule: matches of `re` are replaced by group `keep` (a prefix that
-/// stays, e.g. the option name) followed by [`REDACTED`].
+/// One rule: matches of `re` are replaced by `replacement`, a template
+/// that keeps the non-secret groups (e.g. the option name) around
+/// [`REDACTED`].
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
     re: Regex,
-    keep_prefix: bool,
+    replacement: String,
 }
+
+/// Keep group 1, redact the rest of the match.
+const KEEP_PREFIX: &str = "${1}‹redacted›";
+/// Redact the whole match.
+const WHOLE: &str = "‹redacted›";
 
 /// The built-in rules plus user patterns, compiled once per process.
 #[derive(Debug, Clone)]
@@ -50,43 +56,44 @@ pub const BUILTIN: [&str; 8] = [
 impl Redactor {
     /// The built-in rules only.
     pub fn builtin() -> Self {
-        let rule = |name, pattern: &str, keep_prefix| Rule {
+        let rule = |name, pattern: &str, replacement: &str| Rule {
             name,
             re: Regex::new(pattern).expect("built-in redaction pattern compiles"),
-            keep_prefix,
+            replacement: replacement.to_string(),
         };
         Redactor {
             rules: vec![
-                // scheme://user:pass@host → scheme://‹redacted›@host
+                // scheme://user:pass@host → scheme://‹redacted›@host; up to
+                // the last `@` before the path, as a password may hold `@`
                 rule(
                     "url-userinfo",
-                    r"(?i)(\b[a-z][a-z0-9+.-]*://)[^/\s@'\x22]+@",
-                    true,
+                    r"(?i)(\b[a-z][a-z0-9+.-]*://)[^/\s'\x22]+(@)",
+                    "${1}‹redacted›${2}",
                 ),
                 rule(
                     "password-option",
                     &format!(r"(?i)(--password(?:=|\s+))(?:{VALUE})"),
-                    true,
+                    KEEP_PREFIX,
                 ),
                 rule(
                     "token-assignment",
                     &format!(r"(?i)(token=)(?:{VALUE})"),
-                    true,
+                    KEEP_PREFIX,
                 ),
                 // the header value up to a closing quote or the end of the line
                 rule(
                     "authorization-header",
                     r#"(?i)(authorization:\s*)[^'"\n]+"#,
-                    true,
+                    KEEP_PREFIX,
                 ),
-                rule("aws-access-key", r"AKIA[0-9A-Z]{16}", false),
-                rule("github-token", r"ghp_[A-Za-z0-9]{36}", false),
-                rule("openai-key", r"sk-[A-Za-z0-9_-]{20,}", false),
+                rule("aws-access-key", r"AKIA[0-9A-Z]{16}", WHOLE),
+                rule("github-token", r"ghp_[A-Za-z0-9]{36}", WHOLE),
+                rule("openai-key", r"sk-[A-Za-z0-9_-]{20,}", WHOLE),
                 // `mysql … -p secret …`, `-psecret`: everything after -p
                 rule(
                     "db-client-password",
                     r"(?m)(\b(?:mysql|psql|smbclient)\b[^\n]*?\s-p ?)\S[^\n]*",
-                    true,
+                    KEEP_PREFIX,
                 ),
             ],
         }
@@ -106,7 +113,7 @@ impl Redactor {
             redactor.rules.push(Rule {
                 name: "user-pattern",
                 re,
-                keep_prefix: false,
+                replacement: WHOLE.to_string(),
             });
         }
         Ok(redactor)
@@ -116,13 +123,11 @@ impl Redactor {
     pub fn redact(&self, text: &str) -> String {
         let mut out = text.to_string();
         for rule in &self.rules {
-            let replacement = if rule.keep_prefix {
-                format!("${{1}}{REDACTED}")
-            } else {
-                REDACTED.to_string()
-            };
             if rule.re.is_match(&out) {
-                out = rule.re.replace_all(&out, replacement.as_str()).into_owned();
+                out = rule
+                    .re
+                    .replace_all(&out, rule.replacement.as_str())
+                    .into_owned();
             }
         }
         out

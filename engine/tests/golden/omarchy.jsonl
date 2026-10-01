@@ -1,0 +1,2 @@
+{"id":"<id>","ts":"2026-09-15T20:13:05+02:00","source":"omarchy","kind":"update","subject":"omarchy","detail":"4.0.5-1 → 4.0.6-1","actor":"system","zone":"red","meta":{"from":"4.0.5-1","to":"4.0.6-1"}}
+{"id":"<id>","ts":"2026-10-01T09:21:00+02:00","source":"omarchy","kind":"update","subject":"omarchy","detail":"4.0.6-1 → 4.0.7-1","actor":"agent:claude-code","case":"C-2026-003","zone":"red","meta":{"from":"4.0.6-1","to":"4.0.7-1"}}
