@@ -976,19 +976,20 @@ first ssh call. That way the steps that write `~/.local/bin`,
 same engine steps:
 1. `--version`, and `contract-version` = `plugin/manifest.json`
    `seldon.contractVersion`;
-2. `init --non-interactive --path ~/Seldon-e2e`;
-3. `capture --all --since <now − 7 days>`: at least one package event. A
-   fresh logbook records nothing older than its creation without `--since`
-   (SPEC-ENGINE §3). `SELDON_E2E_SINCE_DAYS` changes the window; it must
-   be a whole number of days, and anything else stops the run before the
-   build;
-4. a second `capture --all` must write 0 events (idempotency);
-5. `plan new`, then `plan start`;
-6. `log --case <id> -- <note>`. The note contains quotes and `$(…)` and must
+2. `init --non-interactive --path ~/Seldon-e2e --since <now − 7 days>`.
+   `init` runs the first capture itself (WP-024), and `--since` backfills
+   that capture. A fresh logbook records nothing older than its creation
+   otherwise, and a later `capture --since` is ignored by collectors that
+   already have a cursor. The first capture must record at least one
+   package event. `SELDON_E2E_SINCE_DAYS` changes the window; it must be a
+   whole number of days, and anything else stops the run before the build;
+3. `capture --all` after `init` must write 0 events (idempotency);
+4. `plan new`, then `plan start`;
+5. `log --case <id> -- <note>`. The note contains quotes and `$(…)` and must
    arrive verbatim;
-7. `status`, which must give `state.status` `ok`;
-8. `index --check`, which must give `valid: true`;
-9. `doctor`, which must give `ok: true`.
+6. `status`, which must give `state.status` `ok`;
+7. `index --check`, which must give `valid: true`;
+8. `doctor`, which must give `ok: true`.
 
 Then index.json must have the contract version, one active case, the note
 in `today.entries`, and at least one package event.
