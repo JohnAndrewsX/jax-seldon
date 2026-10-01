@@ -434,7 +434,7 @@ impl Collector for ConfigFiles {
             .iter()
             .map(|p| ctx.dirs.expand(p))
             .collect();
-        let excluded = [Plugins::dir(&ctx.dirs.home)];
+        let excluded = [Plugins::dir(ctx.sources, &ctx.dirs.home)];
         self.collect_from(ctx, cursor, &roots, &excluded, &Manifest::file(ctx.dirs))
     }
 }

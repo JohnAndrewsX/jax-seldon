@@ -120,6 +120,7 @@ impl Bench {
                 .path("bin/no-such-program")
                 .to_string_lossy()
                 .into_owned(),
+            ..Sources::default()
         };
         Bench {
             ledger: Ledger::at(scratch.path("logbook/ledger"), Redactor::builtin()),

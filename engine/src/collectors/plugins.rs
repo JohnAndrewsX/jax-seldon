@@ -24,15 +24,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{Collector, Ctx, Outcome, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Outcome, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys::{self, Run};
-
-/// Overrides the `omarchy` program (tests, acceptance runs).
-pub const OMARCHY_ENV: &str = "SELDON_OMARCHY";
-
-/// Overrides Omarchy's user plugin directory (tests, acceptance runs).
-pub const PLUGINS_DIR_ENV: &str = "SELDON_OMARCHY_PLUGINS_DIR";
 
 /// Omarchy's user plugin directory relative to `$HOME` (the CLI hard-codes
 /// `$HOME/.config`, not XDG).
@@ -89,20 +83,14 @@ impl PluginsCursor {
 }
 
 impl Plugins {
-    /// The `omarchy` program: `SELDON_OMARCHY`, else `omarchy` on PATH.
-    pub fn program() -> String {
-        std::env::var(OMARCHY_ENV)
-            .ok()
-            .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| "omarchy".to_string())
-    }
-
-    /// Omarchy's user plugin directory: `SELDON_OMARCHY_PLUGINS_DIR`, else
-    /// `~/.config/omarchy/plugins`. The config collector excludes it.
-    pub fn dir(home: &Path) -> PathBuf {
-        std::env::var_os(PLUGINS_DIR_ENV)
-            .filter(|v| !v.is_empty())
-            .map_or_else(|| home.join(PLUGINS_DIR), PathBuf::from)
+    /// Omarchy's user plugin directory: [`Sources::plugins_dir`]
+    /// (`SELDON_OMARCHY_PLUGINS_DIR`), else `~/.config/omarchy/plugins`.
+    /// The config collector excludes it.
+    pub fn dir(sources: &Sources, home: &Path) -> PathBuf {
+        sources
+            .plugins_dir
+            .clone()
+            .unwrap_or_else(|| home.join(PLUGINS_DIR))
     }
 
     /// [`Collector::collect`] with an explicit program and plugin directory.
@@ -321,8 +309,8 @@ impl Collector for Plugins {
         self.collect_from(
             ctx,
             cursor,
-            &Plugins::program(),
-            &Plugins::dir(&ctx.dirs.home),
+            &ctx.sources.omarchy,
+            &Plugins::dir(ctx.sources, &ctx.dirs.home),
         )
     }
 }

@@ -122,6 +122,15 @@ pub struct Sources {
     /// `SELDON_PACMAN`, default `pacman`; only ever run as `-Q omarchy`
     /// (the fallback of the omarchy collector).
     pub pacman: String,
+    /// `SELDON_OMARCHY`, default `omarchy`; run as `plugin list --json` and
+    /// `plugin catalog` (plugins collector).
+    pub omarchy: String,
+    /// `SELDON_OMARCHY_PLUGINS_DIR`; `None` = Omarchy's
+    /// `~/.config/omarchy/plugins` ([`plugins::Plugins::dir`]).
+    pub plugins_dir: Option<PathBuf>,
+    /// `SELDON_THEME_FILE`; `None` = Omarchy's
+    /// `~/.local/state/omarchy/current/theme.name` ([`theme::Theme::file`]).
+    pub theme_file: Option<PathBuf>,
 }
 
 impl Default for Sources {
@@ -132,6 +141,9 @@ impl Default for Sources {
             snapper: "snapper".into(),
             omarchy_version: "omarchy-version".into(),
             pacman: "pacman".into(),
+            omarchy: "omarchy".into(),
+            plugins_dir: None,
+            theme_file: None,
         }
     }
 }
@@ -146,6 +158,9 @@ impl Sources {
             snapper: var("SELDON_SNAPPER").unwrap_or(d.snapper),
             omarchy_version: var("SELDON_OMARCHY_VERSION").unwrap_or(d.omarchy_version),
             pacman: var("SELDON_PACMAN").unwrap_or(d.pacman),
+            omarchy: var("SELDON_OMARCHY").unwrap_or(d.omarchy),
+            plugins_dir: var("SELDON_OMARCHY_PLUGINS_DIR").map(PathBuf::from),
+            theme_file: var("SELDON_THEME_FILE").map(PathBuf::from),
         }
     }
 }

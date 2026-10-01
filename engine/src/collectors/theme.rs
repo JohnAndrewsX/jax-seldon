@@ -22,11 +22,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::config::changed_at;
-use super::{Collector, Ctx, Outcome, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Outcome, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
-
-/// Overrides the theme file (tests, acceptance runs).
-pub const THEME_FILE_ENV: &str = "SELDON_THEME_FILE";
 
 /// Where Omarchy stores the current theme slug, relative to `$HOME`
 /// (`omarchy-theme-set` hard-codes `$HOME/.local/state`, not XDG).
@@ -44,11 +41,13 @@ struct ThemeCursor {
 }
 
 impl Theme {
-    /// The theme file: `SELDON_THEME_FILE`, else Omarchy's under `home`.
-    pub fn file(home: &Path) -> PathBuf {
-        std::env::var_os(THEME_FILE_ENV)
-            .filter(|v| !v.is_empty())
-            .map_or_else(|| home.join(THEME_FILE), PathBuf::from)
+    /// The theme file: [`Sources::theme_file`] (`SELDON_THEME_FILE`), else
+    /// Omarchy's under `home`.
+    pub fn file(sources: &Sources, home: &Path) -> PathBuf {
+        sources
+            .theme_file
+            .clone()
+            .unwrap_or_else(|| home.join(THEME_FILE))
     }
 
     /// [`Collector::collect`] with an explicit theme file.
@@ -113,6 +112,6 @@ impl Collector for Theme {
     }
 
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
-        self.collect_from(ctx, cursor, &Theme::file(&ctx.dirs.home))
+        self.collect_from(ctx, cursor, &Theme::file(ctx.sources, &ctx.dirs.home))
     }
 }
