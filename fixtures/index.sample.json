@@ -3,9 +3,9 @@
  "generatedAt": "2026-10-01T17:05:12+02:00",
  "engineVersion": "0.1.0",
  "logbook": {
-  "path": "/home/eandres/Seldon",
+  "path": "/home/user/Seldon",
   "language": "de",
-  "machine": "ideacentre",
+  "machine": "workstation",
   "git": {
    "head": "a1b2c3d",
    "dirty": false

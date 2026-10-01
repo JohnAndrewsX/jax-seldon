@@ -1,6 +1,6 @@
 # PLAN.md — Phases and work packages
 
-Five phases. Each phase ends with something Eugen can use. Work packages
+Five phases. Each phase ends with something the operator can use. Work packages
 (WP) are the unit the orchestrator assigns; each has acceptance tests the
 orchestrator can run without a human. Roles: see ORCHESTRATION.md.
 
@@ -20,7 +20,7 @@ Dependencies are explicit; everything else may run in parallel.
 | WP-008 | Reconciliation and `drift` commands | Engine | WP-007 | fixtures produce the three expected drift rows; link/explain/dismiss append resolution events and remove rows on rebuild; dependency auto-link works |
 | WP-009 | Hooks: `hook install claude-code`, `hook claude-code`, session-start/stop, generic | Engine | WP-006 | hook JSON fixtures classify correctly; non-mutating commands produce nothing; always exit 0; session-start prints context block; `hook install` writes a valid `.claude/settings.json` fragment without clobbering existing hooks |
 
-**Phase 0 exit:** Eugen runs `seldon init` on his machine, works one real
+**Phase 0 exit:** The operator runs `seldon init` on their machine, works one real
 case with Claude Code, sees events, drift and a STATUS.md. Logbook opens in
 Obsidian.
 
@@ -33,7 +33,7 @@ Obsidian.
 | WP-012 | Panel actions: QuickEntry, Capture now, Open in editor | Plugin | WP-011, WP-006 | `seldon log` called with the text as one argv element; capture triggers index refresh via FileView; editor opens the right path |
 | WP-013 | Engine ↔ plugin integration test on a real logbook | QA | WP-007, WP-012 | end-to-end script: init → capture → index → shell reads it; documented in `docs/TESTING.md` |
 
-**Phase 1 exit:** the pill lives in Eugen's bar.
+**Phase 1 exit:** the pill lives in the operator's bar.
 
 ## Phase 2 — Planning desk (cases, agents, drift in the UI)
 
@@ -45,7 +45,7 @@ Obsidian.
 | WP-023 | Decisions and Memory tabs | Plugin | WP-011 | lists render; "New decision" calls `seldon decide --no-edit` then opens editor |
 | WP-024 | Logbook templates (en, de), AGENTS.md for the logbook, optional Omarchy-Agent harness install | Engine + Docs | WP-003 | `seldon init --language de` yields German prose templates; harness option copies guard/skills if the template dir exists and documents what it did |
 
-**Phase 2 exit:** Eugen plans a case in the panel, sends an agent, sees its
+**Phase 2 exit:** The operator plans a case in the panel, sends an agent, sees its
 trace, and resolves drift without a terminal.
 
 ## Phase 3 — Prime Radiant and reproducibility
@@ -67,7 +67,7 @@ trace, and resolves drift without a terminal.
 | WP-040 | AUR package `jax-seldon` (PKGBUILD, .SRCINFO), release workflow | Scaffold | WP-009 | `makepkg -si` works on a clean Omarchy; `omarchy pkg add jax-seldon` documented; version from git tag |
 | WP-041 | Plugin README, preview.png, security section, keybinding docs | Docs | WP-031 | README follows the marketplace template; preview shows panel + Prime Radiant |
 | WP-042 | Marketplace submission (plugins.omarchy.org and omahub.dev) | Docs | WP-040, WP-041 | listings live; security scan clean (no network, no units, no binaries) |
-| WP-043 | Eugen's own logbook migration from `~/Omarchy-Agent` (optional) | Engine | WP-024 | importer maps kit cases/journal into Seldon layout; dry-run report first |
+| WP-043 | The operator's own logbook migration from `~/Omarchy-Agent` (optional) | Engine | WP-024 | importer maps kit cases/journal into Seldon layout; dry-run report first |
 
 ## Milestones
 
@@ -78,7 +78,7 @@ trace, and resolves drift without a terminal.
 - **M4** public release 1.0.0.
 
 No dates beyond M0 on purpose; the orchestrator reports velocity after
-Phase 0 and Eugen sets the rest.
+Phase 0 and the operator sets the rest.
 
 ## Risks and how the plan handles them
 

@@ -49,7 +49,7 @@ Out of scope (for v1):
 
 ## Users
 
-1. **Eugen** — power user, developer, runs several agents (Claude Code,
+1. **The operator** — power user, developer, runs several agents (Claude Code,
    Codex, the Omarchy default agent) on one machine. Wants the full history
    and the planning desk.
 2. **Any Omarchy user** who installs the plugin from the marketplace. Must

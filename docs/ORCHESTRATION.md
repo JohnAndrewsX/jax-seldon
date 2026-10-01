@@ -8,7 +8,7 @@ session steering several Claude Code / Codex workers). It assumes
 
 | Role | Does | Typical model/tool |
 |---|---|---|
-| **Orchestrator** | reads PLAN.md and `work/`, assigns WPs, runs acceptance tests, moves WPs between folders, writes STATUS.md, talks to Eugen (German) | long-running Herdr session |
+| **Orchestrator** | reads PLAN.md and `work/`, assigns WPs, runs acceptance tests, moves WPs between folders, writes STATUS.md, talks to the operator (German) | long-running Herdr session |
 | **Architect / Reviewer** | reviews every handover against specs and ADRs; owns contract changes; writes ADRs when a WP forces a decision | one session, invoked per review |
 | **Schema Keeper** | owns `schema/`, `fixtures/`, golden tests | part of Architect in small teams |
 | **Engine Dev** | Rust WPs | up to 2 parallel sessions in separate worktrees |
@@ -30,8 +30,8 @@ for each tick:
   3. for each idle worker: pick highest-priority queued WP whose deps are
      completed and whose role matches → create worktree → send brief
   4. if a worker reports a decision needed → Reviewer drafts ADR →
-     Orchestrator asks Eugen (German, one question, options listed)
-  5. commit STATUS.md; summarise to Eugen only when a WP completes or blocks
+     Orchestrator asks the operator (German, one question, options listed)
+  5. commit STATUS.md; summarise to the operator only when a WP completes or blocks
 ```
 
 A tick is whatever Herdr's cadence is; the loop must be safe to re-run.
@@ -75,7 +75,7 @@ Touched outside WP scope: none | list
 - **G2 Accept:** tests pass on the orchestrator's machine, Reviewer approves,
   no files touched outside scope, STATUS updated.
 - **G3 Phase exit:** the phase's exit criterion in PLAN.md is demonstrated
-  to Eugen (screenshot or terminal transcript in `work/completed/`).
+  to the operator (screenshot or terminal transcript in `work/completed/`).
 
 ## 6. Parallelism rules
 
@@ -96,7 +96,7 @@ the Reviewer prunes.
 ## 8. What the orchestrator never does
 
 - Merge without tests. Guess Omarchy internals. Change ADRs. Point the
-  engine at Eugen's real logbook before Phase 0 exit. Run anything red-zone.
+  engine at the operator's real logbook before Phase 0 exit. Run anything red-zone.
 
 ## 9. Kickoff checklist (first session)
 
@@ -108,5 +108,5 @@ the Reviewer prunes.
    `qmllint` present, Rust toolchain with `x86_64-unknown-linux-musl`.
    Record in `memory/host.md`.
 4. Assign WP-001 (Scaffold) and WP-002 (Schema Keeper) in parallel.
-5. Report to Eugen: what was started, what you need from him (nothing,
+5. Report to the operator: what was started, what you need from them (nothing,
    ideally).

@@ -2,11 +2,11 @@
 
 This file applies to the orchestrator and every dev agent (Claude Code,
 Codex, Herdr-managed sessions, anything else). Read it before touching
-anything. It is changed only on Eugen's explicit instruction.
+anything. It is changed only on the operator's explicit instruction.
 
 ## 1. Who and what
 
-- **Operator:** Eugen (`eandres`, GitHub `JohnAndrewsX`). German speaker.
+- **Operator:** the user of this machine (GitHub `JohnAndrewsX`). German speaker.
 - **Project:** Seldon — engine (Rust), plugin (QML), logbook spec, contract.
 - **Target platform:** Omarchy 4 "Quattro" (Arch, Hyprland, Quickshell
   shell process, plugin system). Reference: the local repo at
@@ -15,7 +15,7 @@ anything. It is changed only on Eugen's explicit instruction.
 
 ## 2. Language policy
 
-- Talk to Eugen in **German**: briefings, questions, handovers, PR text
+- Talk to the operator in **German**: briefings, questions, handovers, PR text
   addressed to him.
 - **Everything in this repository is English**: code, comments, commit
   messages, docs, schema, ADRs, file and folder names, identifiers, enum
@@ -79,7 +79,7 @@ dev agents in parallel on independent WPs.
 - **Green — this repository.** Free, within the WP.
 - **Yellow — the test logbook** at the path given by `SELDON_LOGBOOK`
   (default `fixtures/logbook/` or a temp dir). Engine tests write here.
-  Never point the engine at Eugen's real logbook unless the WP says so.
+  Never point the engine at the operator's real logbook unless the WP says so.
 - **Red — the host system.** No `pacman`, no `sudo`, no edits under
   `~/.config` outside `~/.config/omarchy/plugins/jax.seldon` (the dev
   install of the plugin), no systemd changes. Collectors only *read*
@@ -121,7 +121,7 @@ Docs:
 
 ## 8. Safety
 
-- Never commit secrets, tokens, real hostnames or Eugen's private paths.
+- Never commit secrets, tokens, real hostnames or the operator's private paths.
 - Collectors redact anything that matches the redaction rules in
   `docs/SPEC-ENGINE.md §7` before an event is written.
 - The plugin runs unsandboxed in the shell process. It therefore never
@@ -130,5 +130,5 @@ Docs:
 
 ## 9. When in doubt
 
-Ask the orchestrator; the orchestrator asks Eugen. Destructive and uncertain
+Ask the orchestrator; the orchestrator asks the operator. Destructive and uncertain
 exclude each other.

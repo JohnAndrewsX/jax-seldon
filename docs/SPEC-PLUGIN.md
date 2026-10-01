@@ -10,7 +10,7 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
   "id": "jax.seldon",
   "name": "JAX Seldon",
   "version": "0.1.0",
-  "author": "Eugen Andres (JohnAndrewsX)",
+  "author": "JohnAndrewsX",
   "license": "MIT",
   "description": "Flight recorder and planning desk for your Omarchy system: ledger, journal, cases, drift, and the Prime Radiant overlay.",
   "kinds": ["service", "bar-widget", "overlay"],

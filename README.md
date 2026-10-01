@@ -29,4 +29,4 @@ This repository is the **development kit**. Read in this order:
 
 The human-facing concept lives in `docs/seldon-concept.html` (offline, single file).
 
-Author: Eugen (`JohnAndrewsX`). Plugin ID `jax.seldon`. License MIT.
+Author: `JohnAndrewsX`. Plugin ID `jax.seldon`. License MIT.

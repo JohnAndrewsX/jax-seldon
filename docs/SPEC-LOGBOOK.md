@@ -6,7 +6,7 @@ must open as an Obsidian vault.
 ## 1. Location and identity
 
 - Default path `~/Seldon`; any path is allowed. Stored in
-  `~/.config/seldon/config.toml` (`logbook = "/home/eandres/Seldon"`).
+  `~/.config/seldon/config.toml` (`logbook = "/home/user/Seldon"`).
 - The root contains `.seldon/logbook.toml` with `schemaVersion = 1`,
   `created`, `machineId` (hostname + random suffix), `language`.
 - The root is a git repository. The engine commits with `seldon: <summary>`

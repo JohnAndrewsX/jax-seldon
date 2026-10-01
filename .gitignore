@@ -1,0 +1,7 @@
+# local, machine-specific notes (real hostnames, private paths)
+memory/local.md
+# git worktrees created by the orchestrator (wt/WP-NNN)
+wt/
+# build output
+engine/target/
+target/
