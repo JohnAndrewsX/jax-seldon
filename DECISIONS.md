@@ -13,5 +13,6 @@
 | ADR-0009 | Monorepo for development, `jax-seldon-plugin` for the installable plugin | accepted |
 | ADR-0010 | Default logbook path and the wizard's path options | accepted |
 | ADR-0011 | Snapper collector degrades without privileges; the user opts in | accepted |
+| ADR-0013 | Drift is grouped per pacman transaction; routine upgrades are yellow | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
