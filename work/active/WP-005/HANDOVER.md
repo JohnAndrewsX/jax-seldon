@@ -134,6 +134,9 @@ Four commits on top of the rebased branch:
 ## Verified by
 
 - `just check` → `check: ok`: fmt, clippy `-D warnings`, all tests, schema-validate, plugin-validate, qmllint, plugin-test.
+  - After the fix-up, one `just check` run failed in `plugin-test` (the headless QML harness, `tests/plugin/`). This branch touches nothing under `plugin/` or `tests/plugin/`.
+  - The next 5 `just plugin-test` runs and the next `just check` passed.
+  - I did not keep the output of the failing run. It looks like a flake in the plugin harness, worth a look by its owner.
 - `cargo test --locked` (after the fix-up, on top of main): lib 58, `collectors_user` 23, and every other suite pass, including WP-004's `collectors`/`idempotency`/`redaction` and WP-006's `commands`.
 - **Mutation checks.** Six deliberate bugs, each caught by a test:
   - drop skipPaths;
