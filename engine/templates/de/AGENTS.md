@@ -1,4 +1,6 @@
-# AGENTS.md — Regeln für jeden Agenten auf dieser Maschine
+# AGENTS.md
+
+Regeln für jeden Agenten auf dieser Maschine.
 
 Dieser Ordner ist das Logbuch dieser Maschine. Er hält fest, was sich am
 System geändert hat, warum, und wer es war. Jeder Agent, der diese Datei

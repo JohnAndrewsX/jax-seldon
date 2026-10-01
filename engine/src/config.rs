@@ -173,7 +173,7 @@ pub struct Config {
     pub language: Language,
     /// Paths the config collector hashes; `~` is expanded at use.
     pub watch_paths: Vec<String>,
-    /// Agent harnesses chosen in the wizard (`claude-code`).
+    /// Agent harnesses chosen in the wizard (`claude-code`, `omarchy-agent`).
     pub harnesses: Vec<String>,
     pub collectors: Collectors,
     pub git: GitConfig,
@@ -206,8 +206,10 @@ pub const DEFAULT_WATCH_PATHS: [&str; 5] = [
     "~/.zshrc",
 ];
 
-/// Harnesses the wizard can set up.
-pub const HARNESSES: [&str; 1] = ["claude-code"];
+/// Harnesses the wizard can set up: Claude Code's hooks
+/// (`.claude/settings.json`) and the Omarchy-Agent kit's guard and skills
+/// (copied into `.claude/` from a template directory, `commands::setup`).
+pub const HARNESSES: [&str; 2] = ["claude-code", "omarchy-agent"];
 
 /// Collectors on/off, all on by default (SPEC-ENGINE §9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

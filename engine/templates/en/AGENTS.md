@@ -1,4 +1,6 @@
-# AGENTS.md — rules for every agent on this machine
+# AGENTS.md
+
+Rules for every agent on this machine.
 
 This folder is the logbook of this machine. It records what changed on the
 system, why, and who did it. Any agent that reads this file may work here.

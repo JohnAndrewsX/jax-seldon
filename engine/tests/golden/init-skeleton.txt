@@ -1,0 +1,92 @@
+== AGENTS.md
+# AGENTS.md
+## The engine is the only writer
+## Work in cases
+## Zones
+## Journal and memory
+## Drift
+## Hooks
+## Never
+== PROJECT.md
+key language
+key machineId
+# {{machineId}}
+## Purpose
+## Must not happen here
+## Who works here
+== STATUS.md
+# Status — {{machineId}}
+== DECISIONS.md
+# Decisions
+fence decisions.index
+table | ID | Title | Status | Date |
+== areas/hyprland/README.md
+key type
+key name
+key description
+# hyprland
+== areas/themes/README.md
+key type
+key name
+key description
+# themes
+== areas/packages/README.md
+key type
+key name
+key description
+# packages
+== areas/dev-env/README.md
+key type
+key name
+key description
+# dev-env
+== areas/plugins/README.md
+key type
+key name
+key description
+# plugins
+== areas/shell/README.md
+key type
+key name
+key description
+# shell
+== memory/lessons.md
+key type
+key topic
+key updated
+# Lessons
+== system/hardware.md
+# Hardware
+fence hardware.summary
+== system/packages.md
+# Packages
+fence packages.summary
+## History
+fence packages.history
+table | date | explicit | total |
+== system/deviations.md
+# Deviations from Omarchy defaults
+fence deviations.table
+table | path | reason | date | case |
+== system/services.md
+# Services
+fence services.enabled
+table | unit | scope | case |
+== system/omarchy.md
+# Omarchy
+fence omarchy.summary
+== system/plugins.md
+# Plugins
+fence plugins.list
+table | id | enabled | firstParty | clonedFrom |
+== .seldon/templates/case.md
+# {{id}} — {{title}}
+## Intent
+## Plan
+## Log
+## Result
+== .seldon/templates/decision.md
+# {{id}} — {{title}}
+## Context
+## Decision
+## Consequences

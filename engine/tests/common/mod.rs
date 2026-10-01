@@ -136,12 +136,16 @@ impl Env {
         stub(&self.bin, name, body);
     }
 
-    /// `seldon init --non-interactive` of a fresh logbook at `<tmp>/<dir>`.
+    /// `seldon init --non-interactive --no-capture` of a fresh logbook at
+    /// `<tmp>/<dir>`: no collector has a cursor yet, so a test's first
+    /// `capture` records the state it set up as the baseline (WP-024 made
+    /// the first capture part of `init`; `tests/init.rs` covers it).
     pub fn init_logbook_at(&self, dir: &str, language: &str) -> PathBuf {
         let root = self.tmp.path().join(dir);
         let out = self.seldon(&[
             "init",
             "--non-interactive",
+            "--no-capture",
             "--path",
             root.to_str().unwrap(),
             "--language",

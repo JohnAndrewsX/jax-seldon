@@ -119,7 +119,9 @@ struct InitCmd {
     #[arg(long, value_name = "DIR")]
     path: Option<PathBuf>,
 
-    /// Ask nothing; take flags and defaults
+    /// Ask nothing; take flags, then the existing config, then the
+    /// defaults: ~/Seldon, language from the locale, all collectors, git
+    /// on, first capture from now on, no backfill, no theme hook
     #[arg(long)]
     non_interactive: bool,
 
@@ -132,8 +134,25 @@ struct InitCmd {
     obsidian: bool,
 
     /// Agent harness to set up (repeatable)
-    #[arg(long, value_name = "NAME", value_parser = ["claude-code"])]
+    #[arg(long, value_name = "NAME", value_parser = ["claude-code", "omarchy-agent"])]
     harness: Vec<String>,
+
+    /// Backfill: the first capture also records changes since TS
+    /// (YYYY-MM-DD or RFC 3339); each one opens as drift
+    #[arg(long, value_name = "TS")]
+    since: Option<String>,
+
+    /// Mark the backfilled drift as the pre-Seldon baseline (dismissed)
+    #[arg(long, requires = "since")]
+    baseline: bool,
+
+    /// Do not run the first capture
+    #[arg(long, conflicts_with = "since")]
+    no_capture: bool,
+
+    /// Install Omarchy's theme-set hook (`omarchy hook install theme-set`)
+    #[arg(long)]
+    theme_hook: bool,
 
     /// Make the logbook a git repository with a first commit (default)
     #[arg(long, overrides_with = "no_git")]
@@ -214,6 +233,14 @@ fn run(cli: Cli) -> Result<Output, Error> {
                     .map_err(Error::User)?,
                 obsidian: c.obsidian,
                 harnesses: c.harness,
+                since: c
+                    .since
+                    .as_deref()
+                    .map(commands::setup::parse_since)
+                    .transpose()?,
+                baseline: c.baseline,
+                capture: !c.no_capture,
+                theme_hook: c.theme_hook,
                 git: match (c.git, c.no_git) {
                     (true, _) => Some(true),
                     (_, true) => Some(false),

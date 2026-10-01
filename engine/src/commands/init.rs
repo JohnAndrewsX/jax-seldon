@@ -1,21 +1,32 @@
 //! `seldon init`: the wizard (SPEC-ENGINE §9, ADR-0010).
 //!
 //! Steps: path → language → Obsidian → collectors → watched paths →
-//! harnesses → git. Each step is skipped when its flag is given;
-//! `--non-interactive` skips them all and takes flags or defaults. Defaults
-//! come from an existing `config.toml` where it has a value.
+//! harnesses → theme hook → git → backfill. Each step is skipped when its
+//! flag is given; `--non-interactive` skips them all and takes flags or
+//! defaults. Defaults come from an existing `config.toml` where it has a
+//! value.
+//!
+//! Then the logbook is written, the harnesses are set up (inside the
+//! first commit), the first capture runs (`capture --all`, with `--since`
+//! as the backfill window), a backfill can be marked as the pre-Seldon
+//! baseline, the theme hook is installed on opt-in, and the capture is
+//! committed. The steps after the layout report failures; they never undo
+//! the logbook ([`super::setup`]).
 
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use chrono::Local;
+use chrono::{DateTime, FixedOffset, Local};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, MultiSelect, Select};
-use serde_json::json;
+use serde_json::{Value, json};
 
+use super::capture::{self, CaptureArgs};
 use super::doctor::{self, Status};
-use super::{Context, Output};
+use super::setup::{self, BASELINE_REASON, ThemeHook};
+use super::{Commit, Context, Output, autocommit};
+use crate::collectors::Sources;
 use crate::config::{Collectors, Config, HARNESSES};
 use crate::error::{Error, Result};
 use crate::logbook::layout::{self, NewLogbook};
@@ -36,6 +47,14 @@ pub struct InitArgs {
     pub harnesses: Vec<String>,
     /// `--git` / `--no-git`; `None` = default (on).
     pub git: Option<bool>,
+    /// `--since`: the first capture's backfill window.
+    pub since: Option<DateTime<FixedOffset>>,
+    /// `--baseline`: dismiss the backfilled drift as the pre-Seldon baseline.
+    pub baseline: bool,
+    /// Run the first capture (`--no-capture` turns it off).
+    pub capture: bool,
+    /// `--theme-hook`: install Omarchy's theme-set hook.
+    pub theme_hook: bool,
 }
 
 /// Everything the wizard decides.
@@ -48,6 +67,11 @@ struct Choices {
     watch_paths: Vec<String>,
     harnesses: Vec<String>,
     git: bool,
+    capture: bool,
+    since: Option<DateTime<FixedOffset>>,
+    /// `None`: ask after the first capture, when it opened drift.
+    baseline: Option<bool>,
+    theme_hook: bool,
 }
 
 /// One logbook location the wizard offers (ADR-0010).
@@ -91,14 +115,14 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         ));
     }
 
-    let choices = if interactive {
+    let mut choices = if interactive {
         wizard(ctx, &args, existing.as_ref())?
     } else {
         defaults(ctx, &args, existing.as_ref())
     };
-    let root = &choices.root;
-    let _lock = lock::acquire(&ctx.dirs.lock_file())?;
-    if Logbook::is_initialised(root) {
+    let root = choices.root.clone();
+    let lock = lock::acquire(&ctx.dirs.lock_file())?;
+    if Logbook::is_initialised(&root) {
         return Err(Error::user(format!(
             "{} is already a logbook",
             root.display()
@@ -110,7 +134,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             root.display()
         )));
     }
-    if !layout::is_vacant(root).with_context(|| format!("cannot read {}", root.display()))? {
+    if !layout::is_vacant(&root).with_context(|| format!("cannot read {}", root.display()))? {
         return Err(Error::user(format!(
             "{} exists and is not empty; choose a new or empty directory",
             root.display()
@@ -139,7 +163,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         today: now.date_naive(),
         obsidian: choices.obsidian,
     };
-    let files = layout::create(root, &spec)?;
+    let files = layout::create(&root, &spec)?;
 
     let mut config = existing.unwrap_or_default();
     config.logbook = Some(root.clone());
@@ -149,14 +173,42 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     config.harnesses = choices.harnesses.clone();
     config.save(&config_file)?;
 
-    let git = setup_git(root, choices.git, !ctx.no_commit);
+    // inside the first commit: the harness files are part of the logbook
+    let harnesses = setup::harnesses(&ctx.dirs, &root, &choices.harnesses);
+    let git = setup_git(&root, choices.git, !ctx.no_commit);
     let snapper = doctor::check_snapper(&config);
+    // the capture and the baseline take the lock themselves
+    drop(lock);
+
+    // every later step works on this logbook, whatever --logbook or
+    // SELDON_LOGBOOK name
+    let mut lb_ctx = ctx.clone();
+    lb_ctx.logbook_flag = Some(root.clone());
+    let capture = first_capture(&lb_ctx, &mut choices, interactive);
+    let theme_hook = if choices.theme_hook {
+        setup::install_theme_hook(&ctx.dirs, &Sources::from_env().omarchy)
+    } else {
+        ThemeHook::NotRequested
+    };
 
     let mut next = vec!["seldon doctor".to_string()];
-    for h in &choices.harnesses {
-        next.push(format!("seldon hook install {h}"));
+    for h in harnesses
+        .iter()
+        .filter(|h| !h.done && h.name == "claude-code")
+    {
+        next.push(format!("seldon hook install {}", h.name));
     }
-    next.push("seldon capture --all".to_string());
+    if !capture.ran {
+        next.push("seldon capture --all".to_string());
+    }
+    if let Some((open, _)) = capture.open_after.filter(|(open, _)| *open > 0) {
+        next.push(format!(
+            "seldon drift   # {open} open drift item(s) to link, explain or dismiss"
+        ));
+    }
+    if let Some(fix) = theme_hook.fix() {
+        next.push(format!("{fix}   # optional: the theme hook"));
+    }
     if snapper.status == Status::Degraded
         && let Some(fix) = &snapper.fix
     {
@@ -165,16 +217,26 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         ));
     }
 
-    let shown_root = ctx.dirs.display(root);
+    let shown_root = ctx.dirs.display(&root);
     let mut human = format!(
-        "Logbook created at {shown_root} (machine {machine_id}, language {}, {} files).\nConfig: {}\nGit: {}\nSnapper: {} — {}\nFirst capture: skipped (no collectors in this engine version yet).\n",
+        "Logbook created at {shown_root} (machine {machine_id}, language {}, {} files).\nConfig: {}\n",
         choices.language,
         files.len(),
         ctx.dirs.display(&config_file),
+    );
+    for h in &harnesses {
+        human.push_str(&format!("Harness {}: {}\n", h.name, h.human));
+    }
+    human.push_str(&format!(
+        "Git: {}\nSnapper: {} — {}\nFirst capture: {}\n",
         git.describe(),
         snapper.status.as_str(),
         snapper.message,
-    );
+        capture.human,
+    ));
+    if let Some(t) = theme_hook.human(&ctx.dirs) {
+        human.push_str(&format!("Theme hook: {t}\n"));
+    }
     if choices.obsidian {
         human.push_str("Obsidian: open the folder as a vault.\n");
     }
@@ -195,12 +257,144 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             "collectors": choices.collectors,
             "watchPaths": choices.watch_paths,
             "harnesses": choices.harnesses,
+            "harnessSetup": harnesses
+                .iter()
+                .map(|h| (h.name.clone(), h.json.clone()))
+                .collect::<serde_json::Map<_, _>>(),
             "git": git.json(),
             "snapper": snapper,
-            "capture": { "ran": false, "reason": "no collectors in this engine version" },
+            "capture": capture.json,
+            "themeHook": theme_hook.json(),
             "nextSteps": next,
         }),
     ))
+}
+
+/// What the first capture step did.
+struct CaptureStep {
+    ran: bool,
+    /// Open drift items and crises after the step (baseline included).
+    open_after: Option<(usize, usize)>,
+    human: String,
+    json: Value,
+}
+
+/// Runs `capture --all` (with `--since` as the backfill window), then the
+/// pre-Seldon baseline when it was chosen (or, in the wizard, confirmed
+/// now that the drift count is known), then commits both. Failures are
+/// reported, never fatal: the logbook exists.
+fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> CaptureStep {
+    if !choices.capture {
+        return CaptureStep {
+            ran: false,
+            open_after: None,
+            human: "skipped (--no-capture)".into(),
+            json: json!({ "ran": false, "reason": "--no-capture" }),
+        };
+    }
+    let since = choices.since.map(|t| t.to_rfc3339());
+    let out = match capture::run(
+        ctx,
+        CaptureArgs {
+            sources: Vec::new(),
+            all: true,
+            since: since.clone(),
+        },
+    ) {
+        Ok(out) => out,
+        Err(e) => {
+            return CaptureStep {
+                ran: false,
+                open_after: None,
+                human: format!("failed: {e}"),
+                json: json!({ "ran": false, "error": e.to_string() }),
+            };
+        }
+    };
+    let written = out.json["written"].as_u64().unwrap_or(0);
+    let mut json = out.json;
+    json["ran"] = json!(true);
+    json["since"] = json!(since);
+    let mut human = format!("{written} event(s)");
+    if let Some(s) = &since {
+        human.push_str(&format!(" since {s}"));
+    }
+    let degraded: Vec<&str> = json["collectors"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|c| c["ran"] == true && c["ok"] == false)
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    if !degraded.is_empty() {
+        human.push_str(&format!(
+            "; degraded: {} (see seldon doctor)",
+            degraded.join(", ")
+        ));
+    }
+
+    let open = setup::open_drift(ctx);
+    if choices.since.is_some()
+        && choices.baseline.is_none()
+        && let Some((items, crisis)) = open.filter(|(items, _)| *items > 0)
+    {
+        choices.baseline = Some(interactive && ask_baseline(items, crisis));
+    }
+    let mut summary = "first capture".to_string();
+    let mut open_after = open;
+    json["baseline"] = Value::Null;
+    if choices.baseline == Some(true) {
+        match setup::baseline(ctx) {
+            Ok(b) => {
+                human.push_str(&format!(
+                    "; {} drift item(s) ({} event(s)) dismissed as \"{BASELINE_REASON}\"",
+                    b.items, b.events
+                ));
+                json["baseline"] = json!({
+                    "reason": BASELINE_REASON, "items": b.items, "events": b.events,
+                });
+                summary.push_str(" and pre-Seldon baseline");
+                open_after = setup::open_drift(ctx);
+            }
+            Err(e) => {
+                human.push_str(&format!("; baseline failed: {e}"));
+                json["baseline"] = json!({ "reason": BASELINE_REASON, "error": e.to_string() });
+            }
+        }
+    }
+    if let Some((items, crisis)) = open_after {
+        human.push_str(&format!("; {items} open drift item(s), {crisis} crisis"));
+        json["openDrift"] = json!(items);
+        json["crisis"] = json!(crisis);
+    }
+
+    let commit = match ctx.open_logbook() {
+        Ok((config, logbook)) => autocommit(ctx, &config, &logbook, &summary),
+        Err(e) => Commit::Failed(e.to_string()),
+    };
+    human.push_str(&commit.human().replace('\n', "; "));
+    json["git"] = commit.json();
+    CaptureStep {
+        ran: true,
+        open_after,
+        human,
+        json,
+    }
+}
+
+/// The wizard's baseline question, asked once the count is known.
+fn ask_baseline(items: usize, crisis: usize) -> bool {
+    eprintln!(
+        "The backfill opened {items} drift item(s) ({crisis} crisis): changes from before \
+         Seldon, none of them in a case."
+    );
+    Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!(
+            "Mark them as the pre-Seldon baseline (dismissed, reason \"{BASELINE_REASON}\")?"
+        ))
+        .default(true)
+        .interact()
+        .unwrap_or(false)
 }
 
 /// Flags, else the existing config, else built-in defaults.
@@ -222,6 +416,10 @@ fn defaults(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choice
             args.harnesses.clone()
         },
         git: args.git.unwrap_or(true),
+        capture: args.capture,
+        since: args.since,
+        baseline: args.since.is_some().then_some(args.baseline),
+        theme_hook: args.theme_hook,
     }
 }
 
@@ -339,13 +537,30 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
             .iter()
             .map(|h| c.harnesses.iter().any(|x| x == h))
             .collect();
+        let kit = setup::kit_dir(&ctx.dirs);
+        let kit_label = format!(
+            "Omarchy-Agent kit: guard and skills into .claude/ (omarchy-agent; {} {})",
+            if kit.is_dir() { "from" } else { "not found at" },
+            ctx.dirs.display(&kit)
+        );
         let picked = MultiSelect::with_theme(&theme)
             .with_prompt("Agent harnesses")
-            .items(["Claude Code hooks (claude-code)"])
+            .items(&["Claude Code hooks (claude-code)".to_string(), kit_label])
             .defaults(&checked)
             .interact()
             .map_err(prompt_err)?;
         c.harnesses = picked.iter().map(|i| HARNESSES[*i].to_string()).collect();
+    }
+
+    if !args.theme_hook {
+        c.theme_hook = Confirm::with_theme(&theme)
+            .with_prompt(
+                "Record theme switches the moment they happen? \
+                 (runs `omarchy hook install theme-set`; without it the next capture finds them)",
+            )
+            .default(false)
+            .interact()
+            .map_err(prompt_err)?;
     }
 
     if args.git.is_none() {
@@ -355,8 +570,43 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
             .interact()
             .map_err(prompt_err)?;
     }
+
+    if c.capture && args.since.is_none() {
+        eprintln!("{BACKFILL_NOTE}");
+        let typed: String = Input::with_theme(&theme)
+            .with_prompt("Backfill since (YYYY-MM-DD; empty: record from now on)")
+            .allow_empty(true)
+            .validate_with(|s: &String| -> std::result::Result<(), String> {
+                if s.trim().is_empty() {
+                    return Ok(());
+                }
+                setup::parse_since(s).map(|_| ()).map_err(|e| e.to_string())
+            })
+            .interact_text()
+            .map_err(prompt_err)?;
+        c.since = match typed.trim() {
+            "" => None,
+            s => Some(setup::parse_since(s)?),
+        };
+    }
+    // asked after the capture, with the number of items it opened
+    c.baseline = match (c.since, args.baseline) {
+        (None, _) => None,
+        (Some(_), true) => Some(true),
+        (Some(_), false) => None,
+    };
     Ok(c)
 }
+
+/// What the wizard says before it asks for a backfill (WP-013 FINDINGS
+/// §2.2: a backfill opens with a red pill).
+const BACKFILL_NOTE: &str = "\
+A new logbook records changes from now on. A backfill also records older
+changes (the package log, snapshots). None of them belongs to a case, so
+each one opens as drift: the bar pill starts red, often with crises.
+After the capture you can mark the backfill as the pre-Seldon baseline:
+every open item is dismissed with the reason \"pre-Seldon baseline\";
+the events stay in the ledger.";
 
 /// What happened with git. Failures are reported, not fatal: the logbook
 /// works without git, and `seldon doctor` shows the fix.
