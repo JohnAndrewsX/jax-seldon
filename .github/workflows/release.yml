@@ -1,0 +1,335 @@
+# Release: a tag vX.Y.Z publishes the engine and the plugin (WP-040).
+#
+#   build    (tag and dry run)  `just check`; static musl binary with the
+#            watch feature; source tarball, binary tarball, SHA256SUMS;
+#            PKGBUILD/.SRCINFO for the version; a real makepkg build of
+#            the PKGBUILD from the source tarball, its file list and the
+#            packaged binary checked; `git subtree split --prefix=plugin`.
+#   release  (tag only)  GitHub release with the assets.
+#   bump     (tag only)  the updated PKGBUILD/.SRCINFO committed to main;
+#            skipped with a warning when main's packaging/ differs from
+#            the tag's (a change after the tag is never overwritten).
+#   aur      (tag only)  push PKGBUILD/.SRCINFO to the AUR; skipped with a
+#            notice when the AUR_SSH_PRIVATE_KEY secret is absent.
+#   plugin   (tag only)  push the plugin split to jax-seldon-plugin (main
+#            and the tag); skipped when PLUGIN_REPO_TOKEN is absent.
+#
+# Dry run: start the workflow by hand (Actions → release → Run workflow,
+# or `gh workflow run release.yml --ref <branch>`). Only `build` runs;
+# nothing is pushed or published. Its summary and the `dist` and
+# `package` artifacts show what a tag would publish. packaging/README.md.
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# bash -eo pipefail in every step (the implicit default has no pipefail)
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  MUSL_TARGET: x86_64-unknown-linux-musl
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      SELDON_SKIP_HOST_CHECKS: "1"
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # Arch's `rust` ships cargo, clippy and rustfmt; `rust-musl` adds the
+      # musl target for the static release asset (AGENTS.md §7).
+      - name: Install toolchain
+        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # git subtree split needs the history
+
+      # the container runs as root on a checkout owned by the runner's uid
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Version
+        id: version
+        run: |
+          version=$(cargo metadata --manifest-path engine/Cargo.toml --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "seldon") | .version')
+          if [[ $GITHUB_EVENT_NAME == push && $GITHUB_REF_NAME != "v$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match engine/Cargo.toml version $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version $version ($GITHUB_EVENT_NAME, $(git rev-parse --short HEAD))"
+
+      - name: just check
+        run: just check
+
+      - name: Static musl build (feature watch)
+        run: cargo build --manifest-path engine/Cargo.toml --locked --release --features watch --target "$MUSL_TARGET"
+
+      - name: Check the musl binary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bin=engine/target/$MUSL_TARGET/release/seldon
+          file "$bin"
+          file "$bin" | grep -Eq 'static(-pie)? linked'
+          "$bin" --version --json | jq -e --arg v "$VERSION" '.version == $v'
+          "$bin" watch --help > /dev/null
+
+      - name: Release assets
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir dist
+          git archive --format=tar.gz --prefix="jax-seldon-$VERSION/" \
+            -o "dist/jax-seldon-$VERSION.tar.gz" HEAD
+          stage="seldon-$VERSION-$MUSL_TARGET"
+          install -Dm755 "engine/target/$MUSL_TARGET/release/seldon" "$stage/seldon"
+          install -m644 LICENSE README.md engine/systemd/seldon-watch.service "$stage/"
+          install -m644 engine/systemd/README.md "$stage/seldon-watch.md"
+          tar czf "dist/$stage.tar.gz" --owner=0 --group=0 "$stage"
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      # makepkg refuses to run as root
+      - name: PKGBUILD and .SRCINFO for the version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sum=$(sha256sum "dist/jax-seldon-$VERSION.tar.gz" | cut -d' ' -f1)
+          bash packaging/set-version.sh "$VERSION" "$sum"
+          useradd -m builder
+          install -d -o builder /tmp/pkg
+          install -o builder -m644 packaging/PKGBUILD "dist/jax-seldon-$VERSION.tar.gz" /tmp/pkg/
+          runuser -u builder -- bash -c 'cd /tmp/pkg && makepkg --printsrcinfo' > packaging/.SRCINFO
+          bash packaging/check-srcinfo.sh
+          git diff --stat -- packaging/
+
+      # the source is the local tarball (same name as the release asset),
+      # so this builds exactly what the AUR package will download
+      - name: Build the package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          runuser -u builder -- bash -c 'cd /tmp/pkg && makepkg -f --noconfirm'
+          pkg="/tmp/pkg/jax-seldon-$VERSION-1-x86_64.pkg.tar.zst"
+          diff -u packaging/expected-files.txt <(tar tf "$pkg" | grep -v '^\.' | LC_ALL=C sort)
+          root=$(mktemp -d)
+          tar xf "$pkg" -C "$root"
+          "$root/usr/bin/seldon" --version
+          "$root/usr/bin/jax-seldon" --version --json | jq -e --arg v "$VERSION" '.version == $v'
+          "$root/usr/bin/seldon" watch --help > /dev/null
+          grep -qx 'ExecStart=/usr/bin/seldon watch' "$root/usr/lib/systemd/user/seldon-watch.service"
+          mkdir package
+          cp "$pkg" package/
+
+      - name: Plugin split
+        run: |
+          split=$(git subtree split --prefix=plugin)
+          git show "$split:manifest.json" | jq -e '.id == "jax.seldon"'
+          echo "plugin split: $split"
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+          HAS_PLUGIN_TOKEN: ${{ secrets.PLUGIN_REPO_TOKEN != '' }}
+        run: |
+          {
+            echo "## Seldon $VERSION ($GITHUB_EVENT_NAME)"
+            if [[ $GITHUB_EVENT_NAME == push ]]; then
+              echo "Tag build: the release, aur and plugin jobs follow."
+            else
+              echo "**Dry run:** nothing is published; release, aur and plugin are skipped."
+            fi
+            echo
+            echo "- AUR_SSH_PRIVATE_KEY set: $HAS_AUR_KEY"
+            echo "- PLUGIN_REPO_TOKEN set: $HAS_PLUGIN_TOKEN"
+            echo
+            echo '### SHA256SUMS'
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+            echo '### packaging/ for this version'
+            echo '```diff'
+            git diff -- packaging/
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaging
+          path: |
+            packaging/PKGBUILD
+            packaging/.SRCINFO
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: package/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Seldon $VERSION" --generate-notes
+
+  bump:
+    needs: [build, release]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0  # the tag, to compare packaging/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging
+          path: packaging-new
+
+      - name: Commit PKGBUILD and .SRCINFO to main
+        run: |
+          if ! git diff --quiet "$GITHUB_REF_NAME" HEAD -- packaging/PKGBUILD packaging/.SRCINFO; then
+            echo "::warning::main's packaging/ changed after $GITHUB_REF_NAME; bump it by hand (packaging/README.md)"
+            exit 0
+          fi
+          cp packaging-new/PKGBUILD packaging-new/.SRCINFO packaging/
+          if git diff --quiet -- packaging/; then
+            echo "packaging/ already at $VERSION"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packaging/PKGBUILD packaging/.SRCINFO
+          git commit -m "packaging: jax-seldon $VERSION"
+          git push origin HEAD:main
+
+  aur:
+    needs: [build, release]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      # aur.archlinux.org's published Ed25519 host key fingerprint
+      AUR_HOST_FINGERPRINT: SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4
+    steps:
+      - name: Check for the deploy key
+        id: key
+        run: |
+          if [[ -z $AUR_SSH_PRIVATE_KEY ]]; then
+            echo "::notice::AUR_SSH_PRIVATE_KEY is not set; AUR push skipped"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          name: packaging
+          path: packaging
+
+      - name: Push to the AUR
+        if: steps.key.outputs.present == 'true'
+        run: |
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org > ~/.ssh/known_hosts
+          ssh-keygen -lf ~/.ssh/known_hosts | grep -qF " $AUR_HOST_FINGERPRINT " || {
+            echo "::error::aur.archlinux.org host key does not match $AUR_HOST_FINGERPRINT"
+            exit 1
+          }
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git clone ssh://aur@aur.archlinux.org/jax-seldon.git aur
+          cp packaging/PKGBUILD packaging/.SRCINFO aur/
+          cd aur
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "AUR already at $VERSION"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "Update to $VERSION"
+          git push origin HEAD:master
+
+  plugin:
+    needs: [build, release]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      PLUGIN_REPO_TOKEN: ${{ secrets.PLUGIN_REPO_TOKEN }}
+      PLUGIN_REPO: https://github.com/JohnAndrewsX/jax-seldon-plugin.git
+    steps:
+      - name: Check for the token
+        id: token
+        run: |
+          if [[ -z $PLUGIN_REPO_TOKEN ]]; then
+            echo "::notice::PLUGIN_REPO_TOKEN is not set; plugin push skipped"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          fetch-depth: 0
+          persist-credentials: false  # the push below authenticates with its own token
+
+      - name: Push the plugin split
+        if: steps.token.outputs.present == 'true'
+        run: |
+          split=$(git subtree split --prefix=plugin)
+          auth=$(printf 'x-access-token:%s' "$PLUGIN_REPO_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" \
+            push "$PLUGIN_REPO" "$split:refs/heads/main" "$split:refs/tags/$GITHUB_REF_NAME"
