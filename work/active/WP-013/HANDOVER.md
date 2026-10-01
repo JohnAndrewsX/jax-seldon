@@ -11,6 +11,60 @@ Not pushed, no PR. Commits `main..HEAD`:
 
 The restore refactor named under "Not done" is part of `9798998`.
 
+## Review follow-up (SEND BACK → fixed)
+
+Commits `06470d5` (script) and `5b7eeb2` (TESTING), on top of `d69e981`.
+
+1. **Same-host guard (blocking).**
+   - Right after the first `rsh true`, the script compares the remote
+     `/etc/machine-id` (falling back to `hostname`) with the local one. It
+     dies when they are equal or when the remote answer is empty.
+   - So `SELDON_TEST_HOST=localhost`, or an alias for the dev host, never
+     reaches the copy, the init or the restart.
+   - Verified with a fake `ssh` on `PATH` that runs the command on this
+     machine: the run made exactly two ssh calls (`true` and the id),
+     then gave "FAIL SELDON_TEST_HOST=localhost is this machine (same
+     machine id)…" and exit 1.
+2. **Unknown enabled flag.**
+   - `plugin_enabled` asks `listPlugins` up to five times and returns
+     `true`, `false` or empty (unknown).
+   - The restore disables the plugin only when the flag was found `false`
+     for certain and is `true` now.
+3. **`found.env` before the mv-aside loop.**
+   - The backup now writes `found.env` first: whether the plugin dir
+     existed, the flag, and the list of Seldon paths that were absent.
+     Only then does it move the existing paths aside.
+   - The restore (`put_back`) removes a path only when it was absent or
+     was moved aside. A found path that had not been moved yet is kept,
+     with a "kept ~/…" line.
+   - Verified offline: I extracted the remote functions into a scratch
+     `HOME` with stubbed `omarchy-shell`, `quickshell` and `omarchy`.
+     Four scenarios:
+     - **A:** an original `~/.config/seldon` is moved aside, the run
+       writes all four paths, and the restore leaves only the original;
+     - **B:** a run killed inside the loop (`found.env` written,
+       `~/.config/seldon` not moved): the original is kept, and the
+       other three paths are removed;
+     - **C:** `listPlugins` answers empty at the backup and the plugin is
+       enabled now: no `omarchy plugin disable`;
+     - **D:** the plugin was found disabled and is enabled now: exactly
+       one `omarchy plugin disable jax.seldon`.
+4. **`SELDON_E2E_SINCE_DAYS`** must match `^[0-9]+$`; otherwise the script
+   says why and exits 1 before the build. TESTING.md now also says that a
+   killed run on a locked host keeps its leftovers until the operator
+   unlocks the session: the lock check comes before the recovery restore.
+5. **The duplicate assertion** after the plugin's capture is renamed to
+   "index after the plugin's capture still has the note in today". The
+   panel check is the separate count comparison.
+
+**Re-verified:**
+- `just e2e --engine-only` exits 0 (23 passed), with no temp dir left;
+- `SELDON_E2E_SINCE_DAYS=abc … --engine-only` exits 1 with the message.
+
+**Full run: pending unlock.** As instructed, I have not used ssh to reach
+the test host since the review. The two consecutive full runs happen after
+the orchestrator says the host is unlocked and stay-awake is set.
+
 ## Done
 
 - **`tests/integration/e2e.sh`.** `--engine-only` runs on the dev host; the
@@ -171,30 +225,19 @@ The assertions the WP demands held in every passing full run:
 
 ## Decisions needed
 
-1. **The test host is locked.**
-   - It locked at 15:03:36, 28 s after a shell start, with no idle line in
-     the journal. Then `omarchy-restart-shell` re-locked it, as it does by
-     design for a locked session.
-   - Please unlock it, and decide how unattended runs keep it awake
-     (stay-awake, or a longer idle timeout on the test host).
-   - Then re-run `SELDON_TEST_HOST=<alias> just e2e` twice. That closes
-     "Not done" item 1.
-2. **Guard false positive, reported, not worked around.** A read-only
-   `ssh … 'jq … select(length > 0) … ~/.config/omarchy/shell.json'` (to
-   read the idle settings) was blocked as "write under ~/.config". The
-   `>` of the jq filter matches the redirection pattern. Fix it in
-   `scripts/guard.sh` with a `guard-test.sh` row, if wanted.
-3. **The `test` ssh alias.** The docs and the script default use `test`,
-   but this dev host has no such alias. Either add a `Host test` entry to
-   `~/.ssh/config` (operator), or keep passing `SELDON_TEST_HOST`.
-4. **Reading questions from FINDINGS §2.**
-   - The Changelog marks 4 drift rows while the pill says 2. The leader's
-     `+3` counts itself, and the members are rows of their own: is that
-     the intended reading of ADR-0013 §2?
-   - A backfilled onboarding starts with a red pill (by spec).
-5. **Engine follow-up (FINDINGS §3).** The `capture` field of `seldon init
-   --json` still says "no collectors in this engine version". This is for
-   an engine WP.
+Settled at the review:
+- `SELDON_TEST_HOST`, default `test`; the operator adds the alias;
+- the `+(members−1)` badge (plugin side);
+- `init --json` (an engine follow-up);
+- the guard false positive.
+
+Open:
+
+1. **Re-running the full variant.** It is pending the operator's unlock
+   and stay-awake on the test host. After that: run
+   `SELDON_TEST_HOST=<alias> just e2e` twice. This exercises the lock
+   checks, the restore rules and the same-host guard (which passes there)
+   live.
 
 ## Touched outside WP scope
 
