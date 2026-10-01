@@ -1,16 +1,18 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Phase:** 0 — Foundation (prepared, not started)
+**Phase:** 0 — Foundation (running, tick 1 started 2026-10-01)
 **Contract version:** 1 (draft)
 **Last updated:** 2026-10-01
 
 ## Active work packages
-*(none)*
+| WP | Title | Role | Worker | Worktree | Since |
+|---|---|---|---|---|---|
+| WP-001 | Repo scaffold, CI, toolchain | Scaffold | `scaffold-001` (opus, high) | `wt/WP-001` · `wp/001-scaffold` | 2026-10-01 |
+| WP-002 | Contract and fixtures | Schema Keeper | `schema-002` (opus, high) | `wt/WP-002` · `wp/002-contract-fixtures` | 2026-10-01 |
 
 ## Queued (next up)
-WP-001 repo scaffold · WP-002 contract & fixtures · WP-003 engine core
-(WP-001 … WP-009 are written out in `work/queued/`)
+WP-003 engine core (needs WP-002) · WP-004 … WP-009 (see `work/queued/`)
 
 ## Preparation done (2026-10-01)
 - Kickoff checklist steps 1–3: repo + first commit, WP files, host verified
