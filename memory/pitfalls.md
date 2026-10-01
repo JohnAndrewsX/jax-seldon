@@ -247,3 +247,9 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `index::write` for `std::fs::write` made the in-process reader test fail
   3/3 (empty reads); the CLI variant caught it only 1/3, so the in-process
   loop is the proof and the CLI loop a smoke test.
+- **Fixture counts hard-coded in tests break on every fixture update.**
+  After WP-015 (67 → 71 ledger lines), `lines == 670` and the expected
+  STATUS.md (27/38 events) failed, while the golden test, which compares
+  against the sample, passed unchanged. Take numbers from the sample where
+  you can. And run the whole suite after a rebase: `cargo test` stops at
+  the first failing test binary, so later failures stay hidden.

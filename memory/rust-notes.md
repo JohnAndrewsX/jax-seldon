@@ -240,3 +240,11 @@ Append-only. One bullet per finding, newest section last.
 - **clippy 1.98:** `unnecessary_sort_by` wants
   `sort_by_key(|x| Reverse(..))`; `type_complexity` fires on a tuple of
   boxed closures in a test, so use a local `type` alias.
+- **`[profile.bench]` inherits `release`.** Overriding only `lto = "thin"`
+  and `codegen-units = 16` halves the CI bench compile (58 s → 28 s here)
+  and leaves the index timing where it was (×10 median 4.7 ms).
+- **Reading `HEAD` without git** (`index::git_head_fast`): `.git/HEAD` is
+  `ref: refs/heads/x` or a bare hash; the ref is a loose file or a line
+  `<sha> <ref>` in `packed-refs`; a `.git` *file* (`gitdir:`) and
+  `commondir` cover worktrees. The first 7 hex characters match
+  `git rev-parse --short=7`.
