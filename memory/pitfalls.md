@@ -449,3 +449,39 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   tests allow 4 s of slack over the 2 s interval and wait for the
   `watching` line before they write anything. A sleep after spawning is
   not enough.
+## 2026-10-01 · WP-035 (Engine)
+
+- **The guard reads a `grep` pattern as a command.** A read-only
+  `grep -n -i "…systemctl\|list-unit…" memory/host.md` was blocked as a
+  "service or boot command". Nothing ran. I did not reword it; I read the
+  file with the Read tool. Name shim files and test data so that Bash
+  lines never need the word (`git add fixtures/logs/`, not the file names).
+- **Shims, not PATH filtering, for host queries.** `Env::query_shims`
+  writes `pacman`, `systemctl` and `omarchy` stubs that print
+  `fixtures/logs/*` for exactly the read-only argument lists, exit 64 for
+  anything else, and append every call to a log. The log is the proof that
+  only queries ran; without a stub the program is simply not found (PATH
+  is the stub dir), which is the "query failed" test.
+- **`init` now runs the dossier, so it reads `/proc` and `/sys`.** Tests
+  that run `init` with a capture set `SELDON_HARDWARE_ROOT` to
+  `fixtures/logs/hardware` (`init_with` does). Otherwise the hardware
+  fence holds the test machine's CPU, and "is there a dossier commit"
+  depends on the host. Expected git log after `init` with capture:
+  `seldon: dossier`, `seldon: first capture…`, `seldon: init logbook`.
+- **`pacman -Qqm` exits 1 when there are no foreign packages** (empty
+  output, empty stderr). `query()` treats exit 1 with no output at all as
+  an empty answer; any stderr is still an error. The dev host has 0
+  foreign packages (Omarchy's own repository carries brave-bin etc.).
+- **`MemTotal` is not the RAM size.** 64 GB machines report about
+  62.5 GiB; the dossier writes `MemTotal` rounded to whole GiB (`63 GiB`
+  in the fixture), which is stable across boots. Physical size would need
+  dmidecode (root) — not worth it.
+- **A plain fixture copy has no `packages.explicit` fence.** The rebuild
+  golden runs `seldon dossier --section packages` with the shims first;
+  the other rebuild tests do not, so both §2 forms are covered. The manual
+  `diff` against the golden (TESTING.md) shows exactly the "Before the
+  logbook" group.
+- **`~/.config/seldon/config.toml` already exists on the dev host**
+  (mtime 2026-10-01 17:10, before this WP's runs; see the WP-022/024
+  notes). Prove "nothing touched" with a marker file and `find -newer`,
+  not with "the directory does not exist".
