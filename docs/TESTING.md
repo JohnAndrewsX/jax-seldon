@@ -53,7 +53,13 @@ live under it), and a `PATH` that contains only:
 - a link to the host's `git`.
 
 So the results do not depend on what the host has installed or how snapper
-is configured. Two engine variables make tests deterministic:
+is configured. Every run also gets `SELDON_TEST_GUARD=<temp dir>`: the
+engine then refuses to start (exit 2, "refusing to run outside the test
+guard") unless its home, config and state directories, resolved with
+symbolic links and `..`, all lie under that directory
+(`config::Dirs::from_vars`, unit test
+`config::tests::the_test_guard_checks_the_resolved_dirs`, integration test
+`init.rs::setup::the_test_guard_refuses_a_home_outside_it`). Two engine variables make tests deterministic:
 - `SELDON_NOW` (RFC 3339 with offset) fixes the clock of one invocation:
   event `ts`, journal headings, Log lines, the case id year
   (`Env::at(now, args)`). Not for normal use.
@@ -79,17 +85,36 @@ that ships only the engine):
 The packaging WP (WP-040) has to either ship those directories or build
 with `cargo build` only (no tests).
 
-**Manual acceptance (WP-003).** To try `init` and `doctor` against the real
-`snapper`/`omarchy-version` without writing the operator's
-`~/.config/seldon`, redirect the XDG dirs:
+**Manual runs: scratch dirs and the test guard.** Every manual run of the
+engine on a dev or test host starts with one scratch directory that holds
+home, config, state and data, and `SELDON_TEST_GUARD` set to it:
 
 ```
-export XDG_CONFIG_HOME=$(mktemp -d) XDG_STATE_HOME=$(mktemp -d)
-engine/target/debug/seldon init --non-interactive --path /tmp/seldon-wp003
-engine/target/debug/seldon doctor --path /tmp/seldon-wp003 --json   # "ok": true, snapper "degraded"
+S=$(mktemp -d)
+export SELDON_TEST_GUARD=$S HOME=$S/home \
+       XDG_CONFIG_HOME=$S/config XDG_STATE_HOME=$S/state XDG_DATA_HOME=$S/data
+mkdir -p $HOME
+B=$PWD/engine/target/debug/seldon
+$B --json doctor     # the "config" check names $S/config/seldon/config.toml
 ```
 
-`seldon init` refuses an existing logbook, so remove `/tmp/seldon-wp003`
+Set all four, not only `HOME`: a desktop session usually exports
+`XDG_CONFIG_HOME`/`XDG_STATE_HOME`/`XDG_DATA_HOME` pointing into the real
+home, and an absolute XDG variable wins over `HOME`. With the guard set, a
+run whose directories still point outside `$S` exits 2 before it reads or
+writes anything. The real package log and `snapper` are still read (they
+are absolute paths); the theme file and the watched config paths are read
+under `$S/home` (point `SELDON_THEME_FILE` at the real `theme.name` to read
+that one).
+
+**Manual acceptance (WP-003).** With the scratch environment above:
+
+```
+$B init --non-interactive --no-capture --path $S/logbook
+$B doctor --path $S/logbook --json   # "ok": true, snapper "degraded"
+```
+
+`seldon init` refuses an existing logbook, so remove `$S/logbook`
 before running it again.
 
 **Tests that need a logbook without a capture.** Since WP-024, `init` runs
@@ -99,16 +124,13 @@ machine state *after* `init` and expects its own first capture to be the
 baseline passes `--no-capture`; `Env::init_logbook*` does so for every
 test. Only `tests/init.rs` exercises the wizard's capture.
 
-**Real-host run of the wizard (WP-024).** Reads the real package log,
-`snapper`, `omarchy plugin list` and the theme file (read-only), writes only
-under scratch dirs. Never pass `--theme-hook` on the dev host: it runs
+**Real-host run of the wizard (WP-024).** With the scratch environment
+above. It reads the real package log and `snapper` (read-only) and writes
+only under `$S`. Never pass `--theme-hook` on the dev host: it runs
 `omarchy hook install`, a red-zone write under `~/.config/omarchy/hooks/`
-(the guard blocks it; the tests stub `omarchy`).
+(the repository's guard blocks it; the tests stub `omarchy`).
 
 ```
-S=$(mktemp -d)
-export XDG_CONFIG_HOME=$S/config XDG_STATE_HOME=$S/state XDG_DATA_HOME=$S/data
-B=engine/target/debug/seldon
 $B init --non-interactive --path $S/logbook --language de \
    --harness claude-code --harness omarchy-agent --since "$(date -d '-7 days' +%F)"
 #   First capture: N event(s) since …; M open drift item(s), M crisis  (dev host
@@ -120,13 +142,15 @@ $B --json init --non-interactive --path $S/logbook --since "$(date -d '-7 days' 
 $B --json drift          # "openDrift": 0, "crisis": 0
 $B --json capture --all  # "written": 0
 git -C $S/logbook log --format=%s   # first capture and pre-Seldon baseline / init logbook
+jq .logbook.git $S/state/seldon/index.json   # head = git rev-parse --short HEAD, dirty false
 ```
 
 The interactive wizard needs a terminal; `script` provides one. Keys:
 Enter takes the default, Space toggles a multi-select item, `y`/`n` answer a
-confirmation. Pass `--path` so the path step is skipped (its default is
-`~/Seldon`), and stub `omarchy` with `SELDON_OMARCHY` in case the theme
-hook is answered with yes:
+confirmation. Export the scratch environment and `SELDON_TEST_GUARD`
+*before* `script` (as above; `script` passes the environment on), pass
+`--path` so the path step is skipped (its default is `~/Seldon`), and stub
+`omarchy` with `SELDON_OMARCHY` in case the theme hook is answered with yes:
 
 ```
 export SELDON_OMARCHY=$S/omarchy-stub    # a script that only records "$*"
@@ -139,12 +163,12 @@ export SELDON_OMARCHY=$S/omarchy-stub    # a script that only records "$*"
 # baseline?" (Enter: yes)
 ```
 
-Set the variables with `export` *before* `script`, as above. A `HOME=…`
-given to `env` in front of `script` did not reach the engine on the dev host
-(`script` starts `$SHELL`, and the engine then used the real home): on
-2026-10-01 such a run wrote `~/.config/seldon/config.toml` and
-`~/.local/state/seldon/` (WP-024 handover). Check with a harmless command
-(`$B doctor --json` prints the config path) before a wizard run.
+Why the guard: on 2026-10-01 a wizard run with only `HOME` overridden
+(`env HOME=<scratch> script -qec "seldon init …"`) wrote the real
+`~/.config/seldon/config.toml` and `~/.local/state/seldon/`. The session
+exported `XDG_CONFIG_HOME` and `XDG_STATE_HOME` into the real home, and
+those win over `HOME` (WP-024 handover). With `SELDON_TEST_GUARD` set, the
+same command exits 2 and writes nothing.
 
 The engine needs Rust ≥ 1.89 (`File::try_lock`, let-chains); both hosts
 have 1.98.

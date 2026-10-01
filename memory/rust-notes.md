@@ -343,3 +343,17 @@ Append-only. One bullet per finding, newest section last.
   fence names and table header rows per file, the machine id normalised;
   equal across languages and to `tests/golden/init-skeleton.txt`
   (`SELDON_BLESS=1` rewrites). Prose may change without touching it.
+- **Environment as a function for testable setup:**
+  `Dirs::from_vars(|name| …)` lets a unit test feed `HOME`/`XDG_*`/
+  `SELDON_TEST_GUARD` without `std::env::set_var` (unsafe in edition 2024,
+  and racy across test threads); `from_env` passes `std::env::var_os`.
+- **Path containment checks:** `starts_with` on raw paths is fooled by `..`
+  and symbolic links. Fold `.`/`..` component by component and
+  `canonicalize` each prefix that exists (the tail may not exist yet), for
+  both the guard and the checked path.
+- **A rebuild after the commit, not before:** the index's `logbook.git`
+  (head, dirty) is taken at rebuild time. A command that commits must
+  rebuild after the commit, under the same lock, or the index shows the
+  old head and `dirty: true` until the next write. A negative control
+  needs a step that actually commits: with nothing to commit the stale and
+  the fresh index agree.

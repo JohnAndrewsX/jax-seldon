@@ -322,13 +322,19 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 
 ## 2026-10-01 · WP-024 (Engine)
 
-- **`env HOME=… script -qec "seldon init …"` used the real home.** The
-  `HOME` override did not reach the engine through `script` (it starts
-  `$SHELL`); `export`ed `XDG_*` variables did. The run wrote
-  `~/.config/seldon/config.toml` and `~/.local/state/seldon/` on the dev
-  host, and the guard then (rightly) blocked the `rm` under `~/.config`:
-  left for the operator. Export the XDG dirs before `script`, and probe
-  with `seldon --json doctor` (the `config` check names the file) first.
+- **Overriding `HOME` alone does not redirect the engine.** The desktop
+  session exports `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and `XDG_DATA_HOME`
+  into the real home, and an absolute XDG variable wins over `HOME`. A pty
+  run as `env HOME=<scratch> script -qec "seldon init …"` therefore wrote
+  the real `~/.config/seldon/config.toml` and `~/.local/state/seldon/`.
+  `script` itself passes the environment on; I first blamed it, wrongly.
+  The guard then (rightly) blocked the `rm` under `~/.config`, so the
+  files were left for the operator. Since the review follow-up:
+  - export `HOME` *and* all three `XDG_*` into one scratch dir;
+  - set `SELDON_TEST_GUARD` to that dir: the engine exits 2 when its
+    resolved home/config/state dirs leave it (`common::Env` sets it for
+    every test);
+  - probe with `seldon --json doctor` (the `config` check names the file).
 - **`init` runs the first capture now.** A test that builds machine state
   after `init` and expects its own first capture to be the baseline must
   pass `--no-capture` (the shared `Env::init_logbook*` does); otherwise new
