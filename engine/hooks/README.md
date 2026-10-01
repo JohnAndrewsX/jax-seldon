@@ -36,6 +36,24 @@ then it takes that agent and case, through the same attribution pass the
 capture runs. `meta.from` and `detail` name the theme it replaces: the
 theme collector's cursor, or a newer `theme-set` in the ledger.
 
+## Omarchy-Agent kit (`seldon init --harness omarchy-agent`)
+
+The Omarchy-Agent kit's guard and skills stay the kit's (PROJECT.md: its
+zone model and guard are not Seldon's). The wizard only copies them into
+the logbook's `.claude/` when the kit is there as a template directory:
+
+| | |
+|---|---|
+| Template directory | `$SELDON_OMARCHY_AGENT_KIT`, else `${XDG_DATA_HOME:-~/.local/share}/seldon/harness/omarchy-agent/` |
+| Layout | that of `<logbook>/.claude/`, e.g. `hooks/guard.py`, `skills/<name>/SKILL.md`, `settings.json` (with the guard's `PreToolUse` hook) |
+| Copied | every regular file, permissions kept (an executable guard stays executable); symbolic links are skipped; a file that exists in `.claude/` already is kept, never overwritten |
+| Order | the kit first, then Claude Code's hooks, so `--harness claude-code` merges Seldon's hooks into the kit's `settings.json` next to the guard |
+| Without the directory | nothing is copied; `init` says where it looked and what it would have copied |
+
+Seldon ships no kit. Re-running the copy later is not a command yet: copy
+the files by hand (`cp -rn <kit>/. <logbook>/.claude/`), then
+`seldon hook install claude-code` if the kit brought a settings file.
+
 ## Claude Code (`seldon hook install claude-code`)
 
 Not a script. `seldon init --harness claude-code` (or the wizard's harness
@@ -72,21 +90,3 @@ What is recorded:
 - `sh|bash|zsh|dash -c '…'` and `eval '…'` are read as the commands
   inside. Not read yet: `xargs`, `find -exec`, interpreters (`python -c`,
   `node -e`).
-
-## Omarchy-Agent kit (`seldon init --harness omarchy-agent`)
-
-The Omarchy-Agent kit's guard and skills stay the kit's (PROJECT.md: its
-zone model and guard are not Seldon's). The wizard only copies them into
-the logbook's `.claude/` when the kit is there as a template directory:
-
-| | |
-|---|---|
-| Template directory | `$SELDON_OMARCHY_AGENT_KIT`, else `${XDG_DATA_HOME:-~/.local/share}/seldon/harness/omarchy-agent/` |
-| Layout | that of `<logbook>/.claude/`, e.g. `hooks/guard.py`, `skills/<name>/SKILL.md`, `settings.json` (with the guard's `PreToolUse` hook) |
-| Copied | every regular file, permissions kept (an executable guard stays executable); symbolic links are skipped; a file that exists in `.claude/` already is kept, never overwritten |
-| Order | the kit first, then Claude Code's hooks, so `--harness claude-code` merges Seldon's hooks into the kit's `settings.json` next to the guard |
-| Without the directory | nothing is copied; `init` says where it looked and what it would have copied |
-
-Seldon ships no kit. Re-running the copy later is not a command yet: copy
-the files by hand (`cp -rn <kit>/. <logbook>/.claude/`), then
-`seldon hook install claude-code` if the kit brought a settings file.
