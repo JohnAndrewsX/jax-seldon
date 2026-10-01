@@ -43,6 +43,11 @@ mod event {
             e["id"].as_str().unwrap()
         );
         assert_eq!(line, expected);
+        if env.has_git {
+            // the subject is not redacted, so it stays out of git's argv
+            let head = stdout(&env.git(&root, &["log", "-1", "--format=%s"]));
+            assert_eq!(head.trim(), "seldon: event theme/theme-set");
+        }
     }
 
     #[test]

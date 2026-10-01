@@ -178,12 +178,8 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
         file.attach(&event.id.to_string(), &event.actor);
         file.save(&logbook)?;
     }
-    let summary = format!(
-        "event {}/{} {}",
-        event.source,
-        event.kind,
-        clip(subject, 60)
-    );
+    // never the subject: it is not redacted and must not reach a command line
+    let summary = format!("event {}/{}", event.source, event.kind);
     let commit = autocommit(ctx, &config, &logbook, &summary);
     drop(lock);
 

@@ -117,12 +117,13 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
 
-    let area_created = args
-        .area
-        .as_deref()
-        .map(|a| cases::ensure_area(&logbook, a))
-        .transpose()?
-        .flatten();
+    if let Some(area) = args.area.as_deref()
+        && !crate::model::is_slug(area)
+    {
+        return Err(Error::user(format!(
+            "area `{area}` is not a lowercase slug ([a-z0-9][a-z0-9-]*)"
+        )));
+    }
     let today = ctx.now.date_naive();
     let id = cases::next_id(&logbook, ctx.now.year())?;
     let case = Case {
@@ -160,16 +161,27 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
         &format!("created (zone {}, risk {})", args.zone, args.risk),
         &args.actor,
     );
-    write_new(
-        &file.path,
-        &crate::model::render_new(&file.case, &file.doc.body),
-    )?;
+    let text = crate::model::render_new(&file.case, &file.doc.body);
+    if file.path.exists() {
+        return Err(Error::user(format!(
+            "{} already exists",
+            file.path.display()
+        )));
+    }
 
+    // the ledger first: if it cannot be written, nothing else is
     let event = Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
         .detail(title.clone())
         .actor(&args.actor)
         .case(Some(id.clone()));
     let event = emit_one(&lock, &config, &logbook, event)?;
+    let area_created = args
+        .area
+        .as_deref()
+        .map(|a| cases::ensure_area(&logbook, a))
+        .transpose()?
+        .flatten();
+    write_new(&file.path, &text)?;
     let commit = autocommit(ctx, &config, &logbook, &format!("{id} created"));
     drop(lock);
 
@@ -228,8 +240,20 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
         line.push_str(r);
     }
     file.log(&ctx.now, &line, &args.actor);
-    let moved_from = file.save(&logbook)?.map(|p| cases::relative(&logbook, &p));
+    let stub = (transition == Transition::Done).then(|| match logbook.meta.language {
+        Language::En => format!("Case completed: {}", file.case.title),
+        Language::De => format!("Case abgeschlossen: {}", file.case.title),
+    });
 
+    // the ledger first: if it cannot be written, the case is not moved,
+    // the marker and the journal stay as they are
+    let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
+        .actor(&args.actor)
+        .case(Some(args.id.clone()));
+    event.detail = reason.clone();
+    let event = emit_one(&lock, &config, &logbook, event)?;
+
+    let moved_from = file.save(&logbook)?.map(|p| cases::relative(&logbook, &p));
     let active_case = match transition {
         Transition::Start => {
             cases::set_active_case(&logbook, &args.id)?;
@@ -240,21 +264,12 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
         }
         Transition::Verify => Value::Null,
     };
-    let journal_entry = if transition == Transition::Done {
-        let stub = match logbook.meta.language {
-            Language::En => format!("Case completed: {}", file.case.title),
-            Language::De => format!("Case abgeschlossen: {}", file.case.title),
-        };
-        Some(journal::append(&logbook, &ctx.now, &args.actor, Some(&args.id), &stub)?.path)
-    } else {
-        None
+    let journal_entry = match &stub {
+        Some(text) => {
+            Some(journal::append(&logbook, &ctx.now, &args.actor, Some(&args.id), text)?.path)
+        }
+        None => None,
     };
-
-    let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
-        .actor(&args.actor)
-        .case(Some(args.id.clone()));
-    event.detail = reason.clone();
-    let event = emit_one(&lock, &config, &logbook, event)?;
     let commit = autocommit(ctx, &config, &logbook, &format!("{} {}", args.id, to));
     drop(lock);
 

@@ -570,6 +570,109 @@ mod plan {
         assert_eq!(ignored.trim(), ".seldon/active-case");
     }
 
+    /// Everything a plan step may change: every work file, the marker, the
+    /// journal folder, the areas.
+    fn state(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+        fn walk(dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in entries {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else {
+                    out.push((p.clone(), std::fs::read(&p).unwrap()));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for dir in ["work", "journal", "areas", "ledger", ".seldon"] {
+            walk(&root.join(dir), &mut out);
+        }
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_ledger_failure_transitions_nothing() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let queued = new_case(&env, "queued", &[]);
+        let active = new_case(&env, "active", &[]);
+        let verifying = new_case(&env, "verifying", &[]);
+        for (step, id) in [
+            ("start", &active),
+            ("start", &verifying),
+            ("verify", &verifying),
+        ] {
+            assert_eq!(env.at(T1, &["plan", step, id]).status.code(), Some(0));
+        }
+
+        // 1. the ledger refuses to start: an invalid redaction pattern (exit 1)
+        let bad = env.tmp.path().join("bad-redaction.toml");
+        std::fs::write(
+            &bad,
+            format!(
+                "logbook = \"{}\"\n[redaction]\npatterns = [\"(\"]\n",
+                root.display()
+            ),
+        )
+        .unwrap();
+        let before = state(&root);
+        let config = bad.to_str().unwrap();
+        for args in [
+            &[
+                "--config", config, "plan", "new", "--area", "new-area", "--", "x",
+            ][..],
+            &["--config", config, "plan", "start", queued.as_str()][..],
+            &["--config", config, "plan", "verify", active.as_str()][..],
+            &["--config", config, "plan", "done", verifying.as_str()][..],
+            &["--config", config, "plan", "drop", active.as_str()][..],
+        ] {
+            let out = env.at(T2, args);
+            assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stderr(&out));
+            assert!(
+                stderr(&out).contains("[redaction] patterns"),
+                "{}",
+                stderr(&out)
+            );
+        }
+        assert_eq!(state(&root), before, "nothing transitioned");
+
+        // 2. the ledger cannot be written: a new month in a read-only ledger/
+        //    (exit 2); skipped where permissions do not bind (root)
+        let ledger_dir = root.join("ledger");
+        let mut perms = std::fs::metadata(&ledger_dir).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o555);
+        std::fs::set_permissions(&ledger_dir, perms.clone()).unwrap();
+        let probe = ledger_dir.join(".probe");
+        if std::fs::write(&probe, "").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+        } else {
+            let november = "2026-11-02T08:00:00+01:00";
+            for args in [
+                &["plan", "new", "--area", "new-area", "--", "x"][..],
+                &["plan", "start", queued.as_str()][..],
+                &["plan", "done", verifying.as_str()][..],
+                &["plan", "drop", active.as_str()][..],
+            ] {
+                let out = env.at(november, args);
+                assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
+            }
+            assert_eq!(state(&root), before, "nothing transitioned");
+        }
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        std::fs::set_permissions(&ledger_dir, perms).unwrap();
+
+        // and with a working ledger the same steps go through
+        assert_eq!(
+            env.at(T2, &["plan", "done", &verifying]).status.code(),
+            Some(0)
+        );
+        assert!(root.join("journal/2026/2026-10-02.md").is_file());
+    }
+
     #[test]
     fn not_initialised_and_lock_held() {
         let env = Env::new(Snapper::Missing);
