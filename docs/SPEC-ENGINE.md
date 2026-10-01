@@ -18,7 +18,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 |---|---|
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`fix`/`lastRun` (WP-007) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
@@ -105,8 +105,24 @@ logbook's `created` (or `--since TS`); diff collectors record their first
 state silently. `--since` has no effect on a collector that already has a
 cursor (one notice line in human output). Dedupe against the ledger runs on
 every capture, not only after a rotation, so a lost `cursors.json` never
-duplicates events. `capture` does not commit, reconcile or rebuild the
-index by itself until WP-006/007/008 wire those steps in.
+duplicates events. `capture` runs the shared attribution pass before the
+append (ADR-0017), then rebuilds the index (CONTRACT rule 2); the commit
+helper and reconciliation (WP-008) follow.
+
+```
+seldon index --json   → {"ok","logbook","index":"<path>","generatedAt","events":N,"summary":{…},
+                         "files":["ledger/2026-10.md",…],"warnings":[…],"valid":bool}
+seldon status --json  → the index shape above plus "status","state","git":{"committed":bool,"reason"?}
+```
+
+`index --check` validates before writing and refuses an invalid index
+(exit 2). Before `init` both commands write the `notInitialised` index and
+exit 3 (what the plugin's banner expects). `status` autocommits as
+`seldon: status` only when a logbook file changed; `index` never commits.
+Every writing command calls `index::rebuild_if_initialised` after its
+autocommit and before releasing the lock; a failed rebuild is a warning,
+never a command failure. Broken files (torn ledger line, invalid case
+frontmatter) are skipped with a warning that `--json` and stderr surface.
 
 `message` carries the full detail (e.g. the unrecognised subcommand name),
 not just the error kind. Detection of `--json` must not sniff raw argv for
@@ -268,21 +284,47 @@ is recorded redacted.
 
 ## 8. Hooks
 
-`seldon hook claude-code` reads the PostToolUse JSON from stdin, extracts
-`tool_input.command`, classifies with the same rules as the pacman command
-parser plus `omarchy (pkg|plugin|theme|update|install)`, `systemctl
-(enable|disable|start|stop|mask)`, `cp|mv|install|tee|sed -i` targeting a
-watched path, `git` inside `~/.config` or the logbook. Non-mutating commands
-produce no event. Output: nothing on stdout (hooks must stay silent), exit
-0 always (a logging failure must never block an agent).
+`seldon hook claude-code` reads the **PreToolUse** JSON from stdin
+(ADR-0017: the event carries the start time, `meta.toolUseId` and
+`meta.sessionId`; a PostToolUse for a recorded `tool_use_id` writes
+nothing; a PostToolUse-only install records with the arrival time and
+rarely attributes), extracts `tool_input.command` (or `file_path` for
+`Edit|Write|MultiEdit`, ADR-0014 §4), and classifies with the shared
+command parser (`pkgcmd.rs`): package managers via `is_mutating` (query
+sub-commands never, ADR-0017 §5; `pacman -Sy` counts), `omarchy
+(update|pkg add|aur add|drop|remove|install|remove|reinstall|plugin
+add|clone|enable|disable|remove|update|theme set|install|remove|update)`
+and the `omarchy-*` scripts, `systemctl (enable|disable|start|stop|mask|
+unmask)`, `cp|mv|install|ln|tee|sed -i|rm|rmdir|unlink|truncate` and
+redirections whose target — or `mv` source — lies in a watched path
+(`watchPaths` plus `~/.config/systemd`, always), `git` changing
+sub-commands inside the XDG config home or the logbook; the string of
+`bash|sh|zsh -c` and `eval` is re-parsed. Relative paths resolve against
+the payload's `cwd` and earlier `cd`s in the line; heredoc bodies are the
+command's stdin and are cut from the record; redaction runs before the
+4096-character cut. Green events per ADR-0019 only while a case is set.
+Non-mutating commands produce no event. Output: nothing on stdout (hooks
+must stay silent), exit 0 always, even on malformed stdin, a missing
+logbook, a broken config or a held lock (waited for up to 2 s), under
+5 ms in release. `seldon hook generic` takes `{"command","actor","cwd",
+"startedAt"?}` with the same rules. `seldon hook install claude-code
+[--settings PATH]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
+`SessionStart` and `SessionEnd` (timeout 60 s, Claude Code's cap; `Stop`
+would fire after every reply) into `<logbook>/.claude/settings.json`
+without clobbering existing hooks, idempotently; the merged file is
+written with sorted keys. Other agents call `hook generic` themselves.
 
 `seldon hook session-start` prints a compact context block to stdout:
 STATUS summary, active case (id, title, plan steps), last 5 journal lines,
 `memory/lessons.md` headings. Claude Code injects it as context.
 
-`seldon hook session-stop` appends `## HH:MM · agent:NAME · CASE` with
-"session ended; N events recorded" to today's journal, runs `capture --all`,
-`status`, and commits.
+`seldon hook session-stop [--actor agent:NAME]` appends `## HH:MM ·
+agent:NAME · CASE` with "session ended; N events recorded" (N = the
+session's events by `meta.sessionId`) to today's journal, runs `capture
+--all`, rebuilds the index and STATUS.md, and commits `seldon: session
+ended (agent:NAME)`; every step runs even if an earlier one failed. The
+hook path uses the cheap index rebuild (no git spawn) to stay inside its
+budget.
 
 ## 9. Wizard (`seldon init`)
 

@@ -21,5 +21,6 @@
 | ADR-0017 | Hook command events carry the start time; attribution rules sharpened (clarifies ADR-0014 §1) | accepted |
 | ADR-0018 | No `plugin-update` events for first-party plugins (clarifies ADR-0014 §3) | accepted |
 | ADR-0019 | Green zone for agent commands no collector tracks (clarifies ADR-0014 §2) | accepted |
+| ADR-0020 | The index lists at most 200 open drift items, crises first | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

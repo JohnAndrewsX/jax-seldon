@@ -16,12 +16,17 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    tests; without it, dev mode pins the clock to the index's `generatedAt`.
 2. The engine writes the index atomically (temp file + rename) after every
    command that changes the logbook, and on `seldon status` / `seldon index`.
+   The file is compact JSON on one line (the fixture stays pretty-printed
+   for humans); the `ledger/*.md` views are refreshed by `index`/`status`,
+   so they may lag a writing command until the next `status`.
 3. `contractVersion` is an integer. The plugin refuses an index with a
    different version and shows the `contractMismatch` banner with both
    numbers and the update command.
 4. The index is a **view**, not a database: newest 500 events, last 50
-   completed cases, 366 heatmap days, 10 snapshots. Anything older is in the
-   logbook, which the panel can open in the editor.
+   completed cases, 366 heatmap days, 10 snapshots, and the newest 200 open
+   drift items with crises first (ADR-0020; `summary.openDrift` and
+   `summary.crisis` always count all). Anything older is in the logbook,
+   which the panel can open in the editor.
 5. Size budget: < 1 MB. If a section would exceed it, the engine truncates
    that section and sets `meta.truncated` (future field; needs a bump).
 6. Every field the plugin displays verbatim is user content; the plugin
@@ -52,7 +57,6 @@ seldon drift show <eventId> --json          # full member list of a group (ADR-0
 seldon decide --no-edit -- <title>
 seldon rebuild --json
 seldon update-impact --json
-seldon open <what> --editor
 ```
 
 IDs are validated by regex in QML before being passed. Free text is passed
