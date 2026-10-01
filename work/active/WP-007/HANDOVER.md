@@ -1,10 +1,98 @@
 WP-007 HANDOVER
 
-Branch `wp/007-index-status`, worktree `wt/WP-007`, based on `main` at
-`9f91902`. Not pushed, no PR. Commits `main..HEAD`: `37e7f22` index builder,
-views, `index`/`status` · `b65c7a9` rebuild wired into the writing commands ·
-`e456d63` tests, golden test, bench · `9c2c06d` cleanup · `ea885e2` memory ·
-then this handover. `just check` exits 0 at HEAD; `just bench` exits 0.
+Branch `wp/007-index-status`, worktree `wt/WP-007`, **rebased onto `main` at
+`cff6f8a`** (WP-015 merged). Not pushed, no PR. Commits `main..HEAD`:
+`63408aa` index builder, views, `index`/`status` · `630f8d2` rebuild wired
+into the writing commands · `7353ff9` tests, golden test, bench · `7c9b0f1`
+cleanup · `603a04c` memory · `af7f7dd`/`6af8580` handover · then the review
+follow-ups `44d852d` engine · `334c77c` tests · `c6936ea` bench profile ·
+`cc1bba5` memory · and this update. `just check` exits 0 at HEAD (220
+tests, 17 suites); `just bench` exits 0.
+
+## Review follow-ups (after APPROVE)
+
+0. **Rebase.** `git rebase main` was clean except `memory/pitfalls.md`.
+   I kept both sections: WP-015's first, then WP-007's.
+   - Against WP-015's fixture (71 ledger lines, 62 events, the `zone: green`
+     event, snapshots 114/115) the golden test passes **unchanged, with zero
+     differences**, and the ledger views are still byte-identical.
+   - Two tests had pre-WP-015 numbers hard-coded: the ×10 line count, and
+     the event counts in the expected STATUS.md (now 30/41, as in the
+     sample's `summary`). Both are updated.
+1. **Tests.**
+   - `lines == 710` (71 × 10).
+   - `the_engine_checker_agrees_with_jsonschema` now validates every file
+     in `fixtures/index-variants/` (all five, `index-stale` included) with
+     both validators.
+   - Both new variants are derivable, so each got a golden test:
+     - `plugins_degraded_equals_the_variant` uses a `cursors.json` with
+       `plugins` `ok: false` and the plugins collector's own timeout
+       message, `omarchy plugin list --json: timed out`
+       (`collectors/plugins.rs`, `{WHAT}: timed out`).
+     - `omarchy_git_checkout_equals_the_variant`: `repoHead` comes from
+       the dossier fence `omarchy.summary`, which the index already read.
+       The test adds `- repoHead: 3f9c2e1` to the copy's
+       `system/omarchy.md`. No new environment variable was needed.
+2. **Warnings no longer vanish.**
+   - `rebuild_if_initialised` prints every load warning to stderr
+     (`seldon: warning: …`), like the failure path.
+   - An unreadable `memory/*.md`, and also an unreadable `system/*.md`,
+     now warns `…: cannot read: …; skipped`, like the other readers.
+3. **`drift_weeks`** "opened" also excludes `kind == resolution`, as the
+   script does. A resolution's source is `seldon`, so this was unreachable
+   before, but it is now explicit.
+4. **Snapshot cap test.** `at_most_ten_snapshots_newest_first` adds 15
+   snapshots and checks:
+   - 10 are kept, newest first;
+   - the newest added one is in and the oldest is out;
+   - the timeline shows the same 10.
+5. **`[profile.bench]`** sets `lto = "thin"` and `codegen-units = 16`. The
+   bench build drops from about 58 s to 28 s here, and the timing is
+   unchanged (×10 median 4.7 ms). The CI step stays.
+6. **Fast rebuild for the hook (for WP-009).**
+   - `index::rebuild_if_initialised_fast(ctx)` is the same rebuild but
+     spawns no `git`. `logbook.git.head` is read from the `.git` files
+     (`index::git_head_fast`: `HEAD`, a loose ref or `packed-refs`; it
+     follows a `.git` file and `commondir`), and `dirty` is left out.
+   - The schema allows that: both `git` members are optional, and the
+     plugin reads neither. `GitInfo.dirty` is now `Option<bool>`; the full
+     path still writes it, and the next full rebuild restores it.
+   - Test: `the_fast_rebuild_reads_head_without_git` compares against
+     `git rev-parse --short=7 HEAD` for a loose ref, after `pack-refs`, and
+     for a detached HEAD. It then runs the fast rebuild and checks
+     `logbook.git == {"head": …}`.
+   - **What WP-009 should know about the 5 ms budget:**
+     - Use `crate::index::rebuild_if_initialised_fast(ctx);`, one line,
+       after the hook's ledger write. Call it only when the hook actually
+       wrote an event (non-mutating commands write nothing, so they need
+       no rebuild).
+     - The rebuild still reads the whole logbook, so its cost grows
+       linearly. A whole `seldon index` process on the fixture (71 lines)
+       takes 2.4 ms in release; the in-process build is 4.7 ms at ×10
+       (710 lines) and 79 ms at ×150.
+     - So the hook stays under 5 ms only up to roughly 500–700 ledger
+       lines. Beyond that WP-009 needs a deferred rebuild (e.g. leave it to
+       the next `capture`/`status`, which the plugin runs every 15 min) or
+       an incremental index. That is a design decision for WP-009 and the
+       orchestrator; I did not build either.
+7. **ADR-0020 (drift cap) is implemented**, a few lines in
+   `build.rs::cap_drift`. ADR-0020 is not on `main` yet, so I read the
+   orchestrator's sentence like this:
+   - at most 200 items in `index.drift`;
+   - crises are kept before any other item (all of them, up to 200), then
+     the newest other items fill the rest;
+   - the kept items stay **newest first**, the schema's order;
+   - `summary.openDrift` and `summary.crisis` still count **every** open
+     item, so the bar pill shows the true numbers;
+   - `proposedEvents` and the timeline's crises come from the capped list,
+     the rows the plugin can show.
+
+   Test `drift_is_capped_at_200_crises_first` adds 30 old crises and 220
+   newer yellow items: 200 rows, every crisis kept, the oldest yellow items
+   cut, newest first, the summary counts all of them, and the result is
+   schema-valid. With the cap, the ×150 index is 765 KB, down from 897 KB.
+   If ADR-0020 means something else (for example crises first in the
+   output order), the change is in `cap_drift` only.
 
 ## Done
 
@@ -129,15 +217,16 @@ No fixture edit was needed and none was made.
 
 ## Not done
 
-- **CONTRACT rule 5 (size budget)**: no truncation. It would need
-  `meta.truncated` and a contract bump. See Decisions 7 for the numbers.
+- **CONTRACT rule 5 (size budget)**: no `meta.truncated`. The ADR-0020
+  drift cap is in (follow-up 7); open cases stay uncapped, as the schema
+  has them.
 - **`DECISIONS.md`**: its `decisions.index` fence is not regenerated. It is
   not in this WP; `decide` does not do it either (WP-006 note).
 - **`seldon open journal --editor`** creates the day file but does not
   rebuild the index. It is not a ledger write; the next command or
   `status` picks it up.
-- **`seldon hook`** (WP-009) is not wired. It is their module, and the hook's
-  5 ms budget is their call. The ×10 build takes about 5 ms in release.
+- **`seldon hook`** (WP-009) is not wired; it is their module. The fast
+  path and its limits are in follow-up 6.
 - **`just fixtures-refresh`** is still the stub. It would write
   `fixtures/`, which belongs to WP-015.
 - **`drift show`** belongs to WP-008, as the orchestrator notes say.
@@ -145,15 +234,16 @@ No fixture edit was needed and none was made.
 ## Verified by
 
 ```
-$ just check                                  → exit 0
-  fmt-check ok · clippy -D warnings ok · test: 215 passed (17 suites)
-  validate-fixtures: ok — 94 instances, 67 ledger events traced …, 21 self-checks
-  plugin-validate: ok · qmllint: ok (5 files) · model.test.js 17 · service-states 48 · check: ok
-$ just bench                                  → exit 0
-  index build ×10  (670 ledger lines, 80 cases, 212225 bytes): median 4.7 ms
-  index build ×150 (10050 ledger lines, 1200 cases, 897470 bytes): median 78.7 ms
-$ cargo test --release --test index index_build  → ×10 median 4.6 ms (assert < 100 ms active)
-$ loop: 25 × cargo test --test index --test status --test commands --test log --test plan → 0 failures
+$ just check                                  → exit 0   (after the rebase and the follow-ups)
+  fmt-check ok · clippy -D warnings ok · test: 220 passed (17 suites)
+  validate-fixtures: ok — 101 instances, 71 ledger events traced …, 5 variants, 22 self-checks
+  plugin-validate: ok · qmllint: ok · plugin-test: ok · check: ok
+$ just bench                                  → exit 0   (thin-LTO bench profile, build 28 s)
+  index build ×10  (710 ledger lines, 80 cases, 211177 bytes): median 4.7 ms
+  index build ×150 (10650 ledger lines, 1200 cases, 765454 bytes): median 79.1 ms
+$ release `seldon index` on a fixture copy, whole process, 30 runs → median 2.4 ms
+$ loop: 15 × cargo test --test index --test status --test commands --test plan → 0 failures
+  (before the follow-ups: 25 × index/status/commands/log/plan → 0 failures)
 ```
 
 - **Negative control for the atomic-write test.** I replaced `index::write`
@@ -182,7 +272,9 @@ $ loop: 25 × cargo test --test index --test status --test commands --test log -
   - the built-in checker;
   - benches with `harness = false` and a `#[path]` include;
   - the token rule without look-around;
-  - two clippy 1.98 lints.
+  - two clippy 1.98 lints;
+  - `[profile.bench]` with thin LTO;
+  - reading `HEAD` without git.
 - `pitfalls.md`:
   - fixture ULIDs do not sort by time within one second (stable view sort);
   - what the golden test needs beyond `SELDON_NOW`;
@@ -190,84 +282,53 @@ $ loop: 25 × cargo test --test index --test status --test commands --test log -
   - the fixture STATUS.md is stale;
   - index size versus the 1 MB budget;
   - `scripts/__pycache__` left behind by importing the reference script;
-  - an atomic-write test needs a negative control.
+  - an atomic-write test needs a negative control;
+  - fixture counts hard-coded in tests break on fixture updates; run the
+    whole suite after a rebase.
 
 ## Decisions needed
 
-1. **Golden comparison also ignores `logbook.path`.**
-   - It is the copy's location, which cannot be derived
-     (fixtures/README.md, "Not derivable").
-   - The test asserts it equals the copy's path, then normalises it.
-   - Recommendation: accept, and add it to the WP-007 acceptance wording.
-2. **`state.collectors[].fix` is not in the index.**
-   - The orchestrator notes list `fix`, but the schema's collector object is
-     closed and has no `fix`, so I emit `ok`, `message` and `lastRun` only.
-   - `fix` stays in `cursors.json`, `capture --json` and `doctor`.
-   - The plugin's snapper banner already has its own constant fix
-     (ADR-0011).
-   - Recommendation: keep it so. Adding `fix` would need an ADR and a bump.
-3. **`fixtures/logbook/STATUS.md` is stale and in the old layout.**
-   - It shows 3 open drift and 35 events in 7 days, from before the
-     ADR-0013 group. It has German headings and no fence.
-   - It differs from the decision "headings English, prose in the logbook
-     language".
-   - Recommendation: WP-015 replaces it with `seldon status` output. The
-     exact expected text is in
-     `tests/status.rs::status_prose_follows_the_logbook_language`.
-   - I did not edit the fixture.
-4. **STATUS.md layout** (please confirm):
-   - the header on line 1, then a `status` fence, with user text outside
-     it kept;
-   - an existing file without the fence that starts with the header (the
-     `init` template) is replaced;
-   - a file without the header is treated as user text and kept below the
-     fence;
-   - the stamp is `Stand: <day> · letztes Ereignis <time>`, not the build
-     time, so the plugin's 15-minute capture + status cycle does not make a
-     git commit every time.
-5. **Commits.** `status` autocommits `seldon: status` only when it changed
-   a logbook file. `index` writes the views but never commits; they go into
-   the next commit.
-6. **Index format.** `index.json` is written compact (one line), where the
-   fixture is pretty-printed. That is about 37 KB versus 62 KB for the
-   sample, which matters for the size budget.
-7. **Size budget (CONTRACT rule 5).**
-   - Open drift and open cases are uncapped by the schema.
-   - At ×150 of the fixture (10 050 events, 900 open cases, 600 open drift
-     items) the index is 897 KB.
-   - Recommendation: an ADR that caps drift and open cases, or adds
-     `meta.truncated` (contract bump), before real logbooks grow.
-8. **CI.** I added a `just bench` step to `.github/workflows/ci.yml`, to
-   assert "< 100 ms … release … in CI". It costs one release compile,
-   about 1 minute. Confirm, or move it.
-9. **Spec edits for the orchestrator** (`docs/` is yours):
-   - SPEC-ENGINE §3: "`capture` does not … rebuild the index" is now
-     outdated, because capture rebuilds it.
-   - SPEC-ENGINE §3 should get the `index --json` / `status --json` shapes
-     (see Done).
+Settled at the review (no action): `logbook.path` normalised; `fix` stays
+out of the index; the fixture STATUS.md goes to the schema track; the
+STATUS.md layout, stamp and commit rules; compact JSON; the size budget
+(ADR-0020); the CI bench step.
+
+Open:
+
+1. **My reading of ADR-0020** (follow-up 7; the ADR is not on `main` yet):
+   - crises are kept before other items;
+   - the output stays newest first;
+   - `summary` counts every item;
+   - proposals and the timeline come from the capped list.
+
+   Confirm, or correct `cap_drift`.
+2. **The hook's rebuild cost grows with the logbook** (follow-up 6). Past
+   roughly 500–700 ledger lines even the fast rebuild exceeds the hook's
+   5 ms. WP-009 and the orchestrator decide: a rebuild on each hook write
+   (fine for small logbooks), a deferred rebuild left to the next
+   `capture`/`status`, or an incremental index later.
+3. **Merge notes for WP-009** (unchanged):
+   - `index/drift.rs` imports
+     `collectors::pacman::{parse_command, split_logged}`; if the parser
+     moves to `pkgcmd.rs`, that one import changes.
+   - `main.rs` and `commands/mod.rs` conflicts are additive.
+   - ADR-0019's green `agent` zone needs nothing here: green events are
+     not drift-eligible, and zones are copied from the ledger.
+4. **Spec edits for the orchestrator** (unchanged, `docs/` is yours):
+   - SPEC-ENGINE §3: `capture` now rebuilds the index;
+   - SPEC-ENGINE §3: the `index --json` / `status --json` shapes;
    - SPEC-ENGINE §6:
-     - before `init`, the `notInitialised` index and exit 3;
+     - the `notInitialised` index and exit 3;
      - `--check` refuses to write an invalid index (exit 2);
      - the views are written by `index` and `status`;
-     - the rebuild runs after the autocommit.
-10. **Merge note for WP-009.**
-    - `index/drift.rs` imports
-      `collectors::pacman::{parse_command, split_logged}`. If WP-009 moves
-      the parser into `pkgcmd.rs`, that one import changes.
-    - `main.rs` and `commands/mod.rs` conflicts are additive (two variants
-      and arms, two `mod` lines).
-11. **Where the engine and the reference script differ** (no effect on the
-    fixture; for the record):
-    - Steps come from WP-006's `cases::plan_steps`, which also accepts
-      `*`/`+` bullets. The script counts `- [ ]` only.
-    - The `## Plan` section ends at a level-1 or level-2 heading outside
-      code fences. The script stops only at `## `.
-    - A journal heading with an invalid actor is skipped. The script fails.
-    - Broken files are skipped with a warning. The script fails.
-    - `language` and `machine` come from `.seldon/logbook.toml`; the script
-      reads `PROJECT.md`. Both hold the same values.
-    - The routine rule uses the shared engine parser. It agrees with the
-      script on all 18 self-check commands.
+     - the rebuild runs after the autocommit;
+     - plus `rebuild_if_initialised_fast` (no `git`, no `dirty`).
+
+For the record, unchanged: the engine and the reference script differ only
+where the script fails or a format is lenient (plan steps with `*`/`+`
+bullets, Plan section ends outside code fences, invalid journal actors and
+broken files skipped with a warning, language/machine from `logbook.toml`).
+None of these affects the fixture.
 
 ## Touched outside WP scope
 
@@ -279,7 +340,8 @@ $ loop: 25 × cargo test --test index --test status --test commands --test log -
 - `tests/common/mod.rs`: `index_errors`, `assert_valid_index` (jsonschema
   with a retriever) and `pub mod scale;`. `tests/common/scale.rs` is new.
 - `engine/Cargo.toml`: the `[[bench]] name = "index", harness = false`
-  stanza. No new dependency; `Cargo.lock` is unchanged.
+  stanza and `[profile.bench]` (thin LTO, 16 codegen units). No new
+  dependency; `Cargo.lock` is unchanged.
 - `justfile`: a `bench` recipe. `.github/workflows/ci.yml`: a `just bench`
   step.
 - `memory/rust-notes.md` and `memory/pitfalls.md`: appended.
