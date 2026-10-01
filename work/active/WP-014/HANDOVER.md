@@ -86,6 +86,16 @@ Every commit passes `bash scripts/validate-fixtures.sh` on its own (checked from
   trailing-period consequence, grouping, routine/alwaysRed, series counting,
   self-checks), the overlay mechanism, and assumption bullets now citing
   ADR-0013/0014. `memory/pitfalls.md`: WP-014 section appended.
+- **Follow-up after review (`b899409`): proposal token rule per ADR-0015 §4.**
+  A final `.` not followed by a word character is now punctuation
+  (`token_pattern()`), with three new end-to-end self-checks (21 in total):
+  `Install zed.` → proposes, `Edit zed.conf` → does not, `extra/zed` →
+  proposes. Each check replaces every open case's Plan in memory, because the
+  sample's Plans already name `zed` in other forms. The strict ADR-0012 regex
+  fails the first check, and a regex without the after-dot check fails the
+  second. The README cites ADR-0015, a correction is appended to pitfalls, and
+  `index.sample.json` and the variants are unchanged (validator green, `git
+  diff` empty).
 
 ## Not done
 - **jsonschema / check-jsonschema backends are still untested.** Neither is
