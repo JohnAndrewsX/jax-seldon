@@ -154,3 +154,16 @@ build-release:
 # Regenerate fixtures from the engine (stub until the engine can build an index).
 fixtures-refresh:
     @echo "fixtures-refresh: not implemented yet (needs \`seldon index\`; see SPEC-ENGINE §10)"
+
+# Engine ↔ plugin end-to-end test (host only; not part of `check`).
+# `just e2e` runs on the test host over ssh (SELDON_TEST_HOST, default `test`)
+# and restores it; `just e2e --engine-only` runs the engine steps here in
+# scratch dirs. See docs/TESTING.md, "Integration".
+e2e *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -n "{{ skip_host }}" ]]; then
+      echo "e2e: skipped (SELDON_SKIP_HOST_CHECKS set; needs a real Omarchy host)"
+      exit 0
+    fi
+    bash tests/integration/e2e.sh {{ args }}
