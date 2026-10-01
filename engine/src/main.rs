@@ -108,6 +108,9 @@ enum Command {
 
     /// Agent hooks: record commands, session context, install into a harness
     Hook(commands::hook::HookArgs),
+
+    /// Open drift; link, explain, dismiss or show a drift event
+    Drift(commands::drift::DriftArgs),
 }
 
 #[derive(Debug, Args)]
@@ -236,6 +239,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Index(a) => commands::index::run(&ctx, a),
         Command::Status(a) => commands::status::run(&ctx, a),
         Command::Hook(a) => commands::hook::run(&ctx, a),
+        Command::Drift(a) => commands::drift::run(&ctx, a),
     }
 }
 
