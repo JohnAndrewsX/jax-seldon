@@ -1,0 +1,10 @@
+{
+  "id": "01M3VZNFC0M2FQVGJBZGX9KDF9",
+  "ts": "2026-10-01T17:01:00+02:00",
+  "source": "seldon",
+  "kind": "resolution",
+  "subject": "ollama",
+  "actor": "human",
+  "refersTo": "01M3VNFTF8EVHWFFZ687N14Q0C",
+  "resolution": "linked"
+}

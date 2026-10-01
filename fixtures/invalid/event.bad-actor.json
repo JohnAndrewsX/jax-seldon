@@ -1,0 +1,11 @@
+{
+  "id": "01M3VZNFC0M2FQVGJBZGX9KDFA",
+  "ts": "2026-10-01T17:01:00+02:00",
+  "source": "agent",
+  "kind": "command",
+  "subject": "yay",
+  "actor": "agent:Claude Code",
+  "meta": {
+    "command": "yay -S zed"
+  }
+}
