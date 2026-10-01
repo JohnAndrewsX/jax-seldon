@@ -274,6 +274,19 @@ mod log {
     }
 
     #[test]
+    fn the_real_clock_writes_whole_seconds() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let out = env.seldon(&["log", "--json", "--", "now"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let ts = json(&out)["event"]["ts"].as_str().unwrap().to_string();
+        // YYYY-MM-DDTHH:MM:SS+HH:MM, no fraction (fixtures/logbook/ledger/)
+        assert_eq!(ts.len(), 25, "{ts}");
+        assert!(!ts.contains('.'), "{ts}");
+        assert_eq!(ledger(&root)[0]["ts"], ts.as_str());
+    }
+
+    #[test]
     fn not_initialised_and_lock_held() {
         let env = Env::new(Snapper::Missing);
         assert_eq!(env.at(T0, &["log", "--", "x"]).status.code(), Some(3));

@@ -14,7 +14,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::{DateTime, FixedOffset, Local, Timelike as _};
 use serde_json::json;
 
 use crate::config::{self, Config, Dirs, LogbookSource};
@@ -71,6 +71,9 @@ impl Context {
                 .map_err(|e| Error::user(format!("{NOW_ENV}={s}: {e}")))?,
             None => Local::now().fixed_offset(),
         };
+        // whole seconds, like every `ts` in fixtures/logbook/ledger/: the
+        // ledger keeps fractions when a timestamp has them
+        let now = now.with_nanosecond(0).unwrap_or(now);
         Ok(Context {
             dirs,
             json,
