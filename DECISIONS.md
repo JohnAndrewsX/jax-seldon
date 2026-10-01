@@ -18,5 +18,6 @@
 | ADR-0014 | Event attribution, zones, plugin version source, agent file edits | accepted |
 | ADR-0015 | Drift-group schema rules and the proposal token rule (supersedes ADR-0012 §13) | accepted |
 | ADR-0016 | Engine install and update commands go through the AUR helper (supersedes ADR-0004 on the install command) | accepted |
+| ADR-0017 | Hook command events carry the start time; attribution rules sharpened (clarifies ADR-0014 §1) | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

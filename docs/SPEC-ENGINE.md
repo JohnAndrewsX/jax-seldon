@@ -18,7 +18,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 |---|---|
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | per-collector cursors (pacman byte offset + inode, last snapper id, last plugin-list hash, config manifest hash) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`fix`/`lastRun` (WP-007) |
 | `~/.local/state/seldon/manifest.json` | path → sha256 for watched config files |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
@@ -78,6 +78,23 @@ seldon doctor --json             → {"ok":bool,"logbook":"<path>",
 `doctor --path DIR` is an alias of the global `--logbook DIR`. The plugin's
 banner states parse the doctor shape; it is not part of `schema/`.
 
+```
+seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
+                          "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}]}
+                         exit 0 also when a collector is degraded (ok:false + fix, ADR-0011);
+                         1 unknown source or --source with --all; 3 not initialised; 4 lock held
+```
+
+`capture` selection: no flag or `--all` = every collector enabled in
+`config.toml [collectors]`; `--source a,b` = exactly those, even if disabled.
+Baseline: a collector without a cursor emits only events at or after the
+logbook's `created` (or `--since TS`); diff collectors record their first
+state silently. `--since` has no effect on a collector that already has a
+cursor (one notice line in human output). Dedupe against the ledger runs on
+every capture, not only after a rotation, so a lost `cursors.json` never
+duplicates events. `capture` does not commit, reconcile or rebuild the
+index by itself until WP-006/007/008 wire those steps in.
+
 `message` carries the full detail (e.g. the unrecognised subcommand name),
 not just the error kind. Detection of `--json` must not sniff raw argv for
 the literal string, because free-text arguments (`seldon log "--json"`)
@@ -99,8 +116,15 @@ theme, config. Rules:
   the explicit ones. A transaction is emitted only after `transaction
   completed`, the next `transaction started`, or when
   `/var/lib/pacman/db.lck` is absent at capture time; until then the
-  cursor stays at `transaction started` (ADR-0013 §5). `meta.command` is
-  parsed as argv, never matched as a substring.
+  cursor stays at the transaction's `[PACMAN] Running` line, else
+  `transaction started` (ADR-0013 §5). `meta.command` is parsed as argv,
+  never matched as a substring; the parser (`command_intent`,
+  `parse_command`, `is_plain_full_upgrade`) is shared with the hook (§8)
+  and the drift routine rule (§5). Rotation: the tail of `<log>.1` with the
+  old inode is read first, then the new file from 0; a rotation to another
+  name loses the lines between the old offset and the rotation (never
+  duplicates, thanks to dedupe). Attribution follows ADR-0014 §1 as
+  sharpened by ADR-0017 §2–§5.
 - **snapper** — `snapper --jsonout list`. New snapshot numbers become
   `snapshot` events with description; a `pre`/`post` pair is linked via
   `meta.pairOf`. Without `ALLOW_USERS` the command fails with a permission
