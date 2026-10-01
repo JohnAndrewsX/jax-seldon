@@ -99,7 +99,7 @@ one source; once resolved, by the event's own zone.
 |---|---|---|
 | Today | today's journal entries, yesterday collapsed | QuickEntry (`seldon log`), "Open in editor" |
 | Changelog | ledger rows newest first, source filter chips, snapshot rows highlighted, drift rows marked | row → link/explain/dismiss sheet; "Capture now" |
-| Work | three columns queued/active/completed (last 5) | "New case" (title + zone + risk), start/verify/done, "Start agent" (runs `omarchy agent prompt` or the configured launcher with the case context) |
+| Work | three columns queued/active/completed (last 50, scrollable) | "New case" (title + zone + risk + optional area/priority), start/verify/done/drop with two-press arming, Open in editor on every card; "Start agent" (runs `omarchy agent prompt` or the configured launcher with the case context) is WP-022 |
 | Decisions | ADR list with status | "New decision" |
 | System | omarchy version, package counts, deviations, snapshots, plugins, theme | "Rebuild doc", "Update impact" |
 | Memory | lessons headings, memory topics | "Open" |

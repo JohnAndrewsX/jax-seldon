@@ -11,7 +11,7 @@ Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
-| WP-020 | Work tab: three-column list, case card, new-case sheet | Plugin | `plugin-020` (opus, high) | `wt/WP-020` · `wp/020-work-tab` | 2026-10-01 |
+| WP-021 | Drift sheet: link / explain / dismiss | Plugin | `plugin-021` (opus, high) | `wt/WP-021` · `wp/021-drift-sheet` | 2026-10-01 |
 
 ## Queued (next up)
 After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
@@ -29,6 +29,10 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-020 Work tab (three columns, case card with two-press
+  arming, new-case sheet, `wipLimit`, badge `+(members−1)`) — merged; 261
+  panel checks; real-engine smoke via IPC on the test host; live key smoke
+  and theme sweep pending the test host unlock.
 - 2026-10-01 WP-008 Reconciliation and `drift` commands (list/show/link/
   explain/dismiss with group fan-out and `--only`), `after_capture` case
   bookkeeping, ADR-0021 folding, detached editor launch — merged; 290+
