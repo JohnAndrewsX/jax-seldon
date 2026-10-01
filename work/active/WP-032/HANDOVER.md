@@ -2,7 +2,7 @@
 WP-032 HANDOVER
 Done: seldon rebuild [--json] writes outputs/REBUILD.md (seven sections, English headings, prose de/en), golden test, docs/TESTING.md notes
 Not done: nothing in scope; follow-ups under "Decisions needed"
-Verified by: just check (exit 0), cargo test --test rebuild (6 tests), manual run on a fixture copy in a scratch home with SELDON_TEST_GUARD
+Verified by: just check (exit 0), cargo test --test rebuild (7 tests after review round 1), manual run on a fixture copy in a scratch home with SELDON_TEST_GUARD
 Learned: memory/rust-notes.md + memory/pitfalls.md, section "WP-032"
 Decisions needed: 6 (below); none blocks the merge
 Touched outside WP scope: engine/src/lib.rs and engine/src/commands/mod.rs (one `pub mod rebuild;` each, needed to compile)
@@ -58,26 +58,35 @@ branch point (checked before the handover). No PR, no push.
    reads "remove this file".
 4. **Plugins:** the non-first-party rows of `plugins.list`, plus ids the
    ledger added. The ledger's `plugin-remove`, dismissal and enabled state
-   win over the dossier. A row is `omarchy plugin clone <from>` (clonedFrom),
-   `omarchy plugin add <url>` (`meta.url`, which no producer writes yet), or
-   `omarchy plugin add <url>` with "source URL not recorded". Then
-   `omarchy plugin enable <id>` or "stays disabled". One extra line lists
-   the first-party plugins disabled here.
+   win over the dossier. A clone (clonedFrom) is `omarchy plugin clone
+   <from>` with the note "(becomes `<username>.<id>`, enabled by the
+   clone)". The script names the copy `${USER}.<id without omarchy.>` and
+   enables it itself (Omarchy 4.0.4). Only a clone that the dossier lists
+   as disabled gets "then `omarchy plugin disable <username>.<id>`". Any
+   other row is `omarchy plugin add <url>` (`meta.url`, which no producer
+   writes yet) or `omarchy plugin add <url>` with "source URL not
+   recorded", followed by `omarchy plugin enable <id>` or "stays
+   disabled". One extra line lists the first-party plugins disabled here,
+   except a listed clone's source (the clone switches that one off).
 5. **Theme:** the newest `theme-set` that was not dismissed →
    `omarchy theme set <name>`; else the dossier's theme.
 6. **User units:** unit files from config events under
-   `~/.config/systemd/` (the latest event, not removed, not dismissed).
-   Each says "restore the file", then `systemctl --user enable --now
-   <unit>` when `services.enabled` lists the unit as user-scope, else
-   `daemon-reload`. Then `services.enabled` rows **that have a case** and
+   `~/.config/systemd/` (the latest event per path, not dismissed, not a
+   file added and removed again). A drop-in `<unit>.d/<file>` belongs to
+   `<unit>` and reads "(drop-in for `<unit>`)". Each line says "restore
+   the file", then `systemctl --user enable --now <unit>` when
+   `services.enabled` lists the unit as user-scope, else `daemon-reload`.
+   A pre-existing unit file that was removed reads "remove this file, then
+   `systemctl --user daemon-reload`", like section 3. Then `services.enabled` rows **that have a case** and
    no file event; system scope goes under `### System units` with
    `sudo systemctl enable --now`.
 7. **Open questions:** `index.drift` as the index orders it (crises first
    when capped; a "… N more: `seldon drift`" line beyond the cap), each
    with its event id and the three decision commands in the intro. Then
    "Deliberately not reproduced": dismissed changes of state (install,
-   remove, plugin-*, theme-set, config-*); a pacman transaction appears
-   once with its member count. Dismissed version moves (upgrade,
+   remove, plugin-*, theme-set, config-*). A pacman transaction appears
+   once, led by its first explicit install. Its count is every dismissed
+   member of the transaction, dependencies included. Dismissed version moves (upgrade,
    downgrade, update, plugin-update) are left out.
 
 `--json` → `{path (absolute), sections: {packages, deviations, plugins,
@@ -90,7 +99,7 @@ fixture: `{packages: 4, deviations: 5, plugins: 3, units: 2, open: 4}`.
 
 - `just check` → `check: ok` (fmt, clippy `-D warnings`, all engine tests,
   schema-validate, plugin-validate, qmllint, plugin-test on the dev host).
-- `cargo test --test rebuild` (6 tests, all in `common::Env` with
+- `cargo test --test rebuild` (7 tests since review round 1, all in `common::Env` with
   `SELDON_TEST_GUARD`):
   - golden on a fixture copy, also checking the seven headings in order
     and German prose;
@@ -128,11 +137,12 @@ prose) as someone who has just installed a fresh Omarchy:
 3. **Deviations:** restore five files from your dotfiles or backup:
    input.conf, shell.json, .bashrc, monitors.conf (C-2026-002),
    bindings.conf (C-2026-004). Each line has its reason.
-4. **Plugins:** `omarchy plugin clone omarchy.clock`, then
-   `omarchy plugin enable user.clock`. Re-add weather-plus and tyme from
-   their git URLs (not recorded, so the document says so); enable
-   weather-plus, leave tyme disabled. Then disable the six listed
-   first-party plugins if the fresh install has them on.
+4. **Plugins:** `omarchy plugin clone omarchy.clock`. It becomes
+   `<username>.clock` and the clone enables it. Re-add weather-plus and
+   tyme from their git URLs (not recorded, so the document says so);
+   enable weather-plus, leave tyme disabled. Then disable the five listed
+   first-party plugins if the fresh install has them on. `omarchy.clock`
+   is not in that list, because the clone already switched it off.
 5. **Theme:** `omarchy theme set tokyo-night` (still open drift; proposed
    for C-2026-005).
 6. **Units:** restore `~/.config/systemd/user/ollama.service` and
@@ -192,3 +202,41 @@ seldon rebuild                                 # outputs/REBUILD.md (WP-032): 1 
                                                # rebuild. --json → {path, sections: {packages, deviations, plugins,
                                                # units, open}, files, git, warnings}; open = open drift items
 ```
+
+## Review round 1 (APPROVE with six small items, all fixed in one commit)
+
+1. **Clone line.** Renders only `omarchy plugin clone <from>` plus
+   "(becomes `<username>.<id>`, enabled by the clone)" (de: "wird zu …,
+   vom Klonen aktiviert"); the `enable user.clock` step is gone. I checked
+   `omarchy-plugin-clone` read-only on the host: `new_id=
+   "${USER…}.${source_id#omarchy.}"`, then `omarchy-plugin-enable
+   "$new_id"`. One addition beyond the review: a clone the dossier lists as
+   *disabled* gets "then `omarchy plugin disable <username>.<id>`",
+   because otherwise the document would leave it enabled. The fixture has
+   no such clone.
+2. **"Disabled here" line** leaves out a listed clone's source.
+   `omarchy.clock` is gone from the golden.
+3. **Dismissed transaction count.** I chose to count every dismissed
+   member, dependencies included. Covered by the new test
+   `a_dismissed_transaction_counts_every_member_and_units_show_drop_ins_and_removals`:
+   an explicit `foo` plus a dependency `libfoo` in one transaction,
+   dismissed via `seldon drift dismiss` → "pacman install `foo` · 2 events
+   in this transaction". The old code would have counted 1.
+4. **Removed unit file** (config-remove of a pre-existing file) now shows
+   in section 6: "remove this file, then `systemctl --user
+   daemon-reload`". Same test.
+5. **Trace assertion** is the helper `packages_trace`, which accepts
+   `omarchy pkg add` and `omarchy pkg aur add`. The English test now runs it
+   over its AUR line too.
+6. **Drop-ins.** `rebuild::unit_of` maps `…/<unit>.d/<file>` to `<unit>`,
+   with the unit test `a_drop_in_belongs_to_its_unit`. Section 6 shows
+   "(drop-in for `<unit>`)", and the enable command names the unit (in the
+   new test).
+
+Golden diff: only the clone line and `omarchy.clock` leaving the disabled
+list. Counts unchanged (4/5/3/2/4).
+
+Guard note: a read-only `grep` whose *pattern* contained the plugin-clone
+command text was blocked as "omarchy command that changes the system".
+Nothing ran. I did not reword the command; I read the file with the Read
+tool instead.
