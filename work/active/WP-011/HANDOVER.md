@@ -15,10 +15,10 @@ Branch `wp/011-panel-tabs`, worktree `wt/WP-011`. Not pushed, no PR.
 
     | Key | Does |
     |---|---|
-    | Tab / Shift-Tab | walk the tabs. Past the last (or first) tab, hand over to the bar's next (or previous) panel via `bar.switchPanelFrom`. Wrap when there is no other panel (see Decision 1) |
-    | ← / → | previous / next tab |
-    | 1–3 | jump to a tab |
-    | ↑ / ↓ | move the cursor in the tab's list. The first press only shows the cursor, the bluetooth panel pattern |
+    | Tab / Shift-Tab | only hand over to the bar's next (or previous) panel via `bar.switchPanelFrom`, as in the ten first-party panels (SPEC-PLUGIN §5; review follow-up 1) |
+    | ← / →, h / l | previous / next tab (wraps) |
+    | 1–6 | a tab by its fixed number, `Model.TAB_KEYS`: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6. The digit of an absent tab is ignored (review follow-up 2) |
+    | ↑ / ↓, k / j | move the cursor in the tab's list. The first press only shows the cursor, the bluetooth panel pattern |
     | Enter / Space | open the row: a group's members, full text, or the yesterday row |
     | f / F | cycle the Changelog source filter |
     | c | capture |
@@ -42,9 +42,13 @@ Branch `wp/011-panel-tabs`, worktree `wt/WP-011`. Not pushed, no PR.
   - line 3: the folded resolution (`explained: <resolutionDetail>`,
     `linked to C-…`), or for open drift *Unexplained*, *Needs a reason*
     (crisis) or *In the open firefox group*, plus "proposed for C-…";
-  - left stripe: the event's zone in theme colours. Red is `urgent`,
-    yellow `accent`, green `Color.muted`;
-  - glyph, status line and badge: the drift item's colour (Decision 4);
+  - one colour per row, `row.tone` (review follow-up 3). While the event
+    is open drift it comes from the drift item's computed zone, so the
+    routine firefox group is accent throughout although its members are
+    red in the ledger. Otherwise it comes from the event's own zone.
+    Red is `urgent`, yellow `accent`, green `Color.muted`. It paints the
+    left stripe and, for open drift, the glyph, the status line and the
+    "+N" badge;
   - snapshot rows: `CursorSurface.current`, the theme's selected fill;
   - expanded: a group lists its members from `index.events` by `txId`.
 - **System tab** (`components/SystemTab.qml`):
@@ -61,6 +65,9 @@ Branch `wp/011-panel-tabs`, worktree `wt/WP-011`. Not pushed, no PR.
   - `validateArgs` now accepts exactly the CONTRACT.md forms:
     - free text is one non-empty, non-blank argument after `--`;
     - `drift link|explain|dismiss … [--only]`;
+    - `drift dismiss <id> [--only] -- <reason>`, the form settled at
+      review: it shares the explain branch, and the old `--reason <text>`
+      form is refused;
     - `drift show <eventId> --json`, where `--json` is required;
     - the WP-010 forms without `--` are refused;
     - `--json` is only recognised before the separator.
@@ -80,7 +87,7 @@ Branch `wp/011-panel-tabs`, worktree `wt/WP-011`. Not pushed, no PR.
   - `tab <today|changelog|system>`;
   - `filter <all|source>`.
 - **Tests:**
-  - `tests/plugin/model.test.js` (27 tests): the new `validateArgs` forms
+  - `tests/plugin/model.test.js` (28 tests): the new `validateArgs` forms
     and refusals, plus every new helper against the sample and the
     snapper-degraded fixture. Covered: 58 rows, one "+3", 7 folded
     details, 6 snapshots, the filter sums, the crisis text (1 vs 2), and
@@ -93,7 +100,7 @@ Branch `wp/011-panel-tabs`, worktree `wt/WP-011`. Not pushed, no PR.
       argv of its Copy and Run in terminal; no strip or banner without
       an index; `XDG_STATE_HOME`, including the relative form, with the
       fake engine writing there.
-  - **New `tests/plugin/panel-view.sh`** (78 checks), with
+  - **New `tests/plugin/panel-view.sh`** (86 checks after the review follow-ups), with
     `harness/panel.qml` and `harness/KeyboardPanel.qml`:
     - It runs the real Panel.qml offscreen against copies of the
       installed shell's `Commons/` and `Ui/`. Only the layer-shell
@@ -172,15 +179,15 @@ Branch `wp/011-panel-tabs`, worktree `wt/WP-011`. Not pushed, no PR.
 ## Verified by
 
 ```
-$ just check                                  → exit 0
+$ just check                                  → exit 0   (after the review follow-ups)
   plugin-validate: ok
-  tokens: ok (135 references) · qmllint: ok (10 files), --max-warnings 0
-  model.test.js: 27 passed
+  tokens: ok (136 references) · qmllint: ok (10 files), --max-warnings 0
+  model.test.js: 28 passed
   service-states: 61 passed, 0 failed
-  panel-view: 78 passed, 0 failed
-  (final run on 251f5c8; an earlier run failed once on the recorder race
+  panel-view: 86 passed, 0 failed
+  (an earlier run, before 251f5c8, failed once on the recorder race
   described under Done, which led to that fix)
-$ under load (32 busy loops, 16 cores): service-states 61/61, panel-view 78/78
+$ under load (32 busy loops, 16 cores, at 251f5c8): service-states 61/61, panel-view 78/78
 $ find plugin -type l | wc -l                 → 0
 $ omarchy plugin validate ~/.config/omarchy/plugins/jax.seldon   (dev install) → ok
 ```
@@ -208,7 +215,8 @@ display scale 1.25):
    - with `index-variants/snapper-degraded.json` the snapper banner
      "Snapshots not readable" shows with the engine message, the
      constant command, *Run in terminal* and *Copy*.
-4. Real keys with `wtype`:
+4. Real keys with `wtype`, in the first run, before the review follow-ups
+   changed Tab and the digits (for the current behaviour see step 10):
 
    | Key | Result |
    |---|---|
@@ -250,6 +258,35 @@ display scale 1.25):
    once more:
    - panel opened on the Changelog with the engine-missing banner;
    - the log's only jax.seldon line is the expected start probe.
+10. After the review follow-ups: redeploy, restart, the sample in status
+    `ok` with the stand-in again, theme Osaka Jade, no theme switch.
+    - Real keys (`wtype`):
+
+      | Key | Result |
+      |---|---|
+      | → | changelog |
+      | `l` | system |
+      | ← | changelog |
+      | `h` | today |
+      | `5` | system |
+      | `3` | stays on System (no Work tab) |
+      | `2` | changelog |
+      | `1` | today |
+      | `j` | turns the cursor on |
+      | `j` | cursor 1 |
+      | `k` | cursor 0 |
+      | Esc | closes |
+      | Tab (on Today) | opens the bar's next slot (OmaSettings, a window); the Seldon panel stays open on Today, no tab change |
+      | Shift-Tab | opens the previous bar panel, which closes ours (`opened: false`) |
+
+    - `view` gives driftTones `tokyo-night accent, ollama.service urgent,
+      ollama urgent, libinput accent, noto-fonts accent, firefox accent`.
+    - The new Osaka Jade screenshots show the group in accent throughout
+      while cased rows stay red, and the snapshot times shown in full.
+    - Logs: the instance after the restart has no jax.seldon line. The
+      instance before it shows only the expected start probe.
+    - Cleaned up as in step 8. The screen was checked clean, with no
+      leftover OmaSettings window.
 
 ## Learned (appended to memory/omarchy-shell.md, "WP-011 findings")
 
@@ -272,52 +309,66 @@ display scale 1.25):
 - `Color.muted` exists. There is no yellow token, so yellow maps to
   accent. `Util.alpha` dims text for light themes, `Qt.darker` does not.
 
+## Review follow-ups (review: APPROVE with five follow-ups)
+
+Commits b98b79a (plugin), f627dc3 (tests), cebd728 (README), plus the screenshots with this handover.
+
+1. **Tab follows SPEC-PLUGIN §5.** Tab and Shift-Tab only call
+   `switchPanel(direction)`. ←/→ and h/l switch tabs (and wrap); Tab
+   never cycles tabs. The panel-view keys scenario runs with a stand-in
+   bar (`HARNESS_BAR=1`) whose `switchPanelFrom` records the direction:
+   Tab → `1`, Shift-Tab → `-1`, and the tab does not change. The README
+   key table names h/j/k/l, and the Panel.qml header comment is updated.
+2. **Digits are fixed per tab id**: `Model.TAB_KEYS`, Today 1,
+   Changelog 2, Work 3, Decisions 4, System 5, Memory 6. An absent tab's
+   digit is ignored. The tab tooltips show the fixed digit. Tested in
+   node (`TAB_KEYS`, `tabKeyFor`) and panel-view (`5` → System, `3`
+   stays, `1`, `2`).
+3. **One colour source per Changelog row.** `changelogRows` sets `tone`
+   from the open drift item's zone (falling back to crisis → red, then
+   the event's zone, if an item lacks `zone`), else from the event's own
+   zone. EventRow paints stripe, glyph, status and badge from it. Node
+   tests: firefox, libinput and noto-fonts are `accent`, ledger zone
+   still `red`; resolved btop and cased hyprland are `urgent`; the
+   fallback is covered. panel-view checks `view().changelog.driftTones`.
+4. **Banner.qml** dims the command with `Util.alpha(foreground, 0.65)`
+   instead of `Qt.darker`. No `Qt.darker` is left in `plugin/`.
+5. **System snapshots**: the label is `#113`, and the value carries the
+   time, `2026-10-01 14:30 · pre: ollama` (type appended for pre/post).
+   Node tests are updated, and the live screenshot shows it in full.
+
+Also, from the settled notes: `validateArgs` takes `drift dismiss <id>
+[--only] -- <reason>` on the explain branch and refuses `--reason
+<text>`. Node tests cover both.
+
+Screenshots: `osaka-jade-group.png` and `osaka-jade-system.png` were
+replaced with post-follow-up captures. The Tokyo Night and Catppuccin
+Latte group and system shots still show the pre-follow-up colours and
+snapshot labels (see Decision 1).
+
 ## Decisions needed
 
-1. **Tab key: SPEC-PLUGIN §5 and the WP disagree.**
-   - §5 says "`1`–`6`, `←/→` switch tabs, `Tab` switches Omarchy panels",
-     as every first-party panel does.
-   - The WP says "Tab/Shift-Tab between tabs", and its acceptance test
-     says "Tab cycles tabs".
-   - Implemented: both. Tab walks the tabs and, past the last, hands over
-     to the bar's next panel. It wraps only when there is no other panel.
-     ←/→ and digits also switch tabs.
+1. **The guard still blocks `ssh <host> omarchy theme set` from this
+   worktree.** I tried once, to refresh the Tokyo Night and Latte shots
+   after follow-ups 3 and 5. The hook answered "omarchy command that
+   changes the system". Per the review ruling I stopped and did not
+   route around it. Probable cause, not verified: the hook runs
+   `$CLAUDE_PROJECT_DIR/scripts/guard.sh` from this branch, which
+   predates the change on main.
 
-   Please pick one and amend the loser:
-   - keep the hybrid (amend §5);
-   - pure §5, Tab = panels only;
-   - pure WP, Tab cycles and never leaves the panel.
-2. **Source filter includes `manual`.** The WP lists eight sources and
-   omits `manual`, but the schema has nine, and the sample has 6 manual
-   notes that would otherwise be unreachable by filter. Accept, or drop
-   the chip.
-3. **`drift dismiss <id> [--only] --reason <text>` has no `--` guard.** A
-   reason starting with `-` is read as an option by the engine's
-   argument parser. The plugin passes it as one argument and does not
-   reject it.
-
-   Proposed CONTRACT.md change, coordinated with WP-008:
-   - `--reason=<text>` (one argv element), or
-   - `dismiss <id> [--only] -- <reason>`.
-4. **Zone colours of a drift group.** The stripe shows the event's own
-   ledger zone, which is red for the 09-30 members (ADR-0014). Glyph,
-   status line and "+N" badge show the drift item's computed zone, yellow
-   (ADR-0013 §3). So the group does not read as a crisis while the ledger
-   stays truthful. Confirm, or name one colour source.
-5. **Spec amendments (orchestrator-owned):**
-   - SPEC-PLUGIN §2: add `components/TodayTab.qml`, `ChangelogTab.qml`
-     and `SystemTab.qml`, one file per tab.
-   - §8: `jax.seldon.panel` gains `view`, `tab <id>` and `filter
-     <source>`, which are read-out and navigation only.
-   - §5: digits select visible tabs by position (1–3 today). They will
-     shift when Work and Decisions arrive, unless you want fixed numbers
-     (Today 1, Changelog 2, System 5).
-6. **The guard hook blocked `omarchy theme set` inside an ssh command
-   line**, although the brief allows it on the test host. I ran the sweep
-   from a script copied to the test host (`theme current` before,
-   `theme set` per theme, restore on exit). Please confirm this was
-   acceptable, or allow `ssh <test-host> omarchy theme set` in the guard.
-7. **Fixtures (WP-014, information only):** nothing the acceptance needs
+   Either merge as is (the other two themes' group and system shots
+   show the old row colours and snapshot labels; the code is covered by
+   tests and the Osaka Jade shots), or let the sweep be redone once the
+   guard change is on this branch.
+2. **docs/TESTING.md is now out of date in two places** (docs/ is not
+   mine to touch):
+   - the panel-harness paragraph lists the keys as "(Tab, Shift-Tab,
+     ←/→, 1–3, ↑/↓, Enter, Esc)". Now it is "Tab/Shift-Tab hand over to
+     the bar, ←/→ and h/l switch tabs, digits fixed per tab id (1, 2,
+     5)";
+   - the runtime-smoke note "Tab on the last tab opens the bar's next
+     panel" should read "Tab opens the bar's next panel".
+3. **Fixtures (WP-014, information only):** nothing the acceptance needs
    is missing. Not exercised by the sample, so covered only by node tests:
    - an event with `zone: green`;
    - a `system.snapshots` entry of type `pre`/`post`;
