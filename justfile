@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test check-watch schema-validate plugin-validate qmllint plugin-test
+check: fmt-check clippy test check-watch check-packaging schema-validate plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -41,6 +41,22 @@ check-watch:
 # `seldon watch` RSS < 10 MB on the x10 fixture, bench profile.
 check-rss:
     cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_10_mb
+
+# The AUR package (WP-040): PKGBUILD and helper syntax, shellcheck when
+# installed, .SRCINFO in step with the PKGBUILD. Never runs makepkg.
+check-packaging:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash -n packaging/PKGBUILD packaging/set-version.sh packaging/check-srcinfo.sh
+    if command -v shellcheck >/dev/null; then
+      # PKGBUILD variables are read by makepkg, $srcdir/$pkgdir set by it
+      shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD
+      shellcheck packaging/set-version.sh packaging/check-srcinfo.sh
+    else
+      echo "check-packaging: shellcheck not installed; bash -n only"
+    fi
+    bash packaging/check-srcinfo.sh
+    echo "check-packaging: ok"
 
 # Validate fixtures against schema/ (script owned by WP-002).
 schema-validate:
