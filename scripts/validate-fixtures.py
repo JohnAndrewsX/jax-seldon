@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Validate every JSON fixture against its schema and check that the sample
-index derives from the sample logbook (WP-002).
+index derives from the sample logbook (WP-002, WP-014).
 
 Called by scripts/validate-fixtures.sh. Exit 0 when everything holds, 1 otherwise.
 
@@ -11,14 +11,18 @@ Schema backends, picked in this order unless --validator / SELDON_SCHEMA_VALIDAT
                     keyword it does not implement, so a schema change that needs
                     more is noticed instead of silently skipped
 
-The derivation check implements the index rules of ADR-0012 for the parts that
-come from the logbook. It is a fixture consistency check, not the engine; the
-engine's golden test (WP-007) compares real `seldon index` output with the same
-fixture. `--write-index` rewrites those parts of fixtures/index.sample.json.
+The derivation check implements the index rules of ADR-0012 and the drift
+grouping of ADR-0013 for the parts that come from the logbook. It is a fixture
+consistency check, not the engine; the engine's golden test (WP-007) compares
+real `seldon index` output with the same fixture. `--write-index` rewrites those
+parts of fixtures/index.sample.json and regenerates fixtures/index-variants/ from
+the sample (VARIANTS). Every run also executes the mutation self-checks of
+ADR-0013 (drift groups) and ADR-0015 §4 (proposal token rule).
 """
 import argparse
 import copy
 import datetime as dt
+import fnmatch
 import glob
 import json
 import os
@@ -46,7 +50,76 @@ EXT = {
 
 DRIFT_SOURCES = {"pacman", "omarchy", "plugins", "theme", "config"}
 EVENT_KEYS = ["id", "ts", "source", "kind", "subject", "detail", "actor", "case", "zone",
-              "explicit", "txId", "refersTo", "resolution", "meta"]
+              "explicit", "txId", "refersTo", "resolution", "resolutionDetail", "meta"]
+DRIFT_KEYS = ["eventId", "ts", "source", "kind", "subject", "detail", "actor", "zone", "crisis",
+              "proposedCase", "txId", "members"]
+
+# ADR-0013 §3: default of config.toml [drift] alwaysRed (fnmatch globs, case-sensitive).
+ALWAYS_RED = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell"]
+
+# ADR-0015 §4 (supersedes ADR-0012 §13): whole-word, case-sensitive; word characters are
+# [A-Za-z0-9._+-], except that a final `.` not followed by a word character is punctuation.
+TOKEN_CHARS = r"A-Za-z0-9._+\-"
+
+
+def token_pattern(subject):
+    return re.compile(f"(?<![{TOKEN_CHARS}])" + re.escape(subject) + f"(?=\\.?(?![{TOKEN_CHARS}]))")
+
+# pacman options that take a separate argument word (`--opt value`; `--opt=value` is one word).
+# An unknown option is assumed to take none, so its argument counts as a package name and the
+# transaction is not routine: unknown input errs towards red.
+PACMAN_LONG_OPS = {"--sync": "S", "--database": "D", "--files": "F", "--query": "Q", "--remove": "R",
+                   "--deptest": "T", "--upgrade": "U", "--version": "V"}
+PACMAN_LONG_WITH_ARG = {"--arch", "--ask", "--assume-installed", "--cachedir", "--color", "--config",
+                        "--dbpath", "--gpgdir", "--hookdir", "--ignore", "--ignoregroup", "--logfile",
+                        "--overwrite", "--print-format", "--root", "--sysroot"}
+PACMAN_SHORT_WITH_ARG = "br"  # -b/--dbpath, -r/--root
+
+
+def full_upgrade_argv(command):
+    """ADR-0013 §3: the command, split into argv the way pacman logs it (words joined by single
+    spaces, no quoting), is the sync operation with -u/--sysupgrade and names no package."""
+    argv = (command or "").split()
+    if not argv or os.path.basename(argv[0]) != "pacman":
+        return False
+    ops, sysupgrade, targets = set(), False, []
+    i, end_of_opts = 1, False
+    while i < len(argv):
+        a = argv[i]
+        i += 1
+        if end_of_opts or not a.startswith("-") or a == "-":
+            targets.append(a)
+        elif a == "--":
+            end_of_opts = True
+        elif a.startswith("--"):
+            name = a.split("=", 1)[0]
+            if name in PACMAN_LONG_OPS:
+                ops.add(PACMAN_LONG_OPS[name])
+            elif name == "--sysupgrade":
+                sysupgrade = True
+            elif name in PACMAN_LONG_WITH_ARG and "=" not in a:
+                i += 1
+        else:
+            for j, ch in enumerate(a[1:], 2):
+                if ch.isupper():
+                    ops.add(ch)
+                elif ch == "u":
+                    sysupgrade = True
+                elif ch in PACMAN_SHORT_WITH_ARG:
+                    if j == len(a):  # the argument is the next word, else the rest of this one
+                        i += 1
+                    break
+    return ops == {"S"} and sysupgrade and not targets
+
+
+def always_red(subject):
+    return any(fnmatch.fnmatchcase(subject, p) for p in ALWAYS_RED)
+
+
+def routine(e):
+    """ADR-0013 §3: a group member that keeps the group yellow."""
+    return (e["kind"] in ("upgrade", "reinstall") and e.get("explicit") is False
+            and full_upgrade_argv(e.get("meta", {}).get("command")) and not always_red(e["subject"]))
 CASE_KEYS = ["id", "title", "status", "zone", "risk", "priority", "area", "created", "started", "closed",
              "snapshotBefore", "agents", "events", "tags", "path", "steps", "proposedEvents"]
 
@@ -415,7 +488,9 @@ def order_event(e):
 
 # --------------------------------------------------------------------------- derivation (ADR-0012)
 
-def load_logbook(lb, problems):
+def load_logbook(lb, problems, mutate=None, mutate_cases=None):
+    """Self-checks only: mutate(ledger) may edit or append (where, event) pairs, and
+    mutate_cases(cases) may return changed (path, frontmatter, body) triples, before derivation."""
     ledger = []
     for f in sorted(glob.glob(os.path.join(lb, "ledger", "*.jsonl"))):
         month = os.path.basename(f)[:-6]
@@ -428,15 +503,19 @@ def load_logbook(lb, problems):
                 if e.get("ts", "")[:7] != month:
                     problems.append(f"{rel(f)}:{n}: ts {e.get('ts')} not in month file {month}")
                 ledger.append((f"{rel(f)}:{n}", e))
+    if mutate:
+        mutate(ledger)
     cases = []
     for f in sorted(glob.glob(os.path.join(lb, "work", "*", "C-*.md"))):
         fm, body = frontmatter(f)
         cases.append((f, fm, body))
+    if mutate_cases:
+        cases = mutate_cases(cases)
     return ledger, cases
 
 
-def derive(lb, today, problems):
-    ledger, case_files = load_logbook(lb, problems)
+def derive(lb, today, problems, mutate=None, mutate_cases=None):
+    ledger, case_files = load_logbook(lb, problems, mutate, mutate_cases)
     events = [e for _, e in ledger]
     by_id = {}
     for where, e in ledger:
@@ -448,6 +527,8 @@ def derive(lb, today, problems):
     for where, e in ledger:
         if "resolution" in e and e["kind"] != "resolution":
             problems.append(f"{where}: 'resolution' field on a {e['kind']} event (ledger lines carry it only on kind resolution)")
+        if "resolutionDetail" in e:
+            problems.append(f"{where}: 'resolutionDetail' is index-only (ADR-0012 §11)")
         if "refersTo" in e:
             if e["refersTo"] not in seen:
                 problems.append(f"{where}: refersTo {e['refersTo']} is not an earlier ledger event")
@@ -457,6 +538,9 @@ def derive(lb, today, problems):
                     problems.append(f"{where}: resolves {tgt['id']}, which was never drift")
                 if e["subject"] != tgt["subject"]:
                     problems.append(f"{where}: resolution subject differs from its target's")
+                tx = e.get("meta", {}).get("txId")
+                if tx is not None and tx != tgt.get("txId"):
+                    problems.append(f"{where}: meta.txId {tx} != its target's txId {tgt.get('txId')} (ADR-0013 §4)")
                 resolutions[e["refersTo"]] = e
         seen.add(e["id"])
 
@@ -485,6 +569,8 @@ def derive(lb, today, problems):
         r = resolutions.get(e["id"])
         if r:
             e["resolution"] = r["resolution"]
+            if "detail" in r:
+                e["resolutionDetail"] = r["detail"]
             if r["resolution"] == "linked":
                 e["case"] = r["case"]
         folded.append(order_event(e))
@@ -494,24 +580,40 @@ def derive(lb, today, problems):
                          if fm["status"] in ("queued", "active", "verification")))
 
     def proposed(subject):
-        pat = re.compile(r"(?<![A-Za-z0-9._~/-])" + re.escape(subject) + r"(?![A-Za-z0-9_/-]|\.[A-Za-z0-9])")
+        # ADR-0012 §7, ADR-0015 §4 (the reference implementation of the token rule)
+        pat = token_pattern(subject)
         for cid in open_cases:
             if pat.search(plan_section(cases_by_id[cid][2])):
                 return cid
         return None
 
-    drift = []
+    # open drift; caseless pacman events of one transaction form one item (ADR-0013 §1-§3)
+    items, by_tx = [], {}
     for e in folded:
         if e["source"] in DRIFT_SOURCES and "case" not in e and "resolution" not in e:
-            d = {"eventId": e["id"], "ts": e["ts"], "source": e["source"], "kind": e["kind"], "subject": e["subject"]}
-            if "detail" in e:
-                d["detail"] = e["detail"]
-            d["actor"] = e["actor"]
-            if "zone" in e:
-                d["zone"] = e["zone"]
-            d["crisis"] = e.get("zone") == "red"
-            d["proposedCase"] = proposed(e["subject"])
-            drift.append(d)
+            if e["source"] == "pacman" and e.get("txId"):
+                if e["txId"] not in by_tx:
+                    by_tx[e["txId"]] = []
+                    items.append(by_tx[e["txId"]])
+                by_tx[e["txId"]].append(e)
+            else:
+                items.append([e])
+    drift = []
+    for members in items:
+        explicit = [m for m in members if m.get("explicit") is True]
+        lead = min(explicit or members, key=lambda m: m["id"])
+        d = {"eventId": lead["id"], "ts": lead["ts"], "source": lead["source"], "kind": lead["kind"],
+             "subject": lead["subject"], "detail": lead.get("detail"), "actor": lead["actor"]}
+        if lead["source"] == "pacman":
+            d["zone"] = "yellow" if all(routine(m) for m in members) else "red"
+        elif "zone" in lead:
+            d["zone"] = lead["zone"]
+        d["crisis"] = d.get("zone") == "red"
+        d["proposedCase"] = proposed(lead["subject"])
+        if len(members) > 1:
+            d["txId"], d["members"] = lead["txId"], len(members)
+        drift.append({k: d[k] for k in DRIFT_KEYS if d.get(k) is not None or k == "proposedCase"})
+    drift.sort(key=lambda d: (instant(d["ts"]), d["eventId"]), reverse=True)
 
     # case objects
     attributed = {}
@@ -641,8 +743,18 @@ def derive(lb, today, problems):
         while d <= today:
             weeks.append(week(d))
             d += dt.timedelta(days=7)
-    opened = [week(day(e)) for e in events if e["source"] in DRIFT_SOURCES and "case" not in e]
-    resolved_w = [week(day(e)) for e in events if e["kind"] == "resolution"]
+    # ADR-0013 §4: drift items, not lines. A caseless pacman transaction opens one item (in the
+    # week of its earliest line); the resolution lines of one group write (same meta.txId, ts and
+    # actor) count as one.
+    first = {}
+    for e in sorted(events, key=lambda e: (instant(e["ts"]), e["id"])):
+        if e["source"] in DRIFT_SOURCES and "case" not in e:
+            first.setdefault(("tx", e["txId"]) if e["source"] == "pacman" and e.get("txId") else e["id"], e)
+        elif e["kind"] == "resolution":
+            tx = e.get("meta", {}).get("txId")
+            first.setdefault(("res", tx, e["ts"], e["actor"]) if tx else e["id"], e)
+    opened = [week(day(e)) for e in first.values() if e["kind"] != "resolution"]
+    resolved_w = [week(day(e)) for e in first.values() if e["kind"] == "resolution"]
     drift_series = [{"week": w, "opened": opened.count(w), "resolved": resolved_w.count(w)} for w in weeks]
     risk = {r: sum(c["risk"] == r for c in all_cases) for r in ("R0", "R1", "R2", "R3")}
     timeline = []
@@ -699,6 +811,186 @@ def diff(a, b, path=""):
     elif a != b:
         out.append(f"{path or '/'}: fixture {json.dumps(a, ensure_ascii=False)[:80]} != derived {json.dumps(b, ensure_ascii=False)[:80]}")
     return out[:20]
+
+
+# --------------------------------------------------------------------------- index variants
+
+# fixtures/index-variants/<name>.json = index.sample.json with these operations applied (an RFC 6902
+# subset: test, add, replace, remove), so a variant never drifts from the sample. `--write-index`
+# regenerates them; the check fails when a variant file differs from sample + overlay.
+VARIANTS = {
+    # ADR-0011: snapper runs without ALLOW_USERS; everything else as in the sample.
+    "snapper-degraded": [
+        {"op": "test", "path": "/state/collectors/1/name", "value": "snapper"},
+        {"op": "replace", "path": "/state/collectors/1/ok", "value": False},
+        {"op": "add", "path": "/state/collectors/1/message",
+         "value": "snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see `seldon doctor`."},
+    ],
+    # `seldon index` before `seldon init`: no logbook, every section empty.
+    "not-initialised": [
+        {"op": "replace", "path": "/logbook", "value": {"path": "/home/user/Seldon", "language": "en", "machine": ""}},
+        {"op": "replace", "path": "/state", "value": {"status": "notInitialised", "lastCapture": None, "collectors": []}},
+        {"op": "replace", "path": "/summary", "value": {"activeCases": 0, "queuedCases": 0, "openDrift": 0, "crisis": 0,
+                                                        "eventsToday": 0, "events7d": 0}},
+        {"op": "remove", "path": "/today/path"},
+        {"op": "replace", "path": "/today/entries", "value": []},
+        {"op": "remove", "path": "/today/yesterday"},
+        {"op": "replace", "path": "/events", "value": []},
+        {"op": "replace", "path": "/drift", "value": []},
+        {"op": "replace", "path": "/cases", "value": {"queued": [], "active": [], "verification": [], "completed": []}},
+        {"op": "replace", "path": "/decisions", "value": []},
+        {"op": "replace", "path": "/system", "value": {}},
+        {"op": "replace", "path": "/memory", "value": {}},
+        {"op": "replace", "path": "/series", "value": {"heatmap": [], "packages": [], "drift": []}},
+    ],
+}
+
+
+def apply_overlay(doc, ops, name):
+    doc = copy.deepcopy(doc)
+    for op in ops:
+        parts = [p.replace("~1", "/").replace("~0", "~") for p in op["path"].split("/")[1:]]
+        parent = doc
+        for p in parts[:-1]:
+            parent = parent[int(p)] if isinstance(parent, list) else parent[p]
+        last = int(parts[-1]) if isinstance(parent, list) else parts[-1]
+        if op["op"] == "test":
+            if parent[last] != op["value"]:
+                raise Fail(f"index-variants/{name}: overlay test {op['path']} == {op['value']!r} failed")
+        elif op["op"] in ("remove", "replace"):
+            exists = last in parent if isinstance(parent, dict) else 0 <= last < len(parent)
+            if not exists:
+                raise Fail(f"index-variants/{name}: overlay {op['op']} {op['path']}: no such member")
+            if op["op"] == "remove":
+                del parent[last]
+            else:
+                parent[last] = copy.deepcopy(op["value"])
+        elif op["op"] == "add":
+            if isinstance(parent, list):
+                parent.insert(last, copy.deepcopy(op["value"]))
+            else:
+                parent[last] = copy.deepcopy(op["value"])
+        else:
+            raise Fail(f"index-variants/{name}: unsupported overlay op {op['op']}")
+    return doc
+
+
+def dump_json(path, doc):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
+# --------------------------------------------------------------------------- self-checks
+
+GROUP_TX = "tx-20260930T214115"  # the open caseless `-Syu` of 2026-09-30 in the sample logbook
+
+
+def self_checks(today):
+    """Mutation tests of the ADR-0013 drift rules and the ADR-0015 §4 token rule on in-memory
+    copies of the sample logbook.
+    Each case: (label, mutate(ledger), expect(group item or None, derived) -> error or None)."""
+    def members(ledger):
+        return [e for _, e in ledger if e.get("txId") == GROUP_TX]
+
+    def set_on_first(**kv):
+        def m(ledger):
+            members(ledger)[0].update(kv)
+        return m
+
+    def set_command(cmd):
+        def m(ledger):
+            for e in members(ledger):
+                e["meta"]["command"] = cmd
+        return m
+
+    def resolve(n, fan_out):
+        def m(ledger):
+            for i, e in enumerate(members(ledger)[:n]):
+                r = {"id": "7" + "Z" * 23 + f"{i:02d}", "ts": "2026-10-01T16:50:00+02:00",
+                     "source": "seldon", "kind": "resolution", "subject": e["subject"], "detail": "Routine.",
+                     "actor": "human", "refersTo": e["id"], "resolution": "explained"}
+                if fan_out:
+                    r["meta"] = {"txId": GROUP_TX}
+                ledger.append((f"<self-check>:{i}", r))
+        return m
+
+    def zone(z, crisis, n=3):
+        def x(g, _):
+            got = g and (g.get("zone"), g["crisis"], g.get("members", 1))
+            return None if got == (z, crisis, n) else f"group (zone, crisis, members) = {got}, want {(z, crisis, n)}"
+        return x
+
+    def resolved_once(g, derived):
+        w = [s for s in derived["series"]["drift"] if s["week"] == "2026-W40"][0]
+        return None if g is None and w["resolved"] == 3 else f"group {g}, W40 resolved {w['resolved']} (want gone, 3)"
+
+    cases = [
+        ("unchanged", None, zone("yellow", False)),
+        ("one member explicit", set_on_first(explicit=True), zone("red", True)),
+        ("member subject linux", set_on_first(subject="linux"), zone("red", True)),
+        ("member subject linux-firmware (glob)", set_on_first(subject="linux-firmware"), zone("red", True)),
+        ("member subject quickshell", set_on_first(subject="quickshell"), zone("red", True)),
+        ("member kind install", set_on_first(kind="install"), zone("red", True)),
+        ("member kind reinstall", set_on_first(kind="reinstall"), zone("yellow", False)),
+        ("command names a package", set_command("pacman -Syu ollama"), zone("red", True)),
+        ("command after --", set_command("pacman -Syu -- ollama"), zone("red", True)),
+        ("command without -u", set_command("pacman -Sy"), zone("red", True)),
+        ("command -S -u --needed", set_command("pacman -S -u --needed"), zone("yellow", False)),
+        ("command --sync --sysupgrade --refresh", set_command("pacman --sync --sysupgrade --refresh"), zone("yellow", False)),
+        ("command --overwrite takes its argument", set_command("pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*"),
+         zone("yellow", False)),
+        ("command -r takes its argument", set_command("pacman -Syur /mnt"), zone("yellow", False)),
+        ("command with an unknown option and a word", set_command("pacman -Syu --frobnicate ollama"), zone("red", True)),
+        ("command yay", set_command("yay -Syu"), zone("red", True)),
+        ("--only resolves one member", resolve(1, False), zone("yellow", False, 2)),
+        ("fan-out resolves the group, counted once", resolve(3, True), resolved_once),
+    ]
+    out = []
+    for label, mutate, expect in cases:
+        problems = []
+        derived, _, _ = derive(LOGBOOK, today, problems, mutate)
+        tx_items = [d for d in derived["drift"] if d.get("txId") == GROUP_TX
+                    or (d["source"] == "pacman" and d["ts"].startswith("2026-09-30"))]
+        err = problems[:1] or ([f"{len(tx_items)} items for the group"] if len(tx_items) > 1 else [])
+        if not err:
+            g = tx_items[0] if tx_items else None
+            e = expect(g, derived)
+            err = [e] if e else []
+        out += [f"self-check '{label}': {e}" for e in err]
+
+    # ADR-0015 §4 token rule, end to end: an open caseless `zed` upgrade, every open case's Plan
+    # replaced by a neutral one (the sample's Plans name zed in other forms), and one Plan line
+    # in C-2026-007.
+    def add_zed(ledger):
+        ledger.append(("<self-check>:zed", {
+            "id": "7" + "Z" * 23 + "ZD", "ts": "2026-10-01T16:55:00+02:00", "source": "pacman", "kind": "upgrade",
+            "subject": "zed", "detail": "0.198.4-1 → 0.198.5-1", "actor": "system", "zone": "red", "explicit": False,
+            "txId": "tx-20261001T165500", "meta": {"command": "pacman -Syu", "from": "0.198.4-1", "to": "0.198.5-1"}}))
+
+    def plan_line(line):
+        def m(cases):
+            out = []
+            for f, fm, body in cases:
+                if fm["status"] in ("queued", "active", "verification"):
+                    plan = f"- [ ] {line}\n" if fm["id"] == "C-2026-007" else "- [ ] nothing to see\n"
+                    body = re.sub(r"^## Plan\n.*?(?=^## |\Z)", lambda _: f"## Plan\n{plan}\n", body, flags=re.S | re.M)
+                out.append((f, fm, body))
+            return out
+        return m
+
+    proposals = [
+        ("Plan 'Install zed.' proposes zed", "Install zed.", "C-2026-007"),
+        ("Plan 'Edit zed.conf' does not propose zed", "Edit zed.conf", None),
+        ("Plan 'extra/zed' proposes zed", "`extra/zed` from the repo", "C-2026-007"),
+    ]
+    for label, line, want in proposals:
+        problems = []
+        derived, _, _ = derive(LOGBOOK, today, problems, add_zed, plan_line(line))
+        got = [d.get("proposedCase") for d in derived["drift"] if d["subject"] == "zed"]
+        err = problems[:1] or ([] if got == [want] else [f"proposedCase {got}, want [{want!r}]"])
+        out += [f"self-check '{label}': {e}" for e in err]
+    return out, len(cases) + len(proposals)
 
 
 # --------------------------------------------------------------------------- main
@@ -768,11 +1060,13 @@ def main():
         out["state"] = sample["state"]
         for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
             out[k] = derived[k]
-        with open(SAMPLE, "w", encoding="utf-8") as f:
-            json.dump(out, f, ensure_ascii=False, indent=2)
-            f.write("\n")
+        dump_json(SAMPLE, out)
         sample = out
         print(f"wrote {rel(SAMPLE)}")
+        for name, ops in VARIANTS.items():
+            path = os.path.join(FIX, "index-variants", f"{name}.json")
+            dump_json(path, apply_overlay(sample, ops, name))
+            print(f"wrote {rel(path)}")
 
     # 1. schema validation of every JSON fixture
     items, unmapped = collect_instances()
@@ -798,6 +1092,24 @@ def main():
         if sample["logbook"].get(k) != derived["logbook"][k]:
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
 
+    # 3. every index variant is the sample plus its overlay
+    variant_files = {os.path.basename(f)[:-5] for f in glob.glob(os.path.join(FIX, "index-variants", "*.json"))}
+    for name in sorted(variant_files - set(VARIANTS)):
+        problems.append(f"fixtures/index-variants/{name}.json: no overlay in VARIANTS (scripts/validate-fixtures.py)")
+    for name, ops in VARIANTS.items():
+        path = os.path.join(FIX, "index-variants", f"{name}.json")
+        if not os.path.exists(path):
+            problems.append(f"{rel(path)}: missing; run with --write-index")
+            continue
+        with open(path, encoding="utf-8") as f:
+            have = json.load(f)
+        problems += [f"{rel(path)} {d} (regenerate with --write-index)"
+                     for d in diff(have, apply_overlay(sample, ops, name))]
+
+    # 4. ADR-0013 mutation self-checks on the sample logbook
+    errs, n_checks = self_checks(today)
+    problems += errs
+
     if problems:
         for p in problems:
             print(f"FAIL {p}")
@@ -806,7 +1118,8 @@ def main():
     if not a.quiet:
         n_ev = len(ledger)
         print(f"validate-fixtures: ok — {ok} instances ({len(items)} incl. {sum(i[3] for i in items)} expected failures), "
-              f"{n_ev} ledger events traced to index.sample.json; backend {backend.name}")
+              f"{n_ev} ledger events traced to index.sample.json, {len(VARIANTS)} variants, "
+              f"{n_checks} self-checks; backend {backend.name}")
     return 0
 
 

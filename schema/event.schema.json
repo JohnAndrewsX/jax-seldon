@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/event.schema.json",
   "title": "Seldon ledger event",
-  "description": "One line of ledger/YYYY-MM.jsonl. The same shape appears in index.events, where resolutions are folded onto their target (ADR-0012).",
+  "description": "One line of ledger/YYYY-MM.jsonl. The same shape appears in index.events, where resolutions are folded onto their target as resolution, resolutionDetail and (when linked) case (ADR-0012 §8, §11).",
   "type": "object",
   "required": ["id", "ts", "source", "kind", "subject", "actor"],
   "additionalProperties": false,
@@ -25,10 +25,15 @@
     "txId":    { "type": "string", "minLength": 1, "description": "pacman: opaque transaction id, shared by all lines of one transaction" },
     "refersTo": { "$ref": "#/$defs/ulid", "description": "resolution/correction target" },
     "resolution": { "enum": ["linked", "explained", "dismissed"], "description": "ledger: only on kind resolution; index: folded onto the target event" },
+    "resolutionDetail": { "type": "string", "maxLength": 4096, "description": "index only (ADR-0012 §11): the detail of the winning resolution, folded onto its target next to resolution; never in a ledger line (a resolution line carries it as detail)" },
     "meta":    {
       "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "plugin-add, plugin-enable, plugin-disable: whether the plugin is enabled after the change (ADR-0012 §15)" },
+        "txId":    { "type": "string", "minLength": 1, "description": "resolution only: the txId of the drift group this line was written for; every member's resolution line of one write carries it (ADR-0013 §4)" }
+      },
       "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
-      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre)"
+      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre), enabled (plugin-add/-enable/-disable), txId (resolution of a drift group)"
     }
   },
   "allOf": [
@@ -37,7 +42,11 @@
     { "if": { "properties": { "kind": { "const": "correction" } }, "required": ["kind"] },
       "then": { "required": ["refersTo"] } },
     { "if": { "properties": { "kind": { "const": "resolution" }, "resolution": { "const": "linked" } }, "required": ["kind", "resolution"] },
-      "then": { "required": ["case"] } }
+      "then": { "required": ["case"] } },
+    { "if": { "required": ["resolutionDetail"] },
+      "then": { "required": ["resolution"], "properties": { "kind": { "not": { "const": "resolution" } } } } },
+    { "if": { "properties": { "meta": { "required": ["txId"] } }, "required": ["meta"] },
+      "then": { "properties": { "kind": { "const": "resolution" } } } }
   ],
   "$defs": {
     "ulid":   { "type": "string", "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$", "description": "ULID (Crockford base32, 26 chars)" },

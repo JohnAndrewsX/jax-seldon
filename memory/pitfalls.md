@@ -34,3 +34,40 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   reads Edit/Write payloads (`tool_input.file_path`).
 - **`omarchy plugin catalog` does not carry versions** (see host.md); do not
   build `plugin-update` on it.
+
+## 2026-10-01 · WP-014 (Schema Keeper)
+
+- **The guard also blocks a `python3 -c` or heredoc that contains the
+  package-manager word**, e.g. a schema edit whose replacement text mentions
+  `pacman` in a description. Put such edit scripts in a file under the
+  scratchpad (Write tool) and run the file.
+- **`meta.command` is logged unquoted.** pacman writes `Running '<argv joined
+  by spaces>'`, so `--overwrite /usr/share/omarchy/*` appears bare. Split on
+  whitespace, not with a shell lexer (an apostrophe in an argument would make
+  `shlex` throw), and know which options take an argument word: every
+  `omarchy update` runs `-Syu --noconfirm --overwrite /usr/share/omarchy/*`,
+  and a parser that treats `/usr/share/omarchy/*` as a package name turns every
+  routine update red (ADR-0013 §3). Unknown options must err towards red.
+- **A direct `-Syu` is blocked on Omarchy** by `00-omarchy-update-guard.hook`
+  (`omarchy-update-pacman-guard`) unless `OMARCHY_ALLOW_DIRECT_PACMAN=1` is set;
+  the environment is not logged. Most routine upgrades therefore arrive via
+  `omarchy update`, which also yields a keyring reinstall (named package →
+  red) and, on a version change, the red `omarchy update` event.
+- **Adding pacman events to the fixture ledger is a three-file change**: the
+  ledger line(s), the same block in `fixtures/logs/pacman.log` *and*
+  `fixtures/logs/pacman-rotation/pacman.log`, plus the byte offsets in
+  `fixtures/README.md` (the collector tests rely on "the log produces exactly
+  the ledger's pacman events"). Keep month files chronological when appending:
+  pick a `ts` after the file's last line, and give the ULID that time part.
+- **`index-variants/` are generated** from the sample plus an overlay
+  (`VARIANTS` in `scripts/validate-fixtures.py`); a hand edit is reported. Add
+  a banner state by adding an overlay, then `--write-index`.
+- **ADR-0012 §13's token rule makes `.` a word character**, so a Plan line
+  ending in `zed.` does not propose `zed`. The previous script regex allowed a
+  trailing sentence period; the fixture's proposals are the same under both,
+  so the change was invisible in the diff. Write Plan items without trailing
+  punctuation after a package name, or raise it with the orchestrator.
+- **Correction (same day): ADR-0015 §4 supersedes the item above.** A final
+  `.` not followed by a word character is punctuation, so `Install zed.`
+  proposes `zed` again; `zed.conf` does not. A rule change that leaves the
+  sample index identical needs an end-to-end self-check, not just a clean diff.

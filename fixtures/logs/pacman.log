@@ -97,6 +97,17 @@ garbage line without a timestamp
 [2026-09-15T20:11:31+0200] [ALPM] upgraded omarchy (4.0.5-1 -> 4.0.6-1)
 [2026-09-15T20:11:31+0200] [ALPM] transaction completed
 [2026-09-15T20:11:31+0200] [ALPM] running '35-systemd-update.hook'...
+[2026-09-30T21:40:02+0200] [PACMAN] Running 'pacman -Syu'
+[2026-09-30T21:40:02+0200] [PACMAN] synchronizing package lists
+[2026-09-30T21:40:03+0200] [PACMAN] starting full system upgrade
+[2026-09-30T21:41:15+0200] [ALPM] running '00-omarchy-update-guard.hook'...
+[2026-09-30T21:41:15+0200] [ALPM] running '10-limine-snapper-lock.hook'...
+[2026-09-30T21:41:15+0200] [ALPM] transaction started
+[2026-09-30T21:41:15+0200] [ALPM] upgraded firefox (143.0.1-1 -> 143.0.2-1)
+[2026-09-30T21:41:16+0200] [ALPM] upgraded libinput (1.29.1-1 -> 1.29.2-1)
+[2026-09-30T21:41:16+0200] [ALPM] upgraded noto-fonts (1:2026.09.01-1 -> 1:2026.09.15-1)
+[2026-09-30T21:41:16+0200] [ALPM] transaction completed
+[2026-09-30T21:41:16+0200] [ALPM] running 'fontconfig.hook'...
 [2026-10-01T09:10:40+0200] [PACMAN] Running 'pacman -Sy --noconfirm archlinux-keyring'
 [2026-10-01T09:10:40+0200] [PACMAN] synchronizing package lists
 [2026-10-01T09:10:41+0200] [ALPM] running '00-omarchy-update-guard.hook'...

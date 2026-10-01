@@ -48,8 +48,8 @@
         "yesterday": { "type": "array", "items": { "$ref": "#/$defs/journalEntry" } }
       }
     },
-    "events": { "type": "array", "maxItems": 500, "items": { "$ref": "event.schema.json" }, "description": "newest first; resolution events are not listed, they are folded onto their target (resolution, and case when linked)" },
-    "drift":  { "type": "array", "items": { "$ref": "#/$defs/drift" }, "description": "open drift, newest first" },
+    "events": { "type": "array", "maxItems": 500, "items": { "$ref": "event.schema.json" }, "description": "newest first; resolution events are not listed, they are folded onto their target (resolution, resolutionDetail when the resolution has a detail, and case when linked; ADR-0012 §8, §11)" },
+    "drift":  { "type": "array", "items": { "$ref": "#/$defs/drift" }, "description": "open drift items, newest first; open caseless pacman events of one transaction form one item (ADR-0013)" },
     "cases":  { "type": "object", "required": ["queued", "active", "verification", "completed"], "additionalProperties": false,
       "properties": {
         "queued": { "type": "array", "items": { "$ref": "case.schema.json" } },
@@ -78,9 +78,9 @@
       "properties": {
         "heatmap":  { "type": "array", "maxItems": 366, "items": { "type": "object", "required": ["date", "total"], "additionalProperties": false, "properties": { "date": { "type": "string", "format": "date" }, "total": { "type": "integer", "minimum": 0 }, "bySource": { "type": "object", "propertyNames": { "$ref": "event.schema.json#/properties/source" }, "additionalProperties": { "type": "integer" } } } } },
         "packages": { "type": "array", "items": { "type": "object", "required": ["date", "explicit"], "additionalProperties": false, "properties": { "date": { "type": "string", "format": "date" }, "explicit": { "type": "integer" }, "total": { "type": "integer" } } } },
-        "drift":    { "type": "array", "items": { "type": "object", "required": ["week", "opened", "resolved"], "additionalProperties": false, "properties": { "week": { "type": "string", "pattern": "^[0-9]{4}-W[0-9]{2}$" }, "opened": { "type": "integer" }, "resolved": { "type": "integer" } } } },
+        "drift":    { "type": "array", "description": "per ISO week: drift items opened and resolution writes; a pacman group counts once on both sides (ADR-0013 §4)", "items": { "type": "object", "required": ["week", "opened", "resolved"], "additionalProperties": false, "properties": { "week": { "type": "string", "pattern": "^[0-9]{4}-W[0-9]{2}$" }, "opened": { "type": "integer" }, "resolved": { "type": "integer" } } } },
         "risk":     { "type": "object", "propertyNames": { "enum": ["R0", "R1", "R2", "R3"] }, "additionalProperties": { "type": "integer" } },
-        "timeline": { "type": "array", "items": { "type": "object", "required": ["kind", "ts", "label"], "additionalProperties": false, "properties": { "kind": { "enum": ["release", "snapshot", "case", "crisis"] }, "ts": { "type": "string" }, "end": { "type": ["string", "null"] }, "label": { "type": "string" }, "ref": { "type": "string" } } } }
+        "timeline": { "type": "array", "items": { "type": "object", "required": ["kind", "ts", "label"], "additionalProperties": false, "properties": { "kind": { "enum": ["release", "snapshot", "case", "crisis"] }, "ts": { "type": "string", "description": "two forms (ADR-0012 §12): YYYY-MM-DD for case spans (the case's created), RFC 3339 date-time for release, snapshot and crisis" }, "end": { "type": ["string", "null"], "description": "case spans only: YYYY-MM-DD (closed), null while the case is open; absent for the other kinds" }, "label": { "type": "string" }, "ref": { "type": "string" } } } }
       }
     }
   },
@@ -88,15 +88,22 @@
     "journalEntry": { "type": "object", "required": ["time", "actor", "text"], "additionalProperties": false,
       "properties": { "time": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" }, "actor": { "$ref": "event.schema.json#/$defs/actor" }, "case": { "anyOf": [ { "$ref": "event.schema.json#/$defs/caseId" }, { "type": "null" } ] }, "text": { "type": "string" } } },
     "drift": { "type": "object", "required": ["eventId", "ts", "source", "kind", "subject", "actor", "crisis"], "additionalProperties": false,
+      "description": "One open drift item: a single event, or a pacman transaction group (ADR-0013). A group's ts, source, kind, subject, detail, actor and proposedCase are the leader's (lowest-id explicit member, else lowest-id member); its members have no rows of their own.",
       "properties": {
-        "eventId": { "$ref": "event.schema.json#/$defs/ulid" },
+        "eventId": { "$ref": "event.schema.json#/$defs/ulid", "description": "the event's id; for a group the leader's id (the drift key stays an event id, ADR-0008)" },
         "ts": { "type": "string", "format": "date-time" },
         "source": { "enum": ["pacman", "omarchy", "plugins", "theme", "config"], "description": "only system-changing collectors produce drift (ADR-0012)" },
         "kind": { "$ref": "event.schema.json#/properties/kind" },
         "subject": { "type": "string" }, "detail": { "type": "string" },
         "actor": { "$ref": "event.schema.json#/$defs/actor" },
-        "zone": { "enum": ["green", "yellow", "red"] },
+        "zone": { "enum": ["green", "yellow", "red"], "description": "the event's zone; for pacman items computed: yellow iff every member is routine, else red (ADR-0013 §3)" },
         "crisis": { "type": "boolean", "description": "true iff zone is red" },
-        "proposedCase": { "anyOf": [ { "$ref": "event.schema.json#/$defs/caseId" }, { "type": "null" } ] } } }
+        "proposedCase": { "anyOf": [ { "$ref": "event.schema.json#/$defs/caseId" }, { "type": "null" } ] },
+        "txId": { "type": "string", "minLength": 1, "description": "groups only: the shared pacman txId; expand the group from index.events by txId (ADR-0013 §2)" },
+        "members": { "type": "integer", "minimum": 2, "description": "groups only: number of open member events incl. the leader; omitted for single-event items" } },
+      "allOf": [
+        { "if": { "required": ["members"] }, "then": { "required": ["txId"], "properties": { "source": { "const": "pacman" } } } },
+        { "if": { "required": ["txId"] }, "then": { "required": ["members"] } }
+      ] }
   }
 }
