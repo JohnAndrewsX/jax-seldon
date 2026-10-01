@@ -12,7 +12,7 @@ setup), WP-033 and WP-043 (operator decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-037 | Overlay live findings: `periodView` fallback on open, harness creation order, heatmap probe docs, theme shots | Plugin | `plugin-037` (opus, high) | `wt/WP-037` · `wp/037-overlay-live` | 2026-10-02 |
+*(none — all remaining work waits on the operator items below)*
 
 ## Queued (next up)
 WP-033 (update-impact, needs the operator's release-notes source decision)
@@ -31,6 +31,13 @@ logbook migration)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-037 Overlay live findings: memoised empty period view
+  (no aggregation when the shell injects `service` after creation), the
+  harness now creates the overlay like the shell and the old code fails
+  its assertion with the live number (23), probe docs, Tokyo Night /
+  Catppuccin Latte / Osaka Jade live screenshots, theme restored — merged;
+  live `call view`: overlay 0, every chart paints 1. The Phase 1–3 live
+  sweeps are complete.
 - 2026-10-02 WP-013 Engine ↔ plugin e2e on the test host: two full runs
   47/47 after the unlock (gate G2), the live checklist of WP-020…031
   (keys, arming, drift and decisions flows, overlay paint counters,
@@ -199,6 +206,9 @@ logbook migration)
 - **ADR-0022** (AUR package builds against glibc; the static musl binary
   is the GitHub release asset) reads AGENTS.md §7 without changing it —
   accepted by the orchestrator, veto possible.
+- **Live sweeps done.** Only the QSG frame-timing profile is left, see
+  the next item; `call view` paint counters (1 per chart, 0–2 ms) are the
+  live record.
 - **Live frame profile of the Prime Radiant (WP-031)** needs
   `QSG_RENDER_TIMING` in Hyprland's environment on the test host
   (`hyprctl keyword env …`) plus a shell restart — a runtime change on the
