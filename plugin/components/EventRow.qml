@@ -17,7 +17,7 @@ import "../Model.js" as Model
 // members are red in the ledger, ADR-0013 §3), else the event's own zone. It
 // paints the stripe and, for open drift, the glyph, status line and "+N"
 // badge. Snapshot rows carry the theme's selected
-// fill. A drift group's leader shows "+N"; expanded, it lists the members
+// fill. A drift group's leader shows "+N", N the members besides it; expanded, it lists the members
 // that index.events still holds. Every string is plain text.
 CursorSurface {
   id: root

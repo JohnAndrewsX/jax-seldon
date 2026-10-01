@@ -10,12 +10,13 @@ import "Model.js" as Model
 // Top to bottom: title, tab strip, the status banner (WP-010), the
 // snapper-degraded banner (ADR-0011), the red crisis strip, then the current
 // tab. The banners and the strip sit above the tabs, so every tab shows them.
-// Tabs: Today, Changelog, System (Work, Decisions and Memory arrive later).
+// Tabs: Today, Changelog, Work, System (Decisions and Memory arrive later).
 //
 // Actions (WP-012) go through the service's queue with fixed argument lists:
 // the QuickEntry note (`seldon log`), *Capture now* (capture, then status;
 // the index refresh arrives through the FileView), and *Open in editor* per
-// tab (`seldon open journal|ledger|status|<caseId> --editor`).
+// tab (`seldon open journal|ledger|status|<caseId> --editor`). The Work tab
+// (WP-020) adds `seldon plan new|start|verify|done|drop`.
 //
 // Keyboard (SPEC-PLUGIN §5):
 //   Tab / Shift-Tab  the bar's next / previous panel, as every Omarchy panel
@@ -24,11 +25,15 @@ import "Model.js" as Model
 //                    Changelog 2, Work 3, Decisions 4, System 5, Memory 6);
 //                    the digit of a tab this version lacks does nothing
 //   ↑ / ↓, k / j     move in the tab's list
-//   Enter, Space     open the row under the cursor (a group, the yesterday row)
+//   Enter, Space     open the row under the cursor (a group, the yesterday
+//                    row); on Work, the card's first action (twice to write)
+//   x                Work: drop the case under the cursor (twice)
 //   f / F            Changelog: next / previous source filter
 //   c                capture now
 //   n                write a note (Today's QuickEntry; Esc gives the keys back)
-//   e                open this tab's file in the editor (journal, ledger, status)
+//   +                new case (Work's sheet; Esc gives the keys back)
+//   e                open this tab's file in the editor (journal, ledger, the
+//                    case under the Work cursor, status)
 //   Esc              close
 Panel {
   id: root
@@ -49,14 +54,18 @@ Panel {
   readonly property color dim: Util.alpha(foreground, 0.65)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  readonly property var tabNames: ["Today", "Changelog", "System"]
-  readonly property var tabIds: ["today", "changelog", "system"]
+  readonly property var tabNames: ["Today", "Changelog", "Work", "System"]
+  readonly property var tabIds: ["today", "changelog", "work", "system"]
   property int tabIndex: 0
   property bool cursorActive: false
 
   // The index only when its contents mean something in this status.
   readonly property var indexData: service && service.indexShown ? service.index : null
-  readonly property var tabItems: [todayTab, changelogTab, systemTab]
+  readonly property var tabItems: [todayTab, changelogTab, workTab, systemTab]
+  // A text field or picker of a tab has the keys.
+  readonly property bool editing: todayTab.editing || workTab.editing
+  // The bar widget setting `wipLimit` (Work tab).
+  readonly property int wipLimit: Model.clampWipLimit(setting("wipLimit", Model.WIP_LIMIT_DEFAULT))
   readonly property var currentTab: tabItems[tabIndex]
 
   function selectTab(i) {
@@ -87,6 +96,8 @@ Panel {
     } else if (t === "n") {
       root.selectTabById("today")
       todayTab.quickEntry.focusField()
+    } else if (t === "+") {
+      root.newCase()
     } else {
       root.currentTab.textKey(t)
     }
@@ -100,6 +111,12 @@ Panel {
     if (root.service) root.service.captureNow()
   }
 
+  // The Work tab's new-case sheet, from any tab.
+  function newCase() {
+    root.selectTabById("work")
+    if (workTab.canWrite) workTab.openSheet()
+  }
+
   // journal | ledger | status | <caseId>; Service.openInEditor validates it.
   function openInEditor(what) {
     if (root.service) root.service.openInEditor(what)
@@ -107,7 +124,7 @@ Panel {
 
   // The QuickEntry gives the keys back, or its field was hidden with the tab.
   function restoreKeys() {
-    if (root.opened && !todayTab.editing && !keyCatcher.activeFocus) keyCatcher.forceActiveFocus()
+    if (root.opened && !root.editing && !keyCatcher.activeFocus) keyCatcher.forceActiveFocus()
   }
 
   // Tab walks the bar's panels from the slot's widget, not from this item.
@@ -156,7 +173,40 @@ Panel {
         driftTones: rows.filter(function(r) { return r.drift }).map(function(r) { return r.subject + " " + r.tone }),
         expanded: changelogTab.expandedId
       },
+      work: root.workView(),
       system: systemTab.sections.map(function(s) { return s.title })
+    }
+  }
+
+  function workView() {
+    var c = workTab.current
+    var actions = Model.caseActions(c)
+    return {
+      columns: workTab.columns.map(function(col) { return col.id + " " + col.cases.length }),
+      ids: workTab.columns.map(function(col) { return col.cases.map(function(x) { return x.id }).join(",") }),
+      wip: workTab.wip.text,
+      cursor: c ? c.id : "",
+      card: c ? {
+        id: c.id,
+        status: c.status,
+        actions: actions.map(function(a) { return a.label }),
+        proposed: c.proposed,
+        armed: workTab.armedFor,
+        hint: workTab.card.hint
+      } : null,
+      result: workTab.result ? workTab.result.text : "",
+      resultOk: workTab.result ? workTab.result.ok : null,
+      pending: workTab.pending,
+      sheet: {
+        open: workTab.sheetOpen,
+        editing: workTab.sheet.editing,
+        title: workTab.sheet.title,
+        zone: workTab.sheet.zone,
+        risk: workTab.sheet.risk,
+        priority: workTab.sheet.priority,
+        area: workTab.sheet.area,
+        result: workTab.sheet.resultText
+      }
     }
   }
 
@@ -179,8 +229,9 @@ Panel {
       id: keyCatcher
       objectName: "seldonKeys"
       anchors.fill: parent
-      // The QuickEntry field and case picker take every key while focused.
-      blocked: todayTab.editing
+      // The QuickEntry field and case picker, and the new-case sheet, take
+      // every key while focused.
+      blocked: root.editing
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onMoveRequested: function(dx, dy) {
@@ -188,6 +239,7 @@ Panel {
         else if (dy !== 0) root.moveCursor(dy)
       }
       onActivateRequested: if (root.cursorActive) root.currentTab.activate()
+      onDeleteRequested: if (root.cursorActive && root.currentTab === workTab) workTab.dropKey()
       onTextKey: function(t) { root.textKey(t) }
 
       Column {
@@ -343,10 +395,26 @@ Panel {
             onCursorWanted: root.cursorActive = true
           }
 
+          WorkTab {
+            id: workTab
+            anchors.fill: parent
+            visible: root.tabIndex === 2
+            service: root.service
+            indexData: root.indexData
+            wipLimit: root.wipLimit
+            cursorActive: root.cursorActive && visible
+            foreground: root.foreground
+            urgent: root.urgent
+            fontFamily: root.fontFamily
+            onCursorWanted: root.cursorActive = true
+            onLeaveRequested: keyCatcher.forceActiveFocus()
+            onEditingChanged: if (!editing) Qt.callLater(root.restoreKeys)
+          }
+
           SystemTab {
             id: systemTab
             anchors.fill: parent
-            visible: root.tabIndex === 2
+            visible: root.tabIndex === 3
             indexData: root.indexData
             nowMs: root.service ? root.service.nowMs : Date.now()
             cursorActive: root.cursorActive && visible

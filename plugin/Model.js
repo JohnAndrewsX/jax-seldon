@@ -25,6 +25,10 @@ var EVENT_ID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/
 var ZONES = ["green", "yellow", "red"]
 var RISKS = ["R0", "R1", "R2", "R3"]
 var OPEN_TARGETS = ["journal", "ledger", "status"]
+// schema/case.schema.json: priority, area; the steps of `seldon plan`.
+var PRIORITIES = ["high", "normal", "low"]
+var AREA = /^[a-z0-9][a-z0-9-]*$/
+var PLAN_STEPS = ["start", "verify", "done", "drop"]
 
 // Fix commands shown in banners. Constants only: nothing from the index is
 // ever spliced into a command (AGENTS.md §8). The engine is an AUR package
@@ -364,10 +368,17 @@ function validateArgs(args) {
     if (withText && n === 3 && a[1] === "--case" && CASE_ID.test(a[2])) return ""
     return "log must be: log [--case <caseId>] -- <text>"
   case "plan":
-    if (withText && n === 6 && a[1] === "new" && a[2] === "--zone" && matches(ZONES, a[3])
-        && a[4] === "--risk" && matches(RISKS, a[5])) return ""
-    if (!withText && n === 3 && matches(["start", "verify", "done", "drop"], a[1]) && CASE_ID.test(a[2])) return ""
-    return "plan must be: plan new --zone <z> --risk <r> -- <title> | plan start|verify|done|drop <caseId>"
+    if (withText && n >= 6 && a[1] === "new" && a[2] === "--zone" && matches(ZONES, a[3])
+        && a[4] === "--risk" && matches(RISKS, a[5])) {
+      // Then optionally `--area <slug>`, then optionally `--priority <p>`.
+      var k = 6
+      if (k + 1 < n && a[k] === "--area" && AREA.test(a[k + 1])) k += 2
+      if (k + 1 < n && a[k] === "--priority" && matches(PRIORITIES, a[k + 1])) k += 2
+      if (k === n) return ""
+    }
+    if (!withText && n === 3 && matches(PLAN_STEPS, a[1]) && CASE_ID.test(a[2])) return ""
+    return "plan must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>"
+      + " | plan start|verify|done|drop <caseId>"
   case "drift":
     var id = n >= 3 && EVENT_ID.test(a[2])
     if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
@@ -712,8 +723,9 @@ function changelogRows(index, filter) {
       drift: item !== null,
       crisis: item !== null && item.crisis === true,
       proposedCase: leader && typeof leader.proposedCase === "string" ? leader.proposedCase : "",
-      // "+N" on the group's leader row; N counts every member (ADR-0013 §2).
-      badge: grouped ? "+" + leader.members : "",
+      // "+N" on the group's leader row: the leader plus N more. `members`
+      // counts the leader too (ADR-0013 §2), so a group of 3 reads "+2".
+      badge: grouped && leader.members > 1 ? "+" + (leader.members - 1) : "",
       txId: grouped ? str(leader.txId) : "",
       groupLeader: group ? str(group.eventId) : "",
       groupSubject: group ? str(group.subject) : ""
@@ -921,4 +933,207 @@ function systemSections(index, nowMs) {
   if (rows.length) sections.push({ title: "SELDON", rows: rows })
 
   return sections
+}
+
+// ---- Work ---------------------------------------------------------------------
+
+// SPEC-PLUGIN §5, Work: three columns. Active holds the verification cases
+// too, after the active ones; Completed holds completed and dropped cases,
+// newest closed first, as the index lists them (at most 50, CONTRACT.md
+// rule 4).
+var WORK_COLUMNS = [
+  { id: "queued", title: "Queued", groups: ["queued"] },
+  { id: "active", title: "Active", groups: ["active", "verification"] },
+  { id: "completed", title: "Completed", groups: ["completed"] }
+]
+
+var CASE_STATUSES = ["queued", "active", "verification", "completed", "dropped"]
+
+// `seldon plan new` defaults (SPEC-ENGINE §3): the sheet starts with them.
+var NEW_CASE_DEFAULTS = { zone: "yellow", risk: "R1", priority: "normal" }
+
+// The WIP limit the Work tab measures active cases against. Neither the
+// contract nor the logbook config has one yet; the bar widget setting
+// `wipLimit` overrides this default.
+var WIP_LIMIT_DEFAULT = 3
+var WIP_LIMIT_MIN = 1
+var WIP_LIMIT_MAX = 20
+
+function clampWipLimit(value) {
+  var n = Math.round(Number(value))
+  if (!isFinite(n)) return WIP_LIMIT_DEFAULT
+  return Math.max(WIP_LIMIT_MIN, Math.min(WIP_LIMIT_MAX, n))
+}
+
+// One case as the Work tab shows it. `actionable` is false for an id that
+// does not match the schema pattern: such a case is shown, never passed on.
+function workCase(c, group, column) {
+  var steps = isObject(c.steps) ? c.steps : null
+  var total = steps ? count(steps.total) : 0
+  var id = str(c.id)
+  return {
+    id: id,
+    title: str(c.title),
+    status: matches(CASE_STATUSES, c.status) ? c.status : group,
+    column: column,
+    zone: str(c.zone),
+    risk: str(c.risk),
+    priority: str(c.priority),
+    area: str(c.area),
+    created: str(c.created),
+    started: str(c.started),
+    closed: str(c.closed),
+    path: str(c.path),
+    tone: zoneTone(c.zone),
+    stepsText: steps ? Math.min(count(steps.done), total) + "/" + total : "",
+    proposed: Array.isArray(c.proposedEvents) ? c.proposedEvents.length : 0,
+    actionable: CASE_ID.test(id)
+  }
+}
+
+// [{ id, title, cases }] for queued, active (+ verification), completed.
+function workColumns(index) {
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  var out = []
+  for (var k = 0; k < WORK_COLUMNS.length; k++) {
+    var col = WORK_COLUMNS[k]
+    var list = []
+    for (var g = 0; g < col.groups.length; g++) {
+      var group = cases[col.groups[g]]
+      if (!Array.isArray(group)) continue
+      for (var i = 0; i < group.length; i++)
+        if (isObject(group[i])) list.push(workCase(group[i], col.groups[g], col.id))
+    }
+    out.push({ id: col.id, title: col.title, cases: list })
+  }
+  return out
+}
+
+// Every case of the columns in reading order, the order the cursor walks.
+function workCases(columns) {
+  var out = []
+  for (var k = 0; k < columns.length; k++) out = out.concat(columns[k].cases)
+  return out
+}
+
+// "2 / 3 active": cases with status active (not verification) against the
+// limit. tone: "" below it, "accent" at it, "urgent" over it.
+function wipStatus(index, limit) {
+  var cases = index && isObject(index.cases) ? index.cases : {}
+  var active = Array.isArray(cases.active) ? cases.active.length : 0
+  var max = clampWipLimit(limit)
+  return {
+    active: active,
+    limit: max,
+    text: active + " / " + max + " active",
+    tone: active > max ? "urgent" : active === max ? "accent" : ""
+  }
+}
+
+// The actions of a case card (SPEC-PLUGIN §5, WP-020): queued → Start;
+// active → Verify, Drop; verification → Done, Drop; completed and dropped →
+// Open. Every open case also gets Open, last. The first action is the one
+// Enter runs. `write`: changes the logbook; `confirm`: a click only arms it,
+// a second click runs it (Drop is final).
+var ACTIONS = {
+  start: { id: "start", label: "Start", write: true, confirm: false },
+  verify: { id: "verify", label: "Verify", write: true, confirm: false },
+  done: { id: "done", label: "Done", write: true, confirm: false },
+  drop: { id: "drop", label: "Drop", write: true, confirm: true },
+  open: { id: "open", label: "Open", write: false, confirm: false }
+}
+
+var ACTIONS_BY_STATUS = {
+  queued: ["start", "open"],
+  active: ["verify", "drop", "open"],
+  verification: ["done", "drop", "open"],
+  completed: ["open"],
+  dropped: ["open"]
+}
+
+function caseActions(c) {
+  if (!c || !c.actionable || ACTIONS_BY_STATUS[c.status] === undefined) return []
+  var ids = ACTIONS_BY_STATUS[c.status]
+  var out = []
+  for (var i = 0; i < ids.length; i++) {
+    var a = ACTIONS[ids[i]]
+    out.push({ id: a.id, label: a.label, write: a.write, confirm: a.confirm, primary: i === 0 })
+  }
+  return out
+}
+
+function caseAction(c, actionId) {
+  var list = caseActions(c)
+  for (var i = 0; i < list.length; i++)
+    if (list[i].id === actionId) return list[i]
+  return null
+}
+
+// "dev-env · priority high · 2/4 steps"
+function caseMeta(c) {
+  var parts = []
+  if (c.area !== "") parts.push(c.area)
+  if (c.priority !== "") parts.push("priority " + c.priority)
+  if (c.stepsText !== "") parts.push(c.stepsText + " steps")
+  return parts.join(" · ")
+}
+
+// "created 2026-09-28 · started 2026-10-01 · closed 2026-10-02"
+function caseDates(c) {
+  var parts = []
+  if (c.created !== "") parts.push("created " + c.created)
+  if (c.started !== "") parts.push("started " + c.started)
+  if (c.closed !== "") parts.push("closed " + c.closed)
+  return parts.join(" · ")
+}
+
+// `seldon plan …` (CONTRACT.md, SPEC-ENGINE §3). Returns { args } or { error }.
+//   planArgs("new", { title, zone, risk, area, priority })
+//     → plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] --json -- <title>
+//     The title is one argument after `--`, exactly as typed; --area only
+//     when given, --priority only when it is not the default (normal).
+//   planArgs("start" | "verify" | "done" | "drop", caseId)
+//     → plan <step> <caseId> --json
+function planArgs(action, input) {
+  if (action === "new") {
+    var f = isObject(input) ? input : {}
+    var title = f.title
+    if (!hasText(title)) return { error: "Give the case a title" }
+    if (String(title).indexOf("\u0000") !== -1) return { error: "The title contains a NUL character" }
+    var zone = f.zone === undefined || f.zone === "" ? NEW_CASE_DEFAULTS.zone : f.zone
+    var risk = f.risk === undefined || f.risk === "" ? NEW_CASE_DEFAULTS.risk : f.risk
+    var priority = f.priority === undefined || f.priority === "" ? NEW_CASE_DEFAULTS.priority : f.priority
+    var area = f.area === undefined || f.area === null ? "" : String(f.area)
+    if (!matches(ZONES, zone)) return { error: "Not a zone: " + zone }
+    if (!matches(RISKS, risk)) return { error: "Not a risk: " + risk }
+    if (!matches(PRIORITIES, priority)) return { error: "Not a priority: " + priority }
+    if (area !== "" && !AREA.test(area)) return { error: "Area must be a lowercase slug: letters, digits and -" }
+    var args = ["plan", "new", "--zone", zone, "--risk", risk]
+    if (area !== "") args.push("--area", area)
+    if (priority !== NEW_CASE_DEFAULTS.priority) args.push("--priority", priority)
+    return { args: args.concat(["--json", "--", title]) }
+  }
+  if (!matches(PLAN_STEPS, action)) return { error: "Not a plan step: " + action }
+  var id = String(input || "")
+  if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  return { args: ["plan", action, id, "--json"] }
+}
+
+// `seldon plan … --json` (SPEC-ENGINE §3): new → {"case", "event",
+// "areaCreated", "git"}; a step → {"case", "from", "to", "movedFrom",
+// "activeCase", "journal", "event", "git"}. Returns { ok, text, caseId }.
+function planResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "" }
+  var data = parseJson(stdoutText)
+  var c = data && isObject(data.case) ? data.case : null
+  var id = c && typeof c.id === "string" && CASE_ID.test(c.id) ? c.id : ""
+  var name = id !== "" ? id : "The case"
+  if (data && typeof data.from === "string" && typeof data.to === "string") {
+    var text = name + ": " + data.from + " → " + data.to
+    if (typeof data.journal === "string" && data.journal !== "") text += " · journal " + data.journal
+    return { ok: true, text: text, caseId: id }
+  }
+  var created = (id !== "" ? "Created " + id : "Case created") + (c && typeof c.title === "string" && c.title !== "" ? " · " + c.title : "")
+  if (data && typeof data.areaCreated === "string" && data.areaCreated !== "") created += " · new area " + data.areaCreated
+  return { ok: true, text: created, caseId: id }
 }

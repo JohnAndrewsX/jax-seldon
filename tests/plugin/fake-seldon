@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fake `seldon` for the plugin harnesses (tests/plugin/service-states.sh,
 # panel-view.sh). Speaks just enough of the CLI (SPEC-ENGINE §3) for the
-# plugin: --version, capture, status, log, open.
+# plugin: --version, capture, status, log, open, plan new|start|verify|done|drop.
 # Every call is logged to $HOME/calls.log as "start <cmd>" / "end <cmd>" so
 # the test can prove calls never overlap, and its exact argv to
 # $HOME/argv.log, one line per call, each argument `printf %q`-quoted (a
@@ -16,8 +16,17 @@
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
-#   FAKE_SELDON_UNKNOWN_CASE  the case id `log` and `open` do not know
-#                        (default C-2026-999): exit 1, "unknown case <id>"
+#   FAKE_SELDON_LOCKED   if set, every `plan` call exits 4 (lock held)
+#   FAKE_SELDON_UNKNOWN_CASE  the case id `log`, `open` and `plan` do not
+#                        know (default C-2026-999): exit 1, "unknown case <id>"
+#
+# `plan` treats the index the fake last wrote (the state index) as its
+# logbook: a case's status is the one the index lists, unless $HOME/cases
+# has a line "<id> <status>" for it (a logbook the index has not caught up
+# with). A step follows the engine's transition rules and refuses with the
+# engine's message; an allowed step, and `plan new`, rewrite the state index
+# atomically with the case in its new column, as the real engine's index
+# rebuild does. Needs jq.
 #
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
@@ -41,6 +50,126 @@ uninit() {
 user_error() {
   echo "{\"error\":{\"code\":1,\"message\":\"$1\"}}"
   exit 1
+}
+
+state_index() {
+  local state=${XDG_STATE_HOME:-}
+  [[ $state == /* ]] || state="$HOME/.local/state"
+  echo "$state/seldon/index.json"
+}
+
+# Rewrite the state index with jq filter $1 (further jq arguments follow),
+# temp file + rename like the engine. No index, nothing to rewrite.
+rewrite_index() {
+  local index filter=$1
+  shift
+  index=$(state_index)
+  [[ -f $index ]] || return 0
+  jq --arg now "$(date --iso-8601=seconds)" "$@" "$filter | .generatedAt = \$now" "$index" >"$index.tmp"
+  mv "$index.tmp" "$index"
+}
+
+case_status() { # case_status <id> — the logbook's status, empty when unknown
+  local line index
+  if [[ -f $HOME/cases ]] && line=$(grep -m 1 "^$1 " "$HOME/cases"); then
+    echo "${line#* }"
+    return
+  fi
+  index=$(state_index)
+  [[ -f $index ]] && jq -r --arg id "$1" '[.cases[][] | select(.id == $id) | .status][0] // empty' "$index"
+  return 0
+}
+
+set_status() { # set_status <id> <status>
+  if [[ -f $HOME/cases ]]; then
+    grep -v "^$1 " "$HOME/cases" >"$HOME/cases.tmp" || true
+    mv "$HOME/cases.tmp" "$HOME/cases"
+  fi
+  echo "$1 $2" >>"$HOME/cases"
+}
+
+folder() {
+  case $1 in
+    queued) echo queued ;;
+    active | verification) echo active ;;
+    *) echo completed ;;
+  esac
+}
+
+# The index columns: verification has its own, dropped goes with completed
+# (newest closed first). Counts follow the columns.
+MOVE_CASE='def column($s): if $s == "dropped" then "completed" else $s end;
+  ([.cases[][] | select(.id == $id)][0]) as $c
+  | if $c == null then . else
+      (.cases |= with_entries(.value |= map(select(.id != $id))))
+      | ($c + {status: $to, path: ("work/" + $folder + "/" + ($c.path // ($id + ".md") | split("/") | last))}
+          + (if $to == "active" then {started: $today} else {} end)
+          + (if $to == "completed" or $to == "dropped" then {closed: $today} else {} end)) as $n
+      | if column($to) == "completed" then .cases.completed = [$n] + .cases.completed
+        else .cases[column($to)] += [$n] end
+      | .summary.activeCases = (.cases.active | length)
+      | .summary.queuedCases = (.cases.queued | length)
+    end'
+
+plan_new() {
+  local zone=yellow risk=R1 priority=normal area="" title id index next
+  while (($# > 0)) && [[ $1 != -- ]]; do
+    case $1 in
+      --zone) zone=$2; shift ;;
+      --risk) risk=$2; shift ;;
+      --area) area=$2; shift ;;
+      --priority) priority=$2; shift ;;
+    esac
+    shift
+  done
+  title=${2:-}
+  [[ -n ${title//[[:space:]]/} ]] || user_error "the title must not be empty"
+  [[ $title != *$'\n'* ]] || user_error "the title must be one line"
+  next=9
+  index=$(state_index)
+  [[ -f $index ]] && next=$(jq '[.cases[][] | .id | capture("^C-2026-(?<n>[0-9]+)$").n | tonumber] | (max // 0) + 1' "$index")
+  id=$(printf 'C-2026-%03d' "$next")
+  set_status "$id" queued
+  rewrite_index '.cases.queued += [{id: $id, title: $title, status: "queued", zone: $zone, risk: $risk, priority: $priority}
+      + (if $area == "" then {} else {area: $area} end)
+      + {created: "2026-10-01", started: null, closed: null, snapshotBefore: null, agents: [], events: [], tags: [],
+         path: ("work/queued/" + $id + "-case.md"), steps: {total: 0, done: 0}}]
+    | .summary.queuedCases = (.cases.queued | length)' \
+    --arg id "$id" --arg title "$title" --arg zone "$zone" --arg risk "$risk" --arg priority "$priority" --arg area "$area"
+  jq -cn --arg id "$id" --arg title "$title" --arg zone "$zone" --arg risk "$risk" --arg area "$area" '{
+    case: {id: $id, title: $title, status: "queued", zone: $zone, risk: $risk, path: ("work/queued/" + $id + "-case.md")},
+    event: {id: "01M3W1FAKE0000000000000CAS", source: "seldon", kind: "case-created", subject: $id, detail: $title, case: $id},
+    areaCreated: (if $area == "" then null else $area end),
+    git: {committed: true, message: ($id + " created")}}'
+}
+
+plan_step() { # plan_step <start|verify|done|drop> <id>
+  local step=$1 id=$2 from allowed to hint="" moved=""
+  [[ $id == "$unknown" ]] && user_error "unknown case $id"
+  from=$(case_status "$id")
+  [[ -n $from ]] || user_error "unknown case $id"
+  case $step in
+    start) allowed="queued"; to=active ;;
+    verify) allowed="active"; to=verification ;;
+    done) allowed="verification"; to=completed ;;
+    drop) allowed="queued active verification"; to=dropped ;;
+  esac
+  if [[ " $allowed " != *" $from "* ]]; then
+    [[ $step == done && $from == active ]] && hint='; run `seldon plan verify` first'
+    [[ $step == verify && $from == queued ]] && hint='; run `seldon plan start` first'
+    user_error "$id is $from; \`seldon plan $step\` needs a case that is ${allowed// /, }$hint"
+  fi
+  set_status "$id" "$to"
+  [[ $(folder "$from") != "$(folder "$to")" ]] && moved="work/$(folder "$from")/$id.md"
+  rewrite_index "$MOVE_CASE" --arg id "$id" --arg to "$to" --arg folder "$(folder "$to")" --arg today 2026-10-01
+  jq -cn --arg id "$id" --arg step "$step" --arg from "$from" --arg to "$to" --arg moved "$moved" '{
+    case: {id: $id, status: $to},
+    from: $from, to: $to,
+    movedFrom: (if $moved == "" then null else $moved end),
+    activeCase: (if $step == "start" then {set: $id} elif $step == "verify" then null else {cleared: true} end),
+    journal: (if $to == "completed" then "journal/2026/2026-10-01.md" else null end),
+    event: {id: "01M3W1FAKE0000000000000STP", source: "seldon", kind: ({start: "case-started", verify: "case-verified", done: "case-completed", drop: "case-dropped"}[$step]), subject: $id, case: $id},
+    git: {committed: true, message: ($id + " " + $to)}}'
 }
 
 case "$cmd" in
@@ -101,6 +230,19 @@ case "$cmd" in
       || user_error "cannot open $path: no terminal and no omarchy-launch-editor; set \$EDITOR or open the path yourself"
     omarchy-launch-editor "$path"
     echo "{\"what\":\"$what\",\"path\":\"$path\",\"editor\":{\"launched\":true,\"program\":\"omarchy-launch-editor\"}}"
+    ;;
+  plan)
+    sleep 0.2
+    [[ $mode == uninit ]] && uninit
+    if [[ -n ${FAKE_SELDON_LOCKED:-} ]]; then
+      echo '{"error":{"code":4,"message":"the logbook is locked by another seldon (pid 4242)"}}'
+      exit 4
+    fi
+    case "${2:-}" in
+      new) shift 2; plan_new "$@" ;;
+      start | verify | done | drop) plan_step "$2" "${3:-}" ;;
+      *) user_error "unrecognized subcommand '${2:-}'" ;;
+    esac
     ;;
   *)
     user_error "unrecognized subcommand"

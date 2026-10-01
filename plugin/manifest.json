@@ -20,10 +20,12 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "captureIntervalMin": 15
+      "captureIntervalMin": 15,
+      "wipLimit": 3
     },
     "schema": [
-      { "key": "captureIntervalMin", "type": "integer", "label": "Capture interval (minutes)", "min": 5, "max": 120, "step": 5, "defaultValue": 15, "description": "How often the engine captures system changes while the shell runs." }
+      { "key": "captureIntervalMin", "type": "integer", "label": "Capture interval (minutes)", "min": 5, "max": 120, "step": 5, "defaultValue": 15, "description": "How often the engine captures system changes while the shell runs." },
+      { "key": "wipLimit", "type": "integer", "label": "Active cases limit", "min": 1, "max": 20, "step": 1, "defaultValue": 3, "description": "The Work tab shows active cases against this limit (\"2 / 3 active\"); it warns, it does not block." }
     ]
   },
   "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }

@@ -101,10 +101,13 @@ Item {
   readonly property bool canWrite: root.writeBlocker === ""
 
   // The last result of each panel action, { ok, pending, text } or null:
-  // QuickEntry (`log`), Open in editor (`open`), Capture now (`capture`).
+  // QuickEntry (`log`), Open in editor (`open`), Capture now (`capture`),
+  // the Work tab's case actions and new-case sheet (`plan`; also `action`
+  // and `caseId`, the case the result is about).
   property var logResult: null
   property var openResult: null
   property var captureResult: null
+  property var planResult: null
 
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
@@ -218,10 +221,36 @@ Item {
     return true
   }
 
+  // Work tab: `seldon plan new …` (form: { title, zone, risk, area,
+  // priority }) or `seldon plan start|verify|done|drop <caseId>`. One plan
+  // call at a time; the moved case arrives with the index (FileView).
+  function plan(action, input) {
+    if (root.planResult && root.planResult.pending) return false
+    var built = Model.planArgs(action, input)
+    var caseId = action === "new" ? "" : String(input || "")
+    if (built.error) {
+      root.planResult = { ok: false, pending: false, text: built.error, action: action, caseId: caseId }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.planResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, action: action, caseId: caseId }
+      return false
+    }
+    var doing = { new: "Creating the case", start: "Starting", verify: "Moving to verification:", done: "Completing", drop: "Dropping" }
+    root.planResult = { ok: true, pending: true, text: doing[action] + (caseId !== "" ? " " + caseId : "") + "…",
+      action: action, caseId: caseId }
+    return true
+  }
+
   function setResult(args, result) {
     if (args[0] === "log") root.logResult = result
     else if (args[0] === "open") root.openResult = result
     else if (args[0] === "capture") root.captureResult = result
+    else if (args[0] === "plan") {
+      result.action = args[1]
+      if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
+      root.planResult = result
+    }
   }
 
   // Calls that will never run still owe their result line an answer.
@@ -256,6 +285,7 @@ Item {
     var result = args[0] === "log" ? Model.logResult(exitCode, out, err)
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
+      : args[0] === "plan" ? Model.planResult(exitCode, out, err)
       : null
     if (result) {
       result.pending = false
@@ -270,8 +300,8 @@ Item {
       root.engineNotInitialised = true
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
-    } else if (args[0] !== "log") {
-      // QuickEntry shows its own error next to the field.
+    } else if (args[0] !== "log" && args[0] !== "plan") {
+      // QuickEntry and the Work tab show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
@@ -354,6 +384,7 @@ Item {
       logResult: root.logResult,
       openResult: root.openResult,
       captureResult: root.captureResult,
+      planResult: root.planResult,
       pill: Model.pillText(root.counts),
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),

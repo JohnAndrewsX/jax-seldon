@@ -22,7 +22,7 @@ source "$root/tests/plugin/real-home-guard.sh"
 # A PATH with the tools the fakes need but never a seldon, even when one is
 # installed system-wide: a private dir of symlinks to exactly those tools.
 mkdir -p "$work/bin-base"
-for tool in bash sh env cat sed date mkdir mv sleep basename tr grep; do
+for tool in bash sh env cat sed date mkdir mv sleep basename tr grep jq; do
   path=$(command -v "$tool") || { echo "service-states: $tool not found" >&2; exit 1; }
   ln -s "$path" "$work/bin-base/$tool"
 done
@@ -387,6 +387,78 @@ expect actions-devmode .openResult.text "dev mode (SELDON_INDEX): engine calls a
 argv_check act-dev "$(q --version --json)"
 run actions-noengine 2500 PATH="$base_path" HOME="$work/home-act-dev" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 expect actions-noengine .logResult.text "Needs the Seldon engine"
+
+# 22. Work tab actions (WP-020): the exact argv of `plan new` (the title one
+#     argument after `--`: an option-like title, quotes; zone, risk, area and
+#     priority from the form) and of every step, one plan call at a time.
+#     The fake engine moves the cases in the index it writes. Last, `done` on
+#     an active case: the engine refuses, its message is the result, nothing
+#     else changes and the panel-wide error line stays empty.
+mkdir -p "$work/home-plan"
+title2='Zed "second" editor'
+actions=$(jq -cn --arg t2 "$title2" '[
+  ["plan", "new", {title: "--help", zone: "yellow", risk: "R1", area: "", priority: "normal"}], ["wait"],
+  ["plan", "new", {title: $t2, zone: "red", risk: "R2", area: "dev-env", priority: "high"}], ["wait"],
+  ["plan", "start", "C-2026-005"], ["wait"], ["plan", "verify", "C-2026-005"], ["wait"],
+  ["plan", "done", "C-2026-005"], ["wait"], ["plan", "drop", "C-2026-006"], ["wait"],
+  ["plan", "done", "C-2026-003"]
+]')
+run plan 3000 PATH="$fake_path" HOME="$work/home-plan" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+argv_check plan "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q plan new --zone yellow --risk R1 --json -- --help)" \
+  "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- "$title2")" \
+  "$(q plan start C-2026-005 --json)" "$(q plan verify C-2026-005 --json)" "$(q plan done C-2026-005 --json)" \
+  "$(q plan drop C-2026-006 --json)" "$(q plan done C-2026-003 --json)")"
+refusal='C-2026-003 is active; `seldon plan done` needs a case that is verification; run `seldon plan verify` first'
+expect plan .planResult.text "$refusal"
+expect plan .planResult.ok false
+expect plan .planResult.action done
+expect plan .planResult.caseId C-2026-003
+expect plan .lastError ""
+expect plan .pill "⟡ 2 · 4"
+if [[ $(grep -a -c 'HARNESS action \["plan".* true$' "$work/plan.log") == 7 ]]; then
+  pass=$((pass + 1)); echo "ok   plan: all seven calls queued"
+else
+  fail=$((fail + 1)); echo "FAIL plan: $(grep -a 'HARNESS action' "$work/plan.log")"
+fi
+columns=$(jq -c '.cases | map_values(map(.id + " " + .status))' "$work/home-plan/.local/state/seldon/index.json" 2>/dev/null || true)
+want='{"queued":["C-2026-007 queued","C-2026-009 queued","C-2026-010 queued"],"active":["C-2026-003 active","C-2026-004 active"],"verification":["C-2026-008 verification"],"completed":["C-2026-006 dropped","C-2026-005 completed","C-2026-002 completed","C-2026-001 completed"]}'
+if [[ $columns == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   plan: the fake engine's index moved the cases"
+else
+  fail=$((fail + 1)); echo "FAIL plan: index columns $columns"
+fi
+clean_log plan
+
+# 23. Refused before the engine is asked: no title, a bad area slug, an id
+#     that is not a case id, a step the contract does not list.
+mkdir -p "$work/home-plan-refused"
+actions=$(jq -cn '[["plan", "new", {title: " \t ", zone: "yellow", risk: "R1"}],
+  ["plan", "new", {title: "t", zone: "yellow", risk: "R1", area: "Dev Env"}],
+  ["plan", "new", {title: "t", zone: "purple", risk: "R1"}],
+  ["plan", "list", ""], ["plan", "start", "C-26-1; rm -rf ~"]]')
+run plan-refused 2500 PATH="$fake_path" HOME="$work/home-plan-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+argv_check plan-refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+expect plan-refused .planResult.text "Not a case id: C-26-1; rm -rf ~"
+expect plan-refused .planResult.ok false
+if [[ $(grep -a -c 'HARNESS action .* false$' "$work/plan-refused.log") == 5 ]]; then
+  pass=$((pass + 1)); echo "ok   plan-refused: all five refused"
+else
+  fail=$((fail + 1)); echo "FAIL plan-refused: $(grep -a 'HARNESS action' "$work/plan-refused.log")"
+fi
+
+# 24. A held lock (exit 4) reaches the result line; dev mode refuses plan.
+mkdir -p "$work/home-plan-locked"
+actions=$(jq -cn '[["plan", "start", "C-2026-005"]]')
+run plan-locked 2500 PATH="$fake_path" HOME="$work/home-plan-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  FAKE_SELDON_LOCKED=1 HARNESS_ACTIONS="$actions"
+expect plan-locked .planResult.text "the logbook is locked by another seldon (pid 4242)"
+expect plan-locked .planResult.ok false
+expect plan-locked .lastError ""
+mkdir -p "$work/home-plan-dev"
+run plan-devmode 2500 PATH="$fake_path" HOME="$work/home-plan-dev" SELDON_INDEX="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect plan-devmode .planResult.text "Dev mode is read-only"
+argv_check plan-dev "$(q --version --json)"
 
 real_home_check service-states
 
