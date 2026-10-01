@@ -16,6 +16,7 @@ pub mod plan;
 pub mod rebuild;
 pub mod setup;
 pub mod status;
+pub mod watch;
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};

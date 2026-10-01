@@ -117,6 +117,9 @@ enum Command {
 
     /// Write outputs/REBUILD.md: the steps to rebuild this machine
     Rebuild(commands::rebuild::RebuildArgs),
+
+    /// Rebuild index.json when the logbook changes (feature "watch")
+    Watch(commands::watch::WatchArgs),
 }
 
 #[derive(Debug, Args)]
@@ -275,6 +278,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Drift(a) => commands::drift::run(&ctx, a),
         Command::Agent(a) => commands::agent::run(&ctx, a),
         Command::Rebuild(a) => commands::rebuild::run(&ctx, a),
+        Command::Watch(a) => commands::watch::run(&ctx, a),
     }
 }
 
