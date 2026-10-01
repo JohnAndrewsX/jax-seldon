@@ -43,6 +43,7 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/tests/journal.rs` | `journal::` appends to a fixture day (only the `cases:` line changes), CRLF days, the `plan done` stub in the logbook language |
 | `engine/tests/commands.rs` | `event::` (fixture line shape, typed meta, engine-only kinds refused), `decide::` (ADR numbering, the logbook's own template, the editor gets the path as one argument), `open::` (paths, `--editor` without a terminal) |
 | `engine/tests/agent.rs` | `seldon agent start` (WP-022): a recording stub `omarchy` gets exactly one argv, the prompt one element (a title with quotes, `$(…)` and backticks stays text), cwd and `SELDON_LOGBOOK` the logbook, the case becomes the active case, under 1 s; `[agent] launcher` and `[agent.launchers]` from config; a shell launcher refused before anything changes; a queued case → exit 1 with the `seldon plan start` hint; verification, unknown and malformed ids; a missing launcher and one that exits 1 at once (its stderr is the message) → exit 1 with the previous active case restored; a launcher that keeps running is detached (own process group, alive); exit 3 without a logbook. Unit tests in `commands/agent.rs` check the launcher rules |
+| `engine/tests/rebuild.rs` | `seldon rebuild` (WP-032) on a copy of `fixtures/logbook/`: `outputs/REBUILD.md` equals `tests/golden/REBUILD.md` (`SELDON_BLESS=1 cargo test --test rebuild` rewrites it), the seven English headings in order, German prose, `--json` `sections` counts, and every package line's last code span is the id of an explicit `install` event of that package; a second run at a later clock writes nothing (`files: []`, same bytes, no commit); text above and below the `rebuild` fence survives a change; the autocommit `seldon: rebuild` happens once per change (git repository made in the test); `drift dismiss`/`explain` move items to "Deliberately not reproduced" and out of the open questions; appended ledger lines prove `pacman -U` → `omarchy pkg aur add`, no command → "repository unknown", a later `remove` drops the package (English logbook); an empty logbook says "none"; exit 3 without a logbook. Unit tests in `rebuild/mod.rs` check the repo/AUR rule and the fence merge |
 | `engine/tests/doctor.rs` | `doctor::` green after init with snapper degraded, exit 3 when not initialised, invalid frontmatter, misplaced case, the fixture logbook (and that doctor leaves it untouched) |
 
 **Isolation.** The integration tests never see the real home, config,
@@ -126,6 +127,21 @@ $B doctor --path $S/logbook --json   # "ok": true, snapper "degraded"
 
 `seldon init` refuses an existing logbook, so remove `$S/logbook`
 before running it again.
+
+**Manual run of `seldon rebuild` (WP-032).** With the scratch environment
+above, on a copy of the fixture (never on `fixtures/logbook/` itself):
+
+```
+cp -r fixtures/logbook $S/lb
+SELDON_NOW=2026-10-01T17:05:12+02:00 $B --logbook $S/lb --json rebuild
+#   {"files":["outputs/REBUILD.md"], "sections":{"packages":4,"deviations":5,
+#    "plugins":3,"units":2,"open":4}, …}
+$B --logbook $S/lb --json rebuild        # "files": [] — nothing changed
+diff $S/lb/outputs/REBUILD.md engine/tests/golden/REBUILD.md
+```
+
+The document has no clock in it ("as of" is the newest ledger event), so
+the second run writes nothing whatever the time.
 
 **Tests that need a logbook without a capture.** Since WP-024, `init` runs
 the first capture, which records the first state of every diff collector
