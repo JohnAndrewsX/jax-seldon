@@ -125,7 +125,8 @@ inside the team, not by waiting:
      alternative, lists failure modes and hidden costs.
    - **Advocatus Dei** — defends the proposed option, answers the attacks,
      lists what breaks if the alternative is chosen.
-   Use different model families when available (one Claude, one Codex).
+   Both are Claude sessions (the operator uses Claude only); give them
+   different briefs and, if possible, different models (`fable` vs `opus`).
 3. The orchestrator judges: picks an option, writes `decisions/ADR-NNNN`
    with both arguments summarised under *Context*, updates STATUS.md, and
    continues. A debate is bounded: two rounds at most, then decide.
@@ -172,7 +173,7 @@ Workers may use cheaper subagents internally for exploration.
 |---|---|---|---|
 | Orchestrator | `fable` | high | judgement, long context, few tool calls |
 | Architect / Reviewer | `fable` | high | reads specs against code; errors here are expensive |
-| Debate: devil's advocate | Codex (if logged in) else `opus` | high | different model family gives a real second opinion |
+| Debate: devil's advocate | `fable` | high | the attacker gets the stronger model |
 | Debate: advocatus Dei | `opus` | high | |
 | Engine Dev, Plugin Dev, Schema Keeper | `opus` | high | long coding runs; escalate a stuck WP to `fable` once |
 | Docs, boilerplate, fixtures prose | `sonnet` | medium | cheap and good enough |

@@ -82,5 +82,5 @@ Recorded here because Seldon does not exist yet to record them.
 - Repository created at `~/Work/johnandrewsx/jax-seldon`, pushed to
   `github.com/JohnAndrewsX/jax-seldon` (private).
 - Repo harness added: `.claude/settings.json` + `scripts/guard.sh` (red-zone guard).
-- Codex is installed (mise) but not logged in; debates fall back to two Claude sessions.
+- Claude only: the operator has no Codex subscription; debates use two Claude sessions.
 - Nothing under `/etc`, no pacman, no sudo, no systemd changes.
