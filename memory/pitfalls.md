@@ -34,3 +34,23 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   reads Edit/Write payloads (`tool_input.file_path`).
 - **`omarchy plugin catalog` does not carry versions** (see host.md); do not
   build `plugin-update` on it.
+
+## 2026-10-01 · WP-003 (Engine)
+
+- **Running the engine by hand writes config and state.** `seldon init`
+  writes `~/.config/seldon/config.toml` (red zone on the dev host) and takes
+  `~/.local/state/seldon/lock`. Before any manual run, export
+  `XDG_CONFIG_HOME` and `XDG_STATE_HOME` to temp dirs; the integration tests
+  get the same effect from a temp `HOME`. The WP-003 acceptance line
+  (`seldon init --non-interactive --path /tmp/seldon-wp003`) needs this too.
+- **Filtering PATH directories does not hide host binaries.** `/usr/bin`
+  holds `snapper` and `git` together, so dropping it from PATH drops git as
+  well. Tests set PATH to a stub directory only, with a link to the host's
+  git (`engine/tests/common/mod.rs`).
+- **Real host names leak through `init` output.** The machine id is
+  `<hostname>-<4 hex>`, so `seldon init` / `doctor` output names the
+  machine. Redact it before pasting output into handovers or commits
+  (AGENTS.md §8).
+- **Scripted edits and `cargo fmt` make the editor's file state stale.**
+  After a python/sed edit or `cargo fmt`, Read the file again before using
+  the Edit tool.
