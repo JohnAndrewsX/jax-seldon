@@ -208,9 +208,17 @@ dropped; the four open variants reach the launcher with the right path and
 the result line reads `open --json`; calls never overlap; blank notes, a
 malformed case id and an unknown open target never reach the engine; the
 engine's errors reach the result lines; dev mode and a missing engine
-refuse with a reason. The scenarios run with
-a `PATH` made of symlinks to the few tools the fakes need, so a `seldon`
-installed system-wide never leaks in.
+refuse with a reason.
+
+Isolation: the scenarios run with a `PATH` made of symlinks to the few
+tools the fakes need, so a `seldon` installed system-wide never leaks in.
+Every run, here and in layer 3, gets its own `HOME`, `XDG_STATE_HOME` and
+`XDG_CONFIG_HOME` inside the temp dir (a case may name its own `HOME`; the
+XDG dirs follow it). Both scripts end with a check
+(`tests/plugin/real-home-guard.sh`) that the real `~/.local/state/seldon`
+and `~/.config/seldon` neither appeared nor changed during the run; it
+compares existence, size, mtime and ctime of every entry, so an engine run
+by hand at the same time also fails it.
 
 To watch one case by hand:
 

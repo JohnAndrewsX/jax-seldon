@@ -2,7 +2,8 @@
 # Drive plugin/Service.qml through every status of its state machine in a
 # private, headless Quickshell instance (tests/plugin/harness/shell.qml).
 # Nothing here talks to the running omarchy-shell or writes outside a temp
-# dir. Needs quickshell and jq (host check; see docs/TESTING.md).
+# dir: every run gets its own HOME, XDG_STATE_HOME and XDG_CONFIG_HOME
+# there, and the real ones are checked at the end (real-home-guard.sh). Needs quickshell and jq (host check; see docs/TESTING.md).
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -16,6 +17,7 @@ command -v jq >/dev/null || { echo "service-states: jq not found" >&2; exit 1; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+source "$root/tests/plugin/real-home-guard.sh"
 
 # A PATH with the tools the fakes need but never a seldon, even when one is
 # installed system-wide: a private dir of symlinks to exactly those tools.
@@ -34,11 +36,18 @@ pass=0
 fail=0
 
 # run <case> <ms> [VAR=value ...] — one harness run; the final snapshot lands
-# in $work/<case>.json, the whole log in $work/<case>.log.
+# in $work/<case>.json, the whole log in $work/<case>.log. HOME is
+# $work/home-<case> unless the case names one (HOME=… among the variables);
+# XDG_STATE_HOME and XDG_CONFIG_HOME default to that HOME's, so neither the
+# fake engine nor anything else can reach the real user's files.
 run() {
-  local name=$1 ms=$2
+  local name=$1 ms=$2 home arg
   shift 2
-  env -u SELDON_INDEX -u SELDON_NOW -u XDG_STATE_HOME QT_QPA_PLATFORM=offscreen \
+  home="$work/home-$name"
+  for arg in "$@"; do [[ $arg == HOME=* ]] && home=${arg#HOME=}; done
+  mkdir -p "$home"
+  env -u SELDON_INDEX -u SELDON_NOW -u SELDON_CONFIG -u SELDON_LOGBOOK QT_QPA_PLATFORM=offscreen \
+    HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_MS="$ms" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$harness" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS final " | sed 's/.*HARNESS final //' | tail -n 1 >"$work/$name.json" || true
@@ -153,7 +162,9 @@ expect engine-appears .engine present
 # 12. Live loop without the dev override: capture, then status writes the
 #     index, which the service picks up. Calls never overlap.
 mkdir -p "$work/home-live"
-run live 9000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+#     An empty XDG_STATE_HOME counts as unset: plugin and engine use HOME's.
+run live 9000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-live" XDG_STATE_HOME= FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect live .indexPath "$work/home-live/.local/state/seldon/index.json"
 expect live .status ok
 expect live .devMode false
 expect live .pill "⟡ 2 · 4"
@@ -356,6 +367,8 @@ expect actions-devmode .openResult.text "dev mode (SELDON_INDEX): engine calls a
 argv_check act-dev "$(q --version --json)"
 run actions-noengine 2500 PATH="$base_path" HOME="$work/home-act-dev" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 expect actions-noengine .logResult.text "Needs the Seldon engine"
+
+real_home_check service-states
 
 echo "service-states: $pass passed, $fail failed"
 ((fail == 0))

@@ -24,6 +24,7 @@ timeout_bin=$(command -v timeout) || { echo "panel-view: timeout not found" >&2;
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+source "$root/tests/plugin/real-home-guard.sh"
 
 config="$work/config"
 mkdir -p "$config/Commons" "$config/Ui" "$work/home" "$work/bin"
@@ -51,10 +52,15 @@ fail=0
 
 # run <case> <index file> <steps> [VAR=value ...] — one harness run; step reports land in
 # $work/<case>.steps (one JSON object per line), the whole log in <case>.log.
+# HOME is $work/home unless the case names one; XDG_STATE_HOME and
+# XDG_CONFIG_HOME follow it, so nothing reaches the real user's files.
 run() {
-  local name=$1 index=$2 steps=$3
+  local name=$1 index=$2 steps=$3 home="$work/home" arg
   shift 3
-  env -i HOME="$work/home" PATH="$work/bin" QT_QPA_PLATFORM=offscreen \
+  for arg in "$@"; do [[ $arg == HOME=* ]] && home=${arg#HOME=}; done
+  mkdir -p "$home"
+  env -i HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" \
+    PATH="$work/bin" QT_QPA_PLATFORM=offscreen \
     XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$work}" \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_STEPS="$steps" SELDON_INDEX="$index" "$@" \
     "$timeout_bin" 60 "$qs_bin" -p "$config/shell.qml" >"$work/$name.log" 2>&1 || true
@@ -291,6 +297,8 @@ expect refuse 10 .view.today.quickEntry.editing true
 shows refuse 10 "unknown case C-2026-004"
 expect refuse 10 .view.lastError ""
 clean_log refuse
+
+real_home_check panel-view
 
 echo "panel-view: $pass passed, $fail failed"
 ((fail == 0))
