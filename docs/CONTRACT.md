@@ -37,9 +37,10 @@ seldon capture --all --json --quiet
 seldon log <text> [--case <id>]                 # text as one argument
 seldon plan new <title> --zone <z> --risk <r>   # title as one argument
 seldon plan start|verify|done|drop <id>
-seldon drift link <eventId> <caseId>
-seldon drift explain <eventId> <text>
-seldon drift dismiss <eventId> --reason <text>
+seldon drift link <eventId> <caseId> [--only]
+seldon drift explain <eventId> <text> [--only]
+seldon drift dismiss <eventId> --reason <text> [--only]
+seldon drift show <eventId> --json          # full member list of a group (ADR-0013)
 seldon decide <title> --no-edit
 seldon rebuild --json
 seldon update-impact --json
