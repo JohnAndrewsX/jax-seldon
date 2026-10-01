@@ -17,7 +17,6 @@
 //! at once is reported with its message. On a failure the previous active
 //! case is restored.
 
-use std::fs::File;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -46,10 +45,13 @@ pub const OMARCHY_NAME: &str = "omarchy";
 /// Where the launcher's stderr goes, in the state directory.
 pub const LAUNCH_LOG: &str = "agent-launch.log";
 
-/// Programs that run their arguments as shell code: shells, and Omarchy
-/// launchers that join their arguments into a `bash -c` string. The prompt
-/// carries logbook text, so it is never handed to one of them.
-const SHELL_STRING_RUNNERS: [&str; 13] = [
+/// Programs that run their arguments as shell code: shells, Omarchy
+/// launchers that join their arguments into a `bash -c` or `eval` string,
+/// and `hyprctl` (`dispatch exec` takes a shell string). The prompt carries
+/// logbook text, so it is never handed to one of them. A heuristic, not a
+/// sandbox: interpreters (`python -c`, `perl -e`) and `xargs` are not
+/// listed; the config is the user's own file.
+const SHELL_STRING_RUNNERS: [&str; 16] = [
     "sh",
     "bash",
     "zsh",
@@ -62,7 +64,11 @@ const SHELL_STRING_RUNNERS: [&str; 13] = [
     "eval",
     "omarchy-launch-floating-terminal-with-presentation",
     "omarchy-launch-or-focus",
+    "omarchy-launch-or-focus-tui",
+    "omarchy-launch-or-focus-webapp",
+    // runs `tmux attach || tmux new` in `bash -c` and drops its arguments
     "omarchy-launch-terminal-tmux",
+    "hyprctl",
 ];
 
 /// `seldon agent <command>`.
@@ -159,13 +165,26 @@ impl Launcher {
             [_] => return bad(format!("`{PROMPT}` must be a whole element")),
             _ => return bad(format!("`{PROMPT}` must appear once")),
         };
-        if let Some(shell) = self.argv[..at].iter().find(|a| {
-            let base = a.rsplit('/').next().unwrap_or(a);
-            SHELL_STRING_RUNNERS.contains(&base)
-        }) {
+        let before = &self.argv[..at];
+        let base = |a: &str| a.rsplit('/').next().unwrap_or(a).to_string();
+        if let Some(shell) = before
+            .iter()
+            .find(|a| SHELL_STRING_RUNNERS.contains(&base(a).as_str()))
+        {
             return bad(format!(
                 "`{shell}` runs its arguments as shell code; the prompt is never handed to it"
             ));
+        }
+        // `omarchy launch …` dispatches to `omarchy-launch-*` by route, so
+        // the list above cannot see which one: name the launcher directly
+        if before
+            .windows(2)
+            .any(|w| base(&w[0]) == "omarchy" && w[1] == "launch")
+        {
+            return bad(
+                "`omarchy launch …` is refused; name the launcher itself, e.g. `omarchy-launch-tui`"
+                    .into(),
+            );
         }
         Ok(())
     }
@@ -260,17 +279,28 @@ fn launch(
     if ctx.config_file != ctx.dirs.config_file() {
         cmd.env(CONFIG_ENV, &ctx.config_file);
     }
+    // appended, never truncated: an earlier launcher may still write to it;
+    // only what this launch adds after `start` is read back
     let log = ctx.dirs.state_dir.join(LAUNCH_LOG);
-    let stderr = std::fs::create_dir_all(&ctx.dirs.state_dir)
-        .and_then(|()| File::create(&log))
-        .map_or_else(|_| Stdio::null(), Stdio::from);
+    let opened = std::fs::create_dir_all(&ctx.dirs.state_dir).and_then(|()| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+    });
+    let start = opened
+        .as_ref()
+        .ok()
+        .and_then(|f| f.metadata().ok())
+        .map_or(0, |m| m.len());
+    let stderr = opened.map_or_else(|_| Stdio::null(), Stdio::from);
     match launch_detached(cmd, stderr) {
         Run::Exited { code: Some(0), .. } => Ok(()),
         Run::Exited { code, .. } => Err(format!(
             "launcher `{}` ({program}) exited with {}{}",
             launcher.name,
             code.map_or("a signal".to_string(), |c| c.to_string()),
-            last_lines(&log)
+            last_lines(&log, start)
                 .map(|t| format!(": {t}"))
                 .unwrap_or_default()
         )),
@@ -283,9 +313,10 @@ fn launch(
     }
 }
 
-/// The last lines of the launch log, joined, if it has any.
-fn last_lines(log: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(log).ok()?;
+/// The last lines the launch log got after byte `start`, joined, if any.
+fn last_lines(log: &Path, start: u64) -> Option<String> {
+    let bytes = std::fs::read(log).ok()?;
+    let text = String::from_utf8_lossy(bytes.get(start as usize..)?);
     let lines: Vec<&str> = text
         .lines()
         .map(str::trim)
@@ -355,9 +386,35 @@ mod tests {
                 "claude",
                 "{prompt}",
             ],
+            &["omarchy-launch-or-focus-tui", "claude", "{prompt}"],
+            &["omarchy-launch-or-focus-webapp", "{prompt}"],
+            &[
+                "/usr/share/omarchy/bin/omarchy-launch-or-focus",
+                "x",
+                "{prompt}",
+            ],
+            &["omarchy-launch-terminal-tmux", "{prompt}"],
+            &["hyprctl", "dispatch", "exec", "{prompt}"],
         ] {
             assert!(refused(shell).contains("shell code"), "{shell:?}");
         }
+        // the omarchy CLI's route to the same launchers, refused outright
+        for route in [
+            &["omarchy", "launch", "or-focus-tui", "claude", "{prompt}"][..],
+            &["omarchy", "launch", "or", "focus", "tui", "{prompt}"],
+            &["/usr/bin/omarchy", "launch", "tui", "claude", "{prompt}"],
+            &["env", "X=1", "omarchy", "launch", "tui", "{prompt}"],
+        ] {
+            assert!(
+                refused(route).contains("`omarchy launch …` is refused"),
+                "{route:?}"
+            );
+        }
+        // other omarchy routes stay allowed, as does `launch` after the prompt
+        assert!(
+            Launcher::resolve(&agent(&["omarchy", "agent", "prompt", "{prompt}"]), None).is_ok()
+        );
+        assert!(Launcher::resolve(&agent(&["omarchy", "{prompt}", "launch"]), None).is_ok());
         // after the prompt a shell name is only an argument
         assert!(Launcher::resolve(&agent(&["agent", "{prompt}", "bash"]), None).is_ok());
         assert!(

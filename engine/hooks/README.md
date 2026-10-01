@@ -85,11 +85,13 @@ plan start <id>`). It:
    lessons);
 4. runs the launcher **detached** in the logbook directory, with
    `SELDON_LOGBOOK` set to it (and `SELDON_CONFIG` when a non-default
-   config was used): stdin and stdout null, stderr into
-   `~/.local/state/seldon/agent-launch.log`, its own process group, never
+   config was used): stdin and stdout null, stderr appended to
+   `~/.local/state/seldon/agent-launch.log` (never truncated: an earlier
+   agent's terminal may still hold it), its own process group, never
    waited for. A launcher still running after 200 ms counts as launched;
    one that exits non-zero in that time is an error (exit 1) with the last
-   lines of its stderr, and the previous active case is put back.
+   lines it wrote to stderr (only this launch's), and the previous active
+   case is put back.
 
 `--json` → `{"launched": true, "launcher": "<name>", "program": "<argv[0]>",
 "argv": [… "{prompt}" …], "case": "C-…", "cwd": "<logbook>",
@@ -118,11 +120,26 @@ Rules, checked on every start (a broken launcher is exit 1, nothing runs):
   prompt as **one** argument, whatever the prompt contains. `--x={prompt}`
   is refused;
 - no shell before `{prompt}` (`sh`, `bash`, `zsh`, `dash`, `ksh`, `mksh`,
-  `fish`, `nu`, `xonsh`, `eval`), and none of the Omarchy launchers that
-  join their arguments into a `bash -c` string
-  (`omarchy-launch-floating-terminal-with-presentation`,
-  `omarchy-launch-or-focus`, `omarchy-launch-terminal-tmux`): the prompt
-  carries logbook text and is never run as code (AGENTS.md §8).
+  `fish`, `nu`, `xonsh`, `eval`), none of the Omarchy launchers that turn
+  their arguments into shell code
+  (`omarchy-launch-floating-terminal-with-presentation`: `bash -c "$*"`;
+  `omarchy-launch-or-focus`, `omarchy-launch-or-focus-tui`,
+  `omarchy-launch-or-focus-webapp`: `eval exec setsid $LAUNCH_COMMAND`;
+  `omarchy-launch-terminal-tmux`: a fixed `bash -c "tmux …"` that also
+  drops its arguments, so the prompt would be lost), and no `hyprctl`
+  (`dispatch exec` takes a shell string): the prompt carries logbook text
+  and is never run as code (AGENTS.md §8);
+- no `omarchy launch …` before `{prompt}`: the `omarchy` CLI dispatches
+  it by route to an `omarchy-launch-*` script, so the list above could not
+  see which one. Name the launcher itself (`omarchy-launch-tui`). Other
+  `omarchy` routes (`omarchy agent prompt`) are allowed.
+
+The refusal list is a **heuristic**, not a sandbox: it knows the shells
+and Omarchy launchers above, not every program that runs a string as code
+(`python -c`, `perl -e`, `node -e`, `xargs`, `ssh host …`, a wrapper
+script of your own). `config.toml` is your own file; what it names runs
+with your rights. The rules make the common mistakes impossible, nothing
+more.
 
 Names: `default` is `[agent] launcher`; `omarchy` is the built-in
 `["omarchy", "agent", "prompt", "{prompt}"]`, reachable even when
@@ -147,7 +164,10 @@ Names: `default` is `[agent] launcher`; `omarchy` is the built-in
   — `omarchy-launch-tui` passes its arguments through as an argv.
 - **Not `omarchy-launch-floating-terminal-with-presentation`:** it joins
   its arguments into `bash -c "…"`, so the prompt would be run as shell
-  code. Refused.
+  code. Refused, as are the `omarchy-launch-or-focus*` launchers (`eval`)
+  and `omarchy launch …`.
+- **Not `omarchy-launch-terminal-tmux`:** it ignores its arguments and
+  attaches tmux, so the agent would get no prompt. Refused.
 - **Claude Code hooks:** the agent starts in the logbook directory, so
   `<logbook>/.claude/settings.json` (`seldon hook install claude-code`)
   applies: its `SessionStart` hook prints the same block again as context,

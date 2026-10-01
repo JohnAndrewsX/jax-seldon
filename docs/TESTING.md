@@ -69,7 +69,13 @@ Editors are never started: tests run without a terminal, so `--editor`
 goes to `omarchy-launch-editor`, which a test stubs to record its argv.
 No agent is ever started either: `agent start` tests stub `omarchy` (the
 default launcher) or a configured launcher with a script that records its
-argv NUL-separated. Tests that need git skip themselves when the host has none.
+argv NUL-separated. A manual `agent start` demo on the dev host follows
+the same rule: its `PATH` holds only stub launchers (a temp dir, no
+`/usr/bin`, no `/usr/local/bin`; reach other tools by absolute path), and
+`HOME` is a temp dir. With `/usr/bin` on `PATH` a missing stub falls
+through to the host's real `omarchy agent prompt`, which opens the
+operator's default agent (WP-022 handover: it happened once, harmlessly,
+because the dev host has no default agent). Tests that need git skip themselves when the host has none.
 `fixtures/logbook/` is read-only input.
 
 **Monorepo layout.** Some tests read files outside the crate, so they only

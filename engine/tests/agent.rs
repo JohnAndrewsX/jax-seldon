@@ -289,6 +289,21 @@ fn a_launcher_that_fails_at_once_reports_its_message() {
         "launcher `default` (omarchy) exited with 1: Choose default agent with: omarchy default agent <name>"
     );
     assert_eq!(active_case(&root).as_deref(), Some("C-2026-003"));
+
+    // the log is appended, never truncated (a running launcher may hold
+    // it), and a silent failure never reports an earlier launch's lines
+    env.stub("omarchy", "exit 2");
+    let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        json(&out)["error"]["message"],
+        "launcher `default` (omarchy) exited with 2"
+    );
+    let log = read(&env.home.join(".local/state/seldon/agent-launch.log"));
+    assert_eq!(
+        log,
+        "Choose default agent with: omarchy default agent <name>\n"
+    );
 }
 
 /// The launcher may keep running (a terminal with the agent in it): it is

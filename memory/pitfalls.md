@@ -373,3 +373,17 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A new engine verb must be added to `Service.runnerDone`'s list of
   calls that show their errors in place**, or a refusal also lands in
   `lastError` (the banner).
+- **Review round 1 (WP-022):**
+  - `omarchy-launch-or-focus-tui` and `-webapp` build
+    `LAUNCH_COMMAND="omarchy-launch-tui $@"` for `eval` in
+    `omarchy-launch-or-focus`. Grep a launcher's whole body for unquoted
+    `$@`/`$*` inside a string, not only for `bash -c`.
+  - The `omarchy` CLI resolves multi-word routes (`omarchy launch
+    or-focus-tui`, possibly `omarchy launch or focus tui`) to the same
+    scripts, so a basename list misses them. Refuse the route.
+  - A log that a detached child keeps open must be opened with append,
+    never truncated. To report only this launch's lines, remember the
+    length before the spawn and read from there.
+  - A manual demo of a command that launches programs needs a `PATH` of
+    stubs only. With `/usr/bin` on it, a removed stub falls through to the
+    real program.
