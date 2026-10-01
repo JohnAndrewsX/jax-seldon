@@ -59,15 +59,23 @@ seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|
                                                # fences of system/*.md (comma list or repeated; default all):
                                                # packages.summary (explicit/total/aur), packages.history (a row
                                                # for today when the counts changed; today's row is replaced),
-                                               # packages.explicit (sorted, `- <name> · repo|aur · since <date>
-                                               # [[C-…]]` from the ledger's latest install, else `pre-logbook`),
+                                               # packages.explicit (sorted, `- <name> · repo|aur · omarchy-base|user
+                                               # · since <date> [[C-…]]` from the ledger's latest install, else
+                                               # `pre-logbook`; WP-036: class `omarchy-base` when Omarchy's
+                                               # omarchy-base.packages or omarchy-other.packages names it, read
+                                               # as files from $SELDON_OMARCHY_PACKAGES, else $OMARCHY_PATH/install,
+                                               # else /usr/share/omarchy/install; `#` comments skipped; a list
+                                               # not readable → its packages `user`, one warning),
                                                # services.enabled (system then user units; case from the ledger:
                                                # a user unit file's config event or an agent's cased `systemctl
                                                # [--user] enable`, else the old row's, else —), omarchy.summary
                                                # (version, theme, lastUpdate), hardware.summary (cpu, memory,
                                                # machine, rootfs from /proc and /sys files only), plugins.list,
                                                # deviations.table (old lines kept byte for byte, a row added per
-                                               # cased config path without one, reason left empty). Text outside
+                                               # cased config path without one, reason left empty; WP-036: a row
+                                               # whose case cell is empty, blank, — or -, gets the case of its
+                                               # path's latest cased config event when that event is not older
+                                               # than the row's date; only that cell changes). Text outside
                                                # the fences is never changed; a missing fence is appended to its
                                                # default file under a heading in the logbook language. A failed
                                                # query skips its fences (warning, fence kept). Files written
@@ -75,12 +83,16 @@ seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|
                                                # index rebuilt; no ledger write. `init` runs it once after the
                                                # first capture; `capture` and `status` never do. --json →
                                                # {files, sections: {<fence>: written|unchanged|skipped}, counts:
-                                               # {explicit, preLogbook, total, aur, units, plugins}, git, warnings}
+                                               # {explicit, preLogbook, omarchyBase, total, aur, units, plugins},
+                                               # git, warnings}
 seldon rebuild [--json]                        # outputs/REBUILD.md (WP-032): 1 base, 2 explicit packages by
                                                # case (`omarchy pkg add|aur add` from meta.command: pacman -S →
                                                # repo, -U → AUR, else "repository unknown"; "Before the logbook":
-                                               # the `pre-logbook` lines of `packages.explicit` as one `omarchy pkg
-                                               # add` and one `omarchy pkg aur add` block, WP-035), 3 deviations, 4 plugins,
+                                               # the `pre-logbook` lines of class `user` of `packages.explicit` as
+                                               # one `omarchy pkg add` and one `omarchy pkg aur add` block, WP-035,
+                                               # then one line "N more come with Omarchy <version>" counting the
+                                               # `pre-logbook` lines of class `omarchy-base`, WP-036; an empty fence
+                                               # counts as none), 3 deviations, 4 plugins,
                                                # 5 theme, 6 units (incl. cased `services.enabled` rows; system scope
                                                # separately), 7 open drift (marked in place too) + dismissed
                                                # ("deliberately not reproduced"); English headings, prose in the
@@ -220,8 +232,10 @@ Each collector implements `fn collect(ctx) -> Vec<Event>` and
 `fn cursor(&self) -> Cursor`. Run order: snapper, pacman, omarchy, plugins,
 theme, config. `seldon dossier` (§3) is not a collector and writes no
 events; it queries pacman read-only (`-Qqe`, `-Qqm`, `-Q`) and systemd
-read-only (`list-unit-files --state=enabled`); no package manager or
-`systemctl` is ever invoked with a mutating verb. Rules:
+read-only (`list-unit-files --state=enabled`), and reads Omarchy's
+package lists (`omarchy-base.packages`, `omarchy-other.packages`) as
+plain files; no package manager or `systemctl` is ever invoked with a
+mutating verb. Rules:
 
 - **pacman** — parse `/var/log/pacman.log` from the saved byte offset; verify
   inode; on rotation restart from 0 and dedupe by `(ts, kind, subject,
