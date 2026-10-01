@@ -319,3 +319,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **An old leader id is not a handle for its group.** After `--only` on
   the leader, the remaining members form a new item with a new leader.
   `drift <verb> <old leader>` writes nothing, by design.
+
+## 2026-10-01 · WP-024 (Engine)
+
+- **`env HOME=… script -qec "seldon init …"` used the real home.** The
+  `HOME` override did not reach the engine through `script` (it starts
+  `$SHELL`); `export`ed `XDG_*` variables did. The run wrote
+  `~/.config/seldon/config.toml` and `~/.local/state/seldon/` on the dev
+  host, and the guard then (rightly) blocked the `rm` under `~/.config`:
+  left for the operator. Export the XDG dirs before `script`, and probe
+  with `seldon --json doctor` (the `config` check names the file) first.
+- **`init` runs the first capture now.** A test that builds machine state
+  after `init` and expects its own first capture to be the baseline must
+  pass `--no-capture` (the shared `Env::init_logbook*` does); otherwise new
+  files show up as `config-add` instead of the silent first state.
+- **`fixtures/logs/pacman.log` ends on 2026-10-01 17:04 +0200**, and
+  `init` stamps `created` with the real clock: on that day a test without
+  `--since` may or may not pick lines up. Use an empty log, or `--since`.
+- **A backfill is big.** Dev host, 7 days: 1230 pacman events, 22 items,
+  all crises; the baseline writes one resolution per member (ADR-0013 §4),
+  so 1230 more ledger lines. Correct, but the ledger doubles.
+- **`seldon … | head` panics** ("failed printing to stdout: Broken pipe"):
+  `println!` on a closed pipe, pre-existing and harmless. Redirect to a
+  file when only the start is needed.

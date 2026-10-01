@@ -315,3 +315,31 @@ Append-only. One bullet per finding, newest section last.
 - **`/proc/<pid>/stat`**: split after the last `)`; then field 0 is the
   state and field 2 is the pgrp. That lets a test check "own process
   group" and "still alive (not Z)" without a libc crate.
+
+## 2026-10-01 · WP-024 (wizard steps, templates)
+
+- **One command calling another in-process** (`init` → `capture::run`,
+  `setup::baseline`): clone the `Context` and pin `logbook_flag` to the
+  logbook just created, or `--logbook`/`SELDON_LOGBOOK` would send the
+  capture elsewhere. Release your own flock first: a second
+  `lock::acquire` in the same process is a new open file description and
+  sees `WouldBlock` (exit 4).
+- **Bulk resolutions reuse WP-008:** iterate `Built::open_drift` (every
+  open member; `index.drift` is capped at 200, ADR-0020), oldest first,
+  `reconcile::select(built, id, false)` per event not yet covered, then
+  `reconcile::resolutions`; one `emit` for all lines.
+- **Files outside `src/` in the binary:** `include_str!(concat!(env!(
+  "CARGO_MANIFEST_DIR"), "/hooks/theme-set.sh"))`; a unit test pins the
+  shebang and the one command so a moved file fails loudly.
+- **Copying a tree:** `DirEntry::file_type()` does not follow symlinks, so
+  `is_file()`/`is_dir()` skip links for free; `std::fs::copy` keeps the
+  permission bits (an executable guard stays executable).
+- **clap `requires`/`conflicts_with`** turn flag combinations into parse
+  errors (exit 1, the flag names in the message) before anything is
+  written; cheaper than checking in `run`.
+- **dialoguer `Input::validate_with`** needs the closure typed:
+  `|s: &String| -> std::result::Result<(), String>`.
+- **Snapshot of a template skeleton:** frontmatter keys, `#` headings,
+  fence names and table header rows per file, the machine id normalised;
+  equal across languages and to `tests/golden/init-skeleton.txt`
+  (`SELDON_BLESS=1` rewrites). Prose may change without touching it.
