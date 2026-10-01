@@ -70,7 +70,21 @@ seldon hook install <claude-code|generic> [--settings PATH]
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…","cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub
-seldon watch [--interval SECS]                 # feature "watch", optional
+seldon watch [--interval SECS] [--json]        # feature "watch" (off by default, ADR-0005; without it: exit 1
+                                               # "built without the watch feature"). Watches ledger/ work/ journal/
+                                               # decisions/ system/ memory/ (recursive) and .seldon/logbook.toml;
+                                               # one rebuild at start, then reacts to changes: after SECS quiet
+                                               # (default and minimum 2; at most 5×SECS into a burst) rebuilds
+                                               # index.json under the lock (a held lock delays, retried every
+                                               # 250 ms). Writes index.json only: no capture, no views, no
+                                               # STATUS.md, no commit. Ignores reads, ledger/*.md, STATUS.md,
+                                               # hidden/temp/backup files. One line per rebuild on stderr; --json:
+                                               # JSON lines on stdout {status: watching|rebuilt|error|stopped}.
+                                               # SIGTERM/SIGINT → exit 0 after the rebuild in progress; exit 3 when
+                                               # the logbook is not initialised; watcher error at start (inotify
+                                               # limit) → exit 2; a failing re-watch later is an error line. RSS
+                                               # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
+                                               # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, omarchy, snapper, git checks
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
 # prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
