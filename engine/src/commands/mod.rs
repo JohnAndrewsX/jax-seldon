@@ -5,6 +5,7 @@ pub mod agent;
 pub mod capture;
 pub mod decide;
 pub mod doctor;
+pub mod dossier;
 pub mod drift;
 pub mod event;
 pub mod hook;

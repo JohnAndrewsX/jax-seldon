@@ -316,25 +316,40 @@ fn drift_line(d: &DriftItem, today: &str, w: &Words) -> String {
     line
 }
 
-/// `STATUS.md` with the `status` fence replaced by `content`; the rest of
-/// an existing file is kept. A file without the fence that starts with
-/// the generated header (the `init` template, older engines) is replaced;
-/// one without the header is user text and is kept below the fence.
+/// `STATUS.md` with the `status` fence replaced by `content`
+/// ([`merge_fence`]).
 pub fn merge_status(existing: Option<&str>, content: &str) -> String {
-    let begin = format!("{FENCE_BEGIN}{STATUS_FENCE} -->\n");
-    let block = format!("{begin}{content}{FENCE_END}\n");
+    merge_fence(existing, STATUS_FENCE, content)
+}
+
+/// `text` with the body of its first fence `name` replaced by `content`
+/// (which ends in a newline, or is empty); the marker lines and every
+/// byte outside them stay as they are. `None` when `text` has no complete
+/// fence `name`.
+pub fn replace_fence(text: &str, name: &str, content: &str) -> Option<String> {
+    let begin = format!("{FENCE_BEGIN}{name} -->\n");
+    let start = text.find(&begin)? + begin.len();
+    let len = text[start..].find(FENCE_END)?;
+    Some(format!(
+        "{}{content}{}",
+        &text[..start],
+        &text[start + len..]
+    ))
+}
+
+/// A generated file (`STATUS.md`, `outputs/REBUILD.md`) with its fence
+/// `name` replaced by `content`; the rest of an existing file is kept
+/// (WP-032 review item 6: one merge, two callers). A file without the
+/// fence that starts with the generated header (the `init` template,
+/// older engines) is replaced; one without the header is user text and is
+/// kept below the fence. The header is always the first line.
+pub fn merge_fence(existing: Option<&str>, name: &str, content: &str) -> String {
+    let block = format!("{FENCE_BEGIN}{name} -->\n{content}{FENCE_END}\n");
     let fresh = || format!("{GENERATED_HEADER}\n{block}");
     let Some(old) = existing else {
         return fresh();
     };
-    if let Some(start) = old.find(&begin)
-        && let Some(len) = old[start + begin.len()..].find(FENCE_END)
-    {
-        let mut end = start + begin.len() + len + FENCE_END.len();
-        if old[end..].starts_with('\n') {
-            end += 1;
-        }
-        let merged = format!("{}{block}{}", &old[..start], &old[end..]);
+    if let Some(merged) = replace_fence(old, name, content) {
         return if merged.starts_with(GENERATED_HEADER) {
             merged
         } else {

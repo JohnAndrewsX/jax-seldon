@@ -1,0 +1,3 @@
+elephant.service enabled enabled
+ollama.service   enabled disabled
+pipewire.socket  enabled enabled

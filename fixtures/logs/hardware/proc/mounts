@@ -1,0 +1,5 @@
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+/dev/mapper/root / btrfs rw,noatime,compress=zstd:3,ssd,space_cache=v2,subvolid=256,subvol=/@ 0 0
+/dev/mapper/root /home btrfs rw,noatime,compress=zstd:3,ssd,space_cache=v2,subvolid=257,subvol=/@home 0 0
+/dev/nvme0n1p1 /boot vfat rw,relatime 0 0

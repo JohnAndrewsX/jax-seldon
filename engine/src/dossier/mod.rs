@@ -1,0 +1,820 @@
+//! The dossier `system/*.md` (SPEC-LOGBOOK §3, SPEC-ENGINE §3 `seldon
+//! dossier`, WP-035): the engine writes the generated fences, the user owns
+//! everything outside them.
+//!
+//! [`Files`] holds the files and replaces fence bodies only
+//! ([`views::replace_fence`]), so every byte outside a fence stays as it
+//! was. A fence the files lack is appended to its default file under a
+//! heading in the logbook language (a missing file is created). [`facts`]
+//! reads what the ledger knows (installs, cases, the last Omarchy update)
+//! from the index derivation; the renderers below turn facts and host
+//! queries ([`query`]) into fence bodies. Nothing here depends on the clock
+//! except the date of a new `packages.history` row, so an unchanged system
+//! renders the same bytes.
+
+pub mod query;
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+
+use anyhow::Context as _;
+
+use crate::collectors::plugins::Listed;
+use crate::index::Built;
+use crate::index::load::{FENCE_BEGIN, FENCE_END, fence_kv, fence_table, fences};
+use crate::index::views;
+use crate::model::Language;
+use crate::model::event::{Kind, Resolution, Source, format_ts};
+use crate::pkgcmd;
+use crate::rebuild::unit_of;
+use crate::sys;
+use query::{Hardware, Packages, Scope};
+
+/// `--section` values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+pub enum Section {
+    Packages,
+    Services,
+    Omarchy,
+    Hardware,
+    Plugins,
+    Deviations,
+    All,
+}
+
+impl Section {
+    /// Whether `fence` belongs to one of `selected` (`all`: every fence).
+    pub fn selects(selected: &[Section], fence: &Fence) -> bool {
+        selected.is_empty()
+            || selected
+                .iter()
+                .any(|s| *s == Section::All || *s == fence.section)
+    }
+}
+
+/// A fence the engine writes, and where it lives by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fence {
+    pub name: &'static str,
+    /// The file under `system/` that gets the fence when no file has it.
+    pub file: &'static str,
+    pub section: Section,
+    /// The heading put above the fence when it is appended (en, de).
+    heading: [&'static str; 2],
+}
+
+/// Every generated fence of the dossier, in the order they are written.
+pub const FENCES: [Fence; 8] = [
+    Fence {
+        name: "packages.summary",
+        file: "packages.md",
+        section: Section::Packages,
+        heading: ["Summary", "Übersicht"],
+    },
+    Fence {
+        name: "packages.history",
+        file: "packages.md",
+        section: Section::Packages,
+        heading: ["History", "Verlauf"],
+    },
+    Fence {
+        name: "packages.explicit",
+        file: "packages.md",
+        section: Section::Packages,
+        heading: ["Explicit packages", "Explizite Pakete"],
+    },
+    Fence {
+        name: "services.enabled",
+        file: "services.md",
+        section: Section::Services,
+        heading: ["Enabled units", "Aktivierte Units"],
+    },
+    Fence {
+        name: "omarchy.summary",
+        file: "omarchy.md",
+        section: Section::Omarchy,
+        heading: ["Summary", "Übersicht"],
+    },
+    Fence {
+        name: "hardware.summary",
+        file: "hardware.md",
+        section: Section::Hardware,
+        heading: ["Summary", "Übersicht"],
+    },
+    Fence {
+        name: "plugins.list",
+        file: "plugins.md",
+        section: Section::Plugins,
+        heading: ["Installed plugins", "Installierte Plugins"],
+    },
+    Fence {
+        name: "deviations.table",
+        file: "deviations.md",
+        section: Section::Deviations,
+        heading: ["Deviations", "Abweichungen"],
+    },
+];
+
+/// The title of a dossier file the engine has to create (en, de).
+fn title(file: &str) -> [&'static str; 2] {
+    match file {
+        "packages.md" => ["Packages", "Pakete"],
+        "services.md" => ["Services", "Dienste"],
+        "omarchy.md" => ["Omarchy", "Omarchy"],
+        "hardware.md" => ["Hardware", "Hardware"],
+        "plugins.md" => ["Plugins", "Plugins"],
+        _ => [
+            "Deviations from Omarchy defaults",
+            "Abweichungen vom Omarchy-Standard",
+        ],
+    }
+}
+
+fn pick(pair: [&'static str; 2], language: Language) -> &'static str {
+    match language {
+        Language::En => pair[0],
+        Language::De => pair[1],
+    }
+}
+
+/// The `*.md` files of `system/`, as read and as they will be written.
+#[derive(Debug, Clone)]
+pub struct Files {
+    dir: PathBuf,
+    language: Language,
+    files: Vec<File>,
+}
+
+#[derive(Debug, Clone)]
+struct File {
+    name: String,
+    /// The bytes on disk; `None` for a file the engine creates.
+    old: Option<String>,
+    text: String,
+}
+
+impl Files {
+    /// Reads every `*.md` directly in `dir`, sorted by name (the order the
+    /// index reads fences in: the first fence of a name wins).
+    pub fn read(dir: &Path, language: Language) -> anyhow::Result<Self> {
+        let mut paths: Vec<PathBuf> = match std::fs::read_dir(dir) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "md"))
+                .collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => {
+                return Err(anyhow::Error::new(e).context(format!("cannot read {}", dir.display())));
+            }
+        };
+        paths.sort();
+        let mut files = Vec::new();
+        for path in paths {
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("cannot read {}", path.display()))?;
+            files.push(File {
+                name: path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                old: Some(text.clone()),
+                text,
+            });
+        }
+        Ok(Files {
+            dir: dir.to_path_buf(),
+            language,
+            files,
+        })
+    }
+
+    /// The body of the first fence `name`, if a file has one.
+    pub fn body(&self, name: &str) -> Option<String> {
+        self.files.iter().find_map(|f| {
+            fences(&f.text)
+                .into_iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, body)| body)
+        })
+    }
+
+    /// Sets the body of `fence` to `content`; `true` when that changed it.
+    pub fn set(&mut self, fence: &Fence, content: &str) -> bool {
+        debug_assert!(content.is_empty() || content.ends_with('\n'));
+        if self.body(fence.name).as_deref() == Some(content) {
+            return false;
+        }
+        for f in &mut self.files {
+            if fences(&f.text).iter().any(|(n, _)| n == fence.name)
+                && let Some(text) = views::replace_fence(&f.text, fence.name, content)
+            {
+                f.text = text;
+                return true;
+            }
+        }
+        // no file has it: append it to its default file
+        let language = self.language;
+        let index = match self.files.iter().position(|f| f.name == fence.file) {
+            Some(i) => i,
+            None => {
+                self.files.push(File {
+                    name: fence.file.to_string(),
+                    old: None,
+                    text: format!("# {}\n", pick(title(fence.file), language)),
+                });
+                self.files.len() - 1
+            }
+        };
+        let f = &mut self.files[index];
+        if !f.text.is_empty() && !f.text.ends_with('\n') {
+            f.text.push('\n');
+        }
+        let _ = write!(
+            f.text,
+            "\n## {}\n\n{FENCE_BEGIN}{} -->\n{content}{FENCE_END}\n",
+            pick(fence.heading, language),
+            fence.name
+        );
+        true
+    }
+
+    /// The files whose bytes changed, as `system/<name>`.
+    pub fn changed(&self) -> Vec<String> {
+        self.files
+            .iter()
+            .filter(|f| f.old.as_deref() != Some(f.text.as_str()))
+            .map(|f| format!("system/{}", f.name))
+            .collect()
+    }
+
+    /// Writes every changed file atomically; returns them as `system/<name>`.
+    pub fn write(&self) -> anyhow::Result<Vec<String>> {
+        let mut written = Vec::new();
+        for f in &self.files {
+            if f.old.as_deref() == Some(f.text.as_str()) {
+                continue;
+            }
+            sys::write_atomic(&self.dir.join(&f.name), f.text.as_bytes())?;
+            written.push(format!("system/{}", f.name));
+        }
+        Ok(written)
+    }
+}
+
+/// When the ledger saw a package installed, and for which case.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Known {
+    /// `YYYY-MM-DD` of the latest `install`.
+    pub date: String,
+    pub case: Option<String>,
+}
+
+/// A config file the ledger knows a case for (a `deviations.table` row).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cased {
+    pub path: String,
+    pub date: String,
+    pub case: String,
+}
+
+/// What the ledger contributes to the dossier.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Facts {
+    /// Packages whose latest install is not followed by a removal.
+    pub installs: BTreeMap<String, Known>,
+    /// `ts` of the newest Omarchy `update`.
+    pub last_update: Option<String>,
+    /// The newest `theme-set` that was not dismissed.
+    pub theme: Option<String>,
+    /// Config files whose latest event has a case, oldest first; unit
+    /// files (`~/.config/systemd/`) belong to `services.enabled` instead.
+    pub cased_config: Vec<Cased>,
+    /// The case that set up a unit: a user unit file's config event, or
+    /// an agent's `systemctl [--user] enable <unit>` with a case.
+    pub unit_cases: BTreeMap<(String, Scope), String>,
+}
+
+/// Config files under this prefix are systemd units.
+const UNIT_PREFIX: &str = "~/.config/systemd/";
+const USER_UNIT_PREFIX: &str = "~/.config/systemd/user/";
+
+/// Reads [`Facts`] from the index derivation (folded events: each carries
+/// its winning resolution and the case it resolved to, ADR-0021).
+pub fn facts(built: &Built) -> Facts {
+    let mut f = Facts::default();
+    let dismissed = |r: Option<Resolution>| r == Some(Resolution::Dismissed);
+    // the latest config event per path, and whether the file existed
+    // before the logbook saw it (a file added and removed again is gone)
+    let mut config: BTreeMap<String, (usize, bool)> = BTreeMap::new();
+    let chrono: Vec<_> = built.folded.iter().rev().collect();
+    for (i, ie) in chrono.iter().enumerate() {
+        let e = &ie.event;
+        match (e.source, e.kind) {
+            (Source::Pacman, Kind::Install) => {
+                f.installs.insert(
+                    e.subject.clone(),
+                    Known {
+                        date: e.ts.date_naive().to_string(),
+                        case: e.case.clone(),
+                    },
+                );
+            }
+            (Source::Pacman, Kind::Remove) => {
+                f.installs.remove(&e.subject);
+            }
+            (Source::Omarchy, Kind::Update) => f.last_update = Some(format_ts(&e.ts)),
+            (Source::Theme, Kind::ThemeSet) if !dismissed(e.resolution) => {
+                f.theme = Some(e.subject.clone());
+            }
+            (Source::Config, Kind::ConfigAdd | Kind::ConfigChange | Kind::ConfigRemove) => {
+                let existed = config
+                    .get(&e.subject)
+                    .map_or(e.kind != Kind::ConfigAdd, |(_, existed)| *existed);
+                config.insert(e.subject.clone(), (i, existed));
+            }
+            (Source::Agent, Kind::Command) => {
+                if let (Some(case), Some(cmd)) = (&e.case, &e.meta.command) {
+                    for (unit, scope) in enabled_by(cmd) {
+                        f.unit_cases.insert((unit, scope), case.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut cased: Vec<(usize, Cased)> = Vec::new();
+    for (path, (i, existed)) in &config {
+        let e = &chrono[*i].event;
+        let gone = e.kind == Kind::ConfigRemove && !existed;
+        let Some(case) = e.case.clone().filter(|_| !gone && !dismissed(e.resolution)) else {
+            continue;
+        };
+        if let Some(rest) = path.strip_prefix(USER_UNIT_PREFIX) {
+            if e.kind != Kind::ConfigRemove && !rest.is_empty() {
+                let (unit, _) = unit_of(path);
+                f.unit_cases.insert((unit, Scope::User), case);
+            }
+            continue;
+        }
+        if path.starts_with(UNIT_PREFIX) {
+            continue;
+        }
+        cased.push((
+            *i,
+            Cased {
+                path: path.clone(),
+                date: e.ts.date_naive().to_string(),
+                case,
+            },
+        ));
+    }
+    cased.sort_by_key(|(i, _)| *i);
+    f.cased_config = cased.into_iter().map(|(_, c)| c).collect();
+    f
+}
+
+/// The units a recorded command line enables: `systemctl [--user] enable
+/// [--now] <unit>…` in any simple command of the line (wrappers such as
+/// `sudo` stripped). A bare name gets `.service`.
+pub fn enabled_by(command: &str) -> Vec<(String, Scope)> {
+    let mut out = Vec::new();
+    for segment in pkgcmd::simple_commands(&pkgcmd::parse_shell(command)) {
+        let argv = segment.argv();
+        let Some((program, args)) = argv.split_first() else {
+            continue;
+        };
+        if program.rsplit('/').next() != Some("systemctl") {
+            continue;
+        }
+        let scope = if args.iter().any(|a| a == "--user") {
+            Scope::User
+        } else {
+            Scope::System
+        };
+        let mut words = args.iter().filter(|a| !a.starts_with('-'));
+        if words.next().map(String::as_str) != Some("enable") {
+            continue;
+        }
+        for unit in words {
+            let unit = if unit.contains('.') {
+                unit.clone()
+            } else {
+                format!("{unit}.service")
+            };
+            out.push((unit, scope));
+        }
+    }
+    out
+}
+
+/// `packages.summary`: `- explicit: N`, `- total: N`, `- aur: N`.
+pub fn packages_summary(p: &Packages) -> String {
+    format!(
+        "- explicit: {}\n- total: {}\n- aur: {}\n",
+        p.explicit.len(),
+        p.total,
+        p.aur()
+    )
+}
+
+/// `packages.history`: the rows as they are, plus a row for `today` when
+/// the counts differ from the last row (a row of `today` is replaced).
+pub fn packages_history(body: Option<&str>, today: &str, p: &Packages) -> String {
+    const HEAD: &str = "| date | explicit | total |\n|---|---|---|\n";
+    let row = format!("| {today} | {} | {} |", p.explicit.len(), p.total);
+    let body = body.filter(|b| b.contains("|---")).unwrap_or(HEAD);
+    let mut lines: Vec<&str> = body.lines().collect();
+    let rows = fence_table(body);
+    // the table line of the last row: header and separator come first
+    let last_line = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.starts_with('|'))
+        .map(|(i, _)| i)
+        .nth(rows.len() + 1)
+        .filter(|_| !rows.is_empty());
+    if let (Some(last), Some(i)) = (rows.last(), last_line) {
+        let same = |k: &str, v: usize| last.get(k).is_some_and(|x| *x == v.to_string());
+        if same("explicit", p.explicit.len()) && same("total", p.total) {
+            return ensure_newline(body);
+        }
+        if last.get("date").is_some_and(|d| d == today) {
+            lines[i] = &row;
+            return lines.join("\n") + "\n";
+        }
+    }
+    let mut out = ensure_newline(body);
+    out.push_str(&row);
+    out.push('\n');
+    out
+}
+
+fn ensure_newline(s: &str) -> String {
+    if s.is_empty() || s.ends_with('\n') {
+        s.to_string()
+    } else {
+        format!("{s}\n")
+    }
+}
+
+/// `packages.explicit`: one line per explicit package, sorted:
+/// `- <name> · repo|aur · since <date> [[C-…]]` when the ledger saw the
+/// install, else `- <name> · repo|aur · pre-logbook`.
+pub fn packages_explicit(p: &Packages, known: &BTreeMap<String, Known>) -> String {
+    let mut t = String::new();
+    for name in &p.explicit {
+        let origin = if p.foreign.contains(name) {
+            "aur"
+        } else {
+            "repo"
+        };
+        let _ = write!(t, "- {name} · {origin} · ");
+        match known.get(name) {
+            Some(k) => {
+                let _ = write!(t, "since {}", k.date);
+                if let Some(case) = &k.case {
+                    let _ = write!(t, " [[{case}]]");
+                }
+            }
+            None => t.push_str(PRE_LOGBOOK),
+        }
+        t.push('\n');
+    }
+    t
+}
+
+/// The mark of a package the ledger does not know.
+pub const PRE_LOGBOOK: &str = "pre-logbook";
+
+/// An entry of the `packages.explicit` fence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Explicit {
+    pub name: String,
+    pub aur: bool,
+    pub pre_logbook: bool,
+}
+
+/// Reads a `packages.explicit` body (see [`packages_explicit`]); lines in
+/// another shape are skipped.
+pub fn parse_explicit(body: &str) -> Vec<Explicit> {
+    body.lines()
+        .filter_map(|l| {
+            let mut parts = l.strip_prefix("- ")?.split(" · ");
+            let (name, origin, since) = (parts.next()?, parts.next()?, parts.next()?);
+            if name.is_empty() || name.contains(char::is_whitespace) {
+                return None;
+            }
+            Some(Explicit {
+                name: name.to_string(),
+                aur: match origin.trim() {
+                    "aur" => true,
+                    "repo" => false,
+                    _ => return None,
+                },
+                pre_logbook: since.trim() == PRE_LOGBOOK,
+            })
+        })
+        .collect()
+}
+
+/// `services.enabled`: system units, then user units, by name. The case is
+/// the ledger's, else the one the existing row had, else `—`.
+pub fn services_enabled(
+    units: &[(String, Scope)],
+    cases: &BTreeMap<(String, Scope), String>,
+    body: Option<&str>,
+) -> String {
+    let old: BTreeMap<(String, String), String> = body
+        .map(fence_table)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| {
+            let case = r.get("case")?.trim().to_string();
+            let known = !case.is_empty() && case != "—" && case != "-";
+            if !known {
+                return None;
+            }
+            Some(((r.get("unit")?.clone(), r.get("scope")?.clone()), case))
+        })
+        .collect();
+    let mut sorted: Vec<&(String, Scope)> = units.iter().collect();
+    sorted.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+    sorted.dedup();
+    let mut t = String::from("| unit | scope | case |\n|---|---|---|\n");
+    for (unit, scope) in sorted {
+        let case = cases
+            .get(&(unit.clone(), *scope))
+            .map(|c| format!("[[{c}]]"))
+            .or_else(|| {
+                old.get(&(unit.clone(), scope.as_str().to_string()))
+                    .cloned()
+            })
+            .unwrap_or_else(|| "—".to_string());
+        let _ = writeln!(t, "| {unit} | {} | {case} |", scope.as_str());
+    }
+    t
+}
+
+/// `plugins.list`: one row per plugin, by id.
+pub fn plugins_list(listed: &[Listed]) -> String {
+    let yes = |b: bool| if b { "yes" } else { "no" };
+    let mut t = String::from("| id | enabled | firstParty | clonedFrom |\n|---|---|---|---|\n");
+    for p in listed {
+        let from = p.cloned_from.trim();
+        let from = if from.is_empty() || from.contains('|') {
+            "—"
+        } else {
+            from
+        };
+        let _ = writeln!(
+            t,
+            "| {} | {} | {} | {from} |",
+            p.id,
+            yes(p.enabled),
+            yes(p.first_party)
+        );
+    }
+    t
+}
+
+/// A `- key: value` fence; a key without a new value keeps the value the
+/// existing body had, a key without either is left out.
+pub fn key_values(pairs: &[(&str, Option<String>)], body: Option<&str>) -> String {
+    let old = body.map(fence_kv).unwrap_or_default();
+    let mut t = String::new();
+    for (key, value) in pairs {
+        if let Some(v) = value.clone().or_else(|| old.get(*key).cloned()) {
+            let _ = writeln!(t, "- {key}: {v}");
+        }
+    }
+    t
+}
+
+/// `omarchy.summary`: version, theme, last update.
+pub fn omarchy_summary(
+    version: Option<String>,
+    theme: Option<String>,
+    facts: &Facts,
+    body: Option<&str>,
+) -> String {
+    key_values(
+        &[
+            ("version", version),
+            ("theme", theme.or_else(|| facts.theme.clone())),
+            ("lastUpdate", facts.last_update.clone()),
+        ],
+        body,
+    )
+}
+
+/// `hardware.summary`: what [`query::hardware`] found, nothing else.
+pub fn hardware_summary(hw: &Hardware) -> String {
+    key_values(
+        &[
+            ("cpu", hw.cpu.clone()),
+            ("memory", hw.memory.clone()),
+            ("machine", hw.machine.clone()),
+            ("rootfs", hw.rootfs.clone()),
+        ],
+        None,
+    )
+}
+
+/// `deviations.table`: the existing lines byte for byte (the user's
+/// reasons), plus a row for each cased config file without one, keyed by
+/// path. The reason of a new row is empty: the user writes it.
+pub fn deviations_table(body: Option<&str>, cased: &[Cased]) -> String {
+    const HEAD: &str = "| path | reason | date | case |\n|---|---|---|---|\n";
+    let body = body.filter(|b| b.contains("|---")).unwrap_or(HEAD);
+    let listed: Vec<String> = fence_table(body)
+        .into_iter()
+        .filter_map(|r| r.get("path").cloned())
+        .collect();
+    let mut t = ensure_newline(body);
+    for c in cased {
+        if listed.contains(&c.path) || c.path.contains('|') {
+            continue;
+        }
+        let _ = writeln!(t, "| {} |  | {} | [[{}]] |", c.path, c.date, c.case);
+    }
+    t
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pkgs(explicit: &[&str], foreign: &[&str], total: usize) -> Packages {
+        Packages {
+            explicit: explicit.iter().map(|s| s.to_string()).collect(),
+            foreign: foreign.iter().map(|s| s.to_string()).collect(),
+            total,
+        }
+    }
+
+    #[test]
+    fn history_appends_replaces_today_or_keeps() {
+        let body = "| date | explicit | total |\n|---|---|---|\n| 2026-09-01 | 2 | 10 |\n";
+        let p = pkgs(&["a", "b"], &[], 10);
+        assert_eq!(packages_history(Some(body), "2026-10-01", &p), body);
+        let p3 = pkgs(&["a", "b", "c"], &[], 11);
+        let appended = packages_history(Some(body), "2026-10-01", &p3);
+        assert_eq!(appended, format!("{body}| 2026-10-01 | 3 | 11 |\n"));
+        let p4 = pkgs(&["a", "b", "c", "d"], &[], 12);
+        assert_eq!(
+            packages_history(Some(&appended), "2026-10-01", &p4),
+            format!("{body}| 2026-10-01 | 4 | 12 |\n"),
+            "today's row is replaced"
+        );
+        assert_eq!(
+            packages_history(Some(""), "2026-10-01", &p),
+            "| date | explicit | total |\n|---|---|---|\n| 2026-10-01 | 2 | 10 |\n"
+        );
+    }
+
+    #[test]
+    fn explicit_lines_round_trip() {
+        let p = pkgs(&["btop", "yay", "zed"], &["yay", "yay-debug"], 40);
+        let known = BTreeMap::from([
+            (
+                "zed".to_string(),
+                Known {
+                    date: "2026-10-01".into(),
+                    case: Some("C-2026-004".into()),
+                },
+            ),
+            (
+                "btop".to_string(),
+                Known {
+                    date: "2026-09-03".into(),
+                    case: None,
+                },
+            ),
+        ]);
+        let body = packages_explicit(&p, &known);
+        assert_eq!(
+            body,
+            "- btop · repo · since 2026-09-03\n- yay · aur · pre-logbook\n- zed · repo · since 2026-10-01 [[C-2026-004]]\n"
+        );
+        let parsed = parse_explicit(&body);
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(
+            parsed[1],
+            Explicit {
+                name: "yay".into(),
+                aur: true,
+                pre_logbook: true
+            }
+        );
+        assert!(!parsed[2].pre_logbook);
+        assert_eq!(
+            packages_summary(&p),
+            "- explicit: 3\n- total: 40\n- aur: 2\n"
+        );
+    }
+
+    #[test]
+    fn services_take_the_ledger_case_then_the_old_row() {
+        let units = vec![
+            ("ollama.service".to_string(), Scope::User),
+            ("tailscaled.service".to_string(), Scope::System),
+            ("elephant.service".to_string(), Scope::User),
+        ];
+        let cases = BTreeMap::from([(
+            ("ollama.service".to_string(), Scope::User),
+            "C-2026-009".to_string(),
+        )]);
+        let old = "| unit | scope | case |\n|---|---|---|\n| tailscaled.service | system | [[C-2026-008]] |\n| gone.service | user | [[C-1]] |\n";
+        assert_eq!(
+            services_enabled(&units, &cases, Some(old)),
+            "| unit | scope | case |\n|---|---|---|\n| tailscaled.service | system | [[C-2026-008]] |\n| elephant.service | user | — |\n| ollama.service | user | [[C-2026-009]] |\n"
+        );
+    }
+
+    #[test]
+    fn enable_commands_name_their_units() {
+        assert_eq!(
+            enabled_by("sudo systemctl enable --now tailscaled && tailscale up"),
+            [("tailscaled.service".to_string(), Scope::System)]
+        );
+        assert_eq!(
+            enabled_by("systemctl --user enable ollama.service elephant.socket"),
+            [
+                ("ollama.service".to_string(), Scope::User),
+                ("elephant.socket".to_string(), Scope::User)
+            ]
+        );
+        assert!(enabled_by("systemctl --user status ollama").is_empty());
+        assert!(enabled_by("systemctl is-enabled ollama").is_empty());
+    }
+
+    #[test]
+    fn deviations_keep_rows_and_add_cased_paths() {
+        let old = "| path | reason | date | case |\n|---|---|---|---|\n| ~/.bashrc | mise | 2026-09-01 | — |\n";
+        let cased = [
+            Cased {
+                path: "~/.bashrc".into(),
+                date: "2026-10-01".into(),
+                case: "C-1".into(),
+            },
+            Cased {
+                path: "~/.config/hypr/a.conf".into(),
+                date: "2026-10-01".into(),
+                case: "C-2".into(),
+            },
+        ];
+        assert_eq!(
+            deviations_table(Some(old), &cased),
+            format!("{old}| ~/.config/hypr/a.conf |  | 2026-10-01 | [[C-2]] |\n")
+        );
+        assert_eq!(deviations_table(Some(old), &[]), old);
+    }
+
+    #[test]
+    fn key_values_keep_old_values_for_missing_keys() {
+        let old =
+            "- version: 4.0.7-1\n- theme: tokyo-night\n- lastUpdate: 2026-10-01T09:21:00+02:00\n";
+        let facts = Facts::default();
+        assert_eq!(omarchy_summary(None, None, &facts, Some(old)), old);
+        assert_eq!(
+            omarchy_summary(Some("4.0.8-1".into()), None, &facts, Some(old)),
+            old.replace("4.0.7-1", "4.0.8-1")
+        );
+    }
+
+    #[test]
+    fn files_replace_bodies_and_append_missing_fences() {
+        let dir = std::env::temp_dir().join(format!("seldon-dossier-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let packages = "# Pakete\nMeine Notiz.\n\n<!-- seldon:begin packages.summary -->\n- explicit: 1\n<!-- seldon:end -->\nEnde ohne Zeilenumbruch";
+        std::fs::write(dir.join("packages.md"), packages).unwrap();
+        let mut files = Files::read(&dir, Language::De).unwrap();
+        let fence = |name: &str| *FENCES.iter().find(|f| f.name == name).unwrap();
+        assert!(!files.set(&fence("packages.summary"), "- explicit: 1\n"));
+        assert!(files.changed().is_empty());
+        assert!(files.set(&fence("packages.summary"), "- explicit: 2\n"));
+        assert!(files.set(&fence("packages.explicit"), "- zed · repo · pre-logbook\n"));
+        assert!(files.set(&fence("hardware.summary"), "- cpu: x\n"));
+        assert_eq!(
+            files.changed(),
+            ["system/packages.md", "system/hardware.md"]
+        );
+        files.write().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("packages.md")).unwrap(),
+            "# Pakete\nMeine Notiz.\n\n<!-- seldon:begin packages.summary -->\n- explicit: 2\n<!-- seldon:end -->\nEnde ohne Zeilenumbruch\n\n## Explizite Pakete\n\n<!-- seldon:begin packages.explicit -->\n- zed · repo · pre-logbook\n<!-- seldon:end -->\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("hardware.md")).unwrap(),
+            "# Hardware\n\n## Übersicht\n\n<!-- seldon:begin hardware.summary -->\n- cpu: x\n<!-- seldon:end -->\n"
+        );
+        let again = Files::read(&dir, Language::De).unwrap();
+        assert_eq!(
+            again.body("packages.explicit").as_deref(),
+            Some("- zed · repo · pre-logbook\n")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

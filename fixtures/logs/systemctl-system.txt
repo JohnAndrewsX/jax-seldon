@@ -1,0 +1,6 @@
+bluetooth.service                  enabled disabled
+getty@.service                     enabled enabled
+NetworkManager.service             enabled disabled
+systemd-timesyncd.service          enabled enabled
+tailscaled.service                 enabled disabled
+fstrim.timer                       enabled disabled

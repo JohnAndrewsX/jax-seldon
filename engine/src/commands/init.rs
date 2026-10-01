@@ -10,7 +10,8 @@
 //! first commit), the first capture runs (`capture --all`, with `--since`
 //! as the backfill window), a backfill can be marked as the pre-Seldon
 //! baseline, the theme hook is installed on opt-in, and the capture is
-//! committed. The steps after the layout report failures; they never undo
+//! committed; then `seldon dossier` fills `system/*.md` once (WP-035,
+//! its own commit). The steps after the layout report failures; they never undo
 //! the logbook ([`super::setup`]).
 
 use std::io::IsTerminal as _;
@@ -24,6 +25,7 @@ use serde_json::{Value, json};
 
 use super::capture::{self, CaptureArgs};
 use super::doctor::{self, Status};
+use super::dossier::{self, DossierArgs};
 use super::setup::{self, BASELINE_REASON, ThemeHook};
 use super::{Commit, Context, Output, autocommit};
 use crate::collectors::Sources;
@@ -185,6 +187,9 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     let mut lb_ctx = ctx.clone();
     lb_ctx.logbook_flag = Some(root.clone());
     let capture = first_capture(&lb_ctx, &mut choices, interactive);
+    // the dossier once, after the first capture (WP-035); `capture` and
+    // `status` never refresh it
+    let dossier = first_dossier(&lb_ctx, &capture);
     let theme_hook = if choices.theme_hook {
         setup::install_theme_hook(&ctx.dirs, &Sources::from_env().omarchy)
     } else {
@@ -200,6 +205,9 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     }
     if !capture.ran {
         next.push("seldon capture --all".to_string());
+    }
+    if !dossier.ran {
+        next.push("seldon dossier".to_string());
     }
     if let Some((open, _)) = capture.open_after.filter(|(open, _)| *open > 0) {
         next.push(format!(
@@ -228,11 +236,12 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         human.push_str(&format!("Harness {}: {}\n", h.name, h.human));
     }
     human.push_str(&format!(
-        "Git: {}\nSnapper: {} — {}\nFirst capture: {}\n",
+        "Git: {}\nSnapper: {} — {}\nFirst capture: {}\nDossier: {}\n",
         git.describe(),
         snapper.status.as_str(),
         snapper.message,
         capture.human,
+        dossier.human,
     ));
     if let Some(t) = theme_hook.human(&ctx.dirs) {
         human.push_str(&format!("Theme hook: {t}\n"));
@@ -264,6 +273,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             "git": git.json(),
             "snapper": snapper,
             "capture": capture.json,
+            "dossier": dossier.json,
             "themeHook": theme_hook.json(),
             "nextSteps": next,
         }),
@@ -386,6 +396,47 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
         open_after,
         human,
         json,
+    }
+}
+
+/// What the first `seldon dossier` did.
+struct DossierStep {
+    ran: bool,
+    human: String,
+    json: Value,
+}
+
+/// Runs `seldon dossier` (all sections) once the first capture ran; it
+/// takes the lock, commits `seldon: dossier` and rebuilds the index
+/// itself. A failure is reported, never fatal: the logbook exists.
+fn first_dossier(ctx: &Context, capture: &CaptureStep) -> DossierStep {
+    if !capture.ran {
+        return DossierStep {
+            ran: false,
+            human: "skipped (no first capture)".into(),
+            json: json!({ "ran": false, "reason": "no first capture" }),
+        };
+    }
+    match dossier::run(ctx, DossierArgs::default()) {
+        Ok(out) => {
+            let mut human = out.human.lines().next().unwrap_or_default().to_string();
+            let warnings = out.json["warnings"].as_array().map_or(0, Vec::len);
+            if warnings > 0 {
+                human.push_str(&format!("; {warnings} warning(s) (see seldon dossier)"));
+            }
+            let mut json = out.json;
+            json["ran"] = json!(true);
+            DossierStep {
+                ran: true,
+                human,
+                json,
+            }
+        }
+        Err(e) => DossierStep {
+            ran: false,
+            human: format!("failed: {e}"),
+            json: json!({ "ran": false, "error": e.to_string() }),
+        },
     }
 }
 

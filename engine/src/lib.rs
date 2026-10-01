@@ -7,6 +7,7 @@ pub mod attribution;
 pub mod collectors;
 pub mod commands;
 pub mod config;
+pub mod dossier;
 pub mod error;
 pub mod frontmatter;
 pub mod index;

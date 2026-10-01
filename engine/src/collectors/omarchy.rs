@@ -19,9 +19,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::pacman::{ATTRIBUTION_WINDOW, causes};
-use super::{Collector, Ctx, Outcome, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, Source};
-use crate::sys::Run;
+use crate::sys::{self, Run};
 
 pub struct Omarchy;
 
@@ -40,7 +40,7 @@ impl Collector for Omarchy {
     }
 
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
-        let Some(version) = current_version(ctx) else {
+        let Some(version) = current_version(ctx.sources) else {
             return Outcome::degraded(
                 "cannot read the Omarchy version (`omarchy-version` and the package query both failed)",
                 None,
@@ -90,8 +90,10 @@ fn already_recorded(ctx: &Ctx, from: &str, to: &str) -> anyhow::Result<bool> {
         .is_some_and(|e| e.meta.from.as_deref() == Some(from) && e.meta.to.as_deref() == Some(to)))
 }
 
-/// `omarchy-version`, else the version column of the package query.
-fn current_version(ctx: &Ctx) -> Option<String> {
+/// `omarchy-version`, else the version column of the package query (also
+/// read by `seldon dossier`).
+pub fn current_version(sources: &Sources) -> Option<String> {
+    let run = |program: &str, args: &[&str]| sys::run(program, args, None, RUN_TIMEOUT);
     let ok = |run: Run| match run {
         Run::Exited {
             code: Some(0),
@@ -101,13 +103,13 @@ fn current_version(ctx: &Ctx) -> Option<String> {
         _ => None,
     };
     let valid = |v: &str| !v.is_empty() && !v.contains(char::is_whitespace);
-    if let Some(out) = ok(ctx.run(&ctx.sources.omarchy_version, &[])) {
+    if let Some(out) = ok(run(&sources.omarchy_version, &[])) {
         let v = out.trim();
         if valid(v) {
             return Some(v.to_string());
         }
     }
-    let out = ok(ctx.run(&ctx.sources.pacman, &["-Q", "omarchy"]))?;
+    let out = ok(run(&sources.pacman, &["-Q", "omarchy"]))?;
     let mut words = out.split_whitespace();
     match (words.next(), words.next()) {
         (Some("omarchy"), Some(v)) if valid(v) => Some(v.to_string()),

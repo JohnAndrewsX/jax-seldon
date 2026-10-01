@@ -1,0 +1,15 @@
+base
+base-devel
+brave-bin
+btop
+firefox
+git
+hyprland
+linux
+linux-firmware
+neovim
+ollama
+omarchy
+tailscale
+yay
+zed

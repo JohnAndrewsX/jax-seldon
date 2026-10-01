@@ -402,7 +402,8 @@ mod setup {
         cmd.env("SELDON_PACMAN_LOG", pacman_log)
             .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
             .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
-            .env("SELDON_THEME_FILE", tmp.join("theme.name"));
+            .env("SELDON_THEME_FILE", tmp.join("theme.name"))
+            .env("SELDON_HARDWARE_ROOT", common::hardware_root());
         for (k, v) in vars {
             cmd.env(k, v);
         }
@@ -460,6 +461,19 @@ mod setup {
             !next.iter().any(|s| s == "seldon capture --all"),
             "{next:?}"
         );
+        // the dossier ran once after the capture (WP-035): the queries
+        // that are not stubbed here are skipped with a warning, the
+        // hardware comes from the fixture files
+        let dossier = &v["dossier"];
+        assert_eq!(dossier["ran"], true, "{dossier}");
+        assert_eq!(dossier["sections"]["hardware.summary"], "written");
+        assert_eq!(dossier["sections"]["packages.summary"], "skipped");
+        assert!(!next.iter().any(|s| s == "seldon dossier"), "{next:?}");
+        let hardware = common::read(&env.tmp.path().join("logbook/system/hardware.md"));
+        assert!(
+            hardware.contains("- cpu: Intel(R) Core(TM) i7-14700K\n"),
+            "{hardware}"
+        );
         // the capture set every collector's cursor and built the index
         assert!(env.home.join(".local/state/seldon/cursors.json").is_file());
         assert!(env.home.join(".local/state/seldon/index.json").is_file());
@@ -484,6 +498,7 @@ mod setup {
         );
         let text = stdout(&human);
         assert!(text.contains("First capture: 0 event(s)"), "{text}");
+        assert!(text.contains("\nDossier: Wrote system/"), "{text}");
         assert!(!text.contains("First capture: skipped"), "{text}");
 
         // with git: the index is rebuilt after the capture's commit, so it
@@ -503,7 +518,7 @@ mod setup {
         let root = env.tmp.path().join("logbook");
         assert_eq!(
             stdout(&env.git(&root, &["log", "--format=%s"])),
-            "seldon: first capture\nseldon: init logbook\n"
+            "seldon: dossier\nseldon: first capture\nseldon: init logbook\n"
         );
         let head = stdout(&env.git(&root, &["rev-parse", "HEAD"]));
         let index: serde_json::Value = serde_json::from_str(&common::read(
@@ -533,13 +548,13 @@ mod setup {
         let v = json(&out);
         assert_eq!(v["capture"]["ran"], false);
         assert_eq!(v["capture"]["reason"], "--no-capture");
-        assert!(
-            v["nextSteps"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|s| s == "seldon capture --all")
-        );
+        assert_eq!(v["dossier"]["ran"], false, "no dossier without the capture");
+        for step in ["seldon capture --all", "seldon dossier"] {
+            assert!(
+                v["nextSteps"].as_array().unwrap().iter().any(|s| s == step),
+                "{step}"
+            );
+        }
         assert!(!env.home.join(".local/state/seldon/cursors.json").exists());
     }
 
@@ -638,7 +653,7 @@ mod setup {
         if env.has_git {
             assert_eq!(
                 stdout(&env.git(&root, &["log", "--format=%s"])),
-                "seldon: first capture and pre-Seldon baseline\nseldon: init logbook\n"
+                "seldon: dossier\nseldon: first capture and pre-Seldon baseline\nseldon: init logbook\n"
             );
             assert_eq!(stdout(&env.git(&root, &["status", "--porcelain"])), "");
         }

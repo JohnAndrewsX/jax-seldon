@@ -12,7 +12,16 @@ Stand: letztes Ereignis 2026-10-01 17:00
 
 ## 2. Packages
 Explizit installierte Pakete seit Beginn des Logbuchs (2026-09-01), nach Case; ihre Abhängigkeiten kommen von selbst mit.
-Pakete von vor dem Logbuch fehlen hier. Explizite Pakete laut Dossier: 327.
+Explizite Pakete laut Dossier: 15.
+
+### Before the logbook
+Explizite Pakete von vor dem Logbuch (Dossier `packages.explicit`): 9 aus den Repositories, 2 aus dem AUR. Eine frische Omarchy-Installation bringt viele davon schon mit; die Befehle überspringen, was schon installiert ist.
+
+```sh
+omarchy pkg add \
+  base base-devel firefox git hyprland linux linux-firmware neovim omarchy
+omarchy pkg aur add brave-bin yay
+```
 
 ### [[C-2026-004]] Zed als zweiten Editor installieren
 - `omarchy pkg add zed` — 0.198.4-1 · agent:claude-code · `01M3V8AJ08NT7N105393XZXCP7`

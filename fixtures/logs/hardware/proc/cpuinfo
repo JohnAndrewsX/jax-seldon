@@ -1,0 +1,15 @@
+processor	: 0
+vendor_id	: GenuineIntel
+cpu family	: 6
+model		: 183
+model name	: Intel(R) Core(TM) i7-14700K
+stepping	: 1
+cpu MHz		: 3400.000
+
+processor	: 1
+vendor_id	: GenuineIntel
+cpu family	: 6
+model		: 183
+model name	: Intel(R) Core(TM) i7-14700K
+stepping	: 1
+cpu MHz		: 3400.000

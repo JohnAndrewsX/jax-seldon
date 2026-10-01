@@ -70,6 +70,10 @@ fn last_code(line: &str) -> &str {
 fn the_fixture_document_is_golden_and_traces_every_package() {
     let env = Env::new(Snapper::Missing);
     let lb = fixture_copy(&env);
+    // the pre-logbook packages come from the dossier's `packages.explicit`
+    // (WP-035), written from shimmed read-only queries
+    env.query_shims();
+    run_at(&env, &lb, NOW, &["dossier", "--section", "packages"], 0);
     let out = rebuild(&env, &lb);
     assert_eq!(
         out["sections"],
@@ -112,6 +116,52 @@ fn the_fixture_document_is_golden_and_traces_every_package() {
     assert!(text.contains("Installiere Omarchy und führe dann `omarchy update` aus"));
 
     assert_eq!(packages_trace(&lb, &text), 4);
+    assert_eq!(before_trace(&lb, &text), 11);
+}
+
+/// Asserts that the "Before the logbook" group of section 2 lists every
+/// `pre-logbook` package of the dossier's `packages.explicit` fence, each
+/// under the command of its origin, and nothing else; returns the count.
+fn before_trace(lb: &Path, text: &str) -> usize {
+    let dossier = read(&lb.join("system/packages.md"));
+    let expected: Vec<(String, &str)> = dossier
+        .lines()
+        .filter(|l| l.ends_with(" · pre-logbook"))
+        .map(|l| {
+            let mut parts = l.trim_start_matches("- ").split(" · ");
+            let name = parts.next().unwrap().to_string();
+            let cmd = match parts.next().unwrap() {
+                "aur" => "omarchy pkg aur add",
+                _ => "omarchy pkg add",
+            };
+            (name, cmd)
+        })
+        .collect();
+    let packages = section(text, "2. Packages").join("\n");
+    let start = packages
+        .find("### Before the logbook\n")
+        .expect("a Before the logbook group");
+    let block = &packages[start..];
+    let block = &block[block.find("```sh\n").unwrap() + 6..];
+    let block = &block[..block.find("```").unwrap()];
+    let mut listed: Vec<(String, &str)> = Vec::new();
+    let mut cmd = "";
+    for line in block.lines() {
+        let mut words = line.trim_end_matches(" \\").trim();
+        for prefix in ["omarchy pkg aur add", "omarchy pkg add"] {
+            if let Some(rest) = words.strip_prefix(prefix) {
+                cmd = prefix;
+                words = rest;
+                break;
+            }
+        }
+        listed.extend(words.split_whitespace().map(|w| (w.to_string(), cmd)));
+    }
+    listed.sort();
+    let mut expected = expected;
+    expected.sort();
+    assert_eq!(listed, expected);
+    listed.len()
 }
 
 /// Asserts that every package line of section 2 names an explicit
