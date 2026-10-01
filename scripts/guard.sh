@@ -36,11 +36,14 @@ fi
 # commands: only when the system path is the LAST argument of the segment
 # (the destination) — a /usr or /var path used as a read-only source is fine
 if printf '%s' "$cmd" | grep -Eq '(>|>>|tee([[:space:]]+-[a-z]+)*)[[:space:]]*/(etc|usr|boot|var)/' \
-   || printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(sudo[[:space:]]+)?(cp|mv|install|rm|rmdir|sed[[:space:]]+-i[^[:space:]]*|chmod|chown|ln|mkdir|touch|truncate)([[:space:]]+[^|;&[:space:]]+)*[[:space:]]+/(etc|usr|boot|var)/[^|;&[:space:]]*[[:space:]]*($|[|;&])'; then
+   || printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(ssh[[:space:]]+[^[:space:]]+[[:space:]]+["'\'']?)?(sudo[[:space:]]+)?(cp|mv|install|rm|rmdir|sed[[:space:]]+-i[^[:space:]]*|chmod|chown|ln|mkdir|touch|truncate)([[:space:]]+[^|;&[:space:]]+)*[[:space:]]+/(etc|usr|boot|var)/[^|;&[:space:]]*[[:space:]]*($|[|;&])'; then
   block "write under /etc, /usr, /boot or /var"
 fi
 # writes under ~/.config outside the plugin dev install
-if printf '%s' "$cmd" | grep -Eq '(>|>>|tee|cp|mv|install|rm|sed[[:space:]]+-i|ln|mkdir)[^|;&]*[[:space:]](~|\$HOME|/home/[^/]+)/\.config/'; then
+# same shape as the system-path rule: redirections/tee anywhere, file commands
+# only at a command position — not inside heredoc bodies or quoted test data
+if printf '%s' "$cmd" | grep -Eq '(>|>>|tee([[:space:]]+-[a-z]+)*)[[:space:]]*(~|\$HOME|/home/[^/]+)/\.config/' \
+   || printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*)(ssh[[:space:]]+[^[:space:]]+[[:space:]]+["'\'']?)?(sudo[[:space:]]+)?(cp|mv|install|rm|rmdir|sed[[:space:]]+-i[^[:space:]]*|chmod|chown|ln|mkdir|touch|truncate)([[:space:]]+[^|;&[:space:]]+)*[[:space:]]+(~|\$HOME|/home/[^/]+)/\.config/'; then
   # exceptions: the plugin dev install, and — over ssh to the test host only —
   # Seldon's own config dir there (smoke-test restore, docs/HERDR-SETUP.md §5)
   if ! printf '%s' "$cmd" | grep -Eq '\.config/omarchy/plugins/jax\.seldon' \

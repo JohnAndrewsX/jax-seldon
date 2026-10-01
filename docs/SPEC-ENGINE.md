@@ -35,10 +35,18 @@ seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
 seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT]
 seldon plan list [--status S] [--area A]
 seldon plan show <ID>
-seldon drift [--crisis-only]
-seldon drift link <EVENT> <CASE>
-seldon drift explain <EVENT> "<intent>" [--zone --risk --area]
-seldon drift dismiss <EVENT> --reason TEXT
+seldon drift [--crisis-only] [--json]            # read-only: index items, crises first; totals count all
+seldon drift show <EVENT> --json                 # {event, open, item, txId, members} — full member list of a group
+seldon drift link <EVENT> <CASE> [--only] [--actor A]
+seldon drift explain <EVENT> [--only] [--zone Z] [--risk R] [--area A] [--actor A] -- <intent>
+seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
+# resolving commands: one lock, one ledger write (one `resolution` line per open
+# member of the group, same ts/actor/detail/case, meta.txId on fan-out), case
+# `events:` updated oldest-first, autocommit `seldon: drift <verb>: N event(s)`,
+# index rebuilt; a re-run writes nothing (exit 0, resolved 0); ids and the case
+# are checked before any write (exit 1). `explain` creates a completed
+# retroactive case (ADR-0021). --json → {eventId, resolution, only, txId,
+# resolved, events, case, areaCreated, git}
 seldon decide "<title>" [--case ID]            # creates ADR, opens $EDITOR unless --no-edit
 seldon status                                  # regenerates STATUS.md + index
 seldon index [--check]                         # rebuild index; --check validates against schema
@@ -51,7 +59,12 @@ seldon hook generic                            # stdin: {"command":"…","actor"
 seldon hook session-start | session-stop       # context print / journal stub
 seldon watch [--interval SECS]                 # feature "watch", optional
 seldon doctor                                  # engine, config, logbook, omarchy, snapper, git checks
-seldon open <case|journal|ledger|status>       # prints path; with --editor launches $EDITOR
+seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
+# prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
+# path as one argument; without a terminal (the plugin) it launches
+# `omarchy-launch-editor <path>` DETACHED (null stdio, own process group, never
+# killed or waited for): a non-zero exit within 200 ms is an error (exit 1),
+# otherwise {"launched": true, "program": …} (WP-008 fix of the 10 s kill)
 seldon --version / seldon contract-version
 ```
 

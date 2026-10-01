@@ -22,5 +22,6 @@
 | ADR-0018 | No `plugin-update` events for first-party plugins (clarifies ADR-0014 §3) | accepted |
 | ADR-0019 | Green zone for agent commands no collector tracks (clarifies ADR-0014 §2) | accepted |
 | ADR-0020 | The index lists at most 200 open drift items, crises first | accepted |
+| ADR-0021 | The index folds `case` from any resolution that carries one (clarifies ADR-0012 §8) | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

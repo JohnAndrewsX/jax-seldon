@@ -52,4 +52,10 @@ check A 'ssh test-host rm -rf ~/.config/seldon'
 check A 'ssh test-host "rm -rf ~/.config/seldon && ls ~/.config/seldon"'
 check B 'rm -rf ~/.config/seldon'
 check B 'ssh test-host rm -rf ~/.config/hypr'
+check A 'cat >> engine/tests/drift.rs <<EOF
+let cmd = "sed -i s/a/b/ ~/.config/hypr/bindings.conf";
+EOF'
+check A 'git commit -m "engine: attribute sed -i ~/.config/hypr edits"'
+check B 'sed -i s/a/b/ ~/.config/hypr/bindings.conf'
+check B 'cd x && cp y ~/.config/omarchy/shell.json'
 exit $fail
