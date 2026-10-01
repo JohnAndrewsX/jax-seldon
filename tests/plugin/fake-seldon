@@ -6,8 +6,9 @@
 #
 #   FAKE_SELDON_MODE     ok (default) | uninit; $HOME/mode overrides it, so a
 #                        test can run `seldon init` halfway through
-#   FAKE_SELDON_FIXTURE  index written by `status` in mode ok; generatedAt is
-#                        replaced with the current time
+#   FAKE_SELDON_FIXTURE  index written by `status` in mode ok to
+#                        ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json;
+#                        generatedAt is replaced with the current time
 set -euo pipefail
 
 log="$HOME/calls.log"
@@ -35,7 +36,9 @@ case "$cmd" in
       echo '{"error":{"code":3,"message":"logbook not initialised"}}'
       exit 3
     fi
-    dir="$HOME/.local/state/seldon"
+    state=${XDG_STATE_HOME:-}
+    [[ $state == /* ]] || state="$HOME/.local/state"
+    dir="$state/seldon"
     mkdir -p "$dir"
     now=$(date --iso-8601=seconds)
     sed "s/\"generatedAt\": \"[^\"]*\"/\"generatedAt\": \"$now\"/" "$FAKE_SELDON_FIXTURE" >"$dir/index.json.tmp"

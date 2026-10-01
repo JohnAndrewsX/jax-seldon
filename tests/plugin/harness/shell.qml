@@ -12,7 +12,8 @@ import Quickshell
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin folder (required)
 //   HARNESS_MS          run time in milliseconds (default 2500)
 //   HARNESS_RECHECK_MS  if set, run the "recheck" fix after this many milliseconds
-//   HARNESS_FIX         comma-separated fix action ids to run after 1 s
+//   HARNESS_FIX         comma-separated fix action ids to run after 1 s; an id
+//                       may name its banner: "snapper:copy"
 ShellRoot {
   id: root
 
@@ -50,8 +51,12 @@ ShellRoot {
     running: root.fixes !== ""
     onTriggered: {
       var ids = root.fixes.split(",")
-      for (var i = 0; i < ids.length; i++)
-        console.log("HARNESS fix " + ids[i] + " " + (root.service ? root.service.fix(ids[i]) : false))
+      for (var i = 0; i < ids.length; i++) {
+        var parts = ids[i].split(":")
+        var banner = parts.length > 1 ? parts[0] : "status"
+        var action = parts[parts.length - 1]
+        console.log("HARNESS fix " + ids[i] + " " + (root.service ? root.service.fix(action, banner) : false))
+      }
     }
   }
 

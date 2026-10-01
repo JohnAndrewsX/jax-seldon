@@ -17,12 +17,15 @@ command -v jq >/dev/null || { echo "service-states: jq not found" >&2; exit 1; }
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-# A PATH with the system tools but no seldon.
-base_path="/usr/bin:/bin"
-if PATH=$base_path command -v seldon >/dev/null 2>&1; then
-  echo "service-states: seldon is installed in $base_path; cannot build a PATH without it" >&2
-  exit 1
-fi
+# A PATH with the tools the fakes need but never a seldon, even when one is
+# installed system-wide: a private dir of symlinks to exactly those tools.
+mkdir -p "$work/bin-base"
+for tool in bash sh env cat sed date mkdir mv sleep basename tr grep; do
+  path=$(command -v "$tool") || { echo "service-states: $tool not found" >&2; exit 1; }
+  ln -s "$path" "$work/bin-base/$tool"
+done
+base_path="$work/bin-base"
+timeout_bin=$(command -v timeout) || { echo "service-states: timeout not found" >&2; exit 1; }
 mkdir -p "$work/bin-fake" "$work/bin-late"
 install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin-fake/seldon"
 fake_path="$work/bin-fake:$base_path"
@@ -35,17 +38,16 @@ fail=0
 run() {
   local name=$1 ms=$2
   shift 2
-  env -u SELDON_INDEX -u SELDON_NOW QT_QPA_PLATFORM=offscreen \
+  env -u SELDON_INDEX -u SELDON_NOW -u XDG_STATE_HOME QT_QPA_PLATFORM=offscreen \
     HARNESS_PLUGIN_DIR="$plugin" HARNESS_MS="$ms" "$@" \
-    timeout 60 "$qs_bin" -p "$harness" >"$work/$name.log" 2>&1 || true
+    "$timeout_bin" 60 "$qs_bin" -p "$harness" >"$work/$name.log" 2>&1 || true
   sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "HARNESS final " | sed 's/.*HARNESS final //' | tail -n 1 >"$work/$name.json" || true
 }
 
 # expect <case> <jq filter> <value>
 expect() {
-  local got
-  got=$(jq -r "$2" "$work/$1.json" 2>/dev/null || true)
-  [[ -n $got ]] || got="<no snapshot>"
+  local got="<no snapshot>"
+  [[ -s $work/$1.json ]] && got=$(jq -r "$2" "$work/$1.json" 2>/dev/null || true)
   if [[ $got == "$3" ]]; then
     pass=$((pass + 1))
     echo "ok   $1: $2 = $3"
@@ -78,6 +80,8 @@ expect ok .pill "⟡ 2 · 4"
 expect ok .tone urgent
 expect ok .engine present
 expect ok .engineVersion 0.1.0-fake
+expect ok .crisis "2 changes in the red zone need a reason"
+expect ok .snapper ""
 clean_log ok
 
 # 2. Same index, no seldon on PATH.
@@ -202,6 +206,23 @@ run fix-init 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-vari
   HARNESS_FIX=terminal HARNESS_RECORD="$work/fix-init.record"
 record_check fix-init "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "seldon init" --)"
 
+# 14b. Snapper without permissions (ADR-0011): its banner, with the constant
+#      fix behind Copy and Run in terminal.
+run snapper-degraded 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-variants/snapper-degraded.json" \
+  HARNESS_FIX=snapper:copy,snapper:terminal HARNESS_RECORD="$work/snapper-degraded.record"
+expect snapper-degraded .status ok
+expect snapper-degraded .snapper "Snapshots not readable"
+expect snapper-degraded .crisis "2 changes in the red zone need a reason"
+snapper_fix='sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes'
+record_check snapper-degraded "$(printf '%s\n' wl-copy -- "$snapper_fix" -- \
+  omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
+clean_log snapper-degraded
+
+# 14c. No crisis strip and no snapper banner without an index to report them.
+run strip-hidden 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/not-initialised.json"
+expect strip-hidden .crisis ""
+expect strip-hidden .snapper ""
+
 # 15. Dev mode never runs the engine, not even on an explicit fix.
 mkdir -p "$work/home-dev"
 run fix-devmode 3000 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T20:05:12+02:00" \
@@ -213,6 +234,19 @@ if grep -q -v -x -E "(start|end) --version" "$work/home-dev/calls.log"; then
 else
   pass=$((pass + 1)); echo "ok   fix-devmode: engine only probed"
 fi
+
+# 16. The index path honours XDG_STATE_HOME (CONTRACT.md rule 1); the fake
+#     engine writes there too.
+mkdir -p "$work/home-xdg" "$work/xdg-state"
+run xdg 6000 PATH="$fake_path" HOME="$work/home-xdg" XDG_STATE_HOME="$work/xdg-state" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect xdg .indexPath "$work/xdg-state/seldon/index.json"
+expect xdg .status ok
+expect xdg .pill "⟡ 2 · 4"
+
+# 17. A relative XDG_STATE_HOME is invalid (XDG spec) and falls back to HOME.
+mkdir -p "$work/home-xdg-rel"
+run xdg-relative 2500 PATH="$fake_path" HOME="$work/home-xdg-rel" XDG_STATE_HOME="relative/state" FAKE_SELDON_MODE=uninit
+expect xdg-relative .indexPath "$work/home-xdg-rel/.local/state/seldon/index.json"
 
 echo "service-states: $pass passed, $fail failed"
 ((fail == 0))

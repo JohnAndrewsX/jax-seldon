@@ -13,8 +13,12 @@ import "Model.js" as Model
 // The engine is only ever started with an argument list from CONTRACT.md,
 // checked by Model.validateArgs; fix commands are constants from Model.js.
 //
+// The index lives at ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json
+// (CONTRACT.md rule 1). The engine is probed once at start and again only on
+// "Check again"; the capture timer never probes.
+//
 // Development overrides (never set them in a real session):
-//   SELDON_INDEX  read this file instead of ~/.local/state/seldon/index.json.
+//   SELDON_INDEX  read this file instead of the state index.
 //                 Dev mode is read-only: the engine is probed, never run.
 //   SELDON_NOW    with SELDON_INDEX, the clock used for staleness (RFC 3339).
 //                 Without it the clock is pinned to the index's generatedAt,
@@ -35,7 +39,7 @@ Item {
   readonly property string devNow: devMode ? String(Quickshell.env("SELDON_NOW") || "") : ""
   readonly property string indexPath: devMode
     ? Model.resolvePath(devIndex, Quickshell.workingDirectory)
-    : home + "/.local/state/seldon/index.json"
+    : Model.stateIndexPath(Quickshell.env("XDG_STATE_HOME"), home)
 
   // ---- Engine.
   property string engineState: "unknown"   // unknown | present | missing
@@ -71,6 +75,11 @@ Item {
     generatedAt: index ? index.generatedAt : "",
     nowMs: nowMs
   })
+  // What the index itself reports, shown under the status banner on every tab
+  // (SPEC-PLUGIN §5), only while its counts mean something.
+  readonly property bool indexShown: index !== null && Model.showsCounts(status)
+  readonly property string crisisText: indexShown ? Model.crisisText(index) : ""
+  readonly property var snapperBanner: indexShown ? Model.snapperBanner(index) : null
 
   // ---- Engine calls: one at a time, in order.
   property bool busy: false
@@ -229,8 +238,11 @@ Item {
   }
 
   // ---- Banner fixes (AGENTS.md §7: every non-ok state has a one-click fix).
-  function fix(actionId) {
-    var command = root.banner ? root.banner.command : ""
+  // bannerId picks the banner whose constant command copy/terminal use:
+  // "status" (default) or "snapper" (ADR-0011).
+  function fix(actionId, bannerId) {
+    var source = bannerId === "snapper" ? root.snapperBanner : root.banner
+    var command = source ? source.command : ""
     if (actionId === "copy" && command !== "") {
       Quickshell.execDetached(["wl-copy", "--", command])
     } else if (actionId === "terminal" && command !== "") {
@@ -265,7 +277,9 @@ Item {
       pill: Model.pillText(root.counts),
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),
-      banner: root.banner ? root.banner.title : ""
+      banner: root.banner ? root.banner.title : "",
+      crisis: root.crisisText,
+      snapper: root.snapperBanner ? root.snapperBanner.title : ""
     }
   }
 
@@ -362,16 +376,13 @@ Item {
     onTriggered: indexFile.reload()
   }
 
-  // Capture cycle (ADR-0005); while the engine is missing, look for it on
-  // the same cadence.
+  // Capture cycle (ADR-0005). A missing engine is looked for again only on
+  // "Check again", so a machine without it logs one probe per shell start.
   Timer {
     interval: root.captureIntervalMin * 60000
     repeat: true
-    running: root.engineState !== "unknown"
-    onTriggered: {
-      if (root.engineState === "missing") root.probeEngine()
-      else root.captureCycle()
-    }
+    running: root.engineState === "present"
+    onTriggered: root.captureCycle()
   }
 
   // Staleness and "N min ago" follow the clock.
