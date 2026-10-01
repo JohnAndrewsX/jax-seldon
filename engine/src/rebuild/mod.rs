@@ -16,11 +16,11 @@ pub mod render;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::GENERATED_HEADER;
-use crate::index::Built;
+use crate::dossier;
 use crate::index::build::is_open_drift;
-use crate::index::load::{FENCE_BEGIN, FENCE_END, fence_kv, fence_table, fences};
+use crate::index::load::{fence_kv, fence_table, fences};
 use crate::index::model::{DriftItem, IndexEvent};
+use crate::index::{Built, views};
 use crate::model::event::{Kind, Resolution, Source};
 use crate::pkgcmd::{self, Op};
 
@@ -139,6 +139,14 @@ pub struct Dismissed {
     pub event: String,
 }
 
+/// Explicit packages that predate the logbook (the dossier's
+/// `packages.explicit` lines marked `pre-logbook`), by origin and name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Before {
+    pub repo: Vec<String>,
+    pub aur: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Base {
     pub version: Option<String>,
@@ -158,6 +166,9 @@ pub struct Rebuild {
     pub base: Base,
     /// `explicit` of the dossier's `packages.summary`.
     pub explicit_total: Option<i64>,
+    /// `None` when the dossier has no `packages.explicit` fence (written
+    /// by `seldon dossier`, WP-035).
+    pub before: Option<Before>,
     pub packages: Vec<Package>,
     pub deviations: Vec<Deviation>,
     pub plugins: Vec<Plugin>,
@@ -561,6 +572,22 @@ pub fn collect(
         explicit_total: dossier
             .get("packages.summary")
             .and_then(|f| fence_kv(f).get("explicit")?.parse().ok()),
+        before: dossier.get("packages.explicit").map(|f| {
+            let mut before = Before::default();
+            for p in dossier::parse_explicit(f)
+                .into_iter()
+                .filter(|p| p.pre_logbook)
+            {
+                if p.aur {
+                    before.aur.push(p.name);
+                } else {
+                    before.repo.push(p.name);
+                }
+            }
+            before.repo.sort();
+            before.aur.sort();
+            before
+        }),
         packages,
         deviations,
         plugins,
@@ -608,40 +635,15 @@ pub fn origin(command: Option<&str>) -> Origin {
 }
 
 /// The file with its `rebuild` fence replaced by `content`; everything
-/// outside the fence is kept. A file without the fence keeps its text
-/// below the fence; the generated header is always the first line.
+/// outside the fence is kept ([`views::merge_fence`]).
 pub fn merge(existing: Option<&str>, content: &str) -> String {
-    let begin = format!("{FENCE_BEGIN}{FENCE} -->\n");
-    let block = format!("{begin}{content}{FENCE_END}\n");
-    let fresh = format!("{GENERATED_HEADER}\n{block}");
-    let Some(old) = existing else {
-        return fresh;
-    };
-    if let Some(start) = old.find(&begin)
-        && let Some(len) = old[start + begin.len()..].find(FENCE_END)
-    {
-        let mut end = start + begin.len() + len + FENCE_END.len();
-        if old[end..].starts_with('\n') {
-            end += 1;
-        }
-        let merged = format!("{}{block}{}", &old[..start], &old[end..]);
-        return if merged.starts_with(GENERATED_HEADER) {
-            merged
-        } else {
-            format!("{GENERATED_HEADER}\n{merged}")
-        };
-    }
-    let rest = old.strip_prefix(GENERATED_HEADER).unwrap_or(old);
-    let rest = rest.strip_prefix('\n').unwrap_or(rest);
-    if rest.trim().is_empty() {
-        return fresh;
-    }
-    format!("{fresh}\n{rest}")
+    views::merge_fence(existing, FENCE, content)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::GENERATED_HEADER;
 
     #[test]
     fn origin_from_the_logged_command() {

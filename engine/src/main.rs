@@ -120,6 +120,9 @@ enum Command {
 
     /// Rebuild index.json when the logbook changes (feature "watch")
     Watch(commands::watch::WatchArgs),
+
+    /// Refresh the generated fences of system/*.md from read-only queries
+    Dossier(commands::dossier::DossierArgs),
 }
 
 #[derive(Debug, Args)]
@@ -279,6 +282,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Agent(a) => commands::agent::run(&ctx, a),
         Command::Rebuild(a) => commands::rebuild::run(&ctx, a),
         Command::Watch(a) => commands::watch::run(&ctx, a),
+        Command::Dossier(a) => commands::dossier::run(&ctx, a),
     }
 }
 

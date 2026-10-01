@@ -138,6 +138,57 @@ impl Env {
         stub(&self.bin, name, body);
     }
 
+    /// Shims for the dossier's read-only host queries (WP-035): the package
+    /// manager, `systemctl` and `omarchy` print `fixtures/logs/` files for
+    /// exactly the query argument lists and fail (exit 64) for anything
+    /// else; `omarchy-version` prints the fixture's 4.0.7-1. Each call's
+    /// arguments are appended to the returned file, one line per call, so
+    /// a test can prove that only queries ran. No real program runs: PATH
+    /// is the stub directory only.
+    pub fn query_shims(&self) -> PathBuf {
+        let calls = self.tmp.path().join("query-calls.log");
+        let logs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/logs");
+        let shim = |name: &str, cases: &[(&str, &str)]| {
+            let mut body = format!(
+                "printf '%s %s\\n' {name} \"$*\" >> '{}'\ncase \"$*\" in\n",
+                calls.display()
+            );
+            for (args, file) in cases {
+                body.push_str(&format!("  \"{args}\") f='{}/{file}' ;;\n", logs.display()));
+            }
+            body.push_str(
+                "  *) echo \"shim: unexpected arguments: $*\" >&2; exit 64 ;;\nesac\n\
+                 while IFS= read -r l || [ -n \"$l\" ]; do printf '%s\\n' \"$l\"; done < \"$f\"",
+            );
+            self.stub(name, &body);
+        };
+        shim(
+            "pacman",
+            &[
+                ("-Qqe", "pacman-Qqe.txt"),
+                ("-Qqm", "pacman-Qqm.txt"),
+                ("-Q", "pacman-Q.txt"),
+            ],
+        );
+        let units = "list-unit-files --state=enabled --no-legend --no-pager";
+        shim(
+            "systemctl",
+            &[
+                (&format!("--system {units}"), "systemctl-system.txt"),
+                (&format!("--user {units}"), "systemctl-user.txt"),
+            ],
+        );
+        shim(
+            "omarchy",
+            &[
+                ("plugin list --json", "plugin-list-after.json"),
+                ("plugin catalog", "plugin-catalog.json"),
+            ],
+        );
+        self.stub("omarchy-version", "echo 4.0.7-1");
+        calls
+    }
+
     /// `seldon init --non-interactive --no-capture` of a fresh logbook at
     /// `<tmp>/<dir>`: no collector has a cursor yet, so a test's first
     /// `capture` records the state it set up as the baseline (WP-024 made
@@ -169,6 +220,12 @@ impl Env {
             .output()
             .expect("run seldon")
     }
+}
+
+/// `fixtures/logs/hardware/`: the `proc/` and `sys/` files the dossier's
+/// `hardware.summary` reads (`SELDON_HARDWARE_ROOT`).
+pub fn hardware_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/logs/hardware")
 }
 
 /// Copies a directory tree (files and folders only).

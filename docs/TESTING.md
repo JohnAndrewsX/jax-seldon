@@ -47,7 +47,8 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/tests/journal.rs` | `journal::` appends to a fixture day (only the `cases:` line changes), CRLF days, the `plan done` stub in the logbook language |
 | `engine/tests/commands.rs` | `event::` (fixture line shape, typed meta, engine-only kinds refused), `decide::` (ADR numbering, the logbook's own template, the editor gets the path as one argument), `open::` (paths, `--editor` without a terminal) |
 | `engine/tests/agent.rs` | `seldon agent start` (WP-022): a recording stub `omarchy` gets exactly one argv, the prompt one element (a title with quotes, `$(…)` and backticks stays text), cwd and `SELDON_LOGBOOK` the logbook, the case becomes the active case, under 1 s; `[agent] launcher` and `[agent.launchers]` from config; a shell launcher refused before anything changes; a queued case → exit 1 with the `seldon plan start` hint; verification, unknown and malformed ids; a missing launcher and one that exits 1 at once (its stderr is the message) → exit 1 with the previous active case restored; a launcher that keeps running is detached (own process group, alive); exit 3 without a logbook. Unit tests in `commands/agent.rs` check the launcher rules |
-| `engine/tests/rebuild.rs` | `seldon rebuild` (WP-032) on a copy of `fixtures/logbook/`: `outputs/REBUILD.md` equals `tests/golden/REBUILD.md` (`SELDON_BLESS=1 cargo test --test rebuild` rewrites it), the seven English headings in order, German prose, `--json` `sections` counts, and every package line's last code span is the id of an explicit `install` event of that package; a second run at a later clock writes nothing (`files: []`, same bytes, no commit); text above and below the `rebuild` fence survives a change; the autocommit `seldon: rebuild` happens once per change (git repository made in the test); `drift dismiss`/`explain` move items to "Deliberately not reproduced" and out of the open questions; appended ledger lines prove `pacman -U` → `omarchy pkg aur add`, no command → "repository unknown", a later `remove` drops the package (English logbook); an empty logbook says "none"; exit 3 without a logbook. Unit tests in `rebuild/mod.rs` check the repo/AUR rule and the fence merge |
+| `engine/tests/rebuild.rs` | `seldon rebuild` (WP-032) on a copy of `fixtures/logbook/`: `outputs/REBUILD.md` equals `tests/golden/REBUILD.md` (`SELDON_BLESS=1 cargo test --test rebuild` rewrites it; the golden test first runs `seldon dossier --section packages` with the query shims, so the document has the "Before the logbook" group and the test checks that it lists every `pre-logbook` package of `packages.explicit` under the command of its origin, WP-035), the seven English headings in order, German prose, `--json` `sections` counts, and every package line's last code span is the id of an explicit `install` event of that package; a second run at a later clock writes nothing (`files: []`, same bytes, no commit); text above and below the `rebuild` fence survives a change; the autocommit `seldon: rebuild` happens once per change (git repository made in the test); `drift dismiss`/`explain` move items to "Deliberately not reproduced" and out of the open questions; appended ledger lines prove `pacman -U` → `omarchy pkg aur add`, no command → "repository unknown", a later `remove` drops the package (English logbook); an empty logbook says "none"; exit 3 without a logbook. Unit tests in `rebuild/mod.rs` check the repo/AUR rule and the fence merge |
+| `engine/tests/dossier.rs` | `seldon dossier` (WP-035) on a copy of `fixtures/logbook/` with every host query shimmed (`Env::query_shims`: the package manager, `systemctl`, `omarchy` print `fixtures/logs/pacman-Q*.txt`, `systemctl-*.txt`, `plugin-list-after.json` for exactly the query argument lists, exit 64 for anything else, and log each call; `SELDON_HARDWARE_ROOT=fixtures/logs/hardware`): the system files equal `tests/golden/dossier.md` (`SELDON_BLESS=1` rewrites it), all eight fences present, the text outside the fences byte-identical, only read-only queries ran (each once), `seldon: dossier` committed once; a second run a day later writes nothing ("Nothing changed"); emptied fences are all filled (the ledger's four installs marked `since`, eleven `pre-logbook`, cased config rows, hardware from files); a missing program skips its fences with a warning and keeps them; `--section` writes only its fences (comma list and repeats, unknown value exit 1); a cased `config-change` adds a deviations row and keeps the old rows byte for byte; an agent's `systemctl --user enable` with a case fills the unit's case; `capture` and `status` never touch the dossier; exit 3 and 4. Unit tests in `dossier/` cover history rows, the explicit-line format, unit cases, the deviations rows, appending a missing fence under a heading in the logbook language, and `/proc` parsing |
 | `engine/tests/doctor.rs` | `doctor::` green after init with snapper degraded, exit 3 when not initialised, invalid frontmatter, misplaced case, the fixture logbook (and that doctor leaves it untouched) |
 
 | `engine/tests/watch.rs` | `seldon watch` (WP-034). Without the feature: exit 1, "built without the watch feature", JSON error. With `--features watch` (`just check-watch`): one rebuild at start (`trigger: "start"`; an edit made before the start is in it), then one change → exactly one rebuild after the 2 s quiet interval and nothing after it (the rebuild's own reads and its `index.json` write stay silent); a burst of 24 writes plus a new folder → one rebuild, and a later write in that folder is seen; generated `ledger/*.md`, `STATUS.md`, temp/backup files, `PROJECT.md`, reads of every watched file, and `seldon index`/`status` runs → none, while `.seldon/logbook.toml` counts; a held lock → no rebuild and still running, the rebuild within 2 s of the release; a folder renamed away and recreated → its watch moves to the new folder (a write in the old one is quiet, one in the new one counts); SIGTERM and SIGINT → exit 0 with a final `stopped` line; not initialised → exit 3; `--interval 1` → exit 1; RSS on the ×10 fixture (below) |
@@ -147,7 +148,32 @@ diff $S/lb/outputs/REBUILD.md engine/tests/golden/REBUILD.md
 ```
 
 The document has no clock in it ("as of" is the newest ledger event), so
-the second run writes nothing whatever the time.
+the second run writes nothing whatever the time. A plain fixture copy has
+no `packages.explicit` fence, so this `diff` shows exactly the golden's
+"Before the logbook" group (the golden test runs the dossier first).
+
+**Manual run of `seldon dossier` (WP-035).** The dossier only *reads* the
+host: `pacman -Qqe`, `-Qqm`, `-Q`, `systemctl --system|--user
+list-unit-files --state=enabled`, `omarchy plugin list --json`,
+`omarchy-version`, the theme file and `/proc`, `/sys` files. With the
+scratch environment above, on a copy of the fixture:
+
+```
+cp -r fixtures/logbook $S/lb
+export SELDON_THEME_FILE=/home/<you>/.local/state/omarchy/current/theme.name  # optional, read-only
+$B --logbook $S/lb --no-commit --json dossier
+#   {"files":[…], "sections":{"packages.explicit":"written",…},
+#    "counts":{"explicit":…,"preLogbook":…,"total":…,"aur":…,"units":…,"plugins":…}, "warnings":[]}
+$B --logbook $S/lb dossier              # "Nothing changed (8 fence(s) checked)"
+$B --logbook $S/lb --no-commit rebuild  # §2 now has "### Before the logbook"
+```
+
+Programs and files can be pointed elsewhere: `SELDON_PACMAN`,
+`SELDON_SYSTEMCTL`, `SELDON_OMARCHY`, `SELDON_OMARCHY_VERSION`,
+`SELDON_THEME_FILE`, `SELDON_HARDWARE_ROOT` (default `/`). Dev host,
+2026-10-01: 169 explicit packages (167 from before the logbook), 966 in
+total, 0 foreign, 40 enabled units, 38 plugins, no warnings; nothing
+under the real `~/.config` or `~/.local/state` was written.
 
 **Tests that need a logbook without a capture.** Since WP-024, `init` runs
 the first capture, which records the first state of every diff collector

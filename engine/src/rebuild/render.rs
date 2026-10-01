@@ -21,6 +21,11 @@ struct Words {
     packages_intro: &'static str,
     packages_intro_end: &'static str,
     packages_before: &'static str,
+    explicit_in_dossier: &'static str,
+    before_intro: &'static str,
+    from_repos: &'static str,
+    from_aur: &'static str,
+    before_skip: &'static str,
     repo_unknown: &'static str,
     all_repo: &'static str,
     all_aur: &'static str,
@@ -62,6 +67,11 @@ const EN: Words = Words {
     packages_intro: "Packages installed explicitly since the logbook began (",
     packages_intro_end: "), grouped by case; their dependencies come along.",
     packages_before: "Packages from before the logbook are not listed. Explicit packages in the dossier:",
+    explicit_in_dossier: "Explicit packages in the dossier:",
+    before_intro: "Explicit packages from before the logbook (dossier `packages.explicit`):",
+    from_repos: "from the repositories",
+    from_aur: "from the AUR",
+    before_skip: "A fresh Omarchy install already has many of them; the commands skip what is installed.",
     repo_unknown: "repository unknown; from the AUR:",
     all_repo: "All repository packages at once (open ones left out)",
     all_aur: "All AUR packages at once (open ones left out)",
@@ -103,6 +113,11 @@ const DE: Words = Words {
     packages_intro: "Explizit installierte Pakete seit Beginn des Logbuchs (",
     packages_intro_end: "), nach Case; ihre Abhängigkeiten kommen von selbst mit.",
     packages_before: "Pakete von vor dem Logbuch fehlen hier. Explizite Pakete laut Dossier:",
+    explicit_in_dossier: "Explizite Pakete laut Dossier:",
+    before_intro: "Explizite Pakete von vor dem Logbuch (Dossier `packages.explicit`):",
+    from_repos: "aus den Repositories",
+    from_aur: "aus dem AUR",
+    before_skip: "Eine frische Omarchy-Installation bringt viele davon schon mit; die Befehle überspringen, was schon installiert ist.",
     repo_unknown: "Quelle unbekannt; aus dem AUR:",
     all_repo: "Alle Repo-Pakete auf einmal (ohne offene)",
     all_aur: "Alle AUR-Pakete auf einmal (ohne offene)",
@@ -171,7 +186,32 @@ pub fn text(r: &Rebuild, language: Language) -> String {
     t.push_str("\n## 2. Packages\n");
     let _ = writeln!(t, "{}{}{}", w.packages_intro, r.since, w.packages_intro_end);
     if let Some(n) = r.explicit_total {
-        let _ = writeln!(t, "{} {n}.", w.packages_before);
+        let words = match r.before {
+            Some(_) => w.explicit_in_dossier,
+            None => w.packages_before,
+        };
+        let _ = writeln!(t, "{words} {n}.");
+    }
+    if let Some(before) = &r.before {
+        t.push_str("\n### Before the logbook\n");
+        let _ = writeln!(
+            t,
+            "{} {} {}, {} {}. {}\n",
+            w.before_intro,
+            before.repo.len(),
+            w.from_repos,
+            before.aur.len(),
+            w.from_aur,
+            w.before_skip
+        );
+        if before.repo.is_empty() && before.aur.is_empty() {
+            let _ = writeln!(t, "- {}", w.none);
+        } else {
+            t.push_str("```sh\n");
+            t.push_str(&command_lines("omarchy pkg add", &before.repo));
+            t.push_str(&command_lines("omarchy pkg aur add", &before.aur));
+            t.push_str("```\n");
+        }
     }
     if r.packages.is_empty() {
         let _ = writeln!(t, "\n- {}", w.none);
@@ -478,6 +518,33 @@ fn drift_line(d: &DriftItem, w: &Words) -> String {
     line
 }
 
+/// Width a command line of the "Before the logbook" block stays within.
+const BLOCK_WIDTH: usize = 76;
+
+/// `cmd name…` as shell lines of at most [`BLOCK_WIDTH`] characters,
+/// continued with ` \`; nothing for no names.
+fn command_lines(cmd: &str, names: &[String]) -> String {
+    if names.is_empty() {
+        return String::new();
+    }
+    let one = format!("{cmd} {}", names.join(" "));
+    if one.chars().count() <= BLOCK_WIDTH {
+        return one + "\n";
+    }
+    let mut lines = vec![cmd.to_string()];
+    let mut line = String::from(" ");
+    for name in names {
+        // room for the name and the trailing ` \`
+        if line.len() > 1 && line.chars().count() + 1 + name.chars().count() + 2 > BLOCK_WIDTH {
+            lines.push(std::mem::replace(&mut line, String::from(" ")));
+        }
+        line.push(' ');
+        line.push_str(name);
+    }
+    lines.push(line);
+    lines.join(" \\\n") + "\n"
+}
+
 /// An inline code span that survives backticks in `s`.
 fn code(s: &str) -> String {
     if s.contains('`') {
@@ -490,4 +557,37 @@ fn code(s: &str) -> String {
 /// User text on one line.
 fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_commands_are_continued_lines() {
+        let names = |n: usize| {
+            (0..n)
+                .map(|i| format!("package-{i:02}"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(command_lines("omarchy pkg add", &[]), "");
+        assert_eq!(
+            command_lines("omarchy pkg add", &names(2)),
+            "omarchy pkg add package-00 package-01\n"
+        );
+        let text = command_lines("omarchy pkg add", &names(14));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[0], "omarchy pkg add \\");
+        assert!(
+            lines.iter().all(|l| l.chars().count() <= BLOCK_WIDTH),
+            "{text}"
+        );
+        assert!(lines[1..lines.len() - 1].iter().all(|l| l.ends_with(" \\")));
+        assert!(lines[1..].iter().all(|l| l.starts_with("  package-")));
+        let listed: Vec<&str> = text
+            .split_whitespace()
+            .filter(|w| w.starts_with("package-"))
+            .collect();
+        assert_eq!(listed.len(), 14);
+    }
 }

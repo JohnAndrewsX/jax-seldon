@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::config::changed_at;
-use super::{Collector, Ctx, Outcome, Sources, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys::{self, Run};
 
@@ -55,13 +55,16 @@ const MANIFEST_MAX: u64 = 1024 * 1024;
 pub struct Plugins;
 
 /// One entry of `omarchy plugin list --json` (other fields ignored).
-#[derive(Debug, Deserialize)]
-struct Listed {
-    id: String,
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Listed {
+    pub id: String,
     #[serde(default)]
-    enabled: bool,
+    pub enabled: bool,
     #[serde(default, rename = "firstParty")]
-    first_party: bool,
+    pub first_party: bool,
+    /// The source id of a clone (`omarchy plugin clone`), else empty.
+    #[serde(default, rename = "clonedFrom")]
+    pub cloned_from: String,
 }
 
 /// One entry of `omarchy plugin catalog` (other fields ignored).
@@ -132,7 +135,7 @@ impl Plugins {
         plugins_dir: &Path,
     ) -> Outcome {
         let prev = typed_cursor::<PluginsCursor>(cursor);
-        let listed = match list(ctx, omarchy) {
+        let listed = match list(omarchy) {
             Ok(l) => l,
             Err(message) => return Outcome::degraded(message, None),
         };
@@ -195,10 +198,11 @@ impl Plugins {
     }
 }
 
-/// `omarchy plugin list --json`, or the message to degrade with.
-fn list(ctx: &Ctx, omarchy: &str) -> Result<Vec<Listed>, String> {
+/// `omarchy plugin list --json`, or the message to degrade with (also
+/// read by `seldon dossier`).
+pub fn list(omarchy: &str) -> Result<Vec<Listed>, String> {
     const WHAT: &str = "omarchy plugin list --json";
-    match ctx.run(omarchy, &["plugin", "list", "--json"]) {
+    match sys::run(omarchy, &["plugin", "list", "--json"], None, RUN_TIMEOUT) {
         Run::Exited {
             code: Some(0),
             stdout,

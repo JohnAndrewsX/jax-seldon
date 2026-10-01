@@ -444,3 +444,37 @@ Append-only. One bullet per finding, newest section last.
   therefore needs an optimised test run: `cargo test --profile bench`
   (thin LTO, about 10 s incremental) works and sets `CARGO_BIN_EXE_*` to
   the optimised binary.
+## 2026-10-01 · WP-035 (seldon dossier)
+
+- **Replace a fence body, not the fence.** `index::views::replace_fence`
+  swaps only the bytes between the begin line and `<!-- seldon:end -->`,
+  so a file without a final newline, or with text glued to the end marker,
+  stays byte-identical outside. `merge_fence(existing, name, content)` is
+  the one merge for generated files (STATUS.md, REBUILD.md): header first,
+  a header-only file without the fence is replaced, a user file is kept
+  below. `dossier::Files` uses `replace_fence` directly (no header there:
+  the dossier files are the user's).
+- **Keep user rows by keeping their lines.** `deviations.table` and
+  `packages.history` keep the old body's lines verbatim and append; parsing
+  with `fence_table` and re-rendering would normalise spacing and break a
+  reason that contains `|`. Only fully generated tables (services, plugins)
+  are re-rendered.
+- **Collector readers reused without a `Ctx`:** `plugins::list(omarchy)`
+  and `omarchy::current_version(&Sources)` call `sys::run(…, RUN_TIMEOUT)`
+  themselves; `Ctx::run` was only that. Anything another command needs
+  should take `&Sources`, not the capture context (which needs a ledger).
+- **clap `ValueEnum` in the library:** `#[derive(clap::ValueEnum)]` on
+  `dossier::Section` plus `#[arg(long = "section", value_enum,
+  value_delimiter = ',')]` on a `Vec<Section>` gives comma lists and
+  repeats, and an unknown value is a parse error (exit 1). An empty `Vec`
+  means "all".
+- **Lazy query once per section:** `Option<Result<T, String>>` with
+  `get_or_insert_with` inside the fence loop runs the three package
+  queries once for three fences, and not at all when `--section` leaves
+  them out (the shim call log proves both).
+- **`.rev().find_map(..)`, not `.filter_map(..).last()`:** clippy's
+  `double_ended_iterator_last` (the last mount at `/` wins).
+- **A command that `init` runs in-process** returns its usual `Output`;
+  `init` keeps the first human line and the JSON (`json["ran"] = true`).
+  It takes and releases the lock itself, commits on its own and rebuilds
+  the index after the commit, so the tree stays clean.
