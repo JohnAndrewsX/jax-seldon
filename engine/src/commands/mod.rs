@@ -2,13 +2,33 @@
 //! JSON rendering (SPEC-ENGINE §1.4); `main.rs` picks one.
 
 pub mod capture;
+pub mod decide;
 pub mod doctor;
+pub mod event;
 pub mod init;
+pub mod log;
+pub mod open;
+pub mod plan;
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context as _;
+use chrono::{DateTime, FixedOffset, Local};
+use serde_json::json;
+
 use crate::config::{self, Config, Dirs, LogbookSource};
-use crate::error::{Exit, Result};
+use crate::error::{Error, Exit, Result};
+use crate::logbook::{Logbook, git, lock};
+
+pub use event::{Event, NewEvent, emit};
+
+/// Environment variable that overrides the config file (`--config` wins).
+pub const CONFIG_ENV: &str = "SELDON_CONFIG";
+
+/// Environment variable that fixes the clock (RFC 3339 with offset), for
+/// tests and reproducible demos. Never set it in normal use.
+pub const NOW_ENV: &str = "SELDON_NOW";
 
 /// Global flags and the environment, read once per process.
 #[derive(Debug, Clone)]
@@ -21,6 +41,11 @@ pub struct Context {
     pub logbook_flag: Option<PathBuf>,
     /// `$SELDON_LOGBOOK`.
     pub logbook_env: Option<String>,
+    /// `config.toml`: `--config` > `$SELDON_CONFIG` > XDG default.
+    pub config_file: PathBuf,
+    /// The time of this invocation: every event, journal heading and Log
+    /// line of one command carries it (`$SELDON_NOW` overrides).
+    pub now: DateTime<FixedOffset>,
 }
 
 impl Context {
@@ -29,19 +54,37 @@ impl Context {
         quiet: bool,
         no_commit: bool,
         logbook: Option<PathBuf>,
+        config: Option<PathBuf>,
     ) -> Result<Self> {
+        let dirs = Dirs::from_env()?;
+        let config_file = config
+            .map(|p| dirs.expand(&p.to_string_lossy()))
+            .or_else(|| {
+                std::env::var(CONFIG_ENV)
+                    .ok()
+                    .filter(|p| !p.is_empty())
+                    .map(|p| dirs.expand(&p))
+            })
+            .unwrap_or_else(|| dirs.config_file());
+        let now = match std::env::var(NOW_ENV).ok().filter(|s| !s.is_empty()) {
+            Some(s) => DateTime::parse_from_rfc3339(&s)
+                .map_err(|e| Error::user(format!("{NOW_ENV}={s}: {e}")))?,
+            None => Local::now().fixed_offset(),
+        };
         Ok(Context {
-            dirs: Dirs::from_env()?,
+            dirs,
             json,
             quiet,
             no_commit,
             logbook_flag: logbook,
             logbook_env: std::env::var(config::LOGBOOK_ENV).ok(),
+            config_file,
+            now,
         })
     }
 
     pub fn load_config(&self) -> Result<Option<Config>> {
-        Config::load(&self.dirs.config_file())
+        Config::load(&self.config_file)
     }
 
     /// The logbook path; `explicit` (a command's own `--path`) wins over
@@ -57,6 +100,20 @@ impl Context {
             self.logbook_env.as_deref(),
             config,
         )
+    }
+
+    /// The config (defaults if there is none) and the opened logbook; exit 3
+    /// when it is not initialised.
+    pub fn open_logbook(&self) -> Result<(Config, Logbook)> {
+        let config = self.load_config()?;
+        let (root, _) = self.resolve_logbook(None, config.as_ref());
+        let logbook = Logbook::open(&root)?;
+        Ok((config.unwrap_or_default(), logbook))
+    }
+
+    /// Takes the state lock (exit 4 when another writer holds it).
+    pub fn lock(&self) -> Result<lock::Lock> {
+        lock::acquire(&self.dirs.lock_file())
     }
 }
 
@@ -76,4 +133,92 @@ impl Output {
             exit: Exit::Ok,
         }
     }
+}
+
+/// The outcome of the git autocommit after a logbook write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Commit {
+    Committed(String),
+    /// `--no-commit`, `git.autocommit = false`, or no repository.
+    Skipped(&'static str),
+    /// Reported, never fatal: the logbook write already happened.
+    Failed(String),
+}
+
+impl Commit {
+    pub fn json(&self) -> serde_json::Value {
+        match self {
+            Commit::Committed(message) => json!({ "committed": true, "message": message }),
+            Commit::Skipped(reason) => json!({ "committed": false, "reason": reason }),
+            Commit::Failed(error) => json!({ "committed": false, "error": error }),
+        }
+    }
+
+    /// A line for the human output, empty when there is nothing to say.
+    pub fn human(&self) -> String {
+        match self {
+            Commit::Failed(e) => format!("\nGit: not committed: {e}"),
+            _ => String::new(),
+        }
+    }
+}
+
+/// `git add -A` + `git commit -m "seldon: <summary>"` in the logbook when
+/// `git.autocommit` is on, `--no-commit` is not given and the logbook is a
+/// repository (SPEC-LOGBOOK §1).
+pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &str) -> Commit {
+    if ctx.no_commit {
+        return Commit::Skipped("--no-commit");
+    }
+    if !config.git.autocommit {
+        return Commit::Skipped("git.autocommit = false");
+    }
+    if !git::is_repo(&logbook.root) {
+        return Commit::Skipped("the logbook is not a git repository");
+    }
+    match git::commit_all(&logbook.root, summary) {
+        Ok(()) => Commit::Committed(format!("seldon: {summary}")),
+        Err(e) => Commit::Failed(e),
+    }
+}
+
+/// The text of a free-text argument, or a user error when it is blank.
+pub(crate) fn required_text(what: &str, text: &str) -> Result<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(Error::user(format!("{what} must not be empty")));
+    }
+    Ok(text.to_string())
+}
+
+/// A one-line free text (titles, reasons): blank or multi-line is an error.
+pub(crate) fn one_line(what: &str, text: &str) -> Result<String> {
+    let text = required_text(what, text)?;
+    if text.contains(['\n', '\r']) {
+        return Err(Error::user(format!("{what} must be one line")));
+    }
+    Ok(text)
+}
+
+/// Creates `path` with `text`; an existing file is a user error, never
+/// overwritten.
+pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => {
+                Error::user(format!("{} already exists", path.display()))
+            }
+            _ => anyhow::Error::new(e)
+                .context(format!("cannot create {}", path.display()))
+                .into(),
+        })?;
+    file.write_all(text.as_bytes())
+        .with_context(|| format!("cannot write {}", path.display()))?;
+    Ok(())
 }
