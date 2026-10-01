@@ -13,7 +13,6 @@ host unlock. Phase 4 (packaging, docs) starting.
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
 | WP-040 | AUR package `jax-seldon` (PKGBUILD, .SRCINFO), release workflow | Scaffold | `scaffold-040` (opus, high) | `wt/WP-040` · `wp/040-packaging` | 2026-10-02 |
-| WP-041 | Plugin README, preview.png, security section, keybinding docs | Docs | `docs-041` (opus, high) | `wt/WP-041` · `wp/041-plugin-docs` | 2026-10-02 |
 
 ## Queued (next up)
 WP-033 (update-impact, needs the operator's release-notes source decision)
@@ -32,6 +31,12 @@ logbook migration)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-041 Plugin README along the marketplace template,
+  preview.png from offscreen renders (no bar pill until a live shot),
+  Security section cross-checked against the plugin's three non-engine
+  calls, KEYBINDINGS.md, plugin/LICENSE — merged after one review round;
+  CONTRACT.md probe form `seldon --version --json`; SPEC-PLUGIN §10
+  names wl-copy and the terminal launcher.
 - 2026-10-02 WP-036 Dossier follow-ups: `omarchy-base` vs `user` origin
   from Omarchy's package lists (read-only), "Before the logbook" lists
   only the user's packages plus a base-count line, `packages.explicit`
@@ -161,6 +166,22 @@ logbook migration)
 - **Stray `~/.config/seldon/config.toml`** on the dev host from WP-024's
   pty test (points at a scratch logbook). The guard blocks the
   orchestrator; please `rm -r ~/.config/seldon`. The state dir was removed.
+- **Guard exceptions (your file, `scripts/guard.sh`):** (a) WP-040 needs
+  `ssh <test host> 'cd /tmp/<dir> && makepkg -f'` and the
+  `--printsrcinfo > SRCINFO.new` form on the test host (never -i/-s);
+  the reviewer proposes a full-match whitelist with test rows; until then
+  the CI dry run stands in for the test-host build. (b) The service rule
+  fires on grep/rg search patterns and on quoted message text that merely
+  mentions systemctl (three false positives today); anchoring it at the
+  command position like the package-manager rule would fix it.
+- **WP-040 one-time setup before the first tag `v0.1.0`:** make the repo
+  public, AUR account + dedicated SSH key (`AUR_SSH_PRIVATE_KEY` secret),
+  empty `jax-seldon-plugin` repo + `PLUGIN_REPO_TOKEN` secret, your e-mail
+  in the PKGBUILD's Maintainer line, branch protection allowing the bump
+  job, then the `workflow_dispatch` dry run — all in packaging/README.md.
+- **ADR-0022** (AUR package builds against glibc; the static musl binary
+  is the GitHub release asset) reads AGENTS.md §7 without changing it —
+  accepted by the orchestrator, veto possible.
 - **Live frame profile of the Prime Radiant (WP-031)** needs
   `QSG_RENDER_TIMING` in Hyprland's environment on the test host
   (`hyprctl keyword env …`) plus a shell restart — a runtime change on the
