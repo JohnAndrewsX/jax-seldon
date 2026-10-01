@@ -16,9 +16,10 @@
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
+#   FAKE_SELDON_UNKNOWN_CASE  the case id `log` and `open` do not know
+#                        (default C-2026-999): exit 1, "unknown case <id>"
 #
-# `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. The case id
-# C-2026-999 is unknown to them (exit 1). `open … --editor` hands the path to
+# `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
 # harness puts a recorder there.
 set -euo pipefail
@@ -26,6 +27,7 @@ set -euo pipefail
 log="$HOME/calls.log"
 cmd="${1:-}"
 mode=${FAKE_SELDON_MODE:-ok}
+unknown=${FAKE_SELDON_UNKNOWN_CASE:-C-2026-999}
 [[ -f $HOME/mode ]] && mode=$(<"$HOME/mode")
 printf '%s\n' "$(printf '%q ' "$@")" >>"$HOME/argv.log"
 echo "start $cmd" >>"$log"
@@ -78,7 +80,7 @@ case "$cmd" in
       [[ $1 == --case ]] && { case_id=$2; shift; }
       shift
     done
-    [[ $case_id == C-2026-999 ]] && user_error "unknown case C-2026-999"
+    [[ -n $case_id && $case_id == "$unknown" ]] && user_error "unknown case $case_id"
     if [[ -n $case_id ]]; then subject=$case_id; case_json="\"$case_id\""; else subject=journal; case_json=null; fi
     echo "{\"event\":{\"id\":\"01M3W1FAKE0000000000000NTE\",\"ts\":\"2026-10-01T18:00:00+02:00\",\"source\":\"manual\",\"kind\":\"note\",\"subject\":\"$subject\",\"actor\":\"human\",\"case\":$case_json},\"git\":null}"
     ;;
@@ -89,8 +91,10 @@ case "$cmd" in
       journal) path="$HOME/Seldon/journal/2026/2026-10-01.md" ;;
       ledger) path="$HOME/Seldon/ledger/2026-10.jsonl" ;;
       status) path="$HOME/Seldon/STATUS.md" ;;
-      C-2026-999) user_error "unknown case C-2026-999" ;;
-      C-*) path="$HOME/Seldon/work/active/$what.md" ;;
+      C-*)
+        [[ $what == "$unknown" ]] && user_error "unknown case $what"
+        path="$HOME/Seldon/work/active/$what.md"
+        ;;
       *) user_error "cannot open \`$what\`" ;;
     esac
     command -v omarchy-launch-editor >/dev/null \

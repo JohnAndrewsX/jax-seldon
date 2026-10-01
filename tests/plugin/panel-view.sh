@@ -279,5 +279,18 @@ else
 fi
 clean_log live
 
+# 8. The engine refuses a note (the fake does not know C-2026-004 here): the
+#    result line shows its message and the text stays in the field.
+mkdir -p "$work/home-refuse"
+run refuse "" "text:n;type:keep this;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;key:Return;settle" \
+  HOME="$work/home-refuse" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_UNKNOWN_CASE=C-2026-004
+expect refuse 7 .view.today.quickEntry.caseId C-2026-004
+expect refuse 10 .view.today.quickEntry.result "unknown case C-2026-004"
+expect refuse 10 .view.today.quickEntry.text "keep this"
+expect refuse 10 .view.today.quickEntry.editing true
+shows refuse 10 "unknown case C-2026-004"
+expect refuse 10 .view.lastError ""
+clean_log refuse
+
 echo "panel-view: $pass passed, $fail failed"
 ((fail == 0))

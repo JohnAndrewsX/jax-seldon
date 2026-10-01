@@ -7,7 +7,8 @@ import "../Model.js" as Model
 // optionally for one open case. Enter sends `seldon log [--case <id>] --json
 // -- <text>` through Service.log(); the text is one argument after `--`,
 // exactly as typed. Blank text is refused here. The line under the field
-// shows the event id or the engine's error.
+// shows the event id or the engine's error. The field empties only once the
+// engine has saved the note, so a refused note is never lost.
 //
 // Keyboard: `n` on the Today tab focuses the field (Panel.qml). While the
 // field or the case picker has focus, Panel.qml blocks its own keys
@@ -23,6 +24,8 @@ FocusScope {
   property string fontFamily: Style.font.family
 
   property string caseId: ""
+  // The text of the note being saved, until the engine answers.
+  property string sentText: ""
 
   // Keys belong to the field or the picker, not to the panel.
   readonly property bool editing: root.activeFocus || picker.popupOpen
@@ -47,10 +50,17 @@ FocusScope {
   }
 
   function submit() {
-    if (!root.service) return false
-    var sent = root.service.log(field.text, root.caseId)
-    if (sent) field.text = ""
+    if (!root.service || root.pending) return false
+    var text = field.text
+    var sent = root.service.log(text, root.caseId)
+    if (sent) root.sentText = text
     return sent
+  }
+
+  onResultChanged: {
+    if (!root.result || root.result.pending) return
+    if (root.result.ok && root.sentText !== "" && field.text === root.sentText) field.text = ""
+    root.sentText = ""
   }
 
   function leave() {
