@@ -7,7 +7,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | Path | What | Schema |
 |---|---|---|
 | `index.sample.json` | canonical index; the plugin develops against it | `schema/index.schema.json` |
-| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0011), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
+| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0011), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
@@ -111,6 +111,9 @@ add a banner state, add an overlay and run `--write-index`.
 | `index-stale` | `state.status: indexStale` only; `generatedAt` and `lastCapture` stay the sample's. The engine never writes `indexStale`; `plugin/Model.js` derives it, and this variant exercises its data-driven branch | stale banner from the data; with **`SELDON_NOW=2026-10-01T20:05:12+02:00`** (`STALE_NOW` in the script, also the plugin harness's clock) stale by the clock too — the check requires both times more than 2 h before it |
 | `plugins-degraded` | collector `plugins`: `ok: false`, `message` `omarchy plugin list --json: timed out` (the engine's text for a shell IPC timeout) | a failing non-snapper collector |
 | `omarchy-git-checkout` | `system.omarchy.repoHead: 3f9c2e1` (short hash, like `logbook.git.head`) | Omarchy run from a git checkout of `$OMARCHY_PATH` (SPEC-ENGINE §4) |
+| `drift-explained-case` | btop's event (`01M1MB2M…`, `resolution: explained`) gets `case: C-2026-002`; jq: `.events \|= map(if .id == "01M1MB2M1GWZYF485HTGVZ1KS3" then .case = "C-2026-002" else . end)`. Index only: the logbook's explained lines stay caseless and C-2026-002's `events:` does not list btop | ADR-0021: the row reads `explained · C-2026-002: Kleines Monitoring-Tool, bewusst ohne Case.` and names the case |
+| `drift-capped` | `summary.openDrift: 250`, `drift` unchanged (4 items); jq: `.summary.openDrift = 250` | ADR-0020: "+246 more open drift items not listed here" under the drift rows; pill `⟡ 2 · 250` |
+| `drift-members-capped` | noto-fonts (`01M3SXBRV0E7…`) removed from `events`; the firefox group keeps `members: 3`; jq: `.events \|= map(select(.id != "01M3SXBRV0E702XKBM22HEV1B8"))` | CONTRACT.md rule 4: the drift sheet lists firefox and libinput plus "… and 1 more", then asks `seldon drift show <firefox> --json` for all three (the fallback) |
 
 Not derivable from the logbook and therefore not checked beyond the index
 times above: `generatedAt`, `engineVersion`, `logbook.path`, `logbook.git`,
@@ -207,12 +210,40 @@ Markdown table):
 
 ## hooks/
 
-All three are `PostToolUse` payloads for the Bash tool.
+Claude Code hook payloads for `seldon hook claude-code` (stdin). The Bash
+payloads come in pairs: the `PostToolUse` original (with `tool_response`) and
+its `-pre` variant (`PreToolUse`, the same `tool_use_id`, no `tool_response`).
+The engine records on `PreToolUse` (ADR-0017 §1); a `PostToolUse` whose
+`tool_use_id` is already in the ledger writes nothing, a `PostToolUse` alone is
+recorded. `validate-fixtures` fails when a `-pre` payload is not its sibling
+with `hook_event_name: PreToolUse` and without `tool_response`. `Edit`/`Write` are `PreToolUse` only and carry an absolute
+`file_path` under the fixture user's home `/home/user`.
 
-| File | Expected from `seldon hook claude-code` |
-|---|---|
-| `claude-code-mutating.json` | one `agent command` event, subject `yay`, `meta.command` = `yay -S --noconfirm zed`, actor `agent:claude-code`, case from `.seldon/active-case` |
-| `claude-code-non-mutating.json` | no event (`pacman -Qi`, `git status` are queries) |
-| `claude-code-secret.json` | one `agent command` event, subject `git` (git inside `~/.config`); `meta.command` contains `‹redacted›` and none of `AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `user:`, `hunter2`; nothing from `tool_response` (it holds an `sk-` token) is recorded |
+Every recorded event: `source: agent`, `kind: command`, `actor:
+agent:claude-code`, `ts` = the hook's clock, `meta.toolUseId` = the payload's
+`tool_use_id`, `meta.sessionId` = its `session_id`, `case` = the active case
+(`.seldon/active-case`) when one is set, else none.
+
+| File | Hook | Without a case | With an active case |
+|---|---|---|---|
+| `claude-code-mutating.json` | Post, Bash | one event, subject `yay`, zone `red`, `meta.command` = `yay -S --noconfirm zed` | the same with `case` |
+| `claude-code-mutating-pre.json` | Pre, Bash | the same; after it the Post payload adds nothing | the same with `case` |
+| `claude-code-non-mutating.json` | Post, Bash | nothing (`pacman -Qi`, `git status` are queries) | nothing |
+| `claude-code-non-mutating-pre.json` | Pre, Bash | nothing | nothing |
+| `claude-code-secret.json` | Post, Bash | one event, subject `git`, zone `yellow` (git inside `~/.config/hypr`, watched); `meta.command` = `AWS_ACCESS_KEY_ID=‹redacted› git -C ~/.config/hypr push https://‹redacted›@github.com/example/dotfiles.git main --password ‹redacted›`, none of `AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `user:`, `hunter2`; nothing from `tool_response` (it holds an `sk-` token) | the same with `case` |
+| `claude-code-secret-pre.json` | Pre, Bash | the same; after it the Post payload adds nothing | the same with `case` |
+| `claude-code-edit-watched.json` | Pre, Edit `~/.config/hypr/monitors.conf` (watched) | one event, subject `edit`, zone `yellow` (config under `watchPaths`, ADR-0014 §4), `meta.command` = `Edit ~/.config/hypr/monitors.conf`; neither `old_string` nor `new_string` is recorded | the same with `case` |
+| `claude-code-write-unwatched.json` | Pre, Write `~/.config/zed/settings.json` (not in `watchPaths`) | nothing (ADR-0019 §1: untracked effects are recorded only with a case) | one event, subject `write`, zone `green` (ADR-0019 §2), `meta.command` = `Write ~/.config/zed/settings.json`; `content` is not recorded |
 
 In every case: no stdout, exit 0.
+
+**Running them.** `~` in the Bash commands and the `/home/user/…` paths of
+`Edit`/`Write` resolve against `$HOME`, and the git rule compares with
+`$XDG_CONFIG_HOME` (default `$HOME/.config`). To reproduce the table, run with
+`HOME=/home/user`, `XDG_CONFIG_HOME` unset, and the config, state and logbook in
+a scratch dir: `SELDON_CONFIG=<scratch>/config.toml`,
+`XDG_STATE_HOME=<scratch>/state` (WP-016 did this; `/home/user` does not exist
+on the dev host, so nothing can be written there). A test with its own temp
+`HOME` replaces the `/home/user` prefix in the payload with that home first;
+otherwise the `Edit` path is outside `watchPaths` and records nothing without a
+case.

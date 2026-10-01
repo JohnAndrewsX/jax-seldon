@@ -945,6 +945,28 @@ VARIANTS = {
         {"op": "test", "path": "/system/omarchy/version", "value": "4.0.7-1"},
         {"op": "add", "path": "/system/omarchy/repoHead", "value": "3f9c2e1"},
     ],
+    # ADR-0021: an `explained` resolution that carries a case folds it onto the event. The sample's
+    # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
+    # touched), so the row reads "explained · C-2026-002: …".
+    "drift-explained-case": [
+        {"op": "test", "path": "/events/56/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/56/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/56/case", "value": "C-2026-002"},
+    ],
+    # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
+    # list stays the sample's four, so the plugin shows "+246 more open drift items not listed here".
+    "drift-capped": [
+        {"op": "test", "path": "/summary/openDrift", "value": 4},
+        {"op": "replace", "path": "/summary/openDrift", "value": 250},
+    ],
+    # CONTRACT.md rule 4: index.events may omit members of an open group. noto-fonts leaves events,
+    # the firefox group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
+    "drift-members-capped": [
+        {"op": "test", "path": "/drift/3/members", "value": 3},
+        {"op": "test", "path": "/events/31/id", "value": "01M3SXBRV0E702XKBM22HEV1B8"},
+        {"op": "test", "path": "/events/31/subject", "value": "noto-fonts"},
+        {"op": "remove", "path": "/events/31"},
+    ],
 }
 
 # SELDON_NOW for index-variants/index-stale.json (fixtures/README.md); the plugin harness pins
@@ -1273,6 +1295,21 @@ def main():
             for k, v in (("generatedAt", have["generatedAt"]), ("state.lastCapture", have["state"]["lastCapture"])):
                 if instant(STALE_NOW) - instant(v) <= STALE_AFTER:
                     problems.append(f"{rel(path)} {k} {v} is not more than 2 h before STALE_NOW {STALE_NOW}")
+
+    # 3b. a `-pre` hook payload is its PostToolUse sibling as PreToolUse, without tool_response
+    for pre in sorted(glob.glob(os.path.join(FIX, "hooks", "*-pre.json"))):
+        post = pre[:-len("-pre.json")] + ".json"
+        if not os.path.exists(post):
+            problems.append(f"{rel(pre)}: no PostToolUse sibling {os.path.basename(post)}")
+            continue
+        with open(pre, encoding="utf-8") as f:
+            have = json.load(f)
+        with open(post, encoding="utf-8") as f:
+            want = json.load(f)
+        want["hook_event_name"] = "PreToolUse"
+        want.pop("tool_response", None)
+        problems += [f"{rel(pre)} {d} (must equal {os.path.basename(post)} as PreToolUse without tool_response)"
+                     for d in diff(have, want)]
 
     # 4. ADR-0013 mutation self-checks on the sample logbook
     errs, n_checks = self_checks(today)

@@ -1,0 +1,15 @@
+{
+  "session_id": "6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34",
+  "transcript_path": "/home/user/.claude/projects/-home-user-Seldon/6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34.jsonl",
+  "cwd": "/home/user/Seldon",
+  "permission_mode": "acceptEdits",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_use_id": "toolu_01Lp0qA5tCS2zD6eF7gH8jK9",
+  "tool_input": {
+    "file_path": "/home/user/.config/hypr/monitors.conf",
+    "old_string": "monitor = DP-2, preferred, auto, 1",
+    "new_string": "monitor = DP-2, 2560x1440@144, 2560x0, 1",
+    "replace_all": false
+  }
+}

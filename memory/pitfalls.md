@@ -319,3 +319,23 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **An old leader id is not a handle for its group.** After `--only` on
   the leader, the remaining members form a new item with a new leader.
   `drift <verb> <old leader>` writes nothing, by design.
+
+## 2026-10-01 · WP-016 (Schema Keeper)
+
+- **The hook reads `~` from `$HOME` but "inside `~/.config`" from
+  `$XDG_CONFIG_HOME`.** Running a fixture payload with `HOME=/home/user`
+  and `XDG_CONFIG_HOME` pointed at scratch silently turns `git -C
+  ~/.config/hypr push` from yellow into green-needs-a-case, so nothing is
+  recorded. Keep `XDG_CONFIG_HOME` unset and put the scratch config in
+  `SELDON_CONFIG` (state in `XDG_STATE_HOME`).
+- **`Edit`/`Write` payloads carry absolute paths.** A fixture under
+  `/home/user` only hits `watchPaths` when `HOME=/home/user`; a test with a
+  temp `HOME` must rewrite the prefix first, or the watched Edit records
+  nothing without a case.
+- **Fixture logbook files feed engine goldens too.** `STATUS.md` is quoted
+  by `engine/tests/golden/session-start.txt` (the session-start context
+  block). After changing any file under `fixtures/logbook/`, grep
+  `engine/tests/golden/` as well as `engine/tests/*.rs`.
+- **Harness step numbers count steps, not key presses.** `key:Down*61` is
+  one step and one report; the row it scrolls to is visible in the next
+  report number, not in the one after `key:Down`.

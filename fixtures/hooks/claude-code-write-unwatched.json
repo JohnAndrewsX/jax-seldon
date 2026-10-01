@@ -1,0 +1,13 @@
+{
+  "session_id": "6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34",
+  "transcript_path": "/home/user/.claude/projects/-home-user-Seldon/6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34.jsonl",
+  "cwd": "/home/user/Seldon",
+  "permission_mode": "acceptEdits",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_use_id": "toolu_01Mq1rB6uDT3aE7fG8hJ9kL0",
+  "tool_input": {
+    "file_path": "/home/user/.config/zed/settings.json",
+    "content": "{\n  \"theme\": \"Tokyo Night\",\n  \"vim_mode\": true,\n  \"buffer_font_family\": \"JetBrainsMono Nerd Font\"\n}\n"
+  }
+}
