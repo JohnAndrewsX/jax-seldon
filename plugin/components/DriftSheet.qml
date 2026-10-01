@@ -100,7 +100,10 @@ FocusScope {
   readonly property string sig: built.args ? JSON.stringify(built.args) : ""
   readonly property bool armed: sig !== "" && armedSig === sig
   readonly property string summary: Model.driftSummary(action, shown, form)
-  readonly property var showResult: service && service.driftShown && service.driftShown.eventId === eventId ? service.driftShown : null
+  // `drift show` is asked for the group's leader (fetchMembers), whichever
+  // member row the sheet was opened from.
+  readonly property var showResult: service && service.driftShown && shown && shown.grouped
+    && service.driftShown.eventId === shown.leaderId ? service.driftShown : null
   readonly property var members: showResult && showResult.ok && !showResult.pending && showResult.members.length > 0
     ? showResult.members : shown ? shown.memberList : []
   readonly property var memberLines: shown && shown.grouped ? Model.memberLines(members, shown.members) : []
@@ -136,6 +139,8 @@ FocusScope {
 
   function saveDraft() {
     if (root.eventId === "") return
+    // A resolved event has no draft left to keep (forgotten in onResultChanged).
+    if (root.result && root.result.ok && !root.result.pending && !root.result.already) return
     var d = {}
     for (var k in root.drafts) d[k] = root.drafts[k]
     d[root.eventId] = {

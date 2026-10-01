@@ -692,6 +692,31 @@ else
 fi
 clean_log drift-show
 
+# 19. The same from a member row (Enter on libinput): `drift show` is asked
+#     for the group's leader, and its answer fills the sheet opened from the
+#     member.
+LIBINPUT=01M3SXBRV0WPNQ721VWGG2WXZ1
+mkdir -p "$work/home-drift-show-member"
+cp "$work/home-drift-show/extra-events.json" "$work/home-drift-show-member/"
+run drift-show-member "" \
+  "tab:changelog;key:Down;key:Down*30;key:Return;wait:drift.members.1=· upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1" \
+  HOME="$work/home-drift-show-member" FAKE_SELDON_FIXTURE="$work/members-capped.json"
+expect drift-show-member 3 .view.cursor 30
+expect drift-show-member 4 .view.drift.eventId $LIBINPUT
+expect drift-show-member 4 .view.drift.subject firefox
+shows drift-show-member 4 "Only libinput"
+expect drift-show-member 5 '.view.drift.members | join(" | ")' \
+  "· upgrade firefox  143.0.1-1 → 143.0.2-1 | · upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1 | · upgrade libinput  1.29.1-1 → 1.29.2-1"
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q drift show $FIREFOX --json)")
+got=$(cat "$work/home-drift-show-member/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   drift-show-member: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL drift-show-member: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log drift-show-member
+
 real_home_check panel-view
 
 echo "panel-view: $pass passed, $fail failed"

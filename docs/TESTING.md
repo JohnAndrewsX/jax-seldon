@@ -347,7 +347,7 @@ opens it; the exact argv of all of it. Locked: the engine refuses the new
 case (exit 4), the sheet shows the message and keeps the title, Esc and
 `+` bring it back intact.
 
-The drift sheet (WP-021) has seven scenarios. On the sample (dev mode):
+The drift sheet (WP-021) has eight scenarios. On the sample (dev mode):
 Enter on the theme row and `resolve:<id>` for the other three items open
 the sheet with Link and C-2026-005 preselected for the theme item, Explain
 with the item's zone for the two crises and the group, the group's three
@@ -369,7 +369,8 @@ members. Already: an item `$HOME/resolved` lists shows "Already resolved:
 linked to C-2026-005" and nothing changes. Locked: the refusal keeps the
 text, Esc and reopening bring the draft back, another item gets its own
 defaults. Members: with one member missing from `index.events`, the sheet
-shows "… and 1 more", asks `seldon drift show` and lists all three.
+shows "… and 1 more", asks `seldon drift show` (always for the group's leader) and
+lists all three, also when opened from a member row.
 
 The step format is documented in the header of
 `tests/plugin/harness/panel.qml`, e.g.
