@@ -31,3 +31,6 @@ jobs:
 
       - name: just check
         run: just check
+
+      - name: just bench (index build < 100 ms on x10 fixtures, release)
+        run: just bench

@@ -3,6 +3,8 @@
 //! (AGENTS.md §6).
 #![allow(dead_code)] // each test binary uses a different subset
 
+pub mod scale;
+
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -276,4 +278,46 @@ pub fn json(out: &Output) -> serde_json::Value {
             stderr(out)
         )
     })
+}
+
+/// The contract schemas by `$id`, for `$ref`s across files.
+struct SchemaFiles(std::collections::HashMap<String, serde_json::Value>);
+
+impl jsonschema::Retrieve for SchemaFiles {
+    fn retrieve(
+        &self,
+        uri: &jsonschema::Uri<String>,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        self.0
+            .get(uri.as_str())
+            .cloned()
+            .ok_or_else(|| format!("no schema {uri}").into())
+    }
+}
+
+/// Errors of `instance` against `schema/index.schema.json` (with the
+/// event and case schemas it references), formats checked.
+pub fn index_errors(instance: &serde_json::Value) -> Vec<String> {
+    let files = ["index.schema.json", "event.schema.json", "case.schema.json"]
+        .map(|name| {
+            let s = schema(name);
+            (s["$id"].as_str().unwrap().to_string(), s)
+        })
+        .into_iter()
+        .collect();
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .with_retriever(SchemaFiles(files))
+        .build(&schema("index.schema.json"))
+        .expect("index schema compiles");
+    validator
+        .iter_errors(instance)
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect()
+}
+
+/// Panics unless `instance` validates against `schema/index.schema.json`.
+pub fn assert_valid_index(instance: &serde_json::Value) {
+    let errors = index_errors(instance);
+    assert!(errors.is_empty(), "index is invalid: {errors:#?}");
 }
