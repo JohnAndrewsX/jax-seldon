@@ -241,9 +241,9 @@ test("snapperBanner: only for an enabled snapper collector that fails (ADR-0011)
   assert.ok(M.snapperBanner(bare).detail !== "")
 })
 
-test("changelogRows: 58 events newest first, one +3 group, folded resolutions, snapshots", () => {
+test("changelogRows: 62 events newest first, one +3 group, folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 58)
+  assert.strictEqual(rows.length, 62)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -252,7 +252,7 @@ test("changelogRows: 58 events newest first, one +3 group, folded resolutions, s
   assert.strictEqual(badged[0].txId, "tx-20260930T214115")
   same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["libinput", "noto-fonts"])
   assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 7)
-  assert.strictEqual(rows.filter((r) => r.snapshot).length, 6)
+  assert.strictEqual(rows.filter((r) => r.snapshot).length, 8)
   assert.strictEqual(rows.filter((r) => r.drift).length, 6)
   same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "install"])
   const theme = rows.find((r) => r.id === EID)
@@ -292,7 +292,7 @@ test("changelogRows: 58 events newest first, one +3 group, folded resolutions, s
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 58)
+  assert.strictEqual(counts.all, 62)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -300,10 +300,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 58)
+  assert.strictEqual(total, 62)
   assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 12)
-  assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 8)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 58)
+  assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 62)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -340,7 +340,7 @@ test("todayView: today's and yesterday's journal and the summary counts", () => 
   assert.strictEqual(t.yesterday.length, 1)
   assert.strictEqual(M.entryMeta(t.entries[0]), "09:25 · claude-code · C-2026-003")
   assert.strictEqual(M.entryMeta(t.entries[2]), "14:40 · human")
-  same(t.stats.map((s) => s.value), [27, 38, 2, 3, 4])
+  same(t.stats.map((s) => s.value), [30, 41, 2, 3, 4])
   const empty = M.todayView(null)
   same([empty.entries.length, empty.yesterday.length, empty.title], [0, 0, "Today"])
 })
@@ -352,8 +352,10 @@ test("systemSections: every field optional", () => {
   same(s[0].rows, [{ label: "Version", value: "4.0.7-1" }, { label: "Theme", value: "tokyo-night" },
     { label: "Last update", value: "2026-10-01 09:21 · 7 h ago" }])
   same(s[2].rows, [{ label: "Plugins", value: "33 of 40 enabled" }])
-  assert.strictEqual(s[3].rows.length, 4)
-  same(s[3].rows[0], { label: "#113", value: "2026-10-01 14:30 · pre: ollama" })
+  assert.strictEqual(s[3].rows.length, 6)
+  same(s[3].rows.slice(0, 3), [{ label: "#115", value: "2026-10-01 16:30 · tailscale: MagicDNS · post" },
+    { label: "#114", value: "2026-10-01 16:30 · tailscale: MagicDNS · pre" },
+    { label: "#113", value: "2026-10-01 14:30 · pre: ollama" }])
   same(s[4].rows[1], { label: "hyprland", value: "1 case · AGENTS.md" })
   const bare = JSON.parse(sample)
   bare.system = {}

@@ -116,6 +116,13 @@ expect index-stale .banner "Index is stale"
 expect index-stale .pill "⟡ 2 · 4"
 run index-fresh 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T19:05:00+02:00"
 expect index-fresh .status ok
+# 6b. Stale from the data: index-variants/index-stale says indexStale while the
+#     dev clock (no SELDON_NOW) is pinned to its own generatedAt.
+run variant-stale 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/index-stale.json"
+expect variant-stale .status indexStale
+expect variant-stale .banner "Index is stale"
+expect variant-stale .pill "⟡ 2 · 4"
+clean_log variant-stale
 
 # 7. Contract v2.
 run contract-mismatch 2500 PATH="$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v2.json"
@@ -229,6 +236,19 @@ snapper_fix='sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes'
 record_check snapper-degraded "$(printf '%s\n' wl-copy -- "$snapper_fix" -- \
   omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
 clean_log snapper-degraded
+
+# 14d. A failing non-snapper collector (index-variants/plugins-degraded): no
+#      banner of its own today; the service stays ok and the log clean.
+run plugins-degraded 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/plugins-degraded.json"
+expect plugins-degraded .status ok
+expect plugins-degraded .snapper ""
+expect plugins-degraded .pill "⟡ 2 · 4"
+clean_log plugins-degraded
+
+# 14e. Omarchy from a git checkout (system.omarchy.repoHead) changes nothing here.
+run git-checkout 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/omarchy-git-checkout.json"
+expect git-checkout .status ok
+clean_log git-checkout
 
 # 14c. No crisis strip and no snapper banner without an index to report them.
 run strip-hidden 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/not-initialised.json"
