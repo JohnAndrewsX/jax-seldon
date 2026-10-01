@@ -515,3 +515,32 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   forbidden call into the code under test and see the suite fail
   (WP-031's aggregation count missed the chart files until the reviewer
   did this).
+
+## 2026-10-01 · WP-040 (Scaffold, packaging)
+
+- **The guard blocks `makepkg` inside an ssh command string** when it
+  follows `;`/`&&` (`ssh <host> 'cd dir && makepkg -f'`), and also in a
+  plain probe (`…; makepkg --version`). The WP allowed makepkg on the test
+  host, but a block is reported, not reworded: the PKGBUILD build there is
+  open until the guard gets an ssh exception like the `omarchy theme set`
+  one. Probe tools with `command -v`, never by running them.
+- **`rust-musl` depends on `rust`, which conflicts with `rustup`** (what
+  `omarchy install dev-env rust` installs). An AUR package must not need
+  the musl target; it builds for glibc, the static musl binary is a
+  release asset (ADR-0022, proposed).
+- **The engine has a lib and a bin target.** Unit tests are
+  `cargo test --lib --bins` (111 + 2); `--bins` alone runs 2.
+- **cargo under rustup with `HOME` redirected** fails with "rustup could
+  not choose a version"; keep `RUSTUP_HOME`/`CARGO_HOME` pointing at the
+  real ones when running cargo in a scratch home.
+- **GitHub Actions:** the implicit `run` shell is `bash -e` without
+  `pipefail` (`defaults.run.shell: bash` adds it); `actions/checkout`
+  persists an `http.<github>.extraheader` with `GITHUB_TOKEN` that would
+  shadow another token pushing to github.com (`persist-credentials:
+  false`); `upload-artifact@v4` skips dot files such as `.SRCINFO` unless
+  `include-hidden-files: true`; `makepkg` refuses root, so a container
+  job runs it through `runuser -u <user>`.
+- **makepkg takes a local file for a URL source** when it sits in the
+  build dir under the `source` entry's file name, so a `git archive`
+  tarball named like the release asset tests a PKGBUILD before any tag
+  exists.

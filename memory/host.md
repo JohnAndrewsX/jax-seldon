@@ -119,3 +119,24 @@ Corrections and additions to "Where the kit's assumptions differ" above.
 - No python `jsonschema` module and no `check-jsonschema` on the dev host;
   `python3` with PyYAML is there. `scripts/validate-fixtures.sh` falls back
   to its builtin validator.
+
+## Verified during WP-040 (2026-10-01)
+
+Test host toolchain, read over ssh (`command -v`, `rustc --version`,
+`/usr/lib/rustlib`, `/etc/makepkg.conf`); nothing was installed:
+
+- `cargo`/`rustc` 1.98.1 from pacman `rust`; **no rustup**; rustlib has
+  `x86_64-unknown-linux-gnu` only (**no musl target**, no `rust-musl`).
+- `makepkg`, `git`, `bsdtar`, `curl` present; **missing:** `just`,
+  `shellcheck`, `yamllint`, `namcap`.
+- `/etc/makepkg.conf`: `BUILDENV=(… check …)`, `OPTIONS=(strip docs … debug
+  lto)`, `PKGEXT='.pkg.tar.zst'`; `/etc/makepkg.conf.d/rust.conf` exists
+  (Arch's RUSTFLAGS defaults).
+- `/tmp` is tmpfs 3.9 GB; 6 cores, 7 GB RAM — enough for one release build
+  plus the debug unit-test build of `seldon`.
+- A `makepkg` run there from the dev host is blocked by the guard (see
+  pitfalls, WP-040); the PKGBUILD has not been built there yet.
+
+Dev host: no `shellcheck`, `yamllint` or `actionlint`; PyYAML parses
+workflow files. The glibc `seldon` links `libgcc_s` and `libc` only
+(`depends=(gcc-libs git glibc)`).
