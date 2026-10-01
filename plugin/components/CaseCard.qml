@@ -12,15 +12,17 @@ import "../Model.js" as Model
 //   ▌ Zed als zweiten Editor installieren
 //   ▌ dev-env · priority normal · 2/4 steps
 //   ▌ created 2026-09-28 · started 2026-10-01
+//   ▌ agent: claude-code
 //   ▌ [1 proposed event]
-//   ▌ [Verify] [Drop] [Open]
+//   ▌ [Verify] [Start agent] [Drop] [Open]
 //   ▌ Enter again: Verify C-2026-004
 //
 // The stripe is the zone's theme colour (red = urgent, yellow = accent,
 // green = muted). The buttons are Model.caseActions(); a click asks the tab
 // to run one (`actionRequested`); the tab owns arming and the engine call.
-// An armed action shows the cursor on its button and the hint line. Every
-// string is plain text.
+// An armed action shows the cursor on its button and the hint line; Start
+// agent (WP-022) is armed by key a or a click and asks for the same again.
+// Every string is plain text.
 BorderSurface {
   id: root
 
@@ -45,6 +47,8 @@ BorderSurface {
   readonly property string hint: !caseData ? ""
     : armedAction && armedAction.confirm
       ? armedAction.label + " " + caseData.id + "? Press x again or click Confirm " + armedAction.label.toLowerCase() + ". This is final."
+    : armedAction && armedAction.twice
+      ? armedAction.label + " on " + caseData.id + "? Press a again or click Confirm " + armedAction.label.toLowerCase() + "."
     : armedAction ? "Press Enter again: " + armedAction.label + " " + caseData.id
     : !canWrite && actions.length > 0 ? writeBlocker
     : ""
@@ -150,6 +154,18 @@ BorderSurface {
       font.pixelSize: Style.font.caption
     }
 
+    // The agents the case lists (schema `agents`), e.g. "agent: claude-code".
+    Text {
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      text: root.caseData ? Model.caseAgents(root.caseData) : ""
+      color: root.dim
+      elide: Text.ElideRight
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
     // Open drift the engine proposes for this case (schema `proposedEvents`).
     BorderSurface {
       visible: !!root.caseData && root.caseData.proposed > 0
@@ -182,7 +198,7 @@ BorderSurface {
         Button {
           required property var modelData
 
-          text: root.armed === modelData.id && modelData.confirm ? "Confirm " + modelData.label.toLowerCase() : modelData.label
+          text: root.armed === modelData.id && (modelData.confirm || modelData.twice) ? "Confirm " + modelData.label.toLowerCase() : modelData.label
           enabled: root.canWrite && !root.pending
           hasCursor: root.armed === modelData.id
           selected: modelData.primary && modelData.write
@@ -193,6 +209,7 @@ BorderSurface {
           fontSize: Style.font.caption
           verticalPadding: Style.spacing.xs
           tooltipText: modelData.id === "open" ? "Open the case file in the editor (key e)"
+            : modelData.id === "agent" ? "Launch the configured agent on this case (key a, twice)"
             : modelData.primary ? "Key Enter, twice"
             : modelData.id === "drop" ? "Key x, twice"
             : ""

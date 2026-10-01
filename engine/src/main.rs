@@ -111,6 +111,9 @@ enum Command {
 
     /// Open drift; link, explain, dismiss or show a drift event
     Drift(commands::drift::DriftArgs),
+
+    /// Start an agent on an active case
+    Agent(commands::agent::AgentArgs),
 }
 
 #[derive(Debug, Args)]
@@ -240,6 +243,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Status(a) => commands::status::run(&ctx, a),
         Command::Hook(a) => commands::hook::run(&ctx, a),
         Command::Drift(a) => commands::drift::run(&ctx, a),
+        Command::Agent(a) => commands::agent::run(&ctx, a),
     }
 }
 

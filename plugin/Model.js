@@ -402,6 +402,10 @@ function validateArgs(args) {
     if (id && !withText && a[1] === "show" && n === 3 && json) return ""
     return "drift must be: drift link <eventId> <caseId> [--only] | explain <eventId> [--only] [--zone <z>]"
       + " [--risk <r>] [--area <a>] -- <text> | dismiss <eventId> [--only] -- <text> | show <eventId> --json"
+  case "agent":
+    // WP-022: the engine reads the launcher from its config; nothing else.
+    return !withText && n === 3 && a[1] === "start" && CASE_ID.test(a[2]) && json
+      ? "" : "agent must be: agent start <caseId> --json"
   case "decide":
     return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
   case "open":
@@ -1010,6 +1014,7 @@ function workCase(c, group, column) {
     tone: zoneTone(c.zone),
     stepsText: steps ? Math.min(count(steps.done), total) + "/" + total : "",
     proposed: Array.isArray(c.proposedEvents) ? c.proposedEvents.length : 0,
+    agents: Array.isArray(c.agents) ? c.agents.filter(function(a) { return typeof a === "string" && a !== "" }) : [],
     actionable: CASE_ID.test(id)
   }
 }
@@ -1058,17 +1063,20 @@ function wipStatus(index, limit) {
 // Open. Every open case also gets Open, last. The first action is the one
 // Enter runs. `write`: changes the logbook; `confirm`: a click only arms it,
 // a second click runs it (Drop is final).
+// `twice`: armed by the first press or click, run by the second (Start
+// agent, WP-022); `confirm` also asks twice and warns that it is final.
 var ACTIONS = {
-  start: { id: "start", label: "Start", write: true, confirm: false },
-  verify: { id: "verify", label: "Verify", write: true, confirm: false },
-  done: { id: "done", label: "Done", write: true, confirm: false },
-  drop: { id: "drop", label: "Drop", write: true, confirm: true },
-  open: { id: "open", label: "Open", write: false, confirm: false }
+  start: { id: "start", label: "Start", write: true, confirm: false, twice: false },
+  verify: { id: "verify", label: "Verify", write: true, confirm: false, twice: false },
+  agent: { id: "agent", label: "Start agent", write: true, confirm: false, twice: true },
+  done: { id: "done", label: "Done", write: true, confirm: false, twice: false },
+  drop: { id: "drop", label: "Drop", write: true, confirm: true, twice: false },
+  open: { id: "open", label: "Open", write: false, confirm: false, twice: false }
 }
 
 var ACTIONS_BY_STATUS = {
   queued: ["start", "open"],
-  active: ["verify", "drop", "open"],
+  active: ["verify", "agent", "drop", "open"],
   verification: ["done", "drop", "open"],
   completed: ["open"],
   dropped: ["open"]
@@ -1080,7 +1088,7 @@ function caseActions(c) {
   var out = []
   for (var i = 0; i < ids.length; i++) {
     var a = ACTIONS[ids[i]]
-    out.push({ id: a.id, label: a.label, write: a.write, confirm: a.confirm, primary: i === 0 })
+    out.push({ id: a.id, label: a.label, write: a.write, confirm: a.confirm, twice: a.twice, primary: i === 0 })
   }
   return out
 }
@@ -1108,6 +1116,14 @@ function caseDates(c) {
   if (c.started !== "") parts.push("started " + c.started)
   if (c.closed !== "") parts.push("closed " + c.closed)
   return parts.join(" · ")
+}
+
+// "agent: claude-code" / "agents: claude-code, codex" from the case's
+// `agents` (agent:NAME), "" without one.
+function caseAgents(c) {
+  var names = (c && Array.isArray(c.agents) ? c.agents : []).map(function(a) { return String(a).replace(/^agent:/, "") })
+  if (names.length === 0) return ""
+  return (names.length === 1 ? "agent: " : "agents: ") + names.join(", ")
 }
 
 // `seldon plan …` (CONTRACT.md, SPEC-ENGINE §3). Returns { args } or { error }.
@@ -1159,6 +1175,24 @@ function planResult(exitCode, stdoutText, stderrText) {
   var created = (id !== "" ? "Created " + id : "Case created") + (c && typeof c.title === "string" && c.title !== "" ? " · " + c.title : "")
   if (data && typeof data.areaCreated === "string" && data.areaCreated !== "") created += " · new area " + data.areaCreated
   return { ok: true, text: created, caseId: id }
+}
+
+// `seldon agent start <caseId> --json` (WP-022): { args } or { error }; the
+// answer {"launched", "launcher", "program", "case", …} → { ok, text, caseId }.
+function agentArgs(caseId) {
+  var id = String(caseId || "")
+  if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
+  return { args: ["agent", "start", id, "--json"] }
+}
+
+function agentResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "" }
+  var data = parseJson(stdoutText)
+  var id = data && typeof data.case === "string" && CASE_ID.test(data.case) ? data.case : ""
+  var launcher = data && typeof data.launcher === "string" ? data.launcher : ""
+  var program = data && typeof data.program === "string" ? data.program : ""
+  var via = launcher === "" ? program : program === "" || program === launcher ? launcher : launcher + " (" + program + ")"
+  return { ok: true, text: "Agent started on " + (id !== "" ? id : "the case") + (via !== "" ? " · launcher " + via : ""), caseId: id }
 }
 
 // ---- Drift sheet (WP-021) ---------------------------------------------------

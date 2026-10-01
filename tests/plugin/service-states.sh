@@ -648,6 +648,51 @@ run decide-devmode 2500 PATH="$fake_path" HOME="$work/home-decide-dev" SELDON_IN
 expect decide-devmode .decideResult.text "Dev mode is read-only"
 argv_check decide-dev "$(q --version --json)"
 
+# 30. Start agent (WP-022): the exact argv `agent start <id> --json` for a
+#     validated id only; a malformed id never reaches the engine; one call at
+#     a time; the engine's answer (the launcher) and its refusals (a queued
+#     case's hint, a missing launcher) land on the plan result line with
+#     action "agent"; dev mode refuses.
+mkdir -p "$work/home-agent"
+actions=$(jq -cn '[["agent", "C-26-1; rm -rf ~"], ["agent", "C-2026-005"], ["agent", "C-2026-004"], ["wait"], ["agent", "C-2026-003"]]')
+run agent 2500 PATH="$fake_path" HOME="$work/home-agent" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+argv_check agent "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q agent start C-2026-005 --json)" "$(q agent start C-2026-003 --json)")"
+expect agent .planResult.text "Agent started on C-2026-003 · launcher default (omarchy)"
+expect agent .planResult.ok true
+expect agent .planResult.action agent
+expect agent .planResult.caseId C-2026-003
+expect agent .lastError ""
+if [[ $(grep -a 'HARNESS action \["agent"' "$work/agent.log" | sed 's/.* //' | tr '\n' ' ') == "false true false true " ]]; then
+  pass=$((pass + 1)); echo "ok   agent: malformed id refused, one call at a time"
+else
+  fail=$((fail + 1)); echo "FAIL agent: $(grep -a 'HARNESS action' "$work/agent.log")"
+fi
+if [[ $(cat "$work/home-agent/active-case" 2>/dev/null) == C-2026-003 ]]; then
+  pass=$((pass + 1)); echo "ok   agent: the fake engine set the active case"
+else
+  fail=$((fail + 1)); echo "FAIL agent: active-case $(cat "$work/home-agent/active-case" 2>/dev/null)"
+fi
+clean_log agent
+mkdir -p "$work/home-agent-queued"
+actions=$(jq -cn '[["agent", "C-2026-005"]]')
+run agent-queued 2500 PATH="$fake_path" HOME="$work/home-agent-queued" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect agent-queued .planResult.text 'C-2026-005 is queued; start it first: `seldon plan start C-2026-005`'
+expect agent-queued .planResult.ok false
+expect agent-queued .planResult.caseId C-2026-005
+expect agent-queued .lastError ""
+mkdir -p "$work/home-agent-nolauncher"
+actions=$(jq -cn '[["agent", "C-2026-004"]]')
+run agent-nolauncher 2500 PATH="$fake_path" HOME="$work/home-agent-nolauncher" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  FAKE_SELDON_NO_LAUNCHER=1 HARNESS_ACTIONS="$actions"
+expect agent-nolauncher .planResult.text 'launcher `default`: `omarchy` not found; set `[agent] launcher` in config.toml'
+expect agent-nolauncher .planResult.ok false
+expect agent-nolauncher .lastError ""
+mkdir -p "$work/home-agent-dev"
+run agent-devmode 2500 PATH="$fake_path" HOME="$work/home-agent-dev" SELDON_INDEX="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect agent-devmode .planResult.text "Dev mode is read-only"
+argv_check agent-dev "$(q --version --json)"
+
 real_home_check service-states
 
 echo "service-states: $pass passed, $fail failed"

@@ -42,6 +42,7 @@ cargo test --manifest-path engine/Cargo.toml log::                # notes, journ
 | `engine/tests/log.rs` | `log::` notes with and without a case (`case.events`, `agents`), the Log section append-only over three steps, the journal appended not rewritten, free text as one argument (spaces, quotes, `$(…)`, `--json` after `--`), month and day by timestamp, redaction, exit 3/4 |
 | `engine/tests/journal.rs` | `journal::` appends to a fixture day (only the `cases:` line changes), CRLF days, the `plan done` stub in the logbook language |
 | `engine/tests/commands.rs` | `event::` (fixture line shape, typed meta, engine-only kinds refused), `decide::` (ADR numbering, the logbook's own template, the editor gets the path as one argument), `open::` (paths, `--editor` without a terminal) |
+| `engine/tests/agent.rs` | `seldon agent start` (WP-022): a recording stub `omarchy` gets exactly one argv, the prompt one element (a title with quotes, `$(…)` and backticks stays text), cwd and `SELDON_LOGBOOK` the logbook, the case becomes the active case, under 1 s; `[agent] launcher` and `[agent.launchers]` from config; a shell launcher refused before anything changes; a queued case → exit 1 with the `seldon plan start` hint; verification, unknown and malformed ids; a missing launcher and one that exits 1 at once (its stderr is the message) → exit 1 with the previous active case restored; a launcher that keeps running is detached (own process group, alive); exit 3 without a logbook. Unit tests in `commands/agent.rs` check the launcher rules |
 | `engine/tests/doctor.rs` | `doctor::` green after init with snapper degraded, exit 3 when not initialised, invalid frontmatter, misplaced case, the fixture logbook (and that doctor leaves it untouched) |
 
 **Isolation.** The integration tests never see the real home, config,
@@ -65,7 +66,16 @@ Every line any test writes to a ledger is validated against
 `schema/event.schema.json` (`common::ledger`, `jsonschema` with formats),
 and case JSON against `schema/case.schema.json` (`common::assert_valid_case`).
 Editors are never started: tests run without a terminal, so `--editor`
-goes to `omarchy-launch-editor`, which a test stubs to record its argv. Tests that need git skip themselves when the host has none.
+goes to `omarchy-launch-editor`, which a test stubs to record its argv.
+No agent is ever started either: `agent start` tests stub `omarchy` (the
+default launcher) or a configured launcher with a script that records its
+argv NUL-separated. A manual `agent start` demo on the dev host follows
+the same rule: its `PATH` holds only stub launchers (a temp dir, no
+`/usr/bin`, no `/usr/local/bin`; reach other tools by absolute path), and
+`HOME` is a temp dir. With `/usr/bin` on `PATH` a missing stub falls
+through to the host's real `omarchy agent prompt`, which opens the
+operator's default agent (WP-022 handover: it happened once, harmlessly,
+because the dev host has no default agent). Tests that need git skip themselves when the host has none.
 `fixtures/logbook/` is read-only input.
 
 **Monorepo layout.** Some tests read files outside the crate, so they only
@@ -298,6 +308,18 @@ titles, `ADR-4`, `ADR-0004; reboot`, a path, `memory`); a held lock (the
 decide result, nothing opened) and an unknown decision (the open result
 and the panel's error line); dev mode.
 
+*Start agent* (WP-022) uses `["agent", caseId]` (`Service.startAgent`).
+The fake engine's `agent start` checks the case like the engine (active
+only; queued gets the `seldon plan start` hint), launches nothing, writes
+the id to `$HOME/active-case` and answers with the engine's JSON for the
+default launcher; `FAKE_SELDON_NO_LAUNCHER` makes it answer as the engine
+does without `omarchy`. Checked: a malformed id never reaches the engine;
+the exact argv `agent start <id> --json`; a second call while one runs is
+refused (one at a time, shared with `plan`); the answer is `planResult`
+with `action: "agent"` and "Agent started on C-2026-003 · launcher default
+(omarchy)"; the queued refusal and the missing launcher are `planResult`,
+`lastError` stays empty; dev mode refuses.
+
 Isolation: the scenarios run with a `PATH` made of symlinks to the few
 tools the fakes need, so a `seldon` installed system-wide never leaks in.
 Every run, here and in layer 3, gets its own `HOME`, `XDG_STATE_HOME` and
@@ -371,6 +393,18 @@ and changes nothing; a cursor move disarms; x twice drops C-2026-004; `e`
 opens it; the exact argv of all of it. Locked: the engine refuses the new
 case (exit 4), the sheet shows the message and keeps the title, Esc and
 `+` bring it back intact.
+
+*Start agent* (WP-022): on the sample (dev mode) the active case's card
+lists *Verify, Start agent, Drop, Open* and "agent: claude-code", and
+neither `a` nor a click arms it ("Dev mode is read-only"). Live: `a` on a
+queued case does nothing; on C-2026-003 the first `a` arms (the hint
+"Start agent on C-2026-003? Press a again or click Confirm start agent.",
+the button "Confirm start agent"), Enter re-arms Verify instead, `a` twice
+runs and the result line names the launcher; with the mouse on C-2026-004
+a click arms and the second click runs; the fake engine's logbook has
+C-2026-004 queued (`$HOME/cases`), so its refusal with the `seldon plan
+start` hint is the result line and the banner stays empty; the exact argv
+of both calls.
 
 The drift sheet (WP-021) has eight scenarios. On the sample (dev mode):
 Enter on the theme row and `resolve:<id>` for the other three items open
@@ -542,6 +576,19 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    then `open <id> --editor --json`, `open logbook --editor --json`) over
    ssh and read the rows through `view`; the sheet itself only in the
    private offscreen instance.
+   Start agent (WP-022) launches a real agent window, so only on an
+   **unlocked** session (`omarchy-shell lock status`, ORCHESTRATION §11)
+   and only with a default agent set (`omarchy default agent`): on an
+   active case of the smoke logbook, `wtype 3`, move to the case, `wtype
+   a` twice. Pass: `work.result` reads "Agent started on C-… · launcher
+   default (omarchy)", a terminal window with app-id `org.omarchy.agent`
+   appears (`hyprctl clients`), its agent starts in `~/Seldon-smoke` with
+   the context block as its first prompt, and
+   `~/Seldon-smoke/.seldon/active-case` names the case. Restore: close the
+   agent window (end the agent session first, so its hooks finish) and
+   remove `~/.local/state/seldon/agent-launch.log` with the state dir in
+   step 8. Without a default agent the result line shows the launcher's
+   own "Choose default agent with: omarchy default agent <name>".
 6. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
    the test host's output is scaled 1.25, so a region read off a full
    screenshot (physical pixels) must be divided by the scale. Over ssh also

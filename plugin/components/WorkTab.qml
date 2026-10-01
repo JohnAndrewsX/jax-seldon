@@ -12,9 +12,9 @@ import "../Model.js" as Model
 // the CaseCard of the case under the cursor, with its actions; the
 // NewCaseSheet in place of board and card while it is open.
 //
-// Every action goes through Service.plan() or Service.openInEditor() with a
-// fixed argument list and a case id checked against the schema pattern
-// (Model.planArgs). The result line shows the engine's answer; the moved
+// Every action goes through Service.plan(), Service.startAgent() or
+// Service.openInEditor() with a fixed argument list and a case id checked
+// against the schema pattern (Model.planArgs, Model.agentArgs). The result line shows the engine's answer; the moved
 // case arrives with the next index (Service.qml's FileView), and the cursor
 // follows it into its new column.
 //
@@ -24,10 +24,12 @@ import "../Model.js" as Model
 //                  Verify and Done are armed by the first press and run by
 //                  the second
 //   x              Drop, armed by the first press, run by the second
+//   a              Start agent on an active case, armed by the first press,
+//                  run by the second (WP-022)
 //   e              open the case under the cursor in the editor
 //   +              new case (Panel.qml, from any tab)
 // Any other key, a cursor move or a new index disarms. With the mouse, a
-// click runs an action; Drop asks for a second click.
+// click runs an action; Drop and Start agent ask for a second click.
 Item {
   id: root
 
@@ -122,14 +124,16 @@ Item {
     var c = root.current
     root.disarm()
     if (!c || !root.service) return false
+    if (actionId === "agent") return root.service.startAgent(c.id)
     return root.service.plan(actionId, c.id)
   }
 
-  // A click on a card button: runs it, except Drop, which needs a second click.
+  // A click on a card button: runs it, except Drop and Start agent, which
+  // need a second click.
   function clickAction(actionId) {
     var action = Model.caseAction(root.current, actionId)
     if (!action) return
-    if (action.confirm) root.arm(actionId)
+    if (action.confirm || action.twice) root.arm(actionId)
     else if (!action.write) root.arm(actionId)
     else if (!root.pending) root.runAction(actionId)
   }
@@ -163,6 +167,10 @@ Item {
   function textKey(t) {
     if (t === "e") {
       root.openCurrent()
+      return true
+    }
+    if (t === "a" && Model.caseAction(root.current, "agent")) {
+      root.arm("agent")
       return true
     }
     root.disarm()
