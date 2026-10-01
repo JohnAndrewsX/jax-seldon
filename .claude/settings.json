@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo:*)", "Bash(rustup:*)", "Bash(just:*)", "Bash(git:*)", "Bash(gh:*)",
+      "Bash(jq:*)", "Bash(qmllint:*)", "Bash(/usr/lib/qt6/bin/qmllint:*)",
+      "Bash(omarchy plugin validate:*)", "Bash(omarchy plugin list:*)", "Bash(omarchy plugin catalog:*)",
+      "Bash(omarchy-version:*)", "Bash(omarchy-shell:*)", "Bash(omarchy agent usage:*)",
+      "Bash(herdr:*)", "Bash(ssh:*)", "Bash(rsync:*)", "Bash(scp:*)", "Bash(python3:*)"
+    ],
+    "deny": [
+      "Bash(sudo:*)", "Bash(doas:*)", "Bash(pacman:*)", "Bash(yay:*)", "Bash(paru:*)",
+      "Bash(makepkg:*)", "Bash(systemctl enable:*)", "Bash(systemctl disable:*)",
+      "Bash(systemctl start:*)", "Bash(systemctl stop:*)", "Bash(systemctl mask:*)",
+      "Bash(omarchy pkg:*)", "Bash(omarchy update:*)", "Bash(omarchy install:*)",
+      "Bash(omarchy theme set:*)", "Bash(omarchy snapshot:*)",
+      "Write(/etc/**)", "Edit(/etc/**)", "Write(~/.config/hypr/**)", "Edit(~/.config/hypr/**)",
+      "Write(~/.config/omarchy/shell.json)", "Edit(~/.config/omarchy/shell.json)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/guard.sh\"", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}
