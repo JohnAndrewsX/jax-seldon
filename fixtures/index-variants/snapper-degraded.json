@@ -821,6 +821,15 @@
       "case": "C-2026-001"
     },
     {
+      "id": "01M1F1DGK8N56T9EW6KFSQX1PC",
+      "ts": "2026-09-01T19:49:05+02:00",
+      "source": "seldon",
+      "kind": "case-verified",
+      "subject": "C-2026-001",
+      "actor": "human",
+      "case": "C-2026-001"
+    },
+    {
       "id": "01M1F161B0EJ8KHDPZAK9M0GTD",
       "ts": "2026-09-01T19:45:00+02:00",
       "source": "manual",
@@ -2582,10 +2591,10 @@
       },
       {
         "date": "2026-09-01",
-        "total": 4,
+        "total": 5,
         "bySource": {
           "manual": 1,
-          "seldon": 3
+          "seldon": 4
         }
       },
       {

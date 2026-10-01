@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Validate every JSON fixture against its schema and check that the sample
-index derives from the sample logbook (WP-002, WP-014).
+index derives from the sample logbook (WP-002, WP-014, WP-015).
 
 Called by scripts/validate-fixtures.sh. Exit 0 when everything holds, 1 otherwise.
 
@@ -16,8 +16,10 @@ grouping of ADR-0013 for the parts that come from the logbook. It is a fixture
 consistency check, not the engine; the engine's golden test (WP-007) compares
 real `seldon index` output with the same fixture. `--write-index` rewrites those
 parts of fixtures/index.sample.json and regenerates fixtures/index-variants/ from
-the sample (VARIANTS). Every run also executes the mutation self-checks of
-ADR-0013 (drift groups) and ADR-0015 §4 (proposal token rule).
+the sample (VARIANTS). Every case's Log is walked through the SPEC-LOGBOOK §3
+state machine, and index times must not precede the events they list. Every run
+also executes the mutation self-checks of ADR-0013 (drift groups), ADR-0015 §4
+(proposal token rule) and the case walk.
 """
 import argparse
 import copy
@@ -790,6 +792,88 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None):
     }, ledger, case_files
 
 
+# --------------------------------------------------------------------------- case lifecycle (SPEC-LOGBOOK §3)
+
+LOG_LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) · (.*) · (human|system|agent:[a-z0-9-]+)$")
+# Log word → (ledger kind, statuses it may start from, status after); the engine's
+# `Transition::target`. `created` opens a case as queued.
+CASE_STEPS = {
+    "started": ("case-started", ("queued",), "active"),
+    "verification": ("case-verified", ("active",), "verification"),
+    "completed": ("case-completed", ("verification",), "completed"),
+    "dropped": ("case-dropped", ("queued", "active", "verification"), "dropped"),
+}
+
+
+def check_case_logs(ledger, case_files):
+    """Walk every case's Log lines through the state machine `queued → active → verification →
+    completed`, open → `dropped`. The walk must end in the frontmatter status; its steps must be
+    the case's `case-*` ledger events (same kind, minute and actor, in order); `created`, `started`
+    and `closed` are the dates of their steps; `started (snapshot N)` is `snapshotBefore`."""
+    out = []
+    for f, fm, body in case_files:
+        where = rel(f)
+        m = re.search(r"^## Log\n(.*?)(?=^## |\Z)", body, re.S | re.M)
+        status, steps, dates, snapshot = None, [], {}, None
+        for line in (m.group(1) if m else "").splitlines():
+            if not line.startswith("- "):
+                continue
+            lm = LOG_LINE.match(line)
+            if not lm:
+                out.append(f"{where}: bad Log line {line!r}")
+                continue
+            day, hm, text, actor = lm.groups()
+            word = re.match(r"[a-z]*", text).group(0)
+            if word == "created":
+                if status is not None:
+                    out.append(f"{where}: Log 'created' twice")
+                status = "queued"
+                steps.append(("case-created", f"{day} {hm}", actor))
+                dates["created"] = day
+            elif word in CASE_STEPS:
+                kind, allowed, to = CASE_STEPS[word]
+                if status not in allowed:
+                    out.append(f"{where}: Log '{word}' from {status}; SPEC-LOGBOOK §3 allows it only from "
+                               f"{' | '.join(allowed)}")
+                status = to
+                steps.append((kind, f"{day} {hm}", actor))
+                if word == "started":
+                    dates["started"] = day
+                    sm = re.match(r"started \(snapshot (\d+)\)$", text)
+                    snapshot = int(sm.group(1)) if sm else None
+                elif word in ("completed", "dropped"):
+                    dates["closed"] = day
+        if status != fm.get("status"):
+            out.append(f"{where}: the Log ends in {status}, frontmatter says {fm.get('status')}")
+        events = [(e["kind"], e["ts"][:16].replace("T", " "), e["actor"]) for _, e in ledger
+                  if e["source"] == "seldon" and e["kind"].startswith("case-") and e["subject"] == fm.get("id")]
+        if events != steps:
+            out.append(f"{where}: Log steps {steps} != ledger case events {events}")
+        for k in ("created", "started", "closed"):
+            if fm.get(k) != dates.get(k):
+                out.append(f"{where}: frontmatter {k} {fm.get(k)} != Log {dates.get(k)}")
+        if "started" in dates and fm.get("snapshotBefore") != snapshot:
+            out.append(f"{where}: snapshotBefore {fm.get('snapshotBefore')} != Log 'started' snapshot {snapshot}")
+    return out
+
+
+def check_times(index, name):
+    """An index is not older than what it lists: generatedAt is not before any event, lastCapture
+    not before any collector event (the engine stamps both at write time)."""
+    out = []
+    evs = index.get("events") or []
+    gen = instant(index["generatedAt"])
+    newest = max(evs, key=lambda e: instant(e["ts"]), default=None)
+    if newest and instant(newest["ts"]) > gen:
+        out.append(f"{name}: generatedAt {index['generatedAt']} is before event {newest['id']} ({newest['ts']})")
+    cap = index.get("state", {}).get("lastCapture")
+    collected = [e for e in evs if e["source"] in DRIFT_SOURCES | {"snapper"}]
+    newest = max(collected, key=lambda e: instant(e["ts"]), default=None)
+    if cap and newest and instant(newest["ts"]) > instant(cap):
+        out.append(f"{name}: state.lastCapture {cap} is before collector event {newest['id']} ({newest['ts']})")
+    return out
+
+
 def diff(a, b, path=""):
     """First few differences between fixture (a) and derived (b)."""
     out = []
@@ -990,7 +1074,20 @@ def self_checks(today):
         got = [d.get("proposedCase") for d in derived["drift"] if d["subject"] == "zed"]
         err = problems[:1] or ([] if got == [want] else [f"proposedCase {got}, want [{want!r}]"])
         out += [f"self-check '{label}': {e}" for e in err]
-    return out, len(cases) + len(proposals)
+
+    # SPEC-LOGBOOK §3: C-2026-001 without its verification step (as before WP-015) must fail the walk.
+    def drop_verified(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if not (e["kind"] == "case-verified" and e["subject"] == "C-2026-001")]
+
+    def drop_verification_line(cases):
+        return [(f, fm, re.sub(r"^- \S+ \S+ · verification · human\n", "", body, flags=re.M)
+                 if fm["id"] == "C-2026-001" else body) for f, fm, body in cases]
+
+    ledger, case_files = load_logbook(LOGBOOK, [], drop_verified, drop_verification_line)
+    errs = check_case_logs(ledger, case_files)
+    if not any("C-2026-001" in e and "'completed' from active" in e for e in errs):
+        out.append(f"self-check 'C-2026-001 active -> completed is rejected': walker reported {errs}")
+    return out, len(cases) + len(proposals) + 1
 
 
 # --------------------------------------------------------------------------- main
@@ -1050,7 +1147,7 @@ def main():
     with open(SAMPLE, encoding="utf-8") as f:
         sample = json.load(f)
     today = dt.date.fromisoformat(sample["generatedAt"][:10])
-    derived, ledger, _ = derive(LOGBOOK, today, problems)
+    derived, ledger, case_files = derive(LOGBOOK, today, problems)
 
     if a.write_index:
         out = {k: sample[k] for k in ("contractVersion", "generatedAt", "engineVersion")}
@@ -1091,6 +1188,8 @@ def main():
     for k in ("language", "machine"):
         if sample["logbook"].get(k) != derived["logbook"][k]:
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
+    problems += check_case_logs(ledger, case_files)
+    problems += check_times(sample, "index.sample.json")
 
     # 3. every index variant is the sample plus its overlay
     variant_files = {os.path.basename(f)[:-5] for f in glob.glob(os.path.join(FIX, "index-variants", "*.json"))}
@@ -1105,6 +1204,7 @@ def main():
             have = json.load(f)
         problems += [f"{rel(path)} {d} (regenerate with --write-index)"
                      for d in diff(have, apply_overlay(sample, ops, name))]
+        problems += check_times(have, rel(path))
 
     # 4. ADR-0013 mutation self-checks on the sample logbook
     errs, n_checks = self_checks(today)
