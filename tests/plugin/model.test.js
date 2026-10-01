@@ -167,7 +167,9 @@ test("validateArgs accepts every CONTRACT.md command form", () => {
     ["drift", "dismiss", EID, "--", "tried it"], ["drift", "dismiss", EID, "--only", "--", "--tried it"],
     ["drift", "show", EID, "--json"],
     ["decide", "--no-edit", "--", "Use zed"], ["rebuild", "--json"], ["update-impact", "--json"],
-    ["open", "journal", "--editor"], ["open", "C-2026-003", "--editor"]
+    ["open", "journal", "--editor"], ["open", "C-2026-003", "--editor"],
+    ["decide", "--no-edit", "--json", "--", "--help"], ["open", "ADR-0004", "--editor", "--json"],
+    ["open", "logbook", "--editor", "--json"]
   ]
   for (const a of good) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
 })
@@ -199,6 +201,11 @@ test("validateArgs refuses everything else", () => {
     ["drift", "dismiss", EID], ["drift", "dismiss", EID, "--only"],
     ["drift", "show", EID], ["drift", "show", "C-2026-005", "--json"], ["drift", "show", EID, "--only", "--json"],
     ["decide", "--", "t"], ["open", "/etc/passwd", "--editor"], ["open", "journal"],
+    ["decide", "--no-edit", "--json"], ["decide", "--no-edit", "--case", "C-2026-001", "--", "t"],
+    ["decide", "--json", "--no-edit", "--", "t"], ["decide", "--no-edit", "--json", "--", "a", "b"],
+    ["open", "ADR-4", "--editor"], ["open", "ADR-00041", "--editor"], ["open", "adr-0004", "--editor"],
+    ["open", "ADR-0004; reboot", "--editor"], ["open", "ADR-0004", "--editor", "--", "x"],
+    ["open", "memory", "--editor"], ["open", "memory/lessons.md", "--editor"],
     ["log", "--", 42], ["log", "--", "a\u0000b"]
   ]
   for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
@@ -430,12 +437,13 @@ test("logArgs: the text is one argument after `--`, exactly as typed", () => {
   assert.ok(M.logArgs("a\u0000b", "").error)
 })
 
-test("openArgs: journal, ledger, status or a case id, nothing else", () => {
-  for (const what of ["journal", "ledger", "status", "C-2026-004"]) {
+test("openArgs: journal, ledger, status, logbook, a case or decision id, nothing else", () => {
+  for (const what of ["journal", "ledger", "status", "logbook", "C-2026-004", "ADR-0001"]) {
     same(M.openArgs(what), ["open", what, "--editor", "--json"])
     assert.strictEqual(M.validateArgs(M.openArgs(what)), "", what)
   }
-  for (const what of ["", "logbook", "case", "ADR-0001", "../../etc/passwd", "/etc/passwd", "C-2026-1", "journal --x", null])
+  for (const what of ["", "case", "memory", "memory/lessons.md", "ADR-1", "ADR-0001 ", "ADR-0001-language",
+    "decisions/ADR-0001-language.md", "../../etc/passwd", "/etc/passwd", "C-2026-1", "journal --x", null])
     assert.strictEqual(M.openArgs(what), null, String(what))
 })
 
@@ -743,6 +751,88 @@ test("folded resolutions: explained · C-… (ADR-0021), the crisis target, +N m
   assert.strictEqual(M.moreDriftText(capped), "+246 more open drift items not listed here")
   capped.summary.openDrift = 5
   assert.strictEqual(M.moreDriftText(capped), "+1 more open drift item not listed here")
+})
+
+// ---- Decisions and Memory (WP-023) ----
+
+test("decisionRows: the sample's four decisions, newest first", () => {
+  const rows = M.decisionRows(sampleIndex)
+  same(rows.map((r) => r.id + " " + r.status + " " + r.date), [
+    "ADR-0004 proposed 2026-10-01", "ADR-0003 accepted 2026-10-01",
+    "ADR-0002 accepted 2026-09-02", "ADR-0001 accepted 2026-09-01"])
+  same(rows.map((r) => r.tone), ["accent", "", "", ""])
+  assert.ok(rows.every((r) => r.actionable))
+  assert.strictEqual(rows[0].title, "Ollama nur als User-Service mit Case")
+  assert.strictEqual(M.decisionMeta(rows[0]), "2026-10-01 · decisions/ADR-0004-ollama-user-service.md")
+  assert.strictEqual(M.decisionSummary(rows), "4 decisions · 1 proposed")
+})
+
+test("decisionRows: index order does not matter, broken entries survive", () => {
+  const idx = { decisions: [
+    { id: "ADR-0002", title: "b", status: "superseded", date: "2026-09-02" },
+    null, "x", { id: "ADR-2", title: "bad id", status: "accepted", date: "2026-10-09" },
+    { id: "ADR-0010", title: "c", status: "weird", date: "2026-08-01" },
+    { id: "ADR-0001", title: 7, status: "accepted" }] }
+  const rows = M.decisionRows(idx)
+  same(rows.map((r) => r.id), ["ADR-0010", "ADR-0002", "ADR-0001", "ADR-2"])
+  same(rows.map((r) => r.actionable), [true, true, true, false])
+  same(rows.map((r) => r.status), ["", "superseded", "accepted", "accepted"])
+  same(rows.map((r) => r.tone), ["", "muted", "", ""])
+  assert.strictEqual(rows[2].title, "")
+  assert.strictEqual(M.decisionMeta(rows[2]), "")
+  same(M.decisionRows(null), [])
+  same(M.decisionRows({ decisions: "no" }), [])
+  assert.strictEqual(M.decisionSummary([]), "No decisions yet")
+  assert.strictEqual(M.decisionSummary(M.decisionRows({ decisions: [{ id: "ADR-0001", status: "accepted" }] })), "1 decision")
+})
+
+test("decideArgs: the title is one argument after --, exactly as typed", () => {
+  for (const t of ["Use zed", "--help", 'a "quoted" title', "-rf --case C-2026-001", "$(reboot)", "--", "  padded  "]) {
+    same(M.decideArgs(t), { args: ["decide", "--no-edit", "--json", "--", t] })
+    assert.strictEqual(M.validateArgs(M.decideArgs(t).args), "", t)
+  }
+  assert.strictEqual(M.decideArgs("").error, "Give the decision a title")
+  assert.strictEqual(M.decideArgs(" \t ").error, "Give the decision a title")
+  assert.strictEqual(M.decideArgs(null).error, "Give the decision a title")
+  assert.strictEqual(M.decideArgs(42).error, "Give the decision a title")
+  assert.strictEqual(M.decideArgs("two\nlines").error, "The title must be one line")
+  assert.strictEqual(M.decideArgs("a\rb").error, "The title must be one line")
+  assert.ok(M.decideArgs("a\u0000b").error)
+})
+
+test("decideResult reads the SPEC-ENGINE §3 decide shape and refusals", () => {
+  const out = JSON.stringify({ decision: { id: "ADR-0005", title: "--help", status: "proposed", date: "2026-10-01",
+    cases: [], path: "decisions/ADR-0005-help.md" }, editor: null, git: { committed: true } })
+  same(M.decideResult(0, out, ""), { ok: true, text: "Created ADR-0005 · --help", decisionId: "ADR-0005" })
+  same(M.decideResult(0, JSON.stringify({ decision: { id: "ADR-5; reboot", title: "x" } }), ""),
+    { ok: true, text: "Decision created · x", decisionId: "" })
+  same(M.decideResult(0, "not json", ""), { ok: true, text: "Decision created", decisionId: "" })
+  same(M.decideResult(1, '{"error":{"code":1,"message":"the title must be one line"}}', ""),
+    { ok: false, text: "the title must be one line", decisionId: "" })
+  same(M.decideResult(4, "", "lock held"), { ok: false, text: "lock held", decisionId: "" })
+})
+
+test("memoryRows: the sample's three lessons and two topics", () => {
+  const rows = M.memoryRows(sampleIndex)
+  same(rows.map((r) => r.kind + " " + r.title), [
+    "lesson `omarchy pkg add` statt yay direkt", "lesson Theme-Overrides nie im Omarchy-Repo",
+    "lesson Hyprland reload nach bindings.conf", "topic omarchy", "topic hyprland"])
+  same(rows.map((r) => r.section), ["LESSONS", "", "", "TOPICS", ""])
+  same(rows.map((r) => r.meta), ["", "", "", "memory/omarchy.md · updated 2026-10-01", "memory/hyprland.md · updated 2026-09-13"])
+  assert.ok(rows.every((r) => r.target === "logbook"))
+  assert.strictEqual(M.validateArgs(M.openArgs(rows[0].target)), "")
+  assert.strictEqual(M.memorySummary(rows), "3 lessons · 2 topics")
+})
+
+test("memoryRows: every part optional, broken entries left out", () => {
+  same(M.memoryRows(null), [])
+  same(M.memoryRows({ memory: {} }), [])
+  assert.strictEqual(M.memorySummary([]), "")
+  const rows = M.memoryRows({ memory: { lessons: ["", 3, "one"], topics: [null, { topic: "" }, { topic: "x", path: "memory/x.md" }, { topic: "y" }] } })
+  same(rows.map((r) => r.section + "|" + r.title + "|" + r.meta), ["LESSONS|one|", "TOPICS|x|memory/x.md", "|y|"])
+  const topicsOnly = M.memoryRows({ memory: { topics: [{ topic: "t", updated: "2026-09-01" }] } })
+  same(topicsOnly.map((r) => r.section + "|" + r.meta), ["TOPICS|updated 2026-09-01"])
+  assert.strictEqual(M.memorySummary(topicsOnly), "0 lessons · 1 topic")
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
