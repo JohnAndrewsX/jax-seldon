@@ -867,4 +867,147 @@ test("memoryRows: every part optional, broken entries left out", () => {
   assert.strictEqual(M.memorySummary(topicsOnly), "0 lessons · 1 topic")
 })
 
+// ---- Prime Radiant (WP-030) --------------------------------------------------
+
+test("periods: ids, keys 1–4, ←/→ wrap, payload", () => {
+  same(M.PERIODS.map((p) => p.id), ["30", "90", "365", "all"])
+  assert.strictEqual(M.PERIOD_DEFAULT, "90")
+  same(["1", "2", "3", "4", "0", "5", "", "12", "a"].map(M.periodForKey), ["30", "90", "365", "all", "", "", "", "", ""])
+  assert.strictEqual(M.cyclePeriod("30", -1), "all")
+  assert.strictEqual(M.cyclePeriod("all", 1), "30")
+  assert.strictEqual(M.cyclePeriod("90", 1), "365")
+  assert.strictEqual(M.cyclePeriod("bogus", 1), "365")
+  assert.strictEqual(M.overlayPayloadPeriod('{"period":"30"}', "90"), "30")
+  assert.strictEqual(M.overlayPayloadPeriod('{"period":"7"}', "90"), "90")
+  assert.strictEqual(M.overlayPayloadPeriod("", "365"), "365")
+  assert.strictEqual(M.overlayPayloadPeriod("{broken", "all"), "all")
+  assert.strictEqual(M.isPeriod("all"), true)
+  assert.strictEqual(M.isPeriod(30), false)
+})
+
+test("periodWindow: inclusive days ending on the index's today", () => {
+  same(M.periodWindow("30", "2026-10-01"), { period: "30", from: "2026-09-02", to: "2026-10-01", days: 30 })
+  same(M.periodWindow("90", "2026-10-01"), { period: "90", from: "2026-07-04", to: "2026-10-01", days: 90 })
+  same(M.periodWindow("365", "2026-10-01"), { period: "365", from: "2025-10-02", to: "2026-10-01", days: 365 })
+  same(M.periodWindow("all", "2026-10-01"), { period: "all", from: "", to: "", days: 0 })
+  // Across a leap day, and an unknown period counts as the default.
+  same(M.periodWindow("30", "2024-03-01"), { period: "30", from: "2024-02-01", to: "2024-03-01", days: 30 })
+  assert.strictEqual(M.periodWindow("x", "2026-10-01").period, "90")
+  // No today: unbounded.
+  same(M.periodWindow("30", ""), { period: "30", from: "", to: "", days: 30 })
+  assert.strictEqual(M.periodCaption(M.periodWindow("30", "2026-10-01")), "30 d · 2026-09-02 – 2026-10-01")
+  assert.strictEqual(M.periodCaption(M.periodWindow("all", "2026-10-01")), "All · everything in the index")
+})
+
+test("isoWeekMonday: ISO 8601 weeks, week 53 only in long years", () => {
+  assert.strictEqual(M.isoWeekMonday("2026-W40"), "2026-09-28")
+  assert.strictEqual(M.isoWeekMonday("2026-W01"), "2025-12-29")
+  assert.strictEqual(M.isoWeekMonday("2025-W01"), "2024-12-30")
+  assert.strictEqual(M.isoWeekMonday("2026-W53"), "2026-12-28")
+  assert.strictEqual(M.isoWeekMonday("2020-W53"), "2020-12-28")
+  assert.strictEqual(M.isoWeekMonday("2025-W53"), "")
+  same(["2026-W00", "2026-W54", "2026-40", "", null].map(M.isoWeekMonday), ["", "", "", "", ""])
+})
+
+test("seriesInPeriod: dates, weeks that touch the window, case spans", () => {
+  const win = M.periodWindow("30", "2026-10-01")
+  const series = {
+    heatmap: [{ date: "2026-09-01", total: 1 }, { date: "2026-09-02", total: 2 }, { date: "2026-10-01", total: 3 },
+      { date: "2026-10-02", total: 4 }, { date: "bad", total: 5 }, null],
+    drift: [{ week: "2026-W35", opened: 1, resolved: 0 }, { week: "2026-W36", opened: 1, resolved: 0 },
+      { week: "2026-W41", opened: 1, resolved: 0 }, { week: "x", opened: 1, resolved: 0 }],
+    timeline: [
+      { kind: "case", ts: "2026-08-01", end: "2026-09-01", label: "ended before" },
+      { kind: "case", ts: "2026-08-01", end: "2026-09-02", label: "ends on the first day" },
+      { kind: "case", ts: "2026-08-01", end: null, label: "open" },
+      { kind: "case", ts: "2026-10-02", end: null, label: "starts after" },
+      { kind: "case", ts: "2026-09-10", end: "2026-09-01", label: "ends before it starts" },
+      { kind: "snapshot", ts: "2026-09-02T00:10:00+02:00", label: "in" },
+      { kind: "release", ts: "2026-09-01T23:59:00+02:00", label: "out" },
+      { kind: "crisis", ts: "2026-10-01T17:00:00+02:00", label: "in" },
+      { kind: "other", ts: "2026-09-20T00:00:00Z", label: "unknown kind" }
+    ]
+  }
+  same(M.seriesInPeriod(series, "heatmap", win).map((r) => r.total), [2, 3])
+  // W36 is Mon 31 Aug – Sun 6 Sep: it touches the window.
+  same(M.seriesInPeriod(series, "drift", win).map((r) => r.week), ["2026-W36"])
+  same(M.seriesInPeriod(series, "timeline", win).map((r) => r.label), ["ends on the first day", "open", "in", "in"])
+  const all = M.periodWindow("all", "2026-10-01")
+  assert.strictEqual(M.seriesInPeriod(series, "heatmap", all).length, 4)
+  assert.strictEqual(M.seriesInPeriod(series, "drift", all).length, 3)
+  assert.strictEqual(M.seriesInPeriod(series, "timeline", all).length, 7)
+  same(M.seriesInPeriod(null, "heatmap", win), [])
+  same(M.seriesInPeriod({ heatmap: "x" }, "heatmap", win), [])
+})
+
+test("periodTable: the sample's counts per period", () => {
+  const table = M.periodTable(ok.index)
+  assert.strictEqual(table.today, "2026-10-01")
+  const rows = (p) => table.periods[p].slots.map((s) => s.id + "=" + s.rows).join(",")
+  assert.strictEqual(rows("30"), "heatmap=30,series=2,driftBars=5,riskDonut=3,timeline=17")
+  assert.strictEqual(rows("90"), "heatmap=90,series=3,driftBars=5,riskDonut=3,timeline=18")
+  assert.strictEqual(rows("365"), "heatmap=365,series=3,driftBars=5,riskDonut=3,timeline=18")
+  assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=3,timeline=18")
+  const s30 = table.periods["30"].slots
+  same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries"])
+  same(s30.map((s) => s.detail), ["57 events", "Explicit 324 → 327", "13 opened · 9 resolved",
+    "R0 1 · R1 3 · R2 4 · R3 0 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises"])
+  same(s30.map((s) => s.windowed), [true, true, true, false, true])
+  assert.strictEqual(table.periods["90"].slots[0].detail, "62 events")
+  same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 4, R3: 0 })
+  assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
+  // periodView picks a period, the default one for an unknown id.
+  assert.strictEqual(M.periodView(table, "365").window.period, "365")
+  assert.strictEqual(M.periodView(table, "nope").window.period, "90")
+})
+
+test("periodTable: no index, empty series", () => {
+  const table = M.periodTable(null)
+  assert.strictEqual(table.today, "")
+  same(table.periods["30"].slots.map((s) => s.rows), [0, 0, 0, 0, 0])
+  same(table.periods["30"].slots.map((s) => s.detail), ["0 events", "No package counts", "0 opened · 0 resolved",
+    "R0 0 · R1 0 · R2 0 · R3 0 · all time", "Nothing in this period"])
+  assert.strictEqual(M.periodView(null, "30").window.period, "30")
+  const one = M.periodTable({ generatedAt: "2026-10-01T10:00:00Z", series: { packages: [{ date: "2026-09-30", explicit: 7 }] } })
+  assert.strictEqual(one.periods["30"].slots[1].detail, "7 explicit")
+})
+
+test("overlayMeta and overlayBanner", () => {
+  assert.strictEqual(M.overlayMeta(ok.index), "workstation-7f3a · Omarchy 4.0.7-1 · generated 2026-10-01 17:05")
+  assert.strictEqual(M.overlayMeta(null), "")
+  assert.strictEqual(M.overlayMeta({ generatedAt: "x" }), "")
+  assert.strictEqual(M.overlayBanner(null), null)
+  const b = M.bannerFor("notInitialised", {})
+  const o = M.overlayBanner(b)
+  same(o.actions.map((a) => a.id), ["copy"])
+  assert.strictEqual(o.title, b.title)
+  assert.strictEqual(b.actions.length, 3)
+  same(M.overlayBanner(M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00Z", nowMs: gen })).actions, [])
+})
+
+test("overlayGrid: 12 columns, three modes, minimum heights scroll", () => {
+  const ids = (g) => g.slots.map((s) => s.id).join(",")
+  const wide = M.overlayGrid(1500, 700, 8, 300, 120)
+  assert.strictEqual(wide.mode, "wide")
+  assert.strictEqual(ids(wide), "heatmap,series,driftBars,riskDonut,timeline")
+  assert.strictEqual(wide.contentHeight, 700)
+  for (const s of wide.slots) assert.ok(s.x >= 0 && s.y >= 0 && s.x + s.w <= 1500 && s.y + s.h <= 700, JSON.stringify(s))
+  same(wide.slots.map((s) => s.w), [1500, 494, 495, 495, 1500])
+  same(wide.slots.map((s) => s.y), [0, 236, 236, 236, 548])
+  // Gaps between neighbours are exactly `gap`.
+  assert.strictEqual(wide.slots[2].x - (wide.slots[1].x + wide.slots[1].w), 8)
+  assert.strictEqual(wide.slots[3].x - (wide.slots[2].x + wide.slots[2].w), 8)
+  const medium = M.overlayGrid(700, 700, 8, 300, 120)
+  assert.strictEqual(medium.mode, "medium")
+  same(medium.slots.map((s) => s.y), [0, 213, 213, 494, 494])
+  same(medium.slots.map((s) => s.x + s.w <= 700), [true, true, true, true, true])
+  const narrow = M.overlayGrid(500, 400, 8, 300, 120)
+  assert.strictEqual(narrow.mode, "narrow")
+  same(narrow.slots.map((s) => s.h), [120, 120, 120, 120, 120])
+  assert.ok(narrow.contentHeight > 400)
+  const zero = M.overlayGrid(0, 0, 8, 300, 120)
+  assert.strictEqual(zero.slots.length, 5)
+  assert.ok(zero.slots.every((s) => s.w >= 0))
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
