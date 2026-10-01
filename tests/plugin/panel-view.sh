@@ -918,6 +918,26 @@ else
 fi
 clean_log decisions-locked
 
+# 23. Offscreen renders of the Today tab in three themes (only with PANEL_SHOTS;
+# the panel's counterpart of overlay-view.sh's OVERLAY_SHOTS; not live
+# screenshots). plugin/preview.png is composed from these (docs/TESTING.md).
+if [[ -n ${PANEL_SHOTS:-} ]]; then
+  mkdir -p "$PANEL_SHOTS"
+  omarchy="${OMARCHY_PATH:-/usr/share/omarchy}"
+  for theme in osaka-jade tokyo-night catppuccin-latte; do
+    home="$work/home-shot-$theme"
+    mkdir -p "$home/.local/state/omarchy/current/theme"
+    cp "$omarchy/themes/$theme/colors.toml" "$home/.local/state/omarchy/current/theme/colors.toml"
+    # A live run on the fake engine: no dev-mode note (it prints the index
+    # path) and the QuickEntry as a user sees it.
+    run "shot-$theme" "" "settle;shot:panel-$theme-today;view" \
+      HOME="$home" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_SHOTS="$PANEL_SHOTS"
+    expect "shot-$theme" 1 .view.tab today
+    expect "shot-$theme" 1 .view.today.quickEntry.enabled true
+    clean_log "shot-$theme"
+  done
+fi
+
 real_home_check panel-view
 
 echo "panel-view: $pass passed, $fail failed"
