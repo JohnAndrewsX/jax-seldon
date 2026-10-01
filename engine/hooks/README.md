@@ -69,3 +69,86 @@ What is recorded:
 - `sh|bash|zsh|dash -c '…'` and `eval '…'` are read as the commands
   inside. Not read yet: `xargs`, `find -exec`, interpreters (`python -c`,
   `node -e`).
+
+## Starting an agent (`seldon agent start`, WP-022)
+
+`seldon agent start <caseId> [--launcher NAME] [--json]` sends an agent to
+work an **active** case (a queued case is refused with the hint `seldon
+plan start <id>`). It:
+
+1. checks the launcher (below) before it writes anything;
+2. makes the case the active case (`.seldon/active-case`), so the agent's
+   recorded commands land on it;
+3. builds the prompt: `Work case C-… in the Seldon logbook at <path>;
+   every mutating command is recorded.`, a blank line, then the block of
+   `seldon hook session-start` (status, the case and its plan, journal,
+   lessons);
+4. runs the launcher **detached** in the logbook directory, with
+   `SELDON_LOGBOOK` set to it (and `SELDON_CONFIG` when a non-default
+   config was used): stdin and stdout null, stderr into
+   `~/.local/state/seldon/agent-launch.log`, its own process group, never
+   waited for. A launcher still running after 200 ms counts as launched;
+   one that exits non-zero in that time is an error (exit 1) with the last
+   lines of its stderr, and the previous active case is put back.
+
+`--json` → `{"launched": true, "launcher": "<name>", "program": "<argv[0]>",
+"argv": [… "{prompt}" …], "case": "C-…", "cwd": "<logbook>",
+"previousActiveCase": "C-…" | null}`. Every failure is exit 1 with the
+message (exit 3 without a logbook, 4 when the lock is held).
+
+### The launcher in `config.toml`
+
+```toml
+[agent]
+# the default; `seldon agent start` without --launcher runs this
+launcher = ["omarchy", "agent", "prompt", "{prompt}"]
+
+[agent.launchers]
+# more, for `seldon agent start C-… --launcher <name>`
+claude = ["omarchy-launch-tui", "--app-id=org.omarchy.agent", "claude", "--", "{prompt}"]
+codex  = ["xdg-terminal-exec", "-e", "codex", "--", "{prompt}"]
+```
+
+Rules, checked on every start (a broken launcher is exit 1, nothing runs):
+
+- an argv list, never a string; no shell reads it;
+- the first element is a program name without `/` (looked up on `PATH`)
+  or an absolute path;
+- exactly one element is exactly `{prompt}`; it is replaced by the
+  prompt as **one** argument, whatever the prompt contains. `--x={prompt}`
+  is refused;
+- no shell before `{prompt}` (`sh`, `bash`, `zsh`, `dash`, `ksh`, `mksh`,
+  `fish`, `nu`, `xonsh`, `eval`), and none of the Omarchy launchers that
+  join their arguments into a `bash -c` string
+  (`omarchy-launch-floating-terminal-with-presentation`,
+  `omarchy-launch-or-focus`, `omarchy-launch-terminal-tmux`): the prompt
+  carries logbook text and is never run as code (AGENTS.md §8).
+
+Names: `default` is `[agent] launcher`; `omarchy` is the built-in
+`["omarchy", "agent", "prompt", "{prompt}"]`, reachable even when
+`[agent] launcher` is changed; any other name comes from
+`[agent.launchers]` (an unknown one is exit 1 listing the known names).
+`seldon init` does not write an `[agent]` section while it is the default.
+
+### Fallbacks
+
+- **The default, `omarchy agent prompt <prompt>`:** opens Omarchy's
+  default coding agent (`omarchy default agent <name>`) in its own
+  terminal window (`omarchy-launch-tui --app-id=org.omarchy.agent`),
+  with that agent's "do not stop to ask" flag. Without a default agent it
+  exits 1 with `Choose default agent with: omarchy default agent <name>`,
+  which `agent start` reports.
+- **Not `--inline`:** `omarchy agent prompt --inline` runs the agent in
+  the caller's terminal. A detached launch (and the plugin) has none, so
+  the agent would start without a terminal. Use `--inline` only by hand:
+  `omarchy agent prompt --inline "$(seldon hook session-start)"`.
+- **A specific agent in a window:**
+  `["omarchy-launch-tui", "--app-id=org.omarchy.agent", "<agent>", …, "{prompt}"]`
+  — `omarchy-launch-tui` passes its arguments through as an argv.
+- **Not `omarchy-launch-floating-terminal-with-presentation`:** it joins
+  its arguments into `bash -c "…"`, so the prompt would be run as shell
+  code. Refused.
+- **Claude Code hooks:** the agent starts in the logbook directory, so
+  `<logbook>/.claude/settings.json` (`seldon hook install claude-code`)
+  applies: its `SessionStart` hook prints the same block again as context,
+  and `PreToolUse` records the agent's commands on the case.
