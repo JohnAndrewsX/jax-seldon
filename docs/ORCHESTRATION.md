@@ -163,6 +163,12 @@ as two subagents; both are allowed for this bounded fan-out.
   unlock attempts (faillock). Restart the shell only on an unlocked
   session, and only after the plugin reloads have settled (a restart
   during the reload storm crashed Quickshell and left a stranded lock).
+- Keys go out only while a Seldon surface reports `opened: true` (via
+  `shell call jax.seldon view ""`), and text only into a field that
+  reports `editing: true`. A pointer click once closed the panel
+  mid-sequence and the next `wtype` text ran in the operator's terminal
+  on the test host (exit 127, harmless). Check the surface before every
+  key burst, not once per session (WP-013 live session).
 - A worker in state `blocked` is inspected (`herdr agent read`). An
   ordinary question inside the worker's own task is answered from the WP
   brief; a question that needs a decision goes through §10; a permission
