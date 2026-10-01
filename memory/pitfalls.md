@@ -181,3 +181,13 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Main moves while a WP runs.** Before the handover, diff
   `$(git merge-base main HEAD)..main -- docs/ decisions/` for spec changes
   that touch the WP (WP-005: ADR-0017 did not).
+- **A test that re-acquires the flock per step flakes under parallel tests**
+  (WP-005 review). A child forked by another test thread inherits the open
+  lock fd until it execs, so a fresh `lock::acquire` on the same file can
+  see `WouldBlock` (about 5% of parallel runs). Take the lock once per
+  bench, keep it in the struct, and hand it to `Ledger::append`.
+- **Adding a field to `Sources` breaks struct literals in tests.** Write
+  test literals with `..Sources::default()`.
+- **The guard also matches the Omarchy update command inside a python
+  heredoc** (e.g. in a code comment being inserted). Put such edit scripts
+  in a scratchpad file (Write tool) and run the file.
