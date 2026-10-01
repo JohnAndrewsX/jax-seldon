@@ -120,11 +120,13 @@ Item {
       // A seldon that cannot even report its version is no usable engine.
       root.engineVersion = ""
       root.engineDetail = Model.engineError(out, err, exitCode)
+      root.lastError = ""
       root.engineState = "missing"
     }
   }
 
   function probeFailedToStart() {
+    root.lastError = ""
     root.engineVersion = ""
     root.engineDetail = "seldon not found on PATH"
     root.engineState = "missing"
@@ -182,7 +184,7 @@ Item {
       root.queue = []
       root.lastError = ""
     } else {
-      root.lastError = Model.engineError(out, err, exitCode)
+      root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
     // missed the rename.
@@ -196,6 +198,7 @@ Item {
     root.busy = false
     root.currentArgs = []
     root.queue = []
+    root.lastError = ""
     root.engineVersion = ""
     root.engineDetail = "seldon not found on PATH"
     root.engineState = "missing"

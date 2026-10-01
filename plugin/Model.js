@@ -191,11 +191,17 @@ function statusPhrase(status) {
   return STATUS_PHRASES[status] !== undefined ? STATUS_PHRASES[status] : "unknown state"
 }
 
+// Whether the index's counts mean anything in this status. An uninitialised
+// logbook reports zeros, a mismatched or missing index has none.
+function showsCounts(status) {
+  return status === "ok" || status === "indexStale" || status === "engineMissing"
+}
+
 // SPEC-PLUGIN §4: "Seldon — 2 active cases, 3 unexplained changes, last
 // capture 4 min ago", with the problem appended when the status is not ok.
 function tooltipText(status, c, lastCaptureText, nowMs) {
   var problem = statusPhrase(status)
-  if (!c) return "Seldon — " + (problem !== "" ? problem : "loading")
+  if (!c || !showsCounts(status)) return "Seldon — " + (problem !== "" ? problem : "loading")
   var drift = plural(c.drift, "unexplained change", "unexplained changes")
   if (c.crisis > 0) drift += " (" + c.crisis + " in the red zone)"
   var captured = lastCaptureText

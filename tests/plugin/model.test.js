@@ -115,6 +115,8 @@ test("tooltipText matches the SPEC-PLUGIN §4 example", () => {
   assert.strictEqual(M.tooltipText("indexStale", c, "2026-10-01T17:05:00+02:00", now + 3 * H),
     "Seldon — 2 active cases, 3 unexplained changes, last capture 3 h ago · index is stale")
   assert.strictEqual(M.tooltipText("engineMissing", null, "", now), "Seldon — engine not installed")
+  assert.strictEqual(M.tooltipText("notInitialised", { active: 0, drift: 0, crisis: 0 }, "", now),
+    "Seldon — logbook not initialised")
 })
 
 test("relativeAge", () => {

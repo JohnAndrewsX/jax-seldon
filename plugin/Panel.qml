@@ -86,7 +86,7 @@ Panel {
 
         Column {
           width: parent.width
-          visible: root.counts !== null
+          visible: root.counts !== null && !!root.service && Model.showsCounts(root.service.status)
           spacing: Style.spacing.sm
 
           PanelSectionHeader {

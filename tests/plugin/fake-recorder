@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Stand-in for wl-copy and the Omarchy terminal launcher in
+# tests/plugin/service-states.sh: records its name and argv, one per line,
+# then "--", to $HARNESS_RECORD.
+{
+  basename "$0"
+  printf '%s\n' "$@"
+  echo "--"
+} >>"$HARNESS_RECORD"

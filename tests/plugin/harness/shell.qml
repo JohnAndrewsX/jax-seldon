@@ -11,7 +11,8 @@ import Quickshell
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin folder (required)
 //   HARNESS_MS          run time in milliseconds (default 2500)
-//   HARNESS_RECHECK_MS  if set, call refresh() after this many milliseconds
+//   HARNESS_RECHECK_MS  if set, run the "recheck" fix after this many milliseconds
+//   HARNESS_FIX         comma-separated fix action ids to run after 1 s
 ShellRoot {
   id: root
 
@@ -19,6 +20,7 @@ ShellRoot {
   readonly property string pluginDir: Quickshell.env("HARNESS_PLUGIN_DIR") || ""
   readonly property int runMs: Number(Quickshell.env("HARNESS_MS") || 2500)
   readonly property int recheckMs: Number(Quickshell.env("HARNESS_RECHECK_MS") || 0)
+  readonly property string fixes: Quickshell.env("HARNESS_FIX") || ""
 
   function emit(tag) {
     if (!root.service) return
@@ -41,6 +43,16 @@ ShellRoot {
     interval: root.recheckMs
     running: root.recheckMs > 0
     onTriggered: if (root.service) root.service.fix("recheck")
+  }
+
+  Timer {
+    interval: 1000
+    running: root.fixes !== ""
+    onTriggered: {
+      var ids = root.fixes.split(",")
+      for (var i = 0; i < ids.length; i++)
+        console.log("HARNESS fix " + ids[i] + " " + (root.service ? root.service.fix(ids[i]) : false))
+    }
   }
 
   Timer {

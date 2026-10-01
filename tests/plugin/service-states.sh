@@ -168,5 +168,42 @@ run live-uninit 4000 PATH="$fake_path" HOME="$work/home-uninit" FAKE_SELDON_MODE
 expect live-uninit .status notInitialised
 expect live-uninit .banner "Logbook not initialised"
 
+# 14. Banner fixes run fixed argument lists with constant commands only.
+mkdir -p "$work/bin-tools"
+for tool in wl-copy omarchy-launch-floating-terminal-with-presentation; do
+  install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-tools/$tool"
+done
+record_check() { # record_check <case> <expected record>
+  local got
+  got=$(cat "$work/$1.record" 2>/dev/null || true)
+  if [[ $got == "$2" ]]; then
+    pass=$((pass + 1)); echo "ok   $1: fix commands"
+  else
+    fail=$((fail + 1)); echo "FAIL $1: fix commands were:"; echo "$got" | sed 's/^/     /'
+  fi
+}
+run fix-engine 3000 PATH="$work/bin-tools:$base_path" SELDON_INDEX="$fx/index.sample.json" \
+  HARNESS_FIX=copy,terminal HARNESS_RECORD="$work/fix-engine.record"
+record_check fix-engine "$(printf '%s\n' wl-copy -- "omarchy pkg aur add jax-seldon" -- \
+  omarchy-launch-floating-terminal-with-presentation "omarchy pkg aur add jax-seldon" --)"
+run fix-contract 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v2.json" \
+  HARNESS_FIX=copy HARNESS_RECORD="$work/fix-contract.record"
+record_check fix-contract "$(printf '%s\n' wl-copy -- "omarchy plugin update jax.seldon" --)"
+run fix-init 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-variants/not-initialised.json" \
+  HARNESS_FIX=terminal HARNESS_RECORD="$work/fix-init.record"
+record_check fix-init "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "seldon init" --)"
+
+# 15. Dev mode never runs the engine, not even on an explicit fix.
+mkdir -p "$work/home-dev"
+run fix-devmode 3000 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T20:05:12+02:00" \
+  HARNESS_FIX=capture HOME="$work/home-dev"
+expect fix-devmode .status indexStale
+expect fix-devmode .lastError "dev mode (SELDON_INDEX): engine calls are disabled"
+if grep -q -v -x -E "(start|end) --version" "$work/home-dev/calls.log"; then
+  fail=$((fail + 1)); echo "FAIL fix-devmode: engine was called: $(tr '\n' ' ' <"$work/home-dev/calls.log")"
+else
+  pass=$((pass + 1)); echo "ok   fix-devmode: engine only probed"
+fi
+
 echo "service-states: $pass passed, $fail failed"
 ((fail == 0))
