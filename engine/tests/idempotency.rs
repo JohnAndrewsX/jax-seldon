@@ -111,6 +111,34 @@ mod idempotency {
         );
         assert_eq!(first["ok"], true);
         assert_eq!(cli.capture(&[])["written"], 0);
+        // --since is ignored, and said to be, for collectors with a cursor
+        let again = cli.capture(&["--since", FIXTURE_CREATED]);
+        assert_eq!(again["written"], 0);
+        assert_eq!(
+            again["sinceIgnored"],
+            serde_json::json!(["snapper", "pacman", "omarchy"])
+        );
+        // another spelling of the same logbook keeps its cursors
+        let detour = cli.logbook.join("../logbook");
+        let out = cli.run(&[
+            "capture",
+            "--json",
+            "--since",
+            FIXTURE_CREATED,
+            "--logbook",
+            detour.to_str().unwrap(),
+        ]);
+        let out = common::json(&out);
+        assert_eq!(out["written"], 0);
+        assert_eq!(
+            out["sinceIgnored"],
+            serde_json::json!(["snapper", "pacman", "omarchy"]),
+            "the cursors were not dropped as another logbook's"
+        );
+        let human = cli.run(&["capture", "--since", FIXTURE_CREATED]);
+        assert!(
+            common::stdout(&human).contains("note: --since ignored for snapper, pacman, omarchy")
+        );
 
         // later: snapper sees the newer list, Omarchy was updated
         cli.stub_snapper(&fixture("logs/snapper.json"));
