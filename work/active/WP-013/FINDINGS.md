@@ -141,3 +141,70 @@ Panel view (`jax.seldon.panel view`, Changelog, filter all):
    window's log and passed vacuously. The script now takes the pid from
    `quickshell list -a -j` (config path `$OMARCHY_PATH/shell/shell.qml`),
    and requires a "Configuration Loaded" line before it trusts the log.
+
+## 5. Live shell vs headless harness (live session, rebased onto `main` `f54e382`)
+
+Setup and step table: `live/RESULTS.md`.
+
+1. **`aggregations.overlay` is 23 live and 0 headless, on the same index.**
+   - Command: `omarchy-shell shell toggle jax.seldon`, then
+     `omarchy-shell shell call jax.seldon view ""`.
+   - Live answer:
+     `"aggregations":{"service":736,"overlay":23}`. That holds on the
+     first open and stays the same after period keys, hover and a second
+     open.
+   - Headless answer: `overlay-view.sh` (and a probe run of its harness
+     with a copy of the live `index.json`) gives `"overlay":0`.
+     `overlay-view.sh` asserts that ("nothing the overlay did aggregated
+     anything").
+   - So in the live shell either something in the overlay aggregates 23
+     times at load, or the counter counts passes the harness does not
+     make (for example a `Model.js` instance shared with other loads in
+     the shell's engine).
+   - Plugin follow-up: investigate. I did not touch plugin code.
+2. **The heatmap's probe point from the handovers lands on empty space.**
+   - `call hover "heatmap 0.9,0.5"` (WP-031's example) returns
+     `{"slot":"heatmap","hover":""}`, live and headless alike.
+   - The 13-week grid takes only the left ~15 % of the full-width slot,
+     at 1536×864 logical and at 1920×1080. Inside the grid, the probe
+     answers live: for example `0.15,0.5` gives "Thu 2026-10-01 · 38
+     events · seldon 13 · pacman 7 · …".
+   - A real pointer on the grid gives the same kind of read-out. The
+     screenshot `live/screenshots/osaka-jade-overlay.png` shows the empty
+     space right of the grid.
+   - Not a data mismatch. It is a layout question for the plugin (stretch
+     the cells, or centre the grid), and the docs' example point should
+     lie inside the grid.
+3. **Everything else agrees.** Live, as in the harness:
+   - pill and tone from `summary`;
+   - the tab digits, h/l wrap, the cursor rule and two-press arming;
+   - the QuickEntry argv (a `--help` note arrives verbatim);
+   - the drift sheet's default actions (Link with a proposed case,
+     otherwise Explain), its results and the `+2` badge;
+   - each chart painted once on open;
+   - period changes repaint only the windowed charts;
+   - hover repaints nothing;
+   - Esc, a scrim click and the pill's middle click close or open the
+     overlay.
+4. **Resolved on `main` since the first part of this WP.**
+   - `seldon open --editor` no longer kills a terminal editor after 10 s
+     (WP-012 Decision 1).
+   - `seldon init --json` reports a real first capture instead of "no
+     collectors in this engine version" (§3 above).
+5. **The crash on shell exit also happens outside the e2e script.** The
+   4th crash report (15:13:11, signal 11) came from a shell restart that
+   no WP-013 run made: my last contact with the host before it was at
+   15:06. A Quickshell crash-report window (`org.quickshell`) is still
+   open from it.
+
+## 6. Driving the live shell: pitfalls found
+
+- `hyprctl activewindow` keeps naming the client window (foot) while a
+  layer-shell panel has the keyboard. It cannot prove where keys go; the
+  plugin's `view.opened` can.
+- `ydotool mousemove --absolute` doubles the coordinates on this host
+  (`640,160` lands at `1280,320`); pass half the logical coordinates. A
+  bare `hyprctl dispatch movecursor` warps without a motion event, so
+  Quickshell sees no hover.
+- A pointer click inside a `KeyboardPanel` may close it. Keystrokes after
+  that go to the focused client window (`INCIDENT.md`).
