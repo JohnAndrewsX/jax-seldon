@@ -6,7 +6,7 @@ what the Seldon engine has recorded: active cases, unexplained changes
 `${XDG_STATE_HOME:-~/.local/state}/seldon/index.json`, which the engine
 writes.
 
-> Phase 1. The panel has the Today, Changelog and System tabs; Work,
+> Phase 2. The panel has the Today, Changelog, Work and System tabs;
 > Decisions, Memory and the Prime Radiant charts arrive in later releases.
 > Project home: https://github.com/JohnAndrewsX/jax-seldon
 
@@ -36,6 +36,7 @@ fixing. The tooltip says what and when the engine last captured.
 |---|---|
 | Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), the QuickEntry (below), today's journal entries, yesterday's behind one row; *Open in editor* (today's journal) |
 | Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; *Ledger* (this month's ledger in the editor); *Capture now* |
+| Work | your cases in three columns, Queued · Active (verification included) · Completed (the last 50, dropped ones struck through); the active cases against your limit ("2 / 3 active"); the card of the case under the cursor with its actions; *New case* |
 | System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine; a section appears only when the index has it; *Open in editor* (the logbook's `STATUS.md`) |
 
 **QuickEntry** (Today): type a note and press Enter; it goes to today's
@@ -52,6 +53,41 @@ index, without a restart.
 
 **Open in editor** runs `seldon open <journal|ledger|status|case id>
 --editor`; the engine starts your default editor (`omarchy-launch-editor`).
+
+**Work** shows one tile per case: id, steps done/total, title, the zone as
+the stripe colour, *verification* or *dropped*, and "N proposed" when the
+engine thinks open drift belongs to the case. Under the columns, the card of
+the case under the cursor: id and status, zone and risk, title, area,
+priority, steps, created/started/closed, the proposed events, and the
+actions its status allows:
+
+| Status | Actions |
+|---|---|
+| queued | *Start*, *Open* |
+| active | *Verify*, *Drop*, *Open* |
+| verification | *Done*, *Drop*, *Open* |
+| completed, dropped | *Open* |
+
+*Start*, *Verify*, *Done* and *Drop* run `seldon plan start|verify|done|drop
+<id>`; *Open* opens the case file in the editor. A click runs the action,
+except *Drop*, which asks for a second click (a dropped case stays dropped).
+The line under the WIP text shows the engine's answer, e.g. `C-2026-005:
+queued → active`, or why it refused; the case moves to its new column when
+the engine rewrites the index, and the cursor goes with it. If the index is
+behind your logbook (you changed a case in a terminal), the engine refuses
+and says why; nothing else changes.
+
+**New case** (the button or `+` from any tab) opens a sheet: a title, the
+zone (green, yellow, red), the risk (R0–R3), the priority (high, normal,
+low) and an optional area slug (`dev-env`: lowercase letters, digits, `-`).
+They start at the engine's defaults, yellow, R1, normal. Enter or *Create*
+runs `seldon plan new`; the title goes to the engine exactly as typed. The
+fields keep their text until the case exists, so a refused case is not
+lost; then the sheet closes and the cursor sits on the new case. Esc
+closes the sheet and keeps what you typed.
+
+The active-cases limit is a setting (below); the Work tab warns at and over
+it, the engine does not enforce it.
 
 The actions need the engine and an initialised logbook; otherwise the
 field says why. In dev mode (`SELDON_INDEX`) they are disabled.
@@ -77,17 +113,26 @@ reason" (a click opens the Changelog).
 | Tab / Shift-Tab | the bar's next / previous panel, as in every Omarchy panel |
 | ← / →, h / l | previous / next tab |
 | 1–6 | a tab by its fixed number: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 (a tab this version does not have yet: nothing happens) |
-| ↑ / ↓, k / j | move in the list |
-| Enter, Space | open the row (a group's members, the full text, yesterday's entries) |
+| ↑ / ↓, k / j | move in the list; on Work, through the cases column by column |
+| Enter, Space | open the row (a group's members, the full text, yesterday's entries); on Work, the card's first action: *Open* at once, *Start*, *Verify* or *Done* on the second press |
+| x | Work: drop the case under the cursor, on the second press |
 | f / F | Changelog: next / previous source filter |
 | c | capture now |
 | n | write a note: focuses the QuickEntry (from any tab) |
-| e | open this tab's file in the editor: journal, ledger, `STATUS.md` |
+| + | new case: opens the Work tab's sheet (from any tab) |
+| e | open this tab's file in the editor: journal, ledger, the case under the Work cursor, `STATUS.md` |
 | Esc | close |
+
+On Work, the first Enter (or x) arms the action: its button is marked and
+the card says "Press Enter again: Start C-2026-005". Any other key or a
+cursor move disarms it.
 
 While the QuickEntry field or its case picker has focus, every key goes to
 it: Enter saves, Tab moves between field and picker (↓ opens the picker),
-Esc gives the keys back to the panel.
+Esc gives the keys back to the panel. The same holds for the new-case
+sheet: Tab walks title, zone, risk, priority, area, *Create*, *Cancel*; in
+a picker ←/→ (h/l) move and Enter or Space picks; Enter in a text field
+creates the case.
 
 ## States
 
@@ -112,8 +157,8 @@ again* (or `jax.seldon.service refresh`), not on every capture interval.
 | `omarchy-shell shell toggle jax.seldon` | the Prime Radiant overlay (also `summon`, `hide`) |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
-| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, QuickEntry, last action results), as JSON |
-| `omarchy-shell jax.seldon.panel tab today\|changelog\|system` | show a tab |
+| `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, QuickEntry, the Work columns, card and sheet, last action results), as JSON |
+| `omarchy-shell jax.seldon.panel tab today\|changelog\|work\|system` | show a tab |
 | `omarchy-shell jax.seldon.panel filter all\|<source>` | set the Changelog source filter |
 | `omarchy-shell jax.seldon.service status` | the service state, as JSON |
 | `omarchy-shell jax.seldon.service refresh` | look for the engine again and re-read the index |
@@ -131,7 +176,11 @@ o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
 
 ## Settings
 
-Setup > Plugins > Seldon: **Capture interval (minutes)**, 5–120, default 15.
+Setup > Plugins > Seldon:
+
+- **Capture interval (minutes)**, 5–120, default 15.
+- **Active cases limit**, 1–20, default 3: what the Work tab measures active
+  cases against ("2 / 3 active"). Cases in verification do not count.
 
 ## Security, privacy, privileges
 
@@ -139,9 +188,10 @@ Setup > Plugins > Seldon: **Capture interval (minutes)**, 5–120, default 15.
 - Reads one JSON file. Everything shown from it is displayed as plain text,
   never evaluated.
 - Runs the `seldon` engine only with fixed argument lists from the
-  contract; ids are checked against their patterns first, free text (a
-  QuickEntry note) is one non-empty argument after `--`. Never builds a
-  shell command from logbook content. Writing to the logbook happens only
+  contract; ids are checked against their patterns first (a case id from
+  the index included), free text (a QuickEntry note, a case title) is one
+  non-empty argument after `--`. Never builds a shell command from logbook
+  content. Writing to the logbook happens only
   through the engine, on your Enter or click.
 - Opens a terminal or touches the clipboard only when you click a banner
   button, and then only with a constant command.

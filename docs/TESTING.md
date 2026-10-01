@@ -172,7 +172,19 @@ the open cases only, active first, with ids checked; `logArgs` keeps the
 note one argument after `--` (`--help`, quotes, a newline, `$(…)`) and
 refuses blank text and a malformed case id; `openArgs` takes journal,
 ledger, status or a case id and nothing else; the result lines read the
-`log`, `open` and `capture` JSON of SPEC-ENGINE §3.
+`log`, `open` and `capture` JSON of SPEC-ENGINE §3. For the Work tab
+(WP-020): `workColumns` puts the sample's cases into Queued 3, Active 3
+(2 active + 1 verification, in that order) and Completed 2, with the
+`proposedEvents` count on C-2026-005 only, and survives broken entries;
+`wipStatus` says "2 / 3 active" (verification does not count) with its
+tone at and over the limit; `caseActions` gives each status its actions;
+`planArgs` builds `plan new --zone --risk [--area] [--priority] --json --
+<title>` (the title one argument after `--` for `--help`, quotes,
+`-rf --zone red`, `$(…)`) and `plan <step> <id> --json`, and refuses a
+blank title, a bad zone, risk, priority or area slug, a malformed id and
+any other step; `validateArgs` accepts `--area` and `--priority` only in
+that order; `planResult` reads both `plan --json` shapes and the engine's
+refusal.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -209,6 +221,21 @@ the result line reads `open --json`; calls never overlap; blank notes, a
 malformed case id and an unknown open target never reach the engine; the
 engine's errors reach the result lines; dev mode and a missing engine
 refuse with a reason.
+
+The Work tab's calls (WP-020) use `["plan", action, input]` (input: a case
+id, or the new case's form) and `["wait"]`, which holds the remaining
+actions until no engine call is queued or running, so plan calls run one
+after another as the panel sends them. The fake engine's `plan` treats the
+index it last wrote as its logbook (a line `<id> <status>` in
+`$HOME/cases` overrides it, for a logbook the index has not caught up
+with), follows the engine's transition rules and refusal message, and
+rewrites the index with the case in its new column. Checked: the exact argv
+of two `plan new` calls (an option-like title, one with quotes, zone, risk,
+area and priority from the form) and of start, verify, done, drop; the
+cases in the index the fake wrote afterwards; `done` on an active case
+refused with the engine's message as `planResult`, `lastError` empty; five
+refusals in the plugin that never reach the engine; a held lock (exit 4);
+dev mode.
 
 Isolation: the scenarios run with a `PATH` made of symlinks to the few
 tools the fakes need, so a `seldon` installed system-wide never leaks in.
@@ -252,7 +279,7 @@ collapsed and opened with Enter; Changelog: 62 rows, the "+3" group expanded
 to its members, 7 folded resolution details, 6 highlighted snapshot rows,
 the pacman filter narrows to 12, `f` cycles; System: seven sections), the
 strip "2 changes in the red zone need a reason" on every tab, the keys
-(Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs, digits fixed per tab id (1, 2, 5), ↑/↓, Enter, Esc), the snapper banner on every
+(Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs, digits fixed per tab id (1, 2, 3, 5; 4 is absent and ignored), ↑/↓, Enter, Esc), the snapper banner on every
 tab, the not-initialised variant, an empty and a sparse `system`, and a log
 free of warnings, `TypeError`s and binding loops. The shell's `Style.qml`
 asks `hyprctl` and `fc-match` for gaps and the font; the script gives it
@@ -266,6 +293,23 @@ and STATUS.md with `e`, and press `c`: the fake engine's next `status`
 writes an index with one more event, and the Changelog shows 59 rows
 through the FileView, without a restart. The exact argv and the editor
 paths are compared, and a note the engine refuses keeps its text.
+
+The Work tab (WP-020) has three scenarios. On the sample (dev mode): the
+columns Queued 3 · Active 3 · Completed 2 in cursor order, "2 / 3 active",
+the "1 proposed" badge on exactly one tile, the card of the case under the
+cursor with its actions by status, and nothing armed or run without an
+engine. Live: `3`, `+`, the title `--help` typed into the sheet (no tab
+switch), zone, risk and priority picked with Tab, ←/→ and Enter, the area
+`Dev` refused in the plugin, `dev-env` accepted, Enter: the new case
+appears in Queued through the FileView with the cursor on it; then start →
+verify → done on C-2026-005 with Enter twice each, the case moving columns
+(after start "3 / 3 active · at the limit") and the cursor following it;
+Enter on the completed case opens it; Done on C-2026-008, which the fake
+engine's logbook has active (`$HOME/cases`), shows the engine's refusal
+and changes nothing; a cursor move disarms; x twice drops C-2026-004; `e`
+opens it; the exact argv of all of it. Locked: the engine refuses the new
+case (exit 4), the sheet shows the message and keeps the title, Esc and
+`+` bring it back intact.
 
 The step format is documented in the header of
 `tests/plugin/harness/panel.qml`, e.g.
@@ -351,6 +395,14 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    reports "did not return" (WP-012 handover). To see the case picker, put a fixture index in place
    (step 3): its cases are unknown to the smoke logbook, so a case note
    shows the engine's "unknown case" and keeps its text.
+   Work tab (WP-020), with the engine's own index: `wtype 3`, `wtype +`,
+   type a title, `wtype -k Tab` / `-k Right` / `-k Return` through the
+   pickers, `wtype -k Return` in a text field; `view` shows `work.result`
+   "Created C-…" and the case under `work.ids`; `find ~/Seldon-smoke/work`
+   shows the file in `work/queued/`. Then `wtype -k Return` twice for each
+   of start, verify and done: the file moves to `work/active/`, stays there
+   for verification, and moves to `work/completed/`; `work.columns` follows
+   each step without a restart.
 6. Screenshots: `grim -g "<x>,<y> <w>x<h>"` takes **logical** coordinates;
    the test host's output is scaled 1.25, so a region read off a full
    screenshot (physical pixels) must be divided by the scale. Over ssh also
@@ -375,9 +427,9 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
 8. Clean up: remove `~/.local/bin/seldon` and `~/.local/state/seldon/` unless
    the next WP needs them; after step 5 also `~/Seldon-smoke` and the
    `~/.config/seldon/` that `seldon init` wrote, then restart the shell (the
-   plugin shows engineMissing again). The guard hook blocks commands that
-   touch `~/.config/seldon` on the test host; ask the orchestrator for that
-   path.
+   plugin shows engineMissing again). The guard hook allows writes to
+   `~/.config/seldon` only in a plain `ssh <test host> …` command (no `;`,
+   `&` or `|` before the path).
 
 **Three themes (SPEC-PLUGIN §7)**, on the test host only — switching the
 theme is a system change, so never on the dev host. Every plugin WP that
@@ -389,7 +441,8 @@ changes what the panel draws repeats it:
    Night*, *Catppuccin Latte* (`omarchy theme list`):
    `omarchy theme set "<theme>"`, wait about 6 s (the shell restarts), open
    the panel and capture Today, Changelog, System and the Changelog filtered
-   to pacman with the cursor on the "+3" row and Enter pressed.
+   to pacman with the cursor on the "+3" row and Enter pressed; since
+   WP-020 also Work (the columns and a card) and its new-case sheet.
 3. Look for: every colour follows the theme — panel border, tab and chip
    fills, the zone stripes (red = the theme's urgent colour, yellow = its
    accent), the red strip, banners, the snapshot row highlight; dim text
