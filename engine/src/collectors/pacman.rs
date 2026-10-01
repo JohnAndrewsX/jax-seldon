@@ -31,7 +31,9 @@
 //!   `actor` and `case` from a hook `command` event in the ledger whose
 //!   `ts` (the command's start) lies at most 10 minutes before the
 //!   transaction began (its Running line, else `transaction started`) and
-//!   not after it. The command must name the package; a full upgrade
+//!   not after it. The command must name the package, and only reaches a
+//!   package the transaction's own command names too (`explicit` is not
+//!   `false`); a full upgrade
 //!   (`-Syu`, `omarchy update`, bare `yay`) only counts for a transaction
 //!   whose own command is a full upgrade, or that has none. `omarchy update`
 //!   also names the keyrings it installs first. Query commands (`-Ss`, `-Q`,
@@ -765,20 +767,28 @@ pub fn causes(events: &[Event]) -> Vec<Cause> {
 
 /// The latest cause for `package` in a transaction that `began` at that
 /// instant (ADR-0017 §2 §3): the command started at most 10 minutes before
-/// `began` and not after it, and either names `package`, or is a full
-/// upgrade while the transaction's own command is one too
+/// `began` and not after it, and either names `package` while the
+/// transaction's own command names it too (`named_by_tx`: `explicit` is not
+/// `Some(false)`, so also when the transaction has no command line), or is a
+/// full upgrade while the transaction's own command is one too
 /// (`tx_full_upgrade`, also true when the transaction has no command line).
+///
+/// A naming command never reaches a package the transaction only pulled in
+/// or upgraded along the way: an agent's `yay -S zed` does not make zed's
+/// later upgrade by a human's plain `-Syu` the agent's. Such members get
+/// the full-upgrade path and inheritance only.
 pub fn find_cause<'c>(
     causes: &'c [Cause],
     package: &str,
     began: DateTime<FixedOffset>,
+    named_by_tx: bool,
     tx_full_upgrade: bool,
 ) -> Option<&'c Cause> {
     causes
         .iter()
         .filter(|c| c.ts <= began && began - c.ts <= ATTRIBUTION_WINDOW)
         .filter(|c| {
-            c.intent.packages.iter().any(|p| p == package)
+            (named_by_tx && c.intent.packages.iter().any(|p| p == package))
                 || (c.intent.full_upgrade && tx_full_upgrade)
         })
         .max_by_key(|c| c.ts)
@@ -823,7 +833,8 @@ pub fn attribute(
         .iter()
         .map(|e| {
             let full = tx_is_full_upgrade(e.meta.command.as_deref());
-            find_cause(&causes, &e.subject, start(e), full)
+            let named = e.explicit != Some(false);
+            find_cause(&causes, &e.subject, start(e), named, full)
                 .map(|c| (c.actor.clone(), c.case.clone()))
         })
         .collect();

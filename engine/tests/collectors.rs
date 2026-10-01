@@ -342,6 +342,50 @@ mod collectors {
     }
 
     #[test]
+    fn a_naming_command_does_not_reach_a_later_plain_upgrade() {
+        // reviewer's case: the agent installs zed at 12:00 in its own
+        // transaction; at 12:05 a human's plain -Syu upgrades zed and
+        // firefox. The agent's command names zed, but the -Syu does not, so
+        // the upgrade stays the human's (system), with no case.
+        let mut b = Bench::new("naming-scope");
+        append(
+            &b,
+            vec![hook_event(
+                "2026-10-01T12:00:00+02:00",
+                "agent:claude-code",
+                Some("C-2026-004"),
+                "yay -S zed",
+            )],
+        );
+        let log = b.scratch.path("pkg.log");
+        b.sources.pacman_log = log.clone();
+        std::fs::write(
+            &log,
+            "[2026-10-01T12:00:10+0200] [PACMAN] Running 'pacman -S --needed --noconfirm --config /etc/pacman.conf -- extra/zed'\n\
+             [2026-10-01T12:00:11+0200] [ALPM] transaction started\n\
+             [2026-10-01T12:00:11+0200] [ALPM] installed zed (0.198.4-1)\n\
+             [2026-10-01T12:00:11+0200] [ALPM] transaction completed\n\
+             [2026-10-01T12:05:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+             [2026-10-01T12:05:30+0200] [ALPM] transaction started\n\
+             [2026-10-01T12:05:30+0200] [ALPM] upgraded zed (0.198.4-1 -> 0.199.0-1)\n\
+             [2026-10-01T12:05:31+0200] [ALPM] upgraded firefox (143.0.1-1 -> 143.0.2-1)\n\
+             [2026-10-01T12:05:31+0200] [ALPM] transaction completed\n",
+        )
+        .unwrap();
+        b.baseline = support::ts("2026-10-01T00:00:00+02:00");
+        let out = b.run(&Pacman, "2026-10-01T12:10:00+02:00");
+        assert_eq!(
+            attribution(&out.events),
+            [
+                ("zed", "agent:claude-code", Some("C-2026-004")),
+                ("zed", "system", None),
+                ("firefox", "system", None),
+            ]
+        );
+        assert_eq!(out.events[1].explicit, Some(false));
+    }
+
+    #[test]
     fn queries_and_late_commands_never_attribute() {
         let mut b = Bench::new("queries");
         append(
