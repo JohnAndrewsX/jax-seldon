@@ -28,6 +28,8 @@ mod event {
                 "from=kanagawa",
                 "--meta",
                 "to=tokyo-night",
+                "--actor",
+                "human",
                 "--json",
             ],
         );

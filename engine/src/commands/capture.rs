@@ -12,6 +12,11 @@
 //! when disabled. `--since TS` sets the baseline for collectors that have no
 //! cursor yet (default: the logbook's `created` time); collectors with a
 //! cursor ignore it, and the output says so (`sinceIgnored`).
+//!
+//! Before the append, the shared attribution pass gives config, theme and
+//! plugins events the actor and case of the agent command that provably
+//! caused them (`attribution.rs`). The pacman and omarchy collectors
+//! attribute their own events.
 
 use std::fmt::Write as _;
 
@@ -19,6 +24,7 @@ use chrono::{DateTime, FixedOffset, Local, Timelike as _};
 use serde_json::json;
 
 use super::{Context, Output};
+use crate::attribution;
 use crate::collectors::{self, CollectorState, Ctx, Cursors, REGISTRY, Sources, Tz};
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -92,9 +98,10 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         None => created(&logbook)?,
     };
     let sources = Sources::from_env();
-    let (events, reports, states) = collect_all(
+    let (mut events, reports, states) = collect_all(
         &selected, &config, ctx, &ledger, &cursors, &logbook, &sources, now, baseline,
     );
+    attribution::attribute_from_ledger(&ledger, &mut events, &ctx.dirs.home)?;
 
     let written = ledger.append(&lock, events)?;
     for (name, state) in states {

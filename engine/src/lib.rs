@@ -3,6 +3,7 @@
 //! The binary (`src/main.rs`) is a thin CLI over this library so that the
 //! integration tests in `tests/` can use the types directly.
 
+pub mod attribution;
 pub mod collectors;
 pub mod commands;
 pub mod config;
@@ -12,6 +13,7 @@ pub mod index;
 pub mod ledger;
 pub mod logbook;
 pub mod model;
+pub mod pkgcmd;
 pub mod redact;
 pub mod sys;
 

@@ -4,8 +4,8 @@
 
 use regex::Regex;
 
-use crate::collectors::pacman::{parse_command, split_logged};
 use crate::model::event::{Event, Kind};
+use crate::pkgcmd::{parse_command, split_logged};
 
 /// Word characters of the token rule: `[A-Za-z0-9._+-]`.
 fn is_word(c: char) -> bool {

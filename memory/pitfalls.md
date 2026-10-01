@@ -253,3 +253,46 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   against the sample, passed unchanged. Take numbers from the sample where
   you can. And run the whole suite after a rebase: `cargo test` stops at
   the first failing test binary, so later failures stay hidden.
+
+## 2026-10-01 · WP-009 (Engine)
+
+- **Claude Code's `Stop` hook fires after every assistant reply**, not at
+  the end of a session; `SessionEnd` fires once when the session ends
+  (hooks reference, checked 2026-10-01). A journal stub on `Stop` would
+  write one entry per reply. `hook install` uses `SessionEnd`.
+- **The fixtures in `fixtures/hooks/` are PostToolUse payloads**, but
+  ADR-0017 records on PreToolUse. Tests set `hook_event_name` per case; the
+  hook still records a PostToolUse whose `tool_use_id` is not in the ledger.
+- **Guard false positives on file content in a Bash heredoc** (WP-009,
+  twice): a doc comment "`attribution.rs`; pacman and omarchy …" matched the
+  package-manager rule (`;` + `pacman`), and test strings with
+  `> ~/.config/hypr/…` matched the `~/.config` write rule. Write file
+  content with the Edit/Write tools; a *command* the guard blocks is
+  reported, never reworded or moved into a script (ORCHESTRATION.md §11).
+- **A recorded command has no working directory.** The hook resolves
+  relative paths against the payload's `cwd` and any `cd` earlier in the
+  line, but attribution later only sees `meta.command`: a bare
+  `sed -i … bindings.conf` run inside `~/.config/hypr` cannot prove the
+  path. Paths count as `~/…`, `$HOME/…`, absolute or home-relative.
+- **A heredoc in a Bash tool call is the command's stdin**: `cat > x <<EOF`
+  carries a whole config file (and its secrets). The hook cuts heredoc
+  bodies before it records the line (`pkgcmd::parse_shell`).
+- **The theme-set hook makes its own event final.** The theme collector
+  skips a change the hook already recorded, so an agent's `omarchy theme
+  set` would stay `system` unless `seldon event` runs the attribution pass
+  itself (it does since WP-009).
+- **`~/.config/systemd` is red as a directory too**: `zone_for` checks the
+  prefix `~/.config/systemd/`, so the hook tests a path with a trailing `/`.
+- **Unwrapping wrappers can invent a command** (WP-009 review blocker).
+  `command -v yay` stripped to `yay` is a full upgrade (`yay` alone =
+  `-Syu`): a red event *and* a cause that claims a human's later `-Syu`.
+  Probe options (`command -v|-V`, `sudo -l|-v|-k`) run nothing; every
+  wrapper-stripping path (`command_argv`, `command_intent`) must know them.
+- **An argv word is not a write.** Proving a config change by "the path
+  appears in the command" lets `cat x && pacman -S y` claim the user's
+  later edit of `x`. Attribution proves only through `pkgcmd::write_targets`.
+- **`2>/dev/null` is a redirection target.** Any "writes a file" rule must
+  ignore `/dev/*`, or every quiet command becomes a recorded write.
+- **The guard also reads `git commit -m` text.** A message with
+  `… && pacman -S …` as an example is blocked like a command. Write the
+  message with the Write tool and commit with `-F`.

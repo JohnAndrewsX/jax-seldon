@@ -105,6 +105,9 @@ enum Command {
 
     /// Regenerate STATUS.md, the ledger views and index.json; print a summary
     Status(commands::status::StatusArgs),
+
+    /// Agent hooks: record commands, session context, install into a harness
+    Hook(commands::hook::HookArgs),
 }
 
 #[derive(Debug, Args)]
@@ -144,6 +147,24 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(err) => return parse_error(&err, &argv),
     };
+    // hooks an agent harness calls never block it: errors go to stderr, exit 0
+    if let Some(Command::Hook(h)) = &cli.command
+        && h.command.is_agent_hook()
+    {
+        commands::hook::run_agent_hook(
+            || {
+                Context::from_env(
+                    cli.json,
+                    cli.quiet,
+                    cli.no_commit,
+                    cli.logbook.clone(),
+                    cli.config.clone(),
+                )
+            },
+            h.command.clone(),
+        );
+        return ExitCode::SUCCESS;
+    }
     let (json, quiet) = (cli.json, cli.quiet);
     match run(cli) {
         Ok(out) => {
@@ -214,6 +235,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Open(a) => commands::open::run(&ctx, a),
         Command::Index(a) => commands::index::run(&ctx, a),
         Command::Status(a) => commands::status::run(&ctx, a),
+        Command::Hook(a) => commands::hook::run(&ctx, a),
     }
 }
 
