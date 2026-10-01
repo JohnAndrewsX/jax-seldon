@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fake `seldon` for the plugin harnesses (tests/plugin/service-states.sh,
 # panel-view.sh). Speaks just enough of the CLI (SPEC-ENGINE §3) for the
-# plugin: --version, capture, status, log, open, plan new|start|verify|done|drop.
+# plugin: --version, capture, status, log, open, plan new|start|verify|done|drop,
+# drift link|explain|dismiss|show.
 # Every call is logged to $HOME/calls.log as "start <cmd>" / "end <cmd>" so
 # the test can prove calls never overlap, and its exact argv to
 # $HOME/argv.log, one line per call, each argument `printf %q`-quoted (a
@@ -16,7 +17,8 @@
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
-#   FAKE_SELDON_LOCKED   if set, every `plan` call exits 4 (lock held)
+#   FAKE_SELDON_LOCKED   if set, every `plan` and resolving `drift` call exits 4
+#                        (lock held)
 #   FAKE_SELDON_UNKNOWN_CASE  the case id `log`, `open` and `plan` do not
 #                        know (default C-2026-999): exit 1, "unknown case <id>"
 #
@@ -27,6 +29,17 @@
 # engine's message; an allowed step, and `plan new`, rewrite the state index
 # atomically with the case in its new column, as the real engine's index
 # rebuild does. Needs jq.
+#
+# `drift link|explain|dismiss` (WP-021) work on the same state index: the
+# engine's checks and messages (a link's case first, then the event), the
+# selection (a group's open members, or the named event with --only), the
+# fold (resolution, resolutionDetail, case; ADR-0021 for explain), the item
+# dropped or re-keyed to a new leader after --only, the summary recounted,
+# and `explain`'s retroactive completed case. A re-run on a resolved event,
+# or on an event $HOME/resolved lists as "<id> <resolution> [<case>]" (a
+# logbook the index has not caught up with), is the engine's no-op:
+# resolved 0 and `already`. `drift show` lists the open members, plus those
+# in $HOME/extra-events.json (members the capped index no longer lists).
 #
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
@@ -172,6 +185,149 @@ plan_step() { # plan_step <start|verify|done|drop> <id>
     git: {committed: true, message: ($id + " " + $to)}}'
 }
 
+# ---- drift (SPEC-ENGINE §3, §5; WP-008 handover) ----------------------------
+
+# The open drift events of the state index: every item's own event, and the
+# caseless, unresolved members of a group item (ADR-0013).
+DRIFT_DEFS='def items: (.drift // []);
+  def groups: [items[] | select(.members != null and .txId != null) | .txId];
+  def open_ids: ([items[] | .eventId] + [groups as $g | .events[]
+      | select(.txId != null and (.txId as $t | $g | index($t)) and .case == null and .resolution == null) | .id]) | unique;
+  def event($id): [.events[] | select(.id == $id)][0];'
+
+# What a resolving call on $id resolves: nothing when the event is not open,
+# itself with --only or when it is no group member, else every open member of
+# its transaction, oldest first.
+DRIFT_SELECT='open_ids as $open | event($id) as $e
+  | if ($open | index($id)) == null then []
+    elif $only or ($e.source != "pacman") or ($e.txId == null) or ((groups | index($e.txId)) == null) then [$e]
+    else [.events[] | select(.id as $i | $open | index($i)) | select(.txId == $e.txId)] | sort_by(.ts, .id) end'
+
+# Fold the resolution onto the selected events, drop their items, re-key a
+# group that keeps open members (new leader: lowest-id explicit member, else
+# lowest id; `members` only from 2 on), and recount the summary by the items
+# that went away (so a capped index keeps counting what it does not list).
+DRIFT_APPLY='def leader: (map(select(.explicit == true)) | sort_by(.id) | first) // (sort_by(.id) | first);
+  (.drift // []) as $before
+  | ($sel | map(.id)) as $ids
+  | .events |= map(if (.id as $i | $ids | index($i)) then . + {resolution: $res, resolutionDetail: $detail}
+      + (if $case == "" then {} else {case: $case} end) else . end)
+  | . as $root
+  | .drift = [($before[]) as $d
+      | if ($ids | index($d.eventId)) == null and ($d.members == null or $d.txId == null) then $d
+        else ([$root.events[] | select($d.members != null and $d.txId != null and .txId == $d.txId
+              and .case == null and .resolution == null)]) as $rest
+          | if ($rest | length) == 0 then empty
+            elif ($ids | index($d.eventId)) == null then
+              if ($rest | length) > 1 then $d + {members: ($rest | length)} else $d | del(.txId, .members) end
+            else ($rest | leader) as $l
+              | {eventId: $l.id, ts: $l.ts, source: $l.source, kind: $l.kind, subject: $l.subject, detail: $l.detail,
+                 actor: $l.actor, zone: $d.zone, crisis: $d.crisis, proposedCase: null}
+                + (if ($rest | length) > 1 then {txId: $d.txId, members: ($rest | length)} else {} end)
+            end
+        end]
+  | .summary.openDrift -= (($before | length) - (.drift | length))
+  | .summary.crisis -= (([$before[] | select(.crisis)] | length) - ([.drift[] | select(.crisis)] | length))
+  | .cases |= with_entries(.value |= map(if .proposedEvents == null then .
+      else .proposedEvents |= ([.[] | select(. as $p | $ids | index($p) | not)] | if length == 0 then null else . end) end))'
+
+drift_cmd() { # drift_cmd <link|explain|dismiss> <id> [<case>] [options] [-- <text>]
+  local verb=$1 id=${2:-} case_id="" only=false zone="" risk=R1 area="" text="" what index line sel n res detail new=""
+  shift 2 || true
+  if [[ $verb == link ]]; then
+    case_id=${1:-}
+    shift || true
+  fi
+  while (($# > 0)) && [[ $1 != -- ]]; do
+    case $1 in
+      --only) only=true ;;
+      --zone) zone=$2; shift ;;
+      --risk) risk=$2; shift ;;
+      --area) area=$2; shift ;;
+    esac
+    shift
+  done
+  text=${2:-}
+  if [[ $verb != link ]]; then
+    what="the intent"
+    [[ $verb == dismiss ]] && what="the reason"
+    [[ -n ${text//[[:space:]]/} ]] || user_error "$what must not be empty"
+    [[ $text != *$'\n'* ]] || user_error "$what must be one line"
+    text=$(printf '%s' "$text" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  fi
+  index=$(state_index)
+  # A link names an existing case, also when there is nothing to resolve.
+  if [[ $verb == link ]] && { [[ $case_id == "$unknown" ]] \
+      || ! jq -e --arg c "$case_id" '[.cases[][] | select(.id == $c)] | length > 0' "$index" >/dev/null 2>&1; }; then
+    user_error "unknown case $case_id"
+  fi
+  jq -e --arg id "$id" 'any(.events[]; .id == $id)' "$index" >/dev/null 2>&1 || user_error "unknown event $id"
+  case $verb in
+    link) res=linked ;;
+    explain) res=explained ;;
+    dismiss) res=dismissed ;;
+  esac
+  # Resolved in the logbook, but the index has not caught up: $HOME/resolved
+  # holds "<id> <resolution> [<case>]" lines.
+  if [[ -f $HOME/resolved ]] && line=$(grep -m 1 "^$id " "$HOME/resolved"); then
+    read -r _ how owner <<<"$line"
+    jq -cn --arg id "$id" --arg res "$res" --arg how "$how" --arg owner "${owner:-}" \
+      '{eventId: $id, resolution: $res, resolved: 0, events: [], already: {resolution: $how, case: (if $owner == "" then null else $owner end)}}'
+    return
+  fi
+  sel=$(jq -c --arg id "$id" --argjson only "$only" "$DRIFT_DEFS $DRIFT_SELECT" "$index")
+  n=$(jq 'length' <<<"$sel")
+  if ((n == 0)); then
+    jq -c --arg id "$id" --arg res "$res" 'def event($id): [.events[] | select(.id == $id)][0];
+      event($id) as $e | {eventId: $id, resolution: $res, resolved: 0, events: [], already: {resolution: $e.resolution, case: $e.case}}' "$index"
+    return
+  fi
+  detail=$text
+  [[ $verb == link ]] && detail=""
+  if [[ $verb == explain ]]; then
+    new=$(printf 'C-2026-%03d' "$(jq '[.cases[][] | .id | capture("^C-2026-(?<n>[0-9]+)$").n | tonumber] | (max // 0) + 1' "$index")")
+    [[ -n $zone ]] || zone=$(jq -r --argjson sel "$sel" \
+      '([.drift[] | select(.eventId as $x | $sel | map(.id) | index($x))][0].zone) // $sel[0].zone // "yellow"' "$index")
+    rewrite_index '.cases.completed = [{id: $new, title: $intent, status: "completed", zone: $zone, risk: $risk, priority: "normal"}
+        + (if $area == "" then {} else {area: $area} end)
+        + {created: ($sel[0].ts[0:10]), started: ($sel[0].ts[0:10]), closed: "2026-10-01", snapshotBefore: null,
+           agents: [], events: ($sel | map(.id)), tags: [], path: ("work/completed/" + $new + "-case.md"), steps: {total: 0, done: 0}}]
+        + .cases.completed' \
+      --arg new "$new" --arg intent "$text" --arg zone "$zone" --arg risk "$risk" --arg area "$area" --argjson sel "$sel"
+  fi
+  rewrite_index "$DRIFT_APPLY" --argjson sel "$sel" --arg res "$res" \
+    --arg case "${new:-$case_id}" --argjson detail "$(jq -n --arg d "$detail" 'if $d == "" then null else $d end')"
+  jq -c --arg id "$id" --arg res "$res" --argjson only "$only" --argjson sel "$sel" --arg case "${new:-$case_id}" \
+    --arg detail "$detail" --arg area "$area" --arg verb "$verb" '
+    ([.cases[][] | select(.id == $case)][0]) as $c
+    | {eventId: $id, resolution: $res, only: $only,
+       txId: (if ($sel | length) > 1 then $sel[0].txId else null end),
+       resolved: ($sel | length),
+       events: [$sel[] | {id: ("01M3W1FAKERES" + (.id[13:26])), source: "seldon", kind: "resolution", subject: .subject,
+         refersTo: .id, resolution: $res, case: (if $case == "" then null else $case end),
+         detail: (if $detail == "" then null else $detail end)}],
+       case: (if $c == null then null else $c end),
+       areaCreated: (if $verb == "explain" and $area != "" then $area else null end),
+       git: {committed: true, message: ("seldon: drift " + $res + ": " + ($sel | length | tostring) + " event(s)"
+         + (if $case == "" then "" else ", " + $case end))}}' "$(state_index)"
+}
+
+drift_show() { # drift_show <id>: {event, open, item, txId, members}; members
+  # the index no longer lists come from $HOME/extra-events.json (an array).
+  local id=$1 index extra='[]'
+  index=$(state_index)
+  jq -e --arg id "$id" 'any(.events[]; .id == $id)' "$index" >/dev/null 2>&1 || user_error "unknown event $id"
+  [[ -f $HOME/extra-events.json ]] && extra=$(<"$HOME/extra-events.json")
+  jq -c --arg id "$id" --argjson extra "$extra" "$DRIFT_DEFS"'
+    .events += $extra | open_ids as $open | event($id) as $e
+    | ([items[] | select(.eventId == $id or (.txId != null and .members != null and .txId == $e.txId))][0]) as $item
+    | (if ($open | index($id)) == null then []
+       elif $item != null and $item.members != null then
+         [.events[] | select(.txId == $item.txId and .case == null and .resolution == null)] | sort_by(.ts, .id)
+       else [$e] end) as $m
+    | {event: $e, open: ($m | length > 0), item: $item, txId: (if ($m | length) > 1 then $e.txId else null end), members: $m}' "$index"
+}
+
 case "$cmd" in
   --version)
     echo '{"name":"seldon","version":"0.1.0-fake"}'
@@ -241,6 +397,22 @@ case "$cmd" in
     case "${2:-}" in
       new) shift 2; plan_new "$@" ;;
       start | verify | done | drop) plan_step "$2" "${3:-}" ;;
+      *) user_error "unrecognized subcommand '${2:-}'" ;;
+    esac
+    ;;
+  drift)
+    sleep 0.2
+    [[ $mode == uninit ]] && uninit
+    case "${2:-}" in
+      show) drift_show "${3:-}" ;;
+      link | explain | dismiss)
+        if [[ -n ${FAKE_SELDON_LOCKED:-} ]]; then
+          echo '{"error":{"code":4,"message":"the logbook is locked by another seldon (pid 4242)"}}'
+          exit 4
+        fi
+        shift
+        drift_cmd "$@"
+        ;;
       *) user_error "unrecognized subcommand '${2:-}'" ;;
     esac
     ;;

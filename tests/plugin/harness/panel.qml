@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtTest
 import Quickshell
+import qs.Commons
 
 // Headless harness for plugin/Panel.qml (docs/TESTING.md, "Plugin").
 //
@@ -19,6 +20,15 @@ import Quickshell
 //                       type:<text>        each character of text, typed
 //                       tab:<id>           Panel.selectTabById(id)
 //                       filter:<source>    Panel.setFilter(source)
+//                       resolve:<target>   Panel.resolve(target): the drift
+//                                          sheet for an event id, or "crisis"
+//                                          (a click on the red strip)
+//                       click:<text>       click the centre of the first
+//                                          visible item whose text is <text>
+//                                          (a Button, or a label over a
+//                                          MouseArea such as the red strip)
+//                       shot:<name>        save the window as
+//                                          $HARNESS_SHOTS/<name>.png
 //                       view               no action, just report
 //                       settle             wait (up to 15 s) until no engine
 //                                          call is queued or running
@@ -66,7 +76,8 @@ ShellRoot {
 
   function report(tag) {
     var view = root.panel ? root.panel.view() : null
-    console.log("HARNESS step " + tag + " " + JSON.stringify({
+    // The tag is one word: panel-view.sh cuts the line at the first space after it.
+    console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
       view: view, switches: fakeBar.switches, texts: texts(win.contentItem, [])
     }))
   }
@@ -104,7 +115,28 @@ ShellRoot {
       root.panel.selectTabById(arg)
     } else if (verb === "filter") {
       root.panel.setFilter(arg)
+    } else if (verb === "resolve") {
+      root.panel.resolve(arg)
+    } else if (verb === "click") {
+      var target = root.findText(win.contentItem, arg)
+      if (target) driver.mouseClick(target)
+      else console.log("HARNESS nothing to click: " + arg)
+    } else if (verb === "shot") {
+      var dir = Quickshell.env("HARNESS_SHOTS") || ""
+      if (dir !== "") win.contentItem.grabToImage(function(result) { result.saveToFile(dir + "/" + arg + ".png") })
     }
+  }
+
+  // The first visible item, in tree order, whose text is `label`.
+  function findText(item, label) {
+    if (!item || item.visible === false) return null
+    if (item.text === label) return item
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) {
+      var found = root.findText(kids[i], label)
+      if (found) return found
+    }
+    return null
   }
 
   Window {
@@ -112,6 +144,13 @@ ShellRoot {
     visible: true
     width: 700
     height: 1000
+
+    // The theme's background under the panel, for `shot:` (grabToImage
+    // leaves out the window colour).
+    Rectangle {
+      anchors.fill: parent
+      color: Color.background
+    }
   }
 
   TestCase {

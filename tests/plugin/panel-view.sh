@@ -136,7 +136,10 @@ expect sample 7 .view.cursor 32
 shows sample 7 "firefox"
 shows sample 7 "+2"
 shows sample 7 "Unexplained"
-expect sample 8 .view.changelog.expanded 01M3SXBQVR7AW8PJQC1YXDCQ14
+expect sample 8 .view.drift.open true
+expect sample 8 .view.drift.subject firefox
+expect sample 8 '.view.drift.members | length' 3
+shows sample 8 "3 packages in one transaction:"
 shows sample 8 "· upgrade libinput  1.29.1-1 → 1.29.2-1"
 expect sample 9 .view.tab system
 expect sample 9 '.view.system | join(",")' "OMARCHY,PACKAGES,PLUGINS,SNAPSHOTS,AREAS,COLLECTORS,SELDON"
@@ -457,6 +460,262 @@ expect work-locked 6 '.view.work.columns | join(",")' "queued 3,active 3,complet
 expect work-locked 7 .view.work.sheet.open true
 expect work-locked 7 .view.work.sheet.title "keep me"
 clean_log work-locked
+
+# 12. The drift sheet on the sample (dev mode, read-only; WP-021): Enter on an
+#     open drift row and the IPC route open it for each of the four items
+#     with the right defaults (Link with the proposed case for the theme
+#     item, Explain for the crises and the group), a group lists its three
+#     members and offers "Only <the row's package>", a member row opens the
+#     group named by that member, and a click on the red strip opens the
+#     first crisis with the cursor on its row. Nothing can be sent.
+THEME=01M3VTGNY0NZG4AY80814WSKGR UNIT=01M3VNJ9JGZ9169T01XCW16FT0 OLLAMA=01M3VNFTF8EVHWFFZ687N14Q0C
+FIREFOX=01M3SXBQVR7AW8PJQC1YXDCQ14 NOTO=01M3SXBRV0E702XKBM22HEV1B8
+run drift-sample "$fx/index.sample.json" \
+  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Escape;resolve:$UNIT;key:Escape;resolve:$OLLAMA;key:Escape;resolve:$FIREFOX;key:Escape;resolve:$NOTO;key:Escape;click:2 changes in the red zone need a reason"
+expect drift-sample 3 .view.cursor 4
+shows drift-sample 3 "Resolve…"
+expect drift-sample 4 .view.drift.open true
+expect drift-sample 4 .view.drift.editing true
+expect drift-sample 4 .view.drift.eventId $THEME
+expect drift-sample 4 .view.drift.subject tokyo-night
+expect drift-sample 4 .view.drift.action link
+expect drift-sample 4 .view.drift.caseId C-2026-005
+expect drift-sample 4 '.view.drift.cases | join(",")' "C-2026-005,C-2026-003,C-2026-004,C-2026-008,C-2026-006,C-2026-007"
+expect drift-sample 4 .view.drift.hint "Dev mode is read-only"
+for text in "RESOLVE DRIFT" "proposed for C-2026-005" "kanagawa → tokyo-night · human · 2026-10-01 15:30" \
+  "C-2026-005 · Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim) · proposed" "Link" "Explain" "Dismiss" "Cancel"; do
+  shows drift-sample 4 "$text"
+done
+expect drift-sample 5 .view.drift.armed false
+expect drift-sample 5 .view.drift.result ""
+expect drift-sample 6 .view.drift.open false
+expect drift-sample 6 .view.drift.editing false
+expect drift-sample 6 .view.cursor 4
+expect drift-sample 7 .view.drift.subject "~/.config/systemd/user/ollama.service"
+expect drift-sample 7 .view.drift.action explain
+expect drift-sample 7 .view.drift.zone red
+expect drift-sample 7 .view.drift.explainZone red
+expect drift-sample 7 .view.drift.risk R1
+expect drift-sample 7 '.view.drift.cases[0]' ""
+shows drift-sample 7 "RESOLVE A RED-ZONE CHANGE"
+shows drift-sample 7 "red · crisis"
+expect drift-sample 9 .view.drift.subject ollama
+expect drift-sample 9 .view.drift.action explain
+expect drift-sample 11 .view.drift.subject firefox
+expect drift-sample 11 .view.drift.badge +2
+expect drift-sample 11 .view.drift.zone yellow
+expect drift-sample 11 '.view.drift.members | join(" | ")' \
+  "· upgrade firefox  143.0.1-1 → 143.0.2-1 | · upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1 | · upgrade libinput  1.29.1-1 → 1.29.2-1"
+shows drift-sample 11 "All 3"
+shows drift-sample 11 "Only firefox"
+expect drift-sample 13 .view.drift.eventId $NOTO
+expect drift-sample 13 .view.drift.subject firefox
+shows drift-sample 13 "Only noto-fonts"
+expect drift-sample 15 .view.drift.open true
+expect drift-sample 15 .view.drift.eventId $UNIT
+expect drift-sample 15 .view.cursor 7
+expect drift-sample 15 .view.tab changelog
+clean_log drift-sample
+
+# 13. ADR-0020: the index lists fewer drift items than the summary counts.
+jq '.summary.openDrift = 250' "$fx/index.sample.json" >"$work/capped.json"
+run drift-capped "$work/capped.json" "tab:changelog"
+expect drift-capped 1 .view.changelog.more "+246 more open drift items not listed here"
+shows drift-capped 1 "+246 more open drift items not listed here"
+expect drift-capped 1 .view.pill "⟡ 2 · 250"
+clean_log drift-capped
+
+# 14. The drift sheet live, against the fake engine, with real keys: Enter on
+#     the theme row, Enter twice links it to the preselected C-2026-005; a
+#     click on the red strip opens the first crisis, which is explained with
+#     the text `--help`, risk R2 (a change disarms) and area dev-env; Open
+#     case opens the new C-2026-009, which the Work tab shows as completed;
+#     the firefox group is dismissed as one: three rows fold. The pill and
+#     the strip follow every index.
+mkdir -p "$work/home-drift"
+run drift-live "" \
+  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;click:2 changes in the red zone need a reason;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:drift.isOpen=false;key:Return;settle;key:Escape;text:3;text:2;key:Down*25;key:Return;key:Backtab;key:Backtab;key:Right;key:Return;key:Tab;key:Tab;type:routine update;key:Return;key:Return;wait:drift.isOpen=false;key:Escape" \
+  HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECORD="$work/drift-live.record"
+expect drift-live 4 .view.drift.caseId C-2026-005
+expect drift-live 4 .view.drift.editing true
+expect drift-live 5 .view.drift.armed true
+expect drift-live 5 .view.drift.hint "Press Enter again: Link tokyo-night to C-2026-005"
+shows drift-live 5 "Press Enter again: Link tokyo-night to C-2026-005"
+expect drift-live 7 .view.drift.isOpen false
+expect drift-live 7 .view.drift.result "Linked 1 event to C-2026-005"
+expect drift-live 7 .view.drift.resolution "linked to C-2026-005"
+expect drift-live 7 .view.drift.openCase C-2026-005
+shows drift-live 7 "Resolved: linked to C-2026-005"
+shows drift-live 7 "Open C-2026-005"
+expect drift-live 7 .view.pill "⟡ 2 · 3"
+expect drift-live 7 .view.crisis "2 changes in the red zone need a reason"
+expect drift-live 7 '.view.changelog.resolved | map(select(startswith("tokyo-night"))) | join(",")' "tokyo-night: linked to C-2026-005"
+expect drift-live 8 .view.drift.open false
+expect drift-live 9 .view.drift.eventId $UNIT
+expect drift-live 9 .view.drift.action explain
+expect drift-live 9 .view.cursor 7
+expect drift-live 10 .view.drift.intent "--help"
+expect drift-live 10 .view.tab changelog
+expect drift-live 11 .view.drift.armed true
+expect drift-live 12 .view.drift.armed true
+expect drift-live 15 .view.drift.risk R2
+expect drift-live 15 .view.drift.armed false
+expect drift-live 17 .view.drift.area dev-env
+expect drift-live 18 .view.drift.hint "Press Enter again: Explain ~/.config/systemd/user/ollama.service as a new completed case"
+expect drift-live 20 .view.drift.result "Explained 1 event · created C-2026-009 · new area dev-env"
+expect drift-live 20 .view.drift.resolution "explained · C-2026-009: --help"
+expect drift-live 20 .view.crisis "1 change in the red zone needs a reason"
+expect drift-live 20 .view.pill "⟡ 2 · 2"
+shows drift-live 20 "Open C-2026-009"
+expect drift-live 22 .view.openResult "Opened $work/home-drift/Seldon/work/active/C-2026-009.md in omarchy-launch-editor"
+expect drift-live 23 .view.drift.open false
+expect drift-live 24 .view.tab work
+expect drift-live 24 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
+expect drift-live 24 '.view.work.ids[2]' "C-2026-009,C-2026-002,C-2026-001"
+expect drift-live 26 .view.cursor 32
+expect drift-live 27 .view.drift.subject firefox
+expect drift-live 31 .view.drift.action dismiss
+expect drift-live 34 .view.drift.reason "routine update"
+expect drift-live 35 .view.drift.hint "Press Enter again: Dismiss firefox and 2 more"
+expect drift-live 37 .view.drift.result "Dismissed 3 events"
+expect drift-live 37 '.view.changelog.resolved | map(select(endswith("dismissed: routine update"))) | join(",")' \
+  "libinput: dismissed: routine update,noto-fonts: dismissed: routine update,firefox: dismissed: routine update"
+expect drift-live 37 '.view.changelog.driftTones | join(",")' "ollama urgent"
+expect drift-live 37 '.view.changelog.badges | length' 0
+expect drift-live 37 .view.pill "⟡ 2 · 1"
+expect drift-live 38 .view.drift.open false
+expect drift-live 38 .view.opened true
+expect drift-live 38 .view.lastError ""
+q() { printf '%q ' "$@"; }
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q drift link $THEME C-2026-005 --json)" "$(q drift explain $UNIT --risk R2 --area dev-env --json -- --help)" \
+  "$(q open C-2026-009 --editor --json)" "$(q drift dismiss $FIREFOX --json -- "routine update")")
+got=$(cat "$work/home-drift/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   drift-live: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL drift-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log drift-live
+
+# 15. `--only` (ADR-0013 §4) and a refusal in the plugin: Link without a
+#     case is refused before the engine is asked; then C-2026-004 picked in
+#     the case picker by keys and "Only firefox": the leader is linked alone
+#     and the rest comes back as a smaller group led by noto-fonts ("+1"),
+#     whose sheet lists two members.
+mkdir -p "$work/home-drift-only"
+run drift-only "" \
+  "tab:changelog;key:Down;key:Down*32;key:Return;key:Backtab;key:Backtab;key:Left;key:Return;key:Tab;key:Tab;key:Tab;key:Return;key:Backtab;key:Backtab;key:Return;key:Down;key:Down;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;key:Up;key:Return" \
+  HOME="$work/home-drift-only" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect drift-only 3 .view.cursor 32
+expect drift-only 8 .view.drift.action link
+expect drift-only 8 .view.drift.caseId ""
+expect drift-only 12 .view.drift.result "Pick a case first"
+expect drift-only 12 .view.drift.armed false
+shows drift-only 12 "Pick a case first"
+expect drift-only 18 .view.drift.caseId C-2026-004
+expect drift-only 18 .view.drift.result ""
+expect drift-only 21 .view.drift.only true
+shows drift-only 21 "Only firefox"
+expect drift-only 23 .view.drift.hint "Press Enter again: Link firefox only to C-2026-004"
+expect drift-only 25 .view.drift.result "Linked 1 event to C-2026-004"
+expect drift-only 25 .view.drift.resolution "linked to C-2026-004"
+expect drift-only 25 '.view.changelog.badges | join(",")' "noto-fonts +1"
+expect drift-only 25 .view.pill "⟡ 2 · 4"
+expect drift-only 27 .view.cursor 31
+expect drift-only 28 .view.drift.eventId $NOTO
+expect drift-only 28 .view.drift.badge +1
+expect drift-only 28 '.view.drift.members | length' 2
+shows drift-only 28 "2 packages in one transaction:"
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q drift link $FIREFOX C-2026-004 --only --json)")
+got=$(cat "$work/home-drift-only/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   drift-only: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL drift-only: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log drift-only
+
+# 16. A re-run on an item the logbook has resolved but the index still shows
+#     open ($HOME/resolved): the engine writes nothing and the sheet says
+#     "Already resolved"; the index, the pill and the item stay as they were.
+mkdir -p "$work/home-drift-already"
+echo "$THEME linked C-2026-005" >"$work/home-drift-already/resolved"
+run drift-already "" "resolve:$THEME;key:Return;key:Return;settle" \
+  HOME="$work/home-drift-already" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect drift-already 4 .view.drift.result "Already resolved: linked to C-2026-005"
+expect drift-already 4 .view.drift.already true
+expect drift-already 4 .view.drift.resultOk true
+expect drift-already 4 .view.drift.isOpen true
+expect drift-already 4 .view.pill "⟡ 2 · 4"
+shows drift-already 4 "Already resolved: linked to C-2026-005"
+clean_log drift-already
+
+# 17. The engine refuses (lock held, exit 4): the sheet shows its message and
+#     keeps the text; Esc closes the sheet, and the draft is back when the
+#     sheet opens again; another item gets its own defaults.
+mkdir -p "$work/home-drift-locked"
+run drift-locked "" "resolve:$UNIT;type:keep this;key:Return;key:Return;settle;key:Escape;resolve:$THEME;key:Escape;resolve:$UNIT" \
+  HOME="$work/home-drift-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_LOCKED=1
+expect drift-locked 5 .view.drift.result "the logbook is locked by another seldon (pid 4242)"
+expect drift-locked 5 .view.drift.resultOk false
+expect drift-locked 5 .view.drift.intent "keep this"
+expect drift-locked 5 .view.drift.isOpen true
+expect drift-locked 5 .view.lastError ""
+shows drift-locked 5 "the logbook is locked by another seldon (pid 4242)"
+expect drift-locked 6 .view.drift.open false
+expect drift-locked 7 .view.drift.intent ""
+expect drift-locked 7 .view.drift.action link
+expect drift-locked 9 .view.drift.intent "keep this"
+expect drift-locked 9 .view.drift.action explain
+clean_log drift-locked
+
+# 18. A group whose members index.events no longer all lists (CONTRACT.md
+#     rule 4): the sheet shows what the index has, asks `seldon drift show`
+#     and then lists all three.
+jq '.events |= map(select(.id != "01M3SXBRV0E702XKBM22HEV1B8"))' "$fx/index.sample.json" >"$work/members-capped.json"
+mkdir -p "$work/home-drift-show"
+jq '[.events[] | select(.id == "01M3SXBRV0E702XKBM22HEV1B8")]' "$fx/index.sample.json" >"$work/home-drift-show/extra-events.json"
+run drift-show "" "resolve:$FIREFOX;wait:drift.members.1=· upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1" \
+  HOME="$work/home-drift-show" FAKE_SELDON_FIXTURE="$work/members-capped.json"
+expect drift-show 1 '.view.drift.members | join(" | ")' "· upgrade firefox  143.0.1-1 → 143.0.2-1 | · upgrade libinput  1.29.1-1 → 1.29.2-1 | … and 1 more"
+expect drift-show 2 '.view.drift.members | length' 3
+expect drift-show 2 '.view.drift.members[2]' "· upgrade libinput  1.29.1-1 → 1.29.2-1"
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q drift show $FIREFOX --json)")
+got=$(cat "$work/home-drift-show/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   drift-show: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL drift-show: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log drift-show
+
+# 19. The same from a member row (Enter on libinput): `drift show` is asked
+#     for the group's leader, and its answer fills the sheet opened from the
+#     member.
+LIBINPUT=01M3SXBRV0WPNQ721VWGG2WXZ1
+mkdir -p "$work/home-drift-show-member"
+cp "$work/home-drift-show/extra-events.json" "$work/home-drift-show-member/"
+run drift-show-member "" \
+  "tab:changelog;key:Down;key:Down*30;key:Return;wait:drift.members.1=· upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1" \
+  HOME="$work/home-drift-show-member" FAKE_SELDON_FIXTURE="$work/members-capped.json"
+expect drift-show-member 3 .view.cursor 30
+expect drift-show-member 4 .view.drift.eventId $LIBINPUT
+expect drift-show-member 4 .view.drift.subject firefox
+shows drift-show-member 4 "Only libinput"
+expect drift-show-member 5 '.view.drift.members | join(" | ")' \
+  "· upgrade firefox  143.0.1-1 → 143.0.2-1 | · upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1 | · upgrade libinput  1.29.1-1 → 1.29.2-1"
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q drift show $FIREFOX --json)")
+got=$(cat "$work/home-drift-show-member/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   drift-show-member: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL drift-show-member: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log drift-show-member
 
 real_home_check panel-view
 

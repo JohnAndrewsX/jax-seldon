@@ -16,7 +16,10 @@ import "Model.js" as Model
 // the QuickEntry note (`seldon log`), *Capture now* (capture, then status;
 // the index refresh arrives through the FileView), and *Open in editor* per
 // tab (`seldon open journal|ledger|status|<caseId> --editor`). The Work tab
-// (WP-020) adds `seldon plan new|start|verify|done|drop`.
+// (WP-020) adds `seldon plan new|start|verify|done|drop`; the Changelog's
+// drift sheet (WP-021) `seldon drift link|explain|dismiss` (and `drift show`
+// for a group's members). A click on the red strip opens the sheet for the
+// first crisis.
 //
 // Keyboard (SPEC-PLUGIN §5):
 //   Tab / Shift-Tab  the bar's next / previous panel, as every Omarchy panel
@@ -25,8 +28,9 @@ import "Model.js" as Model
 //                    Changelog 2, Work 3, Decisions 4, System 5, Memory 6);
 //                    the digit of a tab this version lacks does nothing
 //   ↑ / ↓, k / j     move in the tab's list
-//   Enter, Space     open the row under the cursor (a group, the yesterday
-//                    row); on Work, the card's first action (twice to write)
+//   Enter, Space     open the row under the cursor (the yesterday row, a
+//                    Changelog row; an open drift row opens its sheet); on
+//                    Work, the card's first action (twice to write)
 //   x                Work: drop the case under the cursor (twice)
 //   f / F            Changelog: next / previous source filter
 //   c                capture now
@@ -63,7 +67,7 @@ Panel {
   readonly property var indexData: service && service.indexShown ? service.index : null
   readonly property var tabItems: [todayTab, changelogTab, workTab, systemTab]
   // A text field or picker of a tab has the keys.
-  readonly property bool editing: todayTab.editing || workTab.editing
+  readonly property bool editing: todayTab.editing || workTab.editing || changelogTab.editing
   // The bar widget setting `wipLimit` (Work tab).
   readonly property int wipLimit: Model.clampWipLimit(setting("wipLimit", Model.WIP_LIMIT_DEFAULT))
   readonly property var currentTab: tabItems[tabIndex]
@@ -107,6 +111,16 @@ Panel {
     changelogTab.setFilter(source)
   }
 
+  // The drift sheet: "crisis" (the strip) or an event id; never runs the
+  // engine. False when the event is not open drift.
+  function resolve(target) {
+    root.selectTabById("changelog")
+    root.cursorActive = true
+    if (String(target) === "crisis") return changelogTab.openCrisis()
+    changelogTab.setFilter("all")
+    return changelogTab.openSheet(String(target))
+  }
+
   function captureNow() {
     if (root.service) root.service.captureNow()
   }
@@ -144,6 +158,7 @@ Panel {
       cursorActive: root.cursorActive,
       cursor: root.currentTab.cursor,
       status: root.service ? root.service.status : "",
+      pill: root.service ? Model.pillText(root.service.counts) : "",
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
       snapper: snapperBanner.visible && root.service.snapperBanner ? root.service.snapperBanner.title : "",
       crisis: crisisStrip.visible ? crisisLabel.text : "",
@@ -171,10 +186,45 @@ Panel {
         folded: rows.filter(function(r) { return r.resolutionDetail !== "" }).length,
         snapshots: rows.filter(function(r) { return r.snapshot }).length,
         driftTones: rows.filter(function(r) { return r.drift }).map(function(r) { return r.subject + " " + r.tone }),
+        resolved: rows.filter(function(r) { return r.resolution !== "" }).map(function(r) { return r.subject + ": " + Model.rowStatus(r) }),
+        more: changelogTab.moreDrift,
         expanded: changelogTab.expandedId
       },
+      drift: root.driftView(),
       work: root.workView(),
       system: systemTab.sections.map(function(s) { return s.title })
+    }
+  }
+
+  function driftView() {
+    var s = changelogTab.sheet
+    var it = s.shown
+    return {
+      open: changelogTab.sheetOpen,
+      editing: s.editing,
+      eventId: s.eventId,
+      isOpen: s.isOpen,
+      subject: it ? it.subject : "",
+      badge: it ? it.badge : "",
+      zone: it ? it.zone : "",
+      members: s.memberLines,
+      action: s.action,
+      caseId: s.caseId,
+      cases: s.options.map(function(o) { return o.value }),
+      only: s.only,
+      intent: s.intent,
+      reason: s.reason,
+      explainZone: s.zone,
+      risk: s.risk,
+      area: s.area,
+      armed: s.armed,
+      hint: s.hint,
+      result: s.resultText,
+      resultOk: s.resultOk,
+      already: !!s.result && s.result.already === true,
+      pending: s.pending,
+      resolution: s.resolution,
+      openCase: s.caseToOpen
     }
   }
 
@@ -313,7 +363,8 @@ Panel {
           onActionRequested: function(actionId) { if (root.service) root.service.fix(actionId, "snapper") }
         }
 
-        // The red strip (SPEC-PLUGIN §5); a click shows the changelog.
+        // The red strip (SPEC-PLUGIN §5); a click opens the drift sheet for
+        // the first crisis on the Changelog.
         BorderSurface {
           id: crisisStrip
           width: parent.width
@@ -340,10 +391,7 @@ Panel {
           MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
-              changelogTab.setFilter("all")
-              root.selectTab(1)
-            }
+            onClicked: root.resolve("crisis")
           }
         }
 
@@ -383,6 +431,7 @@ Panel {
             id: changelogTab
             anchors.fill: parent
             visible: root.tabIndex === 1
+            service: root.service
             indexData: root.indexData
             cursorActive: root.cursorActive && visible
             foreground: root.foreground
@@ -393,6 +442,8 @@ Panel {
             onCaptureRequested: root.captureNow()
             onOpenLedgerRequested: root.openInEditor("ledger")
             onCursorWanted: root.cursorActive = true
+            onLeaveRequested: keyCatcher.forceActiveFocus()
+            onEditingChanged: if (!editing) Qt.callLater(root.restoreKeys)
           }
 
           WorkTab {

@@ -460,6 +460,116 @@ run plan-devmode 2500 PATH="$fake_path" HOME="$work/home-plan-dev" SELDON_INDEX=
 expect plan-devmode .planResult.text "Dev mode is read-only"
 argv_check plan-dev "$(q --version --json)"
 
+# 25. The drift sheet's calls (WP-021): the exact argv of link (the proposed
+#     case), explain with the text `--help` (zone as the item's, so no
+#     --zone), dismiss of a group member with --only and a quoted text,
+#     explain of the rest of that group with zone, risk and area, then a
+#     re-run (the engine's no-op: "Already resolved"), and a link to a case
+#     the engine does not know (refused by the engine, its message the
+#     result). `drift show` lists a group's members. The fake engine folds
+#     every resolution into the index it writes.
+THEME=01M3VTGNY0NZG4AY80814WSKGR UNIT=01M3VNJ9JGZ9169T01XCW16FT0 OLLAMA=01M3VNFTF8EVHWFFZ687N14Q0C
+FIREFOX=01M3SXBQVR7AW8PJQC1YXDCQ14 LIBINPUT=01M3SXBRV0WPNQ721VWGG2WXZ1
+mkdir -p "$work/home-drift"
+quoted='say "hi"; $(reboot)'
+actions=$(jq -cn --arg t "$THEME" --arg u "$UNIT" --arg o "$OLLAMA" --arg f "$FIREFOX" --arg l "$LIBINPUT" --arg q "$quoted" '[
+  ["driftShow", $f], ["wait"],
+  ["drift", "link", {eventId: $t, caseId: "C-2026-005", only: false}], ["wait"],
+  ["drift", "explain", {eventId: $u, text: "--help", zone: "red", risk: "R1", area: "", itemZone: "red"}], ["wait"],
+  ["drift", "dismiss", {eventId: $l, only: true, text: $q}], ["wait"],
+  ["drift", "explain", {eventId: $f, text: "the rest", zone: "red", risk: "R3", area: "browser", itemZone: "yellow"}], ["wait"],
+  ["drift", "link", {eventId: $t, caseId: "C-2026-005"}], ["wait"],
+  ["drift", "link", {eventId: $o, caseId: "C-2026-999"}]
+]')
+run drift 3000 PATH="$fake_path" HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+argv_check drift "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q drift show $FIREFOX --json)" \
+  "$(q drift link $THEME C-2026-005 --json)" \
+  "$(q drift explain $UNIT --json -- --help)" \
+  "$(q drift dismiss $LIBINPUT --only --json -- "$quoted")" \
+  "$(q drift explain $FIREFOX --zone red --risk R3 --area browser --json -- "the rest")" \
+  "$(q drift link $THEME C-2026-005 --json)" \
+  "$(q drift link $OLLAMA C-2026-999 --json)")"
+expect drift '.driftShown.members | length' 3
+expect drift .driftShown.eventId $FIREFOX
+expect drift .driftResult.text "unknown case C-2026-999"
+expect drift .driftResult.ok false
+expect drift .driftResult.action link
+expect drift .driftResult.eventId $OLLAMA
+expect drift .lastError ""
+expect drift .pill "⟡ 2 · 1"
+expect drift .crisis "1 change in the red zone needs a reason"
+if grep -a -q 'HARNESS action \["drift","link",{"eventId":"'$THEME'","caseId":"C-2026-005"}\] true' "$work/drift.log"; then
+  pass=$((pass + 1)); echo "ok   drift: the re-run was sent"
+else
+  fail=$((fail + 1)); echo "FAIL drift: $(grep -a 'HARNESS action' "$work/drift.log")"
+fi
+state="$work/home-drift/.local/state/seldon/index.json"
+folded=$(jq -c '[.events[] | select(.id as $i | ["'$THEME'", "'$UNIT'", "'$LIBINPUT'", "'$FIREFOX'", "01M3SXBRV0E702XKBM22HEV1B8"] | index($i))
+  | [.subject, .resolution, .resolutionDetail, .case]]' "$state" 2>/dev/null || true)
+want='[["tokyo-night","linked",null,"C-2026-005"],["~/.config/systemd/user/ollama.service","explained","--help","C-2026-009"],["libinput","dismissed","say \"hi\"; $(reboot)",null],["noto-fonts","explained","the rest","C-2026-010"],["firefox","explained","the rest","C-2026-010"]]'
+if [[ $folded == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   drift: the fake engine folded every resolution"
+else
+  fail=$((fail + 1)); echo "FAIL drift: folded $folded"
+fi
+expect_index() { # expect_index <jq filter> <value> — the fake engine's index after scenario 25
+  local got
+  got=$(jq -c "$1" "$state" 2>/dev/null || true)
+  if [[ $got == "$2" ]]; then
+    pass=$((pass + 1)); echo "ok   drift index: $1 = $2"
+  else
+    fail=$((fail + 1)); echo "FAIL drift index: $1 = $got (want $2)"
+  fi
+}
+expect_index '[.drift[].subject]' '["ollama"]'
+expect_index '[.summary.openDrift, .summary.crisis]' '[1,1]'
+expect_index '[.cases.completed[] | [.id, .zone, .risk, (.area // "")]] | .[0:2]' '[["C-2026-010","red","R3","browser"],["C-2026-009","red","R1",""]]'
+expect_index '.cases.queued[0].proposedEvents' 'null'
+clean_log drift
+
+# 26. The re-run alone: its no-op answer is the result ("Already resolved").
+mkdir -p "$work/home-drift-again"
+echo "$THEME linked C-2026-005" >"$work/home-drift-again/resolved"
+actions=$(jq -cn --arg t "$THEME" '[["drift", "link", {eventId: $t, caseId: "C-2026-005"}]]')
+run drift-again 2500 PATH="$fake_path" HOME="$work/home-drift-again" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect drift-again .driftResult.text "Already resolved: linked to C-2026-005"
+expect drift-again .driftResult.already true
+expect drift-again .driftResult.ok true
+expect drift-again .driftResult.caseId C-2026-005
+expect drift-again .pill "⟡ 2 · 4"
+
+# 27. Refused before the engine is asked: a malformed event id, Link
+#     without a case or with a malformed one, a blank or two-line text, a
+#     bad area slug, an action the contract does not list, a malformed id
+#     for `drift show`. Then a held lock (exit 4) and dev mode.
+mkdir -p "$work/home-drift-refused"
+actions=$(jq -cn --arg t "$THEME" '[["drift", "link", {eventId: ($t | ascii_downcase), caseId: "C-2026-005"}],
+  ["drift", "link", {eventId: $t, caseId: ""}], ["drift", "link", {eventId: $t, caseId: "C-26-1; rm -rf ~"}],
+  ["drift", "dismiss", {eventId: $t, text: " \t "}], ["drift", "explain", {eventId: $t, text: "two\nlines"}],
+  ["drift", "explain", {eventId: $t, text: "x", area: "Dev Env"}], ["drift", "purge", {eventId: $t}],
+  ["driftShow", "not-an-id"]]')
+run drift-refused 2500 PATH="$fake_path" HOME="$work/home-drift-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+argv_check drift-refused "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+expect drift-refused .driftResult.text "Not a drift action: purge"
+expect drift-refused .driftResult.ok false
+if [[ $(grep -a -c 'HARNESS action .* false$' "$work/drift-refused.log") == 8 ]]; then
+  pass=$((pass + 1)); echo "ok   drift-refused: all eight refused"
+else
+  fail=$((fail + 1)); echo "FAIL drift-refused: $(grep -a 'HARNESS action' "$work/drift-refused.log")"
+fi
+mkdir -p "$work/home-drift-locked"
+actions=$(jq -cn --arg u "$UNIT" '[["drift", "dismiss", {eventId: $u, text: "x"}]]')
+run drift-locked 2500 PATH="$fake_path" HOME="$work/home-drift-locked" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  FAKE_SELDON_LOCKED=1 HARNESS_ACTIONS="$actions"
+expect drift-locked .driftResult.text "the logbook is locked by another seldon (pid 4242)"
+expect drift-locked .driftResult.ok false
+expect drift-locked .lastError ""
+mkdir -p "$work/home-drift-dev"
+run drift-devmode 2500 PATH="$fake_path" HOME="$work/home-drift-dev" SELDON_INDEX="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+expect drift-devmode .driftResult.text "Dev mode is read-only"
+argv_check drift-dev "$(q --version --json)"
+
 real_home_check service-states
 
 echo "service-states: $pass passed, $fail failed"
