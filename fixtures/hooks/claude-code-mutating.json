@@ -1,0 +1,19 @@
+{
+  "session_id": "6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34",
+  "transcript_path": "/home/user/.claude/projects/-home-user-Seldon/6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34.jsonl",
+  "cwd": "/home/user/Seldon",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_use_id": "toolu_01Hk7mX2qZP9wA3bC4dE5fG6",
+  "tool_input": {
+    "command": "yay -S --noconfirm zed",
+    "description": "Install the Zed editor"
+  },
+  "tool_response": {
+    "stdout": ":: Synchronizing package databases...\n extra is up to date\nresolving dependencies...\nlooking for conflicting packages...\n\nPackages (2) alsa-lib-1.2.14-1  zed-0.198.4-1\n\n:: Processing package changes...\n(1/2) installing alsa-lib\n(2/2) installing zed\n",
+    "stderr": "",
+    "interrupted": false,
+    "isImage": false
+  }
+}

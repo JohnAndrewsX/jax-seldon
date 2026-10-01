@@ -1,0 +1,43 @@
+{
+  "contractVersion": 1,
+  "generatedAt": "2026-10-01T17:05:12+02:00",
+  "engineVersion": "0.1.0",
+  "logbook": {
+    "path": "/home/user/Seldon",
+    "language": "en",
+    "machine": ""
+  },
+  "state": {
+    "status": "notInitialised",
+    "lastCapture": null,
+    "collectors": []
+  },
+  "summary": {
+    "activeCases": 0,
+    "queuedCases": 0,
+    "openDrift": 0,
+    "crisis": 0,
+    "eventsToday": 0,
+    "events7d": 0
+  },
+  "today": {
+    "date": "2026-10-01",
+    "entries": []
+  },
+  "events": [],
+  "drift": [],
+  "cases": {
+    "queued": [],
+    "active": [],
+    "verification": [],
+    "completed": []
+  },
+  "decisions": [],
+  "system": {},
+  "memory": {},
+  "series": {
+    "heatmap": [],
+    "packages": [],
+    "drift": []
+  }
+}

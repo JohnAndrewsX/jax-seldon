@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/event.schema.json",
   "title": "Seldon ledger event",
+  "description": "One line of ledger/YYYY-MM.jsonl. The same shape appears in index.events, where resolutions are folded onto their target (ADR-0012).",
   "type": "object",
   "required": ["id", "ts", "source", "kind", "subject", "actor"],
   "additionalProperties": false,
   "properties": {
-    "id":      { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "description": "ULID" },
-    "ts":      { "type": "string", "format": "date-time" },
+    "id":      { "$ref": "#/$defs/ulid" },
+    "ts":      { "type": "string", "format": "date-time", "description": "RFC 3339 with offset; the offset of the source is kept (pacman.log may say +00:00 or +02:00)" },
     "source":  { "enum": ["pacman", "snapper", "omarchy", "plugins", "theme", "config", "agent", "manual", "seldon"] },
     "kind":    { "enum": ["install", "remove", "upgrade", "downgrade", "reinstall",
                           "snapshot", "snapshot-delete", "update",
@@ -15,19 +16,32 @@
                           "theme-set", "config-change", "config-add", "config-remove",
                           "command", "note", "resolution", "correction",
                           "case-created", "case-started", "case-verified", "case-completed", "case-dropped"] },
-    "subject": { "type": "string", "maxLength": 512, "description": "package name, path, theme, plugin id, case id" },
-    "detail":  { "type": "string", "maxLength": 4096 },
-    "actor":   { "type": "string", "pattern": "^(human|system|agent:[a-z0-9-]+)$" },
-    "case":    { "type": "string", "pattern": "^C-[0-9]{4}-[0-9]{3,}$" },
+    "subject": { "type": "string", "minLength": 1, "maxLength": 512, "description": "package name, path (~-relative), theme slug, plugin id, snapshot number, case id, program name (command), 'journal' (note without case), or the target's subject (resolution, correction)" },
+    "detail":  { "type": "string", "maxLength": 4096, "description": "human-readable, redacted (SPEC-ENGINE §7)" },
+    "actor":   { "$ref": "#/$defs/actor" },
+    "case":    { "$ref": "#/$defs/caseId" },
     "zone":    { "enum": ["green", "yellow", "red"] },
     "explicit": { "type": "boolean", "description": "pacman: named on the command line" },
-    "txId":    { "type": "string" },
-    "refersTo": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "description": "resolution/correction target" },
-    "resolution": { "enum": ["linked", "explained", "dismissed"] },
-    "meta":    { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean", "null"] } }
+    "txId":    { "type": "string", "minLength": 1, "description": "pacman: opaque transaction id, shared by all lines of one transaction" },
+    "refersTo": { "$ref": "#/$defs/ulid", "description": "resolution/correction target" },
+    "resolution": { "enum": ["linked", "explained", "dismissed"], "description": "ledger: only on kind resolution; index: folded onto the target event" },
+    "meta":    {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
+      "description": "Conventional keys: command (redacted command line), version (install/remove/reinstall, plugin-add), from/to (upgrade, downgrade, update, plugin-update, theme-set), hashFrom/hashTo (config-*), type (snapper: single|pre|post), cleanup (snapper), pairOf (snapper post: number of its pre)"
+    }
   },
   "allOf": [
-    { "if": { "properties": { "kind": { "const": "resolution" } } },
-      "then": { "required": ["refersTo", "resolution"] } }
-  ]
+    { "if": { "properties": { "kind": { "const": "resolution" } }, "required": ["kind"] },
+      "then": { "required": ["refersTo", "resolution"] } },
+    { "if": { "properties": { "kind": { "const": "correction" } }, "required": ["kind"] },
+      "then": { "required": ["refersTo"] } },
+    { "if": { "properties": { "kind": { "const": "resolution" }, "resolution": { "const": "linked" } }, "required": ["kind", "resolution"] },
+      "then": { "required": ["case"] } }
+  ],
+  "$defs": {
+    "ulid":   { "type": "string", "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$", "description": "ULID (Crockford base32, 26 chars)" },
+    "actor":  { "type": "string", "pattern": "^(human|system|agent:[a-z0-9-]+)$" },
+    "caseId": { "type": "string", "pattern": "^C-[0-9]{4}-[0-9]{3,}$" }
+  }
 }

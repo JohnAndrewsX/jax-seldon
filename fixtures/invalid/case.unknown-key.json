@@ -1,0 +1,10 @@
+{
+  "id": "C-2026-009",
+  "type": "case",
+  "title": "Unbekannter Schlüssel",
+  "status": "queued",
+  "zone": "green",
+  "risk": "R0",
+  "created": "2026-10-01",
+  "owner": "human"
+}

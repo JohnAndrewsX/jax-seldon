@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/external/omarchy-plugin-list.schema.json",
+  "title": "Output of `omarchy plugin list --json` (Omarchy 4.0.4, observed)",
+  "description": "Third-party input format, not part of the engine/plugin contract. Produced by the shell IPC call listPlugins (shell.qml). There is no version field. `enabled` means 'in the bar' for bar widgets.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "name", "kinds", "enabled", "active", "canDisable", "firstParty", "clonedFrom"],
+    "additionalProperties": false,
+    "properties": {
+      "id": { "type": "string", "minLength": 1 },
+      "name": { "type": "string" },
+      "kinds": { "type": "array", "items": { "type": "string" } },
+      "enabled": { "type": "boolean" },
+      "active": { "type": "boolean", "description": "only true for the active bar" },
+      "canDisable": { "type": "boolean" },
+      "firstParty": { "type": "boolean" },
+      "clonedFrom": { "type": "string", "description": "source id of a clone (omarchy plugin clone), else empty" }
+    }
+  }
+}
