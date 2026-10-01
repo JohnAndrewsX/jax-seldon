@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Seldon",
-    "description": "Active cases and open drift at a glance",
+    "description": "Active cases and unexplained changes at a glance",
     "category": "System",
     "aliases": ["seldon", "logbook", "drift"],
     "allowMultiple": false,

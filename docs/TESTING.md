@@ -671,6 +671,11 @@ Offscreen theme renders: copy a theme's `colors.toml` from
 `shot:` steps; the harness paints the theme's background under the panel.
 They show the real components in the theme's colours, not the live
 layer-shell window; the live sweep below stays the acceptance check.
+`PANEL_SHOTS=<dir> bash tests/plugin/panel-view.sh` does this for the
+Today tab in Osaka Jade, Tokyo Night and Catppuccin Latte
+(`<dir>/panel-<theme>-today.png`): a live run against the fake engine, so
+the render has no dev-mode note (which would print the index path) and the
+QuickEntry looks as a user sees it.
 
 ### 3b. `Overlay.qml` in a private headless Quickshell
 
@@ -733,6 +738,28 @@ overlay at 1920×1080 and 2560×1440 in Osaka Jade, Tokyo Night and
 Catppuccin Latte into `<dir>`, each once on 90 d and once on 365 d with
 the pointer on the heatmap's last day (offscreen renders with each
 theme's `colors.toml`, not live screenshots).
+
+**`plugin/preview.png`** (the marketplace image, WP-041) is composed from
+two of these renders, kept in `docs/images/` (monorepo only, so the plugin
+repository stays small): `overlay-tokyo-night-1920x1080.png` (the
+`OVERLAY_SHOTS` render on 90 d) and `panel-tokyo-night-today.png` (the
+`PANEL_SHOTS` render). To refresh it after a visible change, render both,
+copy them over the files in `docs/images/`, and run (ImageMagick 7; the
+colours are Tokyo Night's `background` and `accent` from its
+`colors.toml`):
+
+```sh
+magick docs/images/panel-tokyo-night-today.png -crop 382x536+0+0 +repage \
+  -bordercolor '#1a1b26' -border 18 -bordercolor '#7aa2f7' -border 2 /tmp/panel-framed.png
+magick -size 2400x1080 xc:'#1a1b26' \
+  docs/images/overlay-tokyo-night-1920x1080.png -geometry +0+0 -composite \
+  /tmp/panel-framed.png -geometry +1942+24 -composite \
+  -strip -define png:compression-level=9 plugin/preview.png
+```
+
+The crop is the panel's 380-unit width plus its tab row's edge and the
+journal list's bottom at the default font; re-check it if the panel's
+layout changes. The image must stay under 1 MB (it is about 150 KB).
 
 ### 4. Runtime smoke test in the shell
 
