@@ -137,16 +137,27 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
     }
 
     for path in md_files(&logbook.path("system")) {
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            for (name, body) in fences(&text) {
-                out.fences.entry(name).or_insert(body);
+        match read(&path) {
+            Ok(text) => {
+                for (name, body) in fences(&text) {
+                    out.fences.entry(name).or_insert(body);
+                }
             }
+            Err(e) => out
+                .warnings
+                .push(format!("{}: {e}; skipped", cases::relative(logbook, &path))),
         }
     }
 
     for path in logbook.memory_files()? {
         let rel = cases::relative(logbook, &path);
-        let Ok(text) = read(&path) else { continue };
+        let text = match read(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                out.warnings.push(format!("{rel}: {e}; skipped"));
+                continue;
+            }
+        };
         if rel == "memory/lessons.md" {
             let body = Document::parse(&text).map_or(text.clone(), |d| d.body);
             out.lessons = Some(

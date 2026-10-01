@@ -43,7 +43,9 @@ pub struct LogbookInfo {
 pub struct GitInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub head: Option<String>,
-    pub dirty: bool,
+    /// `None` when unknown (the fast rebuild path spawns no git).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dirty: Option<bool>,
 }
 
 /// `state.status`.

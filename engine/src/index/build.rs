@@ -22,6 +22,9 @@ pub const MAX_COMPLETED: usize = 50;
 pub const HEATMAP_DAYS: i64 = 366;
 /// Most snapshots the index lists.
 pub const MAX_SNAPSHOTS: usize = 10;
+/// Most open drift items the index lists (ADR-0020): crises first, then
+/// the newest; `summary` still counts all of them.
+pub const MAX_DRIFT: usize = 200;
 
 /// What the index needs besides the logbook.
 #[derive(Debug, Clone)]
@@ -70,14 +73,16 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
 
     let folded = fold(&events);
     let (drift, open_drift) = drift_items(&folded, &cases, &AlwaysRed::new(&input.always_red));
+    let (drift_total, crisis_total) = (drift.len(), drift.iter().filter(|d| d.crisis).count());
+    let drift = cap_drift(drift);
     let groups = case_groups(&cases, &drift);
     let all_cases: Vec<&IndexCase> = groups.all().collect();
 
     let summary = Summary {
         active_cases: groups.active.len(),
         queued_cases: groups.queued.len(),
-        open_drift: drift.len(),
-        crisis: drift.iter().filter(|d| d.crisis).count(),
+        open_drift: drift_total,
+        crisis: crisis_total,
         events_today: folded.iter().filter(|f| day(&f.event) == today).count(),
         events_7d: folded
             .iter()
@@ -370,6 +375,30 @@ fn drift_items(
     (drift.into_iter().map(|(_, _, d)| d).collect(), open)
 }
 
+/// At most [`MAX_DRIFT`] items (ADR-0020): every crisis before any other
+/// item, the newest of each first; the kept items stay newest first.
+fn cap_drift(drift: Vec<DriftItem>) -> Vec<DriftItem> {
+    if drift.len() <= MAX_DRIFT {
+        return drift;
+    }
+    let crises = drift.iter().filter(|d| d.crisis).count();
+    let mut others_left = MAX_DRIFT.saturating_sub(crises);
+    let mut crises_left = MAX_DRIFT;
+    drift
+        .into_iter()
+        .filter(|d| {
+            let left = if d.crisis {
+                &mut crises_left
+            } else {
+                &mut others_left
+            };
+            let keep = *left > 0;
+            *left = left.saturating_sub(1);
+            keep
+        })
+        .collect()
+}
+
 /// `index.cases` (ADR-0012 §9): open groups by id, completed and dropped
 /// together, newest `closed` first, at most [`MAX_COMPLETED`].
 fn case_groups(cases: &[LoadedCase], drift: &[DriftItem]) -> Cases {
@@ -518,21 +547,22 @@ fn drift_weeks(events: &[Event], today: NaiveDate) -> Vec<DriftWeek> {
     let mut opened: HashMap<String, usize> = HashMap::new();
     let mut resolved: HashMap<String, usize> = HashMap::new();
     for e in sorted {
-        let (key, counter) = if e.source.is_drift_eligible() && e.case.is_none() {
-            let key = match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
-                Some(tx) => Key::Tx(tx),
-                None => Key::Event(e.id),
+        let (key, counter) =
+            if e.source.is_drift_eligible() && e.case.is_none() && e.kind != Kind::Resolution {
+                let key = match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
+                    Some(tx) => Key::Tx(tx),
+                    None => Key::Event(e.id),
+                };
+                (key, &mut opened)
+            } else if e.kind == Kind::Resolution {
+                let key = match e.meta.tx_id.as_deref() {
+                    Some(tx) => Key::Write(tx, format_ts(&e.ts), e.actor.as_str()),
+                    None => Key::Event(e.id),
+                };
+                (key, &mut resolved)
+            } else {
+                continue;
             };
-            (key, &mut opened)
-        } else if e.kind == Kind::Resolution {
-            let key = match e.meta.tx_id.as_deref() {
-                Some(tx) => Key::Write(tx, format_ts(&e.ts), e.actor.as_str()),
-                None => Key::Event(e.id),
-            };
-            (key, &mut resolved)
-        } else {
-            continue;
-        };
         if seen.insert(key) {
             *counter.entry(iso_week(day(e))).or_default() += 1;
         }

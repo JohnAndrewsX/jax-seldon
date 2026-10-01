@@ -138,7 +138,50 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
         } => !stdout.trim().is_empty(),
         _ => return None,
     };
-    Some(model::GitInfo { head, dirty })
+    Some(model::GitInfo {
+        head,
+        dirty: Some(dirty),
+    })
+}
+
+/// `logbook.git` without running git: the 7-character HEAD from
+/// `.git/HEAD`, a loose ref or `packed-refs` (`head` absent on an unborn
+/// branch), `dirty` unknown and left out. `None` when the logbook is not a
+/// repository. Follows a `.git` file (`gitdir:`) and `commondir`.
+pub fn git_head_fast(root: &Path) -> Option<model::GitInfo> {
+    let dot = root.join(".git");
+    let gitdir = if dot.is_file() {
+        let text = std::fs::read_to_string(&dot).ok()?;
+        let dir = Path::new(text.trim().strip_prefix("gitdir:")?.trim());
+        root.join(dir)
+    } else if dot.is_dir() {
+        dot
+    } else {
+        return None;
+    };
+    let common = std::fs::read_to_string(gitdir.join("commondir"))
+        .map(|c| gitdir.join(c.trim()))
+        .unwrap_or_else(|_| gitdir.clone());
+    let head = std::fs::read_to_string(gitdir.join("HEAD")).ok()?;
+    let head = head.trim();
+    let sha = match head.strip_prefix("ref:").map(str::trim) {
+        None => Some(head.to_string()),
+        Some(name) => [&gitdir, &common]
+            .iter()
+            .find_map(|d| std::fs::read_to_string(d.join(name)).ok())
+            .map(|s| s.trim().to_string())
+            .or_else(|| {
+                let packed = std::fs::read_to_string(common.join("packed-refs")).ok()?;
+                packed.lines().find_map(|l| {
+                    let (sha, r) = l.split_once(' ')?;
+                    (r.trim() == name).then(|| sha.to_string())
+                })
+            }),
+    };
+    let head = sha
+        .filter(|s| s.len() >= 7 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(|s| s[..7].to_string());
+    Some(model::GitInfo { head, dirty: None })
 }
 
 /// The index of a logbook that does not exist yet: `state.status
@@ -180,23 +223,53 @@ pub fn not_initialised(path: &Path, now: DateTime<FixedOffset>) -> Index {
 /// Rebuilds `index.json` after a command changed the logbook (CONTRACT.md
 /// rule 2). Does nothing when the logbook is not initialised. A failure
 /// does not fail the command (its write already happened): it is reported
-/// on stderr, and the plugin shows the index as stale until the next
-/// `seldon status`.
+/// on stderr, like every load warning, and the plugin shows the index as
+/// stale until the next `seldon status`.
 pub fn rebuild_if_initialised(ctx: &Context) {
-    if let Err(e) = try_rebuild(ctx) {
-        eprintln!("seldon: warning: index.json not rebuilt: {e}");
+    rebuild_reporting(ctx, GitProbe::Full);
+}
+
+/// [`rebuild_if_initialised`] for latency-bound callers (the hook path,
+/// WP-009, 5 ms budget): spawns no `git`. `logbook.git.head` is read from
+/// the `.git` files ([`git_head_fast`]) and `dirty` is left out (the
+/// schema allows it); the next full rebuild fills it in again.
+pub fn rebuild_if_initialised_fast(ctx: &Context) {
+    rebuild_reporting(ctx, GitProbe::HeadOnly);
+}
+
+/// How `logbook.git` is filled in by a rebuild.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitProbe {
+    /// `git rev-parse` + `git status` ([`git_info`]).
+    Full,
+    /// `.git/HEAD` only ([`git_head_fast`]).
+    HeadOnly,
+}
+
+fn rebuild_reporting(ctx: &Context, probe: GitProbe) {
+    match try_rebuild(ctx, probe) {
+        Ok(warnings) => {
+            for w in warnings {
+                eprintln!("seldon: warning: {w}");
+            }
+        }
+        Err(e) => eprintln!("seldon: warning: index.json not rebuilt: {e}"),
     }
 }
 
-fn try_rebuild(ctx: &Context) -> Result<()> {
+/// Rebuilds and writes the index; returns the load warnings.
+fn try_rebuild(ctx: &Context, probe: GitProbe) -> Result<Vec<String>> {
     let config = ctx.load_config()?.unwrap_or_default();
     let (root, _) = ctx.resolve_logbook(None, Some(&config));
     if !Logbook::is_initialised(&root) {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let logbook = Logbook::open(&root)?;
     let mut built = derive(ctx, &config, &logbook)?;
-    built.index.logbook.git = git_info(&logbook.root);
+    built.index.logbook.git = match probe {
+        GitProbe::Full => git_info(&logbook.root),
+        GitProbe::HeadOnly => git_head_fast(&logbook.root),
+    };
     write(&ctx.dirs.index_file(), &built.index)?;
-    Ok(())
+    Ok(built.warnings)
 }
