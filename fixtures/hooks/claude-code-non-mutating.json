@@ -1,0 +1,19 @@
+{
+  "session_id": "6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34",
+  "transcript_path": "/home/user/.claude/projects/-home-user-Seldon/6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34.jsonl",
+  "cwd": "/home/user/Seldon",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Bash",
+  "tool_use_id": "toolu_01Jm8nY3rAQ0xB4cD5eF6gH7",
+  "tool_input": {
+    "command": "pacman -Qi zed | head -5 && git -C ~/.config/hypr status --short",
+    "description": "Show installed Zed package info and hypr config status"
+  },
+  "tool_response": {
+    "stdout": "Name            : zed\nVersion         : 0.198.4-1\nDescription     : A high-performance, multiplayer code editor\nArchitecture    : x86_64\nURL             : https://zed.dev\n M bindings.conf\n",
+    "stderr": "",
+    "interrupted": false,
+    "isImage": false
+  }
+}

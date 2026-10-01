@@ -1,0 +1,991 @@
+[
+  {
+    "id": "omarchy.active-window",
+    "name": "Active window",
+    "description": "Title of the focused window",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/ActiveWindow.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "ActiveWindow.qml"
+    },
+    "barWidget": {
+      "displayName": "Active window",
+      "description": "Title of the focused window",
+      "category": "Compositor",
+      "allowMultiple": false,
+      "defaultSection": "left"
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/ActiveWindow.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.agents",
+    "name": "Agents",
+    "description": "Claude Code, Codex, and Fireworks usage, limits, and pace in a native Omarchy bar panel.",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/agents/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/agents",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Agents",
+      "description": "One bar icon and one panel: rate-limit meters with pace, today, the last week, and the all-time model breakdown for every subscription.",
+      "category": "AI",
+      "aliases": [
+        "agents",
+        "model-usage"
+      ],
+      "allowMultiple": false,
+      "defaults": {
+        "providers": {
+          "claude": {
+            "enabled": true
+          },
+          "codex": {
+            "enabled": true
+          },
+          "fireworks": {
+            "enabled": true
+          }
+        },
+        "refreshIntervalSec": 900,
+        "syncMode": "Off",
+        "syncDir": "",
+        "syncFileName": "",
+        "syncDeviceId": ""
+      },
+      "schema": [
+        {
+          "key": "refreshIntervalSec",
+          "type": "integer",
+          "label": "Refresh interval (seconds)",
+          "min": 30,
+          "max": 3600,
+          "step": 30,
+          "defaultValue": 900
+        },
+        {
+          "key": "syncMode",
+          "type": "enum",
+          "label": "Synced aggregation",
+          "options": [
+            "Off",
+            "On"
+          ],
+          "defaultValue": "Off",
+          "description": "When On, write this machine's local usage snapshot and merge snapshots from other machines."
+        },
+        {
+          "key": "syncDir",
+          "type": "path",
+          "label": "Sync folder",
+          "defaultValue": "",
+          "description": "A folder synced by Syncthing, Dropbox, rsync, etc."
+        },
+        {
+          "key": "syncFileName",
+          "type": "string",
+          "label": "Snapshot file name",
+          "defaultValue": "",
+          "description": "Optional. Defaults to <hostname>.json. Use a different file name on each machine, such as laptop.json or desktop.json."
+        },
+        {
+          "key": "syncDeviceId",
+          "type": "string",
+          "label": "Device id",
+          "defaultValue": "",
+          "description": "Optional stable device name used inside synced aggregate snapshots."
+        }
+      ]
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/agents/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.audio",
+    "name": "Audio",
+    "description": "Volume slider, output picker, per-app mixer",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/audio/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/audio",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Audio",
+      "description": "Volume slider, output picker, per-app mixer",
+      "category": "Audio",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/audio/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.background",
+    "name": "Background",
+    "description": "Desktop background renderer with click handling and transitions",
+    "kinds": [
+      "service"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/background/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/background",
+    "entryPoints": {
+      "service": "Background.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.bar",
+    "name": "Bar",
+    "description": "Status bar with widgets",
+    "kinds": [
+      "bar"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar",
+    "entryPoints": {
+      "bar": "Bar.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": "/usr/share/omarchy/shell/plugins/bar/Bar.qml"
+  },
+  {
+    "id": "omarchy.battery",
+    "name": "Battery",
+    "description": "Low battery warning service",
+    "kinds": [
+      "service"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/services/battery/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/services/battery",
+    "entryPoints": {
+      "service": "Service.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.bluetooth",
+    "name": "Bluetooth",
+    "description": "Bluetooth device list with connect/disconnect",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/bluetooth/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/bluetooth",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Bluetooth",
+      "description": "Bluetooth device list with connect/disconnect",
+      "category": "Network",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/bluetooth/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.clipboard",
+    "name": "Clipboard",
+    "description": "A clipboard manager to view and paste history",
+    "kinds": [
+      "overlay"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/clipboard/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/clipboard",
+    "entryPoints": {
+      "overlay": "Clipboard.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.clock",
+    "name": "Clock",
+    "description": "Date/time label with a calendar popup",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/clock/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/clock",
+    "entryPoints": {
+      "barWidget": "BarWidget.qml"
+    },
+    "barWidget": {
+      "displayName": "Clock",
+      "description": "Date/time label with a calendar popup",
+      "category": "Time",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/clock/BarWidget.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.dev-gallery",
+    "name": "Dev gallery",
+    "description": "Visual reference for omarchy-shell common UI components. Summon with: omarchy-shell shell summon omarchy.dev-gallery '{}' (or run: omarchy dev ui-preview).",
+    "kinds": [
+      "panel"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/dev-gallery/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/dev-gallery",
+    "entryPoints": {
+      "panel": "GalleryPanel.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.disk-speedtest",
+    "name": "Disk speed test",
+    "description": "Live disk write and read speed dials. Summon with: omarchy-shell shell summon omarchy.disk-speedtest",
+    "kinds": [
+      "panel"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/disk-speedtest/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/disk-speedtest",
+    "entryPoints": {
+      "panel": "Panel.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.dropbox",
+    "name": "Dropbox",
+    "description": "Dropbox status, storage usage, login, and recent synced files in the Omarchy bar.",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/dropbox/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/dropbox",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Dropbox",
+      "description": "Log in to Dropbox, view storage usage, and open recent synced files.",
+      "category": "Files",
+      "allowMultiple": false,
+      "defaultSection": "right",
+      "defaults": {
+        "refreshIntervalSec": 60
+      },
+      "schema": [
+        {
+          "key": "refreshIntervalSec",
+          "type": "integer",
+          "label": "Refresh interval (seconds)",
+          "min": 10,
+          "max": 3600,
+          "step": 5,
+          "defaultValue": 60
+        }
+      ]
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/dropbox/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.emojis",
+    "name": "Emojis",
+    "description": "Search, copy, and type emojis",
+    "kinds": [
+      "overlay"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/emojis/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/emojis",
+    "entryPoints": {
+      "overlay": "Emojis.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.idle",
+    "name": "Idle",
+    "description": "Quickshell-based idle detection for screensaver, lock, and display wake.",
+    "kinds": [
+      "service"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/services/idle/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/services/idle",
+    "entryPoints": {
+      "service": "Service.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.image-picker",
+    "name": "Image picker",
+    "description": "Image-grid selector overlay used for wallpapers, themes, and any other directory of images",
+    "kinds": [
+      "overlay"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/image-picker/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/image-picker",
+    "entryPoints": {
+      "overlay": "ImagePicker.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.indicators",
+    "name": "Indicators",
+    "description": "Manual state indicators",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Indicators.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "Indicators.qml"
+    },
+    "barWidget": {
+      "displayName": "Indicators",
+      "description": "Manual state indicators",
+      "category": "Status",
+      "allowMultiple": true,
+      "schema": [
+        {
+          "key": "items",
+          "type": "multiselect",
+          "label": "Indicators",
+          "description": "Choose which indicators this widget instance should show. Leave empty to show all indicators.",
+          "noSelectionText": "All indicators",
+          "placeholderText": "Search indicators...",
+          "emptyText": "No indicators",
+          "options": [
+            {
+              "value": "Dictation",
+              "label": "Dictation",
+              "description": "Voice typing status"
+            },
+            {
+              "value": "ScreenRecording",
+              "label": "Screen recording",
+              "description": "GPU screen recorder status"
+            },
+            {
+              "value": "Reminder",
+              "label": "Reminder",
+              "description": "Queued reminder status"
+            },
+            {
+              "value": "NightLight",
+              "label": "Night light",
+              "description": "Blue-light filter"
+            },
+            {
+              "value": "Dnd",
+              "label": "Do not disturb",
+              "description": "Notification silencing"
+            },
+            {
+              "value": "StayAwake",
+              "label": "Stay awake",
+              "description": "Idle lock and screensaver override"
+            }
+          ]
+        },
+        {
+          "key": "alwaysShow",
+          "type": "boolean",
+          "label": "Always Show",
+          "description": "Show inactive indicators without waiting for hover.",
+          "defaultValue": false
+        }
+      ]
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Indicators.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.keyboard-layout",
+    "name": "Keyboard layout",
+    "description": "Current xkb layout, click cycles",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/KeyboardLayout.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "KeyboardLayout.qml"
+    },
+    "barWidget": {
+      "displayName": "Keyboard layout",
+      "description": "Current xkb layout, click cycles",
+      "category": "Compositor",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/KeyboardLayout.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.lock",
+    "name": "Lock Screen",
+    "description": "Quickshell session lock with separate password and fingerprint PAM flows.",
+    "kinds": [
+      "service"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/lock/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/lock",
+    "entryPoints": {
+      "service": "Service.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.media",
+    "name": "Media",
+    "description": "MPRIS media control service",
+    "kinds": [
+      "service",
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/services/media/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/services/media",
+    "entryPoints": {
+      "service": "Service.qml",
+      "barWidget": "BarWidget.qml"
+    },
+    "barWidget": {
+      "displayName": "Media",
+      "description": "MPRIS now-playing with playback controls",
+      "category": "Media",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/services/media/BarWidget.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.menu",
+    "name": "Omarchy menu",
+    "description": "Quickshell-powered Omarchy command menu",
+    "kinds": [
+      "menu",
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/menu/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/menu",
+    "entryPoints": {
+      "menu": "Menu.qml",
+      "barWidget": "BarWidget.qml"
+    },
+    "barWidget": {
+      "displayName": "Omarchy menu",
+      "description": "Launches the Omarchy menu",
+      "category": "Compositor",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/menu/BarWidget.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.microphone",
+    "name": "Microphone",
+    "description": "Mic input state and mute toggle",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Microphone.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "Microphone.qml"
+    },
+    "barWidget": {
+      "displayName": "Microphone",
+      "description": "Mic input state and mute toggle",
+      "category": "Audio",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Microphone.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.monitor",
+    "name": "Display",
+    "description": "Brightness slider and laptop display controls",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/monitor/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/monitor",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Display",
+      "description": "Brightness slider and laptop display controls",
+      "category": "System",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/monitor/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.network",
+    "name": "Network",
+    "description": "Wi-Fi list and connection state",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/network/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/network",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Network",
+      "description": "Wi-Fi list and connection state",
+      "category": "Network",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/network/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.nightlight",
+    "name": "Night Light",
+    "description": "Owns the hyprsunset night light temperature for the bar indicator and CLI.",
+    "kinds": [
+      "service"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/services/nightlight/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/services/nightlight",
+    "entryPoints": {
+      "service": "Service.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.notifications",
+    "name": "Notifications",
+    "description": "Notification daemon, popups, DND, and history",
+    "kinds": [
+      "service"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/notifications/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/notifications",
+    "entryPoints": {
+      "service": "Service.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.osd",
+    "name": "On-screen display",
+    "description": "Quickshell volume, brightness, and status overlays.",
+    "kinds": [
+      "panel"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/osd/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/osd",
+    "entryPoints": {
+      "panel": "Osd.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.polkit",
+    "name": "Polkit Agent",
+    "description": "Theme-aware authentication dialog for privileged actions.",
+    "kinds": [
+      "service"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/polkit/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/polkit",
+    "entryPoints": {
+      "service": "PolkitAgent.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.power",
+    "name": "Power",
+    "description": "Battery, power profile, and system stats",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/power/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/power",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Power",
+      "description": "Battery, power profile, and system stats",
+      "category": "System",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/power/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.reminders",
+    "name": "Reminders",
+    "description": "Interactive reminder setup flow",
+    "kinds": [
+      "overlay"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/reminders/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/reminders",
+    "entryPoints": {
+      "overlay": "ReminderFlow.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.spacer",
+    "name": "Spacer",
+    "description": "Configurable blank space",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Spacer.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "Spacer.qml"
+    },
+    "barWidget": {
+      "displayName": "Spacer",
+      "description": "Configurable blank space",
+      "category": "Layout",
+      "allowMultiple": true,
+      "settingsForm": "spacerSettings"
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Spacer.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.speedtest",
+    "name": "Speed Test",
+    "description": "Internet speed test with download and upload dials",
+    "kinds": [
+      "panel"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/speedtest/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/speedtest",
+    "entryPoints": {
+      "panel": "Panel.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.system-update",
+    "name": "Omarchy update",
+    "description": "Indicates available Omarchy updates",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/SystemUpdate.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "SystemUpdate.qml"
+    },
+    "barWidget": {
+      "displayName": "Omarchy update",
+      "description": "Indicates available Omarchy updates",
+      "category": "System",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/SystemUpdate.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.tailscale",
+    "name": "Tailscale",
+    "description": "Tailscale status, connection switching, machine browsing, and quick copy actions in the Omarchy bar.",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/tailscale/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/tailscale",
+    "entryPoints": {
+      "barWidget": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Tailscale",
+      "description": "Toggle Tailscale, switch connections, browse machines, and copy machine IPs or names.",
+      "category": "Network",
+      "allowMultiple": false,
+      "defaultSection": "right",
+      "defaults": {
+        "refreshIntervalSec": 30
+      },
+      "schema": [
+        {
+          "key": "refreshIntervalSec",
+          "type": "integer",
+          "label": "Refresh interval (seconds)",
+          "min": 5,
+          "max": 3600,
+          "step": 5,
+          "defaultValue": 30
+        }
+      ]
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/tailscale/Panel.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.tray",
+    "name": "System tray",
+    "description": "Status notifier items",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Tray.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "Tray.qml"
+    },
+    "barWidget": {
+      "displayName": "System tray",
+      "description": "Status notifier items",
+      "category": "Status",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Tray.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.weather",
+    "name": "Weather",
+    "description": "Weather pill with detail popup",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/weather/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/weather",
+    "entryPoints": {
+      "barWidget": "BarWidget.qml"
+    },
+    "barWidget": {
+      "displayName": "Weather",
+      "description": "Weather pill with detail popup",
+      "category": "Info",
+      "allowMultiple": false,
+      "settingsForm": "weatherSettings"
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/panels/weather/BarWidget.qml",
+    "barPath": null
+  },
+  {
+    "id": "omarchy.wifiqr",
+    "name": "Wi-Fi QR",
+    "description": "Share the connected Wi-Fi network as a scannable QR code",
+    "kinds": [
+      "panel"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/panels/wifiqr/manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/panels/wifiqr",
+    "entryPoints": {
+      "panel": "Panel.qml"
+    },
+    "barWidget": null,
+    "bar": null,
+    "barWidgetPath": null,
+    "barPath": null
+  },
+  {
+    "id": "omarchy.workspaces",
+    "name": "Workspaces",
+    "description": "Workspace number indicators",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": true,
+    "manifestPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Workspaces.manifest.json",
+    "sourceDir": "/usr/share/omarchy/shell/plugins/bar/widgets",
+    "entryPoints": {
+      "barWidget": "Workspaces.qml"
+    },
+    "barWidget": {
+      "displayName": "Workspaces",
+      "description": "Workspace number indicators",
+      "category": "Compositor",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/usr/share/omarchy/shell/plugins/bar/widgets/Workspaces.qml",
+    "barPath": null
+  },
+  {
+    "id": "io.github.example.tyme",
+    "name": "Tyme",
+    "description": "Time tracking in the bar",
+    "kinds": [
+      "bar-widget",
+      "panel"
+    ],
+    "firstParty": false,
+    "manifestPath": "/home/user/.config/omarchy/plugins/io.github.example.tyme/manifest.json",
+    "sourceDir": "/home/user/.config/omarchy/plugins/io.github.example.tyme",
+    "entryPoints": {
+      "barWidget": "BarWidget.qml",
+      "panel": "Panel.qml"
+    },
+    "barWidget": {
+      "displayName": "Tyme",
+      "description": "Time tracking in the bar",
+      "category": "Productivity",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/home/user/.config/omarchy/plugins/io.github.example.tyme/BarWidget.qml",
+    "barPath": null
+  },
+  {
+    "id": "io.github.example.weather-plus",
+    "name": "Weather Plus",
+    "description": "Forecast with radar panel",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": false,
+    "manifestPath": "/home/user/.config/omarchy/plugins/io.github.example.weather-plus/manifest.json",
+    "sourceDir": "/home/user/.config/omarchy/plugins/io.github.example.weather-plus",
+    "entryPoints": {
+      "barWidget": "Weather.qml"
+    },
+    "barWidget": {
+      "displayName": "Weather Plus",
+      "description": "Forecast with radar panel",
+      "category": "Information",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/home/user/.config/omarchy/plugins/io.github.example.weather-plus/Weather.qml",
+    "barPath": null
+  },
+  {
+    "id": "user.clock",
+    "name": "Clock",
+    "description": "Clock with seconds (clone of omarchy.clock)",
+    "kinds": [
+      "bar-widget"
+    ],
+    "firstParty": false,
+    "manifestPath": "/home/user/.config/omarchy/plugins/user.clock/manifest.json",
+    "sourceDir": "/home/user/.config/omarchy/plugins/user.clock",
+    "entryPoints": {
+      "barWidget": "Clock.qml"
+    },
+    "barWidget": {
+      "displayName": "Clock",
+      "description": "Clock with seconds (clone of omarchy.clock)",
+      "category": "Information",
+      "allowMultiple": false
+    },
+    "bar": null,
+    "barWidgetPath": "/home/user/.config/omarchy/plugins/user.clock/Clock.qml",
+    "barPath": null
+  }
+]
