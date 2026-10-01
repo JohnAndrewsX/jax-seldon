@@ -147,3 +147,66 @@ manageIpc: false }`, colours from `bar.foreground`, `bar.urgent`,
 - SPEC-PLUGIN §1 points at `~/.local/share/omarchy/shell/README.md`; on a
   package install the README is at `$OMARCHY_PATH/shell/README.md`
   (`/usr/share/omarchy`).
+
+## WP-010 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+Verified in the shell source and live on the test host.
+
+- **Service lookup from a third-party bar widget:** `root.bar.shell.serviceFor(<own id>)`.
+  `bar.shell` is the scoped facade from `shell.pluginShellForId` (only the
+  trusted built-in bar hands it out); it returns the plugin's own service and
+  nothing else. `firstPartyServiceFor` (media) only serves an allowlist of
+  first-party ids. The service can mount after the widget: poll until found,
+  and hold it in a `property QtObject` so it drops back to null when the
+  service is destroyed on a reload.
+- **`bar.run(cmd)` is a shell string** (`Util.execDetached` → `bash -lc cmd`).
+  Never use it with anything assembled. `Quickshell.execDetached([argv])`
+  takes a list; `Util.execArgv(argv)` wraps a login shell around a constant
+  `exec "$@"`.
+- **Process that cannot start:** Quickshell logs `WARN: Process failed to
+  start, likely because the binary could not be found. Command: …`, drops
+  `running` and emits **neither `started` nor `exited`**. Detect it with a
+  `started` flag checked in `onRunningChanged`.
+- **qmllint vs `Process.onExited`:** `onExited: function(exitCode) {…}` gives
+  a `signal-handler-parameters` warning (`QProcess::ExitStatus` is not
+  resolvable; first-party `SystemUpdate.qml` has the same). A
+  `Connections { target: proc; function onExited(exitCode, exitStatus) {} }`
+  lints clean. Inline components that use outer ids from a `Repeater`
+  delegate need `pragma ComponentBehavior: Bound`.
+- **Hot reload does not load new code.** `finishPluginReload` calls
+  `Qt.clearComponentCache` only `if (typeof … === "function")`, and it is
+  `undefined` in Quickshell 0.3.1. Saving files re-creates the plugin from
+  cached components. After changing plugin code: `omarchy-restart-shell`
+  (works over ssh).
+- **FileView:** `printErrors: false` keeps a missing file out of the log;
+  `loadFailed(FileViewError.FileNotFound)` reports it. `watchChanges` follows
+  an atomic temp+rename replace. Whether the watch also sees a file that did
+  not exist at start is not verified: Service.qml polls every 5 s while the
+  index is missing.
+- **IPC to plugin targets:** `omarchy-shell <target> <method> [args]` reaches
+  any `IpcHandler` target, e.g. `omarchy-shell jax.seldon.panel pill`.
+  Non-interactive ssh has no `OMARCHY_PATH` and no `$OMARCHY_PATH/bin` on
+  `PATH`; export both first.
+- **Routing quirk:** `shell togglePanelAt <section> <n>` resolves the Nth bar
+  panel to its *id* and calls `shell.toggle(id)`. For `jax.seldon` (has an
+  overlay) that opens the Prime Radiant, not the bar panel. Tab between
+  panels calls `slot.activeItem.open()` directly and does reach our panel;
+  a nested Panel must pass the slot's widget (`barIdentity`) to
+  `bar.switchPanelFrom`, as clock and weather do.
+- **Environment:** the shell is spawned from Hyprland (`omarchy-launch-shell`,
+  with `QS_DISABLE_FILE_WATCHER=1`) and inherits Hyprland's environment, so
+  env overrides like `SELDON_INDEX` cannot reach it from a terminal. Logs:
+  `quickshell log --pid <pid>` or `journalctl --user -t omarchy-shell`.
+- **Log noise that is not ours:** every bar rebuild (enable, disable, reload)
+  logs two `QObject::connect(QJSEngine, QtObject): invalid nullptr parameter`
+  lines and "Handler was registered but will not be used" for other plugins'
+  IPC targets. Both appear with jax.seldon disabled.
+- **`omarchy pkg add` is official repositories only** (`pacman -S`); AUR
+  packages need `omarchy pkg aur add` (`yay -S`, `--needed`, no upgrade).
+  ADR-0004 and SPEC-PLUGIN §5 name the wrong command for `jax-seldon`.
+- **Terminal for a fix:** `omarchy-launch-floating-terminal-with-presentation
+  "<cmd>"` runs `<cmd>` through `bash -c` in a floating Omarchy terminal;
+  pass constants only.
+- **Headless harness:** `QT_QPA_PLATFORM=offscreen quickshell -p file.qml`
+  runs non-visual QML (Service.qml) in a private instance. Files importing
+  `qs.*` cannot load there: `qs` is the config root of the running shell.
