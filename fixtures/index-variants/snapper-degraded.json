@@ -57,10 +57,10 @@
   "summary": {
     "activeCases": 2,
     "queuedCases": 3,
-    "openDrift": 3,
+    "openDrift": 4,
     "crisis": 2,
     "eventsToday": 27,
-    "events7d": 35
+    "events7d": 38
   },
   "today": {
     "date": "2026-10-01",
@@ -121,6 +121,7 @@
       "actor": "system",
       "zone": "yellow",
       "resolution": "explained",
+      "resolutionDetail": "Zeiterfassung nur zum Testen, noch nicht in der Bar.",
       "meta": {
         "version": "1.1.0",
         "enabled": false
@@ -459,6 +460,57 @@
       "case": "C-2026-003"
     },
     {
+      "id": "01M3SXBRV0WPNQ721VWGG2WXZ1",
+      "ts": "2026-09-30T21:41:16+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "libinput",
+      "detail": "1.29.1-1 → 1.29.2-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260930T214115",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1.29.1-1",
+        "to": "1.29.2-1"
+      }
+    },
+    {
+      "id": "01M3SXBRV0E702XKBM22HEV1B8",
+      "ts": "2026-09-30T21:41:16+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "noto-fonts",
+      "detail": "1:2026.09.01-1 → 1:2026.09.15-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260930T214115",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1:2026.09.01-1",
+        "to": "1:2026.09.15-1"
+      }
+    },
+    {
+      "id": "01M3SXBQVR7AW8PJQC1YXDCQ14",
+      "ts": "2026-09-30T21:41:15+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "firefox",
+      "detail": "143.0.1-1 → 143.0.2-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260930T214115",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "143.0.1-1",
+        "to": "143.0.2-1"
+      }
+    },
+    {
       "id": "01M3SMPSJ0P7PCQDY2VZ7K3VSX",
       "ts": "2026-09-30T19:10:00+02:00",
       "source": "manual",
@@ -554,6 +606,7 @@
       "actor": "system",
       "zone": "yellow",
       "resolution": "explained",
+      "resolutionDetail": "omarchy plugin update, nur das Widget.",
       "meta": {
         "from": "1.2.0",
         "to": "1.3.0"
@@ -569,6 +622,7 @@
       "actor": "human",
       "zone": "yellow",
       "resolution": "dismissed",
+      "resolutionDetail": "Nur ausprobiert.",
       "meta": {
         "from": "osaka-jade",
         "to": "kanagawa"
@@ -584,6 +638,7 @@
       "actor": "system",
       "zone": "red",
       "resolution": "explained",
+      "resolutionDetail": "Routine-Update mit omarchy update, Snapshot 110 davor.",
       "meta": {
         "from": "4.0.5-1",
         "to": "4.0.6-1"
@@ -601,6 +656,7 @@
       "explicit": false,
       "txId": "tx-20260915T201131",
       "resolution": "explained",
+      "resolutionDetail": "Routine-Update mit omarchy update, Snapshot 110 davor.",
       "meta": {
         "command": "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
         "from": "4.0.5-1",
@@ -731,6 +787,7 @@
       "actor": "system",
       "zone": "yellow",
       "resolution": "explained",
+      "resolutionDetail": "Wetter-Widget für die Bar, kleine Spielerei ohne Case.",
       "meta": {
         "version": "1.2.0",
         "enabled": true
@@ -748,6 +805,7 @@
       "explicit": true,
       "txId": "tx-20260903T211406",
       "resolution": "explained",
+      "resolutionDetail": "Kleines Monitoring-Tool, bewusst ohne Case.",
       "meta": {
         "command": "pacman -S btop",
         "version": "1.4.5-1"
@@ -828,6 +886,20 @@
       "zone": "red",
       "crisis": true,
       "proposedCase": null
+    },
+    {
+      "eventId": "01M3SXBQVR7AW8PJQC1YXDCQ14",
+      "ts": "2026-09-30T21:41:15+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "firefox",
+      "detail": "143.0.1-1 → 143.0.2-1",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": null,
+      "txId": "tx-20260930T214115",
+      "members": 3
     }
   ],
   "cases": {
@@ -2665,9 +2737,10 @@
       },
       {
         "date": "2026-09-30",
-        "total": 5,
+        "total": 8,
         "bySource": {
           "manual": 1,
+          "pacman": 3,
           "seldon": 1,
           "snapper": 3
         }
@@ -2728,7 +2801,7 @@
       },
       {
         "week": "2026-W40",
-        "opened": 5,
+        "opened": 6,
         "resolved": 2
       }
     ],
