@@ -20,8 +20,12 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
 }
 ```
 
-Verify the exact manifest keys against `~/.local/share/omarchy/shell/README.md`
-before committing (WP-010 does this); the shell is the source of truth.
+Verify the exact manifest keys against `$OMARCHY_PATH/shell/README.md`
+(`/usr/share/omarchy` on a package install) before committing (WP-010 does
+this); the shell is the source of truth. Do **not** add `panel` to `kinds`:
+the shell's panel loader picks one UI kind per plugin id (`panel` before
+`overlay` before `menu`), so `panel` would take `summon`/`toggle` away from
+the Prime Radiant (see memory/omarchy-shell.md, WP-001 findings).
 
 ## 2. Files
 
@@ -52,7 +56,8 @@ plugin/
   "capture", "--all", "--json", "--quiet"] }`; then `["seldon", "status",
   "--json"]`. Never both at once; a `busy` flag serialises calls.
 - Engine detection: at start run `["seldon", "--version"]`; map failures
-  to `state: engineMissing`. States: `ok | engineMissing | notInitialised |
+  to `status: engineMissing` (the property is named `status`, because
+  `state` clashes with `Item.state`). States: `ok | engineMissing | notInitialised |
   indexMissing | indexStale (> 2 h) | contractMismatch`.
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
@@ -115,17 +120,36 @@ at least three Omarchy themes incl. a light one.
 ## 8. Keybinding and IPC
 
 Suggested user binding (documented, not installed): `o.bind("SUPER + SHIFT
-+ S", "Seldon", "omarchy-shell shell toggle jax.seldon")`. IPC routes the
-plugin must honour: `open`, `close`, `toggle` on the bar widget; the overlay
-exposes the same through its entry point.
++ S", "Seldon", "omarchy-shell shell toggle jax.seldon")`.
+
+How the shell routes (verified against `shell.qml`, Omarchy 4.0.4; see
+memory/omarchy-shell.md): because `kinds` includes `overlay`, the plugin is
+*not* a bar-widget-panel plugin. `shell summon|hide|toggle jax.seldon`
+therefore reaches **Overlay.qml** (the Prime Radiant), never the bar
+widget; `shell call jax.seldon <method>` reaches only the loaded overlay
+item and only while it is loaded. Routes the plugin must honour:
+
+- Overlay entry point: `open(payloadJson)`, `close()`, `opened` — this is
+  what the keybinding above hits.
+- Bar panel: an `IpcHandler` target owned by the bar widget/panel, following
+  the first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open,
+  close and toggle the panel independently of the overlay. WP-010 names the
+  target and documents it in `plugin/README.md`.
 
 ## 9. Validation
 
-`omarchy plugin validate plugin/` and `qmllint -I "$OMARCHY_PATH/shell"
-plugin/*.qml plugin/components/*.qml` on every commit. A smoke test
-launches the shell with the fixture index (`SELDON_INDEX` env override is
-honoured by Service.qml for development only) and checks that each tab and
-the overlay render without QML errors (`qs log --tail`).
+`omarchy plugin validate plugin/` and `just qmllint` on every commit.
+`just qmllint` builds a temporary `qs/` import root from the installed shell
+(a plain `-I "$OMARCHY_PATH/shell"` cannot resolve `qs.*` imports) and
+requires **zero warnings** with `--max-warnings 0`, with exactly two
+categories demoted to info because first-party plugins cannot avoid them
+either: `missing-property` (nested `Style`/`Color` tokens) and
+`uncreatable-type` (`PanelWindow`). Consequence: the lint is blind to typos
+in token names, so the runtime smoke test below is a **hard acceptance
+test** of every plugin WP, not an option. The smoke test launches the shell
+with the fixture index (`SELDON_INDEX` env override is honoured by
+Service.qml for development only) and checks that each tab and the overlay
+render without QML errors (`qs log --tail`).
 
 ## 10. Security posture (for the marketplace listing)
 

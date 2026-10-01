@@ -59,7 +59,23 @@ Global flags: `--json`, `--logbook DIR` (overrides config and
 `SELDON_LOGBOOK`), `--quiet`, `--no-commit`.
 
 Exit codes: 0 ok · 1 user error (bad args, unknown case) · 2 engine error ·
-3 logbook not initialised · 4 lock held.
+3 logbook not initialised · 4 lock held. Argument-parse errors are user
+errors (1), never 2; `--help` exits 0.
+
+JSON shapes of the always-available commands (not part of `schema/`, so no
+`contractVersion` bump when they change; the plugin's engine detection
+parses them):
+
+```
+seldon --version --json          → {"name":"seldon","version":"0.1.0"}
+seldon contract-version --json   → {"contractVersion":1}
+any user error with --json       → {"error":{"code":1,"message":"<detail>"}}  (exit 1)
+```
+
+`message` carries the full detail (e.g. the unrecognised subcommand name),
+not just the error kind. Detection of `--json` must not sniff raw argv for
+the literal string, because free-text arguments (`seldon log "--json"`)
+may contain it.
 
 ## 4. Collectors
 

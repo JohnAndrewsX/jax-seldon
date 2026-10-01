@@ -8,7 +8,6 @@
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-001 | Repo scaffold, CI, toolchain | Scaffold | `scaffold-001` (opus, high) | `wt/WP-001` · `wp/001-scaffold` | 2026-10-01 |
 | WP-002 | Contract and fixtures | Schema Keeper | `schema-002` (opus, high) | `wt/WP-002` · `wp/002-contract-fixtures` | 2026-10-01 |
 
 ## Queued (next up)
@@ -25,7 +24,8 @@ WP-003 engine core (needs WP-002) · WP-004 … WP-009 (see `work/queued/`)
 *(none)*
 
 ## Recently completed
-*(none)*
+- 2026-10-01 WP-001 Repo scaffold, CI, toolchain — merged `wp/001-scaffold`;
+  `just check` green on main; handover in `work/completed/WP-001/`.
 
 ## Decided 2026-10-01
 - Default logbook path `~/Seldon`, wizard options → ADR-0010.
@@ -36,6 +36,15 @@ WP-003 engine core (needs WP-002) · WP-004 … WP-009 (see `work/queued/`)
   → ADR-0011.
 
 ## Open questions for the operator
+- **AGENTS.md §7 exit codes** say 0/1/2/3; SPEC-ENGINE §3 and the code add
+  `4 lock held`. AGENTS.md needs a one-line fix on operator instruction.
+- **`scripts/guard.sh` false positives** (operator-owned): the "write under
+  /etc, /usr" rule fires when such a path is a read-only *source* argument;
+  the package-manager rule fires on any command text that merely mentions
+  the package manager (e.g. a heredoc writing a CI file). Both are
+  trade-offs for the operator; the WP-001 review has concrete proposals.
+- **CI may fetch `omarchy-plugin-validate`** from a pinned Omarchy tag with
+  a checksum (network in CI, not red zone). FYI; scheduled unless vetoed.
 - **Omarchy is a package install, not a git checkout.** Version comes from
   `omarchy-version`; WP-033 (update-impact from release notes) needs
   another source. Decide in Phase 3.
