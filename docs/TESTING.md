@@ -13,7 +13,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine
@@ -309,6 +309,25 @@ left out); `periodTable` on the sample (rows per slot for 30/90/365/All:
 count and detail lines) and without an index; `overlayMeta`;
 `overlayBanner` keeps only *Copy*; `overlayGrid` in its three modes (exact
 gaps, rows by weight, minimum heights that make the grid scroll).
+For the charts (WP-031): six slots (The Plan last, `…,plan=2`); the grid
+gives rows at their minimum height first and shares the rest by weight,
+filling the height exactly (`rowHeights`); `dayNumber`/`dateOfDay` against
+`Date` for every day of 1899–2101 and impossible dates (2026-02-30)
+rejected; ISO weeks across year ends; colour steps (square root of
+count/max, 0 for none); `splitSeries` gives exactly `seriesInPeriod`'s rows
+for every period, on the sample and on edge rows; per chart on the sample:
+heatmap cells, offset, months, hover text with sources and the hit test;
+series lanes, padded flat lanes and the sample that holds at a day; drift
+weeks with gaps filled (also across week 53); risk shares and the part at
+an angle; timeline markers, spans clipped to the window, lanes, months
+and the hit test; the plan's cards and columns; empty charts without an
+index; `aggregationCount` counts exactly the table's passes.
+
+`node tests/plugin/model.bench.js` times `periodTable` (what the service
+does on every index write) on the sample, the sample ×10 and 7000 timeline
+rows, in a vm sandbox (as the tests load Model.js; slow global lookups)
+and in a plain function scope, against the WP-030 cut. It fails when the
+fastest of 31 runs on ×10 takes more than 20 ms in the sandbox.
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -563,30 +582,50 @@ after each step prints `Overlay.view()`, the hidden ids, every visible
 text, and every text that leaves its slot or the window.
 
 Steps (header of `harness/overlay.qml`): `toggle[:<json>]` (what `shell
-toggle` does: hide when open, else `open(json)`), `summon[:<json>]`,
-`hide`, `key:<Left|Right|Escape|…>`, `text:<c>`, `click:<text>`,
-`clickAt:<x>,<y>`, `call:<method>:<arg>` (what `shell call jax.seldon`
-does), `shot:<name>`, `view`.
+toggle` does: hide when open, else `open(json)`), `fresh[:<json>]` (what
+the shell's Loader does on summon: a new Overlay.qml, then `open(json)`;
+the report's `firstFrame` holds the aggregation counts and paints sampled
+on its first swapped frame and the frame by which every chart painted),
+`summon[:<json>]`, `hide`, `key:<Left|Right|Escape|…>`, `text:<c>`,
+`click:<text>`, `clickAt:<x>,<y>`, `hover:<slot>:<fx>,<fy>` and
+`hoverItem:<slot>:<i>` (a real mouse move onto a point of a chart, or onto
+its item i as `chart.locate(i)` places it), `leave`, `resize:<W>x<H>`,
+`call:<method>:<arg>` (what `shell call jax.seldon` does), `shot:<name>`,
+`view`.
 
 Checks: closed until toggled; toggle opens on 90 d with the header (title,
-machine, Omarchy version, index time, the period's dates) and the five
-slots with the sample's counts; `1`–`4`, ←/→ and `h`/`l` pick periods
-(wrapping) and the counts follow (`30,2,5,3,17` for 30 d, `366,…` for
-All); Esc closes through `shell.hide("jax.seldon")`; toggle closes; a click
+machine, Omarchy version, index time, the period's dates) and the six
+slots with the sample's counts and each chart's summary (its caption);
+`1`–`4`, ←/→ and `h`/`l` pick periods (wrapping) and the counts and
+summaries follow (`30,2,5,3,17,2` for 30 d, `366,…` for All); Esc closes through `shell.hide("jax.seldon")`; toggle closes; a click
 on the scrim closes; `summon` with `{"period":"365"}` opens on 365 d; a
 click on *30 d*, `call setPeriod all` (an unknown id changes nothing) and
 `call view` work; *Close* closes. Layout at 1920×1080, 2560×1440 and, for
 a 1.25 output scale, 1536×864 and 2048×1152 (each with every period) and
-once with `QT_SCALE_FACTOR=1.25`: five slots with a size, all inside the
-window, no text outside its slot or the window, no scrolling, three
-columns. 760×1000 reflows to two columns, 560×700 to one and scrolls. The
-not-initialised variant shows the banner with *Copy* only and the hint.
-Every run's log is free of warnings and errors.
+once with `QT_SCALE_FACTOR=1.25`: six slots with a size, all inside the
+window, every chart with a plot of its own, no text outside its slot or
+the window, no scrolling, three columns. 760×1000 reflows to two columns,
+560×700 to one and scrolls. Charts (WP-031): after a `fresh` open the
+first frame has run no aggregation (the service's count is the one from
+before, the overlay's own 0) and painted nothing (Canvas gets its context
+then); by frame 2 every chart has painted exactly once. A period switch
+aggregates nothing and repaints only the charts whose data changed
+(RiskDonut and The Plan have no period); hovering repaints nothing; a
+resize (one dimension, the harness sets width and height separately)
+repaints each chart once, also through the medium and narrow modes. Hover
+read-outs from real mouse moves onto items of every chart and from `call
+hover` (exact texts, e.g. the heatmap's 2026-10-01 with its counts by
+source). The not-initialised variant shows the banner with *Copy* only
+and the hint, every chart in its empty state ("no data in this period",
+"no cases yet · all time", "no active cases") and nothing painted; every
+other index variant renders every chart. Every run's log is free of
+warnings and errors.
 
 `OVERLAY_SHOTS=<dir> bash tests/plugin/overlay-view.sh` also renders the
 overlay at 1920×1080 and 2560×1440 in Osaka Jade, Tokyo Night and
-Catppuccin Latte into `<dir>` (offscreen renders with each theme's
-`colors.toml`, not live screenshots).
+Catppuccin Latte into `<dir>`, each once on 90 d and once on 365 d with
+the pointer on the heatmap's last day (offscreen renders with each
+theme's `colors.toml`, not live screenshots).
 
 ### 4. Runtime smoke test in the shell
 
@@ -647,8 +686,9 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    omarchy-shell jax.seldon.panel resolve crisis      # or an event id: the drift sheet
    omarchy-shell jax.seldon.panel view       # tab, cursor, rows, badges, banners, strip
    omarchy-shell shell toggle jax.seldon     # Prime Radiant
-   omarchy-shell shell call jax.seldon view ""   # while it is open: period, slots, geometry
+   omarchy-shell shell call jax.seldon view ""   # while it is open: period, slots, geometry, charts
    omarchy-shell shell call jax.seldon setPeriod 30
+   omarchy-shell shell call jax.seldon hover "heatmap 0.9,0.5"   # a chart's read-out at a point
    omarchy-shell shell hide jax.seldon
    ```
    Keys: `wtype -k Tab`, `wtype -M shift -k Tab -m shift`, `wtype -k Down`,

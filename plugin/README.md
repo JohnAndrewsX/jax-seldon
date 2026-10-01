@@ -7,8 +7,8 @@ what the Seldon engine has recorded: active cases, unexplained changes
 writes.
 
 > Phase 3. The panel has all six tabs: Today, Changelog, Work, Decisions,
-> System and Memory. The Prime Radiant opens with its layout and period
-> selector; its charts arrive in a later release.
+> System and Memory. The Prime Radiant shows its five charts and The Plan
+> for 30 d, 90 d, 365 d or everything.
 > Project home: https://github.com/JohnAndrewsX/jax-seldon
 
 ## Requirements
@@ -206,12 +206,32 @@ jax.seldon` (or the suggested binding below) or a middle click on the pill.
 - **Header:** "Prime Radiant", the machine, the Omarchy version and when the
   index was written; on the right the period selector (30 d · 90 d · 365 d ·
   All, default 90 d), *Close*, and the period's dates.
-- **Grid** of five slots on 12 columns: Heatmap (full width); Series,
-  DriftBars and RiskDonut side by side; Timeline (full width). On a narrow
-  screen the grid uses two columns, then one, and scrolls. Until the charts
-  arrive each slot shows the number of rows its chart will draw for the
-  period (days, package samples, weeks, cases by risk, timeline entries) and
-  one line about them.
+- **Grid** of six slots on 12 columns: Heatmap (full width); Series,
+  DriftBars and RiskDonut side by side; Timeline (full width); The Plan
+  (full width). On a narrow screen the grid uses two columns, then one, and
+  scrolls once the slots are at their minimum height.
+- **Charts**, all in the theme's colours (accent, foreground, urgent):
+  - *Heatmap*: events per day as a calendar, weeks as columns and Monday on
+    top; five shades of the accent from few to many events (a faint cell for
+    none). Hover: the day and its events by source.
+  - *Series*: explicit and total package counts as step lines, one lane
+    each, with their range. Hover: the sample at that day.
+  - *DriftBars*: drift opened (accent) and resolved per ISO week. Hover:
+    the week, its dates and both counts.
+  - *RiskDonut*: cases by risk R0–R3 (R3 in the urgent colour), with the
+    count in the middle and a legend; always all time. Hover: the class, its
+    count and share.
+  - *Timeline*: releases (diamonds), snapshots (dots) and crises (urgent
+    diamonds) on top, case spans below (open cases bright, running to
+    today). Hover: the item's kind, label and date.
+  - *The Plan*: the active cases as cards: zone stripe, id and risk, title,
+    steps done of total as a bar, the agent. It has no period.
+
+  Each slot's title row carries the chart's summary ("62 events on 13 of 90
+  days · busiest 2026-10-01 (30)"), replaced by the hovered item's details
+  while the pointer is on the chart. A chart without data in the period
+  says "no data in this period" (the donut "no cases yet · all time", The
+  Plan "no active cases").
 - A period covers the days up to the index's today: 30 d is today and the
   29 days before it; a drift week counts when any of its days does, a case
   when its span overlaps. *All* is everything the index carries. Cases by
@@ -226,7 +246,9 @@ jax.seldon` (or the suggested binding below) or a middle click on the pill.
 | Esc | close |
 
 A click on the dimmed area or on *Close* closes it too. The overlay reads
-the service's index only and never runs the engine.
+the service's index only and never runs the engine. The service prepares
+every period's chart data when the index changes, so opening the overlay
+and switching periods only draw.
 
 ## States
 
@@ -250,8 +272,9 @@ again* (or `jax.seldon.service refresh`), not on every capture interval.
 |---|---|
 | `omarchy-shell shell toggle jax.seldon` | the Prime Radiant overlay (also `summon`, `hide`) |
 | `omarchy-shell shell summon jax.seldon '{"period":"30"}'` | open the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
-| `omarchy-shell shell call jax.seldon view ""` | what the open Prime Radiant shows (period, window, banner, grid mode, each slot's counts and geometry), as JSON; `unknown` while it is closed |
+| `omarchy-shell shell call jax.seldon view ""` | what the open Prime Radiant shows (period, window, banner, grid mode, aggregation counts, each slot's counts and geometry, each chart's summary, numbers, hover read-out and paint count), as JSON; `unknown` while it is closed |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | pick a period in the open Prime Radiant |
+| `omarchy-shell shell call jax.seldon hover "heatmap 0.9,0.5"` | the read-out at that point of a chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON; `hover ""` clears it |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
 | `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, pill, QuickEntry, the Work columns, card and sheet, the drift sheet, the decisions and their sheet, the memory rows, last action results), as JSON |

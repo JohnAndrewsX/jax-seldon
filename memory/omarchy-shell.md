@@ -423,3 +423,41 @@ Verified in the shell source and live on the test host.
 - **qs.Ui `ButtonGroup` with `focusable: false`** works as a mouse-only
   selector next to a key catcher: a chip click emits `changed(value)`
   without taking keyboard focus, and a binding on `value` survives.
+
+## WP-031 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1, Qt 6.11)
+
+- **`Canvas` paints on frame 2 after it is created** (its 2D context comes
+  up on frame 1), then once per `requestPaint()` per frame. It repaints by
+  itself on a geometry change; `onWidthChanged: requestPaint()` is
+  redundant. When the layout above it settles during frame 1 (a status
+  banner), it paints twice at the same size; nothing in plugin code
+  triggers the second one.
+- **A Column's `implicitHeight` is set in its polish, one frame late.** A
+  header whose height comes from `titles.implicitHeight` (a Column) grew by
+  3 px after the charts' first paint and made them paint again. Sum the
+  children's `implicitHeight`s instead where a Canvas sits below.
+- **`ctx.fillStyle`/`strokeStyle` take QML colour values** (`Util.alpha(…)`,
+  `Color.accent`) directly; no colour string is needed, so the token rule
+  (no literal colours) holds inside `onPaint` too. `ctx.font` takes
+  `"<px>px \"<family>\""` built from `Style.font.*` and `Style.font.family`.
+- **Shared chart behaviour without function overriding:** a base Item
+  (`ChartCanvas.qml`) emits signals (`paintRequested(ctx, w, h)`,
+  `hoverRequested(x, y)`, `locateRequested(i)`) that the derived file
+  handles with `onX: function(…) {…}`. qmllint stays at zero warnings;
+  redeclaring a base function in a derived file does not.
+- **A non-`.pragma library` JS import has one state per importing
+  component instance.** A module-level counter in Model.js counts that
+  instance's calls only (the service's, the overlay's and each chart's are
+  separate), so `call view` sums them.
+- **Offscreen harness:** `Window.frameSwapped` fires with
+  `QT_QPA_PLATFORM=offscreen`; `QSG_RENDER_TIMING=1` with
+  `QT_LOGGING_RULES=qt.scenegraph.time.renderloop=true` logs each frame
+  ("software" render loop: polish/sync/render ms). `TestCase.mouseMove`
+  without a button reaches a `MouseArea { hoverEnabled: true }` as hover.
+  Setting `win.width` and then `win.height` is two geometry changes (two
+  paints).
+- **`omarchy-launch-shell` runs the shell with Hyprland's environment**
+  (spawned through `hyprctl dispatch exec`), so a `QSG_RENDER_TIMING=1` for
+  the live shell has to go into Hyprland's environment before
+  `omarchy-restart-shell` (`hyprctl keyword env …`, runtime only). That is
+  a change on the test host: the operator's call.

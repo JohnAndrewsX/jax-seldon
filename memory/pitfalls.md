@@ -415,3 +415,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **`seldon … | head` panics** ("failed printing to stdout: Broken pipe"):
   `println!` on a closed pipe, pre-existing and harmless. Redirect to a
   file when only the start is needed.
+
+## 2026-10-01 · WP-031 (Plugin)
+
+- **node's `vm` sandbox makes Model.js about 8× slower** than a plain
+  function scope: every top-level name is a contextified global lookup.
+  `periodTable` on the sample ×10: 14 ms in the sandbox (as model.test.js
+  loads it), 1.8 ms plain. State which one a timing is; the bench prints
+  both.
+- **V8's `Date.parse("2026-02-30T00:00:00Z")` rolls over to 2 March**
+  instead of failing, so `isDate` built on it accepted impossible dates
+  under node. `dayNumber` now does the calendar arithmetic itself
+  (checked against `Date` for every day of 1899–2101).
+- **First-fit lane packing is quadratic** when many spans stay open
+  (7000 timeline rows, 233 open cases: 244 lanes × 700 spans × 4 periods).
+  Interval partitioning with a min-heap of lane ends packs as tightly in
+  O(n log n).
+- **The overlay harness's `toggle` reuses one long-lived Overlay.qml**,
+  unlike the shell, which creates it on every open: its paints and work
+  happen while it is still closed. Measure the first frame with the
+  `fresh` step (a new overlay, as the shell's Loader does).
+- **jq inside `expect` filters:** `input` reads the *next* JSON line, not
+  an earlier step; read an earlier step's value with `sed -n Np` in bash.
