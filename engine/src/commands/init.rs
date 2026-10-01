@@ -117,7 +117,6 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         )));
     }
 
-
     let now = Local::now();
     let host = sys::slugify(&sys::hostname());
     let machine_id = format!(
