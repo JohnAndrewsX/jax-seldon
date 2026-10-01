@@ -8,7 +8,7 @@
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-007 | `index`, `status`, ledger `.md` view, STATUS.md | Engine | `engine-007` (opus, high) | `wt/WP-007` · `wp/007-index-status` | 2026-10-01 |
+| WP-008 | Reconciliation and `drift` commands (+ `open --editor` fix) | Engine | `engine-008` (opus, high) | `wt/WP-008` · `wp/008-drift` | 2026-10-01 |
 | WP-009 | Hooks: claude-code, generic, session-start/stop, attribution pass | Engine | `engine-009` (opus, high) | `wt/WP-009` · `wp/009-hooks` | 2026-10-01 |
 | WP-012 | Panel actions: QuickEntry, Capture now, Open in editor | Plugin | `plugin-012` (opus, high) | `wt/WP-012` · `wp/012-panel-actions` | 2026-10-01 |
 
@@ -28,6 +28,9 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-007 Index builder, `index`/`status`, ledger views,
+  STATUS.md, drift cap (ADR-0020), fast rebuild — merged; golden test
+  zero differences against the fixture; ×10 build 4.7 ms, ×150 78 ms.
 - 2026-10-01 WP-015 Fixture corrections — merged; verification step for
   C-2026-001, green `tee` event, pre/post snapshot pair, three index
   variants, case walker and index-time checks (101 instances, 71 events).
