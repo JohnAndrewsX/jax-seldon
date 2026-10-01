@@ -12,8 +12,8 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Tests | `test` | `cargo test` (unit + CLI tests in `engine/tests/`) | yes |
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
-| QML lint | `qmllint` | `qmllint` on `plugin/*.qml` and `plugin/components/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh` (see "Plugin") | **no** (dev host) |
+| QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine
@@ -298,7 +298,17 @@ reads the `decide --json` shape and passes on only an id matching
 `^ADR-[0-9]{4}$`; `openArgs` and `validateArgs` take `logbook` and a
 decision id (not `ADR-4`, `adr-0004`, a padded id, a path or `memory`);
 `memoryRows` gives the sample's three lessons and two topics (path and
-`updated`), every part optional, all opening the fixed target `logbook`.
+`updated`), every part optional, all opening the fixed target `logbook`. For the Prime Radiant (WP-030): the period ids, keys `1`–`4` and
+←/→ wrapping, the summon payload (`{"period":"30"}`, anything else keeps
+the period); `periodWindow` (inclusive days ending on the index's today,
+across a leap day, *All* unbounded); `isoWeekMonday` (week 53 only in long
+years); `seriesInPeriod` (heatmap and packages by date, a drift week that
+touches the window, case spans that overlap it, open cases, broken rows
+left out); `periodTable` on the sample (rows per slot for 30/90/365/All:
+`30,2,5,3,17`, `90,3,5,3,18`, `365,3,5,3,18`, `366,3,5,3,18`, with the
+count and detail lines) and without an index; `overlayMeta`;
+`overlayBanner` keeps only *Copy*; `overlayGrid` in its three modes (exact
+gaps, rows by weight, minimum heights that make the grid scroll).
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -540,6 +550,44 @@ Offscreen theme renders: copy a theme's `colors.toml` from
 They show the real components in the theme's colours, not the live
 layer-shell window; the live sweep below stays the acceptance check.
 
+### 3b. `Overlay.qml` in a private headless Quickshell
+
+`bash tests/plugin/overlay-view.sh` runs the Prime Radiant the same way:
+copies of the shell's `Commons/` and `Ui/`, `tests/plugin/harness/overlay.qml`
+as `shell.qml`, and a copy of `plugin/` whose layer-shell window
+(`components/overlay/OverlayWindow.qml`) is replaced by
+`tests/plugin/harness/OverlayWindow.qml`, an Item that fills the harness
+window. The harness hands the overlay a stand-in shell facade whose
+`hide()` records the id and calls `close()`, as the shell's does, and
+after each step prints `Overlay.view()`, the hidden ids, every visible
+text, and every text that leaves its slot or the window.
+
+Steps (header of `harness/overlay.qml`): `toggle[:<json>]` (what `shell
+toggle` does: hide when open, else `open(json)`), `summon[:<json>]`,
+`hide`, `key:<Left|Right|Escape|…>`, `text:<c>`, `click:<text>`,
+`clickAt:<x>,<y>`, `call:<method>:<arg>` (what `shell call jax.seldon`
+does), `shot:<name>`, `view`.
+
+Checks: closed until toggled; toggle opens on 90 d with the header (title,
+machine, Omarchy version, index time, the period's dates) and the five
+slots with the sample's counts; `1`–`4`, ←/→ and `h`/`l` pick periods
+(wrapping) and the counts follow (`30,2,5,3,17` for 30 d, `366,…` for
+All); Esc closes through `shell.hide("jax.seldon")`; toggle closes; a click
+on the scrim closes; `summon` with `{"period":"365"}` opens on 365 d; a
+click on *30 d*, `call setPeriod all` (an unknown id changes nothing) and
+`call view` work; *Close* closes. Layout at 1920×1080, 2560×1440 and, for
+a 1.25 output scale, 1536×864 and 2048×1152 (each with every period) and
+once with `QT_SCALE_FACTOR=1.25`: five slots with a size, all inside the
+window, no text outside its slot or the window, no scrolling, three
+columns. 760×1000 reflows to two columns, 560×700 to one and scrolls. The
+not-initialised variant shows the banner with *Copy* only and the hint.
+Every run's log is free of warnings and errors.
+
+`OVERLAY_SHOTS=<dir> bash tests/plugin/overlay-view.sh` also renders the
+overlay at 1920×1080 and 2560×1440 in Osaka Jade, Tokyo Night and
+Catppuccin Latte into `<dir>` (offscreen renders with each theme's
+`colors.toml`, not live screenshots).
+
 ### 4. Runtime smoke test in the shell
 
 The bar widget, panel and banner import `qs.Ui`/`qs.Commons`, which only the
@@ -599,6 +647,9 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    omarchy-shell jax.seldon.panel resolve crisis      # or an event id: the drift sheet
    omarchy-shell jax.seldon.panel view       # tab, cursor, rows, badges, banners, strip
    omarchy-shell shell toggle jax.seldon     # Prime Radiant
+   omarchy-shell shell call jax.seldon view ""   # while it is open: period, slots, geometry
+   omarchy-shell shell call jax.seldon setPeriod 30
+   omarchy-shell shell hide jax.seldon
    ```
    Keys: `wtype -k Tab`, `wtype -M shift -k Tab -m shift`, `wtype -k Down`,
    `wtype -k Return`, `wtype f`, `wtype -k Escape`, each followed by

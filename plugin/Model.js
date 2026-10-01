@@ -1543,3 +1543,292 @@ function memorySummary(rows) {
   var topics = list.length - lessons
   return list.length === 0 ? "" : plural(lessons, "lesson", "lessons") + " · " + plural(topics, "topic", "topics")
 }
+
+// ---- Prime Radiant (overlay) ------------------------------------------------
+
+// The period selector (WP-030), in key order: `1`–`4` pick these, ←/→ walk
+// them. "all" has no bounds: it covers every row the index carries.
+var PERIODS = [
+  { id: "30", days: 30, label: "30 d" },
+  { id: "90", days: 90, label: "90 d" },
+  { id: "365", days: 365, label: "365 d" },
+  { id: "all", days: 0, label: "All" }
+]
+var PERIOD_DEFAULT = "90"
+
+// The five chart slots (SPEC-PLUGIN §6), in grid order. `series` names the
+// `series.*` field the chart renders; WP-031 fills the slots.
+var OVERLAY_SLOTS = [
+  { id: "heatmap", title: "Heatmap", subtitle: "Events per day", series: "heatmap" },
+  { id: "series", title: "Series", subtitle: "Explicit packages over time", series: "packages" },
+  { id: "driftBars", title: "DriftBars", subtitle: "Drift opened vs resolved per week", series: "drift" },
+  { id: "riskDonut", title: "RiskDonut", subtitle: "Cases by risk", series: "risk" },
+  { id: "timeline", title: "Timeline", subtitle: "Releases, snapshots, cases, crises", series: "timeline" }
+]
+
+var TIMELINE_KINDS = ["case", "release", "snapshot", "crisis"]
+var TIMELINE_KIND_NAMES = {
+  case: ["case", "cases"], release: ["release", "releases"],
+  snapshot: ["snapshot", "snapshots"], crisis: ["crisis", "crises"]
+}
+
+function isPeriod(id) {
+  for (var i = 0; i < PERIODS.length; i++) if (PERIODS[i].id === id) return true
+  return false
+}
+
+function periodById(id) {
+  for (var i = 0; i < PERIODS.length; i++) if (PERIODS[i].id === id) return PERIODS[i]
+  return periodById(PERIOD_DEFAULT)
+}
+
+// "1"–"4" → the period id, anything else → "".
+function periodForKey(text) {
+  var n = Number(text)
+  return String(text).length === 1 && n >= 1 && n <= PERIODS.length ? PERIODS[n - 1].id : ""
+}
+
+// The next period to the left (-1) or right (+1), wrapping like the tabs.
+function cyclePeriod(current, direction) {
+  var i = PERIODS.indexOf(periodById(current))
+  var n = PERIODS.length
+  return PERIODS[((i + (direction < 0 ? -1 : 1)) % n + n) % n].id
+}
+
+// `summon jax.seldon '{"period":"30"}'` opens on that period; anything else
+// (no payload, broken JSON, an unknown id) opens on `fallback`.
+function overlayPayloadPeriod(payloadJson, fallback) {
+  var data = parseJson(payloadJson)
+  return data && isPeriod(data.period) ? data.period : fallback
+}
+
+function isDate(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && utcDate(value) !== null
+}
+
+// The days a period covers, as inclusive YYYY-MM-DD bounds ending on the
+// index's today (ADR-0012 §10): "30" is today and the 29 days before it.
+// "all", or no today, leaves both bounds "" (unbounded).
+function periodWindow(period, today) {
+  var p = periodById(period)
+  if (p.days === 0 || !isDate(today)) return { period: p.id, from: "", to: "", days: p.days }
+  return { period: p.id, from: addDays(today, 1 - p.days), to: today, days: p.days }
+}
+
+function dateInWindow(date, win) {
+  if (!isDate(date)) return false
+  return (win.from === "" || date >= win.from) && (win.to === "" || date <= win.to)
+}
+
+// A span from `start` to `end` (both YYYY-MM-DD; end "" while it is open)
+// overlaps the window.
+function spanInWindow(start, end, win) {
+  if (!isDate(start)) return false
+  if (end !== "" && (!isDate(end) || end < start)) return false
+  return (win.to === "" || start <= win.to) && (end === "" || win.from === "" || end >= win.from)
+}
+
+// "2026-W40" → the Monday of that ISO week ("2026-09-28"), else "".
+function isoWeekMonday(week) {
+  var m = /^(\d{4})-W(\d{2})$/.exec(str(week))
+  if (!m) return ""
+  var n = Number(m[2])
+  if (n < 1 || n > 53) return ""
+  var jan4 = utcDate(m[1] + "-01-04")
+  var week1 = addDays(m[1] + "-01-04", -((jan4.getUTCDay() + 6) % 7))
+  var monday = addDays(week1, (n - 1) * 7)
+  // Week 53 exists only in long years: its Monday must still be in the year
+  // whose week 1 follows it by at least four days.
+  return n === 53 && isoWeekMonday(String(Number(m[1]) + 1) + "-W01") <= monday ? "" : monday
+}
+
+// The rows of one `series.*` list that fall into the window, in index order.
+// heatmap and packages go by date, drift by ISO week (a week counts when any
+// of its days does), the timeline by day (case spans when they overlap the
+// window; an open case runs on). Rows that break the schema are left out.
+function seriesInPeriod(series, key, win) {
+  var list = isObject(series) && Array.isArray(series[key]) ? series[key] : []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i]
+    if (!isObject(r)) continue
+    var keep = false
+    if (key === "heatmap" || key === "packages") {
+      keep = dateInWindow(r.date, win)
+    } else if (key === "drift") {
+      var monday = isoWeekMonday(r.week)
+      keep = monday !== "" && spanInWindow(monday, addDays(monday, 6), win)
+    } else if (key === "timeline") {
+      if (r.kind === "case") keep = spanInWindow(str(r.ts), r.end === null || r.end === undefined ? "" : str(r.end), win)
+      else if (TIMELINE_KINDS.indexOf(r.kind) !== -1) keep = dateInWindow(dayOf(r.ts), win)
+    }
+    if (keep) out.push(r)
+  }
+  return out
+}
+
+// series.risk as { R0: n, …, R3: n } (absent classes 0). It has no dates, so
+// every period shows the same counts.
+function riskCounts(series) {
+  var risk = isObject(series) && isObject(series.risk) ? series.risk : {}
+  var out = {}
+  for (var i = 0; i < RISKS.length; i++) out[RISKS[i]] = count(risk[RISKS[i]])
+  return out
+}
+
+function sumOf(rows, field) {
+  var total = 0
+  for (var i = 0; i < rows.length; i++) total += count(rows[i][field])
+  return total
+}
+
+// What a slot's placeholder says for one period: { id, title, subtitle,
+// rows, count, detail, windowed }. `rows` is the number of series rows the
+// chart will draw; `count` says it in words.
+function slotSummary(slot, data) {
+  var out = { id: slot.id, title: slot.title, subtitle: slot.subtitle, rows: 0, count: "", detail: "", windowed: true }
+  if (slot.id === "heatmap") {
+    out.rows = data.heatmap.length
+    out.count = plural(out.rows, "day", "days")
+    out.detail = plural(sumOf(data.heatmap, "total"), "event", "events")
+  } else if (slot.id === "series") {
+    var p = data.packages
+    out.rows = p.length
+    out.count = plural(out.rows, "sample", "samples")
+    out.detail = p.length === 0 ? "No package counts"
+      : p.length === 1 ? count(p[0].explicit) + " explicit"
+      : "Explicit " + count(p[0].explicit) + " → " + count(p[p.length - 1].explicit)
+  } else if (slot.id === "driftBars") {
+    out.rows = data.drift.length
+    out.count = plural(out.rows, "week", "weeks")
+    out.detail = sumOf(data.drift, "opened") + " opened · " + sumOf(data.drift, "resolved") + " resolved"
+  } else if (slot.id === "riskDonut") {
+    var parts = []
+    var cases = 0
+    for (var i = 0; i < RISKS.length; i++) {
+      var n = data.risk[RISKS[i]]
+      if (n > 0) out.rows++
+      cases += n
+      parts.push(RISKS[i] + " " + n)
+    }
+    out.count = plural(cases, "case", "cases")
+    out.detail = parts.join(" · ") + " · all time"
+    out.windowed = false
+  } else if (slot.id === "timeline") {
+    var t = data.timeline
+    out.rows = t.length
+    out.count = plural(out.rows, "entry", "entries")
+    var byKind = []
+    for (var k = 0; k < TIMELINE_KINDS.length; k++) {
+      var kind = TIMELINE_KINDS[k]
+      var c = t.filter(function(r) { return r.kind === kind }).length
+      if (c > 0) byKind.push(plural(c, TIMELINE_KIND_NAMES[kind][0], TIMELINE_KIND_NAMES[kind][1]))
+    }
+    out.detail = byKind.length > 0 ? byKind.join(" · ") : "Nothing in this period"
+  }
+  return out
+}
+
+// Every period's window, series rows and slot summaries, computed once per
+// index (Service.qml binds it to the index), so opening the overlay or
+// switching periods only looks things up:
+// { today, periods: { <id>: { window, series: { heatmap, packages, drift,
+// timeline, risk }, slots: [slotSummary…] } } }.
+function periodTable(index) {
+  var series = index && isObject(index.series) ? index.series : {}
+  var today = index ? todayDate(index) : ""
+  var risk = riskCounts(series)
+  var table = { today: today, periods: {} }
+  for (var i = 0; i < PERIODS.length; i++) {
+    var win = periodWindow(PERIODS[i].id, today)
+    var data = {
+      heatmap: seriesInPeriod(series, "heatmap", win),
+      packages: seriesInPeriod(series, "packages", win),
+      drift: seriesInPeriod(series, "drift", win),
+      timeline: seriesInPeriod(series, "timeline", win),
+      risk: risk
+    }
+    var slots = []
+    for (var s = 0; s < OVERLAY_SLOTS.length; s++) slots.push(slotSummary(OVERLAY_SLOTS[s], data))
+    table.periods[PERIODS[i].id] = { window: win, series: data, slots: slots }
+  }
+  return table
+}
+
+// One period of a periodTable(), the default one for an unknown id.
+function periodView(table, period) {
+  var periods = table && isObject(table.periods) ? table.periods : {}
+  return periods[periodById(period).id] || periodTable(null).periods[periodById(period).id]
+}
+
+// "30 d · 2026-09-02 – 2026-10-01", or "All · everything in the index".
+function periodCaption(win) {
+  var p = periodById(win ? win.period : "")
+  if (!win || win.from === "") return p.label + " · everything in the index"
+  return p.label + " · " + win.from + " – " + win.to
+}
+
+// The header's second line: machine · Omarchy version · generated time.
+function overlayMeta(index) {
+  if (!index) return ""
+  var parts = []
+  var logbook = isObject(index.logbook) ? index.logbook : {}
+  if (hasText(logbook.machine)) parts.push(logbook.machine)
+  var omarchy = isObject(index.system) && isObject(index.system.omarchy) ? index.system.omarchy : {}
+  if (hasText(omarchy.version)) parts.push("Omarchy " + omarchy.version)
+  if (dayOf(index.generatedAt) !== "") parts.push("generated " + dayOf(index.generatedAt) + " " + clockTime(index.generatedAt))
+  return parts.join(" · ")
+}
+
+// The overlay's banner: the service's banner, with only the fix that runs
+// no engine command (copying it); the overlay runs no engine command (WP-030).
+function overlayBanner(banner) {
+  if (!banner) return null
+  var out = {}
+  for (var k in banner) out[k] = banner[k]
+  out.actions = (banner.actions || []).filter(function(a) { return a.id === "copy" })
+  return out
+}
+
+// Slot geometry on a 12-column grid (SPEC-PLUGIN §6) inside `width` ×
+// `height`, `gap` between cells. The column count follows the width:
+//   wide   (≥ 3 slots of minWidth): Heatmap | Series DriftBars RiskDonut | Timeline
+//   medium (≥ 2):                  Heatmap | Series DriftBars | RiskDonut Timeline
+//   narrow:                        one slot per row
+// Rows share the height by weight and never get less than minHeight; when
+// they would, contentHeight exceeds height and the grid scrolls.
+// Returns { mode, contentHeight, slots: [{ id, x, y, w, h }] } in grid order.
+var GRID_ROWS = {
+  wide: { weights: [3, 4, 2], rows: [[["heatmap", 12]], [["series", 4], ["driftBars", 4], ["riskDonut", 4]], [["timeline", 12]]] },
+  medium: { weights: [3, 4, 3], rows: [[["heatmap", 12]], [["series", 6], ["driftBars", 6]], [["riskDonut", 4], ["timeline", 8]]] },
+  narrow: { weights: [3, 3, 3, 3, 2], rows: [[["heatmap", 12]], [["series", 12]], [["driftBars", 12]], [["riskDonut", 12]], [["timeline", 12]]] }
+}
+
+function overlayGrid(width, height, gap, minWidth, minHeight) {
+  var w = Math.max(0, Math.floor(Number(width) || 0))
+  var h = Math.max(0, Math.floor(Number(height) || 0))
+  var g = Math.max(0, Math.floor(Number(gap) || 0))
+  var minW = Math.max(1, Number(minWidth) || 1)
+  var minH = Math.max(1, Math.floor(Number(minHeight) || 1))
+  var mode = w >= 3 * minW + 2 * g ? "wide" : w >= 2 * minW + g ? "medium" : "narrow"
+  var spec = GRID_ROWS[mode]
+  var colW = (w - 11 * g) / 12
+  var weightSum = spec.weights.reduce(function(a, b) { return a + b }, 0)
+  var free = h - (spec.rows.length - 1) * g
+  var heights = spec.weights.map(function(wt) { return Math.max(minH, Math.floor(free * wt / weightSum)) })
+  var slots = []
+  var y = 0
+  for (var r = 0; r < spec.rows.length; r++) {
+    var col = 0
+    for (var c = 0; c < spec.rows[r].length; c++) {
+      var span = spec.rows[r][c][1]
+      var x = Math.floor(col * (colW + g))
+      var last = col + span === 12
+      var right = last ? w : Math.floor((col + span) * (colW + g) - g)
+      slots.push({ id: spec.rows[r][c][0], x: x, y: y, w: Math.max(0, right - x), h: heights[r] })
+      col += span
+    }
+    y += heights[r] + (r < spec.rows.length - 1 ? g : 0)
+  }
+  return { mode: mode, contentHeight: y, slots: slots }
+}

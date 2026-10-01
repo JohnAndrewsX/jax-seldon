@@ -81,6 +81,10 @@ Item {
   readonly property bool indexShown: index !== null && Model.showsCounts(status)
   readonly property string crisisText: indexShown ? Model.crisisText(index) : ""
   readonly property var snapperBanner: indexShown ? Model.snapperBanner(index) : null
+  // The Prime Radiant's windows, series rows and slot counts for every period
+  // (Model.periodTable), computed when the index changes: the overlay is
+  // created anew on each open and then only looks them up (WP-030).
+  readonly property var periods: Model.periodTable(index)
 
   // ---- Engine calls: one at a time, in order.
   property bool busy: false
