@@ -2,9 +2,9 @@
 WP-035 HANDOVER
 Done: seldon dossier [--section …] [--json] writes the eight generated fences of system/*.md (seven in use + new packages.explicit) from read-only queries and the ledger; rebuild §2 "Before the logbook"; shared views::merge_fence; init runs the dossier once after the first capture; tests, golden, docs
 Not done: nothing in scope; follow-ups under "Decisions needed"
-Verified by: just check (exit 0), cargo test --test dossier (7 tests), --test rebuild (7), --test init (29), lib unit tests (107); real-host read-only run on the dev host (scratch logbook copy, XDG redirected, real queries)
+Verified by: just check (exit 0, again after review round 1), cargo test --test dossier (9 tests after review round 1), --test rebuild (7), --test init (29), lib unit tests (109); real-host read-only run on the dev host (scratch logbook copy, XDG redirected, real queries)
 Learned: memory/rust-notes.md + memory/pitfalls.md, section "WP-035"
-Decisions needed: 6 (below); none blocks the merge
+Decisions needed: none open (review round 1 decided all six; see the end)
 Touched outside WP scope: collectors/{plugins,omarchy}.rs (two readers made public and Ctx-free), lib.rs / commands/mod.rs / main.rs (one line, one line, one variant + one arm), tests/common/mod.rs (query_shims, hardware_root), tests/init.rs (expects the dossier commit, pins SELDON_HARDWARE_ROOT)
 ```
 
@@ -72,7 +72,8 @@ justfile) are untouched.
     and `lastUpdate` (the ledger). A key without a new value keeps its old
     value.
   - `hardware.summary`: `cpu`, `memory` (`MemTotal` rounded to whole GiB),
-    `machine`, `rootfs`.
+    `machine`, `rootfs`. Since review round 1, other lines of the old body
+    (hand-written `gpu`, `displays`, `disk`) are kept in place.
   - `plugins.list`: one row per plugin, sorted by id, with `clonedFrom`.
   - `deviations.table`: the old lines byte for byte, plus one row
     `| path |  | date | [[case]] |` for each cased config path without a
@@ -272,3 +273,77 @@ blocked as a "service or boot command" (the word was only in the search
 pattern). Nothing ran. I did not reword the command and read the file with
 the Read tool. No other block. I typed no package-manager or `systemctl`
 command myself; the real-host run invoked only the engine.
+
+## Review round 1 (APPROVE, no blocking items; fixed in one commit)
+
+Decisions taken by the reviewer:
+- 1 `--section hardware` accepted.
+- 2 existing deviation rows stay untouched (filling empty cells → follow-up
+  WP).
+- 3 the `merge_fence` edge case accepted.
+- 4 splitting Omarchy's base packages from the user's additions →
+  follow-up WP.
+- 5 templates and fixture carrying `packages.explicit` → follow-up WP.
+- 6 fixed (below).
+
+Fixes, commit `engine: dossier review fixes (WP-035)`:
+
+- **(6) Hand-written hardware lines stay.** `hardware_summary(hw, body)`
+  goes through the same `key_values` as `omarchy.summary`. `key_values`
+  now owns only its own keys: each engine key's line is refreshed in
+  place, and every other old line is kept verbatim. Keys the body lacks
+  are appended, and a stale duplicate of an engine key is dropped.
+  - On the fixture, `gpu`, `displays` and `disk` survive. That adds three
+    lines to the golden `tests/golden/dossier.md`; the integration test
+    asserts the whole body.
+  - Unit test `hardware_keeps_hand_written_lines`, idempotent.
+  - `omarchy.summary` uses the same function, so a hand-written key there
+    is kept too.
+- **(a) One lookup for "has the fence".** `views::fence_body` finds a
+  body exactly as `replace_fence` does (`replace_fence` is built on it).
+  `Files::body` uses it, and `Files::set` decides with
+  `replace_fence(...)`. So an unclosed `<!-- seldon:begin notes -->` above
+  a fence can no longer hide it and make every run append it again.
+  - Unit test `a_damaged_marker_elsewhere_does_not_hide_the_fence`, and
+    integration test `a_damaged_marker_above_a_fence_never_appends_it_again`:
+    the second run gives `files: []`, and each fence appears once.
+  - Negative control: with the old logic put back, the integration test
+    fails.
+  - Note: the index loader (`load::fences`, a sequential scan) still
+    misreads such a damaged file. That is outside this WP and unchanged.
+- **(b) Redaction.** The command builds
+  `Redactor::with_patterns(&config.redaction.patterns)` before taking the
+  lock, so an invalid pattern exits 1 and nothing is written. These host
+  strings go through it before rendering:
+  - package names;
+  - unit names;
+  - plugin ids and `clonedFrom`;
+  - the four hardware values;
+  - the Omarchy version and theme;
+  - the paths of new deviation rows.
+
+  Old user lines are not rewritten. The integration test
+  `host_strings_go_through_the_users_redaction_patterns` uses patterns
+  `MS-7D\d+`, `pipewire` and `weather-plus`: the result is `machine:
+  ‹redacted›` and `| ‹redacted›.socket | user | — |`, with no
+  weather-plus left. An invalid pattern gives exit 1 with the files
+  unchanged.
+- **(c)** `enabled_units` drops a unit name containing `|`.
+- **(d)** `enabled_by` ignores a path argument (`systemctl enable
+  /etc/…/x.service`); this has a unit-test assertion.
+
+Verified:
+- `cargo test --test dossier --test rebuild --test init` → 9 / 7 / 29
+  passed.
+- `cargo clippy --all-targets -- -D warnings` clean, `cargo fmt --check`
+  clean.
+- `just check` → exit 0.
+- The real-host read-only run was repeated on a fresh scratch copy (XDG
+  redirected, `--no-commit`). The counts are unchanged (169 explicit, 167
+  pre-logbook, 966 total, 0 AUR, 40 units, 38 plugins, no warnings). The
+  three hand-written hardware lines were kept. The second run printed
+  "Nothing changed". Nothing under the real `~/.config` or
+  `~/.local/state` was written.
+
+No package-manager or service-manager command was typed by me in this
+round. The guard blocked nothing.
