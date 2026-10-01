@@ -10,7 +10,78 @@ Branch `wp/040-packaging`, worktree `wt/WP-040`, based on `main` at
 | `85b0629` | `.github/workflows/release.yml` |
 | `4041447` | `decisions/ADR-0022` (**proposed**), DECISIONS.md row |
 | `ce3e281` | memory/host.md, memory/pitfalls.md |
-| HEAD | this handover |
+| `98ed95f` | first handover |
+| `b364092` | review, blocking: `check()` keeps `CARGO_HOME`/`RUSTUP_HOME`; `options=('!debug')`; maintainer placeholder |
+| `55aafb4` | review, non-blocking: release.yml, check-srcinfo.sh, README, ADR-0022 |
+| HEAD | this handover, updated after the review |
+
+## Review follow-ups (round 2)
+
+**Blocking, fixed (`b364092`).** `check()` moved `HOME` to the scratch
+dir without pinning cargo's and rustup's dirs:
+- `cargo test --frozen` then looked for the registry that `prepare()`
+  had fetched into the builder's real `~/.cargo`.
+- It looked in the empty scratch home instead, so the build failed.
+- I reproduced it on the dev host with plain cargo:
+  `RUSTUP_TOOLCHAIN=stable HOME=<scratch> cargo metadata --frozen` →
+  exit 101, `no matching package named 'anyhow'`.
+- It was worse than the review said: **rustup first auto-installed a
+  1.5 GB stable toolchain** into the scratch home ("the missing active
+  toolchain … has been auto-installed"). I deleted that scratch dir.
+- Fix: `check()` now exports `CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"`
+  and `RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"` before `HOME`
+  moves. It already set `RUSTUP_TOOLCHAIN=stable` and
+  `CARGO_TARGET_DIR=target`, as `build()` does.
+- Stand-in re-verified (plain cargo, no makepkg) on a fresh `git archive`
+  tarball:
+  - `cargo fetch --locked`, then `cargo build --frozen --release
+    --features watch` succeeds;
+  - then the exact `check()` body, with its exports and the scratch
+    `HOME`/`XDG_*`/`SELDON_TEST_GUARD`:
+    `cargo test --frozen --features watch --lib --bins` → 111 + 2
+    passed, exit 0;
+  - the scratch home is still empty afterwards (0 bytes).
+
+**Non-blocking, done:**
+1. `options=('!debug')`, and the matching `options = !debug` line in
+   `.SRCINFO` (srcinfo.sh order: after `optdepends`, before `source`;
+   `check-srcinfo.sh` agrees).
+2. release.yml:
+   - `cargo metadata --locked`;
+   - `shellcheck` added to the container's pacman list, so `just
+     check-packaging` runs it there;
+   - a comment that the `bump` commit, pushed with `GITHUB_TOKEN`, does
+     not trigger ci.yml.
+
+   check-srcinfo.sh gains a file-wide `# shellcheck disable=SC1090,SC2154`,
+   for the `source`d PKGBUILD and its variables.
+3. packaging/README.md, test-host section: only
+   `ssh <host> 'cd /tmp/<dir> && makepkg -f'` and
+   `ssh <host> 'cd /tmp/<dir> && makepkg --printsrcinfo > SRCINFO.new'`.
+   Then `scp` the file back and `cmp` it locally. The `| cmp - .SRCINFO`
+   pipe is gone, and every other step is its own plain ssh command.
+4. `# Maintainer: JohnAndrewsX <EMAIL>` (a visible placeholder). It is
+   in the operator setup below and in README § One-time setup, step 7.
+5. ADR-0022: status stays proposed, date 2026-10-02, and the §7 sentence
+   is replaced word for word as given.
+6. README § Cutting a release, step 2: the dry run must be green before
+   the tag, or the AUR copy ships a PKGBUILD whose `check()` fails for
+   every user.
+
+**Optional, not done:**
+- `rustc -vV | sed …` instead of `--print host-tuple`. `host-tuple`
+  needs rustc ≥ 1.84; the crate's `rust-version` is 1.89 and the current
+  Arch Rust guidelines use it.
+- SHA-pinned actions: left as major tags, consistent with ci.yml.
+
+**Not verifiable here: shellcheck has never run on these files.** It is
+not on the dev host and I installed nothing. Its first run is the CI
+dry run (`just check` in `build`). A finding there fails the dry run,
+not ci.yml, because ci.yml does not install shellcheck. I reasoned
+through the likely codes:
+- PKGBUILD: SC2034, SC2154 and SC2164 are excluded by the recipe.
+- check-srcinfo.sh: SC1090 and SC2154 are disabled.
+- set-version.sh: none expected.
 
 ## Done
 
@@ -144,7 +215,11 @@ Branch `wp/040-packaging`, worktree `wt/WP-040`, based on `main` at
 
 ## Verified by
 
-- `just check` → `check: ok`, exit 0, 715 tests passed, 0 failed. It
+- After the review round: `bash -n` on the PKGBUILD and both scripts,
+  and on every `run:` block of release.yml, is ok. PyYAML parses it. No
+  tabs or trailing spaces. `just check` → `check: ok`, exit 0, 715
+  passed, 0 failed, `check-packaging: ok`.
+- First round: `just check` → `check: ok`, exit 0, 715 tests passed, 0 failed. It
   includes `check-packaging: ok` ("shellcheck not installed; bash -n
   only", `check-srcinfo: ok`), `plugin-validate: ok` and
   `qmllint: ok (28 files)`.
@@ -193,8 +268,12 @@ Branch `wp/040-packaging`, worktree `wt/WP-040`, based on `main` at
    `jax-seldon-plugin`, *Contents: Read and write*.
 6. If `main` is protected, let GitHub Actions push to it (`bump`) or bump
    by hand after each release.
-7. Run the dry run (`gh workflow run release.yml --ref main`); the summary
-   must say `true` for both secrets. Then tag `v0.1.0` when ready.
+7. Replace `EMAIL` in `# Maintainer: JohnAndrewsX <EMAIL>`
+   (packaging/PKGBUILD, line 1) with the address to show on the AUR, and
+   commit before the first tag. No agent fills it in.
+8. Run the dry run (`gh workflow run release.yml --ref main`); it must be
+   green and the summary must say `true` for both secrets. Then tag
+   `v0.1.0` when ready.
 
 ## Learned (in memory/)
 
@@ -211,33 +290,30 @@ Branch `wp/040-packaging`, worktree `wt/WP-040`, based on `main` at
 
 ## Decisions needed
 
-1. **Guard block: makepkg on the test host.**
-   - These commands were blocked as "privileged or package command":
-     - `ssh <test-host> 'cd /tmp/seldon-wp040 && makepkg --printsrcinfo > srcinfo.test-host && cmp srcinfo.test-host .SRCINFO && echo IDENTICAL'`
-     - `ssh <test-host> 'cd /tmp/seldon-wp040 && makepkg -f'`
-     - Earlier, a probe containing `…; makepkg --version`. I re-ran it
-       with `command -v` only.
-   - I did not reword them or run them from a script. The rule matches
-     `makepkg` after `;`/`&&` even inside the ssh string.
-   - Proposal for `scripts/guard.sh` (the orchestrator's call, with a
-     `guard-test.sh` row), like the `omarchy theme set` exception: allow
-     the whole command when it is
-     `^\s*ssh\s+\S+\s+'cd /tmp/[A-Za-z0-9._-]+ && makepkg (-f|--printsrcinfo)( [^';&|]*)?'$`,
-     and keep it blocked whenever `-s`, `-i`, `--syncdeps`, `--install`
-     or `-r` appears.
-   - Then either a worker reruns the README's test-host block
-     (≈ 5 min), or the CI dry run stands in for it.
-2. **ADR-0022**: accept as written, or replace it with a note elsewhere.
-   Renumber it if another WP took 0022.
-3. Optional follow-ups for other owners, not done here because they are
-   outside packaging/:
-   - engine/systemd/README.md step 1 still says "Until the package ships
-     it". It could now say "Installed by `jax-seldon` at
-     `/usr/lib/systemd/user/`; just `systemctl --user enable --now
-     seldon-watch`". The unit's header comment says "Installed only by
-     the user".
-   - ci.yml could run a `makepkg --printsrcinfo` diff on every PR.
-     `release.yml` does that only on tags and dry runs.
+Settled by the review:
+- ADR-0022 is accepted at merge, with the review's wording.
+- The guard exception for makepkg over ssh is the operator's (the guard
+  is operator-owned). Until it exists, the CI dry run stands in for the
+  test-host build. README § Testing uses exactly the two forms the
+  exception is to allow.
+- The `bump` job stays.
+- The first tag is the operator's.
+
+So the test-host acceptance items stay open until either the guard
+exception exists or the dry run is green. The test host was not touched
+in this round.
+
+Still open, outside packaging/ (owners other than this WP):
+- engine/systemd/README.md step 1 still says "Until the package ships
+  it". The unit's header says "Installed only by the user".
+- ci.yml could install shellcheck and diff `makepkg --printsrcinfo` on
+  PRs. Today only release.yml does.
+
+The first round's request (for the record): these commands were
+blocked by the guard:
+- `ssh <test-host> 'cd /tmp/seldon-wp040 && makepkg --printsrcinfo > … && cmp …'`
+- `ssh <test-host> 'cd /tmp/seldon-wp040 && makepkg -f'`
+- a probe with `…; makepkg --version`.
 
 ## Touched outside WP scope
 
