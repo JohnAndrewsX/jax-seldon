@@ -1,0 +1,67 @@
+# Maintainer: JohnAndrewsX <https://github.com/JohnAndrewsX>
+#
+# Source of truth: packaging/PKGBUILD in https://github.com/JohnAndrewsX/jax-seldon.
+# The release workflow sets pkgver, pkgrel and sha256sums, regenerates
+# .SRCINFO and pushes both to the AUR; do not edit the AUR copy by hand.
+#
+# glibc build, not musl: the AUR convention, and the musl target would need
+# `rust-musl`, which pulls in `rust` and conflicts with rustup (ADR-0022).
+# The static musl binary is a GitHub release asset.
+
+pkgname=jax-seldon
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Flight recorder and planning desk for an Omarchy system (engine)'
+arch=('x86_64')
+url='https://github.com/JohnAndrewsX/jax-seldon'
+license=('MIT')
+depends=('gcc-libs' 'git' 'glibc')
+makedepends=('cargo')
+optdepends=('snapper: snapshot events (needs ALLOW_USERS in the snapper config)')
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver/engine"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd "$pkgname-$pkgver/engine"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release --features watch
+}
+
+check() {
+  cd "$pkgname-$pkgver/engine"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  # unit tests only; a scratch home keeps them away from the builder's
+  # ~/.config/seldon and ~/.local/state/seldon (docs/TESTING.md)
+  local scratch="$srcdir/test-home"
+  mkdir -p "$scratch/home"
+  HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" \
+    XDG_STATE_HOME="$scratch/state" XDG_DATA_HOME="$scratch/data" \
+    SELDON_TEST_GUARD="$scratch" \
+    cargo test --frozen --features watch --lib --bins
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 engine/target/release/seldon "$pkgdir/usr/bin/seldon"
+  ln -s seldon "$pkgdir/usr/bin/jax-seldon"
+
+  # the optional watcher unit (ADR-0005): installed, never enabled;
+  # the repository copy runs a self-built ~/.local/bin/seldon
+  install -dm755 "$pkgdir/usr/lib/systemd/user"
+  sed 's|%h/\.local/bin/seldon|/usr/bin/seldon|; s|~/\.local/bin/seldon|/usr/bin/seldon|' \
+    engine/systemd/seldon-watch.service \
+    > "$pkgdir/usr/lib/systemd/user/seldon-watch.service"
+  chmod 644 "$pkgdir/usr/lib/systemd/user/seldon-watch.service"
+  grep -qx 'ExecStart=/usr/bin/seldon watch' "$pkgdir/usr/lib/systemd/user/seldon-watch.service"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
