@@ -248,3 +248,33 @@ Append-only. One bullet per finding, newest section last.
   `<sha> <ref>` in `packed-refs`; a `.git` *file* (`gitdir:`) and
   `commondir` cover worktrees. The first 7 hex characters match
   `git rev-parse --short=7`.
+
+## 2026-10-01 · WP-009 (hooks, pkgcmd, attribution)
+
+**Conventions**
+- **A command that must never fail is dispatched before `run()`.** `main`
+  matches `Some(Command::Hook(h)) = &cli.command` with
+  `h.command.is_agent_hook()` and calls `hook::run_agent_hook(|| Context::from_env(…), cmd)`:
+  the context is built inside the closure, so a bad `SELDON_NOW`, a missing
+  HOME or a broken config also lands on stderr with exit 0.
+- **Moving code without touching its tests:** `pub use crate::pkgcmd::{…}`
+  and `pub use crate::attribution::{…}` in `collectors/pacman.rs` keep every
+  old path (`pacman::parse_command`, `super::*` in its unit tests) valid.
+- **One owned value into a `&mut [T]` API:** `std::slice::from_mut(&mut event)`.
+- **Hook payloads are typed with only the fields read** (`#[serde(default)]`
+  on each, `tool_input: Value`); `tool_response` is never named, so the
+  command's output never reaches a Rust value Seldon keeps.
+
+**Crate behaviour**
+- **clippy `filter_next`-style lint on `DoubleEndedIterator`:** write
+  `.rfind(pred)`, not `.filter(pred).next_back()`.
+- **serde_json without `preserve_order` sorts object keys** (`Map` is a
+  `BTreeMap`). Rewriting a user's JSON file (`.claude/settings.json`) keeps
+  every value but reorders keys; `preserve_order` needs `indexmap`, which is
+  not on the allowed list.
+- **`std::io::IsTerminal` on stdin** before `read_to_end`: a hook run by
+  hand from a terminal would otherwise wait for EOF.
+- **Release timing** of `seldon hook claude-code` (musl not needed for the
+  measure): about 2.0 ms per mutating call, 1.1 ms per non-mutating call,
+  of which about 0.65 ms is process spawn (`env -i … true`). The
+  non-mutating path compiles no redaction regex and touches no ledger.
