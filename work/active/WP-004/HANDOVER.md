@@ -21,6 +21,8 @@ Commits, oldest first:
 | `c83f9b4` | review 3: URL userinfo up to its last `@` |
 | `761dfbf` | review 5: dedupe of capture-time events |
 | `29c1c8e` | review nice-to-haves: `--since` notice, canonical logbook key |
+| `059a612`, `7033ef1` | handover for round 1; memory |
+| `71a3ac1` | review round 2: a naming cause reaches only packages the transaction names |
 | last | this handover update |
 
 - **The foundation slice on its own:** I checked out `d973f19` in a throw-away
@@ -29,6 +31,31 @@ Commits, oldest first:
   has redaction bugs: `https://user:pw@host` became `https://‹redacted›host`,
   and `https://user:p@ss@h/` leaked `ss@h`. Both commits touch only
   `redact.rs` and `tests/redaction.rs`.
+
+## Review round 2 (approve, one tightening) — what changed
+
+- **Change.** In `attribute()`, a hook command that *names* a package can now
+  attribute only members with `explicit != Some(false)`. That means the
+  transaction's own command names the package too, or the transaction has no
+  logged command (`find_cause(…, named_by_tx, tx_full_upgrade)`).
+- **`explicit: false` members** (dependencies, or packages upgraded along the
+  way) get only two routes:
+  - the full-upgrade path (ADR-0017 §3);
+  - inheritance from an attributed member of their own transaction.
+- **Test:** `collectors::a_naming_command_does_not_reach_a_later_plain_upgrade`,
+  the reviewer's case.
+  - The agent runs `yay -S zed` at 12:00, in its own transaction. That install
+    is attributed to `agent:claude-code`/C-2026-004.
+  - At 12:05 a human's plain `-Syu` upgrades zed and firefox. Both stay
+    `system`, with no case.
+  - Before this change, the zed upgrade matched the naming command and
+    firefox inherited from it, so the test would have failed.
+- **The fixture story is unchanged and green.**
+  - The keyring (named by `omarchy update`), zed and ollama are explicit in
+    their own transactions.
+  - The `-Syu` members come in through the full-upgrade path.
+  - alsa-lib inherits from zed.
+- **Gate:** `just check` exits 0 with **110 tests** (collectors 14).
 
 ## Review round 1 (send back) — what changed
 
