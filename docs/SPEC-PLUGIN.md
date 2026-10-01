@@ -87,7 +87,17 @@ click on Drop turns into "Confirm drop". The WIP text counts `active`
 cases against the bar-widget setting `wipLimit` (default 3; warns, never
 blocks). Completed shows the index's last 50 (scrollable). While a text
 field or the sheet has focus the panel blocks the key catcher; `Esc`
-hands the keys back and keeps the draft. Width `Style.space(380)` (WP-011). Files: one component per tab,
+hands the keys back and keeps the draft. Drift sheet (WP-021): Enter or
+a click on an open drift row, the row's *Resolve…* button, or a click on
+the red strip (first crisis) opens the sheet in the Changelog's place;
+actions Link (open cases, the proposed case preselected), Explain (intent
++ optional zone/risk/area; result shows the created case with *Open*),
+Dismiss (reason); groups offer *All N* / *Only <package>* (`--only`);
+writes use two-press arming where any change to the form disarms; the
+draft is kept per event; a no-op shows "Already resolved: …"; above the
+list "+N more open drift items not listed here" when `summary.openDrift`
+exceeds `drift.length` (ADR-0020). Folded rows read `linked to C-…`,
+`explained · C-…: <intent>` (ADR-0021), `dismissed: <reason>`. Width `Style.space(380)` (WP-011). Files: one component per tab,
 `components/TodayTab.qml`, `ChangelogTab.qml`, `SystemTab.qml`, plus
 `EventRow.qml`, `Tabs.qml`, `Banner.qml`. The Changelog source filter has
 one chip per schema source (all nine, including `manual`, `agent`,
@@ -155,8 +165,9 @@ item and only while it is loaded. Routes the plugin must honour:
   what the keybinding above hits.
 - Bar panel: `IpcHandler` target **`jax.seldon.panel`** owned by the bar
   widget (`open`, `close`, `show`, `hide`, `toggle`, `pill`, and the
-  read-out/navigation methods `view`, `tab <id>`, `filter <source>` —
-  none runs the engine; WP-011), following the
+  read-out/navigation methods `view`, `tab <id>`, `filter <source>`,
+  `resolve crisis|<eventId>` (opens the drift sheet, WP-021) — none runs
+  the engine; WP-011), following the
   first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
   and toggle the panel independently of the overlay (WP-010).
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,

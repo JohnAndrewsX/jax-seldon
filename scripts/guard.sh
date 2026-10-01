@@ -8,6 +8,21 @@ input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [[ -n $cmd ]] || exit 0
 
+# Heredoc bodies are data (the command's stdin), never commands: drop every
+# line between `<<[-]['"]?WORD['"]?` and its terminator before matching, so
+# file contents written through a heredoc cannot trigger the rules below.
+# The heredoc operator line itself stays and is still checked.
+cmd=$(printf '%s\n' "$cmd" | awk '
+  BEGIN { term = "" }
+  term != "" { if ($0 == term || ($0 ~ /^[[:space:]]+/ && dash && $0 ~ ("^[[:space:]]*" term "$"))) { term = "" } ; next }
+  {
+    print
+    if (match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*["'"'"']?/)) {
+      s = substr($0, RSTART, RLENGTH); dash = (s ~ /<<-/)
+      gsub(/^<<-?[[:space:]]*["'"'"']?/, "", s); gsub(/["'"'"']$/, "", s); term = s
+    }
+  }')
+
 block() { echo "guard: blocked (AGENTS.md §6 red zone): $1" >&2; exit 2; }
 
 # privilege and package management

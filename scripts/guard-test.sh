@@ -60,4 +60,18 @@ check B 'sed -i s/a/b/ ~/.config/hypr/bindings.conf'
 check B 'cd x && cp y ~/.config/omarchy/shell.json'
 check A "ssh test-host 'jq -r \".idle | select(length > 0)\" ~/.config/omarchy/shell.json'"
 check A 'test "$(jq ".n > 0" x.json)" = true && cat ~/.config/omarchy/shell.json'
+check A 'python3 - <<'"'"'EOF'"'"'
+s = "// sources: all | pacman | snapper"
+open("x.qml", "w").write(s)
+EOF'
+check A 'cat > notes.md <<EOF
+run sudo pacman -Syu then cp x /usr/share/y
+EOF'
+check B 'cat > notes.md <<EOF
+harmless
+EOF
+sudo pacman -Syu'
+check B 'cat <<EOF > /etc/motd
+hello
+EOF'
 exit $fail
