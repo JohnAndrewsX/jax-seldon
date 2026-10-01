@@ -1,0 +1,33 @@
+# CI runs `just check` in an Arch Linux container.
+#
+# What does NOT run here (see docs/TESTING.md):
+#   - `omarchy plugin validate plugin/`  needs the omarchy CLI (an Omarchy install)
+#   - qmllint against the shell          needs $OMARCHY_PATH/shell and Quickshell's QML modules
+# Both are skipped via SELDON_SKIP_HOST_CHECKS=1 and run on the dev host
+# with `just check` before every handover.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      SELDON_SKIP_HOST_CHECKS: "1"
+      CARGO_TERM_COLOR: always
+    steps:
+      # Arch's `rust` package ships cargo, clippy and rustfmt.
+      - name: Install toolchain
+        run: pacman -Syu --noconfirm --needed git rust just jq
+
+      - uses: actions/checkout@v4
+
+      - name: just check
+        run: just check
