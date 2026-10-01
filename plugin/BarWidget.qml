@@ -137,7 +137,7 @@ BarWidget {
     function view(): string {
       return JSON.stringify(panelLoader.item ? panelLoader.item.view() : null)
     }
-    // Show one tab: today | changelog | work | system.
+    // Show one tab: today | changelog | work | decisions | system | memory.
     function tab(name: string): string {
       return panelLoader.item && panelLoader.item.selectTabById(name) ? "ok" : "unknown tab"
     }
