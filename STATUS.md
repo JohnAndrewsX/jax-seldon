@@ -12,11 +12,10 @@ Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
 | WP-031 | Charts: Heatmap, Series, DriftBars, RiskDonut, Timeline (+ The Plan) | Plugin | `plugin-031` (opus, high) | `wt/WP-031` · `wp/031-charts` | 2026-10-02 |
-| WP-032 | `seldon rebuild` → outputs/REBUILD.md | Engine | `engine-032` (opus, high) | `wt/WP-032` · `wp/032-rebuild` | 2026-10-02 |
+| WP-035 | `seldon dossier`: generated fences in system/*.md and the pre-logbook package list | Engine | `engine-035` (opus, high) | `wt/WP-035` · `wp/035-dossier` | 2026-10-02 |
 | WP-034 | `seldon watch` (feature-gated) and systemd user unit template | Engine | `engine-034` (opus, high) | `wt/WP-034` · `wp/034-watch` | 2026-10-02 |
 
 ## Queued (next up)
-WP-035 (`seldon dossier` + pre-logbook package list, after WP-032) ·
 WP-033 (update-impact, needs the operator's release-notes source decision)
 · WP-040/041 (packaging, docs) after WP-031. (see `work/queued/`)
 
@@ -31,6 +30,12 @@ WP-033 (update-impact, needs the operator's release-notes source decision)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-032 `seldon rebuild` → outputs/REBUILD.md (seven sections,
+  AUR rule from the command, open drift in place, dismissed changes
+  "deliberately not reproduced", fence `rebuild`, only-on-change write)
+  — merged after one small fix round; 329 engine tests; golden
+  byte-identical on the fixture. Gap found by the review: pre-logbook
+  packages are only counted → WP-035.
 - 2026-10-02 WP-030 Prime Radiant overlay skeleton (five-slot 12-column
   grid with reflow, period selector 30/90/365/All, keyboard, precomputed
   period table in the service, overlay harness at 1080p/1440p/1.25 scale)
