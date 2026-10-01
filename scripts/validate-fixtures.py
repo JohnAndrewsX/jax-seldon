@@ -1,0 +1,821 @@
+#!/usr/bin/env python3
+"""Validate every JSON fixture against its schema and check that the sample
+index derives from the sample logbook (WP-002).
+
+Called by scripts/validate-fixtures.sh. Exit 0 when everything holds, 1 otherwise.
+
+Schema backends, picked in this order unless --validator / SELDON_SCHEMA_VALIDATOR says otherwise:
+  jsonschema        python module (Draft 2020-12, local registry, format checks)
+  check-jsonschema  CLI, fed with local copies of the schemas
+  builtin           the small Draft 2020-12 subset below; fails closed on any
+                    keyword it does not implement, so a schema change that needs
+                    more is noticed instead of silently skipped
+
+The derivation check implements the index rules of ADR-0012 for the parts that
+come from the logbook. It is a fixture consistency check, not the engine; the
+engine's golden test (WP-007) compares real `seldon index` output with the same
+fixture. `--write-index` rewrites those parts of fixtures/index.sample.json.
+"""
+import argparse
+import copy
+import datetime as dt
+import glob
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.parse
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCHEMA_DIR = os.path.join(ROOT, "schema")
+FIX = os.path.join(ROOT, "fixtures")
+LOGBOOK = os.path.join(FIX, "logbook")
+SAMPLE = os.path.join(FIX, "index.sample.json")
+ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
+
+EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
+EXT = {
+    "snapper": ID + "external/snapper-list.schema.json",
+    "plugin-list": ID + "external/omarchy-plugin-list.schema.json",
+    "plugin-catalog": ID + "external/omarchy-plugin-catalog.schema.json",
+    "hook": ID + "external/claude-code-hook.schema.json",
+}
+
+DRIFT_SOURCES = {"pacman", "omarchy", "plugins", "theme", "config"}
+EVENT_KEYS = ["id", "ts", "source", "kind", "subject", "detail", "actor", "case", "zone",
+              "explicit", "txId", "refersTo", "resolution", "meta"]
+CASE_KEYS = ["id", "title", "status", "zone", "risk", "priority", "area", "created", "started", "closed",
+             "snapshotBefore", "agents", "events", "tags", "path", "steps", "proposedEvents"]
+
+
+class Fail(Exception):
+    pass
+
+
+# --------------------------------------------------------------------------- schemas
+
+def load_schemas():
+    out = {}
+    for path in sorted(glob.glob(os.path.join(SCHEMA_DIR, "**", "*.json"), recursive=True)):
+        with open(path, encoding="utf-8") as f:
+            s = json.load(f)
+        sid = s.get("$id")
+        if not sid:
+            raise Fail(f"{rel(path)}: schema has no $id")
+        out[sid] = (s, path)
+    return out
+
+
+def rel(p):
+    return os.path.relpath(p, ROOT)
+
+
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$")
+
+
+def check_format(fmt, value):
+    if not isinstance(value, str):
+        return True
+    try:
+        if fmt == "date":
+            return bool(DATE_RE.match(value)) and dt.date.fromisoformat(value) is not None
+        if fmt == "date-time":
+            return bool(DATETIME_RE.match(value)) and dt.datetime.fromisoformat(value.replace("Z", "+00:00")) is not None
+    except ValueError:
+        return False
+    return True  # unknown formats are annotations
+
+
+class Builtin:
+    """Draft 2020-12 subset sufficient for schema/**. Unknown keywords are errors."""
+    name = "builtin"
+    ANNOTATIONS = {"$schema", "$id", "$defs", "title", "description", "default", "$comment", "examples"}
+
+    def __init__(self, schemas):
+        self.docs = {sid: s for sid, (s, _) in schemas.items()}
+
+    def validate(self, instance, sid):
+        errs = []
+        self._v(instance, self.docs[sid], sid, "", errs)
+        return errs
+
+    def _resolve(self, base, ref):
+        target = urllib.parse.urljoin(base, ref)
+        doc_id, _, frag = target.partition("#")
+        if doc_id not in self.docs:
+            raise Fail(f"builtin validator: unresolvable $ref {ref} (from {base})")
+        node = self.docs[doc_id]
+        for part in [p for p in frag.split("/") if p]:
+            part = part.replace("~1", "/").replace("~0", "~")
+            node = node[int(part)] if isinstance(node, list) else node[part]
+        return node, doc_id
+
+    @staticmethod
+    def _type_ok(t, x):
+        if t == "integer":
+            return (isinstance(x, int) and not isinstance(x, bool)) or (isinstance(x, float) and x.is_integer())
+        if t == "number":
+            return isinstance(x, (int, float)) and not isinstance(x, bool)
+        return isinstance(x, {"string": str, "boolean": bool, "null": type(None), "array": list, "object": dict}[t])
+
+    @staticmethod
+    def _same(a, b):
+        """JSON equality: booleans are not numbers."""
+        if isinstance(a, bool) or isinstance(b, bool):
+            return isinstance(a, bool) and isinstance(b, bool) and a == b
+        return a == b
+
+    def _v(self, x, s, base, path, errs):
+        if s is True or s == {}:
+            return
+        if s is False:
+            errs.append(f"{path or '/'}: not allowed")
+            return
+        where = path or "/"
+        for k in s:
+            if k in self.ANNOTATIONS or k in ("then", "else"):
+                continue
+            v = s[k]
+            if k == "$ref":
+                node, doc = self._resolve(base, v)
+                self._v(x, node, doc, path, errs)
+            elif k == "type":
+                ts = v if isinstance(v, list) else [v]
+                if not any(self._type_ok(t, x) for t in ts):
+                    errs.append(f"{where}: expected type {v}, got {type(x).__name__}")
+            elif k == "enum":
+                if not any(self._same(x, e) for e in v):
+                    errs.append(f"{where}: {json.dumps(x, ensure_ascii=False)[:60]} not in enum")
+            elif k == "const":
+                if not self._same(x, v):
+                    errs.append(f"{where}: expected const {v!r}")
+            elif k == "required":
+                if isinstance(x, dict):
+                    for r in v:
+                        if r not in x:
+                            errs.append(f"{where}: missing required '{r}'")
+            elif k == "properties":
+                if isinstance(x, dict):
+                    for pk, ps in v.items():
+                        if pk in x:
+                            self._v(x[pk], ps, base, f"{path}/{pk}", errs)
+            elif k == "additionalProperties":
+                if isinstance(x, dict):
+                    known = set(s.get("properties", {}))
+                    for pk in x:
+                        if pk not in known:
+                            if v is False:
+                                errs.append(f"{where}: unexpected property '{pk}'")
+                            else:
+                                self._v(x[pk], v, base, f"{path}/{pk}", errs)
+            elif k == "propertyNames":
+                if isinstance(x, dict):
+                    for pk in x:
+                        self._v(pk, v, base, f"{path}/{pk}(name)", errs)
+            elif k == "items":
+                if isinstance(x, list):
+                    for i, item in enumerate(x):
+                        self._v(item, v, base, f"{path}/{i}", errs)
+            elif k == "maxItems":
+                if isinstance(x, list) and len(x) > v:
+                    errs.append(f"{where}: more than {v} items")
+            elif k == "minItems":
+                if isinstance(x, list) and len(x) < v:
+                    errs.append(f"{where}: fewer than {v} items")
+            elif k == "maxLength":
+                if isinstance(x, str) and len(x) > v:
+                    errs.append(f"{where}: longer than {v}")
+            elif k == "minLength":
+                if isinstance(x, str) and len(x) < v:
+                    errs.append(f"{where}: shorter than {v}")
+            elif k == "minimum":
+                if self._type_ok("number", x) and x < v:
+                    errs.append(f"{where}: below minimum {v}")
+            elif k == "pattern":
+                if isinstance(x, str) and not re.search(v, x):
+                    errs.append(f"{where}: {x[:60]!r} does not match {v}")
+            elif k == "format":
+                if not check_format(v, x):
+                    errs.append(f"{where}: {x!r} is not a valid {v}")
+            elif k == "allOf":
+                for sub in v:
+                    self._v(x, sub, base, path, errs)
+            elif k in ("anyOf", "oneOf"):
+                ok = 0
+                for sub in v:
+                    e = []
+                    self._v(x, sub, base, path, e)
+                    ok += not e
+                if (k == "anyOf" and ok == 0) or (k == "oneOf" and ok != 1):
+                    errs.append(f"{where}: does not match {k}")
+            elif k == "not":
+                e = []
+                self._v(x, v, base, path, e)
+                if not e:
+                    errs.append(f"{where}: matches a 'not' schema")
+            elif k == "if":
+                e = []
+                self._v(x, v, base, path, e)
+                branch = s.get("then") if not e else s.get("else")
+                if branch is not None:
+                    self._v(x, branch, base, path, errs)
+            else:
+                raise Fail(f"builtin validator does not implement keyword '{k}' — install python-jsonschema "
+                           f"or check-jsonschema, or extend scripts/validate-fixtures.py")
+
+
+class LibJsonschema:
+    name = "jsonschema"
+
+    def __init__(self, schemas):
+        import jsonschema
+        self.js = jsonschema
+        self.schemas = {sid: s for sid, (s, _) in schemas.items()}
+        for s in self.schemas.values():
+            jsonschema.Draft202012Validator.check_schema(s)
+        cls = jsonschema.Draft202012Validator
+        fc = cls.FORMAT_CHECKER
+        try:
+            from referencing import Registry, Resource
+            reg = Registry().with_resources(
+                [(sid, Resource.from_contents(s)) for sid, s in self.schemas.items()])
+            self.make = lambda sid: cls(self.schemas[sid], registry=reg, format_checker=fc)
+        except ImportError:  # jsonschema < 4.18
+            def make(sid):
+                res = jsonschema.RefResolver.from_schema(self.schemas[sid], store=dict(self.schemas))
+                return cls(self.schemas[sid], resolver=res, format_checker=fc)
+            self.make = make
+
+    def validate(self, instance, sid):
+        errs = []
+        for e in self.make(sid).iter_errors(instance):
+            p = "/" + "/".join(str(x) for x in e.absolute_path)
+            errs.append(f"{p}: {e.message[:200]}")
+        return errs
+
+
+class CheckJsonschema:
+    """check-jsonschema CLI. Schemas are copied to a temp dir with file:// ids so no $ref goes to the network."""
+    name = "check-jsonschema"
+
+    def __init__(self, schemas, exe):
+        self.exe = exe
+        self.tmp = tempfile.mkdtemp(prefix="seldon-schemas-")
+        self.paths = {}
+        for sid, (s, path) in schemas.items():
+            r = os.path.relpath(path, SCHEMA_DIR)
+            dst = os.path.join(self.tmp, "schema", r)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            s2 = dict(s)
+            s2["$id"] = "file://" + dst
+            with open(dst, "w", encoding="utf-8") as f:
+                json.dump(s2, f)
+            self.paths[sid] = dst
+        self.n = 0
+
+    def validate(self, instance, sid):
+        self.n += 1
+        inst = os.path.join(self.tmp, f"instance-{self.n}.json")
+        with open(inst, "w", encoding="utf-8") as f:
+            json.dump(instance, f, ensure_ascii=False)
+        r = subprocess.run([self.exe, "--schemafile", self.paths[sid], inst], capture_output=True, text=True)
+        if r.returncode == 0:
+            return []
+        return [(r.stdout + r.stderr).strip().replace(inst, "<instance>")[:2000]]
+
+
+def pick_backend(schemas, wanted):
+    wanted = wanted or os.environ.get("SELDON_SCHEMA_VALIDATOR", "auto")
+    if wanted in ("auto", "jsonschema"):
+        try:
+            return LibJsonschema(schemas)
+        except ImportError:
+            if wanted == "jsonschema":
+                raise Fail("python module jsonschema not available")
+    if wanted in ("auto", "check-jsonschema"):
+        exe = shutil.which("check-jsonschema")
+        if exe:
+            return CheckJsonschema(schemas, exe)
+        if wanted == "check-jsonschema":
+            raise Fail("check-jsonschema not on PATH")
+    if wanted in ("auto", "builtin"):
+        return Builtin(schemas)
+    raise Fail(f"unknown validator '{wanted}'")
+
+
+# --------------------------------------------------------------------------- logbook parsing
+
+FM_KEY = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(?:\s+(.*))?$")
+
+
+def scalar(v):
+    v = v.strip()
+    if v == "":
+        return None
+    if v.startswith('"'):
+        if not v.endswith('"') or len(v) < 2:
+            raise Fail(f"unterminated string {v!r}")
+        return json.loads(v)
+    if v in ("true", "false"):
+        return v == "true"
+    if re.fullmatch(r"-?\d+", v):
+        return int(v)
+    return v
+
+
+def frontmatter(path):
+    """Flat YAML frontmatter as Seldon writes it: key: scalar | [a, b] | empty. Dates stay strings."""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    if not text.startswith("---\n"):
+        raise Fail(f"{rel(path)}: no frontmatter")
+    head, sep, body = text[4:].partition("\n---\n")
+    if not sep:
+        raise Fail(f"{rel(path)}: unterminated frontmatter")
+    out = {}
+    for n, line in enumerate(head.splitlines(), 2):
+        m = FM_KEY.match(line)
+        if not m:
+            raise Fail(f"{rel(path)}:{n}: unsupported frontmatter line {line!r}")
+        k, v = m.group(1), (m.group(2) or "").strip()
+        if v.startswith("["):
+            if not v.endswith("]"):
+                raise Fail(f"{rel(path)}:{n}: unsupported list {v!r}")
+            inner = v[1:-1].strip()
+            out[k] = [str(scalar(x)) for x in inner.split(",")] if inner else []
+        else:
+            out[k] = scalar(v)
+    return out, body
+
+
+def fences(path):
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    out = {}
+    for m in re.finditer(r"<!-- seldon:begin ([a-z0-9.-]+) -->\n(.*?)<!-- seldon:end -->", text, re.S):
+        out[m.group(1)] = m.group(2)
+    return out
+
+
+def fence_kv(text):
+    out = {}
+    for line in text.splitlines():
+        m = re.match(r"^- ([A-Za-z][A-Za-z0-9]*): (.*)$", line)
+        if m:
+            out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def fence_table(text):
+    rows = [l for l in text.splitlines() if l.startswith("|")]
+    if len(rows) < 2:
+        return []
+    head = [c.strip() for c in rows[0].strip("|").split("|")]
+    return [dict(zip(head, [c.strip() for c in r.strip("|").split("|")])) for r in rows[2:]]
+
+
+HEADING = re.compile(r"^## ([0-2][0-9]:[0-5][0-9]) · (human|system|agent:[a-z0-9-]+)(?: · (C-[0-9]{4}-[0-9]{3,}))?\s*$")
+
+
+def journal(path):
+    if not os.path.exists(path):
+        return []
+    _, body = frontmatter(path)
+    entries, cur = [], None
+    for line in body.splitlines():
+        if line.startswith("## "):
+            m = HEADING.match(line)
+            if not m:
+                raise Fail(f"{rel(path)}: bad journal heading {line!r}")
+            cur = {"time": m.group(1), "actor": m.group(2), "case": m.group(3), "text": []}
+            entries.append(cur)
+        elif cur is not None:
+            cur["text"].append(line)
+    for e in entries:
+        e["text"] = "\n".join(e["text"]).strip()
+    return entries
+
+
+def plan_section(body):
+    m = re.search(r"^## Plan\n(.*?)(?=^## |\Z)", body, re.S | re.M)
+    return m.group(1) if m else ""
+
+
+def instant(ts):
+    return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def order_event(e):
+    return {k: e[k] for k in EVENT_KEYS if k in e}
+
+
+# --------------------------------------------------------------------------- derivation (ADR-0012)
+
+def load_logbook(lb, problems):
+    ledger = []
+    for f in sorted(glob.glob(os.path.join(lb, "ledger", "*.jsonl"))):
+        month = os.path.basename(f)[:-6]
+        with open(f, encoding="utf-8") as fh:
+            for n, line in enumerate(fh, 1):
+                if not line.strip():
+                    problems.append(f"{rel(f)}:{n}: empty line")
+                    continue
+                e = json.loads(line)
+                if e.get("ts", "")[:7] != month:
+                    problems.append(f"{rel(f)}:{n}: ts {e.get('ts')} not in month file {month}")
+                ledger.append((f"{rel(f)}:{n}", e))
+    cases = []
+    for f in sorted(glob.glob(os.path.join(lb, "work", "*", "C-*.md"))):
+        fm, body = frontmatter(f)
+        cases.append((f, fm, body))
+    return ledger, cases
+
+
+def derive(lb, today, problems):
+    ledger, case_files = load_logbook(lb, problems)
+    events = [e for _, e in ledger]
+    by_id = {}
+    for where, e in ledger:
+        if e["id"] in by_id:
+            problems.append(f"{where}: duplicate id {e['id']}")
+        by_id[e["id"]] = e
+    seen = set()
+    resolutions = {}
+    for where, e in ledger:
+        if "resolution" in e and e["kind"] != "resolution":
+            problems.append(f"{where}: 'resolution' field on a {e['kind']} event (ledger lines carry it only on kind resolution)")
+        if "refersTo" in e:
+            if e["refersTo"] not in seen:
+                problems.append(f"{where}: refersTo {e['refersTo']} is not an earlier ledger event")
+            elif e["kind"] == "resolution":
+                tgt = by_id[e["refersTo"]]
+                if tgt["source"] not in DRIFT_SOURCES or "case" in tgt:
+                    problems.append(f"{where}: resolves {tgt['id']}, which was never drift")
+                if e["subject"] != tgt["subject"]:
+                    problems.append(f"{where}: resolution subject differs from its target's")
+                resolutions[e["refersTo"]] = e
+        seen.add(e["id"])
+
+    # cases
+    cases_by_id = {}
+    for f, fm, body in case_files:
+        r = os.path.relpath(f, lb)
+        folder = r.split(os.sep)[1]
+        want = {"queued": "queued", "active": "active", "verification": "active",
+                "completed": "completed", "dropped": "completed"}.get(fm.get("status"))
+        if folder != want:
+            problems.append(f"{rel(f)}: status {fm.get('status')} belongs in work/{want}/")
+        if not os.path.basename(f).startswith(str(fm.get("id")) + "-"):
+            problems.append(f"{rel(f)}: file name does not start with its id")
+        cases_by_id[fm["id"]] = (r, fm, body)
+    for where, e in ledger:
+        if e.get("case") and e["case"] not in cases_by_id:
+            problems.append(f"{where}: unknown case {e['case']}")
+
+    # events, resolutions folded (newest first)
+    folded = []
+    for e in events:
+        if e["kind"] == "resolution":
+            continue
+        e = copy.deepcopy(e)
+        r = resolutions.get(e["id"])
+        if r:
+            e["resolution"] = r["resolution"]
+            if r["resolution"] == "linked":
+                e["case"] = r["case"]
+        folded.append(order_event(e))
+    folded.sort(key=lambda e: (instant(e["ts"]), e["id"]), reverse=True)
+
+    open_cases = sorted((cid for cid, (_, fm, _) in cases_by_id.items()
+                         if fm["status"] in ("queued", "active", "verification")))
+
+    def proposed(subject):
+        pat = re.compile(r"(?<![A-Za-z0-9._~/-])" + re.escape(subject) + r"(?![A-Za-z0-9_/-]|\.[A-Za-z0-9])")
+        for cid in open_cases:
+            if pat.search(plan_section(cases_by_id[cid][2])):
+                return cid
+        return None
+
+    drift = []
+    for e in folded:
+        if e["source"] in DRIFT_SOURCES and "case" not in e and "resolution" not in e:
+            d = {"eventId": e["id"], "ts": e["ts"], "source": e["source"], "kind": e["kind"], "subject": e["subject"]}
+            if "detail" in e:
+                d["detail"] = e["detail"]
+            d["actor"] = e["actor"]
+            if "zone" in e:
+                d["zone"] = e["zone"]
+            d["crisis"] = e.get("zone") == "red"
+            d["proposedCase"] = proposed(e["subject"])
+            drift.append(d)
+
+    # case objects
+    attributed = {}
+    for e in sorted(folded, key=lambda e: (instant(e["ts"]), e["id"])):
+        if e["source"] != "seldon" and e.get("case"):
+            attributed.setdefault(e["case"], []).append(e["id"])
+    groups = {"queued": [], "active": [], "verification": [], "completed": []}
+    for cid in sorted(cases_by_id):
+        r, fm, body = cases_by_id[cid]
+        if fm.get("type") != "case":
+            problems.append(f"{r}: frontmatter type must be 'case'")
+        if fm.get("events", []) != attributed.get(cid, []):
+            problems.append(f"{r}: frontmatter events {fm.get('events')} != ledger-attributed {attributed.get(cid, [])}")
+        plan = plan_section(body)
+        c = {k: v for k, v in fm.items() if k != "type"}
+        c["path"] = r.replace(os.sep, "/")
+        c["steps"] = {"total": len(re.findall(r"^\s*- \[[ xX]\] ", plan, re.M)),
+                      "done": len(re.findall(r"^\s*- \[[xX]\] ", plan, re.M))}
+        prop = [d["eventId"] for d in drift if d["proposedCase"] == cid]
+        if prop:
+            c["proposedEvents"] = prop
+        c = {k: c[k] for k in CASE_KEYS if k in c}
+        g = "completed" if fm["status"] in ("completed", "dropped") else fm["status"]
+        groups[g].append(c)
+    groups["completed"].sort(key=lambda c: (c.get("closed") or "", c["id"]), reverse=True)
+    groups["completed"] = groups["completed"][:50]
+    all_cases = [c for g in groups.values() for c in g]
+
+    # summary
+    day = lambda e: dt.date.fromisoformat(e["ts"][:10])
+    week_ago = today - dt.timedelta(days=6)
+    summary = {
+        "activeCases": len(groups["active"]), "queuedCases": len(groups["queued"]),
+        "openDrift": len(drift), "crisis": sum(d["crisis"] for d in drift),
+        "eventsToday": sum(day(e) == today for e in folded),
+        "events7d": sum(week_ago <= day(e) <= today for e in folded),
+    }
+
+    # today
+    def jpath(d):
+        return f"journal/{d.year:04d}/{d.isoformat()}.md"
+    tpath = jpath(today)
+    today_obj = {"date": today.isoformat(), "path": tpath,
+                 "entries": journal(os.path.join(lb, tpath)),
+                 "yesterday": journal(os.path.join(lb, jpath(today - dt.timedelta(days=1))))}
+
+    # decisions
+    decisions = []
+    for f in sorted(glob.glob(os.path.join(lb, "decisions", "ADR-*.md")), reverse=True):
+        fm, _ = frontmatter(f)
+        decisions.append({"id": fm["id"], "title": fm["title"], "status": fm["status"], "date": fm["date"],
+                          "path": os.path.relpath(f, lb).replace(os.sep, "/")})
+
+    # system
+    sysdir = os.path.join(lb, "system")
+    om = fence_kv(fences(os.path.join(sysdir, "omarchy.md"))["omarchy.summary"])
+    pk = {k: int(v) for k, v in fence_kv(fences(os.path.join(sysdir, "packages.md"))["packages.summary"]).items()}
+    pl = fence_table(fences(os.path.join(sysdir, "plugins.md"))["plugins.list"])
+    dev = fence_table(fences(os.path.join(sysdir, "deviations.md"))["deviations.table"])
+    deleted = {e["subject"] for e in events if e["source"] == "snapper" and e["kind"] == "snapshot-delete"}
+    snaps = []
+    for e in sorted(events, key=lambda e: (instant(e["ts"]), e["id"]), reverse=True):
+        if e["source"] == "snapper" and e["kind"] == "snapshot" and e["subject"] not in deleted:
+            s = {"number": int(e["subject"]), "ts": e["ts"]}
+            if "detail" in e:
+                s["description"] = e["detail"]
+            if "type" in e.get("meta", {}):
+                s["type"] = e["meta"]["type"]
+            snaps.append(s)
+    areas = []
+    for d in sorted(glob.glob(os.path.join(lb, "areas", "*", "README.md"))):
+        name = os.path.basename(os.path.dirname(d))
+        areas.append({"name": name, "hasAgentsMd": os.path.exists(os.path.join(os.path.dirname(d), "AGENTS.md")),
+                      "cases": sum(c.get("area") == name for c in all_cases)})
+    system = {
+        "omarchy": {"version": om["version"], "theme": om["theme"], "lastUpdate": om.get("lastUpdate") or None},
+        "packages": pk,
+        "deviations": len(dev),
+        "snapshots": snaps[:10],
+        "plugins": {"enabled": sum(r["enabled"] == "yes" for r in pl), "installed": len(pl)},
+        "areas": areas,
+    }
+    upd = [e for e in folded if e["source"] == "omarchy" and e["kind"] == "update"]
+    if upd and upd[0].get("meta", {}).get("to") != om["version"]:
+        problems.append(f"dossier omarchy.version {om['version']} != last update event {upd[0]['meta'].get('to')}")
+    if upd and upd[0]["ts"] != om.get("lastUpdate"):
+        problems.append(f"dossier omarchy.lastUpdate {om.get('lastUpdate')} != last update event {upd[0]['ts']}")
+    th = [e for e in folded if e["source"] == "theme" and e["kind"] == "theme-set"]
+    if th and th[0]["subject"] != om["theme"]:
+        problems.append(f"dossier omarchy.theme {om['theme']} != last theme-set {th[0]['subject']}")
+
+    # memory
+    memdir = os.path.join(lb, "memory")
+    _, lbody = frontmatter(os.path.join(memdir, "lessons.md"))
+    lessons = [l[3:].strip() for l in lbody.splitlines() if l.startswith("## ")]
+    topics = []
+    for f in sorted(glob.glob(os.path.join(memdir, "*.md"))):
+        if os.path.basename(f) == "lessons.md":
+            continue
+        fm, _ = frontmatter(f)
+        topics.append({"topic": fm["topic"], "updated": fm["updated"], "path": os.path.relpath(f, lb).replace(os.sep, "/")})
+    topics.sort(key=lambda t: t["topic"])
+    topics.sort(key=lambda t: t["updated"], reverse=True)
+
+    # series
+    heat = []
+    for i in range(365, -1, -1):
+        d = today - dt.timedelta(days=i)
+        evs = [e for e in folded if day(e) == d]
+        h = {"date": d.isoformat(), "total": len(evs)}
+        if evs:
+            by = {}
+            for e in evs:
+                by[e["source"]] = by.get(e["source"], 0) + 1
+            h["bySource"] = dict(sorted(by.items()))
+        heat.append(h)
+    hist = [{"date": r["date"], "explicit": int(r["explicit"]), "total": int(r["total"])}
+            for r in fence_table(fences(os.path.join(sysdir, "packages.md"))["packages.history"])]
+
+    def week(d):
+        y, w, _ = d.isocalendar()
+        return f"{y}-W{w:02d}"
+    weeks = []
+    if events:
+        d = min(day(e) for e in events)
+        d -= dt.timedelta(days=d.weekday())
+        while d <= today:
+            weeks.append(week(d))
+            d += dt.timedelta(days=7)
+    opened = [week(day(e)) for e in events if e["source"] in DRIFT_SOURCES and "case" not in e]
+    resolved_w = [week(day(e)) for e in events if e["kind"] == "resolution"]
+    drift_series = [{"week": w, "opened": opened.count(w), "resolved": resolved_w.count(w)} for w in weeks]
+    risk = {r: sum(c["risk"] == r for c in all_cases) for r in ("R0", "R1", "R2", "R3")}
+    timeline = []
+    for e in upd:
+        to = e.get("meta", {}).get("to", "")
+        timeline.append({"kind": "release", "ts": e["ts"], "label": f"Omarchy {to}", "ref": to})
+    for s in system["snapshots"]:
+        timeline.append({"kind": "snapshot", "ts": s["ts"],
+                         "label": f"{s['number']} {s.get('description', '')}".strip(), "ref": str(s["number"])})
+    for c in all_cases:
+        if c["status"] != "dropped":
+            timeline.append({"kind": "case", "ts": c["created"], "end": c.get("closed"),
+                             "label": f"{c['id']} {c['title']}", "ref": c["id"]})
+    for d in drift:
+        if d["crisis"]:
+            timeline.append({"kind": "crisis", "ts": d["ts"], "label": f"{d['source']} {d['kind']} {d['subject']}",
+                             "ref": d["eventId"]})
+    korder = {"release": 0, "snapshot": 1, "case": 2, "crisis": 3}
+    timeline.sort(key=lambda t: (t["ts"], korder[t["kind"]], t["ref"]))
+
+    pfm, _ = frontmatter(os.path.join(lb, "PROJECT.md"))
+    return {
+        "logbook": {"language": pfm["language"], "machine": pfm["machineId"]},
+        "summary": summary,
+        "today": today_obj,
+        "events": folded[:500],
+        "drift": drift,
+        "cases": groups,
+        "decisions": decisions,
+        "system": system,
+        "memory": {"lessons": lessons, "topics": topics},
+        "series": {"heatmap": heat, "packages": hist, "drift": drift_series, "risk": risk, "timeline": timeline},
+    }, ledger, case_files
+
+
+def diff(a, b, path=""):
+    """First few differences between fixture (a) and derived (b)."""
+    out = []
+    if type(a) is not type(b):
+        return [f"{path or '/'}: fixture {json.dumps(a, ensure_ascii=False)[:80]} != derived {json.dumps(b, ensure_ascii=False)[:80]}"]
+    if isinstance(a, dict):
+        for k in sorted(set(a) | set(b)):
+            if k not in a:
+                out.append(f"{path}/{k}: missing in fixture")
+            elif k not in b:
+                out.append(f"{path}/{k}: not derivable from the logbook")
+            else:
+                out += diff(a[k], b[k], f"{path}/{k}")
+    elif isinstance(a, list):
+        if len(a) != len(b):
+            out.append(f"{path}: fixture has {len(a)} items, derived {len(b)}")
+        for i, (x, y) in enumerate(zip(a, b)):
+            out += diff(x, y, f"{path}/{i}")
+    elif a != b:
+        out.append(f"{path or '/'}: fixture {json.dumps(a, ensure_ascii=False)[:80]} != derived {json.dumps(b, ensure_ascii=False)[:80]}")
+    return out[:20]
+
+
+# --------------------------------------------------------------------------- main
+
+def collect_instances():
+    """(label, instance, schema id, must_fail) for every JSON fixture. Unmapped files are an error."""
+    items, unmapped = [], []
+    files = sorted(glob.glob(os.path.join(FIX, "**", "*.json"), recursive=True)
+                   + glob.glob(os.path.join(FIX, "**", "*.jsonl"), recursive=True))
+    for f in files:
+        r = os.path.relpath(f, FIX).replace(os.sep, "/")
+        if r.endswith(".jsonl"):
+            if not r.startswith("logbook/ledger/"):
+                unmapped.append(r)
+                continue
+            with open(f, encoding="utf-8") as fh:
+                for n, line in enumerate(fh, 1):
+                    if line.strip():
+                        items.append((f"fixtures/{r}:{n}", json.loads(line), EVENT, False))
+            continue
+        with open(f, encoding="utf-8") as fh:
+            inst = json.load(fh)
+        if r == "index.sample.json" or re.fullmatch(r"index-variants/[a-z0-9-]+\.json", r):
+            sid, bad = INDEX, False
+        elif re.fullmatch(r"logs/snapper(-[a-z0-9-]+)?\.json", r):
+            sid, bad = EXT["snapper"], False
+        elif re.fullmatch(r"logs/plugin-list-[a-z0-9-]+\.json", r):
+            sid, bad = EXT["plugin-list"], False
+        elif r == "logs/plugin-catalog.json":
+            sid, bad = EXT["plugin-catalog"], False
+        elif re.fullmatch(r"hooks/claude-code-[a-z0-9-]+\.json", r):
+            sid, bad = EXT["hook"], False
+        elif re.fullmatch(r"invalid/(index|event|case)\.[a-z0-9-]+\.json", r):
+            sid, bad = ID + r.split("/")[1].split(".")[0] + ".schema.json", True
+        else:
+            unmapped.append(r)
+            continue
+        items.append((f"fixtures/{r}", inst, sid, bad))
+    for f in sorted(glob.glob(os.path.join(LOGBOOK, "work", "*", "C-*.md"))):
+        fm, _ = frontmatter(f)
+        items.append((rel(f) + " (frontmatter)", fm, CASE, False))
+    return items, unmapped
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--validator", choices=["auto", "jsonschema", "check-jsonschema", "builtin"])
+    ap.add_argument("--write-index", action="store_true",
+                    help="rewrite the logbook-derived parts of fixtures/index.sample.json, then validate")
+    ap.add_argument("-q", "--quiet", action="store_true")
+    a = ap.parse_args()
+    problems = []
+
+    schemas = load_schemas()
+    backend = pick_backend(schemas, a.validator)
+
+    with open(SAMPLE, encoding="utf-8") as f:
+        sample = json.load(f)
+    today = dt.date.fromisoformat(sample["generatedAt"][:10])
+    derived, ledger, _ = derive(LOGBOOK, today, problems)
+
+    if a.write_index:
+        out = {k: sample[k] for k in ("contractVersion", "generatedAt", "engineVersion")}
+        out["logbook"] = {"path": sample["logbook"]["path"], **derived["logbook"]}
+        if "git" in sample["logbook"]:
+            out["logbook"]["git"] = sample["logbook"]["git"]
+        out["state"] = sample["state"]
+        for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
+            out[k] = derived[k]
+        with open(SAMPLE, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        sample = out
+        print(f"wrote {rel(SAMPLE)}")
+
+    # 1. schema validation of every JSON fixture
+    items, unmapped = collect_instances()
+    for r in unmapped:
+        problems.append(f"fixtures/{r}: no schema mapping in scripts/validate-fixtures.py")
+    ok = 0
+    for label, inst, sid, must_fail in items:
+        errs = backend.validate(inst, sid)
+        if must_fail:
+            if errs:
+                ok += 1
+            else:
+                problems.append(f"{label}: expected to FAIL against {sid.rsplit('/', 1)[1]} but passed")
+        elif errs:
+            problems += [f"{label}: {e}" for e in errs[:10]]
+        else:
+            ok += 1
+
+    # 2. the sample index derives from the sample logbook
+    for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
+        problems += [f"index.sample.json /{k}{d}" for d in diff(sample.get(k), derived[k])]
+    for k in ("language", "machine"):
+        if sample["logbook"].get(k) != derived["logbook"][k]:
+            problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
+
+    if problems:
+        for p in problems:
+            print(f"FAIL {p}")
+        print(f"validate-fixtures: {len(problems)} problem(s); backend {backend.name}")
+        return 1
+    if not a.quiet:
+        n_ev = len(ledger)
+        print(f"validate-fixtures: ok — {ok} instances ({len(items)} incl. {sum(i[3] for i in items)} expected failures), "
+              f"{n_ev} ledger events traced to index.sample.json; backend {backend.name}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Fail as e:
+        print(f"FAIL {e}")
+        sys.exit(1)
+    except (OSError, ValueError, KeyError) as e:
+        print(f"FAIL {type(e).__name__}: {e}")
+        sys.exit(1)
