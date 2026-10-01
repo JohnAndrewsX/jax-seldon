@@ -11,7 +11,6 @@ Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
-| WP-022 | Start agent from a case (engine command + card button) | Engine + Plugin | `engine-022` (opus, high) | `wt/WP-022` · `wp/022-start-agent` | 2026-10-01 |
 | WP-024 | Logbook templates, logbook AGENTS.md, harness install, wizard first capture | Engine + Docs | `engine-024` (opus, high) | `wt/WP-024` · `wp/024-templates-wizard` | 2026-10-01 |
 
 ## Queued (next up)
@@ -30,6 +29,10 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-022 `seldon agent start` (config-driven launcher argv,
+  `{prompt}` as one argument, detached, shell-string launchers refused)
+  and the *Start agent* card action (key `a`) — merged after one review
+  round; 548 panel checks on the rebased branch.
 - 2026-10-01 WP-023 Decisions and Memory tabs (digits 4 and 6, new-decision
   sheet, six-tab panel) — merged; 53/171/519 checks; real-engine offscreen
   run on the test host; live sweep pending the unlock.
