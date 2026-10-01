@@ -4,8 +4,33 @@ Branch `wp/006-commands`, worktree `wt/WP-006`. Not pushed, no PR.
 Rebased onto `main` at `aae3ef1` (WP-004 foundation). Commits `main..HEAD`:
 `b442cb2` case store, journal, templates · `792b38e` commands and `--config` ·
 `7309d51` emit through `Ledger::append` · `716aa0c` tests · `3849a4a` docs and
-memory · `51c3447` whole-second timestamps · plus this handover. `just check`
+memory · `51c3447` whole-second timestamps · `0712409` handover · then the
+review hardenings `cecb12a` (see "Review follow-ups") and this update. `just check`
 exits 0 at HEAD.
+
+## Review follow-ups (after APPROVE)
+
+1. **The ledger line comes first in `plan new` and in every plan step.**
+   - The `case-*` event is appended before anything else is written: the
+     case file write or move, `.seldon/active-case`, the journal stub, and
+     for `plan new` the new area.
+   - Everything that can be checked is checked before the ledger line: the
+     transition, the area slug, the body template, and whether the target
+     file already exists.
+   - So a ledger failure leaves nothing transitioned.
+   - New test `plan::a_ledger_failure_transitions_nothing`:
+     - An invalid `[redaction] patterns` entry in the config (exit 1) makes
+       `new`, `start`, `verify`, `done` and `drop` fail. The test checks
+       that every file under `work/`, `journal/`, `areas/`, `ledger/` and
+       `.seldon/` is byte-identical afterwards.
+     - A read-only `ledger/` with a new month (exit 2) gives the same
+       result. This half skips itself where permissions do not bind, i.e.
+       as root; it ran here as uid 1000.
+   - Mutation check: with the old order (file first, then ledger) the test
+     fails ("nothing transitioned"). With the fix it passes.
+2. **No subject in commit messages.** The `seldon event` commit summary is
+   now `event <source>/<kind>`, because the subject is not redacted.
+   `event::records_a_manual_event` asserts the commit message.
 
 ## Done
 
@@ -88,7 +113,8 @@ exits 0 at HEAD.
   - It runs only when `git.autocommit` is on, `--no-commit` is not given,
     and the logbook is a repository.
   - Summaries: `C-2026-001 created|active|verification|completed|dropped`,
-    `note [C-…]`, `event <source>/<kind> <subject>`, `ADR-0001 proposed`.
+    `note [C-…]`, `event <source>/<kind>` (no subject: it is not redacted),
+    `ADR-0001 proposed`.
   - A commit failure is reported in the output (`git.error`) but is not
     fatal.
   - `commit_all` no longer fails when nothing is staged.
@@ -108,8 +134,8 @@ exits 0 at HEAD.
   `plan new --zone z --risk r -- <title>` and `decide --no-edit -- <title>`
   are accepted and tested. The forms without `--` work too, for humans, as
   long as the text is not exactly a known option.
-- **Tests: 130.**
-  - `plan::` 11, `log::` 10, `journal::` 3, `event::`/`decide::`/`open::`
+- **Tests: 131.**
+  - `plan::` 12, `log::` 10, `journal::` 3, `event::`/`decide::`/`open::`
     9, `cli` 17.
   - Unit tests: state machine, Log append edge cases, slugs, `fill`,
     `wants_json`, meta, tags.
@@ -144,7 +170,7 @@ exits 0 at HEAD.
 
 ```
 $ just check                          → exit 0
-  fmt-check ok · clippy -D warnings ok · test: 130 passed (11 suites)
+  fmt-check ok · clippy -D warnings ok · test: 131 passed (11 suites)
   validate-fixtures: ok — 94 instances, 67 ledger events traced …
   plugin-validate: ok · qmllint: ok (5 files) · plugin-test: ok · check: ok
 
@@ -187,53 +213,22 @@ $ git log --oneline   → init, C-2026-001 created, active, note C-2026-001, ADR
 
 ## Decisions needed
 
-1. **The fixture contradicts the state machine.** `C-2026-001` went
-   `active → completed` without `verification` (Log and ledger:
-   created, started, completed). SPEC-LOGBOOK §3 says the transitions are
-   engine-enforced, so the engine refuses `done` from `active`. I did not
-   edit the fixture. Options:
-   - (a) keep it strict, and have the Schema Keeper add the missing
-     verification to the fixture;
-   - (b) allow `done` from `active`, as an implicit verification.
-2. **`* → dropped` is read as "any open case".** A completed or dropped case
-   cannot be dropped (exit 1). Please confirm.
-3. **`plan new` defaults are my choice:** `--zone yellow --risk R1
-   --priority normal`. The spec is silent; the plugin always passes zone and
-   risk.
-4. **Autocommit commits the whole work tree** (`git add -A`), not only the
-   files the command wrote. So edits made in Obsidian since the last command
-   go in under that command's message. That is how `init` already worked;
-   the logbook's history doubles as its backup. The alternative is a
-   path-limited commit, which leaves editor-only edits uncommitted until the
-   engine touches that file again.
-5. **Additions not in SPEC-ENGINE §3**, so the spec should list them or I
-   remove them:
-   - `--actor` on `plan new|start|verify|done|drop`, so agents can identify
-     themselves.
-   - `log --tag`: `meta.tags` comma-joined in `meta.extra`, plus a `#tag`
-     line in the journal.
-   - `open logbook|C-…|ADR-…`.
-   - `SELDON_NOW` (a clock override for tests and demos) and
-     `SELDON_CONFIG`.
-   - The JSON shapes of `log`, `event`, `plan *`, `decide` and `open`. Each
-     has `event` (the ledger line), `git`, and for plan steps `from`, `to`,
-     `movedFrom`, `activeCase`, `journal`. Should §3 fix them like `doctor`'s?
-6. **Language of engine-written prose.** The `done` journal stub follows the
-   logbook language (`Case completed:` / `Case abgeschlossen:`). Case Log
-   words stay English (`created`, `started`, `verification`, `completed`,
-   `dropped: <reason>`), as in the German fixture. Please confirm.
-7. **`decide` writes no ledger event.** No event kind fits, and adding one
-   (`decision-created`) needs an ADR and a contract bump.
-8. **Several active cases.** `.seldon/active-case` names the case started
-   last. `done`/`drop` of another active case leaves the marker alone.
-   SPEC-ENGINE §5 rule 1 links agent collector events to "the" active case.
-   Is "last started" the intended meaning?
-9. **`open --editor` failure is exit 1**, with the message naming
-   `$EDITOR`/`omarchy-launch-editor`. For `decide`, the ADR already exists,
-   so an editor failure is reported in `editor.error` and the exit is 0.
-10. **`snapshotBefore` only comes from `--snapshot N`.** `plan start` could
-    take the newest snapper snapshot from the ledger when no `--snapshot` is
-    given. I left that out; say if you want it.
+None open. The orchestrator settled all ten from the first handover:
+1. The state machine stays strict. The fixture gets its missing
+   verification step on the schema track, not in this WP.
+2. Only open cases can be dropped.
+3. The `plan new` defaults are yellow, R1, normal.
+4. Autocommit keeps `git add -A`.
+5. The additions (`--actor`, `--tag`, `open logbook|C-…|ADR-…`,
+   `SELDON_NOW`, `SELDON_CONFIG`, the JSON shapes) stay and go into
+   SPEC-ENGINE §3. That spec edit is the orchestrator's; I did not touch
+   `docs/`.
+6. The journal stub follows the logbook language; Log words stay English.
+7. A decision event is deferred.
+8. `.seldon/active-case` means the case started last.
+9. A failed `open --editor` exits 1; `decide` reports the editor failure and
+   exits 0.
+10. No automatic `snapshotBefore`.
 
 ## Touched outside WP scope
 
