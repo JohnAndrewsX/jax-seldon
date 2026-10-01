@@ -12,6 +12,7 @@ ChartCanvas {
   id: root
 
   chartId: "series"
+  onCountRequested: root.ownCount = Model.aggregationCount()
 
   readonly property real labelH: Style.font.caption + Style.spacing.xs
   readonly property real valueW: Style.font.caption * 5

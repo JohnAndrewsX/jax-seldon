@@ -1158,6 +1158,13 @@ test("driftChart: weeks with gaps filled, peak, hover text", () => {
   // Across a year end with a week 53.
   same(M.driftChart([{ week: "2020-W52", opened: 1, resolved: 0 }, { week: "2021-W02", opened: 1, resolved: 0 }]).weeks.map((w) => w.week),
     ["2020-W52", "2020-W53", "2021-W01", "2021-W02"])
+  // The peak is the week with the most opened, not the last one with any.
+  const bumpy = M.driftChart([{ week: "2026-W36", opened: 5 }, { week: "2026-W37", opened: 1 }, { week: "2026-W38", opened: 0, resolved: 9 }])
+  same(bumpy.numbers, { weeks: 3, opened: 6, resolved: 9, max: 9, peak: "2026-W36" })
+  assert.strictEqual(bumpy.summary, "6 opened · 9 resolved in 3 weeks · peak 2026-W36")
+  // A tie goes to the later week.
+  same(M.driftChart([{ week: "2026-W36", opened: 2 }, { week: "2026-W37", opened: 3 }, { week: "2026-W38", opened: 3 },
+    { week: "2026-W39", opened: 1 }]).numbers.peak, "2026-W38")
   same(M.driftChart([]).empty, true)
   assert.strictEqual(M.driftChart([{ week: "2026-W40", opened: 0, resolved: 3 }]).summary, "0 opened · 3 resolved in 1 week")
 })

@@ -13,6 +13,7 @@ ChartCanvas {
   id: root
 
   chartId: "timeline"
+  onCountRequested: root.ownCount = Model.aggregationCount()
 
   readonly property real labelH: Style.font.caption + Style.spacing.xs
   readonly property real band: Math.max(Style.space(14), Style.font.caption + Style.spacing.sm)

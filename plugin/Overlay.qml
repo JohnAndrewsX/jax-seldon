@@ -35,7 +35,8 @@ import "Model.js" as Model
 // Read-out for tests and the test host: `omarchy-shell shell call jax.seldon
 // view ""` (JSON, see view()); `shell call jax.seldon setPeriod 30`;
 // `shell call jax.seldon hover "heatmap 0.9,0.5"` (the read-out at that
-// point of a chart, as fractions of its plot; "" clears every hover).
+// point of a chart, as fractions of its plot; "" clears every hover; a
+// malformed argument returns { error } and changes nothing).
 Item {
   id: root
 
@@ -108,18 +109,26 @@ Item {
   }
 
   // "heatmap 0.9,0.5" → the read-out at that point of the chart's plot
-  // (fractions), as JSON { slot, hover }; "" clears every chart's hover.
+  // (fractions in [0, 1]), as JSON { slot, hover }; "" clears every chart's
+  // hover. Anything else (no such slot, a malformed or out-of-range point)
+  // changes nothing and returns JSON { error }.
   function hover(arg) {
-    var m = /^\s*(\w+)\s+([0-9.]+),([0-9.]+)\s*$/.exec(String(arg))
-    if (!m) {
+    var text = String(arg).trim()
+    if (text === "") {
       for (var i = 0; i < slotRepeater.count; i++) {
         var item = slotRepeater.itemAt(i) as OverlaySlot
         if (item && item.chart) item.chart.clearHover()
       }
       return JSON.stringify({ slot: "", hover: "" })
     }
+    var usage = "expected \"<slot> <x>,<y>\" with x and y in [0, 1], or \"\""
+    var m = /^(\w+)\s+(\d+(?:\.\d+)?|\.\d+),(\d+(?:\.\d+)?|\.\d+)$/.exec(text)
+    if (!m) return JSON.stringify({ error: usage })
     var chart = root.chartFor(m[1])
-    return JSON.stringify({ slot: chart ? m[1] : "", hover: chart ? chart.probe(Number(m[2]), Number(m[3])) : "" })
+    if (!chart) return JSON.stringify({ error: "no chart " + m[1] })
+    var read = chart.probe(Number(m[2]), Number(m[3]))
+    if (read === null) return JSON.stringify({ error: usage })
+    return JSON.stringify({ slot: m[1], hover: read })
   }
 
   function rectFor(id) {

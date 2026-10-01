@@ -446,9 +446,14 @@ Verified in the shell source and live on the test host.
   handles with `onX: function(…) {…}`. qmllint stays at zero warnings;
   redeclaring a base function in a derived file does not.
 - **A non-`.pragma library` JS import has one state per importing
-  component instance.** A module-level counter in Model.js counts that
-  instance's calls only (the service's, the overlay's and each chart's are
-  separate), so `call view` sums them.
+  document per object.** A derived file (`Heatmap.qml`, whose root is
+  `ChartCanvas {}`) that imports Model.js gets an instance of its own,
+  separate from the one its base file `ChartCanvas.qml` imports, in the
+  same object. A base-class function reading `Model.aggregationCount()`
+  therefore never sees the derived file's calls (review of WP-031 caught
+  exactly that). The base asks through a signal (`countRequested`) and each
+  derived file answers with its own count (`ownCount`); `call view` sums
+  the service's, the overlay's and every chart's.
 - **Offscreen harness:** `Window.frameSwapped` fires with
   `QT_QPA_PLATFORM=offscreen`; `QSG_RENDER_TIMING=1` with
   `QT_LOGGING_RULES=qt.scenegraph.time.renderloop=true` logs each frame

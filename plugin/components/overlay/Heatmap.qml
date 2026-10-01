@@ -12,6 +12,7 @@ ChartCanvas {
   id: root
 
   chartId: "heatmap"
+  onCountRequested: root.ownCount = Model.aggregationCount()
 
   readonly property real labelW: Style.font.caption * 3
   readonly property real labelH: Style.font.caption + Style.spacing.sm

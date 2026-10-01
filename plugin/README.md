@@ -274,7 +274,7 @@ again* (or `jax.seldon.service refresh`), not on every capture interval.
 | `omarchy-shell shell summon jax.seldon '{"period":"30"}'` | open the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
 | `omarchy-shell shell call jax.seldon view ""` | what the open Prime Radiant shows (period, window, banner, grid mode, aggregation counts, each slot's counts and geometry, each chart's summary, numbers, hover read-out and paint count), as JSON; `unknown` while it is closed |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | pick a period in the open Prime Radiant |
-| `omarchy-shell shell call jax.seldon hover "heatmap 0.9,0.5"` | the read-out at that point of a chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON; `hover ""` clears it |
+| `omarchy-shell shell call jax.seldon hover "heatmap 0.9,0.5"` | the read-out at that point of a chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON; `hover ""` clears it; a malformed argument (no such chart, not two fractions in [0, 1]) returns `{"error": …}` and changes nothing |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
 | `omarchy-shell jax.seldon.panel view` | what the panel shows (tab, rows, banners, strip, pill, QuickEntry, the Work columns, card and sheet, the drift sheet, the decisions and their sheet, the memory rows, last action results), as JSON |

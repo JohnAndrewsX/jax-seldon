@@ -319,15 +319,18 @@ for every period, on the sample and on edge rows; per chart on the sample:
 heatmap cells, offset, months, hover text with sources and the hit test;
 series lanes, padded flat lanes and the sample that holds at a day; drift
 weeks with gaps filled (also across week 53); risk shares and the part at
-an angle; timeline markers, spans clipped to the window, lanes, months
+an angle; the drift peak is the week with the most opened (a
+non-monotonic series, ties to the later week); timeline markers, spans clipped to the window, lanes, months
 and the hit test; the plan's cards and columns; empty charts without an
 index; `aggregationCount` counts exactly the table's passes.
 
 `node tests/plugin/model.bench.js` times `periodTable` (what the service
 does on every index write) on the sample, the sample ×10 and 7000 timeline
-rows, in a vm sandbox (as the tests load Model.js; slow global lookups)
-and in a plain function scope, against the WP-030 cut. It fails when the
-fastest of 31 runs on ×10 takes more than 20 ms in the sandbox.
+rows, in a plain function scope and in a vm sandbox (as the tests load
+Model.js; slow global lookups, about 8× slower and load-sensitive, so only
+reported), against the WP-030 cut. It fails when the fastest of 31 plain
+runs on ×10 takes more than 10 ms (idle about 1.9 ms, about 4 ms with the
+host fully loaded).
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -615,7 +618,11 @@ resize (one dimension, the harness sets width and height separately)
 repaints each chart once, also through the medium and narrow modes. Hover
 read-outs from real mouse moves onto items of every chart and from `call
 hover` (exact texts, e.g. the heatmap's 2026-10-01 with its counts by
-source). The not-initialised variant shows the banner with *Copy* only
+source); a malformed `call hover` (no such slot, `.`, `1.2.3`, a point
+outside [0, 1], one number) returns `{ error }` and leaves the hover as it
+was. The aggregation count covers every chart file's own Model.js
+instance: a `Model.heatmapChart(…)` call slipped into
+`Heatmap.onPaintRequested` fails `fresh #2 .view.aggregations.overlay`. The not-initialised variant shows the banner with *Copy* only
 and the hint, every chart in its empty state ("no data in this period",
 "no cases yet · all time", "no active cases") and nothing painted; every
 other index variant renders every chart. Every run's log is free of

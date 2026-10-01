@@ -14,6 +14,7 @@ ChartCanvas {
   id: root
 
   chartId: "plan"
+  onCountRequested: root.ownCount = Model.aggregationCount()
 
   readonly property var rows: root.chart && !root.empty ? root.chart.rows : []
   readonly property real gap: Style.spacing.md

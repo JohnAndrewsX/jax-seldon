@@ -11,6 +11,7 @@ ChartCanvas {
   id: root
 
   chartId: "driftBars"
+  onCountRequested: root.ownCount = Model.aggregationCount()
 
   readonly property real labelH: Style.font.caption + Style.spacing.xs
   readonly property real axisW: Style.font.caption * 3

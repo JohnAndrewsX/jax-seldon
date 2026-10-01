@@ -2119,6 +2119,7 @@ function driftChart(rows) {
   if (mondays.length === 0) return out
   mondays.sort()
   var n = out.numbers
+  var peakOpened = 0
   for (var d = dayNumber(mondays[0]); d <= dayNumber(mondays[mondays.length - 1]); d += 7) {
     var date = dateOfDay(d)
     var r = byMonday[date]
@@ -2126,7 +2127,11 @@ function driftChart(rows) {
     out.weeks.push(week)
     n.opened += week.opened
     n.resolved += week.resolved
-    if (week.opened > 0 && week.opened >= n.max) n.peak = week.week
+    // The peak is the week with the most opened (the later one on a tie).
+    if (week.opened > 0 && week.opened >= peakOpened) {
+      peakOpened = week.opened
+      n.peak = week.week
+    }
     out.max = Math.max(out.max, week.opened, week.resolved)
   }
   out.empty = false

@@ -12,6 +12,7 @@ ChartCanvas {
   id: root
 
   chartId: "riskDonut"
+  onCountRequested: root.ownCount = Model.aggregationCount()
 
   readonly property real legendRowH: Style.font.caption + Style.spacing.md
   readonly property real legendW: Style.font.caption * 11

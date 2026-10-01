@@ -55,6 +55,11 @@ Item {
   // negative index counts from the end), or leave it null.
   signal locateRequested(int index)
   property var located: null
+  // Set `ownCount` to Model.aggregationCount() of the chart file's own
+  // Model.js (each importing document gets its own instance per object, so
+  // this file cannot read the chart's count).
+  signal countRequested()
+  property int ownCount: 0
 
   function hoverAt(x, y) {
     if (root.empty || x < 0 || y < 0 || x > canvas.width || y > canvas.height) root.clearHover()
@@ -62,8 +67,12 @@ Item {
   }
 
   // The read-out at a point given as fractions of the plot (IPC and tests).
+  // null (and no change) unless both are finite fractions in [0, 1].
   function probe(fx, fy) {
-    root.hoverAt(fx * canvas.width, fy * canvas.height)
+    var x = Number(fx)
+    var y = Number(fy)
+    if (!isFinite(x) || !isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null
+    root.hoverAt(x * canvas.width, y * canvas.height)
     return root.hoverText
   }
 
@@ -80,9 +89,13 @@ Item {
     root.highlight = Qt.rect(0, 0, 0, 0)
   }
 
-  // This instance's Model.js aggregation passes (see Model.aggregationCount).
+  // Aggregation passes of this object's Model.js instances (see
+  // Model.aggregationCount): the one of this base file and the one of the
+  // chart file, which reports it through countRequested.
   function aggregationCount() {
-    return Model.aggregationCount()
+    root.ownCount = 0
+    root.countRequested()
+    return Model.aggregationCount() + root.ownCount
   }
 
   function repaint() {

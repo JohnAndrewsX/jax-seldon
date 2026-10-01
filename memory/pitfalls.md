@@ -437,3 +437,11 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `fresh` step (a new overlay, as the shell's Loader does).
 - **jq inside `expect` filters:** `input` reads the *next* JSON line, not
   an earlier step; read an earlier step's value with `sed -n Np` in bash.
+- **A "peak" compared against a summary field that is filled after the
+  loop** (`n.max` set once the loop ends) is 0 throughout, so it reported
+  the last week with anything instead of the maximum. Keep a running
+  maximum; test with a non-monotonic series (review of WP-031).
+- **A mutation check proves a counter test is not blind:** slip one
+  forbidden call into the code under test and see the suite fail
+  (WP-031's aggregation count missed the chart files until the reviewer
+  did this).

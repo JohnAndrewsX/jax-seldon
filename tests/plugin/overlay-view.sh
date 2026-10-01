@@ -278,8 +278,10 @@ clean_log fresh
 # 3. Hover read-outs, from real mouse moves onto each chart's items
 #    (chart.locate), and from `call hover <slot> <fx>,<fy>` (fractions of
 #    the plot, what `shell call jax.seldon hover …` does on a live shell).
+#    A malformed argument (no such slot, not two numbers, a point outside
+#    [0, 1]) returns { error } and leaves the hover as it was.
 run hover "$sample" 1920x1080 \
-  'fresh;view;hoverItem:heatmap:0;hoverItem:series:1;hoverItem:driftBars:-1;hoverItem:riskDonut:0;hoverItem:riskDonut:2;hoverItem:timeline:2;hoverItem:timeline:11;hoverItem:plan:1;text:1;hoverItem:heatmap:-2;hoverItem:timeline:12;call:hover:riskDonut 0.99,0.01;call:hover:driftBars 0.97,0.5;call:hover:;call:hover:nope 0.5,0.5'
+  'fresh;view;hoverItem:heatmap:0;hoverItem:series:1;hoverItem:driftBars:-1;hoverItem:riskDonut:0;hoverItem:riskDonut:2;hoverItem:timeline:2;hoverItem:timeline:11;hoverItem:plan:1;text:1;hoverItem:heatmap:-2;hoverItem:timeline:12;call:hover:riskDonut 0.99,0.01;call:hover:driftBars 0.97,0.5;call:hover:;call:hover:nope 0.5,0.5;call:hover:driftBars 0.97,0.5;call:hover:series .,.;call:hover:series 1.2.3,0.5;call:hover:series 1.5,0.5;call:hover:series 0.5;call:hover:series .5,1'
 hovered hover 3 heatmap "Sat 2026-07-04 · 0 events"
 hovered hover 4 series "2026-09-03 · explicit 324 · total 2005"
 hovered hover 5 driftBars "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2"
@@ -296,7 +298,17 @@ hovered hover 13 timeline "case · C-2026-004 Zed als zweiten Editor installiere
 expect hover 14 '.call | fromjson | .slot + "=" + .hover' "riskDonut="
 expect hover 15 '.call | fromjson | .slot + "=" + .hover' "driftBars=2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2"
 expect hover 16 '[.view.slots[] | .chart.hover] | join("")' ""
-expect hover 17 '.call | fromjson | .slot + "=" + .hover' "="
+expect hover 17 '.call | fromjson | .error' "no chart nope"
+# Every malformed argument: an error, and the DriftBars hover set at step 18
+# is still there.
+hovered hover 18 driftBars "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2"
+for step in 19 20 21 22; do
+  expect hover $step '.call | fromjson | .error' 'expected "<slot> <x>,<y>" with x and y in [0, 1], or ""'
+  hovered hover $step driftBars "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2"
+done
+# ".5" and "1" are fractions too (mid-September on 30 d: the 3 Sep sample
+# holds there).
+expect hover 23 '.call | fromjson | .slot + "=" + .hover' "series=2026-09-03 · explicit 324 · total 2005"
 clean_log hover
 
 # 4. Layout: 2560×1440, and both sizes at a 1.25 output scale (logical
