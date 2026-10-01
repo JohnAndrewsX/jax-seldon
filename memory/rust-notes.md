@@ -315,3 +315,26 @@ Append-only. One bullet per finding, newest section last.
 - **`/proc/<pid>/stat`**: split after the last `)`; then field 0 is the
   state and field 2 is the pgrp. That lets a test check "own process
   group" and "still alive (not Z)" without a libc crate.
+
+## 2026-10-01 · WP-022 (agent start)
+
+- **A detached child's stderr without a pipe:** hand `Command::stderr` a
+  `Stdio::from(File::create(log)?)`. A file never blocks the caller (a
+  pipe would keep `output()` of a test, or the plugin's process queue,
+  waiting until the child exits), and a launcher that fails inside the
+  grace period can still be reported with its own message (read the
+  file's last lines). `open::launch_detached(cmd, stderr)` now takes a
+  prepared `Command`, so the caller sets `current_dir` and `env` too.
+- **`#[serde(skip_serializing_if = "AgentConfig::is_default")]` on a
+  config section** keeps `seldon init`'s config.toml unchanged when a
+  new section is added (no fixture or init test moves), and
+  `Config::save`'s `merge_unknown` still carries a user's own section
+  over when the loaded value equals the default.
+- **Recording argv in a `/bin/sh` stub:** `printf '%s\0' "$@" >> file`
+  then split on `\0` in the test; one argument with newlines, quotes or
+  `$(…)` stays one element. Append a line per call to a second file to
+  prove "exactly one launch".
+- **Matching a slice pattern on a filtered `Vec`:**
+  `match v.iter().enumerate().filter(..).collect::<Vec<_>>().as_slice()
+  { [(i, a)] if … => …, [] => …, [_] => …, _ => … }` reads the
+  "exactly once, as a whole element" rule in one expression.

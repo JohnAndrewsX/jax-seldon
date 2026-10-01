@@ -339,3 +339,37 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Harness step numbers count steps, not key presses.** `key:Down*61` is
   one step and one report; the row it scrolls to is visible in the next
   report number, not in the one after `key:Down`.
+
+## 2026-10-01 · WP-022 (Engine + Plugin)
+
+- **`omarchy agent prompt --inline` runs the agent in the caller's
+  terminal** (`omarchy-agent` ends in `exec "${command[@]}"`); without
+  `--inline` it opens a window through `omarchy-launch-tui
+  --app-id=org.omarchy.agent`. A detached launch (null stdio, the plugin)
+  has no terminal, so the default launcher is
+  `omarchy agent prompt {prompt}` without `--inline`, deviating from the
+  brief. `omarchy-agent` also `cd`s to `~/Work` when started in `$HOME`;
+  `agent start` sets the logbook as its cwd.
+- **`omarchy-launch-floating-terminal-with-presentation` joins `$*` into
+  `bash -c "…"`** (also `omarchy-launch-or-focus`,
+  `omarchy-launch-terminal-tmux`). Never pass logbook text to them;
+  `agent start` refuses them, and any shell before `{prompt}`.
+- **`omarchy-shell lock status` over ssh needs `OMARCHY_PATH` and
+  `XDG_RUNTIME_DIR`:** `ssh <test host> env
+  OMARCHY_PATH=/usr/share/omarchy XDG_RUNTIME_DIR=/run/user/1000
+  omarchy-shell lock status` (a plain call prints "OMARCHY_PATH is not
+  set").
+- **The real-home guard catches other workers too.** During this WP's
+  `just check`, a parallel worker's pty run of `seldon init` (logbook in
+  its own scratchpad) wrote the real `~/.config/seldon/config.toml` and
+  `~/.local/state/seldon/` (incl. `hooks/seldon-theme-set.sh`), and
+  service-states failed on it. A rerun once the paths were stable passed.
+  The guard says which path changed, not who: check the files' mtime and
+  contents before suspecting your own change.
+- **A new Work card action that is not the first one needs its own key
+  and a hint that names it.** "Press Enter again" would be wrong: Enter
+  arms the first action (Verify) instead. Start agent uses `a` and a
+  click to arm (`twice`), and the hint says so.
+- **A new engine verb must be added to `Service.runnerDone`'s list of
+  calls that show their errors in place**, or a refusal also lands in
+  `lastError` (the banner).
