@@ -1,10 +1,12 @@
 WP-015 HANDOVER
 
 Branch `wp/015-fixture-corrections`, worktree `wt/WP-015`. Not pushed, no PR.
-Commits: `508b38c` verification step + case walker · `a80ef81` green event +
-snapshot pair · `fa01d93` three index variants · `3768aab` README + pitfalls ·
-this handover. Each code commit passed `just check` (or, for `fa01d93`, the
-validator) on its own state.
+Rebased onto main `13afe0c` (WP-011 merged) with no conflicts. Commits:
+`f527634` verification step + case walker · `234f9f0` green event + snapshot
+pair · `a342f92` three index variants · `be1b03a` README + pitfalls ·
+`6500358` handover · `de22443` plugin test expectations · this update. Before
+the rebase, each code commit passed `just check` (or, for the variants commit,
+the validator) on its own state. After the rebase, HEAD passes `just check`.
 
 ## Done
 
@@ -63,25 +65,28 @@ validator) on its own state.
   - why `generatedAt` stays at 17:05:12;
   - the snapper diff.
 - **`memory/pitfalls.md`:** WP-015 section appended.
+- **Plugin tests follow the fixture** (`de22443`, after the rebase onto main
+  with WP-011).
+  - `model.test.js`: Changelog 58 → 62 rows (snapper filter 8 → 10, snapshot
+    rows 6 → 8); Today stats `[30, 41, 2, 3, 4]`; System snapshots 4 → 6, with
+    #115 post, #114 pre and #113 asserted.
+  - `panel-view.sh`: 62 rows and "62 events · newest first"; snapper filter
+    10; snapshot rows 8; the firefox row moves 29 → 32 (`Down*32`, cursor 32);
+    the System cursor clamps at 28 (was 26); the pre snapshot row is shown.
+  - `service-states.sh`, new scenarios:
+    - `variant-stale`: `indexStale` and banner "Index is stale" from the data,
+      without `SELDON_NOW`;
+    - `plugins-degraded`: ok, no snapper banner, clean log;
+    - `git-checkout`: ok, clean log.
+  - The `+3` group, folded 7 and crisis 2 are unchanged. `just check` exit 0:
+    model 28, service-states 71, panel-view 87.
 
 ## Not done
 
 - **The sample's `generatedAt`/`lastCapture` were NOT moved to 09:30.** The
   brief asked to check that the README story and journal times stay
-  consistent, and they don't. See decision 1. Everything else in the WP is
-  done.
-- **No plugin tests for the three new variants.** The brief limits
-  `tests/plugin` to count changes, and none of main's plugin assertions
-  changed. I loaded each variant once by hand in the headless harness
-  (`tests/plugin/harness`, fake seldon; script not committed):
-  - `index-stale` → `status indexStale`, banner "Index is stale", from the
-    data alone (no `SELDON_NOW`). With `SELDON_NOW` 20:05:12 the tooltip shows
-    "last capture 3 h ago".
-  - `plugins-degraded` → status ok. Main's Service does not surface a
-    non-snapper collector failure yet.
-  - `omarchy-git-checkout` → ok.
-  - The log was clean in all three.
-  The next plugin WP should add them to `service-states.sh`.
+  consistent, and they don't. See decision 1, which the orchestrator has
+  confirmed: keep 17:05:12. Everything else in the WP is done.
 - **jsonschema / check-jsonschema backends still untested.** Only the
   builtin backend ran, as in WP-014.
 
@@ -91,8 +96,10 @@ validator) on its own state.
 $ bash scripts/validate-fixtures.sh
 validate-fixtures: ok — 101 instances (101 incl. 8 expected failures), 71 ledger events traced to index.sample.json, 5 variants, 22 self-checks; backend builtin
 $ just check                     # fmt, clippy, cargo test (15 suites), schema, plugin validate, qmllint, plugin-test
-service-states: 48 passed, 0 failed
-check: ok                        # exit 0
+model.test.js: 28 passed
+service-states: 71 passed, 0 failed
+panel-view: 87 passed, 0 failed
+check: ok                        # exit 0 (after the rebase onto 13afe0c)
 $ cargo test plan::              # 12 passed
 $ git diff --stat main -- fixtures/logbook/ledger/
  4 files changed, 8 insertions(+)        # no '-' lines; all 67 old lines byte-identical; both months chronological
@@ -135,6 +142,12 @@ $ git diff --stat main -- fixtures/logbook/ledger/
 
 ## Decisions needed
 
+None open. The orchestrator settled all three: 1 and 3 are confirmed as
+implemented (keep 17:05:12; `repoHead` is a short hash; `index-stale` is
+status-only), and 2 is decided as "green is the rule": an ADR successor is
+being written, and the event stays in the sample. The original questions
+follow for the record.
+
 1. **The sample's `generatedAt` (and `lastCapture`): keep 17:05:12, or move
    it?** Moving it to 09:30 as the brief suggests makes the sample
    inconsistent:
@@ -175,14 +188,8 @@ $ git diff --stat main -- fixtures/logbook/ledger/
 
 ## For other WPs (counts that moved)
 
-- **WP-011** (not on main yet). `tests/plugin/model.test.js` and
-  `panel-view.sh` on `wp/011-panel-tabs` assert the old sample. After a
-  rebase onto this branch:
-  - 58 → **62** rows / "62 events · newest first";
-  - snapshot rows 6 → **8**;
-  - Today stats `[27, 38, 2, 3, 4]` → **`[30, 41, 2, 3, 4]`**;
-  - `+3`, folded 7 and crisis 2 are unchanged;
-  - the System tab now has 6 snapshots, 2 of them a pre/post pair.
+- **WP-011** is merged on main. Its plugin tests now follow the fixture
+  (`de22443`, see Done).
 - **WP-007** (golden index). `index.sample.json` changed; rebase before
   freezing it.
 - **WP-007 / WP-009** both edit `engine/`. My test-expectation edits in
@@ -217,5 +224,8 @@ quoted `sed` patterns.
   - `tests/idempotency.rs`: written 6 → 8, snapper 8 → 10;
   - `tests/golden/snapper.jsonl`: + 2 lines, blessed.
 - `fixtures/logs/snapper.json` (collector input; under `fixtures/`).
-- No changes to `schema/`, `plugin/`, `tests/plugin/`, `docs/` or
-  `decisions/`. No `contractVersion` bump.
+- `tests/plugin/model.test.js`, `panel-view.sh` and `service-states.sh`:
+  expectations and three variant scenarios, as the orchestrator asked after
+  review.
+- No changes to `schema/`, `plugin/`, `docs/` or `decisions/`. No
+  `contractVersion` bump.
