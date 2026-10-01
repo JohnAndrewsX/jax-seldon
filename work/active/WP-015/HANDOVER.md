@@ -4,7 +4,8 @@ Branch `wp/015-fixture-corrections`, worktree `wt/WP-015`. Not pushed, no PR.
 Rebased onto main `13afe0c` (WP-011 merged) with no conflicts. Commits:
 `f527634` verification step + case walker · `234f9f0` green event + snapshot
 pair · `a342f92` three index variants · `be1b03a` README + pitfalls ·
-`6500358` handover · `de22443` plugin test expectations · this update. Before
+`6500358` handover · `de22443` plugin test expectations · `bfac47f` handover ·
+`f0bbe08` review fixes · this update. Before
 the rebase, each code commit passed `just check` (or, for the variants commit,
 the validator) on its own state. After the rebase, HEAD passes `just check`.
 
@@ -36,15 +37,18 @@ the validator) on its own state. After the rebase, HEAD passes `just check`.
 - **Surviving pre/post pair.** Snapshots 114 (pre) and 115 (post, `pairOf:
   114`), "tailscale: MagicDNS", 10-01 16:30:00 and 16:30:04, ids
   `01M3VXYHJ0CDTAWEV5WRW4C0C2` and `01M3VXYNF0XTBDWFTZP1412REN`. Both are in
-  `logs/snapper.json` with `userdata.case: C-2026-008`, so the snapper
-  collector reproduces them: the golden test checks this, and the blessed
+  `logs/snapper.json`, linked through `type` and `pre-number` (the collector
+  ignores `userdata`), so the snapper collector reproduces them: the golden
+  test checks this, and the blessed
   golden lines equal the ledger lines. `system.snapshots` now holds 6 entries,
   1 pair.
 - **Variants** (RFC 6902 overlays in `VARIANTS`, generated with
   `--write-index`):
-  - `index-stale`: `state.status: indexStale`. The overlay *tests*
-    `generatedAt` 17:05:12 and `lastCapture` 17:05:00 rather than moving them.
-    The validator requires both to lie more than 2 h before `STALE_NOW =
+  - `index-stale`: `state.status: indexStale` only; `generatedAt` and
+    `lastCapture` stay the sample's. The engine never writes `indexStale`
+    (`plugin/Model.js` derives it), so the variant exercises the plugin's
+    data-driven branch. The validator requires both times in the variant
+    file to lie more than 2 h before `STALE_NOW =
     2026-10-01T20:05:12+02:00`, which is the README's pinned `SELDON_NOW` and
     the plugin harness's existing stale clock.
   - `plugins-degraded`: collector `plugins` `ok: false`, message `omarchy plugin
@@ -78,6 +82,20 @@ the validator) on its own state. After the rebase, HEAD passes `just check`.
       without `SELDON_NOW`;
     - `plugins-degraded`: ok, no snapper banner, clean log;
     - `git-checkout`: ok, clean log.
+- **Review fixes** (`f0bbe08`; the review approved the content unchanged):
+  - A failing overlay op is reported per variant, in the check and in
+    `--write-index`, instead of raising `Fail`, which dropped every problem
+    collected before it. Verified on a scratch copy with a broken
+    `plugins-degraded` test op and `STALE_NOW` 18:00: all 3 problems are
+    reported, exit 1.
+  - The `index-stale` overlay lost its two redundant `test` ops on
+    `generatedAt`/`lastCapture`. The `STALE_NOW` check now runs on the
+    variant file itself.
+  - The comment and the README row say the engine never writes `indexStale`.
+  - README: the collector pairs 114/115 through `type`/`pre-number` and
+    ignores `userdata`.
+  - Fixture files are byte-identical. `just check` exits 0 (model 28,
+    service-states 71, panel-view 87).
   - The `+3` group, folded 7 and crisis 2 are unchanged. `just check` exit 0:
     model 28, service-states 71, panel-view 87.
 
@@ -183,8 +201,8 @@ follow for the record.
 3. **Small assumptions; confirm or correct:**
    - `repoHead` is a 7-character short hash (like `logbook.git.head`; SPEC-ENGINE
      §4 gives no format).
-   - `index-stale` keeps the sample's times and only sets the status. An
-     engine writing `indexStale` itself is not specified anywhere.
+   - `index-stale` keeps the sample's times and only sets the status (the
+     engine never writes `indexStale`; the plugin derives it).
 
 ## For other WPs (counts that moved)
 
