@@ -841,6 +841,9 @@ fn record(
         }
         file.save(&setup.logbook)?;
     }
+    // the hook wrote an event: the no-git rebuild keeps the 5 ms budget
+    crate::index::rebuild_if_initialised_fast(ctx);
+    drop(lock);
     Ok(())
 }
 
@@ -986,13 +989,14 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
     ) {
         eprintln!("seldon hook: capture: {e}");
     }
-    // WP-007: rebuild index.json and STATUS.md here (`commands::status`)
-    // once it lands; one call, before the commit below.
+    let _lock = lock_patiently(ctx)?;
     if let super::Commit::Failed(e) =
         autocommit(ctx, &config, &logbook, &format!("session ended ({actor})"))
     {
         eprintln!("seldon hook: git: {e}");
     }
+    // after the commit, so `logbook.git` shows it (CONTRACT rule 2)
+    crate::index::rebuild_if_initialised(ctx);
     Ok(())
 }
 

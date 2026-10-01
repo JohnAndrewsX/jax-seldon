@@ -991,3 +991,52 @@ mod robustness {
         assert!(!stderr(&out).contains("internal error"), "{}", stderr(&out));
     }
 }
+
+/// The index follows the hook's writes (CONTRACT rule 2, WP-007's fast
+/// rebuild), and only them.
+mod index {
+    use super::*;
+
+    fn index(h: &Hooks) -> Option<String> {
+        std::fs::read_to_string(h.home().join(".local/state/seldon/index.json")).ok()
+    }
+
+    #[test]
+    fn a_hook_write_rebuilds_the_index() {
+        let h = Hooks::new();
+        let before = index(&h);
+        h.hook(
+            "claude-code",
+            &payload("claude-code-non-mutating.json", "PreToolUse"),
+        );
+        assert_eq!(index(&h), before, "nothing written, no rebuild");
+
+        h.hook(
+            "claude-code",
+            &payload("claude-code-mutating.json", "PreToolUse"),
+        );
+        let id = h.commands()[0]["id"].as_str().unwrap().to_string();
+        let after = index(&h).expect("index.json written");
+        let v: Value = serde_json::from_str(&after).unwrap();
+        assert!(
+            v["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["id"] == id.as_str()),
+            "the new event is in the index"
+        );
+        assert!(
+            v["logbook"]["git"].get("dirty").is_none(),
+            "the fast rebuild runs no git"
+        );
+
+        // session-stop's full rebuild runs after its commit
+        let out = h.piped(&["hook", "session-stop"], "", Some(NOW));
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v: Value = serde_json::from_str(&index(&h).unwrap()).unwrap();
+        if h.env.has_git {
+            assert_eq!(v["logbook"]["git"]["dirty"], false, "{}", v["logbook"]);
+        }
+    }
+}
