@@ -160,7 +160,9 @@ Wikilinks `[[C-2026-004]]` are used for cases so Obsidian's graph works.
 ## 6. Obsidian
 
 The wizard can create `.obsidian/` with: daily notes folder `journal/`,
-excluded folders `.seldon .claude .codex work/*/`, and no community plugin
+excluded folders `.seldon .claude .codex` and the case workpieces
+`work/C-*/` (regex filter `/^work\/C-/`; never `work/*/`, which would hide
+every case), and no community plugin
 requirements. Dataview or Bases are the user's choice; Seldon's generated
 Markdown must read well without them.
 

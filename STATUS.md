@@ -8,7 +8,8 @@
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-003 | Engine core: config, logbook model, frontmatter, init | Engine | `engine-003` (opus, high) | `wt/WP-003` · `wp/003-engine-core` | 2026-10-01 |
+| WP-004 | Collectors: pacman, snapper, omarchy (+ event model, ledger, collector registry) | Engine | `engine-004` (opus, high) | `wt/WP-004` · `wp/004-collectors-core` | 2026-10-01 |
+| WP-006 | `log`, `event`, `plan` commands, case state machine, journal | Engine | `engine-006` (opus, high) | `wt/WP-006` · `wp/006-commands` | 2026-10-01 |
 | WP-010 | Plugin skeleton: manifest, Service, BarWidget, states | Plugin | `plugin-010` (opus, high) | `wt/WP-010` · `wp/010-plugin-skeleton` | 2026-10-01 |
 
 ## Queued (next up)
@@ -27,6 +28,9 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-003 Engine core — merged; config, logbook layout, lossless
+  frontmatter, typed models, `init` wizard, `doctor`; 71 tests; specs
+  amended (SPEC-ENGINE §2 §3 §9, SPEC-LOGBOOK §6).
 - 2026-10-01 WP-014 Contract v1 follow-ups — merged; drift group fields,
   `resolutionDetail`, open `-Syu` group in the sample index (4 drift items),
   token rule per ADR-0015; `just check` green on main.
@@ -53,6 +57,12 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
   the package-manager rule fires on any command text that merely mentions
   the package manager (e.g. a heredoc writing a CI file). Both are
   trade-offs for the operator; the WP-001 review has concrete proposals.
+- **`serde_yaml` is deprecated upstream** (0.9.34+deprecated). It works and
+  the YAML surface is flat, but AUR reviewers may flag it. Before WP-040,
+  AGENTS.md §7 should allow a maintained fork with the same API
+  (`serde_yaml_ng`); one-commit swap. Operator instruction needed for the
+  AGENTS.md line. `rust-version` was raised to 1.89 for `File::try_lock`
+  (both hosts have 1.98) — orchestrator approved.
 - **CI may fetch `omarchy-plugin-validate`** from a pinned Omarchy tag with
   a checksum (network in CI, not red zone). FYI; scheduled unless vetoed.
 - **Omarchy is a package install, not a git checkout.** Version comes from

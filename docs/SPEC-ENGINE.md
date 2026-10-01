@@ -16,7 +16,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | logbook path, language, collectors on/off, watched config paths, agent names, git.autocommit, redaction extras |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | per-collector cursors (pacman byte offset + inode, last snapper id, last plugin-list hash, config manifest hash) |
 | `~/.local/state/seldon/manifest.json` | path → sha256 for watched config files |
@@ -70,7 +70,13 @@ parses them):
 seldon --version --json          → {"name":"seldon","version":"0.1.0"}
 seldon contract-version --json   → {"contractVersion":1}
 any user error with --json       → {"error":{"code":1,"message":"<detail>"}}  (exit 1)
+seldon doctor --json             → {"ok":bool,"logbook":"<path>",
+                                     "checks":[{"name","status":"ok|degraded|error","message","fix"?}]}
+                                    exit 0 (no error), 1 (a check is error), 3 (not initialised)
 ```
+
+`doctor --path DIR` is an alias of the global `--logbook DIR`. The plugin's
+banner states parse the doctor shape; it is not part of `schema/`.
 
 `message` carries the full detail (e.g. the unrecognised subcommand name),
 not just the error kind. Detection of `--json` must not sniff raw argv for
@@ -216,7 +222,13 @@ later). Steps: path (the options of ADR-0010: `~/Seldon`,
 (all on by default) → watched config paths (defaults shown) → agent
 harnesses (Claude Code hooks; optional Omarchy-Agent kit guard/skills if
 present as a template dir) → git init + first commit → run first capture →
-print next steps. `--non-interactive` takes all defaults and flags.
+print next steps. `--non-interactive` takes flags, then the existing
+config, then the defaults. The default language is deterministic:
+`--language` > config > `LC_ALL`/`LC_MESSAGES`/`LANG` (`de*` → `de`) >
+`en`; the interactive wizard pre-selects the same. Every flag skips its
+step. `init` refuses an existing logbook or a non-empty directory (exit 1)
+and never overwrites a file; only `config.toml` is rewritten, with unknown
+keys preserved. Empty layout directories get a `.gitkeep`.
 
 The wizard writes templates from `engine/templates/{en,de}/` into the
 logbook: `AGENTS.md`, `PROJECT.md`, `DECISIONS.md`, `areas/*/README.md`
