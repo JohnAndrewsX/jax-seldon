@@ -4,8 +4,41 @@ Branch `wp/021-drift-sheet`, worktree `wt/WP-021`, on top of `main` at
 `9c2cdaf`. Not pushed, no PR. Commits `main..HEAD`:
 `21838b4` drift helpers and Service.drift · `c7bc19a` DriftSheet on the
 Changelog · `ad5ae33` tests and fake engine drift · `9bcc1bd` README and
-TESTING · `19d231f` offscreen theme renders · then memory and this
-handover. `just check` exits 0 at HEAD.
+TESTING · `19d231f` offscreen theme renders · `3fc4b16` memory ·
+`2a322f7` handover · then the review follow-up below. `just check` exits 0
+at HEAD.
+
+## Review follow-up (after APPROVE)
+
+1. **`drift show` answer ignored when the sheet was opened from a member
+   row.**
+   - The bug: `fetchMembers()` asks for the leader's id. `showResult`
+     compared the answer's `eventId` with the row's id. Opened from a
+     non-leader member, with members missing from `index.events`, the
+     answer was fetched and then ignored.
+   - The fix: `showResult` now matches against `shown.leaderId` (only for
+     a group). An answer for an old leader, after `--only` re-keyed the
+     group, is ignored too.
+   - **New panel-view scenario 19, `drift-show-member`:** on the index
+     with noto-fonts missing from `index.events`, Enter on the libinput
+     row (cursor 30) opens the sheet. Checked:
+     - the sheet names libinput ("Only libinput") and shows the firefox
+       group;
+     - the engine is asked `drift show <firefox> --json`;
+     - all three members are listed.
+   - **Negative control:** with the committed `DriftSheet.qml` restored,
+     step 5 fails ("… and 1 more" stays; 418 passed, 1 failed). With the
+     fix it passes.
+2. **Optional, done: no stale draft for a resolved event.** `saveDraft()`
+   now returns early when the sheet's result is a completed resolution
+   (ok, not pending, not a no-op). `openFor()` and Esc/Cancel therefore no
+   longer re-save a draft that `onResultChanged` has just forgotten.
+3. **Decisions settled on main** (no longer open):
+   - the link picker shows open cases only;
+   - the IPC method `resolve` stays;
+   - any change to the form disarms;
+   - the fixture overlays go to the schema track;
+   - the live smoke and theme sweep follow the unlock.
 
 ## Done
 
@@ -17,7 +50,7 @@ handover. `just check` exits 0 at HEAD.
     - a click on the red strip, which picks the first crisis and puts the
       cursor on its row;
     - IPC `jax.seldon.panel resolve crisis|<event id>` (navigation only;
-      see Decision 3).
+      kept on main).
   - **Summary card:** glyph, kind, subject and "+N"; zone, plus "crisis"
     when it is one; detail · actor · day and time; the proposed case. A
     group also lists its members, oldest first: "3 packages in one
@@ -38,7 +71,7 @@ handover. `just check` exits 0 at HEAD.
     - Enter in a text field, or on the action button, arms the call:
       "Press Enter again: Link firefox and 2 more to C-2026-004". The
       second Enter sends it. A click sends at once.
-    - Any change to the form disarms (Decision 4).
+    - Any change to the form disarms (settled on main).
     - The fields keep their text until the engine has resolved the item.
     - Esc closes the sheet. The draft is kept per event, so another item
       opens with its own defaults.
@@ -138,7 +171,7 @@ handover. `just check` exits 0 at HEAD.
       summary 1/1, C-2026-009 and C-2026-010;
     - the re-run alone ("Already resolved: linked to C-2026-005");
     - eight refusals that never reach the engine; a held lock; dev mode.
-  - **`panel-view.sh`:** 412 checks (+151):
+  - **`panel-view.sh`:** 419 checks (+158):
     - The sample run now expects the firefox sheet with 3 members where it
       used to expect the group's expansion.
     - **drift-sample** (dev mode): the four items open the sheet with the
@@ -163,7 +196,9 @@ handover. `just check` exits 0 at HEAD.
     - **drift-already:** "Already resolved", and nothing changes.
     - **drift-locked:** the refusal keeps the text. Esc and reopening
       bring the draft back, and another item gets its own defaults.
-    - **drift-show:** "… and 1 more", then `drift show`, then 3 members.
+    - **drift-show:** "… and 1 more", then `drift show`, then 3 members;
+      **drift-show-member** the same from the libinput row (review
+      follow-up 1).
 - **Docs:**
   - `plugin/README.md`: the sheet, its actions table and keys, the
     folded-resolution wording, "+N more", the strip, IPC `resolve`, and
@@ -198,7 +233,7 @@ handover. `just check` exits 0 at HEAD.
     WP-020's final copy, as before.
 - **No retro-links to completed or dropped cases from the picker.** The
   engine accepts them, but the WP says "open cases". It would be a
-  one-line change in `caseOptionsFor` (Decision 2).
+  one-line change in `caseOptionsFor`; settled on main: open cases only.
 - **No IPC method that sends a drift call.** That is by design (SPEC §8:
   the panel target never runs the engine).
 
@@ -208,7 +243,7 @@ handover. `just check` exits 0 at HEAD.
 $ just check                                   → exit 0
   fmt-check, clippy, engine tests ok · validate-fixtures ok · plugin-validate: ok
   tokens: ok · qmllint: ok (15 files), --max-warnings 0
-  model.test.js: 47 passed · service-states: 148 passed, 0 failed · panel-view: 412 passed, 0 failed
+  model.test.js: 47 passed · service-states: 148 passed, 0 failed · panel-view: 419 passed, 0 failed
 $ find plugin -type l | wc -l                  → 0
 ```
 
@@ -313,26 +348,17 @@ seat.
 
 ## Decisions needed
 
-1. **Live smoke and theme sweep after the unlock.** Needed from the
-   operator: unlock the test host and let the orchestrator do the
-   following, about 15 minutes in all:
-   - rsync `plugin/` to the test host (validate);
-   - wait for the reload to settle, then run `omarchy-restart-shell`;
-   - run TESTING step 5 "Drift sheet" with keys;
-   - run the three-theme sweep including the sheet.
-2. **Link picker: open cases only?** The WP says open cases. The engine
-   also accepts a completed or dropped case (retro-link). Keep it as it
-   is, or list completed cases after the open ones?
-3. **New IPC method `jax.seldon.panel resolve crisis|<event id>`.** It is
-   navigation only: it opens the sheet and never runs the engine. I added
-   it so the sheet can be opened and read without keys (a locked
-   session). SPEC-PLUGIN §8 lists the panel target's methods and should
-   gain it. Keep it?
-4. **Arming semantics in the sheet.** "Any change to the form disarms"
-   instead of WP-020's "any other key disarms". Tab between fields keeps
-   the arm; editing a text, picker or scope takes it back. Please
-   confirm.
-5. **Spec and contract wording (docs not mine):**
+The first handover's Decisions 1–4 and 6 are settled on main (see Review
+follow-up 3):
+- the live smoke follows the unlock;
+- the link picker shows open cases only;
+- the IPC method `resolve` stays;
+- any change to the form disarms;
+- the fixture overlays go to the schema track.
+
+Still open:
+
+1. **Spec and contract wording (docs not mine):**
    - **CONTRACT.md** lists `drift link <eventId> <caseId> [--only]`,
      `drift explain <eventId> [--only] -- <text>` and `drift dismiss …`
      without `--json`, and explain without `--zone/--risk/--area`. The
@@ -347,25 +373,17 @@ seat.
        Before, it only showed the Changelog.
      - The "+N more" line (ADR-0020).
      - The sheet's keys (as in the README).
-   - **SPEC-PLUGIN §8:** the new IPC method `resolve` (Decision 3).
-6. **Fixture gaps (fixtures/ is not mine).** The sample has no explained
-   event that carries a case (ADR-0021: "the fixture's explained lines
-   carry no case"). It also has no capped drift list (`openDrift >
-   drift.length`) and no group with members missing from `index.events`.
-   - Consequence: on the sample, `explained · C-…`, "+N more" and the
-     `drift show` path render only in the tests, which build them with jq
-     or the fake engine.
-   - Proposal: an `index-variants/` file for each, so the plugin team can
-     see them in dev mode.
-7. **Guard false positive (reported, not worked around).**
+     - Any change to the form disarms (settled on main).
+   - **SPEC-PLUGIN §8:** the IPC method `resolve crisis|<event id>` (kept
+     on main).
+2. **Guard false positive (reported, not worked around).**
    `scripts/guard.sh` blocked a `python3 - <<'EOF'` file edit as
    "privileged or package command". The edit's text only contained the
-   word *pacman* inside a QML comment (`all | pacman | snapper`). Nothing
-   ran. I made the same edits with the Edit tool, which the memory note
-   allows for file content. Proposed fix: a row in
-   `scripts/guard-test.sh` for a heredoc whose body names a package tool
-   but does not run it.
-8. **WP-020's leftovers, unchanged:**
+   name of the package manager inside a QML comment. Nothing ran. I made
+   the same edits with the Edit tool, which the memory note allows for
+   file content. Proposed fix: a row in `scripts/guard-test.sh` for a
+   heredoc whose body names a package tool but does not run it.
+3. **WP-020's leftovers, unchanged on the test host:**
    - the extra `/usr/bin/quickshell` (pid 1377038) is still running next
      to the shell;
    - the running shell's plugin copy still lacks the badge fix.
@@ -374,7 +392,7 @@ seat.
 
 - `memory/omarchy-shell.md`: appended, as the brief asked.
 - `work/active/WP-021/`: this handover and 15 offscreen renders.
-- `plugin/BarWidget.qml`: one IPC method (`resolve`, Decision 3).
+- `plugin/BarWidget.qml`: one IPC method (`resolve`, kept on main).
   `plugin/` is mine; it is named because it adds IPC surface.
 - `engine/`, `schema/`, `fixtures/`, `scripts/`, `justfile` and the other
   `docs/` files were not touched. No new dependency.
