@@ -39,8 +39,11 @@ fixing. The tooltip says what and when the engine last captured.
 | System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine; a section appears only when the index has it |
 
 A Changelog row shows the source glyph, kind, subject and time, then what
-changed, who, and the case. The stripe on the left is the event's zone in
-theme colours (red = urgent, yellow = accent, green = muted). Snapshot rows
+changed, who, and the case. Each row has one colour, in theme colours (red =
+urgent, yellow = accent, green = muted): while the event is open drift, the
+zone of its drift item (a routine upgrade group is yellow), otherwise the
+event's own zone. It paints the stripe on the left and, for open drift, the
+glyph, the status line and the "+N" badge. Snapshot rows
 are highlighted. An explained, dismissed or linked event shows its
 resolution and the reason given. Open drift says *Unexplained* or, in the
 red zone, *Needs a reason*, with the proposed case when there is one. A
@@ -53,9 +56,10 @@ reason" (a click opens the Changelog).
 
 | Key | Does |
 |---|---|
-| Tab / Shift-Tab | next / previous tab; past the last (first) tab, on to the bar's next (previous) panel |
-| ← / →, 1–3 | previous / next tab, or a tab directly |
-| ↑ / ↓ | move in the list |
+| Tab / Shift-Tab | the bar's next / previous panel, as in every Omarchy panel |
+| ← / →, h / l | previous / next tab |
+| 1–6 | a tab by its fixed number: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 (a tab this version does not have yet: nothing happens) |
+| ↑ / ↓, k / j | move in the list |
 | Enter, Space | open the row (a group's members, the full text, yesterday's entries) |
 | f / F | Changelog: next / previous source filter |
 | c | capture now |
