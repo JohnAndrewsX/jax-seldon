@@ -33,6 +33,13 @@ Panel {
     if (root.service) root.service.captureNow()
   }
 
+  // Tab walks the bar's panels from the slot's widget, not from this item.
+  function switchPanel(direction) {
+    if (root.bar && typeof root.bar.switchPanelFrom === "function")
+      return root.bar.switchPanelFrom(root.barIdentity, direction)
+    return false
+  }
+
   KeyboardPanel {
     id: panel
     anchorItem: root.anchorItem
