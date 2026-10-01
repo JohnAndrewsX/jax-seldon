@@ -332,6 +332,8 @@ pub fn story() -> Bench {
             "snapshot 111",
             "snapshot 112",
             "snapshot 113",
+            "snapshot 114",
+            "snapshot 115",
             "snapshot-delete 108",
             "snapshot-delete 109"
         ]

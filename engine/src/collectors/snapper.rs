@@ -247,7 +247,7 @@ mod tests {
         let list = parse_list(text).unwrap();
         assert_eq!(
             list.iter().map(|s| s.number).collect::<Vec<_>>(),
-            [1, 105, 106, 107, 110, 111, 112, 113]
+            [1, 105, 106, 107, 110, 111, 112, 113, 114, 115]
         );
         let before =
             parse_list(include_str!("../../../fixtures/logs/snapper-before.json")).unwrap();
