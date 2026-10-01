@@ -667,7 +667,7 @@ mod install {
         assert_eq!(
             ours(&after, "SessionEnd"),
             [
-                json!({"hooks": [{"type": "command", "command": "seldon hook session-stop", "timeout": 120}]})
+                json!({"hooks": [{"type": "command", "command": "seldon hook session-stop", "timeout": 60}]})
             ]
         );
 
@@ -829,5 +829,165 @@ mod event {
         // a switch nobody's command named stays system
         let e = theme_set(&h, "2026-10-01T15:31:00+02:00", "nord", &[]);
         assert_eq!(e["actor"], "system");
+    }
+}
+
+/// ADR-0019: agent commands no collector tracks are green, and recorded
+/// only while a case is set.
+mod green {
+    use super::*;
+
+    /// (subject, zone, meta.command) of the recorded command events.
+    fn recorded(h: &Hooks) -> Vec<(String, String, String)> {
+        h.commands()
+            .iter()
+            .map(|e| {
+                (
+                    e["subject"].as_str().unwrap().into(),
+                    e["zone"].as_str().unwrap().into(),
+                    e["meta"]["command"].as_str().unwrap().into(),
+                )
+            })
+            .collect()
+    }
+
+    fn row(s: &str, z: &str, c: &str) -> (String, String, String) {
+        (s.into(), z.into(), c.into())
+    }
+
+    /// The calls of the test: a tee into an unwatched config dir (the
+    /// WP-015 fixture line), npm, git push in a project, Edit on an
+    /// unwatched path, and a tee into a watched path (yellow, always).
+    fn calls(h: &Hooks) {
+        let home = h.home().to_str().unwrap().to_string();
+        let bash = |command: &str, cwd: &str, id: &str| {
+            let mut p: Value =
+                serde_json::from_str(&tool_call("Bash", json!({"command": command}), id)).unwrap();
+            p["cwd"] = json!(cwd);
+            h.hook("claude-code", &p.to_string());
+        };
+        bash("tee ~/.config/zed/settings.json", "/tmp", "t1");
+        bash("npm install", "/tmp/project", "t2");
+        bash("git push origin main", "/tmp/project", "t3");
+        h.hook(
+            "claude-code",
+            &tool_call(
+                "Edit",
+                json!({"file_path": format!("{home}/Work/notes.md"), "old_string": "a", "new_string": "b"}),
+                "t4",
+            ),
+        );
+        bash("tee -a ~/.bashrc", "/tmp", "t5");
+        bash("npm run build 2>/dev/null", "/tmp/project", "t6");
+    }
+
+    #[test]
+    fn recorded_with_a_case() {
+        let h = Hooks::new();
+        let case = h.active_case();
+        calls(&h);
+        assert_eq!(
+            recorded(&h),
+            [
+                row("tee", "green", "tee ~/.config/zed/settings.json"),
+                row("npm", "green", "npm install"),
+                row("git", "green", "git push origin main"),
+                row("edit", "green", "Edit ~/Work/notes.md"),
+                row("tee", "yellow", "tee -a ~/.bashrc"),
+            ]
+        );
+        assert!(h.commands().iter().all(|e| e["case"] == case.as_str()));
+    }
+
+    #[test]
+    fn nothing_green_without_a_case() {
+        let h = Hooks::new();
+        calls(&h);
+        assert_eq!(recorded(&h), [row("tee", "yellow", "tee -a ~/.bashrc")]);
+    }
+
+    #[test]
+    fn the_generic_hook_takes_a_case() {
+        let h = Hooks::new();
+        let case = h.active_case();
+        // clear the active case: only the explicit one counts
+        std::fs::remove_file(h.logbook.join(".seldon/active-case")).unwrap();
+        let npm = json!({"command": "npm install", "actor": "agent:codex", "cwd": "/tmp/p"});
+        h.hook("generic", &npm.to_string());
+        assert!(h.commands().is_empty(), "no case, nothing green");
+        let out = h.piped(
+            &["hook", "generic", "--case", &case],
+            &npm.to_string(),
+            Some(NOW),
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let mut with_field = npm.clone();
+        with_field["case"] = json!(case);
+        h.hook("generic", &with_field.to_string());
+        let events = h.commands();
+        assert_eq!(events.len(), 2);
+        assert!(
+            events
+                .iter()
+                .all(|e| e["case"] == case.as_str() && e["zone"] == "green")
+        );
+        // an unknown case is reported; a tracked command is still recorded
+        let out = h.piped(
+            &["hook", "generic", "--case", "C-2026-999"],
+            &json!({"command": "yay -S zed", "actor": "agent:codex"}).to_string(),
+            Some(NOW),
+        );
+        assert_eq!(out.status.code(), Some(0));
+        assert!(stderr(&out).contains("C-2026-999"), "{}", stderr(&out));
+        let last = h.commands().pop().unwrap();
+        assert_eq!(
+            (last["subject"].as_str(), last.get("case")),
+            (Some("yay"), None)
+        );
+    }
+}
+
+/// Review round 1: a panic and a closed stdout never fail the agent.
+mod robustness {
+    use super::*;
+
+    #[test]
+    fn a_panic_exits_zero() {
+        let h = Hooks::new();
+        let mut cmd = h.command(&["hook", "claude-code"], Some(NOW));
+        let out = cmd
+            .env("SELDON_TEST_HOOK_PANIC", "1")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0));
+        assert_eq!(stdout(&out), "");
+        assert!(stderr(&out).contains("internal error"), "{}", stderr(&out));
+    }
+
+    #[test]
+    fn session_start_survives_a_closed_pipe() {
+        let env = Env::new(Snapper::NoPermissions);
+        let logbook = env.tmp.path().join("logbook");
+        copy_dir(&fixture_logbook(), &logbook);
+        let mut child = env
+            .command(&[
+                "--logbook",
+                logbook.to_str().unwrap(),
+                "hook",
+                "session-start",
+            ])
+            .env("SELDON_NOW", "2026-10-01T18:00:00+02:00")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // the reader goes away before the hook writes
+        drop(child.stdout.take());
+        child.stdin.take().unwrap().write_all(b"{}").unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(!stderr(&out).contains("internal error"), "{}", stderr(&out));
     }
 }

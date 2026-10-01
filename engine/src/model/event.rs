@@ -107,12 +107,15 @@ pub fn is_actor(s: &str) -> bool {
 /// events, resolutions). `subject` is the config path, `~`-relative.
 ///
 /// Hook `command` events take the zone of what the command would produce;
-/// the hook decides that and calls this with the produced source.
+/// the hook decides that and sets red or yellow itself. An agent command
+/// no collector tracks is green (ADR-0019), so `source: agent` defaults to
+/// green.
 pub fn zone_for(source: Source, subject: &str) -> Option<Zone> {
     match source {
         Source::Pacman | Source::Omarchy => Some(Zone::Red),
         Source::Config if subject.starts_with("~/.config/systemd/") => Some(Zone::Red),
         Source::Config | Source::Theme | Source::Plugins => Some(Zone::Yellow),
+        Source::Agent => Some(Zone::Green),
         _ => None,
     }
 }
@@ -408,6 +411,11 @@ mod tests {
         );
         assert_eq!(zone_for(Source::Theme, "kanagawa"), Some(Zone::Yellow));
         assert_eq!(zone_for(Source::Plugins, "x"), Some(Zone::Yellow));
+        assert_eq!(
+            zone_for(Source::Agent, "npm"),
+            Some(Zone::Green),
+            "ADR-0019"
+        );
         assert_eq!(zone_for(Source::Snapper, "112"), None);
         assert_eq!(zone_for(Source::Seldon, "C-2026-001"), None);
     }

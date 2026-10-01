@@ -5,14 +5,23 @@
 //!   the command's start, `meta.command` the command line (heredoc bodies
 //!   cut, redacted, at most 4096 characters), actor `agent:claude-code`,
 //!   case from `.seldon/active-case`, `meta.toolUseId` and `meta.sessionId`
-//!   for matching. `Bash` commands are classified by [`classify`]; `Edit`,
-//!   `Write` and `MultiEdit` on a watched path become `subject: edit|write|
-//!   multiedit`, `meta.command "<Tool> <~path>"`, the path redacted when it
-//!   matches `[redaction] skipPaths`. `PostToolUse` writes nothing for a
-//!   tool call that is already recorded; one that is not (a settings file
-//!   with only the PostToolUse hook) is recorded with the time it arrives.
-//! - `hook generic` reads `{"command","actor","cwd","startedAt"?}`: the
-//!   same classification for any agent, called before the command runs.
+//!   for matching. `Bash` commands are classified by [`classify`] (`sh -c
+//!   '…'` and `eval '…'` are read as the commands inside); `Edit`, `Write`
+//!   and `MultiEdit` become `subject: edit|write|multiedit`, `meta.command
+//!   "<Tool> <~path>"`, the path redacted when it matches `[redaction]
+//!   skipPaths`. `PostToolUse` writes nothing for a tool call that is
+//!   already recorded; one that is not (a settings file with only the
+//!   PostToolUse hook) is recorded with the time it arrives.
+//! - Zones: what a collector tracks keeps its zone (red packages, services
+//!   and updates; yellow config under `watchPaths`, plugins, themes). Any
+//!   other change (a file written outside `watchPaths` and the logbook, a
+//!   foreign package manager's install, `git` outside `~/.config`) is green
+//!   and recorded only while a case is set (ADR-0019).
+//! - `hook generic` reads `{"command","actor","cwd","startedAt"?,"case"?}`
+//!   (`--case` wins over the field, either over `.seldon/active-case`):
+//!   the same classification for any agent, called before the command runs.
+//! - Not read yet (a follow-up): commands run by `xargs`, `find -exec` or
+//!   an interpreter (`python -c`, `node -e`).
 //! - `hook session-start` prints the context block an agent starts with.
 //! - `hook session-stop` writes the journal stub, runs `capture --all` and
 //!   commits.
@@ -26,7 +35,7 @@
 //! the path (SPEC-ENGINE §7).
 
 use std::fmt::Write as _;
-use std::io::{IsTerminal as _, Read as _};
+use std::io::{IsTerminal as _, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -35,7 +44,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::capture::{self, CaptureArgs};
-use super::event::{clip, parse_person};
+use super::event::{clip, parse_case_id, parse_person};
 use super::{Context, Output, autocommit};
 use crate::attribution::{home_path, normalise};
 use crate::collectors::config::SkipPaths;
@@ -47,7 +56,9 @@ use crate::logbook::lock::{self, Lock};
 use crate::logbook::{Logbook, journal};
 use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, Source, Zone, zone_for};
 use crate::model::is_agent;
-use crate::pkgcmd::{ShellLine, parse_command, parse_shell};
+use crate::pkgcmd::{
+    ShellLine, Target, parse_command, parse_shell, simple_commands, write_targets,
+};
 use crate::redact::{REDACTED, Redactor};
 
 /// The actor of `hook claude-code`.
@@ -77,8 +88,12 @@ pub enum HookCommand {
     },
     /// Record a Claude Code tool call (hook payload on stdin; silent, exit 0)
     ClaudeCode,
-    /// Record any agent's command ({"command","actor","cwd","startedAt"?} on stdin)
-    Generic,
+    /// Record any agent's command ({"command","actor","cwd","startedAt"?,"case"?} on stdin)
+    Generic {
+        /// The case the command belongs to (default: `.seldon/active-case`)
+        #[arg(long = "case", value_name = "ID", value_parser = parse_case_id)]
+        case_id: Option<String>,
+    },
     /// Print the context block an agent session starts with
     SessionStart,
     /// End a session: journal stub, capture, commit (silent, exit 0)
@@ -105,13 +120,29 @@ pub fn run(ctx: &Context, args: HookArgs) -> Result<Output> {
 }
 
 /// Runs a hook an agent calls. Prints only what the hook prints on success
-/// (session-start's block); every error goes to stderr. The caller exits 0.
+/// (session-start's block, whose write errors such as a closed pipe are
+/// ignored); every error goes to stderr. The caller exits 0.
+///
+/// A panic exits 0 too: the panic hook reports it on stderr and ends the
+/// process before the release profile's `panic = "abort"` would (where
+/// `catch_unwind` catches nothing).
 pub fn run_agent_hook(context: impl FnOnce() -> Result<Context>, command: HookCommand) {
+    std::panic::set_hook(Box::new(|info| {
+        let _ = writeln!(std::io::stderr(), "seldon hook: internal error: {info}");
+        std::process::exit(0);
+    }));
+    #[cfg(debug_assertions)]
+    if std::env::var_os("SELDON_TEST_HOOK_PANIC").is_some() {
+        panic!("SELDON_TEST_HOOK_PANIC is set");
+    }
     let stdin = read_stdin();
     let result = context().and_then(|ctx| match command {
         HookCommand::ClaudeCode => claude_code(&ctx, &stdin),
-        HookCommand::Generic => generic(&ctx, &stdin),
-        HookCommand::SessionStart => session_start(&ctx).map(|block| print!("{block}")),
+        HookCommand::Generic { case_id } => generic(&ctx, &stdin, case_id),
+        HookCommand::SessionStart => session_start(&ctx).map(|block| {
+            let mut out = std::io::stdout().lock();
+            let _ = out.write_all(block.as_bytes()).and_then(|()| out.flush());
+        }),
         HookCommand::SessionStop { actor } => session_stop(&ctx, &actor, &stdin),
         HookCommand::Install { .. } => Ok(()),
     });
@@ -137,12 +168,32 @@ fn read_stdin() -> String {
 // Classification
 // ---------------------------------------------------------------------------
 
-/// What a mutating command records: the program word and the zone of what
-/// it would change (ADR-0014 §2).
+/// What a mutating command records: the program word, the zone of what it
+/// would change (ADR-0014 §2, ADR-0019), and whether it is recorded only
+/// while a case is set (ADR-0019 §1: green commands no collector tracks).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mutation {
     pub subject: String,
     pub zone: Option<Zone>,
+    pub needs_case: bool,
+}
+
+impl Mutation {
+    /// The order in which a line's mutations compete: the more severe zone,
+    /// then the one recorded without a case.
+    fn rank(&self) -> (u8, bool) {
+        (zone_weight(self.zone), !self.needs_case)
+    }
+}
+
+/// How much a zone weighs when a line has several mutating commands.
+fn zone_weight(zone: Option<Zone>) -> u8 {
+    match zone {
+        None => 0,
+        Some(Zone::Green) => 1,
+        Some(Zone::Yellow) => 2,
+        Some(Zone::Red) => 3,
+    }
 }
 
 /// Where commands change the system: the watched config paths (plus
@@ -190,6 +241,12 @@ impl Scope {
         self.watched.iter().any(|w| path.starts_with(w))
     }
 
+    /// Paths whose changes are no news for the green class: devices
+    /// (`2>/dev/null`) and the logbook, which Seldon itself records.
+    fn is_untracked_noise(&self, path: &Path) -> bool {
+        path.starts_with("/dev") || path.starts_with(&self.logbook)
+    }
+
     /// The path as `~/…` when it is under the home directory.
     pub fn display(&self, path: &Path) -> String {
         match path.strip_prefix(&self.home) {
@@ -204,31 +261,55 @@ impl Scope {
     fn config_zone(&self, path: &Path) -> Option<Zone> {
         zone_for(Source::Config, &format!("{}/", self.display(path)))
     }
-}
 
-/// How much a zone weighs when a line has several mutating commands.
-fn weight(zone: Option<Zone>) -> u8 {
-    match zone {
-        None => 0,
-        Some(Zone::Green) => 1,
-        Some(Zone::Yellow) => 2,
-        Some(Zone::Red) => 3,
+    /// What writing `paths` amounts to: the most severe config zone when one
+    /// is watched (a removal also counts the watched paths below it);
+    /// otherwise green, recorded only with a case, when any path is outside
+    /// the noise (ADR-0019); `None` when nothing is written.
+    fn writes(&self, paths: &[(PathBuf, bool)]) -> Option<(Option<Zone>, bool)> {
+        let mut watched: Option<Option<Zone>> = None;
+        let mut untracked = false;
+        for (p, tree) in paths {
+            let mut zones: Vec<Option<Zone>> = Vec::new();
+            if self.is_watched(p) {
+                zones.push(self.config_zone(p));
+            }
+            if *tree {
+                zones.extend(
+                    self.watched
+                        .iter()
+                        .filter(|w| w.starts_with(p))
+                        .map(|w| self.config_zone(w)),
+                );
+            }
+            if zones.is_empty() {
+                untracked |= !self.is_untracked_noise(p);
+            }
+            for z in zones {
+                if watched.is_none_or(|w| zone_weight(z) > zone_weight(w)) {
+                    watched = Some(z);
+                }
+            }
+        }
+        match watched {
+            Some(zone) => Some((zone, false)),
+            None if untracked => Some((Some(Zone::Green), true)),
+            None => None,
+        }
     }
 }
 
-/// Whether `line`, run in `cwd`, changes the system (SPEC-ENGINE §8), and
-/// what it records: the first of its most severe mutating commands. A `cd`
-/// changes the directory for the commands after it.
+/// Whether `line`, run in `cwd`, changes anything (SPEC-ENGINE §8,
+/// ADR-0019), and what it records: the first of its most severe mutating
+/// commands. `sh -c '…'` and `eval '…'` are read as the commands inside;
+/// a `cd` changes the directory for the commands after it.
 pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation> {
     let mut cwd = cwd.to_path_buf();
     let mut found: Option<Mutation> = None;
-    for segment in &line.segments {
-        let argv = segment.argv();
-        let mutation = classify_segment(argv, &segment.writes, scope, &mut cwd);
+    for segment in simple_commands(line) {
+        let mutation = classify_segment(segment.argv(), &segment.writes, scope, &mut cwd);
         if let Some(m) = mutation
-            && found
-                .as_ref()
-                .is_none_or(|f| weight(m.zone) > weight(f.zone))
+            && found.as_ref().is_none_or(|f| m.rank() > f.rank())
         {
             found = Some(m);
         }
@@ -237,9 +318,9 @@ pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation>
 }
 
 /// One simple command: pacman-like programs (every mutating operation is
-/// red), `omarchy` routes, `systemctl` unit changes, file writers into a
-/// watched path, `git` in `~/.config` or the logbook, and any redirection
-/// into a watched path. Updates `cwd` on `cd`.
+/// red), `omarchy` routes, `systemctl` unit changes, `git` sub-commands
+/// that change a repository, foreign package managers, and the files it
+/// writes ([`write_targets`]). Updates `cwd` on `cd`.
 fn classify_segment(
     argv: &[String],
     writes: &[String],
@@ -249,86 +330,91 @@ fn classify_segment(
     let word = argv.first().map(String::as_str).unwrap_or("");
     let program = word.rsplit('/').next().unwrap_or(word);
     let args = argv.get(1..).unwrap_or_default();
-    let written = writes
-        .iter()
-        .map(|w| scope.resolve(w, cwd))
-        .find(|p| scope.is_watched(p));
     if program == "cd" {
         *cwd = match args.iter().find(|a| !a.starts_with('-')) {
             Some(dir) => scope.resolve(dir, cwd),
             None => scope.home.clone(),
         };
     }
-    let mutation = |zone| {
-        Some(Mutation {
-            subject: program.to_string(),
-            zone,
-        })
-    };
     let cwd: &Path = cwd;
-    let changes_config = |paths: Vec<&str>| {
-        paths
-            .into_iter()
-            .map(|p| scope.resolve(p, cwd))
-            .filter(|p| scope.is_watched(p))
-            .map(|p| scope.config_zone(&p))
-            .max_by_key(|z| weight(*z))
+    let subject = if program.is_empty() { "sh" } else { program };
+    let mutation = |(zone, needs_case): (Option<Zone>, bool)| Mutation {
+        subject: subject.to_string(),
+        zone,
+        needs_case,
     };
+
     let argv_str: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let found = if let Some(cmd) = parse_command(&argv_str) {
-        if cmd.is_mutating() {
-            mutation(Some(Zone::Red))
-        } else {
-            None
-        }
-    } else {
-        match program {
-            "omarchy" => omarchy(&route(args)).and_then(mutation),
+    let command = match parse_command(&argv_str) {
+        Some(cmd) => cmd.is_mutating().then_some((Some(Zone::Red), false)),
+        None => match program {
+            "omarchy" => omarchy(&route(args)).map(|z| (z, false)),
             p if p.starts_with("omarchy-") => {
                 let mut words: Vec<&str> = p["omarchy-".len()..].split('-').collect();
                 words.extend(route(args));
-                omarchy(&words).and_then(mutation)
+                omarchy(&words).map(|z| (z, false))
             }
             "systemctl" => args
                 .iter()
                 .find(|a| !a.starts_with('-'))
                 .filter(|verb| SYSTEMCTL_VERBS.contains(&verb.as_str()))
-                .and_then(|_| mutation(Some(Zone::Red))),
-            "cp" | "mv" | "install" | "ln" => copy_target(args)
-                .and_then(|t| changes_config(vec![t]))
-                .and_then(mutation),
-            "tee" => changes_config(operands(args)).and_then(mutation),
-            "sed" => sed_in_place_files(args)
-                .and_then(changes_config)
-                .and_then(mutation),
-            "rm" | "rmdir" | "unlink" | "truncate" => operands(args)
-                .into_iter()
-                .map(|p| scope.resolve(p, cwd))
-                .flat_map(|p| {
-                    // the path itself, or the watched paths it removes with it
-                    let under = scope.watched.iter().filter(|w| w.starts_with(&p)).cloned();
-                    std::iter::once(p.clone())
-                        .filter(|p| scope.is_watched(p))
-                        .chain(under)
-                        .collect::<Vec<_>>()
-                })
-                .map(|p| scope.config_zone(&p))
-                .max_by_key(|z| weight(*z))
-                .and_then(mutation),
-            "git" => git(args, scope, cwd).and_then(mutation),
+                .map(|_| (Some(Zone::Red), false)),
+            "git" => git(args, scope, cwd),
+            p if FOREIGN_PACKAGE_MANAGERS.contains(&p) => {
+                foreign_install(p, args).then_some((Some(Zone::Green), true))
+            }
             _ => None,
-        }
+        },
     };
-    found.or_else(|| {
-        written.map(|p| Mutation {
-            subject: if program.is_empty() { "sh" } else { program }.to_string(),
-            zone: scope.config_zone(&p),
-        })
-    })
+    let paths: Vec<(PathBuf, bool)> = write_targets(argv, writes)
+        .iter()
+        .map(|t| (scope.resolve(t.word(), cwd), matches!(t, Target::Tree(_))))
+        .collect();
+    let files = scope.writes(&paths);
+    [command, files]
+        .into_iter()
+        .flatten()
+        .map(mutation)
+        .reduce(|a, b| if b.rank() > a.rank() { b } else { a })
 }
 
 /// `systemctl` verbs that change units (SPEC-ENGINE §8).
 const SYSTEMCTL_VERBS: [&str; 6] = ["enable", "disable", "start", "stop", "mask", "unmask"];
+
+/// Package managers no collector tracks (ADR-0019 §2): their installs are
+/// green, recorded only with a case.
+const FOREIGN_PACKAGE_MANAGERS: [&str; 10] = [
+    "npm", "pnpm", "yarn", "pip", "pip3", "pipx", "uv", "cargo", "go", "bun",
+];
+
+/// Sub-commands of [`FOREIGN_PACKAGE_MANAGERS`] that change what is
+/// installed.
+const FOREIGN_VERBS: [&str; 12] = [
+    "install",
+    "i",
+    "add",
+    "remove",
+    "rm",
+    "uninstall",
+    "un",
+    "update",
+    "upgrade",
+    "up",
+    "get",
+    "ci",
+];
+
+/// Whether a foreign package manager's arguments install or remove
+/// something: the first operand is a verb of [`FOREIGN_VERBS`] (after `pip`
+/// or `tool` for `uv pip install`, `uv tool install`); bare `yarn` installs.
+fn foreign_install(program: &str, args: &[String]) -> bool {
+    let words = route(args);
+    match words.as_slice() {
+        [] => program == "yarn",
+        ["pip" | "tool", verb, ..] if program == "uv" => FOREIGN_VERBS.contains(verb),
+        [verb, ..] => FOREIGN_VERBS.contains(verb),
+    }
+}
 
 /// `git` sub-commands that change a repository or a remote.
 const GIT_MUTATING: [&str; 20] = [
@@ -354,8 +440,7 @@ const GIT_MUTATING: [&str; 20] = [
     "switch",
 ];
 
-/// The non-option words of an `omarchy` command line (its route and
-/// arguments).
+/// The non-option words of a command line (its route and arguments).
 fn route(args: &[String]) -> Vec<&str> {
     args.iter()
         .map(String::as_str)
@@ -399,116 +484,10 @@ fn omarchy(route: &[&str]) -> Option<Option<Zone>> {
     }
 }
 
-/// Options of `cp`, `mv`, `install` and `ln` that take the next word.
-const COPY_WITH_VALUE: [&str; 8] = [
-    "-m", "-o", "-g", "-S", "--mode", "--owner", "--group", "--suffix",
-];
-
-/// The destination of `cp|mv|install|ln`: `-t DIR`, `--target-directory`,
-/// else the last operand when there are at least two.
-fn copy_target(args: &[String]) -> Option<&str> {
-    let mut operands = Vec::new();
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        if a == "--" {
-            operands.extend(it.by_ref().map(String::as_str));
-            break;
-        }
-        if a == "-t" || a == "--target-directory" {
-            return it.next().map(String::as_str);
-        }
-        if let Some(dir) = a.strip_prefix("--target-directory=") {
-            return Some(dir);
-        }
-        if a.starts_with('-') && a.len() > 1 {
-            if COPY_WITH_VALUE.contains(&a.as_str()) {
-                it.next();
-            }
-            continue;
-        }
-        operands.push(a.as_str());
-    }
-    (operands.len() >= 2)
-        .then(|| operands.last().copied())
-        .flatten()
-}
-
-/// Words that are not options (everything after `--`).
-fn operands(args: &[String]) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        if a == "--" {
-            out.extend(it.by_ref().map(String::as_str));
-            break;
-        }
-        if !a.starts_with('-') || a == "-" {
-            out.push(a.as_str());
-        }
-    }
-    out
-}
-
-/// The files `sed` edits in place, or `None` without `-i`/`--in-place`.
-fn sed_in_place_files(args: &[String]) -> Option<Vec<&str>> {
-    let mut in_place = false;
-    let mut script_given = false;
-    let mut words = Vec::new();
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        if a == "--" {
-            words.extend(it.by_ref().map(String::as_str));
-            break;
-        }
-        if let Some(long) = a.strip_prefix("--") {
-            let name = long.split('=').next().unwrap_or(long);
-            match name {
-                "in-place" => in_place = true,
-                "expression" | "file" => {
-                    script_given = true;
-                    if !long.contains('=') {
-                        it.next();
-                    }
-                }
-                "line-length" if !long.contains('=') => {
-                    it.next();
-                }
-                _ => {}
-            }
-        } else if let Some(cluster) = a.strip_prefix('-').filter(|c| !c.is_empty()) {
-            for (i, c) in cluster.char_indices() {
-                match c {
-                    // the rest of the cluster is the backup suffix
-                    'i' => {
-                        in_place = true;
-                        break;
-                    }
-                    'e' | 'f' | 'l' => {
-                        script_given |= c != 'l';
-                        if i + 1 == cluster.len() {
-                            it.next();
-                        }
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        } else {
-            words.push(a.as_str());
-        }
-    }
-    if !in_place {
-        return None;
-    }
-    if !script_given && !words.is_empty() {
-        words.remove(0);
-    }
-    Some(words)
-}
-
-/// The zone of a mutating `git` command in `~/.config` (by the config zone
-/// of its directory) or in the logbook (no zone), else `None`.
-fn git(args: &[String], scope: &Scope, cwd: &Path) -> Option<Option<Zone>> {
+/// A `git` sub-command that changes a repository: in `~/.config` the config
+/// zone of its directory; in the logbook green and always recorded
+/// (SPEC-ENGINE §8); anywhere else green, only with a case (ADR-0019).
+fn git(args: &[String], scope: &Scope, cwd: &Path) -> Option<(Option<Zone>, bool)> {
     let mut dir = cwd.to_path_buf();
     let mut it = args.iter();
     let sub = loop {
@@ -539,13 +518,13 @@ fn git(args: &[String], scope: &Scope, cwd: &Path) -> Option<Option<Zone>> {
     if !GIT_MUTATING.contains(&sub.as_str()) {
         return None;
     }
-    if dir.starts_with(&scope.config_home) {
-        Some(scope.config_zone(&dir))
+    Some(if dir.starts_with(&scope.config_home) {
+        (scope.config_zone(&dir), false)
     } else if dir.starts_with(&scope.logbook) {
-        Some(None)
+        (Some(Zone::Green), false)
     } else {
-        None
-    }
+        (Some(Zone::Green), true)
+    })
 }
 
 /// `…/repo/.git` → `…/repo`.
@@ -588,6 +567,9 @@ struct GenericPayload {
     cwd: Option<String>,
     #[serde(default)]
     started_at: Option<String>,
+    /// The command's case (`--case` wins; default `.seldon/active-case`).
+    #[serde(default)]
+    case: Option<String>,
 }
 
 /// One command to record, before the event is built.
@@ -666,16 +648,25 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
     if let Some(id) = payload.session_id.filter(|s| !s.is_empty()) {
         extra.push(("sessionId", id));
     }
-    record(ctx, &setup, ledger, CLAUDE_CODE, ctx.now, records, &extra)
+    let entry = Entry {
+        actor: CLAUDE_CODE,
+        ts: ctx.now,
+        case: None,
+    };
+    record(ctx, &setup, ledger, entry, records, &extra)
 }
 
-fn generic(ctx: &Context, stdin: &str) -> Result<()> {
+fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> {
     let payload: GenericPayload = serde_json::from_str(stdin).map_err(|e| {
         Error::user(format!(
-            "stdin is not {{\"command\",\"actor\",\"cwd\",\"startedAt\"?}}: {e}"
+            "stdin is not {{\"command\",\"actor\",\"cwd\",\"startedAt\"?,\"case\"?}}: {e}"
         ))
     })?;
     let actor = parse_person(&payload.actor).map_err(Error::user)?;
+    let case = match case_flag.or(payload.case) {
+        Some(id) => Some(parse_case_id(&id).map_err(Error::user)?),
+        None => None,
+    };
     let ts = match payload.started_at.as_deref() {
         Some(s) => chrono::DateTime::parse_from_rfc3339(s)
             .map_err(|e| Error::user(format!("startedAt `{s}` is not RFC 3339: {e}")))?,
@@ -690,7 +681,12 @@ fn generic(ctx: &Context, stdin: &str) -> Result<()> {
         &setup.logbook,
         Redactor::with_patterns(&setup.config.redaction.patterns)?,
     );
-    record(ctx, &setup, ledger, &actor, ts, vec![rec], &[])
+    let entry = Entry {
+        actor: &actor,
+        ts,
+        case,
+    };
+    record(ctx, &setup, ledger, entry, vec![rec], &[])
 }
 
 /// A shell command line as a record, if it is mutating.
@@ -703,8 +699,10 @@ fn bash_record(command: &str, scope: &Scope, cwd: &Path) -> Option<Record> {
     })
 }
 
-/// `Edit`/`Write`/`MultiEdit` on watched paths (ADR-0014 §4): one record
-/// per path. Only the path is read from `tool_input`, never the content.
+/// `Edit`/`Write`/`MultiEdit`: one record per path. A watched path takes
+/// its config zone (ADR-0014 §4); any other path outside the logbook is
+/// green and recorded only with a case (ADR-0019). Only the path is read
+/// from `tool_input`, never the content.
 fn edit_records(
     ctx: &Context,
     setup: &Setup,
@@ -732,20 +730,21 @@ fn edit_records(
     paths
         .into_iter()
         .map(|p| setup.scope.resolve(p, cwd))
-        .filter(|p| setup.scope.is_watched(p))
-        .map(|p| {
+        .filter_map(|p| {
+            let (zone, needs_case) = setup.scope.writes(&[(p.clone(), false)])?;
             let shown = if skip.matches(&p) {
                 REDACTED.to_string()
             } else {
                 setup.scope.display(&p)
             };
-            Record {
+            Some(Record {
                 mutation: Mutation {
                     subject: tool.to_lowercase(),
-                    zone: setup.scope.config_zone(&p),
+                    zone,
+                    needs_case,
                 },
                 command: format!("{tool} {shown}"),
-            }
+            })
         })
         .collect()
 }
@@ -774,29 +773,47 @@ fn lock_patiently(ctx: &Context) -> Result<Lock> {
     }
 }
 
+/// Who recorded the commands, when they started, and their case if the
+/// caller named one (else `.seldon/active-case`).
+struct Entry<'a> {
+    actor: &'a str,
+    ts: chrono::DateTime<chrono::FixedOffset>,
+    case: Option<String>,
+}
+
 /// Appends one `agent/command` event per record and attaches them to the
-/// active case. The command line is redacted before it is cut, so a cut
-/// never leaves half a secret.
+/// case. Records that need a case (ADR-0019, green) are dropped without
+/// one. The command line is redacted before it is cut, so a cut never
+/// leaves half a secret.
 fn record(
     ctx: &Context,
     setup: &Setup,
     ledger: Ledger,
-    actor: &str,
-    ts: chrono::DateTime<chrono::FixedOffset>,
+    entry: Entry,
     records: Vec<Record>,
     extra: &[(&str, String)],
 ) -> Result<()> {
-    let lock = lock_patiently(ctx)?;
-    let mut case_file: Option<CaseFile> = match cases::active_case(&setup.logbook) {
-        Some(id) => match cases::find(&setup.logbook, &id) {
+    let (id, origin) = match entry.case {
+        Some(id) => (Some(id), "case"),
+        None => (cases::active_case(&setup.logbook), "active case"),
+    };
+    let mut case_file: Option<CaseFile> =
+        id.and_then(|id| match cases::find(&setup.logbook, &id) {
             Ok(file) => Some(file),
             Err(e) => {
-                eprintln!("seldon hook: active case {id} ignored: {e}");
+                eprintln!("seldon hook: {origin} {id} ignored: {e}");
                 None
             }
-        },
-        None => None,
-    };
+        });
+    let records: Vec<Record> = records
+        .into_iter()
+        .filter(|r| case_file.is_some() || !r.mutation.needs_case)
+        .collect();
+    if records.is_empty() {
+        return Ok(());
+    }
+    let (actor, ts) = (entry.actor, entry.ts);
+    let lock = lock_patiently(ctx)?;
     let events: Vec<Event> = records
         .into_iter()
         .map(|r| {
@@ -1019,7 +1036,7 @@ pub const CLAUDE_HOOKS: [(&str, Option<&str>, &str, u64); 3] = [
         10,
     ),
     ("SessionStart", None, "seldon hook session-start", 10),
-    ("SessionEnd", None, "seldon hook session-stop", 120),
+    ("SessionEnd", None, "seldon hook session-stop", 60),
 ];
 
 /// `seldon hook install claude-code [--settings PATH]`: adds each of
@@ -1144,8 +1161,16 @@ mod tests {
         Scope::new(&dirs, &Config::default(), Path::new("/home/user/Seldon"))
     }
 
+    /// What the hook records for `line` (cwd = the logbook) with a case set.
+    fn with_case(line: &str) -> Option<(String, Option<Zone>)> {
+        classify(&parse_shell(line), &scope(), Path::new("/home/user/Seldon"))
+            .map(|m| (m.subject, m.zone))
+    }
+
+    /// … and without a case (ADR-0019: green commands need one).
     fn class(line: &str) -> Option<(String, Option<Zone>)> {
         classify(&parse_shell(line), &scope(), Path::new("/home/user/Seldon"))
+            .filter(|m| !m.needs_case)
             .map(|m| (m.subject, m.zone))
     }
 
@@ -1155,6 +1180,72 @@ mod tests {
 
     fn yellow(s: &str) -> Option<(String, Option<Zone>)> {
         Some((s.to_string(), Some(Zone::Yellow)))
+    }
+
+    fn green(s: &str) -> Option<(String, Option<Zone>)> {
+        Some((s.to_string(), Some(Zone::Green)))
+    }
+
+    #[test]
+    fn green_needs_a_case() {
+        for (line, subject) in [
+            ("tee ~/.config/zed/settings.json", "tee"),
+            ("npm install", "npm"),
+            ("pnpm add -D vite", "pnpm"),
+            ("uv pip install requests", "uv"),
+            ("cargo install ripgrep", "cargo"),
+            ("yarn", "yarn"),
+            ("cd /tmp/project && git push origin main", "git"),
+            ("echo x > /tmp/notes.txt", "echo"),
+            ("rm -rf /tmp/project/target", "rm"),
+            ("cp a.txt ~/Documents/", "cp"),
+        ] {
+            assert_eq!(with_case(line), green(subject), "{line}");
+            assert_eq!(class(line), None, "{line}: not without a case");
+        }
+        // not package changes, not writes
+        for line in [
+            "npm run build",
+            "cargo build --release",
+            "go test ./...",
+            "uv run pytest",
+            "cargo test 2>/dev/null",
+            "ls > /dev/null",
+        ] {
+            assert_eq!(with_case(line), None, "{line}");
+        }
+        // the logbook is Seldon's own record: writes there are no news
+        assert_eq!(with_case("echo x >> /home/user/Seldon/inbox/a.md"), None);
+        // tracked changes keep their zone and need no case
+        assert_eq!(
+            class("npm install && sed -i s/a/b/ ~/.bashrc"),
+            yellow("sed")
+        );
+    }
+
+    #[test]
+    fn review_round_1_writers() {
+        // an `mv` out of a watched path removes the file there
+        assert_eq!(class("mv ~/.config/hypr/old.conf /tmp/"), yellow("mv"));
+        assert_eq!(
+            class("install -d ~/.config/hypr/scripts"),
+            yellow("install")
+        );
+        assert_eq!(
+            class("install -d -m 700 ~/.config/systemd/user"),
+            red("install")
+        );
+        // a copy into a watched directory
+        assert_eq!(class("cp new.conf ~/.config/hypr/"), yellow("cp"));
+        // shells and eval are read as the commands inside
+        assert_eq!(class("bash -c 'sudo pacman -S zed'"), red("pacman"));
+        assert_eq!(
+            class("sh -c \"sed -i s/a/b/ ~/.config/hypr/a.conf\""),
+            yellow("sed")
+        );
+        assert_eq!(class("eval 'yay -S zed'"), red("yay"));
+        assert_eq!(class("bash -c 'command -v yay'"), None);
+        assert_eq!(class("bash script.sh"), None);
     }
 
     #[test]
@@ -1296,12 +1387,11 @@ mod tests {
             yellow("git")
         );
         assert_eq!(class("git -C ~/.config/hypr status --short"), None);
-        assert_eq!(
-            class("git commit -am x"),
-            Some(("git".into(), None)),
-            "cwd = logbook"
-        );
+        // in the logbook: recorded without a case (SPEC-ENGINE §8), green
+        assert_eq!(class("git commit -am x"), green("git"), "cwd = logbook");
+        // anywhere else: green, only with a case (ADR-0019)
         assert_eq!(class("cd /tmp/repo && git commit -am x"), None);
+        assert_eq!(with_case("cd /tmp/repo && git commit -am x"), green("git"));
         assert_eq!(
             class("git --git-dir=/home/user/.config/.git add -A"),
             yellow("git")
@@ -1322,16 +1412,5 @@ mod tests {
         ] {
             assert_eq!(class(q), None, "{q}");
         }
-    }
-
-    #[test]
-    fn sed_files() {
-        let args = |s: &str| -> Vec<String> { s.split(' ').map(String::from).collect() };
-        let a = args("-i -e s/a/b/ -e s/c/d/ f1 f2");
-        assert_eq!(sed_in_place_files(&a).unwrap(), [&a[5], &a[6]]);
-        let a = args("-Ei s/a/b/ f1");
-        assert_eq!(sed_in_place_files(&a).unwrap(), [&a[2]]);
-        let a = args("-n s/a/b/p f1");
-        assert_eq!(sed_in_place_files(&a), None);
     }
 }
