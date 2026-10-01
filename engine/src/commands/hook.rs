@@ -1172,6 +1172,12 @@ mod tests {
             "yay -Si zed",
             "pacman -T zed",
             "paru -Sc",
+            // probes run nothing; `yay` alone would be a full upgrade
+            "command -v yay",
+            "command -v pacman",
+            "type yay",
+            "which pacman",
+            "command -v yay >/dev/null && echo ok",
         ] {
             assert_eq!(class(q), None, "{q}");
         }

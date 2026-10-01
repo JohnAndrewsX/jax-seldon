@@ -234,7 +234,7 @@ pub struct Intent {
 /// and the `omarchy-update`/`omarchy-pkg-*` scripts.
 pub fn command_intent(line: &str) -> Intent {
     let mut intent = Intent::default();
-    for segment in line.split(['&', '|', ';', '\n']) {
+    'segments: for segment in line.split(['&', '|', ';', '\n']) {
         let mut argv: Vec<&str> = segment
             .split_whitespace()
             .map(|w| w.trim_matches(['"', '\'', '(', ')']))
@@ -245,9 +245,13 @@ pub fn command_intent(line: &str) -> Intent {
                 Some(w) if is_assignment(w) => {
                     argv.remove(0);
                 }
-                Some(&"sudo" | &"doas" | &"env" | &"command" | &"exec") => {
+                Some(&wrapper @ ("sudo" | "doas" | "env" | "command" | "exec")) => {
                     argv.remove(0);
                     while argv.first().is_some_and(|w| w.starts_with('-')) {
+                        // `command -v yay` runs nothing (no full upgrade)
+                        if is_probe(wrapper, argv[0]) {
+                            continue 'segments;
+                        }
                         argv.remove(0);
                     }
                 }
@@ -642,12 +646,16 @@ pub fn command_argv(words: &[String]) -> &[String] {
             "command" | "nohup" | "time" => &[],
             _ => break,
         };
-        let duration = w.ends_with("timeout");
+        let wrapper = w.rsplit('/').next().unwrap_or(w);
+        let duration = wrapper == "timeout";
         i += 1;
         while let Some(o) = words.get(i).filter(|o| o.starts_with('-')) {
             i += 1;
             if o == "--" {
                 break;
+            }
+            if is_probe(wrapper, o) {
+                return &[];
             }
             if with_value.contains(&o.as_str()) {
                 i += 1;
@@ -658,6 +666,32 @@ pub fn command_argv(words: &[String]) -> &[String] {
         }
     }
     &words[i.min(words.len())..]
+}
+
+/// Whether `option` turns `wrapper` into a probe that runs nothing:
+/// `command -v|-V` (print what a name is) and `sudo -l|-v|-k|-K` (list,
+/// validate, drop credentials). `command -v yay` must never read as `yay`,
+/// which is a full upgrade (ADR-0017 §3).
+pub fn is_probe(wrapper: &str, option: &str) -> bool {
+    match wrapper {
+        "command" => option.strip_prefix('-').is_some_and(|c| {
+            !c.starts_with('-')
+                && c.contains(['v', 'V'])
+                && c.chars().all(|ch| matches!(ch, 'p' | 'v' | 'V'))
+        }),
+        "sudo" => matches!(
+            option,
+            "-l" | "-ll"
+                | "-v"
+                | "-k"
+                | "-K"
+                | "--list"
+                | "--validate"
+                | "--reset-timestamp"
+                | "--remove-timestamp"
+        ),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -744,7 +778,34 @@ mod tests {
             ["pacman", "-S", "zed"]
         );
         assert_eq!(argv("timeout -s KILL 10 yay"), ["yay"]);
-        assert_eq!(argv("command -v x"), ["x"]);
+        assert_eq!(argv("command yay -Syu"), ["yay", "-Syu"]);
         assert!(argv("FOO=1").is_empty());
+    }
+
+    #[test]
+    fn probes_run_nothing() {
+        // `command -v yay` must not read as bare `yay` (a full upgrade)
+        for probe in [
+            "command -v yay",
+            "command -V pacman",
+            "command -pv yay",
+            "sudo -l pacman -Syu",
+            "sudo -v",
+        ] {
+            let line = parse_shell(probe);
+            assert!(line.segments[0].argv().is_empty(), "{probe}");
+            assert_eq!(command_intent(probe), Intent::default(), "{probe}");
+        }
+        for probe in ["type yay", "which pacman", "hash yay", "whereis paru"] {
+            let line = parse_shell(probe);
+            let argv: Vec<&str> = line.segments[0].argv().iter().map(String::as_str).collect();
+            assert!(parse_command(&argv).is_none(), "{probe}");
+            assert_eq!(command_intent(probe), Intent::default(), "{probe}");
+        }
+        assert_eq!(
+            command_intent("command -v yay && yay -S zed").packages,
+            ["zed"]
+        );
+        assert!(!command_intent("command -v yay && yay -S zed").full_upgrade);
     }
 }
