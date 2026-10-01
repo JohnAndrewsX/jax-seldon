@@ -1,15 +1,112 @@
 WP-013 HANDOVER
 
-Branch `wp/013-integration`, worktree `wt/WP-013`, on `main` at `78aa1ff`.
-Not pushed, no PR. Commits `main..HEAD`:
-- `9798998` script;
-- `cc007e8` justfile;
-- `0fbce86` TESTING;
-- `ff956d3` findings;
-- `f5e1e97` memory;
-- then this handover.
+Branch `wp/013-integration`, worktree `wt/WP-013`, **rebased onto `main`
+at `f54e382`** (WP-020…WP-041 merged). Not pushed, no PR. 16 commits
+`main..HEAD`:
+- the original WP: `5a367c6` script · `439580a` justfile · `a413964`
+  TESTING · `eaf635c` findings · `328d66e` memory · `f46df44` handover;
+- the review follow-up: `227eba2` · `dd6f000` · `f3bf013`;
+- the live session: `ae2dd01` · `cd51151` · `27bf86c` · `a1080d7` ·
+  `f99d772` · `6be6455` · `7a0730a`, and this handover.
 
-The restore refactor named under "Not done" is part of `9798998`.
+The commit ids quoted in the sections below are from before the rebase.
+
+## Live session after the unlock (orchestrator's resume brief)
+
+**1. Rebase.**
+- `git rebase main` had one conflict, in `memory/pitfalls.md`, where both
+  sides had appended. I kept both, main's sections first.
+- Main's engine changed one thing the script relied on: `seldon init` now
+  runs the first capture (WP-024). A later `capture --since` is then
+  ignored (`sinceIgnored`).
+- The script therefore backfills with `init --since <now − 7 d>`, and the
+  idempotency check is now "`capture --all` after `init` writes 0"
+  (`ae2dd01`; TESTING updated in `cd51151`).
+
+**2. E2E on the test host, two runs back to back.** Both exited 0 (47/47):
+- the lock was checked before every key and the restart;
+- the restart ran only after the reloads had settled;
+- no new crash report;
+- the host was restored each time.
+
+`just e2e --engine-only` exits 0 (24/24), and `just check` on the
+rebased branch exits 0. Logs:
+`live/e2e-full-run1.log`, `live/e2e-full-run2.log`,
+`live/e2e-engine-only.log`. The host name is redacted to `<test-host>`.
+
+**3. Pending live steps of WP-020/021/022/023/030/031.**
+- Setup: a scratch logbook `~/Seldon-e2e`, built from `fixtures/logbook/`
+  (never a real one), the static engine, and the plugin from `main`.
+- 31 of the steps pass. Details and the table: `live/RESULTS.md`.
+- Highlights:
+  - all panel keys (digits 1–6, h/l and ←/→, Tab/Shift-Tab, n, e, c, +,
+    x, a, d, Esc, two-press arming with disarm on a move);
+  - the Work chain start → verify → done, drop, and Start agent (with a
+    harmless `/usr/bin/true` launcher, so no real agent was launched);
+  - Decisions `d`, and the Memory open;
+  - the drift sheet: Explain, Link, and Dismiss of a group, with the
+    ledger `resolution`/`refersTo` lines and the pill and strip following;
+  - the overlay:
+    - every chart's `paints` = 1 on open, `paintMs` 0–2;
+    - `call hover`, period keys 1–4, ←/→ and h/l;
+    - a real pointer hover through `ydotool`, which repaints nothing;
+    - Esc, a scrim click, and the pill's middle click;
+  - the shell log of the live instance is clean of jax.seldon warnings
+    and errors.
+- `seldon open --editor` (WP-012 Decision 1) is fixed on main: the editor
+  stays open.
+
+**4. Results.**
+- `work/active/WP-013/live/`: `RESULTS.md` (step, WP, result, note), the
+  logs, and `screenshots/osaka-jade-*.png`. That is 11 shrunk PNGs: six
+  tabs, the drift sheet, the new-case and new-decision sheets, the
+  overlay and the pill.
+- Live vs headless mismatches: FINDINGS §5.
+  - **`aggregations.overlay` is 23 live and 0 headless** on the same
+    index. Plugin follow-up.
+  - The heatmap probe point `0.9,0.5` from the handovers lands on the
+    empty part of the slot (the grid fills only ~15 %). This is a layout
+    and docs question; it is the same live and headless.
+  - Everything else agrees.
+- **Nothing needs an engine fix.** Plugin follow-ups:
+  - the aggregation counter (FINDINGS §5.1);
+  - the heatmap's use of its slot (FINDINGS §5.2).
+
+**5. Test host left as found.**
+- Theme Osaka Jade (never changed, see Decision 1).
+- `~/Seldon-e2e`, `~/.local/bin/seldon`, `~/.local/state/seldon`,
+  `~/.config/seldon`, `~/.cache/seldon-e2e` and `/tmp/seldon-wp013` are
+  absent, and the `ls -A ~` listing equals the one before the session.
+- The service shows `engineMissing`, and the session is unlocked.
+- Crash reports: still 4.
+- The plugin folder holds the fresh copy of `main` (hash `644fd01ae2c8`).
+- No editor windows I opened are left.
+- `/tmp/seldon-unlock.sh` is untouched.
+- Two things were already there before the session and are not mine:
+  the second `quickshell` process (the crash-report window of 15:13) and
+  the Navbar Cat layer.
+
+**Incident (please read `live/INCIDENT.md`).**
+- While I was driving the drift sheet, a pointer click closed the Seldon
+  panel. The next `wtype` text went into the operator's foot terminal on
+  the test host, where bash ran it: `command not found: Live`, exit 127,
+  plus two empty Returns.
+- Nothing else ran. The line is now in that shell's history; I left the
+  history alone.
+- From then on, every key went out only while a Seldon surface reported
+  `opened: true`, and text only into a field reporting `editing: true`.
+  The guard refused keys correctly twice afterwards. This rule is in
+  `memory/pitfalls.md`.
+
+**Not done in this session:**
+- the Tokyo Night and Catppuccin Latte screenshots (Decision 1);
+- the WP-040 `makepkg` build on the test host (the guard blocks package
+  builds);
+- the WP-024 theme hook install (`omarchy hook install` is guard-blocked);
+- the real default agent launch of WP-022 (deliberately replaced by a
+  harmless launcher);
+- `plugin/preview.png` (WP-041) is not mine to change. The live pill and
+  panel shots are in `live/screenshots/`.
 
 ## Review follow-up (SEND BACK → fixed)
 
@@ -225,19 +322,29 @@ The assertions the WP demands held in every passing full run:
 
 ## Decisions needed
 
-Settled at the review:
-- `SELDON_TEST_HOST`, default `test`; the operator adds the alias;
-- the `+(members−1)` badge (plugin side);
-- `init --json` (an engine follow-up);
-- the guard false positive.
-
-Open:
-
-1. **Re-running the full variant.** It is pending the operator's unlock
-   and stay-awake on the test host. After that: run
-   `SELDON_TEST_HOST=<alias> just e2e` twice. This exercises the lock
-   checks, the restore rules and the same-host guard (which passes there)
-   live.
+1. **Guard block: `omarchy theme set` over ssh.**
+   - My command was `ssh -n <test-host> '… omarchy theme set "Tokyo
+     Night"'; echo "theme set exit $?"`. The trailing `; echo` takes it
+     outside the guard's ssh-only exception, so it was blocked as a
+     system change.
+   - Per §11 and the memory rule, I did not retry it in another form. The
+     theme stayed Osaka Jade.
+   - The shots a parallel call took under the name `tokyo-night` showed
+     Osaka Jade, and I deleted them.
+   - Decide whether I (or the next live session) may run the bare form
+     the exception allows, to finish the Tokyo Night and Catppuccin Latte
+     shots. The steps are scripted (`shots <theme>` in the session
+     helper); each theme takes about 1 min.
+2. **Plugin follow-ups** from FINDINGS §5:
+   - the `aggregations.overlay` counter (23 live vs 0 headless);
+   - the heatmap filling only ~15 % of its slot, and the docs' probe
+     point outside the grid.
+3. **WP-040 and WP-024 live items** need an operator exception to the
+   guard, or a stand-in: CI for the package build, a manual run by the
+   operator for the theme hook.
+4. **The operator's shell history on the test host** has the line from
+   the incident (`Live smoke: dismissed, test host package`). Remove it
+   if wanted; I did not touch it.
 
 ## Touched outside WP scope
 
