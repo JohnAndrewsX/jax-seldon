@@ -1,14 +1,15 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Phase:** 0 — Foundation (running, tick 1 started 2026-10-01)
+**Phase:** 0 — Foundation: all nine engine/contract packages merged
+(2026-10-01); exit G3 pending the operator's run (`work/PHASE-0-EXIT.md`).
+Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active).
 **Contract version:** 1 (draft)
 **Last updated:** 2026-10-01
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-008 | Reconciliation and `drift` commands (+ `open --editor` fix) | Engine | `engine-008` (opus, high) | `wt/WP-008` · `wp/008-drift` | 2026-10-01 |
 | WP-013 | Engine ↔ plugin integration test on a real logbook | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
 | WP-020 | Work tab: three-column list, case card, new-case sheet | Plugin | `plugin-020` (opus, high) | `wt/WP-020` · `wp/020-work-tab` | 2026-10-01 |
 
@@ -28,6 +29,10 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-008 Reconciliation and `drift` commands (list/show/link/
+  explain/dismiss with group fan-out and `--only`), `after_capture` case
+  bookkeeping, ADR-0021 folding, detached editor launch — merged; 290+
+  engine tests. **Phase 0 is code-complete.**
 - 2026-10-01 WP-009 Hooks (Claude Code PreToolUse, generic, session
   start/stop, `hook install`), shared command parser `pkgcmd.rs`, shared
   attribution pass, green zone per ADR-0019 — merged after one review
