@@ -264,9 +264,10 @@ Item {
 
   // One engine invocation. A missing binary never emits `exited`: Quickshell
   // logs "Process failed to start" and drops `running` without `started`.
-  component EngineCall: Process {
+  component EngineCall: Item {
     id: call
 
+    readonly property bool running: proc.running
     property bool didStart: false
     property bool exitSeen: false
     property bool outDone: false
@@ -282,8 +283,12 @@ Item {
       call.outDone = false
       call.errDone = false
       call.code = -1
-      call.command = argv
-      call.running = true
+      proc.command = argv
+      proc.running = true
+    }
+
+    function stop() {
+      proc.running = false
     }
 
     function settle() {
@@ -291,21 +296,30 @@ Item {
         call.done(call.code, outText.text, errText.text)
     }
 
-    stdout: StdioCollector {
-      id: outText
-      onStreamFinished: { call.outDone = true; call.settle() }
+    Process {
+      id: proc
+      stdout: StdioCollector {
+        id: outText
+        onStreamFinished: { call.outDone = true; call.settle() }
+      }
+      stderr: StdioCollector {
+        id: errText
+        onStreamFinished: { call.errDone = true; call.settle() }
+      }
+      onStarted: call.didStart = true
+      onRunningChanged: if (!proc.running && !call.didStart) call.failedToStart()
     }
-    stderr: StdioCollector {
-      id: errText
-      onStreamFinished: { call.errDone = true; call.settle() }
+
+    // A Connections handler, because qmllint cannot resolve the
+    // QProcess::ExitStatus parameter of an inline onExited handler.
+    Connections {
+      target: proc
+      function onExited(exitCode, exitStatus) {
+        call.code = exitCode
+        call.exitSeen = true
+        call.settle()
+      }
     }
-    onStarted: call.didStart = true
-    onExited: function(exitCode) {
-      call.code = exitCode
-      call.exitSeen = true
-      call.settle()
-    }
-    onRunningChanged: if (!call.running && !call.didStart) call.failedToStart()
   }
 
   EngineCall {
@@ -365,7 +379,7 @@ Item {
     interval: 300000
     onTriggered: {
       console.warn("jax.seldon: engine call timed out: " + root.currentArgs.join(" "))
-      runner.running = false
+      runner.stop()
     }
   }
 
