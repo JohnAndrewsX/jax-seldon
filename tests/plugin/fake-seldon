@@ -2,7 +2,7 @@
 # Fake `seldon` for the plugin harnesses (tests/plugin/service-states.sh,
 # panel-view.sh). Speaks just enough of the CLI (SPEC-ENGINE §3) for the
 # plugin: --version, capture, status, log, open, plan new|start|verify|done|drop,
-# drift link|explain|dismiss|show.
+# drift link|explain|dismiss|show, decide.
 # Every call is logged to $HOME/calls.log as "start <cmd>" / "end <cmd>" so
 # the test can prove calls never overlap, and its exact argv to
 # $HOME/argv.log, one line per call, each argument `printf %q`-quoted (a
@@ -17,8 +17,8 @@
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
-#   FAKE_SELDON_LOCKED   if set, every `plan` and resolving `drift` call exits 4
-#                        (lock held)
+#   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift` and `decide`
+#                        call exits 4 (lock held)
 #   FAKE_SELDON_UNKNOWN_CASE  the case id `log`, `open` and `plan` do not
 #                        know (default C-2026-999): exit 1, "unknown case <id>"
 #
@@ -40,6 +40,12 @@
 # logbook the index has not caught up with), is the engine's no-op:
 # resolved 0 and `already`. `drift show` lists the open members, plus those
 # in $HOME/extra-events.json (members the capped index no longer lists).
+#
+# `decide` (WP-023) adds the next ADR, status proposed, to the state index's
+# decisions (newest first, as the engine lists them) and answers in the
+# SPEC-ENGINE §3 shape; it writes no ledger event, like the engine. `open
+# ADR-NNNN` opens the path the state index lists for it; `open logbook` the
+# logbook folder.
 #
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
@@ -328,6 +334,23 @@ drift_show() { # drift_show <id>: {event, open, item, txId, members}; members
     | {event: $e, open: ($m | length > 0), item: $item, txId: (if ($m | length) > 1 then $e.txId else null end), members: $m}' "$index"
 }
 
+decide() { # decide --no-edit [--json] -- <title>
+  local title="" id index
+  while (($# > 0)) && [[ $1 != -- ]]; do shift; done
+  title=${2:-}
+  [[ -n ${title//[[:space:]]/} ]] || user_error "the title must not be empty"
+  [[ $title != *$'\n'* ]] || user_error "the title must be one line"
+  index=$(state_index)
+  id=ADR-0001
+  [[ -f $index ]] && id=$(jq -r '[.decisions[] | .id | capture("^ADR-(?<n>[0-9]{4})$").n | tonumber] | (max // 0) + 1
+    | tostring | "ADR-" + ("0000"[0:(4 - length)]) + .' "$index")
+  rewrite_index '.decisions = [{id: $id, title: $title, status: "proposed", date: "2026-10-01",
+      path: ("decisions/" + $id + "-" + ($title | ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-")
+        | if . == "" then "decision" else . end) + ".md")}] + .decisions' --arg id "$id" --arg title "$title"
+  jq -c --arg id "$id" '{decision: ([.decisions[] | select(.id == $id)][0] + {cases: []}), editor: null,
+    git: {committed: true, message: ($id + " proposed")}}' "$index"
+}
+
 case "$cmd" in
   --version)
     echo '{"name":"seldon","version":"0.1.0-fake"}'
@@ -376,6 +399,12 @@ case "$cmd" in
       journal) path="$HOME/Seldon/journal/2026/2026-10-01.md" ;;
       ledger) path="$HOME/Seldon/ledger/2026-10.jsonl" ;;
       status) path="$HOME/Seldon/STATUS.md" ;;
+      logbook) path="$HOME/Seldon" ;;
+      ADR-*)
+        rel=$(jq -r --arg id "$what" '[.decisions[] | select(.id == $id) | .path][0] // empty' "$(state_index)" 2>/dev/null || true)
+        [[ -n $rel ]] || user_error "unknown decision $what"
+        path="$HOME/Seldon/$rel"
+        ;;
       C-*)
         [[ $what == "$unknown" ]] && user_error "unknown case $what"
         path="$HOME/Seldon/work/active/$what.md"
@@ -399,6 +428,16 @@ case "$cmd" in
       start | verify | done | drop) plan_step "$2" "${3:-}" ;;
       *) user_error "unrecognized subcommand '${2:-}'" ;;
     esac
+    ;;
+  decide)
+    sleep 0.2
+    [[ $mode == uninit ]] && uninit
+    if [[ -n ${FAKE_SELDON_LOCKED:-} ]]; then
+      echo '{"error":{"code":4,"message":"the logbook is locked by another seldon (pid 4242)"}}'
+      exit 4
+    fi
+    shift
+    decide "$@"
     ;;
   drift)
     sleep 0.2
