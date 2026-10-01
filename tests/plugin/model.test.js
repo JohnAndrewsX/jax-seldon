@@ -462,4 +462,122 @@ test("logResult, openResult, captureResult read the SPEC-ENGINE §3 shapes", () 
   same(M.captureResult(4, '{"error":{"code":4,"message":"lock held"}}', ""), { ok: false, text: "lock held" })
 })
 
+test("validateArgs: plan new takes --area and --priority, in that order, each optional", () => {
+  const base = ["plan", "new", "--zone", "yellow", "--risk", "R1"]
+  const good = [
+    base.concat(["--json", "--", "t"]),
+    base.concat(["--area", "dev-env", "--json", "--", "t"]),
+    base.concat(["--priority", "high", "--", "t"]),
+    base.concat(["--area", "a1", "--priority", "low", "--json", "--", "--help"]),
+    ["plan", "verify", "C-2026-004", "--json"]
+  ]
+  for (const a of good) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
+  const bad = [
+    base.concat(["--priority", "high", "--area", "dev-env", "--", "t"]),
+    base.concat(["--area", "Dev_Env", "--", "t"]),
+    base.concat(["--area", "-x", "--", "t"]),
+    base.concat(["--area", "--", "t"]),
+    base.concat(["--priority", "urgent", "--", "t"]),
+    base.concat(["--priority", "--", "t"]),
+    base.concat(["--area", "a", "--area", "b", "--", "t"]),
+    base.concat(["--actor", "agent:x", "--", "t"]),
+    base.concat(["--json"]),
+    ["plan", "start", "C-2026-004", "--reason", "x"],
+    ["plan", "list"], ["plan", "show", "C-2026-004"]
+  ]
+  for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
+})
+
+test("workColumns: Queued 3, Active 3 (2 active + 1 verification), Completed 2 on the sample", () => {
+  const index = JSON.parse(sample)
+  const cols = M.workColumns(index)
+  same(cols.map(c => c.id + " " + c.cases.length), ["queued 3", "active 3", "completed 2"])
+  same(cols[1].cases.map(c => c.id + " " + c.status), ["C-2026-003 active", "C-2026-004 active", "C-2026-008 verification"])
+  same(M.workCases(cols).map(c => c.id), ["C-2026-005", "C-2026-006", "C-2026-007", "C-2026-003", "C-2026-004",
+    "C-2026-008", "C-2026-002", "C-2026-001"])
+  const c5 = cols[0].cases[0]
+  same([c5.proposed, c5.stepsText, c5.tone, c5.area, c5.priority, c5.started, c5.actionable], [1, "0/4", "accent", "themes", "normal", "", true])
+  same(M.workCases(cols).filter(c => c.proposed > 0).map(c => c.id), ["C-2026-005"])
+  assert.strictEqual(cols[1].cases[0].tone, "urgent")
+  assert.strictEqual(cols[2].cases[1].tone, "muted")
+  assert.strictEqual(M.caseMeta(cols[1].cases[1]), "dev-env · priority normal · 2/4 steps")
+  assert.strictEqual(M.caseDates(cols[2].cases[0]), "created 2026-09-12 · started 2026-09-12 · closed 2026-09-13")
+  assert.strictEqual(M.caseDates(c5), "created 2026-09-29")
+  // No index, no cases, broken entries: empty columns, never a throw.
+  same(M.workColumns(null).map(c => c.cases.length), [0, 0, 0])
+  same(M.workColumns({ cases: { queued: [null, 7, { id: "x" }], active: "no" } }).map(c => c.cases.length), [1, 0, 0])
+  const odd = M.workColumns({ cases: { queued: [{ id: "C-26-1; rm", title: "t", status: "bogus", steps: { total: 2, done: 5 } }] } })[0].cases[0]
+  same([odd.status, odd.actionable, odd.stepsText], ["queued", false, "2/2"])
+  same(M.caseActions(odd), [])
+})
+
+test("wipStatus: active cases (not verification) against the limit", () => {
+  const index = JSON.parse(sample)
+  same(M.wipStatus(index, 3), { active: 2, limit: 3, text: "2 / 3 active", tone: "" })
+  same(M.wipStatus(index, 2).tone, "accent")
+  same(M.wipStatus(index, 1), { active: 2, limit: 1, text: "2 / 1 active", tone: "urgent" })
+  assert.strictEqual(M.wipStatus(null, 3).text, "0 / 3 active")
+  assert.strictEqual(M.wipStatus(index, "x").limit, 3)
+  assert.strictEqual(M.clampWipLimit(0), 1)
+  assert.strictEqual(M.clampWipLimit(99), 20)
+  assert.strictEqual(M.clampWipLimit("4"), 4)
+})
+
+test("caseActions by status (WP-020); Enter runs the first, Drop asks twice", () => {
+  const cases = M.workCases(M.workColumns(JSON.parse(sample)))
+  const by = id => M.caseActions(cases.find(c => c.id === id)).map(a => a.id + (a.primary ? "*" : "") + (a.confirm ? "?" : ""))
+  same(by("C-2026-005"), ["start*", "open"])
+  same(by("C-2026-003"), ["verify*", "drop?", "open"])
+  same(by("C-2026-008"), ["done*", "drop?", "open"])
+  same(by("C-2026-002"), ["open*"])
+  same(M.caseActions({ id: "C-2026-010", status: "dropped", actionable: true }).map(a => a.id), ["open"])
+  same(M.caseActions(null), [])
+  assert.strictEqual(M.caseAction(cases[0], "drop"), null)
+  assert.strictEqual(M.caseAction(cases[3], "drop").label, "Drop")
+})
+
+test("planArgs: fixed argv, title one argument after `--`, ids and slugs checked", () => {
+  const titles = ["--help", 'a "b" c', "-rf --zone red", "--", "$(reboot)", "Zed; rm -rf ~"]
+  for (const title of titles) {
+    const built = M.planArgs("new", { title: title, zone: "yellow", risk: "R1", priority: "normal", area: "" })
+    same(built.args, ["plan", "new", "--zone", "yellow", "--risk", "R1", "--json", "--", title])
+    assert.strictEqual(M.validateArgs(built.args), "", title)
+  }
+  same(M.planArgs("new", { title: "t" }).args, ["plan", "new", "--zone", "yellow", "--risk", "R1", "--json", "--", "t"])
+  const full = M.planArgs("new", { title: "Zed", zone: "red", risk: "R2", area: "dev-env", priority: "high" }).args
+  same(full, ["plan", "new", "--zone", "red", "--risk", "R2", "--area", "dev-env", "--priority", "high", "--json", "--", "Zed"])
+  assert.strictEqual(M.validateArgs(full), "")
+  assert.strictEqual(M.planArgs("new", { title: "  " }).error, "Give the case a title")
+  assert.strictEqual(M.planArgs("new", { title: "t", area: "Dev Env" }).error, "Area must be a lowercase slug: letters, digits and -")
+  assert.strictEqual(M.planArgs("new", { title: "t", area: "-x" }).error, "Area must be a lowercase slug: letters, digits and -")
+  assert.strictEqual(M.planArgs("new", { title: "t", zone: "purple" }).error, "Not a zone: purple")
+  assert.strictEqual(M.planArgs("new", { title: "t", risk: "R9" }).error, "Not a risk: R9")
+  assert.strictEqual(M.planArgs("new", { title: "t", priority: "urgent" }).error, "Not a priority: urgent")
+  assert.strictEqual(M.planArgs("new", { title: "a\u0000b" }).error, "The title contains a NUL character")
+  for (const step of ["start", "verify", "done", "drop"]) {
+    same(M.planArgs(step, "C-2026-005").args, ["plan", step, "C-2026-005", "--json"])
+    assert.strictEqual(M.validateArgs(M.planArgs(step, "C-2026-005").args), "")
+  }
+  assert.strictEqual(M.planArgs("start", "C-26-1; rm -rf ~").error, "Not a case id: C-26-1; rm -rf ~")
+  assert.strictEqual(M.planArgs("start", "--help").error, "Not a case id: --help")
+  assert.strictEqual(M.planArgs("finish", "C-2026-005").error, "Not a plan step: finish")
+  assert.strictEqual(M.planArgs("list", "").error, "Not a plan step: list")
+})
+
+test("planResult reads the SPEC-ENGINE §3 plan shapes", () => {
+  const step = (o) => JSON.stringify(Object.assign({ case: { id: "C-2026-005" }, movedFrom: null, activeCase: null,
+    journal: null, event: {}, git: null }, o))
+  same(M.planResult(0, step({ from: "queued", to: "active" }), ""), { ok: true, text: "C-2026-005: queued → active", caseId: "C-2026-005" })
+  same(M.planResult(0, step({ from: "verification", to: "completed", journal: "journal/2026/2026-10-01.md" }), ""),
+    { ok: true, text: "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md", caseId: "C-2026-005" })
+  same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009", title: "Zed" }, event: {}, areaCreated: null, git: null }), ""),
+    { ok: true, text: "Created C-2026-009 · Zed", caseId: "C-2026-009" })
+  same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009", title: "Zed" }, areaCreated: "dev-env" }), ""),
+    { ok: true, text: "Created C-2026-009 · Zed · new area dev-env", caseId: "C-2026-009" })
+  same(M.planResult(0, "not json", ""), { ok: true, text: "Case created", caseId: "" })
+  const refused = "C-2026-003 is active; `seldon plan done` needs a case that is verification; run `seldon plan verify` first"
+  same(M.planResult(1, JSON.stringify({ error: { code: 1, message: refused } }), ""), { ok: false, text: refused, caseId: "" })
+  same(M.planResult(4, "", "lock held"), { ok: false, text: "lock held", caseId: "" })
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

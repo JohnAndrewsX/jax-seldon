@@ -28,6 +28,11 @@ import Quickshell
 //                       ["log", text, caseId] → Service.log(text, caseId)
 //                       ["open", what]        → Service.openInEditor(what)
 //                       ["capture"]           → Service.captureNow()
+//                       ["plan", action, input] → Service.plan(action, input)
+//                                             (input: a case id, or the new
+//                                             case's form object)
+//                       ["wait"]              wait until no engine call is
+//                                             queued or running, then go on
 ShellRoot {
   id: root
 
@@ -45,6 +50,7 @@ ShellRoot {
   property bool fixesDone: fixes === ""
   property bool recheckDone: recheckMs === 0
   property bool actionsDone: actions.length === 0
+  property int actionIndex: 0
 
   function emit(tag) {
     if (!root.service) return
@@ -109,11 +115,14 @@ ShellRoot {
     onTriggered: {
       var s = root.service
       if (!s.ready || s.busy || s.probing || s.queue.length > 0) return
-      for (var i = 0; i < root.actions.length; i++) {
-        var a = root.actions[i]
+      while (root.actionIndex < root.actions.length) {
+        var a = root.actions[root.actionIndex]
+        root.actionIndex++
+        if (a[0] === "wait") return
         var done = a[0] === "log" ? s.log(a[1], a[2])
           : a[0] === "open" ? s.openInEditor(a[1])
           : a[0] === "capture" ? s.captureNow()
+          : a[0] === "plan" ? s.plan(a[1], a[2])
           : false
         console.log("HARNESS action " + JSON.stringify(a) + " " + done)
       }
