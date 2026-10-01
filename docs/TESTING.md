@@ -965,6 +965,12 @@ real name is in the git-ignored `memory/local.md`; never commit it. Under
 script exits 0 when every check passes and 1 otherwise. Either way it prints
 a summary with one line per failed check.
 
+The full run refuses to start when `SELDON_TEST_HOST` leads back to this
+machine (`localhost`, or an alias for the dev host). It compares
+`/etc/machine-id` on both sides (falling back to `hostname`) right after the
+first ssh call. That way the steps that write `~/.local/bin`,
+`~/.config/seldon` and restart the shell never run on the dev host.
+
 **Steps.** Both variants first build the static engine
 (`cargo build --release --target x86_64-unknown-linux-musl`) and run the
 same engine steps:
@@ -973,7 +979,9 @@ same engine steps:
 2. `init --non-interactive --path ~/Seldon-e2e`;
 3. `capture --all --since <now − 7 days>`: at least one package event. A
    fresh logbook records nothing older than its creation without `--since`
-   (SPEC-ENGINE §3). `SELDON_E2E_SINCE_DAYS` changes the window;
+   (SPEC-ENGINE §3). `SELDON_E2E_SINCE_DAYS` changes the window; it must
+   be a whole number of days, and anything else stops the run before the
+   build;
 4. a second `capture --all` must write 0 events (idempotency);
 5. `plan new`, then `plan start`;
 6. `log --case <id> -- <note>`. The note contains quotes and `$(…)` and must
@@ -1028,19 +1036,34 @@ in `today.entries`, and at least one package event.
   - the hash of the plugin dir and its enabled flag;
   - the theme;
   - the number of `quickshell` processes and of crash reports;
-- moves any of those four Seldon paths that exists aside into
-  `~/.cache/seldon-e2e/`, together with a copy of the plugin dir.
+- copies the plugin dir to `~/.cache/seldon-e2e/`;
+- writes `~/.cache/seldon-e2e/found.env`:
+  - whether the plugin dir existed;
+  - the enabled flag;
+  - which of the four Seldon paths were absent;
+- only then moves the Seldon paths that exist aside into
+  `~/.cache/seldon-e2e/saved/`.
+
+The enabled flag comes from `omarchy-shell shell listPlugins`, which
+answers empty while the shell rescans. The script asks up to five times.
+If it still gets no answer, the flag is recorded as unknown, and the
+restore never changes it.
 
 At the end, or on any failure through an EXIT trap, it restores the test
 host in this order:
 1. it removes the engine binary;
 2. it restores the plugin dir;
-3. it disables the plugin, if the run enabled it;
+3. it disables the plugin, but only when the flag was found `false` for
+   certain and is `true` now;
 4. it restarts the shell if the plugin code differs from what the shell
    runs, and otherwise sends `jax.seldon.service refresh`;
 5. it waits until the service has no engine call in flight;
 6. only then it removes the state, config and logbook dirs and moves the
    saved paths back.
+
+A path is removed only when it was absent at the backup or was moved
+aside. A path that the backup found but had not moved yet (a run killed
+inside the loop) is the original, so the restore keeps it and says so.
 
 It then compares the fingerprint, and checks that the service status is
 the one it found (`engineMissing` on a host without an engine).
@@ -1049,6 +1072,13 @@ If a run was killed before its restore, `~/.cache/seldon-e2e/found.env` is
 still there. The next run then restores that state first. After you kill a
 run, wait about 10 s: its last ssh command may still be running on the test
 host.
+
+The lock check (below) comes before that recovery. So a run killed on a
+host that is locked, or that locks later, leaves its leftovers on the test
+host until the operator unlocks the session. These are `~/Seldon-e2e`,
+`~/.local/bin/seldon`, the Seldon state and config dirs, the run's plugin
+code and `~/.cache/seldon-e2e/`. The plugin may meanwhile keep capturing
+into `~/Seldon-e2e`. The next run after the unlock restores them.
 
 **Locked session.** The full run refuses to start while the test host's
 session is locked (`omarchy-shell lock status`), because:
