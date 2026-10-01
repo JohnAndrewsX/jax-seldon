@@ -12,8 +12,10 @@ import qs.Commons
 // runs it against a copy of the plugin whose layer-shell window
 // (components/overlay/OverlayWindow.qml) is replaced by a stand-in Item. It
 // loads Service.qml as the shell does, puts Overlay.qml in an offscreen
-// window of HARNESS_W × HARNESS_H, hands it a stand-in shell facade (whose
-// hide() records the id and calls close(), as the shell's hide does), then
+// window of HARNESS_W × HARNESS_H the way the shell's overlay Loader does
+// (created without properties; shell, manifest and service assigned
+// afterwards), hands it a stand-in shell facade (whose hide() records the
+// id and calls close(), as the shell's hide does), then
 // runs HARNESS_STEPS and prints after each: Overlay.view(), the ids hidden
 // through the facade, every visible text and every text that leaves its
 // slot or the window.
@@ -61,6 +63,8 @@ ShellRoot {
   property bool awaitFrame: false
   readonly property var slotIds: ["heatmap", "series", "driftBars", "riskDonut", "timeline", "plan"]
   property var beforeFresh: null
+  // The last createOverlay() made the item without a service (see there).
+  property bool bare: false
 
   readonly property var keys: ({
     Left: Qt.Key_Left, Right: Qt.Key_Right, Escape: Qt.Key_Escape, Return: Qt.Key_Return, Tab: Qt.Key_Tab
@@ -229,10 +233,18 @@ ShellRoot {
     running: false
   }
 
+  // As the shell's overlay Loader does it ($OMARCHY_PATH/shell/shell.qml,
+  // onLoaded): create the item bare, then inject shell, manifest and
+  // service. Overlay.qml's bindings therefore first evaluate with
+  // `service === null`; `bare` records that the creation saw no service.
   function createOverlay() {
-    var o = root.load("Overlay.qml", win.contentItem, { service: root.service, shell: fakeShell,
-      manifest: { id: "jax.seldon" } })
-    if (o) o.anchors.fill = win.contentItem
+    var o = root.load("Overlay.qml", win.contentItem, {})
+    if (!o) return null
+    root.bare = o.service === null
+    o.anchors.fill = win.contentItem
+    if ("shell" in o) o.shell = fakeShell
+    if ("manifest" in o) o.manifest = { id: "jax.seldon" }
+    if ("service" in o) o.service = root.service
     return o
   }
 
@@ -254,6 +266,7 @@ ShellRoot {
           overlay: root.overlay.aggregationCount(),
           opened: root.overlay.opened,
           createMs: root.beforeFresh.createMs,
+          bare: root.bare,
           paints: paints,
           frames: 0,
           paintedBy: 0
