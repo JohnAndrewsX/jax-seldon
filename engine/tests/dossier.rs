@@ -533,6 +533,49 @@ fn without_omarchys_lists_every_package_is_the_users() {
 }
 
 #[test]
+fn a_later_cased_event_fills_only_an_empty_case_cell() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let lb = fixture_copy(&env);
+    let deviations = read(&lb.join("system/deviations.md"));
+    let event = |path: &str, case: &str| {
+        run_at(
+            &env,
+            &lb,
+            NOW,
+            &[
+                "event",
+                "config",
+                "config-change",
+                "--subject",
+                path,
+                "--case",
+                case,
+            ],
+            0,
+        );
+    };
+    // ~/.bashrc has a row without a case; monitors.conf has one with
+    event("~/.bashrc", "C-2026-004");
+    event("~/.config/hypr/monitors.conf", "C-2026-004");
+    let out = dossier(&env, &lb, &["--section", "deviations"]);
+    assert_eq!(out["sections"]["deviations.table"], "written", "{out}");
+    let new = read(&lb.join("system/deviations.md"));
+    assert_eq!(
+        new,
+        deviations.replace(
+            "| ~/.bashrc | mise-Aktivierung | 2026-09-01 | — |",
+            "| ~/.bashrc | mise-Aktivierung | 2026-09-01 | [[C-2026-004]] |"
+        ),
+        "only the empty case cell changed"
+    );
+    assert!(new.contains("| ~/.config/hypr/monitors.conf | Dual-WQHD, Skalierung 1.25 | 2026-09-12 | [[C-2026-002]] |"));
+    let again = dossier(&env, &lb, &["--section", "deviations"]);
+    assert_eq!(again["files"], json!([]), "{again}");
+    assert_eq!(read(&lb.join("system/deviations.md")), new);
+}
+
+#[test]
 fn exit_codes_follow_the_spec() {
     let env = Env::new(Snapper::Missing);
     env.query_shims();
