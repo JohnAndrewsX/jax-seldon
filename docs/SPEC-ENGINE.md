@@ -259,7 +259,14 @@ Resolution events (`kind: resolution`, `refersTo`) are applied when the
 index is built; an event with a resolution is not drift. `seldon drift
 link|explain|dismiss <id>` on a group member resolves every member that is
 open at that moment, one resolution line per member in one write with
-`meta.txId`; `--only` resolves the named event alone (ADR-0013 §4).
+`meta.txId`; `--only` resolves the named event alone (ADR-0013 §4) and
+does not fan out to the explicit event's dependencies (rule 2 is
+satisfied at capture and by the fan-out without `--only`). A resolved
+event is no longer a group handle: after `--only` on a leader, the rest
+is a new item with its own leader and the old id resolves nothing (exit
+0, `resolved: 0`). `drift link` accepts a completed or dropped case as
+target (retro-links). `drift explain` creates a completed retroactive
+case and the index folds its `case` onto the explained event (ADR-0021).
 
 ## 6. Index build
 
