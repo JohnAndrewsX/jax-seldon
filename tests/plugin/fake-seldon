@@ -2,7 +2,7 @@
 # Fake `seldon` for the plugin harnesses (tests/plugin/service-states.sh,
 # panel-view.sh). Speaks just enough of the CLI (SPEC-ENGINE §3) for the
 # plugin: --version, capture, status, log, open, plan new|start|verify|done|drop,
-# drift link|explain|dismiss|show, decide.
+# drift link|explain|dismiss|show, decide, agent start.
 # Every call is logged to $HOME/calls.log as "start <cmd>" / "end <cmd>" so
 # the test can prove calls never overlap, and its exact argv to
 # $HOME/argv.log, one line per call, each argument `printf %q`-quoted (a
@@ -17,10 +17,12 @@
 #                        once `capture` has run twice (the user's
 #                        "Capture now" after the start-up capture)
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
-#   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift` and `decide`
-#                        call exits 4 (lock held)
-#   FAKE_SELDON_UNKNOWN_CASE  the case id `log`, `open` and `plan` do not
-#                        know (default C-2026-999): exit 1, "unknown case <id>"
+#   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift`, `decide` and
+#                        `agent` call exits 4 (lock held)
+#   FAKE_SELDON_UNKNOWN_CASE  the case id `log`, `open`, `plan` and `agent`
+#                        do not know (default C-2026-999): exit 1, "unknown case <id>"
+#   FAKE_SELDON_NO_LAUNCHER  if set, `agent start` answers as the engine does
+#                        without `omarchy` on PATH (exit 1)
 #
 # `plan` treats the index the fake last wrote (the state index) as its
 # logbook: a case's status is the one the index lists, unless $HOME/cases
@@ -46,6 +48,11 @@
 # SPEC-ENGINE §3 shape; it writes no ledger event, like the engine. `open
 # ADR-NNNN` opens the path the state index lists for it; `open logbook` the
 # logbook folder.
+#
+# `agent start <id>` (WP-022) checks the case like the engine (status from
+# the state index or $HOME/cases: active only, queued gets the `seldon plan
+# start` hint), launches nothing, and answers with the engine's JSON for
+# the default launcher; it writes the id to $HOME/active-case.
 #
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
@@ -351,6 +358,20 @@ decide() { # decide --no-edit [--json] -- <title>
     git: {committed: true, message: ($id + " proposed")}}' "$index"
 }
 
+agent_start() { # agent_start <id> — the engine's checks and answer, no launch
+  local id=$1 status
+  [[ $id == "$unknown" ]] && user_error "unknown case $id"
+  status=$(case_status "$id")
+  [[ -n $status ]] || user_error "unknown case $id"
+  [[ $status == queued ]] && user_error "$id is queued; start it first: \`seldon plan start $id\`"
+  [[ $status == active ]] || user_error "$id has status $status; an agent starts on an active case only"
+  [[ -n ${FAKE_SELDON_NO_LAUNCHER:-} ]] \
+    && user_error "launcher \`default\`: \`omarchy\` not found; set \`[agent] launcher\` in config.toml"
+  echo "$id" >"$HOME/active-case"
+  jq -cn --arg id "$id" --arg cwd "$HOME/Seldon" '{launched: true, launcher: "default", program: "omarchy",
+    argv: ["omarchy", "agent", "prompt", "{prompt}"], case: $id, cwd: $cwd, previousActiveCase: null}'
+}
+
 case "$cmd" in
   --version)
     echo '{"name":"seldon","version":"0.1.0-fake"}'
@@ -452,6 +473,18 @@ case "$cmd" in
         shift
         drift_cmd "$@"
         ;;
+      *) user_error "unrecognized subcommand '${2:-}'" ;;
+    esac
+    ;;
+  agent)
+    sleep 0.2
+    [[ $mode == uninit ]] && uninit
+    if [[ -n ${FAKE_SELDON_LOCKED:-} ]]; then
+      echo '{"error":{"code":4,"message":"the logbook is locked by another seldon (pid 4242)"}}'
+      exit 4
+    fi
+    case "${2:-}" in
+      start) agent_start "${3:-}" ;;
       *) user_error "unrecognized subcommand '${2:-}'" ;;
     esac
     ;;

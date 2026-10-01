@@ -543,9 +543,12 @@ test("wipStatus: active cases (not verification) against the limit", () => {
 
 test("caseActions by status (WP-020); Enter runs the first, Drop asks twice", () => {
   const cases = M.workCases(M.workColumns(JSON.parse(sample)))
-  const by = id => M.caseActions(cases.find(c => c.id === id)).map(a => a.id + (a.primary ? "*" : "") + (a.confirm ? "?" : ""))
+  const by = id => M.caseActions(cases.find(c => c.id === id))
+    .map(a => a.id + (a.primary ? "*" : "") + (a.confirm ? "?" : "") + (a.twice ? "!" : ""))
   same(by("C-2026-005"), ["start*", "open"])
-  same(by("C-2026-003"), ["verify*", "drop?", "open"])
+  // Start agent (WP-022) only on an active case, never the first action
+  same(by("C-2026-003"), ["verify*", "agent!", "drop?", "open"])
+  assert.strictEqual(M.caseAction(cases.find(c => c.id === "C-2026-003"), "agent").label, "Start agent")
   same(by("C-2026-008"), ["done*", "drop?", "open"])
   same(by("C-2026-002"), ["open*"])
   same(M.caseActions({ id: "C-2026-010", status: "dropped", actionable: true }).map(a => a.id), ["open"])
@@ -596,6 +599,35 @@ test("planResult reads the SPEC-ENGINE §3 plan shapes", () => {
   const refused = "C-2026-003 is active; `seldon plan done` needs a case that is verification; run `seldon plan verify` first"
   same(M.planResult(1, JSON.stringify({ error: { code: 1, message: refused } }), ""), { ok: false, text: refused, caseId: "" })
   same(M.planResult(4, "", "lock held"), { ok: false, text: "lock held", caseId: "" })
+})
+
+test("Start agent (WP-022): agentArgs, agentResult, the allow-list, the agents line", () => {
+  same(M.agentArgs("C-2026-003").args, ["agent", "start", "C-2026-003", "--json"])
+  assert.strictEqual(M.validateArgs(M.agentArgs("C-2026-003").args), "")
+  for (const bad of ["C-26-1; rm -rf ~", "--help", "", null, "C-2026-003 --launcher x"])
+    assert.strictEqual(M.agentArgs(bad).error, "Not a case id: " + (bad === null ? "" : bad), String(bad))
+  // only `agent start <caseId> --json`: no launcher, no free text, no other verb
+  for (const args of [["agent", "start", "C-2026-003"], ["agent", "start", "C-2026-003", "--launcher", "x", "--json"],
+    ["agent", "stop", "C-2026-003", "--json"], ["agent", "start", "C-26-1", "--json"],
+    ["agent", "start", "C-2026-003", "--json", "--", "text"], ["agent", "--json"]])
+    assert.notStrictEqual(M.validateArgs(args), "", JSON.stringify(args))
+  const answer = { launched: true, launcher: "default", program: "omarchy", argv: ["omarchy", "agent", "prompt", "{prompt}"],
+    case: "C-2026-003", cwd: "/home/u/Seldon", previousActiveCase: null }
+  same(M.agentResult(0, JSON.stringify(answer), ""),
+    { ok: true, text: "Agent started on C-2026-003 · launcher default (omarchy)", caseId: "C-2026-003" })
+  same(M.agentResult(0, JSON.stringify(Object.assign({}, answer, { launcher: "omarchy" })), "").text,
+    "Agent started on C-2026-003 · launcher omarchy")
+  same(M.agentResult(0, "not json", ""), { ok: true, text: "Agent started on the case", caseId: "" })
+  const queued = "C-2026-005 is queued; start it first: `seldon plan start C-2026-005`"
+  same(M.agentResult(1, JSON.stringify({ error: { code: 1, message: queued } }), ""), { ok: false, text: queued, caseId: "" })
+  // the agents line from the schema's `agents`
+  const cases = M.workCases(M.workColumns(JSON.parse(sample)))
+  for (const c of cases) assert.ok(Array.isArray(c.agents), c.id)
+  assert.strictEqual(M.caseAgents({ agents: [] }), "")
+  assert.strictEqual(M.caseAgents({ agents: ["agent:claude-code"] }), "agent: claude-code")
+  assert.strictEqual(M.caseAgents({ agents: ["agent:claude-code", "agent:codex"] }), "agents: claude-code, codex")
+  assert.strictEqual(M.caseAgents(null), "")
+  same(M.workColumns({ cases: { active: [{ id: "C-2026-001", agents: ["agent:x", 7, null, ""] }] } })[1].cases[0].agents, ["agent:x"])
 })
 
 // ---- Drift sheet (WP-021) ----

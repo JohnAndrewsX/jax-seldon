@@ -321,7 +321,7 @@ clean_log refuse
 #    text, the proposedEvents badge on C-2026-005, the card of the case under
 #    the cursor with its actions by status. The cursor walks the columns in
 #    order; nothing can be armed or run without an engine to write.
-run work "$fx/index.sample.json" "text:3;view;key:Down;key:Down*3;key:Down*2;key:Return;text:x;key:Down*5;key:Up*9"
+run work "$fx/index.sample.json" "text:3;view;key:Down;key:Down*3;key:Down*2;key:Return;text:x;key:Down*5;key:Up*9;key:Down*3;text:a;click:Start agent"
 expect work 1 .view.tab work
 expect work 1 '.view.work.columns | join(",")' "queued 3,active 3,completed 2"
 expect work 1 '.view.work.ids | join(" | ")' \
@@ -340,7 +340,8 @@ expect work 1 '[.texts[] | select(. == "1 proposed")] | length' 1
 expect work 3 .view.cursorActive true
 expect work 3 .view.work.cursor C-2026-005
 expect work 4 .view.work.cursor C-2026-003
-expect work 4 '.view.work.card.actions | join(",")' "Verify,Drop,Open"
+expect work 4 '.view.work.card.actions | join(",")' "Verify,Start agent,Drop,Open"
+shows work 4 "agent: claude-code"
 shows work 4 "red · R2"
 shows work 4 "shell · priority high · 4/5 steps"
 shows work 4 "created 2026-09-26 · started 2026-10-01"
@@ -354,6 +355,12 @@ expect work 8 .view.work.cursor C-2026-001
 expect work 8 '.view.work.card.actions | join(",")' "Open"
 shows work 8 "created 2026-09-01 · started 2026-09-01 · closed 2026-09-01"
 expect work 9 .view.work.cursor C-2026-005
+# Start agent (WP-022) is gated by canWrite: neither key a nor a click arms it
+expect work 10 .view.work.cursor C-2026-003
+expect work 11 .view.work.card.armed ""
+expect work 11 .view.work.card.hint "Dev mode is read-only"
+expect work 12 .view.work.card.armed ""
+expect work 12 .view.work.result ""
 clean_log work
 
 # 10. Work tab live, against the fake engine: a new case through the sheet
@@ -407,7 +414,7 @@ expect work-live 26 '.view.work.columns | join(",")' "queued 3,active 4,complete
 expect work-live 26 .view.work.result "C-2026-005: queued → active"
 expect work-live 26 .view.work.wip "3 / 3 active"
 shows work-live 26 "3 / 3 active · at the limit"
-expect work-live 26 '.view.work.card.actions | join(",")' "Verify,Drop,Open"
+expect work-live 26 '.view.work.card.actions | join(",")' "Verify,Start agent,Drop,Open"
 expect work-live 29 .view.work.result "C-2026-005: active → verification"
 expect work-live 32 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
 expect work-live 32 .view.work.result "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md"
@@ -448,6 +455,51 @@ else
   fail=$((fail + 1)); echo "FAIL work-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
 fi
 clean_log work-live
+
+# 10b. Start agent (WP-022), live against the fake engine: key a on a
+#     queued case does nothing; on the active C-2026-003 the first a arms
+#     (hint, "Confirm start agent"), Enter re-arms the first action (Verify)
+#     instead, a and a again runs `agent start C-2026-003 --json` and the
+#     result line names the launcher. With the mouse on C-2026-004: a click
+#     arms, a second click (Confirm) runs; the fake engine's logbook has
+#     C-2026-004 queued, so the engine's refusal (with its `seldon plan
+#     start` hint) is the result line and never the banner.
+mkdir -p "$work/home-agent"
+echo "C-2026-004 queued" >"$work/home-agent/cases"
+run work-agent "" \
+  "text:3;key:Down;text:a;key:Down*3;text:a;key:Return;text:a;text:a;settle;key:Down;click:Start agent;click:Confirm start agent;settle" \
+  HOME="$work/home-agent" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect work-agent 2 .view.work.cursor C-2026-005
+expect work-agent 3 .view.work.card.armed ""
+expect work-agent 4 .view.work.cursor C-2026-003
+shows work-agent 4 "agent: claude-code"
+shows work-agent 4 "Start agent"
+expect work-agent 5 .view.work.card.armed agent
+expect work-agent 5 .view.work.card.hint "Start agent on C-2026-003? Press a again or click Confirm start agent."
+shows work-agent 5 "Confirm start agent"
+expect work-agent 6 .view.work.card.armed verify
+expect work-agent 7 .view.work.card.armed agent
+expect work-agent 9 .view.work.result "Agent started on C-2026-003 · launcher default (omarchy)"
+expect work-agent 9 .view.work.resultOk true
+expect work-agent 9 .view.work.card.armed ""
+shows work-agent 9 "Agent started on C-2026-003 · launcher default (omarchy)"
+expect work-agent 10 .view.work.cursor C-2026-004
+expect work-agent 11 .view.work.card.armed agent
+expect work-agent 11 .view.work.result "Agent started on C-2026-003 · launcher default (omarchy)"
+refusal='C-2026-004 is queued; start it first: `seldon plan start C-2026-004`'
+expect work-agent 13 .view.work.result "$refusal"
+expect work-agent 13 .view.work.resultOk false
+expect work-agent 13 .view.lastError ""
+shows work-agent 13 "$refusal"
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q agent start C-2026-003 --json)" "$(q agent start C-2026-004 --json)")
+got=$(cat "$work/home-agent/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   work-agent: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL work-agent: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log work-agent
 
 # 11. The engine refuses the new case (lock held, exit 4): the sheet shows
 #     its message and keeps the title; Esc gives the keys back and keeps it;

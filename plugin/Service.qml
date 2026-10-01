@@ -102,8 +102,9 @@ Item {
 
   // The last result of each panel action, { ok, pending, text } or null:
   // QuickEntry (`log`), Open in editor (`open`), Capture now (`capture`),
-  // the Work tab's case actions and new-case sheet (`plan`; also `action`
-  // and `caseId`, the case the result is about), the drift sheet (`drift`;
+  // the Work tab's case actions, Start agent and new-case sheet (`plan`;
+  // also `action` — a plan verb, "new" or "agent" — and `caseId`, the case
+  // the result is about), the drift sheet (`drift`;
   // also `action`, `eventId`, `caseId` — the linked or created case — and
   // `already` for a no-op re-run), the new-decision sheet (`decide`; also
   // `decisionId`, the created decision, which is then opened in the editor).
@@ -250,6 +251,26 @@ Item {
     return true
   }
 
+  // Work tab, an active case's *Start agent* (WP-022): `seldon agent start
+  // <caseId> --json`. The engine launches the configured agent detached and
+  // answers at once; the answer shares the plan result line (`action`
+  // "agent") and its one-at-a-time rule.
+  function startAgent(caseId) {
+    if (root.planResult && root.planResult.pending) return false
+    var built = Model.agentArgs(caseId)
+    var id = String(caseId || "")
+    if (built.error) {
+      root.planResult = { ok: false, pending: false, text: built.error, action: "agent", caseId: id }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.planResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, action: "agent", caseId: id }
+      return false
+    }
+    root.planResult = { ok: true, pending: true, text: "Starting an agent on " + id + "…", action: "agent", caseId: id }
+    return true
+  }
+
   // Drift sheet: `seldon drift link|explain|dismiss …` (input: { eventId,
   // caseId, only, text, zone, risk, area, itemZone }, see Model.driftArgs).
   // One drift call at a time; the resolved rows arrive with the index.
@@ -308,6 +329,10 @@ Item {
       result.action = args[1]
       if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
       root.planResult = result
+    } else if (args[0] === "agent") {
+      result.action = "agent"
+      if (result.caseId === undefined || result.caseId === "") result.caseId = args[2]
+      root.planResult = result
     } else if (args[0] === "drift" && args[1] === "show") {
       result.eventId = args[2]
       if (result.members === undefined) result.members = []
@@ -357,6 +382,7 @@ Item {
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
       : args[0] === "plan" ? Model.planResult(exitCode, out, err)
+      : args[0] === "agent" ? Model.agentResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
       : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
       : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
@@ -374,9 +400,9 @@ Item {
       root.engineNotInitialised = true
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
-    } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "drift" && args[0] !== "decide") {
-      // QuickEntry, the Work tab, the drift sheet and the new-decision sheet
-      // show their own errors in place.
+    } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide") {
+      // QuickEntry, the Work tab (case actions, Start agent), the drift sheet
+      // and the new-decision sheet show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch

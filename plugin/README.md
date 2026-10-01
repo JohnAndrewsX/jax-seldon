@@ -82,13 +82,24 @@ actions its status allows:
 | Status | Actions |
 |---|---|
 | queued | *Start*, *Open* |
-| active | *Verify*, *Drop*, *Open* |
+| active | *Verify*, *Start agent*, *Drop*, *Open* |
 | verification | *Done*, *Drop*, *Open* |
 | completed, dropped | *Open* |
 
 *Start*, *Verify*, *Done* and *Drop* run `seldon plan start|verify|done|drop
 <id>`; *Open* opens the case file in the editor. A click runs the action,
-except *Drop*, which asks for a second click (a dropped case stays dropped).
+except *Drop*, which asks for a second click (a dropped case stays dropped),
+and *Start agent*, which also asks twice.
+
+*Start agent* runs `seldon agent start <id> --json`: the engine makes the
+case the active case and launches the agent configured in
+`~/.config/seldon/config.toml` (`[agent] launcher`; by default `omarchy
+agent prompt`, Omarchy's default coding agent in its own window) with the
+case's context as its first prompt. The result line says which launcher
+started, or why not (a queued case: start it first; no default agent; no
+launcher). The plugin passes nothing but the case id; the launcher and its
+rules are the engine's (`engine/hooks/README.md`). The card shows the
+agents a case lists, e.g. "agent: claude-code".
 The line under the WIP text shows the engine's answer, e.g. `C-2026-005:
 queued → active`, or why it refused; the case moves to its new column when
 the engine rewrites the index, and the cursor goes with it. If the index is
@@ -160,6 +171,7 @@ reason" (a click opens the drift sheet for the first of them).
 | ↑ / ↓, k / j | move in the list; on Work, through the cases column by column |
 | Enter, Space | open the row (the full text, yesterday's entries); on an unexplained Changelog row, the drift sheet; on Work, the card's first action: *Open* at once, *Start*, *Verify* or *Done* on the second press; on Decisions and Memory, the file in the editor |
 | x | Work: drop the case under the cursor, on the second press |
+| a | Work: start an agent on the active case under the cursor, on the second press |
 | f / F | Changelog: next / previous source filter |
 | c | capture now |
 | n | write a note: focuses the QuickEntry (from any tab) |

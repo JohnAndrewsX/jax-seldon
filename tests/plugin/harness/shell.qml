@@ -127,6 +127,7 @@ ShellRoot {
           : a[0] === "open" ? s.openInEditor(a[1])
           : a[0] === "capture" ? s.captureNow()
           : a[0] === "plan" ? s.plan(a[1], a[2])
+          : a[0] === "agent" ? s.startAgent(a[1])
           : a[0] === "drift" ? s.drift(a[1], a[2])
           : a[0] === "driftShow" ? s.driftShow(a[1])
           : a[0] === "decide" ? s.decide(a[1])
