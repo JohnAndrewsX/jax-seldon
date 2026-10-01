@@ -1,0 +1,9 @@
+n → tab ["today",true]
+QuickEntry → {"entries":5,"result":"Saved to the journal · 01M3WMX5SA5TXH7NYYTNVDGSQB","editing":true}
+Esc → editing [true,false]
+{"kind":"note","detail":"--help live note: a \"b\" c","case":null}
+c → capturing false
+capture → {"capturing":false,"captureResult":"nothing new · failing: snapper"}
+e (Today) → openResult Opened ~/Seldon-e2e/journal/2026/2026-10-01.md in omarchy-launch-editor, lastError 
+[{"class":"org.omarchy.btop","title":"foot","pid":28813},{"class":"org.omarchy.nvim","title":"foot","pid":1995696}]
+after 16 s: [{"class":"org.omarchy.btop","pid":28813},{"class":"org.omarchy.nvim","pid":1995696}], lastError 

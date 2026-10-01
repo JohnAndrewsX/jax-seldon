@@ -1,0 +1,10 @@
+nvim windows: []
+decisions → {"rows":["ADR-0004 proposed","ADR-0003 accepted","ADR-0002 accepted","ADR-0001 accepted"],"cursor":"ADR-0001"}
+d → {"open":true,"editing":true,"title":"","armed":false,"hint":"","result":""}
+1st Enter → {"armed":true,"hint":"Press Enter again: create the decision “Live smoke decision”"}
+2nd Enter → {"result":"Created ADR-0005 · Live smoke decision","resultOk":true,"rows":["ADR-0005 proposed","ADR-0004 proposed","ADR-0003 accepted","ADR-0002 accepted","ADR-0001 accepted"]}
+ADR-0004-ollama-user-service.md
+ADR-0005-live-smoke-decision.md
+title: "Live smoke decision"
+status: proposed
+editor windows: [{"class":"org.omarchy.nvim","pid":1999453}]

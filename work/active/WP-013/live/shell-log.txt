@@ -1,0 +1,10 @@
+lines: 31, Configuration Loaded: 1
+WARN/ERROR naming jax.seldon:
+(end)
+all WARN/ERROR sources:
+      4 plugins/com.mirashif.omalauncher
+      6 plugins/patrickfanella.superproductivity
+      1 plugins/shafayet.finder
+      2 qt.core.qobject.connect
+      1 qt.qml.context
+      1 qt.qpa.services

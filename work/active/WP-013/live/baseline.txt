@@ -1,0 +1,12 @@
+unlocked
+Osaka Jade
+absent Seldon-e2e
+absent .local/bin/seldon
+absent .local/state/seldon
+absent .config/seldon
+absent .cache/seldon-e2e
+absent /tmp/seldon-wp013
+2
+4
+0a0c64c0c40b
+43

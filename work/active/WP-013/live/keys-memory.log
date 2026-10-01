@@ -1,0 +1,4 @@
+memory → {"rows":["lesson `omarchy pkg add` statt yay direkt","lesson Theme-Overrides nie im Omarchy-Repo","lesson Hyprland reload nach bindings.conf","topic omarchy","topic hyprland"],"sections":["LESSONS","TOPICS"],"cursor":"`omarchy pkg add` statt yay direkt"}
+Down → cursor [true,"Theme-Overrides nie im Omarchy-Repo"]
+Enter → openResult Opened ~/Seldon-e2e in omarchy-launch-editor lastError 
+[{"class":"org.omarchy.nvim","title":"foot","pid":1999847}]

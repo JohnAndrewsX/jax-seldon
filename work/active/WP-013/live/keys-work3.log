@@ -1,0 +1,11 @@
+tab work
+cursor → {"id":"C-2026-003","status":"active","actions":["Verify","Start agent","Drop","Open"]}
+a (1st) → {"armed":"agent","hint":"Start agent on C-2026-003? Press a again or click Confirm start agent."}
+a (2nd) → {"result":"Agent started on C-2026-003 · launcher default (/usr/bin/true)","resultOk":true}
+active-case: C-2026-003
+launch log: 
+cursor → {"id":"C-2026-004","status":"active","actions":["Verify","Start agent","Drop","Open"]}
+x (1st) → {"armed":"drop","hint":"Drop C-2026-004? Press x again or click Confirm drop. This is final."}
+move disarms → {"id":"C-2026-004","armed":""}
+x x → {"result":"C-2026-004: active → dropped","columns":["queued 3","active 2","completed 4"]}
+C-2026-004-zed.md

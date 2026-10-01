@@ -1,0 +1,14 @@
+["brave-music.youtube.com__-Default","org.omarchy.btop","org.keepassxc.KeePassXC","brave-browser","foot","org.quickshell","org.omarchy.nvim"]
+work → {"columns":["queued 3","active 3","completed 2"],"ids":["C-2026-005,C-2026-006,C-2026-007","C-2026-003,C-2026-004,C-2026-008","C-2026-002,C-2026-001"],"wip":"2 / 3 active","cursor":"C-2026-005"}
++ → {"open":true,"editing":true,"title":"","zone":"yellow","risk":"R1","priority":"normal","area":"","result":""}
+typed → {"title":"Live smoke case","zone":"yellow","risk":"R1","priority":"normal"}
+Return → {"result":"Created C-2026-009 · Live smoke case","resultOk":true,"ids":["C-2026-005,C-2026-006,C-2026-007,C-2026-009","C-2026-003,C-2026-004,C-2026-008","C-2026-002,C-2026-001"],"sheet":false}
+[1995696]
+cursor → {"id":"C-2026-009","status":"queued","actions":["Start","Open"],"proposed":0,"armed":"","hint":""}
+start 1st Enter → armed {"armed":"start","hint":"Press Enter again: Start C-2026-009"}
+start 2nd Enter → {"result":"C-2026-009: queued → active","columns":["queued 3","active 4","completed 2"],"card":"active"}
+verify 1st Enter → armed {"armed":"verify","hint":"Press Enter again: Verify C-2026-009"}
+verify 2nd Enter → {"result":"C-2026-009: active → verification","columns":["queued 3","active 4","completed 2"],"card":"verification"}
+done 1st Enter → armed {"armed":"done","hint":"Press Enter again: Done C-2026-009"}
+done 2nd Enter → {"result":"C-2026-009: verification → completed · journal journal/2026/2026-10-01.md","columns":["queued 3","active 3","completed 3"],"card":"completed"}
+9:C-2026-009-live-smoke-case.md

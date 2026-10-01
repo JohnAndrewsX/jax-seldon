@@ -1,0 +1,5 @@
+Tab → seldon opened true; clients changed: no; layers ["navbar-cat","omarchy-background","omarchy-bar","omarchy-keyboard-panel","omarchy-notifications","omasettings"]
+reopen via IPC → true
+Shift-Tab → seldon opened true; clients changed: no
+after Esc: ["navbar-cat","omarchy-background","omarchy-bar","omarchy-keyboard-panel","omarchy-notifications"], seldon panel true
+final: ["navbar-cat","omarchy-background","omarchy-bar","omarchy-notifications"], seldon panel false

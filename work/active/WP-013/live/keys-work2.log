@@ -1,0 +1,8 @@
+cursor → {"id":"C-2026-007","status":"queued","actions":["Start","Open"]}
+x (1st) → {"armed":"","hint":""}
+x (2nd) → {"result":"C-2026-009: verification → completed · journal journal/2026/2026-10-01.md","columns":["queued 3","active 3","completed 3"]}
+cursor → {"id":"C-2026-007","status":"queued","actions":["Start","Open"]}
+a (1st) → {"armed":"","hint":""}
+a (2nd) → {"result":"C-2026-009: verification → completed · journal journal/2026/2026-10-01.md","resultOk":true}
+
+["brave-music.youtube.com__-Default","org.omarchy.btop","org.keepassxc.KeePassXC","brave-browser","foot","org.quickshell","org.omarchy.nvim"]
