@@ -368,8 +368,15 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
         json["crisis"] = json!(crisis);
     }
 
-    let commit = match ctx.open_logbook() {
-        Ok((config, logbook)) => autocommit(ctx, &config, &logbook, &summary),
+    // commit, then rebuild under the same lock, so `logbook.git` in the
+    // index names the new head and a clean tree (like `log` and `drift`)
+    let commit = match ctx.lock().and_then(|lock| Ok((lock, ctx.open_logbook()?))) {
+        Ok((lock, (config, logbook))) => {
+            let commit = autocommit(ctx, &config, &logbook, &summary);
+            crate::index::rebuild_if_initialised(ctx);
+            drop(lock);
+            commit
+        }
         Err(e) => Commit::Failed(e.to_string()),
     };
     human.push_str(&commit.human().replace('\n', "; "));

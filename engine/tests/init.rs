@@ -483,6 +483,39 @@ mod setup {
         let text = stdout(&human);
         assert!(text.contains("First capture: 0 event(s)"), "{text}");
         assert!(!text.contains("First capture: skipped"), "{text}");
+
+        // with git: the index is rebuilt after the capture's commit, so it
+        // names the new head and a clean tree, not the state before it
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            return;
+        }
+        // a backfill, so the capture changes the logbook and commits
+        let out = init_with(
+            &env,
+            &fixture("logs/pacman.log"),
+            &["--json", "--since", "2026-08-01"],
+            &[("SELDON_OMARCHY", &no_omarchy(&env))],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let root = env.tmp.path().join("logbook");
+        assert_eq!(
+            stdout(&env.git(&root, &["log", "--format=%s"])),
+            "seldon: first capture\nseldon: init logbook\n"
+        );
+        let head = stdout(&env.git(&root, &["rev-parse", "HEAD"]));
+        let index: serde_json::Value = serde_json::from_str(&common::read(
+            &env.home.join(".local/state/seldon/index.json"),
+        ))
+        .unwrap();
+        let git = &index["logbook"]["git"];
+        let short = git["head"].as_str().unwrap();
+        assert!(
+            !short.is_empty() && head.starts_with(short),
+            "{git} vs {head}"
+        );
+        assert_eq!(git["dirty"], false, "{git}");
+        assert_eq!(stdout(&env.git(&root, &["status", "--porcelain"])), "");
     }
 
     #[test]
