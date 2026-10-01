@@ -7,6 +7,20 @@ Branch `wp/022-start-agent`, worktree `wt/WP-022`, based on `main` at
 
 ## Done
 
+**Rebased onto `main` at `2b9e5e2`** (WP-023 merged; round 2 APPROVE).
+Conflicts in `plugin/Service.qml`, `tests/plugin/fake-seldon`,
+`tests/plugin/service-states.sh`, `docs/TESTING.md` and
+`memory/pitfalls.md` were resolved by keeping both sides:
+- `runnerDone`'s in-place list holds `agent` and `decide`;
+- the fake engine has both `decide` and `agent start`, and its header
+  covers both. `FAKE_SELDON_LOCKED` now names `decide` and `agent`;
+- service-states has WP-023's #28/#29 and Start agent, renumbered to #30;
+- TESTING.md keeps both layer-2 paragraphs and both smoke steps;
+- pitfalls.md keeps both appends.
+The harness comment now lists `["agent", caseId]`. `just check` → `check:
+ok`, exit 0: model 54, service-states 189, panel-view 548, qmllint 18
+files, tokens 385 references.
+
 **Engine: `seldon agent start <caseId> [--launcher NAME] [--json]`**
 (`engine/src/commands/agent.rs`; `main.rs`: one variant and one arm;
 `commands/mod.rs`: `pub mod agent`)
