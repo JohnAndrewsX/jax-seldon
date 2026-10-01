@@ -282,6 +282,11 @@ fn link_explain_dismiss_append_valid_resolutions_and_the_rows_disappear() {
     assert_eq!(event(THEME)["case"], "C-2026-005");
     assert_eq!(event(OLLAMA)["resolution"], "explained");
     assert_eq!(
+        event(OLLAMA)["case"],
+        "C-2026-009",
+        "ADR-0021: the explained event carries its new case"
+    );
+    assert_eq!(
         event(UNIT)["resolutionDetail"],
         "--user unit, tested by hand"
     );
@@ -651,5 +656,66 @@ fn a_caseless_install_is_one_group_and_links_as_one() {
             .len(),
         2
     );
+    assert_eq!(drift(&env, &lb)["openDrift"], 0);
+}
+
+/// Rule 1 through the hook and the shared attribution pass (WP-009): an
+/// agent's in-place edit of a watched config file under the active case.
+/// After `capture` the config change carries the case, and the case file
+/// lists the hook's command and the change, oldest first. Real clock:
+/// `capture` has no `SELDON_NOW`.
+#[test]
+fn a_hooked_config_edit_lands_in_the_case_file() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let env = Env::new(Snapper::Missing);
+    let lb = env.init_logbook();
+    let conf = env.home.join(".config/hypr/bindings.conf");
+    std::fs::create_dir_all(conf.parent().unwrap()).unwrap();
+    std::fs::write(&conf, "bindd = SUPER, E, Editor, exec, nvim\n").unwrap();
+    let seldon = |args: &[&str], stdin: &str| {
+        let mut child = env
+            .command(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        out
+    };
+    seldon(&["plan", "new", "--", "Zed as editor"], "");
+    seldon(&["plan", "start", "C-2026-001"], "");
+    seldon(&["capture", "--source", "config"], ""); // baseline
+    let payload = json!({
+        "session_id": "s-1",
+        "cwd": lb,
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_use_id": "toolu_1",
+        "tool_input": {"command": "sed -i 's/nvim/zeditor/' ~/.config/hypr/bindings.conf"},
+    });
+    seldon(&["hook", "claude-code"], &payload.to_string());
+    std::fs::write(&conf, "bindd = SUPER, E, Editor, exec, zeditor\n").unwrap();
+    let out = seldon(&["capture", "--source", "config", "--json"], "");
+    assert_eq!(json(&out)["written"], 1);
+
+    let lines = common::ledger(&lb);
+    let command = lines.iter().find(|l| l["source"] == "agent").unwrap();
+    let change = lines.iter().find(|l| l["source"] == "config").unwrap();
+    assert_eq!(change["kind"], "config-change");
+    assert_eq!(change["actor"], "agent:claude-code");
+    assert_eq!(change["case"], "C-2026-001");
+    let c = case(&env, &lb, "C-2026-001");
+    assert_eq!(c["events"], json!([command["id"], change["id"]]));
+    assert_eq!(c["agents"], json!(["agent:claude-code"]));
     assert_eq!(drift(&env, &lb)["openDrift"], 0);
 }
