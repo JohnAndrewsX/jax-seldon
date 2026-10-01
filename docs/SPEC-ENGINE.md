@@ -323,8 +323,11 @@ agent:NAME · CASE` with "session ended; N events recorded" (N = the
 session's events by `meta.sessionId`) to today's journal, runs `capture
 --all`, rebuilds the index and STATUS.md, and commits `seldon: session
 ended (agent:NAME)`; every step runs even if an earlier one failed. The
-hook path uses the cheap index rebuild (no git spawn) to stay inside its
-budget.
+hook path uses the cheap index rebuild (no git spawn, `.git/HEAD` read
+directly) and only after it actually wrote an event; the rebuild still
+reads the whole logbook, so beyond roughly 500 ledger lines it exceeds
+the 5 ms target — accepted for v1; a later WP may skip the fast rebuild
+above a line count and let the next `capture`/`status` catch up.
 
 ## 9. Wizard (`seldon init`)
 

@@ -9,7 +9,6 @@
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-008 | Reconciliation and `drift` commands (+ `open --editor` fix) | Engine | `engine-008` (opus, high) | `wt/WP-008` · `wp/008-drift` | 2026-10-01 |
-| WP-009 | Hooks: claude-code, generic, session-start/stop, attribution pass | Engine | `engine-009` (opus, high) | `wt/WP-009` · `wp/009-hooks` | 2026-10-01 |
 | WP-013 | Engine ↔ plugin integration test on a real logbook | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
 | WP-020 | Work tab: three-column list, case card, new-case sheet | Plugin | `plugin-020` (opus, high) | `wt/WP-020` · `wp/020-work-tab` | 2026-10-01 |
 
@@ -29,6 +28,10 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-009 Hooks (Claude Code PreToolUse, generic, session
+  start/stop, `hook install`), shared command parser `pkgcmd.rs`, shared
+  attribution pass, green zone per ADR-0019 — merged after one review
+  round; 277 engine tests; hook under 2 ms in release.
 - 2026-10-01 WP-012 Panel actions: QuickEntry, Capture now, Open in
   editor; harness HOME isolation and real-dir guard — merged; smoke on the
   test host with the real engine found the `open --editor` launcher bug
