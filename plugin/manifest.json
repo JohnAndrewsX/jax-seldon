@@ -16,8 +16,15 @@
     "displayName": "Seldon",
     "description": "Active cases and open drift at a glance",
     "category": "System",
+    "aliases": ["seldon", "logbook", "drift"],
     "allowMultiple": false,
-    "defaultSection": "right"
+    "defaultSection": "right",
+    "defaults": {
+      "captureIntervalMin": 15
+    },
+    "schema": [
+      { "key": "captureIntervalMin", "type": "integer", "label": "Capture interval (minutes)", "min": 5, "max": 120, "step": 5, "defaultValue": 15, "description": "How often the engine captures system changes while the shell runs." }
+    ]
   },
   "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }
 }
