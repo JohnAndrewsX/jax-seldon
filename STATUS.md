@@ -10,7 +10,6 @@
 |---|---|---|---|---|---|
 | WP-003 | Engine core: config, logbook model, frontmatter, init | Engine | `engine-003` (opus, high) | `wt/WP-003` · `wp/003-engine-core` | 2026-10-01 |
 | WP-010 | Plugin skeleton: manifest, Service, BarWidget, states | Plugin | `plugin-010` (opus, high) | `wt/WP-010` · `wp/010-plugin-skeleton` | 2026-10-01 |
-| WP-014 | Contract v1 follow-ups (ADR-0012 edits, ADR-0013 fields, fixture group) | Schema Keeper | `schema-014` (opus, high) | `wt/WP-014` · `wp/014-contract-followups` | 2026-10-01 |
 
 ## Queued (next up)
 After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
@@ -28,6 +27,9 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-014 Contract v1 follow-ups — merged; drift group fields,
+  `resolutionDetail`, open `-Syu` group in the sample index (4 drift items),
+  token rule per ADR-0015; `just check` green on main.
 - 2026-10-01 WP-002 Contract and fixtures — merged `wp/002-contract-fixtures`;
   `just check` incl. schema-validate green on main; ADR-0012 accepted with
   review edits; ADR-0013 (drift grouping, debate) and ADR-0014 (attribution,
