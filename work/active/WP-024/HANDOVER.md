@@ -1,8 +1,8 @@
 WP-024 HANDOVER
 
 Branch `wp/024-templates-wizard`, worktree `wt/WP-024`. Base: `main` at
-`90c3dec`. `main` has since moved by `3d0037c` (CONTRACT/SPEC-PLUGIN only).
-Not pushed, no PR.
+`90c3dec`; `main` is now at `2b9e5e2` (WP-016 and WP-023 merged, SPEC
+edits for this WP in `5ca2b17`). Not pushed, no PR.
 
 Commits `90c3dec..HEAD`:
 
@@ -14,60 +14,131 @@ Commits `90c3dec..HEAD`:
 | `b914645` | TESTING.md, hooks README |
 | `204a814` | README section order (avoids a conflict with WP-022) |
 | `191859f` | memory |
+| `3a696d6` | first handover |
+| `09445f8` | review (1): index rebuilt after the first-capture commit |
+| `5b340b9` | review (2): hermetic init tests (`--no-capture`) |
+| `b9b946d` | review (3): `SELDON_TEST_GUARD` |
+| `a1e9548` | review (3): TESTING.md, memory (the incident's real cause) |
+| `bd8b15b` | `OsString` qualified in place (avoids an import conflict with WP-022) |
 
-The handover commit follows. `just check` exits 0 at HEAD.
+The handover update follows. `just check` exits 0 at HEAD.
 
-Dry-run merges (`git merge-tree`) with `main`, `wp/016`, `wp/022` and
-`wp/023` are clean.
-- `wp/013` conflicts in `memory/pitfalls.md`. The conflict is already
-  there between `main` and `wp/013`; it is not from this WP.
-- My own appends to `memory/*.md` may conflict with other WPs' appends.
-  That is the usual append-at-end case: keep both.
+Merges, checked with `git merge-tree` at `bd8b15b`:
+- with `main` and with `wp/022-start-agent`, the only conflict is
+  `memory/pitfalls.md`: entries appended at the end on both sides; keep
+  both;
+- a trial merge of `main` into a throw-away worktree, with that union
+  resolution, passes all engine tests (20 suites, 310 passed, 0 failed);
+- git's rerere recorded that union resolution for `memory/pitfalls.md`.
 
-## ⚠ Host incident: leftover files under the real home (needs the operator)
+## ⚠ Host incident: leftover file under the real home (needs the operator)
 
 What happened:
 - During a pty smoke test of the interactive wizard I ran
   `env HOME=<scratch> … script -qec "seldon init --path <scratch>/logbook"`.
-- `HOME` did not reach the engine through `script`. The engine used the
-  real home.
+- **Cause, corrected in the follow-up.** This session exports
+  `XDG_CONFIG_HOME=~/.config`, `XDG_STATE_HOME=~/.local/state` and
+  `XDG_DATA_HOME=~/.local/share`. An absolute XDG variable wins over
+  `HOME`, so overriding only `HOME` redirected nothing.
+- `script` is not the cause. It passes the environment on (re-checked:
+  `env HOME=/tmp/x script -qec 'echo $HOME'` prints `/tmp/x`). My first
+  handover blamed `script`; that was wrong.
 
-What it created on the dev host (2026-10-01 17:10, all from this one run):
-- `~/.config/seldon/config.toml`. Its `logbook =` names
-  `/tmp/claude-1000/…/scratchpad/pty3/logbook`.
-- `~/.local/state/seldon/`, containing `cursors.json`, `index.json`,
-  `lock`, `manifest.json` and `hooks/seldon-theme-set.sh`. All of them name
-  the same scratch logbook.
-- Both directories did not exist before. I checked at the earlier
-  real-host run: `ls ~/.config/seldon` → "No such file or directory".
+What it created (2026-10-01 17:10, all from this one run):
+- `~/.config/seldon/config.toml`, with `logbook =` naming
+  `/tmp/claude-1000/…/scratchpad/pty3/logbook`. **It is still there.**
+- `~/.local/state/seldon/` (`cursors.json`, `index.json`, `lock`,
+  `manifest.json`, `hooks/seldon-theme-set.sh`). It was gone at the
+  follow-up; I did not remove it.
 
 What did not happen:
 - No `~/Seldon` was created.
 - `~/.config/omarchy/hooks/theme-set.d/` holds only its old `.sample` file.
 - The real `omarchy` never ran. The theme-hook call went to the recording
-  stub (`SELDON_OMARCHY`). The stub's argv file shows
-  `hook install theme-set /home/…/.local/state/seldon/hooks/seldon-theme-set.sh`
-  and nothing else ran.
+  stub.
 
-Cleanup is not done:
-- My `rm -r ~/.config/seldon ~/.local/state/seldon` was **blocked by the
-  guard**: "red zone: write under ~/.config outside the jax.seldon plugin
-  dir".
-- Per the standing rule, I stopped there and did not route around the block.
-- I also left `~/.local/state/seldon` alone, because it was part of the
-  blocked command.
+Cleanup:
+- My `rm` was blocked by the guard (red zone, `~/.config`). I did not
+  route around it.
+- **Operator:** check that `~/.config/seldon/config.toml` names the `pty3`
+  scratch logbook, then run `rm -r ~/.config/seldon`.
 
-Fix for the operator:
-- First check that `~/.config/seldon/config.toml` names the `pty3`
-  scratch logbook.
-- Then run `rm -r ~/.config/seldon ~/.local/state/seldon`.
-- Until then, a `jax.seldon` dev install would read the stray `index.json`
-  (the scratch logbook).
+Prevention (review follow-up 3):
+- With `SELDON_TEST_GUARD=<dir>`, the engine exits 2 before it reads or
+  writes anything unless its resolved home, config and state directories
+  all lie under `<dir>`.
+- On the host, `HOME=/home/eandres` with the guard set gives `{"error":
+  {"code":2,"message":"refusing to run outside the test guard: the home
+  directory /home/eandres is not under … (SELDON_TEST_GUARD)"}}`, exit 2.
+- An integration test replays the incident's shape: HOME outside, the XDG
+  dirs inside. It gets exit 2 and finds nothing written.
 
-Cause and prevention:
-- The cause is in `memory/pitfalls.md` (WP-024).
-- `docs/TESTING.md` now says to export the XDG variables before `script`
-  and to probe the paths with `seldon --json doctor` first.
+## Review follow-up (after APPROVE)
+
+1. **Index rebuilt after the first-capture commit** (`init.rs`
+   `first_capture`).
+   - The autocommit and `index::rebuild_if_initialised` now run under one
+     lock, as in `log` and `drift`.
+   - `init_runs_the_first_capture` has a new git part: a backfill
+     (fixture `pacman.log`, `--since 2026-08-01`) so that the capture
+     really commits. It asserts:
+     - git log is `seldon: first capture` / `seldon: init logbook`;
+     - `index.json` `logbook.git.head` is a prefix of
+       `git rev-parse HEAD`;
+     - `dirty` is false;
+     - `git status` is clean.
+   - **Negative control.** Without the fix the test fails with
+     `{"dirty":true,"head":"c6f89e9"}` vs the new head. With an empty log
+     the control passed, because nothing was committed; hence the
+     backfill.
+   - Host: the guarded real-host recipe gives `{'head': 'c10b9e1', 'dirty':
+     False}`, matching `git rev-parse --short HEAD`.
+2. **Hermetic init tests.** All `init::` tests (the helper,
+   `language_from_locale`, `default_path_is_home_seldon_…`) now pass
+   `--no-capture`. So do the `init` calls in `cli.rs`, `drift.rs` (2) and
+   `doctor.rs`, which also read the host's package log through `init`.
+   - The second `drift.rs` test even got a pacman cursor from the real log
+     before its own capture.
+   - No test reaches `/var/log/pacman.log` through `init` any more. The
+     `setup::` tests keep their stubbed sources.
+3. **`SELDON_TEST_GUARD`.**
+   - `config::Dirs::from_env` now calls `Dirs::from_vars(|name| …)`, so
+     the environment can be injected in tests.
+   - With the variable set (non-empty), it checks home, config and state.
+     Each is made absolute, with `.`/`..` folded component by component
+     and every existing prefix canonicalised, so symlinks and `..` cannot
+     escape. Each must `starts_with` the guard, resolved the same way.
+   - Otherwise it errors with "refusing to run outside the test guard: the
+     <what> directory … is not under … (SELDON_TEST_GUARD)". That is
+     `Error::Engine`, so exit 2 before any command runs. A hook still
+     exits 0 and prints the error on stderr.
+   - `common::Env::command` sets `SELDON_TEST_GUARD=<test temp dir>` for
+     every spawned `seldon`; all test spawns go through it.
+   - Unit test `config::tests::the_test_guard_checks_the_resolved_dirs`
+     covers:
+     - no variable → no check;
+     - home inside, XDG defaults under it;
+     - the incident (HOME outside, XDG inside) → refused;
+     - one XDG dir outside → refused;
+     - `..` out → refused;
+     - a symlink out → refused;
+     - a guard given through a symlink → still accepted.
+   - Integration test `init.rs::setup::the_test_guard_refuses_a_home_outside_it`
+     expects exit 2 with JSON `error.code` 2, no logbook, no config, and
+     the outside home left empty. Negative control: with the engine change
+     stashed, that test fails (exit 0).
+   - **`docs/TESTING.md`:**
+     - the isolation paragraph names the guard and both tests;
+     - a new "Manual runs: scratch dirs and the test guard" block
+       exports `SELDON_TEST_GUARD`, `HOME` and the three `XDG_*` into one
+       scratch dir, then probes with `doctor`;
+     - it explains why `HOME` alone is not enough;
+     - the WP-003 and WP-024 recipes and the pty recipe use that block
+       ("export … before `script`");
+     - the incident paragraph now gives the real cause.
+
+Counts after the follow-up: lib 91 (one new guard test), `tests/init.rs`
+29 (one new guard test); all suites green.
 
 ## Done
 
@@ -332,7 +403,8 @@ exists by then.
   - dialoguer `validate_with` typing;
   - the skeleton snapshot.
 - **pitfalls:**
-  - `HOME` through `script`, the incident;
+  - the incident: `XDG_*` exported by the session win over `HOME`
+    (corrected in the follow-up; `script` was not the cause);
   - `--no-capture` for tests that build state after `init`;
   - `pacman.log` ending at 17:04 on the test day;
   - backfill size, which doubles the ledger;
@@ -340,78 +412,25 @@ exists by then.
 
 ## Decisions needed
 
-1. **The host leftovers above.** The operator should remove
-   `~/.config/seldon` and `~/.local/state/seldon` (the guard blocked me).
-2. **Baseline granularity.** The WP says "one `dismissed` resolution per
-   open item". I wrote one line per open *member*, the same fan-out as
-   `seldon drift dismiss` (ADR-0013 §4, `meta.txId` on groups). A
-   one-line-per-item reading would leave members open. Please confirm.
-3. **Installed hook name.** It is `seldon-theme-set.sh`, not WP-005's
-   `theme-set.sh`. `omarchy hook install` keeps the base name and `cp`s
-   over an existing file, so `theme-set.sh` could replace a user's own
-   hook. Please confirm.
-4. **Kit template dir.** It is `${XDG_DATA_HOME:-~/.local/share}/seldon/harness/omarchy-agent/`,
-   overridable with `SELDON_OMARCHY_AGENT_KIT`. Packaging (WP-040) might
-   add `/usr/share/seldon/harness/omarchy-agent/` as a fallback. Please
-   confirm.
-5. **`--since` without `--baseline`.** Non-interactively it leaves the
-   drift open (an explicit opt-in, and the next steps say `seldon drift`).
-   The alternative is baseline-on-by-default with `--since`. The
-   interactive default is yes.
-6. **English headings in German logbooks.** These are as the WP asks. They
-   change how a German `PROJECT.md`/`DECISIONS.md` looks, and the fixture
-   logbook (WP-016) still has the German ones.
+1. **The leftover `~/.config/seldon/config.toml`** (above). The operator
+   should remove it; the guard blocked me.
+
+Settled in the review, as implemented:
+- the baseline is per member;
+- the hook file is `seldon-theme-set.sh`;
+- the kit dir with its env override (packaging adds
+  `/usr/share/seldon/harness/omarchy-agent` as a second lookup; not in this
+  WP);
+- `--since` without `--baseline` leaves the drift open
+  non-interactively;
+- English headings, with fixture alignment on the schema track.
 
 ## SPEC-ENGINE edits for the orchestrator
 
-- **§3, `init` synopsis:**
-  `seldon init [--path DIR] [--non-interactive] [--language de|en] [--obsidian]
-  [--harness claude-code|omarchy-agent]… [--git/--no-git] [--since TS [--baseline]]
-  [--no-capture] [--theme-hook]`.
-  - `--since` takes YYYY-MM-DD (local midnight) or RFC 3339.
-  - `--baseline` requires `--since`; `--no-capture` conflicts with it.
-- **§3, add the `init --json` shape:**
-  `{logbook, config, machineId, language, files, obsidian, collectors,
-  watchPaths, harnesses, harnessSetup:{<name>:{…}}, git, snapper,
-  capture:{ran, since, written, files, collectors, sinceIgnored, openDrift,
-  crisis, baseline:{reason, items, events}|null, git} | {ran:false,
-  reason|error}, themeHook:{requested, installed, already?, script?, hook?,
-  error?, fix?}, nextSteps}`.
-- **§9, step list:**
-  - The wizard asks: path → language → Obsidian → collectors → watched
-    paths → harnesses → theme hook → git → backfill.
-  - Then `init` runs: layout + harness files → git init + first commit →
-    `capture --all [--since]` → pre-Seldon baseline (flag, or asked with
-    the item count) → theme hook (opt-in) → commit `seldon: first
-    capture[ and pre-Seldon baseline]` → next steps.
-  - A failure after the layout is reported, never fatal.
-- **§9, `--non-interactive` defaults:** the list under "Wizard" above.
-- **§9, baseline:**
-  - one `dismissed` resolution per open drift member, reason `pre-Seldon
-    baseline`, actor `human`, `meta.txId` on groups;
-  - one ledger write, every open item (not capped);
-  - the events stay.
-- **§9, harnesses:**
-  - `claude-code` = §8's merge into `<logbook>/.claude/settings.json`;
-  - `omarchy-agent` copies `${XDG_DATA_HOME:-~/.local/share}/seldon/harness/omarchy-agent/`
-    (or `$SELDON_OMARCHY_AGENT_KIT`) into `<logbook>/.claude/`:
-    - existing files are kept, symlinks skipped, modes kept;
-    - the kit runs before claude-code;
-    - without the dir, `init` reports what it would copy.
-- **§9, theme hook:**
-  - opt-in only;
-  - the script goes to `$XDG_STATE_HOME/seldon/hooks/seldon-theme-set.sh`;
-  - `omarchy hook install theme-set <script>` → `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh`;
-  - skipped when that file exists;
-  - a failure gives the manual command as a next step.
-- **§9, templates paragraph:**
-  - add `STATUS.md` and `.seldon/templates/{case,decision}.md`;
-  - "English keys and headings in every language, prose per language
-    (ADR-0007); `engine/tests/golden/init-skeleton.txt` pins the
-    skeleton".
-- **§8, last sentences of the hooks paragraph:** "`seldon init --harness
-  claude-code` runs the same merge into the new logbook (in its first
-  commit)".
+Applied on `main` in `5ca2b17` (§3 synopsis and JSON shape, §9 steps,
+defaults, baseline, harnesses, theme hook, `SELDON_TEST_GUARD`). I compared
+them with the implementation and they match, including the "index
+rebuild" after the commit (follow-up 1). No further edits.
 
 ## Touched outside WP scope
 
@@ -423,5 +442,11 @@ exists by then.
 - **`engine/src/commands/mod.rs`:** `pub mod setup`.
 - **`engine/tests/common/mod.rs`, `collectors_user.rs`, `idempotency.rs`:**
   `--no-capture` on their `init` calls, as explained under Tests.
-- **The host:** the leftover `~/.config/seldon` and `~/.local/state/seldon`
-  described at the top.
+- **The host:** the leftover `~/.config/seldon/config.toml` described at
+  the top (`~/.local/state/seldon` is gone).
+- **Review follow-up:**
+  - `engine/src/config.rs`: `Dirs::from_vars`, the guard, `resolved()`,
+    `TEST_GUARD_ENV`, the unit test;
+  - `engine/tests/common/mod.rs`: sets `SELDON_TEST_GUARD`;
+  - `engine/tests/{cli,drift,doctor}.rs`: `--no-capture` on their `init`
+    calls.
