@@ -31,6 +31,9 @@ import Quickshell
 //                       ["plan", action, input] → Service.plan(action, input)
 //                                             (input: a case id, or the new
 //                                             case's form object)
+//                       ["drift", action, input] → Service.drift(action, input)
+//                                             (input: the sheet's form object)
+//                       ["driftShow", eventId] → Service.driftShow(eventId)
 //                       ["wait"]              wait until no engine call is
 //                                             queued or running, then go on
 ShellRoot {
@@ -123,6 +126,8 @@ ShellRoot {
           : a[0] === "open" ? s.openInEditor(a[1])
           : a[0] === "capture" ? s.captureNow()
           : a[0] === "plan" ? s.plan(a[1], a[2])
+          : a[0] === "drift" ? s.drift(a[1], a[2])
+          : a[0] === "driftShow" ? s.driftShow(a[1])
           : false
         console.log("HARNESS action " + JSON.stringify(a) + " " + done)
       }
