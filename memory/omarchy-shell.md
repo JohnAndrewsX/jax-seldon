@@ -494,3 +494,24 @@ Verified in the shell source and live on the test host.
   `SELDON_INDEX` empty and `FAKE_SELDON_FIXTURE` set renders the live panel;
   a dev-mode run prints the absolute index path (a private path in a
   committed image). `PANEL_SHOTS=<dir>` does this for the Today tab.
+
+## WP-037 findings (2026-10-01, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **The shell's panel/overlay Loader injects every property after
+  creation.** `onLoaded` assigns `omarchyPath`, `shell`, `manifest`,
+  `barWidgetRegistry`, `pluginRegistry` and `service` (`if ("service" in
+  item) item.service = shell.serviceFor(id)`) once the async Loader has
+  built the item. Every binding therefore first evaluates with all of them
+  `null`, and then once more after each assignment. A fallback that does
+  real work for `null` (here `periodTable(null)`: 23 aggregation passes)
+  runs on every open. Make the null path a kept constant. A harness that
+  passes these as `createObject` properties never sees this; create the
+  item bare and assign afterwards, in the shell's order.
+- **A theme change repaints a Canvas chart once and aggregates nothing.**
+  The open overlay stays open through `omarchy theme set`, and `Color.*`
+  changes repaint each chart once.
+- **`omarchy theme set` works over plain ssh with only `OMARCHY_PATH`
+  set.** The shell (and the overlay's colours) picked up Tokyo Night,
+  Catppuccin Latte and Osaka Jade without `WAYLAND_DISPLAY` or `HYPRLAND_INSTANCE_SIGNATURE`
+  in the ssh environment. Read `~/.local/state/omarchy/current/theme.name`
+  in a separate call to confirm.

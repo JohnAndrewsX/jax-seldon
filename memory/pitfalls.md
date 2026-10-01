@@ -643,3 +643,28 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `logbook.toml` carries `workstation-7f3a`). Crop away the bar (window
   titles) and the desktop, and grep the logs for the host name and
   `/home/<user>` before committing.
+
+## 2026-10-01 · WP-037 (Plugin, overlay live findings)
+
+- **A headless harness must create plugin items the way the shell does.**
+  Passing `service` as a creation property hid a 23-pass aggregation on
+  every live open for two WPs. The harness now creates Overlay.qml bare
+  and assigns `shell`, `manifest` and `service` afterwards, and it records
+  `firstFrame.bare`. Swapping the harness first and keeping the old code
+  gave exactly the live number (23); that is the cheapest proof the
+  harness is faithful.
+- **Probe points given as fractions of a chart's plot depend on the
+  chart's own geometry.** The heatmap grid is square and height-bound, so
+  `0.9` is empty at 30/90 d. Series reserves a value-label column on the
+  right (`x > plotW` → no hover), so `series 0.9,0.5` is empty too. Use
+  `0.5,0.5` for Series, and for the heatmap a point from
+  `Model.heatmapLayout` (TESTING step 4).
+- **The test host's bar shows window and media titles.** Crop the top
+  28 px of a 1920×1080 grim shot (scale 1.25) before committing it. For
+  live chart shots, a stand-in engine plus the fixture index (TESTING
+  step 3) is enough and leaves only two paths to remove.
+- **`rsync -a --checksum` still sets the mtime of every file** whose time
+  differs (`.f..t` in `-i` output), even when the content is the same. To
+  touch only the files whose content changed (and keep the hot reloads to
+  those), use `rsync -rp --checksum`. Whether an mtime-only change
+  triggers a reload was not tested.
