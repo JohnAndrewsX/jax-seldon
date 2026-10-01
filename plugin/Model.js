@@ -3,7 +3,8 @@
 //
 // Nothing here touches Qt, files or processes, so the same file runs under
 // node (tests/plugin/model.test.js). Service.qml owns all I/O; BarWidget.qml,
-// Panel.qml and components/Banner.qml only render what these functions return.
+// Panel.qml and components/ only render what these functions return,
+// including the rows of the Today, Changelog and System tabs.
 
 var CONTRACT_VERSION = 1
 
@@ -33,6 +34,10 @@ var INSTALL_ENGINE_COMMAND = "omarchy pkg aur add jax-seldon"
 var UPDATE_ENGINE_COMMAND = "yay -S jax-seldon"
 var UPDATE_PLUGIN_COMMAND = "omarchy plugin update jax.seldon"
 var INIT_COMMAND = "seldon init"
+// ADR-0011: the one-time opt-in that lets the snapper collector read
+// snapshots. `$USER` is expanded by the shell the user pastes it into (or by
+// the terminal launcher's bash -c); nothing else in it varies.
+var SNAPPER_FIX_COMMAND = "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
 
 var GLYPH = "⟡"
 
@@ -315,48 +320,69 @@ function matches(list, value) {
   return list.indexOf(value) !== -1
 }
 
+// Free text must say something: one argument, not empty, not only blanks.
+function hasText(value) {
+  return typeof value === "string" && value.trim() !== ""
+}
+
 // Validate an argument list against the commands of CONTRACT.md ("Commands
-// the plugin may run"). Returns "" when allowed, else the reason. Every
-// command may end in --json; ids must match their schema pattern; free text
-// is one argument.
+// the plugin may run"). Returns "" when allowed, else the reason.
+//
+// Free text (a note, a title, an explanation) is exactly one non-empty
+// argument after a `--` separator, so the engine never reads it as an option.
+// Before the separator every command may end in --json (`drift show`
+// requires it); ids must match their schema pattern.
 function validateArgs(args) {
   if (!Array.isArray(args) || args.length === 0) return "empty argument list"
   for (var i = 0; i < args.length; i++) {
     if (typeof args[i] !== "string") return "argument " + i + " is not a string"
     if (args[i].indexOf("\u0000") !== -1) return "argument " + i + " contains NUL"
   }
-  var a = args.slice()
-  if (a.length > 1 && a[a.length - 1] === "--json") a.pop()
+  var sep = args.indexOf("--")
+  var a = sep === -1 ? args.slice() : args.slice(0, sep)
+  var free = sep === -1 ? null : args.slice(sep + 1)
+  if (free !== null && (free.length !== 1 || !hasText(free[0])))
+    return "free text must be one non-empty argument after --"
+  var json = a.length > 1 && a[a.length - 1] === "--json"
+  if (json) a.pop()
   var n = a.length
-  var text = function(i) { return typeof a[i] === "string" && a[i] !== "" }
+  var withText = free !== null
+  var only = function(i) { return n === i + 1 && a[i] === "--only" }
   switch (a[0]) {
   case "--version":
   case "status":
   case "rebuild":
   case "update-impact":
-    return n === 1 ? "" : a[0] + " takes no arguments"
+    return n === 1 && !withText ? "" : a[0] + " takes no arguments"
   case "capture":
     // CONTRACT.md writes it `capture --all --json --quiet`.
-    if (args.length === 4 && args[1] === "--all" && args[2] === "--json" && args[3] === "--quiet") return ""
+    if (withText) return "capture takes no free text"
+    if (n === 4 && a[1] === "--all" && a[2] === "--json" && a[3] === "--quiet") return ""
     return n === 3 && a[1] === "--all" && a[2] === "--quiet" ? "" : "capture must be: capture --all --json --quiet"
   case "log":
-    if (n === 2 && text(1)) return ""
-    if (n === 4 && text(1) && a[2] === "--case" && CASE_ID.test(a[3])) return ""
-    return "log must be: log <text> [--case <caseId>]"
+    if (withText && n === 1) return ""
+    if (withText && n === 3 && a[1] === "--case" && CASE_ID.test(a[2])) return ""
+    return "log must be: log [--case <caseId>] -- <text>"
   case "plan":
-    if (n === 7 && a[1] === "new" && text(2) && a[3] === "--zone" && matches(ZONES, a[4])
-        && a[5] === "--risk" && matches(RISKS, a[6])) return ""
-    if (n === 3 && matches(["start", "verify", "done", "drop"], a[1]) && CASE_ID.test(a[2])) return ""
-    return "plan must be: plan new <title> --zone <z> --risk <r> | plan start|verify|done|drop <caseId>"
+    if (withText && n === 6 && a[1] === "new" && a[2] === "--zone" && matches(ZONES, a[3])
+        && a[4] === "--risk" && matches(RISKS, a[5])) return ""
+    if (!withText && n === 3 && matches(["start", "verify", "done", "drop"], a[1]) && CASE_ID.test(a[2])) return ""
+    return "plan must be: plan new --zone <z> --risk <r> -- <title> | plan start|verify|done|drop <caseId>"
   case "drift":
-    if (n === 4 && a[1] === "link" && EVENT_ID.test(a[2]) && CASE_ID.test(a[3])) return ""
-    if (n === 4 && a[1] === "explain" && EVENT_ID.test(a[2]) && text(3)) return ""
-    if (n === 5 && a[1] === "dismiss" && EVENT_ID.test(a[2]) && a[3] === "--reason" && text(4)) return ""
-    return "drift must be: drift link <eventId> <caseId> | explain <eventId> <text> | dismiss <eventId> --reason <text>"
+    var id = n >= 3 && EVENT_ID.test(a[2])
+    if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
+    if (id && withText && a[1] === "explain" && (n === 3 || only(3))) return ""
+    if (id && !withText && a[1] === "dismiss") {
+      var r = n >= 4 && a[3] === "--only" ? 4 : 3
+      if (n === r + 2 && a[r] === "--reason" && hasText(a[r + 1])) return ""
+    }
+    if (id && !withText && a[1] === "show" && n === 3 && json) return ""
+    return "drift must be: drift link <eventId> <caseId> [--only] | explain <eventId> [--only] -- <text>"
+      + " | dismiss <eventId> [--only] --reason <text> | show <eventId> --json"
   case "decide":
-    return n === 3 && text(1) && a[2] === "--no-edit" ? "" : "decide must be: decide <title> --no-edit"
+    return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
   case "open":
-    return n === 3 && (matches(OPEN_TARGETS, a[1]) || CASE_ID.test(a[1])) && a[2] === "--editor"
+    return !withText && n === 3 && (matches(OPEN_TARGETS, a[1]) || CASE_ID.test(a[1])) && a[2] === "--editor"
       ? "" : "open must be: open journal|ledger|status|<caseId> --editor"
   default:
     return "command not allowed: " + a[0]
@@ -376,4 +402,408 @@ function resolvePath(path, workingDirectory) {
   var base = String(workingDirectory || "")
   if (base === "") return p
   return base.replace(/\/+$/, "") + "/" + p
+}
+
+// CONTRACT.md rule 1: ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json.
+// The XDG spec says a relative XDG_STATE_HOME is invalid and is ignored.
+function stateIndexPath(xdgStateHome, home) {
+  var base = String(xdgStateHome || "")
+  if (base.charAt(0) !== "/") base = String(home || "") + "/.local/state"
+  return base.replace(/\/+$/, "") + "/seldon/index.json"
+}
+
+// ---- Panel: strips and banners under the status banner ----------------------
+
+// SPEC-PLUGIN §5: the red strip "N changes in the red zone need a reason".
+// Empty when nothing is in the red zone.
+function crisisText(index) {
+  var c = counts(index)
+  if (!c || c.crisis === 0) return ""
+  return plural(c.crisis, "change", "changes") + " in the red zone " + (c.crisis === 1 ? "needs" : "need") + " a reason"
+}
+
+function collectors(index) {
+  return index && isObject(index.state) && Array.isArray(index.state.collectors) ? index.state.collectors : []
+}
+
+// ADR-0011: snapper runs degraded until the user opts in. The banner shows the
+// engine's message as plain text and offers the constant fix. Action ids are
+// dispatched by Service.fix(actionId, "snapper").
+function snapperBanner(index) {
+  var list = collectors(index)
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i]
+    if (!isObject(c) || c.name !== "snapper" || c.enabled !== true || c.ok !== false) continue
+    return {
+      status: "snapperDegraded",
+      tone: "accent",
+      title: "Snapshots not readable",
+      detail: typeof c.message === "string" && c.message !== ""
+        ? c.message
+        : "The snapper collector has no permission to list snapshots.",
+      command: SNAPPER_FIX_COMMAND,
+      actions: [
+        { id: "terminal", label: "Run in terminal" },
+        { id: "copy", label: "Copy" }
+      ]
+    }
+  }
+  return null
+}
+
+// ---- Shared formatting ------------------------------------------------------
+
+var WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+function str(value) {
+  return typeof value === "string" ? value : ""
+}
+
+// Index timestamps keep the offset of their source (event.schema.json), so
+// the wall-clock time is read from the string itself, not converted.
+function clockTime(ts) {
+  var m = /^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2})/.exec(str(ts))
+  return m ? m[1] : ""
+}
+
+function dayOf(ts) {
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(str(ts))
+  return m ? m[1] : ""
+}
+
+function utcDate(date) {
+  var d = new Date(Date.parse(date + "T00:00:00Z"))
+  return isFinite(d.getTime()) ? d : null
+}
+
+// YYYY-MM-DD shifted by `delta` days, calendar arithmetic only.
+function addDays(date, delta) {
+  var d = utcDate(date)
+  return d ? new Date(d.getTime() + delta * 86400000).toISOString().slice(0, 10) : ""
+}
+
+// "Today", "Yesterday", else "Tue 30 Sep" (with the year when it differs).
+function dayLabel(date, today) {
+  if (date === "") return "Undated"
+  if (date === today) return "Today"
+  if (today && date === addDays(today, -1)) return "Yesterday"
+  var d = utcDate(date)
+  if (!d) return date
+  var label = WEEKDAYS[d.getUTCDay()].slice(0, 3) + " " + d.getUTCDate() + " " + MONTHS[d.getUTCMonth()]
+  return String(today || "").slice(0, 4) === date.slice(0, 4) ? label : label + " " + date.slice(0, 4)
+}
+
+// `human`, `system`, or the agent's name for `agent:<name>`.
+function actorLabel(actor) {
+  var a = str(actor)
+  return a.indexOf("agent:") === 0 ? a.slice(6) : a
+}
+
+// "Today" is the index's (ADR-0012 §10), not the clock's.
+function todayDate(index) {
+  if (index && isObject(index.today) && typeof index.today.date === "string") return index.today.date
+  return index ? dayOf(index.generatedAt) : ""
+}
+
+// ---- Changelog --------------------------------------------------------------
+
+// Every event source (event.schema.json) in filter order, with its glyph.
+// Glyphs are Nerd Font codepoints, the icon set the bar's font ships.
+var SOURCES = ["pacman", "snapper", "omarchy", "plugins", "theme", "config", "agent", "manual", "seldon"]
+var SOURCE_GLYPHS = {
+  pacman: "\u{F03D7}",   // package
+  snapper: "\u{F0100}",  // camera
+  omarchy: "\u{F06B0}",  // update
+  plugins: "\u{F0431}",  // puzzle
+  theme: "\u{F03D8}",    // palette
+  config: "\u{F0493}",   // cog
+  agent: "\u{F06A9}",    // robot
+  manual: "\u{F03EB}",   // pencil
+  seldon: GLYPH
+}
+
+function sourceGlyph(source) {
+  return SOURCE_GLYPHS[source] !== undefined ? SOURCE_GLYPHS[source] : "•"
+}
+
+// Zone colours come from theme tokens only (SPEC-PLUGIN §7): red is the
+// theme's urgent colour, yellow its accent, green the muted colour.
+function zoneTone(zone) {
+  if (zone === "red") return "urgent"
+  if (zone === "yellow") return "accent"
+  if (zone === "green") return "muted"
+  return ""
+}
+
+function events(index) {
+  return index && Array.isArray(index.events) ? index.events : []
+}
+
+// Open drift by event: every item under its eventId, and a pacman group
+// (ADR-0013; ADR-0015 §2: `members` present) also under its txId, so the
+// group's other members find it.
+function driftLookup(index) {
+  var byId = {}
+  var byTx = {}
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  for (var i = 0; i < list.length; i++) {
+    var d = list[i]
+    if (!isObject(d) || typeof d.eventId !== "string") continue
+    byId[d.eventId] = d
+    if (typeof d.members === "number" && typeof d.txId === "string") byTx[d.txId] = d
+  }
+  return { byId: byId, byTx: byTx }
+}
+
+// An open group member is caseless and unresolved (ADR-0013 §1).
+function isOpenMember(e, txId) {
+  return isObject(e) && e.txId === txId && !e.case && !e.resolution
+}
+
+// One row per index event, newest first as the index lists them (the index
+// already folds resolutions onto their targets). filter: "" or "all" for
+// every source, else one source name.
+function changelogRows(index, filter) {
+  var all = events(index)
+  var drift = driftLookup(index)
+  var today = todayDate(index)
+  var only = filter && filter !== "all" ? filter : ""
+  var rows = []
+  for (var i = 0; i < all.length; i++) {
+    var e = all[i]
+    if (!isObject(e) || (only !== "" && e.source !== only)) continue
+    var leader = drift.byId[e.id] || null
+    var group = !leader && typeof e.txId === "string" && isOpenMember(e, e.txId) ? drift.byTx[e.txId] || null : null
+    var item = leader || group
+    var grouped = leader !== null && typeof leader.members === "number"
+    var day = dayOf(e.ts)
+    rows.push({
+      id: str(e.id),
+      day: day,
+      dayLabel: dayLabel(day, today),
+      time: clockTime(e.ts),
+      source: str(e.source),
+      glyph: sourceGlyph(e.source),
+      kind: str(e.kind),
+      subject: str(e.subject),
+      detail: str(e.detail),
+      actor: actorLabel(e.actor),
+      caseId: str(e.case),
+      zone: str(e.zone),
+      tone: zoneTone(e.zone),
+      resolution: str(e.resolution),
+      resolutionDetail: str(e.resolutionDetail),
+      snapshot: e.source === "snapper" && e.kind === "snapshot",
+      drift: item !== null,
+      crisis: item !== null && item.crisis === true,
+      proposedCase: leader && typeof leader.proposedCase === "string" ? leader.proposedCase : "",
+      // "+N" on the group's leader row; N counts every member (ADR-0013 §2).
+      badge: grouped ? "+" + leader.members : "",
+      txId: grouped ? str(leader.txId) : "",
+      groupLeader: group ? str(group.eventId) : "",
+      groupSubject: group ? str(group.subject) : ""
+    })
+  }
+  return rows
+}
+
+// Event counts per source, for the filter chips.
+function sourceCounts(index) {
+  var result = { all: 0 }
+  for (var s = 0; s < SOURCES.length; s++) result[SOURCES[s]] = 0
+  var all = events(index)
+  for (var i = 0; i < all.length; i++) {
+    if (!isObject(all[i])) continue
+    result.all++
+    if (result[all[i].source] !== undefined) result[all[i].source]++
+  }
+  return result
+}
+
+// Chips: "all" first, then every source in SOURCES order.
+function filterChips(index) {
+  var c = sourceCounts(index)
+  var chips = [{ id: "all", label: "all", count: c.all }]
+  for (var i = 0; i < SOURCES.length; i++)
+    chips.push({ id: SOURCES[i], label: SOURCES[i], count: c[SOURCES[i]] })
+  return chips
+}
+
+// Next or previous filter id, wrapping (keys `f` / `F`).
+function cycleFilter(current, direction) {
+  var ids = ["all"].concat(SOURCES)
+  var at = ids.indexOf(current || "all")
+  if (at === -1) at = 0
+  return ids[(at + (direction < 0 ? ids.length - 1 : 1)) % ids.length]
+}
+
+// The members of a pacman group as far as index.events still lists them
+// (CONTRACT.md rule 4 caps it; `seldon drift show <id> --json` has the rest).
+function groupMembers(index, txId) {
+  var out = []
+  if (!txId) return out
+  var all = events(index)
+  for (var i = 0; i < all.length; i++) {
+    var e = all[i]
+    if (isOpenMember(e, txId))
+      out.push({ id: str(e.id), kind: str(e.kind), subject: str(e.subject), detail: str(e.detail) })
+  }
+  return out
+}
+
+function memberLine(member) {
+  return member.kind + " " + member.subject + (member.detail !== "" ? "  " + member.detail : "")
+}
+
+// The second line of a row: what changed, who, for which case.
+function rowMeta(r) {
+  var parts = []
+  if (r.detail !== "") parts.push(r.detail)
+  if (r.actor !== "") parts.push(r.actor)
+  if (r.caseId !== "") parts.push(r.caseId)
+  return parts.join(" · ")
+}
+
+// The folded resolution (ADR-0012 §8, §11), or the open-drift note.
+function rowStatus(r) {
+  if (r.resolution !== "") {
+    var head = r.resolution === "linked" && r.caseId !== "" ? "linked to " + r.caseId : r.resolution
+    return r.resolutionDetail !== "" ? head + ": " + r.resolutionDetail : head
+  }
+  if (!r.drift) return ""
+  var note = r.groupLeader !== "" ? "In the open " + r.groupSubject + " group"
+    : r.crisis ? "Needs a reason" : "Unexplained"
+  if (r.proposedCase !== "") note += " · proposed for " + r.proposedCase
+  return note
+}
+
+// ---- Today ------------------------------------------------------------------
+
+function journalEntries(list) {
+  var out = []
+  if (!Array.isArray(list)) return out
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i]
+    if (!isObject(e)) continue
+    out.push({ time: str(e.time), actor: actorLabel(e.actor), caseId: str(e.case), text: str(e.text) })
+  }
+  return out
+}
+
+// Today's journal, yesterday's (shown collapsed) and the summary counts.
+function todayView(index) {
+  var today = index && isObject(index.today) ? index.today : {}
+  var summary = index && isObject(index.summary) ? index.summary : {}
+  var date = todayDate(index)
+  var d = utcDate(date)
+  return {
+    date: date,
+    title: d ? WEEKDAYS[d.getUTCDay()] + ", " + d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear() : "Today",
+    entries: journalEntries(today.entries),
+    yesterday: journalEntries(today.yesterday),
+    stats: [
+      { label: "events today", value: count(summary.eventsToday) },
+      { label: "in 7 days", value: count(summary.events7d) },
+      { label: "active", value: count(summary.activeCases) },
+      { label: "queued", value: count(summary.queuedCases) },
+      { label: "open drift", value: count(summary.openDrift) }
+    ]
+  }
+}
+
+function entryMeta(entry) {
+  var parts = []
+  if (entry.time !== "") parts.push(entry.time)
+  if (entry.actor !== "") parts.push(entry.actor)
+  if (entry.caseId !== "") parts.push(entry.caseId)
+  return parts.join(" · ")
+}
+
+// ---- System -----------------------------------------------------------------
+
+function pair(label, value) {
+  return { label: label, value: value }
+}
+
+function isInt(value) {
+  return typeof value === "number" && isFinite(value)
+}
+
+function stamp(ts) {
+  return (dayOf(ts) + " " + clockTime(ts)).trim()
+}
+
+// The System tab as sections of label/value rows. Every field of
+// index.system is optional (the schema requires none there), so a section
+// appears only when it has a row.
+function systemSections(index, nowMs) {
+  var sys = index && isObject(index.system) ? index.system : {}
+  var sections = []
+  var rows
+
+  rows = []
+  var om = isObject(sys.omarchy) ? sys.omarchy : {}
+  if (str(om.version) !== "") rows.push(pair("Version", om.version))
+  if (str(om.theme) !== "") rows.push(pair("Theme", om.theme))
+  if (str(om.lastUpdate) !== "")
+    rows.push(pair("Last update", stamp(om.lastUpdate) + (isFinite(nowMs) ? " · " + relativeAge(timeMs(om.lastUpdate), nowMs) : "")))
+  if (str(om.repoHead) !== "") rows.push(pair("Checkout", om.repoHead))
+  if (rows.length) sections.push({ title: "OMARCHY", rows: rows })
+
+  rows = []
+  var pk = isObject(sys.packages) ? sys.packages : {}
+  if (isInt(pk.explicit)) rows.push(pair("Explicit", String(pk.explicit)))
+  if (isInt(pk.total)) rows.push(pair("Installed", String(pk.total)))
+  if (isInt(pk.aur)) rows.push(pair("AUR", String(pk.aur)))
+  if (isInt(sys.deviations)) rows.push(pair("Deviations", String(sys.deviations)))
+  if (rows.length) sections.push({ title: "PACKAGES", rows: rows })
+
+  rows = []
+  var pl = isObject(sys.plugins) ? sys.plugins : {}
+  if (isInt(pl.enabled) && isInt(pl.installed)) rows.push(pair("Plugins", pl.enabled + " of " + pl.installed + " enabled"))
+  else if (isInt(pl.installed)) rows.push(pair("Plugins", pl.installed + " installed"))
+  else if (isInt(pl.enabled)) rows.push(pair("Plugins", pl.enabled + " enabled"))
+  if (rows.length) sections.push({ title: "PLUGINS", rows: rows })
+
+  rows = []
+  var snaps = Array.isArray(sys.snapshots) ? sys.snapshots : []
+  for (var i = 0; i < snaps.length; i++) {
+    var s = snaps[i]
+    if (!isObject(s) || !isInt(s.number)) continue
+    var what = str(s.description)
+    if (str(s.type) !== "" && s.type !== "single") what = what !== "" ? what + " · " + s.type : s.type
+    rows.push(pair("#" + s.number + "  " + stamp(s.ts), what))
+  }
+  if (rows.length) sections.push({ title: "SNAPSHOTS", rows: rows })
+
+  rows = []
+  var areas = Array.isArray(sys.areas) ? sys.areas : []
+  for (var j = 0; j < areas.length; j++) {
+    var ar = areas[j]
+    if (!isObject(ar) || str(ar.name) === "") continue
+    var parts = []
+    if (isInt(ar.cases)) parts.push(plural(ar.cases, "case", "cases"))
+    if (ar.hasAgentsMd === true) parts.push("AGENTS.md")
+    rows.push(pair(ar.name, parts.join(" · ")))
+  }
+  if (rows.length) sections.push({ title: "AREAS", rows: rows })
+
+  rows = []
+  var cs = collectors(index)
+  for (var k = 0; k < cs.length; k++) {
+    var c = cs[k]
+    if (!isObject(c) || str(c.name) === "") continue
+    var state = c.enabled === false ? "off" : c.ok === false ? "failing" : "ok"
+    rows.push(pair(c.name, state + (c.ok === false && str(c.message) !== "" ? " · " + c.message : "")))
+  }
+  if (rows.length) sections.push({ title: "COLLECTORS", rows: rows })
+
+  rows = []
+  if (index && isObject(index.logbook) && str(index.logbook.machine) !== "") rows.push(pair("Machine", index.logbook.machine))
+  if (index && str(index.engineVersion) !== "") rows.push(pair("Engine", index.engineVersion))
+  if (index && str(index.generatedAt) !== "") rows.push(pair("Index written", stamp(index.generatedAt)))
+  if (rows.length) sections.push({ title: "SELDON", rows: rows })
+
+  return sections
 }

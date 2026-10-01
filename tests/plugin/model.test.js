@@ -152,17 +152,21 @@ test("bannerFor indexStale shows the age", () => {
   assert.strictEqual(b.detail, "Last update 3 h ago. Capture to refresh it.")
 })
 
+const EID = "01M3VTGNY0NZG4AY80814WSKGR"
+
 test("validateArgs accepts every CONTRACT.md command form", () => {
   const good = [
     ["--version"], ["--version", "--json"], ["status", "--json"],
     ["capture", "--all", "--json", "--quiet"], ["capture", "--all", "--quiet", "--json"],
-    ["log", "Zed läuft"], ["log", "text", "--case", "C-2026-004"],
-    ["plan", "new", "A title; rm -rf ~", "--zone", "red", "--risk", "R2"],
+    ["log", "--", "Zed läuft"], ["log", "--case", "C-2026-004", "--", "text"],
+    ["log", "--", "--json"], ["log", "--", "-rf --case C-2026-001"], ["log", "--", "--"],
+    ["plan", "new", "--zone", "red", "--risk", "R2", "--", "A title; rm -rf ~"],
     ["plan", "start", "C-2026-005"], ["plan", "drop", "C-2026-1234"],
-    ["drift", "link", "01M3VTGNY0NZG4AY80814WSKGR", "C-2026-005"],
-    ["drift", "explain", "01M3VTGNY0NZG4AY80814WSKGR", "theme test"],
-    ["drift", "dismiss", "01M3VTGNY0NZG4AY80814WSKGR", "--reason", "tried it"],
-    ["decide", "Use zed", "--no-edit"], ["rebuild", "--json"], ["update-impact", "--json"],
+    ["drift", "link", EID, "C-2026-005"], ["drift", "link", EID, "C-2026-005", "--only"],
+    ["drift", "explain", EID, "--", "theme test"], ["drift", "explain", EID, "--only", "--", "only this one"],
+    ["drift", "dismiss", EID, "--reason", "tried it"], ["drift", "dismiss", EID, "--only", "--reason", "tried it"],
+    ["drift", "show", EID, "--json"],
+    ["decide", "--no-edit", "--", "Use zed"], ["rebuild", "--json"], ["update-impact", "--json"],
     ["open", "journal", "--editor"], ["open", "C-2026-003", "--editor"]
   ]
   for (const a of good) assert.strictEqual(M.validateArgs(a), "", JSON.stringify(a))
@@ -171,16 +175,185 @@ test("validateArgs accepts every CONTRACT.md command form", () => {
 test("validateArgs refuses everything else", () => {
   const bad = [
     [], "status", ["seldon", "status"], ["init"], ["hook", "install", "claude-code"],
-    ["status", "--logbook", "/tmp"], ["capture"], ["capture", "--all"],
-    ["log"], ["log", ""], ["log", "x", "--case", "C-26-1"], ["log", "x", "--case", "C-2026-001; reboot"],
-    ["plan", "new", "t", "--zone", "purple", "--risk", "R1"], ["plan", "new", "t", "--zone", "red", "--risk", "R9"],
-    ["plan", "start", "../C-2026-001"], ["plan", "finish", "C-2026-001"],
+    ["status", "--logbook", "/tmp"], ["status", "--", "x"], ["capture"], ["capture", "--all"],
+    ["capture", "--all", "--json", "--quiet", "--", "x"],
+    // free text without `--` (the WP-010 forms)
+    ["log", "Zed läuft"], ["log", "text", "--case", "C-2026-004"],
+    ["plan", "new", "t", "--zone", "red", "--risk", "R2"], ["decide", "Use zed", "--no-edit"],
+    ["drift", "explain", EID, "theme test"],
+    // empty, blank or split free text
+    ["log"], ["log", "--"], ["log", "--", ""], ["log", "--", "   "], ["log", "--", "a", "b"],
+    ["decide", "--no-edit", "--", "\t"], ["drift", "explain", EID, "--", ""],
+    ["drift", "dismiss", EID, "--reason", ""], ["drift", "dismiss", EID, "--reason", "  "],
+    ["log", "--case", "C-26-1", "--", "x"], ["log", "--case", "C-2026-001; reboot", "--", "x"],
+    ["log", "--case", "--", "x"],
+    ["plan", "new", "--zone", "purple", "--risk", "R1", "--", "t"],
+    ["plan", "new", "--zone", "red", "--risk", "R9", "--", "t"],
+    ["plan", "start", "../C-2026-001"], ["plan", "finish", "C-2026-001"], ["plan", "start", "C-2026-001", "--", "x"],
     ["drift", "link", "01m3vtgny0nzg4ay80814wskgr", "C-2026-005"], ["drift", "link", "81M3VTGNY0NZG4AY80814WSKGR", "C-2026-005"],
-    ["drift", "explain", "01M3VTGNY0NZG4AY80814WSKGR"], ["drift", "dismiss", "01M3VTGNY0NZG4AY80814WSKGR", "reason"],
-    ["decide", "t"], ["open", "/etc/passwd", "--editor"], ["open", "journal"],
-    ["log", 42], ["log", "a\u0000b"]
+    ["drift", "link", EID, "C-2026-005", "--all"], ["drift", "link", EID, "--only", "C-2026-005"],
+    ["drift", "explain", EID], ["drift", "explain", EID, "--only"], ["drift", "explain", EID, "--force", "--", "x"],
+    ["drift", "dismiss", EID, "reason"], ["drift", "dismiss", EID, "--reason", "x", "--only"],
+    ["drift", "dismiss", EID, "--", "x"],
+    ["drift", "show", EID], ["drift", "show", "C-2026-005", "--json"], ["drift", "show", EID, "--only", "--json"],
+    ["decide", "--", "t"], ["open", "/etc/passwd", "--editor"], ["open", "journal"],
+    ["log", "--", 42], ["log", "--", "a\u0000b"]
   ]
   for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
+})
+
+test("stateIndexPath honours XDG_STATE_HOME (CONTRACT.md rule 1)", () => {
+  assert.strictEqual(M.stateIndexPath("", "/home/u"), "/home/u/.local/state/seldon/index.json")
+  assert.strictEqual(M.stateIndexPath(undefined, "/home/u"), "/home/u/.local/state/seldon/index.json")
+  assert.strictEqual(M.stateIndexPath("/srv/state/", "/home/u"), "/srv/state/seldon/index.json")
+  assert.strictEqual(M.stateIndexPath("relative/state", "/home/u"), "/home/u/.local/state/seldon/index.json")
+})
+
+const sampleIndex = JSON.parse(sample)
+const degraded = JSON.parse(fs.readFileSync(path.join(root, "fixtures/index-variants/snapper-degraded.json"), "utf8"))
+
+test("crisisText: the red strip of SPEC-PLUGIN §5", () => {
+  assert.strictEqual(M.crisisText(sampleIndex), "2 changes in the red zone need a reason")
+  const one = JSON.parse(sample)
+  one.summary.crisis = 1
+  assert.strictEqual(M.crisisText(one), "1 change in the red zone needs a reason")
+  one.summary.crisis = 0
+  assert.strictEqual(M.crisisText(one), "")
+  assert.strictEqual(M.crisisText(null), "")
+})
+
+test("snapperBanner: only for an enabled snapper collector that fails (ADR-0011)", () => {
+  assert.strictEqual(M.snapperBanner(sampleIndex), null)
+  assert.strictEqual(M.snapperBanner(null), null)
+  const b = M.snapperBanner(degraded)
+  assert.strictEqual(b.title, "Snapshots not readable")
+  assert.strictEqual(b.command, M.SNAPPER_FIX_COMMAND)
+  assert.ok(/^\S+ snapper -c root set-config ALLOW_USERS=\$USER SYNC_ACL=yes$/.test(b.command), b.command)
+  assert.ok(b.detail.indexOf("ALLOW_USERS") !== -1, "shows the engine message")
+  same(b.actions.map((a) => a.id), ["terminal", "copy"])
+  const off = JSON.parse(JSON.stringify(degraded))
+  off.state.collectors.forEach((c) => { if (c.name === "snapper") c.enabled = false })
+  assert.strictEqual(M.snapperBanner(off), null)
+  const bare = JSON.parse(JSON.stringify(degraded))
+  bare.state.collectors.forEach((c) => { delete c.message })
+  assert.ok(M.snapperBanner(bare).detail !== "")
+})
+
+test("changelogRows: 58 events newest first, one +3 group, folded resolutions, snapshots", () => {
+  const rows = M.changelogRows(sampleIndex, "all")
+  assert.strictEqual(rows.length, 58)
+  same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
+  const badged = rows.filter((r) => r.badge !== "")
+  assert.strictEqual(badged.length, 1)
+  assert.strictEqual(badged[0].badge, "+3")
+  assert.strictEqual(badged[0].subject, "firefox")
+  assert.strictEqual(badged[0].txId, "tx-20260930T214115")
+  same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["libinput", "noto-fonts"])
+  assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 7)
+  assert.strictEqual(rows.filter((r) => r.snapshot).length, 6)
+  assert.strictEqual(rows.filter((r) => r.drift).length, 6)
+  same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "install"])
+  const theme = rows.find((r) => r.id === EID)
+  assert.strictEqual(theme.proposedCase, "C-2026-005")
+  assert.strictEqual(M.rowStatus(theme), "Unexplained · proposed for C-2026-005")
+  const tyme = rows.find((r) => r.subject === "io.github.example.tyme")
+  assert.strictEqual(M.rowStatus(tyme), "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar.")
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "tailscale")), "linked to C-2026-008")
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "libinput")), "In the open firefox group")
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "ollama")), "Needs a reason")
+  assert.strictEqual(M.rowStatus(rows[0]), "")
+  assert.strictEqual(rows[0].dayLabel, "Today")
+  assert.strictEqual(rows[0].time, "17:00")
+  assert.strictEqual(rows.find((r) => r.subject === "firefox").dayLabel, "Yesterday")
+  assert.strictEqual(rows[rows.length - 1].dayLabel, "Tue 1 Sep")
+  assert.strictEqual(rows.find((r) => r.subject === "ollama").tone, "urgent")
+  assert.strictEqual(theme.tone, "accent")
+  assert.strictEqual(rows[0].tone, "")
+  assert.strictEqual(M.rowMeta(rows.find((r) => r.subject === "zed")), "0.198.4-1 · claude-code · C-2026-004")
+})
+
+test("changelogRows: the source filter narrows the list", () => {
+  const counts = M.sourceCounts(sampleIndex)
+  assert.strictEqual(counts.all, 58)
+  let total = 0
+  for (const s of M.SOURCES) {
+    const rows = M.changelogRows(sampleIndex, s)
+    assert.strictEqual(rows.length, counts[s], s)
+    assert.ok(rows.every((r) => r.source === s), s)
+    total += rows.length
+  }
+  assert.strictEqual(total, 58)
+  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 12)
+  assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 8)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 58)
+  same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
+  assert.strictEqual(M.cycleFilter("all", 1), "pacman")
+  assert.strictEqual(M.cycleFilter("seldon", 1), "all")
+  assert.strictEqual(M.cycleFilter("all", -1), "seldon")
+  assert.strictEqual(M.cycleFilter("nonsense", 1), "pacman")
+  same(M.changelogRows(null, "all"), [])
+})
+
+test("groupMembers expands a drift group from index.events by txId", () => {
+  const members = M.groupMembers(sampleIndex, "tx-20260930T214115")
+  same(members.map((m) => m.subject), ["libinput", "noto-fonts", "firefox"])
+  assert.strictEqual(M.memberLine(members[2]), "upgrade firefox  143.0.1-1 → 143.0.2-1")
+  same(M.groupMembers(sampleIndex, ""), [])
+  // A transaction with a case is no open group.
+  same(M.groupMembers(sampleIndex, "tx-20261001T101204"), [])
+})
+
+test("every source has a glyph; zones map to theme tones only", () => {
+  for (const s of M.SOURCES) assert.ok(M.sourceGlyph(s).length >= 1, s)
+  assert.strictEqual(M.sourceGlyph("nope"), "•")
+  same(["red", "yellow", "green", undefined].map(M.zoneTone), ["urgent", "accent", "muted", ""])
+})
+
+test("todayView: today's and yesterday's journal and the summary counts", () => {
+  const t = M.todayView(sampleIndex)
+  assert.strictEqual(t.date, "2026-10-01")
+  assert.strictEqual(t.title, "Thursday, 1 Oct 2026")
+  assert.strictEqual(t.entries.length, 4)
+  assert.strictEqual(t.yesterday.length, 1)
+  assert.strictEqual(M.entryMeta(t.entries[0]), "09:25 · claude-code · C-2026-003")
+  assert.strictEqual(M.entryMeta(t.entries[2]), "14:40 · human")
+  same(t.stats.map((s) => s.value), [27, 38, 2, 3, 4])
+  const empty = M.todayView(null)
+  same([empty.entries.length, empty.yesterday.length, empty.title], [0, 0, "Today"])
+})
+
+test("systemSections: every field optional", () => {
+  const now = Date.parse("2026-10-01T17:05:12+02:00")
+  const s = M.systemSections(sampleIndex, now)
+  same(s.map((x) => x.title), ["OMARCHY", "PACKAGES", "PLUGINS", "SNAPSHOTS", "AREAS", "COLLECTORS", "SELDON"])
+  same(s[0].rows, [{ label: "Version", value: "4.0.7-1" }, { label: "Theme", value: "tokyo-night" },
+    { label: "Last update", value: "2026-10-01 09:21 · 7 h ago" }])
+  same(s[2].rows, [{ label: "Plugins", value: "33 of 40 enabled" }])
+  assert.strictEqual(s[3].rows.length, 4)
+  same(s[3].rows[0], { label: "#113  2026-10-01 14:30", value: "pre: ollama" })
+  same(s[4].rows[1], { label: "hyprland", value: "1 case · AGENTS.md" })
+  const bare = JSON.parse(sample)
+  bare.system = {}
+  delete bare.state.collectors
+  same(M.systemSections(bare, now).map((x) => x.title), ["SELDON"])
+  bare.system = { packages: { aur: 3 }, plugins: { installed: 4 }, snapshots: [{ number: 7, ts: "2026-01-01T00:00:00Z", type: "pre" }] }
+  same(M.systemSections(bare, now).slice(0, 3).map((x) => x.rows), [[{ label: "AUR", value: "3" }],
+    [{ label: "Plugins", value: "4 installed" }], [{ label: "#7  2026-01-01 00:00", value: "pre" }]])
+  const failing = M.systemSections(degraded, now).find((x) => x.title === "COLLECTORS")
+  assert.ok(failing.rows.find((r) => r.label === "snapper").value.indexOf("failing · snapper: No permissions") === 0)
+  same(M.systemSections(null, now), [])
+})
+
+test("dayLabel and clockTime read the timestamp as written", () => {
+  assert.strictEqual(M.clockTime("2026-09-03T21:14:06+00:00"), "21:14")
+  assert.strictEqual(M.clockTime("garbage"), "")
+  assert.strictEqual(M.dayLabel("2026-10-01", "2026-10-01"), "Today")
+  assert.strictEqual(M.dayLabel("2026-09-30", "2026-10-01"), "Yesterday")
+  assert.strictEqual(M.dayLabel("2026-03-01", "2026-03-02"), "Yesterday")
+  assert.strictEqual(M.dayLabel("2025-12-31", "2026-10-01"), "Wed 31 Dec 2025")
+  assert.strictEqual(M.dayLabel("", "2026-10-01"), "Undated")
+  assert.strictEqual(M.actorLabel("agent:claude-code"), "claude-code")
+  assert.strictEqual(M.actorLabel("human"), "human")
 })
 
 test("clampInterval and resolvePath", () => {
