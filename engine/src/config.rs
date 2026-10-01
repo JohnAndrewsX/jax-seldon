@@ -4,7 +4,6 @@
 //! Logbook path precedence: `--logbook` > `SELDON_LOGBOOK` > `logbook` in
 //! config.toml > `~/Seldon` (ADR-0010).
 
-use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -69,7 +68,7 @@ impl Dirs {
     /// docs/TESTING.md set it, so a run whose `HOME` or `XDG_*` override
     /// got lost on the way (WP-024: through `script`) cannot touch the
     /// real `~/.config/seldon` or `~/.local/state/seldon`.
-    pub fn from_vars(var: impl Fn(&str) -> Option<OsString>) -> anyhow::Result<Self> {
+    pub fn from_vars(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> anyhow::Result<Self> {
         let home = var("HOME")
             .filter(|h| !h.is_empty())
             .map(PathBuf::from)
@@ -424,7 +423,7 @@ mod tests {
 
     /// `Dirs::from_vars` over a fixed environment.
     fn dirs_with(vars: &[(&str, &Path)]) -> anyhow::Result<Dirs> {
-        let vars: Vec<(String, OsString)> = vars
+        let vars: Vec<(String, std::ffi::OsString)> = vars
             .iter()
             .map(|(k, v)| (k.to_string(), v.as_os_str().to_os_string()))
             .collect();
