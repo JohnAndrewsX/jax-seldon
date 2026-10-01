@@ -1,9 +1,10 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Phase:** 0 — Foundation: all nine engine/contract packages merged
-(2026-10-01); exit G3 pending the operator's run (`work/PHASE-0-EXIT.md`).
-Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active).
+**Phase:** 3 code-complete (WP-030/031/032/034/035 merged 2026-10-02);
+Phase 0 exit G3 still pending the operator's run (`work/PHASE-0-EXIT.md`);
+Phase 1/2 live sweeps and the WP-013 full e2e runs wait for the test
+host unlock. Phase 4 (packaging, docs) starting.
 **Contract version:** 1 (draft)
 **Last updated:** 2026-10-01
 
@@ -11,12 +12,14 @@ Phase 1 in progress in parallel (WP-010/011/012 merged, WP-013 and WP-020 active
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-013 | Engine ↔ plugin integration test on a real logbook (full runs wait for the test host unlock) | QA | `qa-013` (opus, medium) | `wt/WP-013` · `wp/013-integration` | 2026-10-01 |
-| WP-031 | Charts: Heatmap, Series, DriftBars, RiskDonut, Timeline (+ The Plan) | Plugin | `plugin-031` (opus, high) | `wt/WP-031` · `wp/031-charts` | 2026-10-02 |
-| WP-035 | `seldon dossier`: generated fences in system/*.md and the pre-logbook package list | Engine | `engine-035` (opus, high) | `wt/WP-035` · `wp/035-dossier` | 2026-10-02 |
+| WP-036 | Dossier follow-ups: Omarchy base split, `packages.explicit` in templates/fixture, deviation case fill | Engine | `engine-036` (opus, high) | `wt/WP-036` · `wp/036-dossier-followups` | 2026-10-02 |
+| WP-040 | AUR package `jax-seldon` (PKGBUILD, .SRCINFO), release workflow | Scaffold | `scaffold-040` (opus, high) | `wt/WP-040` · `wp/040-packaging` | 2026-10-02 |
+| WP-041 | Plugin README, preview.png, security section, keybinding docs | Docs | `docs-041` (opus, high) | `wt/WP-041` · `wp/041-plugin-docs` | 2026-10-02 |
 
 ## Queued (next up)
-WP-036 (dossier follow-ups, after WP-035) · WP-033 (update-impact, needs
-the operator's release-notes source decision)
+WP-033 (update-impact, needs the operator's release-notes source decision)
+· WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
+logbook migration)
 · WP-040/041 (packaging, docs) after WP-031. (see `work/queued/`)
 
 ## Preparation done (2026-10-01)
@@ -30,6 +33,17 @@ the operator's release-notes source decision)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-031 Prime Radiant charts (Heatmap, Series, DriftBars,
+  RiskDonut, Timeline) and The Plan as the sixth slot; one-pass period
+  table; hover read-outs via IPC; first-frame rule proven in the harness
+  (per-file aggregation counters) — merged after one review round; 72
+  node + 312 overlay checks; offscreen frame profile 4–7 ms; live profile
+  pending the test host (operator item).
+- 2026-10-02 WP-035 `seldon dossier` (eight generated fences in
+  system/*.md from read-only queries, new `packages.explicit`, user text
+  kept byte for byte, config redaction over host strings), "Before the
+  logbook" group in REBUILD.md, `init` runs it once — merged after one
+  review round; one real-host read-only run (counts only).
 - 2026-10-02 WP-034 `seldon watch` behind the `watch` feature (notify
   only under the feature, debounce, generated-file filters, lock retry,
   one rebuild at start, clean SIGTERM/SIGINT), systemd user unit template

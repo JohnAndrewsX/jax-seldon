@@ -149,14 +149,28 @@ Layout: 12-column grid, `Style.space` gutters.
 - Row 1: title "Prime Radiant", machine name, Omarchy version, period
   selector (30 / 90 / 365 days / All; default 90 d, resets on every open;
   WP-030), close hint.
-- Row 2 (full width): **Heatmap** — events per day, 53 × 7, theme accent
-  ramp; hover shows date, counts by source.
-- Row 3: **Series** packages explicit over time (step line) · **DriftBars**
-  drift opened vs resolved per week · **RiskDonut** cases by risk.
-- Row 4: **Timeline** — Omarchy releases, snapshots, cases as spans
-  (queued→completed), crisis markers.
-- Row 5: **The Plan** — active cases with step progress and agent (no
-  period; the sixth slot, WP-031).
+- Row 2 (full width): **Heatmap** — events per day of the period as ISO
+  weeks × 7 days (53 × 7 at 365 d and All), five steps of the theme
+  accent; hover shows the date and counts by source.
+- Row 3: **Series** explicit and total packages over time (step lines,
+  one lane each; a count holds until the next sample; left of the first
+  sample in the period no line is drawn but the hover reads out that
+  first sample) · **DriftBars** drift opened vs resolved per ISO week
+  (the peak is the week with the most opened) · **RiskDonut** cases by
+  risk, all time.
+- Row 4 (full width): **Timeline** — Omarchy releases, snapshots and
+  crisis markers on one band; cases as spans from created to closed
+  (open cases run to today), packed in lanes.
+- Row 5 (full width): **The Plan** — active cases (`cases.active`) as
+  cards with step progress and agent (no period; the sixth slot, WP-031).
+
+Each chart's summary is its caption in the slot's title row (also its
+accessible description and in `call view`); while the pointer is on the
+chart the caption shows the hovered item. A chart without data in the
+period says "no data in this period". Chart data is prepared by the
+service (`Model.periodTable`) when the index changes; the overlay only
+draws (one paint per chart per data or size change; no aggregation on
+the first frame after open — the harness asserts it).
 
 Period windows follow ADR-0012 §10: inclusive day windows ending on
 `today`; drift weeks and case spans count when they overlap the window;
@@ -168,7 +182,7 @@ All charts are drawn with `Canvas` or `Shape` from arrays prepared by
 ## 7. Theming
 
 Every colour from `Style` / the bar's palette; charts use `accent`,
-`foreground` at opacities, `error` for crisis. Font from the bar. Test with
+`foreground` at opacities, `Color.urgent` for crises and R3. Font from the bar. Test with
 at least three Omarchy themes incl. a light one.
 
 ## 8. Keybinding and IPC
@@ -184,7 +198,12 @@ widget; `shell call jax.seldon <method>` reaches only the loaded overlay
 item and only while it is loaded. Routes the plugin must honour:
 
 - Overlay entry point: `open(payloadJson)`, `close()`, `opened` — this is
-  what the keybinding above hits.
+  what the keybinding above hits. While loaded, `shell call jax.seldon
+  view ""` reads the slots (aggregation counters, each chart's summary and
+  hover), `setPeriod <30|90|365|all>` switches the period, and
+  `hover "<slot> <fx>,<fy>"` (fractions in [0, 1]; `""` clears; anything
+  else returns `{ error }` and changes nothing) drives the hover read-out
+  for tests (WP-030/031).
 - Bar panel: `IpcHandler` target **`jax.seldon.panel`** owned by the bar
   widget (`open`, `close`, `show`, `hide`, `toggle`, `pill`, and the
   read-out/navigation methods `view`, `tab <today|changelog|work|decisions|system|memory>`, `filter <source>`,
