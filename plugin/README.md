@@ -270,7 +270,7 @@ o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
 | `omarchy-shell shell summon jax.seldon '{"period":"30"}'` | the Prime Radiant on a period (`30`, `90`, `365`, `all`) |
 | `omarchy-shell shell call jax.seldon view ""` | what the open Prime Radiant shows, as JSON; `unknown` while it is closed |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | pick a period in the open Prime Radiant |
-| `omarchy-shell shell call jax.seldon hover "heatmap 0.9,0.5"` | the read-out at that point of a chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON; `hover ""` clears; a malformed argument returns `{"error": …}` and changes nothing |
+| `omarchy-shell shell call jax.seldon hover "series 0.9,0.5"` | the read-out at that point of a chart (`heatmap`, `series`, `driftBars`, `riskDonut`, `timeline`, `plan`; x,y as fractions of its plot), as JSON; `hover ""` clears; a malformed argument returns `{"error": …}` and changes nothing. The heatmap's grid is square, height-bound and left-aligned (legend beside it), so at 30 d and 90 d only the left part of its plot holds cells: take the point from `Model.heatmapLayout` (docs/TESTING.md, "Runtime smoke test in the shell", step 4) |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|show\|hide` | the bar panel |
 | `omarchy-shell jax.seldon.panel pill` | what the pill shows, as JSON |
 | `omarchy-shell jax.seldon.panel view` | what the panel shows, as JSON |

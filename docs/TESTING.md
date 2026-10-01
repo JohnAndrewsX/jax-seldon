@@ -685,7 +685,14 @@ copies of the shell's `Commons/` and `Ui/`, `tests/plugin/harness/overlay.qml`
 as `shell.qml`, and a copy of `plugin/` whose layer-shell window
 (`components/overlay/OverlayWindow.qml`) is replaced by
 `tests/plugin/harness/OverlayWindow.qml`, an Item that fills the harness
-window. The harness hands the overlay a stand-in shell facade whose
+window. The harness creates Overlay.qml the way the shell's overlay
+Loader does: without properties, then it assigns `shell`, `manifest` and
+`service`, so the overlay's bindings first run with `service === null`
+and must do no work then (SPEC-PLUGIN §6; with `service` as a creation
+property the harness missed the 23 aggregation passes the live shell
+showed, WP-013 FINDINGS §5.1). `fresh` reports that as `firstFrame.bare`,
+and the script asserts it next to `firstFrame.overlay == 0`. The harness
+hands the overlay a stand-in shell facade whose
 `hide()` records the id and calls `close()`, as the shell's does, and
 after each step prints `Overlay.view()`, the hidden ids, every visible
 text, and every text that leaves its slot or the window.
@@ -823,7 +830,8 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    omarchy-shell shell toggle jax.seldon     # Prime Radiant
    omarchy-shell shell call jax.seldon view ""   # while it is open: period, slots, geometry, charts
    omarchy-shell shell call jax.seldon setPeriod 30
-   omarchy-shell shell call jax.seldon hover "heatmap 0.9,0.5"   # a chart's read-out at a point
+   omarchy-shell shell call jax.seldon hover "series 0.9,0.5"    # a chart's read-out at a point
+   omarchy-shell shell call jax.seldon hover "heatmap 0.15,0.5"  # a heatmap cell: see below
    omarchy-shell shell hide jax.seldon
    ```
    Keys: `wtype -k Tab`, `wtype -M shift -k Tab -m shift`, `wtype -k Down`,
@@ -831,6 +839,18 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    `jax.seldon.panel view`. Tab opens the bar's next panel
    (`Bar.switchPanelFrom`); if that neighbour opens a window instead of a
    popup panel (OmaSettings on the test host), the Seldon panel stays open.
+   Heatmap probe: the grid is square and bound by the slot's height, left
+   aligned with the legend beside it, so a fixed fraction such as `0.9`
+   lands on empty space except at 365 d/All on wide screens. Take the point
+   from `Model.heatmapLayout(w, h, weeks, labelW, labelH)`: `w`, `h` are the
+   heatmap slot's `chart.w`/`chart.h` in `view`, `weeks` the number of week
+   columns (5–6 at 30 d, 13–14 at 90 d, 53–54 at 365 d), `labelW` = 3 × `Style.font.caption`, `labelH` = `Style.font.caption`
+   + `Style.spacing.sm` (30 and 14 at the default tokens); then `pitch` =
+   ⌊min((w − labelW)/weeks, (h − labelH)/7)⌋ and the cell in column `c`
+   (oldest week 0), row `r` (Monday 0) is at
+   `fx = (labelW + (c + ½)·pitch)/w`, `fy = (labelH + (r + ½)·pitch)/h`.
+   `fy = 0.5` is a middle row while the grid is height-bound. In the headless harness use
+   `hoverItem:heatmap:<i>` instead (`chart.locate(i)`, `-1` = today).
 5. Panel actions (WP-012), with the real engine (`just build-release`, copy
    to `~/.local/bin/seldon`, `chmod 755`; `seldon init --non-interactive
    --path ~/Seldon-smoke`; restart the shell): `jax.seldon.panel open`,

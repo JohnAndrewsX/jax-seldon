@@ -170,7 +170,16 @@ chart the caption shows the hovered item. A chart without data in the
 period says "no data in this period". Chart data is prepared by the
 service (`Model.periodTable`) when the index changes; the overlay only
 draws (one paint per chart per data or size change; no aggregation on
-the first frame after open — the harness asserts it).
+the first frame after open — the harness asserts it). The shell creates
+the overlay item first and injects `service` afterwards (its Loader's
+`onLoaded`: `if ("service" in item) item.service = …`), so every binding
+first runs with `service === null` and must tolerate that without work
+(`Model.periodView` then returns a kept empty view, no aggregation pass);
+the harness creates the overlay in the same order.
+
+The Heatmap is a square grid bound by the slot's height, left-aligned
+with its legend beside it; at 30 d and 90 d it fills only the left part
+of a full-width slot (WP-037).
 
 Period windows follow ADR-0012 §10: inclusive day windows ending on
 `today`; drift weeks and case spans count when they overlap the window;
