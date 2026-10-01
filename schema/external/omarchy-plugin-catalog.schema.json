@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/external/omarchy-plugin-catalog.schema.json",
+  "title": "Output of `omarchy plugin catalog` (Omarchy 4.0.4, observed)",
+  "description": "Third-party input format, not part of the contract. A jq projection of every manifest; it carries no version field — read manifestPath for that.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "name", "description", "kinds", "firstParty", "manifestPath", "sourceDir", "entryPoints", "barWidget", "bar", "barWidgetPath", "barPath"],
+    "additionalProperties": false,
+    "properties": {
+      "id": { "type": "string" },
+      "name": { "type": "string" },
+      "description": { "type": "string" },
+      "kinds": { "type": "array", "items": { "type": "string" } },
+      "firstParty": { "type": "boolean" },
+      "manifestPath": { "type": "string" },
+      "sourceDir": { "type": "string" },
+      "entryPoints": { "type": "object" },
+      "barWidget": { "type": ["object", "null"] },
+      "bar": { "type": ["object", "null"] },
+      "barWidgetPath": { "type": ["string", "null"] },
+      "barPath": { "type": ["string", "null"] }
+    }
+  }
+}
