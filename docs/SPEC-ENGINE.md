@@ -137,7 +137,13 @@ theme, config. Rules:
   old inode is read first, then the new file from 0; a rotation to another
   name loses the lines between the old offset and the rotation (never
   duplicates, thanks to dedupe). Attribution follows ADR-0014 §1 as
-  sharpened by ADR-0017 §2–§5.
+  sharpened by ADR-0017 §2–§5, with this reading of "named the subject": a
+  cause that names a package attributes only members whose own transaction
+  command names it or that have no logged command (`explicit` not
+  `false`); `explicit: false` members are reached only through the
+  full-upgrade path or by inheritance from an attributed explicit member of
+  their own transaction. So an agent's `yay -S zed` never claims a human's
+  later `-Syu` that happens to upgrade `zed`.
 - **snapper** — `snapper --jsonout list`. New snapshot numbers become
   `snapshot` events with description; a `pre`/`post` pair is linked via
   `meta.pairOf`. Without `ALLOW_USERS` the command fails with a permission
