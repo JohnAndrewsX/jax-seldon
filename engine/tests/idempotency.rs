@@ -11,7 +11,7 @@ use seldon::collectors::omarchy::Omarchy;
 use seldon::collectors::pacman::Pacman;
 use seldon::collectors::snapper::Snapper;
 use seldon::collectors::{Collector, REGISTRY};
-use seldon::model::event::{Event, Source};
+use seldon::model::event::{Event, Kind, Source};
 use support::{FIXTURE_CREATED, assert_schema_valid, fixture, story};
 
 mod idempotency {
@@ -57,6 +57,51 @@ mod idempotency {
     }
 
     #[test]
+    fn a_crash_before_the_cursor_save_does_not_duplicate() {
+        // the ledger has the capture-time events, cursors.json still has
+        // the state from before (crash between append and save)
+        let mut b = support::Bench::new("crash");
+        b.sources.snapper = b
+            .scratch
+            .stub_cat("snapper", &fixture("logs/snapper-before.json"));
+        b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.6-1");
+        b.run(&Snapper, "2026-09-30T18:00:00+02:00");
+        b.run(&Omarchy, "2026-09-30T18:00:00+02:00");
+        let before = b.cursors.clone();
+
+        b.sources.snapper = b.scratch.stub_cat("snapper", &fixture("logs/snapper.json"));
+        b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.7-1");
+        let deletes = b.run(&Snapper, "2026-10-01T17:05:00+02:00");
+        assert_eq!(
+            deletes
+                .events
+                .iter()
+                .filter(|e| e.kind == Kind::SnapshotDelete)
+                .count(),
+            2
+        );
+        assert_eq!(b.run(&Omarchy, "2026-10-01T17:05:00+02:00").events.len(), 1);
+
+        b.cursors = before;
+        assert!(
+            b.run(&Snapper, "2026-10-01T17:06:00+02:00")
+                .events
+                .is_empty()
+        );
+        assert!(
+            b.run(&Omarchy, "2026-10-01T17:06:00+02:00")
+                .events
+                .is_empty()
+        );
+
+        // a real re-upgrade after a downgrade is still recorded
+        b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.6-1");
+        assert_eq!(b.run(&Omarchy, "2026-10-02T10:00:00+02:00").events.len(), 1);
+        b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.7-1");
+        assert_eq!(b.run(&Omarchy, "2026-10-03T10:00:00+02:00").events.len(), 1);
+    }
+
+    #[test]
     fn capture_writes_the_ledger_once() {
         let cli = Cli::new();
         let first = cli.capture(&["--since", FIXTURE_CREATED]);
@@ -76,6 +121,12 @@ mod idempotency {
             "+111 +112 +113 −108 −109, one update: {third}"
         );
         assert_eq!(cli.capture(&[])["written"], 0);
+
+        // cursors.json lost after the capture that wrote the update and the
+        // deletions: nothing is written again, even from the old baseline
+        let cursors = cli.env.home.join(".local/state/seldon/cursors.json");
+        std::fs::remove_file(&cursors).unwrap();
+        assert_eq!(cli.capture(&["--since", FIXTURE_CREATED])["written"], 0);
 
         let events = cli.ledger();
         events.iter().for_each(assert_schema_valid);

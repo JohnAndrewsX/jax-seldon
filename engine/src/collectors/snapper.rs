@@ -191,6 +191,10 @@ fn diff(
 
 /// Drops `snapshot` events already in the ledger (same number and time),
 /// e.g. after a crash between the ledger write and the cursor save.
+///
+/// Likewise a `snapshot-delete` whose number the ledger already records as
+/// deleted after its last creation: deletions carry capture time, so only
+/// the subject can tell them apart.
 fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
     let created = || {
         events
@@ -198,20 +202,37 @@ fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
             .filter(|e| e.kind == Kind::Snapshot)
             .map(|e| e.ts)
     };
-    let (Some(first), Some(last)) = (created().min(), created().max()) else {
-        return Ok(events);
+    let seen: HashSet<(String, i64)> = match (created().min(), created().max()) {
+        (Some(first), Some(last)) => ctx
+            .ledger
+            .read_range(first, last)?
+            .into_iter()
+            .filter(|e| e.source == Source::Snapper && e.kind == Kind::Snapshot)
+            .map(|e| (e.subject, e.ts.timestamp()))
+            .collect(),
+        _ => HashSet::new(),
     };
-    let seen: HashSet<(String, i64)> = ctx
-        .ledger
-        .read_range(first, last)?
-        .into_iter()
-        .filter(|e| e.source == Source::Snapper && e.kind == Kind::Snapshot)
-        .map(|e| (e.subject, e.ts.timestamp()))
-        .collect();
+    let deleted: HashSet<String> = if events.iter().any(|e| e.kind == Kind::SnapshotDelete) {
+        // the latest snapper event per number, over the whole ledger
+        let mut last: BTreeMap<String, Event> = BTreeMap::new();
+        for e in ctx.ledger.read_all()? {
+            if e.source == Source::Snapper && last.get(&e.subject).is_none_or(|l| l.ts <= e.ts) {
+                last.insert(e.subject.clone(), e);
+            }
+        }
+        last.into_values()
+            .filter(|e| e.kind == Kind::SnapshotDelete)
+            .map(|e| e.subject)
+            .collect()
+    } else {
+        HashSet::new()
+    };
     Ok(events
         .into_iter()
-        .filter(|e| {
-            e.kind != Kind::Snapshot || !seen.contains(&(e.subject.clone(), e.ts.timestamp()))
+        .filter(|e| match e.kind {
+            Kind::Snapshot => !seen.contains(&(e.subject.clone(), e.ts.timestamp())),
+            Kind::SnapshotDelete => !deleted.contains(&e.subject),
+            _ => true,
         })
         .collect())
 }

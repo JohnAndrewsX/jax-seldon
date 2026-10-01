@@ -54,6 +54,11 @@ impl Collector for Omarchy {
             Some(p) if p.version != version => p.version,
             _ => return Outcome::ok(Vec::new(), next),
         };
+        match already_recorded(ctx, &from, &version) {
+            Ok(true) => return Outcome::ok(Vec::new(), next),
+            Ok(false) => {}
+            Err(err) => return Outcome::degraded(format!("{err:#}"), None),
+        }
         let mut e = Event::new(ctx.now, Source::Omarchy, Kind::Update, "omarchy")
             .detail(format!("{from} → {version}"))
             .meta(Meta {
@@ -68,6 +73,21 @@ impl Collector for Omarchy {
         }
         Outcome::ok(vec![e], next)
     }
+}
+
+/// Whether the ledger's latest `update` within [`LOOKBACK`] is already
+/// `from → to`: the ledger was written but the cursor was not saved (a
+/// crash in between). The latest one, so that a real re-upgrade after a
+/// downgrade is still recorded.
+fn already_recorded(ctx: &Ctx, from: &str, to: &str) -> anyhow::Result<bool> {
+    let latest = ctx
+        .ledger
+        .read_range(ctx.now - LOOKBACK, ctx.now)?
+        .into_iter()
+        .filter(|e| e.source == Source::Omarchy && e.kind == Kind::Update)
+        .max_by_key(|e| e.ts);
+    Ok(latest
+        .is_some_and(|e| e.meta.from.as_deref() == Some(from) && e.meta.to.as_deref() == Some(to)))
 }
 
 /// `omarchy-version`, else the version column of the package query.
