@@ -108,7 +108,7 @@ add a banner state, add an overlay and run `--write-index`.
 |---|---|---|
 | `snapper-degraded` | collector `snapper`: `ok: false` + the ADR-0011 message | degraded collector with a fix command |
 | `not-initialised` | `state.status: notInitialised`, every section empty | "Run `seldon init`" |
-| `index-stale` | `state.status: indexStale`; `generatedAt` 17:05:12 and `lastCapture` 17:05:00 (tested, not changed) | stale banner from the data; with **`SELDON_NOW=2026-10-01T20:05:12+02:00`** (`STALE_NOW` in the script, also the plugin harness's clock) stale by the clock too — the check requires both times more than 2 h before it |
+| `index-stale` | `state.status: indexStale` only; `generatedAt` and `lastCapture` stay the sample's. The engine never writes `indexStale`; `plugin/Model.js` derives it, and this variant exercises its data-driven branch | stale banner from the data; with **`SELDON_NOW=2026-10-01T20:05:12+02:00`** (`STALE_NOW` in the script, also the plugin harness's clock) stale by the clock too — the check requires both times more than 2 h before it |
 | `plugins-degraded` | collector `plugins`: `ok: false`, `message` `omarchy plugin list --json: timed out` (the engine's text for a shell IPC timeout) | a failing non-snapper collector |
 | `omarchy-git-checkout` | `system.omarchy.repoHead: 3f9c2e1` (short hash, like `logbook.git.head`) | Omarchy run from a git checkout of `$OMARCHY_PATH` (SPEC-ENGINE §4) |
 
@@ -190,7 +190,8 @@ Markdown table):
   with the 09-30 `-Syu` to 10-01. Expected: restart from 0 on the inode change, dedupe by
   `(ts, kind, subject, version)`, so the 09-15 upgrade is not emitted twice.
 - `snapper-before.json` (2026-09-30 18:00, has pre/post 108/109) and `snapper.json`
-  (2026-10-01 17:05, has pre/post 114/115 with `userdata.case`). Diff: +111, −108,
+  (2026-10-01 17:05, has pre/post 114/115; the collector links them through
+  `type` and `pre-number` and ignores `userdata`). Diff: +111, −108,
   −109, +112, +113, +114, +115 — the snapper events of the ledger. `date` is
   local time without offset; snapshot 0 is `current`.
   Shape from snapper upstream; **not verified on the dev host** (ADR-0011).

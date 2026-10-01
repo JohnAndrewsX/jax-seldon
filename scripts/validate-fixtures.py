@@ -927,11 +927,11 @@ VARIANTS = {
         {"op": "replace", "path": "/memory", "value": {}},
         {"op": "replace", "path": "/series", "value": {"heatmap": [], "packages": [], "drift": []}},
     ],
-    # The index as the engine wrote it, read later: stale by its status and, with SELDON_NOW =
-    # STALE_NOW, by the clock too (generatedAt and lastCapture more than 2 h before it).
+    # The engine never writes indexStale; plugin/Model.js derives it from the clock or takes it
+    # from state.status. This variant exercises that data-driven branch. With SELDON_NOW =
+    # STALE_NOW the clock agrees: the check below requires generatedAt and lastCapture to lie
+    # more than 2 h before it.
     "index-stale": [
-        {"op": "test", "path": "/generatedAt", "value": "2026-10-01T17:05:12+02:00"},
-        {"op": "test", "path": "/state/lastCapture", "value": "2026-10-01T17:05:00+02:00"},
         {"op": "replace", "path": "/state/status", "value": "indexStale"},
     ],
     # A non-snapper collector failed (SPEC-ENGINE §4 plugins: the shell IPC call timed out).
@@ -1185,7 +1185,11 @@ def main():
         print(f"wrote {rel(SAMPLE)}")
         for name, ops in VARIANTS.items():
             path = os.path.join(FIX, "index-variants", f"{name}.json")
-            dump_json(path, apply_overlay(sample, ops, name))
+            try:
+                dump_json(path, apply_overlay(sample, ops, name))
+            except Fail as e:
+                problems.append(f"{e} (not written)")
+                continue
             print(f"wrote {rel(path)}")
 
     # 1. schema validation of every JSON fixture
@@ -1225,13 +1229,17 @@ def main():
             continue
         with open(path, encoding="utf-8") as f:
             have = json.load(f)
-        problems += [f"{rel(path)} {d} (regenerate with --write-index)"
-                     for d in diff(have, apply_overlay(sample, ops, name))]
+        try:
+            want = apply_overlay(sample, ops, name)
+        except Fail as e:  # one broken overlay must not hide the other problems
+            problems.append(str(e))
+        else:
+            problems += [f"{rel(path)} {d} (regenerate with --write-index)" for d in diff(have, want)]
         problems += check_times(have, rel(path))
-    stale = apply_overlay(sample, VARIANTS["index-stale"], "index-stale")
-    for k, v in (("generatedAt", stale["generatedAt"]), ("state.lastCapture", stale["state"]["lastCapture"])):
-        if instant(STALE_NOW) - instant(v) <= STALE_AFTER:
-            problems.append(f"index-variants/index-stale {k} {v} is not more than 2 h before STALE_NOW {STALE_NOW}")
+        if name == "index-stale":
+            for k, v in (("generatedAt", have["generatedAt"]), ("state.lastCapture", have["state"]["lastCapture"])):
+                if instant(STALE_NOW) - instant(v) <= STALE_AFTER:
+                    problems.append(f"{rel(path)} {k} {v} is not more than 2 h before STALE_NOW {STALE_NOW}")
 
     # 4. ADR-0013 mutation self-checks on the sample logbook
     errs, n_checks = self_checks(today)
