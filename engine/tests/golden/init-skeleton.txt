@@ -64,6 +64,8 @@ fence packages.summary
 ## History
 fence packages.history
 table | date | explicit | total |
+## Explicit packages
+fence packages.explicit
 == system/deviations.md
 # Deviations from Omarchy defaults
 fence deviations.table

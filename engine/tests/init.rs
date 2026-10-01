@@ -1034,6 +1034,17 @@ mod setup {
         let (_de_env, de, de_id) = logbook_in("de");
         let en_skeleton = skeleton(&en, &en_id);
         assert_eq!(skeleton(&de, &de_id), en_skeleton, "de and en differ");
+        // every new logbook carries the (empty) packages.explicit fence
+        // from the start (WP-036)
+        for root in [&en, &de] {
+            let packages = common::read(&root.join("system/packages.md"));
+            assert!(
+                packages.ends_with(
+                    "\n## Explicit packages\n\n<!-- seldon:begin packages.explicit -->\n<!-- seldon:end -->\n"
+                ),
+                "{packages}"
+            );
+        }
 
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/init-skeleton.txt");
         if std::env::var_os("SELDON_BLESS").is_some() {

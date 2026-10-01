@@ -195,15 +195,10 @@ fn the_fixture_dossier_is_golden_and_keeps_user_text() {
         before.keys().collect::<Vec<_>>(),
         after.keys().collect::<Vec<_>>()
     );
+    // (the fixture carries an empty packages.explicit fence: nothing is
+    // appended, WP-036)
     for (name, text) in &before {
-        let new = &after[name];
-        // packages.explicit is new: it was appended after the last fence
-        let new_outside = outside(new);
-        let new_outside = match new_outside.split_once("\n## Explizite Pakete\n") {
-            Some((head, _)) if name == "packages.md" => head.to_string(),
-            _ => new_outside,
-        };
-        assert_eq!(outside(text), new_outside, "{name}");
+        assert_eq!(outside(text), outside(&after[name]), "{name}");
     }
     let all = bodies(&lb);
     let got: Vec<&str> = all.keys().map(String::as_str).collect();
