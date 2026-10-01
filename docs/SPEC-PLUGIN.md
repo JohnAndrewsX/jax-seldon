@@ -86,7 +86,10 @@ toggles Panel; middle click opens Prime Radiant; right click runs capture.
 | Memory | lessons headings, memory topics | "Open" |
 
 Banner states (top of every tab): engine missing → "Install the engine:
-`omarchy pkg add jax-seldon`" with *Copy* and *Open terminal*; snapshots
+`omarchy pkg aur add jax-seldon`" (ADR-0016; `omarchy pkg add` reaches the
+official repositories only) with *Copy* and *Open terminal*; contract
+mismatch → `omarchy plugin update jax.seldon` when the plugin is older
+than the index, `yay -S jax-seldon` when the engine is older; snapshots
 not readable (ADR-0011) → the one-line snapper fix with *Copy* and *Open
 terminal*; not
 initialised → "Run `seldon init`" with *Open terminal*; index stale →
@@ -131,10 +134,17 @@ item and only while it is loaded. Routes the plugin must honour:
 
 - Overlay entry point: `open(payloadJson)`, `close()`, `opened` — this is
   what the keybinding above hits.
-- Bar panel: an `IpcHandler` target owned by the bar widget/panel, following
-  the first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open,
-  close and toggle the panel independently of the overlay. WP-010 names the
-  target and documents it in `plugin/README.md`.
+- Bar panel: `IpcHandler` target **`jax.seldon.panel`** owned by the bar
+  widget (`open`, `close`, `show`, `hide`, `toggle`, `pill`), following the
+  first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
+  and toggle the panel independently of the overlay (WP-010).
+- Service: `IpcHandler` target **`jax.seldon.service`** (`status`,
+  `refresh`, `capture`) — read-only state and the two actions any local
+  process could trigger anyway; it is how the test host reads plugin state
+  headlessly.
+- Quirk: `shell togglePanelAt <section> <n>` on the Seldon pill opens the
+  overlay, not the panel, because the shell routes by plugin id. Use the
+  panel target above.
 
 ## 9. Validation
 
@@ -149,7 +159,14 @@ in token names, so the runtime smoke test below is a **hard acceptance
 test** of every plugin WP, not an option. The smoke test launches the shell
 with the fixture index (`SELDON_INDEX` env override is honoured by
 Service.qml for development only) and checks that each tab and the overlay
-render without QML errors (`qs log --tail`).
+render without QML errors (`qs log --tail`). With `SELDON_INDEX` set the
+plugin is in read-only dev mode (CONTRACT.md rule 1): it never runs a
+writing engine command, and `SELDON_NOW` pins its clock. The headless
+harness under `tests/plugin/` (`just plugin-test`) runs Service.qml in an
+offscreen Quickshell against fake engines and checks the exact argv of
+every command the plugin issues; it is part of `just check`. After copying
+changed plugin code into a live shell, run `omarchy-restart-shell` —
+Quickshell 0.3.1 does not reload plugin code on file change.
 
 ## 10. Security posture (for the marketplace listing)
 

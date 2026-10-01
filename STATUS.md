@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|
 | WP-004 | Collectors: pacman, snapper, omarchy (+ event model, ledger, collector registry) | Engine | `engine-004` (opus, high) | `wt/WP-004` · `wp/004-collectors-core` | 2026-10-01 |
 | WP-006 | `log`, `event`, `plan` commands, case state machine, journal | Engine | `engine-006` (opus, high) | `wt/WP-006` · `wp/006-commands` | 2026-10-01 |
-| WP-010 | Plugin skeleton: manifest, Service, BarWidget, states | Plugin | `plugin-010` (opus, high) | `wt/WP-010` · `wp/010-plugin-skeleton` | 2026-10-01 |
+| WP-011 | Panel: Today, Changelog, System tabs | Plugin | `plugin-011` (opus, high) | `wt/WP-011` · `wp/011-panel-tabs` | 2026-10-01 |
 
 ## Queued (next up)
 After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
@@ -28,6 +28,10 @@ After WP-003: WP-004, WP-005, WP-006, WP-024 in parallel (own module paths)
 *(none)*
 
 ## Recently completed
+- 2026-10-01 WP-010 Plugin skeleton — merged; Service state machine, pill,
+  banners, headless harness (48 checks), token check; smoke-tested on the
+  test host; ADR-0016 (install via AUR helper); plugin test expectations
+  updated to the 4-item drift fixture at merge.
 - 2026-10-01 WP-003 Engine core — merged; config, logbook layout, lossless
   frontmatter, typed models, `init` wizard, `doctor`; 71 tests; specs
   amended (SPEC-ENGINE §2 §3 §9, SPEC-LOGBOOK §6).

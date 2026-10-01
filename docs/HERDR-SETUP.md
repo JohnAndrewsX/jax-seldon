@@ -103,6 +103,7 @@ from the first release on. Until then, test by copying:
 ```bash
 rsync -a --delete plugin/ test:~/.config/omarchy/plugins/jax.seldon/
 ssh test 'omarchy plugin validate ~/.config/omarchy/plugins/jax.seldon && omarchy-shell shell rescanPlugins && omarchy plugin enable jax.seldon'
+ssh test 'omarchy-restart-shell'   # required after every code change: Quickshell 0.3.1 does not reload plugin code
 ```
 
 The engine builds on the test host with its pacman Rust (glibc), or copy

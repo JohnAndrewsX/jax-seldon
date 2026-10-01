@@ -50,8 +50,8 @@ test("pillTone: crisis beats active beats default", () => {
 test("parseIndex accepts the sample and reads its counts", () => {
   const r = M.parseIndex(sample)
   assert.strictEqual(r.ok, true)
-  same(M.counts(r.index), { active: 2, queued: 3, drift: 3, crisis: 2 })
-  assert.strictEqual(M.pillText(M.counts(r.index)), "⟡ 2 · 3")
+  same(M.counts(r.index), { active: 2, queued: 3, drift: 4, crisis: 2 })
+  assert.strictEqual(M.pillText(M.counts(r.index)), "⟡ 2 · 4")
 })
 
 test("parseIndex reports a contract mismatch with the version found", () => {

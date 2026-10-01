@@ -74,7 +74,7 @@ clean_log() {
 # 1. Fixture index, engine on PATH: the pill shows the fixture's counts.
 run ok 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json"
 expect ok .status ok
-expect ok .pill "⟡ 2 · 3"
+expect ok .pill "⟡ 2 · 4"
 expect ok .tone urgent
 expect ok .engine present
 expect ok .engineVersion 0.1.0-fake
@@ -83,7 +83,7 @@ clean_log ok
 # 2. Same index, no seldon on PATH.
 run engine-missing 2500 PATH="$base_path" SELDON_INDEX="$fx/index.sample.json"
 expect engine-missing .status engineMissing
-expect engine-missing .pill "⟡ 2 · 3"
+expect engine-missing .pill "⟡ 2 · 4"
 expect engine-missing .banner "Seldon engine not installed"
 clean_log engine-missing
 
@@ -109,7 +109,7 @@ expect index-unreadable .banner "Index unreadable"
 run index-stale 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T20:05:12+02:00"
 expect index-stale .status indexStale
 expect index-stale .banner "Index is stale"
-expect index-stale .pill "⟡ 2 · 3"
+expect index-stale .pill "⟡ 2 · 4"
 run index-fresh 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T19:05:00+02:00"
 expect index-fresh .status ok
 
@@ -137,7 +137,7 @@ cp "$fx/index-variants/not-initialised.json" "$work/swap.json"
 run atomic-replace 4000 PATH="$fake_path" SELDON_INDEX="$work/swap.json"
 wait
 expect atomic-replace .status ok
-expect atomic-replace .pill "⟡ 2 · 3"
+expect atomic-replace .pill "⟡ 2 · 4"
 
 # 11. The engine is installed while the shell runs; "Check again" finds it.
 (sleep 1; install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin-late/seldon") &
@@ -152,7 +152,7 @@ mkdir -p "$work/home-live"
 run live 9000 PATH="$fake_path" HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
 expect live .status ok
 expect live .devMode false
-expect live .pill "⟡ 2 · 3"
+expect live .pill "⟡ 2 · 4"
 calls=$(tr '\n' ' ' <"$work/home-live/calls.log" | sed 's/ $//')
 want="start --version end --version start capture end capture start status end status"
 if [[ $calls == "$want" ]]; then
@@ -175,7 +175,7 @@ echo uninit >"$work/home-init/mode"
 run init-later 7000 PATH="$fake_path" HOME="$work/home-init" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECHECK_MS=2500
 wait
 expect init-later .status ok
-expect init-later .pill "⟡ 2 · 3"
+expect init-later .pill "⟡ 2 · 4"
 
 # 14. Banner fixes run fixed argument lists with constant commands only.
 mkdir -p "$work/bin-tools"
