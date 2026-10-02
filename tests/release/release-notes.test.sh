@@ -39,6 +39,8 @@ expect_fail() {
 }
 
 # --- the real CHANGELOG.md: the 0.1.0 section a v0.1.0 tag publishes ---
+# The checks below quote its first and last lines. 0.1.0 is released, so
+# its section is frozen; a later edit to it is a deliberate change here.
 bash "$script" 0.1.0 "$root/CHANGELOG.md" > "$tmp/real" || fail "real 0.1.0: exit $?"
 first=$(head -n 1 "$tmp/real")
 last=$(tail -n 1 "$tmp/real")

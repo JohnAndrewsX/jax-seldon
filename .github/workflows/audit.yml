@@ -1,0 +1,53 @@
+# RustSec advisories for engine/Cargo.lock (WP-048): weekly, by hand, and
+# on every push or pull request that changes the lock file.
+#
+# Advisory only for now: a finding (vulnerability, unmaintained or yanked
+# crate) leaves the job green with a warning annotation on the run.
+# CONTRIBUTING.md ("Dependency advisories") says when it becomes blocking:
+# then `continue-on-error` goes from the `cargo audit` step.
+name: audit
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'  # Mondays 05:17 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - engine/Cargo.lock
+      - .github/workflows/audit.yml
+  pull_request:
+    paths:
+      - engine/Cargo.lock
+      - .github/workflows/audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      # Arch's `cargo-audit` pulls in cargo; the advisory database is
+      # fetched from github.com/rustsec/advisory-db at run time.
+      - name: Install cargo-audit
+        run: pacman -Syu --noconfirm --needed git cargo-audit
+
+      - uses: actions/checkout@v4
+
+      - name: cargo audit
+        id: audit
+        continue-on-error: true
+        run: cargo audit --file engine/Cargo.lock --deny warnings
+
+      - name: Report findings
+        if: steps.audit.outcome == 'failure'
+        run: |
+          echo "::warning title=cargo audit::cargo audit failed for engine/Cargo.lock (RustSec findings, or the advisory database could not be fetched); see the cargo audit step log (CONTRIBUTING.md, Dependency advisories)"
+          {
+            echo '## cargo audit: findings'
+            echo 'See the log of the cargo audit step. Update the crate, or document why the advisory does not apply.'
+          } >> "$GITHUB_STEP_SUMMARY"
