@@ -119,7 +119,7 @@ files, tokens 385 references.
 ## Not done
 
 - **The real launcher on the test host:** skipped. It is locked:
-  `ssh pbbau-lnx-ea env OMARCHY_PATH=/usr/share/omarchy
+  `ssh <test-host> env OMARCHY_PATH=/usr/share/omarchy
   XDG_RUNTIME_DIR=/run/user/1000 omarchy-shell lock status` →
   `"locked":true`. The manual step is in TESTING.md layer 4, step 5
   ("Start agent (WP-022) …"). It also needs a default agent set

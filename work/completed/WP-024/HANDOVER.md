@@ -67,9 +67,9 @@ Prevention (review follow-up 3):
 - With `SELDON_TEST_GUARD=<dir>`, the engine exits 2 before it reads or
   writes anything unless its resolved home, config and state directories
   all lie under `<dir>`.
-- On the host, `HOME=/home/eandres` with the guard set gives `{"error":
+- On the host, `HOME=/home/<user>` with the guard set gives `{"error":
   {"code":2,"message":"refusing to run outside the test guard: the home
-  directory /home/eandres is not under … (SELDON_TEST_GUARD)"}}`, exit 2.
+  directory /home/<user> is not under … (SELDON_TEST_GUARD)"}}`, exit 2.
 - An integration test replays the incident's shape: HOME outside, the XDG
   dirs inside. It gets exit 2 and finds nothing written.
 
