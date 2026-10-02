@@ -1,17 +1,49 @@
+<!-- mark: the Prime Radiant icon (work/design/ROUND-2.md in the project
+     repository, A1 mask / A9 favicon) goes here, left of the title, once
+     round 2 is delivered; it must be copied into plugin/ to show here. -->
+
 # JAX Seldon
 
-Flight recorder and planning desk for your Omarchy system. The Seldon engine
-records what changes on your machine (packages, Omarchy updates, themes,
-plugins, snapshots, config) in a plain-Markdown logbook; this plugin shows
-it: a pill in the bar, a panel with six tabs (today's journal, the
-changelog, your work cases, decisions, the system, your agents' memory)
-and the **Prime Radiant**, a fullscreen overlay with charts and the plan.
-You write notes, plan cases and explain unexpected changes from the panel;
-the engine does the writing.
+The Omarchy shell plugin for Seldon, the flight recorder and planning desk
+for your Omarchy system.
 
+[![CI](https://github.com/JohnAndrewsX/jax-seldon/actions/workflows/ci.yml/badge.svg)](https://github.com/JohnAndrewsX/jax-seldon/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
+[![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
+
+<!-- hero: stays preview.png (the marketplace preview); the round-2 hero
+     (A6) goes into the project README, a marketplace image (A8) may
+     replace this one once delivered, copied into plugin/. -->
 ![Preview, 2480×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
 
 *Offscreen renders of the real QML on the sample index, Tokyo Night theme.*
+
+The Seldon engine records what changes on your machine (packages, Omarchy
+updates, themes, plugins, snapshots, config) in a plain-Markdown logbook
+and matches it against the changes you planned as cases. This plugin
+shows the result in the Omarchy shell. You write notes, plan cases and
+explain unexpected changes from the panel; the engine does the writing.
+
+- A pill in the bar counts active cases and unexplained changes
+  ([The pill](#the-pill)).
+- A panel with six tabs shows today's journal, the changelog, your work
+  cases, decisions, the system and your agents' memory
+  ([The panel](#the-panel)).
+- The Prime Radiant is a fullscreen overlay with charts and the plan
+  ([The Prime Radiant](#the-prime-radiant)).
+- From the panel you write notes, create cases, move them through their
+  steps and propose decisions; the engine writes each one.
+- One sheet resolves drift: link a change to a case, explain it or
+  dismiss it.
+- Every degraded state, from a missing engine to a stale index, has a
+  one-click fix ([States](#states)).
+
+It follows your Omarchy theme, runs every program without a shell and
+never writes a file itself ([Security](#security-privacy-privileges)).
+
+[Install](#install) · [Usage](#usage) · [Keys](#keys) ·
+[Configure](#configure) · [Troubleshooting](#troubleshooting) ·
+[Remove](#remove) · [Documentation](#documentation)
 
 ## Requirements
 
@@ -23,9 +55,25 @@ the engine does the writing.
 
 ## Install
 
+Three steps: the engine, your logbook, the plugin. None needs `sudo`.
+
 **1. The engine.** AUR package: coming soon; until then install it from
 GitHub. `install.sh` checks the release against its `SHA256SUMS`, refuses
 on a mismatch, installs `~/.local/bin/seldon` and never asks for root.
+
+> [!NOTE]
+> `releases/latest/download/install.sh` exists from the next release on
+> (v0.1.1); until then take the script from `main`
+> (https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
+> and run `bash install.sh --version v0.1.0`:
+>
+> ```sh
+> cd "$(mktemp -d)"
+> curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
+> less install.sh
+> bash install.sh --version v0.1.0
+> ```
+
 Download, read, verify, run:
 
 ```sh
@@ -42,15 +90,30 @@ or in one line (the script still verifies the engine, not itself):
 curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
 ```
 
-`releases/latest/download/install.sh` exists from the next release on
-(v0.1.1); until then take the script from `main`
-(https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
-and run `bash install.sh --version v0.1.0`. Run it again to update.
-Options (`--version`, `--prefix`, `--unit` for the optional watcher,
-`--force` over a self-built `seldon`) and the AUR commands are in the
-[project README](https://github.com/JohnAndrewsX/jax-seldon#install).
+Run it again to update. Its options (`--version`, `--prefix`, `--unit`
+for the optional watcher, `--force` over a self-built `seldon`) are in the
+[project README](https://github.com/JohnAndrewsX/jax-seldon#install-options-update-and-removal).
+Check the engine with `seldon --version`. If your shell says
+`command not found`, open a new terminal.
 
-**2. Your logbook**, once: `seldon init` in a terminal.
+Once the AUR package is live, you can install the engine from there
+instead of GitHub. Install from one source only: both put a `seldon` on
+your `PATH`.
+
+```sh
+omarchy pkg aur add jax-seldon   # install
+yay -S jax-seldon                # update
+```
+
+**2. Your logbook**, once, in a terminal:
+
+```sh
+seldon init
+```
+
+It asks where to put the logbook (`~/Seldon` by default) and a few more
+questions; Enter takes each default. `seldon doctor` then checks the
+setup.
 
 **3. The plugin:**
 
@@ -58,8 +121,9 @@ Options (`--version`, `--prefix`, `--unit` for the optional watcher,
 omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
 ```
 
-The pill lands in the bar's right section. Without `--enable` the plugin is
-installed disabled; enable it later with `omarchy plugin enable jax.seldon`.
+Omarchy asks before it clones the plugin. The pill lands in the bar's
+right section. Without `--enable` the plugin is installed disabled; enable
+it later with `omarchy plugin enable jax.seldon`.
 
 **Development copy** (before a release, or to try local changes): copy the
 `plugin/` folder of the [project repository](https://github.com/JohnAndrewsX/jax-seldon)
@@ -123,9 +187,9 @@ note is saved, and a blank note is refused.
 line below says what the capture wrote. New rows arrive with the rewritten
 index, without a restart.
 
-**Open in editor** runs `seldon open <journal|ledger|status|logbook|case
-id|decision id> --editor`; the engine starts your default editor
-(`omarchy-launch-editor`).
+**Open in editor** runs
+`seldon open <journal|ledger|status|logbook|case id|decision id> --editor`;
+the engine starts your default editor (`omarchy-launch-editor`).
 
 **Work.** One tile per case: id, steps done/total, title, the zone as the
 stripe colour, *verification* or *dropped*, and "N proposed" when the engine
@@ -140,12 +204,13 @@ the proposed events and the actions its status allows:
 | verification | *Done*, *Drop*, *Open* |
 | completed, dropped | *Open* |
 
-*Start*, *Verify*, *Done* and *Drop* run `seldon plan start|verify|done|drop
-<id>`. A click runs the action, except *Drop* and *Start agent*, which ask
-for a second click. *Start agent* runs `seldon agent start <id>`: the
-engine makes the case the active case and launches the agent configured in
-`~/.config/seldon/config.toml` (`[agent] launcher`; by default `omarchy
-agent prompt`) with the case's context as its first prompt. The line under
+*Start*, *Verify*, *Done* and *Drop* run
+`seldon plan start|verify|done|drop <id>`. A click runs the action, except
+*Drop* and *Start agent*, which ask for a second click. *Start agent* runs
+`seldon agent start <id>`: the engine makes the case the active case and
+launches the agent configured in `~/.config/seldon/config.toml`
+(`[agent] launcher`; by default `omarchy agent prompt`) with the case's
+context as its first prompt. The line under
 the columns shows the engine's answer (`C-2026-005: queued → active`) or
 why it refused.
 
@@ -358,21 +423,22 @@ shell plugin. This is everything it does outside its own window:
 - **When it runs the engine:** `seldon --version --json` at shell start
   and on *Check again*; `seldon capture` then `seldon status` at start and
   every capture interval; everything else only on your click or key press.
-  `seldon open` makes the engine start your editor and `seldon agent
-  start` makes it start the agent launcher you configured in
+  `seldon open` makes the engine start your editor and
+  `seldon agent start` makes it start the agent launcher you configured in
   `~/.config/seldon/config.toml`; those are the engine's actions, under
   your configuration.
 - **Two other programs, only when you click a banner button:**
   `wl-copy -- <command>` (*Copy*) and
-  `omarchy-launch-floating-terminal-with-presentation <command>` (*Install
-  in terminal*, *Run in terminal*, *Update in terminal*). `<command>` is
-  always one of five constants in the plugin: `curl -fsSL
-  https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
+  `omarchy-launch-floating-terminal-with-presentation <command>`
+  (*Install in terminal*, *Run in terminal*, *Update in terminal*).
+  `<command>` is always one of five constants in the plugin:
+  `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
   (the engine install while the AUR package does not exist; it fetches
   the script over TLS from this project's release and the script checks
-  the engine against `SHA256SUMS`), `seldon init`, `omarchy plugin update jax.seldon`, `yay -S
-  jax-seldon`, `sudo snapper -c root set-config ALLOW_USERS=$USER
-  SYNC_ACL=yes`. Omarchy's launcher runs it in a terminal window you see
+  the engine against `SHA256SUMS`), `seldon init`,
+  `omarchy plugin update jax.seldon`, `yay -S jax-seldon`,
+  `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes`.
+  Omarchy's launcher runs it in a terminal window you see
   (`sudo` asks for your password there).
 - **Never shell strings:** every program is started with an argument list,
   without a shell. Nothing from the index or the logbook ever becomes part
@@ -446,20 +512,28 @@ it.
 - Tests, the headless harnesses and how `preview.png` is made:
   [`docs/TESTING.md`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/TESTING.md).
 
-## For AI agents
+## Documentation
+
+| You want to | Read |
+|---|---|
+| Use Seldon, engine and plugin together | User guide: [English](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/user/en/README.md) · [Deutsch](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/user/de/README.md) |
+| Get going in fifteen minutes | [Getting started](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/user/en/01-getting-started.md) · [Erste Schritte](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/user/de/01-getting-started.md) |
+| Let an AI agent work in your logbook | [Agent guide](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md) · [`llms.txt`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/llms.txt) |
+| Read what the plugin may do | [Plugin spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-PLUGIN.md) · [Contract](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/CONTRACT.md) |
+| See what changed | [Changelog](https://github.com/JohnAndrewsX/jax-seldon/blob/main/CHANGELOG.md) |
 
 The plugin only reads Seldon's index; agents work through the engine. An
 agent started inside a Seldon logbook follows that logbook's `AGENTS.md`;
-the long form is the
-[agent guide](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md),
-the one-page index is
-[`llms.txt`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/llms.txt).
+the agent guide is its long form.
 
-## Project home and licence
+## Project home, contributing and licence
 
 Project home, issues and the engine:
 <https://github.com/JohnAndrewsX/jax-seldon>. This plugin repository is
 generated from its `plugin/` folder; please file issues and pull requests
-there.
+there, following its
+[contributing guide](https://github.com/JohnAndrewsX/jax-seldon/blob/main/CONTRIBUTING.md).
+Report a vulnerability privately, never in a public issue: see
+[`SECURITY.md`](SECURITY.md).
 
 MIT, see [`LICENSE`](LICENSE).
