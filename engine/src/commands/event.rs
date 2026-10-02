@@ -117,23 +117,23 @@ pub struct EventArgs {
     pub kind: Kind,
 
     /// What it is about: package, ~-relative path, theme, plugin id, …
-    #[arg(long, value_name = "S", allow_hyphen_values = true)]
+    #[arg(long, value_name = "SUBJECT", allow_hyphen_values = true)]
     pub subject: String,
 
     /// Human-readable detail
-    #[arg(long, value_name = "D", allow_hyphen_values = true)]
+    #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
     pub detail: Option<String>,
 
     /// Attribute the event to this case
     #[arg(long = "case", value_name = "ID", value_parser = parse_case_id)]
     pub case_id: Option<String>,
 
-    /// Who did it (default: system, like a collector; hooks and scripts
-    /// name the agent or human they act for)
-    #[arg(long, value_name = "A", default_value = "system", value_parser = parse_actor)]
+    /// Who did it: system (like a collector), human or agent:NAME; hooks
+    /// and scripts name the one they act for
+    #[arg(long, value_name = "ACTOR", default_value = "system", value_parser = parse_actor)]
     pub actor: String,
 
-    /// Extra key=value (repeatable); `enabled` takes true or false
+    /// Extra key=value (repeatable), e.g. `--meta enabled=true`; `enabled` takes true or false
     #[arg(long = "meta", value_name = "KEY=VALUE")]
     pub meta: Vec<String>,
 }

@@ -15,8 +15,11 @@ use crate::model::event::{Event, Kind, Meta, Source};
 pub const JOURNAL_SUBJECT: &str = "journal";
 
 #[derive(Debug, Clone, Args)]
+#[command(after_help = "Examples:
+  seldon log -- \"Switched the terminal font to Iosevka\"
+  seldon log --case C-2026-004 --tag fonts -- \"Tried two fonts, kept the first\"")]
 pub struct LogArgs {
-    /// The note, as one argument (put `--` before a text that is exactly an option, e.g. `-- --json`)
+    /// The note, as one argument; after `--` when it starts with `-`
     #[arg(value_name = "TEXT", allow_hyphen_values = true)]
     pub text: String,
 
@@ -24,12 +27,12 @@ pub struct LogArgs {
     #[arg(long = "case", value_name = "ID", value_parser = parse_case_id)]
     pub case_id: Option<String>,
 
-    /// Who writes the note
-    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    /// Who writes the note: human or agent:NAME
+    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
     pub actor: String,
 
     /// Tag the note (repeatable): `#tag` in the journal, `meta.tags` in the ledger
-    #[arg(long = "tag", value_name = "T", value_parser = parse_tag)]
+    #[arg(long = "tag", value_name = "TAG", value_parser = parse_tag)]
     pub tags: Vec<String>,
 }
 

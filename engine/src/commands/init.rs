@@ -31,6 +31,7 @@ use super::dossier::{self, DossierArgs};
 use super::setup::{self, BASELINE_REASON, ThemeHook};
 use super::{Commit, Context, Output, autocommit};
 use crate::collectors::Sources;
+use crate::collectors::config::OwnOp;
 use crate::config::{Collectors, Config, HARNESSES};
 use crate::error::{Error, Result};
 use crate::logbook::layout::{self, NewLogbook};
@@ -203,6 +204,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             &config,
             std::slice::from_ref(hook),
             "seldon init --theme-hook",
+            OwnOp::Install,
         )),
         _ => None,
     };
@@ -294,6 +296,37 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             "dossier": dossier.json,
             "themeHook": theme_hook_json,
             "nextSteps": next,
+        }),
+    ))
+}
+
+/// `seldon init --remove-theme-hook`: removes what `--theme-hook`
+/// installed ([`setup::remove_theme_hook`]); the logbook is not needed.
+/// The config's watch paths decide what is recorded as the engine's own
+/// deletion, as for `hook install --settings`.
+pub fn remove_theme_hook(ctx: &Context) -> Result<Output> {
+    let config = ctx.load_config().ok().flatten().unwrap_or_default();
+    let r = setup::remove_theme_hook(ctx, &config)?;
+    let (hook, script) = (ctx.dirs.display(&r.hook), ctx.dirs.display(&r.script));
+    let mut human = if r.hook_removed {
+        format!("Removed the theme hook {hook}.")
+    } else {
+        format!("The theme hook is not installed ({hook}); nothing to remove.")
+    };
+    if r.script_removed {
+        human.push_str(&format!("\nRemoved its script {script}."));
+    }
+    if let Some(Err(e)) = &r.own {
+        human.push_str(&format!("\n{hook}: {}", setup::own_writes_warning(e)));
+    }
+    Ok(Output::ok(
+        human,
+        json!({
+            "hook": r.hook,
+            "removed": r.hook_removed,
+            "script": r.script,
+            "scriptRemoved": r.script_removed,
+            "ownWrites": r.own.as_ref().map_or(Value::Null, setup::own_writes_json),
         }),
     ))
 }

@@ -12,7 +12,7 @@ Nothing here is installed by default.
 | Hook | `theme-set` — `omarchy-theme-set` runs it with the new theme slug after it wrote `~/.local/state/omarchy/current/theme.name` |
 | Does | `seldon event theme theme-set --subject "$1"` |
 | Installed by | the wizard (`seldon init`, WP-024), only when the user opts in (`--theme-hook`, or "yes" to the wizard's question): it writes the script, compiled into the engine, to `${XDG_STATE_HOME:-~/.local/state}/seldon/hooks/seldon-theme-set.sh` and runs `omarchy hook install theme-set <that file>`, which copies it to `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` with mode 755. The name is Seldon's own so the copy never replaces a hook of the user's. When that file exists already, nothing runs. A failure is reported with the command to run by hand; it never fails `init` |
-| Removed by | deleting `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` |
+| Removed by | `seldon init --remove-theme-hook` (WP-049): deletes the copy in `~/.config/omarchy/hooks/theme-set.d/` and the script in the state directory, and records the deletion as the engine's own, so the next capture explains it (SPEC-ENGINE §5 rule 7); Omarchy has no command to remove a hook |
 
 Why it is optional: the `theme` collector (`engine/src/collectors/theme.rs`)
 finds every change on the next `seldon capture` by comparing `theme.name`
@@ -58,7 +58,7 @@ the files by hand (`cp -rn <kit>/. <logbook>/.claude/`), then
 
 Not a script. `seldon init --harness claude-code` (or the wizard's harness
 step) installs it into the new logbook, inside the first commit;
-`seldon hook install claude-code [--settings PATH]` does the same later and
+`seldon hook install claude-code [--settings FILE]` does the same later and
 merges
 three entries into `<logbook>/.claude/settings.json` (other hooks and keys
 stay; running it again changes nothing):
@@ -68,6 +68,10 @@ stay; running it again changes nothing):
 | `PreToolUse` | `Bash\|Edit\|Write\|MultiEdit` | `seldon hook claude-code` | records a mutating command (or a file edit) as an `agent/command` event at its start (ADR-0017 §1) |
 | `SessionStart` | — | `seldon hook session-start` | prints the context block (status, active case, journal, lessons) |
 | `SessionEnd` | — | `seldon hook session-stop` | journal stub, `capture --all`, commit; timeout 60 s, the most Claude Code allows a `SessionEnd` hook |
+
+`seldon hook uninstall claude-code [--settings FILE]` (WP-049) takes these
+three out again: other hooks and keys stay, a file with nothing else is
+deleted, and the next capture explains the change.
 
 `SessionEnd`, not `Stop`: Claude Code runs `Stop` after every reply. Every
 hook is silent and exits 0, even on a panic; problems go to stderr. Other

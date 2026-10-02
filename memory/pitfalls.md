@@ -906,3 +906,32 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   exists on your branch passes before the merge. Other URLs (shields,
   releases, external sites) are not fetched; `curl -sL -o /dev/null -w
   '%{http_code}'` them by hand before the handover.
+
+## 2026-10-02 · WP-049
+
+- **`makepkg` is blocked by the guard hook** (red zone, package command),
+  even for a scratch build of the PKGBUILD from a `git archive`. The
+  package file list (`packaging/expected-files.txt`) is checked only by
+  the release workflow's dry run (`gh workflow run release.yml --ref
+  <branch>`); remember that makepkg gzips `usr/share/man/**` (`zipman`),
+  so the list names `seldon.1.gz`.
+- **`cargo add` needs crates.io** when the crate is not in
+  `~/.cargo/registry/cache`; the "no network" rule is the engine's
+  runtime, but say in the handover that the WP fetched crates.
+- **Moving `HOME` breaks `cargo`/`rustup`** ("rustup could not choose a
+  version of cargo"). The engine tests make their own scratch homes
+  (`common::Env`); run `cargo test` with the normal environment, or
+  export `CARGO_HOME`/`RUSTUP_HOME` first as the PKGBUILD's `check()` does.
+- **`cmd | grep -q` under `pipefail`** can fail the step when `cmd` is
+  killed by SIGPIPE (`zcat`); in CI checks use `grep … > /dev/null`,
+  which reads everything.
+- **zsh, fish and shellcheck are not installed on the dev host**:
+  `tests/manual.rs` and `install.test.sh` skip those checks with a note;
+  CI's container has shellcheck.
+- **Testing EPIPE:** drop the child's stdout pipe right after `spawn()`,
+  before it writes; reading a few bytes and closing lets a short output
+  fit the pipe buffer and the write never fails. `/dev/full` (opened for
+  writing, passed as `Stdio::from(file)`) tests the other write errors.
+- **Hermetic "shell not installed" in bash tests:** link the host's
+  programs except zsh/fish into a dir and use only that dir on PATH;
+  fakes in another dir decide which shells exist.

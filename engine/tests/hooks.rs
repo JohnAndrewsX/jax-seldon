@@ -598,7 +598,7 @@ mod install {
 
     /// A settings file a user already has: a guard hook, a Stop hook,
     /// permissions.
-    const EXISTING: &str = r#"{
+    pub(super) const EXISTING: &str = r#"{
   "permissions": { "allow": ["Bash(ls:*)"] },
   "hooks": {
     "PreToolUse": [
@@ -732,6 +732,205 @@ mod install {
             );
             assert_eq!(read(&path), bad);
         }
+    }
+}
+
+/// `seldon hook uninstall claude-code` (WP-049): exactly what `install`
+/// added comes out again.
+mod uninstall {
+    use super::*;
+
+    /// `seldon hook install|uninstall claude-code --settings <path> --json`.
+    fn hook(h: &Hooks, verb: &str, path: &std::path::Path) -> Value {
+        let out = h.run(&[
+            "hook",
+            verb,
+            "claude-code",
+            "--settings",
+            path.to_str().unwrap(),
+            "--json",
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{verb}: {}", stderr(&out));
+        json(&out)
+    }
+
+    fn settings(path: &std::path::Path) -> Value {
+        serde_json::from_str(&read(path)).unwrap()
+    }
+
+    #[test]
+    fn takes_out_exactly_what_install_added() {
+        let h = Hooks::new();
+        let path = h.env.tmp.path().join("project/.claude/settings.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, super::install::EXISTING).unwrap();
+        let before = settings(&path);
+        hook(&h, "install", &path);
+
+        let v = hook(&h, "uninstall", &path);
+        assert_eq!(v["removed"].as_array().unwrap().len(), 3, "{v}");
+        assert_eq!(v["absent"], json!([]));
+        assert_eq!(v["deleted"], false);
+        // the user's file as it was: their PreToolUse guard and Stop hook,
+        // permissions, model; no empty SessionStart/SessionEnd lists left
+        assert_eq!(settings(&path), before);
+
+        // again: nothing to remove, the file is not touched
+        let text = read(&path);
+        let v = hook(&h, "uninstall", &path);
+        assert_eq!(v["removed"], json!([]));
+        assert_eq!(v["absent"].as_array().unwrap().len(), 3);
+        assert_eq!(v["ownWrites"], Value::Null);
+        assert_eq!(read(&path), text, "byte for byte");
+    }
+
+    #[test]
+    fn keeps_hooks_the_user_added_to_seldons_groups() {
+        let h = Hooks::new();
+        let path = h.env.tmp.path().join("settings.json");
+        hook(&h, "install", &path);
+        // the user appends a hook of their own to Seldon's SessionStart group
+        let mut s = settings(&path);
+        s["hooks"]["SessionStart"][0]["hooks"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "command", "command": "notify-send hi"}));
+        std::fs::write(&path, serde_json::to_string_pretty(&s).unwrap()).unwrap();
+
+        let v = hook(&h, "uninstall", &path);
+        assert_eq!(v["deleted"], false, "{v}");
+        assert_eq!(
+            settings(&path),
+            json!({"hooks": {"SessionStart": [
+                {"hooks": [{"type": "command", "command": "notify-send hi"}]}
+            ]}})
+        );
+    }
+
+    #[test]
+    fn a_file_with_only_seldons_hooks_is_deleted() {
+        let h = Hooks::new();
+        let path = h.env.tmp.path().join("new/.claude/settings.json");
+        hook(&h, "install", &path);
+        assert!(path.is_file());
+        let out = h.run(&[
+            "hook",
+            "uninstall",
+            "claude-code",
+            "--settings",
+            path.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(
+            stdout(&out).contains("removed the Seldon hooks and the file"),
+            "{}",
+            stdout(&out)
+        );
+        assert!(!path.exists());
+        assert!(path.parent().unwrap().is_dir(), "directories stay");
+        // nothing there: nothing to do
+        let v = hook(&h, "uninstall", &path);
+        assert_eq!(v["removed"], json!([]));
+        assert_eq!(v["deleted"], false);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn default_path_is_the_logbook_and_commits() {
+        let h = Hooks::new();
+        let out = h.run(&["hook", "install", "claude-code"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let out = h.run(&["hook", "uninstall", "claude-code", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["deleted"], true, "{v}");
+        assert_eq!(v["ownWrites"], json!([]), "the logbook is not watched");
+        assert!(!h.logbook.join(".claude/settings.json").exists());
+        if h.env.has_git {
+            let log = h.env.git(&h.logbook, &["log", "-1", "--format=%s"]);
+            assert_eq!(
+                String::from_utf8_lossy(&log.stdout).trim(),
+                "seldon: hook uninstall claude-code"
+            );
+            let status = h.env.git(&h.logbook, &["status", "--porcelain"]);
+            assert_eq!(String::from_utf8_lossy(&status.stdout), "", "committed");
+        }
+    }
+
+    #[test]
+    fn refuses_a_broken_file() {
+        let h = Hooks::new();
+        let path = h.env.tmp.path().join("settings.json");
+        for bad in [
+            "{ not json",
+            "[]",
+            r#"{"hooks": []}"#,
+            r#"{"hooks": {"SessionStart": {}}}"#,
+        ] {
+            std::fs::write(&path, bad).unwrap();
+            let out = h.run(&[
+                "hook",
+                "uninstall",
+                "claude-code",
+                "--settings",
+                path.to_str().unwrap(),
+            ]);
+            assert_eq!(out.status.code(), Some(1), "{bad}");
+            assert!(
+                stderr(&out).contains("nothing was changed"),
+                "{}",
+                stderr(&out)
+            );
+            assert_eq!(read(&path), bad);
+        }
+    }
+
+    #[test]
+    fn the_lock_covers_the_write() {
+        // the lock is taken before the settings file is read or written:
+        // while another seldon holds it, nothing changes (exit 4), so no
+        // capture can see the file before its own-write record
+        let h = Hooks::new();
+        let path = h.env.tmp.path().join("settings.json");
+        hook(&h, "install", &path);
+        let text = read(&path);
+        let lock = seldon::logbook::lock::acquire(&h.env.lock_file()).unwrap();
+        for verb in ["uninstall", "install"] {
+            let out = h.run(&[
+                "hook",
+                verb,
+                "claude-code",
+                "--settings",
+                path.to_str().unwrap(),
+            ]);
+            assert_eq!(out.status.code(), Some(4), "{verb}: {}", stderr(&out));
+            assert_eq!(read(&path), text, "{verb}: untouched");
+        }
+        // an install that would write: a fresh `{}` stays `{}`
+        let fresh = h.env.tmp.path().join("fresh.json");
+        std::fs::write(&fresh, "{}").unwrap();
+        let out = h.run(&[
+            "hook",
+            "install",
+            "claude-code",
+            "--settings",
+            fresh.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(4), "fresh: {}", stderr(&out));
+        assert_eq!(read(&fresh), "{}", "fresh: untouched");
+        drop(lock);
+        assert_eq!(hook(&h, "uninstall", &path)["deleted"], true);
+    }
+
+    #[test]
+    fn is_not_an_agent_hook() {
+        // a harness never calls it: errors keep their exit code instead of
+        // the agent hooks' silent 0
+        let env = Env::new(Snapper::Missing);
+        let out = env.seldon(&["hook", "uninstall", "claude-code"]);
+        assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+        let out = env.seldon(&["hook", "uninstall", "generic"]);
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     }
 }
 

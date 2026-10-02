@@ -5,8 +5,10 @@
 # (SELDON_INSTALL_DOWNLOAD_URL, SELDON_INSTALL_API_URL), HOME and
 # XDG_CONFIG_HOME are scratch dirs, every install goes to a scratch prefix.
 # No network. A recording `sudo` and `systemctl` first on PATH prove the
-# script never calls either. The real ~/.local/bin/seldon, jax-seldon and
-# ~/.config/systemd/user are fingerprinted before and compared after.
+# script never calls either. The real ~/.local/bin/seldon, jax-seldon,
+# ~/.config/systemd/user, the completions and the man page under
+# ~/.local/share are fingerprinted before and compared after. The shells
+# install.sh looks for live in a scratch /usr/share (SELDON_INSTALL_SHARE).
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -35,7 +37,11 @@ real_home=$HOME
 real_fingerprint() {
   local p
   for p in "$real_home/.local/bin/seldon" "$real_home/.local/bin/jax-seldon" \
-    "$real_home/.config/systemd/user"; do
+    "$real_home/.config/systemd/user" \
+    "$real_home/.local/share/bash-completion/completions/seldon" \
+    "$real_home/.local/share/zsh/site-functions/_seldon" \
+    "$real_home/.local/share/fish/vendor_completions.d/seldon.fish" \
+    "$real_home/.local/share/man/man1/seldon.1"; do
     if [[ -e $p || -L $p ]]; then
       find "$p" -printf '%p %y %s %T@ %C@ %l\n' 2>/dev/null | LC_ALL=C sort
     else
@@ -48,12 +54,23 @@ real_before=$(real_fingerprint)
 # ---- the mock releases -------------------------------------------------------
 # $work/releases/download/vX.Y.Z/{seldon-X.Y.Z-<target>.tar.gz,SHA256SUMS,install.sh}
 # and $work/releases/latest.json, as the GitHub API answers.
-make_release() { # version
+# The fake binary answers --version, and `completions <shell>` and
+# `mangen` unless the release is "old" (before WP-049).
+make_release() { # version [old]
   local v=$1 stage="seldon-$1-$target" dir="$work/releases/download/v$1"
   mkdir -p "$dir" "$work/build/$stage"
-  # shellcheck disable=SC2016 # $1 belongs to the fake binary
-  printf '#!/bin/sh\n[ "$1" = --version ] && echo "seldon %s" && exit 0\necho "fake seldon %s" >&2\nexit 1\n' \
-    "$v" "$v" >"$work/build/$stage/seldon"
+  {
+    printf '#!/bin/sh\n'
+    # shellcheck disable=SC2016 # $1 belongs to the fake binary
+    printf '[ "$1" = --version ] && echo "seldon %s" && exit 0\n' "$v"
+    if [[ ${2:-} != old ]]; then
+      # shellcheck disable=SC2016 # $1 and $2 belong to the fake binary
+      printf '[ "$1" = completions ] && echo "# seldon %s completions for $2" && exit 0\n' "$v"
+      # shellcheck disable=SC2016 # $1 belongs to the fake binary
+      printf '[ "$1" = mangen ] && echo ".TH SELDON 1 seldon-%s" && exit 0\n' "$v"
+    fi
+    printf 'echo "fake seldon %s" >&2\nexit 1\n' "$v"
+  } >"$work/build/$stage/seldon"
   chmod 755 "$work/build/$stage/seldon"
   cp "$root/LICENSE" "$root/README.md" "$root/engine/systemd/seldon-watch.service" "$work/build/$stage/"
   cp "$root/engine/systemd/README.md" "$work/build/$stage/seldon-watch.md"
@@ -64,6 +81,7 @@ make_release() { # version
 }
 make_release 9.9.8
 make_release 9.9.9
+make_release 9.9.4 old
 printf '{\n  "url": "x",\n  "tag_name": "v9.9.9",\n  "name": "Seldon 9.9.9"\n}\n' >"$work/releases/latest.json"
 printf '{"name":"Seldon 9.9.9","tag_name":"v9.9.9","draft":false}' >"$work/releases/latest-compact.json"
 
@@ -90,18 +108,33 @@ for tool in sudo systemctl; do
   printf '#!/bin/sh\necho "%s $*" >>"%s/trap.log"\nexit 1\n' "$tool" "$work" >"$work/trap/$tool"
   chmod 755 "$work/trap/$tool"
 done
-mkdir -p "$work/nojq"
+# The host's programs without zsh and fish (install.sh looks for them with
+# `command -v`; the fakes in $work/shells decide), and without jq too.
+mkdir -p "$work/host" "$work/nojq" "$work/shells"
 IFS=: read -ra path_dirs <<<"$PATH"
 for dir in "${path_dirs[@]}"; do
   [[ -d $dir ]] || continue
   for f in "$dir"/*; do
     name=${f##*/}
-    [[ $name == jq || -e $work/nojq/$name ]] && continue
-    [[ -x $f ]] && ln -s "$f" "$work/nojq/$name"
+    [[ $name == zsh || $name == fish || -e $work/host/$name ]] && continue
+    [[ -x $f ]] || continue
+    ln -s "$f" "$work/host/$name"
+    [[ $name == jq ]] || ln -s "$f" "$work/nojq/$name"
   done
 done
+fake_shell() { # name
+  printf '#!/bin/sh\nexit 0\n' >"$work/shells/$1"
+  chmod 755 "$work/shells/$1"
+}
 has_jq=0
 command -v jq >/dev/null && has_jq=1
+
+# ---- the shells of this scratch system: bash-completion and fish; zsh has
+# its directory but is not on PATH (both are needed) -------------------------
+share="$work/usrshare"
+mkdir -p "$share/bash-completion/completions" "$share/fish/vendor_completions.d" \
+  "$share/zsh/site-functions"
+fake_shell fish
 
 # ---- runner ------------------------------------------------------------------
 home="$work/home"
@@ -110,11 +143,12 @@ mkdir -p "$home"
 run_with() {
   local mode=$1 api=$2 path
   shift 2
-  if [[ $mode == nojq ]]; then path="$work/trap:$work/nojq"; else path="$work/trap:$PATH"; fi
+  if [[ $mode == nojq ]]; then path="$work/trap:$work/shells:$work/nojq"; else path="$work/trap:$work/shells:$work/host"; fi
   rc=0
   out=$(env -i HOME="$home" PATH="$path" LANG=C.UTF-8 \
     SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
     SELDON_INSTALL_API_URL="file://$work/releases/$api" \
+    SELDON_INSTALL_SHARE="$share" \
     bash "$script" "$@" 2>&1) || rc=$?
 }
 run() { run_with jq latest.json "$@"; }
@@ -139,9 +173,19 @@ check "latest: next step seldon init" has "seldon init"
 check "latest: PATH note" has "is not on your PATH"
 check "latest: no unit without --unit" test ! -e "$home/.config/systemd/user/seldon-watch.service"
 check "latest: manifest" test -f "$p/share/jax-seldon/install-manifest"
-check "latest: only bin/ and share/jax-seldon/" \
-  test "$(cd "$p" && find . | LC_ALL=C sort | tr '\n' ' ')" = \
-  ". ./bin ./bin/jax-seldon ./bin/seldon ./share ./share/jax-seldon ./share/jax-seldon/install-manifest "
+check "latest: bin/, the man page, bash and fish completions, the manifest" \
+  test "$(cd "$p" && find . -type f -o -type l | LC_ALL=C sort | tr '\n' ' ')" = \
+  "./bin/jax-seldon ./bin/seldon ./share/bash-completion/completions/seldon ./share/fish/vendor_completions.d/seldon.fish ./share/jax-seldon/install-manifest ./share/man/man1/seldon.1 "
+check "latest: bash completions from the new binary" \
+  grep -qx '# seldon 9.9.9 completions for bash' "$p/share/bash-completion/completions/seldon"
+check "latest: fish completions" \
+  grep -qx '# seldon 9.9.9 completions for fish' "$p/share/fish/vendor_completions.d/seldon.fish"
+check "latest: no zsh completions without zsh on PATH" test ! -e "$p/share/zsh"
+# shellcheck disable=SC2016 # $1 is bash -c's argument
+check "latest: no zsh hint without zsh" bash -c '[[ $1 != *fpath=* ]]' _ "$out"
+check "latest: the man page" grep -qx '.TH SELDON 1 seldon-9.9.9' "$p/share/man/man1/seldon.1"
+check "latest: completions and man page in the manifest" \
+  test "$(grep -cE '  .*/(seldon|seldon\.fish|seldon\.1)$' "$p/share/jax-seldon/install-manifest")" -eq 4
 check "latest: nothing in HOME" test -z "$(find "$home" -mindepth 1)"
 [[ $rc -eq 0 ]] || printf '     %s\n' "${out//$'\n'/$'\n'     }"
 
@@ -157,6 +201,8 @@ check "re-run: says unchanged" has "unchanged  $p/bin/seldon"
 run --prefix "$p" --version 9.9.8
 check "downgrade: exit 0" test "$rc" -eq 0
 check "downgrade: the 9.9.8 binary" cmp -s "$p/bin/seldon" "$work/build/seldon-9.9.8-$target/seldon"
+check "downgrade: its completions" \
+  grep -qx '# seldon 9.9.8 completions for bash' "$p/share/bash-completion/completions/seldon"
 run --prefix "$p"
 check "update: exit 0, back to 9.9.9" cmp -s "$p/bin/seldon" "$work/build/seldon-9.9.9-$target/seldon"
 check "update: manifest hash follows" grep -qF "$(sha256sum "$p/bin/seldon" | cut -d' ' -f1)  $p/bin/seldon" \
@@ -169,6 +215,49 @@ check "no jq: 9.9.9 installed" cmp -s "$work/p4/bin/seldon" "$work/build/seldon-
 run_with nojq latest-compact.json --prefix "$work/p4b"
 check "no jq, compact JSON: 9.9.9 installed" cmp -s "$work/p4b/bin/seldon" "$work/build/seldon-9.9.9-$target/seldon"
 [[ $has_jq == 1 ]] || echo "note: jq is not installed here; the jq path ran as the fallback too"
+
+# ---- 4b. completions: zsh, a release without them, a foreign file -----------
+fake_shell zsh
+run --prefix "$work/p4z"
+check "zsh: exit 0" test "$rc" -eq 0
+check "zsh: completions installed" \
+  grep -qx '# seldon 9.9.9 completions for zsh' "$work/p4z/share/zsh/site-functions/_seldon"
+check "zsh: the fpath hint" has "fpath=($work/p4z/share/zsh/site-functions \$fpath)"
+rm "$work/shells/zsh"
+# zsh is gone: a re-run keeps its completion in the manifest for --uninstall
+run --prefix "$work/p4z"
+check "zsh gone: its completion stays listed" \
+  grep -qF "  $work/p4z/share/zsh/site-functions/_seldon" "$work/p4z/share/jax-seldon/install-manifest"
+run --uninstall --prefix "$work/p4z"
+check "zsh gone: --uninstall removes its completion" test ! -e "$work/p4z/share/zsh/site-functions/_seldon"
+# fish on PATH without its completion directory: no fish completion
+rmdir "$share/fish/vendor_completions.d"
+run --prefix "$work/p4n"
+check "fish without its directory: not installed" test ! -e "$work/p4n/share/fish"
+check "fish without its directory: bash still installed" test -f "$work/p4n/share/bash-completion/completions/seldon"
+mkdir -p "$share/fish/vendor_completions.d"
+
+run --prefix "$work/p4o" --version v9.9.4
+check "release without completions: exit 0" test "$rc" -eq 0
+check "release without completions: says so" has "has no man page or shell completions; skipped"
+check "release without completions: none installed" test ! -e "$work/p4o/share/man"
+check "release without completions: none listed" \
+  test "$(grep -c '/share/' "$work/p4o/share/jax-seldon/install-manifest")" -eq 0
+
+mkdir -p "$work/p4f/share/bash-completion/completions"
+echo "# my own" >"$work/p4f/share/bash-completion/completions/seldon"
+run --prefix "$work/p4f"
+check "foreign completion: exit 0" test "$rc" -eq 0
+check "foreign completion: kept" grep -qx '# my own' "$work/p4f/share/bash-completion/completions/seldon"
+check "foreign completion: says kept" has "kept       $work/p4f/share/bash-completion/completions/seldon"
+# shellcheck disable=SC2016 # $1 and $2 are bash -c's arguments
+check "foreign completion: not in the manifest" \
+  bash -c '! grep -qF "  $1" "$2"' _ "$work/p4f/share/bash-completion/completions/seldon" \
+  "$work/p4f/share/jax-seldon/install-manifest"
+check "foreign completion: the others installed" test -f "$work/p4f/share/man/man1/seldon.1"
+run --prefix "$work/p4f" --force
+check "foreign completion, --force: replaced" \
+  grep -qx '# seldon 9.9.9 completions for bash' "$work/p4f/share/bash-completion/completions/seldon"
 
 # ---- 5. default prefix (~/.local) and --unit ---------------------------------
 run --unit
@@ -311,6 +400,8 @@ check "uninstall: exit 0" test "$rc" -eq 0
 check "uninstall: seldon removed" test ! -e "$home/.local/bin/seldon"
 check "uninstall: jax-seldon removed" test ! -L "$home/.local/bin/jax-seldon"
 check "uninstall: unit removed" test ! -e "$unit"
+check "uninstall: completions removed" test ! -e "$home/.local/share/bash-completion/completions/seldon"
+check "uninstall: man page removed" test ! -e "$home/.local/share/man/man1/seldon.1"
 check "uninstall: manifest removed" test ! -e "$home/.local/share/jax-seldon"
 check "uninstall: says what stays" has "These stay: your logbook"
 check "uninstall: the opt prefix untouched" test -x "$home/opt/seldon/bin/seldon"

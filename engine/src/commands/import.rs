@@ -42,7 +42,7 @@ pub struct ImportArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum ImportSource {
-    /// The omarchy-agent kit's Obsidian vault (read only; dry run unless --apply)
+    /// Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
     OmarchyAgent(OmarchyAgentArgs),
 }
 

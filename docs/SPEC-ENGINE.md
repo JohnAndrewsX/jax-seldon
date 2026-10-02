@@ -20,7 +20,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
-| `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by}}`: files the engine wrote itself under a watched path (`init --theme-hook`, `hook install`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); written under the lock, removed by the next capture that runs the config collector successfully |
+| `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
 
@@ -32,13 +32,16 @@ seldon init [--path DIR] [--non-interactive] [--language de|en] [--obsidian]
             [--since TS [--baseline]] [--no-capture] [--theme-hook]
             # --since: YYYY-MM-DD (local midnight) or RFC 3339; --baseline requires
             # --since; --no-capture conflicts with --since (WP-024)
+seldon init --remove-theme-hook                # WP-049: undoes --theme-hook (§9); conflicts with
+                                               # every other init flag, needs no logbook
 seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case only
 seldon capture [--source pacman,snapper,omarchy,plugins,theme,config | --all] [--since TS]
 seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]
 seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [--meta k=v]
 seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
 seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A]
-# --snapshot: `plan start` only. Starting an R2 or R3 case with no snapshot
+# --snapshot: `plan start` only (WP-049: the other steps do not offer it; clap
+# refuses it, exit 1). Starting an R2 or R3 case with no snapshot
 # (no --snapshot, no snapshotBefore) prints a warning and never refuses
 # (ADR-0023); R3's also asks for the human's explicit go per step (WP-050)
 seldon plan list [--status S] [--area A]
@@ -187,10 +190,13 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # ids}], assumptions: [{case, source, assumption}], skipped: [{path,
                                                # reason, error}],
                                                # files, marker, git}
-seldon hook install claude-code [--settings PATH]
+seldon hook install claude-code [--settings FILE]
                                                # WP-050: `generic` dropped from the synopsis: it has no
                                                # settings file to merge into; other agents pipe into
                                                # `hook generic` themselves (§8)
+seldon hook uninstall claude-code [--settings FILE]
+                                               # WP-049: the inverse of install (§8); `generic` has
+                                               # nothing installed, so nothing to uninstall
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…","cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub
@@ -217,7 +223,25 @@ seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--jso
 # killed or waited for): a non-zero exit within 200 ms is an error (exit 1),
 # otherwise {"launched": true, "program": …} (WP-008 fix of the 10 s kill)
 seldon --version / seldon contract-version
+seldon completions bash|zsh|fish               # WP-049: the completion script (clap_complete) on stdout;
+                                               # --json → {shell, script}
+seldon mangen                                  # WP-049: seldon(1) in roff on stdout (clap_mangen: name,
+                                               # synopsis, global options; then COMMANDS with every command's
+                                               # usage, sentence and arguments, EXIT STATUS, ENVIRONMENT,
+                                               # FILES); --json → {manPage}. Both are generated from the clap
+                                               # definition, read no config, logbook or home, and are what the
+                                               # package (/usr/share/man/man1, bash-completion, zsh
+                                               # site-functions, fish vendor_completions.d) and install.sh
+                                               # (under the prefix) install
 ```
+
+Help texts (WP-049): every command's `--help` starts with one sentence;
+values are named by what they are (`<ID>` a case id, `<EVENT>` an event
+id, `<ACTOR>` `human` or `agent:NAME`, `<ZONE>`, `<RISK>`, `<AREA>`,
+`<TS>` a time, `<DIR>`, `<FILE>`); every positional has a line; a flag
+that takes a form and free text after `--` have an example (`Examples:`
+under the options). `docs/user/*/05-cli-reference.md` carries them
+verbatim (`scripts/docs-check.sh`).
 
 Global flags: `--json`, `--logbook DIR` (overrides config and
 `SELDON_LOGBOOK`), `--quiet`, `--no-commit`.
@@ -449,7 +473,17 @@ After every capture:
    `config-add|config-change` without a case whose subject and
    `meta.hashTo` match a record: `source: seldon`, actor `system`, no
    case, detail `installed by <by>` (e.g. `installed by seldon init
-   --theme-hook`). Then it forgets every record, matched or not: the
+   --theme-hook`). The removal commands (WP-049) record the same way:
+   `hook uninstall` that leaves the file records the new content with
+   `op: remove`, and its `config-change` is explained; a file the engine
+   deletes (`init --remove-theme-hook`, `hook uninstall` of a file that
+   held only Seldon's hooks) is recorded *before* the deletion with
+   `op: delete` and the sha256 of the content it had, and a
+   `config-remove` whose `meta.hashFrom` matches it is explained; both
+   with detail `removed by <by>` (e.g. `removed by seldon hook uninstall
+   claude-code`). A file someone changed after the last capture and
+   before the deletion does not match (the manifest's hash is the older
+   one): its removal stays drift. Then it forgets every record, matched or not: the
    collector has seen each file — as an event, in its baseline, or with
    content someone else wrote, which stays drift. The config event stays
    in the ledger with its own actor; the index folds the resolution
@@ -531,7 +565,7 @@ must stay silent), exit 0 always, even on malformed stdin, a missing
 logbook, a broken config or a held lock (waited for up to 2 s), under
 5 ms in release. `seldon hook generic` takes `{"command","actor","cwd",
 "startedAt"?}` with the same rules. `seldon hook install claude-code
-[--settings PATH]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
+[--settings FILE]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
 `SessionStart` and `SessionEnd` (timeout 60 s, Claude Code's cap; `Stop`
 would fire after every reply) into `<logbook>/.claude/settings.json`
 without clobbering existing hooks, idempotently; the merged file is
@@ -541,6 +575,22 @@ records the file as the engine's own write (§5 rule 7), so the next
 capture explains its config event; `--json` adds `ownWrites` (the
 recorded `~`-paths, `{error}` when they could not be recorded, `null` when nothing
 was added). Other agents call `hook generic` themselves.
+
+`seldon hook uninstall claude-code [--settings FILE]` (WP-049) is the
+inverse: it takes out each hook `install` writes (same event, matcher and
+command) and keeps everything else, also a hook the user added to one of
+Seldon's groups; a group, an event list or the `hooks` object it leaves
+empty goes too, and a file left as `{}` is deleted (its directory stays).
+None of Seldon's hooks there (or no file): nothing is written, exit 0. A
+file that is not a JSON object is refused unchanged (exit 1). The write or
+deletion is recorded as the engine's own (§5 rule 7: `op: remove` or
+`delete`), the logbook's own file is committed as `seldon: hook uninstall
+claude-code`. It is not an agent hook: errors keep their exit codes
+(3 without a logbook). `--json` → `{settings, removed, absent, deleted,
+ownWrites, git}`. Both `install` and `uninstall` hold the state lock from
+reading the settings file to the commit (WP-049 review), so no capture or
+`watch` sees the written file before its record; while another `seldon`
+holds the lock they change nothing and exit 4.
 
 `seldon hook session-start` prints a compact context block to stdout:
 STATUS summary, active case (id, title, plan steps), last 5 journal lines,
@@ -588,6 +638,20 @@ failure prints the manual command); the installed copy is recorded as
 the engine's own write (§5 rule 7), so the next capture's `config-add`
 for it is explained and opens no drift (WP-038) → next steps (`seldon
 drift` when drift stays open). A failure after the layout is reported, never fatal.
+
+`seldon init --remove-theme-hook` (WP-049) undoes the theme hook: it
+deletes `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` (a name
+of Seldon's own; Omarchy has no `hook remove`) under the lock, recorded
+first as the engine's own deletion (§5 rule 7: `op: delete`), so the next
+capture's `config-remove` is explained `removed by seldon init
+--remove-theme-hook`, and deletes `$XDG_STATE_HOME/seldon/hooks/
+seldon-theme-set.sh`; directories stay. Nothing installed: nothing
+changes, exit 0. It runs no wizard, needs no logbook (the config's
+`watchPaths` decide what is recorded; defaults without a config) and
+conflicts with every other `init` flag. The flag sits on `init`, not on a
+new `setup` command, because `init --theme-hook` is the only way the hook
+is installed: the undo is next to it in the same help. `--json` →
+`{hook, removed, script, scriptRemoved, ownWrites}`.
 `--non-interactive`: flags, then the existing config, then: `~/Seldon`,
 language from the locale, all collectors, default watched paths,
 harnesses from the config (none on a fresh machine), git on, first
