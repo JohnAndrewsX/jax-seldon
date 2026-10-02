@@ -764,3 +764,20 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   templates_have_english_keys`, then review the diff) and, for
   `AGENTS.md`, the ordered section list in
   `agents_md_carries_the_agent_rules_in_both_languages`.
+
+## 2026-10-02 · WP-048 (Scaffold)
+
+- **GitHub's community profile reads the default branch only.**
+  `gh api repos/<owner>/<repo>/community/profile` keeps reporting
+  CONTRIBUTING, SECURITY, the code of conduct and the templates as
+  missing until they are merged and pushed to `main`; a branch cannot
+  prove that acceptance line. Re-run it after the merge.
+- **A release dry run never reaches the `release` job.** The
+  `workflow_dispatch` run executes `build` only, so anything added to
+  `release` (the CHANGELOG notes step) is proven by a local test
+  (`tests/release/`) or by running the step body with `VERSION` and
+  `RUNNER_TEMP` set, not by the dry run.
+- **The dev host has no `shellcheck` and no `actionlint`**, while the
+  release build's `just check` runs shellcheck on `packaging/`. Lint
+  locally with `shellcheck-py` / `actionlint-py` in a venv under the
+  scratchpad (nothing installed on the host) before committing a script.

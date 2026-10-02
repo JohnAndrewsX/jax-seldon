@@ -44,18 +44,22 @@ check-rss:
 
 # The AUR package (WP-040): PKGBUILD and helper syntax, shellcheck when
 # installed, .SRCINFO in step with the PKGBUILD. Never runs makepkg.
+# The release body from CHANGELOG.md (WP-048): tests/release/.
 check-packaging:
     #!/usr/bin/env bash
     set -euo pipefail
-    bash -n packaging/PKGBUILD packaging/set-version.sh packaging/check-srcinfo.sh
+    bash -n packaging/PKGBUILD packaging/set-version.sh packaging/check-srcinfo.sh \
+      packaging/release-notes.sh tests/release/release-notes.test.sh
     if command -v shellcheck >/dev/null; then
       # PKGBUILD variables are read by makepkg, $srcdir/$pkgdir set by it
       shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD
-      shellcheck packaging/set-version.sh packaging/check-srcinfo.sh
+      shellcheck packaging/set-version.sh packaging/check-srcinfo.sh \
+        packaging/release-notes.sh tests/release/release-notes.test.sh
     else
       echo "check-packaging: shellcheck not installed; bash -n only"
     fi
     bash packaging/check-srcinfo.sh
+    bash tests/release/release-notes.test.sh
     echo "check-packaging: ok"
 
 # Validate fixtures against schema/ (script owned by WP-002).

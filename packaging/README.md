@@ -14,6 +14,7 @@ publishes both through `.github/workflows/release.yml`.
 | `.SRCINFO` | `makepkg --printsrcinfo` of the PKGBUILD; the AUR needs it in every commit |
 | `set-version.sh VERSION SHA256` | sets `pkgver`, `pkgrel=1` and the source checksum (the workflow runs it) |
 | `check-srcinfo.sh` | checks `.SRCINFO` against the PKGBUILD without makepkg (`just check-packaging`) |
+| `release-notes.sh X.Y.Z [CHANGELOG]` | prints the version's `CHANGELOG.md` section, the release body; exit 1 without it (`tests/release/`) |
 | `expected-files.txt` | the exact file list of the built package (`tar tf`, dot files left out) |
 
 ## What the package contains
@@ -66,8 +67,8 @@ The workflow then runs, in order:
 
 | Job | Runs on | Does |
 |---|---|---|
-| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` |
-| `release` | tag | GitHub release `vX.Y.Z` with the three assets |
+| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` |
+| `release` | tag | GitHub release `vX.Y.Z` with the three assets; the release notes are that `CHANGELOG.md` section (`packaging/release-notes.sh`) |
 | `bump` | tag | commits the updated `PKGBUILD` and `.SRCINFO` to `main` (`packaging: jax-seldon X.Y.Z`). Skipped with a warning if `main`'s `packaging/` changed after the tag; then bump by hand (below) |
 | `aur` | tag | clones `ssh://aur@aur.archlinux.org/jax-seldon.git`, commits `PKGBUILD` + `.SRCINFO` (`Update to X.Y.Z`), pushes `master`. The host key is pinned (Ed25519 `SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4`, as published on aur.archlinux.org). **Skipped with a notice** without `AUR_SSH_PRIVATE_KEY` |
 | `plugin` | tag | `git subtree split --prefix=plugin`, pushes it to `jax-seldon-plugin` as `main` and as the tag. **Skipped with a notice** without `PLUGIN_REPO_TOKEN` |
