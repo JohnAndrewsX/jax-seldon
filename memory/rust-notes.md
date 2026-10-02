@@ -605,3 +605,38 @@ Append-only. One bullet per finding, newest section last.
   skipped), `write_decisions_index` returns `Fill::Skipped`. A closure
   that records status per fence takes `&mut warnings` as an argument,
   not as a capture, so the loop around it can still push warnings.
+
+## 2026-10-02 · WP-049 (completions, man page, removals)
+
+- **Generate CLI artefacts from the clap definition, in the library.**
+  `commands::manual::{completions, mangen}` take a `clap::Command`;
+  `main.rs` passes `Cli::command()` and handles both before
+  `Context::from_env`, so they need no home, config or guard. Tests run
+  them with `env_clear()`.
+- **clap_mangen's `render()` lists `seldon-<cmd>(1)` pages that do not
+  exist.** Compose the page from `render_title`, `render_name_section`,
+  `render_synopsis_section`, `render_description_section`,
+  `render_options_section`, then write a COMMANDS section yourself:
+  `root.build()` first, then each subcommand's `clone().render_usage()`
+  gives `Usage: seldon plan new …` with the full bin name. Escape roff
+  text yourself (`\` → `\e`, `-` → `\-`, `` ` `` → `\(ga`, non-ASCII →
+  `\[uXXXX]`, a leading `.`/`'` → `\&`); `groff -man -ww -z` without
+  `preconv` warns on raw UTF-8, `man -l` does not, so test with groff.
+- **`exclusive = true` also conflicts with global args** (`--json` after
+  the subcommand fails). A mode flag on a command with globals needs
+  `conflicts_with_all = [...]` naming the command's own args.
+- **A flag only one step takes belongs on that step's args.**
+  `StartArgs { #[command(flatten)] step: StepArgs, snapshot }` instead of
+  a shared `--snapshot` refused at run time: the help of `verify`/`done`/
+  `drop` no longer offers it, and clap's own error keeps exit 1.
+- **`println!` panics on EPIPE, and the release profile aborts.**
+  `main.rs::print_line` writes with `writeln!` and ignores the error;
+  Rust ignores SIGPIPE, so `seldon … | head` now exits normally.
+- **Recording a deletion as the engine's own: hash before you delete.**
+  `config::delete_own_file(lock, …)` hashes the watched file, removes
+  it, then records `op: delete`; the capture matches the
+  `config-remove`'s `meta.hashFrom`. `OwnOp::Install` is
+  `skip_serializing_if`, so WP-038's `owned.json` shape is unchanged.
+- **The inverse of a merge returns a plan, not a write.**
+  `unmerge_claude_hooks` returns `After::{Unchanged, Write(text),
+  Delete}`; the caller writes or deletes so that it can record which.
