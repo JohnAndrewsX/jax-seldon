@@ -32,11 +32,11 @@ const gen = Date.parse("2026-10-01T17:05:12+02:00")
 const H = 3600 * 1000
 
 test("pillText hides zero parts (SPEC-PLUGIN §4)", () => {
-  assert.strictEqual(M.pillText(null), "⟡")
-  assert.strictEqual(M.pillText({ active: 0, drift: 0 }), "⟡")
-  assert.strictEqual(M.pillText({ active: 2, drift: 0 }), "⟡ 2")
-  assert.strictEqual(M.pillText({ active: 0, drift: 3 }), "⟡ · 3")
-  assert.strictEqual(M.pillText({ active: 2, drift: 3 }), "⟡ 2 · 3")
+  assert.strictEqual(M.pillText(null), "")
+  assert.strictEqual(M.pillText({ active: 0, drift: 0 }), "")
+  assert.strictEqual(M.pillText({ active: 2, drift: 0 }), "2")
+  assert.strictEqual(M.pillText({ active: 0, drift: 3 }), "· 3")
+  assert.strictEqual(M.pillText({ active: 2, drift: 3 }), "2 · 3")
 })
 
 test("pillTone: crisis beats active beats default", () => {
@@ -51,7 +51,7 @@ test("parseIndex accepts the sample and reads its counts", () => {
   const r = M.parseIndex(sample)
   assert.strictEqual(r.ok, true)
   same(M.counts(r.index), { active: 2, queued: 3, drift: 4, crisis: 2 })
-  assert.strictEqual(M.pillText(M.counts(r.index)), "⟡ 2 · 4")
+  assert.strictEqual(M.pillText(M.counts(r.index)), "2 · 4")
 })
 
 test("parseIndex reports a contract mismatch with the version found", () => {
@@ -1265,6 +1265,100 @@ test("aggregationCount counts periodTable and chart passes", () => {
   M.heatmapCellText(M.periodTable(ok.index).periods["30"].charts.heatmap.cells[0])
   M.heatmapCellAt(null, {}, 0, 0)
   assert.strictEqual(M.aggregationCount() - before, 2 * 23)
+})
+
+// ---- Assets (WP-051) ----------------------------------------------------------
+
+const pluginAssets = path.join(root, "plugin/assets")
+const asset = (name) => fs.readFileSync(path.join(pluginAssets, name), "utf8")
+
+test("every file the plugin names exists in plugin/assets/ and is a copy of assets/", () => {
+  const named = [M.barGlyph(16).file, M.barGlyph(20).file, M.barGlyph(24).file,
+    M.panelMark(11.7, 1).file, M.panelMark(16.1, 1).file, M.panelMark(14.6, 1).file]
+  for (const id of Object.keys(M.STATUS_PICTOGRAMS).map((s) => M.statusPictogram(s))
+    .concat(["crisis", "drift-open", "case-active", "all-clear"])) {
+    named.push(M.pictogramFile(id, 48), M.pictogramFile(id, 96))
+  }
+  for (const kind of M.MARKER_KINDS) named.push(M.markerFile(kind, 12), M.markerFile(kind, 16))
+  assert.strictEqual(new Set(named).size, 3 + 3 + 16 + 10) // A4, A5 and the A1 master, A11, A12
+  for (const name of named) {
+    const p = path.join(pluginAssets, name)
+    assert.ok(!fs.lstatSync(p).isSymbolicLink(), name + " is a symlink")
+    assert.ok(fs.readFileSync(p).equals(fs.readFileSync(path.join(root, "assets", name))), name + " differs from assets/")
+  }
+  for (const name of fs.readdirSync(pluginAssets)) {
+    assert.ok(fs.readFileSync(path.join(pluginAssets, name)).equals(fs.readFileSync(path.join(root, "assets", name))),
+      name + " differs from assets/")
+  }
+})
+
+test("tintedSvg sets the root colour of a mask and nothing else", () => {
+  for (const name of fs.readdirSync(pluginAssets).filter((n) => n.endsWith(".svg"))) {
+    const svg = asset(name)
+    // round 3 (F1): the fallback colour on the root only
+    assert.strictEqual((svg.match(/\scolor="/g) || []).length, 1, name)
+    assert.ok(/<svg\b[^>]*\scolor="#000"/.test(svg), name)
+    const url = M.tintedSvg(svg, "#a9b1d6")
+    assert.ok(url.startsWith("data:image/svg+xml;utf8,"), name)
+    const out = decodeURIComponent(url.slice("data:image/svg+xml;utf8,".length))
+    assert.strictEqual(out, svg.replace('color="#000"', 'color="#a9b1d6"'), name)
+  }
+  assert.strictEqual(M.tintedSvg('<svg viewBox="0 0 1 1"/>', "#123456"),
+    "data:image/svg+xml;utf8," + encodeURIComponent('<svg color="#123456" viewBox="0 0 1 1"/>'))
+  assert.strictEqual(M.tintedSvg("", "#123456"), "")
+  assert.strictEqual(M.tintedSvg(asset("a4-bar-glyph.svg"), "red"), "")
+  assert.strictEqual(M.tintedSvg(asset("a4-bar-glyph.svg"), "#80a9b1d6"), "")
+})
+
+test("barGlyph: hinted 16 and 20 px boxes with their centre rows, the vector otherwise", () => {
+  same(M.barGlyph(16), { file: "a4-bar-glyph-16.svg", crisp: true, centre: 7.5 / 16 })
+  same(M.barGlyph(20), { file: "a4-bar-glyph-20.svg", crisp: true, centre: 9.5 / 20 })
+  same(M.barGlyph(24), { file: "a4-bar-glyph.svg", crisp: false, centre: 0.5 })
+  same(M.barGlyph(19.6), M.barGlyph(20))
+  // The hinted grids' ink: rows 3–11 of 16 and 4–14 of 20, centre pixel row 7 and 9.
+  for (const [name, top, bottom] of [["a4-bar-glyph-16.svg", 3, 11], ["a4-bar-glyph-20.svg", 4, 14]]) {
+    const rows = [...asset(name).matchAll(/<rect [^>]*y="(\d+)"/g)].map((m) => Number(m[1]))
+    assert.strictEqual(Math.min(...rows), top, name)
+    assert.strictEqual(Math.max(...rows), bottom, name)
+  }
+})
+
+test("panelMark: the delivered A5 metrics at 16 and 22 px headings", () => {
+  // DELIVERY.md §5: cap 11.7 → box 24, gap 6, baseline 17.84; cap 16.1 → 32, 8, 24.03
+  const a = M.panelMark(11.7, 1)
+  same([a.box, a.gap, a.file, a.crisp], [24, 6, "a5-panel-mark-24.svg", true])
+  assert.ok(Math.abs(a.baseline - 17.85) < 0.01)
+  const b = M.panelMark(16.1, 1)
+  same([b.box, b.gap, b.file, b.crisp], [32, 8, "a5-panel-mark-32.svg", true])
+  assert.ok(Math.abs(b.baseline - 24.05) < 0.01)
+  // 24 logical px on a 1.25 output are 30 device px: the vector master
+  same([M.panelMark(11.7, 1.25).file, M.panelMark(11.7, 1.25).crisp], ["a1-icon-mask.svg", false])
+  same([M.panelMark(14.6, 1).box, M.panelMark(14.6, 1).file], [30, "a1-icon-mask.svg"])
+})
+
+test("state pictograms: one per non-ok status but the contract mismatch, the day's state by urgency", () => {
+  same(["engineMissing", "notInitialised", "indexMissing", "indexStale", "contractMismatch", "ok"].map(M.statusPictogram),
+    ["engine-missing", "logbook-not-initialised", "index-missing", "index-stale", "", ""])
+  assert.strictEqual(M.todayState(null), null)
+  same(M.todayState({ active: 2, drift: 4, crisis: 2 }), { id: "crisis", tone: "urgent" })
+  same(M.todayState({ active: 2, drift: 4, crisis: 0 }), { id: "drift-open", tone: "accent" })
+  same(M.todayState({ active: 2, drift: 0, crisis: 0 }), { id: "case-active", tone: "accent" })
+  same(M.todayState({ active: 0, drift: 0, crisis: 0 }), { id: "all-clear", tone: "default" })
+  assert.strictEqual(M.pictogramFile("crisis", 48), "a11-state-crisis-48.svg")
+  assert.strictEqual(M.pictogramFile("crisis", 60), "a11-state-crisis-48.svg")
+  assert.strictEqual(M.pictogramFile("crisis", 96), "a11-state-crisis-96.svg")
+  assert.strictEqual(M.pictogramFile("", 96), "")
+})
+
+test("timeline markers: the canvas paths are the A12 16-grid files' paths", () => {
+  for (const kind of Object.keys(M.MARKER_PATHS)) {
+    const d = asset("a12-marker-" + kind + "-16.svg").match(/\sd="([^"]+)"/)[1]
+    assert.strictEqual(M.MARKER_PATHS[kind], d, kind)
+  }
+  assert.strictEqual(M.markerFile("release", 12), "a12-marker-release-12.svg")
+  assert.strictEqual(M.markerFile("crisis", 15), "a12-marker-crisis-16.svg")
+  assert.strictEqual(M.markerFile("diamond", 12), "")
+  same(M.TIMELINE_LEGEND.map((e) => e.label), ["releases", "snapshots", "cases", "crises"])
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

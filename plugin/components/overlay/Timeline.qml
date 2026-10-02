@@ -4,9 +4,11 @@ import "../../Model.js" as Model
 
 // Timeline (SPEC-PLUGIN §6): one time axis over the period. The top band
 // carries the markers — Omarchy releases (accent diamonds), snapshots
-// (foreground dots) and crises (urgent diamonds) — and the lanes under it
-// the case spans from created to closed (open cases, in accent, run to
-// the end of today; closed ones are dimmer). The period's first and last
+// (foreground dots) and crises (urgent spindles), the A12 shapes from
+// Model.MARKER_PATHS — and the lanes under it the case spans from created
+// to closed, each between brackets: `[` at the start, `]` at the close
+// (open cases, in accent, run to the end of today without one; closed ones
+// are dimmer). The slot's title row carries the legend (Overlay.qml). The period's first and last
 // day and the month starts sit under the axis. Hover: the item's kind,
 // label and date. Data: Model.timelineChart (lanes packed there).
 ChartCanvas {
@@ -26,6 +28,42 @@ ChartCanvas {
 
   function xOf(day) {
     return Model.scale(day, root.chart.x0, root.chart.x1, 0, root.plot.width)
+  }
+
+  // One A12 marker centred on (x, y), its 16-unit grid scaled so the
+  // release diamond (12 units wide) is 2 r across.
+  function drawMarker(ctx, kind, x, y, r) {
+    var u = 2 * r / 12
+    ctx.save()
+    ctx.translate(x - 8 * u, y - 8 * u)
+    ctx.scale(u, u)
+    ctx.beginPath()
+    ctx.path = Model.MARKER_PATHS[kind]
+    ctx.fill()
+    ctx.restore()
+  }
+
+  // A case span: brackets the lane's bar height tall at its ends (2 of 16
+  // units thick, arms 6 of 16, as the A12 files), a bar a third of that
+  // between them; an open span has no closing bracket. Too short for both
+  // brackets, it stays a plain bar.
+  function drawSpan(ctx, x0, x1, y, h, open) {
+    var w = Math.max(2, x1 - x0)
+    var t = Math.max(1, Math.round(h / 6))
+    var arm = Math.max(2 * t, Math.round(h * 3 / 8))
+    if (w < 2 * arm + 2) {
+      ctx.fillRect(x0, y, w, h)
+      return
+    }
+    var mid = Math.max(1, Math.round(h / 3))
+    ctx.fillRect(x0, y + Math.round((h - mid) / 2), w, mid)
+    ctx.fillRect(x0, y, t, h)
+    ctx.fillRect(x0, y, arm, t)
+    ctx.fillRect(x0, y + h - t, arm, t)
+    if (open) return
+    ctx.fillRect(x0 + w - t, y, t, h)
+    ctx.fillRect(x0 + w - arm, y, arm, t)
+    ctx.fillRect(x0 + w - arm, y + h - t, arm, t)
   }
 
   function markerColor(kind) {
@@ -68,7 +106,7 @@ ChartCanvas {
       var sp = c.spans[s]
       var x0 = root.xOf(sp.x0)
       ctx.fillStyle = sp.open ? root.accent : root.closedColor
-      ctx.fillRect(x0, L.laneY0 + sp.lane * L.laneH, Math.max(2, root.xOf(sp.x1) - x0), barH)
+      root.drawSpan(ctx, x0, root.xOf(sp.x1), L.laneY0 + sp.lane * L.laneH, barH, sp.open)
     }
 
     // Markers: snapshots first, then releases, crises on top.
@@ -79,18 +117,7 @@ ChartCanvas {
       for (var m = 0; m < c.markers.length; m++) {
         var mk = c.markers[m]
         if (mk.kind !== order[o]) continue
-        var x = root.xOf(mk.x)
-        ctx.beginPath()
-        if (mk.kind === "snapshot") {
-          ctx.arc(x, L.bandY, r * 0.7, 0, 2 * Math.PI, false)
-        } else {
-          ctx.moveTo(x, L.bandY - r)
-          ctx.lineTo(x + r, L.bandY)
-          ctx.lineTo(x, L.bandY + r)
-          ctx.lineTo(x - r, L.bandY)
-          ctx.closePath()
-        }
-        ctx.fill()
+        root.drawMarker(ctx, mk.kind, root.xOf(mk.x), L.bandY, r)
       }
     }
   }

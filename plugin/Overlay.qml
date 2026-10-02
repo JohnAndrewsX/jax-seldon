@@ -58,6 +58,15 @@ Item {
     Style.space(240), Style.space(120))
 
   readonly property color foreground: Color.popups.text
+  // The Timeline's legend (A12): the markers in the colours its canvas
+  // uses (Timeline.markerColor), shown in the slot's title row.
+  readonly property var timelineLegend: Model.TIMELINE_LEGEND.map(function(e) {
+    return {
+      files: e.markers.map(function(k) { return Model.markerFile(k, Style.space(12)) }),
+      label: e.label,
+      color: e.tone === "urgent" ? Color.urgent : e.tone === "snapshot" ? Util.alpha(root.foreground, 0.7) : Color.accent
+    }
+  })
   readonly property string fontFamily: Style.font.family
 
   function open(payloadJson) {
@@ -275,6 +284,7 @@ Item {
             Banner {
               width: parent.width
               banner: root.banner
+              pictogramSize: Style.space(96)
               foreground: root.foreground
               fontFamily: root.fontFamily
               onActionRequested: function(actionId) { if (root.service) root.service.fix(actionId, "status") }
@@ -283,7 +293,7 @@ Item {
             Text {
               width: parent.width
               textFormat: Text.PlainText
-              text: "Fix it from the Seldon panel (click ⟡ in the bar)."
+              text: "Fix it from the Seldon panel (click the Seldon mark in the bar)."
               color: Color.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
@@ -320,6 +330,7 @@ Item {
                 width: rect.w
                 height: rect.h
                 summary: root.summaryFor(modelData.id)
+                legend: modelData.id === "timeline" ? root.timelineLegend : []
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 placeholder: false

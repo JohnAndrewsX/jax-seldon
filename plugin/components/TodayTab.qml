@@ -37,6 +37,8 @@ Item {
 
   readonly property var view: Model.todayView(indexData)
   readonly property color dim: Util.alpha(foreground, 0.65)
+  // The state pictogram's id and tone, null without an index.
+  readonly property var dayState: indexData ? Model.todayState(Model.counts(indexData)) : null
   // Entries of today, the yesterday toggle, and yesterday's entries when open.
   readonly property var rows: {
     var out = []
@@ -80,69 +82,96 @@ Item {
       width: parent.width
       spacing: Style.spacing.lg
 
+      // The day's state (A11): crisis, open drift, active cases or all
+      // clear (Model.todayState), left of the date and the counts.
       Item {
+        id: summary
         width: parent.width
-        implicitHeight: Math.max(title.implicitHeight, editButton.implicitHeight)
+        implicitHeight: Math.max(stateIcon.visible ? stateIcon.height : 0, summaryText.implicitHeight)
 
-        Text {
-          id: title
-          anchors.left: parent.left
+        MaskIcon {
+          id: stateIcon
           anchors.verticalCenter: parent.verticalCenter
-          textFormat: Text.PlainText
-          text: root.view.title
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.subtitle
-          font.bold: true
+          width: Style.space(48)
+          height: Style.space(48)
+          visible: root.dayState !== null
+          file: root.dayState ? Model.pictogramFile(root.dayState.id, width) : ""
+          color: !root.dayState || root.dayState.tone === "default" ? root.foreground
+            : root.dayState.tone === "urgent" ? root.urgent : root.accent
         }
 
-        Button {
-          id: editButton
-          anchors.right: parent.right
+        Column {
+          id: summaryText
+          x: stateIcon.visible ? stateIcon.width + Style.spacing.xl : 0
           anchors.verticalCenter: parent.verticalCenter
-          text: "Open in editor"
-          tooltipText: "Key e"
-          bordered: true
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          fontSize: Style.font.caption
-          verticalPadding: Style.spacing.xs
-          onClicked: root.openJournalRequested()
-        }
-      }
+          width: parent.width - x
+          spacing: Style.spacing.lg
 
-      Flow {
-        width: parent.width
-        spacing: Style.spacing.xl
-        visible: root.indexData !== null
-
-        Repeater {
-          model: root.view.stats
-
-          Row {
-            id: stat
-
-            required property var modelData
-
-            spacing: Style.spacing.sm
+          Item {
+            width: parent.width
+            implicitHeight: Math.max(title.implicitHeight, editButton.implicitHeight)
 
             Text {
-              anchors.baseline: statLabel.baseline
+              id: title
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
-              text: String(stat.modelData.value)
+              text: root.view.title
               color: root.foreground
               font.family: root.fontFamily
-              font.pixelSize: Style.font.title
+              font.pixelSize: Style.font.subtitle
               font.bold: true
             }
 
-            Text {
-              id: statLabel
-              textFormat: Text.PlainText
-              text: stat.modelData.label
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
+            Button {
+              id: editButton
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Open in editor"
+              tooltipText: "Key e"
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              verticalPadding: Style.spacing.xs
+              onClicked: root.openJournalRequested()
+            }
+          }
+
+          Flow {
+            width: parent.width
+            spacing: Style.spacing.xl
+            visible: root.indexData !== null
+
+            Repeater {
+              model: root.view.stats
+
+              Row {
+                id: stat
+
+                required property var modelData
+
+                spacing: Style.spacing.sm
+
+                Text {
+                  anchors.baseline: statLabel.baseline
+                  textFormat: Text.PlainText
+                  text: String(stat.modelData.value)
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                }
+
+                Text {
+                  id: statLabel
+                  textFormat: Text.PlainText
+                  text: stat.modelData.label
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
             }
           }
         }

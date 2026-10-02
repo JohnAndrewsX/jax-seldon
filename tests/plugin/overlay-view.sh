@@ -171,6 +171,9 @@ shows ipc 2 "Prime Radiant"
 shows ipc 2 "workstation-7f3a · Omarchy 4.0.7-1 · generated 2026-10-01 17:05"
 shows ipc 2 "90 d · 2026-07-04 – 2026-10-01"
 shows ipc 2 "1–4 period · ←/→ previous / next · Esc close"
+# WP-051: the Timeline's legend (A12 markers) in place of its subtitle
+for label in releases snapshots cases crises; do shows ipc 2 "$label"; done
+expect ipc 2 '[.texts[] | select(. == "Releases, snapshots, cases, crises")] | length' 0
 for label in Heatmap Series DriftBars RiskDonut Timeline "The Plan"; do shows ipc 2 "$label"; done
 # Each chart's summary is its caption, in the slot's title row.
 summaries ipc 2 "$s90"
@@ -371,7 +374,7 @@ expect uninit 1 .view.banner "Logbook not initialised"
 shows uninit 1 "Logbook not initialised"
 shows uninit 1 "Copy"
 expect uninit 1 '[.texts[] | select(. == "Run in terminal" or . == "Check again")] | length' 0
-shows uninit 1 "Fix it from the Seldon panel (click ⟡ in the bar)."
+shows uninit 1 "Fix it from the Seldon panel (click the Seldon mark in the bar)."
 fits uninit 1 1920 1080
 counts uninit 1 90 "0,0,0,0,0,0"
 expect uninit 1 '[.view.slots[] | .chart.empty] | all' true
@@ -415,6 +418,11 @@ if [[ -n ${OVERLAY_SHOTS:-} ]]; then
       fits "shot-$theme-$size" 2 "${size%x*}" "${size#*x}"
       clean_log "shot-$theme-$size"
     done
+    # The not-initialised banner with its 96 px pictogram (A11, WP-051).
+    run "shot-uninit-$theme" "$fx/index-variants/not-initialised.json" 1920x1080 \
+      "fresh;view;shot:offscreen-$theme-1920x1080-uninit" HOME="$home" HARNESS_SHOTS="$OVERLAY_SHOTS"
+    expect "shot-uninit-$theme" 2 .view.banner "Logbook not initialised"
+    clean_log "shot-uninit-$theme"
   done
 fi
 

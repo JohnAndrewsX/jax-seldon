@@ -57,8 +57,6 @@ var SNAPPER_FIX_COMMAND = "sudo snapper -c root set-config ALLOW_USERS=$USER SYN
 // (operator, 2026-10-02); flip this with INSTALL_ENGINE_COMMAND (WP-044).
 var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub: the command below downloads install.sh from the release, which checks the engine against SHA256SUMS. Then check again."
 
-var GLYPH = "⟡"
-
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
@@ -172,9 +170,10 @@ function lastCapture(index) {
 
 // ---- Pill -------------------------------------------------------------------
 
-// SPEC-PLUGIN §4: `⟡ A · D`, parts hidden when 0: `⟡`, `⟡ 2`, `⟡ · 3`.
+// SPEC-PLUGIN §4: the counts after the bar glyph, `A · D`, parts hidden
+// when 0: "", `2`, `· 3`, `2 · 3`. The glyph itself is an image (barGlyph).
 function pillText(c) {
-  var parts = [GLYPH]
+  var parts = []
   if (c && c.active > 0) parts.push(String(c.active))
   if (c && c.drift > 0) parts.push("· " + c.drift)
   return parts.join(" ")
@@ -186,6 +185,117 @@ function pillTone(c) {
   if (c && c.active > 0) return "accent"
   return "default"
 }
+
+// ---- Assets (plugin/assets/, copies from assets/; assets/README.md) ----------
+
+// Every Prime Radiant mask is one colour: its shapes are `currentColor` and
+// the fallback colour sits on the <svg> root only (design round 3, F1), so
+// the root's `color` tints the whole file. tintedSvg() sets it to a theme
+// colour ("#rrggbb", from Style/Color/the bar, never a constant) and returns
+// the data URL components/MaskIcon.qml hands to Image; "" when either input
+// is unusable.
+function tintedSvg(svg, rgb) {
+  var text = typeof svg === "string" ? svg : ""
+  var open = text.match(/<svg\b[^>]*>/)
+  if (!open || !/^#[0-9a-fA-F]{6}$/.test(String(rgb))) return ""
+  var tag = open[0]
+  var tinted = /\scolor="[^"]*"/.test(tag)
+    ? tag.replace(/\scolor="[^"]*"/, " color=\"" + rgb + "\"")
+    : tag.replace(/^<svg\b/, "<svg color=\"" + rgb + "\"")
+  return "data:image/svg+xml;utf8," + encodeURIComponent(text.replace(tag, tinted))
+}
+
+// A4, the bar glyph (assets/DELIVERY.md §5): hand-hinted for the 16 and the
+// 20 px box (bar scale 1.0 and 1.25), the vector for every other box. `box`
+// is the glyph box in device pixels (Style.bar.iconCanvas times the output
+// scale). `centre` is the glyph's vertical ink centre as a fraction of the
+// box: the hinted grids have their centre pixel in row 7 of 16 and row 9 of
+// 20, the vector is centred. BarWidget puts that centre on the digits'.
+function barGlyph(box) {
+  var px = Math.round(Number(box) || 0)
+  if (px === 16) return { file: "a4-bar-glyph-16.svg", crisp: true, centre: 7.5 / 16 }
+  if (px === 20) return { file: "a4-bar-glyph-20.svg", crisp: true, centre: 9.5 / 20 }
+  return { file: "a4-bar-glyph.svg", crisp: false, centre: 0.5 }
+}
+
+// A5, the panel header mark (DELIVERY.md §5): the box is twice the heading's
+// cap height, rounded to an even pixel count; the wordmark starts half a cap
+// height after it; its baseline sits at box / 2 + cap / 2 below the box top
+// (the mark's centre on the cap-height centre). For the 16 px heading that
+// is 24 / 6 / 17.85, the delivered metrics. The hinted grids at 24 and 32
+// device pixels, the A1 master for every other size.
+function panelMark(capHeight, dpr) {
+  var cap = Math.max(1, Number(capHeight) || 1)
+  var ratio = Number(dpr) > 0 ? Number(dpr) : 1
+  var box = 2 * Math.round(cap)
+  var device = Math.round(box * ratio)
+  var hinted = device === 24 || device === 32
+  return {
+    box: box,
+    gap: Math.round(cap / 2),
+    baseline: box / 2 + cap / 2,
+    file: hinted ? "a5-panel-mark-" + device + ".svg" : "a1-icon-mask.svg",
+    crisp: hinted
+  }
+}
+
+// A11, the state pictograms (48 and 96 grids; used at 48 px and up only,
+// design round 3, F2). The status banner shows its status's pictogram;
+// contractMismatch has none.
+var STATUS_PICTOGRAMS = {
+  engineMissing: "engine-missing",
+  notInitialised: "logbook-not-initialised",
+  indexMissing: "index-missing",
+  indexStale: "index-stale"
+}
+
+function statusPictogram(status) {
+  return STATUS_PICTOGRAMS[status] !== undefined ? STATUS_PICTOGRAMS[status] : ""
+}
+
+// The Today tab's state pictogram: the most pressing of crisis, open drift
+// and active cases, else all clear; tone as the pill's (pillTone), drift in
+// the accent like an open drift row. null without counts.
+function todayState(c) {
+  if (!c) return null
+  if (c.crisis > 0) return { id: "crisis", tone: "urgent" }
+  if (c.drift > 0) return { id: "drift-open", tone: "accent" }
+  if (c.active > 0) return { id: "case-active", tone: "accent" }
+  return { id: "all-clear", tone: "default" }
+}
+
+// The pictogram file for a state id drawn at `size` device pixels: the 48
+// grid up to 72 px, the 96 grid above.
+function pictogramFile(id, size) {
+  return id ? "a11-state-" + id + "-" + (Number(size) > 72 ? 96 : 48) + ".svg" : ""
+}
+
+// A12, the timeline markers: shape alone tells them apart (release diamond,
+// snapshot dot, case brackets, crisis spindle). The legend shows the files,
+// the 12 grid up to 14 px, the 16 grid above; the canvas draws the same
+// shapes from the 16 grid's path data (assets/a12-marker-*-16.svg, centre
+// 8, 8; model.test.js keeps the two equal). Case brackets are rectangles
+// (Timeline.qml), 2 of 16 units thick, as in the files.
+var MARKER_KINDS = ["release", "snapshot", "case-span-start", "case-span-end", "crisis"]
+var MARKER_PATHS = {
+  release: "m8 2 6 6-6 6-6-6z",
+  snapshot: "M12.64 8a4.64 4.64 0 1 1-9.29 0 4.64 4.64 0 0 1 9.29 0",
+  crisis: "M8 .64a11 11 0 0 0 1.12 4.04q.47.95 1.12 1.78.64.84 1.44 1.54a11 11 0 0 0-2.56 3.32A11 11 0 0 0 8 15.36a11 11 0 0 0-1.12-4.04q-.47-.95-1.12-1.78Q5.12 8.69 4.32 8a11 11 0 0 0 2.56-3.32A11 11 0 0 0 8 .64"
+}
+
+function markerFile(kind, size) {
+  if (MARKER_KINDS.indexOf(kind) === -1) return ""
+  return "a12-marker-" + kind + "-" + (Number(size) > 14 ? 16 : 12) + ".svg"
+}
+
+// The timeline legend, in the order of the slot's subtitle; tone names the
+// colour the canvas uses for the same marker (Timeline.markerColor).
+var TIMELINE_LEGEND = [
+  { markers: ["release"], label: "releases", tone: "accent" },
+  { markers: ["snapshot"], label: "snapshots", tone: "snapshot" },
+  { markers: ["case-span-start", "case-span-end"], label: "cases", tone: "accent" },
+  { markers: ["crisis"], label: "crises", tone: "urgent" }
+]
 
 function plural(n, one, many) {
   return n + " " + (n === 1 ? one : many)
@@ -668,7 +778,7 @@ var SOURCE_GLYPHS = {
   config: "\u{F0493}",   // cog
   agent: "\u{F06A9}",    // robot
   manual: "\u{F03EB}",   // pencil
-  seldon: GLYPH
+  seldon: "\u27E1"     // ⟡, the text glyph of the engine's own events
 }
 
 function sourceGlyph(source) {

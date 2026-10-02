@@ -1,5 +1,6 @@
-# Sourced by tests/plugin/service-states.sh and panel-view.sh: proves that a
-# run never touches the real user's Seldon files. Every scenario runs with
+# Sourced by the plugin harness scripts (service-states.sh, panel-view.sh,
+# overlay-view.sh, bar-view.sh): proves that a run never touches the real
+# user's Seldon files. Every scenario runs with
 # HOME, XDG_STATE_HOME and XDG_CONFIG_HOME inside the run's temp dir; this
 # fingerprints the real paths before the run, and `real_home_check` compares
 # them after it (existence, type, size, mtime and ctime of every entry).

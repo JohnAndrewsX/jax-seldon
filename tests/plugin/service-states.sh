@@ -85,7 +85,7 @@ clean_log() {
 # 1. Fixture index, engine on PATH: the pill shows the fixture's counts.
 run ok 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json"
 expect ok .status ok
-expect ok .pill "⟡ 2 · 4"
+expect ok .pill "2 · 4"
 expect ok .tone urgent
 expect ok .engine present
 expect ok .engineVersion 0.1.0-fake
@@ -96,7 +96,7 @@ clean_log ok
 # 2. Same index, no seldon on PATH.
 run engine-missing 2500 PATH="$base_path" SELDON_INDEX="$fx/index.sample.json"
 expect engine-missing .status engineMissing
-expect engine-missing .pill "⟡ 2 · 4"
+expect engine-missing .pill "2 · 4"
 expect engine-missing .banner "Seldon engine not installed"
 clean_log engine-missing
 
@@ -104,7 +104,7 @@ clean_log engine-missing
 run not-initialised 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/not-initialised.json"
 expect not-initialised .status notInitialised
 expect not-initialised .banner "Logbook not initialised"
-expect not-initialised .pill "⟡"
+expect not-initialised .pill ""
 
 # 4. No index file.
 run index-missing 2500 PATH="$fake_path" SELDON_INDEX="$work/does-not-exist.json"
@@ -122,7 +122,7 @@ expect index-unreadable .banner "Index unreadable"
 run index-stale 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T20:05:12+02:00"
 expect index-stale .status indexStale
 expect index-stale .banner "Index is stale"
-expect index-stale .pill "⟡ 2 · 4"
+expect index-stale .pill "2 · 4"
 run index-fresh 2500 PATH="$fake_path" SELDON_INDEX="$fx/index.sample.json" SELDON_NOW="2026-10-01T19:05:00+02:00"
 expect index-fresh .status ok
 # 6b. Stale from the data: index-variants/index-stale says indexStale while the
@@ -130,7 +130,7 @@ expect index-fresh .status ok
 run variant-stale 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/index-stale.json"
 expect variant-stale .status indexStale
 expect variant-stale .banner "Index is stale"
-expect variant-stale .pill "⟡ 2 · 4"
+expect variant-stale .pill "2 · 4"
 clean_log variant-stale
 
 # 7. Contract v2.
@@ -138,7 +138,7 @@ run contract-mismatch 2500 PATH="$fake_path" SELDON_INDEX="$fx/invalid/index.con
 expect contract-mismatch .status contractMismatch
 expect contract-mismatch .indexContractVersion 2
 expect contract-mismatch .banner "Index format mismatch"
-expect contract-mismatch .pill "⟡"
+expect contract-mismatch .pill ""
 clean_log contract-mismatch
 
 # 8. A relative SELDON_INDEX resolves against the shell's working directory.
@@ -157,7 +157,7 @@ cp "$fx/index-variants/not-initialised.json" "$work/swap.json"
 run atomic-replace 4000 HARNESS_UNTIL=status=ok PATH="$fake_path" SELDON_INDEX="$work/swap.json"
 wait
 expect atomic-replace .status ok
-expect atomic-replace .pill "⟡ 2 · 4"
+expect atomic-replace .pill "2 · 4"
 
 # 11. The engine is installed while the shell runs; "Check again" finds it.
 (sleep 1; install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin-late/seldon") &
@@ -174,7 +174,7 @@ run live 9000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-live" X
 expect live .indexPath "$work/home-live/.local/state/seldon/index.json"
 expect live .status ok
 expect live .devMode false
-expect live .pill "⟡ 2 · 4"
+expect live .pill "2 · 4"
 calls=$(tr '\n' ' ' <"$work/home-live/calls.log" | sed 's/ $//')
 want="start --version end --version start capture end capture start status end status"
 if [[ $calls == "$want" ]]; then
@@ -197,7 +197,7 @@ echo uninit >"$work/home-init/mode"
 run init-later 7000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-init" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECHECK_MS=2500
 wait
 expect init-later .status ok
-expect init-later .pill "⟡ 2 · 4"
+expect init-later .pill "2 · 4"
 
 # 14. Banner fixes run fixed argument lists with constant commands only.
 mkdir -p "$work/bin-tools"
@@ -254,7 +254,7 @@ clean_log snapper-degraded
 run plugins-degraded 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/plugins-degraded.json"
 expect plugins-degraded .status ok
 expect plugins-degraded .snapper ""
-expect plugins-degraded .pill "⟡ 2 · 4"
+expect plugins-degraded .pill "2 · 4"
 clean_log plugins-degraded
 
 # 14e. Omarchy from a git checkout (system.omarchy.repoHead) changes nothing here.
@@ -285,7 +285,7 @@ mkdir -p "$work/home-xdg" "$work/xdg-state"
 run xdg 6000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-xdg" XDG_STATE_HOME="$work/xdg-state" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
 expect xdg .indexPath "$work/xdg-state/seldon/index.json"
 expect xdg .status ok
-expect xdg .pill "⟡ 2 · 4"
+expect xdg .pill "2 · 4"
 
 # 17. A relative XDG_STATE_HOME is invalid (XDG spec) and falls back to HOME.
 mkdir -p "$work/home-xdg-rel"
@@ -416,7 +416,7 @@ expect plan .planResult.ok false
 expect plan .planResult.action done
 expect plan .planResult.caseId C-2026-003
 expect plan .lastError ""
-expect plan .pill "⟡ 2 · 4"
+expect plan .pill "2 · 4"
 if [[ $(grep -a -c 'HARNESS action \["plan".* true$' "$work/plan.log") == 7 ]]; then
   pass=$((pass + 1)); echo "ok   plan: all seven calls queued"
 else
@@ -498,7 +498,7 @@ expect drift .driftResult.ok false
 expect drift .driftResult.action link
 expect drift .driftResult.eventId $OLLAMA
 expect drift .lastError ""
-expect drift .pill "⟡ 2 · 1"
+expect drift .pill "2 · 1"
 expect drift .crisis "1 change in the red zone needs a reason"
 if grep -a -q 'HARNESS action \["drift","link",{"eventId":"'$THEME'","caseId":"C-2026-005"}\] true' "$work/drift.log"; then
   pass=$((pass + 1)); echo "ok   drift: the re-run was sent"
@@ -538,7 +538,7 @@ expect drift-again .driftResult.text "Already resolved: linked to C-2026-005"
 expect drift-again .driftResult.already true
 expect drift-again .driftResult.ok true
 expect drift-again .driftResult.caseId C-2026-005
-expect drift-again .pill "⟡ 2 · 4"
+expect drift-again .pill "2 · 4"
 
 # 27. Refused before the engine is asked: a malformed event id, Link
 #     without a case or with a malformed one, a blank or two-line text, a
