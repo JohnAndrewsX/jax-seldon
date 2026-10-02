@@ -182,22 +182,49 @@ as two subagents; both are allowed for this bounded fan-out.
 
 ## 12. Models, effort, and budget
 
-Default matrix; the orchestrator states model and effort in every brief
-and passes them on start (`herdr agent start … -- --model X --effort Y`).
-Workers may use cheaper subagents internally for exploration.
+Principle (operator decision, 2026-10-02): **Opus orchestrates, Fable
+advises.** Fable's weekly window is the scarce resource. It is spent on
+judgement in fresh, small contexts — never on mechanics, and never on
+re-reading a long session at every tool call. The orchestrator states
+model and effort in every brief and passes them on start
+(`herdr agent start … -- --model X --effort Y`). Workers may use cheaper
+subagents internally for exploration.
 
 | Role | Model | Effort | Why |
 |---|---|---|---|
-| Orchestrator | `fable` | high | judgement, long context, few tool calls |
-| Architect / Reviewer | `fable` | high | reads specs against code; errors here are expensive |
-| Debate: devil's advocate | `fable` | high | the attacker gets the stronger model |
+| Orchestrator | `opus` | high | the loop is mechanics: start, wait, check, merge, log, push; judgement calls go to the advisor |
+| Advisor | `fable` | high | a fresh subagent (`.claude/agents/advisor.md`, never a fork) with a written brief and only the files it needs; called for WP scoping of R2/R3 topics, ADRs, class-a decisions on contract, security or release, contested SEND BACKs, debates, operator strategy questions |
+| Reviewer, stage 1 (mechanical) | `opus` | high | `.claude/agents/reviewer.md`: reads the diff, runs checks and mutation tests, writes a review packet (findings with evidence, risk list, open questions, ≤ 2 pages); approves alone for docs, packaging boilerplate and translations |
+| Reviewer, stage 2 (judgement) | `fable` | high | only for risk WPs (contract, engine core, release workflow, security, install paths); gets the packet and the spec sections, not the diff; decides APPROVE / SEND BACK. Round-2 re-reviews run on `opus` unless round 1 found a design flaw |
+| Debate: devil's advocate | `fable` | high | fresh context, packet-based; the attacker gets the stronger model |
 | Debate: advocatus Dei | `opus` | high | |
-| Engine Dev, Plugin Dev, Schema Keeper | `opus` | high | long coding runs; escalate a stuck WP to `fable` once |
-| Docs, boilerplate, fixtures prose | `sonnet` | medium | cheap and good enough |
+| Engine Dev, Plugin Dev, Schema Keeper | `opus` | high | long coding runs; a stuck WP is escalated once to the advisor, not to a Fable worker |
+| Docs, translations, boilerplate | `sonnet` | medium | `opus` when the WP carries a quality chain (fresh-user replay, humanizer round) |
 | QA (integration scripts, theme sweeps) | `opus` | medium | |
 
+Context discipline (this is where the tokens go):
+
+- One orchestrator session per day, or after about 40 ticks; the
+  handover is `STATUS.md` plus `work/ORCHESTRATOR-LOG.md`, nothing else.
+- Advisor and reviewer subagents start fresh from a written brief. Forks
+  carry the whole session context and are not allowed for them.
+- Tick cadence at least 30 minutes; waiting is a background `herdr agent
+  wait`, not polling; tool output is trimmed (`head`, `-c`).
+- Briefs and packets name file paths; they do not paste file contents.
+
 Budget: subscription windows are visible with
-`omarchy agent usage claude --limits-only` (JSON). The orchestrator checks
-it at every tick; above 85 % of a window it starts no new worker and lets
-the loop wait; above 95 % it pauses running workers' prompts until the
-window resets. It never switches providers or keys to get around a limit.
+`omarchy agent usage claude --limits-only` (JSON). The orchestrator reads
+it at every tick and logs the three percentages.
+
+- Daily allowance per window = remaining percent / remaining days until
+  the reset. Above it: no new worker and no stage-2 review until the
+  next day.
+- Fable weekly ≥ 70 %: the advisor is called only for ADR, contract and
+  security questions. ≥ 85 %: no Fable at all until the reset; stage-2
+  reviews run on `opus` with the same brief, and the log says so.
+- Any weekly ≥ 85 %: no new worker; ≥ 95 %: running workers' prompts
+  pause until the window resets. It never switches providers or keys to
+  get around a limit.
+- Switching the orchestrator's own model is the operator's act
+  (`/model opus` in the session, or a restart with `--model opus`); the
+  loop and the handover files are model-independent.
