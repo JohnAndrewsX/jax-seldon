@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- `seldon plan start` warns when an R2 or R3 case starts without a
+  snapshot (`warnings` in `--json`); R3 also asks for the human's explicit
+  go per step. Advice only, never refused (ADR-0023, WP-050).
+- The default `[drift] alwaysRed` list follows ADR-0023's R3 subjects: new
+  `omarchy-settings`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`.
+  `init` writes the list into `config.toml`, so an existing config keeps
+  its old list; add the new globs by hand.
+- `seldon decide` and `seldon status` fill the `decisions.index` table in
+  the logbook's `DECISIONS.md` from `decisions/`; text outside the fence
+  stays yours.
+- `seldon doctor` prints `~`-shortened paths in the `logbook` row, like
+  its header; the wizard's harness question says how to toggle and
+  confirm.
+- SPEC-ENGINE no longer lists `hook install generic`: there is nothing to
+  install, other agents pipe into `seldon hook generic` themselves.
+
 ### Packaging and docs
 
 - Repository hygiene (WP-048): CONTRIBUTING.md, SECURITY.md (GitHub
