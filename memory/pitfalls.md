@@ -928,3 +928,10 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **zsh, fish and shellcheck are not installed on the dev host**:
   `tests/manual.rs` and `install.test.sh` skip those checks with a note;
   CI's container has shellcheck.
+- **Testing EPIPE:** drop the child's stdout pipe right after `spawn()`,
+  before it writes; reading a few bytes and closing lets a short output
+  fit the pipe buffer and the write never fails. `/dev/full` (opened for
+  writing, passed as `Stdio::from(file)`) tests the other write errors.
+- **Hermetic "shell not installed" in bash tests:** link the host's
+  programs except zsh/fish into a dir and use only that dir on PATH;
+  fakes in another dir decide which shells exist.

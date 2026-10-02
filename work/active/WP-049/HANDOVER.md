@@ -162,3 +162,62 @@ Touched outside WP scope: CHANGELOG.md ([Unreleased] entries);
   engine/hooks/README.md (removal rows); main.rs print_line (the EPIPE
   abort, found while testing `completions | head`).
 ```
+
+```
+WP-049 HANDOVER — fix rounds after review
+Done:
+- Round 1 (4623bee): `# shellcheck disable=SC2016` with a reason above the
+  two `bash -c '…$1…'` checks in tests/install/install.test.sh.
+- (B1) 4763207: main.rs print_line ignores only ErrorKind::BrokenPipe;
+  any other stdout write error → "seldon: cannot write to stdout: …" on
+  stderr, exit 2 (also for the JSON error line of `fail`). `seldon mangen
+  > /dev/full` now exits 2 instead of 0 with an empty file.
+- (B2) 4763207: config::delete_own_file writes the `op: delete` record
+  BEFORE remove_file, as SPEC-ENGINE §5 rule 7 says (spec unchanged); a
+  record whose deletion fails stays and is harmless.
+- (N2) 86f3fd8: `hook install` and `hook uninstall` take the state lock
+  before reading the settings file and hold it through the write, the
+  own-write record and the autocommit (setup::record_own_writes_under,
+  delete_own_file_under). With the lock held elsewhere they now exit 4
+  and change nothing (before: wrote the file, then warned that the record
+  failed). SPEC-ENGINE §8 gained one sentence saying so (dfd9523).
+- (N1) 80b77eb: install.sh shell_present needs `command -v zsh` /
+  `command -v fish` plus the directory; bash keeps the bash-completion
+  directory check. Docs 11 unchanged. The install test links the host's
+  programs without zsh and fish into its PATH and decides with fakes in
+  $work/shells; TESTING.md row updated.
+- (N3) dfd9523: SPEC-ENGINE `[--settings PATH]` → `[--settings FILE]`
+  (4 places).
+- (N4) 86f3fd8: `import omarchy-agent`: "Import the omarchy-agent kit's
+  Obsidian vault, which is only read (dry run unless --apply)"; docs 05
+  regenerated (dfd9523), de source line re-stamped at dfd9523 (062bf3c).
+- Follow-ups left as instructed: jax-seldon symlink completion, JSON key
+  re-ordering on hook install/uninstall.
+Not done: nothing of the list. Note: the round took five commits instead
+  of one or two (engine B1+B2, engine N2+N4, docs, de stamp, install.sh
+  N1); the branch is under review, so I did not squash.
+Verified by:
+- New tests, each run against its mutation (temporary edit, reverted):
+  tests/manual.rs a_failed_write_to_stdout_exits_2 (/dev/full → exit 2;
+  fails when all errors are ignored) and
+  a_reader_that_closes_early_is_not_an_error (read end closed before the
+  write → exit 0, no panic; fails with println!);
+  tests/own_writes.rs the_deletion_is_recorded_before_the_file_goes
+  (read-only hook directory: exit 2, file still there, owned.json has
+  op delete; the next capture writes nothing and forgets it; fails with
+  delete-first); tests/hooks.rs uninstall::the_lock_covers_the_write
+  (lock held → install and uninstall exit 4, file byte-identical; after
+  the release uninstall works); install.test.sh: zsh directory without
+  `zsh` → no completion and no hint, fake zsh → both, fish without its
+  directory → none (dropping `command -v zsh` fails 3 checks).
+- Suites: manual 7/7, own_writes 13/13, hooks 35/35, install test 132/132.
+- `just check` → exit 0, "check: ok" (851 Rust tests passed over test +
+  check-watch; docs-check ok; plugin checks ok).
+- Still not run here: shellcheck, zsh -n, fish -n (not installed), makepkg
+  (guard block).
+Learned: a test for EPIPE must close the read end before the child writes
+  (drop the pipe right after spawn); a short output fits the pipe buffer
+  and never sees EPIPE otherwise.
+Decisions needed: none.
+Touched outside WP scope: none.
+```
