@@ -12,19 +12,33 @@ shows the command and what you should see.
 - A terminal. The commands on this page run as your user; none needs
   `sudo`.
 
-Seldon only reads your system. It never installs a package, never edits
-a file outside its own folders and never blocks a command. It writes
-three things: your logbook (`~/Seldon` by default), its config file
-(`~/.config/seldon/config.toml`) and its state (`~/.local/state/seldon/`).
+Seldon only reads your system. It never installs a package and never
+blocks a command. It writes three things: your logbook (`~/Seldon` by
+default), its config file (`~/.config/seldon/config.toml`) and its state
+(`~/.local/state/seldon/`). It writes outside these folders only where
+you opt in during setup: Omarchy's theme hook and Claude Code's hook
+settings.
 
 ## Step 1: Install the engine
 
 The engine is one program, `seldon`. The AUR package is coming soon. Until
-then you install it from the project's GitHub release. The script checks
-the download against the release's checksums and installs
+then you install it from the project's GitHub release. The install script
+checks the engine against the release's checksums and installs
 `~/.local/bin/seldon`.
 
-Download the script, read it, verify it, run it:
+While the current release is v0.1.0, take the script from the project's
+`main` branch and name the version. The v0.1.0 release does not carry
+the script yet:
+
+```sh
+cd "$(mktemp -d)"
+curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
+less install.sh
+bash install.sh --version v0.1.0
+```
+
+From v0.1.1 on, the release carries the script and its checksum. Then
+download both, read the script, verify it and run it:
 
 ```sh
 cd "$(mktemp -d)"
@@ -32,15 +46,6 @@ curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
 less install.sh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
-```
-
-The release v0.1.0 has no `install.sh` yet. If the first `curl` fails
-with a 404, take the script from the project's `main` branch instead and
-name the version:
-
-```sh
-curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
-bash install.sh --version v0.1.0
 ```
 
 Check that your shell finds the engine:
@@ -54,8 +59,11 @@ seldon 0.1.0
 ```
 
 If your shell says `command not found`, `~/.local/bin` is not on your
-`PATH`. Open a new terminal and try again. [Update and uninstall](11-update-and-uninstall.md)
-lists every install option.
+`PATH` yet. Omarchy's default bash setup adds it when a shell starts, so
+open a new terminal and try again. If you use another shell or your own
+startup file, add `export PATH="$HOME/.local/bin:$PATH"` to it.
+[Update and uninstall](11-update-and-uninstall.md) lists every install
+option.
 
 ## Step 2: Create your logbook
 
@@ -117,7 +125,7 @@ seldon doctor
 seldon doctor · ~/Seldon
   ok        engine   seldon 0.1.0, contract 1
   ok        config   ~/.config/seldon/config.toml
-  ok        logbook  ~/Seldon · machine <machine> · en · 0 cases, 0 decisions, 0 journal days
+  ok        logbook  /home/you/Seldon · machine <machine> · en · 0 cases, 0 decisions, 0 journal days
   ok        omarchy  Omarchy 4.0.4-1
   degraded  snapper  No permissions. Snapshots are not recorded until you allow your user once (ADR-0011)
                      fix: sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
@@ -141,6 +149,13 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 
 A small pill `⟡` appears on the right of the bar. Click it to open the
 panel. [Daily use](03-daily-use.md) explains every part of it.
+
+No pill? Check that `omarchy plugin list` shows `jax.seldon` as enabled
+(else `omarchy plugin enable jax.seldon`), then restart the shell with
+`omarchy-restart-shell`. If the panel shows a banner instead of data,
+its button is the fix; *Check again* looks for the engine once more.
+[Troubleshooting](10-troubleshooting.md#banners-in-the-panel) lists
+every banner.
 
 ## Step 5: Record an unplanned change
 
@@ -186,11 +201,15 @@ test: it is visible and you can undo it in a second.
    1 open drift item(s), 0 crisis
    ```
 
-   The theme switch is **drift**: a change that no case covers. The last
-   column is the event id (yours is different). If you added the plugin,
-   the pill in the bar now shows `⟡ · 1`.
+   The theme switch is **drift**: a change that no case covers. `yellow`
+   is its zone: a config or theme change, not a package
+   ([Concepts](02-concepts.md#zones) explains zones). The last column is
+   the event id (yours is different). If you added the plugin, the pill
+   in the bar now shows `⟡ · 1`.
 
-5. Explain it. Seldon then files it under a new, completed case:
+5. Explain it. The change already happened, so Seldon records your
+   reason as a retroactive case: a new case, created already completed,
+   with your text as its title:
 
    ```sh
    seldon drift explain <EVENT> -- "Tried another theme"
@@ -221,8 +240,9 @@ Created C-2026-002 "Switch back to my usual theme" in work/queued/C-2026-002-swi
 C-2026-002 queued → active (now work/active/C-2026-002-switch-back-to-my-usual-theme.md)
 ```
 
-Use the id that `plan new` printed. The case is now active. Write a note
-into today's journal:
+`--area themes` files the case under the area `themes`, one of six
+topics a new logbook has (`areas/themes/`). Use the id that `plan new`
+printed. The case is now active. Write a note into today's journal:
 
 ```sh
 seldon log --case C-2026-002 -- "Switching back to my usual theme"
@@ -238,8 +258,12 @@ seldon drift
 
 The switch shows up as drift again. Seldon sees that the theme changed,
 but a collector cannot know that you did it for this case. Only agents
-working through hooks are linked to the active case by themselves. You
-link your own change with one command:
+working through hooks are linked to the active case by themselves. The
+case still pays off: it holds your note and, once linked, the change
+itself, as its trace. If the case's *Plan* names the theme (for example
+`tokyo-night`), Seldon proposes this case for the change, and the
+panel's drift dialog preselects it. You link your own change with one
+command:
 
 ```sh
 seldon drift link <EVENT> C-2026-002

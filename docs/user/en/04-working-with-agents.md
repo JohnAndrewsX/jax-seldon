@@ -110,7 +110,10 @@ The hooks only run when Claude Code starts in the logbook folder. To
 record Claude Code sessions in every folder, install the hooks into your
 user settings instead:
 `seldon hook install claude-code --settings ~/.claude/settings.json`.
-Every session then writes into your logbook, with the active case.
+Then every Claude Code session on this machine writes into your
+logbook, in any project, with the active case. Red and yellow commands
+are recorded in every session; green commands only while a case is
+active.
 
 ## The active case
 
@@ -132,7 +135,7 @@ with the agent's name. Green commands are not recorded at all.
 
 | Zone | Recorded |
 |---|---|
-| red | installing and removing packages, `omarchy` commands that change the system, `systemctl enable`, `disable`, `start`, `stop`, `mask`, `unmask` |
+| red | installing, removing and upgrading packages (also `pacman -Syu` and `omarchy update`), `omarchy` commands that change the system, `systemctl enable`, `disable`, `start`, `stop`, `mask`, `unmask` |
 | yellow | writes into watched paths: `cp`, `mv`, `tee`, `sed -i`, `rm`, redirections, and Claude Code's Edit and Write tools |
 | green | every other changing command (`npm install`, `git push`, files elsewhere), only while a case is active |
 
@@ -222,10 +225,13 @@ into Seldon, see [Import from omarchy-agent](09-import-from-omarchy-agent.md).
 
 ## Review what the agent did
 
-The case file lists the ids of its events, oldest first:
+`seldon plan show C-2026-003` prints the case file. Its `events:` line
+holds only event ids. To read the events themselves, open this month's
+ledger view; each line names the time, the source, the case and, for
+an agent, its name:
 
 ```sh
-seldon plan show C-2026-003
+seldon open ledger --editor
 ```
 
 In the panel:

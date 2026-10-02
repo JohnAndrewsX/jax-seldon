@@ -42,6 +42,10 @@ on:
 Before 1.0.0 the minor number is the breaking slot (SemVer §4): `0.2.0`
 may break `0.1.x`, and the CHANGELOG then says so under **Breaking**.
 
+The user guide (`docs/user/`) is in English and German; further
+languages are added when there is demand, as a docs change (patch),
+following the translation policy in [docs/user/README.md](user/README.md).
+
 ## `contractVersion`
 
 `contractVersion` is one integer kept in four places: the engine

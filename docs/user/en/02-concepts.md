@@ -75,7 +75,10 @@ Each event has a source. There are nine:
 
 A case is one planned change, in one Markdown file under `work/`. It
 has an id like `C-2026-004`, a title, a zone, a risk, an area and four
-sections:
+sections. An *area* is a long-lived topic of the machine, with a folder
+under `areas/`. A new logbook has six: `hyprland`, `themes`, `packages`,
+`dev-env`, `plugins` and `shell`. A new area name creates its folder on
+first use. The four sections are:
 
 - *Intent*: why, and what is different afterwards.
 - *Plan*: goal, steps, affected paths, rollback, verification.
@@ -102,8 +105,8 @@ commit.
 
 The case started last is the *active case*. Its id is in
 `.seldon/active-case`. Agent hooks stamp every command they record with
-it, so the case collects its *trace*: the ordered list of what
-happened while it was open.
+it, so the case collects its *trace*: the events recorded for it, in
+order.
 
 ## Zones
 
@@ -147,10 +150,12 @@ Most changes are linked to a case on their own:
 - A package that came in as a dependency of a package in a case belongs
   to that case.
 
-Everything else is drift. That includes your own changes outside the
-terminal: a collector sees that the theme changed, but not that you meant
-it for a case. If an open case names the changed package or path in its
-*Plan*, Seldon proposes that case, and the panel shows it preselected.
+Everything else is drift. That includes all your own changes, in the
+terminal or anywhere else: a collector sees that the theme changed, but
+not that you meant it for a case. Only an agent's command, recorded by a
+hook, carries the active case. If an open case names the changed
+package, path or theme in its *Plan*, Seldon proposes that case (the
+*proposed case*), and the panel shows it preselected.
 
 You resolve drift in one of three ways:
 
@@ -161,8 +166,8 @@ You resolve drift in one of three ways:
 | dismiss | `seldon drift dismiss <EVENT> -- "<reason>"` | it does not matter (a dependency, noise) |
 
 The event stays in the ledger either way. The resolution is a new event
-that points to it. Packages from one transaction form one drift item: a
-routine upgrade of forty packages is one item, and one command resolves
+that points to it. Packages from one transaction form one drift item, a
+*transaction group*: a routine upgrade of forty packages is one item, and one command resolves
 all of them. Add `--only` to resolve that one event alone.
 
 ## Crisis

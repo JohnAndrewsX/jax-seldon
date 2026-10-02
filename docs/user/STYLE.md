@@ -23,7 +23,7 @@ This page is for people who write or translate the user guide in
 - Bold only for the one word a reader must not miss on a page. Never bold
   every list item.
 - Headings in sentence case, no decoration, no emoji.
-- Straight quotes `"…"` in English. German uses „…" in prose. Code is
+- Straight quotes `"…"` in English. German uses „…“ in prose. Code is
   never retyped with typographic quotes.
 
 ## Pages
@@ -65,6 +65,8 @@ them in the page language where it helps.
 | baseline | Baseline | the pre-Seldon baseline after a backfill |
 | backfill | Nacherfassung | `init --since` |
 | link, explain, dismiss | verknüpfen, erklären, verwerfen | the three drift actions |
+| proposed case | vorgeschlagener Case | the case whose *Plan* names a drift event's subject |
+| transaction group | Transaktionsgruppe | one package transaction as one drift item |
 | decision | Entscheidung | an ADR in `decisions/` |
 | memory | Memory | what agents learned, `memory/`; also the panel tab |
 | capture | Erfassung, erfassen | `seldon capture` |

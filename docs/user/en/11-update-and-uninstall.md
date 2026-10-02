@@ -14,8 +14,9 @@ one-liner:
 curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
 ```
 
-It replaces `seldon` when the release is newer. With the same version it
-changes nothing. It checks the engine against the release's `SHA256SUMS`
+It replaces `seldon` when the release's version differs from the
+installed one; with `--version` that can also be an older release. With
+the same version it changes nothing. It checks the engine against the release's `SHA256SUMS`
 and refuses on a mismatch. If the latest release has no `install.sh`
 yet (v0.1.0), use the script from `main` as in Getting started.
 
