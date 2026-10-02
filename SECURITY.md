@@ -46,9 +46,11 @@ How Seldon runs, and therefore what counts as a vulnerability:
   output (`/var/log/pacman.log`, snapper, the `omarchy` CLI), reads the hook
   payloads that agent harnesses (Claude Code, Omarchy Agent) pipe into
   `seldon hook`, and writes only the logbook, its own config and state
-  (`~/.config/seldon`, `~/.local/state/seldon`) and the hook scripts the
-  user asks it to install. Git commits in the logbook are local; Seldon
-  never pushes.
+  (`~/.config/seldon`, `~/.local/state/seldon`), and the hook scripts and
+  harness settings the user asks it to install (an agent harness's
+  `settings.json`, the theme hook under
+  `~/.config/omarchy/hooks/theme-set.d/`). Git commits in the logbook are
+  local; Seldon never pushes.
 - **Redaction** (`docs/SPEC-ENGINE.md` §7): collectors and hooks redact
   secrets before an event is written. A secret that matches a documented
   rule and still reaches the logbook is a vulnerability.

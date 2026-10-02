@@ -113,16 +113,17 @@ answer within a week.
 
 ## Dependency advisories
 
-CI runs `cargo audit` on `engine/Cargo.lock` in a separate `audit` job
-(`.github/workflows/ci.yml`). It is **advisory for now**: a RustSec
-finding, or an unmaintained or yanked crate, marks that job red without
-failing the run. Act on it anyway — update the crate, or document why it
-does not apply.
+`.github/workflows/audit.yml` runs `cargo audit` on `engine/Cargo.lock`
+every Monday, on demand (*Actions → audit → Run workflow*), and on every
+push or pull request that changes the lock file. It is **advisory for
+now**: the `cargo audit` step may fail (`continue-on-error`), and a
+RustSec finding, an unmaintained or a yanked crate then shows as a
+**warning annotation** on the run and in its summary while the job stays
+green. Act on it anyway — update the crate, or document why it does not
+apply.
 
-It becomes **blocking** (`continue-on-error` removed from the job) once
-every run on `main` has been green for four consecutive weeks, and at the
-latest before `1.0.0`. From then on an advisory that does not affect
-Seldon is ignored only by an entry in `.cargo/audit.toml` at the
-repository root, with the advisory id and a one-line reason, reviewed
-like code. The job runs on pushes and pull requests only, so a new
-advisory against an unchanged lock file shows up with the next push.
+It becomes **blocking** (`continue-on-error` removed from the step) once
+four consecutive weekly runs have had no warning, and at the latest
+before `1.0.0`. From then on an advisory that does not affect Seldon is
+ignored only by an entry in `.cargo/audit.toml` at the repository root,
+with the advisory id and a one-line reason, reviewed like code.
