@@ -17,6 +17,8 @@ Crises are where reality deviates. Seldon makes the deviations visible.
 | Plugin | `plugin/` | Quickshell QML | `omarchy plugin add …` |
 | Contract | `schema/` | JSON Schema | the only link between engine and plugin |
 
+**User guide:** [English](docs/user/en/README.md) · [Deutsch](docs/user/de/README.md)
+
 ## Install
 
 **AUR package: coming soon. Until then install the engine from GitHub

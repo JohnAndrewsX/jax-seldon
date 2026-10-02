@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Packaging and docs
 
+- User guide in English and German (WP-045): `docs/user/en/` and
+  `docs/user/de/` with thirteen pages each, from getting started to the
+  glossary, a style sheet and a translation policy (English is the
+  source; each German page names the commit it matches).
+  `just docs-check`, part of `just check`, checks links, the page sets and
+  their structure, and every `seldon` command in the guide against the
+  engine's `--help`; the CLI reference is the engine's own help text.
 - Repository hygiene (WP-048): CONTRIBUTING.md, SECURITY.md (GitHub
   private vulnerability reporting), CODE_OF_CONDUCT.md (Contributor
   Covenant 2.1), issue forms for bugs and features, a pull request
