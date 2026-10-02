@@ -1,6 +1,8 @@
 //! Generated Markdown: the month views `ledger/YYYY-MM.md` (SPEC-LOGBOOK
 //! §5) and `STATUS.md`. Both start with [`GENERATED_HEADER`]; headings and
 //! keys are English, prose follows the logbook language (WP-002 review).
+//! The `decisions.index` fence of the user's `DECISIONS.md` is filled here
+//! too (WP-050); that file has no header, only the fence is the engine's.
 //!
 //! A view is written only when its text changed, so a rebuild does not
 //! touch files (or git) for nothing.
@@ -11,8 +13,8 @@ use std::fmt::Write as _;
 use ulid::Ulid;
 
 use super::build::{Built, day};
-use super::load::{FENCE_BEGIN, FENCE_END};
-use super::model::{DriftItem, IndexCase, IndexEvent};
+use super::load::{FENCE_BEGIN, FENCE_END, has_table_separator};
+use super::model::{DecisionRow, DriftItem, IndexCase, IndexEvent};
 use crate::GENERATED_HEADER;
 use crate::logbook::Logbook;
 use crate::model::Language;
@@ -21,6 +23,9 @@ use crate::sys;
 
 /// Name of the generated fence in `STATUS.md`.
 pub const STATUS_FENCE: &str = "status";
+
+/// Name of the generated fence in the logbook's `DECISIONS.md` (WP-050).
+pub const DECISIONS_FENCE: &str = "decisions.index";
 
 /// Writes `ledger/<month>.md` for every month with events; returns the
 /// relative paths that changed.
@@ -388,6 +393,99 @@ pub fn write_status(logbook: &Logbook, built: &Built) -> anyhow::Result<bool> {
     write_if_changed(logbook, "STATUS.md", &text)
 }
 
+/// The body of the `decisions.index` fence of `DECISIONS.md`: the table
+/// head of `old` when it has one (a translated head stays), else the
+/// English one; then one row per decision in `rows` order (newest first).
+pub fn decisions_index(old: Option<&str>, rows: &[DecisionRow]) -> String {
+    let mut text = String::new();
+    let head: Vec<&str> = old
+        .filter(|b| has_table_separator(b))
+        .map(|b| {
+            let lines: Vec<&str> = b.lines().collect();
+            let sep = lines
+                .iter()
+                .position(|l| has_table_separator(l))
+                .unwrap_or(0);
+            lines[..=sep].to_vec()
+        })
+        .unwrap_or_default();
+    if head.is_empty() {
+        text.push_str("| ID | Title | Status | Date |\n|---|---|---|---|\n");
+    } else {
+        for line in head {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+    for r in rows {
+        let _ = writeln!(
+            text,
+            "| [[{}]] | {} | {} | {} |",
+            r.id,
+            r.title.replace('|', "\\|"),
+            r.status,
+            r.date
+        );
+    }
+    text
+}
+
+/// What [`write_decisions_index`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Fill {
+    Written,
+    Unchanged,
+    /// Not touched; the reason is a warning.
+    Skipped(String),
+}
+
+/// Fills the `decisions.index` fence of `DECISIONS.md` from `rows`
+/// (WP-050); every byte outside the fence stays. A file without the
+/// fence gets it appended under `## Index`, a missing file is created.
+/// A begin marker without its end is left alone (replacing up to a later
+/// end marker could eat the user's text).
+pub fn write_decisions_index(logbook: &Logbook, rows: &[DecisionRow]) -> anyhow::Result<Fill> {
+    const REL: &str = "DECISIONS.md";
+    let path = logbook.path(REL);
+    let old = match std::fs::read_to_string(&path) {
+        Ok(t) => Some(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(anyhow::Error::new(e).context(format!("cannot read {}", path.display())));
+        }
+    };
+    let body = old.as_deref().and_then(|t| fence_body(t, DECISIONS_FENCE));
+    let content = decisions_index(body, rows);
+    let text = match old.as_deref() {
+        Some(t) => match replace_fence(t, DECISIONS_FENCE, &content) {
+            Some(text) => text,
+            None if t.contains(&format!("{FENCE_BEGIN}{DECISIONS_FENCE} -->")) => {
+                return Ok(Fill::Skipped(format!(
+                    "{REL}: the {DECISIONS_FENCE} fence has no end marker; table not updated"
+                )));
+            }
+            None => {
+                let sep = if t.is_empty() || t.ends_with('\n') {
+                    ""
+                } else {
+                    "\n"
+                };
+                format!(
+                    "{t}{sep}\n## Index\n\n{FENCE_BEGIN}{DECISIONS_FENCE} -->\n{content}{FENCE_END}\n"
+                )
+            }
+        },
+        None => {
+            format!("# Decisions\n\n{FENCE_BEGIN}{DECISIONS_FENCE} -->\n{content}{FENCE_END}\n")
+        }
+    };
+    Ok(if write_if_changed(logbook, REL, &text)? {
+        Fill::Written
+    } else {
+        Fill::Unchanged
+    })
+}
+
 fn write_if_changed(logbook: &Logbook, rel: &str, text: &str) -> anyhow::Result<bool> {
     let path = logbook.path(rel);
     if std::fs::read(&path).is_ok_and(|old| old == text.as_bytes()) {
@@ -438,5 +536,40 @@ mod tests {
         // idempotent
         let once = merge_status(Some(user), "E\n");
         assert_eq!(merge_status(Some(&once), "E\n"), once);
+    }
+
+    #[test]
+    fn decisions_index_keeps_the_head_and_writes_every_row() {
+        let row = |id: &str, title: &str| DecisionRow {
+            id: id.into(),
+            title: title.into(),
+            status: "accepted".into(),
+            date: "2026-10-01".into(),
+            path: format!("decisions/{id}-x.md"),
+        };
+        let rows = [row("ADR-0002", "a | b"), row("ADR-0001", "One")];
+        let fresh = "| ID | Title | Status | Date |\n|---|---|---|---|\n\
+                     | [[ADR-0002]] | a \\| b | accepted | 2026-10-01 |\n\
+                     | [[ADR-0001]] | One | accepted | 2026-10-01 |\n";
+        assert_eq!(decisions_index(None, &rows), fresh);
+        assert_eq!(decisions_index(Some(""), &rows), fresh);
+        assert_eq!(
+            decisions_index(Some("hand-written, no table\n"), &rows),
+            fresh
+        );
+        // an editor-formatted, translated head stays; old rows go
+        let old = "| ID | Titel | Status | Datum |\n| --- | :--- | --- | --- |\n| [[ADR-0009]] | gone | x | y |\n";
+        let kept = decisions_index(Some(old), &rows[1..]);
+        assert_eq!(
+            kept,
+            "| ID | Titel | Status | Datum |\n| --- | :--- | --- | --- |\n\
+             | [[ADR-0001]] | One | accepted | 2026-10-01 |\n"
+        );
+        assert_eq!(decisions_index(Some(&kept), &rows[1..]), kept, "stable");
+        assert_eq!(
+            decisions_index(None, &[]),
+            "| ID | Title | Status | Date |\n|---|---|---|---|\n",
+            "the init template's table"
+        );
     }
 }

@@ -1,14 +1,17 @@
 //! `seldon decide "<title>" [--case ID] [--no-edit]` (SPEC-ENGINE §3):
 //! a new `decisions/ADR-NNNN-slug.md` with status `proposed`, opened in the
-//! editor unless `--no-edit`.
+//! editor unless `--no-edit`; the `decisions.index` table of `DECISIONS.md`
+//! is filled in the same commit (WP-050).
 
 use clap::Args;
 use serde_json::json;
 
 use super::event::parse_case_id;
+use super::index::warnings_human;
 use super::open::{edit, editor_json};
 use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::Result;
+use crate::index::{build, load, views};
 use crate::logbook::{Logbook, cases};
 use crate::model::{self, Decision, DecisionStatus};
 
@@ -48,6 +51,7 @@ pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
     let rel = format!("decisions/{id}-{}.md", cases::slug(&title, "decision"));
     let path = logbook.path(&rel);
     write_new(&path, &model::render_new(&decision, &body))?;
+    let warnings = fill_index(&logbook);
     let commit = autocommit(ctx, &config, &logbook, &format!("{id} proposed"));
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
@@ -59,6 +63,7 @@ pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
         human.push_str(&format!("\nEditor: {e}"));
     }
     human.push_str(&commit.human());
+    human.push_str(&warnings_human(&warnings));
     Ok(Output::ok(
         human,
         json!({
@@ -72,8 +77,25 @@ pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
             },
             "editor": editor.as_ref().map(editor_json),
             "git": commit.json(),
+            "warnings": warnings,
         }),
     ))
+}
+
+/// Fills the `decisions.index` fence of `DECISIONS.md` (WP-050), in the
+/// same commit as the new file. The decision is written already, so a
+/// failure here is a warning, not an error; invalid decision files are
+/// skipped (the index rebuild reports them).
+fn fill_index(logbook: &Logbook) -> Vec<String> {
+    let rows = match load::decisions(logbook, &mut Vec::new()) {
+        Ok(d) => build::decision_rows(d),
+        Err(e) => return vec![format!("DECISIONS.md not updated: {e:#}")],
+    };
+    match views::write_decisions_index(logbook, &rows) {
+        Ok(views::Fill::Written | views::Fill::Unchanged) => Vec::new(),
+        Ok(views::Fill::Skipped(w)) => vec![w],
+        Err(e) => vec![format!("DECISIONS.md not updated: {e:#}")],
+    }
 }
 
 /// The next `ADR-NNNN` after every file in `decisions/`.

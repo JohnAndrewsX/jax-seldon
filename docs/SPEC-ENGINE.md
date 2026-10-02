@@ -57,6 +57,14 @@ seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
 # resolved, events, case, areaCreated, git}
 seldon decide "<title>" [--case ID]            # creates ADR, opens $EDITOR unless --no-edit
 seldon status                                  # regenerates STATUS.md + index
+# decide and status (WP-050) fill the `decisions.index` fence of the logbook's
+# DECISIONS.md from decisions/*.md frontmatter: `| [[id]] | title | status |
+# date |`, newest id first, `|` in a title escaped; the table head inside the
+# fence is kept when it has one (a translated head stays), else `| ID | Title |
+# Status | Date |`. Text outside the fence is never changed; a missing fence is
+# appended under `## Index`, a missing file created; a begin marker without its
+# end leaves the file alone (warning). Written only on change; decide commits
+# it with the new ADR, status lists it in `files`.
 seldon index [--check]                         # rebuild index; --check validates against schema
 seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|all] [--json]
                                                # WP-035: rewrites only the bodies of the selected generated
@@ -244,7 +252,8 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
 <ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
 `movedFrom`, `activeCase`, `journal` (WP-006) and `warnings` (a list of
 strings, empty unless `plan start` warned; WP-050); `decide --json` returns
-`{"decision": {id, title, status, date, cases, path}, "editor", "git"}`
+`{"decision": {id, title, status, date, cases, path}, "editor", "git",
+"warnings"}` (`warnings`: the `decisions.index` fill, WP-050)
 (no ledger event). `plan new` defaults:
 `--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
 plan step so agents identify themselves; `log --tag T` stores `meta.tags`
