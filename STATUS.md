@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-*(none — all remaining work waits on the operator items below)*
+| WP-038 | Engine attributes its own installs; Phase 0 exit procedure refreshed | Engine | `engine-038` (opus, high) | `wt/WP-038` · `wp/038-self-attribution` | 2026-10-02 |
 
 ## Queued (next up)
 WP-038 (engine attributes its own installs, Phase 0 procedure refresh) ·
@@ -192,14 +192,9 @@ logbook migration)
   enabled by you (ADR-0011), one case worked by Claude Code, STATUS.md
   rendered. Finding F1 (the engine's own theme hook file shows up as
   drift) → WP-038 queued.
-- **Guard exceptions (your file, `scripts/guard.sh`):** (a) WP-040 needs
-  `ssh <test host> 'cd /tmp/<dir> && makepkg -f'` and the
-  `--printsrcinfo > SRCINFO.new` form on the test host (never -i/-s);
-  the reviewer proposes a full-match whitelist with test rows; until then
-  the CI dry run stands in for the test-host build. (b) The service rule
-  fires on grep/rg search patterns and on quoted message text that merely
-  mentions systemctl (three false positives today); anchoring it at the
-  command position like the package-manager rule would fix it.
+- **Guard updated on your decision (2026-10-02):** makepkg whitelist over
+  ssh (two exact forms), service rule at the command position, comment
+  fix; 74-row test table green.
 - **Release v0.1.0 published 2026-10-02:** repo public, GitHub release
   with the three assets, `jax-seldon-plugin` filled (branch `main` + tag
   `v0.1.0`), PKGBUILD/.SRCINFO bumped on `main`. **AUR still open:**
