@@ -1,6 +1,4 @@
-<!-- mark: the Prime Radiant icon (work/design/ROUND-2.md in the project
-     repository, A1 mask / A9 favicon) goes here, left of the title, once
-     round 2 is delivered; it must be copied into plugin/ to show here. -->
+![Seldon: the Prime Radiant mark and the wordmark on night blue](assets/a6-readme-hero-dark-1280x640.png)
 
 # JAX Seldon
 
@@ -11,9 +9,6 @@ for your Omarchy system.
 [![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
 [![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
 
-<!-- hero: stays preview.png (the marketplace preview); the round-2 hero
-     (A6) goes into the project README, a marketplace image (A8) may
-     replace this one once delivered, copied into plugin/. -->
 ![Preview, 2480×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
 
 *Offscreen renders of the real QML on the sample index, Tokyo Night theme.*
@@ -141,11 +136,12 @@ omarchy-restart-shell
 
 ### The pill
 
-`⟡ A · D` — A active cases, D unexplained changes (open drift); zero parts
-are hidden (`⟡`, `⟡ 2`, `⟡ · 3`). Accent colour while cases are active, the
-theme's urgent colour when a change is in the red zone, dimmed while
-something needs fixing. The tooltip says what and when the engine last
-captured.
+The Seldon mark, then `A · D` — A active cases, D unexplained changes
+(open drift); zero parts are hidden (the mark alone, `2`, `· 3`). Accent
+colour while cases are active, the theme's urgent colour when a change is
+in the red zone, dimmed while something needs fixing; the mark takes the
+same colour, so it follows the theme. The tooltip says what and when the
+engine last captured.
 
 | Click | Does |
 |---|---|

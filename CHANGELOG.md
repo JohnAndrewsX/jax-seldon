@@ -62,6 +62,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GitHub installer while the AUR package does not exist, the same
   one-liner as *Install in terminal* (ADR-0024); it flips back to the
   AUR command when the package is live.
+- The Prime Radiant mark replaces the `⟡` fallback glyph (WP-051). The
+  pill shows the bar glyph before the counts (`2 · 3`): hand-hinted at the
+  16 and 20 px boxes of scale 1.0 and 1.25, the vector at every other
+  scale, its centre on the digits' centre (within 1 px, measured by the
+  new `tests/plugin/bar-view.sh` in three themes), in the counts' colour.
+- The panel header is the mark and "Seldon" with the designer's metrics.
+  The status banner shows its state pictogram (engine missing, logbook not
+  initialised, index missing, index stale), 48 px in the panel and 96 px
+  in the Prime Radiant; the Today tab shows the day's state (crisis, open
+  drift, active cases or all clear).
+- The Timeline draws releases as diamonds, snapshots as dots, crises as
+  the Prime Radiant spindle (no longer a second diamond) and case spans
+  between brackets, with a legend in its title row.
+- Every image follows the theme: the masks are tinted through their SVG
+  root colour, no colour is written into QML. The images are copies under
+  `plugin/assets/`; `preview.png` is re-rendered.
 
 ### Packaging and docs
 
@@ -69,6 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   completions; `install.sh` installs the man page and the completions of
   the shells you have under its prefix and removes them on `--uninstall`;
   the release's binary tarball carries both (WP-049).
+- `assets/` holds the Prime Radiant files of record: the round-3 masks,
+  the round-2 rasters and brand files, `DELIVERY.md`, `LICENSE` and a
+  README listing every file and where the project uses it (WP-051). Both
+  READMEs open with the hero image.
 - New README for the project and the plugin repository (WP-046): what
   Seldon is and why, six features, a quick start from install to the
   plugin, a 60-second tour and a table of every document. The developer

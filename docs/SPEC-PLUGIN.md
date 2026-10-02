@@ -75,11 +75,36 @@ plugin/
 
 ## 4. BarWidget.qml
 
-`WidgetButton` with text `⟡ A · D` where A = active cases, D = open drift
-(hidden parts when 0: `⟡`, `⟡ 2`, `⟡ · 3`). Colour: default foreground;
-accent when A > 0; theme error colour when any crisis. Tooltip: "Seldon —
-2 active cases, 3 unexplained changes, last capture 4 min ago". Left click
-toggles Panel; middle click opens Prime Radiant; right click runs capture.
+`WidgetButton` showing the bar glyph (A4, the Prime Radiant mark) and the
+counts `A · D`, where A = active cases, D = open drift (hidden parts when
+0: the glyph alone, `2`, `· 3`, `2 · 3`; a vertical bar shows the glyph
+only). Colour: default foreground; accent when A > 0; theme error colour
+when any crisis; the glyph always takes the counts' colour. Tooltip:
+"Seldon — 2 active cases, 3 unexplained changes, last capture 4 min ago".
+Left click toggles Panel; middle click opens Prime Radiant; right click
+runs capture.
+
+Glyph (WP-051, `assets/DELIVERY.md` §5): the glyph box is the shell's icon
+canvas, `Style.bar.iconCanvas` (16 px at scale 1.0, 20 px at 1.25), placed
+`Style.space(2)` before the counts. File by the box in device pixels: 16 →
+`a4-bar-glyph-16.svg`, 20 → `a4-bar-glyph-20.svg` (hand-hinted, drawn
+unsmoothed), anything else → `a4-bar-glyph.svg` (vector). The counts sit
+where the shell's own label would (vertically centred), so they share the
+neighbouring widgets' baseline; the glyph's ink centre (row 7.5 of 16, 9.5
+of 20, the middle of the vector box) is put on the digits' centre — the
+baseline minus half the height of the ten digits in the bar font — and
+snapped to device pixels. Brief check 4: the two centres within 1 px at
+scale 1.0 and 1.25; `tests/plugin/bar-view.sh` measures it in three themes.
+
+Every Prime Radiant image in the plugin (§4–§6) is a copy under
+`plugin/assets/` of a file in `assets/` (ADR-0009; no symlinks), drawn by
+`components/MaskIcon.qml`: the masks are `currentColor` with the fallback
+colour on the `<svg>` root, so the plugin sets the root's `color` to a
+theme colour and hands the file to `Image` as a data URL (read once through
+`FileView`). No colour is written into QML; the tint follows the theme.
+The shell's own monochrome icons (tray) use `MultiEffect` colorization,
+which the headless harness's software renderer does not paint; the root
+colour gives the same result in both.
 
 ## 5. Panel.qml
 
@@ -150,6 +175,29 @@ one source; once resolved, by the event's own zone.
 | System | omarchy version, package counts, deviations, snapshots, plugins, theme | "Open in editor" (rebuild/update-impact actions are Phase 3 engine commands, allowed by CONTRACT.md, not wired in v1) |
 | Memory | lessons headings, memory topics | "Open" |
 
+Header (WP-051): the A5 lockup — the mark, then "Seldon" in the heading
+font (`Style.font.heading`, bold), baseline-aligned. Metrics from
+`assets/DELIVERY.md` §5, derived from the heading's cap height (the tight
+height of "H"): box = 2 × cap rounded to an even pixel count, the
+wordmark `round(cap / 2)` after the box, its baseline `box / 2 + cap / 2`
+below the box top (the mark's centre on the cap-height centre). At the
+default font that is box 24, gap 6, baseline 18, the delivered numbers.
+File by the box in device pixels: 24 → `a5-panel-mark-24.svg`, 32 →
+`a5-panel-mark-32.svg`, anything else → `a1-icon-mask.svg` (e.g. 30 at
+font scale 1.25). Colour: the panel foreground.
+
+State pictograms (A11, 48 and 96 grids, never drawn below 48 px; the 48
+grid up to 72 px, the 96 grid above): the status banner shows its status's
+pictogram, `Style.space(48)` square, left of its text, in the banner's
+tone — engine missing → `engine-missing`, not initialised →
+`logbook-not-initialised`, index missing (or unreadable) →
+`index-missing`, index stale → `index-stale`; the contract mismatch and
+the snapper banner have none. The Today tab shows the day's state left of
+the date and the counts, `Style.space(48)`: crisis (urgent) when any
+crisis, else drift open (accent) when open drift, else case active
+(accent) when active cases, else all clear (foreground); none without an
+index.
+
 Banner states (top of every tab): engine missing → "Install the engine:"
 the GitHub one-liner while the AUR package does not exist (§3,
 ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
@@ -170,7 +218,10 @@ Layout: 12-column grid, `Style.space` gutters.
 
 - Row 1: title "Prime Radiant", machine name, Omarchy version, period
   selector (30 / 90 / 365 days / All; default 90 d, resets on every open;
-  WP-030), close hint.
+  WP-030), close hint. While the service is not ok, the status banner
+  sits under it with its *Copy* fix only and the hint "Fix it from the
+  Seldon panel (click the Seldon mark in the bar)."; its state pictogram
+  (§5) is `Style.space(96)` here, the 96 grid.
 - Row 2 (full width): **Heatmap** — events per day of the period as ISO
   weeks × 7 days (53 × 7 at 365 d and All), five steps of the theme
   accent; hover shows the date and counts by source.
@@ -182,7 +233,18 @@ Layout: 12-column grid, `Style.space` gutters.
   risk, all time.
 - Row 4 (full width): **Timeline** — Omarchy releases, snapshots and
   crisis markers on one band; cases as spans from created to closed
-  (open cases run to today), packed in lanes.
+  (open cases run to today), packed in lanes. Marker shapes (A12, WP-051;
+  shape alone tells them apart): release = diamond (accent), snapshot =
+  dot (foreground at 70 %), crisis = the narrow concave spindle (urgent),
+  drawn from the 16-grid path data of `assets/a12-marker-*-16.svg`
+  (`Model.MARKER_PATHS`, kept equal to the files by the unit tests); a
+  case span = a bar a third of the lane tall between brackets the lane
+  tall, `[` at its start, `]` at its close (an open case has no closing
+  bracket; a span too short for both stays a plain bar). The slot's title
+  row shows the legend in place of the subtitle: each marker file
+  (`Style.space(12)`; the 12 grid up to 14 px, the 16 grid above) in the
+  canvas colour, then "releases", "snapshots", "cases" (`[` `]`),
+  "crises"; it hides when it does not fit beside the caption.
 - Row 5 (full width): **The Plan** — active cases (`cases.active`) as
   cards with step progress and agent (no period; the sixth slot, WP-031).
 
@@ -274,7 +336,9 @@ Quickshell 0.3.1 does not reload plugin code on file change.
 
 ## 10. Security posture (for the marketplace listing)
 
-No network. No bundled binaries, units or installers. Reads one JSON file.
+No network. No bundled binaries, units or installers. Reads one JSON file,
+and its own images under `plugin/assets/` (SVG and PNG artwork, no
+scripts; WP-051).
 Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md).
 Besides the engine it starts only `wl-copy` and Omarchy's floating-terminal
 launcher, each with one constant command, only on a banner click. Never a

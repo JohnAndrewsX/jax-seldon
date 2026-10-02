@@ -1,5 +1,4 @@
-<!-- mark: the Prime Radiant icon (work/design/ROUND-2.md, A1 mask / A9 favicon)
-     goes here, left of the title, once round 2 is delivered to assets/. -->
+![Seldon: the Prime Radiant mark and the wordmark on night blue](assets/a6-readme-hero-dark-1280x640.png)
 
 # Seldon
 
@@ -9,9 +8,6 @@ A flight recorder and planning desk for your Omarchy machine.
 [![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
 [![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
 
-<!-- hero: replace with the README hero (work/design/ROUND-2.md, A6, 1280×640:
-     the Prime Radiant lockup with this screenshot on its right) once round 2
-     is delivered; until then the plugin's preview.png. -->
 ![The Prime Radiant overlay on the left with heatmap, package series, drift bars, risk donut, timeline and the plan; the bar panel's Today tab on the right; Tokyo Night theme, sample data](plugin/preview.png)
 
 Seldon keeps a plain-Markdown logbook of everything that changes on your
@@ -143,10 +139,10 @@ config, so Seldon never runs it for you.
 omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
 ```
 
-Omarchy asks before it clones the plugin. A pill `⟡` then appears on the
-right of the bar: a left click opens the panel, a middle click the Prime
-Radiant. If the panel shows a banner instead of data, the banner's button
-is the fix.
+Omarchy asks before it clones the plugin. A pill with the Seldon mark
+then appears on the right of the bar: a left click opens the panel, a
+middle click the Prime Radiant. If the panel shows a banner instead of
+data, the banner's button is the fix.
 
 ## A 60-second tour
 
@@ -163,9 +159,10 @@ yellow  2026-10-02 19:54  theme/theme-set  gruvbox  01M3YW134EVKJ23C1GXVHDVVEH
 1 open drift item(s), 0 crisis
 ```
 
-The switch is drift: no case covers it. The pill now shows `⟡ · 1`. The
-plugin captures by itself every 15 minutes; `seldon capture` just saves
-you the wait. Explain the change with the event id from the last column:
+The switch is drift: no case covers it. The pill now shows `· 1` after
+the mark. The plugin captures by itself every 15 minutes;
+`seldon capture` just saves you the wait. Explain the change with the
+event id from the last column:
 
 ```sh
 seldon drift explain <EVENT> -- "Tried another theme"
