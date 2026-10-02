@@ -1,6 +1,7 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
+**Release:** v0.1.0 on GitHub (2026-10-02); AUR pending registration.
 **Phase:** 0 exited — **gate G3 passed 2026-10-02** (operator's run on
 the dev host, `work/completed/PHASE-0-EXIT-transcript.md`). Phases 1–3
 complete and live-verified (G2 passed), Phase 4 packaging and docs merged.
@@ -199,11 +200,14 @@ logbook migration)
   fires on grep/rg search patterns and on quoted message text that merely
   mentions systemctl (three false positives today); anchoring it at the
   command position like the package-manager rule would fix it.
-- **WP-040 one-time setup before the first tag `v0.1.0`:** make the repo
-  public, AUR account + dedicated SSH key (`AUR_SSH_PRIVATE_KEY` secret),
-  empty `jax-seldon-plugin` repo + `PLUGIN_REPO_TOKEN` secret, your e-mail
-  in the PKGBUILD's Maintainer line, branch protection allowing the bump
-  job, then the `workflow_dispatch` dry run — all in packaging/README.md.
+- **Release v0.1.0 published 2026-10-02:** repo public, GitHub release
+  with the three assets, `jax-seldon-plugin` filled (branch `main` + tag
+  `v0.1.0`), PKGBUILD/.SRCINFO bumped on `main`. **AUR still open:**
+  registration on aur.archlinux.org is temporarily closed; when it
+  reopens, create the account, tell the orchestrator, and it generates a
+  new key, sets `AUR_SSH_PRIVATE_KEY` and pushes `packaging/` by hand
+  (no new tag needed). Until then users install the engine from the
+  release asset.
 - **ADR-0022** (AUR package builds against glibc; the static musl binary
   is the GitHub release asset) reads AGENTS.md §7 without changing it —
   accepted by the orchestrator, veto possible.
