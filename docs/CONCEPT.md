@@ -98,7 +98,7 @@ did, next to what it was asked to do.
 
 ## The plugin surfaces
 
-- **Bar pill** `⟡ 2 · 3` — active cases, open drift. Colour by worst state.
+- **Bar pill** the Seldon mark, then `2 · 3` — active cases, open drift. Colour by worst state.
   Click → panel. `SUPER+SHIFT+S` toggles (user-configurable).
 - **Panel** — tabs: *Today* (journal, quick entry), *Changelog* (ledger
   timeline with source filter and snapshot markers), *Work* (queued /

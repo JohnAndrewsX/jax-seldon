@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-051 | Prime Radiant assets into `assets/` and the plugin (bar glyph, header mark, pictograms, markers, hero) | Plugin | `plugin-051` (opus, high) | `wt/WP-051` · `wp/051-assets` | 2026-10-02 |
+| (none) | | | | | |
 
 ## Queued (next up)
 
@@ -33,6 +33,11 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-02 WP-051 Prime Radiant assets: `assets/` of record (round-3
+  masks, round-2 rest), plugin bar glyph tinted by the theme, panel
+  header mark, eight state pictograms, timeline markers, README heroes,
+  user guide wording; check 4 offscreen within 1 px — merged after two
+  Opus review rounds. Live bar check on the test host: pending, operator.
 - 2026-10-02 WP-049 CLI polish: `seldon completions`, `seldon mangen`
   (man page in the package, the release tarball and install.sh),
   every --help reviewed, `hook uninstall claude-code` and
@@ -258,8 +263,8 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
   version 0.1.1 in `engine/Cargo.toml` and `plugin/manifest.json`,
   CHANGELOG section, dry run on `main`; the tag is the operator's
   (`git tag -a v0.1.1 -m "Seldon 0.1.1" && git push origin v0.1.1`).
-  WP-051 (Prime Radiant assets) is part of 0.1.1 on the operator's word;
-  the dry run and the tag follow its merge. Deferred to the next release:
+  WP-051 (Prime Radiant assets) is part of 0.1.1 on the operator's word
+  and is merged; the dry run on `main` runs next, then the tag. Deferred to the next release:
   the panel surfacing `plan start` warnings.
   Earlier proposal text: say "v0.1.1 vorbereiten" and the
   orchestrator prepares CHANGELOG, version bump and dry run, then asks
