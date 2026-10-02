@@ -137,7 +137,10 @@ fn the_man_page_lists_every_command() {
     let page = ok(&["mangen"]);
     assert!(page.starts_with(".ie \\n(.g"), "roff from clap_mangen");
     assert!(page.contains(".TH SELDON 1 "), "{page}");
-    assert!(page.contains("seldon 0.1.0"), "the version in the footer");
+    assert!(
+        page.contains(&format!("seldon {}", env!("CARGO_PKG_VERSION"))),
+        "the version in the footer"
+    );
     for section in [
         "NAME",
         "SYNOPSIS",

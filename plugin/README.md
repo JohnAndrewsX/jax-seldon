@@ -331,7 +331,7 @@ When something is wrong the panel shows one banner with a one-click fix:
 | Logbook not initialised | Logbook not initialised | *Run in terminal* runs `seldon init` (it asks where to put the logbook); *Copy*; *Check again* |
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
-| Index format mismatch | Index format mismatch, with both contract versions | *Update in terminal* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older, `yay -S jax-seldon` when the engine is older |
+| Index format mismatch | Index format mismatch, with both contract versions | *Update in terminal* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older, the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
 | Snapshots not readable | Snapshots not readable, with the engine's message | *Run in terminal* / *Copy*: `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes` (once; Seldon never runs it on its own) |
 
 The engine is looked for when the shell starts and again on *Check again*

@@ -44,7 +44,9 @@ var PLAN_STEPS = ["start", "verify", "done", "drop"]
 // ADR-0016: `omarchy pkg add` only reaches the official repositories) when
 // the AUR package is live, together with ENGINE_MISSING_DETAIL below.
 var INSTALL_ENGINE_COMMAND = "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
-var UPDATE_ENGINE_COMMAND = "yay -S jax-seldon"
+// While the AUR package does not exist, updating the engine is the same
+// installer (ADR-0024); flip back together with INSTALL_ENGINE_COMMAND.
+var UPDATE_ENGINE_COMMAND = INSTALL_ENGINE_COMMAND
 var UPDATE_PLUGIN_COMMAND = "omarchy plugin update jax.seldon"
 var INIT_COMMAND = "seldon init"
 // ADR-0011: the one-time opt-in that lets the snapper collector read

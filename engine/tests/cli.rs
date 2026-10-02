@@ -16,7 +16,10 @@ fn seldon(args: &[&str]) -> Output {
 fn version_prints_name_and_version() {
     let out = seldon(&["--version"]);
     assert_eq!(out.status.code(), Some(0));
-    assert_eq!(stdout(&out), "seldon 0.1.0\n");
+    assert_eq!(
+        stdout(&out),
+        format!("seldon {}\n", env!("CARGO_PKG_VERSION"))
+    );
 }
 
 #[test]
@@ -25,7 +28,7 @@ fn version_json() {
     assert_eq!(out.status.code(), Some(0));
     let v: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
     assert_eq!(v["name"], "seldon");
-    assert_eq!(v["version"], "0.1.0");
+    assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
 }
 
 #[test]

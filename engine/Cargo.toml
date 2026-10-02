@@ -1,6 +1,6 @@
 [package]
 name = "seldon"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.89"
 description = "Flight recorder and planning desk for an Omarchy system (engine)"

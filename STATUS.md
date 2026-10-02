@@ -247,17 +247,21 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
   writes to `~/Seldon` and is yours to run.
 - **ADR-0024 flip list (when the AUR package is live):** plugin
   `INSTALL_ENGINE_COMMAND` and `ENGINE_MISSING_DETAIL`, the contract-
-  mismatch fix (`UPDATE_ENGINE_COMMAND`, still `yay -S jax-seldon` — to
-  be switched to the installer with v0.1.1); README.md: the bold
+  mismatch fix (`UPDATE_ENGINE_COMMAND`, the installer since v0.1.1); README.md: the bold
   sentence in Quick start step 1, the `> [!NOTE]` v0.1.0 block, "Engine
   from the AUR" under "Install options"; plugin/README: step 1 first
   sentence, the NOTE block, "Once the AUR package is live", the States
   row and the Security constants; docs/user 01 install order.
-- **Proposed release v0.1.1** (WP-038 self-attribution, WP-039 panel
-  width + guard, WP-043 import, WP-050 advisory warning + alwaysRed,
-  WP-049 completions/man page/removal commands; still to do before the
-  tag: switch `UPDATE_ENGINE_COMMAND` to the installer, panel surfacing
-  of `plan start` warnings, CHANGELOG, version bump): say "v0.1.1 vorbereiten" and the
+- **Release v0.1.1 prepared 2026-10-02** (WP-038 self-attribution, WP-039
+  panel width, WP-043 import, WP-050 advisory warning + alwaysRed, WP-049
+  completions/man page/removal commands, update command → installer):
+  version 0.1.1 in `engine/Cargo.toml` and `plugin/manifest.json`,
+  CHANGELOG section, dry run on `main`; the tag is the operator's
+  (`git tag -a v0.1.1 -m "Seldon 0.1.1" && git push origin v0.1.1`).
+  WP-051 (Prime Radiant assets) is part of 0.1.1 on the operator's word;
+  the dry run and the tag follow its merge. Deferred to the next release:
+  the panel surfacing `plan start` warnings.
+  Earlier proposal text: say "v0.1.1 vorbereiten" and the
   orchestrator prepares CHANGELOG, version bump and dry run, then asks
   for the tag.
 - **Release v0.1.0 published 2026-10-02:** repo public, GitHub release

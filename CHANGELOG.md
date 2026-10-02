@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-02
+
 ### Engine
 
+- Files the engine installs for you — the Claude Code hooks, the theme
+  hook, the harness launcher — are recorded as Seldon's own writes
+  (`owned.json`), so the capture after `seldon init` explains them
+  instead of opening drift (WP-038).
+- `seldon import omarchy-agent <vault>` imports the omarchy-agent kit's
+  Obsidian vault into the logbook: cases, sessions, knowledge and
+  deviation rows, with redaction and a dry run by default; `--apply`
+  writes once, marked, and reports id collisions it renumbered (WP-043).
 - `seldon plan start` warns when an R2 or R3 case starts without a
   snapshot (`warnings` in `--json`); R3 also asks for the human's explicit
   go per step. Advice only, never refused (ADR-0023, WP-050).
@@ -43,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offered by `plan start` only.
 - Piping a command's output into a reader that stops early (`| head`)
   no longer crashes the engine.
+
+### Plugin
+
+- The panel is 460 px wide and tab labels no longer clip at the default
+  font size (WP-039).
+- *Update in terminal* on the "Index format mismatch" banner runs the
+  GitHub installer while the AUR package does not exist, the same
+  one-liner as *Install in terminal* (ADR-0024); it flips back to the
+  AUR command when the package is live.
 
 ### Packaging and docs
 
@@ -127,5 +146,6 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.1
 [0.1.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.0

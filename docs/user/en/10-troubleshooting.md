@@ -35,7 +35,7 @@ button that fixes it.
 | Logbook not initialised | there is no logbook yet | *Run in terminal* runs `seldon init` |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` is missing or broken | *Build index* runs `seldon status` |
 | Index is stale | the index is more than two hours old | *Capture now* |
-| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`. Engine: the banner shows the AUR command `yay -S jax-seldon`; until the AUR package exists, run the installer again ([Update and uninstall](11-update-and-uninstall.md)) |
+| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
 | Snapshots not readable | snapper refuses your user | *Run in terminal* runs the one-time snapper fix; you type your password there |
 
 The plugin looks for the engine when the shell starts and when you press
