@@ -1,7 +1,7 @@
 ```
 WP-045 HANDOVER
 Done: the user guide in docs/user/: README.md (index, translation policy), STYLE.md (voice, en/de term list, command and screenshot rules), en/ and de/ with the same 14 files (README + 01-getting-started … 13-glossary); scripts/docs-check.{sh,py} as `just docs-check` inside `just check`; five panel renders copied to docs/images/; README docs link, CHANGELOG [Unreleased] line, docs/TESTING.md row
-Not done: no new screenshots (none needed); shellcheck not run on scripts/docs-check.sh (not installed on the dev host; `bash -n` only); no ROADMAP/VERSIONING line for further languages (the translation policy in docs/user/README.md says how to add one; see Decisions needed 4)
+Not done: no new screenshots (none needed); shellcheck not run on scripts/docs-check.sh (not installed on the dev host; `bash -n` only)
 Verified by: `just check` exit 0 (see "Verification"); `just docs-check` → ok (217 links, 14 translated pages, 37 commands, 315 command lines); the fresh-user run of 01-getting-started in a scratch home (log below); a negative test of docs-check; the German Getting started commands in a second scratch home
 Learned: memory/pitfalls.md, section "WP-045"
 Decisions needed: 4 small ones, below
@@ -155,7 +155,10 @@ du-form. Each page carries `<!-- source: en/<page> @ <commit> -->` with
 the last commit of its English page; docs-check shows no stale
 translation. Deliberate localisations: de/03 adds one sentence that the
 UI labels are English; de/10 asks for issues in English; de/06's config
-example says `language = "de"`; de/12 points to the English original.
+example says `language = "de"`; de/12 points to the English original;
+de/01 (Step 2, the line before the question table) says the wizard asks
+its questions in English; de/04 (section "Die Regeln, die Agenten
+lesen") marks the agent guide link "(Englisch)".
 
 German humanizer pass (`703ebc2`):
 
@@ -178,17 +181,68 @@ build), runs `--help` in a throw-away home with `SELDON_TEST_GUARD`, and
 needs only python3 and git (git is optional: without the source commit,
 for example in CI's shallow clone, freshness is a notice). It runs in CI.
 
+## Review fix round (after APPROVE)
+
+Each item applied in English first (`4ce0827`), then in German
+(`98c8ebf`, every German source line moved to `4ce0827`); docs-check
+shows equal structure and no stale translation.
+
+| # | Fix |
+|---|---|
+| 1 | 01 step 1: the `main` script with `--version v0.1.0` comes first, gated "while the current release is v0.1.0"; the checked four-step form follows "from v0.1.1 on" |
+| 2 | 02 Drift: all your own changes are drift, in the terminal or anywhere; only an agent's command through a hook carries the case |
+| 3 | 02 Cases: *area* defined with the six default areas (checked in a scratch `init`: dev-env, hyprland, packages, plugins, shell, themes) |
+| 4 | 01 step 6: why the case still helps (note and trace); a Plan that names the theme makes Seldon propose the case. Verified in a scratch home: Plan line "switch to tokyo-night", theme switch, `drift --json` → `proposedCase: C-2026-001` |
+| 5 | 01 intro: writes outside its folders only where you opt in (theme hook, Claude Code hook settings) |
+| 6 | 02: trace = "the events recorded for it, in order" (also de "Spur") |
+| 7 | 01 step 5.4: `yellow` glossed as the zone, linked to Concepts |
+| 8 | 04 Review: `plan show` holds ids only; the block is now `seldon open ledger --editor` (month view with case links) plus the Changelog filter `agent` |
+| 9 | 01 step 4: "No pill?" paragraph: `omarchy plugin list`/`enable`, `omarchy-restart-shell`, banners and *Check again*, link to 10 |
+| 10 | 01 step 6: `--area themes` glossed at first use |
+| 11 | 04: hooks in `~/.claude/settings.json` record every Claude Code session in any project; red and yellow always, green only while a case is active |
+| 12 | 01 step 5.5: explain creates a retroactive case, created completed, with your reason as title |
+| 13 | 01 doctor example: the `logbook` row shows an absolute path (`/home/you/Seldon`); the engine inconsistency is WP-050's |
+| 14 | 01: Omarchy's bash setup adds `~/.local/bin` (its `default/bash/envs`); other shells: the `export PATH` line |
+| 15 | 04 hook table: red includes upgrades (`pacman -Syu`, `omarchy update`) |
+
+Also: STYLE.md's German quote example now closes with “; STYLE.md and
+13-glossary (en and de, same row order) gained drift sheet / Drift-Dialog,
+arm / scharf schalten, proposed case / vorgeschlagener Case, transaction
+group / Transaktionsgruppe (02 now uses the last two terms); 11
+"replaces `seldon` when the release's version differs …; with
+`--version` that can also be an older release"; docs/VERSIONING.md has
+one line on further languages, pointing at the policy in
+docs/user/README.md.
+
+`DECISIONS.md` template (engine/templates/en and de, one sentence each):
+I did not write "the table is yours to maintain". The logbook's own
+`AGENTS.md` forbids editing text inside `seldon:begin/end` fences, and a
+later engine fill would overwrite hand-kept rows. The sentence now says
+the table "is reserved for Seldon, which does not fill it yet; until it
+does, keep your own list below the fences" (de accordingly). 07's row
+already says "you, outside the markers". If you want the reviewer's
+wording instead, it is a one-line change, but then AGENTS.md needs an
+exception. The init golden pins headings, fences and the table header,
+not this sentence: `SELDON_BLESS=1 cargo test --test init` left
+`engine/tests/golden/init-skeleton.txt` unchanged; `cargo test --test
+init` 30 passed.
+
+Guard, this round: a scratch-home test command was blocked as "omarchy
+command that changes the system" because the text it wrote into the
+test case's Plan line contained the Omarchy theme command words. Nothing
+ran. The proposal test does not need those words; I re-ran it with the
+Plan line "switch to tokyo-night" (scratch home only). Reported here for
+the guard's false-positive list.
+
 ## Verification
 
 ```
-$ just docs-check
-docs-check: ok (217 links, 14 translated pages, 37 commands, 315 command lines)
-$ just check                      (at 3d0a3d5, exit 0)
+$ just check                      (review round, at 98c8ebf, exit 0)
 check-packaging: shellcheck not installed; bash -n only
 check-packaging: ok
 install.test: 106 passed, 0 failed
 validate-fixtures: ok — 109 instances (109 incl. 8 expected failures), 71 ledger events traced to index.sample.json, 8 variants, 23 self-checks; backend builtin
-docs-check: ok (217 links, 14 translated pages, 37 commands, 315 command lines)
+docs-check: ok (221 links, 14 translated pages, 37 commands, 317 command lines)
 plugin-validate: ok
 qmllint: ok (28 files)
 real-home-guard.test: 11 passed, 0 failed
@@ -198,13 +252,14 @@ overlay-view: 314 passed, 0 failed
 check: ok
 ```
 
+The first round's `just check` (at `3d0a3d5`) was green as well, with
+docs-check at 217 links and 315 command lines.
+
 ## Decisions needed
 
-1. **`DECISIONS.md` promises a generated table the engine never fills.**
-   The template says "The table between the fences is generated by
-   Seldon"; after `seldon decide` the fence stays empty. The guide states
-   today's behaviour. Engine follow-up (fill `decisions.index`) or a
-   template fix: orchestrator's call.
+1. **`DECISIONS.md`'s table is never filled by the engine.** The template
+   sentence now states this (review round). Open: an engine follow-up to
+   fill `decisions.index`, and the wording question above.
 2. **The "Index format mismatch" banner offers `yay -S jax-seldon`** for
    an older engine although the AUR package does not exist (ADR-0024
    flipped only the engine-missing banner). The guide tells users to run
@@ -213,9 +268,7 @@ check: ok
 3. **The wizard's harness question has no "(space toggles)" hint**, unlike
    the collectors question; a first-time user presses Enter and gets no
    harness. Documented; a one-line engine follow-up would fix it.
-4. **Further languages:** the WP goal mentions tracking them in
-   docs/VERSIONING.md or a ROADMAP line. Not in the Outputs list, so not
-   added; say if you want the line.
+4. **Further languages:** done in the review round (docs/VERSIONING.md).
 
 Guard: a read-only `grep -r -n -i` over `docs/*.md` whose pattern held the
 words of Omarchy's agent launcher was blocked as "agent or app launcher
@@ -238,4 +291,7 @@ came from files I had to read anyway (PROJECT.md, AGENT-GUIDE.md).
 - `01b4ce1 docs: user guide in German, complete translation of every page (WP-045)`
 - `703ebc2 docs: humanizer pass on the German pages; two terms in STYLE.md (WP-045)`
 - `3d0a3d5 build: docs-check in just check; README links the user guide; CHANGELOG and TESTING (WP-045)`
-- this handover, memory/pitfalls.md
+- `b06bfcc work: WP-045 handover; pitfalls (WP-045)`
+- `4ce0827 docs: review fixes in the English guide; DECISIONS.md template states today's behaviour; VERSIONING line on languages (WP-045)`
+- `98c8ebf docs: review fixes in the German guide, source lines at 4ce0827 (WP-045)`
+- this handover update
