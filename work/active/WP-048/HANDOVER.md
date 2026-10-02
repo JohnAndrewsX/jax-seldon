@@ -9,7 +9,70 @@ Branch `wp/048-repo-hygiene`, worktree `wt/WP-048`, based on `main` at
 | `9b95460` | CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, `.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml`, `.github/PULL_REQUEST_TEMPLATE.md` |
 | `9fc5af8` | docs/VERSIONING.md, CHANGELOG `[Unreleased]` entry |
 | `c8b12c7` | memory/pitfalls.md |
-| HEAD | this handover |
+| `bee12a1` | first handover |
+| `9c93036` | review: `audit.yml` (ci.yml back to `main`), notes check in `build`, test comment |
+| `9a457dd` | review: SECURITY.md scope wording, CONTRIBUTING audit rule, `plugin/SECURITY.md` |
+| `5874827` | review: packaging/README.md, docs/TESTING.md, docs/VERSIONING.md, CHANGELOG |
+| HEAD | this handover, updated after the review |
+
+## Review round 1 (APPROVE, fixes and decisions applied)
+
+Decisions: (a) plugin repo keeps `qml`; (b) and (c) done below; (d)
+contact alias unchanged.
+
+- **(b) Notes check in `build`:** new step "CHANGELOG.md section for the
+  version" right after `Version`:
+  `bash packaging/release-notes.sh "$VERSION" CHANGELOG.md > /dev/null`
+  (a separate 5-line hunk). A dry run or tag build now fails before
+  `just check` when the section is missing. The `release` job keeps its
+  own extraction for the body.
+- **(c) `audit.yml`:** `cargo audit` moved out of `ci.yml` (which is now
+  byte-identical to `main`; `git diff main -- .github/workflows/ci.yml`
+  is empty) into `.github/workflows/audit.yml`: `schedule` (Mondays
+  05:17 UTC), `workflow_dispatch`, push to `main` and pull requests on
+  `engine/Cargo.lock` or `audit.yml`. `check` no longer runs weekly.
+- **(1) Visibility:** `continue-on-error` is on the `cargo audit` step
+  (`id: audit`); a following step `if: steps.audit.outcome == 'failure'`
+  emits `::warning title=cargo audit::…` and a step-summary note. The
+  warning text also names a failed database fetch, since both end the
+  same way. CONTRIBUTING.md "Dependency advisories" rewritten: schedule
+  and triggers, the warning annotation, blocking once four consecutive
+  weekly runs have no warning (latest before 1.0.0), then
+  `continue-on-error` leaves the step.
+- **(2) SECURITY.md:** the engine writes "the hook scripts and harness
+  settings the user asks it to install (an agent harness's
+  `settings.json`, the theme hook under
+  `~/.config/omarchy/hooks/theme-set.d/`)" (path as in SPEC-ENGINE).
+- **(3) Docs:** release.yml header comment (build: section check;
+  release: notes from CHANGELOG); packaging/README.md file table
+  (`release-notes.sh`) and job table (`build`, `release` rows);
+  docs/TESTING.md row "Packaging | `check-packaging`" including
+  `tests/release/release-notes.test.sh`; VERSIONING.md says the `build`
+  job (dry run included) fails first. CHANGELOG `[Unreleased]` lines
+  updated (dry run, `audit.yml`, plugin policy).
+- **(4) Plugin repository:** `gh api -X PUT
+  repos/JohnAndrewsX/jax-seldon-plugin/private-vulnerability-reporting`
+  → read back `{"enabled":true}` (main repo still `{"enabled":true}`).
+  `plugin/SECURITY.md` points at the monorepo policy, the main repo's
+  advisory form (or the plugin repo's Security tab), the maintainer
+  address, and the README's "Security, privacy, privileges" section. It
+  lands in `jax-seldon-plugin` with the next split push.
+- **(5)** The test now says the 0.1.0 section is released and frozen,
+  so quoting its first and last lines is deliberate.
+
+Verified after the round:
+- `bash tests/release/release-notes.test.sh` → 13 ok, `release-notes: ok`.
+- PyYAML: `ci.yml` (jobs `check`; on push, pull_request), `release.yml`
+  (build steps `… Version, CHANGELOG.md section for the version, just
+  check …`), `audit.yml` (job `audit`; on schedule, workflow_dispatch,
+  push, pull_request) all parse. `actionlint` → 0 errors in the three
+  workflows (an SC2016 info on backticks in the summary text was fixed).
+  `shellcheck` clean on the script and the test.
+- The new build step's body run with `VERSION=0.1.0` → exit 0; with
+  `VERSION=0.2.0` → exit 1, "no '## [0.2.0]' section with content".
+- `just check` → exit 0, `check: ok` (dev host, host steps ran:
+  `plugin-validate: ok` with `plugin/SECURITY.md` present,
+  `qmllint: ok (28 files)`, `plugin-test: ok`, `release-notes: ok`).
 
 ## Done
 
@@ -55,15 +118,17 @@ Branch `wp/048-repo-hygiene`, worktree `wt/WP-048`, based on `main` at
     Description unchanged.
 - **Release notes**: the `release` job now checks out the tag, runs
   `bash packaging/release-notes.sh "$VERSION" CHANGELOG.md`, and creates
-  the release with `--notes-file` (instead of `--generate-notes`). The
-  script prints the `## [X.Y.Z]` section body (to the next `## ` or the
+  the release with `--notes-file` (instead of `--generate-notes`); since
+  the review, `build` checks the section too (see above). The script
+  prints the `## [X.Y.Z]` section body (to the next `## ` or the
   link references, outer blank lines trimmed) and exits 1 when the
   version is malformed or the section is missing or empty. A failing
   `release` job also stops `bump`, `aur` and `plugin`.
-- **`cargo audit`**: new `audit` job in `ci.yml`, `archlinux:base-devel`
-  container, Arch's `cargo-audit` package (extra, 0.22.2, depends on
-  cargo), `cargo audit --file engine/Cargo.lock --deny warnings`,
-  `continue-on-error: true` (non-blocking).
+- **`cargo audit`**: `archlinux:base-devel` container, Arch's
+  `cargo-audit` package (extra, 0.22.2, depends on cargo),
+  `cargo audit --file engine/Cargo.lock --deny warnings`, non-blocking.
+  First as a job in `ci.yml`; since the review its own `audit.yml`
+  (see above).
 - **docs/VERSIONING.md**: one version and tag for engine and plugin,
   `engineMin`, what major/minor/patch mean for Seldon's public interface
   (pre-1.0 and post-1.0), `contractVersion` (four places; a bump is at
@@ -87,13 +152,8 @@ Branch `wp/048-repo-hygiene`, worktree `wt/WP-048`, based on `main` at
   Proven locally instead (below).
 - `cargo audit` itself was not run: the dev host has no `cargo-audit`,
   and I did not install it. Stand-in below.
-- No header-comment or `packaging/README.md` updates for the new notes
-  step (the job table there still says "GitHub release vX.Y.Z with the
-  three assets"); I kept release.yml to the release job and left
-  packaging/README.md to WP-044, which edits it. VERSIONING.md documents
-  the rule. A one-line follow-up after both merges.
-- docs/TESTING.md has no row for `tests/release/` (WP-044 and WP-047
-  both edit that file; avoided a third conflict). Same follow-up.
+- (Resolved in the review round: release.yml header,
+  packaging/README.md tables and the docs/TESTING.md row.)
 
 ## Verified by
 
@@ -142,6 +202,9 @@ Branch `wp/048-repo-hygiene`, worktree `wt/WP-048`, based on `main` at
 
 ## Decisions needed
 
+None open; the review decided all four (a–d). The original questions,
+for the record:
+
 1. **Plugin repo topics:** `qml` instead of `rust` (the WP said "the
    same"). Change with `gh repo edit JohnAndrewsX/jax-seldon-plugin
    --remove-topic qml --add-topic rust` if the identical set is wanted.
@@ -166,8 +229,13 @@ Branch `wp/048-repo-hygiene`, worktree `wt/WP-048`, based on `main` at
   recipe, not the `check:` line WP-044 edits).
 - `.github/ISSUE_TEMPLATE/config.yml` (security contact link) is beyond
   the two named forms.
-- GitHub setting: private vulnerability reporting enabled (Outputs
-  allowed it).
-- Expected merge conflicts: `release.yml` (`gh release create` line, if
-  WP-044 adds `install.sh` there) and `CHANGELOG.md` `[Unreleased]`;
-  both trivial.
+- GitHub settings: private vulnerability reporting enabled on
+  `jax-seldon` (Outputs) and `jax-seldon-plugin` (review item 4).
+- Review round: `plugin/SECURITY.md` (a text file in `plugin/`, no QML),
+  packaging/README.md, docs/TESTING.md, the release.yml header and
+  `build` job (review items 3 and b).
+- Expected merge conflicts: `release.yml` (`gh release create` line and
+  perhaps the header comment, if WP-044 adds `install.sh` there),
+  packaging/README.md (`release` row, if WP-044 edits it),
+  docs/TESTING.md (neighbouring rows from WP-044/047) and `CHANGELOG.md`
+  `[Unreleased]`; all trivial.
