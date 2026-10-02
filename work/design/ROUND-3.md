@@ -62,3 +62,27 @@ rsvg-convert clean on all 74; mask rules unchanged. **F1 closed.**
 Round 3 is the mask set of record; rasters and brand files stay round 2
 (byte-identical per DELIVERY). Nothing further is open for the
 designer; check 4 in the real bar follows from WP-051.
+
+## 5. Check 4 result (WP-051, 2026-10-02)
+
+**Passed offscreen; live check pending, operator.** The plugin's real
+`BarWidget.qml` rendered by the headless bar harness
+(`tests/plugin/bar-view.sh`, the shell's own `PluginBarApi`, sample index,
+urgent tone) in Tokyo Night, Catppuccin Latte and Osaka Jade. Glyph and
+digit centres measured from the pixels of each render (device px; ink rows
+inclusive):
+
+| Scale | Bar / text / box | File | Glyph ink rows | Digit ink rows | Glyph centre | Digit centre | Difference |
+|---|---|---|---|---|---|---|---|
+| 1.0 (font 12) | 26 / 12 / 16 | `a4-bar-glyph-16.svg` | 8–16 | 8–16 | 12.5 | 12.5 | 0.0 px |
+| 1.25 (font 15) | 33 / 15 / 20 | `a4-bar-glyph-20.svg` | 11–21 | 10–21 | 16.5 | 16.0 | 0.5 px |
+| 1.25 output (font 12) | 26 / 12 / 16 logical = 20 device | `a4-bar-glyph-20.svg` | 11–21 | 11–21 | 16.5 | 16.5 | 0.0 px |
+
+Identical in all three themes; the layout's own numbers (glyph box top 5
+and 7, glyph centre 12.50 and 16.50, digit centre 12.73 and 16.30 from
+the bar font's metrics) agree with the specimen table in `DELIVERY.md` §5.
+The hinted glyph's pixels are exactly the pill's colour in each theme and
+tone. Renders: `round-3/screenshots/` (`bar-<theme>-<scale>.png`,
+`bar-zoom-6x.png`, `bar-tones-zoom-6x.png`, and the panel and overlay in
+the three themes). The live bar on the test host was not checked: the
+session was locked; unlocking is the operator's.
