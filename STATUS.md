@@ -14,11 +14,10 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-046 | README overhaul of both repositories, developer docs moved out | Docs | `docs-046` (opus, high) | `wt/WP-046` · `wp/046-readme` | 2026-10-02 |
-| WP-050 | Advisory risk warnings, alwaysRed, stale lines, small engine findings | Engine | `engine-050` (opus, high) | `wt/WP-050` · `wp/050-advisory-risk` | 2026-10-02 |
+| WP-049 | CLI polish: completions, man page, help texts, removal commands | Engine | `engine-049` (opus, high) | `wt/WP-049` · `wp/049-cli-polish` | 2026-10-02 |
 
 ## Queued (next up)
-WP-049 (CLI polish; crates approved) ·
+
 WP-033 (update-impact, option C)
 · WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
 logbook migration)
@@ -32,10 +31,19 @@ logbook migration)
 - How to run the team: `docs/HERDR-SETUP.md`.
 
 ## Blocked
-| WP-046 | README overhaul of both repositories, developer docs moved out | Docs | `docs-046` (opus, high) | `wt/WP-046` · `wp/046-readme` | 2026-10-02 |
-| WP-050 | Advisory risk warnings, alwaysRed, stale lines, small engine findings | Engine | `engine-050` (opus, high) | `wt/WP-050` · `wp/050-advisory-risk` | 2026-10-02 |
+| WP-049 | CLI polish: completions, man page, help texts, removal commands | Engine | `engine-049` (opus, high) | `wt/WP-049` · `wp/049-cli-polish` | 2026-10-02 |
 
 ## Recently completed
+- 2026-10-02 WP-046 Root README along GitHub best practice (badges, hero,
+  why, quick start, tour, docs table), developer content moved to
+  docs/DEVELOPMENT.md, plugin README on the same skeleton with absolute
+  links for the split repo, docs-check covers the front pages — merged.
+- 2026-10-02 WP-050 Advisory warning on `plan start` without a snapshot
+  for R2/R3, alwaysRed aligned with ADR-0023 (login path added, kernels
+  only), engine fills the decisions index, doctor paths, wizard hint,
+  damaged-fence safety in dossier and import — merged after one review
+  round; the CLI reference was regenerated on main (cross-track drift
+  caught by docs-check).
 - 2026-10-02 WP-045 User documentation: 13 pages in English and German
   under docs/user/, STYLE.md with glossary, `docs-check` (links,
   translation parity, CLI reference vs --help) in `just check` — merged
@@ -235,8 +243,11 @@ logbook migration)
 - **ADR-0024 flip list (when the AUR package is live):** plugin
   `INSTALL_ENGINE_COMMAND` and `ENGINE_MISSING_DETAIL`, the contract-
   mismatch fix (`UPDATE_ENGINE_COMMAND`, still `yay -S jax-seldon` — to
-  be switched to the installer with v0.1.1), README.md and plugin/README
-  "coming soon" sentences and section order, docs/user 01 install order.
+  be switched to the installer with v0.1.1); README.md: the bold
+  sentence in Quick start step 1, the `> [!NOTE]` v0.1.0 block, "Engine
+  from the AUR" under "Install options"; plugin/README: step 1 first
+  sentence, the NOTE block, "Once the AUR package is live", the States
+  row and the Security constants; docs/user 01 install order.
 - **Proposed release v0.1.1** (WP-038 self-attribution, WP-039 panel
   width + guard, WP-043 import): say "v0.1.1 vorbereiten" and the
   orchestrator prepares CHANGELOG, version bump and dry run, then asks
