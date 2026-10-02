@@ -710,3 +710,45 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The test host's ssh alias is in memory/local.md**, not `test`
   (`SELDON_TEST_HOST` default); check `omarchy-shell lock status` with
   `OMARCHY_PATH` exported in the same ssh call.
+
+## 2026-10-02 · WP-043 (vault import)
+
+- **The operator's vault and `~/Seldon` are off limits for writes.**
+  Run the real-vault dry run with HOME and all three `XDG_*` in one
+  scratch dir, `SELDON_TEST_GUARD` set, `--logbook` on a scratch copy of
+  `fixtures/logbook/`, and checksum the vault before and after
+  (`find -type f -print0 | sort -z | xargs -0 sha256sum`). Never paste
+  vault titles or text into handovers or commits: counts and ids only.
+- **Python's `glob('**/*.json')` skips dot directories.** The fixture
+  vault's `.obsidian/app.json` is therefore not seen by
+  `validate-fixtures` (every other JSON under `fixtures/` needs a schema
+  mapping). If that script ever sets `include_hidden`, map or exclude
+  `vaults/`.
+- **`init` creates `work/active/` with a `.gitkeep`.** "No active case"
+  in a test means "no `C-*.md` in `work/active/`", not "the directory is
+  absent or empty".
+- **Fixture homes are `/home/user`** (fixtures/README.md). A synthetic
+  vault that uses another fake user name breaks that convention.
+- **The kit's deviations are not a table.** `system/deviations.md` is a
+  list of `### Qn — …` entries with `Datum:` and the path somewhere in
+  a code span; some name no path at all (software lists), some share a
+  path. The importer takes the first `~/…` or `/…` span of the heading,
+  else of the body, and reports the rest.
+
+## 2026-10-02 · WP-043 review round
+
+- **`body.contains("|---")` is not a table test.** Obsidian's table
+  editor writes `| --- | --- |` and `|:---|`; the dossier then took the
+  fence as empty and replaced the user's rows with a fresh header.
+  Use `index::load::has_table_separator` for any "is there a table"
+  check.
+- **A "done" marker must be the last thing written, or the only thing
+  trusted.** Treating ledger import notes as "already imported" turned a
+  half-failed apply into a false "nothing changed". Now only the marker
+  means done; notes without it are refused with the undo hint.
+- **Cheap write-failure injection:** `chmod 555` on a directory the
+  command writes late (`system/`), checked with a probe write first so
+  the test returns early when it runs as root.
+- **An "updated" assertion on a template file is trivially true** when
+  `init` ran the same day. Pre-date the field (and commit) before the
+  command under test.

@@ -22,7 +22,7 @@ use anyhow::Context as _;
 
 use crate::collectors::plugins::Listed;
 use crate::index::Built;
-use crate::index::load::{FENCE_BEGIN, FENCE_END, fence_table};
+use crate::index::load::{FENCE_BEGIN, FENCE_END, fence_table, has_table_separator};
 use crate::index::views;
 use crate::model::Language;
 use crate::model::event::{Kind, Resolution, Source, format_ts};
@@ -420,7 +420,7 @@ pub fn packages_summary(p: &Packages) -> String {
 pub fn packages_history(body: Option<&str>, today: &str, p: &Packages) -> String {
     const HEAD: &str = "| date | explicit | total |\n|---|---|---|\n";
     let row = format!("| {today} | {} | {} |", p.explicit.len(), p.total);
-    let body = body.filter(|b| b.contains("|---")).unwrap_or(HEAD);
+    let body = body.filter(|b| has_table_separator(b)).unwrap_or(HEAD);
     let mut lines: Vec<&str> = body.lines().collect();
     let rows = fence_table(body);
     // the table line of the last row: header and separator come first
@@ -673,7 +673,7 @@ pub fn hardware_summary(hw: &Hardware, body: Option<&str>) -> String {
 /// that event is not older than the row's date; only that cell changes.
 pub fn deviations_table(body: Option<&str>, cased: &[Cased]) -> String {
     const HEAD: &str = "| path | reason | date | case |\n|---|---|---|---|\n";
-    let body = body.filter(|b| b.contains("|---")).unwrap_or(HEAD);
+    let body = body.filter(|b| has_table_separator(b)).unwrap_or(HEAD);
     let listed: Vec<String> = fence_table(body)
         .into_iter()
         .filter_map(|r| r.get("path").cloned())
@@ -900,6 +900,31 @@ mod tests {
             "a row with a case keeps it"
         );
         assert_eq!(deviations_table(Some(old), &[]), old);
+    }
+
+    #[test]
+    fn editor_formatted_tables_keep_their_rows() {
+        // Obsidian's table editor pads the separator: `| --- | --- |`
+        let old = "| path | reason | date | case |\n| --- | --- | --- | --- |\n| ~/.bashrc | mise | 2026-09-01 | — |\n";
+        let cased = [Cased {
+            path: "~/.zshrc".into(),
+            date: "2026-10-01".into(),
+            case: "C-2".into(),
+        }];
+        assert_eq!(
+            deviations_table(Some(old), &cased),
+            format!("{old}| ~/.zshrc |  | 2026-10-01 | [[C-2]] |\n")
+        );
+        let history = "| date | explicit | total |\n|:---|---:|---:|\n| 2026-09-01 | 2 | 10 |\n";
+        assert_eq!(
+            packages_history(Some(history), "2026-10-01", &pkgs(&["a", "b"], &[], 10)),
+            history,
+            "same counts: unchanged, the old row kept"
+        );
+        assert_eq!(
+            packages_history(Some(history), "2026-10-01", &pkgs(&["a"], &[], 10)),
+            format!("{history}| 2026-10-01 | 1 | 10 |\n")
+        );
     }
 
     #[test]

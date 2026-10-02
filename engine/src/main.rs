@@ -123,6 +123,9 @@ enum Command {
 
     /// Refresh the generated fences of system/*.md from read-only queries
     Dossier(commands::dossier::DossierArgs),
+
+    /// Import an earlier logbook (dry run unless --apply)
+    Import(commands::import::ImportArgs),
 }
 
 #[derive(Debug, Args)]
@@ -283,6 +286,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Rebuild(a) => commands::rebuild::run(&ctx, a),
         Command::Watch(a) => commands::watch::run(&ctx, a),
         Command::Dossier(a) => commands::dossier::run(&ctx, a),
+        Command::Import(a) => commands::import::run(&ctx, a),
     }
 }
 

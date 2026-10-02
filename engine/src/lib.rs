@@ -10,6 +10,7 @@ pub mod config;
 pub mod dossier;
 pub mod error;
 pub mod frontmatter;
+pub mod import;
 pub mod index;
 pub mod ledger;
 pub mod logbook;

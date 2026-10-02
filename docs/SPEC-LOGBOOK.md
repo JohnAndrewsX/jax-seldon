@@ -98,6 +98,26 @@ Status transitions (engine enforced): `queued → active → verification →
 completed`, `* → dropped`. Moving between folders is done by the engine
 only. The *Log* section is append-only.
 
+**Imported cases** (`seldon import omarchy-agent`, SPEC-ENGINE §3, WP-043)
+are written directly in their status folder (never `active`), tagged
+`omarchy-agent` (plus `omarchy-agent/<old id>` when the id was taken),
+and carry one extra section after Plan: `## History`, the earlier
+logbook's other sections verbatim with their headings one level deeper
+(`### Protokoll`, …); the earlier `Ergebnis` is their `## Result`. Their
+first Log line is the import line; `events` holds the id of the import
+note; a `done` or `dropped` case without `closed` gets its `created`
+date there (the Log line and the report say so). Imported text names a
+renumbered case by its new id (`[[C-OLD…` and bare `C-OLD` → `C-NEW`);
+the old id stays only in the tag, the line under the title and the
+note's `meta.originalId`. Imported journal sessions
+sit under a `## Imported from omarchy-agent` heading of their day (one
+level deeper, so they are text, not entries); imported knowledge is one
+`## ` section per source file in `memory/<topic>.md` with an
+`*Imported from omarchy-agent: …*` line; an existing memory file's
+`updated` moves to the import day. `outputs/IMPORT-omarchy-agent.md`
+is the import's report and `.seldon/imports/omarchy-agent.json` its
+marker; both are committed.
+
 ### Journal (`journal/YYYY/YYYY-MM-DD.md`)
 
 ```yaml
