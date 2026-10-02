@@ -71,7 +71,7 @@ Item {
       textFormat: Text.PlainText
       text: "From the index; the full report is STATUS.md"
       color: root.dim
-      elide: Text.ElideRight
+      wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }

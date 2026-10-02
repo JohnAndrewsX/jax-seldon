@@ -81,6 +81,12 @@ Above every tab: the status banner (see [States](#states)), the snapper
 banner when snapshots cannot be read, and a red strip "N changes in the red
 zone need a reason" (a click opens the drift sheet for the first of them).
 
+The panel is 460 spacing units wide (`Style.space(460)`), so it grows with
+your theme's font size (`[font] base-size`) and stays within the screen.
+Each tab button is at least as wide as its label; on a screen too narrow
+for all six, the tabs wrap onto a second line rather than cut a label off.
+The Changelog's filter chips wrap the same way.
+
 **QuickEntry** (Today, or `n` from any tab): type a note and press Enter;
 it goes to today's journal through `seldon log`, exactly as typed. Pick an
 open case below the field to file the note under it. The line below shows

@@ -165,6 +165,7 @@ Panel {
       tab: root.tabIds[root.tabIndex],
       cursorActive: root.cursorActive,
       cursor: root.currentTab.cursor,
+      tabStrip: { oneLine: tabStrip.fitsOneLine, widths: tabStrip.cellWidths.join(",") },
       status: root.service ? root.service.status : "",
       pill: root.service ? Model.pillText(root.service.counts) : "",
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
@@ -306,7 +307,9 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(380))
+    // Wider than the shell's 380 list panels (WP-039): six tabs at their
+    // label widths, the Changelog's filter chips in two rows.
+    contentWidth: panel.fittedContentWidth(Style.space(460))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
@@ -368,13 +371,13 @@ Panel {
         }
 
         Tabs {
+          id: tabStrip
           width: parent.width
           tabs: root.tabNames
           keys: root.tabIds.map(Model.tabKeyFor)
           currentIndex: root.tabIndex
           foreground: root.foreground
           fontFamily: root.fontFamily
-          // Six tabs share Style.space(380).
           fontSize: Style.font.caption
           onActivated: function(i) { root.selectTab(i) }
         }

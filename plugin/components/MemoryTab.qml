@@ -94,7 +94,7 @@ Item {
         textFormat: Text.PlainText
         text: "Opens the logbook folder; the files are in memory/"
         color: root.dim
-        elide: Text.ElideRight
+        wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }
