@@ -186,3 +186,41 @@ fn the_man_page_renders_without_warnings() {
         assert!(text.contains("EXIT STATUS"), "{text}");
     }
 }
+
+#[test]
+fn a_reader_that_closes_early_is_not_an_error() {
+    // the read end is closed before seldon writes: its write gets EPIPE
+    // (a panic would abort the release binary)
+    let env = Env::new(Snapper::Missing);
+    let mut child = env
+        .command(&["completions", "bash"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("panicked"), "{}", stderr(&out));
+}
+
+#[test]
+fn a_failed_write_to_stdout_exits_2() {
+    // `seldon mangen > /dev/full` must not exit 0 with an empty page
+    let Ok(full) = std::fs::OpenOptions::new().write(true).open("/dev/full") else {
+        eprintln!("note: no /dev/full; the check is skipped");
+        return;
+    };
+    let env = Env::new(Snapper::Missing);
+    let out = env
+        .command(&["mangen"])
+        .stdout(Stdio::from(full))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("cannot write to stdout"),
+        "{}",
+        stderr(&out)
+    );
+}

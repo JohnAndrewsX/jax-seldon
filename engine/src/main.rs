@@ -238,12 +238,17 @@ fn main() -> ExitCode {
     let (json, quiet) = (cli.json, cli.quiet);
     match run(cli) {
         Ok(out) => {
-            if json {
-                print_line(&out.json.to_string());
+            let printed = if json {
+                print_line(&out.json.to_string())
             } else if !(quiet && out.exit == Exit::Ok) && !out.human.is_empty() {
-                print_line(&out.human);
+                print_line(&out.human)
+            } else {
+                Ok(())
+            };
+            match printed {
+                Ok(()) => out.exit.into(),
+                Err(e) => stdout_failed(&e),
             }
-            out.exit.into()
         }
         Err(err) => fail(json, err.exit(), &err.to_string()),
     }
@@ -336,17 +341,31 @@ fn run(cli: Cli) -> Result<Output, Error> {
 
 /// Prints `text` and a newline on stdout. A reader that went away
 /// (`seldon completions bash | head`) is not an error: `println!` would
-/// panic, and the release profile aborts on a panic.
-fn print_line(text: &str) {
+/// panic, and the release profile aborts on a panic. Any other write
+/// error (`seldon mangen > /dev/full`) is returned: the output is lost,
+/// so the caller must not exit 0 (an empty man page would be installed).
+fn print_line(text: &str) -> std::io::Result<()> {
     use std::io::Write as _;
     let mut out = std::io::stdout().lock();
-    let _ = writeln!(out, "{text}").and_then(|()| out.flush());
+    match writeln!(out, "{text}").and_then(|()| out.flush()) {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        r => r,
+    }
+}
+
+/// A failed write to stdout: the message on stderr, exit 2.
+fn stdout_failed(e: &std::io::Error) -> ExitCode {
+    eprintln!("seldon: cannot write to stdout: {e}");
+    Exit::EngineError.into()
 }
 
 /// Prints an error (JSON on stdout or text on stderr) and returns its code.
 fn fail(as_json: bool, exit: Exit, message: &str) -> ExitCode {
     if as_json {
-        print_line(&json!({ "error": { "code": exit as u8, "message": message } }).to_string());
+        let error = json!({ "error": { "code": exit as u8, "message": message } });
+        if let Err(e) = print_line(&error.to_string()) {
+            return stdout_failed(&e);
+        }
     } else {
         eprintln!("seldon: {message}");
     }

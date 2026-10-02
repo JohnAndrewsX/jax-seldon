@@ -563,3 +563,37 @@ fn hook_uninstall_from_a_shared_watched_file_is_an_explained_change() {
     );
     assert_eq!(drift(&env).0, 0);
 }
+
+#[test]
+fn the_deletion_is_recorded_before_the_file_goes() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let env = env();
+    init(&env, &["--theme-hook"]);
+    ok(&env, &["capture", "--all"]);
+    assert!(!owned_file(&env).exists());
+    // a read-only hook directory: the deletion fails after the record
+    let dir = home_path(&env, HOOK).parent().unwrap().to_path_buf();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(dir.join("probe"), "").is_ok() {
+        eprintln!("note: running as root, a read-only directory is writable; skipped");
+        return;
+    }
+    let out = run(&env, &["--json", "init", "--remove-theme-hook"]);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(home_path(&env, HOOK).is_file(), "the hook is still there");
+    let owned: Value = serde_json::from_str(&read(&owned_file(&env))).unwrap();
+    assert_eq!(owned[HOOK]["op"], "delete", "recorded first: {owned}");
+    assert_eq!(owned[HOOK]["by"], "seldon init --remove-theme-hook");
+
+    // the stale record is harmless: the file is unchanged, so the next
+    // capture writes nothing and forgets it
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(
+        (c["written"].clone(), c["explainedOwn"].clone()),
+        (0.into(), 0.into()),
+        "{c}"
+    );
+    assert!(!owned_file(&env).exists());
+    assert_eq!(drift(&env).0, 0);
+}

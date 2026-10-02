@@ -292,12 +292,14 @@ pub fn record_own_writes(
     record_own(dirs, hashed, by, op)
 }
 
-/// Deletes the file `path` and, when the config collector hashes it,
-/// records the deletion by `by` as the engine's own ([`OwnOp::Delete`],
-/// with the hash of the content it had). The outer `Err` is the failed
-/// deletion (nothing changed); the inner one a deletion that could not be
-/// recorded (the next capture then shows it as drift). `Ok(Ok(paths))`
-/// names the `~`-paths recorded.
+/// Records the deletion of the file `path` by `by` as the engine's own
+/// ([`OwnOp::Delete`], with the hash of the content it has) when the
+/// config collector hashes it, then deletes it. The record comes first
+/// (SPEC-ENGINE §5 rule 7): a record whose deletion then fails is
+/// harmless, it only explains a `config-remove` of exactly that content.
+/// The outer `Err` is the failed deletion; the inner one a deletion that
+/// could not be recorded (the next capture then shows it as drift).
+/// `Ok(Ok(paths))` names the `~`-paths recorded.
 pub fn delete_own_file(
     _lock: &Lock,
     dirs: &Dirs,
@@ -305,11 +307,13 @@ pub fn delete_own_file(
     path: &Path,
     by: &str,
 ) -> anyhow::Result<anyhow::Result<Vec<String>>> {
-    let hash = own_hash(dirs, config, path);
+    let hashed = own_hash(dirs, config, path)
+        .map(|h| vec![(path, h)])
+        .unwrap_or_default();
+    let recorded = record_own(dirs, hashed, by, OwnOp::Delete);
     std::fs::remove_file(path)
         .map_err(|e| anyhow::anyhow!("cannot remove {}: {e}", dirs.display(path)))?;
-    let hashed = hash.map(|h| vec![(path, h)]).unwrap_or_default();
-    Ok(record_own(dirs, hashed, by, OwnOp::Delete))
+    Ok(recorded)
 }
 
 /// The config collector's cursor.

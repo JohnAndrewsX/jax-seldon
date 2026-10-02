@@ -287,11 +287,11 @@ pub fn record_own_writes(
     Ok(recorded)
 }
 
-/// Deletes the file `path` under the state lock and records the deletion
-/// as the engine's own with the command `by` when the config collector
-/// watches it ([`config::delete_own_file`]). `Err` when the lock is held or
-/// the file cannot be deleted (nothing changed); the [`OwnRecord`] as for
-/// [`record_own_writes`].
+/// Records the deletion of the file `path` as the engine's own with the
+/// command `by` when the config collector watches it, then deletes it,
+/// under the state lock ([`config::delete_own_file`]). `Err` when the lock
+/// is held or the file cannot be deleted (a record written first stays,
+/// harmless); the [`OwnRecord`] as for [`record_own_writes`].
 pub fn delete_own_file(ctx: &Context, config: &Config, path: &Path, by: &str) -> Result<OwnRecord> {
     let lock = ctx.lock()?;
     let recorded = config::delete_own_file(&lock, &ctx.dirs, config, path, by)?;
