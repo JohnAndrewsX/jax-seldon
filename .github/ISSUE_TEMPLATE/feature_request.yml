@@ -1,0 +1,70 @@
+name: Feature request
+description: An idea for the engine, the plugin, the logbook or the docs.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Seldon's scope is in
+        [PROJECT.md](https://github.com/JohnAndrewsX/jax-seldon/blob/main/PROJECT.md).
+        Describe the problem first; the best solution may differ from the
+        first one that comes to mind.
+
+  - type: dropdown
+    id: part
+    attributes:
+      label: Part
+      multiple: true
+      options:
+        - Engine (seldon CLI, collectors, hooks)
+        - Plugin (bar pill, panel, Prime Radiant overlay)
+        - Logbook format
+        - Contract (index.json, schema)
+        - Package or install
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do, and what gets in the way today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What Seldon should do. Commands, UI sketches and example logbook entries help.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or other ways to solve it.
+
+  - type: textarea
+    id: version
+    attributes:
+      label: "`seldon --version --json`"
+      description: The version you use, if Seldon is installed.
+      render: json
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`seldon doctor`"
+      description: Optional; helps when the idea depends on your setup (collectors, harnesses, snapper). Remove host names and private paths.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and the docs for this idea.
+          required: true

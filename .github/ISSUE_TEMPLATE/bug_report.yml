@@ -1,0 +1,113 @@
+name: Bug report
+description: Something in the engine, the plugin or the package does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A **security vulnerability** goes through
+        [SECURITY.md](https://github.com/JohnAndrewsX/jax-seldon/blob/main/SECURITY.md),
+        not here.
+
+        Command output names your machine (the machine id is
+        `<hostname>-<4 hex>`) and may contain paths and package names.
+        Replace your host name, user name and anything private before
+        you submit.
+
+  - type: dropdown
+    id: part
+    attributes:
+      label: Part
+      options:
+        - Engine (seldon CLI, collectors, hooks)
+        - Plugin (bar pill, panel, Prime Radiant overlay)
+        - Package or install (AUR, release asset, plugin install)
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, including the exact error message.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead, and where it is documented if you know.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The commands or clicks, starting from a known state. A scratch logbook is ideal.
+      placeholder: |
+        1. seldon plan new --zone yellow --risk R1 -- Try something
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: version
+    attributes:
+      label: "`seldon --version --json`"
+      description: Paste the output. If the engine is not installed, say so.
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`seldon doctor`"
+      description: Paste the whole output (redacted, see above). Exit code 3 means the logbook is not initialised; paste that too.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: The `version` field in the installed plugin's `manifest.json`, or "not installed".
+      placeholder: 0.1.0
+
+  - type: input
+    id: omarchy-version
+    attributes:
+      label: Omarchy version
+      description: Output of `omarchy-version`.
+      placeholder: "4.0.0"
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How Seldon was installed
+      options:
+        - AUR package jax-seldon
+        - GitHub release binary
+        - Built from source
+        - Other (say below)
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Logs, a screenshot of the plugin, the relevant part of `index.json`, what changed recently.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues for this bug.
+          required: true
+        - label: I removed host names, user names, tokens and private logbook content from everything above.
+          required: true
