@@ -857,7 +857,7 @@ Import an earlier logbook (dry run unless --apply)
 Usage: seldon import [OPTIONS] <COMMAND>
 
 Commands:
-  omarchy-agent  The omarchy-agent kit's Obsidian vault (read only; dry run unless --apply)
+  omarchy-agent  Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -872,7 +872,7 @@ Commit. Siehe [Import aus omarchy-agent](09-import-from-omarchy-agent.md).
 
 <!-- help: seldon import omarchy-agent -->
 ```text
-The omarchy-agent kit's Obsidian vault (read only; dry run unless --apply)
+Import the omarchy-agent kit's Obsidian vault, which is only read (dry run unless --apply)
 
 Usage: seldon import omarchy-agent [OPTIONS] <VAULT>
 

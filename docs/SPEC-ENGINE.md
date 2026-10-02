@@ -190,11 +190,11 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # ids}], assumptions: [{case, source, assumption}], skipped: [{path,
                                                # reason, error}],
                                                # files, marker, git}
-seldon hook install claude-code [--settings PATH]
+seldon hook install claude-code [--settings FILE]
                                                # WP-050: `generic` dropped from the synopsis: it has no
                                                # settings file to merge into; other agents pipe into
                                                # `hook generic` themselves (§8)
-seldon hook uninstall claude-code [--settings PATH]
+seldon hook uninstall claude-code [--settings FILE]
                                                # WP-049: the inverse of install (§8); `generic` has
                                                # nothing installed, so nothing to uninstall
 seldon hook claude-code                        # stdin: Claude Code hook JSON
@@ -565,7 +565,7 @@ must stay silent), exit 0 always, even on malformed stdin, a missing
 logbook, a broken config or a held lock (waited for up to 2 s), under
 5 ms in release. `seldon hook generic` takes `{"command","actor","cwd",
 "startedAt"?}` with the same rules. `seldon hook install claude-code
-[--settings PATH]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
+[--settings FILE]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
 `SessionStart` and `SessionEnd` (timeout 60 s, Claude Code's cap; `Stop`
 would fire after every reply) into `<logbook>/.claude/settings.json`
 without clobbering existing hooks, idempotently; the merged file is
@@ -576,7 +576,7 @@ capture explains its config event; `--json` adds `ownWrites` (the
 recorded `~`-paths, `{error}` when they could not be recorded, `null` when nothing
 was added). Other agents call `hook generic` themselves.
 
-`seldon hook uninstall claude-code [--settings PATH]` (WP-049) is the
+`seldon hook uninstall claude-code [--settings FILE]` (WP-049) is the
 inverse: it takes out each hook `install` writes (same event, matcher and
 command) and keeps everything else, also a hook the user added to one of
 Seldon's groups; a group, an event list or the `hooks` object it leaves
@@ -587,7 +587,10 @@ deletion is recorded as the engine's own (§5 rule 7: `op: remove` or
 `delete`), the logbook's own file is committed as `seldon: hook uninstall
 claude-code`. It is not an agent hook: errors keep their exit codes
 (3 without a logbook). `--json` → `{settings, removed, absent, deleted,
-ownWrites, git}`.
+ownWrites, git}`. Both `install` and `uninstall` hold the state lock from
+reading the settings file to the commit (WP-049 review), so no capture or
+`watch` sees the written file before its record; while another `seldon`
+holds the lock they change nothing and exit 4.
 
 `seldon hook session-start` prints a compact context block to stdout:
 STATUS summary, active case (id, title, plan steps), last 5 journal lines,
