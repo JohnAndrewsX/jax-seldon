@@ -66,7 +66,7 @@ seldon init
 ```
 
 It asks a few questions. Each one has a sensible default; press Enter to
-take it.
+take it. In a list, Space ticks or unticks an item and Enter confirms.
 
 | Question | What to answer the first time |
 |---|---|
@@ -76,7 +76,7 @@ take it.
 | Collectors | keep all six |
 | Watched config paths | keep the defaults |
 | More paths | leave empty |
-| Agent harnesses | Claude Code hooks, if you use Claude Code |
+| Agent harnesses | tick Claude Code hooks with Space, if you use Claude Code; else none |
 | Record theme switches the moment they happen? | no (you can add it later) |
 | Make the logbook a git repository with a first commit? | yes |
 | Backfill since | leave empty |
@@ -260,6 +260,7 @@ seldon plan done C-2026-002
 ```text
 C-2026-002 active → verification
 C-2026-002 verification → completed (now work/completed/C-2026-002-switch-back-to-my-usual-theme.md)
+Journal: journal/2026/2026-10-02.md
 ```
 
 ## Step 7: Look at the result
@@ -297,7 +298,7 @@ seldon rebuild
 Wrote outputs/REBUILD.md: 0 package(s), 0 deviation(s), 1 plugin(s), 0 unit(s), 0 open
 ```
 
-Open `~/Seldon/outputs/REBUILD.md`. It lists what a fresh Omarchy install
+Your counts differ. Open `~/Seldon/outputs/REBUILD.md`. It lists what a fresh Omarchy install
 needs to become this machine again: your own packages, changed files,
 plugins and the theme from step 6. It grows with every case you record.
 [Rebuild, dossier and update impact](08-rebuild-dossier-update-impact.md)
