@@ -1,6 +1,6 @@
 # Glossar
 
-<!-- source: en/13-glossary.md @ 4ce0827 -->
+<!-- source: en/13-glossary.md @ 5b712f1 -->
 
 Jeder Begriff von Seldon in einer Tabelle, mit dem englischen Wort, das
 die Oberfläche und die englische Anleitung verwenden. Befehle,
