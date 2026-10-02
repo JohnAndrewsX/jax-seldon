@@ -579,3 +579,24 @@ Append-only. One bullet per finding, newest section last.
   exit code (User → 1, Engine → 2) and appends the hint; the write
   steps live in one function so the hint cannot be forgotten for one
   of them.
+
+## 2026-10-02 · WP-050 (advisory risk, decisions.index)
+
+- **A generated table in a user file keeps the user's table head.**
+  `views::decisions_index` copies the fence body's lines up to the first
+  `has_table_separator` line and regenerates only the rows. A German
+  logbook's `| ID | Titel | Status | Datum |` and an Obsidian-formatted
+  `| --- | :--- |` therefore survive, and the hand-made fixture table is
+  byte-stable under `seldon status`.
+- **One loader, two callers.** `index::load::decisions` (the file loop)
+  and `index::build::decision_rows` (rows, newest id first) serve both
+  the index and `decide`, which fills the fence before its autocommit
+  without a whole-index derive.
+- **A write after the record exists is a warning, not an error.**
+  `decide` has already written the ADR when it fills DECISIONS.md, so a
+  failure there goes to `warnings` (exit 0) instead of turning a
+  successful create into exit 2.
+- **Advice in a step output:** `warnings` is always present in the plan
+  step JSON (empty unless `plan start` warned), and the human line
+  reuses `commands::index::warnings_human` (`\nwarning: …`). A
+  `snapshotBefore` set by hand before the start counts as a snapshot.

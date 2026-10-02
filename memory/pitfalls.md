@@ -808,3 +808,23 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `--unit` is not passed: fingerprint `~/.local/bin/seldon`,
   `~/.local/bin/jax-seldon`, `~/.config/systemd/user` and `~/Seldon`
   before and after, and give `--prefix /tmp/<scratch>`.
+
+## 2026-10-02 · WP-050 (Engine)
+
+- **A changed config default does not reach existing installs.** `init`
+  writes `[drift] alwaysRed` (and the other defaults) into
+  `config.toml`, so a new default list only applies to new logbooks;
+  say so in the CHANGELOG. `scripts/validate-fixtures.py` mirrors the
+  list in `ALWAYS_RED`; change both together.
+- **A begin marker without its end must stop a fence writer.** If the
+  writer appends a fresh fence instead, the next run's `fence_body`
+  spans from the old begin to the new end, and replacing it deletes the
+  user's text in between. `write_decisions_index` skips with a warning;
+  `dossier::Files::set` still appends in that case (open finding).
+- **`alwaysRed` only sees package names.** The globs match pacman
+  subjects; an R3 subject like `/etc` can only be approximated by the
+  packages that own it (`omarchy-settings`, `filesystem`). Config events
+  get their zone from `model::event::zone_for` (ADR-0014 §2) instead.
+- **Package names on this host are in `/var/lib/pacman/local/`** — a
+  directory listing is read-only and passes the guard; the package
+  query command does not.
