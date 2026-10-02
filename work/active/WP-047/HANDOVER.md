@@ -66,19 +66,37 @@ Verified by:
   claude-code, `hook session-stop` defaults to agent:claude-code, `decide`
   has no --actor).
 
-Learned: memory/pitfalls.md § WP-047 — the de template must not contain
-  the string `logbook` (prose-language test), keep commands on one line in
-  templates, template headings are pinned in two places.
+Learned: memory/pitfalls.md § WP-047 — keep commands on one line in
+  templates; template headings are pinned in two places.
 
-Decisions needed:
-- The texts now say an agent closes a case (`plan done`) only once the
-  user agrees; before, the template let the agent close it after its own
-  verification. This matches the Phase 0 run (agent → verification, human
-  → done). Confirm, or I flip it back.
-- Risk levels R0–R3 have no definition in the specs; the guide gives a
-  rule of thumb (R0 nothing can break … R3 may not start). If the operator
-  wants a normative scale, it belongs in SPEC-LOGBOOK §3 (an ADR?).
+Decisions needed: none. Both earlier questions were decided by the
+  orchestrator in review: (a) the agent moves a case to verification, the
+  human closes it or pre-authorises (ADR-0023, on main); (b) R0–R3 get a
+  normative scale in SPEC-LOGBOOK §3 (on main); the guide points to it.
+  The guide links SPEC-LOGBOOK.md#3-frontmatter-conventions; the anchor
+  stays valid as long as the §3 heading keeps its name.
 
 Touched outside WP scope: docs/SPEC-ENGINE.md §9 (one sentence, to keep
   the spec in step with the template); memory/pitfalls.md (append).
+
+Review round 1 (APPROVE with six fixes), one commit 94f9ce9:
+1. Prose-language test (engine/tests/init.rs) strips code spans before
+   the logbook/Logbuch check; de "Never" now names `--logbook`; the
+   workaround note was removed from memory/pitfalls.md.
+2. Guide example caption: "The ledger then held:", plus a line saying the
+   theme switches came from the PreToolUse hook and the note and
+   case-verified from `seldon log` / `seldon plan verify`.
+3. Guide example: the init-hook drift item is marked historical; since
+   WP-038 the engine explains its own files (SPEC-ENGINE §5 rule 7).
+4. "Work one case at a time; the engine allows more, and
+   `.seldon/active-case` names the one started last" in the guide and
+   both templates (en, de).
+5. Guide §7: resolving any open member of a drift group resolves every
+   open member (SPEC-ENGINE §5); `--only` the named event alone.
+6. Guide §4: risk points to the SPEC-LOGBOOK §3 scale, with a one-line
+   summary of the four levels taken from the orchestrator's text; "rule
+   of thumb" is gone.
+Verified: `cargo test --test init` 30 passed; `cargo test --lib` 128
+passed; `just check` exit 0 ("check: ok"); link/anchor check clean;
+golden init-skeleton unchanged (no heading changed).
 ```
