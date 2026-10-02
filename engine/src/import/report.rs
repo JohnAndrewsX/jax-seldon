@@ -36,6 +36,9 @@ pub fn counts(plan: &Plan) -> Value {
         "errors": plan.errors(),
         "redactedLines": plan.hits.len(),
         "privatePaths": plan.private_paths,
+        "rewrittenLinks": plan.rewrite_totals().0,
+        "rewrittenIds": plan.rewrite_totals().1,
+        "assumptions": plan.cases.iter().filter(|c| c.assumption.is_some()).count(),
     })
 }
 
@@ -126,6 +129,18 @@ pub fn render(plan: &Plan, mode: &Mode) -> String {
         plan.private_paths
     );
 
+    let (links, ids) = plan.rewrite_totals();
+    let _ = writeln!(
+        t,
+        "- id rewrites: {links} wikilink(s) and {ids} bare id(s) in {} file(s)",
+        plan.rewrites.len()
+    );
+    let _ = writeln!(
+        t,
+        "- assumptions: {}",
+        plan.cases.iter().filter(|c| c.assumption.is_some()).count()
+    );
+
     t.push_str("\n## Cases\n\n");
     if plan.cases.is_empty() {
         t.push_str("None.\n");
@@ -158,6 +173,30 @@ pub fn render(plan: &Plan, mode: &Mode) -> String {
                 cell(c.collision.as_deref().unwrap_or_default()),
                 c.to
             );
+        }
+    }
+
+    t.push_str("\n## Id rewrites\n\n");
+    if plan.rewrites.is_empty() {
+        t.push_str("None: no imported text names a renumbered id.\n");
+    } else {
+        t.push_str(
+            "Imported text names renumbered cases by their new id (`[[C-OLD…` and bare `C-OLD` → `C-NEW`); the old id stays in the tag `omarchy-agent/C-OLD`, the line under the title and `meta.originalId`.\n\n| file | wikilinks | bare ids |\n|---|---|---|\n",
+        );
+        for (file, (links, ids)) in &plan.rewrites {
+            let _ = writeln!(t, "| {} | {links} | {ids} |", cell(file));
+        }
+    }
+
+    t.push_str("\n## Assumptions\n\n");
+    if plan.cases.iter().all(|c| c.assumption.is_none()) {
+        t.push_str("None.\n");
+    } else {
+        t.push_str("| id here | source | assumption |\n|---|---|---|\n");
+        for c in &plan.cases {
+            if let Some(a) = &c.assumption {
+                let _ = writeln!(t, "| {} | {} | {} |", c.to, cell(&c.source), cell(a));
+            }
         }
     }
 

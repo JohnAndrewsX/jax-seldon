@@ -115,6 +115,10 @@ fn the_dry_run_report_is_golden_and_nothing_else_is_written() {
     assert_eq!(j["counts"]["deviationRows"], 2);
     assert_eq!(j["counts"]["redactedLines"], 2);
     assert_eq!(j["counts"]["privatePaths"], 2);
+    assert_eq!(j["counts"]["rewrittenLinks"], 1);
+    assert_eq!(j["counts"]["rewrittenIds"], 4);
+    assert_eq!(j["counts"]["assumptions"], 1);
+    assert_eq!(j["assumptions"][0]["case"], "C-2026-005");
     assert_eq!(
         j["collisions"],
         serde_json::json!([{
@@ -166,6 +170,18 @@ fn the_dry_run_report_is_golden_and_nothing_else_is_written() {
 #[test]
 fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
     let (env, root, vault) = setup();
+    // an older memory file: the import moves its `updated`
+    let lessons = root.join("memory/lessons.md");
+    let text = read(&lessons);
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("updated: "))
+        .unwrap()
+        .to_string();
+    std::fs::write(&lessons, text.replacen(&line, "updated: 2026-09-01", 1)).unwrap();
+    if env.has_git {
+        env.git(&root, &["commit", "-qam", "older lessons"]);
+    }
     let vault_before = tree(&vault);
     let commits = env.has_git.then(|| commit_count(&env, &root));
 
@@ -196,6 +212,15 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
     assert!(renumbered.contains("### Befund\n"));
     assert!(renumbered.contains("#### Einzelheiten\n"));
     assert!(renumbered.contains("```\n## keine Überschrift, nur Ausgabe\n"));
+    // Ergebnis is the Result; the case's own old id in its text is the new one
+    assert!(
+        renumbered.ends_with(
+            "## Result\nDas Dossier steht unter `system/`. Siehe [[C-2026-005-hostname-prompt]].\n"
+        ),
+        "{renumbered}"
+    );
+    assert!(!renumbered.contains("Ergebnis"));
+    assert!(renumbered.contains("status done; C-2026-007 abgeschlossen\n"));
     assert_eq!(
         find_file(&completed, "C-2026-007-").file_name().unwrap(),
         "C-2026-007-erste-schritte.md"
@@ -216,7 +241,16 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
     for prefix in ["C-2026-002-", "C-2026-003-"] {
         assert!(read(&find_file(&queued, prefix)).contains("status: queued\n"));
     }
-    assert!(read(&find_file(&completed, "C-2026-005-")).contains("status: completed\n"));
+    // done without `closed`: closed = created, said in the Log
+    let no_closed = read(&find_file(&completed, "C-2026-005-"));
+    assert!(
+        no_closed.contains("status: completed\n") && no_closed.contains("closed: 2026-08-20\n")
+    );
+    assert!(no_closed.contains("; closed date assumed: 2026-08-20 · human\n"));
+    assert!(
+        no_closed.contains("baut auf C-2026-007 auf\n"),
+        "a mention of a renumbered id is rewritten"
+    );
     let active = std::fs::read_dir(root.join("work/active"))
         .map(|r| {
             r.filter(|e| {
@@ -269,6 +303,11 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
     assert!(day.contains("### 2026-08-20 — Nachtrag: Sitzungsabschluss\n"));
     assert!(day.contains("cases: [C-2026-005, C-2026-002]\n"), "{day}");
     let day = read(&root.join("journal/2026/2026-08-24.md"));
+    assert!(day.contains("das Dossier aus [[C-2026-007-erste-schritte]]."));
+    assert!(
+        day.contains("cases: [C-2026-003, C-2026-006, C-2026-007]\n"),
+        "{day}"
+    );
     assert!(day.contains("#### Nachtrag zum selben Tag\n"));
     assert!(
         day.contains("## 2026-08-25 ist keine Sitzung"),
@@ -280,6 +319,11 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
 
     // memory: lessons appended, topics new
     let lessons = read(&root.join("memory/lessons.md"));
+    assert!(lessons.contains("[[C-2026-005-hostname-prompt]] und C-2026-007."));
+    assert!(
+        lessons.starts_with("---\ntype: memory\ntopic: lessons\nupdated: 2026-10-02\n---\n"),
+        "{lessons}"
+    );
     assert!(lessons.contains("\n## Verifikation heißt: den ganzen Pfad prüfen\n*Imported from omarchy-agent: `knowledge/lessons/ganzen-pfad-pruefen.md`.*\n\nDestilliert"));
     assert!(lessons.contains("### Der Kern\n"));
     let omarchy = read(&root.join("memory/omarchy.md"));
@@ -294,7 +338,7 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
     // deviations: rows without a case, the duplicate and resolved left out
     let dev = read(&root.join("system/deviations.md"));
     assert!(dev.contains("| ~/.config/hypr/bindings.lua | Q1 — Eigene Tastenkürzel in `~/.config/hypr/bindings.lua` (omarchy-agent) | 2026-08-20 | — |\n"), "{dev}");
-    assert!(dev.contains("| /etc/vconsole.conf | Q2 — Konsole mit deutscher Belegung (omarchy-agent) | 2026-08-14 | — |\n"));
+    assert!(dev.contains("| /etc/vconsole.conf | Q2 — Konsole mit deutscher Belegung (seit C-2026-007) (omarchy-agent) | 2026-08-14 | — |\n"), "the reason names the new id");
     assert_eq!(dev.matches("bindings.lua |").count(), 1);
     assert!(!dev.contains("alter-dateimanager") && !dev.contains("snapper"));
 
@@ -328,18 +372,89 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
         assert_eq!(commit_count(&env, &root), n);
     }
 
-    // without the marker the ledger still knows
+    // import notes without the marker: refused, with the way back
     std::fs::remove_file(root.join(MARKER)).unwrap();
+    let before = tree(&root);
     let out = import(&env, &vault, &["--apply", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let j = json(&out);
-    assert_eq!(j["changed"], false);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
     assert!(
-        j["alreadyImported"]["by"]
-            .as_str()
-            .unwrap()
-            .starts_with("ledger/2026-08.jsonl ")
+        message.contains(".seldon/imports/omarchy-agent.json is missing"),
+        "{message}"
     );
+    assert!(
+        message.contains("git checkout -- . && git clean -fd"),
+        "{message}"
+    );
+    assert_eq!(tree(&root), before);
+}
+
+#[test]
+fn an_editor_formatted_deviations_table_keeps_its_rows() {
+    let (env, root, vault) = setup();
+    let path = root.join("system/deviations.md");
+    let text = read(&path).replace(
+        "|---|---|---|---|\n",
+        "| --- | --- | --- | --- |\n| ~/.zshrc | eigene Shell | 2026-09-01 | — |\n",
+    );
+    assert!(text.contains("| --- |"));
+    std::fs::write(&path, &text).unwrap();
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let dev = read(&path);
+    assert!(
+        dev.contains("| path | reason | date | case |\n| --- | --- | --- | --- |\n| ~/.zshrc | eigene Shell | 2026-09-01 | — |\n| ~/.config/hypr/bindings.lua |"),
+        "{dev}"
+    );
+    assert_eq!(dev.matches("| path | reason |").count(), 1);
+}
+
+#[test]
+fn a_failed_apply_says_how_to_undo_it() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (env, root, vault) = setup();
+    if !env.has_git {
+        return;
+    }
+    // the deviation rows cannot be written: after the ledger, the cases,
+    // the journal and the memory files
+    let system = root.join("system");
+    std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(system.join("probe"), "x").is_ok() {
+        // running as root: permissions do not stop the write
+        std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+    let commits = commit_count(&env, &root);
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stdout(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+    assert!(message.contains("nothing was committed"), "{message}");
+    assert!(
+        message.contains("`git checkout -- . && git clean -fd`"),
+        "{message}"
+    );
+    assert_eq!(commit_count(&env, &root), commits, "nothing committed");
+    assert!(!root.join(MARKER).exists());
+    assert!(
+        common::ledger(&root)
+            .iter()
+            .any(|e| e["meta"]["import"] == "omarchy-agent")
+    );
+
+    // not reported as done: refused until the logbook is restored
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(stderr(&out).contains("is missing"), "{}", stderr(&out));
+
+    // the hint works: restore, then the import runs once
+    for args in [&["checkout", "--", "."][..], &["clean", "-fd"]] {
+        let out = env.git(&root, args);
+        assert!(out.status.success(), "{}", stderr(&out));
+    }
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(
         common::ledger(&root)
             .iter()
@@ -347,6 +462,7 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
             .count(),
         6
     );
+    assert_eq!(commit_count(&env, &root), commits + 1);
 }
 
 #[test]

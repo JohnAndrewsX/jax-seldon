@@ -14,7 +14,7 @@ Jede Abweichung vom Standard, mit Grund, Datum und Case.
 
 Zwei zusätzliche Kürzel für den zweiten Editor. Datum: 2026-08-20 · Case: C-2026-002.
 
-### Q2 — Konsole mit deutscher Belegung
+### Q2 — Konsole mit deutscher Belegung (seit C-2026-001)
 
 Gesetzt in `/etc/vconsole.conf`. Datum: 2026-08-14.
 

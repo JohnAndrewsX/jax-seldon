@@ -14,6 +14,8 @@
 - deviations: 2 row(s)
 - not imported: 11; errors: 0
 - redaction: 2 line(s) (token-assignment 1, url-userinfo 1); 2 private path(s) rewritten to `~`
+- id rewrites: 1 wikilink(s) and 4 bare id(s) in 5 file(s)
+- assumptions: 1
 
 ## Cases
 
@@ -31,6 +33,24 @@
 | kit id | already used by | new id |
 |---|---|---|
 | C-2026-001 | work/queued/C-2026-001-seldon-einrichten.md | C-2026-007 |
+
+## Id rewrites
+
+Imported text names renumbered cases by their new id (`[[C-OLD…` and bare `C-OLD` → `C-NEW`); the old id stays in the tag `omarchy-agent/C-OLD`, the line under the title and `meta.originalId`.
+
+| file | wikilinks | bare ids |
+|---|---|---|
+| archive/cases/C-2026-001-erste-schritte.md | 0 | 1 |
+| journal/2026-08.md | 1 | 0 |
+| knowledge/lessons/ganzen-pfad-pruefen.md | 0 | 1 |
+| pipeline/cases/C-2026-005-hostname-prompt.md | 0 | 1 |
+| system/deviations.md | 0 | 1 |
+
+## Assumptions
+
+| id here | source | assumption |
+|---|---|---|
+| C-2026-005 | pipeline/cases/C-2026-005-hostname-prompt.md | status done without `closed`: closed set to `created` (2026-08-20) |
 
 ## Journal
 

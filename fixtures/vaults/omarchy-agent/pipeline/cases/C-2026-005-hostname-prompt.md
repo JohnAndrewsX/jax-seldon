@@ -7,7 +7,7 @@ zone: yellow
 risk: R1
 priority: normal
 created: 2026-08-20
-closed: 2026-08-20
+closed:
 tags: [prompt, terminal]
 ---
 
@@ -21,7 +21,7 @@ In entfernten Sitzungen soll sichtbar sein, auf welchem Rechner man arbeitet.
 - **Betroffene Pfade:** `~/.config/starship.toml`
 
 ## Protokoll
-- 2026-08-20 · angelegt (G1: zone yellow, risk R1, priority normal)
+- 2026-08-20 · angelegt (G1: zone yellow, risk R1, priority normal), baut auf C-2026-001 auf
 - 2026-08-20 · geschrieben und geprüft → G3, status done
 
 ## Ergebnis

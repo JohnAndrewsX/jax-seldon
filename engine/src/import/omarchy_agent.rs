@@ -9,17 +9,22 @@
 //!   (`omarchy-agent/<id>`) and in a line under the title. Status `new`,
 //!   `planned`, `in-progress`, `verification` → `queued` (an imported case
 //!   is never active; the last two say so in the Log), `done` → `completed`,
-//!   `dropped` → `dropped`. `## Auftrag` → `## Intent`, `## Plan` → `## Plan`,
-//!   every other section verbatim under `## History` (headings one level
-//!   deeper). One Log line names the source; one ledger `note` per case at
-//!   the case's `created` date (local midnight), `meta.import: omarchy-agent`.
+//!   `dropped` → `dropped` (a missing `closed` becomes `created`, listed as
+//!   an assumption). `## Auftrag` → `## Intent`, `## Plan` → `## Plan`,
+//!   `## Ergebnis` → `## Result`, every other section verbatim under
+//!   `## History` (headings one level deeper). One Log line names the
+//!   source; one ledger `note` per case at the case's `created` date (local
+//!   midnight), `meta.import: omarchy-agent`.
+//! - **Id rewrites:** in every imported text, a kit id the logbook already
+//!   had (`[[C-OLD…`, bare `C-OLD`) becomes the case's new id ([`Rewriter`]).
 //! - **Journal** `journal/YYYY-MM.md`: split at the session headings
 //!   `## YYYY-MM-DD …`; each day's sessions go under one `## Imported from
 //!   omarchy-agent` heading of `journal/YYYY/YYYY-MM-DD.md` (appended when
 //!   the day exists).
 //! - **Knowledge** `knowledge/<topic>/*.md` → a `## ` section each in
 //!   `memory/<topic>.md` (`lessons` → `memory/lessons.md`), with a source
-//!   line; `knowledge/<name>.md` → `memory/<name>.md`.
+//!   line; `knowledge/<name>.md` → `memory/<name>.md`; an existing file's
+//!   `updated` moves to the import day.
 //! - **Deviations** `system/deviations.md`: each `### ` entry that is not
 //!   resolved and names a path (`~/…` or `/…`, heading first) → a user row
 //!   of `deviations.table` without a case, when the path is not listed.
@@ -36,13 +41,13 @@ use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone as _};
 use regex::Regex;
 
 use super::{
-    Hit, Scrubber, demote, sections, split_frontmatter, strip_title, trim_blank_lines, yaml_list,
-    yaml_map, yaml_str,
+    Hit, Rewriter, Scrubber, demote, sections, split_frontmatter, strip_title, trim_blank_lines,
+    yaml_list, yaml_map, yaml_str,
 };
 use crate::dossier::{self, FENCES};
 use crate::error::{Error, Result};
 use crate::frontmatter::Document;
-use crate::index::load::fence_table;
+use crate::index::load::{fence_table, has_table_separator};
 use crate::logbook::Logbook;
 use crate::logbook::cases::{self, LOG_COMMENT};
 use crate::model::{
@@ -90,6 +95,8 @@ pub struct PlannedCase {
     pub ts: DateTime<FixedOffset>,
     /// Who had the id first, when the case was renumbered.
     pub collision: Option<String>,
+    /// What the import assumed for this case (a missing `closed`).
+    pub assumption: Option<String>,
 }
 
 /// A journal day that gets imported sessions.
@@ -143,6 +150,9 @@ pub struct Plan {
     pub hits: Vec<Hit>,
     pub by_rule: BTreeMap<&'static str, usize>,
     pub private_paths: usize,
+    /// Renumbered ids rewritten in imported text, per source file:
+    /// (wikilinks, bare ids).
+    pub rewrites: BTreeMap<String, (usize, usize)>,
 }
 
 impl Plan {
@@ -164,6 +174,13 @@ impl Plan {
 
     pub fn collisions(&self) -> impl Iterator<Item = &PlannedCase> {
         self.cases.iter().filter(|c| c.collision.is_some())
+    }
+
+    /// (wikilinks, bare ids) rewritten over every file.
+    pub fn rewrite_totals(&self) -> (usize, usize) {
+        self.rewrites
+            .values()
+            .fold((0, 0), |(l, b), (x, y)| (l + x, b + y))
     }
 }
 
@@ -279,15 +296,29 @@ pub fn plan(
         }
     }
 
-    let cases = plan_cases(logbook, kit_cases, now)?;
+    let ids = assign_ids(logbook, &mut kit_cases)?;
+    // references to an id the logbook already had are rewritten to the new
+    // id; a kit id that two kit files share stays (ambiguous)
+    let renumbered: BTreeMap<String, String> = kit_cases
+        .iter()
+        .zip(&ids)
+        .filter(|(_, a)| a.by_logbook)
+        .map(|(k, a)| (k.id.clone(), a.to.clone()))
+        .collect();
+    let mut rw = Rewriter::new(renumbered);
+    let cases: Vec<PlannedCase> = kit_cases
+        .into_iter()
+        .zip(ids)
+        .map(|(k, a)| build_case(k, a.to, a.collision, now, &mut rw))
+        .collect();
     let id_map: BTreeMap<String, String> = cases
         .iter()
         .map(|c| (c.from.clone(), c.to.clone()))
         .collect();
-    let (days, sessions) = plan_journal(logbook, &journals, &id_map, &mut skipped)?;
-    let memory = plan_memory(logbook, &knowledge, now)?;
+    let (days, sessions) = plan_journal(logbook, &journals, &id_map, &mut rw, &mut skipped)?;
+    let memory = plan_memory(logbook, &knowledge, now, &mut rw)?;
     let (rows, dossier) = match deviations {
-        Some(text) => plan_deviations(logbook, &text, &mut skipped)?,
+        Some(text) => plan_deviations(logbook, &text, &mut rw, &mut skipped)?,
         None => (Vec::new(), None),
     };
     skipped.sort_by(|a, b| (!a.error, &a.path).cmp(&(!b.error, &b.path)));
@@ -303,6 +334,7 @@ pub fn plan(
         by_rule: scrub.by_rule(),
         hits: scrub.hits,
         private_paths: scrub.private_paths,
+        rewrites: rw.by_file,
     })
 }
 
@@ -499,11 +531,18 @@ fn split_id(id: &str) -> (String, u32) {
     (year.to_string(), num.parse().unwrap_or(0))
 }
 
-fn plan_cases(
-    logbook: &Logbook,
-    mut kit: Vec<KitCase>,
-    now: &DateTime<FixedOffset>,
-) -> Result<Vec<PlannedCase>> {
+/// The id a kit case gets here.
+#[derive(Debug, Clone)]
+struct Assigned {
+    to: String,
+    /// Who had the id first, when the case was renumbered.
+    collision: Option<String>,
+    /// The logbook had the id (not an earlier kit case).
+    by_logbook: bool,
+}
+
+/// Sorts the kit cases by id and gives each its id here, in that order.
+fn assign_ids(logbook: &Logbook, kit: &mut [KitCase]) -> Result<Vec<Assigned>> {
     kit.sort_by(|a, b| (&a.id, &a.source).cmp(&(&b.id, &b.source)));
     let existing = logbook_ids(logbook)?;
     // the highest number per year over the logbook and the whole kit, so a
@@ -514,21 +553,29 @@ fn plan_cases(
         let m = max.entry(year).or_insert(0);
         *m = (*m).max(n);
     }
-    let mut taken: BTreeMap<String, String> = existing;
+    let mut taken: BTreeMap<String, String> = existing.clone();
     let mut out = Vec::new();
-    for k in kit {
-        let (to, collision) = match taken.get(&k.id) {
+    for k in kit.iter() {
+        let assigned = match taken.get(&k.id) {
             Some(holder) => {
                 let (year, _) = split_id(&k.id);
                 let n = max.entry(year.clone()).or_insert(0);
                 *n += 1;
-                (format!("C-{year}-{:03}", *n), Some(holder.clone()))
+                Assigned {
+                    to: format!("C-{year}-{:03}", *n),
+                    collision: Some(holder.clone()),
+                    by_logbook: existing.contains_key(&k.id),
+                }
             }
-            None => (k.id.clone(), None),
+            None => Assigned {
+                to: k.id.clone(),
+                collision: None,
+                by_logbook: false,
+            },
         };
         taken.insert(k.id.clone(), k.source.clone());
-        taken.insert(to.clone(), k.source.clone());
-        out.push(build_case(k, to, collision, now));
+        taken.insert(assigned.to.clone(), k.source.clone());
+        out.push(assigned);
     }
     Ok(out)
 }
@@ -538,6 +585,7 @@ fn build_case(
     to: String,
     collision: Option<String>,
     now: &DateTime<FixedOffset>,
+    rw: &mut Rewriter,
 ) -> PlannedCase {
     let (status, note) = map_status(&k.status).expect("checked by parse_case");
     let mut tags = k.tags.clone();
@@ -552,6 +600,18 @@ fn build_case(
             tags.push(tag);
         }
     }
+    // a closed case without `closed`: assume it closed the day it was made
+    let (closed, assumption) = match (status.is_open(), k.closed) {
+        (true, _) => (None, None),
+        (false, Some(c)) => (Some(c), None),
+        (false, None) => (
+            Some(k.created),
+            Some(format!(
+                "status {} without `closed`: closed set to `created` ({})",
+                k.status, k.created
+            )),
+        ),
+    };
     let case = Case {
         id: to.clone(),
         title: k.title.clone(),
@@ -562,7 +622,7 @@ fn build_case(
         area: None,
         created: k.created,
         started: None,
-        closed: if status.is_open() { None } else { k.closed },
+        closed,
         snapshot_before: None,
         agents: Vec::new(),
         events: Vec::new(),
@@ -578,12 +638,16 @@ fn build_case(
     if let Some(note) = note {
         log.push_str(&format!("; {note}"));
     }
+    if assumption.is_some() {
+        log.push_str(&format!("; closed date assumed: {}", k.created));
+    }
     let body = case_body(
         &k.body,
         &to,
         &k.title,
         collision.is_some().then_some(k.id.as_str()),
         &cases::log_line(now, &log, "human"),
+        &mut |text: &str| rw.text(&k.source, text),
     );
     PlannedCase {
         path: format!("work/{}/{}", status.folder(), case.file_name(&k.slug)),
@@ -595,17 +659,27 @@ fn build_case(
         case,
         body,
         collision,
+        assumption,
     }
 }
 
 /// The Seldon body of a kit case: the title line, Intent from `Auftrag`,
 /// Plan from `Plan`, every other section under History, the Log with the
-/// import line, an empty Result.
-fn case_body(kit: &str, id: &str, title: &str, renumbered: Option<&str>, log: &str) -> String {
+/// import line, Result from `Ergebnis`. `rewrite` runs over the kit's text
+/// (not over the lines the import adds).
+fn case_body(
+    kit: &str,
+    id: &str,
+    title: &str,
+    renumbered: Option<&str>,
+    log: &str,
+    rewrite: &mut dyn FnMut(&str) -> String,
+) -> String {
     let parts = sections(kit);
     let (_, preamble) = strip_title(&parts.preamble);
     let mut intent = None;
     let mut plan = None;
+    let mut result = None;
     // History: the preamble's text, then every other section, one blank
     // line after each block
     let mut history: Vec<String> = Vec::new();
@@ -617,32 +691,36 @@ fn case_body(kit: &str, id: &str, title: &str, renumbered: Option<&str>, log: &s
         match name.as_str() {
             "Auftrag" | "Intent" if intent.is_none() => intent = Some(content.as_str()),
             "Plan" if plan.is_none() => plan = Some(content.as_str()),
+            "Ergebnis" | "Result" if result.is_none() => result = Some(content.as_str()),
             _ => history.push(format!(
                 "### {name}\n{}",
                 trim_blank_lines(&demote(content))
             )),
         }
     }
-    let block = |text: Option<&str>| format!("{}\n", trim_blank_lines(text.unwrap_or("")));
+    let mut block = |text: Option<&str>| rewrite(&trim_blank_lines(text.unwrap_or("")));
     let mut b = format!("# {id} — {title}\n\n");
     if let Some(original) = renumbered {
         b.push_str(&format!(
             "*Imported from {SOURCE} as {original}; renumbered because this logbook already had that id.*\n\n"
         ));
     }
-    b.push_str(&format!("## Intent\n{}", block(intent)));
-    b.push_str(&format!("## Plan\n{}", block(plan)));
+    b.push_str(&format!("## Intent\n{}\n", block(intent)));
+    b.push_str(&format!("## Plan\n{}\n", block(plan)));
     b.push_str(&format!(
         "## History\n<!-- imported from {SOURCE}: the kit's other sections, verbatim -->\n"
     ));
     for h in &history {
-        b.push_str(h);
+        b.push_str(&block(Some(h)));
         b.push('\n');
     }
     if history.is_empty() {
         b.push('\n');
     }
-    b.push_str(&format!("## Log\n{LOG_COMMENT}\n{log}\n\n## Result\n"));
+    b.push_str(&format!(
+        "## Log\n{LOG_COMMENT}\n{log}\n\n## Result\n{}",
+        block(result)
+    ));
     b
 }
 
@@ -709,6 +787,7 @@ fn plan_journal(
     logbook: &Logbook,
     months: &[(String, String)],
     id_map: &BTreeMap<String, String>,
+    rw: &mut Rewriter,
     skipped: &mut Vec<Skipped>,
 ) -> Result<(Vec<PlannedDay>, usize)> {
     let mut by_day: BTreeMap<NaiveDate, Vec<Session>> = BTreeMap::new();
@@ -744,7 +823,7 @@ fn plan_journal(
         );
         let mut ids: Vec<String> = Vec::new();
         for s in &sessions {
-            block.push_str(&trim_blank_lines(&demote(&s.text)));
+            block.push_str(&trim_blank_lines(&demote(&rw.text(&s.source, &s.text))));
             block.push('\n');
             for cap in link.captures_iter(&s.text) {
                 if let Some(to) = id_map.get(&cap[1])
@@ -837,12 +916,13 @@ fn plan_memory(
     logbook: &Logbook,
     knowledge: &BTreeMap<String, Vec<(String, String)>>,
     now: &DateTime<FixedOffset>,
+    rw: &mut Rewriter,
 ) -> Result<Vec<PlannedMemory>> {
     let mut out = Vec::new();
     for (rel, files) in knowledge {
         let sections: Vec<String> = files
             .iter()
-            .map(|(source, text)| memory_section(source, text))
+            .map(|(source, text)| rw.text(source, &memory_section(source, text)))
             .collect();
         let path = logbook.path(rel);
         let existing = match std::fs::read_to_string(&path) {
@@ -856,7 +936,15 @@ fn plan_memory(
         };
         let joined = sections.join("\n");
         let text = match &existing {
-            Some(old) => join_blocks(old, &joined),
+            // the file's `updated` moves to the import day
+            Some(old) => match model::parse::<Memory>(old) {
+                Ok((mut memory, mut doc)) => {
+                    memory.updated = Some(now.date_naive());
+                    model::update(&mut doc, &memory);
+                    join_blocks(&doc.render(), &joined)
+                }
+                Err(_) => join_blocks(old, &joined),
+            },
             None => {
                 let topic = rel
                     .trim_start_matches("memory/")
@@ -990,6 +1078,7 @@ fn first_path(text: &str) -> Option<String> {
 fn plan_deviations(
     logbook: &Logbook,
     text: &str,
+    rw: &mut Rewriter,
     skipped: &mut Vec<Skipped>,
 ) -> Result<(Vec<PlannedRow>, Option<dossier::Files>)> {
     let fence = FENCES
@@ -999,7 +1088,7 @@ fn plan_deviations(
     let mut files = dossier::Files::read(&logbook.path("system"), logbook.meta.language)?;
     let mut body = files
         .body(fence.name)
-        .filter(|b| b.contains("|---"))
+        .filter(|b| has_table_separator(b))
         .unwrap_or_else(|| "| path | reason | date | case |\n|---|---|---|---|\n".to_string());
     let mut listed: BTreeSet<String> = fence_table(&body)
         .into_iter()
@@ -1033,7 +1122,7 @@ fn plan_deviations(
             .or_else(|| any_date.find(&e.body).map(|m| m.as_str().to_string()))
             .or_else(|| any_date.find(&e.heading).map(|m| m.as_str().to_string()))
             .unwrap_or_default();
-        let reason = format!("{} ({SOURCE})", e.heading)
+        let reason = format!("{} ({SOURCE})", rw.text("system/deviations.md", &e.heading))
             .replace('|', "/")
             .split_whitespace()
             .collect::<Vec<_>>()
@@ -1074,13 +1163,14 @@ mod tests {
         let k = parse_case("pipeline/cases/C-2026-011-foot-paste.md", CASE).unwrap();
         assert_eq!(k.title, "Einfügen reparieren");
         assert_eq!(k.slug, "foot-paste");
-        let p = build_case(k, "C-2026-011".into(), None, &now());
+        let mut rw = Rewriter::new(BTreeMap::new());
+        let p = build_case(k, "C-2026-011".into(), None, &now(), &mut rw);
         assert_eq!(p.case.status, CaseStatus::Queued);
         assert_eq!(p.case.tags, ["foot", "terminal", "omarchy-agent"]);
         assert_eq!(p.path, "work/queued/C-2026-011-foot-paste.md");
         assert_eq!(
             p.body,
-            "# C-2026-011 — Einfügen reparieren\n\n## Intent\nWarum.\n\n## Plan\n- **Ziel:** x\n\n## History\n<!-- imported from omarchy-agent: the kit's other sections, verbatim -->\nVorspann.\n\n### Protokoll\n- 2026-08-27 · angelegt\n\n```\n## kein Abschnitt\n```\n#### Unterpunkt\n\n### Ergebnis\nGut.\n\n## Log\n<!-- append-only; engine and agents add dated lines -->\n- 2026-10-02 10:00 · imported from omarchy-agent pipeline/cases/C-2026-011-foot-paste.md (status verification → queued); imported cases are never active; check the state before `seldon plan start` · human\n\n## Result\n"
+            "# C-2026-011 — Einfügen reparieren\n\n## Intent\nWarum.\n\n## Plan\n- **Ziel:** x\n\n## History\n<!-- imported from omarchy-agent: the kit's other sections, verbatim -->\nVorspann.\n\n### Protokoll\n- 2026-08-27 · angelegt\n\n```\n## kein Abschnitt\n```\n#### Unterpunkt\n\n## Log\n<!-- append-only; engine and agents add dated lines -->\n- 2026-10-02 10:00 · imported from omarchy-agent pipeline/cases/C-2026-011-foot-paste.md (status verification → queued); imported cases are never active; check the state before `seldon plan start` · human\n\n## Result\nGut.\n"
         );
         // the body is a valid case document with the canonical frontmatter
         let text = model::render_new(&p.case, &p.body);
@@ -1090,6 +1180,45 @@ mod tests {
             cases::section(&p.body, "Plan").map(|r| &p.body[r]),
             Some("- **Ziel:** x\n\n")
         );
+    }
+
+    #[test]
+    fn a_renumbered_done_case_without_closed() {
+        let text = CASE
+            .replace("status: verification", "status: done")
+            .replace("Warum.", "Folgt auf [[C-2026-010-alt]] und C-2026-010.");
+        let k = parse_case("archive/cases/C-2026-011-foot-paste.md", &text).unwrap();
+        let mut rw = Rewriter::new(BTreeMap::from([
+            ("C-2026-011".to_string(), "C-2026-040".to_string()),
+            ("C-2026-010".to_string(), "C-2026-039".to_string()),
+        ]));
+        let p = build_case(
+            k,
+            "C-2026-040".into(),
+            Some("work/queued/C-2026-011-x.md".into()),
+            &now(),
+            &mut rw,
+        );
+        assert_eq!(p.case.closed, NaiveDate::from_ymd_opt(2026, 8, 27));
+        assert_eq!(
+            p.assumption.as_deref(),
+            Some("status done without `closed`: closed set to `created` (2026-08-27)")
+        );
+        assert!(
+            p.body
+                .contains("## Intent\nFolgt auf [[C-2026-039-alt]] und C-2026-039.\n")
+        );
+        // the import's own lines keep the old id
+        assert!(
+            p.body
+                .contains("*Imported from omarchy-agent as C-2026-011;")
+        );
+        assert!(
+            p.body
+                .contains("renumbered from C-2026-011; closed date assumed: 2026-08-27 · human")
+        );
+        assert_eq!(p.case.tags.last().unwrap(), "omarchy-agent/C-2026-011");
+        assert_eq!(rw.by_file["archive/cases/C-2026-011-foot-paste.md"], (1, 1));
     }
 
     #[test]

@@ -8,9 +8,11 @@
 //! errors; otherwise it appends one `note` per case to the ledger, writes
 //! the cases, journal days, memory files and deviation rows, the report and
 //! the marker `.seldon/imports/omarchy-agent.json`, commits once as
-//! `seldon: import omarchy-agent` and rebuilds the index. The marker, or an
-//! import note in the ledger when the marker is gone, makes every later
-//! run a no-op ("nothing changed").
+//! `seldon: import omarchy-agent` and rebuilds the index. A write that
+//! fails half way says how to undo it (nothing is committed yet). The
+//! marker makes every later run a no-op ("nothing changed"); import notes
+//! in the ledger without the marker are refused with the same undo, so the
+//! import never runs twice and is never reported done when it is not.
 
 use std::path::PathBuf;
 
@@ -19,12 +21,14 @@ use serde_json::{Value, json};
 
 use super::event::emit;
 use super::{Commit, Context, Output, autocommit, write_new};
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::import::omarchy_agent::{self, Plan, SOURCE};
 use crate::import::report::{self, Mode};
 use crate::import::{marker_path, report_path};
 use crate::ledger::Ledger;
-use crate::logbook::Logbook;
+use crate::logbook::lock::Lock;
+use crate::logbook::{Logbook, git};
 use crate::model::event::{Event, Kind, Meta, Source};
 use crate::model::{self, event::format_ts};
 use crate::redact::Redactor;
@@ -135,8 +139,38 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
             return Err(Error::user(format!("{} already exists", c.path)));
         }
     }
+    let files =
+        write_plan(ctx, &config, &logbook, &lock, &plan).map_err(|e| after_failure(&logbook, e))?;
+    let marker_rel = marker_path(SOURCE);
+
+    let commit = autocommit(ctx, &config, &logbook, &format!("import {SOURCE}"));
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
+
+    let mut human = format!(
+        "Imported from {}:\n{}\nReport: {report_rel}",
+        plan.vault,
+        summary(&plan)
+    );
+    human.push_str(&commit.human());
+    let files: Vec<&str> = files.iter().map(String::as_str).collect();
+    Ok(Output::ok(
+        human,
+        plan_json(&plan, mode, true, &files, &commit, Some(&marker_rel)),
+    ))
+}
+
+/// Writes the plan: ledger notes, cases, journal days, memory files,
+/// deviation rows, the report and the marker. Returns the files written.
+fn write_plan(
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+    lock: &Lock,
+    plan: &Plan,
+) -> Result<Vec<String>> {
     let events: Vec<Event> = plan.cases.iter().map(note).collect();
-    let written = emit(&lock, &config, &logbook, events)?;
+    let written = emit(lock, config, logbook, events)?;
     let mut files: Vec<String> = Vec::new();
     for (c, event) in plan.cases.iter().zip(&written) {
         let mut case = c.case.clone();
@@ -156,8 +190,8 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
         files.extend(dossier.write()?);
     }
     let at = ctx.now.format("%Y-%m-%d %H:%M").to_string();
-    if write_report(&logbook, &plan, &Mode::Applied(at))? {
-        files.push(report_rel.clone());
+    if write_report(logbook, plan, &Mode::Applied(at))? {
+        files.push(report_path(SOURCE));
     }
     let marker_rel = marker_path(SOURCE);
     let marker = json!({
@@ -165,13 +199,13 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
         "vault": plan.vault,
         "importedAt": format_ts(&ctx.now),
         "cases": plan.id_map(),
-        "counts": report::counts(&plan),
+        "counts": report::counts(plan),
     });
     sys::write_atomic(
         &logbook.path(&marker_rel),
         format!("{}\n", serde_json::to_string_pretty(&marker).expect("json")).as_bytes(),
     )?;
-    files.push(marker_rel.clone());
+    files.push(marker_rel);
     let mut months: Vec<String> = written
         .iter()
         .map(|e| format!("ledger/{}.jsonl", e.month()))
@@ -180,21 +214,25 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     months.dedup();
     files.extend(months);
 
-    let commit = autocommit(ctx, &config, &logbook, &format!("import {SOURCE}"));
-    crate::index::rebuild_if_initialised(ctx);
-    drop(lock);
+    Ok(files)
+}
 
-    let mut human = format!(
-        "Imported from {}:\n{}\nReport: {report_rel}",
-        plan.vault,
-        summary(&plan)
-    );
-    human.push_str(&commit.human());
-    let files: Vec<&str> = files.iter().map(String::as_str).collect();
-    Ok(Output::ok(
-        human,
-        plan_json(&plan, mode, true, &files, &commit, Some(&marker_rel)),
-    ))
+/// The undo for an apply that failed after it began to write: nothing is
+/// committed yet, so the logbook's git state is the way back.
+fn after_failure(logbook: &Logbook, e: Error) -> Error {
+    let hint = if git::is_repo(&logbook.root) {
+        format!(
+            "the import stopped half way and nothing was committed; undo it with `git checkout -- . && git clean -fd` in {}, then run it again",
+            logbook.root.display()
+        )
+    } else {
+        "the import stopped half way; the logbook is not a git repository, so restore it from a backup before running it again".to_string()
+    };
+    match e {
+        Error::User(m) => Error::User(format!("{m}; {hint}")),
+        Error::Engine(a) => Error::Engine(anyhow::anyhow!("{a:#}; {hint}")),
+        other => other,
+    }
 }
 
 /// The ledger note of an imported case: at its `created` date, by the
@@ -216,9 +254,10 @@ fn note(c: &omarchy_agent::PlannedCase) -> Event {
         .meta(meta)
 }
 
-/// The marker, or the first import note in the ledger when the marker is
-/// gone (`.seldon/` may be deleted, SPEC-LOGBOOK §7): `None` when this
-/// logbook has no import from the kit.
+/// The marker, when this logbook has the kit imported (`None` when not).
+/// Import notes in the ledger without the marker mean an apply that did
+/// not finish, or a deleted `.seldon/`: a user error that says which, so
+/// the import is never run twice and never reported done when it is not.
 fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
     let rel = marker_path(SOURCE);
     match std::fs::read_to_string(logbook.path(&rel)) {
@@ -241,12 +280,15 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
         .read_all()?
         .into_iter()
         .find(|e| e.meta.extra.get("import").and_then(Value::as_str) == Some(SOURCE));
-    Ok(found.map(|e| {
-        json!({
-            "by": format!("ledger/{}.jsonl {}", e.month(), e.id),
-            "importedAt": Value::Null,
-        })
-    }))
+    match found {
+        None => Ok(None),
+        Some(e) => Err(Error::user(format!(
+            "ledger/{}.jsonl has {SOURCE} import notes ({}) but {rel} is missing: an earlier --apply did not finish, or .seldon/ was deleted. After a failed apply, undo it with `git checkout -- . && git clean -fd` in {} and run it again; after a deleted .seldon/ the import is complete",
+            e.month(),
+            e.id,
+            logbook.root.display()
+        ))),
+    }
 }
 
 /// Writes the report (text outside its fence kept); `true` when it changed.
@@ -272,7 +314,7 @@ fn write_report(logbook: &Logbook, plan: &Plan, mode: &Mode) -> Result<bool> {
 /// Two lines for the human output.
 fn summary(plan: &Plan) -> String {
     format!(
-        "  {} case(s) ({} renumbered), {} journal session(s) on {} day(s), {} memory section(s), {} deviation row(s)\n  {} file(s) not imported, {} error(s), {} redacted line(s), {} private path(s) rewritten",
+        "  {} case(s) ({} renumbered), {} journal session(s) on {} day(s), {} memory section(s), {} deviation row(s)\n  {} file(s) not imported, {} error(s), {} redacted line(s), {} private path(s) rewritten, {} id rewrite(s), {} assumption(s)",
         plan.cases.len(),
         plan.collisions().count(),
         plan.sessions,
@@ -282,7 +324,9 @@ fn summary(plan: &Plan) -> String {
         plan.skipped.iter().filter(|s| !s.error).count(),
         plan.errors(),
         plan.hits.len(),
-        plan.private_paths
+        plan.private_paths,
+        plan.rewrite_totals().0 + plan.rewrite_totals().1,
+        plan.cases.iter().filter(|c| c.assumption.is_some()).count()
     )
 }
 
@@ -313,6 +357,19 @@ fn plan_json(
         .collisions()
         .map(|c| json!({ "from": c.from, "to": c.to, "takenBy": c.collision }))
         .collect();
+    let rewrites: Vec<Value> = plan
+        .rewrites
+        .iter()
+        .map(|(file, (links, ids))| json!({ "file": file, "wikilinks": links, "ids": ids }))
+        .collect();
+    let assumptions: Vec<Value> = plan
+        .cases
+        .iter()
+        .filter_map(|c| {
+            let a = c.assumption.as_ref()?;
+            Some(json!({ "case": c.to, "source": c.source, "assumption": a }))
+        })
+        .collect();
     let skipped: Vec<Value> = plan
         .skipped
         .iter()
@@ -328,6 +385,8 @@ fn plan_json(
         "counts": report::counts(plan),
         "cases": cases,
         "collisions": collisions,
+        "rewrites": rewrites,
+        "assumptions": assumptions,
         "skipped": skipped,
         "files": files,
         "marker": marker,

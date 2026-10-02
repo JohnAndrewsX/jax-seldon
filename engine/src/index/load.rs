@@ -291,9 +291,49 @@ pub fn fence_table(text: &str) -> Vec<BTreeMap<String, String>> {
         .collect()
 }
 
+/// Whether `text` has a Markdown table separator row: `|---|---|` as the
+/// engine writes it, and the forms editors write (`| --- | --- |`,
+/// `|:---|---:|`, Obsidian's table editor). Every cell is three or more
+/// `-` with an optional `:` on either side.
+pub fn has_table_separator(text: &str) -> bool {
+    text.lines().any(|line| {
+        let t = line.trim();
+        let Some(inner) = t.strip_prefix('|') else {
+            return false;
+        };
+        let inner = inner.strip_suffix('|').unwrap_or(inner);
+        !inner.trim().is_empty()
+            && inner.split('|').all(|cell| {
+                let c = cell.trim();
+                let dashes = c.strip_prefix(':').unwrap_or(c);
+                let dashes = dashes.strip_suffix(':').unwrap_or(dashes);
+                dashes.len() >= 3 && dashes.chars().all(|ch| ch == '-')
+            })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn table_separators_in_every_editor_form() {
+        for sep in [
+            "|---|---|",
+            "| --- | --- |",
+            "|:---|---:|",
+            "| :---: | ---- |",
+            "  |---|  ",
+        ] {
+            assert!(
+                has_table_separator(&format!("| a | b |\n{sep}\n| 1 | 2 |\n")),
+                "{sep}"
+            );
+        }
+        for not in ["| a | b |", "| -- | -- |", "|---|x|", "||", "---", "| - |"] {
+            assert!(!has_table_separator(not), "{not}");
+        }
+    }
 
     #[test]
     fn fences_kv_and_tables() {

@@ -38,7 +38,7 @@ uptime
 
 ## Protokoll
 - 2026-08-14 · angelegt (G1: zone green, risk R0, priority high)
-- 2026-08-15 · Dossier geschrieben → G3, status done
+- 2026-08-15 · Dossier geschrieben → G3, status done; C-2026-001 abgeschlossen
 
 ## Ergebnis
 Das Dossier steht unter `system/`. Siehe [[C-2026-005-hostname-prompt]].

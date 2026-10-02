@@ -111,6 +111,70 @@ impl Scrubber {
     }
 }
 
+/// Rewrites the ids of renumbered cases in imported text: `[[C-OLD…` and
+/// a bare `C-OLD` become `C-NEW` (a slug after the id stays), so a link or
+/// a mention never points at the logbook's own case of that id. One pass
+/// over each text, so a new id is never rewritten again.
+#[derive(Debug, Clone)]
+pub struct Rewriter {
+    map: BTreeMap<String, String>,
+    re: Regex,
+    /// Per source file: (wikilinks, bare ids) rewritten.
+    pub by_file: BTreeMap<String, (usize, usize)>,
+}
+
+impl Rewriter {
+    /// `map`: old id → new id, renumbered cases only.
+    pub fn new(map: BTreeMap<String, String>) -> Self {
+        Rewriter {
+            map,
+            re: Regex::new(r"(\[\[)?\bC-\d{4}-\d{3,}\b").expect("id pattern compiles"),
+            by_file: BTreeMap::new(),
+        }
+    }
+
+    /// `text` with the renumbered ids replaced; counted under `file`.
+    pub fn text(&mut self, file: &str, text: &str) -> String {
+        if self.map.is_empty() {
+            return text.to_string();
+        }
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        let (mut links, mut bare) = (0, 0);
+        for caps in self.re.captures_iter(text) {
+            let whole = caps.get(0).expect("group 0");
+            let link = caps.get(1).is_some();
+            let id = &whole.as_str()[if link { 2 } else { 0 }..];
+            let Some(new) = self.map.get(id) else {
+                continue;
+            };
+            out.push_str(&text[last..whole.start()]);
+            if link {
+                out.push_str("[[");
+                links += 1;
+            } else {
+                bare += 1;
+            }
+            out.push_str(new);
+            last = whole.end();
+        }
+        out.push_str(&text[last..]);
+        if links + bare > 0 {
+            let e = self.by_file.entry(file.to_string()).or_insert((0, 0));
+            e.0 += links;
+            e.1 += bare;
+        }
+        out
+    }
+
+    /// (wikilinks, bare ids) over every file.
+    pub fn totals(&self) -> (usize, usize) {
+        self.by_file
+            .values()
+            .fold((0, 0), |(l, b), (x, y)| (l + x, b + y))
+    }
+}
+
 /// Splits `text` into its YAML frontmatter block (without the `---` lines)
 /// and the body. No frontmatter: `None` and the whole text.
 pub fn split_frontmatter(text: &str) -> (Option<&str>, &str) {
@@ -289,6 +353,27 @@ mod tests {
             [(2, "token-assignment"), (2, "authorization-header")]
         );
         assert_eq!(s.by_rule().len(), 2);
+    }
+
+    #[test]
+    fn rewriter_replaces_renumbered_ids_once() {
+        let map = BTreeMap::from([
+            ("C-2026-001".to_string(), "C-2026-039".to_string()),
+            ("C-2026-039".to_string(), "C-2026-050".to_string()),
+        ]);
+        let mut r = Rewriter::new(map);
+        let out = r.text(
+            "a.md",
+            "[[C-2026-001-quattro]] und C-2026-001, nicht C-2026-0012 oder XC-2026-001; [[C-2026-002]] bleibt.",
+        );
+        assert_eq!(
+            out,
+            "[[C-2026-039-quattro]] und C-2026-039, nicht C-2026-0012 oder XC-2026-001; [[C-2026-002]] bleibt."
+        );
+        assert_eq!(r.by_file["a.md"], (1, 1));
+        assert_eq!(r.text("b.md", "nichts"), "nichts");
+        assert_eq!(r.totals(), (1, 1));
+        assert!(!r.by_file.contains_key("b.md"));
     }
 
     #[test]
