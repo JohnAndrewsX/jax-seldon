@@ -83,3 +83,4 @@ Format: `date time · tick N · budget (session/weekly/fable) · what changed`
 - 2026-10-03 03:50 · tick 79 · 4/49/76 % · Quiet tick: CI green; import dry run not yet run; no worker. Waiting on the operator.
 - 2026-10-03 04:20 · tick 80 · 4/49/76 % · Quiet tick: CI green; import dry run not yet run; no worker. Waiting on the operator.
 - 2026-10-03 04:50 · tick 81 · 0/49/76 % (window reset) · Quiet tick: CI green; import dry run not yet run; no worker. Waiting on the operator.
+- 2026-10-03 05:20 · tick 82 · 1/49/76 % · Quiet tick: CI green; no worker. Operator confirmed AUR stays parked until registration reopens and asked for: a GitHub install path, first-class user documentation, README overhaul of both repos, agent-facing instructions, and a gap review; proposal WP-044…049 delivered, waiting for the operator's go and three answers (scope, docs language, curl|bash).
