@@ -94,6 +94,16 @@ tags: []
 ## Result
 ```
 
+Risk levels (ADR-0023, normative; the engine records them and never
+blocks): `R0` reversible in seconds, nothing depends on it, undo by hand,
+no snapshot · `R1` reversible by hand in minutes with a known command,
+the Plan names the rollback step · `R2` rollback needs the plan and a
+snapshot or backup (`plan start --snapshot`), verify before closing ·
+`R3` can break boot, login or the shell, snapshot mandatory, the human's
+explicit go per step, never unattended. Who closes: an agent moves a
+case to `verification`; `plan done` is the human's call unless the Plan
+pre-authorises it (ADR-0023).
+
 Status transitions (engine enforced): `queued → active → verification →
 completed`, `* → dropped`. Moving between folders is done by the engine
 only. The *Log* section is append-only.
