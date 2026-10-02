@@ -108,22 +108,33 @@ for tool in sudo systemctl; do
   printf '#!/bin/sh\necho "%s $*" >>"%s/trap.log"\nexit 1\n' "$tool" "$work" >"$work/trap/$tool"
   chmod 755 "$work/trap/$tool"
 done
-mkdir -p "$work/nojq"
+# The host's programs without zsh and fish (install.sh looks for them with
+# `command -v`; the fakes in $work/shells decide), and without jq too.
+mkdir -p "$work/host" "$work/nojq" "$work/shells"
 IFS=: read -ra path_dirs <<<"$PATH"
 for dir in "${path_dirs[@]}"; do
   [[ -d $dir ]] || continue
   for f in "$dir"/*; do
     name=${f##*/}
-    [[ $name == jq || -e $work/nojq/$name ]] && continue
-    [[ -x $f ]] && ln -s "$f" "$work/nojq/$name"
+    [[ $name == zsh || $name == fish || -e $work/host/$name ]] && continue
+    [[ -x $f ]] || continue
+    ln -s "$f" "$work/host/$name"
+    [[ $name == jq ]] || ln -s "$f" "$work/nojq/$name"
   done
 done
+fake_shell() { # name
+  printf '#!/bin/sh\nexit 0\n' >"$work/shells/$1"
+  chmod 755 "$work/shells/$1"
+}
 has_jq=0
 command -v jq >/dev/null && has_jq=1
 
-# ---- the shells of this scratch system: bash-completion and fish, no zsh -----
+# ---- the shells of this scratch system: bash-completion and fish; zsh has
+# its directory but is not on PATH (both are needed) -------------------------
 share="$work/usrshare"
-mkdir -p "$share/bash-completion/completions" "$share/fish/vendor_completions.d"
+mkdir -p "$share/bash-completion/completions" "$share/fish/vendor_completions.d" \
+  "$share/zsh/site-functions"
+fake_shell fish
 
 # ---- runner ------------------------------------------------------------------
 home="$work/home"
@@ -132,7 +143,7 @@ mkdir -p "$home"
 run_with() {
   local mode=$1 api=$2 path
   shift 2
-  if [[ $mode == nojq ]]; then path="$work/trap:$work/nojq"; else path="$work/trap:$PATH"; fi
+  if [[ $mode == nojq ]]; then path="$work/trap:$work/shells:$work/nojq"; else path="$work/trap:$work/shells:$work/host"; fi
   rc=0
   out=$(env -i HOME="$home" PATH="$path" LANG=C.UTF-8 \
     SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
@@ -169,7 +180,7 @@ check "latest: bash completions from the new binary" \
   grep -qx '# seldon 9.9.9 completions for bash' "$p/share/bash-completion/completions/seldon"
 check "latest: fish completions" \
   grep -qx '# seldon 9.9.9 completions for fish' "$p/share/fish/vendor_completions.d/seldon.fish"
-check "latest: no zsh completions without zsh" test ! -e "$p/share/zsh"
+check "latest: no zsh completions without zsh on PATH" test ! -e "$p/share/zsh"
 # shellcheck disable=SC2016 # $1 is bash -c's argument
 check "latest: no zsh hint without zsh" bash -c '[[ $1 != *fpath=* ]]' _ "$out"
 check "latest: the man page" grep -qx '.TH SELDON 1 seldon-9.9.9' "$p/share/man/man1/seldon.1"
@@ -206,19 +217,25 @@ check "no jq, compact JSON: 9.9.9 installed" cmp -s "$work/p4b/bin/seldon" "$wor
 [[ $has_jq == 1 ]] || echo "note: jq is not installed here; the jq path ran as the fallback too"
 
 # ---- 4b. completions: zsh, a release without them, a foreign file -----------
-mkdir -p "$share/zsh/site-functions"
+fake_shell zsh
 run --prefix "$work/p4z"
 check "zsh: exit 0" test "$rc" -eq 0
 check "zsh: completions installed" \
   grep -qx '# seldon 9.9.9 completions for zsh' "$work/p4z/share/zsh/site-functions/_seldon"
 check "zsh: the fpath hint" has "fpath=($work/p4z/share/zsh/site-functions \$fpath)"
-rmdir "$share/zsh/site-functions" "$share/zsh"
+rm "$work/shells/zsh"
 # zsh is gone: a re-run keeps its completion in the manifest for --uninstall
 run --prefix "$work/p4z"
 check "zsh gone: its completion stays listed" \
   grep -qF "  $work/p4z/share/zsh/site-functions/_seldon" "$work/p4z/share/jax-seldon/install-manifest"
 run --uninstall --prefix "$work/p4z"
 check "zsh gone: --uninstall removes its completion" test ! -e "$work/p4z/share/zsh/site-functions/_seldon"
+# fish on PATH without its completion directory: no fish completion
+rmdir "$share/fish/vendor_completions.d"
+run --prefix "$work/p4n"
+check "fish without its directory: not installed" test ! -e "$work/p4n/share/fish"
+check "fish without its directory: bash still installed" test -f "$work/p4n/share/bash-completion/completions/seldon"
+mkdir -p "$share/fish/vendor_completions.d"
 
 run --prefix "$work/p4o" --version v9.9.4
 check "release without completions: exit 0" test "$rc" -eq 0

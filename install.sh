@@ -10,8 +10,9 @@
 # written. Then installs <prefix>/bin/seldon and the symlink
 # <prefix>/bin/jax-seldon -> seldon (prefix default ~/.local), the man page
 # <prefix>/share/man/man1/seldon.1 and the shell completions for each of
-# bash, zsh and fish that is installed here (its completion directory
-# exists under /usr/share) into <prefix>/share/{bash-completion/completions,
+# bash, zsh and fish that is installed here (zsh, fish: on PATH; each:
+# its completion directory exists under /usr/share) into
+# <prefix>/share/{bash-completion/completions,
 # zsh/site-functions,fish/vendor_completions.d}; the new binary generates
 # them (`seldon completions`, `seldon mangen`; a release without them
 # skips this step). With --unit also the optional watcher unit
@@ -155,9 +156,10 @@ manifest_line() {
   awk -v p="$1" 'index($0, "  ") && substr($0, index($0, "  ") + 2) == p { print; exit }' "$manifest"
 }
 
-# The completion file of a shell under the prefix, and the directory under
-# /usr/share whose existence says the shell (with its completion system)
-# is installed here.
+# The completion file of a shell under the prefix, and whether the shell
+# is installed here: zsh and fish on PATH with their completion directory
+# under /usr/share; bash (always there) when bash-completion's directory
+# exists.
 completion_path() { # shell
   case "$1" in
     bash) printf '%s/share/bash-completion/completions/seldon\n' "$PREFIX" ;;
@@ -168,8 +170,8 @@ completion_path() { # shell
 shell_present() { # shell
   case "$1" in
     bash) [[ -d $SYSTEM_SHARE/bash-completion/completions ]] ;;
-    zsh) [[ -d $SYSTEM_SHARE/zsh/site-functions ]] ;;
-    fish) [[ -d $SYSTEM_SHARE/fish/vendor_completions.d ]] ;;
+    zsh) command -v zsh >/dev/null 2>&1 && [[ -d $SYSTEM_SHARE/zsh/site-functions ]] ;;
+    fish) command -v fish >/dev/null 2>&1 && [[ -d $SYSTEM_SHARE/fish/vendor_completions.d ]] ;;
   esac
 }
 man_path() { printf '%s/share/man/man1/seldon.1\n' "$PREFIX"; }
