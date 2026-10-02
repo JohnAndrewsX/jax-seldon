@@ -103,6 +103,60 @@ seldon rebuild [--json]                        # outputs/REBUILD.md (WP-032): 1 
                                                # ledger write, no index rebuild. --json → {path, sections:
                                                # {packages, deviations, plugins, units, open}, files, git, warnings}
 seldon update-impact [--target VERSION]        # outputs/UPDATE-IMPACT.md  (Phase 3)
+seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
+                                               # WP-043: the omarchy-agent kit's vault, read only; dry run is the
+                                               # default. Both modes plan under the lock and write
+                                               # outputs/IMPORT-omarchy-agent.md (fence `import-omarchy-agent`, text
+                                               # outside kept, only on change): counts, the id mapping, collisions,
+                                               # journal days, memory files, deviation rows, files not imported with
+                                               # the reason, errors, redaction hits (file, line, rule; never the text).
+                                               # Mapping: kit cases (pipeline/cases, archive/cases) keep their id and
+                                               # file slug unless the logbook (case file or work/C-… folder) or an
+                                               # earlier kit case has it: then the next free id of the year after the
+                                               # highest of logbook and kit, tag `omarchy-agent/<old id>` and a line
+                                               # under the title; every imported case is tagged `omarchy-agent`.
+                                               # new|planned|in-progress|verification → queued (never active; the
+                                               # last two say so in the Log), done → completed, dropped → dropped;
+                                               # zone, risk, priority, created, closed kept. Auftrag → Intent, Plan →
+                                               # Plan, every other section (and text before the first) under
+                                               # `## History`, headings one level deeper; one Log line names the
+                                               # source; one ledger `manual/note` per case, `ts` = created at local
+                                               # midnight, actor human, meta {import: omarchy-agent, originalId,
+                                               # originalStatus, source}, its id in the case's `events`. Journal
+                                               # journal/YYYY-MM.md split at `## YYYY-MM-DD…` headings outside code
+                                               # fences; each day's sessions (headings one level deeper) under
+                                               # `## Imported from omarchy-agent` in journal/YYYY/YYYY-MM-DD.md,
+                                               # appended when the day exists, linked kit cases added to `cases:`.
+                                               # knowledge/<topic>/*.md → a `## <title>` section each (source line,
+                                               # headings one level deeper) appended to memory/<topic>.md (lessons →
+                                               # memory/lessons.md; a new file gets `type: memory` frontmatter),
+                                               # knowledge/<name>.md → memory/<name>.md. system/deviations.md: each
+                                               # `### ` entry not resolved (✅/"aufgelöst"/an "Aufgelöst" section)
+                                               # whose heading, else body, has a `~/…` or `/…` code span → a
+                                               # deviations.table row `| path | <heading> (omarchy-agent) | <date> |
+                                               # — |` when the path is not listed. Inbox, Dashboard, templates,
+                                               # STRUCTURE.md, the rest of system/, .obsidian/ and symlinks are listed,
+                                               # not imported. Every imported line passes §7 redaction (config
+                                               # patterns included) and `/home/<user>` at the start of a path becomes
+                                               # `~`. A case the kit layout says to import but that cannot be mapped
+                                               # (no or invalid frontmatter, unknown status/zone/risk/priority, bad
+                                               # date, not UTF-8) or a day file with invalid frontmatter is an error.
+                                               # Dry run: only the report, autocommit `seldon: import omarchy-agent
+                                               # (dry run)`. --apply: refused (exit 1, report written) while there
+                                               # are errors; else ledger first, then cases (never overwritten), days,
+                                               # memory, deviations, the report ("applied"), the marker
+                                               # .seldon/imports/omarchy-agent.json {source, vault, importedAt, cases:
+                                               # {old: new}, counts}; one autocommit `seldon: import omarchy-agent`;
+                                               # index rebuilt. The marker, or an import note in the ledger when the
+                                               # marker is gone, makes every later run write nothing ("Nothing
+                                               # changed", changed: false). Not a directory / not a vault → exit 1.
+                                               # --json → {mode: dry-run|apply, changed, alreadyImported: null|{by,
+                                               # importedAt}, vault, report, errors, counts: {cases, renumbered,
+                                               # journalSessions, journalDays, memorySections, memoryFiles,
+                                               # deviationRows, notImported, errors, redactedLines, privatePaths},
+                                               # cases: [{from, to, kitStatus, status, path, source, renumbered}],
+                                               # collisions: [{from, to, takenBy}], skipped: [{path, reason, error}],
+                                               # files, marker, git}
 seldon hook install <claude-code|generic> [--settings PATH]
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…","cwd":"…"}
