@@ -9,7 +9,7 @@ and the **Prime Radiant**, a fullscreen overlay with charts and the plan.
 You write notes, plan cases and explain unexpected changes from the panel;
 the engine does the writing.
 
-![Preview, 2400×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
+![Preview, 2480×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
 
 *Offscreen renders of the real QML on the sample index, Tokyo Night theme.*
 

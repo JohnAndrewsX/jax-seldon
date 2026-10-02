@@ -143,6 +143,27 @@ engine.**
     config.toml, no config.toml.
 - I checked by hand that each FAIL names the right reason.
 
+**10. Review follow-up (review: APPROVE, one follow-up before the
+merge).**
+- `docs/images/panel-tokyo-night-today.png` is the fresh `PANEL_SHOTS`
+  render (Tokyo Night, Today, live fake engine, no dev-mode line).
+  `docs/images/overlay-tokyo-night-1920x1080.png` is unchanged, because
+  the overlay did not change.
+- `plugin/preview.png` was recomposed with TESTING's recipe and the same
+  theme and layout: the overlay at 1920×1080 on the left, and the framed
+  panel on the right at `+1942+24`.
+- The crop is now `460x536`. The old `382` included the tab row's 2 px
+  spill past the panel, the bug fixed here; the strip now ends flush.
+  536 still ends just below the journal's last entry.
+- The framed panel grew from 422×576 to 500×576. To keep the 22 px gap
+  and the 36 px right margin, the canvas grew from 2400×1080 to
+  **2480×1080**: 153 036 bytes, under 1 MB.
+- `docs/TESTING.md`: the recipe now crops `460x536` on a `2480x1080`
+  canvas, and the crop paragraph explains the numbers.
+- `plugin/README.md`: the alt text says 2480×1080.
+- `work/active/WP-039/WP-039.md`: the three "SPEC-PLUGIN §3" pointers now
+  read §5.
+
 ## Not done
 
 - **No live check.** The dev host's plugin is the operator's; I did not
@@ -152,16 +173,6 @@ engine.**
   renders are the record. The live check is still to do on the dev host
   (copy into the dev install, or the next plugin release) and on the
   test host once it is unlocked.
-- **The guard's live-engine path has not been hit by a real run yet.**
-  No capture landed inside the final `just check` (the index was
-  rewritten at 12:08:19, between scripts). It is proven by the self-test.
-  The dev host's real config (`logbook` = the real logbook path) and
-  index (`logbook.path` the same, `logbook.machine` set) meet the
-  conditions.
-- **`plugin/preview.png` and `docs/images/panel-*.png` still show the 380
-  panel.** TESTING's crop line ("the panel's 380-unit width") matches
-  those images, so I left both alone. Refreshing them is a follow-up:
-  `PANEL_SHOTS`, then the crop at 460 + edge.
 - Chips: no code change (see Done 3).
 
 ## Verified by
@@ -178,6 +189,13 @@ $ just check                                                         → exit 0,
     qmllint: ok (28 files), tokens: ok (520 references), plugin-validate: ok
     real-home-guard.test: 11 passed · service-states: 189 passed · panel-view: 681 passed · overlay-view: 314 passed
 test host: omarchy-shell lock status                                 → locked: true, secure: true (stopped)
+follow-up:
+$ PANEL_SHOTS=<dir> bash tests/plugin/panel-view.sh                  → panel-view: 690 passed, 0 failed
+$ magick identify plugin/preview.png                                 → PNG 2480x1080, 153036 bytes
+$ just check (follow-up tree)                                        → exit 0, "check: ok"
+    real-home-guard.test: 11 passed · service-states: 189 passed · panel-view: 681 passed · overlay-view: 314 passed
+    "ok   service-states: the real ~/.local/state/seldon changed by the operator's live engine (not a leak)"
+    (a real capture by the operator's engine landed during that script: the guard's live-engine path, hit for real)
 ```
 
 The first full panel-view run after adding case 23 (12:00) failed on the
@@ -203,10 +221,7 @@ That is the reason for item 9.
 
 ## Decisions needed
 
-- None blocking.
-- Optional: refresh `plugin/preview.png` and `docs/images/panel-*` for the
-  wider panel. This is the marketplace preview, so it is the operator's
-  call when.
+- None.
 
 ## Touched outside WP scope
 

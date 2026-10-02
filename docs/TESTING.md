@@ -787,16 +787,18 @@ colours are Tokyo Night's `background` and `accent` from its
 `colors.toml`):
 
 ```sh
-magick docs/images/panel-tokyo-night-today.png -crop 382x536+0+0 +repage \
+magick docs/images/panel-tokyo-night-today.png -crop 460x536+0+0 +repage \
   -bordercolor '#1a1b26' -border 18 -bordercolor '#7aa2f7' -border 2 /tmp/panel-framed.png
-magick -size 2400x1080 xc:'#1a1b26' \
+magick -size 2480x1080 xc:'#1a1b26' \
   docs/images/overlay-tokyo-night-1920x1080.png -geometry +0+0 -composite \
   /tmp/panel-framed.png -geometry +1942+24 -composite \
   -strip -define png:compression-level=9 plugin/preview.png
 ```
 
-The crop is the panel's 380-unit width plus its tab row's edge and the
-journal list's bottom at the default font; re-check it if the panel's
+The crop is the panel's 460-unit width (the tab strip ends flush with it
+since WP-039) and the bottom of the journal's last entry at the default
+font. The framed panel is 500×576, placed 22 px right of the overlay with
+36 px to spare, so the canvas is 2480×1080. Re-check both if the panel's
 layout changes. The image must stay under 1 MB (it is about 150 KB).
 
 ### 4. Runtime smoke test in the shell
