@@ -126,11 +126,12 @@ Hook lifecycle for Claude Code (installed by `seldon hook install claude-code`):
 | Hook | Does |
 |---|---|
 | `SessionStart` | prints `STATUS.md` + active case summary as context |
-| `PostToolUse` (Bash) | `seldon hook claude-code` parses the command, writes an `agent` event if it mutated the system (pacman/yay/omarchy/systemctl/cp into watched paths), tagged `actor: agent:claude-code`, `case: <active>` |
-| `Stop` | appends a journal stub for the session, runs `seldon capture --all`, commits the logbook |
+| `PreToolUse` (Bash, Edit, Write, MultiEdit) | `seldon hook claude-code` parses the command (or the edited file) *before* it runs, so the event carries the start time (ADR-0017), and writes an `agent` event if it changes the system (pacman/yay/omarchy/systemctl, writes into watched paths), tagged `actor: agent:claude-code`, `case: <active>` |
+| `SessionEnd` | appends a journal stub for the session, runs `seldon capture --all`, commits the logbook (`Stop` would fire after every reply) |
 
 Codex and the Omarchy default agent use the generic form: any program can
-pipe `{"command": "...", "actor": "agent:x"}` into `seldon hook generic`.
+pipe `{"command": "...", "actor": "agent:x", "cwd": "..."}` into `seldon hook
+generic` before the command runs (SPEC-ENGINE §8).
 
 ## Outputs that make the system reproducible
 
