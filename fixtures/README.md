@@ -13,6 +13,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
 | `logs/omarchy-packages/` | verbatim copies of Omarchy's `install/omarchy-base.packages` and `omarchy-other.packages` (dev host, 2026-10-01); the dossier's `SELDON_OMARCHY_PACKAGES` in tests (WP-036) | — |
 | `hooks/` | Claude Code hook payloads | `schema/external/claude-code-hook.schema.json` |
+| `vaults/omarchy-agent/` | a small synthetic vault in the omarchy-agent kit's layout (cases in every kit status, two journal months, knowledge topics, a dossier with deviations, inbox, templates, `.obsidian/`); invented German text, input of `seldon import omarchy-agent` (WP-043, `engine/tests/import.rs`). Fakes: `token=abc123geheim`, `https://user:geheim@example.org`, `/home/user` | — |
 
 Fixture prose is German (user content); keys, enums, paths and file names are English.
 No real hostnames, users or tokens: the user is `user`, the machine `workstation-7f3a`,
