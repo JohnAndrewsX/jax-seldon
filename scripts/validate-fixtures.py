@@ -56,8 +56,10 @@ EVENT_KEYS = ["id", "ts", "source", "kind", "subject", "detail", "actor", "case"
 DRIFT_KEYS = ["eventId", "ts", "source", "kind", "subject", "detail", "actor", "zone", "crisis",
               "proposedCase", "txId", "members"]
 
-# ADR-0013 §3: default of config.toml [drift] alwaysRed (fnmatch globs, case-sensitive).
-ALWAYS_RED = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell"]
+# ADR-0013 §3, ADR-0023 (WP-050): default of config.toml [drift] alwaysRed (fnmatch globs,
+# case-sensitive); keep in step with engine/src/config.rs DriftConfig::default.
+ALWAYS_RED = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "omarchy-settings",
+              "quickshell", "limine*", "grub", "mkinitcpio*", "filesystem"]
 
 # ADR-0015 §4 (supersedes ADR-0012 §13): whole-word, case-sensitive; word characters are
 # [A-Za-z0-9._+-], except that a final `.` not followed by a word character is punctuation.

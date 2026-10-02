@@ -158,10 +158,27 @@ mod tests {
             "linux-zen",
             "systemd",
             "hyprland",
+            "omarchy",
+            "omarchy-settings",
+            "quickshell",
+            "limine",
+            "limine-snapper-sync",
+            "grub",
+            "mkinitcpio",
+            "mkinitcpio-busybox",
+            "filesystem",
         ] {
             assert!(red.matches(s), "{s}");
         }
-        for s in ["firefox", "systemd-libs", "xlinux", "glibc-locales"] {
+        for s in [
+            "firefox",
+            "systemd-libs",
+            "xlinux",
+            "glibc-locales",
+            "omarchy-nvim",
+            "hyprutils",
+            "grub-customizer",
+        ] {
             assert!(!red.matches(s), "{s}");
         }
         let custom = AlwaysRed::new(&["lib?nput".into(), "mesa[0-9]".into(), "a.b".into()]);
