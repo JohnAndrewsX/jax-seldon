@@ -1,11 +1,14 @@
 == AGENTS.md
 # AGENTS.md
+## Session start
 ## The engine is the only writer
 ## Work in cases
 ## Zones
+## Commands
 ## Journal and memory
 ## Drift
 ## Hooks
+## Ending a session
 ## Never
 == PROJECT.md
 key language

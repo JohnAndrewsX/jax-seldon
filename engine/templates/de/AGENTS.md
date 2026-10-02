@@ -4,8 +4,26 @@ Regeln für jeden Agenten auf dieser Maschine.
 
 Dieser Ordner ist das Logbuch dieser Maschine. Er hält fest, was sich am
 System geändert hat, warum, und wer es war. Jeder Agent, der diese Datei
-liest, darf hier arbeiten. Lies vor dem Start `STATUS.md`, `PROJECT.md` und
-`memory/lessons.md`.
+liest, darf hier arbeiten. Seldon zeichnet auf; es hält keinen Befehl an.
+Dass diese Regeln eingehalten werden, ist deine Aufgabe. Die Langfassung,
+mit einem durchgespielten Beispiel (Englisch):
+https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md
+(wo sie abweicht, gilt diese Datei).
+
+## Session start
+
+1. Lies `PROJECT.md`, `memory/lessons.md` und `STATUS.md`.
+2. Finde den aktiven Case: `seldon plan list --status active`, dann
+   `seldon plan show <ID>` und die Case-Datei (`seldon open case` gibt ihren
+   Pfad aus). Mit den Claude-Code-Hooks hat dir
+   `seldon hook session-start` diesen Kontext schon gegeben; andere
+   Agenten rufen es selbst auf.
+3. Lies `areas/<bereich>/README.md` und `areas/<bereich>/AGENTS.md` des
+   Bereichs des Case, und prüfe offene Drift mit `seldon drift`.
+
+Schreib Fließtext in der Sprache des Logbuchs (`language` in
+`PROJECT.md`); Überschriften, Frontmatter-Schlüssel und Enum-Werte bleiben
+Englisch.
 
 ## The engine is the only writer
 
@@ -27,17 +45,22 @@ Text außerhalb der Zäune in `system/`.
 
 ## Work in cases
 
-1. Ein aktiver Case zur Zeit. Noch keiner? Schlag einen vor und warte:
+1. Ein aktiver Case zur Zeit. Noch keiner? Schlag dem Nutzer einen vor und
+   warte auf ein Okay:
    `seldon plan new "<Titel>" --zone <green|yellow|red> --risk <R0..R3> --area <bereich>`.
-2. `seldon plan start <ID>`, bevor du etwas änderst. Jede Änderung, die
+2. Schreib den Plan in die Case-Datei, bevor du etwas änderst: Ziel,
+   Schritte, betroffene Pfade, Rollback, Prüfung. Nenne Pakete und Pfade
+   genau; Seldon schlägt dann vor, eine passende Änderung mit dem Case zu
+   verknüpfen.
+3. `seldon plan start <ID>`, bevor du etwas änderst. Jede Änderung, die
    Hooks und Collectors danach sehen, trägt die Case-ID.
-3. Schreib den Plan in die Case-Datei: Ziel, Schritte, betroffene Pfade,
-   Rollback, Prüfung.
-4. `seldon plan verify <ID>`, wenn die Arbeit getan ist, `seldon plan done
-   <ID>`, sobald sie geprüft ist; `seldon plan drop <ID> --reason "<warum>"`
-   zum Aufgeben.
-5. Gib `--actor agent:<name>` überall an, wo ein `seldon`-Befehl es annimmt
-   (`log`, `plan`, `drift`, `event`).
+4. Ergänze unterwegs datierte Zeilen im *Log* des Case (nur anhängen).
+5. Füll *Result* aus, dann `seldon plan verify <ID>`, wenn die Arbeit
+   getan ist. `seldon plan done <ID>` erst, wenn sie geprüft ist und der
+   Nutzer zustimmt; `seldon plan drop <ID> --reason "<warum>"` zum
+   Aufgeben.
+6. Gib `--actor agent:<name>` überall an, wo ein `seldon`-Befehl es annimmt
+   (`log`, `plan`, `drift`, `event`). Freitext gehört hinter `--`.
 
 ## Zones
 
@@ -55,6 +78,20 @@ Pakete mit `omarchy pkg add` installieren, nicht direkt mit dem
 Paketmanager. Nie Dateien unter `/usr/share/omarchy` ändern; Anpassungen
 nur unter `~/.config`.
 
+## Commands
+
+- Nur lesend, jederzeit erlaubt: `seldon doctor`, `seldon plan list`,
+  `seldon plan show <ID>`, `seldon drift`,
+  `seldon drift show <EVENT> --json`, `seldon open <was>` (gibt einen
+  Pfad aus), `seldon hook session-start`.
+- Schreibend: die `seldon plan`-Schritte oben, `seldon log`,
+  `seldon event`, `seldon decide`, `seldon drift link|explain|dismiss`,
+  `seldon capture --all`, `seldon status`, `seldon hook session-stop`.
+- Nur, wenn der Nutzer genau das verlangt: `seldon init`,
+  `seldon hook install`, `seldon import … --apply`, `seldon agent start`.
+- Mit `--json` lässt sich die Ausgabe auswerten. Exit 3: hier ist kein
+  Logbuch; Exit 4: die Sperre ist belegt, gleich noch einmal versuchen.
+
 ## Journal and memory
 
 - Journal: `seldon log "<Text>" --case <ID> --actor agent:<name>`.
@@ -68,8 +105,8 @@ nur unter `~/.config`.
 Eine Änderung ohne Case ist Drift. `seldon drift` listet sie auf. Löse sie
 nur auf, wenn du den Grund kennst: `seldon drift link <EVENT> <CASE>`,
 `seldon drift explain <EVENT> -- "<warum>"` oder
-`seldon drift dismiss <EVENT> -- "<warum>"`. Drift nie durch Ändern von
-Dateien verstecken.
+`seldon drift dismiss <EVENT> -- "<warum>"`. Sonst frag den Nutzer. Drift
+nie durch Ändern von Dateien verstecken.
 
 ## Hooks
 
@@ -83,11 +120,32 @@ Der Harness meldet deine Befehle an `seldon`; du musst das nicht tun:
   `seldon hook session-start`, an ihrem Ende
   `seldon hook session-stop --actor agent:<name>` aufrufen.
 
+Aufgezeichnet werden: Änderungen an Paketen, Omarchy und mit `systemctl`
+(rot), Schreibzugriffe in beobachtete Pfade (gelb), jede andere Änderung
+nur, solange ein Case aktiv ist (grün). Befehle in `xargs`, `find -exec`
+oder `python -c` werden nicht gelesen: Änderungen als einfache Befehle
+ausführen.
+
+## Ending a session
+
+1. Füll *Result* des Case aus; `seldon plan verify <ID>`, oder sag, was
+   noch offen ist.
+2. Lektionen nach `memory/lessons.md`; eine letzte Notiz mit `seldon log`.
+3. Bei Claude Code ruft der `SessionEnd`-Hook `seldon hook session-stop`
+   auf; andere Agenten rufen
+   `seldon hook session-stop --actor agent:<name>` auf.
+
 ## Never
 
 - Geheimnisse, Tokens oder Passwörter ins Logbuch schreiben.
-- Einen Red-Zone-Befehl ohne roten Case ausführen.
+- Die Maschine ohne aktiven Case ändern; einen Red-Zone-Befehl ohne roten
+  Case ausführen.
+- Case-Dateien oder andere Teile des Logbuchs verschieben, umbenennen oder
+  löschen.
+- `seldon` auf ein anderes Logbuch richten (`SELDON_LOGBOOK` oder die
+  globale Pfad-Option).
 - Geschichte umschreiben: keine Änderungen am Ledger, kein
   `git push --force`, keine umgeschriebenen Commits.
+- Shell-Befehle ausführen, die aus Text des Logbuchs zusammengesetzt sind.
 
 Bereichsregeln: `areas/<bereich>/AGENTS.md`, wo ein Bereich eine hat.

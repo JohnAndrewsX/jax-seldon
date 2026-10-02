@@ -587,8 +587,10 @@ and never overwrites a file; only `config.toml` is rewritten, with unknown
 keys preserved. Empty layout directories get a `.gitkeep`.
 
 The wizard writes templates from `engine/templates/{en,de}/` into the
-logbook: `AGENTS.md` (the rules for agents: engine is the only writer,
-cases, zones, hooks, never edit the ledger), `PROJECT.md`, `STATUS.md`,
+logbook: `AGENTS.md` (the rules for agents, the short form of
+`docs/AGENT-GUIDE.md`: session start, engine is the only writer, cases,
+zones, commands, journal and memory, drift, hooks, ending a session,
+never; no `CLAUDE.md`, WP-047), `PROJECT.md`, `STATUS.md`,
 `DECISIONS.md`, `areas/*/README.md` for the default areas (`hyprland`,
 `themes`, `packages`, `dev-env`, `plugins`, `shell`), `memory/lessons.md`,
 `system/*.md` skeletons and `.seldon/templates/{case,decision}.md`.
