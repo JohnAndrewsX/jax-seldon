@@ -1,8 +1,8 @@
 # Update and uninstall
 
 This page shows how to update the engine and the plugin, how to run the
-optional watcher, and how to remove Seldon completely or in parts. Your
-logbook is never touched by any of it.
+optional watcher, and how to remove Seldon completely or in parts. None
+of it touches your logbook, unless you delete it yourself.
 
 ## Update the engine
 
@@ -131,8 +131,8 @@ rm -r ~/Seldon
 To try Seldon from scratch on the same machine, keep the engine and the
 plugin. Remove the theme hook, the engine's config and state and the
 logbook (steps 4 and 6 above, and the logbook), then run `seldon init`
-again. `init` refuses a folder that is not
-empty, so a new logbook never overwrites an old one.
+again. `init` refuses a folder that is not empty, so a new logbook never
+overwrites an old one.
 
 ---
 
