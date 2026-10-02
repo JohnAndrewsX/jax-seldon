@@ -105,7 +105,7 @@ or equivalent; keep a non-optimised source file too.
 | A1 | App icon, mask (monochrome) | SVG + PNG | SVG master 1024 grid; PNG 16, 22, 24, 32, 48, 64, 128, 256, 512, 1024 | PNGs white-on-transparent and black-on-transparent; pixel-hinted versions for 16, 22, 24, 32 |
 | A2 | App icon, brand (colour) | SVG + PNG | same sizes | dark-background and light-background variants; 1024 PNG with and without rounded container |
 | A3 | Two-tone mask (optional) | SVG | 1024 grid | layers `primary`, `muted` |
-| A4 | Bar glyph | SVG | fits a 16–20 px cap height, 1:1 or 1:1.2 | the `⟡` successor shown before counts in the top bar; must align optically with monospace digits; provide a specimen at 1.0 and 1.25 scale next to `2 · 3` |
+| A4 | Bar glyph | SVG | a 16 px glyph box at scale 1.0 and a 20 px box at 1.25, square (1:1) | the `⟡` successor shown before counts in the top bar; must align optically with monospace digits; provide a specimen at 1.0 and 1.25 scale next to `2 · 3` |
 | A5 | Panel header mark | SVG | 24–32 px cap height | small lockup icon + "Seldon" wordmark baseline-aligned (wordmark rendered in a monospace font as a placeholder; deliver the icon and alignment metrics, not the font) |
 | A6 | README hero / social preview | PNG + SVG | 1280×640 (GitHub social preview), 1600×800 safe-area version | lockup on brand background, no screenshots inside (we overlay those) |
 | A7 | GitHub avatar | PNG | 500×500, 1024×1024 | brand icon on brand background, works when cropped to a circle |
@@ -145,12 +145,24 @@ file, its purpose, and how it was produced.
 3. The A1 16 px and 22 px PNGs are legible as the same shape in a
    side-by-side with the 512 px version (we ask three people).
 4. A4 placed in the real bar next to `⟡ 2 · 3` at 1.0 and 1.25 scale:
-   optical size matches the digits' x-height and the vertical centre
-   sits on the digits' centre within 1 px.
+   optical size matches the digit height (lining digits, 0.73 em of the
+   bar font) and the vertical centre sits on the digits' centre within
+   1 px.
 5. No file carries metadata with personal data (author fields, GPS,
    software paths); run `exiftool` or equivalent before delivery.
 6. SVG files pass an XML lint and have no external references.
 7. Each asset in the table exists in every listed size and variant.
+
+## 6a. Clarifications after round 1 (2026-10-02)
+
+- A4 box: 16 px at 1.0, 20 px at 1.25, square; the designer's reading
+  is confirmed.
+- Check 4: "x-height" meant the digit height; the table in the round-1
+  README (9 × 9 px glyph at 1.0, 11 × 11 at 1.25) is the reference.
+- The current `⟡` comes from a fallback font (JetBrains Mono has no
+  U+27E1) and is smaller than the digits; the new glyph fixes that.
+- Round-1 deliverables live in `work/design/round-1/` (sheets, README,
+  sources); sketches stay with the designer.
 
 ## 7. Process
 

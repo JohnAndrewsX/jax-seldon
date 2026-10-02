@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Seldon concept-2-plan-vs-reality, mask master</title>
+  <desc>Concept 2, Plan versus reality. Mask master on the 1024 grid: dashed plan line, solid reality line that departs and returns, return point on the dash lattice.</desc>
+  <g id="mask" color="#000000">
+    <path id="plan" d="M416 640L448 640M576 640L608 640M896 640L928 640" fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="reality" d="M96 640L112.89 640C161.37 640 205.7 612.61 227.38 569.24L284.62 454.76C306.3 411.39 350.63 384 399.11 384L533.14 384C579.38 384 622.03 408.94 644.7 449.25L752 640" fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="return-point" d="M816 640C816 675.35 787.35 704 752 704C716.65 704 688 675.35 688 640C688 604.65 716.65 576 752 576C787.35 576 816 604.65 816 640Z" fill="currentColor"/>
+  </g>
+</svg>

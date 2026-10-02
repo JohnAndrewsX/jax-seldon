@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Seldon concept-3-flight-recorder, mask master</title>
+  <desc>Concept 3, Flight recorder. Mask master on the 1024 grid: recorder dial, stepped trace and recording head.</desc>
+  <g id="mask" color="#000000">
+    <path id="dial" d="M960 512C960 759.42 759.42 960 512 960C264.58 960 64 759.42 64 512C64 264.58 264.58 64 512 64C759.42 64 960 264.58 960 512ZM512 128C299.92 128 128 299.92 128 512C128 724.08 299.92 896 512 896C724.08 896 896 724.08 896 512C896 299.92 724.08 128 512 128Z" fill="currentColor"/>
+    <path id="trace" d="M128 576L288 576L288 384L416 384L416 640L544 640L544 448L704 448" fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="recording-head" d="M784 448C784 492.18 748.18 528 704 528C659.82 528 624 492.18 624 448C624 403.82 659.82 368 704 368C748.18 368 784 403.82 784 448Z" fill="currentColor"/>
+  </g>
+</svg>
