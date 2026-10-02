@@ -63,6 +63,7 @@ them in the page language where it helps.
 | drift | Drift (die Drift) | a change without a case and without a resolution |
 | crisis | Krise | drift in the red zone |
 | baseline | Baseline | the pre-Seldon baseline after a backfill |
+| backfill | Nacherfassung | `init --since` |
 | link, explain, dismiss | verknüpfen, erklären, verwerfen | the three drift actions |
 | decision | Entscheidung | an ADR in `decisions/` |
 | memory | Memory | what agents learned, `memory/`; also the panel tab |
@@ -71,6 +72,8 @@ them in the page language where it helps.
 | watched paths | beobachtete Pfade | `watchPaths` |
 | index | Index | `~/.local/state/seldon/index.json` |
 | dossier | Dossier | `system/` |
+| deviation | Abweichung | a row in `system/deviations.md` |
+| redaction | Schwärzung | |
 | area | Bereich | `areas/<area>/` |
 | trace | Spur | the events of one case, in order |
 | engine | Engine | the `seldon` program |
