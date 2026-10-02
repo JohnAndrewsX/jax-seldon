@@ -112,7 +112,7 @@ hinzugekommen, geändert oder entfernt ist. Er zeichnet den Pfad und zwei
 kurze Hashes auf, nie den Inhalt.
 
 Vorgaben: `~/.config/hypr`, `~/.config/omarchy`, `~/.config/waybar`,
-`~/.bashrc`, `~/.zshrc`. Fehlende Pfade werden übersprungen. Ergänze
+`~/.bashrc`, `~/.zshrc`. Fehlende Pfade überspringt der Collector. Ergänze
 eigene, zum Beispiel:
 
 ```toml
@@ -215,7 +215,7 @@ Ein Launcher ist eine Liste: das Programm, dann seine Argumente. Regeln:
 - Das Programm ist ein Name in deinem `PATH` (ohne `/`) oder ein
   absoluter Pfad.
 - Shells (`bash`, `sh`, `zsh`, `fish` und andere), `eval`, `hyprctl` und
-  die Omarchy-Starter, die Shell-Strings bauen, werden abgelehnt. Der
+  die Omarchy-Starter, die Shell-Strings bauen, lehnt die Engine ab. Der
   Prompt enthält Text aus deinem Logbuch, und Seldon führt diesen Text
   nie als Befehl aus.
 

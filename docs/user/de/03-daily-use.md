@@ -83,7 +83,7 @@ gefunden hat. *Ledger* öffnet die Ledger-Ansicht des Monats in deinem
 Editor.
 
 Um Drift aufzulösen, drück Enter auf einer Drift-Zeile, klick
-*Resolve…* oder klick auf die rote Zeile. Das Drift-Blatt zeigt, was
+*Resolve…* oder klick auf die rote Zeile. Der Drift-Dialog zeigt, was
 sich geändert hat, wer es war, wann, die Zone, den vorgeschlagenen Case
 und jedes Paket einer Transaktion. Wähl eine Aktion:
 
@@ -93,10 +93,10 @@ und jedes Paket einer Transaktion. Wähl eine Aktion:
 | *Explain* | `seldon drift explain <EVENT> -- <warum>`, wahlweise mit Zone, Risiko und Bereich | `explained · C-…` |
 | *Dismiss* | `seldon drift dismiss <EVENT> -- <grund>` | `dismissed: <grund>` |
 
-Eine Paket-Transaktion wird als Ganzes aufgelöst (*All N*). *Only
+Eine Paket-Transaktion löst du als Ganzes auf (*All N*). *Only
 <Paket>* löst nur die Zeile auf, die du geöffnet hast. Dein Text bleibt
-im Blatt, bis die Engine ihn geschrieben hat. Hat inzwischen jemand
-anderes die Änderung aufgelöst, sagt das Blatt „Already resolved: …“ und
+im Dialog, bis die Engine ihn geschrieben hat. Hat inzwischen jemand
+anderes die Änderung aufgelöst, sagt der Dialog „Already resolved: …“ und
 schreibt nichts.
 
 ### Work (3)
@@ -171,7 +171,7 @@ Die Tasten des Panels gelten, solange das Panel offen ist.
 | ← / →, `h` / `l` | vorheriger / nächster Tab |
 | ↑ / ↓, `k` / `j` | in der Liste bewegen; in Work spaltenweise durch die Cases |
 | Tab / Shift-Tab | das nächste / vorherige Panel der Bar, wie in jedem Omarchy-Panel |
-| Enter, Leertaste | die Zeile öffnen; auf einer Drift-Zeile das Drift-Blatt; in Work die erste Aktion der Karte |
+| Enter, Leertaste | die Zeile öffnen; auf einer Drift-Zeile den Drift-Dialog; in Work die erste Aktion der Karte |
 | `x` | Work: den Case unter dem Cursor aufgeben (zweimal drücken) |
 | `a` | Work: einen Agenten auf den aktiven Case unter dem Cursor starten (zweimal drücken) |
 | `f` / `F` | Changelog: nächster / vorheriger Quellen-Filter |
@@ -184,14 +184,14 @@ Die Tasten des Panels gelten, solange das Panel offen ist.
 
 Aktionen, die schreiben, brauchen auf der Tastatur zwei Tastendrücke:
 *Start*, *Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`), das
-Drift-Blatt und eine neue Entscheidung. Das erste Enter schärft die
-Aktion, und die Karte sagt „Press Enter again: Start C-2026-005“. Der
+Drift-Dialog und eine neue Entscheidung. Das erste Enter schaltet die
+Aktion scharf, und die Karte sagt „Press Enter again: Start C-2026-005“. Der
 zweite Druck sendet sie. Jede andere Taste in einer Liste entschärft sie.
 Eine Notiz und ein neuer Case gehen mit einem Enter raus. Mit der Maus
 sendet ein Klick, außer bei *Drop* und *Start agent*, die einen zweiten
 Klick verlangen.
 
-Hat ein Textfeld oder ein Blatt den Fokus, geht jede Taste dorthin. Tab
+Hat ein Textfeld oder ein Dialog den Fokus, geht jede Taste dorthin. Tab
 und Shift-Tab wandern durch die Felder. Esc gibt die Tasten ans Panel
 zurück und behält, was du getippt hast.
 
@@ -254,7 +254,7 @@ Befehle aus, das Ergebnis ist also dasselbe:
 | *Capture now* | `seldon capture` |
 | *New case* | `seldon plan new -- "Titel"` |
 | *Start*, *Verify*, *Done*, *Drop* | `seldon plan start <ID>` und so weiter |
-| Drift-Blatt | `seldon drift link`, `explain`, `dismiss` |
+| Drift-Dialog | `seldon drift link`, `explain`, `dismiss` |
 | *New decision* | `seldon decide -- "Titel"` |
 | *Open in editor* | `seldon open journal --editor` |
 

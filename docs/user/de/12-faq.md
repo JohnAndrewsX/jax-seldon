@@ -46,7 +46,7 @@ das erledigen.
 Ein Collector sieht, dass sich etwas geändert hat, aber nicht, wer es
 war oder warum. Nur der Befehl eines Agenten, aufgezeichnet von einem
 Hook, trägt den aktiven Case. Deine eigene Änderung verknüpfst du mit
-`seldon drift link <EVENT> <CASE>` oder mit *Link* im Drift-Blatt. Siehe
+`seldon drift link <EVENT> <CASE>` oder mit *Link* im Drift-Dialog. Siehe
 [Konzepte](02-concepts.md#drift).
 
 ## Ist jedes Paket-Upgrade eine Krise?

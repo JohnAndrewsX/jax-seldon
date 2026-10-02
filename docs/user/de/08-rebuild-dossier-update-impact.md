@@ -87,8 +87,8 @@ Anleitung hält Pfade und Gründe fest, nie den Inhalt von Dateien. Sie
 nennt die Dateien, die du wiederherstellst; ihr Inhalt kommt aus deinen
 Dotfiles oder deinem Backup.
 
-Die Anleitung wird erzeugt. Text, den du außerhalb ihrer Markierungen
-ergänzt, bleibt; Text innerhalb wird jedes Mal ersetzt. Der Befehl
+Die Engine erzeugt die Anleitung. Text, den du außerhalb ihrer
+Markierungen ergänzt, bleibt; Text innerhalb ersetzt sie jedes Mal. Der Befehl
 schreibt die Datei nur, wenn sie sich geändert hat, und committet als
 `seldon: rebuild`.
 

@@ -151,7 +151,7 @@ entfernt die Engine Passwörter und Tokens, die sie erkennt (siehe
 zeichnen nichts auf.
 
 Befehle, die in `xargs`, `find -exec` oder einem Interpreter
-(`python -c`, `node -e`) stecken, werden nicht gelesen. Die Collectors
+(`python -c`, `node -e`) stecken, liest der Hook nicht. Die Collectors
 sehen ihre Wirkung trotzdem bei der nächsten Erfassung, aber ohne den
 Namen des Agenten und ohne Case. Sag deinem Agenten, Änderungen als
 einfache Befehle auszuführen.
@@ -189,8 +189,8 @@ launcher = ["alacritty", "-e", "claude", "{prompt}"]
 omarchy = ["omarchy", "agent", "prompt", "{prompt}"]
 ```
 
-`{prompt}` wird durch den Prompt ersetzt, als ein einziges Argument. Die
-Engine startet den Launcher nie über eine Shell und lehnt Shells als
+Die Engine ersetzt `{prompt}` durch den Prompt, als ein einziges
+Argument. Sie startet den Launcher nie über eine Shell und lehnt Shells als
 Launcher ab. `--launcher NAME` wählt einen aus `[agent.launchers]`.
 Scheitert der Launcher, steht sein Fehler in
 `~/.local/state/seldon/agent-launch.log`.

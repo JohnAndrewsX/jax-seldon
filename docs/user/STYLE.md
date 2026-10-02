@@ -83,6 +83,8 @@ them in the page language where it helps.
 | panel | Panel | the bar panel with six tabs |
 | hook | Hook | |
 | snapshot | Snapshot | snapper snapshot |
+| sheet (drift sheet) | Dialog (Drift-Dialog) | the plugin's form for drift, a new case or a decision |
+| arm, disarm (two-press arming) | scharf schalten, entschärfen | the first Enter of a writing action |
 
 ## Commands
 

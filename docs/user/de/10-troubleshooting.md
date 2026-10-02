@@ -91,12 +91,12 @@ dich aus.
 - Führ `seldon capture` aus und sieh dir die Zeilen pro Collector an. Ein
   Collector mit 0 ist vielleicht in `config.toml` ausgeschaltet oder
   `degraded`.
-- Eine Konfigurationsdatei wird nur gesehen, wenn sie unter einem
+- Der Collector sieht eine Konfigurationsdatei nur, wenn sie unter einem
   beobachteten Pfad liegt, nicht größer als 1 MiB ist, keine Binärdatei
   ist und nicht in `skipPaths` steht
   ([Konfiguration](06-configuration.md#beobachtete-pfade)).
-- Eine Paket-Transaktion, die noch läuft, wird aufgezeichnet, sobald sie
-  endet.
+- Eine Paket-Transaktion, die noch läuft, zeichnet der Collector auf,
+  sobald sie endet.
 - Änderungen durch ein Programm, das die Hooks nicht sehen (eine
   grafische Oberfläche, ein Skript), erscheinen bei der nächsten
   Erfassung, als Drift ohne Namen eines Agenten.
@@ -143,15 +143,15 @@ dich später in die Irre.
   Ordner vertraut? Gibt es `.claude/settings.json`?
   `seldon hook install claude-code` ergänzt, was fehlt.
 - Ist ein Case aktiv? Grüne Befehle werden nur dann aufgezeichnet.
-- Befehle in `xargs`, `find -exec` oder `python -c` werden nicht gelesen.
+- Befehle in `xargs`, `find -exec` oder `python -c` liest der Hook nicht.
 - Andere Agenten rufen `seldon hook generic` selbst auf
   ([Mit Agenten arbeiten](04-working-with-agents.md#andere-agenten)).
 
 ### `seldon agent start` verweigert, oder nichts öffnet sich
 
 - Der Case muss aktiv sein: erst `seldon plan start <ID>`.
-- Ein Launcher, der eine Shell ist oder kein `{prompt}` hat, wird
-  abgelehnt; die Meldung sagt, warum.
+- Einen Launcher, der eine Shell ist oder kein `{prompt}` hat, lehnt die
+  Engine ab; die Meldung sagt, warum.
 - Erscheint das Fenster des Agenten nicht, lies
   `~/.local/state/seldon/agent-launch.log`.
 

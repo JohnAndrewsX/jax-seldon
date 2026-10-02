@@ -91,7 +91,7 @@ unverändert mit.
 
 Ein Case behält seine ID, wenn dein Logbuch sie noch nicht hat. Ist die
 ID vergeben, bekommt der Case die nächste freie ID dieses Jahres. Er
-wird mit `omarchy-agent/<alte id>` getaggt, und eine Zeile unter seinem
+bekommt den Tag `omarchy-agent/<alte id>`, und eine Zeile unter seinem
 Titel nennt die alte ID. Jeder Verweis auf die alte ID im importierten
 Text (`[[C-2026-001]]` und ein bloßes `C-2026-001`) wird zur neuen ID.
 
