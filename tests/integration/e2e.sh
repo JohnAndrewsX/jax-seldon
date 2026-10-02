@@ -130,11 +130,12 @@ read_index() {
 # ipc <target> <method> [arg] — the running shell on the test host.
 ipc() { rsh "omarchy-shell $(printf '%q ' "$@")"; }
 
-# The pill SPEC-PLUGIN §4 derives from an index: `⟡ A · D`, zero parts hidden.
+# The pill text SPEC-PLUGIN §4 derives from an index: the counts after the
+# bar glyph (an image since WP-051), `A · D`, zero parts hidden: "", `2`,
+# `· 3`, `2 · 3` (Model.pillText).
 pill_of() {
-  jq -r '"⟡"
-    + (if .summary.activeCases > 0 then " \(.summary.activeCases)" else "" end)
-    + (if .summary.openDrift > 0 then " · \(.summary.openDrift)" else "" end)'
+  jq -r '[(if .summary.activeCases > 0 then "\(.summary.activeCases)" else empty end),
+          (if .summary.openDrift > 0 then "· \(.summary.openDrift)" else empty end)] | join(" ")'
 }
 
 # ---- test host: baseline, backup, restore ------------------------------------

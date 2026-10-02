@@ -7,8 +7,8 @@ the keyboard.
 
 ## A day with Seldon
 
-- In the morning, glance at the pill. `⟡ 2 · 3` means two active cases
-  and three unexplained changes.
+- In the morning, glance at the pill. The mark, then `2 · 3`, means two
+  active cases and three unexplained changes.
 - Before a change, create a case (`+` in the panel) and start it.
 - While you work, write a note when you learn something (`n` in the
   panel).
@@ -21,8 +21,9 @@ the keyboard.
 
 The pill sits on the right of the bar.
 
-- `⟡ A · D`: A is the number of active cases, D the number of open drift
-  items. Parts that are zero are hidden: `⟡`, `⟡ 2`, `⟡ · 3`.
+- The Seldon mark, then `A · D`: A is the number of active cases, D the
+  number of open drift items. Parts that are zero are hidden: the mark
+  alone, `2`, `· 3`. The mark takes the pill's colour.
 - It uses your theme's accent colour while cases are active, the theme's
   urgent colour when there is a crisis, and dims while something needs
   fixing.

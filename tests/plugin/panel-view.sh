@@ -108,6 +108,12 @@ run sample "$fx/index.sample.json" \
 expect sample 1 .view.status ok
 expect sample 1 .view.tab today
 expect sample 1 .view.banner ""
+# WP-051: the header mark (A5 at the default font) and the day's state (A11)
+expect sample 1 .view.mark.file a5-panel-mark-24.svg
+expect sample 1 .view.mark.box 24
+expect sample 1 .view.mark.ready true
+expect sample 1 .view.bannerPictogram ""
+expect sample 1 .view.today.state crisis
 expect sample 1 .view.crisis "2 changes in the red zone need a reason"
 shows sample 1 "2 changes in the red zone need a reason"
 expect sample 1 .view.today.entries 4
@@ -207,6 +213,7 @@ clean_log snapper
 # 5. Not initialised: the banner, no strip, empty tabs.
 run uninit "$fx/index-variants/not-initialised.json" "view;tab:changelog;tab:system;tab:work;text:+;tab:decisions;text:d;tab:memory"
 expect uninit 1 .view.banner "Logbook not initialised"
+expect uninit 1 .view.bannerPictogram logbook-not-initialised
 expect uninit 1 .view.crisis ""
 shows uninit 1 "No index to show"
 expect uninit 2 .view.changelog.rows 0
@@ -582,7 +589,7 @@ jq '.summary.openDrift = 250' "$fx/index.sample.json" >"$work/capped.json"
 run drift-capped "$work/capped.json" "tab:changelog"
 expect drift-capped 1 .view.changelog.more "+246 more open drift items not listed here"
 shows drift-capped 1 "+246 more open drift items not listed here"
-expect drift-capped 1 .view.pill "⟡ 2 · 250"
+expect drift-capped 1 .view.pill "2 · 250"
 clean_log drift-capped
 
 # 14. The drift sheet live, against the fake engine, with real keys: Enter on
@@ -607,7 +614,7 @@ expect drift-live 7 .view.drift.resolution "linked to C-2026-005"
 expect drift-live 7 .view.drift.openCase C-2026-005
 shows drift-live 7 "Resolved: linked to C-2026-005"
 shows drift-live 7 "Open C-2026-005"
-expect drift-live 7 .view.pill "⟡ 2 · 3"
+expect drift-live 7 .view.pill "2 · 3"
 expect drift-live 7 .view.crisis "2 changes in the red zone need a reason"
 expect drift-live 7 '.view.changelog.resolved | map(select(startswith("tokyo-night"))) | join(",")' "tokyo-night: linked to C-2026-005"
 expect drift-live 8 .view.drift.open false
@@ -625,7 +632,7 @@ expect drift-live 18 .view.drift.hint "Press Enter again: Explain ~/.config/syst
 expect drift-live 20 .view.drift.result "Explained 1 event · created C-2026-009 · new area dev-env"
 expect drift-live 20 .view.drift.resolution "explained · C-2026-009: --help"
 expect drift-live 20 .view.crisis "1 change in the red zone needs a reason"
-expect drift-live 20 .view.pill "⟡ 2 · 2"
+expect drift-live 20 .view.pill "2 · 2"
 shows drift-live 20 "Open C-2026-009"
 expect drift-live 22 .view.openResult "Opened $work/home-drift/Seldon/work/active/C-2026-009.md in omarchy-launch-editor"
 expect drift-live 23 .view.drift.open false
@@ -642,7 +649,7 @@ expect drift-live 37 '.view.changelog.resolved | map(select(endswith("dismissed:
   "libinput: dismissed: routine update,noto-fonts: dismissed: routine update,firefox: dismissed: routine update"
 expect drift-live 37 '.view.changelog.driftTones | join(",")' "ollama urgent"
 expect drift-live 37 '.view.changelog.badges | length' 0
-expect drift-live 37 .view.pill "⟡ 2 · 1"
+expect drift-live 37 .view.pill "2 · 1"
 expect drift-live 38 .view.drift.open false
 expect drift-live 38 .view.opened true
 expect drift-live 38 .view.lastError ""
@@ -681,7 +688,7 @@ expect drift-only 23 .view.drift.hint "Press Enter again: Link firefox only to C
 expect drift-only 25 .view.drift.result "Linked 1 event to C-2026-004"
 expect drift-only 25 .view.drift.resolution "linked to C-2026-004"
 expect drift-only 25 '.view.changelog.badges | join(",")' "noto-fonts +1"
-expect drift-only 25 .view.pill "⟡ 2 · 4"
+expect drift-only 25 .view.pill "2 · 4"
 expect drift-only 27 .view.cursor 31
 expect drift-only 28 .view.drift.eventId $NOTO
 expect drift-only 28 .view.drift.badge +1
@@ -708,7 +715,7 @@ expect drift-already 4 .view.drift.result "Already resolved: linked to C-2026-00
 expect drift-already 4 .view.drift.already true
 expect drift-already 4 .view.drift.resultOk true
 expect drift-already 4 .view.drift.isOpen true
-expect drift-already 4 .view.pill "⟡ 2 · 4"
+expect drift-already 4 .view.pill "2 · 4"
 shows drift-already 4 "Already resolved: linked to C-2026-005"
 clean_log drift-already
 
@@ -985,6 +992,9 @@ fit_case fit-125 15 "${fit_themes[@]}"
 for theme in "${fit_themes[@]}"; do
   fit_expect "fit-100-$theme" 460 true
   fit_expect "fit-125-$theme" 575 true
+  # WP-051: the 20 px heading gives a box of neither 24 nor 32 (twice its
+  # cap height, 28–30 depending on the font): the A1 master
+  expect "fit-125-$theme" 1 .view.mark.file a1-icon-mask.svg
 done
 fit_case fit-narrow 12 default -- HARNESS_CARD_WIDTH=300
 fit_expect fit-narrow-default 300 false narrow
@@ -1005,7 +1015,19 @@ if [[ -n ${PANEL_SHOTS:-} ]]; then
       HOME="$home" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_SHOTS="$PANEL_SHOTS"
     expect "shot-$theme" 1 .view.tab today
     expect "shot-$theme" 1 .view.today.quickEntry.enabled true
+    expect "shot-$theme" 1 .view.mark.file a5-panel-mark-24.svg
+    expect "shot-$theme" 1 .view.mark.ready true
+    expect "shot-$theme" 1 .view.today.state crisis
     clean_log "shot-$theme"
+    # The not-initialised banner with its pictogram (A11, WP-051).
+    home="$work/home-shot-uninit-$theme"
+    mkdir -p "$home/.local/state/omarchy/current/theme"
+    cp "$omarchy/themes/$theme/colors.toml" "$home/.local/state/omarchy/current/theme/colors.toml"
+    run "shot-uninit-$theme" "" "settle;shot:panel-$theme-uninit;view" \
+      HOME="$home" FAKE_SELDON_MODE=uninit HARNESS_SHOTS="$PANEL_SHOTS"
+    expect "shot-uninit-$theme" 1 .view.status notInitialised
+    expect "shot-uninit-$theme" 1 .view.bannerPictogram logbook-not-initialised
+    clean_log "shot-uninit-$theme"
   done
 fi
 

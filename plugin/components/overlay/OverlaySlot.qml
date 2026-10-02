@@ -1,11 +1,17 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import qs.Commons
 import qs.Ui
+import ".."
 
 // One slot of the Prime Radiant grid (WP-030): the slot's name and what it
 // draws on top, the chart (WP-031) in the area under it. With `placeholder`
 // on it shows the row count of its series for the selected period instead
 // (a Model.slotSummary object). Every string is set as plain text.
+// A slot with a `legend` (the Timeline: Model.TIMELINE_LEGEND with colours)
+// shows it in place of the subtitle: each entry's A12 marker files, tinted
+// like the chart draws them, then its label.
 BorderSurface {
   id: root
 
@@ -17,6 +23,9 @@ BorderSurface {
   property bool placeholder: true
   // The chart in this slot, for Overlay.view() and hover().
   property ChartCanvas chart: null
+  // [{ files: [file names in plugin/assets/], label, color }]; [] shows the
+  // subtitle instead.
+  property var legend: []
 
   // The chart goes here, filling the area under the title.
   default property alias content: chartArea.data
@@ -65,18 +74,65 @@ BorderSurface {
     }
 
     Text {
+      id: subtitle
       anchors.left: title.right
       anchors.leftMargin: Style.spacing.lg
       anchors.right: caption.visible ? caption.left : parent.right
       anchors.rightMargin: caption.visible ? Style.spacing.xl : 0
       anchors.baseline: title.baseline
-      visible: width >= Style.font.bodySmall * 4
+      visible: root.legend.length === 0 && width >= Style.font.bodySmall * 4
       textFormat: Text.PlainText
       text: root.summary ? root.summary.subtitle : ""
       color: Color.muted
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       elide: Text.ElideRight
+    }
+    // The legend, where the subtitle would be; hidden when it does not fit
+    // beside the caption.
+    Row {
+      id: legendRow
+      anchors.left: title.right
+      anchors.leftMargin: Style.spacing.lg
+      anchors.verticalCenter: title.verticalCenter
+      spacing: Style.spacing.lg
+      visible: root.legend.length > 0
+        && implicitWidth <= parent.width - title.width - Style.spacing.lg - (caption.visible ? caption.implicitWidth + Style.spacing.xl : 0)
+
+      Repeater {
+        model: root.legend
+
+        Row {
+          id: entry
+
+          required property var modelData
+
+          spacing: Style.spacing.xs
+
+          Repeater {
+            model: entry.modelData.files
+
+            MaskIcon {
+              required property string modelData
+
+              y: Math.round((entry.height - height) / 2)
+              width: Style.space(12)
+              height: Style.space(12)
+              file: modelData
+              color: entry.modelData.color
+            }
+          }
+
+          Text {
+            y: Math.round((entry.height - height) / 2)
+            textFormat: Text.PlainText
+            text: entry.modelData.label
+            color: Color.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+      }
     }
   }
 

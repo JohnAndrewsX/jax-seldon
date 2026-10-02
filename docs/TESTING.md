@@ -17,7 +17,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`, not in CI, required before the handover
@@ -323,7 +323,7 @@ host-only steps print a skip notice and exit 0:
 - **qmllint against the shell** needs the installed shell tree
   (`$OMARCHY_PATH/shell`, default `/usr/share/omarchy/shell`) and Quickshell's
   QML modules (`/usr/lib/qt6/qml/Quickshell`).
-- **`plugin-test`** needs `node`, `quickshell` and `jq`.
+- **`plugin-test`** needs `node`, `quickshell`, `jq` and `python3`.
 
 All run on the **dev host**: `just check` there runs them, and a missing
 tool is an error, not a skip. Never set `SELDON_SKIP_HOST_CHECKS` on the dev
@@ -667,11 +667,11 @@ its row; nothing can be sent. Capped: `summary.openDrift` 250 shows "+246
 more open drift items not listed here". Live, with real keys: Enter,
 Enter, Enter links the theme item to C-2026-005 (hint "Press Enter again:
 Link tokyo-night to C-2026-005", then `linked to C-2026-005` folded, pill
-`⟡ 2 · 3`); a click on the strip opens the first crisis, which is
+`2 · 3`); a click on the strip opens the first crisis, which is
 explained with the text `--help`, risk R2 (the change disarms) and area
 `dev-env`; the strip drops to "1 change …", *Open C-2026-009* opens the
 new case and Work lists it as completed; the firefox group is dismissed
-as one (three rows `dismissed: routine update`, no badge, pill `⟡ 2 ·
+as one (three rows `dismissed: routine update`, no badge, pill `2 ·
 1`); the exact argv. `--only`: Link without a case is refused in the
 plugin, C-2026-004 is picked in the case picker by keys, *Only firefox*
 links the leader alone and the rest returns as "noto-fonts +1" with two
@@ -716,7 +716,10 @@ layer-shell window; the live sweep below stays the acceptance check.
 Today tab in Osaka Jade, Tokyo Night and Catppuccin Latte
 (`<dir>/panel-<theme>-today.png`): a live run against the fake engine, so
 the render has no dev-mode note (which would print the index path) and the
-QuickEntry looks as a user sees it.
+QuickEntry looks as a user sees it. Since WP-051 it also renders the
+not-initialised banner with its pictogram (`<dir>/panel-<theme>-uninit.png`,
+fake engine in mode `uninit`) and checks the header mark, the day's state
+and the banner pictogram in each.
 
 Label fit (WP-039): every report also carries `overflow`, the visible
 texts that do not fit (`elided:` a Text elided or cut at its line limit,
@@ -805,6 +808,44 @@ Catppuccin Latte into `<dir>`, each once on 90 d and once on 365 d with
 the pointer on the heatmap's last day (offscreen renders with each
 theme's `colors.toml`, not live screenshots).
 
+### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
+
+`bash tests/plugin/bar-view.sh` (WP-051) renders the real pill the way the
+bar hosts it: `tests/plugin/harness/bar.qml` gives BarWidget.qml the
+shell's own `PluginBarApi` facade, bound to the theme's bar colours and
+font, in a strip one bar tall on the bar background, with Service.qml in
+dev mode on the sample (2 active, 4 open drift, crises: urgent tone) and
+the fake engine on PATH. It reports the pill's IPC read-out, the glyph
+file and box (and, for the record only, the centres the widget computes;
+the glyph is placed by that formula, so they cannot disagree), and saves
+the window as a PNG; `tests/plugin/png-ink.py` (standard library only)
+then measures the ink of the glyph box and of the counts in that PNG.
+
+Cases: Tokyo Night, Catppuccin Latte and Osaka Jade, each at `100` (font
+base size 12: bar 26, box 16, `a4-bar-glyph-16.svg`), `125` (base size
+15: bar 33, box 20, `a4-bar-glyph-20.svg`) and `out125` (base size 12 on
+a 1.25 output, `QT_SCALE_FACTOR=1.25`: box 16 logical = 20 device px, the
+20 px file); per theme the accent and the default tone at `100` (the
+sample with no crisis, and with no crisis and no active case, derived in
+the scratch dir; the three tones must give three colours); plus the
+not-initialised variant (the glyph alone, dimmed). Checks: file, box,
+image loaded, text, tone; brief check 4 —
+`|glyph centre − digit centre| ≤ 1` measured in the pixels (device px);
+the tint — the hinted glyph's pixels are exactly the pill's ink colour; a
+clean log; the real-home guard. Each case prints a `measure` line (ink rows and centres).
+`BAR_SHOTS=<dir>` keeps the renders (`bar-<theme>-<scale>.png`);
+`BAR_WORK=<dir>` keeps the scratch dir (logs, reports).
+
+The harness window is a whole number of device pixels tall (a multiple of
+4 logical px): at 1.25, a 26 px window would be 32.5 device px, rounded to
+33, and the grab stretched by 33 / 32.5, which doubles one row of the
+hinted glyph.
+
+The harness renders with Qt Quick's software renderer (the offscreen
+platform), which does not paint shader effects such as `MultiEffect`;
+that is one reason the plugin tints its masks through the SVG root colour
+(SPEC-PLUGIN §4).
+
 **`plugin/preview.png`** (the marketplace image, WP-041) is composed from
 two of these renders, kept in `docs/images/` (monorepo only, so the plugin
 repository stays small): `overlay-tokyo-night-1920x1080.png` (the
@@ -815,7 +856,7 @@ colours are Tokyo Night's `background` and `accent` from its
 `colors.toml`):
 
 ```sh
-magick docs/images/panel-tokyo-night-today.png -crop 460x536+0+0 +repage \
+magick docs/images/panel-tokyo-night-today.png -crop 460x538+0+0 +repage \
   -bordercolor '#1a1b26' -border 18 -bordercolor '#7aa2f7' -border 2 /tmp/panel-framed.png
 magick -size 2480x1080 xc:'#1a1b26' \
   docs/images/overlay-tokyo-night-1920x1080.png -geometry +0+0 -composite \
@@ -825,7 +866,7 @@ magick -size 2480x1080 xc:'#1a1b26' \
 
 The crop is the panel's 460-unit width (the tab strip ends flush with it
 since WP-039) and the bottom of the journal's last entry at the default
-font. The framed panel is 500×576, placed 22 px right of the overlay with
+font. The framed panel is 500×578, placed 22 px right of the overlay with
 36 px to spare, so the canvas is 2480×1080. Re-check both if the panel's
 layout changes. The image must stay under 1 MB (it is about 150 KB).
 
@@ -1098,8 +1139,9 @@ in `today.entries`, and at least one package event.
   4. waits until `jax.seldon.service status` has settled in `ok`, after
      the plugin's own start-up capture;
   5. compares:
-     - `jax.seldon.panel pill` and the service pill with the pill
-       computed from `summary` (SPEC-PLUGIN §4), and the tone;
+     - `jax.seldon.panel pill` and the service pill with the pill text
+       computed from `summary` (SPEC-PLUGIN §4: the counts `A · D` after
+       the glyph, zero parts hidden), and the tone;
      - Today's entry count in `jax.seldon.panel view` with
        `index.today.entries`;
      - the Changelog row count with the pacman filter and without it;

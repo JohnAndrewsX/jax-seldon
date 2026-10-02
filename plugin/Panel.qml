@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import qs.Commons
 import qs.Ui
 import "components"
@@ -168,10 +169,14 @@ Panel {
       tabStrip: { oneLine: tabStrip.fitsOneLine, widths: tabStrip.cellWidths.join(",") },
       status: root.service ? root.service.status : "",
       pill: root.service ? Model.pillText(root.service.counts) : "",
+      // The header mark and the pictograms on screen (A5, A11): file names.
+      mark: { file: headerMark.file, box: header.mark.box, ready: headerMark.ready },
+      bannerPictogram: statusBanner.visible ? statusBanner.pictogram : "",
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
       snapper: snapperBanner.visible && root.service.snapperBanner ? root.service.snapperBanner.title : "",
       crisis: crisisStrip.visible ? crisisLabel.text : "",
       today: {
+        state: todayTab.dayState ? todayTab.dayState.id : "",
         entries: todayTab.view.entries.length,
         yesterday: todayTab.view.yesterday.length,
         rows: todayTab.rowCount,
@@ -334,16 +339,42 @@ Panel {
         width: parent.width
         spacing: Style.spacing.lg
 
+        // The header lockup (A5): the mark, then "Seldon" in the heading
+        // font, baseline-aligned with the mark's centre on the cap-height
+        // centre (Model.panelMark: the delivered 24 / 6 / 18 px at the
+        // default font, the same proportions at every other size).
         Item {
+          id: header
+
+          readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+          readonly property var mark: Model.panelMark(capMetrics.tightBoundingRect.height, header.dpr)
+
           width: parent.width
-          implicitHeight: Math.max(title.implicitHeight, machine.implicitHeight)
+          implicitHeight: Math.max(header.mark.box, title.y + title.implicitHeight, machine.implicitHeight)
+
+          TextMetrics {
+            id: capMetrics
+            font: title.font
+            text: "H"
+          }
+
+          MaskIcon {
+            id: headerMark
+            x: 0
+            y: 0
+            width: header.mark.box
+            height: header.mark.box
+            file: header.mark.file
+            crisp: header.mark.crisp
+            color: root.foreground
+          }
 
           Text {
             id: title
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
+            x: header.mark.box + header.mark.gap
+            y: Math.round((header.mark.baseline - title.baselineOffset) * header.dpr) / header.dpr
             textFormat: Text.PlainText
-            text: Model.GLYPH + " Seldon"
+            text: "Seldon"
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.heading
@@ -355,7 +386,7 @@ Panel {
             anchors.right: parent.right
             anchors.left: title.right
             anchors.leftMargin: Style.spacing.lg
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.baseline: title.baseline
             horizontalAlignment: Text.AlignRight
             textFormat: Text.PlainText
             text: !root.service ? ""

@@ -145,12 +145,12 @@ qmllint:
     python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
 
-# Plugin logic: Model.js under node; Service.qml states and Panel.qml tabs, keys and banners in a private headless Quickshell (host only).
+# Plugin logic: Model.js under node; Service.qml states, Panel.qml tabs, keys and banners, Overlay.qml and the pill (BarWidget.qml) in a private headless Quickshell (host only).
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -n "{{ skip_host }}" ]]; then
-      echo "plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set; needs node, quickshell, jq and the installed shell)"
+      echo "plugin-test: skipped (SELDON_SKIP_HOST_CHECKS set; needs node, quickshell, jq, python3 and the installed shell)"
       exit 0
     fi
     command -v node >/dev/null || { echo "plugin-test: node not found" >&2; exit 1; }
@@ -160,6 +160,7 @@ plugin-test:
     bash tests/plugin/service-states.sh
     bash tests/plugin/panel-view.sh
     bash tests/plugin/overlay-view.sh
+    bash tests/plugin/bar-view.sh
     echo "plugin-test: ok"
 
 # Not part of `check` (it needs a release compile); CI runs it as its own step.

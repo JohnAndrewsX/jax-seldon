@@ -935,3 +935,45 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Hermetic "shell not installed" in bash tests:** link the host's
   programs except zsh/fish into a dir and use only that dir on PATH;
   fakes in another dir decide which shells exist.
+
+## 2026-10-02 · WP-051 (Prime Radiant assets)
+
+- **The offscreen harness renders with Qt Quick's software backend**
+  (`qt.scenegraph.general: Loading backend software`): `MultiEffect`
+  (the shell's tray tint) and every other shader effect paint nothing,
+  and `QSG_RHI_BACKEND=vulkan|opengl` fails under `QT_QPA_PLATFORM=
+  offscreen`. Tint `currentColor` SVG masks through the root `color`
+  instead (Model.tintedSvg + `FileView` → data URL); it renders the same
+  in both.
+- **An item id shadows a property of the same name in every binding of
+  the component.** A new `Text { id: counts }` in BarWidget.qml turned
+  `Model.pillText(counts)` into a call on the Text: empty pill, default
+  tone, "undefined active cases" tooltip. qmllint said nothing, and the
+  panel and service tests passed (they compute the pill from Model, not
+  the widget). Only the bar harness caught it. Never reuse a property
+  name as an id.
+- **A harness window must be a whole number of device pixels tall at
+  fractional scales.** 26 logical px at `QT_SCALE_FACTOR=1.25` is 32.5,
+  rounded to 33; the grab is stretched by 33/32.5 and a hand-hinted
+  glyph gets a doubled row. Use a height that is a multiple of 4.
+- **Repeater delegates must not anchor to `parent`.** The legend's
+  `anchors.verticalCenter: parent.verticalCenter` threw "Cannot read
+  property 'verticalCenter' of null" while delegates were torn down
+  (only in the OVERLAY_SHOTS runs). Position by an enclosing id
+  (`y: (entry.height - height) / 2`).
+- **Font-dependent numbers differ between the harness and the spec.**
+  The harness font gives the 20 px heading a 14 px cap height (box 28),
+  JetBrains Mono gives 14.6 (box 30). Assert the rule's outcome (the
+  file), not a metric of one font.
+- **Header and pictogram changes move every panel render by a few px.**
+  `docs/images/panel-*.png` are 460-wide crops of the `PANEL_FIT_SHOTS`
+  renders ending at a content line; measure the shift (png-ink.py on the
+  tab strip) and add it to each crop height, and to the preview crop in
+  TESTING.md. The five tab crops are palette PNGs on main (about 10 KB
+  each); a fresh render is truecolor (+150 KB in total): shrink with
+  `magick f.png -strip -colors 64 PNG8:f.png`. The overlay and Today
+  renders stay truecolor (preview.png is composed from them).
+- **A rebase onto a release commit moves `[Unreleased]` bullets into the
+  dated section.** Merge into its existing `### Plugin` / `### Packaging
+  and docs` lists (no second heading, no blank line inside a list) and
+  check with `bash packaging/release-notes.sh <version> CHANGELOG.md`.

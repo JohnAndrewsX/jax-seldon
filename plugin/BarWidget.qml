@@ -1,14 +1,24 @@
 import QtQuick
+import QtQuick.Window
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "components"
 import "Model.js" as Model
 
-// The Seldon pill (SPEC-PLUGIN §4): `⟡ A · D`, A = active cases, D = open
-// drift, zero parts hidden. Accent when cases are active, the theme's urgent
-// colour when any drift is in the red zone, dimmed while the status is not ok.
+// The Seldon pill (SPEC-PLUGIN §4): the bar glyph (A4) and `A · D`, A =
+// active cases, D = open drift, zero parts hidden. Accent when cases are
+// active, the theme's urgent colour when any drift is in the red zone,
+// dimmed while the status is not ok; the glyph takes the text's colour.
 // Left click toggles the panel, middle click the Prime Radiant, right click
 // captures.
+//
+// The glyph box is the shell's icon canvas (Style.bar.iconCanvas: 16 px at
+// scale 1.0, 20 at 1.25), 2 px before the counts; the hinted file when the
+// box in device pixels is 16 or 20, the vector otherwise (Model.barGlyph).
+// Its ink centre sits on the digits' centre (half the digit height above
+// the baseline, from the bar font's own metrics), snapped to device pixels
+// so the hinted grid stays crisp (brief check 4: within 1 px).
 //
 // Routing (SPEC-PLUGIN §8): the manifest declares `overlay`, so the shell
 // hands jax.seldon to its panel loader. `omarchy-shell shell summon|hide|
@@ -31,7 +41,7 @@ BarWidget {
   readonly property string tone: Model.pillTone(counts)
   readonly property bool dimmed: !service || (service.ready && status !== "ok")
   readonly property int captureInterval: Model.clampInterval(setting("captureIntervalMin", Model.CAPTURE_INTERVAL_MIN_DEFAULT))
-  readonly property string pillText: vertical ? Model.GLYPH : Model.pillText(counts)
+  readonly property string pillText: vertical ? "" : Model.pillText(counts)
   readonly property string tooltip: service
     ? Model.tooltipText(status, counts, service.lastCapture, service.nowMs)
     : "Seldon — service not running"
@@ -51,6 +61,20 @@ BarWidget {
     if (shell && typeof shell.toggle === "function") shell.toggle(root.moduleName, "")
   }
 
+  // The pill's read-out: IPC `pill` and the bar harness.
+  function pillReadout() {
+    return JSON.stringify({
+      text: button.text,
+      glyph: glyph.file,
+      tone: root.tone,
+      urgent: button.active,
+      dimmed: button.dimmed,
+      tooltip: button.tooltipText,
+      status: root.status,
+      opened: root.opened
+    })
+  }
+
   function captureNow() {
     if (root.service) root.service.captureNow()
   }
@@ -58,7 +82,7 @@ BarWidget {
   // ---- Panel lifecycle, forwarded to Panel.qml (see the clock widget).
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
-  readonly property real openPanelIndicatorWidth: button.labelWidth
+  readonly property real openPanelIndicatorWidth: pill.width
 
   function open() {
     if (panelLoader.item) panelLoader.item.open()
@@ -122,17 +146,7 @@ BarWidget {
     function hide(): void { root.close() }
     function toggle(): void { root.togglePanel() }
     // What the pill shows right now, for smoke tests (docs/TESTING.md).
-    function pill(): string {
-      return JSON.stringify({
-        text: button.text,
-        tone: root.tone,
-        urgent: button.active,
-        dimmed: button.dimmed,
-        tooltip: button.tooltipText,
-        status: root.status,
-        opened: root.opened
-      })
-    }
+    function pill(): string { return root.pillReadout() }
     // What the panel shows (tab, rows, banners, strip), for smoke tests.
     function view(): string {
       return JSON.stringify(panelLoader.item ? panelLoader.item.view() : null)
@@ -160,6 +174,11 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.pillText
+    // The shell's label is replaced by the glyph and counts below.
+    labelVisible: false
+    hasVisualContent: true
+    fixedWidth: root.vertical ? -1 : pill.width + button.scaledHorizontalMargin * 2
+    fixedHeight: root.vertical ? pill.height + button.scaledVerticalPadding * 2 : -1
     foreground: root.tone === "accent" ? Color.accent : (root.bar ? root.bar.barForeground : Color.foreground)
     active: root.tone === "urgent"
     dimmed: root.dimmed
@@ -169,6 +188,63 @@ BarWidget {
       if (b === Qt.RightButton) root.captureNow()
       else if (b === Qt.MiddleButton) root.openOverlay()
       else root.togglePanel()
+    }
+
+    Item {
+      id: pill
+      objectName: "seldonPill"
+
+      readonly property color ink: button.active && button.useActiveColor ? button.activeColor : button.foreground
+      readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+      readonly property real box: Style.bar.iconCanvas
+      readonly property var spec: Model.barGlyph(box * dpr)
+      readonly property real gap: countsText.text === "" ? 0 : Style.space(2)
+      // The digits' centre in this item: the baseline minus half the digit
+      // height (the tight box of the ten digits in the bar font).
+      readonly property real digitCentre: countsText.y + countsText.baselineOffset + digits.tightBoundingRect.y + digits.tightBoundingRect.height / 2
+      readonly property real glyphCentre: glyph.y + spec.centre * box
+
+      anchors.centerIn: parent
+      width: root.vertical ? box : box + gap + (countsText.text === "" ? 0 : countsText.implicitWidth)
+      height: root.vertical ? box : button.height
+
+      function snap(v) {
+        return Math.round(v * pill.dpr) / pill.dpr
+      }
+
+      TextMetrics {
+        id: digits
+        font: countsText.font
+        text: "0123456789"
+      }
+
+      MaskIcon {
+        id: glyph
+        objectName: "seldonGlyph"
+        x: 0
+        y: root.vertical ? 0 : pill.snap(pill.digitCentre - pill.spec.centre * pill.box)
+        width: pill.box
+        height: pill.box
+        file: pill.spec.file
+        crisp: pill.spec.crisp
+        color: pill.ink
+      }
+
+      // Placed like the shell's own label (vertically centred), so the
+      // digits share the baseline of the neighbouring widgets.
+      Text {
+        id: countsText
+        objectName: "seldonCounts"
+        x: pill.box + pill.gap
+        anchors.verticalCenter: parent.verticalCenter
+        visible: !root.vertical
+        textFormat: Text.PlainText
+        text: button.text
+        color: pill.ink
+        font.family: button.fontFamily
+        font.pixelSize: button.fontSize
+        renderType: Text.NativeRendering
+      }
     }
   }
 }

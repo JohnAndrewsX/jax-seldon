@@ -117,7 +117,7 @@ add a banner state, add an overlay and run `--write-index`.
 | `plugins-degraded` | collector `plugins`: `ok: false`, `message` `omarchy plugin list --json: timed out` (the engine's text for a shell IPC timeout) | a failing non-snapper collector |
 | `omarchy-git-checkout` | `system.omarchy.repoHead: 3f9c2e1` (short hash, like `logbook.git.head`) | Omarchy run from a git checkout of `$OMARCHY_PATH` (SPEC-ENGINE §4) |
 | `drift-explained-case` | btop's event (`01M1MB2M…`, `resolution: explained`) gets `case: C-2026-002`; jq: `.events \|= map(if .id == "01M1MB2M1GWZYF485HTGVZ1KS3" then .case = "C-2026-002" else . end)`. Index only: the logbook's explained lines stay caseless and C-2026-002's `events:` does not list btop | ADR-0021: the row reads `explained · C-2026-002: Kleines Monitoring-Tool, bewusst ohne Case.` and names the case |
-| `drift-capped` | `summary.openDrift: 250`, `drift` unchanged (4 items); jq: `.summary.openDrift = 250` | ADR-0020: "+246 more open drift items not listed here" under the drift rows; pill `⟡ 2 · 250` |
+| `drift-capped` | `summary.openDrift: 250`, `drift` unchanged (4 items); jq: `.summary.openDrift = 250` | ADR-0020: "+246 more open drift items not listed here" under the drift rows; pill `2 · 250` |
 | `drift-members-capped` | noto-fonts (`01M3SXBRV0E7…`) removed from `events`; the firefox group keeps `members: 3`; jq: `.events \|= map(select(.id != "01M3SXBRV0E702XKBM22HEV1B8"))` | CONTRACT.md rule 4: the drift sheet lists firefox and libinput plus "… and 1 more", then asks `seldon drift show <firefox> --json` for all three (the fallback) |
 
 Not derivable from the logbook and therefore not checked beyond the index
