@@ -15,10 +15,11 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-045 | User documentation in English and German (docs/user/<lang>/) | Docs | `docs-045` (opus, high) | `wt/WP-045` · `wp/045-user-docs` | 2026-10-02 |
+| WP-050 | Advisory risk warnings, alwaysRed, stale lines, small engine findings | Engine | `engine-050` (opus, high) | `wt/WP-050` · `wp/050-advisory-risk` | 2026-10-02 |
 
 ## Queued (next up)
 WP-046 (README overhaul, after WP-045) · WP-049 (CLI polish; crates approved) ·
-WP-050 (ADR-0023 follow-ups) · WP-033 (update-impact, option C)
+WP-033 (update-impact, option C)
 · WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
 logbook migration)
 · WP-040/041 (packaging, docs) after WP-031. (see `work/queued/`)
@@ -32,6 +33,7 @@ logbook migration)
 
 ## Blocked
 | WP-045 | User documentation in English and German (docs/user/<lang>/) | Docs | `docs-045` (opus, high) | `wt/WP-045` · `wp/045-user-docs` | 2026-10-02 |
+| WP-050 | Advisory risk warnings, alwaysRed, stale lines, small engine findings | Engine | `engine-050` (opus, high) | `wt/WP-050` · `wp/050-advisory-risk` | 2026-10-02 |
 
 ## Recently completed
 - 2026-10-02 WP-044 `install.sh` (verified download of the release asset,
