@@ -221,3 +221,16 @@ Learned: a test for EPIPE must close the read end before the child writes
 Decisions needed: none.
 Touched outside WP scope: none.
 ```
+
+Review round 2 (6ec1676): (F1) uninstall::the_lock_covers_the_write now also
+runs `hook install` on a fresh `{}` settings file while the lock is held
+and asserts exit 4 and `{}` unchanged; with ctx.lock() moved after the
+merge the test fails ("fresh: untouched"), restored after. (F2)
+stdout_failed writes its message with `let _ = writeln!(stderr, …)`:
+`seldon completions bash >/dev/full 2>/dev/full` exits 2 instead of
+aborting. (F3) `--settings FILE` in engine/hooks/README.md (2) and the
+hook.rs doc comments (2). Decisions recorded: the zsh/fish rule stays
+(`command -v` plus the /usr/share directory); the `init --theme-hook`
+write outside the lock (WP-038) is a follow-up. Verified: `cargo test
+--test hooks` 35/35, `cargo fmt --check` and `cargo clippy --all-targets
+-- -D warnings` clean.
