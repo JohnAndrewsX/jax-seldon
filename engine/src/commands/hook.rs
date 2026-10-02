@@ -1138,10 +1138,13 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
 /// [`CLAUDE_HOOKS`] that is not there yet ([`merge_claude_hooks`]),
 /// records a written file under a watched path as the engine's own write
 /// (so the next capture explains its config event), and commits the
-/// logbook when its own settings file changed.
+/// logbook when its own settings file changed. The state lock is held from
+/// the read to the commit: no capture sees the written file before its
+/// record.
 fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     let (path, logbook) = settings_file(ctx, settings)?;
     let shown = ctx.dirs.display(&path);
+    let lock = ctx.lock()?;
     let Merged { added, present } = merge_claude_hooks(&path, &shown)?;
     let own = (!added.is_empty()).then(|| {
         let config = match &logbook {
@@ -1149,7 +1152,8 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
             // `--settings` works without a config; then the default paths
             None => ctx.load_config().ok().flatten().unwrap_or_default(),
         };
-        super::setup::record_own_writes(
+        super::setup::record_own_writes_under(
+            &lock,
             ctx,
             &config,
             std::slice::from_ref(&path),
@@ -1163,6 +1167,7 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     {
         commit = Some(autocommit(ctx, config, logbook, "hook install claude-code"));
     }
+    drop(lock);
 
     let mut human = if added.is_empty() {
         format!("{shown}: the Seldon hooks are already installed.")
@@ -1323,11 +1328,13 @@ pub fn unmerge_claude_hooks(path: &Path, shown: &str) -> Result<Unmerged> {
 /// hooks out of the settings file ([`unmerge_claude_hooks`]), writes it or
 /// deletes a file that held nothing else, records that as the engine's own
 /// write under a watched path (so the next capture explains its config
-/// event), and commits the logbook when its own settings file changed.
+/// event), and commits the logbook when its own settings file changed;
+/// under the state lock from the read to the commit, as `install`.
 fn uninstall(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     const BY: &str = "seldon hook uninstall claude-code";
     let (path, logbook) = settings_file(ctx, settings)?;
     let shown = ctx.dirs.display(&path);
+    let lock = ctx.lock()?;
     let Unmerged {
         removed,
         absent,
@@ -1341,7 +1348,8 @@ fn uninstall(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
         After::Unchanged => None,
         After::Write(text) => {
             crate::sys::write_atomic(&path, text.as_bytes())?;
-            Some(super::setup::record_own_writes(
+            Some(super::setup::record_own_writes_under(
+                &lock,
                 ctx,
                 &config,
                 std::slice::from_ref(&path),
@@ -1349,7 +1357,9 @@ fn uninstall(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
                 OwnOp::Remove,
             ))
         }
-        After::Delete => Some(super::setup::delete_own_file(ctx, &config, &path, BY)?),
+        After::Delete => Some(super::setup::delete_own_file_under(
+            &lock, ctx, &config, &path, BY,
+        )?),
     };
     let mut commit = None;
     if after != After::Unchanged
@@ -1362,6 +1372,7 @@ fn uninstall(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
             "hook uninstall claude-code",
         ));
     }
+    drop(lock);
 
     let mut human = match &after {
         After::Unchanged => {

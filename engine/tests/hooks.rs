@@ -886,6 +886,31 @@ mod uninstall {
     }
 
     #[test]
+    fn the_lock_covers_the_write() {
+        // the lock is taken before the settings file is read or written:
+        // while another seldon holds it, nothing changes (exit 4), so no
+        // capture can see the file before its own-write record
+        let h = Hooks::new();
+        let path = h.env.tmp.path().join("settings.json");
+        hook(&h, "install", &path);
+        let text = read(&path);
+        let lock = seldon::logbook::lock::acquire(&h.env.lock_file()).unwrap();
+        for verb in ["uninstall", "install"] {
+            let out = h.run(&[
+                "hook",
+                verb,
+                "claude-code",
+                "--settings",
+                path.to_str().unwrap(),
+            ]);
+            assert_eq!(out.status.code(), Some(4), "{verb}: {}", stderr(&out));
+            assert_eq!(read(&path), text, "{verb}: untouched");
+        }
+        drop(lock);
+        assert_eq!(hook(&h, "uninstall", &path)["deleted"], true);
+    }
+
+    #[test]
     fn is_not_an_agent_hook() {
         // a harness never calls it: errors keep their exit code instead of
         // the agent hooks' silent 0

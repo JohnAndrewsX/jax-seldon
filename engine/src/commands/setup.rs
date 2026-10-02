@@ -42,6 +42,7 @@ use crate::collectors::config::{self, OwnOp};
 use crate::config::{Config, Dirs};
 use crate::error::{Error, Result};
 use crate::index;
+use crate::logbook::lock::Lock;
 use crate::model::event::{ACTOR_HUMAN, Event, Resolution};
 use crate::reconcile::{self, Resolve};
 use crate::sys::{self, Run};
@@ -281,10 +282,20 @@ pub fn record_own_writes(
     op: OwnOp,
 ) -> OwnRecord {
     let lock = ctx.lock().map_err(|e| e.to_string())?;
-    let recorded = config::record_own_writes(&lock, &ctx.dirs, config, paths, by, op)
-        .map_err(|e| format!("{e:#}"))?;
-    drop(lock);
-    Ok(recorded)
+    record_own_writes_under(&lock, ctx, config, paths, by, op)
+}
+
+/// [`record_own_writes`] for a caller that holds the state lock across the
+/// write and the record, so no capture sees the file in between.
+pub fn record_own_writes_under(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    paths: &[PathBuf],
+    by: &str,
+    op: OwnOp,
+) -> OwnRecord {
+    config::record_own_writes(lock, &ctx.dirs, config, paths, by, op).map_err(|e| format!("{e:#}"))
 }
 
 /// Records the deletion of the file `path` as the engine's own with the
@@ -294,8 +305,18 @@ pub fn record_own_writes(
 /// harmless); the [`OwnRecord`] as for [`record_own_writes`].
 pub fn delete_own_file(ctx: &Context, config: &Config, path: &Path, by: &str) -> Result<OwnRecord> {
     let lock = ctx.lock()?;
-    let recorded = config::delete_own_file(&lock, &ctx.dirs, config, path, by)?;
-    drop(lock);
+    delete_own_file_under(&lock, ctx, config, path, by)
+}
+
+/// [`delete_own_file`] for a caller that already holds the state lock.
+pub fn delete_own_file_under(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    path: &Path,
+    by: &str,
+) -> Result<OwnRecord> {
+    let recorded = config::delete_own_file(lock, &ctx.dirs, config, path, by)?;
     Ok(recorded.map_err(|e| format!("{e:#}")))
 }
 
