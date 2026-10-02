@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
-"""Check the user guide in docs/user/ (WP-045).
+"""Check the user guide in docs/user/ (WP-045) and the front pages (WP-046).
 
 Called by scripts/docs-check.sh, which builds the engine and passes it as
 --seldon. Exit 0 when everything holds, 1 otherwise.
 
 Checks (docs/user/STYLE.md, "Checks"):
-  links      every relative link and image under docs/user/ resolves; an
-             anchor in a link to a Markdown file names a heading there
-             (GitHub's slug rules); every image has alt text
+  links      every relative link and image under docs/user/ and in the
+             front pages (FRONT_PAGES) resolves; an anchor in a link to a
+             Markdown file names a heading there (GitHub's slug rules);
+             every image has alt text and is at most 1 MB
+  split      a page under plugin/ links and embeds only files inside
+             plugin/ by relative path: plugin/ is published on its own
+             (`git subtree split --prefix=plugin`, ADR-0009), so anything
+             outside it needs an absolute URL to the project repository
+  urls       an absolute link into the public repositories
+             (github.com/JohnAndrewsX/jax-seldon[-plugin] blob/tree/main,
+             raw.githubusercontent.com, the repository root, a workflow
+             badge) names a file that exists here, and its anchor a
+             heading; other URLs are not fetched
   pages      every language folder under docs/user/ (en, de, …) holds the
              same file names as en/
   structure  each en/de pair has the same heading levels in the same order
@@ -20,7 +30,8 @@ Checks (docs/user/STYLE.md, "Checks"):
              `<!-- /help -->`, equal to the engine's output with the global
              options removed where their text matches `seldon --help`
   usage      every `seldon …` in a code span or code block of the guide
-             names commands and options that the engine's help lists
+             and the front pages names commands and options that the
+             engine's help lists
 
 --write regenerates the help blocks from the engine instead of comparing
 them; the prose around them is left alone.
@@ -45,6 +56,21 @@ def languages():
 
 LANGS = languages()
 CLI_PAGE = "05-cli-reference.md"
+
+# Pages outside docs/user/ that newcomers land on (WP-046).
+FRONT_PAGES = ("README.md", "plugin/README.md", "plugin/SECURITY.md", "docs/DEVELOPMENT.md", "llms.txt")
+# Published on its own by `git subtree split --prefix=plugin` (ADR-0009).
+SPLIT_DIR = os.path.join(ROOT, "plugin")
+MAX_IMAGE_BYTES = 1024 * 1024
+
+REPO = "JohnAndrewsX/jax-seldon"
+# (pattern, the directory here that the URL's path is relative to)
+REPO_URLS = (
+    (re.compile(r"^https://github\.com/" + REPO + r"-plugin(?:/(?:blob|tree)/main/([^?#]*))?/?(?:#(.*))?$"), "plugin"),
+    (re.compile(r"^https://github\.com/" + REPO + r"(?:/(?:blob|tree)/main/([^?#]*))?/?(?:#(.*))?$"), ""),
+    (re.compile(r"^https://raw\.githubusercontent\.com/" + REPO + r"/main/([^?#]+)()$"), ""),
+    (re.compile(r"^https://github\.com/" + REPO + r"/actions/(workflows/[^/?#]+?)(?:/badge\.svg)?()$"), ".github"),
+)
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -145,16 +171,51 @@ def anchors(path):
     return cache[path]
 
 
-def markdown_files():
+def user_guide_files():
     for dirpath, _, files in os.walk(USER):
         for name in sorted(files):
             if name.endswith(".md"):
                 yield os.path.join(dirpath, name)
 
 
+def markdown_files():
+    yield from user_guide_files()
+    for page in FRONT_PAGES:
+        yield os.path.join(ROOT, page)
+
+
+def inside(path, directory):
+    return path == directory or path.startswith(directory + os.sep)
+
+
+def repo_url(target):
+    """(path here, anchor) for a URL into the public repositories, else None."""
+    for pattern, base in REPO_URLS:
+        m = pattern.match(target)
+        if m:
+            path = m.group(1) or "README.md"
+            return os.path.normpath(os.path.join(ROOT, base, path)), m.group(2) or ""
+    return None
+
+
+def check_target(report, where, target, dest, anchor):
+    if not os.path.exists(dest):
+        report.error(f"{where}: link to {target}: {rel(dest)} does not exist")
+        return None
+    if not inside(dest, ROOT):
+        report.error(f"{where}: link to {target} leaves the repository")
+        return None
+    if anchor and dest.endswith(".md") and anchor not in anchors(dest):
+        report.error(f"{where}: link to {target}: no heading with anchor #{anchor} in {rel(dest)}")
+    return dest
+
+
 def check_links(report):
     count = 0
     for path in markdown_files():
+        if not os.path.exists(path):
+            report.error(f"{rel(path)} does not exist (FRONT_PAGES in scripts/docs-check.py)")
+            continue
         for line, in_fence in prose_lines(read(path)):
             if in_fence:
                 continue
@@ -165,18 +226,21 @@ def check_links(report):
                 if is_image and not label.strip():
                     report.error(f"{where}: image {target} has no alt text")
                 if re.match(r"^[a-z][a-z0-9+.-]*:", target):
+                    found = repo_url(target)
+                    if found:
+                        check_target(report, where, target, *found)
                     continue
                 file_part, _, anchor = target.partition("#")
                 dest = path if not file_part else os.path.normpath(
                     os.path.join(os.path.dirname(path), file_part))
-                if not os.path.exists(dest):
-                    report.error(f"{where}: link to {target}: {rel(dest)} does not exist")
+                if inside(path, SPLIT_DIR) and not inside(dest, SPLIT_DIR):
+                    report.error(
+                        f"{where}: link to {target} leaves plugin/, which is published on its own; "
+                        f"use https://github.com/{REPO}/blob/main/{rel(dest)}")
                     continue
-                if not dest.startswith(ROOT + os.sep):
-                    report.error(f"{where}: link to {target} leaves the repository")
-                    continue
-                if anchor and dest.endswith(".md") and anchor not in anchors(dest):
-                    report.error(f"{where}: link to {target}: no heading with anchor #{anchor} in {rel(dest)}")
+                dest = check_target(report, where, target, dest, anchor)
+                if dest and is_image and os.path.getsize(dest) > MAX_IMAGE_BYTES:
+                    report.error(f"{where}: image {target} is larger than 1 MB")
     return count
 
 
