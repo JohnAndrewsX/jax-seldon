@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 2e4bfa8 -->
+<!-- source: en/05-cli-reference.md @ e6fcf8d -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -353,7 +353,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```
@@ -374,7 +374,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```
@@ -395,7 +395,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```
@@ -416,7 +416,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```
