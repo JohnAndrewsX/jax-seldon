@@ -108,8 +108,9 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # default. Both modes plan under the lock and write
                                                # outputs/IMPORT-omarchy-agent.md (fence `import-omarchy-agent`, text
                                                # outside kept, only on change): counts, the id mapping, collisions,
-                                               # journal days, memory files, deviation rows, files not imported with
-                                               # the reason, errors, redaction hits (file, line, rule; never the text).
+                                               # id rewrites per file, assumptions, journal days, memory files,
+                                               # deviation rows, files not imported with the reason, errors,
+                                               # redaction hits (file, line, rule; never the text).
                                                # Mapping: kit cases (pipeline/cases, archive/cases) keep their id and
                                                # file slug unless the logbook (case file or work/C-… folder) or an
                                                # earlier kit case has it: then the next free id of the year after the
@@ -117,9 +118,15 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # under the title; every imported case is tagged `omarchy-agent`.
                                                # new|planned|in-progress|verification → queued (never active; the
                                                # last two say so in the Log), done → completed, dropped → dropped;
-                                               # zone, risk, priority, created, closed kept. Auftrag → Intent, Plan →
-                                               # Plan, every other section (and text before the first) under
-                                               # `## History`, headings one level deeper; one Log line names the
+                                               # zone, risk, priority, created, closed kept (done/dropped without
+                                               # closed: closed = created, listed under assumptions). Auftrag →
+                                               # Intent, Plan → Plan, Ergebnis → Result, every other section (and
+                                               # text before the first) under `## History`, headings one level
+                                               # deeper. A kit id the logbook had is rewritten in all imported text
+                                               # (case bodies, journal sessions, memory sections, deviation reasons):
+                                               # `[[C-OLD…` and bare `C-OLD` → `C-NEW`, one pass (an id two kit
+                                               # files share is not rewritten); the old id stays in the tag, the
+                                               # line under the title and meta.originalId; one Log line names the
                                                # source; one ledger `manual/note` per case, `ts` = created at local
                                                # midnight, actor human, meta {import: omarchy-agent, originalId,
                                                # originalStatus, source}, its id in the case's `events`. Journal
@@ -129,12 +136,15 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # appended when the day exists, linked kit cases added to `cases:`.
                                                # knowledge/<topic>/*.md → a `## <title>` section each (source line,
                                                # headings one level deeper) appended to memory/<topic>.md (lessons →
-                                               # memory/lessons.md; a new file gets `type: memory` frontmatter),
+                                               # memory/lessons.md; a new file gets `type: memory` frontmatter, an
+                                               # existing one `updated` = the import day),
                                                # knowledge/<name>.md → memory/<name>.md. system/deviations.md: each
                                                # `### ` entry not resolved (✅/"aufgelöst"/an "Aufgelöst" section)
                                                # whose heading, else body, has a `~/…` or `/…` code span → a
                                                # deviations.table row `| path | <heading> (omarchy-agent) | <date> |
-                                               # — |` when the path is not listed. Inbox, Dashboard, templates,
+                                               # — |` when the path is not listed (a table whose separator an editor
+                                               # padded, `| --- |`, `|:--|`, keeps its rows; `seldon dossier` reads
+                                               # `packages.history` and `deviations.table` the same way). Inbox, Dashboard, templates,
                                                # STRUCTURE.md, the rest of system/, .obsidian/ and symlinks are listed,
                                                # not imported. Every imported line passes §7 redaction (config
                                                # patterns included) and `/home/<user>` at the start of a path becomes
@@ -147,15 +157,22 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # memory, deviations, the report ("applied"), the marker
                                                # .seldon/imports/omarchy-agent.json {source, vault, importedAt, cases:
                                                # {old: new}, counts}; one autocommit `seldon: import omarchy-agent`;
-                                               # index rebuilt. The marker, or an import note in the ledger when the
-                                               # marker is gone, makes every later run write nothing ("Nothing
-                                               # changed", changed: false). Not a directory / not a vault → exit 1.
+                                               # index rebuilt. A write that fails after the ledger append is an
+                                               # error that says nothing was committed and how to undo it (`git
+                                               # checkout -- . && git clean -fd` in the logbook). The marker makes
+                                               # every later run write nothing ("Nothing changed", changed: false);
+                                               # import notes in the ledger without the marker (an apply that did
+                                               # not finish, or a deleted .seldon/) are a user error (exit 1) with
+                                               # the same undo, never "nothing changed" and never a second import. Not a directory / not a vault → exit 1.
                                                # --json → {mode: dry-run|apply, changed, alreadyImported: null|{by,
                                                # importedAt}, vault, report, errors, counts: {cases, renumbered,
                                                # journalSessions, journalDays, memorySections, memoryFiles,
-                                               # deviationRows, notImported, errors, redactedLines, privatePaths},
+                                               # deviationRows, notImported, errors, redactedLines, privatePaths,
+                                               # rewrittenLinks, rewrittenIds, assumptions},
                                                # cases: [{from, to, kitStatus, status, path, source, renumbered}],
-                                               # collisions: [{from, to, takenBy}], skipped: [{path, reason, error}],
+                                               # collisions: [{from, to, takenBy}], rewrites: [{file, wikilinks,
+                                               # ids}], assumptions: [{case, source, assumption}], skipped: [{path,
+                                               # reason, error}],
                                                # files, marker, git}
 seldon hook install <claude-code|generic> [--settings PATH]
 seldon hook claude-code                        # stdin: Claude Code hook JSON

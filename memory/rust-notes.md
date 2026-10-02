@@ -561,3 +561,21 @@ Append-only. One bullet per finding, newest section last.
   so `backups/home/x` stays untouched.
 - **A FixedOffset is a TimeZone too.** `offset.from_local_datetime(&naive)`
   is the fallback when `Local` has no local midnight (DST gap).
+
+## 2026-10-02 · WP-043 review round
+
+- **Rewrite ids in one pass with a map lookup, never chained
+  `replace` calls.** One regex `(\[\[)?\bC-\d{4}-\d{3,}\b` over the
+  text, look each match up in old → new, copy the gaps. A sequence of
+  `replace(old, new)` would rewrite a new id again when it equals
+  another old id, and `\b…\b` keeps `C-2026-0012` and `XC-2026-001`
+  out.
+- **Rewrite only the kit's text, not the lines the import adds.**
+  `case_body` takes a `&mut dyn FnMut(&str) -> String` and runs it
+  over Intent/Plan/History/Result blocks; the title line, the Log line
+  and the tag keep the old id on purpose.
+- **Errors after the first write need the undo in the message.**
+  `write_plan(…).map_err(|e| after_failure(&logbook, e))` keeps the
+  exit code (User → 1, Engine → 2) and appends the hint; the write
+  steps live in one function so the hint cannot be forgotten for one
+  of them.

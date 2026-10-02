@@ -734,3 +734,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   a code span; some name no path at all (software lists), some share a
   path. The importer takes the first `~/…` or `/…` span of the heading,
   else of the body, and reports the rest.
+
+## 2026-10-02 · WP-043 review round
+
+- **`body.contains("|---")` is not a table test.** Obsidian's table
+  editor writes `| --- | --- |` and `|:---|`; the dossier then took the
+  fence as empty and replaced the user's rows with a fresh header.
+  Use `index::load::has_table_separator` for any "is there a table"
+  check.
+- **A "done" marker must be the last thing written, or the only thing
+  trusted.** Treating ledger import notes as "already imported" turned a
+  half-failed apply into a false "nothing changed". Now only the marker
+  means done; notes without it are refused with the undo hint.
+- **Cheap write-failure injection:** `chmod 555` on a directory the
+  command writes late (`system/`), checked with a probe write first so
+  the test returns early when it runs as root.
+- **An "updated" assertion on a template file is trivially true** when
+  `init` ran the same day. Pre-date the field (and commit) before the
+  command under test.
