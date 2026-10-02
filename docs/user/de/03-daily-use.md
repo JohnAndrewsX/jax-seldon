@@ -1,0 +1,265 @@
+# Alltag
+
+<!-- source: en/03-daily-use.md @ bf57609 -->
+
+Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
+Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
+Overlay Prime Radiant mit seinen Zeiträumen. Alles hier geht mit der Maus
+und mit der Tastatur. Die Beschriftungen der Oberfläche sind in dieser
+Version englisch; diese Seite nennt sie so, wie du sie siehst.
+
+## Ein Tag mit Seldon
+
+- Morgens ein Blick auf die Pill. `⟡ 2 · 3` heißt: zwei aktive Cases und
+  drei unerklärte Änderungen.
+- Vor einer Änderung legst du einen Case an (`+` im Panel) und startest
+  ihn.
+- Während der Arbeit schreibst du eine Notiz, wenn du etwas lernst (`n`
+  im Panel).
+- Zeigt die Pill Drift, öffnest du den Changelog und löst sie auf:
+  verknüpfen, erklären oder verwerfen.
+- Am Ende eines Case prüfst du ihn und schließt ihn im Tab Work ab.
+- Einmal pro Woche öffnest du den Prime Radiant und schaust dir das Bild
+  an.
+
+## Die Pill
+
+Die Pill sitzt rechts in der Bar.
+
+- `⟡ A · D`: A ist die Zahl der aktiven Cases, D die Zahl der offenen
+  Drift-Einträge. Teile, die null sind, fallen weg: `⟡`, `⟡ 2`, `⟡ · 3`.
+- Sie nimmt die Akzentfarbe deines Themes, solange Cases aktiv sind, die
+  Warnfarbe des Themes bei einer Krise und wird blasser, solange etwas
+  repariert werden muss.
+- Der Tooltip sagt, was die Zahlen bedeuten und wann die Engine zuletzt
+  erfasst hat.
+
+| Klick | Wirkung |
+|---|---|
+| Links | Panel öffnen oder schließen |
+| Mitte | Prime Radiant öffnen oder schließen |
+| Rechts | jetzt erfassen (`seldon capture`, dann `seldon status`) |
+
+## Das Panel
+
+Das Panel öffnet sich unter der Pill. Es hat sechs Tabs, jeder mit einer
+festen Zifferntaste. Über jedem Tab kann ein Banner stehen (etwas muss
+repariert werden, siehe
+[Fehlersuche](10-troubleshooting.md#banner-im-panel)) und eine rote
+Zeile „N changes in the red zone need a reason“. Ein Klick auf die rote
+Zeile löst die erste Krise auf.
+
+Die Bilder auf dieser Seite sind Renderings des Beispiel-Logbuchs im
+Theme Tokyo Night. Dein Panel nimmt dein Theme und zeigt deine Daten.
+
+### Today (1)
+
+![Der Tab Today: das Datum, die Zahlen für heute, das Notizfeld mit Case-Auswahl und die heutigen Journal-Einträge](../../images/panel-tokyo-night-today.png)
+
+*Beispieldaten.*
+
+Today zeigt das Datum und die Zahlen des Tages: Ereignisse heute und in
+sieben Tagen, aktive und geplante Cases, offene Drift. Darunter liegt das
+Notizfeld: Notiz tippen, Enter drücken, und sie landet über `seldon log`
+im heutigen Journal. Wähl unter dem Feld einen offenen Case, um die
+Notiz unter ihm abzulegen. Das Feld leert sich erst, wenn die Notiz
+gespeichert ist. Danach folgen die heutigen Journal-Einträge; die von
+gestern liegen hinter einer Zeile. *Open in editor* öffnet die heutige
+Journal-Datei.
+
+### Changelog (2)
+
+![Der Tab Changelog: Filter-Chips nach Quelle mit Zahlen, die Knöpfe Ledger und Capture now und die Ereignisse nach Tagen gruppiert, das neueste zuerst](../../images/panel-tokyo-night-changelog.png)
+
+*Beispieldaten, gefiltert auf die Quelle `seldon`.*
+
+Der Changelog listet jedes Ereignis, das neueste zuerst, nach Tagen
+gruppiert. Die Chips oben filtern nach Quelle; jeder zeigt seine Zahl.
+Snapshot-Zeilen sind hervorgehoben. Drift-Zeilen sind in der Farbe ihrer
+Zone markiert und tragen einen Knopf *Resolve…*.
+
+*Capture now* startet eine Erfassung; die Zeile darunter sagt, was sie
+gefunden hat. *Ledger* öffnet die Ledger-Ansicht des Monats in deinem
+Editor.
+
+Um Drift aufzulösen, drück Enter auf einer Drift-Zeile, klick
+*Resolve…* oder klick auf die rote Zeile. Das Drift-Blatt zeigt, was
+sich geändert hat, wer es war, wann, die Zone, den vorgeschlagenen Case
+und jedes Paket einer Transaktion. Wähl eine Aktion:
+
+| Aktion | Führt aus | Die Zeile sagt danach |
+|---|---|---|
+| *Link* | `seldon drift link <EVENT> <CASE>` (offene Cases; der vorgeschlagene ist vorgewählt) | `linked to C-…` |
+| *Explain* | `seldon drift explain <EVENT> -- <warum>`, wahlweise mit Zone, Risiko und Bereich | `explained · C-…` |
+| *Dismiss* | `seldon drift dismiss <EVENT> -- <grund>` | `dismissed: <grund>` |
+
+Eine Paket-Transaktion wird als Ganzes aufgelöst (*All N*). *Only
+<Paket>* löst nur die Zeile auf, die du geöffnet hast. Dein Text bleibt
+im Blatt, bis die Engine ihn geschrieben hat. Hat inzwischen jemand
+anderes die Änderung aufgelöst, sagt das Blatt „Already resolved: …“ und
+schreibt nichts.
+
+### Work (3)
+
+![Der Tab Work: drei Spalten Queued, Active und Completed mit Case-Kacheln und die Karte des gewählten Case mit den Knöpfen Start und Open](../../images/panel-tokyo-night-work.png)
+
+*Beispieldaten.*
+
+Work zeigt deine Cases in drei Spalten: Queued (geplant), Active (Cases
+in Prüfung eingeschlossen) und Completed (die letzten 50; aufgegebene
+Cases durchgestrichen). „2 / 3 active“ vergleicht deine aktiven Cases mit
+deinem Limit. Das Limit warnt; es blockiert nie. Eine Kachel zeigt die
+ID, erledigte von allen Schritten, den Titel und die Zone als Farbe des
+Streifens. „N proposed“ heißt, Seldon hält offene Drift für einen Teil
+dieses Case.
+
+Die Karte darunter zeigt den Case unter dem Cursor und die Aktionen, die
+sein Status erlaubt:
+
+| Status | Aktionen |
+|---|---|
+| queued | *Start*, *Open* |
+| active | *Verify*, *Start agent*, *Drop*, *Open* |
+| verification | *Done*, *Drop*, *Open* |
+| completed, dropped | *Open* |
+
+*New case* (oder `+` aus jedem Tab) fragt nach Titel, Zone, Risiko,
+Priorität und einem optionalen Bereich. Es beginnt mit gelb, R1, normal.
+*Start agent* schickt einen Agenten an den Case; siehe
+[Mit Agenten arbeiten](04-working-with-agents.md#einen-agenten-aus-dem-panel-starten).
+
+### Decisions (4)
+
+![Der Tab Decisions: vier Entscheidungen, die neueste zuerst, mit ID, Status, Titel, Datum und Dateipfad, und ein Knopf New decision](../../images/panel-tokyo-night-decisions.png)
+
+*Beispieldaten.*
+
+Decisions listet deine ADRs, das neueste zuerst: ID, Status (*proposed*
+ist markiert, *superseded* durchgestrichen), Titel und Datum. *Open*
+öffnet eine Entscheidung in deinem Editor. *New decision* (oder `d`)
+fragt nach einem Titel, legt die Entscheidung als *proposed* an und
+öffnet sie.
+
+### System (5)
+
+![Der Tab System: Omarchy-Version, Theme und letztes Update, Paketzahlen, Plugins und die letzten Snapshots](../../images/panel-tokyo-night-system.png)
+
+*Beispieldaten.*
+
+System zeigt die Maschine: Omarchy-Version, Theme und letztes Update,
+Paketzahlen, Abweichungen, Plugins, Snapshots, Bereiche, den Zustand
+jedes Collectors, den Namen der Maschine und die Version der Engine.
+*Open in editor* öffnet `STATUS.md`.
+
+### Memory (6)
+
+![Der Tab Memory: drei Überschriften von Lektionen und zwei Memory-Themen mit Pfad und letzter Änderung](../../images/panel-tokyo-night-memory.png)
+
+*Beispieldaten.*
+
+Memory zeigt, was deine Agenten zu Beginn einer Sitzung lesen: die
+Überschriften von `memory/lessons.md` und die anderen Memory-Dateien mit
+ihrer letzten Änderung. *Open* öffnet den Ordner des Logbuchs.
+
+## Tasten
+
+Die Tasten des Panels gelten, solange das Panel offen ist.
+
+| Taste | Wirkung |
+|---|---|
+| `1` bis `6` | ein Tab über seine Nummer: Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6 |
+| ← / →, `h` / `l` | vorheriger / nächster Tab |
+| ↑ / ↓, `k` / `j` | in der Liste bewegen; in Work spaltenweise durch die Cases |
+| Tab / Shift-Tab | das nächste / vorherige Panel der Bar, wie in jedem Omarchy-Panel |
+| Enter, Leertaste | die Zeile öffnen; auf einer Drift-Zeile das Drift-Blatt; in Work die erste Aktion der Karte |
+| `x` | Work: den Case unter dem Cursor aufgeben (zweimal drücken) |
+| `a` | Work: einen Agenten auf den aktiven Case unter dem Cursor starten (zweimal drücken) |
+| `f` / `F` | Changelog: nächster / vorheriger Quellen-Filter |
+| `c` | jetzt erfassen |
+| `n` | eine Notiz schreiben (aus jedem Tab) |
+| `+` | neuer Case (aus jedem Tab) |
+| `d` | Decisions: neue Entscheidung |
+| `e` | die Datei dieses Tabs im Editor öffnen |
+| Esc | schließen |
+
+Aktionen, die schreiben, brauchen auf der Tastatur zwei Tastendrücke:
+*Start*, *Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`), das
+Drift-Blatt und eine neue Entscheidung. Das erste Enter schärft die
+Aktion, und die Karte sagt „Press Enter again: Start C-2026-005“. Der
+zweite Druck sendet sie. Jede andere Taste in einer Liste entschärft sie.
+Eine Notiz und ein neuer Case gehen mit einem Enter raus. Mit der Maus
+sendet ein Klick, außer bei *Drop* und *Start agent*, die einen zweiten
+Klick verlangen.
+
+Hat ein Textfeld oder ein Blatt den Fokus, geht jede Taste dorthin. Tab
+und Shift-Tab wandern durch die Felder. Esc gibt die Tasten ans Panel
+zurück und behält, was du getippt hast.
+
+## Der Prime Radiant
+
+![Der Prime Radiant: eine Heatmap der Ereignisse pro Tag, Paketreihen, Drift-Balken, ein Risiko-Donut, eine Zeitleiste und die aktiven Cases, daneben der Tab Today des Panels](../../../plugin/preview.png)
+
+*Renderings des Beispiel-Logbuchs, Tokyo Night. Links der Prime Radiant, rechts das Panel.*
+
+Der Prime Radiant ist ein bildschirmfüllendes Overlay mit dem Bild deiner
+Maschine. Du öffnest ihn mit einem Mittelklick auf die Pill oder mit
+`omarchy-shell shell toggle jax.seldon`. Für eine Taste fügst du diese
+Zeile zu deinen Hyprland-Bindings hinzu (Seldon richtet sie nie für dich
+ein):
+
+```text
+o.bind("SUPER + SHIFT + S", "Seldon", "omarchy-shell shell toggle jax.seldon")
+```
+
+Er zeigt sechs Diagramme:
+
+| Diagramm | Zeigt |
+|---|---|
+| Heatmap | Ereignisse pro Tag als Kalender, Wochen als Spalten, Montag oben |
+| Series | explizite und gesamte Paketzahl über die Zeit |
+| DriftBars | geöffnete und aufgelöste Drift pro Woche |
+| RiskDonut | Cases nach Risiko, R0 bis R3, immer über die ganze Zeit |
+| Timeline | Omarchy-Releases, Snapshots und Krisen oben, Cases als Spannen darunter |
+| The Plan | die aktiven Cases mit Zone, Risiko, Schritten und Agent |
+
+Die Titelzeile jedes Diagramms trägt eine Zusammenfassung. Zeigst du auf
+ein Diagramm, nennt die Titelzeile stattdessen das Element unter dem
+Zeiger: einen Tag und seine Ereignisse nach Quelle, die Zahlen einer
+Woche, einen Case.
+
+### Zeiträume
+
+Die Zeitraum-Auswahl oben bestimmt das Fenster: 30 Tage, 90 Tage, 365
+Tage oder All. Es reicht bis heute; 30 d sind heute und die 29 Tage
+davor. Der Prime Radiant öffnet jedes Mal mit 90 d. RiskDonut und The
+Plan beachten den Zeitraum nicht.
+
+| Taste | Wirkung |
+|---|---|
+| `1` `2` `3` `4` | 30 d, 90 d, 365 d, All |
+| ← / →, `h` / `l` | vorheriger / nächster Zeitraum |
+| Esc | schließen |
+
+Ein Klick auf die abgedunkelte Fläche oder auf *Close* schließt ihn auch.
+Der Prime Radiant zeigt nur; er startet nie die Engine.
+
+## Vom Terminal aus
+
+Für alles im Panel gibt es einen Befehl. Das Panel führt dieselben
+Befehle aus, das Ergebnis ist also dasselbe:
+
+| Im Panel | Im Terminal |
+|---|---|
+| Notizfeld | `seldon log -- "Text"` |
+| *Capture now* | `seldon capture` |
+| *New case* | `seldon plan new -- "Titel"` |
+| *Start*, *Verify*, *Done*, *Drop* | `seldon plan start <ID>` und so weiter |
+| Drift-Blatt | `seldon drift link`, `explain`, `dismiss` |
+| *New decision* | `seldon decide -- "Titel"` |
+| *Open in editor* | `seldon open journal --editor` |
+
+Die [Befehlsreferenz](05-cli-reference.md) listet jeden Befehl.
+
+---
+
+Zurück: [Konzepte](02-concepts.md) · [Übersicht](README.md) · Weiter: [Mit Agenten arbeiten](04-working-with-agents.md)
