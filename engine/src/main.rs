@@ -355,7 +355,10 @@ fn print_line(text: &str) -> std::io::Result<()> {
 
 /// A failed write to stdout: the message on stderr, exit 2.
 fn stdout_failed(e: &std::io::Error) -> ExitCode {
-    eprintln!("seldon: cannot write to stdout: {e}");
+    use std::io::Write as _;
+    // not eprintln!: it panics (and the release binary aborts) when stderr
+    // is broken too (`seldon mangen >/dev/full 2>/dev/full`)
+    let _ = writeln!(std::io::stderr(), "seldon: cannot write to stdout: {e}");
     Exit::EngineError.into()
 }
 

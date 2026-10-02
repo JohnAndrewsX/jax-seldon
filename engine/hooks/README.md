@@ -58,7 +58,7 @@ the files by hand (`cp -rn <kit>/. <logbook>/.claude/`), then
 
 Not a script. `seldon init --harness claude-code` (or the wizard's harness
 step) installs it into the new logbook, inside the first commit;
-`seldon hook install claude-code [--settings PATH]` does the same later and
+`seldon hook install claude-code [--settings FILE]` does the same later and
 merges
 three entries into `<logbook>/.claude/settings.json` (other hooks and keys
 stay; running it again changes nothing):
@@ -69,7 +69,7 @@ stay; running it again changes nothing):
 | `SessionStart` | — | `seldon hook session-start` | prints the context block (status, active case, journal, lessons) |
 | `SessionEnd` | — | `seldon hook session-stop` | journal stub, `capture --all`, commit; timeout 60 s, the most Claude Code allows a `SessionEnd` hook |
 
-`seldon hook uninstall claude-code [--settings PATH]` (WP-049) takes these
+`seldon hook uninstall claude-code [--settings FILE]` (WP-049) takes these
 three out again: other hooks and keys stay, a file with nothing else is
 deleted, and the next capture explains the change.
 

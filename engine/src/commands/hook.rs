@@ -1134,7 +1134,7 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
     Ok(merged)
 }
 
-/// `seldon hook install claude-code [--settings PATH]`: adds each of
+/// `seldon hook install claude-code [--settings FILE]`: adds each of
 /// [`CLAUDE_HOOKS`] that is not there yet ([`merge_claude_hooks`]),
 /// records a written file under a watched path as the engine's own write
 /// (so the next capture explains its config event), and commits the
@@ -1324,7 +1324,7 @@ pub fn unmerge_claude_hooks(path: &Path, shown: &str) -> Result<Unmerged> {
     Ok(out)
 }
 
-/// `seldon hook uninstall claude-code [--settings PATH]`: takes Seldon's
+/// `seldon hook uninstall claude-code [--settings FILE]`: takes Seldon's
 /// hooks out of the settings file ([`unmerge_claude_hooks`]), writes it or
 /// deletes a file that held nothing else, records that as the engine's own
 /// write under a watched path (so the next capture explains its config

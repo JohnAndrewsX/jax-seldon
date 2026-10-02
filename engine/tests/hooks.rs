@@ -906,6 +906,18 @@ mod uninstall {
             assert_eq!(out.status.code(), Some(4), "{verb}: {}", stderr(&out));
             assert_eq!(read(&path), text, "{verb}: untouched");
         }
+        // an install that would write: a fresh `{}` stays `{}`
+        let fresh = h.env.tmp.path().join("fresh.json");
+        std::fs::write(&fresh, "{}").unwrap();
+        let out = h.run(&[
+            "hook",
+            "install",
+            "claude-code",
+            "--settings",
+            fresh.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(4), "fresh: {}", stderr(&out));
+        assert_eq!(read(&fresh), "{}", "fresh: untouched");
         drop(lock);
         assert_eq!(hook(&h, "uninstall", &path)["deleted"], true);
     }
