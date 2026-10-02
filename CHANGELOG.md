@@ -31,9 +31,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirm.
 - SPEC-ENGINE no longer lists `hook install generic`: there is nothing to
   install, other agents pipe into `seldon hook generic` themselves.
+- `seldon completions bash|zsh|fish` prints a completion script and
+  `seldon mangen` the man page seldon(1), both generated from the help
+  (WP-049).
+- `seldon hook uninstall claude-code` and `seldon init --remove-theme-hook`
+  undo what `hook install` and `init --theme-hook` installed, and nothing
+  else; the next capture explains the removal instead of opening drift.
+- Every `--help` reviewed: one sentence per command, value names that say
+  what they are (`<ACTOR>`, `<ZONE>`, …), a line for every argument,
+  examples for `--since` and free text after `--`. `--snapshot` is
+  offered by `plan start` only.
+- Piping a command's output into a reader that stops early (`| head`)
+  no longer crashes the engine.
 
 ### Packaging and docs
 
+- The AUR package installs the man page and the bash, zsh and fish
+  completions; `install.sh` installs the man page and the completions of
+  the shells you have under its prefix and removes them on `--uninstall`;
+  the release's binary tarball carries both (WP-049).
 - New README for the project and the plugin repository (WP-046): what
   Seldon is and why, six features, a quick start from install to the
   plugin, a 60-second tour and a table of every document. The developer

@@ -22,20 +22,26 @@ derselben Version ändert er nichts. Er prüft die Engine gegen die `SHA256SUMS`
 und bricht bei einer Abweichung ab. Hat das neueste Release noch kein
 `install.sh` (v0.1.0), nimm das Skript aus `main` wie in Erste Schritte.
 
+Er installiert auch die Manpage (`man seldon`) und die Tab-Vervollständigung
+für bash, zsh und fish, jeweils für eine Shell, die auf deinem Rechner
+installiert ist. Für zsh gibt er eine `fpath=(…)`-Zeile aus, die du in
+`~/.zshrc` vor `compinit` einträgst.
+
 | Option | Wirkung |
 |---|---|
 | `--version vX.Y.Z` | dieses Release statt des neuesten |
-| `--prefix DIR` | nach `DIR/bin` installieren statt nach `~/.local/bin` |
+| `--prefix DIR` | nach `DIR/bin` installieren, Manpage und Vervollständigung nach `DIR/share`, statt nach `~/.local` |
 | `--unit` | auch die Benutzer-Unit des Watchers installieren, siehe [Der optionale Watcher](#der-optionale-watcher) |
-| `--force` | ein `seldon` ersetzen, das das Skript nicht installiert hat, etwa ein selbst gebautes |
+| `--force` | ein `seldon`, eine Vervollständigung oder eine Manpage ersetzen, die das Skript nicht installiert hat, etwa ein selbst gebautes `seldon` |
 | `--uninstall` | entfernen, was das Skript installiert hat |
 
 Beim Einzeiler gibst du Optionen nach `bash -s --` an, zum Beispiel
 `… | bash -s -- --version v0.1.1`.
 
 Das AUR-Paket `jax-seldon` kommt bald. Sobald es existiert, aktualisierst
-du es mit deinem AUR-Helfer (`yay -S jax-seldon`). Installiere nur aus
-einer Quelle: Beide legen ein `seldon` in deinen `PATH`.
+du es mit deinem AUR-Helfer (`yay -S jax-seldon`). Das Paket installiert
+die Manpage und die Vervollständigung für alle drei Shells. Installiere
+nur aus einer Quelle: Beide legen ein `seldon` in deinen `PATH`.
 
 ## Das Plugin aktualisieren
 
@@ -84,7 +90,8 @@ systemctl --user disable --now seldon-watch
 ## Entfernen
 
 Entferne die Teile, die du nicht mehr willst. Die Reihenfolge unten
-entfernt alles außer deinem Logbuch.
+entfernt alles außer deinem Logbuch. Die Schritte 3 und 4 brauchen die
+Engine, also führ sie vor Schritt 5 aus.
 
 1. Das Plugin:
 
@@ -98,25 +105,33 @@ entfernt alles außer deinem Logbuch.
    systemctl --user disable --now seldon-watch
    ```
 
-3. Die Engine. Der Installer entfernt genau die Dateien, die er
-   installiert hat; eine Datei, die du seitdem geändert hast, bleibt, und
-   er sagt das. Gib dasselbe `--prefix` an, falls du eins benutzt hast:
+3. Den Theme-Hook, wenn du ihn im Assistenten gewählt hast. Das
+   entfernt den Hook und sonst nichts und braucht kein Logbuch:
+
+   ```sh
+   seldon init --remove-theme-hook
+   ```
+
+4. Die Hooks von Claude Code liegen in `.claude/settings.json` des
+   Logbuchs. Sie gehen mit dem Logbuch. Hast du sie in
+   `~/.claude/settings.json` installiert, nimm sie aus dieser Datei
+   heraus; deine eigenen Einstellungen und Hooks bleiben:
+
+   ```sh
+   seldon hook uninstall claude-code --settings ~/.claude/settings.json
+   ```
+
+   Das nächste `seldon capture` hält beide Entfernungen fest, ohne Drift
+   zu öffnen, falls du das Logbuch behältst.
+
+5. Die Engine. Der Installer entfernt genau die Dateien, die er
+   installiert hat, Manpage und Vervollständigung eingeschlossen; eine
+   Datei, die du seitdem geändert hast, bleibt, und er sagt das. Gib
+   dasselbe `--prefix` an, falls du eins benutzt hast:
 
    ```sh
    curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash -s -- --uninstall
    ```
-
-4. Den Theme-Hook, wenn du ihn im Assistenten gewählt hast. Ohne die
-   Engine tut er nichts, aber es ist sauberer, ihn zu entfernen:
-
-   ```sh
-   rm ~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh
-   ```
-
-5. Die Hooks von Claude Code liegen in `.claude/settings.json` des
-   Logbuchs. Sie gehen mit dem Logbuch. Hast du sie in
-   `~/.claude/settings.json` installiert, entferne aus dieser Datei die
-   drei Einträge, die `seldon hook` aufrufen.
 
 6. Konfiguration und Zustand der Engine:
 
@@ -137,7 +152,7 @@ rm -r ~/Seldon
 
 Um Seldon auf derselben Maschine von vorn auszuprobieren, behältst du
 Engine und Plugin. Entferne den Theme-Hook, Konfiguration und Zustand
-der Engine und das Logbuch (Schritte 4 und 6 oben, und das Logbuch),
+der Engine und das Logbuch (Schritte 3 und 6 oben, und das Logbuch),
 dann führ `seldon init` noch einmal aus. `init` lehnt einen Ordner ab,
 der nicht leer ist, also überschreibt ein neues Logbuch nie ein altes.
 

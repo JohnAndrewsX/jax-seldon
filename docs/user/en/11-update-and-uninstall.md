@@ -20,20 +20,26 @@ the same version it changes nothing. It checks the engine against the release's 
 and refuses on a mismatch. If the latest release has no `install.sh`
 yet (v0.1.0), use the script from `main` as in Getting started.
 
+It also installs the man page (`man seldon`) and the Tab completions for
+bash, zsh and fish, each for a shell that is installed on your machine.
+For zsh it prints one `fpath=(…)` line to add to `~/.zshrc` before
+`compinit`.
+
 | Option | Effect |
 |---|---|
 | `--version vX.Y.Z` | that release instead of the latest |
-| `--prefix DIR` | install into `DIR/bin` instead of `~/.local/bin` |
+| `--prefix DIR` | install into `DIR/bin`, the man page and completions into `DIR/share`, instead of `~/.local` |
 | `--unit` | also install the watcher's user unit, see [The optional watcher](#the-optional-watcher) |
-| `--force` | replace a `seldon` the script did not install, such as one you built yourself |
+| `--force` | replace a `seldon`, a completion or a man page the script did not install, such as one you built yourself |
 | `--uninstall` | remove what the script installed |
 
 With the one-liner, pass options after `bash -s --`, for example
 `… | bash -s -- --version v0.1.1`.
 
 The AUR package `jax-seldon` is coming soon. Once it exists, update it
-with your AUR helper (`yay -S jax-seldon`). Install from one source only:
-both put a `seldon` on your `PATH`.
+with your AUR helper (`yay -S jax-seldon`). The package installs the man
+page and the completions for all three shells. Install from one source
+only: both put a `seldon` on your `PATH`.
 
 ## Update the plugin
 
@@ -79,7 +85,8 @@ systemctl --user disable --now seldon-watch
 ## Uninstall
 
 Remove the parts you no longer want. The order below removes everything
-except your logbook.
+except your logbook. Steps 3 and 4 need the engine, so run them before
+step 5.
 
 1. The plugin:
 
@@ -93,25 +100,32 @@ except your logbook.
    systemctl --user disable --now seldon-watch
    ```
 
-3. The engine. The installer removes exactly the files it installed; a
-   file you changed since is kept, and it says so. Add the same `--prefix`
-   if you gave one:
+3. The theme hook, if you chose it in the wizard. This removes the hook
+   and nothing else, and needs no logbook:
+
+   ```sh
+   seldon init --remove-theme-hook
+   ```
+
+4. Claude Code's hooks live in the logbook's `.claude/settings.json`.
+   They go with the logbook. If you installed them into
+   `~/.claude/settings.json`, take them out of that file; your own
+   settings and hooks stay:
+
+   ```sh
+   seldon hook uninstall claude-code --settings ~/.claude/settings.json
+   ```
+
+   The next `seldon capture` records both removals without opening
+   drift, in case you keep the logbook.
+
+5. The engine. The installer removes exactly the files it installed,
+   the man page and the completions included; a file you changed since
+   is kept, and it says so. Add the same `--prefix` if you gave one:
 
    ```sh
    curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash -s -- --uninstall
    ```
-
-4. The theme hook, if you chose it in the wizard. Without the engine it
-   does nothing, but it is cleaner to remove it:
-
-   ```sh
-   rm ~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh
-   ```
-
-5. Claude Code's hooks live in the logbook's `.claude/settings.json`.
-   They go with the logbook. If you installed them into
-   `~/.claude/settings.json`, remove the three entries that call
-   `seldon hook` from that file.
 
 6. The engine's config and state:
 
@@ -131,7 +145,7 @@ rm -r ~/Seldon
 
 To try Seldon from scratch on the same machine, keep the engine and the
 plugin. Remove the theme hook, the engine's config and state and the
-logbook (steps 4 and 6 above, and the logbook), then run `seldon init`
+logbook (steps 3 and 6 above, and the logbook), then run `seldon init`
 again. `init` refuses a folder that is not empty, so a new logbook never
 overwrites an old one.
 

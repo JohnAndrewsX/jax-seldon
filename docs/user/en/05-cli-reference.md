@@ -31,18 +31,20 @@ Commands:
   capture           Run collectors and append new events to the ledger
   log               Write a note: a ledger event and a journal entry
   event             Record an event by hand (hooks, scripts)
-  plan              Cases: new, start, verify, done, drop, list, show
+  plan              Plan and track cases: new, start, verify, done, drop, list, show
   decide            Create a decision record (ADR) and open it in the editor
   open              Print the path of a logbook file; --editor opens it
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
-  hook              Agent hooks: record commands, session context, install into a harness
-  drift             Open drift; link, explain, dismiss or show a drift event
+  hook              Agent hooks: record commands, print session context, install into or uninstall from a harness
+  drift             List open drift; link, explain, dismiss or show a drift event
   agent             Start an agent on an active case
   rebuild           Write outputs/REBUILD.md: the steps to rebuild this machine
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
   import            Import an earlier logbook (dry run unless --apply)
+  completions       Print a shell completion script for bash, zsh or fish
+  mangen            Print the man page seldon(1), generated from this help
   help              Print this message or the help of the given subcommand(s)
 
 Options:
@@ -98,6 +100,9 @@ a directory that is not empty and never overwrites a file.
 defaults. `--since` takes a date (`2026-09-29`, local midnight) or an RFC
 3339 time; `--baseline` needs `--since`; `--no-capture` cannot go with
 `--since`. See [Getting started](01-getting-started.md#step-2-create-your-logbook).
+`--remove-theme-hook` is the one flag that does not create a logbook: it
+removes the theme hook that `--theme-hook` installed and goes with no
+other flag. See [Update and uninstall](11-update-and-uninstall.md#uninstall).
 
 <!-- help: seldon init -->
 ```text
@@ -111,12 +116,18 @@ Options:
       --language <LANGUAGE>  Language of the logbook prose [possible values: en, de]
       --obsidian             Add Obsidian settings (.obsidian/)
       --harness <NAME>       Agent harness to set up (repeatable) [possible values: claude-code, omarchy-agent]
-      --since <TS>           Backfill: the first capture also records changes since TS (YYYY-MM-DD or RFC 3339); each one opens as drift
+      --since <TS>           Backfill: the first capture also records changes since TS, a date (YYYY-MM-DD, local midnight) or an RFC 3339 time; each one opens as drift
       --baseline             Mark the backfilled drift as the pre-Seldon baseline (dismissed)
       --no-capture           Do not run the first capture
       --theme-hook           Install Omarchy's theme-set hook (`omarchy hook install theme-set`)
+      --remove-theme-hook    Remove the theme-set hook that --theme-hook installed, and nothing else; needs no logbook
       --git                  Make the logbook a git repository with a first commit (default)
       --no-git               Do not use git
+
+Examples:
+  seldon init
+  seldon init --non-interactive --since 2026-09-01 --baseline
+  seldon init --remove-theme-hook
 ```
 <!-- /help -->
 
@@ -173,7 +184,12 @@ Usage: seldon capture [OPTIONS]
 Options:
       --source <NAMES>  Collectors to run, comma-separated (default: every enabled one)
       --all             Run every enabled collector (the default)
-      --since <TS>      Baseline for collectors without a cursor, RFC 3339 (default: logbook creation)
+      --since <TS>      Baseline for collectors without a cursor, an RFC 3339 time (default: the logbook's creation)
+
+Examples:
+  seldon capture
+  seldon capture --source pacman,config
+  seldon capture --since 2026-09-01T00:00:00+02:00
 ```
 <!-- /help -->
 
@@ -190,12 +206,16 @@ Write a note: a ledger event and a journal entry
 Usage: seldon log [OPTIONS] <TEXT>
 
 Arguments:
-  <TEXT>  The note, as one argument (put `--` before a text that is exactly an option, e.g. `-- --json`)
+  <TEXT>  The note, as one argument; after `--` when it starts with `-`
 
 Options:
       --case <ID>      The case the note belongs to
-      --actor <A>      Who writes the note [default: human]
-      --tag <T>        Tag the note (repeatable): `#tag` in the journal, `meta.tags` in the ledger
+      --actor <ACTOR>  Who writes the note: human or agent:NAME [default: human]
+      --tag <TAG>      Tag the note (repeatable): `#tag` in the journal, `meta.tags` in the ledger
+
+Examples:
+  seldon log -- "Switched the terminal font to Iosevka"
+  seldon log --case C-2026-004 --tag fonts -- "Tried two fonts, kept the first"
 ```
 <!-- /help -->
 
@@ -209,18 +229,18 @@ source and kind must be ones the ledger knows; the error lists them.
 ```text
 Record an event by hand (hooks, scripts)
 
-Usage: seldon event [OPTIONS] --subject <S> <SOURCE> <KIND>
+Usage: seldon event [OPTIONS] --subject <SUBJECT> <SOURCE> <KIND>
 
 Arguments:
   <SOURCE>  Event source (pacman, snapper, omarchy, plugins, theme, config, agent, manual)
   <KIND>    Event kind (install, theme-set, config-change, command, note, …)
 
 Options:
-      --subject <S>       What it is about: package, ~-relative path, theme, plugin id, …
-      --detail <D>        Human-readable detail
-      --case <ID>         Attribute the event to this case
-      --actor <A>         Who did it (default: system, like a collector; hooks and scripts name the agent or human they act for) [default: system]
-      --meta <KEY=VALUE>  Extra key=value (repeatable); `enabled` takes true or false
+      --subject <SUBJECT>  What it is about: package, ~-relative path, theme, plugin id, …
+      --detail <TEXT>      Human-readable detail
+      --case <ID>          Attribute the event to this case
+      --actor <ACTOR>      Who did it: system (like a collector), human or agent:NAME; hooks and scripts name the one they act for [default: system]
+      --meta <KEY=VALUE>   Extra key=value (repeatable), e.g. `--meta enabled=true`; `enabled` takes true or false
 ```
 <!-- /help -->
 
@@ -286,18 +306,18 @@ The case commands. Each step is a ledger event, a line in the case's
 
 <!-- help: seldon plan -->
 ```text
-Cases: new, start, verify, done, drop, list, show
+Plan and track cases: new, start, verify, done, drop, list, show
 
 Usage: seldon plan [OPTIONS] <COMMAND>
 
 Commands:
   new     Create a case in work/queued/
-  start   queued → active (writes .seldon/active-case)
-  verify  active → verification
-  done    verification → completed
-  drop    queued, active or verification → dropped
-  list    List cases
-  show    Show one case
+  start   Start a case: queued → active; it becomes the active case
+  verify  Hand an active case to verification: active → verification
+  done    Complete a verified case: verification → completed
+  drop    Drop a case that is queued, active or in verification
+  list    List cases, optionally by status or area
+  show    Print one case file with its path
   help    Print this message or the help of the given subcommand(s)
 
 Options:
@@ -317,14 +337,14 @@ Create a case in work/queued/
 Usage: seldon plan new [OPTIONS] <TITLE>
 
 Arguments:
-  <TITLE>  The case title, as one argument
+  <TITLE>  The case title, as one argument (after `--` when it starts with `-`)
 
 Options:
-      --zone <Z>       green, yellow or red [default: yellow]
-      --risk <R>       R0 to R3 [default: R1]
-      --area <A>       Area slug; created under areas/ on first use
-      --priority <P>   high, normal or low [default: normal]
-      --actor <A>      Who creates the case [default: human]
+      --zone <ZONE>          green, yellow or red [default: yellow]
+      --risk <RISK>          R0 to R3 [default: R1]
+      --area <AREA>          Area slug; created under areas/ on first use
+      --priority <PRIORITY>  high, normal or low [default: normal]
+      --actor <ACTOR>        Who creates the case: human or agent:NAME [default: human]
 ```
 <!-- /help -->
 
@@ -335,17 +355,17 @@ snapshot first and pass its number with `--snapshot`.
 
 <!-- help: seldon plan start -->
 ```text
-queued → active (writes .seldon/active-case)
+Start a case: queued → active; it becomes the active case
 
 Usage: seldon plan start [OPTIONS] <ID>
 
 Arguments:
-  <ID>
+  <ID>  The case id, e.g. C-2026-004
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
-      --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
-      --actor <A>      Who takes the step [default: human]
+      --reason <TEXT>      Why, in one line; goes into the Log line and the event detail
+      --actor <ACTOR>      Who takes the step: human or agent:NAME [default: human]
+      --snapshot <NUMBER>  Snapper snapshot number taken before the work, e.g. 42 (an R2 or R3 case started without one gets a warning, ADR-0023)
 ```
 <!-- /help -->
 
@@ -356,17 +376,16 @@ your check.
 
 <!-- help: seldon plan verify -->
 ```text
-active → verification
+Hand an active case to verification: active → verification
 
 Usage: seldon plan verify [OPTIONS] <ID>
 
 Arguments:
-  <ID>
+  <ID>  The case id, e.g. C-2026-004
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
-      --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
-      --actor <A>      Who takes the step [default: human]
+      --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
+      --actor <ACTOR>  Who takes the step: human or agent:NAME [default: human]
 ```
 <!-- /help -->
 
@@ -377,17 +396,16 @@ active case if it named this case.
 
 <!-- help: seldon plan done -->
 ```text
-verification → completed
+Complete a verified case: verification → completed
 
 Usage: seldon plan done [OPTIONS] <ID>
 
 Arguments:
-  <ID>
+  <ID>  The case id, e.g. C-2026-004
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
-      --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
-      --actor <A>      Who takes the step [default: human]
+      --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
+      --actor <ACTOR>  Who takes the step: human or agent:NAME [default: human]
 ```
 <!-- /help -->
 
@@ -397,17 +415,16 @@ Gives up a queued, active or verification case. Say why with `--reason`.
 
 <!-- help: seldon plan drop -->
 ```text
-queued, active or verification → dropped
+Drop a case that is queued, active or in verification
 
 Usage: seldon plan drop [OPTIONS] <ID>
 
 Arguments:
-  <ID>
+  <ID>  The case id, e.g. C-2026-004
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
-      --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
-      --actor <A>      Who takes the step [default: human]
+      --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
+      --actor <ACTOR>  Who takes the step: human or agent:NAME [default: human]
 ```
 <!-- /help -->
 
@@ -418,13 +435,13 @@ Lists cases: id, status, zone, risk, area and title. `--status` takes
 
 <!-- help: seldon plan list -->
 ```text
-List cases
+List cases, optionally by status or area
 
 Usage: seldon plan list [OPTIONS]
 
 Options:
-      --status <S>     Only cases with this status
-      --area <A>       Only cases in this area
+      --status <STATUS>  Only cases with this status (queued, active, verification, completed, dropped)
+      --area <AREA>      Only cases in this area
 ```
 <!-- /help -->
 
@@ -434,12 +451,12 @@ Prints a case's path and file, including its events.
 
 <!-- help: seldon plan show -->
 ```text
-Show one case
+Print one case file with its path
 
 Usage: seldon plan show [OPTIONS] <ID>
 
 Arguments:
-  <ID>
+  <ID>  The case id, e.g. C-2026-004
 
 Options:
 ```
@@ -498,15 +515,15 @@ list is cut.
 
 <!-- help: seldon drift -->
 ```text
-Open drift; link, explain, dismiss or show a drift event
+List open drift; link, explain, dismiss or show a drift event
 
 Usage: seldon drift [OPTIONS]
        seldon drift <COMMAND>
 
 Commands:
-  link     Link a drift event (and the open members of its group) to a case
-  explain  Explain drift: creates a retroactive, completed case for it
-  dismiss  Dismiss drift with a reason
+  link     Link a drift event, and the open members of its group, to a case
+  explain  Explain a drift event with a new retroactive, completed case
+  dismiss  Dismiss a drift event with a reason
   show     Show a drift event and every open member of its group
   help     Print this message or the help of the given subcommand(s)
 
@@ -522,17 +539,17 @@ may be open or closed. Then the events are no longer drift.
 
 <!-- help: seldon drift link -->
 ```text
-Link a drift event (and the open members of its group) to a case
+Link a drift event, and the open members of its group, to a case
 
 Usage: seldon drift link [OPTIONS] <EVENT> <CASE>
 
 Arguments:
-  <EVENT>
-  <CASE>
+  <EVENT>  The drift event id, as `seldon drift` prints it
+  <CASE>   The case id, e.g. C-2026-004 (a completed or dropped case too)
 
 Options:
       --only           Resolve the named event only, not the rest of its group
-      --actor <A>      Who resolves it [default: human]
+      --actor <ACTOR>  Who resolves it: human or agent:NAME [default: human]
 ```
 <!-- /help -->
 
@@ -544,20 +561,23 @@ pass `--zone`.
 
 <!-- help: seldon drift explain -->
 ```text
-Explain drift: creates a retroactive, completed case for it
+Explain a drift event with a new retroactive, completed case
 
 Usage: seldon drift explain [OPTIONS] <EVENT> <INTENT>
 
 Arguments:
-  <EVENT>
+  <EVENT>   The drift event id, as `seldon drift` prints it
   <INTENT>  Why it happened, as one argument after `--`; the new case's title
 
 Options:
       --only           Resolve the named event only, not the rest of its group
-      --zone <Z>       Zone of the new case (default: the drift item's zone)
-      --risk <R>       Risk of the new case [default: R1]
-      --area <A>       Area slug of the new case; created under areas/ on first use
-      --actor <A>      Who resolves it [default: human]
+      --zone <ZONE>    Zone of the new case (default: the drift item's zone)
+      --risk <RISK>    Risk of the new case [default: R1]
+      --area <AREA>    Area slug of the new case; created under areas/ on first use
+      --actor <ACTOR>  Who resolves it: human or agent:NAME [default: human]
+
+Example:
+  seldon drift explain <EVENT> --area hardware -- "Driver for the new GPU"
 ```
 <!-- /help -->
 
@@ -568,17 +588,20 @@ reason.
 
 <!-- help: seldon drift dismiss -->
 ```text
-Dismiss drift with a reason
+Dismiss a drift event with a reason
 
 Usage: seldon drift dismiss [OPTIONS] <EVENT> <REASON>
 
 Arguments:
-  <EVENT>
+  <EVENT>   The drift event id, as `seldon drift` prints it
   <REASON>  Why it can be ignored, as one argument after `--`
 
 Options:
       --only           Resolve the named event only, not the rest of its group
-      --actor <A>      Who resolves it [default: human]
+      --actor <ACTOR>  Who resolves it: human or agent:NAME [default: human]
+
+Example:
+  seldon drift dismiss <EVENT> -- "Tried a theme, reverted it"
 ```
 <!-- /help -->
 
@@ -594,7 +617,7 @@ Show a drift event and every open member of its group
 Usage: seldon drift show [OPTIONS] <EVENT>
 
 Arguments:
-  <EVENT>
+  <EVENT>  The drift event id, as `seldon drift` prints it
 
 Options:
 ```
@@ -646,16 +669,19 @@ Options:
 ### seldon hook
 
 The commands that agents and their harnesses call. Hooks are silent and
-always exit 0, so they never break an agent.
+always exit 0, so they never break an agent. `install` and `uninstall`
+are the exceptions: you run them yourself, and they report like any
+other command.
 
 <!-- help: seldon hook -->
 ```text
-Agent hooks: record commands, session context, install into a harness
+Agent hooks: record commands, print session context, install into or uninstall from a harness
 
 Usage: seldon hook [OPTIONS] <COMMAND>
 
 Commands:
   install        Merge Seldon's hooks into an agent harness's settings
+  uninstall      Remove Seldon's hooks from an agent harness's settings, keeping the rest
   claude-code    Record a Claude Code tool call (hook payload on stdin; silent, exit 0)
   generic        Record any agent's command ({"command","actor","cwd","startedAt"?,"case"?} on stdin)
   session-start  Print the context block an agent session starts with
@@ -682,7 +708,28 @@ Arguments:
   <HARNESS>  The harness [possible values: claude-code]
 
 Options:
-      --settings <PATH>  Settings file (default: <logbook>/.claude/settings.json)
+      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json)
+```
+<!-- /help -->
+
+### seldon hook uninstall
+
+Takes Seldon's three hooks out of Claude Code's settings again and keeps
+everything else, also a hook you added next to one of Seldon's. A file
+that held nothing but Seldon's hooks is deleted. Running it again changes
+nothing. The next `seldon capture` does not report the change as drift.
+
+<!-- help: seldon hook uninstall -->
+```text
+Remove Seldon's hooks from an agent harness's settings, keeping the rest
+
+Usage: seldon hook uninstall [OPTIONS] <HARNESS>
+
+Arguments:
+  <HARNESS>  The harness [possible values: claude-code]
+
+Options:
+      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json)
 ```
 <!-- /help -->
 
@@ -745,7 +792,7 @@ End a session: journal stub, capture, commit (silent, exit 0)
 Usage: seldon hook session-stop [OPTIONS]
 
 Options:
-      --actor <A>      Who ends the session [default: agent:claude-code]
+      --actor <ACTOR>  Who ends the session: human or agent:NAME [default: agent:claude-code]
 ```
 <!-- /help -->
 
@@ -817,6 +864,52 @@ Arguments:
 Options:
       --dry-run        Only write the report outputs/IMPORT-omarchy-agent.md (the default)
       --apply          Import: cases, journal, memory and deviation rows, in one commit
+```
+<!-- /help -->
+
+## Shell completions and man page
+
+The package and the installer put both in place for you. These commands
+print them, for a self-built engine or another place.
+
+### seldon completions
+
+Prints the completion script for bash, zsh or fish. After you save it
+where your shell looks, Tab completes commands, options and their values.
+
+<!-- help: seldon completions -->
+```text
+Print a shell completion script for bash, zsh or fish
+
+Usage: seldon completions [OPTIONS] <SHELL>
+
+Arguments:
+  <SHELL>  The shell [possible values: bash, zsh, fish]
+
+Options:
+
+Examples:
+  seldon completions bash > ~/.local/share/bash-completion/completions/seldon
+  seldon completions zsh > ~/.local/share/zsh/site-functions/_seldon
+  seldon completions fish > ~/.config/fish/completions/seldon.fish
+```
+<!-- /help -->
+
+### seldon mangen
+
+Prints the man page seldon(1): every command with its options, the exit
+codes, the environment variables and the files.
+
+<!-- help: seldon mangen -->
+```text
+Print the man page seldon(1), generated from this help
+
+Usage: seldon mangen [OPTIONS]
+
+Options:
+
+Example:
+  seldon mangen > seldon.1 && man -l seldon.1
 ```
 <!-- /help -->
 
