@@ -84,18 +84,23 @@ pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
 
 /// Fills the `decisions.index` fence of `DECISIONS.md` (WP-050), in the
 /// same commit as the new file. The decision is written already, so a
-/// failure here is a warning, not an error; invalid decision files are
-/// skipped (the index rebuild reports them).
+/// failure here is a warning, not an error; an invalid decision file is
+/// skipped and named in the warnings.
 fn fill_index(logbook: &Logbook) -> Vec<String> {
-    let rows = match load::decisions(logbook, &mut Vec::new()) {
+    let mut warnings = Vec::new();
+    let rows = match load::decisions(logbook, &mut warnings) {
         Ok(d) => build::decision_rows(d),
-        Err(e) => return vec![format!("DECISIONS.md not updated: {e:#}")],
+        Err(e) => {
+            warnings.push(format!("DECISIONS.md not updated: {e:#}"));
+            return warnings;
+        }
     };
     match views::write_decisions_index(logbook, &rows) {
-        Ok(views::Fill::Written | views::Fill::Unchanged) => Vec::new(),
-        Ok(views::Fill::Skipped(w)) => vec![w],
-        Err(e) => vec![format!("DECISIONS.md not updated: {e:#}")],
+        Ok(views::Fill::Written | views::Fill::Unchanged) => {}
+        Ok(views::Fill::Skipped(w)) => warnings.push(w),
+        Err(e) => warnings.push(format!("DECISIONS.md not updated: {e:#}")),
     }
+    warnings
 }
 
 /// The next `ADR-NNNN` after every file in `decisions/`.

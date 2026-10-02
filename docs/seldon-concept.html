@@ -331,8 +331,8 @@ siehe Inbox.</pre>
     <p>Claude-Code-Hooks, installiert mit einem Befehl. Codex und der Omarchy-Default-Agent nutzen die generische Form: eine JSON-Zeile in <span class="mono">seldon hook generic</span>.</p>
     <div class="hooks">
       <div class="k">SessionStart</div><div class="v">Druckt STATUS, den aktiven Case mit Planschritten, die letzten Journalzeilen und die Überschriften aus <span class="mono">memory/lessons.md</span> als Kontext.</div>
-      <div class="k">PostToolUse</div><div class="v">Jeder Bash-Befehl wird klassifiziert. Mutiert er das System (pacman, yay, omarchy, systemctl, Schreiben in beobachtete Pfade), entsteht ein Ereignis mit <span class="mono">actor: agent:claude-code</span> und dem aktiven Case. Geheimnisse werden vorher entfernt. Dauer: ein bis zwei Millisekunden.</div>
-      <div class="k">Stop</div><div class="v">Journal-Eintrag für die Sitzung, Capture, Index, Commit.</div>
+      <div class="k">PreToolUse</div><div class="v">Jeder Bash-Befehl und jede Dateiänderung (Edit, Write, MultiEdit) wird klassifiziert, bevor er läuft, damit das Ereignis die Startzeit trägt. Mutiert er das System (pacman, yay, omarchy, systemctl, Schreiben in beobachtete Pfade), entsteht ein Ereignis mit <span class="mono">actor: agent:claude-code</span> und dem aktiven Case. Geheimnisse werden vorher entfernt. Dauer: ein bis zwei Millisekunden.</div>
+      <div class="k">SessionEnd</div><div class="v">Journal-Eintrag für die Sitzung, Capture, Index, Commit — einmal am Ende der Sitzung, nicht nach jeder Antwort.</div>
     </div>
     <p style="margin-top:18px">Das Ergebnis pro Case ist die <strong>Spur</strong>: die geordnete Liste dessen, was der Agent tatsächlich getan hat, neben dem, was er tun sollte. Mit dem Snapper-Snapshot davor als Rückweg.</p>
   </div>

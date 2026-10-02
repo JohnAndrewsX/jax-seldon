@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `seldon decide` and `seldon status` fill the `decisions.index` table in
   the logbook's `DECISIONS.md` from `decisions/`; text outside the fence
   stays yours.
+- A generated fence whose begin marker lost its end marker is now left
+  alone with a warning (`dossier`, `decide`, `status`; an error in
+  `import`) instead of getting a second fence that a later run would
+  replace together with your text.
 - `seldon doctor` prints `~`-shortened paths in the `logbook` row, like
   its header; the wizard's harness question says how to toggle and
   confirm.

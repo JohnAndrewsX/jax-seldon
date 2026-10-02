@@ -55,15 +55,15 @@ seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
 # are checked before any write (exit 1). `explain` creates a completed
 # retroactive case (ADR-0021). --json → {eventId, resolution, only, txId,
 # resolved, events, case, areaCreated, git}
-seldon decide "<title>" [--case ID]            # creates ADR, opens $EDITOR unless --no-edit
+seldon decide "<title>" [--case ID] [--no-edit] # creates ADR, opens $EDITOR unless --no-edit
 seldon status                                  # regenerates STATUS.md + index
 # decide and status (WP-050) fill the `decisions.index` fence of the logbook's
 # DECISIONS.md from decisions/*.md frontmatter: `| [[id]] | title | status |
 # date |`, newest id first, `|` in a title escaped; the table head inside the
 # fence is kept when it has one (a translated head stays), else `| ID | Title |
 # Status | Date |`. Text outside the fence is never changed; a missing fence is
-# appended under `## Index`, a missing file created; a begin marker without its
-# end leaves the file alone (warning). Written only on change; decide commits
+# appended under `## Index`, a missing file created; a begin marker without an
+# end marker of its own leaves the file alone (warning). Written only on change; decide commits
 # it with the new ADR, status lists it in `files`.
 seldon index [--check]                         # rebuild index; --check validates against schema
 seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|all] [--json]
@@ -90,7 +90,9 @@ seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|
                                                # than the row's date; only that cell changes). Text outside
                                                # the fences is never changed; a missing fence is appended to its
                                                # default file under a heading in the logbook language. A failed
-                                               # query skips its fences (warning, fence kept). Files written
+                                               # query skips its fences (warning, fence kept); so does a fence
+                                               # whose begin marker has no end marker of its own (WP-050: no
+                                               # second fence is appended; `import` reports it as an error). Files written
                                                # atomically and only on change, autocommit `seldon: dossier`,
                                                # index rebuilt; no ledger write. `init` runs it once after the
                                                # first capture; `capture` and `status` never do. --json →

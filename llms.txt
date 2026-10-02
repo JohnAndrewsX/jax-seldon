@@ -24,7 +24,7 @@ An agent started inside a logbook follows the logbook's own `AGENTS.md`; the lon
 ## Writing commands (and when)
 
 - [`seldon plan new --zone Z --risk R --area A -- "<title>"`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#3-plan-before-you-change-the-machine): only after the user agreed to the proposed case
-- [`seldon plan start <ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#3-plan-before-you-change-the-machine): before any change to the machine; red cases with `--snapshot N`
+- [`seldon plan start <ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#3-plan-before-you-change-the-machine): before any change to the machine; R2 and R3 cases with `--snapshot N` (without one it warns, never refuses)
 - [`seldon plan verify | done | drop <ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#3-plan-before-you-change-the-machine): verify when the work is done; done only when verification passed and the user agrees; drop with `--reason`
 - [`seldon log --case <ID> -- "<text>"`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#5-the-commands-you-use): a journal note
 - [`seldon event <source> <kind> --subject S`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#5-the-commands-you-use): record a change no hook or collector sees

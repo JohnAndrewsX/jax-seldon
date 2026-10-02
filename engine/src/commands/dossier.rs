@@ -83,14 +83,19 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
         .filter(|f| Section::selects(&args.sections, f))
         .collect();
     let mut status: BTreeMap<&'static str, Status> = BTreeMap::new();
-    let mut set = |files: &mut Files, fence: &Fence, content: Option<String>| {
-        let s = match content {
-            Some(c) if files.set(fence, &c) => Status::Written,
-            Some(_) => Status::Unchanged,
-            None => Status::Skipped,
+    let mut set =
+        |files: &mut Files, warnings: &mut Vec<String>, fence: &Fence, content: Option<String>| {
+            let s = match content.map(|c| files.set(fence, &c)) {
+                Some(Ok(true)) => Status::Written,
+                Some(Ok(false)) => Status::Unchanged,
+                Some(Err(w)) => {
+                    warnings.push(w);
+                    Status::Skipped
+                }
+                None => Status::Skipped,
+            };
+            status.insert(fence.name, s);
         };
-        status.insert(fence.name, s);
-    };
 
     // the queries run once per section, the first time one of its fences
     // needs them
@@ -202,7 +207,7 @@ pub fn run(ctx: &Context, args: DossierArgs) -> Result<Output> {
             }
             other => unreachable!("fence {other} has no renderer"),
         };
-        set(&mut files, fence, content);
+        set(&mut files, &mut warnings, fence, content);
     }
 
     let written = files.write()?;

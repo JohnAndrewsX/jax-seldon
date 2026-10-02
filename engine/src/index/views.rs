@@ -351,6 +351,17 @@ pub fn fence_body<'a>(text: &'a str, name: &str) -> Option<&'a str> {
     Some(&text[start..start + len])
 }
 
+/// Whether `text` has a begin marker of fence `name` whose body cannot be
+/// told: no end marker after it, or another fence's begin marker before
+/// the end (the end then belongs to that fence). A writer must leave such
+/// a fence alone: appending a second one would let the next run replace
+/// everything between the old begin and the new end, the user's text
+/// included (WP-050).
+pub fn fence_damaged(text: &str, name: &str) -> bool {
+    text.contains(&format!("{FENCE_BEGIN}{name} -->"))
+        && fence_body(text, name).is_none_or(|b| b.contains(FENCE_BEGIN))
+}
+
 /// A generated file (`STATUS.md`, `outputs/REBUILD.md`) with its fence
 /// `name` replaced by `content`; the rest of an existing file is kept
 /// (WP-032 review item 6: one merge, two callers). A file without the
@@ -442,8 +453,7 @@ pub enum Fill {
 /// Fills the `decisions.index` fence of `DECISIONS.md` from `rows`
 /// (WP-050); every byte outside the fence stays. A file without the
 /// fence gets it appended under `## Index`, a missing file is created.
-/// A begin marker without its end is left alone (replacing up to a later
-/// end marker could eat the user's text).
+/// A damaged fence ([`fence_damaged`]) is left alone.
 pub fn write_decisions_index(logbook: &Logbook, rows: &[DecisionRow]) -> anyhow::Result<Fill> {
     const REL: &str = "DECISIONS.md";
     let path = logbook.path(REL);
@@ -454,16 +464,19 @@ pub fn write_decisions_index(logbook: &Logbook, rows: &[DecisionRow]) -> anyhow:
             return Err(anyhow::Error::new(e).context(format!("cannot read {}", path.display())));
         }
     };
+    if old
+        .as_deref()
+        .is_some_and(|t| fence_damaged(t, DECISIONS_FENCE))
+    {
+        return Ok(Fill::Skipped(format!(
+            "{REL}: the {DECISIONS_FENCE} fence has no end marker of its own; table not updated"
+        )));
+    }
     let body = old.as_deref().and_then(|t| fence_body(t, DECISIONS_FENCE));
     let content = decisions_index(body, rows);
     let text = match old.as_deref() {
         Some(t) => match replace_fence(t, DECISIONS_FENCE, &content) {
             Some(text) => text,
-            None if t.contains(&format!("{FENCE_BEGIN}{DECISIONS_FENCE} -->")) => {
-                return Ok(Fill::Skipped(format!(
-                    "{REL}: the {DECISIONS_FENCE} fence has no end marker; table not updated"
-                )));
-            }
             None => {
                 let sep = if t.is_empty() || t.ends_with('\n') {
                     ""
@@ -536,6 +549,22 @@ mod tests {
         // idempotent
         let once = merge_status(Some(user), "E\n");
         assert_eq!(merge_status(Some(&once), "E\n"), once);
+    }
+
+    #[test]
+    fn a_fence_is_damaged_without_an_end_of_its_own() {
+        let ok = "<!-- seldon:begin a -->\nx\n<!-- seldon:end -->\n";
+        assert!(!fence_damaged(ok, "a"));
+        assert!(!fence_damaged(ok, "b"), "no fence is not a damaged fence");
+        assert!(fence_damaged("<!-- seldon:begin a -->\nx\n", "a"));
+        assert!(
+            fence_damaged("t <!-- seldon:begin a -->", "a"),
+            "marker at the end"
+        );
+        let borrowed =
+            "<!-- seldon:begin a -->\nmine\n<!-- seldon:begin b -->\ny\n<!-- seldon:end -->\n";
+        assert!(fence_damaged(borrowed, "a"));
+        assert!(!fence_damaged(borrowed, "b"));
     }
 
     #[test]

@@ -461,3 +461,38 @@ fn the_fixture_decisions_index_is_stable() {
         read(&fixture_logbook().join("DECISIONS.md"))
     );
 }
+
+/// An invalid decision file is skipped by the fill and named in
+/// `decide --json`'s warnings; the new decision is still created.
+#[test]
+fn decide_names_a_skipped_decision_in_its_warnings() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    std::fs::write(
+        root.join("decisions/ADR-0001-broken.md"),
+        "---\nid: nope\n---\n",
+    )
+    .unwrap();
+    let out = env.at(NOW, &["decide", "--no-edit", "--json", "--", "Good"]);
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let v = common::json(&out);
+    assert_eq!(v["decision"]["id"], "ADR-0002");
+    let warnings = v["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{v}");
+    let w = warnings[0].as_str().unwrap();
+    assert!(w.starts_with("decisions/ADR-0001-broken.md: "), "{w}");
+    assert!(w.ends_with("; skipped"), "{w}");
+    let text = read(&root.join("DECISIONS.md"));
+    assert!(
+        text.contains("| [[ADR-0002]] | Good | proposed |"),
+        "{text}"
+    );
+    assert!(!text.contains("ADR-0001"), "{text}");
+    // the human output carries it too
+    let out = env.at(NOW, &["decide", "--no-edit", "--", "Another"]);
+    assert!(
+        common::stdout(&out).contains("\nwarning: decisions/ADR-0001-broken.md: "),
+        "{}",
+        common::stdout(&out)
+    );
+}
