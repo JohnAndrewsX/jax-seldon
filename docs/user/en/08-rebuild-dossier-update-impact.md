@@ -112,13 +112,15 @@ Until then, a safe routine for Omarchy updates:
 
 2. Read `system/deviations.md`. Each row is a file you changed on purpose
    that the update may touch.
-3. Take a snapshot and start the case with it:
+3. Take a snapshot and start the case with its number:
 
    ```sh
+   sudo snapper -c root create --description "before Omarchy update" --print-number
    seldon plan start C-2026-005 --snapshot <N>
    ```
 
-   `<N>` is the snapshot's number from `snapper list`.
+   `<N>` is the number the first command prints. Use the id that
+   `plan new` printed instead of `C-2026-005`.
 
 4. Run the update, then `seldon capture`. Link the update's drift to the
    case with `seldon drift link`, and check your deviations.
