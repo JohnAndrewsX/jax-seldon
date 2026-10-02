@@ -112,6 +112,13 @@ All on `main`, after every work package of the release is merged:
    `git push origin vX.Y.Z`. The workflow builds, publishes the GitHub
    release with the CHANGELOG section as its notes, then the AUR package
    and the plugin repository.
+6. After the workflow is green: grep `README.md`, `plugin/README.md`,
+   `docs/user/` and `llms.txt` for the previous version and for text
+   bound to it ("from the next release on", sample `seldon --version`
+   output, the project status line) and update it on `main`. Prefer
+   wording that does not name a version in the first place. The plugin
+   repository's README changes only with the next tag (subtree push), so
+   keep version-bound text out of `plugin/README.md`.
 
 The dry run in step 4 already fails without the section. If a tag
 build fails on it anyway, no release exists yet: fix the CHANGELOG on
