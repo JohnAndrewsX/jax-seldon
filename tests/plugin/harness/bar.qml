@@ -19,8 +19,9 @@ import qs.Ui
 // The report (`HARNESS bar {json}`): the pill's IPC read-out, the device
 // pixel ratio, the bar and box size, the glyph file, the glyph box and the
 // counts text in window coordinates (logical px), the glyph's ink centre
-// and the digits' centre as the widget computes them (logical px), and the
-// ink colour. bar-view.sh measures the same centres in the PNG.
+// and the digits' centre as the widget computes them (logical px; for the
+// record only, the glyph is placed by that formula), and the ink colour.
+// bar-view.sh measures check 4 in the PNG.
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin folder (required)
 //   HARNESS_SHOT        PNG path to save the window to (optional)

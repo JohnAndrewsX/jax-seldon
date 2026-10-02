@@ -816,21 +816,23 @@ shell's own `PluginBarApi` facade, bound to the theme's bar colours and
 font, in a strip one bar tall on the bar background, with Service.qml in
 dev mode on the sample (2 active, 4 open drift, crises: urgent tone) and
 the fake engine on PATH. It reports the pill's IPC read-out, the glyph
-file and box, and the glyph's and the digits' centres from the widget's
-geometry, and saves the window as a PNG; `tests/plugin/png-ink.py`
-(standard library only) then measures the ink of the glyph box and of the
-counts in that PNG.
+file and box (and, for the record only, the centres the widget computes;
+the glyph is placed by that formula, so they cannot disagree), and saves
+the window as a PNG; `tests/plugin/png-ink.py` (standard library only)
+then measures the ink of the glyph box and of the counts in that PNG.
 
 Cases: Tokyo Night, Catppuccin Latte and Osaka Jade, each at `100` (font
 base size 12: bar 26, box 16, `a4-bar-glyph-16.svg`), `125` (base size
 15: bar 33, box 20, `a4-bar-glyph-20.svg`) and `out125` (base size 12 on
 a 1.25 output, `QT_SCALE_FACTOR=1.25`: box 16 logical = 20 device px, the
-20 px file); plus the not-initialised variant (the glyph alone, dimmed).
-Checks: file, box, image loaded, text `2 · 4`, tone; brief check 4 twice —
-`|glyph centre − digit centre| ≤ 1` from the layout (logical px) and from
-the pixels (device px); the tint — the hinted glyph's pixels are exactly
-the pill's ink colour (the theme's urgent colour here); a clean log; the
-real-home guard. Each case prints a `measure` line (ink rows and centres).
+20 px file); per theme the accent and the default tone at `100` (the
+sample with no crisis, and with no crisis and no active case, derived in
+the scratch dir; the three tones must give three colours); plus the
+not-initialised variant (the glyph alone, dimmed). Checks: file, box,
+image loaded, text, tone; brief check 4 —
+`|glyph centre − digit centre| ≤ 1` measured in the pixels (device px);
+the tint — the hinted glyph's pixels are exactly the pill's ink colour; a
+clean log; the real-home guard. Each case prints a `measure` line (ink rows and centres).
 `BAR_SHOTS=<dir>` keeps the renders (`bar-<theme>-<scale>.png`);
 `BAR_WORK=<dir>` keeps the scratch dir (logs, reports).
 
@@ -1137,8 +1139,9 @@ in `today.entries`, and at least one package event.
   4. waits until `jax.seldon.service status` has settled in `ok`, after
      the plugin's own start-up capture;
   5. compares:
-     - `jax.seldon.panel pill` and the service pill with the pill
-       computed from `summary` (SPEC-PLUGIN §4), and the tone;
+     - `jax.seldon.panel pill` and the service pill with the pill text
+       computed from `summary` (SPEC-PLUGIN §4: the counts `A · D` after
+       the glyph, zero parts hidden), and the tone;
      - Today's entry count in `jax.seldon.panel view` with
        `index.today.entries`;
      - the Changelog row count with the pacman filter and without it;

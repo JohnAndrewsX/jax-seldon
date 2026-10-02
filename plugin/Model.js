@@ -264,15 +264,16 @@ function todayState(c) {
   return { id: "all-clear", tone: "default" }
 }
 
-// The pictogram file for a state id drawn at `size` device pixels: the 48
-// grid up to 72 px, the 96 grid above.
+// The pictogram file for a state id drawn at `size` logical pixels (the
+// vector scales with the DPR): the 48 grid up to 72 px, the 96 grid above.
 function pictogramFile(id, size) {
   return id ? "a11-state-" + id + "-" + (Number(size) > 72 ? 96 : 48) + ".svg" : ""
 }
 
 // A12, the timeline markers: shape alone tells them apart (release diamond,
-// snapshot dot, case brackets, crisis spindle). The legend shows the files,
-// the 12 grid up to 14 px, the 16 grid above; the canvas draws the same
+// snapshot dot, case brackets, crisis spindle). The legend shows the files
+// at `size` logical pixels (the vector scales with the DPR), the 12 grid up
+// to 14 px, the 16 grid above; the canvas draws the same
 // shapes from the 16 grid's path data (assets/a12-marker-*-16.svg, centre
 // 8, 8; model.test.js keeps the two equal). Case brackets are rectangles
 // (Timeline.qml), 2 of 16 units thick, as in the files.

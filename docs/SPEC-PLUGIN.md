@@ -186,8 +186,9 @@ File by the box in device pixels: 24 → `a5-panel-mark-24.svg`, 32 →
 `a5-panel-mark-32.svg`, anything else → `a1-icon-mask.svg` (e.g. 30 at
 font scale 1.25). Colour: the panel foreground.
 
-State pictograms (A11, 48 and 96 grids, never drawn below 48 px; the 48
-grid up to 72 px, the 96 grid above): the status banner shows its status's
+State pictograms (A11, 48 and 96 grids, never drawn below 48 px; by the
+size in logical pixels — the vector scales with the DPR — the 48 grid up
+to 72 px, the 96 grid above): the status banner shows its status's
 pictogram, `Style.space(48)` square, left of its text, in the banner's
 tone — engine missing → `engine-missing`, not initialised →
 `logbook-not-initialised`, index missing (or unreadable) →
@@ -242,7 +243,8 @@ Layout: 12-column grid, `Style.space` gutters.
   tall, `[` at its start, `]` at its close (an open case has no closing
   bracket; a span too short for both stays a plain bar). The slot's title
   row shows the legend in place of the subtitle: each marker file
-  (`Style.space(12)`; the 12 grid up to 14 px, the 16 grid above) in the
+  (`Style.space(12)`; by the size in logical pixels — the vector scales
+  with the DPR — the 12 grid up to 14 px, the 16 grid above) in the
   canvas colour, then "releases", "snapshots", "cases" (`[` `]`),
   "crises"; it hides when it does not fit beside the caption.
 - Row 5 (full width): **The Plan** — active cases (`cases.active`) as

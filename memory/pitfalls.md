@@ -969,4 +969,11 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `docs/images/panel-*.png` are 460-wide crops of the `PANEL_FIT_SHOTS`
   renders ending at a content line; measure the shift (png-ink.py on the
   tab strip) and add it to each crop height, and to the preview crop in
-  TESTING.md.
+  TESTING.md. The five tab crops are palette PNGs on main (about 10 KB
+  each); a fresh render is truecolor (+150 KB in total): shrink with
+  `magick f.png -strip -colors 64 PNG8:f.png`. The overlay and Today
+  renders stay truecolor (preview.png is composed from them).
+- **A rebase onto a release commit moves `[Unreleased]` bullets into the
+  dated section.** Merge into its existing `### Plugin` / `### Packaging
+  and docs` lists (no second heading, no blank line inside a list) and
+  check with `bash packaging/release-notes.sh <version> CHANGELOG.md`.

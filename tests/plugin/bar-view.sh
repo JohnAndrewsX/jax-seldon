@@ -2,9 +2,10 @@
 # Render plugin/BarWidget.qml (the pill) in a private, headless Quickshell
 # (tests/plugin/harness/bar.qml) and check the bar glyph (A4): the file for
 # the box, the theme's tint, and brief check 4 — the glyph's vertical centre
-# on the digits' centre within 1 px, at scale 1.0 and 1.25 — measured twice:
-# from the widget's own geometry and from the pixels of the render
-# (tests/plugin/png-ink.py).
+# on the digits' centre within 1 px, at scale 1.0 and 1.25 — measured in
+# the pixels of the render (tests/plugin/png-ink.py). The widget's own
+# centres are in the report for the record only: the glyph is placed by
+# the same formula, so comparing them could not fail.
 #
 # Scales: `100` font base size 12 (bar 26, box 16), `125` base size 15 (bar
 # 33, box 20; the shell scales the bar with the font), `out125` base size 12
@@ -134,8 +135,6 @@ for theme in tokyo-night catppuccin-latte osaka-jade; do
     check "$name text" "$(field "$name" .pill.text)" "2 · 4"
     check "$name glyph" "$(field "$name" .pill.glyph)" "$want_file"
     check "$name tone" "$(field "$name" .pill.tone)" urgent
-    # check 4 from the widget's geometry (logical px)
-    within "$name centre (layout)" "$(field "$name" .glyphCentre)" "$(field "$name" .digitCentre)" 1
     # check 4 from the pixels (device px), and the tint: the hinted glyph's
     # pixels are exactly the pill's ink colour (the theme's urgent colour)
     glyph=$(ink "$name" glyphRect)
@@ -160,8 +159,9 @@ for theme in tokyo-night catppuccin-latte osaka-jade; do
     run "$name" "$theme" 12 "$work/index-$tone.json"
     check "$name tone" "$(field "$name" .pill.tone)" "$tone"
     check "$name text" "$(field "$name" .pill.text)" "$([[ $tone == accent ]] && echo "2 · 4" || echo "· 4")"
-    within "$name centre (layout)" "$(field "$name" .glyphCentre)" "$(field "$name" .digitCentre)" 1
     glyph=$(ink "$name" glyphRect)
+    digits=$(ink "$name" countsRect)
+    within "$name centre (pixels)" "$(jq -r .centre <<<"$glyph")" "$(jq -r .centre <<<"$digits")" 1
     check "$name tint" "$(jq -r .colour <<<"$glyph")" "$(field "$name" .ink)"
     clean_log "$name"
   done
