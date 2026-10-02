@@ -16,7 +16,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
@@ -37,7 +37,10 @@ seldon capture [--source pacman,snapper,omarchy,plugins,theme,config | --all] [-
 seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]
 seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [--meta k=v]
 seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
-seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT]
+seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A]
+# --snapshot: `plan start` only. Starting an R2 or R3 case with no snapshot
+# (no --snapshot, no snapshotBefore) prints a warning and never refuses
+# (ADR-0023); R3's also asks for the human's explicit go per step (WP-050)
 seldon plan list [--status S] [--area A]
 seldon plan show <ID>
 seldon drift [--crisis-only] [--json]            # read-only: index items, crises first; totals count all
@@ -52,8 +55,16 @@ seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
 # are checked before any write (exit 1). `explain` creates a completed
 # retroactive case (ADR-0021). --json → {eventId, resolution, only, txId,
 # resolved, events, case, areaCreated, git}
-seldon decide "<title>" [--case ID]            # creates ADR, opens $EDITOR unless --no-edit
+seldon decide "<title>" [--case ID] [--no-edit] # creates ADR, opens $EDITOR unless --no-edit
 seldon status                                  # regenerates STATUS.md + index
+# decide and status (WP-050) fill the `decisions.index` fence of the logbook's
+# DECISIONS.md from decisions/*.md frontmatter: `| [[id]] | title | status |
+# date |`, newest id first, `|` in a title escaped; the table head inside the
+# fence is kept when it has one (a translated head stays), else `| ID | Title |
+# Status | Date |`. Text outside the fence is never changed; a missing fence is
+# appended under `## Index`, a missing file created; a begin marker without an
+# end marker of its own leaves the file alone (warning). Written only on change; decide commits
+# it with the new ADR, status lists it in `files`.
 seldon index [--check]                         # rebuild index; --check validates against schema
 seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|all] [--json]
                                                # WP-035: rewrites only the bodies of the selected generated
@@ -79,7 +90,9 @@ seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|
                                                # than the row's date; only that cell changes). Text outside
                                                # the fences is never changed; a missing fence is appended to its
                                                # default file under a heading in the logbook language. A failed
-                                               # query skips its fences (warning, fence kept). Files written
+                                               # query skips its fences (warning, fence kept); so does a fence
+                                               # whose begin marker has no end marker of its own (WP-050: no
+                                               # second fence is appended; `import` reports it as an error). Files written
                                                # atomically and only on change, autocommit `seldon: dossier`,
                                                # index rebuilt; no ledger write. `init` runs it once after the
                                                # first capture; `capture` and `status` never do. --json →
@@ -174,7 +187,10 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # ids}], assumptions: [{case, source, assumption}], skipped: [{path,
                                                # reason, error}],
                                                # files, marker, git}
-seldon hook install <claude-code|generic> [--settings PATH]
+seldon hook install claude-code [--settings PATH]
+                                               # WP-050: `generic` dropped from the synopsis: it has no
+                                               # settings file to merge into; other agents pipe into
+                                               # `hook generic` themselves (§8)
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…","cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub
@@ -236,8 +252,10 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
 
 `log`, `event`, `plan *`, `open` with `--json` return `{"event":
 <ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
-`movedFrom`, `activeCase`, `journal` (WP-006); `decide --json` returns
-`{"decision": {id, title, status, date, cases, path}, "editor", "git"}`
+`movedFrom`, `activeCase`, `journal` (WP-006) and `warnings` (a list of
+strings, empty unless `plan start` warned; WP-050); `decide --json` returns
+`{"decision": {id, title, status, date, cases, path}, "editor", "git",
+"warnings"}` (`warnings`: the `decisions.index` fill, WP-050)
 (no ledger event). `plan new` defaults:
 `--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
 plan step so agents identify themselves; `log --tag T` stores `meta.tags`
@@ -414,9 +432,8 @@ After every capture:
    `members`. The item's zone is yellow iff every member is *routine*
    (kind `upgrade`/`reinstall`, not explicit, transaction command is `-S`
    with `-u`/`--sysupgrade` naming no package, subject not matching
-   `config.toml [drift] alwaysRed` — default `linux*`, `systemd`, `glibc`,
-   `hyprland`, `omarchy`, `quickshell`), else red. Other sources are
-   never grouped.
+   `config.toml [drift] alwaysRed` — default in §2), else red. Other
+   sources are never grouped.
 6. Red zone → `crisis: true`.
 7. **The engine's own writes (WP-038).** A file the engine writes itself
    under a watched path — the theme hook script that `init --theme-hook`

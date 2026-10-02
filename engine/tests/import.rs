@@ -409,6 +409,34 @@ fn an_editor_formatted_deviations_table_keeps_its_rows() {
     assert_eq!(dev.matches("| path | reason |").count(), 1);
 }
 
+/// WP-050: a deviations fence without its own end marker plans no rows;
+/// it is an error (apply is blocked) and the file is never touched.
+#[test]
+fn a_deviations_fence_without_its_end_blocks_the_rows() {
+    let (env, root, vault) = setup();
+    let path = root.join("system/deviations.md");
+    let open = read(&path).replace("<!-- seldon:end -->", "Meine Notiz.");
+    assert!(!open.contains("<!-- seldon:end -->"));
+    std::fs::write(&path, &open).unwrap();
+    let out = import(&env, &vault, &["--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let j = json(&out);
+    assert_eq!(j["counts"]["deviationRows"], 0, "{j}");
+    let skipped = j["skipped"].as_array().unwrap();
+    assert!(
+        skipped.iter().any(|s| s["path"] == "system/deviations.md"
+            && s["error"] == true
+            && s["reason"]
+                .as_str()
+                .unwrap()
+                .contains("deviations.table fence has no end marker")),
+        "{j}"
+    );
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert_eq!(read(&path), open);
+}
+
 #[test]
 fn a_failed_apply_says_how_to_undo_it() {
     use std::os::unix::fs::PermissionsExt as _;

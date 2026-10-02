@@ -154,14 +154,43 @@ mod tests {
         let red = AlwaysRed::new(&DriftConfig::default().always_red);
         for s in [
             "linux",
-            "linux-firmware",
             "linux-zen",
+            "linux-lts",
+            "linux-omarchy",
             "systemd",
             "hyprland",
+            "omarchy",
+            "omarchy-settings",
+            "quickshell",
+            "limine",
+            "limine-snapper-sync",
+            "grub",
+            "mkinitcpio",
+            "mkinitcpio-busybox",
+            "filesystem",
+            "pam",
+            "sddm",
+            "uwsm",
         ] {
             assert!(red.matches(s), "{s}");
         }
-        for s in ["firefox", "systemd-libs", "xlinux", "glibc-locales"] {
+        for s in [
+            "firefox",
+            "systemd-libs",
+            "xlinux",
+            "glibc-locales",
+            "omarchy-nvim",
+            "hyprutils",
+            "grub-customizer",
+            // kernels only: firmware and headers are not R3
+            "linux-firmware",
+            "linux-firmware-amdgpu",
+            "linux-api-headers",
+            "linux-omarchy-headers",
+            "linux-headers",
+            "pambase",
+            "sddm-kcm",
+        ] {
             assert!(!red.matches(s), "{s}");
         }
         let custom = AlwaysRed::new(&["lib?nput".into(), "mesa[0-9]".into(), "a.b".into()]);

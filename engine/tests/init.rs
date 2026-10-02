@@ -1096,6 +1096,12 @@ mod setup {
             ] {
                 assert!(agents.contains(needle), "{language}: {needle}");
             }
+            // WP-050: the engine maintains the decisions table
+            let decisions = common::read(&root.join("DECISIONS.md"));
+            assert!(
+                decisions.contains("`seldon decide` ") && decisions.contains("`seldon status`"),
+                "{language}: {decisions}"
+            );
         }
         // prose differs wherever a template has prose
         for t in TEMPLATES {

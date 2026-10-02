@@ -1144,7 +1144,15 @@ fn plan_deviations(
     for r in &rows {
         body.push_str(&format!("| {} | {} | {} | — |\n", r.path, r.reason, r.date));
     }
-    files.set(fence, &body);
+    if let Err(w) = files.set(fence, &body) {
+        // a damaged fence is the user's to repair: no rows, the reason reported
+        skipped.push(Skipped {
+            path: "system/deviations.md".to_string(),
+            reason: w,
+            error: true,
+        });
+        return Ok((Vec::new(), None));
+    }
     Ok((rows, Some(files)))
 }
 

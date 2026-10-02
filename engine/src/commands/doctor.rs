@@ -105,7 +105,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     let effective = config.clone().unwrap_or_default();
 
     let (root, source) = ctx.resolve_logbook(path, config.as_ref());
-    let (logbook_check, logbook) = check_logbook(&root, source);
+    let (logbook_check, logbook) = check_logbook(&root, &ctx.dirs.display(&root), source);
     let not_initialised = logbook_check.status == Status::Error && !Logbook::is_initialised(&root);
     checks.push(logbook_check);
     checks.push(check_omarchy(&effective));
@@ -148,17 +148,22 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
 }
 
 /// Initialised, readable, complete layout, every record parses, every case
-/// in the folder of its status.
-fn check_logbook(root: &Path, source: crate::config::LogbookSource) -> (Check, Option<Logbook>) {
+/// in the folder of its status. `shown` is `root` as the header prints it
+/// (`~`-shortened).
+fn check_logbook(
+    root: &Path,
+    shown: &str,
+    source: crate::config::LogbookSource,
+) -> (Check, Option<Logbook>) {
     let logbook = match Logbook::open(root) {
         Ok(l) => l,
         Err(Error::NotInitialised(_)) => {
             let check = Check::new(
                 "logbook",
                 Status::Error,
-                format!("not initialised at {} (path from {source})", root.display()),
+                format!("not initialised at {shown} (path from {source})"),
             )
-            .fix(format!("seldon init --path {}", root.display()));
+            .fix(format!("seldon init --path {shown}"));
             return (check, None);
         }
         Err(e) => return (Check::new("logbook", Status::Error, e.to_string()), None),
@@ -185,13 +190,8 @@ fn check_logbook(root: &Path, source: crate::config::LogbookSource) -> (Check, O
     check_files::<Memory>(root, logbook.memory_files(), &mut problems, |_, _, _| {});
 
     let summary = format!(
-        "{} · machine {} · {} · {} cases, {} decisions, {} journal days",
-        root.display(),
-        logbook.meta.machine_id,
-        logbook.meta.language,
-        cases,
-        decisions,
-        journals
+        "{shown} · machine {} · {} · {} cases, {} decisions, {} journal days",
+        logbook.meta.machine_id, logbook.meta.language, cases, decisions, journals
     );
     let check = if !problems.is_empty() {
         Check::new(

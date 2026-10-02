@@ -86,6 +86,42 @@ mod doctor {
         assert!(text.trim_end().ends_with("doctor: ok"));
     }
 
+    /// WP-050: the `logbook` row shortens the home to `~` like the header.
+    #[test]
+    fn logbook_row_shows_paths_like_the_header() {
+        let env = Env::new(Snapper::Allowed);
+        let root = env.home.join("Seldon");
+        let out = env.seldon(&[
+            "init",
+            "--non-interactive",
+            "--no-capture",
+            "--path",
+            root.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let text = stdout(&env.seldon(&["doctor"]));
+        assert!(text.starts_with("seldon doctor · ~/Seldon\n"), "{text}");
+        assert!(text.contains(" logbook  ~/Seldon · machine "), "{text}");
+        assert!(!text.contains(env.home.to_str().unwrap()), "{text}");
+
+        let missing = env.home.join("Elsewhere");
+        let v = json(&env.seldon(&["doctor", "--path", missing.to_str().unwrap(), "--json"]));
+        assert_eq!(
+            v["logbook"],
+            missing.to_str().unwrap(),
+            "JSON keeps it absolute"
+        );
+        let logbook = check(&v, "logbook");
+        assert!(
+            logbook["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("not initialised at ~/Elsewhere (path from "),
+            "{logbook}"
+        );
+        assert_eq!(logbook["fix"], "seldon init --path ~/Elsewhere");
+    }
+
     #[test]
     fn logbook_from_config_after_init() {
         let env = Env::new(Snapper::Allowed);

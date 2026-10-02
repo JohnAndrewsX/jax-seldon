@@ -1,7 +1,7 @@
 # Decisions
 
 Why this machine is the way it is. One file per decision under `decisions/`.
-New decision: `seldon decide "<title>"`. The table between the fences is reserved for Seldon, which does not fill it yet; until it does, keep your own list below the fences.
+New decision: `seldon decide "<title>"`. Seldon fills the table between the fences from `decisions/` on every `seldon decide` and `seldon status`; your own text goes outside it.
 
 <!-- seldon:begin decisions.index -->
 | ID | Title | Status | Date |

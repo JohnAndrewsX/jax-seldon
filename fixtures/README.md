@@ -70,8 +70,11 @@ Rules the fixture check implements beyond the plain field copies:
   kind `upgrade` or `reinstall`, `explicit: false`, `meta.command` split on
   whitespace (as pacman logs it, unquoted) is `pacman` with the sync operation
   (`-S`/`--sync`), `-u`/`--sysupgrade` and no package word, and the subject
-  matches none of the `alwaysRed` globs (default `linux*`, `systemd`, `glibc`,
-  `hyprland`, `omarchy`, `quickshell`); else red. `crisis` iff red. Options
+  matches none of the `alwaysRed` globs (default in SPEC-ENGINE §2: the
+  kernels `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`,
+  `linux-rt-lts`, `linux-omarchy`; `systemd`, `glibc`, `hyprland`, `omarchy`,
+  `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`,
+  `filesystem`, `pam`, `sddm`, `uwsm`); else red. `crisis` iff red. Options
   that take an argument (`--overwrite`, `--config`, `-r`, `--ask`, …) consume
   it; an unknown option is assumed to take none, so its argument counts as a
   package and the item turns red. Other sources copy the event's zone.

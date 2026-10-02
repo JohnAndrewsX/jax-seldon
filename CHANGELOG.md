@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- `seldon plan start` warns when an R2 or R3 case starts without a
+  snapshot (`warnings` in `--json`); R3 also asks for the human's explicit
+  go per step. Advice only, never refused (ADR-0023, WP-050).
+- The default `[drift] alwaysRed` list follows ADR-0023's R3 subjects: new
+  `omarchy-settings`, `limine*`, `grub`, `mkinitcpio*`, `filesystem` and
+  the login path `pam`, `sddm`, `uwsm`; `linux*` is narrowed to the
+  kernels (`linux`, `-lts`, `-zen`, `-hardened`, `-rt`, `-rt-lts`,
+  `-omarchy`), so firmware and header upgrades stay routine.
+  `init` writes the list into `config.toml`, so an existing config keeps
+  its old list; add the new globs by hand.
+- `seldon decide` and `seldon status` fill the `decisions.index` table in
+  the logbook's `DECISIONS.md` from `decisions/`; text outside the fence
+  stays yours.
+- A generated fence whose begin marker lost its end marker is now left
+  alone with a warning (`dossier`, `decide`, `status`; an error in
+  `import`) instead of getting a second fence that a later run would
+  replace together with your text.
+- `seldon doctor` prints `~`-shortened paths in the `logbook` row, like
+  its header; the wizard's harness question says how to toggle and
+  confirm.
+- SPEC-ENGINE no longer lists `hook install generic`: there is nothing to
+  install, other agents pipe into `seldon hook generic` themselves.
+
 ### Packaging and docs
 
 - User guide in English and German (WP-045): `docs/user/en/` and

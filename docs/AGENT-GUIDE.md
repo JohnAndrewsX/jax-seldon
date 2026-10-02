@@ -53,9 +53,10 @@ more, and `.seldon/active-case` names the one started last.
    will appear: Seldon proposes linking an unexplained change to an open
    case whose *Plan* names its subject.
 3. **Start it:** `seldon plan start <ID> --actor agent:<name>`. From then
-   on every change the hooks and collectors see carries the case id. For a
-   red case take a snapper snapshot first and pass it:
-   `--snapshot <N>`.
+   on every change the hooks and collectors see carries the case id. For
+   an `R2` or `R3` case take a snapper snapshot first and pass it:
+   `--snapshot <N>`. Without one, `plan start` prints a warning (and
+   `warnings` in `--json`) but never refuses (ADR-0023).
 4. **Work the steps.** Add dated lines to the case's *Log* (append only,
    never edit earlier lines) or use `seldon log --case <ID>`.
 5. **Hand over:** fill *Result*, then

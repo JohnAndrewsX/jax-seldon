@@ -620,7 +620,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
             ctx.dirs.display(&kit)
         );
         let picked = MultiSelect::with_theme(&theme)
-            .with_prompt("Agent harnesses")
+            .with_prompt("Agent harnesses (space toggles, enter confirms)")
             .items(&["Claude Code hooks (claude-code)".to_string(), kit_label])
             .defaults(&checked)
             .interact()

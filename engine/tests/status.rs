@@ -320,3 +320,179 @@ fn the_fast_rebuild_reads_head_without_git() {
     assert_eq!(ix["generatedAt"], json!(NOW));
     assert_eq!(ix["logbook"]["git"], json!({ "head": short(&env) }));
 }
+
+/// WP-050: `decide` and `status` fill the `decisions.index` fence of
+/// DECISIONS.md from decisions/*.md; text outside it is the user's.
+#[test]
+fn decide_and_status_fill_the_decisions_index() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let path = root.join("DECISIONS.md");
+    let template = read(&path);
+    assert!(template.contains("Seldon fills the table between the fences"));
+    // the user writes above and below the fence
+    let mine = template.replacen(
+        "<!-- seldon:begin decisions.index -->",
+        "My intro.\n\n<!-- seldon:begin decisions.index -->",
+        1,
+    ) + "\n## Notes\nKeep this.\n";
+    std::fs::write(&path, &mine).unwrap();
+
+    for title in ["First", "Pipes | in titles"] {
+        let out = env.at(NOW, &["decide", "--no-edit", "--json", "--", title]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        assert_eq!(common::json(&out)["warnings"], json!([]));
+    }
+    let rows = "\
+<!-- seldon:begin decisions.index -->
+| ID | Title | Status | Date |
+|---|---|---|---|
+| [[ADR-0002]] | Pipes \\| in titles | proposed | 2026-10-01 |
+| [[ADR-0001]] | First | proposed | 2026-10-01 |
+<!-- seldon:end -->
+";
+    let text = read(&path);
+    assert!(
+        text.contains(&format!("My intro.\n\n{rows}\n## Notes\nKeep this.\n")),
+        "{text}"
+    );
+    assert!(text.ends_with("\n## Notes\nKeep this.\n"));
+    if env.has_git {
+        // in the decision's own commit
+        let files =
+            common::stdout(&env.git(&root, &["show", "--name-only", "--format=%s", "HEAD"]));
+        assert!(files.starts_with("seldon: ADR-0002 proposed\n"), "{files}");
+        assert!(files.contains("\nDECISIONS.md\n"), "{files}");
+    }
+
+    // nothing new: status writes nothing
+    let out = status(&env, NOW);
+    assert!(
+        !out["files"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("DECISIONS.md")),
+        "{out}"
+    );
+    assert_eq!(read(&path), text);
+
+    // the human accepts ADR-0001 in its file; status picks it up
+    let adr = root.join("decisions/ADR-0001-first.md");
+    std::fs::write(
+        &adr,
+        read(&adr).replace("status: proposed", "status: accepted"),
+    )
+    .unwrap();
+    // a translated table head stays
+    std::fs::write(
+        &path,
+        text.replace(
+            "| ID | Title | Status | Date |",
+            "| ID | Titel | Status | Datum |",
+        ),
+    )
+    .unwrap();
+    let out = status(&env, NOW);
+    assert!(
+        out["files"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("DECISIONS.md")),
+        "{out}"
+    );
+    let filled = read(&path);
+    assert!(filled.contains("| ID | Titel | Status | Datum |\n|---|---|---|---|\n| [[ADR-0002]]"));
+    assert!(filled.contains("| [[ADR-0001]] | First | accepted | 2026-10-01 |\n"));
+    // the second run writes nothing
+    let again = status(&env, "2026-10-01T18:00:00+02:00");
+    assert_eq!(again["files"], json!([]), "{again}");
+    assert_eq!(read(&path), filled);
+
+    // a fence without its end is left alone, with a warning
+    let broken = filled.replace("<!-- seldon:end -->\n", "");
+    std::fs::write(&path, &broken).unwrap();
+    let out = status(&env, NOW);
+    let warnings = out["warnings"].as_array().unwrap();
+    assert!(
+        warnings.iter().any(|w| w
+            .as_str()
+            .unwrap()
+            .contains("decisions.index fence has no end")),
+        "{out}"
+    );
+    assert_eq!(read(&path), broken);
+
+    // a file without the fence gets it appended; a missing file is created
+    std::fs::write(&path, "# Mine\nNo table.").unwrap();
+    status(&env, NOW);
+    let appended = read(&path);
+    assert!(
+        appended.starts_with(
+            "# Mine\nNo table.\n\n## Index\n\n<!-- seldon:begin decisions.index -->\n| ID | Title |"
+        ),
+        "{appended}"
+    );
+    std::fs::remove_file(&path).unwrap();
+    status(&env, NOW);
+    assert!(read(&path).starts_with("# Decisions\n\n<!-- seldon:begin decisions.index -->\n"));
+}
+
+/// The fixture's hand-made table is what the engine writes: no change.
+#[test]
+fn the_fixture_decisions_index_is_stable() {
+    let env = Env::new(Snapper::Missing);
+    let lb = env.tmp.path().join("logbook");
+    copy_dir(&fixture_logbook(), &lb);
+    let out = env.at(
+        NOW,
+        &["--logbook", lb.to_str().unwrap(), "status", "--json"],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let v = common::json(&out);
+    assert!(
+        !v["files"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("DECISIONS.md")),
+        "{v}"
+    );
+    assert_eq!(
+        read(&lb.join("DECISIONS.md")),
+        read(&fixture_logbook().join("DECISIONS.md"))
+    );
+}
+
+/// An invalid decision file is skipped by the fill and named in
+/// `decide --json`'s warnings; the new decision is still created.
+#[test]
+fn decide_names_a_skipped_decision_in_its_warnings() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    std::fs::write(
+        root.join("decisions/ADR-0001-broken.md"),
+        "---\nid: nope\n---\n",
+    )
+    .unwrap();
+    let out = env.at(NOW, &["decide", "--no-edit", "--json", "--", "Good"]);
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let v = common::json(&out);
+    assert_eq!(v["decision"]["id"], "ADR-0002");
+    let warnings = v["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{v}");
+    let w = warnings[0].as_str().unwrap();
+    assert!(w.starts_with("decisions/ADR-0001-broken.md: "), "{w}");
+    assert!(w.ends_with("; skipped"), "{w}");
+    let text = read(&root.join("DECISIONS.md"));
+    assert!(
+        text.contains("| [[ADR-0002]] | Good | proposed |"),
+        "{text}"
+    );
+    assert!(!text.contains("ADR-0001"), "{text}");
+    // the human output carries it too
+    let out = env.at(NOW, &["decide", "--no-edit", "--", "Another"]);
+    assert!(
+        common::stdout(&out).contains("\nwarning: decisions/ADR-0001-broken.md: "),
+        "{}",
+        common::stdout(&out)
+    );
+}

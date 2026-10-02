@@ -56,7 +56,8 @@ pub fn run(ctx: &Context, args: IndexArgs) -> Result<Output> {
     Ok(Output::ok(human, rebuilt_json(&r)))
 }
 
-/// Loads, derives, writes the views (and `STATUS.md` when `status`),
+/// Loads, derives, writes the views (and `STATUS.md` and the
+/// `decisions.index` fence of `DECISIONS.md` when `status`),
 /// optionally validates, and writes the index; under the state lock.
 /// `before_index` gets the logbook files written and runs before the git
 /// state is read (the autocommit of `seldon status`).
@@ -79,6 +80,13 @@ pub(crate) fn rebuild_with<T>(
     let mut files = views::write_ledger_views(&logbook, &built)?;
     if status && views::write_status(&logbook, &built)? {
         files.push("STATUS.md".into());
+    }
+    if status {
+        match views::write_decisions_index(&logbook, &built.index.decisions)? {
+            views::Fill::Written => files.push("DECISIONS.md".into()),
+            views::Fill::Unchanged => {}
+            views::Fill::Skipped(w) => built.warnings.push(w),
+        }
     }
     let extra = before_index(&config, &logbook, &files);
     built.index.logbook.git = index::git_info(&logbook.root);

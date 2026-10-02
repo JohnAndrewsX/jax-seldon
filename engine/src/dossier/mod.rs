@@ -197,16 +197,29 @@ impl Files {
             .find_map(|f| views::fence_body(&f.text, name).map(String::from))
     }
 
-    /// Sets the body of `fence` to `content`; `true` when that changed it.
-    pub fn set(&mut self, fence: &Fence, content: &str) -> bool {
+    /// Sets the body of `fence` to `content`; `Ok(true)` when that changed
+    /// it. A file with a damaged fence of that name ([`views::fence_damaged`]:
+    /// a begin marker without an end marker of its own) is left alone and
+    /// the fence skipped; the `Err` is the warning (WP-050).
+    pub fn set(&mut self, fence: &Fence, content: &str) -> Result<bool, String> {
         debug_assert!(content.is_empty() || content.ends_with('\n'));
+        if let Some(f) = self
+            .files
+            .iter()
+            .find(|f| views::fence_damaged(&f.text, fence.name))
+        {
+            return Err(format!(
+                "system/{}: the {} fence has no end marker of its own; fence kept",
+                f.name, fence.name
+            ));
+        }
         if self.body(fence.name).as_deref() == Some(content) {
-            return false;
+            return Ok(false);
         }
         for f in &mut self.files {
             if let Some(text) = views::replace_fence(&f.text, fence.name, content) {
                 f.text = text;
-                return true;
+                return Ok(true);
             }
         }
         // no file has it: append it to its default file
@@ -232,7 +245,7 @@ impl Files {
             pick(fence.heading, language),
             fence.name
         );
-        true
+        Ok(true)
     }
 
     /// The files whose bytes changed, as `system/<name>`.
@@ -1011,15 +1024,59 @@ mod tests {
             files.body("packages.summary").as_deref(),
             Some("- explicit: 1\n")
         );
-        assert!(!files.set(&fence, "- explicit: 1\n"));
-        assert!(files.set(&fence, "- explicit: 2\n"));
+        assert!(!files.set(&fence, "- explicit: 1\n").unwrap());
+        assert!(files.set(&fence, "- explicit: 2\n").unwrap());
         assert_eq!(files.changed(), ["system/packages.md"]);
         files.write().unwrap();
         let written = std::fs::read_to_string(dir.join("packages.md")).unwrap();
         assert_eq!(written, text.replace("explicit: 1", "explicit: 2"));
         let mut again = Files::read(&dir, Language::En).unwrap();
-        assert!(!again.set(&fence, "- explicit: 2\n"));
+        assert!(!again.set(&fence, "- explicit: 2\n").unwrap());
         assert!(again.changed().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// WP-050: a fence of the same name without its own end marker is
+    /// skipped with a warning, never answered with a second fence.
+    #[test]
+    fn a_fence_without_its_end_is_skipped_not_appended() {
+        let dir = std::env::temp_dir().join(format!("seldon-dossier-open-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fence = |name: &str| *FENCES.iter().find(|f| f.name == name).unwrap();
+        // no end marker at all
+        let open = "# P\n<!-- seldon:begin packages.summary -->\n- explicit: 1\nMy notes.\n";
+        // the end that follows belongs to the next fence
+        let borrowed = "# S\n<!-- seldon:begin services.enabled -->\nMine.\n\n\
+                        <!-- seldon:begin plugins.list -->\n- x\n<!-- seldon:end -->\n";
+        std::fs::write(dir.join("packages.md"), open).unwrap();
+        std::fs::write(dir.join("services.md"), borrowed).unwrap();
+        let mut files = Files::read(&dir, Language::En).unwrap();
+        assert_eq!(
+            files.set(&fence("packages.summary"), "- explicit: 2\n"),
+            Err(
+                "system/packages.md: the packages.summary fence has no end marker of its own; fence kept"
+                    .into()
+            )
+        );
+        assert!(
+            files
+                .set(&fence("services.enabled"), "- a.service\n")
+                .unwrap_err()
+                .starts_with("system/services.md: the services.enabled fence ")
+        );
+        // the intact fence in the same file is still written
+        assert_eq!(files.set(&fence("plugins.list"), "- y\n"), Ok(true));
+        assert_eq!(files.changed(), ["system/services.md"]);
+        files.write().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("packages.md")).unwrap(),
+            open
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("services.md")).unwrap(),
+            borrowed.replace("- x\n", "- y\n")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1032,11 +1089,23 @@ mod tests {
         std::fs::write(dir.join("packages.md"), packages).unwrap();
         let mut files = Files::read(&dir, Language::De).unwrap();
         let fence = |name: &str| *FENCES.iter().find(|f| f.name == name).unwrap();
-        assert!(!files.set(&fence("packages.summary"), "- explicit: 1\n"));
+        assert!(
+            !files
+                .set(&fence("packages.summary"), "- explicit: 1\n")
+                .unwrap()
+        );
         assert!(files.changed().is_empty());
-        assert!(files.set(&fence("packages.summary"), "- explicit: 2\n"));
-        assert!(files.set(&fence("packages.explicit"), "- zed · repo · pre-logbook\n"));
-        assert!(files.set(&fence("hardware.summary"), "- cpu: x\n"));
+        assert!(
+            files
+                .set(&fence("packages.summary"), "- explicit: 2\n")
+                .unwrap()
+        );
+        assert!(
+            files
+                .set(&fence("packages.explicit"), "- zed · repo · pre-logbook\n")
+                .unwrap()
+        );
+        assert!(files.set(&fence("hardware.summary"), "- cpu: x\n").unwrap());
         assert_eq!(
             files.changed(),
             ["system/packages.md", "system/hardware.md"]

@@ -643,6 +643,32 @@ fn a_damaged_marker_above_a_fence_never_appends_it_again() {
     assert_eq!(read(&path), text);
 }
 
+/// WP-050: a dossier fence that lost its own end marker is skipped with a
+/// warning; no second fence is appended, the user's text stays.
+#[test]
+fn a_fence_without_its_end_is_skipped_with_a_warning() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let lb = fixture_copy(&env);
+    let path = lb.join("system/omarchy.md");
+    let text = read(&path);
+    let begin = "<!-- seldon:begin omarchy.summary -->\n";
+    let start = text.find(begin).unwrap() + begin.len();
+    let end = start + text[start..].find("<!-- seldon:end -->\n").unwrap();
+    let open = format!("{}My notes.\n{}", &text[..end], &text[end + 20..]);
+    std::fs::write(&path, &open).unwrap();
+    let v = dossier(&env, &lb, &["--section", "omarchy"]);
+    assert_eq!(v["sections"]["omarchy.summary"], "skipped", "{v}");
+    assert_eq!(
+        v["warnings"],
+        json!([
+            "system/omarchy.md: the omarchy.summary fence has no end marker of its own; fence kept"
+        ])
+    );
+    assert_eq!(v["files"], json!([]), "{v}");
+    assert_eq!(read(&path), open);
+}
+
 #[test]
 fn host_strings_go_through_the_users_redaction_patterns() {
     let env = Env::new(Snapper::Missing);

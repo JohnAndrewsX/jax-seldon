@@ -12,7 +12,7 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::model::event::{Event, Kind, Source, format_ts};
-use crate::model::{CaseStatus, Journal};
+use crate::model::{CaseStatus, Decision, Journal};
 
 /// Most events the index lists (CONTRACT.md rule 4).
 pub const MAX_EVENTS: usize = 500;
@@ -97,17 +97,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         yesterday: Some(rows(journal_yesterday)),
     };
 
-    let mut decision_rows: Vec<DecisionRow> = decisions
-        .into_iter()
-        .map(|(path, d)| DecisionRow {
-            id: d.id,
-            title: d.title,
-            status: d.status.as_str().to_string(),
-            date: d.date.to_string(),
-            path,
-        })
-        .collect();
-    decision_rows.sort_by(|a, b| b.id.cmp(&a.id));
+    let decision_rows = decision_rows(decisions);
 
     let snapshots = snapshots(&events);
     let system = System {
@@ -232,6 +222,23 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         open_drift,
         warnings,
     }
+}
+
+/// The `decisions` rows of the index, newest id first (also the rows of
+/// the logbook's `DECISIONS.md` table, [`super::views::decisions_index`]).
+pub fn decision_rows(decisions: Vec<(String, Decision)>) -> Vec<DecisionRow> {
+    let mut rows: Vec<DecisionRow> = decisions
+        .into_iter()
+        .map(|(path, d)| DecisionRow {
+            id: d.id,
+            title: d.title,
+            status: d.status.as_str().to_string(),
+            date: d.date.to_string(),
+            path,
+        })
+        .collect();
+    rows.sort_by(|a, b| b.id.cmp(&a.id));
+    rows
 }
 
 /// An event's day: the date of its `ts` in its own offset.

@@ -126,15 +126,7 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
         }
     }
 
-    for path in logbook.decision_files()? {
-        let rel = cases::relative(logbook, &path);
-        match read(&path).and_then(|t| {
-            model::parse::<Decision>(&t).map_err(|e| format!("invalid decision: {e}"))
-        }) {
-            Ok((d, _)) => out.decisions.push((rel, d)),
-            Err(e) => out.warnings.push(format!("{rel}: {e}; skipped")),
-        }
-    }
+    out.decisions = decisions(logbook, &mut out.warnings)?;
 
     for path in md_files(&logbook.path("system")) {
         match read(&path) {
@@ -222,6 +214,25 @@ pub fn journal_entries(text: &str) -> Vec<Entry> {
             text: e.text,
         })
         .collect()
+}
+
+/// `(relative path, decision)` of every `decisions/ADR-*.md`, in file
+/// order; an unreadable or invalid file is a warning and skipped.
+pub fn decisions(
+    logbook: &Logbook,
+    warnings: &mut Vec<String>,
+) -> anyhow::Result<Vec<(String, Decision)>> {
+    let mut out = Vec::new();
+    for path in logbook.decision_files()? {
+        let rel = cases::relative(logbook, &path);
+        match read(&path).and_then(|t| {
+            model::parse::<Decision>(&t).map_err(|e| format!("invalid decision: {e}"))
+        }) {
+            Ok((d, _)) => out.push((rel, d)),
+            Err(e) => warnings.push(format!("{rel}: {e}; skipped")),
+        }
+    }
+    Ok(out)
 }
 
 pub const FENCE_BEGIN: &str = "<!-- seldon:begin ";
