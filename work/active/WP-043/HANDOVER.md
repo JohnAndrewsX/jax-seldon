@@ -1,11 +1,11 @@
 ```
 WP-043 HANDOVER
-Done: `seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]` (dry run is the default): cases (ids kept, else renumbered with tag `omarchy-agent/<old id>` and a line under the title; statuses mapped, never active; Auftrag → Intent, Plan → Plan, the rest under `## History`), one ledger `note` per case at its `created` date (`meta.import: omarchy-agent`), journal sessions split by day (appended under `## Imported from omarchy-agent` when the day exists), knowledge → `memory/<topic>.md` sections (lessons → `memory/lessons.md`), deviation entries → `deviations.table` user rows, inbox/Dashboard/templates/rest of `system/` listed, redaction plus home paths → `~` on every imported line; report `outputs/IMPORT-omarchy-agent.md`; `--apply` = one commit, index rebuilt, marker `.seldon/imports/omarchy-agent.json` (second apply: "Nothing changed"); synthetic vault `fixtures/vaults/omarchy-agent/`, golden report, 4 integration + 11 unit tests; SPEC-ENGINE §3, SPEC-LOGBOOK §3, TESTING.md, fixtures/README.md
-Not done: no `--apply` on the operator's `~/Seldon` (the operator's step; I never read or touched it); wikilinks to renumbered cases are not rewritten (see Decisions needed)
-Verified by: `just check` exit 0 (`check: ok`: fmt, clippy -D warnings, all engine tests incl. --features watch, packaging, validate-fixtures 109 instances, plugin-validate, qmllint 28 files, plugin-test); `cargo test --test import` 4 passed; the real-vault dry run below, 0 errors, vault byte-identical before/after (sha256 of every file)
-Learned: memory/rust-notes.md + memory/pitfalls.md, sections "WP-043"
-Decisions needed: two small ones, neither blocks the merge (below)
-Touched outside WP scope: none (engine/src/main.rs, commands/mod.rs, lib.rs only register the command and module)
+Done: `seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]` (dry run is the default): cases (ids kept, else renumbered with tag `omarchy-agent/<old id>` and a line under the title; statuses mapped, never active; Auftrag → Intent, Plan → Plan, Ergebnis → Result, the rest under `## History`; references to renumbered ids rewritten in all imported text), one ledger `note` per case at its `created` date (`meta.import: omarchy-agent`), journal sessions split by day (appended under `## Imported from omarchy-agent` when the day exists), knowledge → `memory/<topic>.md` sections (lessons → `memory/lessons.md`), deviation entries → `deviations.table` user rows, inbox/Dashboard/templates/rest of `system/` listed, redaction plus home paths → `~` on every imported line; report `outputs/IMPORT-omarchy-agent.md`; `--apply` = one commit, index rebuilt, marker `.seldon/imports/omarchy-agent.json` (second apply: "Nothing changed"); synthetic vault `fixtures/vaults/omarchy-agent/`, golden report, 6 integration + 13 unit tests in import/ (plus separator tests in index/load.rs and dossier/); review fix round done (below); SPEC-ENGINE §3, SPEC-LOGBOOK §3, TESTING.md, fixtures/README.md
+Not done: no `--apply` on the operator's `~/Seldon` (the operator's step; I never read or touched it)
+Verified by: `just check` exit 0 (`check: ok`: fmt, clippy -D warnings, all engine tests incl. --features watch, packaging, validate-fixtures 109 instances, plugin-validate, qmllint 28 files, plugin-test); after the fix round: `cargo test --test import` 6 passed, `--lib` 128 passed, clippy -D warnings clean, `just check` exit 0 again; the real-vault dry run below (re-run after the fixes), 0 errors, vault byte-identical before/after (sha256 of every file)
+Learned: memory/rust-notes.md + memory/pitfalls.md, sections "WP-043" and "WP-043 review round"
+Decisions needed: none (the two open ones were decided in review and are implemented)
+Touched outside WP scope: engine/src/dossier/mod.rs and engine/src/index/load.rs (table separator hardening, asked for in review); engine/src/main.rs, commands/mod.rs, lib.rs only register the command and module
 ```
 
 Branch `wp/043-vault-import`, worktree `wt/WP-043`, from `70696bf`. No PR,
@@ -14,7 +14,10 @@ no push. Commits:
 - `b992fe6 engine: import omarchy-agent vault, dry run and apply (WP-043)`
 - `23fa151 docs: import command in SPEC-ENGINE, SPEC-LOGBOOK and TESTING (WP-043)`
 - `9bed78d memory: WP-043 notes and pitfalls`
-- this handover
+- `d419a3c work: WP-043 handover`
+- `4b10e06 engine: import review fixes: Ergebnis to Result, id rewrites, safe half-apply (WP-043)`
+- `e83b336 docs: import review fixes in SPEC-ENGINE, SPEC-LOGBOOK, TESTING; memory notes (WP-043)`
+- this handover update
 
 ## Real-vault dry run (acceptance)
 
@@ -34,6 +37,8 @@ dry run wrote only the report. Counts only, as asked:
 | not imported | 35 (19 inbox items, 5 other `system/*.md`, 2 templates, Dashboard, STRUCTURE.md, `.obsidian/`, 6 deviation entries) |
 | errors | 0 |
 | redaction | 1 line (token-assignment); 11 home paths rewritten to `~` |
+| id rewrites (fix round) | 27 wikilinks and 83 bare ids in 18 files |
+| assumptions (fix round) | 0 (every done case in the vault has `closed`) |
 
 Collisions against the fixture logbook:
 
@@ -117,21 +122,80 @@ covers:
   `/home/<user>` at the start of a path becomes `~`. The report lists
   file, line and rule, never the text.
 
-## Decisions needed (none blocks the merge)
+## Review fix round (review of 2026-10-02: APPROVE)
 
-1. **`Ergebnis` → `## Result`?** The WP maps only Auftrag → Intent and
-   Plan → Plan, with "the rest verbatim under History". So the kit's
-   `Ergebnis` lands as `### Ergebnis` under History, and `## Result`
-   stays empty, also for completed cases. Mapping Ergebnis → Result
-   would be a one-line change in `case_body` plus the golden report.
-   Operator's call, before the real `--apply`.
-2. **Wikilinks to renumbered cases.** Kit text links cases by file stem
-   (`[[C-2026-001-slug]]`). A renumbered case's file is
-   `C-2026-0NN-slug.md`, so its old links dangle. They do not point to
-   the wrong case: Seldon file names carry a slug, so `[[C-2026-001-x]]`
-   matches nothing else. The report's collision table is the map.
-   Rewriting links in imported text is possible, but it changes the
-   kit's prose. I left it out.
+The two open decisions were decided as class (a) and are implemented as
+specified. The five fixes are done too.
+
+- **(a) `Ergebnis` → `## Result`.** Match arm `"Ergebnis" | "Result"`;
+  the golden report was re-blessed; the `### Ergebnis` example is gone
+  from SPEC-LOGBOOK.
+- **(b) Id rewrites.**
+  - Scope: references to a kit id the logbook already had, in all
+    imported text: case bodies (Intent, Plan, History, Result), journal
+    sessions, memory sections and deviation reasons.
+  - Rule: `[[C-OLD(-slug)?` → `[[C-NEW(-slug)?` and bare `\bC-OLD\b` →
+    `C-NEW`, in one regex pass with a map lookup, so a new id is never
+    rewritten again.
+  - The old id stays in the tag `omarchy-agent/C-OLD`, the title line,
+    the Log line and `meta.originalId`.
+  - A kit id that two kit files share is not rewritten: it is ambiguous,
+    and the logbook did not have it.
+  - The journal's `cases:` already used the id map.
+  - The report has a new "Id rewrites" section (per file: wikilinks,
+    bare ids); the counts are also in `--json`.
+- **(1) Table separators.** The new `index::load::has_table_separator`
+  recognises `|---|`, `| --- |`, `|:---|---:|`. It is used by the
+  importer and by both places in `dossier/mod.rs` (`packages.history`,
+  `deviations.table`). Tests: a unit test of the helper, a dossier unit
+  test for both fences, and an integration test in which an
+  Obsidian-padded `deviations.table` with a user row keeps that row on
+  `--apply`.
+- **(2) Half-apply safety.** I took the second option: only the marker
+  means "imported". Ledger import notes without the marker are a user
+  error (exit 1). The message names the note and gives the undo `git
+  checkout -- . && git clean -fd` in the logbook. It never says "nothing
+  changed", and it never imports a second time, so a deleted `.seldon/`
+  still cannot cause duplicates. Every write of `--apply` now sits in one
+  `write_plan`. Any error there says "the import stopped half way and
+  nothing was committed" plus the undo (exit codes unchanged: 1 user, 2
+  engine). Test, with the failure injected by a read-only `system/`:
+  1. the apply exits 2 with the hint, makes no commit and writes no
+     marker;
+  2. the next run is refused;
+  3. after `git checkout -- .` and `git clean -fd`, the import runs once,
+     with 6 notes and 1 commit.
+
+  I kept the ledger-first order: the case files need the note ids in
+  `events:`.
+- **(3) `updated`.** An existing `memory/<topic>.md` with valid
+  frontmatter gets `updated` = the import day; the rest of the file is
+  kept byte for byte. The test pre-dates lessons.md to 2026-09-01.
+- **(4) `done` without `closed`.** `closed` is set to `created`. The case
+  is listed in a new "Assumptions" report section (and `--json
+  assumptions`), and its Log line ends with `closed date assumed:
+  <date>`. The same applies to `dropped`. The fixture's C-2026-005 now
+  has an empty `closed`.
+- **(5) Tests.** One per item:
+  - (a): the renumbered case ends with `## Result` + the Ergebnis text,
+    and "Ergebnis" no longer appears;
+  - (b): a case body (incl. the case's own old id), the journal (and its
+    `cases:`), lessons and a deviation reason;
+  - (1), (3), (4): as above;
+  - `--json` counts `rewrittenLinks 1`, `rewrittenIds 4`, `assumptions
+    1`;
+  - unit tests for the rewriter and for a renumbered done case without
+    `closed`.
+
+**Rewrite totals on the real vault** (against the fixture logbook's 7
+collisions): 27 wikilinks and 83 bare ids in 18 files. An independent
+count over the vault agrees: 27 links and 87 bare ids, 4 of which sit in
+knowledge frontmatter (`source:` lines) that the import does not carry
+over. All case-id references in the imported text: 106 links and 260
+bare ids. The reviewer's 208/633 counted the whole vault (inbox,
+Dashboard, the rest of `system/`), which is not imported. The real
+number for `~/Seldon` depends on its collisions; the operator's dry run
+shows them.
 
 ## Open notes
 
