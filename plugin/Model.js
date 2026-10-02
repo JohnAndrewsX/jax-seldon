@@ -46,6 +46,11 @@ var INIT_COMMAND = "seldon init"
 // snapshots. `$USER` is expanded by the shell the user pastes it into (or by
 // the terminal launcher's bash -c); nothing else in it varies.
 var SNAPPER_FIX_COMMAND = "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
+// The engineMissing banner's text: the GitHub install (install.sh, the
+// project README's Install section) next to the AUR command above. The AUR
+// package does not exist yet (operator, 2026-10-02); when it is live, this
+// one sentence is the only plugin text to change (WP-044).
+var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub (Install in the README at github.com/JohnAndrewsX/jax-seldon), then check again."
 
 var GLYPH = "⟡"
 
@@ -237,7 +242,7 @@ function bannerFor(status, ctx) {
       status: status,
       tone: "urgent",
       title: "Seldon engine not installed",
-      detail: "The plugin needs the seldon command. Install it, then check again.",
+      detail: ENGINE_MISSING_DETAIL,
       command: INSTALL_ENGINE_COMMAND,
       actions: [
         { id: "terminal", label: "Install in terminal" },

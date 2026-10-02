@@ -59,6 +59,12 @@ plugin/
   to `status: engineMissing` (the property is named `status`, because
   `state` clashes with `Item.state`). States: `ok | engineMissing | notInitialised |
   indexMissing | indexStale (> 2 h) | contractMismatch`.
+  The engineMissing banner's fix is the constant AUR command (§5); its
+  text names the GitHub install as well (`install.sh` from the release,
+  the project README's Install section) and, while the AUR package does
+  not exist, says so: "AUR package: coming soon; until then install from
+  GitHub". That text is the one constant `ENGINE_MISSING_DETAIL` in
+  `Model.js` (WP-044).
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
   arguments (case ids, event ids validated by regex before use).
