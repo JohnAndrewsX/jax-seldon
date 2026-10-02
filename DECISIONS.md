@@ -25,5 +25,6 @@
 | ADR-0021 | The index folds `case` from any resolution that carries one (clarifies ADR-0012 §8) | accepted |
 | ADR-0022 | The AUR package builds against glibc; the static musl binary is a release asset | accepted |
 | ADR-0023 | An agent verifies, the human closes; risk levels R0–R3 defined, enforced by advice only | accepted |
+| ADR-0024 | While the AUR package does not exist, the plugin's one-click engine install runs the verified GitHub installer | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
