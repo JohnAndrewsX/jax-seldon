@@ -34,3 +34,23 @@ jobs:
 
       - name: just bench (index build < 100 ms on x10 fixtures, release)
         run: just bench
+
+  # RustSec advisories for engine/Cargo.lock (WP-048). Advisory only for
+  # now: a finding marks this job failed but not the run; CONTRIBUTING.md
+  # ("Dependency advisories") says when it becomes blocking.
+  audit:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    continue-on-error: true
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      # Arch's `cargo-audit` pulls in cargo; the advisory database is
+      # fetched from github.com/rustsec/advisory-db at run time.
+      - name: Install cargo-audit
+        run: pacman -Syu --noconfirm --needed git cargo-audit
+
+      - uses: actions/checkout@v4
+
+      - name: cargo audit
+        run: cargo audit --file engine/Cargo.lock --deny warnings

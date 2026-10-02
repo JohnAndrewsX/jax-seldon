@@ -202,10 +202,23 @@ jobs:
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
+      # the tag's CHANGELOG.md and packaging/release-notes.sh
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist
+
+      # the `## [X.Y.Z]` section of CHANGELOG.md is the release body; the
+      # job fails without it, so a tag without notes never ships and aur,
+      # plugin and bump do not run (docs/VERSIONING.md)
+      - name: Release notes from CHANGELOG.md
+        run: |
+          bash packaging/release-notes.sh "$VERSION" CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
 
       - name: GitHub release
         env:
@@ -213,7 +226,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --title "Seldon $VERSION" --generate-notes
+            --title "Seldon $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
 
   bump:
     needs: [build, release]
