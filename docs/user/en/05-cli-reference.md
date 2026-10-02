@@ -343,7 +343,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```
@@ -364,7 +364,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```
@@ -385,7 +385,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```
@@ -405,7 +405,7 @@ Arguments:
   <ID>
 
 Options:
-      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only)
+      --snapshot <N>   Snapper snapshot taken before the work (`plan start` only; an R2 or R3 case started without one gets a warning, ADR-0023)
       --reason <TEXT>  Why (one line; goes into the Log line and the event detail)
       --actor <A>      Who takes the step [default: human]
 ```

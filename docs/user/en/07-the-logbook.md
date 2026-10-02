@@ -38,7 +38,7 @@ Seldon/
 | `AGENTS.md` | the rules agents follow in this logbook | the template, then you |
 | `PROJECT.md` | what the machine is for, what must not happen on it | you |
 | `STATUS.md` | active cases, open drift, latest events | the engine (`seldon status`) |
-| `DECISIONS.md` | the entry page for `decisions/`; the table between its markers is reserved for the engine, which does not fill it yet | you, outside the markers |
+| `DECISIONS.md` | the entry page for `decisions/`; the engine fills the table between its markers on every `seldon decide` and `seldon status` | you, outside the markers |
 | `inbox/` | anything you want to sort later | you |
 | `journal/` | one file per day; entries are `## HH:MM · actor · case` headings | the engine appends, you add text |
 | `ledger/*.jsonl` | the events; append-only | the engine only |
