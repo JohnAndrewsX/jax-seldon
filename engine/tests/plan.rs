@@ -421,6 +421,75 @@ mod plan {
         assert!(!root.join("areas/bad area").exists());
     }
 
+    /// ADR-0023: R2/R3 without a snapshot warn on `plan start`, never refuse.
+    #[test]
+    fn start_warns_on_r2_and_r3_without_a_snapshot() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let start = |id: &str, extra: &[&str]| {
+            let mut args = vec!["plan", "start", id, "--json"];
+            args.extend_from_slice(extra);
+            let out = env.at(T1, &args);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            let v = json(&out);
+            assert_eq!(v["to"], "active", "never refused");
+            v["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|w| w.as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        for risk in ["R0", "R1"] {
+            let id = new_case(&env, risk, &["--risk", risk]);
+            assert!(start(&id, &[]).is_empty(), "{risk}");
+        }
+
+        let r2 = new_case(&env, "r2", &["--zone", "red", "--risk", "R2"]);
+        let w = start(&r2, &[]);
+        assert_eq!(w.len(), 1);
+        assert!(w[0].starts_with(&format!(
+            "{r2} is risk R2 and was started without --snapshot"
+        )));
+        assert!(w[0].contains("snapshot or backup"));
+        assert!(!w[0].contains("explicit go"), "{}", w[0]);
+
+        let r3 = new_case(&env, "r3", &["--zone", "red", "--risk", "R3"]);
+        let w = start(&r3, &[]);
+        assert_eq!(w.len(), 1);
+        assert!(w[0].contains("risk R3"));
+        assert!(
+            w[0].contains("the human's explicit go per step"),
+            "{}",
+            w[0]
+        );
+        assert_eq!(case_at(&root, &r3).1.status, CaseStatus::Active);
+
+        // with a snapshot: no warning, for either level
+        for risk in ["R2", "R3"] {
+            let id = new_case(&env, risk, &["--risk", risk]);
+            assert!(start(&id, &["--snapshot", "7"]).is_empty(), "{risk}");
+        }
+        // a snapshotBefore the human set before the start counts too
+        let id = new_case(&env, "pre-set", &["--risk", "R3"]);
+        let (path, _, _) = case_at(&root, &id);
+        let text = read(&path).replace("snapshotBefore:\n", "snapshotBefore: 9\n");
+        std::fs::write(&path, text).unwrap();
+        assert!(start(&id, &[]).is_empty());
+
+        // the human output carries it as a `warning:` line; other steps none
+        let id = new_case(&env, "human", &["--risk", "R2"]);
+        let out = env.at(T1, &["plan", "start", &id]);
+        assert_eq!(out.status.code(), Some(0));
+        let text = stdout(&out);
+        assert!(
+            text.contains(&format!("\nwarning: {id} is risk R2")),
+            "{text}"
+        );
+        let out = env.at(T2, &["plan", "verify", &id, "--json"]);
+        assert_eq!(json(&out)["warnings"], serde_json::json!([]));
+    }
+
     #[test]
     fn list_and_show() {
         let env = Env::new(Snapper::Missing);

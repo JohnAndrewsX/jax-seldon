@@ -76,7 +76,8 @@ pub struct StepArgs {
     #[arg(value_name = "ID", value_parser = parse_case_id)]
     pub id: String,
 
-    /// Snapper snapshot taken before the work (`plan start` only)
+    /// Snapper snapshot taken before the work (`plan start` only; an R2 or
+    /// R3 case started without one gets a warning, ADR-0023)
     #[arg(long, value_name = "N")]
     pub snapshot: Option<u64>,
 
@@ -286,6 +287,12 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
     if let Some(path) = &journal_entry {
         human.push_str(&format!("\nJournal: {path}"));
     }
+    let warnings: Vec<String> = (transition == Transition::Start)
+        .then(|| snapshot_warning(&file.case))
+        .flatten()
+        .into_iter()
+        .collect();
+    human.push_str(&super::index::warnings_human(&warnings));
     human.push_str(&commit.human());
     Ok(Output::ok(
         human,
@@ -298,8 +305,32 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
             "journal": journal_entry,
             "event": event_json(&event),
             "git": commit.json(),
+            "warnings": warnings,
         }),
     ))
+}
+
+/// The advice for a case started without a snapshot (ADR-0023): R2 and R3
+/// want one, R3 also the human's explicit go per step. Advice only; the
+/// step is never refused.
+fn snapshot_warning(case: &Case) -> Option<String> {
+    if case.snapshot_before.is_some() {
+        return None;
+    }
+    let id = &case.id;
+    match case.risk {
+        Risk::R0 | Risk::R1 => None,
+        Risk::R2 => Some(format!(
+            "{id} is risk R2 and was started without --snapshot: its rollback needs a \
+             snapshot or backup; take one before the first change and note it in the case \
+             (ADR-0023)"
+        )),
+        Risk::R3 => Some(format!(
+            "{id} is risk R3 and was started without --snapshot: a snapshot is mandatory \
+             before the first change, and the work needs the human's explicit go per step, \
+             never unattended (ADR-0023)"
+        )),
+    }
 }
 
 /// The ledger kind of a step (`event.schema.json`).

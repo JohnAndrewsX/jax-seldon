@@ -37,7 +37,10 @@ seldon capture [--source pacman,snapper,omarchy,plugins,theme,config | --all] [-
 seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]
 seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [--meta k=v]
 seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
-seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT]
+seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A]
+# --snapshot: `plan start` only. Starting an R2 or R3 case with no snapshot
+# (no --snapshot, no snapshotBefore) prints a warning and never refuses
+# (ADR-0023); R3's also asks for the human's explicit go per step (WP-050)
 seldon plan list [--status S] [--area A]
 seldon plan show <ID>
 seldon drift [--crisis-only] [--json]            # read-only: index items, crises first; totals count all
@@ -236,7 +239,8 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
 
 `log`, `event`, `plan *`, `open` with `--json` return `{"event":
 <ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
-`movedFrom`, `activeCase`, `journal` (WP-006); `decide --json` returns
+`movedFrom`, `activeCase`, `journal` (WP-006) and `warnings` (a list of
+strings, empty unless `plan start` warned; WP-050); `decide --json` returns
 `{"decision": {id, title, status, date, cases, path}, "editor", "git"}`
 (no ledger event). `plan new` defaults:
 `--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
