@@ -1,11 +1,12 @@
 <!-- maintained by the orchestrator; regenerate the WP table from work/ -->
 # STATUS.md — Seldon
 
-**Phase:** 4 — packaging and docs merged (WP-040/041, 2026-10-02);
-Phase 3 code-complete. Open: Phase 0 exit G3 (operator's run,
-`work/PHASE-0-EXIT.md`), the WP-013 full e2e runs and live sweeps (test
-host unlock), WP-042 marketplace submission (after the operator's release
-setup), WP-033 and WP-043 (operator decisions).
+**Phase:** 0 exited — **gate G3 passed 2026-10-02** (operator's run on
+the dev host, `work/completed/PHASE-0-EXIT-transcript.md`). Phases 1–3
+complete and live-verified (G2 passed), Phase 4 packaging and docs merged.
+Open: WP-042 marketplace submission (after the operator's release setup),
+WP-038 (engine attributes its own installs), WP-033 and WP-043 (operator
+decisions).
 **Contract version:** 1 (draft)
 **Last updated:** 2026-10-01
 
@@ -15,6 +16,7 @@ setup), WP-033 and WP-043 (operator decisions).
 *(none — all remaining work waits on the operator items below)*
 
 ## Queued (next up)
+WP-038 (engine attributes its own installs, Phase 0 procedure refresh) ·
 WP-033 (update-impact, needs the operator's release-notes source decision)
 · WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
 logbook migration)
@@ -185,11 +187,10 @@ logbook migration)
 - **ssh alias `test`**: docs and the e2e script default to `ssh test`; this
   dev host has no such alias. Add `Host test` to `~/.ssh/config` (name in
   `memory/local.md`) or keep passing `SELDON_TEST_HOST=<alias>`.
-- **Phase 0 exit**: `work/PHASE-0-EXIT.md` has the procedure; it needs you
-  (real logbook, `~/.config/seldon`).
-- **Stray `~/.config/seldon/config.toml`** on the dev host from WP-024's
-  pty test (points at a scratch logbook). The guard blocks the
-  orchestrator; please `rm -r ~/.config/seldon`. The state dir was removed.
+- **Phase 0 exit done** (G3): real logbook at `~/Seldon`, snapper
+  enabled by you (ADR-0011), one case worked by Claude Code, STATUS.md
+  rendered. Finding F1 (the engine's own theme hook file shows up as
+  drift) → WP-038 queued.
 - **Guard exceptions (your file, `scripts/guard.sh`):** (a) WP-040 needs
   `ssh <test host> 'cd /tmp/<dir> && makepkg -f'` and the
   `--printsrcinfo > SRCINFO.new` form on the test host (never -i/-s);
