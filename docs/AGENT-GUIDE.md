@@ -41,7 +41,8 @@ frontmatter keys and enum values stay English in every language.
 ## 3. Plan before you change the machine
 
 Every change to the machine happens inside a **case** (`C-YYYY-NNN`, a
-Markdown file under `work/`). One case is active at a time.
+Markdown file under `work/`). Work one case at a time; the engine allows
+more, and `.seldon/active-case` names the one started last.
 
 1. **No case yet?** Propose one to the user — title, zone, risk, area —
    and wait for their go. Then:
@@ -76,10 +77,12 @@ yourself.
 | **yellow** | configuration under the watched paths (`~/.config/hypr`, `~/.config/omarchy`, …), themes, shell plugins | only inside a case |
 | **green** | everything no collector tracks: project files, language package managers, `git` | recorded while a case is active |
 
-Risk is the case's own estimate, `R0` to `R3`. The engine stores it and
-does not enforce it. A rule of thumb: `R0` nothing can break; `R1` easy to
-undo by hand; `R2` needs the rollback plan; `R3` the machine may not start
-afterwards — snapshot and the user's explicit go.
+Risk is the case's own estimate, `R0` to `R3`, on the scale in
+[`SPEC-LOGBOOK.md` §3](SPEC-LOGBOOK.md#3-frontmatter-conventions). In
+short: `R0` reversible in seconds; `R1` by hand in minutes, with a named
+rollback; `R2` needs the plan plus a snapshot or backup; `R3` can break
+boot, login or the shell — snapshot mandatory, the user's explicit go for
+each step. The engine stores the risk and does not enforce it.
 
 Omarchy rules on top: install packages with `omarchy pkg add` (AUR:
 `omarchy pkg aur add`), not with the package manager directly; never edit
@@ -171,8 +174,9 @@ know why it happened — if you don't, ask the user:
   completed, retroactive case with that text as its title.
 - `seldon drift dismiss <EVENT> -- "<why it does not matter>"`.
 
-A routine package upgrade is one group: resolving the leader resolves
-every member; `--only` resolves the named event alone. Never hide drift by
+Package events of one transaction (a routine upgrade, say) form one
+group: resolving any open member resolves every open member of the group
+(SPEC-ENGINE §5); `--only` resolves the named event alone. Never hide drift by
 editing or reverting files, and never edit the ledger to remove it.
 
 ## 8. Ending a session
@@ -203,7 +207,7 @@ $ cd ~/Seldon && claude
 
 The agent read `AGENTS.md`, filled the case's *Intent* and *Plan*,
 switched the theme three times with `omarchy theme set`, wrote a note and
-moved the case to verification. The `PreToolUse` hook recorded:
+moved the case to verification. The ledger then held:
 
 ```
 09:43:02  theme-set  flexoki-light  C-2026-001  agent:claude-code
@@ -213,9 +217,13 @@ moved the case to verification. The `PreToolUse` hook recorded:
 09:43:48  case-verified             C-2026-001  agent:claude-code
 ```
 
+The theme switches came from the `PreToolUse` hook; the note and
+`case-verified` from the agent's `seldon log` and `seldon plan verify`.
 The user then captured, found one drift item that was not the agent's (a
 hook script `seldon init` had installed), explained it and closed the
-case:
+case. (That drift item is historical: since WP-038 the engine explains
+the files it installs itself, SPEC-ENGINE §5 rule 7, so it no longer
+appears.)
 
 ```
 $ seldon capture --all

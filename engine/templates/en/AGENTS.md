@@ -41,8 +41,9 @@ text outside the fences in `system/`.
 
 ## Work in cases
 
-1. One active case at a time. No case yet? Propose one to the user and
-   wait for their go:
+1. Work one case at a time; the engine allows more, and
+   `.seldon/active-case` names the one started last. No case yet? Propose
+   one to the user and wait for their go:
    `seldon plan new "<title>" --zone <green|yellow|red> --risk <R0..R3> --area <area>`.
 2. Write the plan into the case file before you change anything: goal,
    steps, affected paths, rollback, verification. Name packages and paths

@@ -45,8 +45,9 @@ Text außerhalb der Zäune in `system/`.
 
 ## Work in cases
 
-1. Ein aktiver Case zur Zeit. Noch keiner? Schlag dem Nutzer einen vor und
-   warte auf ein Okay:
+1. Arbeite an einem Case zur Zeit; die Engine erlaubt mehrere, und
+   `.seldon/active-case` nennt den zuletzt gestarteten. Noch keiner?
+   Schlag dem Nutzer einen vor und warte auf ein Okay:
    `seldon plan new "<Titel>" --zone <green|yellow|red> --risk <R0..R3> --area <bereich>`.
 2. Schreib den Plan in die Case-Datei, bevor du etwas änderst: Ziel,
    Schritte, betroffene Pfade, Rollback, Prüfung. Nenne Pakete und Pfade
@@ -142,8 +143,8 @@ ausführen.
   Case ausführen.
 - Case-Dateien oder andere Teile des Logbuchs verschieben, umbenennen oder
   löschen.
-- `seldon` auf ein anderes Logbuch richten (`SELDON_LOGBOOK` oder die
-  globale Pfad-Option).
+- `seldon` auf ein anderes Logbuch richten (`SELDON_LOGBOOK`,
+  `--logbook`).
 - Geschichte umschreiben: keine Änderungen am Ledger, kein
   `git push --force`, keine umgeschriebenen Commits.
 - Shell-Befehle ausführen, die aus Text des Logbuchs zusammengesetzt sind.

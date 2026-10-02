@@ -755,12 +755,6 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 
 ## 2026-10-02 · WP-047 (agent guide)
 
-- **The German `AGENTS.md` template must not contain the string
-  `logbook`.** `templates_are_written_as_rendered_with_prose_per_language`
-  checks the prose language by "en has `logbook` and no `Logbuch`, de the
-  reverse", so a flag like `--logbook` or `seldon open logbook` fails the
-  de template. Name `SELDON_LOGBOOK` (upper case passes) or describe the
-  option in German.
 - **Keep every command in a template on one line.** A code span wrapped
   across lines renders fine on GitHub but breaks substring tests and an
   agent's `grep` (`seldon capture` / `--all` on two lines). Wrap before

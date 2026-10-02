@@ -1078,10 +1078,10 @@ mod setup {
                 Language::En => ("logbook", "Logbuch"),
                 Language::De => ("Logbuch", "logbook"),
             };
-            assert!(
-                agents.contains(word) && !agents.contains(other),
-                "{language}"
-            );
+            // prose only: code spans (`--logbook`, `SELDON_LOGBOOK`) are English
+            // in every language
+            let prose: String = agents.split('`').step_by(2).collect();
+            assert!(prose.contains(word) && !prose.contains(other), "{language}");
             // the rules every agent needs (WP-024)
             for needle in [
                 "seldon log",
