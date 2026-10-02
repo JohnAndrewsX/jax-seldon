@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="16" height="16" viewBox="0 0 16 16">
+  <title>Seldon favicon, 16 px</title>
+  <desc>A9: brand container with a hand-hinted mark (16: the 11 x 11 glyph, 32: the 22 px grid, 48: the 32 px grid).</desc>
+  <rect id="container" x="0" y="0" width="16" height="16" rx="3" fill="#0d1326"/>
+  <g id="mark" shape-rendering="crispEdges">
+    <g id="mark-envelope" fill="#eef1fb"><rect x="7" y="2" width="1" height="1"/><rect x="7" y="3" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="8" y="4" width="1" height="1"/><rect x="6" y="5" width="1" height="1"/><rect x="8" y="5" width="1" height="1"/><rect x="4" y="6" width="2" height="1"/><rect x="9" y="6" width="2" height="1"/><rect x="2" y="7" width="2" height="1"/><rect x="11" y="7" width="2" height="1"/><rect x="4" y="8" width="2" height="1"/><rect x="9" y="8" width="2" height="1"/><rect x="6" y="9" width="1" height="1"/><rect x="8" y="9" width="1" height="1"/><rect x="6" y="10" width="1" height="1"/><rect x="8" y="10" width="1" height="1"/><rect x="7" y="11" width="1" height="1"/><rect x="7" y="12" width="1" height="1"/></g>
+    <g id="mark-core" fill="#b86e23"><rect x="7" y="7" width="1" height="1"/></g>
+  </g>
+</svg>
