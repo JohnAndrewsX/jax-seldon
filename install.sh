@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — install, update or remove the Seldon engine from a GitHub release.
 #
-#   install.sh [--version vX.Y.Z] [--prefix DIR] [--unit]
+#   install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force]
 #   install.sh --uninstall [--prefix DIR]
 #
 # Downloads seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz and SHA256SUMS
@@ -14,11 +14,15 @@
 # listed in <prefix>/share/jax-seldon/install-manifest; --uninstall removes
 # exactly those files and keeps your logbook and config.
 #
+# A seldon or unit it did not install (a self-built binary, a unit copied
+# by hand) is never replaced silently: the run refuses and names --force.
+#
 # Runs as your user: no root, no package manager, no system files. A re-run
 # with the same version changes nothing; a newer version updates in place.
 #
 # Exit codes: 0 ok; 1 usage error, or a refusal you can fix (a foreign
-# file in the way, the unit still enabled); 2 download, verification or
+# file in the way, a seldon not installed by this script, the unit still
+# enabled); 2 download, verification or
 # any other failure. Every refusal and failure comes before the first write.
 #
 # Test hooks (tests/install/install.test.sh): SELDON_INSTALL_API_URL and
@@ -38,7 +42,7 @@ say() { printf '%s\n' "$*"; }
 warn() { printf 'install.sh: %s\n' "$*" >&2; }
 usage_error() {
   warn "$*"
-  warn "usage: install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] | --uninstall [--prefix DIR]"
+  warn "usage: install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force] | --uninstall [--prefix DIR]"
   exit 1
 }
 refuse() {
@@ -54,13 +58,15 @@ usage() {
   cat <<'EOF'
 install.sh — install, update or remove the Seldon engine from a GitHub release
 
-  install.sh [--version vX.Y.Z] [--prefix DIR] [--unit]
+  install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force]
   install.sh --uninstall [--prefix DIR]
 
   --version vX.Y.Z  install this release (default: the latest)
   --prefix DIR      install under DIR/bin (default: ~/.local)
   --unit            also install the optional watcher unit into
                     ~/.config/systemd/user/ (installed, not enabled)
+  --force           replace a seldon (or unit) this script did not
+                    install, e.g. a self-built binary
   --uninstall       remove what this script installed under DIR; your
                     logbook, config and index stay
   -h, --help        this text
@@ -110,6 +116,25 @@ latest_tag() {
 # Paths and the hash of each file this script installed, one per line:
 # "<sha256>  <path>" (a symlink records "symlink" and its target instead).
 manifest_path() { printf '%s/share/jax-seldon/install-manifest\n' "$PREFIX"; }
+
+# The sha256 the manifest records for a path, or nothing.
+recorded_sum() {
+  local manifest
+  manifest=$(manifest_path)
+  [[ -f $manifest ]] || return 0
+  awk -v p="$1" 'index($0, "  ") && substr($0, index($0, "  ") + 2) == p { print $1; exit }' "$manifest"
+}
+
+# True when writing $2 to $1 replaces nothing foreign: $1 is absent, equal
+# to $2, or still the file the manifest records.
+ours_to_replace() { # dest new
+  local dest=$1 new=$2 rec
+  [[ -e $dest || -L $dest ]] || return 0
+  [[ -f $dest && ! -L $dest ]] || return 1
+  cmp -s -- "$new" "$dest" && return 0
+  rec=$(recorded_sum "$dest")
+  [[ -n $rec && $(sha_of "$dest") == "$rec" ]]
+}
 
 # Writes $2 to $1 only when the content differs; never touches an equal file.
 write_if_changed() { # dest content-file mode
@@ -195,6 +220,16 @@ do_install() {
         printf '%s\n' "$line"
       fi
     done < "$WORK/$stage/$UNIT_NAME" > "$unit_src"
+  fi
+
+  # A seldon or unit this script did not install is replaced only with --force.
+  if [[ $FORCE == 0 ]]; then
+    ours_to_replace "$bin_dir/seldon" "$new_bin" \
+      || refuse "$bin_dir/seldon exists and was not installed by install.sh (a self-built seldon?); nothing changed. Re-run with --force to replace it."
+    if [[ -n $unit_src ]]; then
+      ours_to_replace "$unit_path" "$unit_src" \
+        || refuse "$unit_path exists and was not installed by install.sh; nothing changed. Re-run with --force to replace it."
+    fi
   fi
 
   write_if_changed "$bin_dir/seldon" "$new_bin" 755
@@ -296,6 +331,7 @@ main() {
   PREFIX="$HOME/.local"
   PREFIX_ARG=""
   UNIT=0
+  FORCE=0
   local uninstall=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -313,6 +349,7 @@ main() {
         ;;
       --prefix=*) PREFIX=${1#*=}; PREFIX_ARG=" --prefix $(printf '%q' "${1#*=}")"; shift ;;
       --unit) UNIT=1; shift ;;
+      --force) FORCE=1; shift ;;
       --uninstall) uninstall=1; shift ;;
       -h | --help) usage; exit 0 ;;
       *) usage_error "unknown argument '$1'" ;;
@@ -332,7 +369,7 @@ main() {
   fi
 
   if [[ $uninstall == 1 ]]; then
-    [[ -z $VERSION && $UNIT == 0 ]] || usage_error "--uninstall takes only --prefix"
+    [[ -z $VERSION && $UNIT == 0 && $FORCE == 0 ]] || usage_error "--uninstall takes only --prefix"
     do_uninstall
   else
     do_install

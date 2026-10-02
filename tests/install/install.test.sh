@@ -143,7 +143,7 @@ check "latest: only bin/ and share/jax-seldon/" \
   test "$(cd "$p" && find . | LC_ALL=C sort | tr '\n' ' ')" = \
   ". ./bin ./bin/jax-seldon ./bin/seldon ./share ./share/jax-seldon ./share/jax-seldon/install-manifest "
 check "latest: nothing in HOME" test -z "$(find "$home" -mindepth 1)"
-[[ $rc -eq 0 ]] || echo "$out" | sed 's/^/     /'
+[[ $rc -eq 0 ]] || printf '     %s\n' "${out//$'\n'/$'\n'     }"
 
 # ---- 2. idempotent re-run ----------------------------------------------------
 before=$(snap "$p")
@@ -187,9 +187,14 @@ run
 check "unit: a re-run without --unit keeps it in the manifest" \
   grep -qF "  $unit" "$home/.local/share/jax-seldon/install-manifest"
 
+before=$(snap "$home")
 run --unit --prefix "$home/opt/seldon"
+check "unit of another prefix: refused, exit 1" test "$rc" -eq 1
+check "unit of another prefix: names --force" has "Re-run with --force"
+check "unit of another prefix: nothing changed" test "$(snap "$home")" = "$before"
+run --unit --force --prefix "$home/opt/seldon"
 check "unit, prefix under HOME: ExecStart with %h" grep -qx 'ExecStart=%h/opt/seldon/bin/seldon watch' "$unit"
-run --unit --prefix "$work/p5"
+run --unit --force --prefix "$work/p5"
 check "unit, prefix outside HOME: absolute ExecStart" grep -qx "ExecStart=$work/p5/bin/seldon watch" "$unit"
 run --unit --prefix "$work/with space"
 check "unit, prefix with a space: refused, exit 1" test "$rc" -eq 1
@@ -201,7 +206,7 @@ out=$(env -i HOME="$home" PATH="$work/trap:$PATH" XDG_CONFIG_HOME="$work/xdg" \
   bash "$script" --unit --prefix "$work/p5x" 2>&1) || rc=$?
 check "unit: follows XDG_CONFIG_HOME" test -f "$work/xdg/systemd/user/seldon-watch.service"
 # put the default-prefix unit back for the uninstall tests below
-run --unit
+run --unit --force
 
 # ---- 6. refusals: nothing installed ------------------------------------------
 refused() { # name prefix message
@@ -243,6 +248,31 @@ run --prefix "$work/p7"
 check "foreign jax-seldon: refused, exit 1" test "$rc" -eq 1
 check "foreign jax-seldon: seldon not written" test ! -e "$work/p7/bin/seldon"
 check "foreign jax-seldon: kept" grep -q "someone else" "$work/p7/bin/jax-seldon"
+
+# a self-built seldon (no manifest), and one rebuilt over an installed one
+mkdir -p "$work/p11/bin"
+printf '#!/bin/sh\necho "seldon 0.0.0-dev"\n' >"$work/p11/bin/seldon"
+chmod 755 "$work/p11/bin/seldon"
+before=$(snap "$work/p11")
+run --prefix "$work/p11"
+check "self-built seldon: refused, exit 1" test "$rc" -eq 1
+check "self-built seldon: names --force" has "not installed by install.sh (a self-built seldon?); nothing changed. Re-run with --force"
+check "self-built seldon: nothing changed" test "$(snap "$work/p11")" = "$before"
+run --prefix "$work/p11" --force
+check "self-built seldon, --force: exit 0" test "$rc" -eq 0
+check "self-built seldon, --force: replaced" cmp -s "$work/p11/bin/seldon" "$work/build/seldon-9.9.9-$target/seldon"
+check "self-built seldon, --force: in the manifest" test -f "$work/p11/share/jax-seldon/install-manifest"
+printf '#!/bin/sh\necho "seldon 0.0.0-dev"\n' >"$work/p11/bin/seldon"
+run --prefix "$work/p11" --version v9.9.8
+check "rebuilt over an installed seldon: refused" test "$rc" -eq 1
+check "rebuilt over an installed seldon: kept" grep -q 0.0.0-dev "$work/p11/bin/seldon"
+mkdir -p "$work/p12/bin"
+ln -s /bin/true "$work/p12/bin/seldon"
+run --prefix "$work/p12"
+check "seldon as a symlink: refused" test "$rc" -eq 1
+check "seldon as a symlink: kept" test -L "$work/p12/bin/seldon"
+run --uninstall --force
+check "--uninstall with --force: exit 1" test "$rc" -eq 1
 
 # ---- 7. the one-liner form: script on stdin ----------------------------------
 rc=0
