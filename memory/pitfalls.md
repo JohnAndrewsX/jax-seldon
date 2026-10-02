@@ -752,3 +752,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **An "updated" assertion on a template file is trivially true** when
   `init` ran the same day. Pre-date the field (and commit) before the
   command under test.
+
+## 2026-10-02 · WP-047 (agent guide)
+
+- **The German `AGENTS.md` template must not contain the string
+  `logbook`.** `templates_are_written_as_rendered_with_prose_per_language`
+  checks the prose language by "en has `logbook` and no `Logbuch`, de the
+  reverse", so a flag like `--logbook` or `seldon open logbook` fails the
+  de template. Name `SELDON_LOGBOOK` (upper case passes) or describe the
+  option in German.
+- **Keep every command in a template on one line.** A code span wrapped
+  across lines renders fine on GitHub but breaks substring tests and an
+  agent's `grep` (`seldon capture` / `--all` on two lines). Wrap before
+  the backtick, not inside it.
+- **Template headings are pinned twice:** `tests/golden/init-skeleton.txt`
+  (rewrite with `SELDON_BLESS=1 cargo test --test init
+  templates_have_english_keys`, then review the diff) and, for
+  `AGENTS.md`, the ordered section list in
+  `agents_md_carries_the_agent_rules_in_both_languages`.
