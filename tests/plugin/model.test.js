@@ -141,6 +141,16 @@ test("bannerFor: one banner per non-ok status, each with a fix", () => {
   }
 })
 
+test("bannerFor engineMissing: the GitHub one-liner while the AUR package does not exist (ADR-0024)", () => {
+  const b = M.bannerFor("engineMissing", {})
+  assert.strictEqual(b.command, M.INSTALL_ENGINE_COMMAND)
+  assert.strictEqual(M.INSTALL_ENGINE_COMMAND,
+    "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash")
+  assert.strictEqual(b.detail, M.ENGINE_MISSING_DETAIL)
+  assert.ok(b.detail.indexOf("AUR package: coming soon") !== -1)
+  assert.ok(b.detail.indexOf("SHA256SUMS") !== -1)
+})
+
 test("bannerFor contractMismatch names the side to update", () => {
   assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 2 }).command, M.UPDATE_PLUGIN_COMMAND)
   assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 0 }).command, M.UPDATE_ENGINE_COMMAND)

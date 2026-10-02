@@ -781,3 +781,30 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   release build's `just check` runs shellcheck on `packaging/`. Lint
   locally with `shellcheck-py` / `actionlint-py` in a venv under the
   scratchpad (nothing installed on the host) before committing a script.
+
+## 2026-10-02 · WP-044 (install.sh)
+
+- **shellcheck is not on the dev host** (no package, docker socket not
+  accessible to the user), and the CI workflow `ci.yml` does not install
+  it either: `check-install` and `check-packaging` fall back to `bash -n`
+  there. Only the release workflow's `build` container has it, so a
+  shellcheck finding in `install.sh` first shows in the release dry run —
+  run the dry run before every tag (packaging/README.md), and keep
+  `# shellcheck disable=SC2016` on single-quoted strings that carry `$1`
+  for another program.
+- **`releases/latest/download/<asset>` 404s for an asset the latest
+  release does not carry.** v0.1.0 has no `install.sh`; the documented
+  URL works from the next release on. The README says so.
+- **`curl -fsSL` accepts `file://`,** so a mock release is a directory:
+  `SELDON_INSTALL_DOWNLOAD_URL=file://<dir>` and `SELDON_INSTALL_API_URL`
+  pointing at a JSON file. No port, no server, no race. Restricting curl
+  with `--proto '=https,file' --proto-redir '=https'` keeps that working
+  and still blocks a downgrade to http on GitHub's CDN redirect.
+- **"No jq" without uninstalling jq:** a PATH dir of symlinks to every
+  tool on PATH except `jq`, used with `env -i PATH=…`.
+- **Wrap a `curl | bash` script in `main "$@"` on its last line;** a test
+  that drops the last lines proves a truncated download does nothing.
+- **The real-run acceptance test is safe with the real HOME** as long as
+  `--unit` is not passed: fingerprint `~/.local/bin/seldon`,
+  `~/.local/bin/jax-seldon`, `~/.config/systemd/user` and `~/Seldon`
+  before and after, and give `--prefix /tmp/<scratch>`.

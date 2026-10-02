@@ -227,8 +227,9 @@ record_check() { # record_check <case> <expected record>
 }
 run fix-engine 3000 PATH="$work/bin-tools:$base_path" SELDON_INDEX="$fx/index.sample.json" \
   HARNESS_FIX=copy,terminal HARNESS_RECORD="$work/fix-engine.record"
-record_check fix-engine "$(printf '%s\n' wl-copy -- "omarchy pkg aur add jax-seldon" -- \
-  omarchy-launch-floating-terminal-with-presentation "omarchy pkg aur add jax-seldon" --)"
+install_engine="curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
+record_check fix-engine "$(printf '%s\n' wl-copy -- "$install_engine" -- \
+  omarchy-launch-floating-terminal-with-presentation "$install_engine" --)"
 run fix-contract 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v2.json" \
   HARNESS_FIX=copy HARNESS_RECORD="$work/fix-contract.record"
 record_check fix-contract "$(printf '%s\n' wl-copy -- "omarchy plugin update jax.seldon" --)"

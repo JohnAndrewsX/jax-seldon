@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test check-watch check-packaging schema-validate plugin-validate qmllint plugin-test
+check: fmt-check clippy test check-watch check-packaging check-install schema-validate plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -61,6 +61,11 @@ check-packaging:
     bash packaging/check-srcinfo.sh
     bash tests/release/release-notes.test.sh
     echo "check-packaging: ok"
+
+# install.sh (WP-044) against a local mock of the release layout (file://
+# URLs, scratch HOME and prefixes, no network); shellcheck when installed.
+check-install:
+    bash tests/install/install.test.sh
 
 # Validate fixtures against schema/ (script owned by WP-002).
 schema-validate:

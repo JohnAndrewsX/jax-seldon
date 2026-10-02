@@ -6,8 +6,10 @@ import qs.Ui
 
 // The banner for a non-ok service status (SPEC-PLUGIN §5, AGENTS.md §7).
 //
-// Renders one Model.bannerFor() object: title, one line of detail, the fix
-// command when there is one, and one button per fix action. It only reports
+// Renders one Model.bannerFor() object: title, the detail (wrapped; the
+// engine-missing one runs to a few lines), the fix command when there is
+// one (wrapped anywhere: the install one-liner is a long URL), and one
+// button per fix action. It only reports
 // clicks; Service.fix() carries them out. Every string is set as plain text.
 BorderSurface {
   id: root

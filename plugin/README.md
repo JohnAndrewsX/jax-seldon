@@ -16,18 +16,43 @@ the engine does the writing.
 ## Requirements
 
 - Omarchy 4 with the Omarchy shell.
-- The `seldon` engine, from the AUR:
-
-  ```sh
-  omarchy pkg aur add jax-seldon
-  ```
-
-  Without it the plugin shows "Seldon engine not installed" with that
-  command (see [States](#states)).
+- The `seldon` engine (see [Install](#install)). Without it the plugin
+  shows "Seldon engine not installed" (see [States](#states)).
 - A logbook, created once with `seldon init` (in a terminal; it asks where
   to put it, `~/Seldon` by default).
 
 ## Install
+
+**1. The engine.** AUR package: coming soon; until then install it from
+GitHub. `install.sh` checks the release against its `SHA256SUMS`, refuses
+on a mismatch, installs `~/.local/bin/seldon` and never asks for root.
+Download, read, verify, run:
+
+```sh
+cd "$(mktemp -d)"
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
+less install.sh                                    # read what it does
+sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
+```
+
+or in one line (the script still verifies the engine, not itself):
+
+```sh
+curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
+```
+
+`releases/latest/download/install.sh` exists from the next release on
+(v0.1.1); until then take the script from `main`
+(https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
+and run `bash install.sh --version v0.1.0`. Run it again to update.
+Options (`--version`, `--prefix`, `--unit` for the optional watcher,
+`--force` over a self-built `seldon`) and the AUR commands are in the
+[project README](https://github.com/JohnAndrewsX/jax-seldon#install).
+
+**2. Your logbook**, once: `seldon init` in a terminal.
+
+**3. The plugin:**
 
 ```sh
 omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
@@ -237,7 +262,7 @@ When something is wrong the panel shows one banner with a one-click fix:
 
 | State | Banner | One-click fix |
 |---|---|---|
-| Engine missing | Seldon engine not installed | *Install in terminal* runs `omarchy pkg aur add jax-seldon` in a floating terminal; *Copy* puts it on the clipboard; *Check again* looks for the engine again |
+| Engine missing | Seldon engine not installed | *Install in terminal* runs the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash` in a floating terminal (the script verifies the download against `SHA256SUMS`; see [Install](#install)); *Copy* puts it on the clipboard; *Check again* looks for the engine again |
 | Logbook not initialised | Logbook not initialised | *Run in terminal* runs `seldon init` (it asks where to put the logbook); *Copy*; *Check again* |
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
@@ -341,8 +366,11 @@ shell plugin. This is everything it does outside its own window:
   `wl-copy -- <command>` (*Copy*) and
   `omarchy-launch-floating-terminal-with-presentation <command>` (*Install
   in terminal*, *Run in terminal*, *Update in terminal*). `<command>` is
-  always one of five constants in the plugin: `omarchy pkg aur add
-  jax-seldon`, `seldon init`, `omarchy plugin update jax.seldon`, `yay -S
+  always one of five constants in the plugin: `curl -fsSL
+  https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
+  (the engine install while the AUR package does not exist; it fetches
+  the script over TLS from this project's release and the script checks
+  the engine against `SHA256SUMS`), `seldon init`, `omarchy plugin update jax.seldon`, `yay -S
   jax-seldon`, `sudo snapper -c root set-config ALLOW_USERS=$USER
   SYNC_ACL=yes`. Omarchy's launcher runs it in a terminal window you see
   (`sudo` asks for your password there).
@@ -351,12 +379,16 @@ shell plugin. This is everything it does outside its own window:
   of a command line other than as one validated argument.
 - **Writes nothing itself.** Notes, cases, drift resolutions and decisions
   are written by the engine, into your logbook, on your Enter or click.
-- **No network.** No sockets, no downloads, no update checks.
+- **No network.** No sockets, no downloads, no update checks. The one
+  exception is yours to click: *Install in terminal* on the
+  engine-missing banner runs the `curl … | bash` install in a terminal
+  you see.
 - **No units, binaries or installers.** The plugin folder holds QML,
   JavaScript, this README, the licence, the manifest and the preview
   image; no
-  services, timers, scripts or symlinks. The engine comes from the AUR as
-  its own package.
+  services, timers, scripts or symlinks. The engine is installed
+  separately (`install.sh` from the GitHub release, or the AUR package);
+  the plugin never installs it.
 - **No privileges.** The plugin never runs `sudo`, `pacman` or `systemctl`.
 - **Dev mode is read-only:** with `SELDON_INDEX` set, the plugin only
   probes `seldon --version --json`; it never runs capture, status or any
@@ -382,9 +414,18 @@ Plugin warnings go to the shell's log: `journalctl --user -t omarchy-shell`.
 omarchy plugin remove jax.seldon
 ```
 
-This removes the plugin only. The engine package `jax-seldon`, your logbook
-(`~/Seldon` unless you chose another place) and the index under
-`~/.local/state/seldon/` stay. To remove the engine as well:
+This removes the plugin only. The engine, your logbook (`~/Seldon` unless
+you chose another place) and the index under `~/.local/state/seldon/`
+stay. To remove the engine as well, installed from GitHub:
+
+```sh
+curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash -s -- --uninstall
+```
+
+It removes exactly the files `install.sh` installed (add the same
+`--prefix` if you gave one; `bash install.sh --uninstall` does the same
+with a downloaded copy, and is the way until v0.1.1, the first release
+that carries `install.sh`). Installed from the AUR:
 
 ```sh
 omarchy pkg drop jax-seldon
