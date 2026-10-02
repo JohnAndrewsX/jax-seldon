@@ -828,3 +828,18 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Package names on this host are in `/var/lib/pacman/local/`** — a
   directory listing is read-only and passes the guard; the package
   query command does not.
+
+## 2026-10-02 · WP-050 fix round
+
+- **Resolved: `dossier::Files::set` no longer appends past a damaged
+  fence** (the open finding above). It returns `Err(warning)` and skips;
+  `import` turns that into an error. A "damaged" fence also covers a
+  borrowed end: the body `fence_body` finds contains another begin
+  marker, so the end belongs to the next fence.
+- **Globs cannot say "but not".** `linux*` caught firmware and headers;
+  a kernels-only rule has to be an explicit list, and every kernel not
+  on it (AUR kernels) is the user's to add. Say so in the spec.
+- **Template prose can contain the marker word.** The deviations
+  template mentions `seldon:begin`/`seldon:end` in a code span, so a test
+  that breaks a fence must replace the full `<!-- seldon:end -->` marker,
+  not search for `seldon:end`.

@@ -600,3 +600,8 @@ Append-only. One bullet per finding, newest section last.
   step JSON (empty unless `plan start` warned), and the human line
   reuses `commands::index::warnings_human` (`\nwarning: …`). A
   `snapshotBefore` set by hand before the start counts as a snapshot.
+- **Every fence writer asks `views::fence_damaged` first** (fix round):
+  `Files::set` returns `Result<bool, String>` (`Err` = warning, fence
+  skipped), `write_decisions_index` returns `Fill::Skipped`. A closure
+  that records status per fence takes `&mut warnings` as an argument,
+  not as a capture, so the loop around it can still push warnings.

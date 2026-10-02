@@ -22,24 +22,29 @@ Done:
   and in "JSON shapes": plan steps return … `journal` (WP-006) and
   `warnings` (a list of strings, empty unless `plan start` warned; WP-050).
 - (2) `[drift] alwaysRed` default reviewed against ADR-0023's R3 subjects
-  (272e65c). Final default:
-    linux*, systemd, glibc, hyprland, omarchy, omarchy-settings,
-    quickshell, limine*, grub, mkinitcpio*, filesystem
-  Mapping: kernel → linux*; systemd; glibc; Hyprland → hyprland; Omarchy
+  (272e65c, fix round eff22f5). Final default:
+    linux, linux-lts, linux-zen, linux-hardened, linux-rt, linux-rt-lts,
+    linux-omarchy, systemd, glibc, hyprland, omarchy, omarchy-settings,
+    quickshell, limine*, grub, mkinitcpio*, filesystem, pam, sddm, uwsm
+  Mapping: kernel → the kernel packages only (fix round; see below); systemd; glibc; Hyprland → hyprland; Omarchy
   itself → omarchy + omarchy-settings (Omarchy 4 ships its /etc layer
   there: mkinitcpio, limine, sddm, modprobe confs); boot loader →
   limine* (Omarchy's), grub, and mkinitcpio* (initramfs); /etc →
   omarchy-settings and filesystem (base /etc files). quickshell kept
-  (ADR-0013: the shell). Deliberately not added: systemd-libs,
+  (ADR-0013: the shell); login → pam, sddm, uwsm (fix round). Deliberately not added: systemd-libs,
   hyprutils/hyprlang (move in the same transaction as their leader),
   omarchy-nvim/omarchy-keyring (not boot/login/shell). The globs only
   see package names, so `/etc` itself cannot be a glob.
-  SPEC wording (§2 config row): "`[drift] alwaysRed` (ADR-0013; package
-  globs, default `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`,
-  `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`,
-  `filesystem` — the R3 subjects of ADR-0023 as packages, `/etc` through
-  `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into
-  the file, so an existing config keeps its own)". §5 rule 5 now says
+  SPEC wording (§2 config row, after the fix round): "`[drift] alwaysRed`
+  (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`,
+  `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`,
+  `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`,
+  `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` —
+  the R3 subjects of ADR-0023 as packages: the kernels only (firmware and
+  headers are not R3; another kernel package is added by hand), the login
+  path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and
+  `filesystem`; WP-050. `init` writes the list into the file, so an
+  existing config keeps its own)". §5 rule 5 now says
   "default in §2". Unit test `always_red_globs` covers each new glob and
   the near misses (omarchy-nvim, hyprutils, grub-customizer).
 - (3) docs/CONCEPT.md "Agents and the logbook": the hook table names
@@ -97,6 +102,68 @@ Done:
 - (8) CHANGELOG [Unreleased] → new "### Engine" block (b44c6f1), incl.
   the note that an existing config.toml keeps its old alwaysRed list.
 
+Fix round (review: APPROVE; orchestrator decisions applied):
+- (1) eff22f5 — red list: `pam`, `sddm`, `uwsm` added; `linux*` replaced
+  by the kernel packages `linux`, `linux-lts`, `linux-zen`,
+  `linux-hardened`, `linux-omarchy` as asked, plus `linux-rt` and
+  `linux-rt-lts` (the two remaining official Arch kernels; drop them if
+  unwanted). Globs have no negation, so "kernels only" is an explicit
+  list: `linux-firmware*`, `linux-api-headers` and every `*-headers` stay
+  routine; an AUR kernel (e.g. linux-cachyos) must be added by hand (SPEC
+  says so). Changed together: config.rs, the validator's `ALWAYS_RED`
+  and its self-checks (linux-firmware now yellow; new: limine-snapper-sync
+  glob red, sddm red; 23 → 25 self-checks), engine/tests/index.rs (same
+  three cases), `always_red_globs` (pam/sddm/uwsm/linux-lts/linux-omarchy
+  red; linux-firmware, linux-firmware-amdgpu, linux-api-headers,
+  linux-headers, linux-omarchy-headers, pambase, sddm-kcm not),
+  fixtures/README, SPEC-ENGINE §2, CHANGELOG. No fixture event changes
+  zone (no linux-* subject in the fixture ledger).
+- (2) 4ee08dd — `decide --json` `warnings` now carries the loader's
+  warnings: an invalid ADR file is named ("decisions/ADR-0001-broken.md:
+  invalid decision: …; skipped") and left out of the table; the new
+  decision is still created. Test
+  status::decide_names_a_skipped_decision_in_its_warnings (JSON and the
+  human `warning:` line).
+- (3) 4ee08dd — `dossier::Files::set` returns `Result<bool, String>`: a
+  file with a damaged fence of that name is left alone and the fence
+  skipped, `Err` = "system/<file>: the <fence> fence has no end marker of
+  its own; fence kept". "Damaged" (`views::fence_damaged`, shared with
+  `write_decisions_index`): the begin marker is there but `fence_body`
+  finds no end, or the body it finds contains another begin marker (the
+  end belongs to the next fence — the same data-loss path one step
+  removed). `seldon dossier` reports the fence as `skipped` with the
+  warning. `import omarchy-agent` (the other caller) records it as an
+  error in `skipped` (path system/deviations.md) with no deviation rows,
+  so `--apply` is blocked until the user repairs the fence — the import
+  never writes past a damaged fence. Tests:
+  dossier::tests::a_fence_without_its_end_is_skipped_not_appended (no
+  end; borrowed end; the intact fence in the same file still written),
+  views::tests::a_fence_is_damaged_without_an_end_of_its_own,
+  tests/dossier.rs a_fence_without_its_end_is_skipped_with_a_warning,
+  tests/import.rs a_deviations_fence_without_its_end_blocks_the_rows.
+  SPEC-ENGINE §3 dossier: "A failed query skips its fences (warning,
+  fence kept); so does a fence whose begin marker has no end marker of
+  its own (WP-050: no second fence is appended; `import` reports it as an
+  error)." The decisions comment now reads "a begin marker without an end
+  marker of its own leaves the file alone (warning)".
+- (4) SPEC-ENGINE §3: `seldon decide "<title>" [--case ID] [--no-edit]`.
+- (5) llms.txt: "R2 and R3 cases with `--snapshot N` (without one it
+  warns, never refuses)"; docs/AGENT-GUIDE.md §3 step 3: "For an `R2` or
+  `R3` case take a snapper snapshot first and pass it: `--snapshot <N>`.
+  Without one, `plan start` prints a warning (and `warnings` in `--json`)
+  but never refuses (ADR-0023)."; docs/seldon-concept.html hooks:
+  PreToolUse (Bash and Edit/Write/MultiEdit, classified before they run)
+  and SessionEnd (once per session, not after every reply), German as the
+  page is.
+- Verified: `cargo clippy --all-targets -D warnings` clean; suites
+  `--test dossier` 12, `--test import` 7, `--test status` 9, `--test
+  index` 17, lib 131 all pass; `python3 scripts/validate-fixtures.py` ok
+  (25 self-checks); `just check` exit 0 ("check: ok"). No scratch
+  logbook was needed this round; scratchpad emptied.
+- Left as is (not asked): AGENT-GUIDE §4 zone table ("red … and a
+  snapshot first") and its do-not list still pair the snapshot with the
+  red zone as a zone rule; not contradictory to ADR-0023 but softer.
+
 Not done:
 - Existing installs keep their old alwaysRed list (init writes the
   default into config.toml). No migration; CHANGELOG says to add the
@@ -144,12 +211,9 @@ for index and decide; a write after the record exists is a warning; a
 changed config default does not reach existing installs; an unterminated
 fence must stop a fence writer; alwaysRed sees package names only).
 
-Decisions needed:
-- dossier::Files::set has the latent data-loss path the decisions fill
-  avoids: with a same-name fence whose end marker is missing, it appends
-  a fresh fence, and the next run's `fence_body` spans from the old
-  begin to the new end and replaces the user's text in between. A small
-  engine WP could make it skip with a warning like `write_decisions_index`.
+Decisions needed (first round; resolved by the review: dossier fix done
+in the fix round, /etc events stay yellow — deferred ADR, login
+packages added, panel warnings → plugin v0.1.1, stale docs fixed):
 - /etc config events: alwaysRed cannot express `/etc` (package names
   only). If a user watches `/etc/...`, its config events are yellow
   (`zone_for`, ADR-0014 §2 makes only `~/.config/systemd/` red). Making
@@ -163,7 +227,11 @@ Decisions needed:
   to the zone); docs/AGENT-GUIDE.md §3 step 3 says the same and could
   mention the warning. Left for the docs owner (WP-045 track).
 
-Touched outside WP scope:
+Touched outside WP scope (fix round, as instructed): llms.txt,
+docs/AGENT-GUIDE.md, docs/seldon-concept.html, engine/src/import/
+omarchy_agent.rs (the second Files::set caller), engine/tests/{index,
+import,dossier}.rs.
+Touched outside WP scope (first round):
 - scripts/validate-fixtures.py: its `ALWAYS_RED` mirror of the default
   updated with the new list (the fixture validator must agree with the
   engine; no fixture changed, `validate-fixtures: ok`).
