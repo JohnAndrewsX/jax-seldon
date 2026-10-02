@@ -26,19 +26,8 @@ then you install it from the project's GitHub release. The install script
 checks the engine against the release's checksums and installs
 `~/.local/bin/seldon`.
 
-While the current release is v0.1.0, take the script from the project's
-`main` branch and name the version. The v0.1.0 release does not carry
-the script yet:
-
-```sh
-cd "$(mktemp -d)"
-curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
-less install.sh
-bash install.sh --version v0.1.0
-```
-
-From v0.1.1 on, the release carries the script and its checksum. Then
-download both, read the script, verify it and run it:
+Download the script and the checksum file from the latest release,
+read the script, verify it and run it:
 
 ```sh
 cd "$(mktemp -d)"
@@ -55,7 +44,7 @@ seldon --version
 ```
 
 ```text
-seldon 0.1.0
+seldon 0.1.1
 ```
 
 If your shell says `command not found`, `~/.local/bin` is not on your
@@ -123,7 +112,7 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.1.0, contract 1
+  ok        engine   seldon 0.1.1, contract 1
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  /home/you/Seldon · machine <machine> · en · 0 cases, 0 decisions, 0 journal days
   ok        omarchy  Omarchy 4.0.4-1

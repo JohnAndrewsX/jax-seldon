@@ -17,8 +17,7 @@ curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/i
 It replaces `seldon` when the release's version differs from the
 installed one; with `--version` that can also be an older release. With
 the same version it changes nothing. It checks the engine against the release's `SHA256SUMS`
-and refuses on a mismatch. If the latest release has no `install.sh`
-yet (v0.1.0), use the script from `main` as in Getting started.
+and refuses on a mismatch.
 
 It also installs the man page (`man seldon`) and the Tab completions for
 bash, zsh and fish, each for a shell that is installed on your machine.

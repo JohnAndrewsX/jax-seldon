@@ -56,19 +56,6 @@ Three steps: the engine, your logbook, the plugin. None needs `sudo`.
 GitHub. `install.sh` checks the release against its `SHA256SUMS`, refuses
 on a mismatch, installs `~/.local/bin/seldon` and never asks for root.
 
-> [!NOTE]
-> `releases/latest/download/install.sh` exists from the next release on
-> (v0.1.1); until then take the script from `main`
-> (https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
-> and run `bash install.sh --version v0.1.0`:
->
-> ```sh
-> cd "$(mktemp -d)"
-> curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
-> less install.sh
-> bash install.sh --version v0.1.0
-> ```
-
 Download, read, verify, run:
 
 ```sh
@@ -486,8 +473,7 @@ curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/i
 
 It removes exactly the files `install.sh` installed (add the same
 `--prefix` if you gave one; `bash install.sh --uninstall` does the same
-with a downloaded copy, and is the way until v0.1.1, the first release
-that carries `install.sh`). Installed from the AUR:
+with a downloaded copy). Installed from the AUR:
 
 ```sh
 omarchy pkg drop jax-seldon

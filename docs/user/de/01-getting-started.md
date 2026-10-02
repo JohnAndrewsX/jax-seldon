@@ -29,19 +29,8 @@ Bis dahin installierst du sie aus dem GitHub-Release des Projekts. Das
 Installationsskript prüft die Engine gegen die Prüfsummen des Release
 und installiert `~/.local/bin/seldon`.
 
-Solange das aktuelle Release v0.1.0 ist, nimmst du das Skript aus dem
-Branch `main` des Projekts und nennst die Version. Das Release v0.1.0
-enthält das Skript noch nicht:
-
-```sh
-cd "$(mktemp -d)"
-curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
-less install.sh
-bash install.sh --version v0.1.0
-```
-
-Ab v0.1.1 enthält das Release das Skript und seine Prüfsumme. Dann lädst
-du beides herunter, liest das Skript, prüfst es und führst es aus:
+Lade das Skript und die Prüfsummendatei aus dem neuesten Release
+herunter, lies das Skript, prüfe es und führe es aus:
 
 ```sh
 cd "$(mktemp -d)"
@@ -58,7 +47,7 @@ seldon --version
 ```
 
 ```text
-seldon 0.1.0
+seldon 0.1.1
 ```
 
 Meldet deine Shell `command not found`, liegt `~/.local/bin` noch nicht
@@ -130,7 +119,7 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.1.0, contract 1
+  ok        engine   seldon 0.1.1, contract 1
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  /home/you/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
   ok        omarchy  Omarchy 4.0.4-1

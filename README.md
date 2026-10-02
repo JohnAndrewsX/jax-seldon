@@ -78,20 +78,6 @@ against the release's `SHA256SUMS` and refuses on a mismatch, then
 installs `~/.local/bin/seldon` (and the alias `jax-seldon`). It runs as
 your user and never asks for root.
 
-> [!NOTE]
-> **v0.1.0** predates `install.sh`, so `releases/latest/download/install.sh`
-> exists from the next release on (v0.1.1). Until then take the script from
-> `main` (https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
-> and run `bash install.sh --version v0.1.0`: the engine is checked the
-> same way, the script itself is not covered by `SHA256SUMS`.
->
-> ```sh
-> cd "$(mktemp -d)"
-> curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
-> less install.sh
-> bash install.sh --version v0.1.0
-> ```
-
 Checked form — download, read, verify, run:
 
 ```sh
@@ -242,11 +228,12 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.1.0, the first release (2026-10-02). Before 1.0.0 a minor release
-may still change the CLI, the logbook layout or the contract; the
-[changelog](CHANGELOG.md) then says so under Breaking. Next: the AUR
-package, the listing in the Omarchy plugin directory, the update-impact
-report and the Seldon mark; then 1.0.0.
+v0.1.1 (2026-10-03): shell completions, man page, the Prime Radiant
+mark in the bar and the panel, clean removal commands. Before 1.0.0 a
+minor release may still change the CLI, the logbook layout or the
+contract; the [changelog](CHANGELOG.md) then says so under Breaking.
+Next: the AUR package, the listing in the Omarchy plugin directory and
+the update-impact report; then 1.0.0.
 
 ## Contributing
 
