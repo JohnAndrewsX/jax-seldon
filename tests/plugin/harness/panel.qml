@@ -74,11 +74,41 @@ ShellRoot {
     return out
   }
 
+  // Every visible text that does not fit (WP-039), as "<kind>:<text>":
+  //   elided   a Text elided or cut at its line limit (`truncated`)
+  //   wide     a Text whose content is wider than its explicit width
+  //   button   a qs.Ui Button narrower than its label and padding (the
+  //            Button's own label is never elided; it spills over)
+  //   outside  text painted past the panel's right edge (a Row that grew
+  //            wider than the panel)
+  // `frame` is the panel's content item (the key catcher).
+  function overflow(item, frame, out) {
+    if (!item || item.visible === false) return out
+    var text = typeof item.text === "string" ? item.text : ""
+    var isButton = item.bordered !== undefined && item.horizontalPadding !== undefined
+    var isText = !isButton && item.truncated !== undefined && item.font !== undefined
+    if (text !== "" && (isButton || isText)) {
+      var painted = isText && item.horizontalAlignment !== Text.AlignRight
+        ? Math.min(item.width, item.contentWidth) : item.width
+      var left = item.mapToItem(frame, 0, 0).x
+      if (item.horizontalAlignment === Text.AlignRight && isText) left += item.width - painted
+      if (isButton && item.implicitWidth > item.width + 0.5) out.push("button:" + text)
+      else if (isText && item.truncated) out.push("elided:" + text)
+      else if (isText && item.width > 0 && item.contentWidth > item.width + 0.5) out.push("wide:" + text)
+      else if (left + painted > frame.width + 0.5) out.push("outside:" + text)
+    }
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) overflow(kids[i], frame, out)
+    return out
+  }
+
   function report(tag) {
     var view = root.panel ? root.panel.view() : null
+    var frame = root.byName(win.contentItem, "seldonKeys")
     // The tag is one word: panel-view.sh cuts the line at the first space after it.
     console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
-      view: view, switches: fakeBar.switches, texts: texts(win.contentItem, [])
+      view: view, switches: fakeBar.switches, texts: texts(win.contentItem, []),
+      overflow: frame ? overflow(frame, frame, []) : [], contentWidth: frame ? frame.width : 0
     }))
   }
 
@@ -125,6 +155,18 @@ ShellRoot {
       var dir = Quickshell.env("HARNESS_SHOTS") || ""
       if (dir !== "") win.contentItem.grabToImage(function(result) { result.saveToFile(dir + "/" + arg + ".png") })
     }
+  }
+
+  // The first item, in tree order, with this objectName.
+  function byName(item, name) {
+    if (!item) return null
+    if (item.objectName === name) return item
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) {
+      var found = root.byName(kids[i], name)
+      if (found) return found
+    }
+    return null
   }
 
   // The first visible item, in tree order, whose text is `label`.

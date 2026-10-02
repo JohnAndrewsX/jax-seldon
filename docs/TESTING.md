@@ -539,7 +539,19 @@ XDG dirs follow it). Both scripts end with a check
 (`tests/plugin/real-home-guard.sh`) that the real `~/.local/state/seldon`
 and `~/.config/seldon` neither appeared nor changed during the run; it
 compares existence, size, mtime and ctime of every entry, so an engine run
-by hand at the same time also fails it.
+by hand at the same time also fails it. One exception (WP-039): on a host
+where the operator's real Seldon is live (the installed plugin runs
+`seldon capture` every 15 minutes), a capture during the run rewrites the
+state dir. The guard passes that as "changed by the operator's live engine
+(not a leak)" only if nothing under `~/.config/seldon` changed
+(`config.toml` byte-identical), no path appeared or disappeared, every
+changed entry is the state dir or its `index.json`, `lock`,
+`cursors.json` or `manifest.json`, and the post-run `index.json` names the
+logbook `config.toml` names (`logbook.path`) and the machine it named
+before the run (`logbook.machine`). It reads only `config.toml` and those
+two index fields, never the logbook. Anything else still fails, with the
+reason. `tests/plugin/real-home-guard.test.sh` (part of `just plugin-test`)
+proves both sides in scratch HOMEs.
 
 To watch one case by hand:
 
@@ -677,6 +689,24 @@ Today tab in Osaka Jade, Tokyo Night and Catppuccin Latte
 (`<dir>/panel-<theme>-today.png`): a live run against the fake engine, so
 the render has no dev-mode note (which would print the index path) and the
 QuickEntry looks as a user sees it.
+
+Label fit (WP-039): every report also carries `overflow`, the visible
+texts that do not fit (`elided:` a Text elided or cut at its line limit,
+`wide:` content wider than its box, `button:` a qs.Ui Button narrower than
+its label and padding, `outside:` text past the panel's right edge), and
+`contentWidth`, the panel's width. The `fit-*` cases put a
+`~/.config/omarchy/shell.toml` with `[font] base-size` 12 and 15 (font
+scale 1.0 and 1.25; `Style.space` follows the font) into the harness HOME,
+walk every tab and require: width 460 and 575, the tab strip on one line
+with the same cell widths whatever tab is selected, no `button:`, `wide:`
+or `outside:` entry anywhere, the Changelog header never elided, and no
+elision at all on Today, Decisions, System and Memory (only Changelog row
+text and Work mini-card titles, user content, may elide). `fit-narrow`
+sets `HARNESS_CARD_WIDTH=300` (the stand-in KeyboardPanel's
+`availableCardWidth`, a screen narrower than the panel): the strip wraps
+and still nothing that is a label is cut. `PANEL_FIT_SHOTS=<dir>` runs
+the two scales in Tokyo Night, Osaka Jade and Catppuccin Latte and saves
+every tab (`<dir>/fit-100-<theme>-<tab>.png`, `fit-125-…`).
 
 ### 3b. `Overlay.qml` in a private headless Quickshell
 

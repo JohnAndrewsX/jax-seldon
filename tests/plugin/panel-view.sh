@@ -918,7 +918,78 @@ else
 fi
 clean_log decisions-locked
 
-# 23. Offscreen renders of the Today tab in three themes (only with PANEL_SHOTS;
+# 23. Label fit (WP-039): at font scale 1.0 and 1.25 (`[font] base-size`
+#     12 and 15 in the user's shell.toml) the panel is Style.space(460) wide
+#     and nothing that is a label is cut off on any tab: no tab or chip
+#     Button narrower than its label, no Text wider than its box or past the
+#     panel's edge (harness `overflow`), the Changelog header never elided.
+#     Only user content may elide (Changelog row text, Work mini-card titles;
+#     Enter or the card below shows it in full); Today, Decisions, System and
+#     Memory elide nothing. The tab strip is one line and its cells keep
+#     their widths when the selection moves. On a screen narrower than the
+#     panel (HARNESS_CARD_WIDTH, the real panel's availableCardWidth) the
+#     strip and the header wrap instead of clipping.
+#     PANEL_FIT_SHOTS=<dir> also renders every tab at both scales in three
+#     themes (work/active/WP-039/screenshots/).
+fit_steps="settle;shot:today;tab:changelog;filter:seldon;shot:changelog;tab:work;shot:work;tab:decisions;shot:decisions;tab:system;shot:system;tab:memory;shot:memory"
+# fit_case <case> <base size> <themes…> [-- VAR=value …]
+fit_case() {
+  local name=$1 base=$2 theme home
+  shift 2
+  local themes=() extra=()
+  while [[ $# -gt 0 && $1 != -- ]]; do themes+=("$1"); shift; done
+  [[ ${1:-} == -- ]] && shift
+  extra=("$@")
+  for theme in "${themes[@]}"; do
+    home="$work/home-$name-$theme"
+    mkdir -p "$home/.config/omarchy" "$home/.local/state/omarchy/current/theme"
+    printf '[font]\nbase-size = %s\n' "$base" >"$home/.config/omarchy/shell.toml"
+    [[ $theme == default ]] || cp "${OMARCHY_PATH:-/usr/share/omarchy}/themes/$theme/colors.toml" \
+      "$home/.local/state/omarchy/current/theme/colors.toml"
+    local steps=$fit_steps shots=()
+    if [[ -n ${PANEL_FIT_SHOTS:-} ]]; then
+      mkdir -p "$PANEL_FIT_SHOTS"
+      steps=$(sed "s/shot:\([a-z]*\)/shot:$name-$theme-\1/g" <<<"$fit_steps")
+      shots=(HARNESS_SHOTS="$PANEL_FIT_SHOTS")
+    fi
+    run "$name-$theme" "" "$steps" HOME="$home" FAKE_SELDON_FIXTURE="$fx/index.sample.json" "${shots[@]}" "${extra[@]}"
+    clean_log "$name-$theme"
+  done
+}
+# fit_expect <case> <panel width> <tab strip on one line> [narrow] — over
+# every step. A narrow case lets content elide on every tab (the Decisions
+# file path), never a label.
+fit_expect() {
+  local name=$1 width=$2 oneline=$3 narrow=${4:-} n
+  n=$(wc -l <"$work/$name.steps")
+  expect "$name" 1 '.view.tab' today
+  expect "$name" "$n" '.view.tab' memory
+  expect "$name" 1 .contentWidth "$width"
+  expect "$name" 1 .view.tabStrip.oneLine "$oneline"
+  # Steps 1 (Today selected) and 3 (Changelog selected): same cell widths.
+  local w1 w3
+  w1=$(sed -n 1p "$work/$name.steps" | jq -r .view.tabStrip.widths)
+  expect "$name" 3 .view.tabStrip.widths "$w1"
+  shows "$name" 4 "18 events from seldon · newest first"
+  local i
+  for ((i = 1; i <= n; i++)); do
+    expect "$name" "$i" '[.overflow[] | select(startswith("elided:") | not)] | join(" | ")' ""
+    expect "$name" "$i" '[.overflow[] | select(test("^elided:[0-9]+ events"))] | length' 0
+    [[ -n $narrow ]] || expect "$name" "$i" 'if (.view.tab | IN("changelog", "work")) then 0 else (.overflow | length) end' 0
+  done
+}
+fit_themes=(default)
+[[ -n ${PANEL_FIT_SHOTS:-} ]] && fit_themes=(tokyo-night osaka-jade catppuccin-latte)
+fit_case fit-100 12 "${fit_themes[@]}"
+fit_case fit-125 15 "${fit_themes[@]}"
+for theme in "${fit_themes[@]}"; do
+  fit_expect "fit-100-$theme" 460 true
+  fit_expect "fit-125-$theme" 575 true
+done
+fit_case fit-narrow 12 default -- HARNESS_CARD_WIDTH=300
+fit_expect fit-narrow-default 300 false narrow
+
+# 24. Offscreen renders of the Today tab in three themes (only with PANEL_SHOTS;
 # the panel's counterpart of overlay-view.sh's OVERLAY_SHOTS; not live
 # screenshots). plugin/preview.png is composed from these (docs/TESTING.md).
 if [[ -n ${PANEL_SHOTS:-} ]]; then
