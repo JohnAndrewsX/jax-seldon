@@ -225,6 +225,11 @@ logbook migration)
 - **Vault import ready (WP-043):** run the dry run yourself and read the
   report before applying — see the orchestrator's message; `--apply`
   writes to `~/Seldon` and is yours to run.
+- **ADR-0024 flip list (when the AUR package is live):** plugin
+  `INSTALL_ENGINE_COMMAND` and `ENGINE_MISSING_DETAIL`, the contract-
+  mismatch fix (`UPDATE_ENGINE_COMMAND`, still `yay -S jax-seldon` — to
+  be switched to the installer with v0.1.1), README.md and plugin/README
+  "coming soon" sentences and section order, docs/user 01 install order.
 - **Proposed release v0.1.1** (WP-038 self-attribution, WP-039 panel
   width + guard, WP-043 import): say "v0.1.1 vorbereiten" and the
   orchestrator prepares CHANGELOG, version bump and dry run, then asks
