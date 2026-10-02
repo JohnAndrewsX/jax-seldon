@@ -19,6 +19,8 @@ Checks (docs/user/STYLE.md, "Checks"):
              every command between `<!-- help: seldon … -->` and
              `<!-- /help -->`, equal to the engine's output with the global
              options removed where their text matches `seldon --help`
+  usage      every `seldon …` in a code span or code block of the guide
+             names commands and options that the engine's help lists
 
 --write regenerates the help blocks from the engine instead of comparing
 them; the prose around them is left alone.
@@ -301,8 +303,18 @@ def global_options(lines):
     return opts
 
 
-def help_texts(seldon):
-    """{'seldon plan new': text} for every command, globals stripped below the root."""
+def option_names(lines):
+    """Every option a help text lists: `--json`, `-V`, `--version`, …"""
+    names = set()
+    for line in lines:
+        m = OPTION_LINE.match(line)
+        if m:
+            names.update(re.findall(r"-{1,2}[A-Za-z][a-z-]*", m.group(1)))
+    return names
+
+
+def help_tree(seldon):
+    """{'seldon plan new': {'lines', 'subs', 'opts'}} for every command."""
     with tempfile.TemporaryDirectory(prefix="seldon-docs-check-") as home:
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -313,26 +325,107 @@ def help_texts(seldon):
             "SELDON_TEST_GUARD": home,
             "LC_ALL": "C.UTF-8",
         }
-        root = run_help(seldon, [], env)
-        globals_ = global_options(root)
-        texts = {"seldon": "\n".join(root) + "\n"}
-        queue = [[name] for name in subcommands(root)]
+        tree = {}
+        queue = [[]]
         while queue:
             words = queue.pop(0)
             lines = run_help(seldon, words, env)
-            kept = []
-            for line in lines:
-                m = OPTION_LINE.match(line)
-                if m and globals_.get(m.group(1)) == m.group(2):
+            subs = subcommands(lines)
+            tree[" ".join(["seldon", *words])] = {"lines": lines, "subs": subs, "opts": option_names(lines)}
+            queue.extend(words + [name] for name in subs)
+        return tree
+
+
+def help_texts(tree):
+    """{'seldon plan new': text}, the global options stripped below the root."""
+    root = tree["seldon"]["lines"]
+    globals_ = global_options(root)
+    texts = {}
+    for cmd, node in tree.items():
+        kept = []
+        for line in node["lines"]:
+            m = OPTION_LINE.match(line)
+            if cmd != "seldon" and m and globals_.get(m.group(1)) == m.group(2):
+                continue
+            kept.append(line)
+        texts[cmd] = "\n".join(kept) + "\n"
+    return texts
+
+
+# `seldon` as a command word: not part of a path, an id or a commit message
+COMMAND = re.compile(r"(?<![\w./~-])seldon(?=\s|$)")
+CODE_SPAN = re.compile(r"(`+)(.+?)\1")
+
+
+# Fenced blocks that hold commands; `text` blocks are output, `toml` config.
+COMMAND_FENCES = ("", "sh", "bash", "console", "shell")
+
+# Commands the guide names as planned, not as available (08: update-impact,
+# WP-033). An entry the engine has gained is an error, so it gets removed.
+PLANNED = {"seldon update-impact"}
+
+
+def command_snippets(text):
+    """Yield (line number, words after `seldon`) for every command in code."""
+    lang = None
+    for n, line in enumerate(text.splitlines(), 1):
+        m = FENCE.match(line)
+        if m:
+            lang = None if lang is not None else line.strip()[3:].strip().lower()
+            continue
+        if lang is not None:
+            if lang not in COMMAND_FENCES:
+                continue
+            parts = [line]
+        else:
+            parts = [m.group(2) for m in CODE_SPAN.finditer(line)]
+        for part in parts:
+            for m in COMMAND.finditer(part):
+                rest = re.split(r"\s(?:\||&&|;|#)\s|\s#|\s\|\s*$", part[m.end():])[0]
+                yield n, rest.split()
+
+
+def check_usage(report, tree):
+    """Every `seldon …` in the guide names a real command and real options."""
+    root_opts = tree["seldon"]["opts"]
+    for cmd in sorted(PLANNED & set(tree)):
+        report.error(f"`{cmd}` exists now; remove it from PLANNED in scripts/docs-check.py and document it")
+    count = 0
+    for path in markdown_files():
+        if os.path.basename(path) == CLI_PAGE:
+            text = HELP_BLOCK.sub("", read(path))
+        else:
+            text = read(path)
+        for n, words in command_snippets(text):
+            count += 1
+            paths = ["seldon"]
+            for word in words:
+                if word == "--":
+                    break
+                if word.startswith("-"):
+                    flag = word.split("=")[0]
+                    for cmd in paths:
+                        if flag not in tree[cmd]["opts"] | root_opts:
+                            report.error(f"{rel(path)}:{n}: `{cmd}` has no option {flag}")
                     continue
-                kept.append(line)
-            texts["seldon " + " ".join(words)] = "\n".join(kept) + "\n"
-            queue.extend(words + [name] for name in subcommands(lines))
-        return texts
+                subs = tree[paths[0]]["subs"]
+                if not subs:
+                    continue  # an argument
+                if word.startswith(("<", "…", '"', "'")) or word in ("help",):
+                    break
+                names = word.split("|")
+                if all(f"{paths[0]} {w}" in PLANNED for w in names):
+                    break
+                unknown = [w for w in names if w not in subs]
+                if unknown:
+                    report.error(f"{rel(path)}:{n}: `{paths[0]}` has no command {'|'.join(unknown)}")
+                    break
+                paths = [f"{paths[0]} {w}" for w in names]
+    return count
 
 
-def check_cli(report, seldon, write):
-    texts = help_texts(seldon)
+def check_cli(report, tree, write):
+    texts = help_texts(tree)
     for lang in LANGS:
         path = os.path.join(USER, lang, CLI_PAGE)
         if not os.path.exists(path):
@@ -380,14 +473,17 @@ def main():
     pairs = check_pages(report)
     if args.seldon:
         try:
-            commands = check_cli(report, args.seldon, args.write)
+            tree = help_tree(args.seldon)
+            commands = check_cli(report, tree, args.write)
+            usages = check_usage(report, tree)
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as e:
             report.error(f"cannot read the engine's help: {e}")
-            commands = 0
+            commands = usages = 0
     else:
         report.error("no engine given (--seldon); the CLI reference was not checked")
-        commands = 0
-    return report.finish(f"{links} links, {pairs} translated pages, {commands} commands")
+        commands = usages = 0
+    return report.finish(
+        f"{links} links, {pairs} translated pages, {commands} commands, {usages} command lines")
 
 
 if __name__ == "__main__":

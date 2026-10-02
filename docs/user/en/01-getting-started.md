@@ -153,8 +153,8 @@ test: it is visible and you can undo it in a second.
    omarchy theme current
    ```
 
-2. Switch to any other theme, with Omarchy's theme menu or with
-   `omarchy theme set <name>`.
+2. Switch to any other theme, with Omarchy's theme switcher or with
+   `omarchy theme set <name>`. `omarchy theme list` shows the names.
 
 3. Let Seldon look for changes:
 
