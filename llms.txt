@@ -1,0 +1,63 @@
+# Seldon
+
+> Seldon is a flight recorder and planning desk for an Omarchy (Arch Linux, Hyprland) machine. It keeps a Markdown logbook (`~/Seldon` by default) of everything that changes on the system — packages, configs, themes, plugins, Omarchy updates — reconciles those changes against planned work ("cases"), reports unplanned changes as drift, and shows the picture in the Omarchy shell. It records; it never changes the system and never blocks a command.
+
+Seldon has two parts. The **engine** is `seldon`, a single Rust binary and the only writer of the logbook and of the index `~/.local/state/seldon/index.json`. The **plugin** `jax.seldon` is a Quickshell (QML) plugin for the Omarchy shell that only reads that index; it is published from `plugin/` to a separate repository, JohnAndrewsX/jax-seldon-plugin. The JSON Schema in `schema/` is the only contract between them.
+
+An agent started inside a logbook follows the logbook's own `AGENTS.md`; the long form is the agent guide below. Pass `--actor agent:<name>` to every `seldon` command that takes it, put free text after `--`, and add `--json` when you parse output. Exit codes: 0 ok, 1 user error, 2 engine error, 3 logbook not initialised, 4 lock held. An agent working on Seldon's source code follows the repository's `AGENTS.md` instead. Raw Markdown of any linked file: replace `github.com/JohnAndrewsX/jax-seldon/blob/main/` with `raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/`.
+
+## Agent docs
+
+- [Agent guide](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md): how to work inside a logbook — session start, cases, zones, commands, hooks, drift, ending a session, a worked example, the do-not list
+- [Logbook AGENTS.md template (en)](https://github.com/JohnAndrewsX/jax-seldon/blob/main/engine/templates/en/AGENTS.md): the rules `seldon init` writes into every logbook (German: `engine/templates/de/AGENTS.md`); a logbook's own copy may be edited by its user and wins
+- [Repository AGENTS.md](https://github.com/JohnAndrewsX/jax-seldon/blob/main/AGENTS.md): rules for agents that develop Seldon itself, not for agents working in a logbook
+
+## Read-only commands (safe at any time)
+
+- [`seldon doctor`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): engine, config, logbook, Omarchy, snapper and git checks
+- [`seldon plan list` / `plan show <ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): the cases and one case
+- [`seldon drift` / `drift show <EVENT> --json`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#5-reconciliation-drift): open drift, crises first; one item and its group members
+- [`seldon open <case|journal|ledger|status|logbook|ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): prints the path of that file (without `--editor`)
+- [`seldon hook session-start`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#8-hooks): the session context — status, active case, last journal lines, lessons
+- [`seldon --version` / `contract-version`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): versions
+
+## Writing commands (and when)
+
+- [`seldon plan new --zone Z --risk R --area A -- "<title>"`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#3-plan-before-you-change-the-machine): only after the user agreed to the proposed case
+- [`seldon plan start <ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#3-plan-before-you-change-the-machine): before any change to the machine; red cases with `--snapshot N`
+- [`seldon plan verify | done | drop <ID>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#3-plan-before-you-change-the-machine): verify when the work is done; done only when verification passed and the user agrees; drop with `--reason`
+- [`seldon log --case <ID> -- "<text>"`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#5-the-commands-you-use): a journal note
+- [`seldon event <source> <kind> --subject S`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#5-the-commands-you-use): record a change no hook or collector sees
+- [`seldon decide --no-edit --case <ID> -- "<title>"`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#5-the-commands-you-use): a decision record (ADR) in the logbook
+- [`seldon drift link | explain | dismiss`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#7-drift-and-how-to-explain-it): only when you know why the change happened
+- [`seldon capture --all` / `seldon status`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md#3-commands): bring the ledger, STATUS.md and the index up to date
+- [`seldon hook session-stop --actor agent:<name>`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#8-ending-a-session): end of session, when no Claude Code `SessionEnd` hook does it
+
+## Forbidden
+
+- [Never edit the ledger](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#10-do-not): `ledger/*.jsonl` is append-only; generated files (`ledger/*.md`, `STATUS.md`, `index.json`), `.seldon/`, engine-kept frontmatter and `seldon:begin/end` fences are the engine's
+- [Never delete the logbook](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#10-do-not): nor move, rename or delete case files, nor rewrite its git history
+- [Never run the engine against another logbook](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#10-do-not): no `--logbook` or `SELDON_LOGBOOK` pointing at another user's logbook
+- [Never change the machine outside a case](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#4-zones-and-risk): red zone (packages, Omarchy, systemd, `/etc`, boot loader) only in a red case with rollback plan and snapshot
+- [Never hide drift or write secrets](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#10-do-not): no edits to make drift disappear; no tokens or passwords in the logbook
+- [Commands not for agents](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md#5-the-commands-you-use): `seldon init`, `seldon hook install`, `seldon import … --apply`, `seldon agent start` — only when the user asks for exactly that
+
+## Specs
+
+- [Concept](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/CONCEPT.md): the idea end to end, glossary
+- [Logbook spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-LOGBOOK.md): layout, frontmatter, ledger lines
+- [Engine spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-ENGINE.md): commands (§3), collectors, drift (§5), hooks (§8), wizard (§9)
+- [Contract](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/CONTRACT.md): engine ⇄ plugin rules and the commands the plugin runs
+- [Plugin spec](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/SPEC-PLUGIN.md): pill, panel, overlay, states
+
+## Human docs
+
+- [README](https://github.com/JohnAndrewsX/jax-seldon/blob/main/README.md): what Seldon is, how to install it
+- [Plugin README](https://github.com/JohnAndrewsX/jax-seldon/blob/main/plugin/README.md): using the plugin, configuration, troubleshooting
+- [Decisions](https://github.com/JohnAndrewsX/jax-seldon/blob/main/DECISIONS.md): the ADR index
+
+## Optional
+
+- [Plan](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/PLAN.md): phases and work packages
+- [Testing](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/TESTING.md): how Seldon is checked
+- [Concept page](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/seldon-concept.html): the human-facing concept, one offline HTML file

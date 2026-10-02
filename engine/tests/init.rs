@@ -1078,10 +1078,10 @@ mod setup {
                 Language::En => ("logbook", "Logbuch"),
                 Language::De => ("Logbuch", "logbook"),
             };
-            assert!(
-                agents.contains(word) && !agents.contains(other),
-                "{language}"
-            );
+            // prose only: code spans (`--logbook`, `SELDON_LOGBOOK`) are English
+            // in every language
+            let prose: String = agents.split('`').step_by(2).collect();
+            assert!(prose.contains(word) && !prose.contains(other), "{language}");
             // the rules every agent needs (WP-024)
             for needle in [
                 "seldon log",
@@ -1107,6 +1107,110 @@ mod setup {
             if prose(en) && t.path != "STATUS.md" {
                 assert_ne!(en, de, "{} has no German prose", t.path);
             }
+        }
+    }
+
+    #[test]
+    fn agents_md_carries_the_agent_rules_in_both_languages() {
+        // WP-047: the short form of docs/AGENT-GUIDE.md; one file, no CLAUDE.md
+        fn section<'a>(text: &'a str, heading: &str) -> &'a str {
+            let start = text.find(&format!("{heading}\n")).unwrap() + heading.len();
+            let rest = &text[start..];
+            &rest[..rest.find("\n## ").unwrap_or(rest.len())]
+        }
+        const SECTIONS: [&str; 10] = [
+            "## Session start",
+            "## The engine is the only writer",
+            "## Work in cases",
+            "## Zones",
+            "## Commands",
+            "## Journal and memory",
+            "## Drift",
+            "## Hooks",
+            "## Ending a session",
+            "## Never",
+        ];
+        let rules: [(&str, &[&str]); 8] = [
+            (
+                "## Session start",
+                &[
+                    "PROJECT.md",
+                    "memory/lessons.md",
+                    "STATUS.md",
+                    "seldon plan list --status active",
+                    "seldon hook session-start",
+                ],
+            ),
+            (
+                "## The engine is the only writer",
+                &["ledger/*.jsonl", "STATUS.md", ".seldon/", "seldon:begin"],
+            ),
+            (
+                "## Work in cases",
+                &[
+                    "seldon plan new",
+                    "seldon plan start <ID>",
+                    "seldon plan verify <ID>",
+                    "seldon plan done <ID>",
+                    "seldon plan drop <ID>",
+                    "--actor agent:<name>",
+                ],
+            ),
+            (
+                "## Commands",
+                &[
+                    "seldon doctor",
+                    "seldon plan show <ID>",
+                    "seldon drift show <EVENT>",
+                    "seldon open",
+                    "seldon capture --all",
+                    "seldon init",
+                    "seldon import … --apply",
+                    "--json",
+                ],
+            ),
+            (
+                "## Drift",
+                &[
+                    "seldon drift link",
+                    "seldon drift explain",
+                    "seldon drift dismiss",
+                ],
+            ),
+            (
+                "## Hooks",
+                &[
+                    "seldon hook install claude-code",
+                    "seldon hook generic",
+                    "seldon hook session-stop --actor agent:<name>",
+                    "xargs",
+                ],
+            ),
+            (
+                "## Ending a session",
+                &[
+                    "seldon plan verify <ID>",
+                    "memory/lessons.md",
+                    "seldon hook session-stop",
+                ],
+            ),
+            ("## Never", &["SELDON_LOGBOOK", "git push --force"]),
+        ];
+        for language in [Language::En, Language::De] {
+            let (_env, root, _) = logbook_in(language.as_str());
+            let agents = common::read(&root.join("AGENTS.md"));
+            let headings: Vec<&str> = agents.lines().filter(|l| l.starts_with("## ")).collect();
+            assert_eq!(headings, SECTIONS, "{language}");
+            for (heading, needles) in rules {
+                for needle in needles {
+                    assert!(
+                        section(&agents, heading).contains(needle),
+                        "{language}: {heading}: {needle}"
+                    );
+                }
+            }
+            assert!(agents.contains("docs/AGENT-GUIDE.md"), "{language}");
+            assert!(!root.join("CLAUDE.md").exists(), "{language}");
         }
     }
 }

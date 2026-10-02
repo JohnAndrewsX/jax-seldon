@@ -752,3 +752,15 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **An "updated" assertion on a template file is trivially true** when
   `init` ran the same day. Pre-date the field (and commit) before the
   command under test.
+
+## 2026-10-02 · WP-047 (agent guide)
+
+- **Keep every command in a template on one line.** A code span wrapped
+  across lines renders fine on GitHub but breaks substring tests and an
+  agent's `grep` (`seldon capture` / `--all` on two lines). Wrap before
+  the backtick, not inside it.
+- **Template headings are pinned twice:** `tests/golden/init-skeleton.txt`
+  (rewrite with `SELDON_BLESS=1 cargo test --test init
+  templates_have_english_keys`, then review the diff) and, for
+  `AGENTS.md`, the ordered section list in
+  `agents_md_carries_the_agent_rules_in_both_languages`.

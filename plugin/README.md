@@ -405,6 +405,15 @@ it.
 - Tests, the headless harnesses and how `preview.png` is made:
   [`docs/TESTING.md`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/TESTING.md).
 
+## For AI agents
+
+The plugin only reads Seldon's index; agents work through the engine. An
+agent started inside a Seldon logbook follows that logbook's `AGENTS.md`;
+the long form is the
+[agent guide](https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md),
+the one-page index is
+[`llms.txt`](https://github.com/JohnAndrewsX/jax-seldon/blob/main/llms.txt).
+
 ## Project home and licence
 
 Project home, issues and the engine:
