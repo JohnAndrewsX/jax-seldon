@@ -1,4 +1,4 @@
-# Maintainer: JohnAndrewsX <EMAIL>
+# Maintainer: JohnAndrewsX <e.andres+aur@ik.me>
 #
 # Source of truth: packaging/PKGBUILD in https://github.com/JohnAndrewsX/jax-seldon.
 # The release workflow sets pkgver, pkgrel and sha256sums, regenerates
