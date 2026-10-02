@@ -3,8 +3,94 @@ WP-044 HANDOVER
 Branch `wp/044-install-script`, worktree `wt/WP-044`, on top of `main` at
 `549f40e`. Not pushed, no PR. Commits `main..HEAD`:
 `71c2330` install.sh, test, recipe, release asset · `dcaf9bd` banner
-text constant · `952f190` READMEs · `338782b` memory · then `work: WP-044
-handover` (this file).
+text constant · `952f190` READMEs · `338782b` memory · `6d93201`
+handover · review round 1: `2d59286` `--force` and SC2001 · `3041d2f`
+the one-liner as the banner fix and docs · then `work: WP-044 handover
+after review` (this file).
+
+## Review round 1 (APPROVE; fix round per the reviewer, ADR-0024)
+
+1. **SC2001** at `tests/install/install.test.sh:146` (the dry run's only
+   finding): `echo "$out" | sed 's/^/     /'` is now
+   `printf '     %s\n' "${out//$'\n'/$'\n'     }"`. The other `sed`
+   indents read files, not `echo`, so SC2001 does not apply to them.
+2. **`INSTALL_ENGINE_COMMAND`** is now
+   `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`.
+   It stays a constant and the argv is unchanged
+   (`wl-copy -- <command>`,
+   `omarchy-launch-floating-terminal-with-presentation <command>`). The
+   pipe works because the launcher runs its argument with `bash -c`. The
+   comment above it names ADR-0024 and the flip back to
+   `omarchy pkg aur add jax-seldon` once the AUR package is live.
+   `ENGINE_MISSING_DETAIL` now describes what the button does: "AUR
+   package: coming soon; until then install from GitHub: the command
+   below downloads install.sh from the release, which checks the engine
+   against SHA256SUMS. Then check again."
+   - Tests: `model.test.js` pins the new string. `service-states.sh`
+     (`fix-engine`) pinned the AUR string as well and was not on the
+     review list; it now expects the one-liner for both `wl-copy` and
+     the launcher.
+   - plugin/README.md: the States row now names the one-liner. The
+     Security list ("one of five constants") has the one-liner first,
+     with why it is safe. The **No network** bullet gained one honest
+     sentence: the engine-missing click runs `curl … | bash` in a
+     visible terminal.
+   - SPEC-PLUGIN §3 paragraph and the §5 banner line are rewritten.
+     CONTRACT.md is untouched.
+3. **`--force`.** A `<prefix>/bin/seldon` that the manifest does not
+   record (no manifest, a different hash, or a symlink) is now a refusal
+   before any write: exit 1, "… exists and was not installed by
+   install.sh (a self-built seldon?); nothing changed. Re-run with
+   --force to replace it." I applied the same rule to the `--unit` file
+   (a unit copied by hand per engine/systemd/README.md). A file equal to
+   the download is never a refusal. `--force` with `--uninstall` is a
+   usage error. New tests, 106 checks in total: self-built binary
+   refused with nothing changed, then `--force` replaces it and writes
+   the manifest; a binary rebuilt over an installed one is refused and
+   kept; `seldon` as a symlink is refused and kept; another prefix's
+   unit is refused without `--force`. The cross-prefix `--unit` tests
+   now pass `--force`.
+4. **plugin/README.md, Install and Remove:** both say that
+   `releases/latest/download/install.sh` exists from the next release on
+   (v0.1.1). Install gives the raw-URL stopgap with `--version v0.1.0`,
+   as README.md does; README.md now names v0.1.1 too.
+5. **"Download, read, verify, run"** in both READMEs, with a
+   `less install.sh  # read what it does` line in the block. README.md's
+   options table gained `--force`.
+6. **`Banner.qml:9`** comment: the detail wraps (the engine-missing one
+   runs to a few lines), and the command wraps anywhere (the one-liner
+   is a long URL). Comment only; qmllint is clean.
+7. `ci.yml` is not touched.
+
+Verified (round 1, at `3041d2f`):
+
+```
+$ bash tests/install/install.test.sh   → install.test: 106 passed, 0 failed
+$ node tests/plugin/model.test.js      → model.test.js: 74 passed
+$ just check                           → exit 0
+  check-packaging: ok · install.test: 106 passed, 0 failed
+  validate-fixtures: ok · plugin-validate: ok · tokens: ok (520 references)
+  qmllint: ok (28 files) · model.test.js: 74 passed
+  service-states: 189 passed · panel-view: 681 passed · overlay-view: 314 passed
+  check: ok
+```
+
+Real run again, final script, v0.1.0 from GitHub, scratch prefix
+`/tmp/seldon-wp044-real` with a fake self-built `seldon` placed first:
+plain run → exit 1 with the `--force` message and the fake untouched
+(`seldon 0.0.0-dev`). `--force` → exit 0, `seldon 0.1.0`. Re-run → exit
+0, 3× unchanged. `--uninstall` → exit 0, 0 files left. My fingerprint of
+the real `~/.local/bin/seldon` (+ sha256), `jax-seldon`,
+`~/.config/systemd/user` and `~/Seldon` was identical before and after.
+
+Note for the next dry run: shellcheck still cannot run here. The only
+new shell constructs are `awk` with a single-quoted program,
+`[[ … ]] || refuse` chains and `${out//$'\n'/…}`.
+
+**Until v0.1.1 is published, the banner's one-click fix gets a 404**
+from `releases/latest/download/install.sh` (curl `-f` exits 22 in the
+terminal and nothing is installed). It starts working with the first
+release built from this branch's workflow change.
 
 ## Done
 
@@ -78,7 +164,7 @@ handover` (this file).
   it as the fourth asset, and it is listed in `SHA256SUMS`, which the
   three-step form needs. The `release` job (WP-048's notes step) is not
   touched.
-- **Banner:** `plugin/Model.js` has a new constant `ENGINE_MISSING_DETAIL`:
+- **Banner (round 0; superseded by review round 1, item 2):** `plugin/Model.js` has a new constant `ENGINE_MISSING_DETAIL`:
   "The plugin needs the seldon command. AUR package: coming soon; until
   then install from GitHub (Install in the README at
   github.com/JohnAndrewsX/jax-seldon), then check again." The
@@ -176,6 +262,10 @@ for `curl | bash` scripts. How to run the real-HOME acceptance safely.
 
 ## Decisions needed
 
+Round 1: 1 is settled (the reviewer adds shellcheck to `ci.yml` at
+merge), 2 is settled by ADR-0024 (the one-liner is the fix), and 3 is
+updated here. Nothing new is open.
+
 1. **shellcheck in CI.** `ci.yml` installs `git rust just jq`. Adding
    `shellcheck` there would make `check-install` and `check-packaging`
    lint on every PR, not only in the release build. That is a one-word
@@ -191,8 +281,13 @@ for `curl | bash` scripts. How to run the real-HOME acceptance safely.
    (`curl -fsSL …/install.sh | bash`) for the AUR pause. That is a
    change to the plugin's command surface: CONTRACT.md "Commands the
    plugin may run" and the README Security list would change with it.
-3. **The flip when the AUR goes live:** one sentence in each of three
-   places. `ENGINE_MISSING_DETAIL` in `plugin/Model.js`; the bold
+3. **The flip when the AUR goes live** (updated in round 1):
+   `INSTALL_ENGINE_COMMAND` → `omarchy pkg aur add jax-seldon` and
+   `ENGINE_MISSING_DETAIL` in `plugin/Model.js`, together with their pins
+   in `tests/plugin/model.test.js` and `tests/plugin/service-states.sh`
+   (`install_engine=`); SPEC-PLUGIN §3 paragraph and §5 line; the
+   plugin/README.md States row, Security constants list and No-network
+   sentence; the bold
    sentence at the top of README.md "Install" (then move "Engine from
    the AUR" above "Engine from GitHub"); the first sentence of
    plugin/README.md "Install" step 1.
