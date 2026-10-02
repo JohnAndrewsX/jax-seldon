@@ -122,8 +122,10 @@ seldon doctor                     # snapper: ok, N snapshots (config root)
 
 ```bash
 seldon capture --all
-#   Captured 1 new event(s).   config 1
+#   Captured 1 new event(s).
+#     snapper 0 · pacman 0 · omarchy 0 · plugins 0 · theme 0 · config 1   (one line per collector)
 #   note: 1 config event(s) explained as written by seldon itself
+#   (more events appear when the machine changed between init and capture)
 seldon drift                      # 0 open drift item(s)
 ```
 

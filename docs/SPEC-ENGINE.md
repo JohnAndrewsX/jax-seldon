@@ -20,7 +20,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
-| `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by}}`: files the engine wrote itself under a watched path (`init --theme-hook`, `hook install`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); written under the lock, removed by the next capture that runs the config collector |
+| `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by}}`: files the engine wrote itself under a watched path (`init --theme-hook`, `hook install`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
 
@@ -356,7 +356,7 @@ After every capture:
    `$XDG_STATE_HOME/seldon/owned.json`: its `~`-path, the sha256 of its
    content, and the command (`by`). Only paths the config collector
    hashes are recorded (under `watchPaths`, not in `skipPaths`). The next
-   capture that runs the config collector appends, after the collector
+   capture that runs the config collector successfully appends, after the collector
    events and under the same lock, one `explained` resolution per new
    `config-add|config-change` without a case whose subject and
    `meta.hashTo` match a record: `source: seldon`, actor `system`, no
