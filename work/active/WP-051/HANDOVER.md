@@ -1,8 +1,47 @@
 WP-051 HANDOVER
 
-Branch `wp/051-assets`, worktree `wt/WP-051`. Commits: `c310169` assets,
-`75b00c8` plugin, `9f0f22d` docs, `73f67ad` design renders, plus this
-handover. No PR, no push.
+Branch `wp/051-assets`, worktree `wt/WP-051`, rebased onto main
+(`b28265b`, after "release: prepare 0.1.1"). Commits: `f7a9216` assets,
+`2ceac89` plugin, `a041d28` docs, `76aa96e` design renders, `0d50661`
+handover; fix round: `5b712f1` user guide en+de, `94ed1b7` German source
+lines, `3f6df35` review fixes, plus this update. No PR, no push.
+
+## Fix round (review SEND BACK, 2026-10-02)
+
+- **B2** Rebased onto main. CHANGELOG: my Plugin bullets moved into the
+  existing `[0.1.1]` `### Plugin` list (after the WP-039/ADR-0024 ones),
+  my Packaging bullet into its `### Packaging and docs` list (after
+  WP-049's); `[Unreleased]` is empty, one `### Plugin` heading per
+  version, no blank line inside a list;
+  `bash packaging/release-notes.sh 0.1.1 CHANGELOG.md` prints one tight
+  body. `memory/pitfalls.md`: both sides kept, main's WP-049 section
+  first.
+- **B1** `tests/integration/e2e.sh` `pill_of` builds the counts only,
+  `[a, "· d"] | join(" ")` with zero parts left out (checked by hand for
+  `2 · 4`, `· 3`, `2`, `""`); comment and `docs/TESTING.md` (the e2e
+  compare step) say so; the asserts (`plugin pill`, `panel pill text`,
+  `service pill`) compare against `pill_of`, so they now expect the
+  counts. `bash -n` clean. **`just e2e` not run: it needs the test host.**
+- **B3** User guide en and de (01-getting-started, 03-daily-use,
+  13-glossary): the README wording, the Seldon mark ("Seldon-Zeichen")
+  then `A · D`; no `⟡` left in `docs/user`. German source lines re-stamped
+  at `5b712f1` in a second commit; `bash scripts/docs-check.sh` → ok, no
+  warning.
+- **M1** `bar-view.sh`: the layout half of check 4 is gone (the glyph is
+  placed by that formula); check 4 is the pixel measurement only, now also
+  in the accent/default tone cases. The widget's centres stay in the
+  report, labelled "for the record only". TESTING §3c updated.
+- **M2** `Model.pictogramFile` / `markerFile` comments and SPEC-PLUGIN
+  §5/§6: sizes in logical pixels (the vector scales with the DPR). No code
+  change. (`barGlyph` and `panelMark` do take device pixels: their callers
+  multiply by the DPR to choose the hinted file.)
+- **N1** The five `docs/images/panel-tokyo-night-*` tab crops are palette
+  PNGs again (`-strip -colors 64 PNG8:`, 7.6–15.2 KB each, like main);
+  the overlay and Today renders stay truecolor as on main.
+- Orchestrator decisions recorded: root-colour tint accepted (no
+  MultiEffect path); Today-tab placement accepted; the live bar check is
+  not a release blocker; the hero ships as delivered in 0.1.1; the
+  Changelog text glyph `⟡` for seldon events stays.
 
 ## Done
 
@@ -53,15 +92,15 @@ handover. No PR, no push.
    byte-identical (diffed).
 4. **SPEC-PLUGIN** §4, §5, §6, §10 updated (wording below). TESTING.md:
    new §3c bar harness, `python3` for plugin-test, uninit renders, preview
-   crop 538 / frame 500×578. CHANGELOG `[Unreleased]`: new `### Plugin`
-   section and one `Packaging and docs` bullet. `fixtures/README.md` pill
-   string.
+   crop 538 / frame 500×578. CHANGELOG `[0.1.1]`: four `### Plugin`
+   bullets and one `Packaging and docs` bullet (see B2).
+   `fixtures/README.md` pill string.
 5. **Bar harness** `tests/plugin/bar-view.sh` + `harness/bar.qml` +
    `png-ink.py` (stdlib PNG reader), in `just plugin-test`: the real
    BarWidget on the shell's own `PluginBarApi`, three themes × scale 1.0 /
    1.25 / 1.25 output, plus accent and default tone per theme and the
-   not-initialised variant; check 4 from layout and from pixels, the tint
-   (glyph pixels == pill colour), clean logs, real-home guard. 129 checks.
+   not-initialised variant; check 4 from the pixels, the tint (glyph
+   pixels == pill colour), clean logs, real-home guard.
 6. **Renders**: `plugin/preview.png` (155 KB) and `docs/images/*`
    re-rendered (panel tabs now show the header mark; crops +2 px, the
    shift the header causes); `work/design/round-3/screenshots/` (28
@@ -79,16 +118,18 @@ inclusive:
 | 1.25 (font 15) | 33 / 15 / 20 | `a4-bar-glyph-20.svg` | 11–21 | 10–21 | 16.5 | 16.0 | 0.5 |
 | 1.25 output, font 12 | 26 / 12 / 16 log. = 20 dev. | `a4-bar-glyph-20.svg` | 11–21 | 11–21 | 16.5 | 16.5 | 0.0 |
 
-Layout side (logical px): glyph box top 5 / 7 / 5.6, glyph centre
-12.50 / 16.50 / 13.20, digit centre (bar font metrics) 12.73 / 16.30 /
-13.23 — matches the specimen table in DELIVERY §5 (box top 5 and 7,
-glyph centre 12.50 and 16.50). Tint: glyph pixels exactly the pill colour,
+This pixel measurement is check 4. For the record only (not a check,
+the glyph is placed by this formula): the widget's own numbers, logical
+px — glyph box top 5 / 7 / 5.6, glyph centre 12.50 / 16.50 / 13.20,
+digit centre from the bar font's metrics 12.73 / 16.30 / 13.23 — agree
+with the specimen table in DELIVERY §5 (box top 5 and 7, glyph centre
+12.50 and 16.50). Tint: glyph pixels exactly the pill colour,
 e.g. urgent `#f7768e` / `#d20f39` / `#ff5345`, accent `#7aa2f7` /
 `#1e66f5` / `#509475`, default `#a9b1d6` / `#4c4f69` / `#c1c497`.
 
-**Live check pending, operator.** Read-only probe of the test host
-(`omarchy-shell lock status`): `"locked":true`. Not unlocked, nothing
-deployed there.
+**Live check pending, operator** (not a release blocker, orchestrator
+decision). Read-only probe of the test host (`omarchy-shell lock
+status`): `"locked":true`. Not unlocked, nothing deployed there.
 
 ## SPEC wording (SPEC-PLUGIN, new or changed)
 
@@ -108,7 +149,7 @@ deployed there.
   even pixel count, wordmark `round(cap / 2)` after it, baseline
   `box / 2 + cap / 2`; 24 / 6 / 18 at the default font; files by device
   px (24, 32, else `a1-icon-mask.svg`). "State pictograms": 48/96 grids,
-  never below 48 px, the 48 grid up to 72 px; banner pictogram per status
+  never below 48 px, by logical size the 48 grid up to 72 px; banner pictogram per status
   (contract mismatch and snapper: none); Today's day state with tones.
 - §6: Row 1 gains the overlay banner (Copy only, the hint, 96 px
   pictogram). Row 4 gains the marker shapes (diamond / dot / spindle from
@@ -123,49 +164,41 @@ deployed there.
 - **Live bar check on the test host: pending, operator's decision after
   this handover.** Read-only probe: session locked; not unlocked, nothing
   deployed. The offscreen check 4 above is the record.
-- `docs/user/en|de` still show `⟡` in pill examples (03-daily-use,
-  01-getting-started, 13-glossary): WP-049 owns `docs/user`. They need
-  the same wording as the READMEs; `docs/images/panel-tokyo-night-*.png`
-  they embed are already re-rendered.
-- The Changelog's source glyph for `seldon` events is still the text
-  `⟡` (a Nerd-Font-style text column next to the other sources' glyphs);
-  not one of the brief's surfaces. Replacing it with the A4 image would
-  mean an image column in EventRow/DriftSheet.
+- `just e2e` (B1's change) not run: it needs the test host.
+- The Changelog's source glyph for `seldon` events stays the text `⟡`
+  (orchestrator decision).
 - `docs/DESIGN-BRIEF.md`, `docs/CONCEPT.md`, `docs/seldon-concept.html`
   still describe `⟡` as the placeholder; they are the brief/concept of
   record, left unchanged.
 - Favicons (A9): only in `assets/`, as the WP says. A7/A8/A6 uploads,
   A10 vault icon: operator.
-- The A6 hero's right 45 % is empty by design ("we overlay screenshots");
-  the READMEs show it as delivered with the screenshot below. A composed
-  hero (lockup + screenshot) would be a new asset.
+- The A6 hero ships as delivered in 0.1.1 (right 45 % empty by design);
+  a composed hero with a screenshot is a later WP (orchestrator).
 
 ## Verified by
 
-- `just check` → **still running at handover** (finish was ordered
-  first). Passed in that run so far: fmt-check, clippy, test (52 cargo
-  test results ok, 0 failed), check-watch, check-packaging (shellcheck
-  not installed, `bash -n` only), check-install (106 passed),
-  schema-validate, docs-check, plugin-validate, qmllint (29 files),
-  model.test.js (80), model bench, real-home-guard.test (11), and
-  service-states up to `fix-contract` with 0 FAIL lines. Not reached
-  then: the rest of service-states, panel-view, overlay-view, bar-view —
-  each passed on its own on the final code (below). The reviewer should
-  re-run `just check`.
-- `omarchy plugin validate plugin/` → exit 0, no output.
-- `just qmllint` → `qmllint: ok (29 files)`.
-- `node tests/plugin/model.test.js` → 80 passed (6 new asset tests).
-- `bash tests/plugin/bar-view.sh` → 129 passed, 0 failed.
-- `bash tests/plugin/panel-view.sh` (with `PANEL_FIT_SHOTS`) → 886
-  passed; with `PANEL_SHOTS` → 715 + the uninit renders; plain run part
-  of `just check`.
-- `bash tests/plugin/overlay-view.sh` (with `OVERLAY_SHOTS`) → 355
-  passed, 0 failed.
-- `bash tests/plugin/service-states.sh` → 189 passed.
-- Real-home guard green in every harness run ("the real
-  ~/.local/state/seldon and ~/.config/seldon are untouched").
-- `find plugin -type l` → 0; `find plugin assets -size +1M` → none.
-- `just docs-check` → ok (378 links); install sections diffed identical.
+Fix round, on the rebased branch (`3f6df35`):
+
+- `just check` → `check: ok`, exit 0. In it: fmt-check, clippy, 54 cargo
+  test results ok and 0 failed (incl. `--features watch`),
+  check-packaging ok (shellcheck not installed, `bash -n` only),
+  install.test 132 passed, validate-fixtures ok, docs-check ok (380
+  links, 14 translated pages, no warning), plugin-validate ok, qmllint ok
+  (29 files), model.test.js 80 passed, real-home-guard.test 11 passed,
+  service-states 189, panel-view 688, overlay-view 319, bar-view 120 —
+  all 0 failed; the real-home guard green in every harness.
+- `bash packaging/release-notes.sh 0.1.1 CHANGELOG.md` → one body, one
+  `### Plugin` list including the four WP-051 bullets, no blank line
+  inside a list.
+- `bash -n tests/integration/e2e.sh` clean; `pill_of` checked by hand on
+  four summaries. `just e2e` not run (test host).
+- `bash scripts/docs-check.sh` → ok, no warning (German source lines at
+  `5b712f1`).
+
+First round (still valid): `PANEL_FIT_SHOTS` panel-view 886 passed,
+`OVERLAY_SHOTS` overlay-view 355 passed, `omarchy plugin validate
+plugin/` exit 0, `find plugin -type l` → 0, `find plugin assets -size
++1M` → none, install sections of both READMEs diffed identical.
 
 ## Learned (memory/pitfalls.md, WP-051 section)
 
@@ -173,9 +206,14 @@ Software-renderer harness paints no `MultiEffect`; an id that shadows a
 property name breaks every binding silently (qmllint blind); fractional
 window heights stretch grabs; Repeater delegates must not anchor to
 `parent`; assert rule outcomes, not font metrics; header changes shift
-every panel crop.
+every panel crop (and fresh crops are truecolor: shrink to palette); a
+rebase onto a release commit moves `[Unreleased]` bullets into the dated
+section.
 
 ## Decisions needed
+
+None open. Both questions of the first round were decided by the
+orchestrator (accepted as built); kept below for the record.
 
 1. **Tint mechanism.** The WP said to use the shell's mechanism. Code is
    truth: the shell tints symbolic tray icons with `MultiEffect {
@@ -196,7 +234,8 @@ every panel crop.
 ## Touched outside WP scope
 
 `fixtures/README.md` (one pill string in the variants table); the
-`docs/images/panel-tokyo-night-*.png` renders embedded by `docs/user`
-(images only, no `docs/user` file edited); `tests/plugin/*` and
-`justfile` `plugin-test` (the new harness). No engine, packaging,
-install.sh or docs/user change.
+`docs/images/panel-tokyo-night-*.png` renders embedded by `docs/user`;
+`docs/user/en|de` 01/03/13 (B3, after WP-049 merged, by review order);
+`tests/integration/e2e.sh` `pill_of` (B1); `tests/plugin/*` and
+`justfile` `plugin-test` (the new harness). No engine, packaging or
+install.sh change.
