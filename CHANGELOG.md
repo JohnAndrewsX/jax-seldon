@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snapshot (`warnings` in `--json`); R3 also asks for the human's explicit
   go per step. Advice only, never refused (ADR-0023, WP-050).
 - The default `[drift] alwaysRed` list follows ADR-0023's R3 subjects: new
-  `omarchy-settings`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`.
+  `omarchy-settings`, `limine*`, `grub`, `mkinitcpio*`, `filesystem` and
+  the login path `pam`, `sddm`, `uwsm`; `linux*` is narrowed to the
+  kernels (`linux`, `-lts`, `-zen`, `-hardened`, `-rt`, `-rt-lts`,
+  `-omarchy`), so firmware and header upgrades stay routine.
   `init` writes the list into `config.toml`, so an existing config keeps
   its old list; add the new globs by hand.
 - `seldon decide` and `seldon status` fill the `decisions.index` table in

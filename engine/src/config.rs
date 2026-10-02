@@ -355,14 +355,21 @@ pub struct DriftConfig {
 }
 
 impl Default for DriftConfig {
-    /// The R3 subjects of ADR-0023 as package globs (WP-050): kernel,
-    /// systemd, glibc, Hyprland, Omarchy itself, the shell, the boot loader
-    /// and initramfs; `/etc` through `omarchy-settings` (Omarchy's `/etc`
+    /// The R3 subjects of ADR-0023 as package globs (WP-050): the kernels
+    /// (not firmware or headers), systemd, glibc, Hyprland, Omarchy itself,
+    /// the shell, the boot loader and initramfs, the login path (`pam`,
+    /// `sddm`, `uwsm`); `/etc` through `omarchy-settings` (Omarchy's `/etc`
     /// layer) and `filesystem` (the base `/etc` files).
     fn default() -> Self {
         DriftConfig {
             always_red: [
-                "linux*",
+                "linux",
+                "linux-lts",
+                "linux-zen",
+                "linux-hardened",
+                "linux-rt",
+                "linux-rt-lts",
+                "linux-omarchy",
                 "systemd",
                 "glibc",
                 "hyprland",
@@ -373,6 +380,9 @@ impl Default for DriftConfig {
                 "grub",
                 "mkinitcpio*",
                 "filesystem",
+                "pam",
+                "sddm",
+                "uwsm",
             ]
             .map(String::from)
             .to_vec(),

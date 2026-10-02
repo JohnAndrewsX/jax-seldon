@@ -58,8 +58,10 @@ DRIFT_KEYS = ["eventId", "ts", "source", "kind", "subject", "detail", "actor", "
 
 # ADR-0013 §3, ADR-0023 (WP-050): default of config.toml [drift] alwaysRed (fnmatch globs,
 # case-sensitive); keep in step with engine/src/config.rs DriftConfig::default.
-ALWAYS_RED = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "omarchy-settings",
-              "quickshell", "limine*", "grub", "mkinitcpio*", "filesystem"]
+ALWAYS_RED = ["linux", "linux-lts", "linux-zen", "linux-hardened", "linux-rt",
+              "linux-rt-lts", "linux-omarchy", "systemd", "glibc", "hyprland", "omarchy",
+              "omarchy-settings", "quickshell", "limine*", "grub", "mkinitcpio*", "filesystem",
+              "pam", "sddm", "uwsm"]
 
 # ADR-0015 §4 (supersedes ADR-0012 §13): whole-word, case-sensitive; word characters are
 # [A-Za-z0-9._+-], except that a final `.` not followed by a word character is punctuation.
@@ -1060,7 +1062,9 @@ def self_checks(today):
         ("unchanged", None, zone("yellow", False)),
         ("one member explicit", set_on_first(explicit=True), zone("red", True)),
         ("member subject linux", set_on_first(subject="linux"), zone("red", True)),
-        ("member subject linux-firmware (glob)", set_on_first(subject="linux-firmware"), zone("red", True)),
+        ("member subject linux-firmware (not a kernel)", set_on_first(subject="linux-firmware"), zone("yellow", False)),
+        ("member subject limine-snapper-sync (glob)", set_on_first(subject="limine-snapper-sync"), zone("red", True)),
+        ("member subject sddm (login)", set_on_first(subject="sddm"), zone("red", True)),
         ("member subject quickshell", set_on_first(subject="quickshell"), zone("red", True)),
         ("member kind install", set_on_first(kind="install"), zone("red", True)),
         ("member kind reinstall", set_on_first(kind="reinstall"), zone("yellow", False)),

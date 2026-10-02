@@ -154,8 +154,9 @@ mod tests {
         let red = AlwaysRed::new(&DriftConfig::default().always_red);
         for s in [
             "linux",
-            "linux-firmware",
             "linux-zen",
+            "linux-lts",
+            "linux-omarchy",
             "systemd",
             "hyprland",
             "omarchy",
@@ -167,6 +168,9 @@ mod tests {
             "mkinitcpio",
             "mkinitcpio-busybox",
             "filesystem",
+            "pam",
+            "sddm",
+            "uwsm",
         ] {
             assert!(red.matches(s), "{s}");
         }
@@ -178,6 +182,14 @@ mod tests {
             "omarchy-nvim",
             "hyprutils",
             "grub-customizer",
+            // kernels only: firmware and headers are not R3
+            "linux-firmware",
+            "linux-firmware-amdgpu",
+            "linux-api-headers",
+            "linux-omarchy-headers",
+            "linux-headers",
+            "pambase",
+            "sddm-kcm",
         ] {
             assert!(!red.matches(s), "{s}");
         }

@@ -421,8 +421,18 @@ fn drift_group_zone_rules() {
             red.clone(),
         ),
         (
-            "linux-firmware (glob)",
+            "linux-firmware is not a kernel",
             first(|e| e.subject = "linux-firmware".into()),
+            yellow.clone(),
+        ),
+        (
+            "limine-snapper-sync (glob)",
+            first(|e| e.subject = "limine-snapper-sync".into()),
+            red.clone(),
+        ),
+        (
+            "member subject sddm (login)",
+            first(|e| e.subject = "sddm".into()),
             red.clone(),
         ),
         (
