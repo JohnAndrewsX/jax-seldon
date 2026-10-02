@@ -27,13 +27,8 @@ changes.
 
 ## Step 2: Read the report
 
-Open the report:
-
-```sh
-seldon open logbook
-```
-
-and then `outputs/IMPORT-omarchy-agent.md` in it. The report lists:
+Open `~/Seldon/outputs/IMPORT-omarchy-agent.md` in your editor. It
+lists:
 
 - every case with its old and new id and status;
 - ids that were taken in your logbook, and the new id each case gets;
@@ -109,7 +104,7 @@ git checkout -- . && git clean -fd
 ```
 
 This removes every uncommitted change in the logbook, including edits of
-your own since the last `seldon` command. Commit or copy those first.
+your own since the last `seldon` command. Copy those elsewhere first.
 Then fix the cause and run `--apply` again.
 
 ---
