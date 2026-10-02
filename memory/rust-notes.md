@@ -513,3 +513,24 @@ Append-only. One bullet per finding, newest section last.
   Check every intermediate commit with `git checkout-index -a
   --prefix=<scratch>/` and a separate `CARGO_TARGET_DIR`, so the
   worktree's target is not shared.
+
+## 2026-10-02 · WP-038 (own installs)
+
+- **A resolution for an event of the same capture needs two appends.**
+  `Ledger::append` assigns every ULID itself, so a line that refers to
+  a new event can only be built from the `written` events it returns.
+  `capture` therefore appends the collector events, then (same lock)
+  the rule 7 `explained` lines. The index's fold only counts a
+  resolution that comes after its target in the ledger. A later append
+  in the same or a later month file always does.
+- **The engine as an actor is `source: seldon`, actor `system`.** The
+  schema's actor pattern is `human|system|agent:<slug>`; a literal
+  `seldon` actor would be a contract change (ADR + `contractVersion`).
+  `Event::validate` refuses anything else before the write.
+- **`json!` takes expressions, not blocks.** A `{ let mut j = …; j }`
+  value inside `json!({...})` fails with "unexpected end of macro
+  invocation"; build the value in a `let` before the macro.
+- **A state file that only matters until the next run:** load, empty
+  when missing or unparsable (a lost record costs one drift item), and
+  remove the file on save when nothing is left (`OwnWrites::save`), so
+  `owned.json` exists only while a record waits.
