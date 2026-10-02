@@ -539,7 +539,19 @@ XDG dirs follow it). Both scripts end with a check
 (`tests/plugin/real-home-guard.sh`) that the real `~/.local/state/seldon`
 and `~/.config/seldon` neither appeared nor changed during the run; it
 compares existence, size, mtime and ctime of every entry, so an engine run
-by hand at the same time also fails it.
+by hand at the same time also fails it. One exception (WP-039): on a host
+where the operator's real Seldon is live (the installed plugin runs
+`seldon capture` every 15 minutes), a capture during the run rewrites the
+state dir. The guard passes that as "changed by the operator's live engine
+(not a leak)" only if nothing under `~/.config/seldon` changed
+(`config.toml` byte-identical), no path appeared or disappeared, every
+changed entry is the state dir or its `index.json`, `lock`,
+`cursors.json` or `manifest.json`, and the post-run `index.json` names the
+logbook `config.toml` names (`logbook.path`) and the machine it named
+before the run (`logbook.machine`). It reads only `config.toml` and those
+two index fields, never the logbook. Anything else still fails, with the
+reason. `tests/plugin/real-home-guard.test.sh` (part of `just plugin-test`)
+proves both sides in scratch HOMEs.
 
 To watch one case by hand:
 
@@ -678,6 +690,24 @@ Today tab in Osaka Jade, Tokyo Night and Catppuccin Latte
 the render has no dev-mode note (which would print the index path) and the
 QuickEntry looks as a user sees it.
 
+Label fit (WP-039): every report also carries `overflow`, the visible
+texts that do not fit (`elided:` a Text elided or cut at its line limit,
+`wide:` content wider than its box, `button:` a qs.Ui Button narrower than
+its label and padding, `outside:` text past the panel's right edge), and
+`contentWidth`, the panel's width. The `fit-*` cases put a
+`~/.config/omarchy/shell.toml` with `[font] base-size` 12 and 15 (font
+scale 1.0 and 1.25; `Style.space` follows the font) into the harness HOME,
+walk every tab and require: width 460 and 575, the tab strip on one line
+with the same cell widths whatever tab is selected, no `button:`, `wide:`
+or `outside:` entry anywhere, the Changelog header never elided, and no
+elision at all on Today, Decisions, System and Memory (only Changelog row
+text and Work mini-card titles, user content, may elide). `fit-narrow`
+sets `HARNESS_CARD_WIDTH=300` (the stand-in KeyboardPanel's
+`availableCardWidth`, a screen narrower than the panel): the strip wraps
+and still nothing that is a label is cut. `PANEL_FIT_SHOTS=<dir>` runs
+the two scales in Tokyo Night, Osaka Jade and Catppuccin Latte and saves
+every tab (`<dir>/fit-100-<theme>-<tab>.png`, `fit-125-…`).
+
 ### 3b. `Overlay.qml` in a private headless Quickshell
 
 `bash tests/plugin/overlay-view.sh` runs the Prime Radiant the same way:
@@ -757,16 +787,18 @@ colours are Tokyo Night's `background` and `accent` from its
 `colors.toml`):
 
 ```sh
-magick docs/images/panel-tokyo-night-today.png -crop 382x536+0+0 +repage \
+magick docs/images/panel-tokyo-night-today.png -crop 460x536+0+0 +repage \
   -bordercolor '#1a1b26' -border 18 -bordercolor '#7aa2f7' -border 2 /tmp/panel-framed.png
-magick -size 2400x1080 xc:'#1a1b26' \
+magick -size 2480x1080 xc:'#1a1b26' \
   docs/images/overlay-tokyo-night-1920x1080.png -geometry +0+0 -composite \
   /tmp/panel-framed.png -geometry +1942+24 -composite \
   -strip -define png:compression-level=9 plugin/preview.png
 ```
 
-The crop is the panel's 380-unit width plus its tab row's edge and the
-journal list's bottom at the default font; re-check it if the panel's
+The crop is the panel's 460-unit width (the tab strip ends flush with it
+since WP-039) and the bottom of the journal's last entry at the default
+font. The framed panel is 500×576, placed 22 px right of the overlay with
+36 px to spare, so the canvas is 2480×1080. Re-check both if the panel's
 layout changes. The image must stay under 1 MB (it is about 150 KB).
 
 ### 4. Runtime smoke test in the shell

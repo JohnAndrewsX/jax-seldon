@@ -9,7 +9,7 @@ and the **Prime Radiant**, a fullscreen overlay with charts and the plan.
 You write notes, plan cases and explain unexpected changes from the panel;
 the engine does the writing.
 
-![Preview, 2400×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
+![Preview, 2480×1080: the Prime Radiant at 1920×1080 on the left, the panel's Today tab framed on the right, Tokyo Night](preview.png)
 
 *Offscreen renders of the real QML on the sample index, Tokyo Night theme.*
 
@@ -80,6 +80,12 @@ Six tabs, each with a fixed number key:
 Above every tab: the status banner (see [States](#states)), the snapper
 banner when snapshots cannot be read, and a red strip "N changes in the red
 zone need a reason" (a click opens the drift sheet for the first of them).
+
+The panel is 460 spacing units wide (`Style.space(460)`), so it grows with
+your theme's font size (`[font] base-size`) and stays within the screen.
+Each tab button is at least as wide as its label; on a screen too narrow
+for all six, the tabs wrap onto a second line rather than cut a label off.
+The Changelog's filter chips wrap the same way.
 
 **QuickEntry** (Today, or `n` from any tab): type a note and press Enter;
 it goes to today's journal through `seldon log`, exactly as typed. Pick an

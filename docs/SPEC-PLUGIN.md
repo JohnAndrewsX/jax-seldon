@@ -111,7 +111,17 @@ lessons headings and memory topics with `updated`; Enter, `e` or *Open*
 run `open logbook --editor --json` until the engine gains a memory target
 (`open memory[/<topic>]`, queued). Linked cases per decision need a
 contract field (`decisions[].cases`) and are deferred to the next contract
-bump. Width `Style.space(380)` (WP-011). Files: one component per tab,
+bump. Width `Style.space(460)` (WP-039; was 380 from WP-011, the
+first-party list panels' width, too narrow for six tabs): the shell's
+`fittedContentWidth` caps it at the screen. Tab cells are at least as wide
+as their label in bold plus the Button padding (equal shares when every
+label fits one; otherwise each its own width plus an equal part of the
+rest; selection never changes the widths); when the six do not fit one
+line the strip wraps, never clips. Filter chips wrap (`Flow`); the
+Changelog header ("N events from <source> · newest first") wraps instead
+of eliding, so the sort order is never cut off. Only user content may
+elide (Changelog row text, Work mini-card titles; Enter or the card shows
+it in full); labels never do. Files: one component per tab,
 `components/TodayTab.qml`, `ChangelogTab.qml`, `WorkTab.qml`,
 `DecisionsTab.qml`, `SystemTab.qml`, `MemoryTab.qml`, plus `EventRow.qml`,
 `Tabs.qml`, `Banner.qml`, `QuickEntry.qml`, `CaseCard.qml`,

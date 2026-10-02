@@ -156,8 +156,11 @@ Item {
       width: parent.width
       implicitHeight: Math.max(countText.implicitHeight, captureButton.implicitHeight)
 
+      // Wraps instead of eliding, so the sort order is never cut off
+      // (WP-039).
       Text {
         id: countText
+        objectName: "changelogHeader"
         anchors.left: parent.left
         anchors.right: ledgerButton.left
         anchors.rightMargin: Style.spacing.sm
@@ -166,7 +169,7 @@ Item {
         text: Model.plural(root.rows.length, "event", "events")
           + (root.filter !== "all" ? " from " + root.filter : "") + " · newest first"
         color: root.dim
-        elide: Text.ElideRight
+        wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }

@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 
 // Test stand-in for qs.Ui KeyboardPanel (tests/plugin/panel-view.sh).
 //
@@ -25,7 +26,15 @@ Item {
 
   default property alias contentItem: holder.data
 
-  function fittedContentWidth(width, cap) { return cap ? Math.min(width, cap) : width }
+  // HARNESS_CARD_WIDTH stands in for the real panel's `availableCardWidth`
+  // (the room the screen leaves); unset, the room is unlimited.
+  readonly property int availableCardWidth: Number(Quickshell.env("HARNESS_CARD_WIDTH") || 0)
+
+  function fittedContentWidth(width, cap) {
+    var max = root.availableCardWidth > 0 ? root.availableCardWidth : width
+    if (cap) max = Math.min(max, cap)
+    return Math.round(Math.min(width, max))
+  }
   function fittedContentHeight(height, cap) { return cap ? Math.min(height, cap) : height }
   function close() { root.open = false }
 

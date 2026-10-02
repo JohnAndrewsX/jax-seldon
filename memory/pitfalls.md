@@ -692,3 +692,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   package-manager install string was blocked as a red-zone package
   command. Leave such strings out of search patterns; report the block,
   do not rephrase the same search around it.
+
+## 2026-10-02 · WP-039 (Plugin, panel width and label fit)
+
+- **"Fits on screen" in a harness render is not "fits".** The tab labels
+  looked fine offscreen at 380 while the Buttons were 2–4 px narrower than
+  label + padding; the operator saw "Changelog" clipped live. Measure
+  (`implicitWidth > width`, `Text.truncated`), don't eyeball.
+- **The real-home guard trips on the dev host when the operator's own
+  Seldon is live:** the installed plugin's capture rewrites
+  `~/.local/state/seldon/index.json` during a run (seen at 12:00:00). The
+  guard now passes that only for the state files, an unchanged
+  config.toml and the configured logbook and same machine in the index;
+  everything else still fails. `real_home_check` no longer aborts the
+  script under `set -e` (the `diff | sed` pipeline returned 1 before the
+  summary line).
+- **The test host's ssh alias is in memory/local.md**, not `test`
+  (`SELDON_TEST_HOST` default); check `omarchy-shell lock status` with
+  `OMARCHY_PATH` exported in the same ssh call.

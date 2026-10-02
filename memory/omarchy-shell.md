@@ -515,3 +515,26 @@ Verified in the shell source and live on the test host.
   Catppuccin Latte and Osaka Jade without `WAYLAND_DISPLAY` or `HYPRLAND_INSTANCE_SIGNATURE`
   in the ssh environment. Read `~/.local/state/omarchy/current/theme.name`
   in a separate call to confirm.
+
+## WP-039 findings (2026-10-02, Omarchy 4.0.4-1, quickshell 0.3.1)
+
+- **First-party panel widths** (`contentWidth: panel.fittedContentWidth(
+  Style.space(n))`): 380 for the list panels (agents, audio, bluetooth,
+  network, power, tailscale, monitor, dropbox), 480 weather, 560 clock;
+  `KeyboardPanel`'s default is 280. `fittedContentWidth` caps at
+  `availableCardWidth` (the screen). Seldon's panel is 460.
+- **qs.Ui `Button` never elides its label.** `implicitWidth` = label +
+  `controlPaddingX` (10 units) × 2 + reserved border; a smaller `width`
+  lets the text spill past the border (no clip). The label is bold only
+  while `selected`, so a cell sized from `implicitWidth` changes width
+  when the selection moves; add the bold/plain `TextMetrics` difference.
+- **Font scale in an offscreen harness:** `[font] base-size = 15` in
+  `$HOME/.config/omarchy/shell.toml` (the user override Color.qml reads)
+  gives scale 1.25; `Style.space` follows the font unless
+  `[spacing] scale-with-font = false`.
+- **`Text.truncated`** is true for an elided Text and for one cut at
+  `maximumLineCount`; with `contentWidth > width` and `mapToItem` it makes
+  a generic "does any label not fit" probe over the item tree.
+- **`Flow` wraps when `x + child.width > width`**, so cells whose widths
+  are rounded down and sum exactly to the width stay on one line; give
+  the rounding rest to the last cell.
