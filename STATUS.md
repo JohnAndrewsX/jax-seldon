@@ -14,11 +14,11 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-045 | User documentation in English and German (docs/user/<lang>/) | Docs | `docs-045` (opus, high) | `wt/WP-045` · `wp/045-user-docs` | 2026-10-02 |
+| WP-046 | README overhaul of both repositories, developer docs moved out | Docs | `docs-046` (opus, high) | `wt/WP-046` · `wp/046-readme` | 2026-10-02 |
 | WP-050 | Advisory risk warnings, alwaysRed, stale lines, small engine findings | Engine | `engine-050` (opus, high) | `wt/WP-050` · `wp/050-advisory-risk` | 2026-10-02 |
 
 ## Queued (next up)
-WP-046 (README overhaul, after WP-045) · WP-049 (CLI polish; crates approved) ·
+WP-049 (CLI polish; crates approved) ·
 WP-033 (update-impact, option C)
 · WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
 logbook migration)
@@ -32,10 +32,15 @@ logbook migration)
 - How to run the team: `docs/HERDR-SETUP.md`.
 
 ## Blocked
-| WP-045 | User documentation in English and German (docs/user/<lang>/) | Docs | `docs-045` (opus, high) | `wt/WP-045` · `wp/045-user-docs` | 2026-10-02 |
+| WP-046 | README overhaul of both repositories, developer docs moved out | Docs | `docs-046` (opus, high) | `wt/WP-046` · `wp/046-readme` | 2026-10-02 |
 | WP-050 | Advisory risk warnings, alwaysRed, stale lines, small engine findings | Engine | `engine-050` (opus, high) | `wt/WP-050` · `wp/050-advisory-risk` | 2026-10-02 |
 
 ## Recently completed
+- 2026-10-02 WP-045 User documentation: 13 pages in English and German
+  under docs/user/, STYLE.md with glossary, `docs-check` (links,
+  translation parity, CLI reference vs --help) in `just check` — merged
+  after one review round (literal replay of Getting Started passed; 15
+  skeptical-reader fixes applied in both languages).
 - 2026-10-02 WP-044 `install.sh` (verified download of the release asset,
   `--uninstall`, `--force` for self-built binaries, 106 hermetic checks),
   fourth release asset, "AUR: coming soon" in both READMEs and the
