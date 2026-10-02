@@ -68,6 +68,10 @@ enum Command {
     },
 
     /// Run collectors and append new events to the ledger
+    #[command(after_help = "Examples:
+  seldon capture
+  seldon capture --source pacman,config
+  seldon capture --since 2026-09-01T00:00:00+02:00")]
     Capture {
         /// Collectors to run, comma-separated (default: every enabled one)
         #[arg(
@@ -80,7 +84,7 @@ enum Command {
         /// Run every enabled collector (the default)
         #[arg(long)]
         all: bool,
-        /// Baseline for collectors without a cursor, RFC 3339 (default: logbook creation)
+        /// Baseline for collectors without a cursor, an RFC 3339 time (default: the logbook's creation)
         #[arg(long, value_name = "TS")]
         since: Option<String>,
     },
@@ -91,7 +95,7 @@ enum Command {
     /// Record an event by hand (hooks, scripts)
     Event(commands::event::EventArgs),
 
-    /// Cases: new, start, verify, done, drop, list, show
+    /// Plan and track cases: new, start, verify, done, drop, list, show
     Plan(commands::plan::PlanArgs),
 
     /// Create a decision record (ADR) and open it in the editor
@@ -106,10 +110,10 @@ enum Command {
     /// Regenerate STATUS.md, the ledger views and index.json; print a summary
     Status(commands::status::StatusArgs),
 
-    /// Agent hooks: record commands, session context, install into a harness
+    /// Agent hooks: record commands, print session context, install into or uninstall from a harness
     Hook(commands::hook::HookArgs),
 
-    /// Open drift; link, explain, dismiss or show a drift event
+    /// List open drift; link, explain, dismiss or show a drift event
     Drift(commands::drift::DriftArgs),
 
     /// Start an agent on an active case
@@ -126,9 +130,29 @@ enum Command {
 
     /// Import an earlier logbook (dry run unless --apply)
     Import(commands::import::ImportArgs),
+
+    /// Print a shell completion script for bash, zsh or fish
+    #[command(after_help = "Examples:
+  seldon completions bash > ~/.local/share/bash-completion/completions/seldon
+  seldon completions zsh > ~/.local/share/zsh/site-functions/_seldon
+  seldon completions fish > ~/.config/fish/completions/seldon.fish")]
+    Completions {
+        /// The shell
+        #[arg(value_parser = commands::manual::SHELLS)]
+        shell: String,
+    },
+
+    /// Print the man page seldon(1), generated from this help
+    #[command(after_help = "Example:
+  seldon mangen > seldon.1 && man -l seldon.1")]
+    Mangen,
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = "Examples:
+  seldon init
+  seldon init --non-interactive --since 2026-09-01 --baseline
+  seldon init --remove-theme-hook")]
 struct InitCmd {
     /// Logbook directory (default ~/Seldon)
     #[arg(long, value_name = "DIR")]
@@ -152,8 +176,9 @@ struct InitCmd {
     #[arg(long, value_name = "NAME", value_parser = ["claude-code", "omarchy-agent"])]
     harness: Vec<String>,
 
-    /// Backfill: the first capture also records changes since TS
-    /// (YYYY-MM-DD or RFC 3339); each one opens as drift
+    /// Backfill: the first capture also records changes since TS, a date
+    /// (YYYY-MM-DD, local midnight) or an RFC 3339 time; each one opens as
+    /// drift
     #[arg(long, value_name = "TS")]
     since: Option<String>,
 
@@ -168,6 +193,14 @@ struct InitCmd {
     /// Install Omarchy's theme-set hook (`omarchy hook install theme-set`)
     #[arg(long)]
     theme_hook: bool,
+
+    /// Remove the theme-set hook that --theme-hook installed, and nothing
+    /// else; needs no logbook
+    #[arg(long, conflicts_with_all = [
+        "path", "non_interactive", "language", "obsidian", "harness", "since",
+        "baseline", "no_capture", "theme_hook", "git", "no_git",
+    ])]
+    remove_theme_hook: bool,
 
     /// Make the logbook a git repository with a first commit (default)
     #[arg(long, overrides_with = "no_git")]
@@ -206,9 +239,9 @@ fn main() -> ExitCode {
     match run(cli) {
         Ok(out) => {
             if json {
-                println!("{}", out.json);
+                print_line(&out.json.to_string());
             } else if !(quiet && out.exit == Exit::Ok) && !out.human.is_empty() {
-                println!("{}", out.human);
+                print_line(&out.human);
             }
             out.exit.into()
         }
@@ -226,16 +259,27 @@ fn run(cli: Cli) -> Result<Output, Error> {
     let Some(command) = cli.command else {
         return Err(Error::user("no command given; see `seldon --help`"));
     };
-    if let Command::ContractVersion = command {
-        return Ok(Output::ok(
-            CONTRACT_VERSION.to_string(),
-            json!({ "contractVersion": CONTRACT_VERSION }),
-        ));
+    match &command {
+        Command::ContractVersion => {
+            return Ok(Output::ok(
+                CONTRACT_VERSION.to_string(),
+                json!({ "contractVersion": CONTRACT_VERSION }),
+            ));
+        }
+        // generated from the definition above; no logbook, config or home
+        Command::Completions { shell } => {
+            return commands::manual::completions(Cli::command(), shell);
+        }
+        Command::Mangen => return commands::manual::mangen(Cli::command()),
+        _ => {}
     }
 
     let ctx = Context::from_env(cli.json, cli.quiet, cli.no_commit, cli.logbook, cli.config)?;
     match command {
-        Command::ContractVersion => unreachable!("handled above"),
+        Command::ContractVersion | Command::Completions { .. } | Command::Mangen => {
+            unreachable!("handled above")
+        }
+        Command::Init(c) if c.remove_theme_hook => commands::init::remove_theme_hook(&ctx),
         Command::Init(c) => commands::init::run(
             &ctx,
             InitArgs {
@@ -290,13 +334,19 @@ fn run(cli: Cli) -> Result<Output, Error> {
     }
 }
 
+/// Prints `text` and a newline on stdout. A reader that went away
+/// (`seldon completions bash | head`) is not an error: `println!` would
+/// panic, and the release profile aborts on a panic.
+fn print_line(text: &str) {
+    use std::io::Write as _;
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{text}").and_then(|()| out.flush());
+}
+
 /// Prints an error (JSON on stdout or text on stderr) and returns its code.
 fn fail(as_json: bool, exit: Exit, message: &str) -> ExitCode {
     if as_json {
-        println!(
-            "{}",
-            json!({ "error": { "code": exit as u8, "message": message } })
-        );
+        print_line(&json!({ "error": { "code": exit as u8, "message": message } }).to_string());
     } else {
         eprintln!("seldon: {message}");
     }

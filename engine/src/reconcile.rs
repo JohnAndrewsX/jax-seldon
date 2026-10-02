@@ -259,10 +259,12 @@ pub fn record_cases(logbook: &Logbook, ledger: &Ledger, written: &[Event]) -> Ve
     warnings
 }
 
-/// The `explained` resolutions rule 7 writes: one per written config add
-/// or change without a case whose path and new hash are an own write in
-/// `own`; `source: seldon`, actor `system`, no case, detail `installed by
-/// <command>`, at `ts`.
+/// The `explained` resolutions rule 7 writes: one per written config
+/// event without a case that an own write in `own` explains
+/// ([`OwnWrites::explaining`]: an add or change with the hash written, a
+/// removal of the content deleted); `source: seldon`, actor `system`, no
+/// case, detail `installed by <command>` (`removed by <command>` for a
+/// removal command), at `ts`.
 pub fn own_write_resolutions(
     written: &[Event],
     own: &OwnWrites,
@@ -271,12 +273,17 @@ pub fn own_write_resolutions(
     written
         .iter()
         .filter(|e| e.source == Source::Config && e.case.is_none())
-        .filter(|e| matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange))
+        .filter(|e| {
+            matches!(
+                e.kind,
+                Kind::ConfigAdd | Kind::ConfigChange | Kind::ConfigRemove
+            )
+        })
         .filter_map(|e| {
             let w = own.explaining(e)?;
             let mut r = Event::new(ts, Source::Seldon, Kind::Resolution, e.subject.clone())
                 .actor(ACTOR_SYSTEM)
-                .detail(format!("installed by {}", w.by));
+                .detail(format!("{} by {}", w.op.verb(), w.by));
             r.refers_to = Some(e.id);
             r.resolution = Some(Resolution::Explained);
             Some(r)

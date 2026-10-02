@@ -23,11 +23,14 @@
 //! fails, the next run diffs against the generation its cursor names and
 //! nothing is lost. The first run (no cursor) is a baseline: no events.
 //!
-//! The engine's own writes (SPEC-ENGINE §5 rule 7): when `init` or `hook
-//! install` writes a file this collector would hash, it records the file's
-//! hash and the command in `$XDG_STATE_HOME/seldon/owned.json`
-//! ([`OwnWrites`], [`record_own_writes`]). The next capture that runs this
-//! collector explains the matching event (`crate::reconcile::explain_own_writes`).
+//! The engine's own writes (SPEC-ENGINE §5 rule 7): when `init`, `hook
+//! install` or one of the removal commands (`hook uninstall`, `init
+//! --remove-theme-hook`) writes or deletes a file this collector would
+//! hash, it records the file's hash, the command and what it did
+//! ([`OwnOp`]) in `$XDG_STATE_HOME/seldon/owned.json` ([`OwnWrites`],
+//! [`record_own_writes`], [`delete_own_file`]). The next capture that runs
+//! this collector explains the matching event
+//! (`crate::reconcile::explain_own_writes`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
@@ -127,13 +130,45 @@ impl Manifest {
 /// (SPEC-ENGINE §2, §5 rule 7).
 pub const OWNED_FILE: &str = "owned.json";
 
-/// One file the engine wrote under a watched path.
+/// What the engine did to a file under a watched path.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OwnOp {
+    /// Wrote it, adding what it installs (`installed by …`).
+    #[default]
+    Install,
+    /// Wrote it, taking out what it had installed; the file stays
+    /// (`removed by …`).
+    Remove,
+    /// Deleted it (`removed by …`); matched against the `config-remove`.
+    Delete,
+}
+
+impl OwnOp {
+    fn is_install(&self) -> bool {
+        *self == OwnOp::Install
+    }
+
+    /// The verb of the resolution's detail: `<verb> by <command>`.
+    pub fn verb(self) -> &'static str {
+        match self {
+            OwnOp::Install => "installed",
+            OwnOp::Remove | OwnOp::Delete => "removed",
+        }
+    }
+}
+
+/// One file the engine wrote or deleted under a watched path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnWrite {
-    /// SHA-256 of the content the engine wrote.
+    /// SHA-256 of the content the engine wrote; for [`OwnOp::Delete`], of
+    /// the content the file had when the engine deleted it.
     pub hash: String,
     /// The command that wrote it (`seldon init --theme-hook`).
     pub by: String,
+    /// What it did; absent in the file for [`OwnOp::Install`].
+    #[serde(default, skip_serializing_if = "OwnOp::is_install")]
+    pub op: OwnOp,
 }
 
 /// `owned.json`: `~`-path → the engine's own write that the next config
@@ -173,10 +208,19 @@ impl OwnWrites {
     }
 
     /// The write that explains a config event: same `~`-path, and the
-    /// event's new hash is the one the engine wrote.
+    /// event's new hash is the one the engine wrote (`config-add`,
+    /// `config-change`), or its old hash the content the engine deleted
+    /// (`config-remove`).
     pub fn explaining(&self, e: &Event) -> Option<&OwnWrite> {
-        let hash = e.meta.hash_to.as_deref()?;
-        self.0.get(&e.subject).filter(|w| w.hash == hash)
+        let w = self.0.get(&e.subject)?;
+        let hash = match (w.op, &e.kind) {
+            (OwnOp::Install | OwnOp::Remove, Kind::ConfigAdd | Kind::ConfigChange) => {
+                e.meta.hash_to.as_deref()?
+            }
+            (OwnOp::Delete, Kind::ConfigRemove) => e.meta.hash_from.as_deref()?,
+            _ => return None,
+        };
+        (w.hash == hash).then_some(w)
     }
 }
 
@@ -190,43 +234,82 @@ pub fn is_watched(dirs: &Dirs, config: &Config, path: &Path) -> bool {
         && !SkipPaths::new(&dirs.home, &config.redaction.skip_paths).matches(path)
 }
 
+/// The hash the config collector records for `path` now, or `None` when
+/// it does not hash the file (not watched, skipped, binary, too large,
+/// not a regular file).
+fn own_hash(dirs: &Dirs, config: &Config, path: &Path) -> Option<String> {
+    if !is_watched(dirs, config, path) {
+        return None;
+    }
+    std::fs::metadata(path)
+        .ok()
+        .filter(|m| m.is_file())
+        .and_then(|m| hash_file(path, m.len()))
+}
+
+/// Adds `(path, hash)` records by `by` to `owned.json`; returns their
+/// `~`-paths.
+fn record_own(
+    dirs: &Dirs,
+    hashed: Vec<(&Path, String)>,
+    by: &str,
+    op: OwnOp,
+) -> anyhow::Result<Vec<String>> {
+    if hashed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let file = OwnWrites::file(dirs);
+    let mut own = OwnWrites::load(&file)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", dirs.display(&file)))?;
+    let mut recorded = Vec::new();
+    for (path, hash) in hashed {
+        let key = dirs.display(path);
+        let by = by.to_string();
+        own.0.insert(key.clone(), OwnWrite { hash, by, op });
+        recorded.push(key);
+    }
+    own.save(&file)?;
+    Ok(recorded)
+}
+
 /// Records each of `paths` that the config collector hashes as the
-/// engine's own write by `by`, with the hash of its content now
-/// (SPEC-ENGINE §5 rule 7). Returns the `~`-paths recorded; the lock
-/// proves that no capture reads the file meanwhile.
+/// engine's own write by `by` ([`OwnOp::Install`] or [`OwnOp::Remove`]),
+/// with the hash of its content now (SPEC-ENGINE §5 rule 7). Returns the
+/// `~`-paths recorded; the lock proves that no capture reads the file
+/// meanwhile.
 pub fn record_own_writes(
     _lock: &Lock,
     dirs: &Dirs,
     config: &Config,
     paths: &[PathBuf],
     by: &str,
+    op: OwnOp,
 ) -> anyhow::Result<Vec<String>> {
-    let mut recorded = Vec::new();
-    let file = OwnWrites::file(dirs);
-    let mut own = OwnWrites::load(&file)
-        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", dirs.display(&file)))?;
-    for path in paths.iter().filter(|p| is_watched(dirs, config, p)) {
-        let Some(hash) = std::fs::metadata(path)
-            .ok()
-            .filter(|m| m.is_file())
-            .and_then(|m| hash_file(path, m.len()))
-        else {
-            continue; // not hashed, so never reported either
-        };
-        let key = dirs.display(path);
-        own.0.insert(
-            key.clone(),
-            OwnWrite {
-                hash,
-                by: by.to_string(),
-            },
-        );
-        recorded.push(key);
-    }
-    if !recorded.is_empty() {
-        own.save(&file)?;
-    }
-    Ok(recorded)
+    let hashed = paths
+        .iter()
+        .filter_map(|p| Some((p.as_path(), own_hash(dirs, config, p)?)))
+        .collect();
+    record_own(dirs, hashed, by, op)
+}
+
+/// Deletes the file `path` and, when the config collector hashes it,
+/// records the deletion by `by` as the engine's own ([`OwnOp::Delete`],
+/// with the hash of the content it had). The outer `Err` is the failed
+/// deletion (nothing changed); the inner one a deletion that could not be
+/// recorded (the next capture then shows it as drift). `Ok(Ok(paths))`
+/// names the `~`-paths recorded.
+pub fn delete_own_file(
+    _lock: &Lock,
+    dirs: &Dirs,
+    config: &Config,
+    path: &Path,
+    by: &str,
+) -> anyhow::Result<anyhow::Result<Vec<String>>> {
+    let hash = own_hash(dirs, config, path);
+    std::fs::remove_file(path)
+        .map_err(|e| anyhow::anyhow!("cannot remove {}: {e}", dirs.display(path)))?;
+    let hashed = hash.map(|h| vec![(path, h)]).unwrap_or_default();
+    Ok(record_own(dirs, hashed, by, OwnOp::Delete))
 }
 
 /// The config collector's cursor.
@@ -626,6 +709,7 @@ mod tests {
                 OwnWrite {
                     hash: "aa".into(),
                     by: "seldon init --theme-hook".into(),
+                    op: OwnOp::Install,
                 },
             )]
             .into(),
@@ -648,7 +732,77 @@ mod tests {
         assert!(own.explaining(&event(path, None)).is_none(), "a removal");
         assert!(own.explaining(&event("~/.bashrc", Some("aa"))).is_none());
         let text = serde_json::to_string(&own).unwrap();
+        assert!(
+            !text.contains("\"op\""),
+            "an install keeps the WP-038 shape: {text}"
+        );
         assert_eq!(serde_json::from_str::<OwnWrites>(&text).unwrap(), own);
+    }
+
+    #[test]
+    fn an_own_deletion_explains_only_the_removal_of_that_content() {
+        let path = "~/.config/omarchy/hooks/theme-set.d/x.sh";
+        let own = |op: OwnOp| {
+            OwnWrites(
+                [(
+                    path.to_string(),
+                    OwnWrite {
+                        hash: "aa".into(),
+                        by: "seldon init --remove-theme-hook".into(),
+                        op,
+                    },
+                )]
+                .into(),
+            )
+        };
+        let event = |kind: Kind, from: Option<&str>, to: Option<&str>| {
+            Event::new(
+                DateTime::parse_from_rfc3339("2026-10-02T09:20:00+02:00").unwrap(),
+                Source::Config,
+                kind,
+                path,
+            )
+            .meta(Meta {
+                hash_from: from.map(String::from),
+                hash_to: to.map(String::from),
+                ..Meta::default()
+            })
+        };
+        let deleted = own(OwnOp::Delete);
+        assert!(
+            deleted
+                .explaining(&event(Kind::ConfigRemove, Some("aa"), None))
+                .is_some()
+        );
+        // someone changed the file after the last capture: not what seldon removed
+        assert!(
+            deleted
+                .explaining(&event(Kind::ConfigRemove, Some("bb"), None))
+                .is_none()
+        );
+        // a deletion never explains a file that is there again
+        assert!(
+            deleted
+                .explaining(&event(Kind::ConfigAdd, None, Some("aa")))
+                .is_none()
+        );
+        // a removal that keeps the file is a change to the content written
+        let removed = own(OwnOp::Remove);
+        assert!(
+            removed
+                .explaining(&event(Kind::ConfigChange, Some("00"), Some("aa")))
+                .is_some()
+        );
+        assert!(
+            removed
+                .explaining(&event(Kind::ConfigRemove, Some("aa"), None))
+                .is_none()
+        );
+        let text = serde_json::to_string(&deleted).unwrap();
+        assert!(text.contains("\"op\":\"delete\""), "{text}");
+        assert_eq!(serde_json::from_str::<OwnWrites>(&text).unwrap(), deleted);
+        assert_eq!(OwnOp::Delete.verb(), "removed");
+        assert_eq!(OwnOp::Install.verb(), "installed");
     }
 
     #[test]

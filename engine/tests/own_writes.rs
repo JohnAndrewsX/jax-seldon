@@ -1,7 +1,10 @@
 //! The engine's own writes (WP-038, SPEC-ENGINE §5 rule 7): a file that
 //! `init --theme-hook` or `hook install` writes under a watched path is
 //! reported by the next capture as a config event that is already
-//! explained, so no drift opens; the event stays in the ledger.
+//! explained, so no drift opens; the event stays in the ledger. The
+//! removal commands (WP-049: `init --remove-theme-hook`, `hook uninstall`)
+//! are recorded the same way: their `config-remove` or `config-change` is
+//! explained as `removed by <command>`.
 //!
 //! Everything runs in a throw-away home (`common::Env`, with
 //! `SELDON_TEST_GUARD`); the collectors' sources point at temp files.
@@ -113,13 +116,18 @@ fn event_and_resolutions(env: &Env, subject: &str) -> (Value, Vec<Value>) {
 
 /// The resolution rule 7 writes for `event`, explained by `by`.
 fn assert_explained_by_seldon(event: &Value, resolutions: &[Value], by: &str) {
+    assert_explained(event, resolutions, &format!("installed by {by}"));
+}
+
+/// The resolution rule 7 writes for `event`, with `detail`.
+fn assert_explained(event: &Value, resolutions: &[Value], detail: &str) {
     assert_eq!(resolutions.len(), 1, "{resolutions:?}");
     let r = &resolutions[0];
     assert_eq!(r["source"], "seldon");
     assert_eq!(r["actor"], "system");
     assert_eq!(r["resolution"], "explained");
     assert_eq!(r["subject"], event["subject"]);
-    assert_eq!(r["detail"], format!("installed by {by}"));
+    assert_eq!(r["detail"], detail);
     assert!(r.get("case").is_none(), "{r}");
     // the event itself is the collector's, unchanged
     assert_eq!(event["actor"], "system");
@@ -351,5 +359,207 @@ fn hook_install_merging_into_a_watched_file_is_an_explained_change() {
     let (event, resolutions) = event_and_resolutions(&env, "~/.claude/settings.json");
     assert_eq!(event["kind"], "config-change");
     assert_explained_by_seldon(&event, &resolutions, "seldon hook install claude-code");
+    assert_eq!(drift(&env).0, 0);
+}
+
+/// The config event of `kind` for `subject` and the resolutions that refer
+/// to it (a path can have an add and a remove).
+fn event_of_kind(env: &Env, subject: &str, kind: &str) -> (Value, Vec<Value>) {
+    let lines = ledger(env);
+    let event = lines
+        .iter()
+        .find(|e| e["source"] == "config" && e["subject"] == subject && e["kind"] == kind)
+        .unwrap_or_else(|| panic!("no {kind} for {subject}: {lines:?}"))
+        .clone();
+    let resolutions = lines
+        .iter()
+        .filter(|e| e["kind"] == "resolution" && e["refersTo"] == event["id"])
+        .cloned()
+        .collect();
+    (event, resolutions)
+}
+
+#[test]
+fn removing_the_theme_hook_leaves_no_drift() {
+    let env = env();
+    init(&env, &["--theme-hook"]);
+    let script = env
+        .home
+        .join(".local/state/seldon/hooks/seldon-theme-set.sh");
+    assert!(script.is_file());
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["explainedOwn"], 1, "{c}");
+
+    let v = ok(&env, &["init", "--remove-theme-hook"]);
+    assert_eq!(v["removed"], true, "{v}");
+    assert_eq!(v["scriptRemoved"], true, "{v}");
+    assert_eq!(v["ownWrites"], serde_json::json!([HOOK]));
+    assert!(!home_path(&env, HOOK).exists());
+    assert!(!script.exists());
+    assert!(
+        home_path(&env, HOOK).parent().unwrap().is_dir(),
+        "Omarchy's hook directory stays"
+    );
+    let owned: Value = serde_json::from_str(&read(&owned_file(&env))).unwrap();
+    assert_eq!(owned[HOOK]["by"], "seldon init --remove-theme-hook");
+    assert_eq!(owned[HOOK]["op"], "delete");
+
+    // the next capture sees the removal and explains it at once
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(
+        (c["written"].clone(), c["explainedOwn"].clone()),
+        (1.into(), 1.into()),
+        "{c}"
+    );
+    assert!(!owned_file(&env).exists(), "the record is used up");
+    let (event, resolutions) = event_of_kind(&env, HOOK, "config-remove");
+    let (added, _) = event_of_kind(&env, HOOK, "config-add");
+    assert_eq!(event["meta"]["hashFrom"], added["meta"]["hashTo"]);
+    assert_explained(
+        &event,
+        &resolutions,
+        "removed by seldon init --remove-theme-hook",
+    );
+    assert_eq!(drift(&env), (0, Vec::new()));
+    let ix = index(&env);
+    assert_valid_index(&ix);
+    assert_eq!(ix["summary"]["openDrift"], 0);
+
+    // idempotent: nothing left to remove, nothing recorded, nothing written
+    let v = ok(&env, &["init", "--remove-theme-hook"]);
+    assert_eq!(
+        (v["removed"].clone(), v["scriptRemoved"].clone()),
+        (false.into(), false.into())
+    );
+    assert_eq!(v["ownWrites"], Value::Null);
+    assert!(!owned_file(&env).exists());
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["written"], 0, "{c}");
+    assert_eq!(drift(&env).0, 0);
+}
+
+#[test]
+fn removing_the_theme_hook_before_any_capture_saw_it_writes_nothing() {
+    let env = env();
+    init(&env, &["--theme-hook"]);
+    ok(&env, &["init", "--remove-theme-hook"]);
+    // installed and removed between two captures: the collector never saw
+    // the file, so there is no event and nothing to explain
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(
+        (c["written"].clone(), c["explainedOwn"].clone()),
+        (0.into(), 0.into()),
+        "{c}"
+    );
+    assert!(!owned_file(&env).exists());
+    assert_eq!(drift(&env).0, 0);
+}
+
+#[test]
+fn a_hook_changed_by_hand_and_then_removed_is_drift() {
+    let env = env();
+    init(&env, &["--theme-hook"]);
+    ok(&env, &["capture", "--all"]);
+    // the user edits the hook; no capture sees the edit before the removal
+    std::fs::write(home_path(&env, HOOK), "#!/bin/bash\n# mine\n").unwrap();
+    ok(&env, &["init", "--remove-theme-hook"]);
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["explainedOwn"], 0, "{c}");
+    let (open, rows) = drift(&env);
+    assert_eq!(
+        open, 1,
+        "the content seldon removed is not what it installed"
+    );
+    assert_eq!(rows[0]["kind"], "config-remove");
+}
+
+#[test]
+fn hook_uninstall_under_a_watched_path_leaves_no_drift() {
+    let env = env();
+    let config = env.config_file();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "watchPaths = [\"~/.claude\"]\n").unwrap();
+    init(&env, &[]);
+    let settings = env.home.join(".claude/settings.json");
+    let path = settings.to_str().unwrap();
+    ok(
+        &env,
+        &["hook", "install", "claude-code", "--settings", path],
+    );
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["explainedOwn"], 1, "{c}");
+
+    // the file held only Seldon's hooks: it goes, and the removal is ours
+    let v = ok(
+        &env,
+        &["hook", "uninstall", "claude-code", "--settings", path],
+    );
+    assert_eq!(v["deleted"], true, "{v}");
+    assert_eq!(
+        v["ownWrites"],
+        serde_json::json!(["~/.claude/settings.json"])
+    );
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(
+        (c["written"].clone(), c["explainedOwn"].clone()),
+        (1.into(), 1.into()),
+        "{c}"
+    );
+    let (event, resolutions) = event_of_kind(&env, "~/.claude/settings.json", "config-remove");
+    assert_explained(
+        &event,
+        &resolutions,
+        "removed by seldon hook uninstall claude-code",
+    );
+    assert_eq!(drift(&env), (0, Vec::new()));
+}
+
+#[test]
+fn hook_uninstall_from_a_shared_watched_file_is_an_explained_change() {
+    let env = env();
+    let config = env.config_file();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "watchPaths = [\"~/.claude\"]\n").unwrap();
+    let settings = env.home.join(".claude/settings.json");
+    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    std::fs::write(&settings, "{\"model\": \"opus\"}\n").unwrap();
+    init(&env, &[]);
+    let path = settings.to_str().unwrap();
+    ok(
+        &env,
+        &["hook", "install", "claude-code", "--settings", path],
+    );
+    ok(&env, &["capture", "--all"]);
+
+    let v = ok(
+        &env,
+        &["hook", "uninstall", "claude-code", "--settings", path],
+    );
+    assert_eq!(v["deleted"], false, "{v}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&read(&settings)).unwrap(),
+        serde_json::json!({"model": "opus"})
+    );
+    let owned: Value = serde_json::from_str(&read(&owned_file(&env))).unwrap();
+    assert_eq!(owned["~/.claude/settings.json"]["op"], "remove");
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["explainedOwn"], 1, "{c}");
+    let lines = ledger(&env);
+    let changes: Vec<&Value> = lines
+        .iter()
+        .filter(|e| e["kind"] == "config-change")
+        .collect();
+    assert_eq!(changes.len(), 2, "install and uninstall: {lines:?}");
+    let last = changes[1];
+    let resolutions: Vec<Value> = lines
+        .iter()
+        .filter(|e| e["kind"] == "resolution" && e["refersTo"] == last["id"])
+        .cloned()
+        .collect();
+    assert_explained(
+        last,
+        &resolutions,
+        "removed by seldon hook uninstall claude-code",
+    );
     assert_eq!(drift(&env).0, 0);
 }

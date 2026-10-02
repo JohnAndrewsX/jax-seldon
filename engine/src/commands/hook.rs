@@ -28,6 +28,9 @@
 //! - `hook install claude-code` merges these hooks into the logbook's
 //!   `.claude/settings.json`; a settings file under a watched path is
 //!   recorded as the engine's own write (SPEC-ENGINE §5 rule 7).
+//!   `hook uninstall claude-code` takes exactly those hooks out again
+//!   ([`unmerge_claude_hooks`]) and records its write, or the deletion of
+//!   a file that is left empty, the same way.
 //!
 //! Every hook an agent calls is silent and exits 0, whatever happens: a
 //! failure goes to stderr and never blocks the agent ([`run_agent_hook`]).
@@ -48,7 +51,7 @@ use super::capture::{self, CaptureArgs};
 use super::event::{clip, parse_case_id, parse_person};
 use super::{Context, Output, autocommit};
 use crate::attribution::{home_path, normalise};
-use crate::collectors::config::SkipPaths;
+use crate::collectors::config::{OwnOp, SkipPaths};
 use crate::config::{Config, Dirs};
 use crate::error::{Error, Result};
 use crate::ledger::Ledger;
@@ -84,7 +87,16 @@ pub enum HookCommand {
         #[arg(value_parser = ["claude-code"])]
         harness: String,
         /// Settings file (default: <logbook>/.claude/settings.json)
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "FILE")]
+        settings: Option<PathBuf>,
+    },
+    /// Remove Seldon's hooks from an agent harness's settings, keeping the rest
+    Uninstall {
+        /// The harness
+        #[arg(value_parser = ["claude-code"])]
+        harness: String,
+        /// Settings file (default: <logbook>/.claude/settings.json)
+        #[arg(long, value_name = "FILE")]
         settings: Option<PathBuf>,
     },
     /// Record a Claude Code tool call (hook payload on stdin; silent, exit 0)
@@ -99,8 +111,8 @@ pub enum HookCommand {
     SessionStart,
     /// End a session: journal stub, capture, commit (silent, exit 0)
     SessionStop {
-        /// Who ends the session
-        #[arg(long, value_name = "A", default_value = CLAUDE_CODE, value_parser = parse_person)]
+        /// Who ends the session: human or agent:NAME
+        #[arg(long, value_name = "ACTOR", default_value = CLAUDE_CODE, value_parser = parse_person)]
         actor: String,
     },
 }
@@ -108,14 +120,19 @@ pub enum HookCommand {
 impl HookCommand {
     /// Hooks an agent harness calls: they never fail ([`run_agent_hook`]).
     pub fn is_agent_hook(&self) -> bool {
-        !matches!(self, HookCommand::Install { .. })
+        !matches!(
+            self,
+            HookCommand::Install { .. } | HookCommand::Uninstall { .. }
+        )
     }
 }
 
-/// `seldon hook install …` (the only hook that reports like a command).
+/// `seldon hook install|uninstall …` (the hooks that report like a
+/// command).
 pub fn run(ctx: &Context, args: HookArgs) -> Result<Output> {
     match args.command {
         HookCommand::Install { settings, .. } => install(ctx, settings),
+        HookCommand::Uninstall { settings, .. } => uninstall(ctx, settings),
         _ => Err(Error::user("this hook is run by an agent harness")),
     }
 }
@@ -145,7 +162,7 @@ pub fn run_agent_hook(context: impl FnOnce() -> Result<Context>, command: HookCo
             let _ = out.write_all(block.as_bytes()).and_then(|()| out.flush());
         }),
         HookCommand::SessionStop { actor } => session_stop(&ctx, &actor, &stdin),
-        HookCommand::Install { .. } => Ok(()),
+        HookCommand::Install { .. } | HookCommand::Uninstall { .. } => Ok(()),
     });
     if let Err(e) = result {
         eprintln!("seldon hook: {e}");
@@ -1085,15 +1102,9 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
             .or_insert_with(|| json!([]))
             .as_array_mut()
             .ok_or_else(|| refuse(format!("`hooks.{event}` is not a list")))?;
-        let label = match matcher {
-            Some(m) => format!("{event} ({m}): {command}"),
-            None => format!("{event}: {command}"),
-        };
+        let label = hook_label(event, matcher, command);
         let has = groups.iter().any(|g| {
-            g.get("matcher")
-                .and_then(Value::as_str)
-                .filter(|m| !m.is_empty())
-                == matcher
+            group_matches(g, matcher)
                 && g.get("hooks")
                     .and_then(Value::as_array)
                     .is_some_and(|hs| hs.iter().any(|h| h.get("command") == Some(&json!(command))))
@@ -1129,16 +1140,7 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
 /// (so the next capture explains its config event), and commits the
 /// logbook when its own settings file changed.
 fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
-    let (path, logbook) = match settings {
-        Some(p) => (ctx.dirs.expand(&p.to_string_lossy()), None),
-        None => {
-            let (config, logbook) = ctx.open_logbook()?;
-            (
-                logbook.path(".claude/settings.json"),
-                Some((config, logbook)),
-            )
-        }
-    };
+    let (path, logbook) = settings_file(ctx, settings)?;
     let shown = ctx.dirs.display(&path);
     let Merged { added, present } = merge_claude_hooks(&path, &shown)?;
     let own = (!added.is_empty()).then(|| {
@@ -1152,6 +1154,7 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
             &config,
             std::slice::from_ref(&path),
             "seldon hook install claude-code",
+            OwnOp::Install,
         )
     });
     let mut commit = None;
@@ -1188,6 +1191,231 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
             "git": commit.map_or(Value::Null, |c| c.json()),
         }),
     ))
+}
+
+/// What [`unmerge_claude_hooks`] found: one label per hook of
+/// [`CLAUDE_HOOKS`], and what becomes of the file.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Unmerged {
+    pub removed: Vec<String>,
+    pub absent: Vec<String>,
+    pub after: After,
+}
+
+/// The settings file after [`unmerge_claude_hooks`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum After {
+    /// None of Seldon's hooks was there (or no file): nothing to write.
+    #[default]
+    Unchanged,
+    /// The new content, without Seldon's hooks.
+    Write(String),
+    /// Nothing but Seldon's hooks was in it: the file goes.
+    Delete,
+}
+
+/// The label of one hook of [`CLAUDE_HOOKS`] in reports.
+fn hook_label(event: &str, matcher: Option<&str>, command: &str) -> String {
+    match matcher {
+        Some(m) => format!("{event} ({m}): {command}"),
+        None => format!("{event}: {command}"),
+    }
+}
+
+/// Whether a hook group has the matcher `matcher` (none or empty: `None`),
+/// as [`merge_claude_hooks`] wrote it.
+fn group_matches(group: &Value, matcher: Option<&str>) -> bool {
+    group
+        .get("matcher")
+        .and_then(Value::as_str)
+        .filter(|m| !m.is_empty())
+        == matcher
+}
+
+/// The inverse of [`merge_claude_hooks`]: takes each hook of
+/// [`CLAUDE_HOOKS`] (same event, matcher and command) out of the Claude
+/// Code settings file at `path` and keeps everything else. A group, an
+/// event list or the `hooks` object that this leaves empty goes too; a
+/// file left as `{}` is deleted ([`After::Delete`]). Nothing is written
+/// here: the caller writes or deletes, so that it can record what it did.
+/// A file that is not a JSON object is refused, as by the merge.
+pub fn unmerge_claude_hooks(path: &Path, shown: &str) -> Result<Unmerged> {
+    let all_absent = || Unmerged {
+        absent: CLAUDE_HOOKS
+            .iter()
+            .map(|(e, m, c, _)| hook_label(e, *m, c))
+            .collect(),
+        ..Unmerged::default()
+    };
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) if t.trim().is_empty() => return Ok(all_absent()),
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(all_absent()),
+        Err(e) => {
+            return Err(anyhow::Error::new(e)
+                .context(format!("cannot read {shown}"))
+                .into());
+        }
+    };
+    let refuse = |why: String| Error::user(format!("{shown}: {why}; nothing was changed"));
+    let mut root: Value =
+        serde_json::from_str(&text).map_err(|e| refuse(format!("not valid JSON ({e})")))?;
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| refuse("not a JSON object".into()))?;
+    let mut out = Unmerged::default();
+    let Some(hooks) = object.get_mut("hooks") else {
+        return Ok(all_absent());
+    };
+    let hooks = hooks
+        .as_object_mut()
+        .ok_or_else(|| refuse("`hooks` is not an object".into()))?;
+    for (event, matcher, command, _) in CLAUDE_HOOKS {
+        let label = hook_label(event, matcher, command);
+        let Some(groups) = hooks.get_mut(event) else {
+            out.absent.push(label);
+            continue;
+        };
+        let groups = groups
+            .as_array_mut()
+            .ok_or_else(|| refuse(format!("`hooks.{event}` is not a list")))?;
+        let mut found = false;
+        for group in groups.iter_mut().filter(|g| group_matches(g, matcher)) {
+            if let Some(list) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+                let before = list.len();
+                list.retain(|h| h.get("command") != Some(&json!(command)));
+                if list.len() < before {
+                    found = true;
+                    // a group of Seldon's hook alone goes with it
+                    if list.is_empty() {
+                        *group = Value::Null;
+                    }
+                }
+            }
+        }
+        if !found {
+            out.absent.push(label);
+            continue;
+        }
+        groups.retain(|g| !g.is_null());
+        if groups.is_empty() {
+            hooks.remove(event);
+        }
+        out.removed.push(label);
+    }
+    if out.removed.is_empty() {
+        return Ok(out);
+    }
+    if hooks.is_empty() {
+        object.remove("hooks");
+    }
+    out.after = if object.is_empty() {
+        After::Delete
+    } else {
+        let mut text = serde_json::to_string_pretty(&root).map_err(anyhow::Error::from)?;
+        text.push('\n');
+        After::Write(text)
+    };
+    Ok(out)
+}
+
+/// `seldon hook uninstall claude-code [--settings PATH]`: takes Seldon's
+/// hooks out of the settings file ([`unmerge_claude_hooks`]), writes it or
+/// deletes a file that held nothing else, records that as the engine's own
+/// write under a watched path (so the next capture explains its config
+/// event), and commits the logbook when its own settings file changed.
+fn uninstall(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
+    const BY: &str = "seldon hook uninstall claude-code";
+    let (path, logbook) = settings_file(ctx, settings)?;
+    let shown = ctx.dirs.display(&path);
+    let Unmerged {
+        removed,
+        absent,
+        after,
+    } = unmerge_claude_hooks(&path, &shown)?;
+    let config = match &logbook {
+        Some((config, _)) => config.clone(),
+        None => ctx.load_config().ok().flatten().unwrap_or_default(),
+    };
+    let own = match &after {
+        After::Unchanged => None,
+        After::Write(text) => {
+            crate::sys::write_atomic(&path, text.as_bytes())?;
+            Some(super::setup::record_own_writes(
+                ctx,
+                &config,
+                std::slice::from_ref(&path),
+                BY,
+                OwnOp::Remove,
+            ))
+        }
+        After::Delete => Some(super::setup::delete_own_file(ctx, &config, &path, BY)?),
+    };
+    let mut commit = None;
+    if after != After::Unchanged
+        && let Some((config, logbook)) = &logbook
+    {
+        commit = Some(autocommit(
+            ctx,
+            config,
+            logbook,
+            "hook uninstall claude-code",
+        ));
+    }
+
+    let mut human = match &after {
+        After::Unchanged => {
+            format!("{shown}: the Seldon hooks are not installed; nothing changed.")
+        }
+        After::Write(_) => format!("{shown}: removed the Seldon hooks."),
+        After::Delete => {
+            format!("{shown}: removed the Seldon hooks and the file, which held nothing else.")
+        }
+    };
+    for r in &removed {
+        let _ = write!(human, "\n  removed  {r}");
+    }
+    if after != After::Unchanged {
+        for a in &absent {
+            let _ = write!(human, "\n  absent   {a}");
+        }
+    }
+    if let Some(Err(e)) = &own {
+        let _ = write!(human, "\n{shown}: {}", super::setup::own_writes_warning(e));
+    }
+    if let Some(c) = &commit {
+        human.push_str(&c.human());
+    }
+    Ok(Output::ok(
+        human,
+        json!({
+            "settings": path,
+            "removed": removed,
+            "absent": absent,
+            "deleted": after == After::Delete,
+            "ownWrites": own.as_ref().map_or(Value::Null, super::setup::own_writes_json),
+            "git": commit.map_or(Value::Null, |c| c.json()),
+        }),
+    ))
+}
+
+/// The settings file `hook install|uninstall` works on: `--settings`
+/// (`~` expanded; no logbook needed), else the logbook's own
+/// `.claude/settings.json`, with the config and logbook for the commit.
+fn settings_file(
+    ctx: &Context,
+    settings: Option<PathBuf>,
+) -> Result<(PathBuf, Option<(Config, Logbook)>)> {
+    Ok(match settings {
+        Some(p) => (ctx.dirs.expand(&p.to_string_lossy()), None),
+        None => {
+            let (config, logbook) = ctx.open_logbook()?;
+            (
+                logbook.path(".claude/settings.json"),
+                Some((config, logbook)),
+            )
+        }
+    })
 }
 
 #[cfg(test)]

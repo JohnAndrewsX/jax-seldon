@@ -27,18 +27,19 @@ pub struct PlanArgs {
 pub enum PlanCommand {
     /// Create a case in work/queued/
     New(NewArgs),
-    /// queued → active (writes .seldon/active-case)
-    Start(StepArgs),
-    /// active → verification
+    /// Start a case: queued → active; it becomes the active case
+    Start(StartArgs),
+    /// Hand an active case to verification: active → verification
     Verify(StepArgs),
-    /// verification → completed
+    /// Complete a verified case: verification → completed
     Done(StepArgs),
-    /// queued, active or verification → dropped
+    /// Drop a case that is queued, active or in verification
     Drop(StepArgs),
-    /// List cases
+    /// List cases, optionally by status or area
     List(ListArgs),
-    /// Show one case
+    /// Print one case file with its path
     Show {
+        /// The case id, e.g. C-2026-004
         #[arg(value_name = "ID", value_parser = parse_case_id)]
         id: String,
     },
@@ -46,68 +47,76 @@ pub enum PlanCommand {
 
 #[derive(Debug, Clone, Args)]
 pub struct NewArgs {
-    /// The case title, as one argument
+    /// The case title, as one argument (after `--` when it starts with `-`)
     #[arg(value_name = "TITLE", allow_hyphen_values = true)]
     pub title: String,
 
     /// green, yellow or red
-    #[arg(long, value_name = "Z", default_value = "yellow")]
+    #[arg(long, value_name = "ZONE", default_value = "yellow")]
     pub zone: Zone,
 
     /// R0 to R3
-    #[arg(long, value_name = "R", default_value = "R1")]
+    #[arg(long, value_name = "RISK", default_value = "R1")]
     pub risk: Risk,
 
     /// Area slug; created under areas/ on first use
-    #[arg(long, value_name = "A")]
+    #[arg(long, value_name = "AREA")]
     pub area: Option<String>,
 
     /// high, normal or low
-    #[arg(long, value_name = "P", default_value = "normal")]
+    #[arg(long, value_name = "PRIORITY", default_value = "normal")]
     pub priority: Priority,
 
-    /// Who creates the case
-    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    /// Who creates the case: human or agent:NAME
+    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
     pub actor: String,
+}
+
+/// `plan start`: a step that can name the snapshot taken before the work.
+#[derive(Debug, Clone, Args)]
+pub struct StartArgs {
+    #[command(flatten)]
+    pub step: StepArgs,
+
+    /// Snapper snapshot number taken before the work, e.g. 42 (an R2 or R3
+    /// case started without one gets a warning, ADR-0023)
+    #[arg(long, value_name = "NUMBER")]
+    pub snapshot: Option<u64>,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct StepArgs {
+    /// The case id, e.g. C-2026-004
     #[arg(value_name = "ID", value_parser = parse_case_id)]
     pub id: String,
 
-    /// Snapper snapshot taken before the work (`plan start` only; an R2 or
-    /// R3 case started without one gets a warning, ADR-0023)
-    #[arg(long, value_name = "N")]
-    pub snapshot: Option<u64>,
-
-    /// Why (one line; goes into the Log line and the event detail)
+    /// Why, in one line; goes into the Log line and the event detail
     #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
     pub reason: Option<String>,
 
-    /// Who takes the step
-    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    /// Who takes the step: human or agent:NAME
+    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
     pub actor: String,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct ListArgs {
-    /// Only cases with this status
-    #[arg(long, value_name = "S")]
+    /// Only cases with this status (queued, active, verification, completed, dropped)
+    #[arg(long, value_name = "STATUS")]
     pub status: Option<CaseStatus>,
 
     /// Only cases in this area
-    #[arg(long, value_name = "A")]
+    #[arg(long, value_name = "AREA")]
     pub area: Option<String>,
 }
 
 pub fn run(ctx: &Context, args: PlanArgs) -> Result<Output> {
     match args.command {
         PlanCommand::New(a) => new(ctx, a),
-        PlanCommand::Start(a) => step(ctx, Transition::Start, a),
-        PlanCommand::Verify(a) => step(ctx, Transition::Verify, a),
-        PlanCommand::Done(a) => step(ctx, Transition::Done, a),
-        PlanCommand::Drop(a) => step(ctx, Transition::Drop, a),
+        PlanCommand::Start(a) => step(ctx, Transition::Start, a.step, a.snapshot),
+        PlanCommand::Verify(a) => step(ctx, Transition::Verify, a, None),
+        PlanCommand::Done(a) => step(ctx, Transition::Done, a, None),
+        PlanCommand::Drop(a) => step(ctx, Transition::Drop, a, None),
         PlanCommand::List(a) => list(ctx, a),
         PlanCommand::Show { id } => show(ctx, &id),
     }
@@ -203,10 +212,14 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
     ))
 }
 
-fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output> {
-    if args.snapshot.is_some() && transition != Transition::Start {
-        return Err(Error::user("--snapshot only goes with `seldon plan start`"));
-    }
+/// One step; `snapshot` only comes with `plan start` (clap has no
+/// `--snapshot` on the other steps).
+fn step(
+    ctx: &Context,
+    transition: Transition,
+    args: StepArgs,
+    snapshot: Option<u64>,
+) -> Result<Output> {
     let reason = args
         .reason
         .as_deref()
@@ -225,8 +238,8 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
     match transition {
         Transition::Start => {
             file.case.started = Some(today);
-            if args.snapshot.is_some() {
-                file.case.snapshot_before = args.snapshot;
+            if snapshot.is_some() {
+                file.case.snapshot_before = snapshot;
             }
         }
         Transition::Done | Transition::Drop => file.case.closed = Some(today),
@@ -234,7 +247,7 @@ fn step(ctx: &Context, transition: Transition, args: StepArgs) -> Result<Output>
     }
     file.add_agent(&args.actor);
     let mut line = transition.log_word().to_string();
-    if let Some(n) = args.snapshot {
+    if let Some(n) = snapshot {
         line.push_str(&format!(" (snapshot {n})"));
     }
     if let Some(r) = &reason {

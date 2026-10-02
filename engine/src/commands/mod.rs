@@ -13,6 +13,7 @@ pub mod import;
 pub mod index;
 pub mod init;
 pub mod log;
+pub mod manual;
 pub mod open;
 pub mod plan;
 pub mod rebuild;

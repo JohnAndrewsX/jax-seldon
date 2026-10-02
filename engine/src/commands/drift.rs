@@ -40,14 +40,15 @@ pub struct DriftArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum DriftCommand {
-    /// Link a drift event (and the open members of its group) to a case
+    /// Link a drift event, and the open members of its group, to a case
     Link(LinkArgs),
-    /// Explain drift: creates a retroactive, completed case for it
+    /// Explain a drift event with a new retroactive, completed case
     Explain(ExplainArgs),
-    /// Dismiss drift with a reason
+    /// Dismiss a drift event with a reason
     Dismiss(DismissArgs),
     /// Show a drift event and every open member of its group
     Show {
+        /// The drift event id, as `seldon drift` prints it
         #[arg(value_name = "EVENT", value_parser = parse_event_id)]
         id: String,
     },
@@ -55,9 +56,11 @@ pub enum DriftCommand {
 
 #[derive(Debug, Clone, Args)]
 pub struct LinkArgs {
+    /// The drift event id, as `seldon drift` prints it
     #[arg(value_name = "EVENT", value_parser = parse_event_id)]
     pub id: String,
 
+    /// The case id, e.g. C-2026-004 (a completed or dropped case too)
     #[arg(value_name = "CASE", value_parser = parse_case_id)]
     pub case_id: String,
 
@@ -65,13 +68,16 @@ pub struct LinkArgs {
     #[arg(long)]
     pub only: bool,
 
-    /// Who resolves it
-    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    /// Who resolves it: human or agent:NAME
+    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
     pub actor: String,
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(after_help = "Example:
+  seldon drift explain <EVENT> --area hardware -- \"Driver for the new GPU\"")]
 pub struct ExplainArgs {
+    /// The drift event id, as `seldon drift` prints it
     #[arg(value_name = "EVENT", value_parser = parse_event_id)]
     pub id: String,
 
@@ -84,24 +90,27 @@ pub struct ExplainArgs {
     pub only: bool,
 
     /// Zone of the new case (default: the drift item's zone)
-    #[arg(long, value_name = "Z")]
+    #[arg(long, value_name = "ZONE")]
     pub zone: Option<Zone>,
 
     /// Risk of the new case
-    #[arg(long, value_name = "R", default_value = "R1")]
+    #[arg(long, value_name = "RISK", default_value = "R1")]
     pub risk: Risk,
 
     /// Area slug of the new case; created under areas/ on first use
-    #[arg(long, value_name = "A")]
+    #[arg(long, value_name = "AREA")]
     pub area: Option<String>,
 
-    /// Who resolves it
-    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    /// Who resolves it: human or agent:NAME
+    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
     pub actor: String,
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(after_help = "Example:
+  seldon drift dismiss <EVENT> -- \"Tried a theme, reverted it\"")]
 pub struct DismissArgs {
+    /// The drift event id, as `seldon drift` prints it
     #[arg(value_name = "EVENT", value_parser = parse_event_id)]
     pub id: String,
 
@@ -113,8 +122,8 @@ pub struct DismissArgs {
     #[arg(long)]
     pub only: bool,
 
-    /// Who resolves it
-    #[arg(long, value_name = "A", default_value = "human", value_parser = parse_person)]
+    /// Who resolves it: human or agent:NAME
+    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
     pub actor: String,
 }
 

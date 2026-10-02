@@ -24,6 +24,10 @@
 //!   The installed copy lies under the watched `~/.config/omarchy`, so it
 //!   is recorded as the engine's own write ([`record_own_writes`]): the
 //!   next capture explains its `config-add` (SPEC-ENGINE §5 rule 7).
+//!   `init --remove-theme-hook` ([`remove_theme_hook`]) deletes that copy
+//!   and the script in the state directory; the deletion is recorded the
+//!   same way ([`delete_own_file`]), so the next capture explains its
+//!   `config-remove`. Omarchy has no command to remove a hook.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -34,7 +38,7 @@ use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone as _};
 use serde_json::{Value, json};
 
 use super::{Context, emit, hook};
-use crate::collectors::config;
+use crate::collectors::config::{self, OwnOp};
 use crate::config::{Config, Dirs};
 use crate::error::{Error, Result};
 use crate::index;
@@ -260,26 +264,44 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
 // The engine's own writes
 // ---------------------------------------------------------------------------
 
-/// Records `paths` as written by the engine with the command `by`
-/// (SPEC-ENGINE §5 rule 7), under the state lock; only paths the config
-/// collector watches are recorded. `Ok` names them; `Err` is a line for
-/// the report, never fatal: the next capture then shows the file as drift.
+/// What recording the engine's own writes gave: the recorded `~`-paths,
+/// or a line for the report.
+pub type OwnRecord = std::result::Result<Vec<String>, String>;
+
+/// Records `paths` as written by the engine with the command `by` and
+/// `op` (SPEC-ENGINE §5 rule 7), under the state lock; only paths the
+/// config collector watches are recorded. `Ok` names them; `Err` is a
+/// line for the report, never fatal: the next capture then shows the file
+/// as drift.
 pub fn record_own_writes(
     ctx: &Context,
     config: &Config,
     paths: &[PathBuf],
     by: &str,
-) -> std::result::Result<Vec<String>, String> {
+    op: OwnOp,
+) -> OwnRecord {
     let lock = ctx.lock().map_err(|e| e.to_string())?;
-    let recorded = config::record_own_writes(&lock, &ctx.dirs, config, paths, by)
+    let recorded = config::record_own_writes(&lock, &ctx.dirs, config, paths, by, op)
         .map_err(|e| format!("{e:#}"))?;
     drop(lock);
     Ok(recorded)
 }
 
+/// Deletes the file `path` under the state lock and records the deletion
+/// as the engine's own with the command `by` when the config collector
+/// watches it ([`config::delete_own_file`]). `Err` when the lock is held or
+/// the file cannot be deleted (nothing changed); the [`OwnRecord`] as for
+/// [`record_own_writes`].
+pub fn delete_own_file(ctx: &Context, config: &Config, path: &Path, by: &str) -> Result<OwnRecord> {
+    let lock = ctx.lock()?;
+    let recorded = config::delete_own_file(&lock, &ctx.dirs, config, path, by)?;
+    drop(lock);
+    Ok(recorded.map_err(|e| format!("{e:#}")))
+}
+
 /// The report of [`record_own_writes`] as one JSON value: the recorded
 /// `~`-paths, or `{"error": …}`.
-pub fn own_writes_json(r: &std::result::Result<Vec<String>, String>) -> Value {
+pub fn own_writes_json(r: &OwnRecord) -> Value {
     match r {
         Ok(paths) => json!(paths),
         Err(e) => json!({ "error": e }),
@@ -470,6 +492,54 @@ pub fn install_theme_hook(dirs: &Dirs, omarchy: &str) -> ThemeHook {
         Run::TimedOut => failed("`omarchy hook install` timed out".into()),
         Run::Failed(e) => failed(format!("cannot run `{omarchy}`: {e}")),
     }
+}
+
+/// The command [`remove_theme_hook`] records as the remover.
+pub const REMOVE_THEME_HOOK: &str = "seldon init --remove-theme-hook";
+
+/// What [`remove_theme_hook`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeHookRemoval {
+    /// Omarchy's copy in `~/.config/omarchy/hooks/theme-set.d/`.
+    pub hook: PathBuf,
+    /// The script in the state directory that `omarchy hook install` copied.
+    pub script: PathBuf,
+    pub hook_removed: bool,
+    pub script_removed: bool,
+    /// The record of the hook's deletion (`None`: nothing deleted).
+    pub own: Option<OwnRecord>,
+}
+
+/// `seldon init --remove-theme-hook`: deletes what `init --theme-hook`
+/// installed, Omarchy's copy of the hook ([`theme_hook_target`], a name of
+/// Seldon's own) and the script in `<state>/hooks/`, and records the
+/// hook's deletion as the engine's own ([`delete_own_file`]). Directories
+/// stay. Nothing installed, nothing changed.
+pub fn remove_theme_hook(ctx: &Context, config: &Config) -> Result<ThemeHookRemoval> {
+    let hook = theme_hook_target(&ctx.dirs);
+    let script = ctx.dirs.state_dir.join("hooks").join(THEME_HOOK_NAME);
+    let own = if is_file(&hook) {
+        Some(delete_own_file(ctx, config, &hook, REMOVE_THEME_HOOK)?)
+    } else {
+        None
+    };
+    let script_removed = is_file(&script);
+    if script_removed {
+        std::fs::remove_file(&script)
+            .with_context(|| format!("cannot remove {}", ctx.dirs.display(&script)))?;
+    }
+    Ok(ThemeHookRemoval {
+        hook,
+        script,
+        hook_removed: own.is_some(),
+        script_removed,
+        own,
+    })
+}
+
+/// A regular file (or a symbolic link to one) at `path`.
+fn is_file(path: &Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|m| m.is_file())
 }
 
 fn write_script(path: &Path) -> anyhow::Result<()> {
