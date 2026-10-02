@@ -85,8 +85,8 @@ The logbook path is taken from, in this order: `--logbook`,
 | `theme` | `~/.local/state/omarchy/current/theme.name` | theme switches |
 | `config` | the files under `watchPaths` | files added, changed, removed |
 
-Each collector only reads. Turn one off with `false`; `seldon capture
---source <name>` still runs it on demand.
+Each collector only reads. Turn one off with `false`;
+`seldon capture --source <name>` still runs it on demand.
 
 A collector that cannot read its source is `degraded`: the capture goes
 on, and `seldon doctor` names the fix. Two cases are normal:
