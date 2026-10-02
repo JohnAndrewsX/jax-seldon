@@ -147,8 +147,8 @@ it you see at a glance what Seldon records.
 omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
 ```
 
-A small pill `⟡` appears on the right of the bar. Click it to open the
-panel. [Daily use](03-daily-use.md) explains every part of it.
+A small pill with the Seldon mark appears on the right of the bar. Click
+it to open the panel. [Daily use](03-daily-use.md) explains every part of it.
 
 No pill? Check that `omarchy plugin list` shows `jax.seldon` as enabled
 (else `omarchy plugin enable jax.seldon`), then restart the shell with
@@ -205,7 +205,7 @@ test: it is visible and you can undo it in a second.
    is its zone: a config or theme change, not a package
    ([Concepts](02-concepts.md#zones) explains zones). The last column is
    the event id (yours is different). If you added the plugin, the pill
-   in the bar now shows `⟡ · 1`.
+   in the bar now shows `· 1` after the mark.
 
 5. Explain it. The change already happened, so Seldon records your
    reason as a retroactive case: a new case, created already completed,

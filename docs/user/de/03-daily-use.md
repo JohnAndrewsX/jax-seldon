@@ -10,8 +10,8 @@ Version englisch; diese Seite nennt sie so, wie du sie siehst.
 
 ## Ein Tag mit Seldon
 
-- Morgens ein Blick auf die Pill. `⟡ 2 · 3` heißt: zwei aktive Cases und
-  drei unerklärte Änderungen.
+- Morgens ein Blick auf die Pill. Das Zeichen, dann `2 · 3`, heißt: zwei
+  aktive Cases und drei unerklärte Änderungen.
 - Vor einer Änderung legst du einen Case an (`+` im Panel) und startest
   ihn.
 - Während der Arbeit schreibst du eine Notiz, wenn du etwas lernst (`n`
@@ -26,8 +26,9 @@ Version englisch; diese Seite nennt sie so, wie du sie siehst.
 
 Die Pill sitzt rechts in der Bar.
 
-- `⟡ A · D`: A ist die Zahl der aktiven Cases, D die Zahl der offenen
-  Drift-Einträge. Teile, die null sind, fallen weg: `⟡`, `⟡ 2`, `⟡ · 3`.
+- Das Seldon-Zeichen, dann `A · D`: A ist die Zahl der aktiven Cases, D
+  die Zahl der offenen Drift-Einträge. Teile, die null sind, fallen weg:
+  das Zeichen allein, `2`, `· 3`. Das Zeichen nimmt die Farbe der Pill.
 - Sie nimmt die Akzentfarbe deines Themes, solange Cases aktiv sind, die
   Warnfarbe des Themes bei einer Krise und wird blasser, solange etwas
   repariert werden muss.

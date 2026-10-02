@@ -32,7 +32,7 @@ languages.
 | logbook | Logbuch | the folder that holds the record, `~/Seldon` by default |
 | memory | Memory | what agents learned, `memory/` |
 | panel | Panel | the bar panel with six tabs |
-| pill | Pill | the bar widget `⟡ A · D` |
+| pill | Pill | the bar widget: the Seldon mark, then `A · D` |
 | Plan, the | der Plan | all open cases (the word from *Foundation*) |
 | plugin | Plugin | `jax.seldon`, the Omarchy shell plugin |
 | Prime Radiant | Prime Radiant | the fullscreen overlay with the charts |

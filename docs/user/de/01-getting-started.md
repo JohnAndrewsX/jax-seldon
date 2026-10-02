@@ -154,8 +154,8 @@ ihm siehst du auf einen Blick, was Seldon aufzeichnet.
 omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
 ```
 
-Rechts in der Bar erscheint eine kleine Pill `⟡`. Ein Klick öffnet das
-Panel. [Alltag](03-daily-use.md) erklärt jeden Teil davon.
+Rechts in der Bar erscheint eine kleine Pill mit dem Seldon-Zeichen. Ein
+Klick öffnet das Panel. [Alltag](03-daily-use.md) erklärt jeden Teil davon.
 
 Keine Pill? Prüf, ob `omarchy plugin list` das Plugin `jax.seldon` als
 aktiviert zeigt (sonst `omarchy plugin enable jax.seldon`), und starte
@@ -212,7 +212,8 @@ eignet sich gut: Er ist sichtbar und in einer Sekunde rückgängig gemacht.
    `yellow` ist ihre Zone: eine Konfigurations- oder Theme-Änderung, kein
    Paket ([Konzepte](02-concepts.md#zonen) erklärt Zonen). Die letzte
    Spalte ist die Ereignis-ID (deine sieht anders aus). Wenn du das Plugin
-   hinzugefügt hast, zeigt die Pill in der Bar jetzt `⟡ · 1`.
+   hinzugefügt hast, zeigt die Pill in der Bar jetzt `· 1` hinter dem
+   Zeichen.
 
 5. Erkläre sie. Die Änderung ist schon passiert, also hält Seldon deinen
    Grund als nachträglichen Case fest: ein neuer Case, gleich als

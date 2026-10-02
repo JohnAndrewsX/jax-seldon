@@ -34,7 +34,7 @@ Dateinamen und Werte im Code bleiben in beiden Sprachen englisch.
 | logbook | Logbuch | der Ordner mit der Aufzeichnung, standardmäßig `~/Seldon` |
 | memory | Memory | was Agenten gelernt haben, `memory/` |
 | panel | Panel | das Panel der Bar mit sechs Tabs |
-| pill | Pill | das Bar-Widget `⟡ A · D` |
+| pill | Pill | das Bar-Widget: das Seldon-Zeichen, dann `A · D` |
 | Plan, the | der Plan | alle offenen Cases (das Wort aus *Foundation*) |
 | plugin | Plugin | `jax.seldon`, das Plugin für die Omarchy-Shell |
 | Prime Radiant | Prime Radiant | das bildschirmfüllende Overlay mit den Diagrammen |
