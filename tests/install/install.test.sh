@@ -170,6 +170,7 @@ check "latest: bash completions from the new binary" \
 check "latest: fish completions" \
   grep -qx '# seldon 9.9.9 completions for fish' "$p/share/fish/vendor_completions.d/seldon.fish"
 check "latest: no zsh completions without zsh" test ! -e "$p/share/zsh"
+# shellcheck disable=SC2016 # $1 is bash -c's argument
 check "latest: no zsh hint without zsh" bash -c '[[ $1 != *fpath=* ]]' _ "$out"
 check "latest: the man page" grep -qx '.TH SELDON 1 seldon-9.9.9' "$p/share/man/man1/seldon.1"
 check "latest: completions and man page in the manifest" \
@@ -232,6 +233,7 @@ run --prefix "$work/p4f"
 check "foreign completion: exit 0" test "$rc" -eq 0
 check "foreign completion: kept" grep -qx '# my own' "$work/p4f/share/bash-completion/completions/seldon"
 check "foreign completion: says kept" has "kept       $work/p4f/share/bash-completion/completions/seldon"
+# shellcheck disable=SC2016 # $1 and $2 are bash -c's arguments
 check "foreign completion: not in the manifest" \
   bash -c '! grep -qF "  $1" "$2"' _ "$work/p4f/share/bash-completion/completions/seldon" \
   "$work/p4f/share/jax-seldon/install-manifest"
