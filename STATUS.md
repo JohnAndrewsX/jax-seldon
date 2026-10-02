@@ -14,11 +14,9 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-038 | Engine attributes its own installs; Phase 0 exit procedure refreshed | Engine | `engine-038` (opus, high) | `wt/WP-038` · `wp/038-self-attribution` | 2026-10-02 |
-| WP-039 | Panel width and label fit (operator's live observation) | Plugin | `plugin-039` (opus, high) | `wt/WP-039` · `wp/039-panel-width` | 2026-10-02 |
+| WP-043 | Import the operator's omarchy-agent vault (dry run first) | Engine | `engine-043` (opus, high) | `wt/WP-043` · `wp/043-vault-import` | 2026-10-02 |
 
 ## Queued (next up)
-WP-038 (engine attributes its own installs, Phase 0 procedure refresh) ·
 WP-033 (update-impact, needs the operator's release-notes source decision)
 · WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
 logbook migration)
@@ -35,6 +33,14 @@ logbook migration)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-039 Panel 460 wide, tabs sized to their labels, chips
+  wrap, Changelog header keeps the sort word, fit assertions at scale
+  1.0/1.25, real-home guard recognises the operator's live engine,
+  preview refreshed — merged (operator's live observation).
+- 2026-10-02 WP-038 Engine attributes its own installs (owned.json →
+  `explained` resolution on the next capture; actor stays `system`,
+  source `seldon`), Phase 0 exit procedure for the shipped wizard,
+  fresh-machine smoke list — merged.
 - 2026-10-02 WP-037 Overlay live findings: memoised empty period view
   (no aggregation when the shell injects `service` after creation), the
   harness now creates the overlay like the shell and the old code fails
