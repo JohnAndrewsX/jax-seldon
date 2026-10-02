@@ -9,10 +9,12 @@
 //! Then the logbook is written, the harnesses are set up (inside the
 //! first commit), the first capture runs (`capture --all`, with `--since`
 //! as the backfill window), a backfill can be marked as the pre-Seldon
-//! baseline, the theme hook is installed on opt-in, and the capture is
-//! committed; then `seldon dossier` fills `system/*.md` once (WP-035,
-//! its own commit). The steps after the layout report failures; they never undo
-//! the logbook ([`super::setup`]).
+//! baseline, and the capture is committed; then `seldon dossier` fills
+//! `system/*.md` once (WP-035, its own commit), and the theme hook is
+//! installed on opt-in and recorded as the engine's own write, so the next
+//! capture explains its `config-add` (SPEC-ENGINE §5 rule 7, WP-038).
+//! The steps after the layout report failures; they never undo the
+//! logbook ([`super::setup`]).
 
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
@@ -195,6 +197,15 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     } else {
         ThemeHook::NotRequested
     };
+    let own_hook = match &theme_hook {
+        ThemeHook::Installed { hook, .. } => Some(setup::record_own_writes(
+            ctx,
+            &config,
+            std::slice::from_ref(hook),
+            "seldon init --theme-hook",
+        )),
+        _ => None,
+    };
 
     let mut next = vec!["seldon doctor".to_string()];
     for h in harnesses
@@ -246,6 +257,9 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     if let Some(t) = theme_hook.human(&ctx.dirs) {
         human.push_str(&format!("Theme hook: {t}\n"));
     }
+    if let Some(Err(e)) = &own_hook {
+        human.push_str(&format!("Theme hook: {}\n", setup::own_writes_warning(e)));
+    }
     if choices.obsidian {
         human.push_str("Obsidian: open the folder as a vault.\n");
     }
@@ -254,6 +268,10 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         human.push_str(&format!("  {step}\n"));
     }
 
+    let mut theme_hook_json = theme_hook.json();
+    if let Some(r) = &own_hook {
+        theme_hook_json["ownWrites"] = setup::own_writes_json(r);
+    }
     Ok(Output::ok(
         human.trim_end(),
         json!({
@@ -274,7 +292,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             "snapper": snapper,
             "capture": capture.json,
             "dossier": dossier.json,
-            "themeHook": theme_hook.json(),
+            "themeHook": theme_hook_json,
             "nextSteps": next,
         }),
     ))

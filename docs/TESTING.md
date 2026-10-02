@@ -1125,3 +1125,54 @@ run.
 They contain the machine id, which names the host: keep them out of the
 repository. Mismatches go to the WP's `FINDINGS.md`, with the command and
 an index excerpt.
+
+## Fresh machine smoke list
+
+A manual check for a machine that has never run Seldon, taken from the
+G3 run (`work/completed/PHASE-0-EXIT-transcript.md`). The operator runs
+it. It writes the real logbook, `~/.config/seldon/`,
+`~/.local/state/seldon/` and, with `--theme-hook`,
+`~/.config/omarchy/hooks/` (AGENTS.md §6). Agents never run it, and
+never on the dev host. The commands are in `work/PHASE-0-EXIT.md`;
+here is what must be true at each step. Run it before a release that
+changes `init`, the collectors or the hooks.
+
+1. **Install.** `seldon --version` prints the release version. `seldon
+   doctor` without a logbook says "not initialised" and exits 3.
+2. **Wizard.** `seldon init --path ~/Seldon --obsidian --harness
+   claude-code --theme-hook` with a backfill date and the baseline answered
+   yes:
+   - the output names the logbook, `config.toml`, the Claude Code hooks
+     (`3 hook(s) added`), the first git commit, the first capture with
+     the backfill, `0 open drift item(s), 0 crisis` after the baseline,
+     the dossier files and the installed theme hook;
+   - `git -C ~/Seldon log --format=%s` is `seldon: dossier`, `seldon:
+     first capture and pre-Seldon baseline`, `seldon: init logbook`;
+   - no "next step" asks for `seldon hook install`, `seldon capture` or
+     `seldon dossier`.
+3. **Doctor.** Every line is `ok` except snapper, which is `degraded`
+   with the `snapper set-config` fix (ADR-0011). After the operator's
+   opt-in, snapper is `ok` with a snapshot count.
+4. **Own install (WP-038).** The first `seldon capture --all` after
+   `init` writes exactly one event: the `config-add` of
+   `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh`. It prints
+   `note: 1 config event(s) explained as written by seldon itself`.
+   `seldon drift` lists nothing. The ledger holds the event and a
+   `resolution` line (`source: seldon`, `explained`, `installed by seldon
+   init --theme-hook`). A second capture writes 0 events.
+5. **Case with Claude Code.** After `plan new` and `plan start`, `claude`
+   in `~/Seldon` records every theme switch at once as `theme-set` with
+   the case and `agent:claude-code` (theme hook). An agent edit of a
+   `~/.config/hypr/*.lua` file becomes a `config-change` with the case at
+   the next capture. Claude Code can move the case to verification from
+   the logbook's AGENTS.md alone (finding F3). `/exit` adds a journal
+   line and a commit `seldon: session ended (agent:claude-code)`.
+6. **Close.** `seldon status`: 1 in verification, 0 open drift. After
+   `seldon plan done`: 0 active, 0 in verification. STATUS.md says the
+   same, with headings in English and prose in the logbook language
+   (ADR-0007).
+7. **Look.** Obsidian opens `~/Seldon` as a vault (`.obsidian/` present).
+   With the plugin enabled, the bar pill matches `index.json` `summary`.
+
+A failure goes to the WP that owns the step, or to a new WP, with the
+command and its output (no private paths or host names).

@@ -26,7 +26,8 @@
 //! - `hook session-stop` writes the journal stub, runs `capture --all` and
 //!   commits.
 //! - `hook install claude-code` merges these hooks into the logbook's
-//!   `.claude/settings.json`.
+//!   `.claude/settings.json`; a settings file under a watched path is
+//!   recorded as the engine's own write (SPEC-ENGINE §5 rule 7).
 //!
 //! Every hook an agent calls is silent and exits 0, whatever happens: a
 //! failure goes to stderr and never blocks the agent ([`run_agent_hook`]).
@@ -1123,8 +1124,10 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
 }
 
 /// `seldon hook install claude-code [--settings PATH]`: adds each of
-/// [`CLAUDE_HOOKS`] that is not there yet ([`merge_claude_hooks`]) and
-/// commits the logbook when its own settings file changed.
+/// [`CLAUDE_HOOKS`] that is not there yet ([`merge_claude_hooks`]),
+/// records a written file under a watched path as the engine's own write
+/// (so the next capture explains its config event), and commits the
+/// logbook when its own settings file changed.
 fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     let (path, logbook) = match settings {
         Some(p) => (ctx.dirs.expand(&p.to_string_lossy()), None),
@@ -1138,6 +1141,19 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     };
     let shown = ctx.dirs.display(&path);
     let Merged { added, present } = merge_claude_hooks(&path, &shown)?;
+    let own = (!added.is_empty()).then(|| {
+        let config = match &logbook {
+            Some((config, _)) => config.clone(),
+            // `--settings` works without a config; then the default paths
+            None => ctx.load_config().ok().flatten().unwrap_or_default(),
+        };
+        super::setup::record_own_writes(
+            ctx,
+            &config,
+            std::slice::from_ref(&path),
+            "seldon hook install claude-code",
+        )
+    });
     let mut commit = None;
     if !added.is_empty()
         && let Some((config, logbook)) = &logbook
@@ -1156,6 +1172,9 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     for p in &present {
         let _ = write!(human, "\n  present  {p}");
     }
+    if let Some(Err(e)) = &own {
+        let _ = write!(human, "\n{shown}: {}", super::setup::own_writes_warning(e));
+    }
     if let Some(c) = &commit {
         human.push_str(&c.human());
     }
@@ -1165,6 +1184,7 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
             "settings": path,
             "added": added,
             "present": present,
+            "ownWrites": own.as_ref().map_or(Value::Null, super::setup::own_writes_json),
             "git": commit.map_or(Value::Null, |c| c.json()),
         }),
     ))

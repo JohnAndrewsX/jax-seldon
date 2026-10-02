@@ -20,6 +20,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
+| `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by}}`: files the engine wrote itself under a watched path (`init --theme-hook`, `hook install`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); written under the lock, removed by the next capture that runs the config collector |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
 
@@ -156,7 +157,8 @@ banner states parse the doctor shape; it is not part of `schema/`.
 
 ```
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
-                          "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}]}
+                          "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
+                          "sinceIgnored":[…],"explainedOwn":N}   # explainedOwn: §5 rule 7
                          exit 0 also when a collector is degraded (ok:false + fix, ADR-0011);
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
 ```
@@ -182,7 +184,8 @@ seldon init --json   → {logbook, config, machineId, language, files, obsidian,
                         capture:{ran, since, written, files, collectors, sinceIgnored, openDrift, crisis,
                                  baseline:{reason, items, events}|null, git} | {ran:false, reason|error},
                         dossier:{ran:true, files, sections, counts, git, warnings} | {ran:false, reason|error},
-                        themeHook:{requested, installed, already?, script?, hook?, error?, fix?}, nextSteps}
+                        themeHook:{requested, installed, already?, script?, hook?, error?, fix?,
+                                   ownWrites?: ["~/path"] | {error}}, nextSteps}
 seldon agent start <caseId> --json → {launched, launcher, program, argv (with the "{prompt}" placeholder,
                         never the prompt), case, cwd, previousActiveCase}; exit 1 for a case that is not
                         active (queued → hint `seldon plan start`), an unknown launcher, or a launcher
@@ -344,6 +347,28 @@ After every capture:
    `hyprland`, `omarchy`, `quickshell`), else red. Other sources are
    never grouped.
 6. Red zone → `crisis: true`.
+7. **The engine's own writes (WP-038).** A file the engine writes itself
+   under a watched path — the theme hook script that `init --theme-hook`
+   has `omarchy hook install` copy to
+   `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh`, a Claude
+   Code settings file `hook install` writes under a watched path — is
+   recorded right after the write, under the lock, in
+   `$XDG_STATE_HOME/seldon/owned.json`: its `~`-path, the sha256 of its
+   content, and the command (`by`). Only paths the config collector
+   hashes are recorded (under `watchPaths`, not in `skipPaths`). The next
+   capture that runs the config collector appends, after the collector
+   events and under the same lock, one `explained` resolution per new
+   `config-add|config-change` without a case whose subject and
+   `meta.hashTo` match a record: `source: seldon`, actor `system`, no
+   case, detail `installed by <by>` (e.g. `installed by seldon init
+   --theme-hook`). Then it forgets every record, matched or not: the
+   collector has seen each file — as an event, in its baseline, or with
+   content someone else wrote, which stays drift. The config event stays
+   in the ledger with its own actor; the index folds the resolution
+   (ADR-0021: no case, so none is folded) and the event is no drift. A
+   capture without the config collector keeps the records. Files the
+   wizard writes before its first capture (the harnesses inside the
+   logbook) are part of that capture's config baseline and need no record.
 
 Resolution events (`kind: resolution`, `refersTo`) are applied when the
 index is built; an event with a resolution is not drift. `seldon drift
@@ -422,7 +447,12 @@ logbook, a broken config or a held lock (waited for up to 2 s), under
 `SessionStart` and `SessionEnd` (timeout 60 s, Claude Code's cap; `Stop`
 would fire after every reply) into `<logbook>/.claude/settings.json`
 without clobbering existing hooks, idempotently; the merged file is
-written with sorted keys. Other agents call `hook generic` themselves.
+written with sorted keys. When it writes a file under a watched path
+(e.g. `--settings ~/.claude/settings.json` with `~/.claude` watched), it
+records the file as the engine's own write (§5 rule 7), so the next
+capture explains its config event; `--json` adds `ownWrites` (the
+recorded `~`-paths, `{error}` when they could not be recorded, `null` when nothing
+was added). Other agents call `hook generic` themselves.
 
 `seldon hook session-start` prints a compact context block to stdout:
 STATUS summary, active case (id, title, plan steps), last 5 journal lines,
@@ -458,15 +488,18 @@ logbook → pre-Seldon baseline (`--baseline`, or asked interactively with
 the item count, default yes): one `dismissed` resolution per open drift
 *member*, reason `pre-Seldon baseline`, actor `human`, `meta.txId` on
 groups, one ledger write over every open item (not capped), events stay
-→ theme hook on opt-in only: the embedded script is written to
+→ commit `seldon: first capture[ and pre-Seldon baseline]` → index
+rebuild → `seldon dossier` once, all sections, its own commit `seldon:
+dossier` (only after a first capture; `--no-capture` adds `seldon
+dossier` to the next steps, WP-035) → theme hook on opt-in only: the
+embedded script is written to
 `$XDG_STATE_HOME/seldon/hooks/seldon-theme-set.sh` and `omarchy hook
 install theme-set <script>` runs once (skipped when
 `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh` exists; a
-failure prints the manual command) → commit `seldon: first capture[ and
-pre-Seldon baseline]` → index rebuild → `seldon dossier` once, all
-sections, its own commit `seldon: dossier` (only after a first capture;
-`--no-capture` adds `seldon dossier` to the next steps, WP-035) → next
-steps (`seldon drift` when drift stays open). A failure after the layout is reported, never fatal.
+failure prints the manual command); the installed copy is recorded as
+the engine's own write (§5 rule 7), so the next capture's `config-add`
+for it is explained and opens no drift (WP-038) → next steps (`seldon
+drift` when drift stays open). A failure after the layout is reported, never fatal.
 `--non-interactive`: flags, then the existing config, then: `~/Seldon`,
 language from the locale, all collectors, default watched paths,
 harnesses from the config (none on a fresh machine), git on, first

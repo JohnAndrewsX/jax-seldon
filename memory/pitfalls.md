@@ -668,3 +668,27 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   touch only the files whose content changed (and keep the hot reloads to
   those), use `rsync -rp --checksum`. Whether an mtime-only change
   triggers a reload was not tested.
+
+## 2026-10-02 · WP-038 (Engine)
+
+- **A test stub runs with the test's PATH: the stub directory only.**
+  An `omarchy` stub that copies files (`cp`, `mkdir`, `chmod`) finds
+  none of them and fails silently. Set `PATH=/usr/bin:/bin` as the first
+  line of such a stub (`tests/own_writes.rs`).
+- **A config event's time is the file's mtime, not the capture's.**
+  The attribution window (ADR-0017) compares the hook command's start
+  with that mtime (clamped to the last check), so a late capture still
+  attributes an agent's edit. What a late capture misses is an edit that
+  was reverted before it ran: the hashes match again and there is no
+  event at all.
+- **The init order matters for the engine's own files.** The theme hook
+  is installed *after* the first capture, so the config baseline does not
+  contain it and the next capture reports a `config-add`. Harness files
+  are written before the first capture and are in the baseline. Rule 7
+  (`owned.json`) covers the first case; moving the install earlier would
+  have hidden the event instead of explaining it.
+- **The repository guard matches strings anywhere in a Bash command,**
+  also inside a read-only `grep` pattern: a pattern that contained a
+  package-manager install string was blocked as a red-zone package
+  command. Leave such strings out of search patterns; report the block,
+  do not rephrase the same search around it.

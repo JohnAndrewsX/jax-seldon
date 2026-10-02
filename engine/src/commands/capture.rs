@@ -16,7 +16,9 @@
 //! Before the append, the shared attribution pass gives config, theme and
 //! plugins events the actor and case of the agent command that provably
 //! caused them (`attribution.rs`). The pacman and omarchy collectors
-//! attribute their own events.
+//! attribute their own events. After the append, a run of the config
+//! collector explains the files the engine wrote itself (`init
+//! --theme-hook`, `hook install`; SPEC-ENGINE §5 rule 7).
 
 use std::fmt::Write as _;
 
@@ -25,6 +27,7 @@ use serde_json::json;
 
 use super::{Context, Output};
 use crate::attribution;
+use crate::collectors::config::OwnWrites;
 use crate::collectors::{self, CollectorState, Ctx, Cursors, REGISTRY, Sources, Tz};
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -111,10 +114,31 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     // WP-008: reconciliation, the attributed collector event ids into
     // their case files (ADR-0012 §10); warnings only, the append is done
     crate::reconcile::after_capture(&logbook, &ledger, &written);
+    // rule 7: only a run of the config collector has seen the own writes
+    let mut explained = 0;
+    if reports.iter().any(|r| r.name == "config" && r.ran && r.ok) {
+        let (n, warnings) = crate::reconcile::explain_own_writes(
+            &lock,
+            &ledger,
+            &OwnWrites::file(&ctx.dirs),
+            &written,
+            now,
+        );
+        explained = n;
+        for w in warnings {
+            eprintln!("seldon: warning: {w}");
+        }
+    }
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
-    Ok(render(&logbook, &written, &reports, &since_ignored))
+    Ok(render(
+        &logbook,
+        &written,
+        &reports,
+        &since_ignored,
+        explained,
+    ))
 }
 
 /// The collectors to run, in registry order.
@@ -230,6 +254,7 @@ fn render(
     written: &[Event],
     reports: &[CollectorReport],
     since_ignored: &[&str],
+    explained: usize,
 ) -> Output {
     let ok = reports.iter().all(|r| r.ok);
     let mut files: Vec<String> = written
@@ -259,6 +284,7 @@ fn render(
         "files": files,
         "collectors": collectors,
         "sinceIgnored": since_ignored,
+        "explainedOwn": explained,
     });
 
     let mut human = format!("Captured {} new event(s).", written.len());
@@ -273,6 +299,12 @@ fn render(
         if let Some(f) = &r.fix {
             let _ = write!(human, "\n           fix: {f}");
         }
+    }
+    if explained > 0 {
+        let _ = write!(
+            human,
+            "\nnote: {explained} config event(s) explained as written by seldon itself"
+        );
     }
     if !since_ignored.is_empty() {
         let _ = write!(

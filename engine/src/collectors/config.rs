@@ -22,6 +22,12 @@
 //! the file keeps the generation before the newest one too: when a write
 //! fails, the next run diffs against the generation its cursor names and
 //! nothing is lost. The first run (no cursor) is a baseline: no events.
+//!
+//! The engine's own writes (SPEC-ENGINE §5 rule 7): when `init` or `hook
+//! install` writes a file this collector would hash, it records the file's
+//! hash and the command in `$XDG_STATE_HOME/seldon/owned.json`
+//! ([`OwnWrites`], [`record_own_writes`]). The next capture that runs this
+//! collector explains the matching event (`crate::reconcile::explain_own_writes`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
@@ -35,7 +41,8 @@ use serde_json::Value;
 
 use super::plugins::Plugins;
 use super::{Collector, Ctx, Outcome, Tz, to_cursor, typed_cursor};
-use crate::config::Dirs;
+use crate::config::{Config, Dirs};
+use crate::logbook::lock::Lock;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys;
 
@@ -114,6 +121,112 @@ impl Manifest {
             .chain(&self.previous)
             .find(|g| g.hash == hash)
     }
+}
+
+/// File name of the engine's own writes in the state directory
+/// (SPEC-ENGINE §2, §5 rule 7).
+pub const OWNED_FILE: &str = "owned.json";
+
+/// One file the engine wrote under a watched path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnWrite {
+    /// SHA-256 of the content the engine wrote.
+    pub hash: String,
+    /// The command that wrote it (`seldon init --theme-hook`).
+    pub by: String,
+}
+
+/// `owned.json`: `~`-path → the engine's own write that the next config
+/// event for that path may still report.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnWrites(pub BTreeMap<String, OwnWrite>);
+
+impl OwnWrites {
+    /// `owned.json` in the state directory.
+    pub fn file(dirs: &Dirs) -> PathBuf {
+        dirs.state_dir.join(OWNED_FILE)
+    }
+
+    /// Reads `path`: empty when it is missing or not a valid file (a lost
+    /// record only means one more drift item), `Err` on an I/O error.
+    pub fn load(path: &Path) -> std::io::Result<OwnWrites> {
+        match std::fs::read(path) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes).unwrap_or_default()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(OwnWrites::default()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Writes `path`, or removes it when nothing is recorded.
+    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+        if self.0.is_empty() {
+            return match std::fs::remove_file(path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    Err(anyhow::Error::new(e).context(format!("cannot remove {}", path.display())))
+                }
+                _ => Ok(()),
+            };
+        }
+        let mut text = serde_json::to_string_pretty(self)?;
+        text.push('\n');
+        sys::write_atomic(path, text.as_bytes())
+    }
+
+    /// The write that explains a config event: same `~`-path, and the
+    /// event's new hash is the one the engine wrote.
+    pub fn explaining(&self, e: &Event) -> Option<&OwnWrite> {
+        let hash = e.meta.hash_to.as_deref()?;
+        self.0.get(&e.subject).filter(|w| w.hash == hash)
+    }
+}
+
+/// Whether the config collector hashes `path`: it lies under a watch path
+/// and matches no `[redaction] skipPaths` pattern.
+pub fn is_watched(dirs: &Dirs, config: &Config, path: &Path) -> bool {
+    config
+        .watch_paths
+        .iter()
+        .any(|w| path.starts_with(dirs.expand(w)))
+        && !SkipPaths::new(&dirs.home, &config.redaction.skip_paths).matches(path)
+}
+
+/// Records each of `paths` that the config collector hashes as the
+/// engine's own write by `by`, with the hash of its content now
+/// (SPEC-ENGINE §5 rule 7). Returns the `~`-paths recorded; the lock
+/// proves that no capture reads the file meanwhile.
+pub fn record_own_writes(
+    _lock: &Lock,
+    dirs: &Dirs,
+    config: &Config,
+    paths: &[PathBuf],
+    by: &str,
+) -> anyhow::Result<Vec<String>> {
+    let mut recorded = Vec::new();
+    let file = OwnWrites::file(dirs);
+    let mut own = OwnWrites::load(&file)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", dirs.display(&file)))?;
+    for path in paths.iter().filter(|p| is_watched(dirs, config, p)) {
+        let Some(hash) = std::fs::metadata(path)
+            .ok()
+            .filter(|m| m.is_file())
+            .and_then(|m| hash_file(path, m.len()))
+        else {
+            continue; // not hashed, so never reported either
+        };
+        let key = dirs.display(path);
+        own.0.insert(
+            key.clone(),
+            OwnWrite {
+                hash,
+                by: by.to_string(),
+            },
+        );
+        recorded.push(key);
+    }
+    if !recorded.is_empty() {
+        own.save(&file)?;
+    }
+    Ok(recorded)
 }
 
 /// The config collector's cursor.
@@ -503,6 +616,57 @@ mod tests {
             hash_detail(Some("40ab11785348"), None),
             "sha256 40ab1178 → —"
         );
+    }
+
+    #[test]
+    fn an_own_write_explains_only_its_path_and_hash() {
+        let own = OwnWrites(
+            [(
+                "~/.config/omarchy/hooks/theme-set.d/x.sh".to_string(),
+                OwnWrite {
+                    hash: "aa".into(),
+                    by: "seldon init --theme-hook".into(),
+                },
+            )]
+            .into(),
+        );
+        let event = |subject: &str, hash: Option<&str>| {
+            Event::new(
+                DateTime::parse_from_rfc3339("2026-10-02T09:20:00+02:00").unwrap(),
+                Source::Config,
+                Kind::ConfigAdd,
+                subject,
+            )
+            .meta(Meta {
+                hash_to: hash.map(String::from),
+                ..Meta::default()
+            })
+        };
+        let path = "~/.config/omarchy/hooks/theme-set.d/x.sh";
+        assert!(own.explaining(&event(path, Some("aa"))).is_some());
+        assert!(own.explaining(&event(path, Some("bb"))).is_none());
+        assert!(own.explaining(&event(path, None)).is_none(), "a removal");
+        assert!(own.explaining(&event("~/.bashrc", Some("aa"))).is_none());
+        let text = serde_json::to_string(&own).unwrap();
+        assert_eq!(serde_json::from_str::<OwnWrites>(&text).unwrap(), own);
+    }
+
+    #[test]
+    fn own_writes_count_only_under_watched_paths() {
+        let dirs = Dirs {
+            home: PathBuf::from("/home/user"),
+            xdg_config_home: PathBuf::from("/home/user/.config"),
+            state_dir: PathBuf::from("/home/user/.local/state/seldon"),
+        };
+        let mut config = Config::default();
+        config.redaction.skip_paths = vec!["*.key".into()];
+        let watched = |p: &str| is_watched(&dirs, &config, Path::new(p));
+        assert!(watched(
+            "/home/user/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh"
+        ));
+        assert!(!watched("/home/user/Seldon/.claude/settings.json"));
+        assert!(!watched("/home/user/.config/omarchy/x.key"));
+        assert!(!watched("/home/user/.config/omarchyx/a"));
     }
 
     #[test]
