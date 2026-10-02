@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test check-watch check-packaging check-install schema-validate plugin-validate qmllint plugin-test
+check: fmt-check clippy test check-watch check-packaging check-install schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -76,6 +76,14 @@ schema-validate:
       exit 0
     fi
     bash scripts/validate-fixtures.sh
+
+# The user guide (WP-045): relative links and anchors, the same pages and
+# structure in every language under docs/user/, the German source lines,
+# every `seldon …` in the guide against the engine's --help, and the CLI
+# reference's help blocks equal to `seldon <command> --help`
+# (`bash scripts/docs-check.sh --write` regenerates them).
+docs-check:
+    bash scripts/docs-check.sh
 
 # `omarchy plugin validate plugin/` (host only).
 plugin-validate:
