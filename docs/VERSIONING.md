@@ -78,9 +78,10 @@ plugin, or the other way round.
 1. A heading `## [X.Y.Z] - YYYY-MM-DD` for exactly the tagged version,
    with the `[Unreleased]` lines moved under it and a non-empty body.
    The release workflow publishes this section, without its heading, as
-   the GitHub release notes (`packaging/release-notes.sh`); **without it
-   the `release` job fails** and nothing is published — no GitHub
-   release, no AUR push, no plugin push.
+   the GitHub release notes (`packaging/release-notes.sh`). **Without it
+   the `build` job fails** — in the dry run and in the tag build — and
+   nothing is published: no GitHub release, no AUR push, no plugin push.
+   The `release` job checks again before it creates the release.
 2. An empty `## [Unreleased]` heading above it.
 3. The link references at the end updated:
    `[Unreleased]: …/compare/vX.Y.Z...HEAD` and
@@ -108,6 +109,7 @@ All on `main`, after every work package of the release is merged:
    release with the CHANGELOG section as its notes, then the AUR package
    and the plugin repository.
 
-If the `release` job fails on the notes, no release exists yet: fix the
-CHANGELOG on `main`, then move the tag to the fixed commit (delete it
-locally and on GitHub, tag again, push). This is the operator's step.
+The dry run in step 4 already fails without the section. If a tag
+build fails on it anyway, no release exists yet: fix the CHANGELOG on
+`main`, then move the tag to the fixed commit (delete it locally and on
+GitHub, tag again, push). This is the operator's step.

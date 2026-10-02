@@ -14,8 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Covenant 2.1), issue forms for bugs and features, a pull request
   template, docs/VERSIONING.md (SemVer, `contractVersion`, tag flow).
 - Release notes come from the version's CHANGELOG.md section; the
-  release job fails when it is missing (`packaging/release-notes.sh`).
-- CI runs `cargo audit` as a non-blocking advisory job.
+  release workflow (dry run included) fails when it is missing
+  (`packaging/release-notes.sh`).
+- `cargo audit` runs weekly and on lock-file changes as a non-blocking
+  advisory workflow (`audit.yml`); the plugin repository has a security
+  policy too.
 
 ## [0.1.0] - 2026-10-02
 

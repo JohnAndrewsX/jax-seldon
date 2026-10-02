@@ -11,6 +11,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Lint | `clippy` | `cargo clippy --all-targets -- -D warnings` | yes |
 | Tests | `test` | `cargo test` (unit + CLI tests in `engine/tests/`) | yes |
 | Watch feature | `check-watch` | `cargo clippy --all-targets --features watch -- -D warnings`, `cargo test --features watch` (see "The `watch` feature") | yes |
+| Packaging | `check-packaging` | `bash -n` and (when installed) `shellcheck` on `packaging/PKGBUILD` and its scripts, `packaging/check-srcinfo.sh` (`.SRCINFO` in step with the PKGBUILD), `bash tests/release/release-notes.test.sh` (the release body from `CHANGELOG.md`: the real `0.1.0` section, a middle and a last section, outer blank lines trimmed; missing, empty and prefix-only versions, malformed input exit 1) | yes |
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
