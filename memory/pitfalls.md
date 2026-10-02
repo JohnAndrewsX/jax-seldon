@@ -710,3 +710,27 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The test host's ssh alias is in memory/local.md**, not `test`
   (`SELDON_TEST_HOST` default); check `omarchy-shell lock status` with
   `OMARCHY_PATH` exported in the same ssh call.
+
+## 2026-10-02 · WP-043 (vault import)
+
+- **The operator's vault and `~/Seldon` are off limits for writes.**
+  Run the real-vault dry run with HOME and all three `XDG_*` in one
+  scratch dir, `SELDON_TEST_GUARD` set, `--logbook` on a scratch copy of
+  `fixtures/logbook/`, and checksum the vault before and after
+  (`find -type f -print0 | sort -z | xargs -0 sha256sum`). Never paste
+  vault titles or text into handovers or commits: counts and ids only.
+- **Python's `glob('**/*.json')` skips dot directories.** The fixture
+  vault's `.obsidian/app.json` is therefore not seen by
+  `validate-fixtures` (every other JSON under `fixtures/` needs a schema
+  mapping). If that script ever sets `include_hidden`, map or exclude
+  `vaults/`.
+- **`init` creates `work/active/` with a `.gitkeep`.** "No active case"
+  in a test means "no `C-*.md` in `work/active/`", not "the directory is
+  absent or empty".
+- **Fixture homes are `/home/user`** (fixtures/README.md). A synthetic
+  vault that uses another fake user name breaks that convention.
+- **The kit's deviations are not a table.** `system/deviations.md` is a
+  list of `### Qn — …` entries with `Datum:` and the path somewhere in
+  a code span; some name no path at all (software lists), some share a
+  path. The importer takes the first `~/…` or `/…` span of the heading,
+  else of the body, and reports the rest.

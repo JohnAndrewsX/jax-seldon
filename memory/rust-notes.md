@@ -534,3 +534,30 @@ Append-only. One bullet per finding, newest section last.
   when missing or unparsable (a lost record costs one drift item), and
   remove the file on save when nothing is left (`OwnWrites::save`), so
   `owned.json` exists only while a record waits.
+
+## 2026-10-02 · WP-043 (vault import)
+
+- **Plan first, write later.** `import::omarchy_agent::plan` reads the
+  vault and the logbook and returns every file with its final bytes
+  (case bodies, whole journal days, whole memory files, a
+  `dossier::Files` with the fence set). The dry run renders the report
+  from the plan; `--apply` writes the same plan. The golden report and
+  the applied files can therefore never disagree.
+- **Ledger ids flow into frontmatter after the append.** The case's
+  `events: [<note id>]` is only known from `emit`'s returned events, so
+  the plan keeps `Case.events` empty and `render_new` runs after the
+  append (ledger first, as in `plan new`).
+- **Lenient YAML for foreign files.** Kit frontmatter has comments,
+  empty values and placeholder dates. `serde_yaml::Value` →
+  `Mapping` plus small `yaml_str`/`yaml_list` getters is enough; the
+  typed `Record` path (`model::parse`) is for Seldon's own files only.
+  A bare `2026-08-14` deserialises as a string in serde_yaml 0.9.
+- **Markdown helpers must be fence-aware.** Kit cases and journals hold
+  `## …` lines inside ``` blocks (shell output, quoted docs). Section
+  splitting, session splitting, deviation entries and heading demotion
+  all toggle on ``` / ~~~ lines, like `cases::headings`.
+- **No look-behind in `regex`.** The home-path rule keeps a prefix
+  group instead: `(^|[\s`'"(\[<=:,;*])/home/[A-Za-z0-9._-]+` → `${1}~`,
+  so `backups/home/x` stays untouched.
+- **A FixedOffset is a TimeZone too.** `offset.from_local_datetime(&naive)`
+  is the fallback when `Local` has no local midnight (DST gap).
