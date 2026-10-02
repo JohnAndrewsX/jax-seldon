@@ -81,7 +81,7 @@ journal text, `PROJECT.md`, `AGENTS.md`, `areas/`, `memory/`,
 parts of `system/`. Edit them in any editor. The engine reads them and
 keeps your text.
 
-Two things help the engine help you:
+Two habits make the engine more useful:
 
 - In a case's *Plan*, name packages and paths exactly as they will appear
   (`zed`, `~/.config/hypr/bindings.lua`). When a change matches, Seldon
@@ -172,7 +172,7 @@ change `logbook` in `~/.config/seldon/config.toml`. The engine's state
 another, the collectors start over from the current state.
 
 To keep a second logbook, for a test, run `seldon init --path <DIR>`.
-Note that `init` sets the new folder as `logbook` in the config. Change
+`init` sets the new folder as `logbook` in the config. Change
 it back, or use `--logbook <DIR>` for single commands.
 
 ---

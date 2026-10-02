@@ -71,7 +71,7 @@ you never delete it by hand.
 
 `seldon doctor` says `snapper degraded: No permissions`. Omarchy does not
 let your user list snapshots. Seldon works without them; the timeline
-just has no snapshot markers. To allow it, run once:
+then has no snapshot markers. To allow it, run once:
 
 ```sh
 sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
@@ -120,8 +120,8 @@ seldon drift show <EVENT> --json
 
 shows the event with every member of its group, the actor and, for
 packages, the command that ran. Check the journal and the agents' notes
-of that day. If you still do not know, leave it open. Open drift is
-honest; a wrong explanation is not.
+of that day. If you still do not know, leave it open and write a note
+in the journal. A wrong explanation misleads you later.
 
 ### An agent's commands are not recorded
 

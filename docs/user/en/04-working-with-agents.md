@@ -9,8 +9,8 @@ review the result.
 
 Seldon records. Hooks tell the engine which commands an agent runs, and
 the engine writes them into the ledger with the agent's name and the
-active case. Afterwards you can see every change the agent made, next to
-the plan it was given.
+active case. Afterwards you see the changes the agent made next to the
+plan it was given.
 
 Seldon does not guard. A hook never stops a command, never asks for
 permission and never changes what the agent does. If you want limits,
@@ -115,8 +115,8 @@ Every session then writes into your logbook, with the active case.
 ## The active case
 
 The case you started last is the active case. Its id is in
-`.seldon/active-case` in the logbook. Every hook reads it, so every
-command an agent runs lands on that case, wherever the agent works.
+`.seldon/active-case` in the logbook. The hooks read it, so each command
+an agent runs lands on that case, wherever the agent works.
 
 - `seldon plan start <ID>` makes a case active.
 - `seldon plan done` and `seldon plan drop` clear it, if it names that
@@ -187,10 +187,8 @@ fails, its error is in `~/.local/state/seldon/agent-launch.log`.
 
 ## Other agents
 
-Any agent can tell Seldon what it does with three commands. Codex, a
-script or an agent of your own calls them itself:
-
-At the start of a session, for context:
+Codex, a script or an agent of your own reports to Seldon with three
+commands. At the start of a session, for context:
 
 ```sh
 seldon hook session-start
@@ -224,7 +222,7 @@ into Seldon, see [Import from omarchy-agent](09-import-from-omarchy-agent.md).
 
 ## Review what the agent did
 
-The case's trace is the list of its events, in order:
+The case file lists the ids of its events, oldest first:
 
 ```sh
 seldon plan show C-2026-003
@@ -232,11 +230,11 @@ seldon plan show C-2026-003
 
 In the panel:
 
-- Changelog, filter `agent`: every command an agent ran, with the case.
+- Changelog, filter `agent`: the commands agents ran, with their case.
 - Today: the agent's journal notes and the "session ended" line.
 - Work: the case card with its steps.
 
-Every engine step is a git commit in the logbook. `git -C ~/Seldon log -p`
+Each engine step is a git commit in the logbook. `git -C ~/Seldon log -p`
 shows what changed in each file, including the case's *Plan* and *Log*.
 Then run `seldon drift`. Anything the agent changed without the hooks
 seeing it shows up there.

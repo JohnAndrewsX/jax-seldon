@@ -53,7 +53,7 @@ Tokyo Night theme. Your panel uses your theme and shows your data.
 *Sample data.*
 
 Today shows the date and today's counts: events today and in seven days,
-active and queued cases, open drift. Below is the **QuickEntry**: type a
+active and queued cases, open drift. Below is the note field: type a
 note, press Enter, and it goes into today's journal through `seldon log`.
 Pick an open case under the field to file the note under it. The field
 empties only once the note is saved. Today's journal entries follow;
@@ -74,7 +74,7 @@ highlighted. Drift rows are marked in their zone's colour and carry a
 *Capture now* runs a capture; the line below says what it found. *Ledger*
 opens this month's ledger view in your editor.
 
-**Resolve drift.** Press Enter on a drift row, click *Resolve…*, or click
+To resolve drift, press Enter on a drift row, click *Resolve…*, or click
 the red line. The drift sheet shows what changed, who did it, when, its
 zone, the proposed case and every package of a transaction. Pick one
 action:
@@ -171,16 +171,14 @@ The panel's keys work while the panel is open.
 | `e` | open this tab's file in your editor |
 | Esc | close |
 
-**Two-press arming.** Actions that write take two presses on the
-keyboard: *Start*, *Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`),
+Actions that write take two presses on the keyboard: *Start*, *Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`),
 the drift sheet and a new decision. The first Enter arms the action and
 the card says "Press Enter again: Start C-2026-005". The second press
 sends it. Any other key in a list disarms it. A note and a new case are
 sent with one Enter. With the mouse, one click sends, except *Drop* and
 *Start agent*, which ask for a second click.
 
-**Fields and sheets.** While a text field or a sheet has focus, every key
-goes to it. Tab and Shift-Tab walk its fields. Esc gives the keys back to
+While a text field or a sheet has focus, every key goes to it. Tab and Shift-Tab walk its fields. Esc gives the keys back to
 the panel and keeps what you typed.
 
 ## The Prime Radiant
@@ -236,7 +234,7 @@ so the result is the same:
 
 | In the panel | In a terminal |
 |---|---|
-| QuickEntry | `seldon log -- "Text"` |
+| note field | `seldon log -- "Text"` |
 | *Capture now* | `seldon capture` |
 | *New case* | `seldon plan new -- "Title"` |
 | *Start*, *Verify*, *Done*, *Drop* | `seldon plan start <ID>` and so on |

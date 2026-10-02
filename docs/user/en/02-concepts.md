@@ -13,12 +13,12 @@ A hand-written changelog has the reasons until you stop writing it.
 
 Seldon keeps both and compares them:
 
-- It **records** what changed. Collectors read the package log, snapper,
+- It records what changed. Collectors read the package log, snapper,
   the Omarchy version, the shell plugins, the theme and your config files.
   Agent hooks record the commands an agent runs.
-- It **plans** what should change. You write cases: one Markdown file per
+- It holds what you plan to change. You write cases: one Markdown file per
   planned change.
-- It **shows the difference**. A change that no case covers is drift.
+- It shows the difference. A change that no case covers is drift.
   You decide what it was.
 
 Seldon is a recorder. It never changes your system, never runs a package
@@ -34,7 +34,7 @@ the Plan predicts, and a crisis is where reality leaves the Plan.
 | Engine | the program `seldon` | the only writer of the logbook; you and your agents call it |
 | Plugin | `jax.seldon` in the Omarchy bar | shows the logbook; every action calls the engine |
 
-The plugin reads one file, the **index**
+The plugin reads one file, the index
 (`~/.local/state/seldon/index.json`). The engine rebuilds it after every
 command. You never edit it; deleting it loses nothing, because
 `seldon status` writes it again.
@@ -44,18 +44,18 @@ command. You never edit it; deleting it loses nothing, because
 The logbook is a normal folder of Markdown files. You can read it in any
 editor, in Obsidian or on GitHub. It has two kinds of record:
 
-- The **ledger** (`ledger/YYYY-MM.jsonl`) is written by the machine. Each
-  line is one **event**: a package installed, a theme switched, a config
+- The ledger (`ledger/YYYY-MM.jsonl`) is written by the machine. Each
+  line is one event: a package installed, a theme switched, a config
   file changed, a note written, a case started. The ledger is
   append-only. Nothing in it is ever edited or deleted; a correction is a
   new event.
-- The **journal** (`journal/YYYY/YYYY-MM-DD.md`) is written by people and
+- The journal (`journal/YYYY/YYYY-MM-DD.md`) is written by people and
   agents. It holds the why: what you tried, what you learned.
 
-A ledger without a journal is a syslog. A journal without a ledger is
-fiction. Seldon keeps both and links them by case ids.
+Seldon links the two by case ids: a journal entry and the events it
+talks about carry the same case.
 
-Each event has a **source**. There are nine:
+Each event has a source. There are nine:
 
 | Source | What it records |
 |---|---|
@@ -73,7 +73,7 @@ Each event has a **source**. There are nine:
 
 ## Cases
 
-A **case** is one planned change, in one Markdown file under `work/`. It
+A case is one planned change, in one Markdown file under `work/`. It
 has an id like `C-2026-004`, a title, a zone, a risk, an area and four
 sections:
 
@@ -100,14 +100,14 @@ The order is fixed: queued, active, verification, completed. A completed
 or dropped case stays closed. Every step is a ledger event and a git
 commit.
 
-The case started last is the **active case**. Its id is in
+The case started last is the *active case*. Its id is in
 `.seldon/active-case`. Agent hooks stamp every command they record with
-it, so the case collects its **trace**: the ordered list of what really
+it, so the case collects its *trace*: the ordered list of what
 happened while it was open.
 
 ## Zones
 
-Every event and every case has a **zone**. The zone says how much the
+Every event and every case has a zone. The zone says how much the
 change touches the system.
 
 | Zone | What falls in it |
@@ -121,7 +121,7 @@ changes are recorded only by agent hooks, and only while a case is active.
 
 ## Risk
 
-Every case also has a **risk**, from `R0` to `R3`. The risk is your
+Every case also has a risk, from `R0` to `R3`. The risk is your
 estimate of what it takes to undo the change.
 
 | Risk | Meaning |
@@ -136,7 +136,7 @@ starts as yellow, `R1`, unless you say otherwise.
 
 ## Drift
 
-**Drift** is an event that changes the system, has no case and has no
+Drift is an event that changes the system, has no case and has no
 resolution yet. Only changes can be drift: packages, Omarchy, plugins,
 theme and config. Snapshots, notes and case steps never are.
 
@@ -163,11 +163,11 @@ You resolve drift in one of three ways:
 The event stays in the ledger either way. The resolution is a new event
 that points to it. Packages from one transaction form one drift item: a
 routine upgrade of forty packages is one item, and one command resolves
-all of them. Add `--only` to resolve just the one event.
+all of them. Add `--only` to resolve that one event alone.
 
 ## Crisis
 
-A **crisis** is drift in the red zone. It has the same three actions. The
+A crisis is drift in the red zone. It has the same three actions. The
 pill and the panel show crises first, in your theme's error colour, with
 the line "N changes in the red zone need a reason".
 
@@ -180,19 +180,19 @@ always-red list (`linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`,
 ## Baseline
 
 A new logbook records from the moment you create it. The wizard can also
-**backfill**: record changes since a past date, from the package log and
+*backfill*: record changes since a past date, from the package log and
 snapper. None of those older changes belongs to a case, so each one opens
 as drift, and most of them as crises.
 
-The **baseline** settles that. After a backfill the wizard asks whether
+The baseline settles that. After a backfill the wizard asks whether
 to mark everything it found as the pre-Seldon baseline. Say yes, and the
 engine dismisses every open item with the reason "pre-Seldon baseline".
-The events stay in the ledger and on the charts; they just stop asking
-for a reason. Without a backfill there is nothing to baseline.
+The events stay in the ledger and on the charts; they no longer ask for
+a reason. Without a backfill there is nothing to baseline.
 
 ## Decisions
 
-A **decision** is a short record of a choice that shapes the machine,
+A decision is a short record of a choice that shapes the machine,
 in the ADR format (architecture decision record): context, decision,
 consequences. `seldon decide -- "<title>"` creates
 `decisions/ADR-NNNN-<slug>.md` with the status *proposed* and opens it in
@@ -201,7 +201,7 @@ file. The Decisions tab lists them.
 
 ## Memory
 
-**Memory** is what agents learned about this machine, in `memory/`.
+Memory is what agents learned about this machine, in `memory/`.
 `memory/lessons.md` has one `##` heading per lesson: what happened and
 what to do next time. Every agent reads it at the start of a session.
 Other files, such as `memory/hyprland.md`, hold notes on one topic. You
@@ -209,7 +209,7 @@ and your agents write these files directly; the engine only reads them.
 
 ## The dossier
 
-The **dossier** (`system/`) describes the machine as it is now: packages,
+The dossier (`system/`) describes the machine as it is now: packages,
 services, Omarchy version and theme, hardware, plugins and the files you
 changed against Omarchy's defaults. The engine fills the parts between
 `<!-- seldon:begin … -->` and `<!-- seldon:end -->` markers; you write
@@ -217,7 +217,7 @@ around them. See [Rebuild, dossier and update impact](08-rebuild-dossier-update-
 
 ## Capture
 
-A **capture** runs the collectors and appends new events to the ledger.
+A capture runs the collectors and appends new events to the ledger.
 It happens:
 
 - when you run `seldon capture`;

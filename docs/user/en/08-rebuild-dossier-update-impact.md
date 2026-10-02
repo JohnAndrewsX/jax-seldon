@@ -77,8 +77,8 @@ the guide reads the package list from it.
 | 7. Open questions | drift nobody decided yet; decide before you rebuild. Below it, what you dismissed on purpose and should not set up again |
 
 Each line names the case or event it comes from. The guide records paths
-and reasons, never file contents: it tells you *which* files to restore,
-your dotfiles hold *what* is in them.
+and reasons, never file contents. It names the files to restore; their
+content comes from your dotfiles or backup.
 
 The guide is generated. Text you add outside its markers stays; text
 inside is replaced each time. The command writes the file only when it

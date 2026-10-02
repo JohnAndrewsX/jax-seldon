@@ -2,15 +2,15 @@
 
 This page takes you from nothing to a working logbook in about fifteen
 minutes. You install the engine, create your logbook, add the bar plugin,
-record one unplanned change and plan one change as a case. Every step
+record one unplanned change and plan one change as a case. Each step
 shows the command and what you should see.
 
 ## What you need
 
 - Omarchy 4 with the Omarchy shell.
 - `git` (Omarchy has it).
-- A terminal. Every command on this page runs as your user. None of them
-  needs `sudo`.
+- A terminal. The commands on this page run as your user; none needs
+  `sudo`.
 
 Seldon only reads your system. It never installs a package, never edits
 a file outside its own folders and never blocks a command. It writes
@@ -81,8 +81,7 @@ take it. In a list, Space ticks or unticks an item and Enter confirms.
 | Make the logbook a git repository with a first commit? | yes |
 | Backfill since | leave empty |
 
-The backfill question deserves a word. Empty means Seldon records from
-now on. A date makes the first capture also record older changes. None of
+For the backfill, empty means Seldon records from now on. A date makes the first capture also record older changes. None of
 those belong to a case, so each one shows up as drift. The wizard then
 offers to mark them as the pre-Seldon baseline. Leave the backfill for
 later; [Concepts](02-concepts.md#baseline) explains it.
@@ -125,15 +124,15 @@ seldon doctor · ~/Seldon
 doctor: ok
 ```
 
-Every line should say `ok`, except `snapper`, which may say `degraded`.
+All lines should say `ok`, except `snapper`, which may say `degraded`.
 If you want snapshots on the timeline, run the fix that `doctor` prints.
 It changes the root snapper config, so the decision is yours. Seldon never
 runs it for you.
 
 ## Step 4: Add the bar plugin
 
-The plugin shows your logbook in the Omarchy bar. It is optional, but it
-is the easiest way to see what Seldon records.
+The plugin shows your logbook in the Omarchy bar. It is optional. With
+it you see at a glance what Seldon records.
 
 ```sh
 omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
@@ -187,8 +186,8 @@ test: it is visible and you can undo it in a second.
    ```
 
    The theme switch is **drift**: a change that no case covers. The last
-   column is the event id (yours is different). The pill in the bar now
-   shows `⟡ · 1`.
+   column is the event id (yours is different). If you added the plugin,
+   the pill in the bar now shows `⟡ · 1`.
 
 5. Explain it. Seldon then files it under a new, completed case:
 
@@ -282,7 +281,7 @@ Open the plugin's panel and press `2` for the Changelog. You see both
 theme switches, the notes and the case steps. Press `3` for Work: both
 cases sit in the Completed column.
 
-The logbook is plain Markdown. Every step you took is also a git commit:
+The logbook is plain Markdown, and each step you took is a git commit:
 
 ```sh
 git -C ~/Seldon log --oneline
@@ -298,9 +297,10 @@ seldon rebuild
 Wrote outputs/REBUILD.md: 0 package(s), 0 deviation(s), 1 plugin(s), 0 unit(s), 0 open
 ```
 
-Your counts differ. Open `~/Seldon/outputs/REBUILD.md`. It lists what a fresh Omarchy install
-needs to become this machine again: your own packages, changed files,
-plugins and the theme from step 6. It grows with every case you record.
+Your counts differ. Open `~/Seldon/outputs/REBUILD.md`. It lists what a
+fresh Omarchy install needs to become this machine again: your own
+packages, changed files, plugins and the theme from step 6. It grows
+with each case you record.
 [Rebuild, dossier and update impact](08-rebuild-dossier-update-impact.md)
 explains each section.
 

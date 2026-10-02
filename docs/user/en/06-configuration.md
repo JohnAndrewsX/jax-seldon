@@ -10,7 +10,7 @@ The engine reads `~/.config/seldon/config.toml`. `seldon init` writes it,
 and you can edit it with any editor. A change takes effect with the next
 `seldon` command; nothing needs a restart.
 
-Two things to know before you edit it:
+Before you edit it:
 
 - `seldon init` rewrites the file. It keeps keys it does not know, but it
   drops comments and reorders the keys. Keep notes elsewhere.
@@ -22,8 +22,10 @@ To use another file for one command, pass `--config <FILE>` or set
 
 ## A complete example
 
-This is the file the wizard writes with its defaults, plus an agent
-launcher. Your `logbook` line holds your own path.
+This is the file the wizard writes when you take its defaults and tick
+Claude Code. The `[agent]` section is left out of the file while it holds
+the default; it is shown here so you see the key. Your `logbook` line
+holds your own path.
 
 ```toml
 harnesses = ["claude-code"]
@@ -86,7 +88,7 @@ The logbook path is taken from, in this order: `--logbook`,
 Each collector only reads. Turn one off with `false`; `seldon capture
 --source <name>` still runs it on demand.
 
-A collector that cannot read its source is **degraded**: the capture goes
+A collector that cannot read its source is `degraded`: the capture goes
 on, and `seldon doctor` names the fix. Two cases are normal:
 
 - `snapper` needs your user in the snapper config's `ALLOW_USERS`. Omarchy
