@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="16" height="16" viewBox="0 0 16 16">
+  <title>a12-marker-16 case-span-end</title>
+  <desc>A12 timeline legend markers, 16 grid</desc>
+  <g id="mask" color="#000000">
+    <path id="case-span-end" d="M10 2L12 2L12 14L10 14L10 2ZM6 2L12 2L12 4L6 4L6 2ZM6 12L12 12L12 14L6 14L6 12Z" fill="currentColor"/>
+  </g>
+</svg>

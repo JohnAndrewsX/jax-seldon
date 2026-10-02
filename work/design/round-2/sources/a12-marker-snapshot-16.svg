@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="16" height="16" viewBox="0 0 16 16">
+  <title>a12-marker-16 snapshot</title>
+  <desc>A12 timeline legend markers, 16 grid</desc>
+  <g id="mask" color="#000000">
+    <path id="snapshot" d="M12.64 8C12.64 10.56 10.56 12.64 8 12.64C5.44 12.64 3.36 10.56 3.36 8C3.36 5.44 5.44 3.36 8 3.36C10.56 3.36 12.64 5.44 12.64 8Z" fill="currentColor"/>
+  </g>
+</svg>

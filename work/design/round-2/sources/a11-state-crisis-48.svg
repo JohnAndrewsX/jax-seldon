@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="48" height="48" viewBox="0 0 48 48">
+  <title>a11-state-48 crisis</title>
+  <desc>A11 state pictograms, 48 grid</desc>
+  <g id="mask" color="#000000">
+    <path id="crisis" d="M31.63 6.58C29.98 10.12 28.52 13.74 27.24 17.43C25.97 21.11 24.88 24.87 24 28.67C23.12 24.87 22.03 21.11 20.76 17.43C19.48 13.74 18.02 10.12 16.37 6.59L31.63 6.58ZM24 32.42L28.5 36.92L24 41.42L19.5 36.92L24 32.42Z" fill="currentColor"/>
+  </g>
+</svg>
