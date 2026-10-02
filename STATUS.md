@@ -257,7 +257,11 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
   from the AUR" under "Install options"; plugin/README: step 1 first
   sentence, the NOTE block, "Once the AUR package is live", the States
   row and the Security constants; docs/user 01 install order.
-- **Release v0.1.1 prepared 2026-10-02** (WP-038 self-attribution, WP-039
+- **Release v0.1.1 published 2026-10-03** (tag on the operator's go; GitHub
+  release with install.sh, the musl tarball, the source tarball and
+  SHA256SUMS; PKGBUILD/.SRCINFO bumped on main; plugin repository at
+  `v0.1.1`; AUR skipped, no account yet). The operator's end-to-end test of
+  install.sh on the laptop is next. Preparation record: (WP-038 self-attribution, WP-039
   panel width, WP-043 import, WP-050 advisory warning + alwaysRed, WP-049
   completions/man page/removal commands, update command → installer):
   version 0.1.1 in `engine/Cargo.toml` and `plugin/manifest.json`,
