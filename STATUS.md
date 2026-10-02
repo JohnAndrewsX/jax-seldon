@@ -14,13 +14,11 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-044 | GitHub install path: install.sh, uninstall, banner/README (AUR "coming soon") | Engine | `engine-044` (opus, high) | `wt/WP-044` · `wp/044-install-script` | 2026-10-02 |
-| WP-047 | Instructions for AI agents: llms.txt, AGENT-GUIDE, logbook AGENTS.md template | Docs | `docs-047` (opus, high) | `wt/WP-047` · `wp/047-agent-guide` | 2026-10-02 |
-| WP-048 | Repository hygiene: community files, templates, topics, release notes, cargo audit | Scaffold | `scaffold-048` (opus, high) | `wt/WP-048` · `wp/048-repo-hygiene` | 2026-10-02 |
+| WP-045 | User documentation in English and German (docs/user/<lang>/) | Docs | `docs-045` (opus, high) | `wt/WP-045` · `wp/045-user-docs` | 2026-10-02 |
 
 ## Queued (next up)
-WP-045 (user docs en+de) · WP-046 (README overhaul) · WP-049 (CLI polish; crates
-`clap_complete`/`clap_mangen` approved with the set) · WP-033 (update-impact, option C)
+WP-046 (README overhaul, after WP-045) · WP-049 (CLI polish; crates approved) ·
+WP-050 (ADR-0023 follow-ups) · WP-033 (update-impact, option C)
 · WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
 logbook migration)
 · WP-040/041 (packaging, docs) after WP-031. (see `work/queued/`)
@@ -33,11 +31,22 @@ logbook migration)
 - How to run the team: `docs/HERDR-SETUP.md`.
 
 ## Blocked
-| WP-044 | GitHub install path: install.sh, uninstall, banner/README (AUR "coming soon") | Engine | `engine-044` (opus, high) | `wt/WP-044` · `wp/044-install-script` | 2026-10-02 |
-| WP-047 | Instructions for AI agents: llms.txt, AGENT-GUIDE, logbook AGENTS.md template | Docs | `docs-047` (opus, high) | `wt/WP-047` · `wp/047-agent-guide` | 2026-10-02 |
-| WP-048 | Repository hygiene: community files, templates, topics, release notes, cargo audit | Scaffold | `scaffold-048` (opus, high) | `wt/WP-048` · `wp/048-repo-hygiene` | 2026-10-02 |
+| WP-045 | User documentation in English and German (docs/user/<lang>/) | Docs | `docs-045` (opus, high) | `wt/WP-045` · `wp/045-user-docs` | 2026-10-02 |
 
 ## Recently completed
+- 2026-10-02 WP-044 `install.sh` (verified download of the release asset,
+  `--uninstall`, `--force` for self-built binaries, 106 hermetic checks),
+  fourth release asset, "AUR: coming soon" in both READMEs and the
+  banner, the one-click fix runs the installer during the AUR pause
+  (ADR-0024) — merged after one review round; branch dry run green.
+- 2026-10-02 WP-048 CONTRIBUTING, SECURITY (private reporting on both
+  repos), Code of Conduct, issue forms, PR template, topics, release
+  notes from the CHANGELOG section (checked in the build job), weekly
+  `audit.yml`, VERSIONING.md — merged after one review round.
+- 2026-10-02 WP-047 `llms.txt`, `docs/AGENT-GUIDE.md`, the logbook
+  `AGENTS.md` rules in en and de (no CLAUDE.md), README pointers;
+  ADR-0023 (agent verifies, human closes; risk scale) — merged after one
+  review round.
 - 2026-10-02 WP-043 `seldon import omarchy-agent <vault> [--apply]`: cases,
   journal, knowledge and deviations mapped, ids renumbered on collision
   with references rewritten, redaction, dry-run report, marker-guarded
