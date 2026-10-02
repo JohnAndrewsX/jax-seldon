@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-043 | Import the operator's omarchy-agent vault (dry run first) | Engine | `engine-043` (opus, high) | `wt/WP-043` · `wp/043-vault-import` | 2026-10-02 |
+*(none)*
 
 ## Queued (next up)
 WP-033 (update-impact, needs the operator's release-notes source decision)
@@ -33,6 +33,12 @@ logbook migration)
 *(none)*
 
 ## Recently completed
+- 2026-10-02 WP-043 `seldon import omarchy-agent <vault> [--apply]`: cases,
+  journal, knowledge and deviations mapped, ids renumbered on collision
+  with references rewritten, redaction, dry-run report, marker-guarded
+  apply — merged after one review round; the operator's real vault dry
+  run: 36 cases (7 renumbered), 41 sessions, 20 knowledge sections, 25
+  deviation rows, 0 errors. The `--apply` on `~/Seldon` is the operator's.
 - 2026-10-02 WP-039 Panel 460 wide, tabs sized to their labels, chips
   wrap, Changelog header keeps the sort word, fit assertions at scale
   1.0/1.25, real-home guard recognises the operator's live engine,
@@ -202,6 +208,13 @@ logbook migration)
 - **Guard updated on your decision (2026-10-02):** makepkg whitelist over
   ssh (two exact forms), service rule at the command position, comment
   fix; 74-row test table green.
+- **Vault import ready (WP-043):** run the dry run yourself and read the
+  report before applying — see the orchestrator's message; `--apply`
+  writes to `~/Seldon` and is yours to run.
+- **Proposed release v0.1.1** (WP-038 self-attribution, WP-039 panel
+  width + guard, WP-043 import): say "v0.1.1 vorbereiten" and the
+  orchestrator prepares CHANGELOG, version bump and dry run, then asks
+  for the tag.
 - **Release v0.1.0 published 2026-10-02:** repo public, GitHub release
   with the three assets, `jax-seldon-plugin` filled (branch `main` + tag
   `v0.1.0`), PKGBUILD/.SRCINFO bumped on `main`. **AUR still open:**

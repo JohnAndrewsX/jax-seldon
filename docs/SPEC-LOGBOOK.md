@@ -220,4 +220,6 @@ Markdown must read well without them.
 - No absolute paths inside the logbook except in the dossier.
 - No code except under `work/<case-id>/` and `outputs/`.
 - Everything the engine generates can be regenerated from Markdown + JSONL.
-- Deleting `.seldon/` loses nothing but the active-case marker.
+- Deleting `.seldon/` loses nothing but the active-case marker and the import
+  markers (`.seldon/imports/`); both are committed, `git checkout` restores
+  them, and without an import marker `seldon import` refuses a second run.
