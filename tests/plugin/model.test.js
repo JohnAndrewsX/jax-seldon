@@ -141,13 +141,14 @@ test("bannerFor: one banner per non-ok status, each with a fix", () => {
   }
 })
 
-test("bannerFor engineMissing: the AUR command stays, the text names the GitHub install (WP-044)", () => {
+test("bannerFor engineMissing: the GitHub one-liner while the AUR package does not exist (ADR-0024)", () => {
   const b = M.bannerFor("engineMissing", {})
   assert.strictEqual(b.command, M.INSTALL_ENGINE_COMMAND)
-  assert.strictEqual(M.INSTALL_ENGINE_COMMAND, "omarchy pkg aur add jax-seldon")
+  assert.strictEqual(M.INSTALL_ENGINE_COMMAND,
+    "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash")
   assert.strictEqual(b.detail, M.ENGINE_MISSING_DETAIL)
-  assert.ok(b.detail.indexOf("install from GitHub") !== -1)
-  assert.ok(b.detail.indexOf("github.com/JohnAndrewsX/jax-seldon") !== -1)
+  assert.ok(b.detail.indexOf("AUR package: coming soon") !== -1)
+  assert.ok(b.detail.indexOf("SHA256SUMS") !== -1)
 })
 
 test("bannerFor contractMismatch names the side to update", () => {

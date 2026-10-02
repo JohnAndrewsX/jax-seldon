@@ -35,10 +35,15 @@ var AREA = /^[a-z0-9][a-z0-9-]*$/
 var PLAN_STEPS = ["start", "verify", "done", "drop"]
 
 // Fix commands shown in banners. Constants only: nothing from the index is
-// ever spliced into a command (AGENTS.md §8). The engine is an AUR package
-// (ADR-0004); `omarchy pkg add` only reaches the official repositories, so
-// the AUR variant is the one that works.
-var INSTALL_ENGINE_COMMAND = "omarchy pkg aur add jax-seldon"
+// ever spliced into a command (AGENTS.md §8).
+// The engine install is the GitHub one-liner while the AUR package does not
+// exist (ADR-0024): it runs only on the user's click, in the floating
+// terminal (whose bash -c runs the pipe), fetches install.sh over TLS from
+// this project's release, and the script checks the engine against
+// SHA256SUMS. Flip back to "omarchy pkg aur add jax-seldon" (ADR-0004,
+// ADR-0016: `omarchy pkg add` only reaches the official repositories) when
+// the AUR package is live, together with ENGINE_MISSING_DETAIL below.
+var INSTALL_ENGINE_COMMAND = "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
 var UPDATE_ENGINE_COMMAND = "yay -S jax-seldon"
 var UPDATE_PLUGIN_COMMAND = "omarchy plugin update jax.seldon"
 var INIT_COMMAND = "seldon init"
@@ -46,11 +51,9 @@ var INIT_COMMAND = "seldon init"
 // snapshots. `$USER` is expanded by the shell the user pastes it into (or by
 // the terminal launcher's bash -c); nothing else in it varies.
 var SNAPPER_FIX_COMMAND = "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
-// The engineMissing banner's text: the GitHub install (install.sh, the
-// project README's Install section) next to the AUR command above. The AUR
-// package does not exist yet (operator, 2026-10-02); when it is live, this
-// one sentence is the only plugin text to change (WP-044).
-var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub (Install in the README at github.com/JohnAndrewsX/jax-seldon), then check again."
+// The engineMissing banner's text. The AUR package does not exist yet
+// (operator, 2026-10-02); flip this with INSTALL_ENGINE_COMMAND (WP-044).
+var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub: the command below downloads install.sh from the release, which checks the engine against SHA256SUMS. Then check again."
 
 var GLYPH = "⟡"
 

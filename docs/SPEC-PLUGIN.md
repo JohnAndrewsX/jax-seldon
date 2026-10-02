@@ -59,12 +59,16 @@ plugin/
   to `status: engineMissing` (the property is named `status`, because
   `state` clashes with `Item.state`). States: `ok | engineMissing | notInitialised |
   indexMissing | indexStale (> 2 h) | contractMismatch`.
-  The engineMissing banner's fix is the constant AUR command (§5); its
-  text names the GitHub install as well (`install.sh` from the release,
-  the project README's Install section) and, while the AUR package does
-  not exist, says so: "AUR package: coming soon; until then install from
-  GitHub". That text is the one constant `ENGINE_MISSING_DETAIL` in
-  `Model.js` (WP-044).
+  While the AUR package does not exist (ADR-0024), the engineMissing
+  banner's fix is the constant GitHub one-liner `curl -fsSL
+  https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
+  (run only on the user's click, in the floating terminal; the script
+  checks the engine against `SHA256SUMS`), and its text says "AUR
+  package: coming soon; until then install from GitHub". Both are
+  constants in `Model.js`, `INSTALL_ENGINE_COMMAND` and
+  `ENGINE_MISSING_DETAIL`; they flip back to `omarchy pkg aur add
+  jax-seldon` and an AUR text together when the package is live
+  (WP-044).
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
   arguments (case ids, event ids validated by regex before use).
@@ -146,9 +150,11 @@ one source; once resolved, by the event's own zone.
 | System | omarchy version, package counts, deviations, snapshots, plugins, theme | "Open in editor" (rebuild/update-impact actions are Phase 3 engine commands, allowed by CONTRACT.md, not wired in v1) |
 | Memory | lessons headings, memory topics | "Open" |
 
-Banner states (top of every tab): engine missing → "Install the engine:
-`omarchy pkg aur add jax-seldon`" (ADR-0016; `omarchy pkg add` reaches the
-official repositories only) with *Copy* and *Open terminal*; contract
+Banner states (top of every tab): engine missing → "Install the engine:"
+the GitHub one-liner while the AUR package does not exist (§3,
+ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
+`omarchy pkg add` reaches the official repositories only), with *Copy*
+and *Open terminal*; contract
 mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, `yay -S jax-seldon` when the engine is older; snapshots
 not readable (ADR-0011) → the one-line snapper fix with *Copy* and *Open

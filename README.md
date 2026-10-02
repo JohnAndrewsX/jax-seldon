@@ -29,12 +29,13 @@ against the release's `SHA256SUMS` and refuses on a mismatch, then
 installs `~/.local/bin/seldon` (and the alias `jax-seldon`). It runs as
 your user and never asks for root.
 
-Checked form — download, verify, run:
+Checked form — download, read, verify, run:
 
 ```sh
 cd "$(mktemp -d)"
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
+less install.sh                                    # read what it does
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
 ```
 
@@ -52,6 +53,7 @@ Options (with the one-liner: `| bash -s -- --unit`):
 | `--version vX.Y.Z` | that release instead of the latest |
 | `--prefix DIR` | install into `DIR/bin` instead of `~/.local/bin` |
 | `--unit` | also install the optional watcher unit into `~/.config/systemd/user/` (installed, not enabled; see `engine/systemd/README.md`) |
+| `--force` | replace a `seldon` (or unit) the script did not install, such as a self-built binary; without it the script refuses and changes nothing |
 | `--uninstall` | remove what the script installed (give the same `--prefix`) |
 
 Then create your logbook once with `seldon init`, and add the plugin:
@@ -65,7 +67,7 @@ Then create your logbook once with `seldon init`, and add the plugin:
   installed (a file you changed since is kept, and it says so). Your
   logbook, `~/.config/seldon/` and `~/.local/state/seldon/` stay.
 - **v0.1.0** predates `install.sh`, so `releases/latest/download/install.sh`
-  exists from the next release on. Until then take the script from
+  exists from the next release on (v0.1.1). Until then take the script from
   `main` (https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
   and run `bash install.sh --version v0.1.0`: the engine is checked the
   same way, the script itself is not covered by `SHA256SUMS`.
