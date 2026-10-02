@@ -177,7 +177,10 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # ids}], assumptions: [{case, source, assumption}], skipped: [{path,
                                                # reason, error}],
                                                # files, marker, git}
-seldon hook install <claude-code|generic> [--settings PATH]
+seldon hook install claude-code [--settings PATH]
+                                               # WP-050: `generic` dropped from the synopsis: it has no
+                                               # settings file to merge into; other agents pipe into
+                                               # `hook generic` themselves (§8)
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…","cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub
