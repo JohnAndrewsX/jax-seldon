@@ -33,6 +33,12 @@ cmd=$(printf '%s\n' "$cmd" | awk '
 block() { echo "guard: blocked (AGENTS.md §6 red zone): $1" >&2; exit 2; }
 
 # privilege and package management
+# exact whitelist: the two makepkg forms packaging/README.md uses on the test
+# host over ssh (no -s/-i/--syncdeps/--install, no command chaining inside
+# the quotes); ORCHESTRATION.md §11, WP-040 review
+if printf '%s' "$cmd" | grep -Eq "^[[:space:]]*ssh[[:space:]]+[A-Za-z0-9._@-]+[[:space:]]+'cd /tmp/[A-Za-z0-9._-]+ && makepkg (-f|--printsrcinfo > SRCINFO\.new)'[[:space:]]*$"; then
+  exit 0
+fi
 # only as the first word of a command segment (after ; & | && || or at the
 # start), optionally behind `env`/`command`/`nice`/`time` — not as a word inside
 # heredoc text, comments or file contents
@@ -40,7 +46,7 @@ if printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*|\$\([[:space:]]*|`[[:spac
   block "privileged or package command"
 fi
 # services and boot
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])(systemctl|loginctl|reboot|shutdown|poweroff|mkinitcpio|grub-)'; then
+if printf '%s' "$cmd" | grep -Eq '(^|[;&|][[:space:]]*|\$\([[:space:]]*|`[[:space:]]*)((env|command|nice|time|exec)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(systemctl|loginctl|reboot|shutdown|poweroff|mkinitcpio|grub-[a-z-]+)([[:space:]]|$)'; then
   # allow read-only systemctl queries
   if ! printf '%s' "$cmd" | grep -Eq 'systemctl[[:space:]]+(--user[[:space:]]+)?(status|list-|show|is-|cat)'; then
     block "service or boot command"
@@ -48,7 +54,7 @@ if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])(systemctl|loginctl|reboot|s
 fi
 # omarchy commands that change the system (observing is fine)
 # exception: `ssh <test-host> ... omarchy theme set ...` — the theme sweep on
-# the test host is allowed (docs/HERDR-SETUP.md §5); everything else stays
+# the test host is allowed (docs/ORCHESTRATION.md §11); everything else stays
 if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])omarchy([[:space:]]+(pkg[[:space:]]+(add|aur|drop|install|remove)|update|install|theme[[:space:]]+set|plugin[[:space:]]+(add|remove|update|clone)|snapshot|migrate|refresh|hook[[:space:]]+install|dev[[:space:]]+link))' \
    && ! printf '%s' "$cmd" | grep -Eq '^[[:space:]]*ssh[[:space:]][^;&|]*omarchy[[:space:]]+theme[[:space:]]+(set|current)([^;&|]*)$'; then
   block "omarchy command that changes the system"

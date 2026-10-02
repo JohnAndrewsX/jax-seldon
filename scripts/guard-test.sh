@@ -92,4 +92,18 @@ check B 'cd x && omarchy launch floating-terminal-with-presentation claude'
 check A 'omarchy agent usage claude --limits-only'
 check A 'ssh test-host omarchy agent prompt "work the case"'
 check A 'grep -rn "omarchy-launch-tui" engine/src/commands/agent.rs'
+check A "ssh testhost 'cd /tmp/seldon-pkg && makepkg -f'"
+check A "ssh testhost 'cd /tmp/seldon-pkg && makepkg --printsrcinfo > SRCINFO.new'"
+check B "ssh testhost 'cd /tmp/seldon-pkg && makepkg -fs'"
+check B "ssh testhost 'cd /tmp/seldon-pkg && makepkg -f -i'"
+check B "ssh testhost 'cd /tmp/seldon-pkg && makepkg -f --syncdeps'"
+check B "ssh testhost 'cd /tmp/seldon-pkg && makepkg -f \$(sudo x)'"
+check B "ssh testhost 'cd /tmp/seldon-pkg && makepkg --printsrcinfo; pacman -Syu'"
+check B "ssh testhost 'cd /home/x && makepkg -f'"
+check B 'makepkg -f'
+check A 'grep -n systemctl memory/host.md'
+check A 'herdr agent prompt x "never run systemctl enable on this host"'
+check A 'systemctl --user status seldon-watch'
+check B 'cd /x && systemctl --user enable seldon-watch'
+check B 'env FOO=1 systemctl daemon-reload'
 exit $fail
