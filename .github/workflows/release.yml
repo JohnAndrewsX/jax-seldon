@@ -104,6 +104,7 @@ jobs:
           install -m644 LICENSE README.md engine/systemd/seldon-watch.service "$stage/"
           install -m644 engine/systemd/README.md "$stage/seldon-watch.md"
           tar czf "dist/$stage.tar.gz" --owner=0 --group=0 "$stage"
+          install -m755 install.sh dist/  # the GitHub install path (WP-044), listed in SHA256SUMS
           (cd dist && sha256sum -- * > SHA256SUMS)
           cat dist/SHA256SUMS
 
