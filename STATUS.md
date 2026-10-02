@@ -9,19 +9,18 @@ Open: WP-042 marketplace submission (after the operator's release setup),
 WP-038 (engine attributes its own installs), WP-033 and WP-043 (operator
 decisions).
 **Contract version:** 1 (draft)
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-02
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-049 | CLI polish: completions, man page, help texts, removal commands | Engine | `engine-049` (opus, high) | `wt/WP-049` · `wp/049-cli-polish` | 2026-10-02 |
+| WP-051 | Prime Radiant assets into `assets/` and the plugin (bar glyph, header mark, pictograms, markers, hero) | Plugin | `plugin-051` (opus, high) | `wt/WP-051` · `wp/051-assets` | 2026-10-02 |
 
 ## Queued (next up)
 
-WP-033 (update-impact, option C)
-· WP-042 (marketplace submission, after WP-040/041) · WP-043 (optional
-logbook migration)
-· WP-040/041 (packaging, docs) after WP-031. (see `work/queued/`)
+WP-033 (update-impact, option C, after AUR) · WP-042 (marketplace
+submission, after AUR) · WP-052 (`init --theme-hook` write under the
+lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 
 ## Preparation done (2026-10-01)
 - Kickoff checklist steps 1–3: repo + first commit, WP files, host verified
@@ -31,9 +30,15 @@ logbook migration)
 - How to run the team: `docs/HERDR-SETUP.md`.
 
 ## Blocked
-| WP-049 | CLI polish: completions, man page, help texts, removal commands | Engine | `engine-049` (opus, high) | `wt/WP-049` · `wp/049-cli-polish` | 2026-10-02 |
+(none)
 
 ## Recently completed
+- 2026-10-02 WP-049 CLI polish: `seldon completions`, `seldon mangen`
+  (man page in the package, the release tarball and install.sh),
+  every --help reviewed, `hook uninstall claude-code` and
+  `init --remove-theme-hook` recorded as own writes, stdout write errors
+  exit 2, hook install/uninstall under the lock — merged after two
+  Opus review rounds and three release dry runs.
 - 2026-10-02 WP-046 Root README along GitHub best practice (badges, hero,
   why, quick start, tour, docs table), developer content moved to
   docs/DEVELOPMENT.md, plugin README on the same skeleton with absolute
@@ -249,7 +254,10 @@ logbook migration)
   sentence, the NOTE block, "Once the AUR package is live", the States
   row and the Security constants; docs/user 01 install order.
 - **Proposed release v0.1.1** (WP-038 self-attribution, WP-039 panel
-  width + guard, WP-043 import): say "v0.1.1 vorbereiten" and the
+  width + guard, WP-043 import, WP-050 advisory warning + alwaysRed,
+  WP-049 completions/man page/removal commands; still to do before the
+  tag: switch `UPDATE_ENGINE_COMMAND` to the installer, panel surfacing
+  of `plan start` warnings, CHANGELOG, version bump): say "v0.1.1 vorbereiten" and the
   orchestrator prepares CHANGELOG, version bump and dry run, then asks
   for the tag.
 - **Release v0.1.0 published 2026-10-02:** repo public, GitHub release
