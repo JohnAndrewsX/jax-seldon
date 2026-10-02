@@ -9,7 +9,7 @@
 # The static musl binary is a GitHub release asset.
 
 pkgname=jax-seldon
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc='Flight recorder and planning desk for an Omarchy system (engine)'
 arch=('x86_64')
@@ -21,7 +21,7 @@ optdepends=('snapper: snapshot events (needs ALLOW_USERS in the snapper config)'
 # Cargo's release profile strips the binary; a debug package would be empty
 options=('!debug')
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('0083586c99ce4ea47412208e244e48d8269666564ad729082eed2e5e88d8f307')
+sha256sums=('3ebef5d34e9e00c53d19586e16c3103157488fc9e5572b4760ecc00a76498cc4')
 
 prepare() {
   cd "$pkgname-$pkgver/engine"
