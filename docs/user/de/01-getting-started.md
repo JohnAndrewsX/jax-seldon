@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ bf57609 -->
+<!-- source: en/01-getting-started.md @ 4ce0827 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
@@ -15,20 +15,33 @@ solltest.
 - Ein Terminal. Die Befehle auf dieser Seite laufen als dein Benutzer;
   keiner braucht `sudo`.
 
-Seldon liest dein System nur. Es installiert nie ein Paket, ändert keine
-Datei außerhalb seiner eigenen Ordner und hält nie einen Befehl an. Es
-schreibt drei Dinge: dein Logbuch (standardmäßig `~/Seldon`), seine
-Konfigurationsdatei (`~/.config/seldon/config.toml`) und seinen Zustand
-(`~/.local/state/seldon/`).
+Seldon liest dein System nur. Es installiert nie ein Paket und hält nie
+einen Befehl an. Es schreibt drei Dinge: dein Logbuch (standardmäßig
+`~/Seldon`), seine Konfigurationsdatei (`~/.config/seldon/config.toml`)
+und seinen Zustand (`~/.local/state/seldon/`). Außerhalb dieser Ordner
+schreibt es nur, wo du bei der Einrichtung zustimmst: Omarchys
+Theme-Hook und die Hook-Einstellungen von Claude Code.
 
 ## Schritt 1: Die Engine installieren
 
 Die Engine ist ein einziges Programm, `seldon`. Das AUR-Paket kommt bald.
 Bis dahin installierst du sie aus dem GitHub-Release des Projekts. Das
-Skript prüft den Download gegen die Prüfsummen des Release und installiert
-`~/.local/bin/seldon`.
+Installationsskript prüft die Engine gegen die Prüfsummen des Release
+und installiert `~/.local/bin/seldon`.
 
-Skript herunterladen, lesen, prüfen, ausführen:
+Solange das aktuelle Release v0.1.0 ist, nimmst du das Skript aus dem
+Branch `main` des Projekts und nennst die Version. Das Release v0.1.0
+enthält das Skript noch nicht:
+
+```sh
+cd "$(mktemp -d)"
+curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
+less install.sh
+bash install.sh --version v0.1.0
+```
+
+Ab v0.1.1 enthält das Release das Skript und seine Prüfsumme. Dann lädst
+du beides herunter, liest das Skript, prüfst es und führst es aus:
 
 ```sh
 cd "$(mktemp -d)"
@@ -36,15 +49,6 @@ curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/
 curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
 less install.sh
 sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
-```
-
-Das Release v0.1.0 hat noch kein `install.sh`. Wenn das erste `curl` mit
-404 scheitert, nimm das Skript aus dem Branch `main` des Projekts und
-nenne die Version:
-
-```sh
-curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
-bash install.sh --version v0.1.0
 ```
 
 Prüfe, ob deine Shell die Engine findet:
@@ -57,8 +61,11 @@ seldon --version
 seldon 0.1.0
 ```
 
-Meldet deine Shell `command not found`, liegt `~/.local/bin` nicht in
-deinem `PATH`. Öffne ein neues Terminal und versuche es noch einmal.
+Meldet deine Shell `command not found`, liegt `~/.local/bin` noch nicht
+in deinem `PATH`. Omarchys Standard-Einrichtung für bash fügt es beim
+Start einer Shell hinzu, also öffne ein neues Terminal und versuche es
+noch einmal. Nutzt du eine andere Shell oder eine eigene Startdatei,
+trag dort `export PATH="$HOME/.local/bin:$PATH"` ein.
 [Aktualisieren und entfernen](11-update-and-uninstall.md) listet alle
 Optionen der Installation.
 
@@ -125,7 +132,7 @@ seldon doctor
 seldon doctor · ~/Seldon
   ok        engine   seldon 0.1.0, contract 1
   ok        config   ~/.config/seldon/config.toml
-  ok        logbook  ~/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
+  ok        logbook  /home/you/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
   ok        omarchy  Omarchy 4.0.4-1
   degraded  snapper  No permissions. Snapshots are not recorded until you allow your user once (ADR-0011)
                      fix: sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
@@ -149,6 +156,13 @@ omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enabl
 
 Rechts in der Bar erscheint eine kleine Pill `⟡`. Ein Klick öffnet das
 Panel. [Alltag](03-daily-use.md) erklärt jeden Teil davon.
+
+Keine Pill? Prüf, ob `omarchy plugin list` das Plugin `jax.seldon` als
+aktiviert zeigt (sonst `omarchy plugin enable jax.seldon`), und starte
+dann die Shell mit `omarchy-restart-shell` neu. Zeigt das Panel ein
+Banner statt Daten, ist sein Knopf die Abhilfe; *Check again* sucht die
+Engine noch einmal. [Fehlersuche](10-troubleshooting.md#banner-im-panel)
+listet jedes Banner.
 
 ## Schritt 5: Eine ungeplante Änderung aufzeichnen
 
@@ -195,11 +209,14 @@ eignet sich gut: Er ist sichtbar und in einer Sekunde rückgängig gemacht.
    ```
 
    Der Theme-Wechsel ist **Drift**: eine Änderung, die kein Case abdeckt.
-   Die letzte Spalte ist die Ereignis-ID (deine sieht anders aus). Wenn du
-   das Plugin hinzugefügt hast, zeigt die Pill in der Bar jetzt `⟡ · 1`.
+   `yellow` ist ihre Zone: eine Konfigurations- oder Theme-Änderung, kein
+   Paket ([Konzepte](02-concepts.md#zonen) erklärt Zonen). Die letzte
+   Spalte ist die Ereignis-ID (deine sieht anders aus). Wenn du das Plugin
+   hinzugefügt hast, zeigt die Pill in der Bar jetzt `⟡ · 1`.
 
-5. Erkläre sie. Seldon legt sie dann unter einem neuen, abgeschlossenen
-   Case ab:
+5. Erkläre sie. Die Änderung ist schon passiert, also hält Seldon deinen
+   Grund als nachträglichen Case fest: ein neuer Case, gleich als
+   abgeschlossen angelegt, mit deinem Text als Titel:
 
    ```sh
    seldon drift explain <EVENT> -- "Anderes Theme ausprobiert"
@@ -230,8 +247,10 @@ Created C-2026-002 "Zurück zu meinem üblichen Theme" in work/queued/C-2026-002
 C-2026-002 queued → active (now work/active/C-2026-002-zurueck-zu-meinem-ueblichen-theme.md)
 ```
 
-Nimm die ID, die `plan new` ausgegeben hat. Der Case ist jetzt aktiv.
-Schreib eine Notiz ins heutige Journal:
+`--area themes` legt den Case im Bereich `themes` ab, einem von sechs
+Themen, die ein neues Logbuch hat (`areas/themes/`). Nimm die ID, die
+`plan new` ausgegeben hat. Der Case ist jetzt aktiv. Schreib eine Notiz
+ins heutige Journal:
 
 ```sh
 seldon log --case C-2026-002 -- "Wechsle zurück zu meinem üblichen Theme"
@@ -248,8 +267,11 @@ seldon drift
 Der Wechsel erscheint wieder als Drift. Seldon sieht, dass sich das
 Theme geändert hat, aber ein Collector kann nicht wissen, dass du es für
 diesen Case getan hast. Nur Agenten, die über Hooks arbeiten, landen von
-selbst beim aktiven Case. Deine eigene Änderung verknüpfst du mit einem
-Befehl:
+selbst beim aktiven Case. Der Case lohnt sich trotzdem: Er enthält deine
+Notiz und, sobald verknüpft, die Änderung selbst als seine Spur. Nennt
+der *Plan* des Case das Theme (zum Beispiel `tokyo-night`), schlägt
+Seldon diesen Case für die Änderung vor, und der Drift-Dialog des Panels
+wählt ihn vor. Deine eigene Änderung verknüpfst du mit einem Befehl:
 
 ```sh
 seldon drift link <EVENT> C-2026-002

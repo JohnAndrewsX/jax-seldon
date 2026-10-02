@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ c28426a -->
+<!-- source: en/11-update-and-uninstall.md @ 4ce0827 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -16,8 +16,9 @@ Der Einzeiler:
 curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
 ```
 
-Er ersetzt `seldon`, wenn das Release neuer ist. Bei derselben Version
-ändert er nichts. Er prüft die Engine gegen die `SHA256SUMS` des Release
+Er ersetzt `seldon`, wenn die Version des Release von der installierten
+abweicht; mit `--version` kann das auch ein älteres Release sein. Bei
+derselben Version ändert er nichts. Er prüft die Engine gegen die `SHA256SUMS` des Release
 und bricht bei einer Abweichung ab. Hat das neueste Release noch kein
 `install.sh` (v0.1.0), nimm das Skript aus `main` wie in Erste Schritte.
 

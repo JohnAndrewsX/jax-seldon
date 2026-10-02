@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 2f41188 -->
+<!-- source: en/04-working-with-agents.md @ 4ce0827 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -115,7 +115,10 @@ Die Hooks laufen nur, wenn Claude Code im Ordner des Logbuchs startet. Um
 Claude-Code-Sitzungen in jedem Ordner aufzuzeichnen, installierst du die
 Hooks stattdessen in deine Benutzereinstellungen:
 `seldon hook install claude-code --settings ~/.claude/settings.json`.
-Dann schreibt jede Sitzung in dein Logbuch, mit dem aktiven Case.
+Dann schreibt jede Claude-Code-Sitzung auf dieser Maschine in dein
+Logbuch, in jedem Projekt, mit dem aktiven Case. Rote und gelbe Befehle
+werden in jeder Sitzung aufgezeichnet, grüne nur, solange ein Case aktiv
+ist.
 
 ## Der aktive Case
 
@@ -140,7 +143,7 @@ nicht aufgezeichnet.
 
 | Zone | Aufgezeichnet |
 |---|---|
-| red | Pakete installieren und entfernen, `omarchy`-Befehle, die das System ändern, `systemctl enable`, `disable`, `start`, `stop`, `mask`, `unmask` |
+| red | Pakete installieren, entfernen und aktualisieren (auch `pacman -Syu` und `omarchy update`), `omarchy`-Befehle, die das System ändern, `systemctl enable`, `disable`, `start`, `stop`, `mask`, `unmask` |
 | yellow | Schreibzugriffe in beobachtete Pfade: `cp`, `mv`, `tee`, `sed -i`, `rm`, Umleitungen sowie die Werkzeuge Edit und Write von Claude Code |
 | green | jeder andere ändernde Befehl (`npm install`, `git push`, Dateien anderswo), nur solange ein Case aktiv ist |
 
@@ -237,10 +240,13 @@ vorhandene Datei. Um das alte Logbuch des Kits in Seldon zu holen, siehe
 
 ## Prüfen, was der Agent getan hat
 
-Die Case-Datei listet die IDs ihrer Ereignisse, die ältesten zuerst:
+`seldon plan show C-2026-003` gibt die Case-Datei aus. Ihre Zeile
+`events:` enthält nur Ereignis-IDs. Die Ereignisse selbst liest du in
+der Ledger-Ansicht des Monats; jede Zeile nennt Uhrzeit, Quelle, Case
+und bei einem Agenten seinen Namen:
 
 ```sh
-seldon plan show C-2026-003
+seldon open ledger --editor
 ```
 
 Im Panel:

@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ 2f41188 -->
+<!-- source: en/02-concepts.md @ 4ce0827 -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -83,7 +83,11 @@ Jedes Ereignis hat eine Quelle. Es gibt neun:
 
 Ein Case ist eine geplante Änderung in einer Markdown-Datei unter
 `work/`. Er hat eine ID wie `C-2026-004`, einen Titel, eine Zone, ein
-Risiko, einen Bereich und vier Abschnitte:
+Risiko, einen Bereich und vier Abschnitte. Ein *Bereich* (area) ist ein
+langlebiges Thema der Maschine, mit einem Ordner unter `areas/`. Ein
+neues Logbuch hat sechs: `hyprland`, `themes`, `packages`, `dev-env`,
+`plugins` und `shell`. Ein neuer Bereichsname legt seinen Ordner beim
+ersten Gebrauch an. Die vier Abschnitte sind:
 
 - *Intent*: warum, und was danach anders ist.
 - *Plan*: Ziel, Schritte, betroffene Pfade, Rollback, Prüfung.
@@ -113,7 +117,7 @@ ist ein Ereignis im Ledger und ein git-Commit.
 Der zuletzt gestartete Case ist der *aktive Case*. Seine ID steht in
 `.seldon/active-case`. Agenten-Hooks versehen jeden Befehl, den sie
 aufzeichnen, mit ihm, und so sammelt der Case seine *Spur*: die
-geordnete Liste dessen, was passiert ist, solange er offen war.
+Ereignisse, die für ihn aufgezeichnet sind, in ihrer Reihenfolge.
 
 ## Zonen
 
@@ -159,11 +163,13 @@ Die meisten Änderungen landen von selbst bei einem Case:
 - Ein Paket, das als Abhängigkeit eines Pakets aus einem Case
   mitgekommen ist, gehört zu diesem Case.
 
-Alles andere ist Drift. Dazu gehören auch deine eigenen Änderungen
-außerhalb des Terminals: Ein Collector sieht, dass sich das Theme
-geändert hat, aber nicht, dass du es für einen Case gemeint hast. Nennt
-ein offener Case das geänderte Paket oder den Pfad in seinem *Plan*,
-schlägt Seldon diesen Case vor, und das Panel wählt ihn vor.
+Alles andere ist Drift. Dazu gehören alle deine eigenen Änderungen, im
+Terminal oder anderswo: Ein Collector sieht, dass sich das Theme
+geändert hat, aber nicht, dass du es für einen Case gemeint hast. Nur
+der Befehl eines Agenten, aufgezeichnet von einem Hook, trägt den
+aktiven Case. Nennt ein offener Case das geänderte Paket, den Pfad oder
+das Theme in seinem *Plan*, schlägt Seldon diesen Case vor (der
+*vorgeschlagene Case*), und das Panel wählt ihn vor.
 
 Du löst Drift auf eine von drei Arten auf:
 
@@ -175,7 +181,7 @@ Du löst Drift auf eine von drei Arten auf:
 
 Das Ereignis bleibt in jedem Fall im Ledger. Die Auflösung ist ein neues
 Ereignis, das darauf verweist. Pakete aus einer Transaktion bilden einen
-Drift-Eintrag: Ein Routine-Upgrade von vierzig Paketen ist ein Eintrag,
+Drift-Eintrag, eine *Transaktionsgruppe*: Ein Routine-Upgrade von vierzig Paketen ist ein Eintrag,
 und ein Befehl löst alle auf. Mit `--only` löst du nur dieses eine
 Ereignis auf.
 
