@@ -99,6 +99,8 @@ jobs:
           file "$bin" | grep -Eq 'static(-pie)? linked'
           "$bin" --version --json | jq -e --arg v "$VERSION" '.version == $v'
           "$bin" watch --help > /dev/null
+          "$bin" completions bash | bash -n
+          "$bin" mangen | grep '^\.TH SELDON 1 ' > /dev/null
 
       - name: Release assets
         env:
@@ -111,6 +113,15 @@ jobs:
           install -Dm755 "engine/target/$MUSL_TARGET/release/seldon" "$stage/seldon"
           install -m644 LICENSE README.md engine/systemd/seldon-watch.service "$stage/"
           install -m644 engine/systemd/README.md "$stage/seldon-watch.md"
+          # the man page and completions for a manual install (install.sh
+          # generates its own with the binary)
+          bin="engine/target/$MUSL_TARGET/release/seldon"
+          "$bin" mangen > "$stage/seldon.1"
+          install -d "$stage/completions"
+          "$bin" completions bash > "$stage/completions/seldon.bash"
+          "$bin" completions zsh > "$stage/completions/_seldon"
+          "$bin" completions fish > "$stage/completions/seldon.fish"
+          chmod 644 "$stage/seldon.1" "$stage"/completions/*
           tar czf "dist/$stage.tar.gz" --owner=0 --group=0 "$stage"
           install -m755 install.sh dist/  # the GitHub install path (WP-044), listed in SHA256SUMS
           (cd dist && sha256sum -- * > SHA256SUMS)
@@ -145,6 +156,8 @@ jobs:
           "$root/usr/bin/jax-seldon" --version --json | jq -e --arg v "$VERSION" '.version == $v'
           "$root/usr/bin/seldon" watch --help > /dev/null
           grep -qx 'ExecStart=/usr/bin/seldon watch' "$root/usr/lib/systemd/user/seldon-watch.service"
+          bash -n "$root/usr/share/bash-completion/completions/seldon"
+          zcat "$root/usr/share/man/man1/seldon.1.gz" | grep '^\.TH SELDON 1 ' > /dev/null  # reads it all: no SIGPIPE under pipefail
           mkdir package
           cp "$pkg" package/
 

@@ -8,14 +8,22 @@
 # from the release (the latest one unless --version is given), checks the
 # tarball with `sha256sum -c` and refuses on a mismatch before anything is
 # written. Then installs <prefix>/bin/seldon and the symlink
-# <prefix>/bin/jax-seldon -> seldon (prefix default ~/.local), with --unit
-# also the optional watcher unit seldon-watch.service into
-# ~/.config/systemd/user/ (installed, never enabled). What it wrote is
-# listed in <prefix>/share/jax-seldon/install-manifest; --uninstall removes
-# exactly those files and keeps your logbook and config.
+# <prefix>/bin/jax-seldon -> seldon (prefix default ~/.local), the man page
+# <prefix>/share/man/man1/seldon.1 and the shell completions for each of
+# bash, zsh and fish that is installed here (its completion directory
+# exists under /usr/share) into <prefix>/share/{bash-completion/completions,
+# zsh/site-functions,fish/vendor_completions.d}; the new binary generates
+# them (`seldon completions`, `seldon mangen`; a release without them
+# skips this step). With --unit also the optional watcher unit
+# seldon-watch.service into ~/.config/systemd/user/ (installed, never
+# enabled). What it wrote is listed in
+# <prefix>/share/jax-seldon/install-manifest; --uninstall removes exactly
+# those files and keeps your logbook and config.
 #
 # A seldon or unit it did not install (a self-built binary, a unit copied
 # by hand) is never replaced silently: the run refuses and names --force.
+# A completion file or man page it did not install is kept (a note says
+# so) unless --force is given.
 #
 # Runs as your user: no root, no package manager, no system files. A re-run
 # with the same version changes nothing; a newer version updates in place.
@@ -26,7 +34,8 @@
 # any other failure. Every refusal and failure comes before the first write.
 #
 # Test hooks (tests/install/install.test.sh): SELDON_INSTALL_API_URL and
-# SELDON_INSTALL_DOWNLOAD_URL replace the GitHub URLs below.
+# SELDON_INSTALL_DOWNLOAD_URL replace the GitHub URLs below,
+# SELDON_INSTALL_SHARE the /usr/share where the shells are looked for.
 
 set -euo pipefail
 
@@ -36,6 +45,7 @@ API_URL="${SELDON_INSTALL_API_URL:-https://api.github.com/repos/$REPO/releases/l
 DOWNLOAD_URL="${SELDON_INSTALL_DOWNLOAD_URL:-https://github.com/$REPO/releases/download}"
 UNIT_NAME="seldon-watch.service"
 UNIT_EXEC_DEFAULT="ExecStart=%h/.local/bin/seldon watch"
+SYSTEM_SHARE="${SELDON_INSTALL_SHARE:-/usr/share}"
 PLUGIN_URL="https://github.com/JohnAndrewsX/jax-seldon-plugin.git"
 
 say() { printf '%s\n' "$*"; }
@@ -62,11 +72,12 @@ install.sh — install, update or remove the Seldon engine from a GitHub release
   install.sh --uninstall [--prefix DIR]
 
   --version vX.Y.Z  install this release (default: the latest)
-  --prefix DIR      install under DIR/bin (default: ~/.local)
+  --prefix DIR      install under DIR/bin, the man page and the shell
+                    completions under DIR/share (default: ~/.local)
   --unit            also install the optional watcher unit into
                     ~/.config/systemd/user/ (installed, not enabled)
-  --force           replace a seldon (or unit) this script did not
-                    install, e.g. a self-built binary
+  --force           replace a seldon (or unit, completion, man page)
+                    this script did not install, e.g. a self-built binary
   --uninstall       remove what this script installed under DIR; your
                     logbook, config and index stay
   -h, --help        this text
@@ -134,6 +145,43 @@ ours_to_replace() { # dest new
   cmp -s -- "$new" "$dest" && return 0
   rec=$(recorded_sum "$dest")
   [[ -n $rec && $(sha_of "$dest") == "$rec" ]]
+}
+
+# The manifest's line for a path, or nothing.
+manifest_line() {
+  local manifest
+  manifest=$(manifest_path)
+  [[ -f $manifest ]] || return 0
+  awk -v p="$1" 'index($0, "  ") && substr($0, index($0, "  ") + 2) == p { print; exit }' "$manifest"
+}
+
+# The completion file of a shell under the prefix, and the directory under
+# /usr/share whose existence says the shell (with its completion system)
+# is installed here.
+completion_path() { # shell
+  case "$1" in
+    bash) printf '%s/share/bash-completion/completions/seldon\n' "$PREFIX" ;;
+    zsh) printf '%s/share/zsh/site-functions/_seldon\n' "$PREFIX" ;;
+    fish) printf '%s/share/fish/vendor_completions.d/seldon.fish\n' "$PREFIX" ;;
+  esac
+}
+shell_present() { # shell
+  case "$1" in
+    bash) [[ -d $SYSTEM_SHARE/bash-completion/completions ]] ;;
+    zsh) [[ -d $SYSTEM_SHARE/zsh/site-functions ]] ;;
+    fish) [[ -d $SYSTEM_SHARE/fish/vendor_completions.d ]] ;;
+  esac
+}
+man_path() { printf '%s/share/man/man1/seldon.1\n' "$PREFIX"; }
+
+# True when $1 is one of the other arguments.
+one_of() { # needle items...
+  local needle=$1 item
+  shift
+  for item in "$@"; do
+    [[ $item == "$needle" ]] && return 0
+  done
+  return 1
 }
 
 # Writes $2 to $1 only when the content differs; never touches an equal file.
@@ -222,6 +270,34 @@ do_install() {
     done < "$WORK/$stage/$UNIT_NAME" > "$unit_src"
   fi
 
+  # The man page and the completions, from the new binary, into $WORK: a
+  # file this script did not install is kept unless --force.
+  local extra_src=() extra_dest=() shells=() shell dest
+  if "$new_bin" completions bash >/dev/null 2>&1; then
+    for shell in bash zsh fish; do
+      shell_present "$shell" || continue
+      "$new_bin" completions "$shell" >"$WORK/completion.$shell" \
+        || fail "the downloaded seldon cannot print its $shell completions"
+      extra_src+=("$WORK/completion.$shell")
+      extra_dest+=("$(completion_path "$shell")")
+      shells+=("$shell")
+    done
+    "$new_bin" mangen >"$WORK/seldon.1" || fail "the downloaded seldon cannot print its man page"
+    extra_src+=("$WORK/seldon.1")
+    extra_dest+=("$(man_path)")
+  else
+    say "  note       seldon $version has no man page or shell completions; skipped"
+  fi
+  local i keep_src=() keep_dest=()
+  for i in "${!extra_dest[@]}"; do
+    if [[ $FORCE == 1 ]] || ours_to_replace "${extra_dest[$i]}" "${extra_src[$i]}"; then
+      keep_src+=("${extra_src[$i]}")
+      keep_dest+=("${extra_dest[$i]}")
+    else
+      say "  kept       ${extra_dest[$i]} (not installed by install.sh; --force replaces it)"
+    fi
+  done
+
   # A seldon or unit this script did not install is replaced only with --force.
   if [[ $FORCE == 0 ]]; then
     ours_to_replace "$bin_dir/seldon" "$new_bin" \
@@ -242,9 +318,13 @@ do_install() {
   if [[ -n $unit_src ]]; then
     write_if_changed "$unit_path" "$unit_src" 644
   fi
+  for i in "${!keep_dest[@]}"; do
+    write_if_changed "${keep_dest[$i]}" "${keep_src[$i]}" 644
+  done
 
   # The manifest lists everything installed so far under this prefix,
-  # including a unit from an earlier --unit run.
+  # including a unit from an earlier --unit run and a completion of a
+  # shell that is gone since.
   local entries="$WORK/manifest"
   {
     printf '# generated by install.sh (jax-seldon); --uninstall removes these\n'
@@ -255,6 +335,13 @@ do_install() {
     elif [[ -f $manifest ]]; then
       grep -F "  $unit_path" "$manifest" || true
     fi
+    for dest in "$(completion_path bash)" "$(completion_path zsh)" "$(completion_path fish)" "$(man_path)"; do
+      if one_of "$dest" "${keep_dest[@]}"; then
+        printf '%s  %s\n' "$(sha_of "$dest")" "$dest"
+      else
+        manifest_line "$dest"
+      fi
+    done
   } > "$entries"
   write_if_changed "$manifest" "$entries" 644
 
@@ -272,6 +359,10 @@ do_install() {
   if [[ -n $unit_src ]]; then
     say "  systemctl --user daemon-reload && systemctl --user enable --now seldon-watch"
     say "                     only if you want the optional watcher (it is not enabled)"
+  fi
+  if one_of zsh "${shells[@]}"; then
+    say "  fpath=($PREFIX/share/zsh/site-functions \$fpath)"
+    say "                     in ~/.zshrc before compinit, for the zsh completions"
   fi
   say "Update: run install.sh again. Remove: install.sh --uninstall${PREFIX_ARG}"
 }
