@@ -15,6 +15,7 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-038 | Engine attributes its own installs; Phase 0 exit procedure refreshed | Engine | `engine-038` (opus, high) | `wt/WP-038` · `wp/038-self-attribution` | 2026-10-02 |
+| WP-039 | Panel width and label fit (operator's live observation) | Plugin | `plugin-039` (opus, high) | `wt/WP-039` · `wp/039-panel-width` | 2026-10-02 |
 
 ## Queued (next up)
 WP-038 (engine attributes its own installs, Phase 0 procedure refresh) ·
