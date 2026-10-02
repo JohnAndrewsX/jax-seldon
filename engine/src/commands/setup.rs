@@ -21,6 +21,9 @@
 //!   `engine/hooks/theme-set.sh` to the state directory and runs
 //!   `omarchy hook install theme-set <file>`, a fixed argument list
 //!   (AGENTS.md §8). Tests stub `omarchy` (`SELDON_OMARCHY`, or `PATH`).
+//!   The installed copy lies under the watched `~/.config/omarchy`, so it
+//!   is recorded as the engine's own write ([`record_own_writes`]): the
+//!   next capture explains its `config-add` (SPEC-ENGINE §5 rule 7).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -31,7 +34,8 @@ use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone as _};
 use serde_json::{Value, json};
 
 use super::{Context, emit, hook};
-use crate::config::Dirs;
+use crate::collectors::config;
+use crate::config::{Config, Dirs};
 use crate::error::{Error, Result};
 use crate::index;
 use crate::model::event::{ACTOR_HUMAN, Event, Resolution};
@@ -250,6 +254,41 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
     out.copied.sort();
     out.kept.sort();
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// The engine's own writes
+// ---------------------------------------------------------------------------
+
+/// Records `paths` as written by the engine with the command `by`
+/// (SPEC-ENGINE §5 rule 7), under the state lock; only paths the config
+/// collector watches are recorded. `Ok` names them; `Err` is a line for
+/// the report, never fatal: the next capture then shows the file as drift.
+pub fn record_own_writes(
+    ctx: &Context,
+    config: &Config,
+    paths: &[PathBuf],
+    by: &str,
+) -> std::result::Result<Vec<String>, String> {
+    let lock = ctx.lock().map_err(|e| e.to_string())?;
+    let recorded = config::record_own_writes(&lock, &ctx.dirs, config, paths, by)
+        .map_err(|e| format!("{e:#}"))?;
+    drop(lock);
+    Ok(recorded)
+}
+
+/// The report of [`record_own_writes`] as one JSON value: the recorded
+/// `~`-paths, or `{"error": …}`.
+pub fn own_writes_json(r: &std::result::Result<Vec<String>, String>) -> Value {
+    match r {
+        Ok(paths) => json!(paths),
+        Err(e) => json!({ "error": e }),
+    }
+}
+
+/// The warning for a failed [`record_own_writes`].
+pub fn own_writes_warning(error: &str) -> String {
+    format!("not recorded as seldon's own write ({error}); the next capture shows it as drift")
 }
 
 // ---------------------------------------------------------------------------

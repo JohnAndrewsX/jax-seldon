@@ -18,19 +18,24 @@
 //!   case of the agent command that caused them, dependencies included,
 //!   before the append; [`after_capture`] then records those ids in the
 //!   case files.
+//! - **The engine's own writes** (rule 7): [`explain_own_writes`] explains
+//!   each new config event that reports a file `init` or `hook install`
+//!   wrote, with one `explained` resolution right after the append.
 
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
+use crate::collectors::config::OwnWrites;
 use crate::error::{Error, Result};
 use crate::index::Built;
 use crate::index::model::IndexEvent;
 use crate::ledger::Ledger;
 use crate::logbook::Logbook;
 use crate::logbook::cases::{self, CaseFile};
-use crate::model::event::{Event, Kind, Meta, Resolution, Source};
+use crate::logbook::lock::Lock;
+use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Meta, Resolution, Source};
 use crate::model::is_ulid;
 
 /// What a `drift link|explain|dismiss` on one event resolves.
@@ -252,6 +257,64 @@ pub fn record_cases(logbook: &Logbook, ledger: &Ledger, written: &[Event]) -> Ve
         }
     }
     warnings
+}
+
+/// The `explained` resolutions rule 7 writes: one per written config add
+/// or change without a case whose path and new hash are an own write in
+/// `own`; `source: seldon`, actor `system`, no case, detail `installed by
+/// <command>`, at `ts`.
+pub fn own_write_resolutions(
+    written: &[Event],
+    own: &OwnWrites,
+    ts: DateTime<FixedOffset>,
+) -> Vec<Event> {
+    written
+        .iter()
+        .filter(|e| e.source == Source::Config && e.case.is_none())
+        .filter(|e| matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange))
+        .filter_map(|e| {
+            let w = own.explaining(e)?;
+            let mut r = Event::new(ts, Source::Seldon, Kind::Resolution, e.subject.clone())
+                .actor(ACTOR_SYSTEM)
+                .detail(format!("installed by {}", w.by));
+            r.refers_to = Some(e.id);
+            r.resolution = Some(Resolution::Explained);
+            Some(r)
+        })
+        .collect()
+}
+
+/// After a capture that ran the config collector (SPEC-ENGINE §5 rule 7):
+/// appends the [`own_write_resolutions`] of `written` and forgets every
+/// recorded own write, explained or not (the collector has now seen each
+/// file: as an event, in its baseline, or changed by someone else).
+/// Returns how many events were explained, and warnings: the append
+/// already happened, so nothing here fails the capture.
+pub fn explain_own_writes(
+    lock: &Lock,
+    ledger: &Ledger,
+    file: &std::path::Path,
+    written: &[Event],
+    ts: DateTime<FixedOffset>,
+) -> (usize, Vec<String>) {
+    let own = match OwnWrites::load(file) {
+        Ok(own) if own.0.is_empty() => return (0, Vec::new()),
+        Ok(own) => own,
+        Err(e) => return (0, vec![format!("own writes not read: {e}")]),
+    };
+    let mut warnings = Vec::new();
+    let lines = own_write_resolutions(written, &own, ts);
+    let explained = match ledger.append(lock, lines) {
+        Ok(lines) => lines.len(),
+        Err(e) => {
+            warnings.push(format!("own writes not explained: {e}"));
+            0
+        }
+    };
+    if let Err(e) = OwnWrites::default().save(file) {
+        warnings.push(format!("{e:#}"));
+    }
+    (explained, warnings)
 }
 
 /// `body` with `text` as the last line of its `## <name>` section (after
