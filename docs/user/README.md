@@ -7,8 +7,8 @@ The guide for people who use Seldon on their Omarchy machine.
 | English | [en/README.md](en/README.md) |
 | Deutsch | [de/README.md](de/README.md) |
 
-People who develop Seldon read the specifications in [`docs/`](..)
-instead. Agents working inside a logbook read the
+People who develop Seldon start with
+[`docs/DEVELOPMENT.md`](../DEVELOPMENT.md) instead. Agents working inside a logbook read the
 [agent guide](../AGENT-GUIDE.md).
 
 ## Translation policy

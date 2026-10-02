@@ -882,3 +882,27 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   template mentions `seldon:begin`/`seldon:end` in a code span, so a test
   that breaks a fence must replace the full `<!-- seldon:end -->` marker,
   not search for `seldon:end`.
+
+## 2026-10-02 · WP-046 (READMEs)
+
+- **plugin/ is a repository of its own after `git subtree split`.** A
+  relative link or image in `plugin/*.md` that leaves `plugin/` breaks on
+  the `jax-seldon-plugin` front page; use
+  `https://github.com/JohnAndrewsX/jax-seldon/blob/main/<path>`.
+  `docs-check` now fails on it. To see the split repository, clone
+  `--no-local` into the scratchpad and run the split there, never in the
+  real repository:
+  `git clone -q --no-local -b <branch> <worktree> <scratch>/mono && cd <scratch>/mono && git worktree add <scratch>/split "$(git subtree split --prefix=plugin)"`.
+- **A code span broken across two lines renders on GitHub but hides
+  from docs-check,** which reads `seldon …` spans line by line. Keep a
+  command span on one line; break the prose before it.
+- **Moving a README heading breaks links from outside the repository**
+  (the published plugin README pointed at `jax-seldon#install`). Keep an
+  `<a name="install"></a>` where the old heading was; docs-check accepts
+  `<a name|id="…">` as an anchor.
+- **docs-check checks repository URLs offline:** `blob|tree/main/<path>`,
+  `raw.githubusercontent.com/…/main/<path>`, the repository root and
+  workflow badges map to files here, so a link to a file that only
+  exists on your branch passes before the merge. Other URLs (shields,
+  releases, external sites) are not fetched; `curl -sL -o /dev/null -w
+  '%{http_code}'` them by hand before the handover.

@@ -81,7 +81,10 @@ schema-validate:
 # structure in every language under docs/user/, the German source lines,
 # every `seldon …` in the guide against the engine's --help, and the CLI
 # reference's help blocks equal to `seldon <command> --help`
-# (`bash scripts/docs-check.sh --write` regenerates them).
+# (`bash scripts/docs-check.sh --write` regenerates them). The front pages
+# (WP-046: both READMEs, docs/DEVELOPMENT.md, llms.txt): links, anchors,
+# links into the public repositories, plugin/ links that survive the
+# subtree split, and their `seldon …` lines.
 docs-check:
     bash scripts/docs-check.sh
 

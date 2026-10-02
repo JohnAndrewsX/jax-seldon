@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Packaging and docs
 
+- New README for the project and the plugin repository (WP-046): what
+  Seldon is and why, six features, a quick start from install to the
+  plugin, a 60-second tour and a table of every document. The developer
+  reading order and layout moved to `docs/DEVELOPMENT.md`. `docs-check`
+  now also checks both READMEs, `docs/DEVELOPMENT.md` and `llms.txt`,
+  including links into the public repositories and plugin links that
+  must survive the subtree split.
 - User guide in English and German (WP-045): `docs/user/en/` and
   `docs/user/de/` with thirteen pages each, from getting started to the
   glossary, a style sheet and a translation policy (English is the

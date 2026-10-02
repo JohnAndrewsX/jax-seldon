@@ -1,35 +1,100 @@
-# jax-seldon
+<!-- mark: the Prime Radiant icon (work/design/ROUND-2.md, A1 mask / A9 favicon)
+     goes here, left of the title, once round 2 is delivered to assets/. -->
 
-**Seldon** is a flight recorder and planning desk for an Omarchy system.
-It keeps a Markdown logbook of everything that changes on the machine —
-packages, configs, themes, plugins, Omarchy updates — reconciles those
-facts against planned work, and shows the whole picture in the Omarchy
-Quattro shell: a bar pill, a panel, and a full-screen overlay called the
-*Prime Radiant*.
+# Seldon
 
-Named after Hari Seldon (Asimov, *Foundation*): the Plan predicts, the
-Crises are where reality deviates. Seldon makes the deviations visible.
+A flight recorder and planning desk for your Omarchy machine.
 
-| Part | Where | Language | Ships as |
-|---|---|---|---|
-| Logbook | `~/Seldon` (configurable) | Markdown + YAML, Obsidian-compatible | user data, git repo |
-| Engine | `engine/` | Rust, single static binary `seldon` | GitHub release (`install.sh`), AUR package `jax-seldon` (see [Install](#install)) |
-| Plugin | `plugin/` | Quickshell QML | `omarchy plugin add …` |
-| Contract | `schema/` | JSON Schema | the only link between engine and plugin |
+[![CI](https://github.com/JohnAndrewsX/jax-seldon/actions/workflows/ci.yml/badge.svg)](https://github.com/JohnAndrewsX/jax-seldon/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/JohnAndrewsX/jax-seldon)](https://github.com/JohnAndrewsX/jax-seldon/releases/latest)
+[![Licence: MIT](https://img.shields.io/github/license/JohnAndrewsX/jax-seldon)](LICENSE)
 
-**User guide:** [English](docs/user/en/README.md) · [Deutsch](docs/user/de/README.md)
+<!-- hero: replace with the README hero (work/design/ROUND-2.md, A6, 1280×640:
+     the Prime Radiant lockup with this screenshot on its right) once round 2
+     is delivered; until then the plugin's preview.png. -->
+![The Prime Radiant overlay on the left with heatmap, package series, drift bars, risk donut, timeline and the plan; the bar panel's Today tab on the right; Tokyo Night theme, sample data](plugin/preview.png)
 
-## Install
+Seldon keeps a plain-Markdown logbook of everything that changes on your
+Omarchy system: packages, config files, themes, plugins, snapshots and
+Omarchy updates. You plan changes as *cases*. Seldon matches what
+actually happened against those cases and shows every change nobody
+planned as *drift*, so you can explain it. A bar pill, a panel and a
+fullscreen overlay, the *Prime Radiant*, show the picture in the Omarchy
+shell. Seldon only records: it never installs anything, never changes
+your system and never blocks a command.
+
+The name comes from Hari Seldon in Asimov's *Foundation*: the Plan
+predicts, and a crisis is where reality leaves it.
+
+[Why](#why) · [Features](#features) · [Quick start](#quick-start) ·
+[Tour](#a-60-second-tour) · [Install options](#install-options-update-and-removal) ·
+[Documentation](#documentation) · [Status](#project-status) ·
+[Contributing](#contributing)
+
+## Why
+
+Omarchy is built for working with AI agents. On a developer's machine,
+agents and people install packages, edit configs and switch themes every
+day. After a few weeks nobody can say why the system looks the way it
+does. `pacman.log` and `journalctl` have the facts but not the reasons. A
+hand-written changelog has the reasons, until you stop writing it. Seldon
+keeps both in one place: the facts it collects itself, and the reasons
+you or your agents give.
+
+## Features
+
+- Six collectors read pacman, snapper, Omarchy, plugins, the theme and
+  your watched config files into an append-only ledger. A capture never
+  records the same change twice.
+- You plan a change as a case: a Markdown file with a zone (green,
+  yellow, red), a risk class and a plan. It moves from queued to active,
+  verification and completed.
+- A change that no case covers is drift. You link it to a case, explain
+  it or dismiss it, from the terminal or the panel.
+- Claude Code's hooks, or one `seldon hook` command for any other agent,
+  record each changing command with the agent's name and the active
+  case. Every logbook carries an `AGENTS.md` with the rules agents follow
+  there.
+- In the Omarchy shell, a bar pill counts active cases and open drift. A
+  panel with six tabs and the Prime Radiant overlay with charts follow
+  your Omarchy theme.
+- The logbook is Markdown and YAML in `~/Seldon`, a git repository and,
+  if you want, an Obsidian vault. `seldon rebuild` writes a guide that
+  turns a fresh install into this machine again. Nothing leaves your
+  machine.
+
+## Quick start
+
+You need Omarchy 4 and a terminal. Nothing here needs `sudo`. Three
+steps, about two minutes.
+
+<a name="install"></a>
+
+### 1. Install the engine
+
+The engine is one program, `seldon`.
 
 **AUR package: coming soon. Until then install the engine from GitHub
 (below).**
-
-### Engine from GitHub
 
 `install.sh` downloads the static `seldon` binary of a release, checks it
 against the release's `SHA256SUMS` and refuses on a mismatch, then
 installs `~/.local/bin/seldon` (and the alias `jax-seldon`). It runs as
 your user and never asks for root.
+
+> [!NOTE]
+> **v0.1.0** predates `install.sh`, so `releases/latest/download/install.sh`
+> exists from the next release on (v0.1.1). Until then take the script from
+> `main` (https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
+> and run `bash install.sh --version v0.1.0`: the engine is checked the
+> same way, the script itself is not covered by `SHA256SUMS`.
+>
+> ```sh
+> cd "$(mktemp -d)"
+> curl -fsSLO https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh
+> less install.sh
+> bash install.sh --version v0.1.0
+> ```
 
 Checked form — download, read, verify, run:
 
@@ -48,33 +113,111 @@ only the script itself goes unchecked:
 curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
 ```
 
+Check it with `seldon --version`. If your shell says `command not found`,
+open a new terminal: Omarchy puts `~/.local/bin` on your `PATH` when a
+shell starts.
+
+### 2. Create your logbook
+
+```sh
+seldon init
+```
+
+The wizard asks where the logbook lives (`~/Seldon` by default) and a few
+more questions. Enter takes the default for each one; in a list, Space
+ticks an item. `seldon init --non-interactive` takes every default
+without asking. Then check the setup:
+
+```sh
+seldon doctor
+```
+
+Every line should say `ok`. On Omarchy, `snapper` may say `degraded`:
+your user cannot read snapshots yet. Seldon works without them. `doctor`
+prints the one command that allows it; it changes the root snapper
+config, so Seldon never runs it for you.
+
+### 3. Add the plugin
+
+```sh
+omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable
+```
+
+Omarchy asks before it clones the plugin. A pill `⟡` then appears on the
+right of the bar: a left click opens the panel, a middle click the Prime
+Radiant. If the panel shows a banner instead of data, the banner's button
+is the fix.
+
+## A 60-second tour
+
+Change something without telling Seldon first. A theme switch is quick
+and easy to undo. Then ask Seldon what it saw:
+
+```sh
+seldon capture
+seldon drift
+```
+
+```text
+yellow  2026-10-02 19:54  theme/theme-set  gruvbox  01M3YW134EVKJ23C1GXVHDVVEH
+1 open drift item(s), 0 crisis
+```
+
+The switch is drift: no case covers it. The pill now shows `⟡ · 1`. The
+plugin captures by itself every 15 minutes; `seldon capture` just saves
+you the wait. Explain the change with the event id from the last column:
+
+```sh
+seldon drift explain <EVENT> -- "Tried another theme"
+```
+
+Seldon records your reason as a completed case and the drift is gone. The
+next change you plan first:
+
+```sh
+seldon plan new --area themes -- "Switch back to my usual theme"
+seldon plan start <ID>
+seldon log --case <ID> -- "Switching back to my usual theme"
+```
+
+`plan new` prints the case id. Switch back, run `seldon capture` again
+and link the new theme change to the case with
+`seldon drift link <EVENT> <ID>`. Close the case with
+`seldon plan verify <ID>` and `seldon plan done <ID>`. A change an agent
+makes through the hooks carries the active case on its own.
+
+Open the panel and press `2` for the Changelog: both switches, the note
+and every step of the case are there. A middle click on the pill opens
+the Prime Radiant. Each step is also a git commit in your logbook:
+`git -C ~/Seldon log --oneline`.
+
+The full walk-through, with the output of every command, is
+[Getting started](docs/user/en/01-getting-started.md).
+
+## Install options, update and removal
+
 Options (with the one-liner: `| bash -s -- --unit`):
 
 | Option | Effect |
 |---|---|
 | `--version vX.Y.Z` | that release instead of the latest |
 | `--prefix DIR` | install into `DIR/bin` instead of `~/.local/bin` |
-| `--unit` | also install the optional watcher unit into `~/.config/systemd/user/` (installed, not enabled; see `engine/systemd/README.md`) |
+| `--unit` | also install the optional watcher unit into `~/.config/systemd/user/` (installed, not enabled; see [`engine/systemd/README.md`](engine/systemd/README.md)) |
 | `--force` | replace a `seldon` (or unit) the script did not install, such as a self-built binary; without it the script refuses and changes nothing |
 | `--uninstall` | remove what the script installed (give the same `--prefix`) |
 
-Then create your logbook once with `seldon init`, and add the plugin:
-`omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable`
-(`plugin/README.md`).
-
 - **Update:** run `install.sh` again, either form. It replaces `seldon`
   when the release is newer; with the same version it changes nothing.
+  Update the plugin with `omarchy plugin update jax.seldon`.
 - **Remove:** `bash install.sh --uninstall`, or with the one-liner
   `… | bash -s -- --uninstall`. It removes exactly the files it
   installed (a file you changed since is kept, and it says so). Your
-  logbook, `~/.config/seldon/` and `~/.local/state/seldon/` stay.
-- **v0.1.0** predates `install.sh`, so `releases/latest/download/install.sh`
-  exists from the next release on (v0.1.1). Until then take the script from
-  `main` (https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
-  and run `bash install.sh --version v0.1.0`: the engine is checked the
-  same way, the script itself is not covered by `SHA256SUMS`.
+  logbook, `~/.config/seldon/` and `~/.local/state/seldon/` stay. Remove
+  the plugin with `omarchy plugin remove jax.seldon`.
 
 ### Engine from the AUR
+
+Once the package is live:
 
 ```sh
 omarchy pkg aur add jax-seldon   # install
@@ -84,22 +227,60 @@ omarchy pkg drop jax-seldon      # remove
 
 Install from one source only: both put a `seldon` on your `PATH`.
 
-This repository is the **development kit**. Read in this order:
+## Documentation
 
-1. `PROJECT.md` — goal, scope, definition of done
-2. `AGENTS.md` — rules for every agent working here
-3. `docs/CONCEPT.md` — the idea, end to end
-4. `docs/SPEC-LOGBOOK.md`, `docs/SPEC-ENGINE.md`, `docs/SPEC-PLUGIN.md`, `docs/CONTRACT.md`
-5. `docs/PLAN.md` — phases and work packages
-6. `docs/ORCHESTRATION.md` — how the agent team is run (Herdr)
-7. `DECISIONS.md` — ADR index
+| You want to | Read |
+|---|---|
+| Use Seldon, step by step | User guide: [English](docs/user/en/README.md) · [Deutsch](docs/user/de/README.md) |
+| Get going in fifteen minutes | [Getting started](docs/user/en/01-getting-started.md) · [Erste Schritte](docs/user/de/01-getting-started.md) |
+| Know every pill, panel and overlay key | [Plugin README](plugin/README.md) |
+| Let an AI agent work in your logbook | [Agent guide](docs/AGENT-GUIDE.md) · [`llms.txt`](llms.txt) |
+| Understand how it works | [Concept](docs/CONCEPT.md) · specs for the [logbook](docs/SPEC-LOGBOOK.md), [engine](docs/SPEC-ENGINE.md), [plugin](docs/SPEC-PLUGIN.md) and the [contract](docs/CONTRACT.md) · [decisions](DECISIONS.md) |
+| Work on Seldon itself | [Contributing](CONTRIBUTING.md) · [Development](docs/DEVELOPMENT.md) |
+| See what changed | [Changelog](CHANGELOG.md) · [Versioning](docs/VERSIONING.md) |
 
-The human-facing concept lives in `docs/seldon-concept.html` (offline, single file).
+An AI agent started inside a logbook follows that logbook's `AGENTS.md`;
+an agent working on this repository follows the repository's
+[`AGENTS.md`](AGENTS.md).
 
-Author: `JohnAndrewsX`. Plugin ID `jax.seldon`. License MIT.
+## Project status
 
-## For AI agents
+v0.1.0, the first release (2026-10-02). Before 1.0.0 a minor release
+may still change the CLI, the logbook layout or the contract; the
+[changelog](CHANGELOG.md) then says so under Breaking. Next: the AUR
+package, the listing in the Omarchy plugin directory, the update-impact
+report and the Seldon mark; then 1.0.0.
 
-An agent started inside a Seldon logbook follows that logbook's `AGENTS.md`; the long form is
-[`docs/AGENT-GUIDE.md`](docs/AGENT-GUIDE.md), the one-page index is [`llms.txt`](llms.txt).
-An agent working on this repository follows [`AGENTS.md`](AGENTS.md).
+## Contributing
+
+Issues and pull requests are welcome. Please open an issue before you
+write anything larger than a fix, so it does not collide with planned
+work. [CONTRIBUTING.md](CONTRIBUTING.md) has the build (`just check`),
+the rules and how review works; everyone taking part follows the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Report a vulnerability privately through
+[GitHub's vulnerability reporting](https://github.com/JohnAndrewsX/jax-seldon/security/advisories/new),
+never in a public issue. [SECURITY.md](SECURITY.md) has the scope and the
+alternative by e-mail. The engine has no network code and needs no root.
+The plugin runs inside the Omarchy shell; what it reads and runs is listed
+in its [README](plugin/README.md#security-privacy-privileges).
+
+## Licence
+
+[MIT](LICENSE) © JohnAndrewsX. Plugin id `jax.seldon`, AUR package
+`jax-seldon`.
+
+## Acknowledgements
+
+- [Omarchy](https://omarchy.org) and its shell, which Seldon is built for.
+- [Quickshell](https://quickshell.org) and [Hyprland](https://hyprland.org),
+  which the plugin runs on.
+- Isaac Asimov's *Foundation*, for the name and the Prime Radiant.
+- [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
+  [Contributor Covenant](https://www.contributor-covenant.org/), which
+  this repository follows.
+- The Rust crates the engine is built from, listed in
+  [`engine/Cargo.toml`](engine/Cargo.toml).
