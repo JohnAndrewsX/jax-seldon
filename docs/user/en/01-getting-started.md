@@ -81,8 +81,9 @@ take it. In a list, Space ticks or unticks an item and Enter confirms.
 | Make the logbook a git repository with a first commit? | yes |
 | Backfill since | leave empty |
 
-For the backfill, empty means Seldon records from now on. A date makes the first capture also record older changes. None of
-those belong to a case, so each one shows up as drift. The wizard then
+For the backfill, empty means Seldon records from now on. A date makes
+the first capture also record older changes. None of those belong to a
+case, so each one shows up as drift. The wizard then
 offers to mark them as the pre-Seldon baseline. Leave the backfill for
 later; [Concepts](02-concepts.md#baseline) explains it.
 

@@ -171,15 +171,17 @@ The panel's keys work while the panel is open.
 | `e` | open this tab's file in your editor |
 | Esc | close |
 
-Actions that write take two presses on the keyboard: *Start*, *Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`),
-the drift sheet and a new decision. The first Enter arms the action and
+Actions that write take two presses on the keyboard: *Start*,
+*Verify*, *Done*, *Drop* (`x`), *Start agent* (`a`), the drift sheet and
+a new decision. The first Enter arms the action and
 the card says "Press Enter again: Start C-2026-005". The second press
 sends it. Any other key in a list disarms it. A note and a new case are
 sent with one Enter. With the mouse, one click sends, except *Drop* and
 *Start agent*, which ask for a second click.
 
-While a text field or a sheet has focus, every key goes to it. Tab and Shift-Tab walk its fields. Esc gives the keys back to
-the panel and keeps what you typed.
+While a text field or a sheet has focus, every key goes to it. Tab and
+Shift-Tab walk its fields. Esc gives the keys back to the panel and
+keeps what you typed.
 
 ## The Prime Radiant
 
