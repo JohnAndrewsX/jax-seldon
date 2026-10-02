@@ -50,3 +50,15 @@ in DELIVERY §8. No GitHub issues needed.
   this file.
 - The GitHub avatar, social preview and marketplace image are uploaded
   by the operator.
+
+## 4. Round 3 received and accepted (2026-10-02)
+
+Delivery: 76 files (37 optimised masks, 37 sources, README, DELIVERY).
+Checks: every mask carries `color` on the `<svg>` root and nowhere
+else (37/37, sources 37/37); a root stylesheet `svg{color:#fff}` now
+tints all 37 (render identical to a `currentColor` substitution);
+black renders identical to round 2 (geometry unchanged); xmllint and
+rsvg-convert clean on all 74; mask rules unchanged. **F1 closed.**
+Round 3 is the mask set of record; rasters and brand files stay round 2
+(byte-identical per DELIVERY). Nothing further is open for the
+designer; check 4 in the real bar follows from WP-051.
