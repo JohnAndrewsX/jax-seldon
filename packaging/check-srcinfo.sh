@@ -14,6 +14,7 @@ dir=$(dirname "$0")
 render() (
   # a PKGBUILD only assigns variables at the top level; the functions are
   # defined, not run
+  # shellcheck disable=SC1091  # the PKGBUILD is data, not a script to follow
   source "$dir/PKGBUILD"
   printf 'pkgbase = %s\n' "$pkgname"
   for f in pkgdesc pkgver pkgrel epoch url install changelog; do
