@@ -30,3 +30,9 @@ This repository is the **development kit**. Read in this order:
 The human-facing concept lives in `docs/seldon-concept.html` (offline, single file).
 
 Author: `JohnAndrewsX`. Plugin ID `jax.seldon`. License MIT.
+
+## For AI agents
+
+An agent started inside a Seldon logbook follows that logbook's `AGENTS.md`; the long form is
+[`docs/AGENT-GUIDE.md`](docs/AGENT-GUIDE.md), the one-page index is [`llms.txt`](llms.txt).
+An agent working on this repository follows [`AGENTS.md`](AGENTS.md).
