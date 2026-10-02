@@ -13,9 +13,72 @@ Crises are where reality deviates. Seldon makes the deviations visible.
 | Part | Where | Language | Ships as |
 |---|---|---|---|
 | Logbook | `~/Seldon` (configurable) | Markdown + YAML, Obsidian-compatible | user data, git repo |
-| Engine | `engine/` | Rust, single static binary `seldon` | AUR package `jax-seldon` |
+| Engine | `engine/` | Rust, single static binary `seldon` | GitHub release (`install.sh`), AUR package `jax-seldon` (see [Install](#install)) |
 | Plugin | `plugin/` | Quickshell QML | `omarchy plugin add …` |
 | Contract | `schema/` | JSON Schema | the only link between engine and plugin |
+
+## Install
+
+**AUR package: coming soon. Until then install the engine from GitHub
+(below).**
+
+### Engine from GitHub
+
+`install.sh` downloads the static `seldon` binary of a release, checks it
+against the release's `SHA256SUMS` and refuses on a mismatch, then
+installs `~/.local/bin/seldon` (and the alias `jax-seldon`). It runs as
+your user and never asks for root.
+
+Checked form — download, verify, run:
+
+```sh
+cd "$(mktemp -d)"
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh
+curl -fsSLO https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS && bash install.sh
+```
+
+One-liner — the script still verifies the engine against `SHA256SUMS`;
+only the script itself goes unchecked:
+
+```sh
+curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash
+```
+
+Options (with the one-liner: `| bash -s -- --unit`):
+
+| Option | Effect |
+|---|---|
+| `--version vX.Y.Z` | that release instead of the latest |
+| `--prefix DIR` | install into `DIR/bin` instead of `~/.local/bin` |
+| `--unit` | also install the optional watcher unit into `~/.config/systemd/user/` (installed, not enabled; see `engine/systemd/README.md`) |
+| `--uninstall` | remove what the script installed (give the same `--prefix`) |
+
+Then create your logbook once with `seldon init`, and add the plugin:
+`omarchy plugin add https://github.com/JohnAndrewsX/jax-seldon-plugin.git --enable`
+(`plugin/README.md`).
+
+- **Update:** run `install.sh` again, either form. It replaces `seldon`
+  when the release is newer; with the same version it changes nothing.
+- **Remove:** `bash install.sh --uninstall`, or with the one-liner
+  `… | bash -s -- --uninstall`. It removes exactly the files it
+  installed (a file you changed since is kept, and it says so). Your
+  logbook, `~/.config/seldon/` and `~/.local/state/seldon/` stay.
+- **v0.1.0** predates `install.sh`, so `releases/latest/download/install.sh`
+  exists from the next release on. Until then take the script from
+  `main` (https://raw.githubusercontent.com/JohnAndrewsX/jax-seldon/main/install.sh)
+  and run `bash install.sh --version v0.1.0`: the engine is checked the
+  same way, the script itself is not covered by `SHA256SUMS`.
+
+### Engine from the AUR
+
+```sh
+omarchy pkg aur add jax-seldon   # install
+yay -S jax-seldon                # update
+omarchy pkg drop jax-seldon      # remove
+```
+
+Install from one source only: both put a `seldon` on your `PATH`.
 
 This repository is the **development kit**. Read in this order:
 
