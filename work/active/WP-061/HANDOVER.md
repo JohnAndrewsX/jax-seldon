@@ -169,10 +169,7 @@ Appended to `memory/pitfalls.md`, under "2026-10-03 · WP-061":
 
 ## Decisions needed
 
-- None open from round 0. The TESTING.md rows and `index/mod.rs` were
-  assigned in the review and are done (fix round 1). B3 (rebase onto
-  WP-064, `sys::run_command_in_engine_group`, process-group test) waits
-  for the orchestrator's go.
+- None. B3 is done in the final round (below).
 
 ## Touched outside WP scope
 
@@ -292,3 +289,71 @@ run after the B3 rebase.
 Touched outside the original file list:
 - `engine/src/index/mod.rs` (`git_info` only, Q4) and `docs/TESTING.md`
   (two rows, one new row, N3). Both were assigned in the review.
+
+## Final round (review round 2: F1, F2; B3)
+
+Done:
+- **F1**: `check_toplevel` asks for `--show-toplevel --absolute-git-dir`.
+  The git dir must be `<root>/.git`, or a linked work tree
+  `<repo>/worktrees/<name>` whose `gitdir` file names `<root>/.git`. A
+  `.git` file whose `gitdir:` names another repository's git dir gives
+  "the logbook's .git points at another repository's git directory
+  (<path>)". In that case the autocommit commits nothing and prints one
+  warning, and doctor reports the `git` check as degraded with that
+  reason, without a fix line.
+- **F2**: `Undo::is_sane(root)` refuses a kept undo when any existing part
+  of one of its paths under the logbook is a symbolic link (checked with
+  `symlink_metadata`). The refusal then points to `git -C … status`.
+- **B3**:
+  - Rebased onto main (WP-064 merge `b275a0f`, `9ea4ec8`).
+    - `git.rs` and `index/mod.rs` conflicts: I kept this WP's versions,
+      in which every git call goes through `git::command()`, so WP-064's
+      direct `run_in_engine_group` calls there are replaced.
+    - `CHANGELOG.md` and `memory/pitfalls.md`: both sides kept, main's
+      entries first.
+  - New `sys::run_command_in_engine_group(Command, Duration)`
+    (`run_with(.., Group::Engine)`). `git.rs` runs all its env-controlled
+    commands through it, while every other program keeps
+    `run`/`run_command` and its own group.
+  - The de page 09 source line is restamped to the rebased en commit
+    `ec1a8a5`.
+- Docs: the SPEC autocommit paragraph (git-dir rule, process group) and
+  the kept-undo rule (no symlinked part); TESTING rows for the new tests.
+
+Tests:
+- `tests/git.rs`:
+  - `a_dot_git_file_pointing_at_another_repository_commits_nowhere`: the
+    parent's HEAD and index are unchanged, there is one warning, and
+    doctor is degraded.
+  - `a_linked_work_tree_of_the_logbooks_repository_is_committed`
+    (`git worktree add`): the commit lands on the work tree's branch.
+  - `git_runs_in_the_engines_process_group`: the `git` link in the stub
+    dir is removed first (never written through), then replaced by a
+    wrapper that appends `/proc/$$/stat` to a log and `exec`s the host's
+    git. For `log` and `doctor`, every git call's process group equals the
+    test process's group, which seldon inherits. A snapper stub, recorded
+    the same way, leads its own group.
+- `tests/import.rs`: `a_kept_undo_through_a_symlinked_folder_is_not_offered`
+  (`memory/` replaced by a link to a folder outside the logbook; no
+  command is printed and the outside folder is unchanged).
+
+Mutants (each one fails its test; each was restored from the index or
+from a copy, checked with `cmp`):
+- G1, any git dir accepted: `a_dot_git_file…` fails.
+- G2, the linked-work-tree branch removed: `a_linked_work_tree…` fails.
+- G3, the symlink check dropped: `a_kept_undo_through_a_symlinked_folder…`
+  fails.
+- B3 mutant, `git.rs` back on `sys::run_command`: `git_runs_in…` fails at
+  tests/git.rs:461 ("git rev-parse ran in its own group").
+
+Verified by:
+- `just check`: exit 0 on `925b07c`, after the rebase. That covers fmt,
+  clippy, the tests and `check-watch` (1017 passed, 0 failed, 60 suites),
+  plus packaging, install, schema, docs-check (ok, 14 translated pages),
+  plugin-validate, qmllint and plugin-test.
+- Nothing else ran in this worktree during the run.
+
+Touched outside the original file list (all assigned in the reviews):
+- `engine/src/sys.rs` (one new function, B3);
+- `engine/src/index/mod.rs` (`git_info`, Q4);
+- `docs/TESTING.md` (rows).
