@@ -16,7 +16,6 @@ decisions).
 |---|---|---|---|---|---|
 | WP-076 | index: size budget enforced; perf budgets at stated scale | Engine | `engine-076` (opus) | `wt/WP-076` · `wp/076-review` | 2026-10-04 |
 | WP-073 | collectors: plugins dedupe, attribution window, verbs, SELDON_NOW, snapper numbers | Engine | `engine-073` (opus) | `wt/WP-073` · `wp/073-review` | 2026-10-04 |
-| WP-075 | import/dossier/watch: case-less vault, non-UTF-8, bad file, areas | Engine | `engine-075` (opus) | `wt/WP-075` · `wp/075-review` | 2026-10-04 |
 
 ## Queued (next up)
 
@@ -37,6 +36,9 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-075 import guards a case-less vault, reads non-UTF-8 names,
+  accepts a BOM; dossier skips an unreadable system file and neutralises
+  fence bodies idempotently; watch covers areas/ (two Opus rounds) — merged.
 - 2026-10-04 WP-074 init: language setting, config saved before the layout
   and restored on a failed layout, --no-git kept across re-runs, theme hook
   installed and recorded under one lock (WP-052 folded in; two Opus rounds)
