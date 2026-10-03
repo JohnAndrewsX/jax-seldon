@@ -1084,19 +1084,24 @@ fn a_value_with_line_breaks_stays_inside_its_code_span() {
     let shown = |tag: &str| format!("n{tag}\\n```sh\\necho {tag}\\n```");
     for (heading, tags) in [
         ("1. Base", &["VER"][..]),
-        ("2. Packages", &["PKG", "VER", "ACT", "CAS"]),
-        ("4. Plugins", &["PLA", "PLB", "CAS"]),
+        ("2. Packages", &["PKG", "VER"]),
+        ("4. Plugins", &["PLA", "PLB"]),
         ("5. Theme", &["THM"]),
         ("6. User units", &["UNT"]),
         (
             "7. Open questions",
-            &["PKG", "UNT", "DSM", "THM", "PLA", "PLB", "ACT"],
+            &["PKG", "UNT", "DSM", "THM", "PLA", "PLB"],
         ),
     ] {
         let body = section(&text, heading).join("\n");
         for tag in tags {
             assert!(body.contains(&shown(tag)), "{tag} in {heading}\n{text}");
         }
+    }
+    // an actor or a case `append` would refuse makes the line a bad line
+    // on load (WP-065): its event never reaches the guide
+    for gone in ["ACT", "CAS", "agentpkg", "casedpkg", "io.example.cased"] {
+        assert!(!text.contains(gone), "{gone}\n{text}");
     }
     let not_reproduced = |tag: &str| {
         text.lines()

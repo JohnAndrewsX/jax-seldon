@@ -803,6 +803,36 @@ mod sessions {
         }
     }
 
+    /// WP-065: a STATUS.md whose end marker was removed by hand is left
+    /// as it is; session-stop says so on stderr and goes on.
+    #[test]
+    fn session_stop_leaves_a_damaged_status_md_alone() {
+        let h = Hooks::new();
+        let out = h.run(&["status"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let status = h.logbook.join("STATUS.md");
+        let damaged =
+            read(&status).replace("<!-- seldon:end -->\n", "") + "\n## My notes\nKeep this.\n";
+        std::fs::write(&status, &damaged).unwrap();
+        let out = h.run(&["plan", "new", "--", "Damaged status test"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+
+        let out = h.piped(
+            &["hook", "session-stop"],
+            "",
+            Some("2026-10-01T10:45:00+02:00"),
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let err = stderr(&out);
+        assert!(
+            err.lines().any(|l| l.starts_with(
+                "seldon: warning: STATUS.md: the status fence has no end marker of its own; file not updated"
+            )),
+            "{err}"
+        );
+        assert_eq!(std::fs::read(&status).unwrap(), damaged.as_bytes());
+    }
+
     #[test]
     fn session_stop_without_a_session_counts_today() {
         let h = Hooks::new();

@@ -1129,7 +1129,9 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
 fn write_views(logbook: &Logbook, built: &crate::index::Built) -> Result<()> {
     use crate::index::views;
     views::write_ledger_views(logbook, built)?;
-    views::write_status(logbook, built)?;
+    if let views::Fill::Skipped(w) = views::write_status(logbook, built)? {
+        eprintln!("seldon: warning: {w}");
+    }
     if let views::Fill::Skipped(w) = views::write_decisions_index(logbook, &built.index.decisions)?
     {
         eprintln!("seldon: warning: {w}");

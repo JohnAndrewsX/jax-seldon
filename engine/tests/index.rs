@@ -877,3 +877,85 @@ fn drift_is_capped_at_200_crises_first() {
     assert!(!ix.drift.iter().any(|d| d.subject == "theme-0"));
     common::assert_valid_index(&serde_json::to_value(&ix).unwrap());
 }
+
+/// F-132: a ledger line torn inside `ü` (`0xC3`), and lines whose actor or
+/// case `append` would refuse (WP-059 review), are skipped with one warning
+/// that names the month and the count; `status`, `index` and `capture`
+/// still run and keep the other events.
+#[test]
+fn a_torn_ledger_line_is_skipped_with_a_warning() {
+    use std::io::Write as _;
+    const AT: &str = "2026-10-03T09:00:00+02:00";
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let run = |args: &[&str]| {
+        let out = env.at(AT, args);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{args:?}: {}{}",
+            common::stdout(&out),
+            common::stderr(&out)
+        );
+        out
+    };
+    run(&["log", "--", "Lüfter getauscht, Prüfung läuft"]);
+    let month = root.join("ledger/2026-10.jsonl");
+    let good = read(&month);
+    let append = |bytes: &[u8]| {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&month)
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+    };
+    append(b"{\"id\":\"01M4TORN\",\"ts\":\"2026-10-03T09:00:00+02:00\",\"source\":\"manual\",\"kind\":\"note\",\"subject\":\"L\xc3");
+
+    let warned = |out: &std::process::Output, count: &str| {
+        let json = common::json(out);
+        let warnings = json["warnings"].as_array().unwrap();
+        assert!(
+            warnings.iter().any(|w| w
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("ledger/2026-10.jsonl: {count} skipped"))),
+            "{json}"
+        );
+    };
+    let notes = || {
+        json_file(&env.home.join(".local/state/seldon/index.json"))["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == json!("note"))
+            .count()
+    };
+    warned(&run(&["status", "--json"]), "1 line");
+    assert_eq!(notes(), 1);
+    // writing goes on after the torn line, and so does the index
+    run(&["log", "--", "second note"]);
+    // a line copied by hand with an actor and a case `append` refuses
+    let line = good.trim_end();
+    for (from, to) in [
+        (
+            "\"actor\":\"human\"",
+            "\"actor\":\"Robot ]] <!-- seldon:end -->\"",
+        ),
+        (
+            "\"actor\":\"human\"",
+            "\"actor\":\"human\",\"case\":\"../../x\"",
+        ),
+    ] {
+        let bad = line.replacen(from, to, 1);
+        assert_ne!(bad, line, "{line}");
+        append(format!("{bad}\n").as_bytes());
+    }
+    warned(&run(&["index", "--check", "--json"]), "3 lines");
+    assert_eq!(notes(), 2);
+    let out = run(&["status", "--json"]);
+    warned(&out, "3 lines");
+    let status = read(&root.join("STATUS.md"));
+    assert!(!status.contains("Robot"), "{status}");
+    run(&["capture", "--source", "theme"]);
+}

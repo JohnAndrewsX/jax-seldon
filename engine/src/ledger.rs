@@ -24,7 +24,8 @@ use ulid::{Generator, Ulid};
 use crate::error::Result;
 use crate::logbook::Logbook;
 use crate::logbook::lock::Lock;
-use crate::model::event::{DETAIL_MAX, Event, Meta, SUBJECT_MAX};
+use crate::model::event::{DETAIL_MAX, Event, Meta, SUBJECT_MAX, is_actor};
+use crate::model::is_case_id;
 use crate::redact::Redactor;
 
 /// `ledger/`, relative to the logbook root.
@@ -39,6 +40,9 @@ pub struct Ledger {
 
 /// One month file as read: its events, and the 1-based numbers of lines that
 /// are not valid events (a torn write, a hand edit). Readers skip those.
+/// A line is bad when it is not UTF-8 (a write torn inside a multi-byte
+/// character, F-132), not an event, or names an actor or a case that
+/// `append` would refuse (`event.schema.json`).
 #[derive(Debug, Clone, Default)]
 pub struct MonthFile {
     pub events: Vec<Event>,
@@ -95,11 +99,13 @@ impl Ledger {
         Ok(months)
     }
 
-    /// Reads one month file; a missing file is empty.
+    /// Reads one month file; a missing file is empty. The file is read as
+    /// bytes and decoded line by line, so one bad line is skipped and
+    /// counted in [`MonthFile::bad_lines`] instead of failing the month.
     pub fn read_month(&self, month: &str) -> anyhow::Result<MonthFile> {
         let path = self.month_file(month);
-        let text = match std::fs::read_to_string(&path) {
-            Ok(t) => t,
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(MonthFile::default()),
             Err(e) => {
                 return Err(
@@ -108,16 +114,34 @@ impl Ledger {
             }
         };
         let mut file = MonthFile::default();
-        for (n, line) in text.lines().enumerate() {
-            if line.trim().is_empty() {
+        for (n, raw) in bytes.split(|&b| b == b'\n').enumerate() {
+            let raw = raw.strip_suffix(b"\r").unwrap_or(raw);
+            if raw.trim_ascii().is_empty() {
                 continue;
             }
-            match serde_json::from_str::<Event>(line) {
-                Ok(e) => file.events.push(e),
-                Err(_) => file.bad_lines.push(n + 1),
+            match std::str::from_utf8(raw)
+                .ok()
+                .and_then(|line| serde_json::from_str::<Event>(line).ok())
+                .filter(loadable)
+            {
+                Some(e) => file.events.push(e),
+                None => file.bad_lines.push(n + 1),
             }
         }
         Ok(file)
+    }
+
+    /// The bad lines of every month that has one (`month`, line numbers),
+    /// months ascending: what `doctor` reports (WP-070).
+    pub fn bad_lines(&self) -> anyhow::Result<Vec<(String, Vec<usize>)>> {
+        let mut out = Vec::new();
+        for m in self.months()? {
+            let bad = self.read_month(&m)?.bad_lines;
+            if !bad.is_empty() {
+                out.push((m, bad));
+            }
+        }
+        Ok(out)
     }
 
     /// Every event of every month, in file order (months ascending).
@@ -192,6 +216,13 @@ impl Ledger {
         }
         Ok(written)
     }
+}
+
+/// Whether a parsed line can be used: its actor and case are what `append`
+/// writes (`Event::validate`), so a hand-edited `actor` or `case` cannot
+/// reach the views, links and paths built from them (WP-059 review).
+fn loadable(e: &Event) -> bool {
+    is_actor(&e.actor) && e.case.as_deref().is_none_or(is_case_id)
 }
 
 /// The next id of a monotonic generator (on the practically impossible
@@ -344,6 +375,58 @@ mod tests {
             )
             .unwrap();
         assert_eq!(range.len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// F-132: a line torn inside a multi-byte character is one bad line,
+    /// not a failed month; WP-059 review: a line whose actor or case
+    /// `append` would refuse is a bad line too.
+    #[test]
+    fn bad_lines_are_skipped_one_by_one() {
+        let dir = tmp("bad");
+        let lock = lock::acquire(&dir.join("lock")).unwrap();
+        let ledger = Ledger::at(dir.join("ledger"), Redactor::builtin());
+        let note = |s: &str| {
+            Event::new(
+                ts("2026-10-03T09:00:00+02:00"),
+                Source::Manual,
+                Kind::Note,
+                s,
+            )
+        };
+        let good = ledger
+            .append(&lock, vec![note("Lüfter getauscht")])
+            .unwrap()
+            .remove(0);
+        let line = good.to_line();
+        let path = ledger.month_file("2026-10");
+        let mut f = OpenOptions::new().append(true).open(&path).unwrap();
+        // 2: torn after the first byte of `ü`
+        f.write_all(b"{\"id\":\"01M4TORN\",\"subject\":\"L\xc3")
+            .unwrap();
+        ledger.append(&lock, vec![note("zwei")]).unwrap();
+        let mut f = OpenOptions::new().append(true).open(&path).unwrap();
+        // 4: a CRLF line is fine; 5, 6: actor and case `append` refuses
+        let crlf = line.replace("Lüfter getauscht", "crlf");
+        let actor = line.replace("\"actor\":\"system\"", "\"actor\":\"Robot ]] x\"");
+        let case = line.replace(
+            "\"actor\":\"system\"",
+            "\"actor\":\"system\",\"case\":\"../x\"",
+        );
+        assert_ne!(actor, line);
+        assert_ne!(case, line);
+        f.write_all(format!("{crlf}\r\n{actor}\n{case}\n").as_bytes())
+            .unwrap();
+
+        let oct = ledger.read_month("2026-10").unwrap();
+        let subjects: Vec<_> = oct.events.iter().map(|e| e.subject.as_str()).collect();
+        assert_eq!(subjects, ["Lüfter getauscht", "zwei", "crlf"]);
+        assert_eq!(oct.bad_lines, [2, 5, 6]);
+        assert_eq!(ledger.read_all().unwrap().len(), 3);
+        assert_eq!(
+            ledger.bad_lines().unwrap(),
+            [("2026-10".to_string(), vec![2, 5, 6])]
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

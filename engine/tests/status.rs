@@ -496,3 +496,136 @@ fn decide_names_a_skipped_decision_in_its_warnings() {
         common::stdout(&out)
     );
 }
+
+fn ok(env: &Env, args: &[&str]) {
+    let out = env.at(NOW, args);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{args:?}: {}",
+        common::stderr(&out)
+    );
+}
+
+/// F-130: a fence end marker in a case title and in a decision title stays
+/// inside its fence; STATUS.md and DECISIONS.md keep their size and
+/// `status` stops committing.
+#[test]
+fn a_fence_marker_in_a_title_stays_in_its_fence() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let title = "Document the <!-- seldon:end --> marker";
+    ok(
+        &env,
+        &[
+            "plan", "new", "--zone", "green", "--risk", "R0", "--", title,
+        ],
+    );
+    ok(&env, &["plan", "start", "C-2026-001"]);
+    ok(
+        &env,
+        &[
+            "decide",
+            "--no-edit",
+            "--",
+            "Keep the <!-- seldon:begin status --> marker literal",
+        ],
+    );
+    let files = [root.join("STATUS.md"), root.join("DECISIONS.md")];
+    let mut runs = Vec::new();
+    for _ in 0..3 {
+        status(&env, NOW);
+        runs.push(files.iter().map(|f| read(f)).collect::<Vec<_>>());
+    }
+    let sizes: Vec<Vec<usize>> = runs
+        .iter()
+        .map(|r| r.iter().map(String::len).collect())
+        .collect();
+    assert_eq!(sizes[0], sizes[1], "{sizes:?}");
+    assert_eq!(sizes[1], sizes[2], "{sizes:?}");
+    assert_eq!(runs[0], runs[2]);
+    let (status_md, decisions_md) = (&runs[2][0], &runs[2][1]);
+    assert!(
+        status_md.contains("Document the <!--\u{200B} seldon:end --> marker"),
+        "{status_md}"
+    );
+    assert!(
+        decisions_md.contains("Keep the <!--\u{200B} seldon:begin status --> marker literal"),
+        "{decisions_md}"
+    );
+    for text in [status_md, decisions_md] {
+        assert_eq!(text.matches("<!-- seldon:end -->").count(), 1, "{text}");
+        assert_eq!(text.matches("<!-- seldon:begin ").count(), 1, "{text}");
+    }
+    if env.has_git {
+        let log = git_log(&env, &root);
+        assert_eq!(
+            log.lines().filter(|l| *l == "seldon: status").count(),
+            1,
+            "{log}"
+        );
+    }
+}
+
+/// F-131: a STATUS.md whose marker lines were edited away is left alone
+/// with a warning, the user's lines kept; a CRLF STATUS.md merges.
+#[test]
+fn a_damaged_status_md_is_left_alone() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let path = root.join("STATUS.md");
+    status(&env, NOW);
+    let notes = read(&path) + "\n## My notes\nKeep this.\n";
+    ok(&env, &["plan", "new", "--", "Zed"]);
+
+    for damaged in [
+        notes.replace("<!-- seldon:end -->\n", ""),
+        notes.replace("<!-- seldon:begin status -->\n", ""),
+        // end marker gone, a complete begin…end block pasted below
+        notes.replace("<!-- seldon:end -->\n", "")
+            + "\n<!-- seldon:begin status -->\npasted\n<!-- seldon:end -->\n",
+    ] {
+        std::fs::write(&path, &damaged).unwrap();
+        let out = status(&env, NOW);
+        let warnings = out["warnings"].as_array().unwrap();
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap().starts_with("STATUS.md: ")
+                    && w.as_str().unwrap().contains("file not updated")),
+            "{out}"
+        );
+        assert!(
+            !out["files"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("STATUS.md"))
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), damaged.as_bytes());
+    }
+
+    // CRLF: the fence is found, the new body gets CRLF, the notes stay
+    std::fs::write(&path, notes.replace('\n', "\r\n")).unwrap();
+    let out = status(&env, NOW);
+    assert_eq!(out["warnings"], json!([]), "{out}");
+    assert!(
+        out["files"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("STATUS.md"))
+    );
+    let text = read(&path);
+    assert!(text.contains("[[C-2026-001]] Zed"), "{text}");
+    assert!(
+        text.ends_with("\r\n\r\n## My notes\r\nKeep this.\r\n"),
+        "{text}"
+    );
+    assert!(
+        !text.replace("\r\n", "").contains('\n'),
+        "only CRLF: {text:?}"
+    );
+    assert_eq!(text.matches("<!-- seldon:begin status -->").count(), 1);
+    let again = status(&env, NOW);
+    assert_eq!(again["files"], json!([]), "{again}");
+    assert_eq!(read(&path), text);
+}

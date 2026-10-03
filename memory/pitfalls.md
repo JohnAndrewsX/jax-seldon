@@ -1238,3 +1238,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   a key the engine actually changes (`agents` via `log --actor agent:…`).
 - **`is_plain` quotes YAML 1.1 booleans**, including `y` and `n`: a test
   that expects `id: y` gets `id: "y"`. Use other letters.
+
+## 2026-10-03 · WP-065 (Engine)
+
+- **Tightening a reader breaks tests that inject bad values through it.**
+  Checking actor and case on load made `tests/rebuild.rs` fail: it put a
+  multi-line actor and case straight into the ledger to test escaping.
+  Before you tighten `Ledger::read_month` (or any loader), grep the tests
+  for hand-built ledger JSON (`"actor":`, `"case":`, `append(&lb`) and
+  decide with the orchestrator which tests change.
+- **Without the load check, a hand-edited actor failed `index --check`
+  (exit 2: the index did not validate) instead of giving a warning.**
+  The mutant that drops the check shows this. A loader must enforce at
+  least what the index schema needs, or one bad line stops the index.
+- **A mutant that does not compile proves nothing.** A changed format
+  string with a different number of `{}` "kills" every test. Keep
+  wording mutants valid Rust (swap words, keep the arguments) and check
+  that the failure is an assertion, not `error[E…]`.
+- **`merge_fence` has three callers with different needs.** `STATUS.md`
+  uses `views::merge_status` (a damaged fence → `Err`, the file is not
+  touched). `outputs/REBUILD.md` and the import report use `merge_fence`:
+  there the old text stays below a fresh fence. When you change one,
+  run `rebuild::tests` and `import` too.
