@@ -127,7 +127,12 @@ blocks). Completed shows the index's last 50 (scrollable). *Start agent*
 `seldon agent start <id> --json`; the card shows "agent: <name>" from the
 case's `agents`; refused on queued/verification/closed cases. While a text
 field or the sheet has focus the panel blocks the key catcher; `Esc`
-hands the keys back and keeps the draft. Drift sheet (WP-021): Enter or
+hands the keys back and keeps the draft. So does every tab change (keys,
+a click on the tab strip, IPC `tab`), because a hidden field would keep
+the focus: an open sheet stays open with its draft, an open picker closes
+(WP-067). The Changelog cursor stays on its event when a new index adds
+rows above it (a new filter starts at the top), as the Work and Decisions
+cursors stay on their case and decision. Drift sheet (WP-021): Enter or
 a click on an open drift row, the row's *Resolve…* button, or a click on
 the red strip (first crisis) opens the sheet in the Changelog's place;
 actions Link (open cases, the proposed case preselected), Explain (intent
@@ -314,7 +319,11 @@ item and only while it is loaded. Routes the plugin must honour:
   `resolve crisis|<eventId>` (opens the drift sheet, WP-021) — none runs
   the engine; WP-011), following the
   first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
-  and toggle the panel independently of the overlay (WP-010).
+  and toggle the panel independently of the overlay (WP-010). The bar
+  builds the widget once per monitor, and a target takes one handler: only
+  the first instance the bar lists (`bar.moduleWidgets`) enables its
+  handler, and when that instance goes, the next one takes the target
+  over (WP-067); IPC calls act on that instance's panel.
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,
   `refresh`, `capture`) — read-only state and the two actions any local
   process could trigger anyway; it is how the test host reads plugin state
