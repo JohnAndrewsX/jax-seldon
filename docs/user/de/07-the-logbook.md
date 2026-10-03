@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ eaea010 -->
+<!-- source: en/07-the-logbook.md @ 7d77836 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -189,17 +189,20 @@ Für ein zweites Logbuch, etwa zum Testen, führst du
 Das Logbuch ist nicht alles, was Seldon aufbewahrt. Die eigene
 Buchführung der Engine liegt in `~/.local/state/seldon/`:
 
-| Datei | Was sie enthält |
+| Pfad | Was er enthält |
 |---|---|
 | `cursors.json` | wo jeder Collector aufgehört hat zu lesen, gebunden an den Pfad deines Logbuchs |
 | `manifest.json` | ein Fingerabdruck jeder beobachteten Konfigurationsdatei |
-| `owned.json` | Dateien, die Seldon selbst geschrieben hat und die das nächste Capture noch nicht gesehen hat; nur vorhanden, solange eine wartet |
-| `index.json` | was das Plugin liest; die Engine baut sie neu auf, sie braucht keine Sicherung |
+| `owned.json` | Dateien, die Seldon selbst geschrieben hat und die das nächste Capture noch nicht gesehen hat. Sie existiert nur, solange eine wartet |
+| `index.json` | was das Plugin liest. Die Engine baut sie neu auf, sie braucht keine Sicherung |
+| `hooks/` | die Quellkopie des Theme-Hook-Skripts, wenn du diesen Hook gewählt hast |
+| `agent-launch.log` | die Fehlerausgabe der Agent-Starter; ein Log, nichts hängt davon ab |
 
 Geht dieser Ordner verloren, schlägt nichts fehl, und nichts warnt dich.
 Die Collectors fangen beim aktuellen Stand neu an. `pacman` und
 `snapper` lesen ihre Quellen erneut und überspringen, was das Ledger
-schon enthält. Die Collectors, die Zustände vergleichen (Konfiguration,
+schon enthält. Ein Snapshot, der gelöscht wurde, während der Zustand
+fehlte, wird nicht als gelöscht festgehalten. Die Collectors, die Zustände vergleichen (Konfiguration,
 Plugins, Omarchy, Theme), nehmen die Maschine, wie sie jetzt ist, als
 neuen Ausgangspunkt, und eine Änderung, die geschah, während der Zustand
 fehlte, wird nicht festgehalten.
@@ -224,7 +227,7 @@ tar -C ~/.local/state -xzf ~/seldon-state-2026-10-03.tar.gz
 seldon capture
 ```
 
-`seldon doctor` zeigt danach nur `ok`.
+`seldon doctor` zeigt danach kein neues Problem.
 
 ---
 
