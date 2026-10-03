@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-054 | snapper banner "Check again" runs a capture (issue #2) | Plugin | `plugin-054` (opus, high) | `wt/WP-054` · `wp/054-snapper-banner` | 2026-10-03 |
+| (none) | | | | | |
 
 ## Queued (next up)
 
@@ -33,6 +33,11 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-054 snapper banner *Check again* runs a capture, hint
+  after *Run in terminal*, fixes #2 — merged (Opus review APPROVE; at
+  merge: SPEC §5 rows for the other banners aligned to the buttons,
+  harness diff pipeline no longer aborts the run). Both issue fixes go
+  into 0.1.2.
 - 2026-10-03 WP-053 snapper runs in the C locale: one helper builds every
   snapper command with `LC_ALL=C`, localized-stub test, fixes #1 — merged
   (Opus review APPROVE, stage 2 by the orchestrator). Follow-ups noted:

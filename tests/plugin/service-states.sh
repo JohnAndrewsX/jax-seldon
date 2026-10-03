@@ -234,7 +234,7 @@ argv_check() {
     pass=$((pass + 1)); echo "ok   $1: engine argv ($(wc -l <<<"$got") calls)"
   else
     fail=$((fail + 1)); echo "FAIL $1: engine argv differs"
-    diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+    diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
   fi
 }
 q() { printf '%q ' "$@"; }
