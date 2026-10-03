@@ -111,17 +111,23 @@ impl Bench {
         let scratch = Scratch::new(tag);
         let home = scratch.path("home");
         let lock = lock::acquire(&scratch.path("lock")).unwrap();
+        let missing = scratch
+            .path("bin/no-such-program")
+            .to_string_lossy()
+            .into_owned();
+        // every field spelled out, no `..Sources::default()` (the host's
+        // paths and programs): a new source does not compile until it has a
+        // scratch value here (WP-060 `snapshots`, WP-076 `omarchy`)
         let sources = Sources {
             pacman_log: fixture("logs/pacman.log"),
             pacman_db_lock: scratch.path("db.lck"),
             snapper: scratch.stub_cat("snapper", &fixture("logs/snapper.json")),
-            omarchy_version: scratch.stub("omarchy-version", "echo 4.0.4-1"),
-            pacman: scratch
-                .path("bin/no-such-program")
-                .to_string_lossy()
-                .into_owned(),
             snapshots: scratch.path("no-snapshots"),
-            ..Sources::default()
+            omarchy_version: scratch.stub("omarchy-version", "echo 4.0.4-1"),
+            pacman: missing.clone(),
+            omarchy: missing,
+            plugins_dir: Some(scratch.path("plugins")),
+            theme_file: Some(scratch.path("theme.name")),
         };
         Bench {
             ledger: Ledger::at(scratch.path("logbook/ledger"), Redactor::builtin()),
@@ -344,4 +350,32 @@ pub fn story() -> Bench {
 
 pub fn subjects(events: &[Event]) -> Vec<&str> {
     events.iter().map(|e| e.subject.as_str()).collect()
+}
+
+/// WP-076: every source of a [`Bench`] lies under its scratch dir or the
+/// fixtures, never a host path or a program found on the host's PATH.
+/// (Runs once in each test binary that includes this module.)
+#[test]
+fn the_bench_reads_nothing_of_the_host() {
+    let b = Bench::new("hostless");
+    let s = &b.sources;
+    let inside = |p: &Path| p.starts_with(&b.scratch.dir) || p.starts_with(fixture(""));
+    let paths = [
+        s.pacman_log.as_path(),
+        &s.pacman_db_lock,
+        &s.snapshots,
+        s.plugins_dir.as_deref().expect("plugins_dir"),
+        s.theme_file.as_deref().expect("theme_file"),
+    ];
+    let programs = [&s.snapper, &s.omarchy_version, &s.pacman, &s.omarchy].map(Path::new);
+    for p in paths.into_iter().chain(programs) {
+        assert!(
+            inside(p),
+            "{} is not a scratch or fixture path",
+            p.display()
+        );
+    }
+    assert!(b.dirs.home.starts_with(&b.scratch.dir));
+    assert!(b.dirs.state_dir.starts_with(&b.scratch.dir));
+    assert!(b.dirs.xdg_config_home.starts_with(&b.scratch.dir));
 }
