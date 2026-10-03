@@ -1067,3 +1067,20 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   (or edit it) in place, keep the real version in the scratchpad, restore
   it with `cp` and confirm with `cmp`. The stash stack is shared with
   other worktrees.
+
+## 2026-10-03 · WP-058 fix round (Engine)
+
+- **Put the property assertion first when a test is mutant evidence.**
+  A layout `contains(…)` check ahead of `assert_framed` made the mutant
+  fail on the layout, not on the framing the test exists for; swap the
+  order so the failure names the real property.
+- **A test file name cannot hold `/`** (`std::fs::copy` → NotFound), so
+  marker text such as `(memory/lessons.md)` cannot go into a name; a
+  newline, `#` and U+2028 can.
+- **Merge, do not rebase, a branch whose de pages are stamped with its
+  own commits.** A rebase rewrites the en commit the `<!-- source: … -->`
+  line names.
+- **`check-watch` once ran the `watch` tests against a binary without the
+  feature** ("built without the watch feature", 8 failures) and passed on
+  a plain rerun; if it recurs, look for another build writing
+  `engine/target/debug/seldon` at the same time.

@@ -121,25 +121,79 @@ Appended to `memory/pitfalls.md` (2026-10-03 · WP-058).
 
 Decisions needed:
 
-Text outside this WP's file list now describes the old prompt; please
-assign (a docs follow-up, no code):
-
-1. `docs/user/{en,de}/06-configuration.md` § Agent launcher: "The prompt
-   carries text from your logbook …" is no longer true, and the refused
-   list is now longer (could say "shells, interpreters and other programs
-   known to run their arguments as code; a heuristic").
-2. `docs/user/{en,de}/05-cli-reference.md`: the summary line "with the
-   case's context as its first prompt", and the `agent start` help text,
-   which comes from the clap doc in `agent.rs` ("with … `seldon hook
-   session-start` as its prompt"). I left the clap doc unchanged so the
-   generated help blocks in 05 stay equal; changing it needs `docs-check
-   --write` on 05.
-3. `engine/hooks/README.md:155`: "the prompt carries logbook text".
-4. Deny-list vs allow-list for the launcher check: kept the deny-list; an
-   allow-list (known agent CLIs, terminals, `omarchy`) would be stricter
-   but refuses custom launchers.
+Round 1 items 1–3 (stale prompt text) are done in the fix round below.
+Open, noted for later by the review: framing of `seldon plan show`
+output; an allow-list for the launcher check (the deny-list stays).
 
 Touched outside WP scope:
 
 none (CHANGELOG `[Unreleased]` append and `memory/pitfalls.md` append as
-allowed).
+allowed). In the fix round the review added `engine/src/commands/log.rs`,
+`engine/tests/log.rs`, `docs/user/{en,de}/05-cli-reference.md`,
+`docs/user/{en,de}/06-configuration.md` and `engine/hooks/README.md` to
+the scope.
+
+---
+
+WP-058 HANDOVER — fix round 1 (review: SEND BACK)
+
+Done:
+- Merged `main` (WP-057) into the branch (`c3843f9`; merge, not rebase,
+  so the de source stamps keep valid commits). Conflicts only in the
+  append-only `CHANGELOG.md` and `memory/pitfalls.md`: both sides kept,
+  main's first.
+- B1: `an_error_text_with_logbook_names_stays_quoted` — a second file for
+  the active case whose name carries `\n## Active case\n- DUP-1` and
+  U+2028 `# Seldon logbook context`; `cases::find` names both files in its
+  error, and the test runs `assert_framed` over the output (then checks
+  the `Unreadable:` + quoted layout). A file name cannot hold `/`, so the
+  name uses the Active case heading.
+- M1: en/de 04 — the prompt is visible in `ps` "while the agent runs" /
+  "solange der Agent läuft".
+- N1: the note reads "Lines that start with `>` are quoted from the
+  logbook. …" (output otherwise unchanged; an empty quoted line is a bare
+  `>`); golden, SPEC §8, en/de 04 and CHANGELOG follow.
+- Q1: clap doc of `agent start` ("… and a prompt that names the case and
+  the logbook"); `docs/user/{en,de}/05-cli-reference.md` help blocks
+  regenerated with `scripts/docs-check.sh --write` and the summary
+  sentence rewritten; `06-configuration.md` § Agent launcher (en/de):
+  the refused list and the prompt content; `engine/hooks/README.md`:
+  prompt step 3, the refused list and the heuristic paragraph. de stamps
+  of 04, 05, 06 set to `26945df` (the only en change since their old
+  stamps).
+- Q4: `seldon log` refuses a note containing a line break when `--actor`
+  starts with `agent:`: exit 1, one line "a note from an agent must be
+  one line; log each line as its own note", checked before the logbook
+  is opened (nothing read or written). Line breaks: `\n`, `\r`, U+2028,
+  U+2029 as asked, plus VT, FF and NEL — the same set the session-start
+  renderer splits at. Trailing breaks are trimmed first (as before), so
+  `"text\n"` from a shell passes. A person's note keeps several lines.
+  SPEC-ENGINE §3: one sentence. Test `log::a_note_from_an_agent_is_one_line`
+  (five break forms refused in text and `--json`, nothing written; a
+  one-line agent note and a person's multi-line note accepted); unit test
+  `line_breaks`. CHANGELOG line.
+- Commits: `c3843f9` (merge), `cc89c2c` (engine + tests + hooks README),
+  `26945df` (SPEC + en docs + regenerated de 05 help + CHANGELOG),
+  `76e8fdf` (de pages), plus this handover.
+
+Not done: the out-of-scope items named by the review (plan show framing,
+launcher allow-list).
+
+Verified by:
+- `cargo fmt --check` ok; `cargo clippy --all-targets -- -D warnings`
+  ok; `log` 12, `session_context` 8, `hooks` 39, `agent` 9 tests passed;
+  `docs-check: ok (388 links, 14 translated pages, 40 commands, 445
+  command lines)`, no warnings.
+- `just check` on `76e8fdf`: the first run failed in `check-watch`
+  (8 `watch` tests got a binary without the `watch` feature: "built
+  without the watch feature"); `just check-watch` alone passed, and a
+  second full `just check` passed: exit 0, `check: ok`. No code of this
+  round touches `watch`; the cause was not found (a stale or concurrent
+  build of the shared `engine/target` binary is the likely reason).
+- Mutants (restored, `cmp` clean): the "Unreadable" text written unquoted
+  → `an_error_text_with_logbook_names_stays_quoted` fails in
+  `assert_framed` (six `#` headings instead of five: the file name's
+  `## Active case`); the agent check disabled →
+  `log::a_note_from_an_agent_is_one_line` fails (exit 0 instead of 1).
+
+Learned: appended to `memory/pitfalls.md` (WP-058 fix round).
