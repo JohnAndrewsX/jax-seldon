@@ -14,14 +14,24 @@
 //!   files larger than 1 MB: listed as `skipped` without a hash, so a file
 //!   that grows past the limit is not reported as removed;
 //! - sockets, FIFOs and devices; symlinks to directories (no loops).
-//!   Symlinks to files are followed (stow-style dotfiles).
+//!   Symlinks to files are followed (stow-style dotfiles);
+//! - files whose `~`-path cannot be an event subject (control characters,
+//!   longer than [`SUBJECT_MAX`]): counted in the collector's message.
 //!
 //! The manifest lives in `$XDG_STATE_HOME/seldon/manifest.json`
 //! ([`Manifest`]); the cursor holds the hash of the generation the ledger has
 //! caught up with. `capture` saves cursors only after the ledger write, so
 //! the file keeps the generation before the newest one too: when a write
 //! fails, the next run diffs against the generation its cursor names and
-//! nothing is lost. The first run (no cursor) is a baseline: no events.
+//! nothing is lost. When the cursor save fails after the ledger write, that
+//! diff repeats events the ledger has: they are dropped. The first run (no
+//! cursor) is a baseline: no events.
+//!
+//! Each generation keeps the scope it was taken with ([`WatchScope`]). A file
+//! that left the scope (a watch path removed, a `skipPaths` pattern added) is
+//! no removal, and a file that entered it is no addition: one notice line
+//! counts them. A file whose size, modification time and inode are as the
+//! manifest has them ([`FileStat`]) keeps its stored hash and is not read.
 //!
 //! The engine's own writes (SPEC-ENGINE §5 rule 7): when `init`, `hook
 //! install` or one of the removal commands (`hook uninstall`, `init
@@ -34,8 +44,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
+use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, FixedOffset, Local, Timelike as _, Utc};
 use regex::Regex;
@@ -73,6 +84,10 @@ pub struct Generation {
     /// Files seen but not hashed: binary, larger than 1 MB, or unreadable.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub skipped: BTreeSet<String>,
+    /// The scope the files were collected in; absent in a manifest written
+    /// before WP-069. Not part of `hash`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<WatchScope>,
 }
 
 impl Generation {
@@ -82,7 +97,108 @@ impl Generation {
             hash: sys::sha256_hex(&body),
             files,
             skipped,
+            scope: None,
         }
+    }
+}
+
+/// The watch scope of a generation: the watch paths and the excluded
+/// folders as `~`-paths, and the `[redaction] skipPaths` patterns as
+/// configured, each sorted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatchScope {
+    pub watch: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skip: Vec<String>,
+}
+
+impl WatchScope {
+    pub fn new(dirs: &Dirs, roots: &[PathBuf], excluded: &[PathBuf], skip: &[String]) -> Self {
+        let shown = |paths: &[PathBuf]| -> Vec<String> {
+            let set: BTreeSet<String> = paths.iter().map(|p| dirs.display(p)).collect();
+            set.into_iter().collect()
+        };
+        let skip: BTreeSet<String> = skip
+            .iter()
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+            .map(String::from)
+            .collect();
+        WatchScope {
+            watch: shown(roots),
+            exclude: shown(excluded),
+            skip: skip.into_iter().collect(),
+        }
+    }
+
+    fn rules(&self, dirs: &Dirs) -> ScopeRules {
+        let paths = |keys: &[String]| keys.iter().map(|k| key_path(dirs, k)).collect();
+        ScopeRules {
+            roots: paths(&self.watch),
+            excluded: paths(&self.exclude),
+            skip: SkipPaths::new(&dirs.home, &self.skip),
+        }
+    }
+}
+
+/// A [`WatchScope`] ready to test paths against.
+struct ScopeRules {
+    roots: Vec<PathBuf>,
+    excluded: Vec<PathBuf>,
+    skip: SkipPaths,
+}
+
+impl ScopeRules {
+    /// Whether a walk in this scope reaches the file `key`: it lies under a
+    /// watch path, and neither it nor a folder between it and the watch
+    /// path is excluded or matches `skipPaths` (as [`Walker::ignored`]).
+    fn covers(&self, dirs: &Dirs, key: &str) -> bool {
+        let path = key_path(dirs, key);
+        self.roots.iter().any(|root| {
+            path.starts_with(root)
+                && path
+                    .ancestors()
+                    .take_while(|a| a.starts_with(root))
+                    .all(|a| {
+                        !self.excluded.iter().any(|x| a.starts_with(x)) && !self.skip.matches(a)
+                    })
+        })
+    }
+}
+
+/// A `~`-path of the manifest as an absolute path.
+fn key_path(dirs: &Dirs, key: &str) -> PathBuf {
+    match key.strip_prefix('~') {
+        Some("") => dirs.home.clone(),
+        Some(rest) if rest.starts_with('/') => dirs.home.join(&rest[1..]),
+        _ => PathBuf::from(key),
+    }
+}
+
+/// Size, modification time (ns since 1970) and inode of a hashed file.
+/// While all three are as the manifest has them, the stored hash is reused
+/// and the file is not read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileStat(u64, u64, u64);
+
+/// A file modified less than this before a walk started is read again by
+/// the next walk: a write right after the read may have kept the
+/// modification time (timestamps are coarse; some file systems keep
+/// seconds or two).
+const RACY: Duration = Duration::from_secs(2);
+
+impl FileStat {
+    /// `None` for a file modified less than [`RACY`] before `started` (or
+    /// before 1970): its hash is not reused.
+    fn of(meta: &std::fs::Metadata, started: SystemTime) -> Option<Self> {
+        let mtime = meta.modified().ok()?;
+        if mtime.checked_add(RACY)? > started {
+            return None;
+        }
+        let ns = u64::try_from(mtime.duration_since(UNIX_EPOCH).ok()?.as_nanos()).ok()?;
+        Some(FileStat(meta.len(), ns, meta.ino()))
     }
 }
 
@@ -92,6 +208,9 @@ impl Generation {
 pub struct Manifest {
     #[serde(flatten)]
     pub current: Generation,
+    /// [`FileStat`] of the current generation's files, by `~`-path.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub stats: BTreeMap<String, FileStat>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous: Option<Generation>,
 }
@@ -230,7 +349,8 @@ pub fn is_watched(dirs: &Dirs, config: &Config, path: &Path) -> bool {
     config
         .watch_paths
         .iter()
-        .any(|w| path.starts_with(dirs.expand(w)))
+        .filter_map(|w| dirs.expand_config(w))
+        .any(|w| path.starts_with(w))
         && !SkipPaths::new(&dirs.home, &config.redaction.skip_paths).matches(path)
 }
 
@@ -403,6 +523,9 @@ struct Scan {
     files: BTreeMap<String, String>,
     skipped: BTreeSet<String>,
     mtimes: BTreeMap<String, SystemTime>,
+    stats: BTreeMap<String, FileStat>,
+    /// Files left out because their `~`-path cannot be a subject.
+    unnamed: usize,
 }
 
 /// The rules of one walk.
@@ -410,6 +533,10 @@ struct Walker<'a> {
     dirs: &'a Dirs,
     excluded: &'a [PathBuf],
     skip: &'a SkipPaths,
+    /// The stored manifest: hashes to reuse by [`FileStat`].
+    known: Option<&'a Manifest>,
+    /// When the walk started (the system clock, for [`FileStat::of`]).
+    started: SystemTime,
 }
 
 impl Walker<'_> {
@@ -465,14 +592,27 @@ impl Walker<'_> {
 
     fn file(&self, path: &Path, meta: &std::fs::Metadata, scan: &mut Scan) {
         let key = self.dirs.display(path);
-        if key.chars().count() > SUBJECT_MAX {
-            return; // cannot be an event subject
+        // cannot be an event subject; a control character could also
+        // rewrite the terminal that shows it
+        if key.chars().count() > SUBJECT_MAX || key.chars().any(char::is_control) {
+            scan.unnamed += 1;
+            return;
         }
         if let Ok(t) = meta.modified() {
             scan.mtimes.insert(key.clone(), t);
         }
-        match hash_file(path, meta.len()) {
+        let stat = FileStat::of(meta, self.started);
+        let known = stat.and_then(|s| {
+            let m = self.known?;
+            (m.stats.get(&key) == Some(&s))
+                .then(|| m.current.files.get(&key).cloned())
+                .flatten()
+        });
+        match known.or_else(|| hash_file(path, meta.len())) {
             Some(hash) => {
+                if let Some(s) = stat {
+                    scan.stats.insert(key.clone(), s);
+                }
                 scan.files.insert(key, hash);
             }
             None => {
@@ -561,6 +701,77 @@ fn diff(ctx: &Ctx, base: &Generation, scan: &Scan, since: DateTime<FixedOffset>)
     events
 }
 
+/// Fits `base`, taken in its own scope, to `scope`: drops the files the
+/// scope no longer reaches, and adds the files of `scan` it did not reach
+/// before (when its scope is known) as they are now. A scope change is no
+/// change of files. Returns how many files left and entered the scope.
+fn rescope(dirs: &Dirs, base: &mut Generation, scope: &WatchScope, scan: &Scan) -> (usize, usize) {
+    if base.scope.as_ref() == Some(scope) {
+        return (0, 0);
+    }
+    let now = scope.rules(dirs);
+    let before = base.files.len() + base.skipped.len();
+    base.files.retain(|k, _| now.covers(dirs, k));
+    base.skipped.retain(|k| now.covers(dirs, k));
+    let left = before - base.files.len() - base.skipped.len();
+    let Some(old) = base.scope.as_ref().map(|s| s.rules(dirs)) else {
+        return (left, 0);
+    };
+    let known = |k: &String| base.files.contains_key(k) || base.skipped.contains(k);
+    let entered_files: Vec<(String, String)> = scan
+        .files
+        .iter()
+        .filter(|(k, _)| !known(k) && !old.covers(dirs, k))
+        .map(|(k, h)| (k.clone(), h.clone()))
+        .collect();
+    let entered_skipped: Vec<String> = scan
+        .skipped
+        .iter()
+        .filter(|k| !known(k) && !old.covers(dirs, k))
+        .cloned()
+        .collect();
+    let entered = entered_files.len() + entered_skipped.len();
+    base.files.extend(entered_files);
+    base.skipped.extend(entered_skipped);
+    (left, entered)
+}
+
+/// `events` without those the ledger holds since `since`: same kind, path
+/// and both hashes. A capture whose cursor save failed after its ledger
+/// write left the cursor on the generation before them.
+fn unrecorded(
+    ctx: &Ctx,
+    events: Vec<Event>,
+    since: DateTime<FixedOffset>,
+) -> anyhow::Result<Vec<Event>> {
+    if events.is_empty() {
+        return Ok(events);
+    }
+    let recorded: Vec<Event> = ctx
+        .ledger
+        .read_range(since.min(ctx.now), ctx.now)?
+        .into_iter()
+        .filter(|r| r.source == Source::Config)
+        .collect();
+    if recorded.is_empty() {
+        return Ok(events);
+    }
+    let redactor = ctx.ledger.redactor();
+    Ok(events
+        .into_iter()
+        .filter(|e| {
+            // the ledger holds the subject redacted
+            let subject = redactor.redact(&e.subject);
+            !recorded.iter().any(|r| {
+                r.kind == e.kind
+                    && r.subject == subject
+                    && r.meta.hash_from == e.meta.hash_from
+                    && r.meta.hash_to == e.meta.hash_to
+            })
+        })
+        .collect())
+}
+
 impl ConfigFiles {
     /// [`Collector::collect`] with explicit watch paths, exclusions and
     /// manifest file.
@@ -572,15 +783,6 @@ impl ConfigFiles {
         excluded: &[PathBuf],
         manifest_file: &Path,
     ) -> Outcome {
-        let skip = SkipPaths::new(&ctx.dirs.home, &ctx.config.redaction.skip_paths);
-        let scan = Walker {
-            dirs: ctx.dirs,
-            excluded,
-            skip: &skip,
-        }
-        .scan(roots);
-        let current = Generation::new(scan.files.clone(), scan.skipped.clone());
-
         let stored = match Manifest::load(manifest_file) {
             Ok(m) => m,
             Err(e) => {
@@ -588,6 +790,22 @@ impl ConfigFiles {
                 return Outcome::degraded(format!("cannot read {shown}: {e}"), None);
             }
         };
+        let skip_paths = &ctx.config.redaction.skip_paths;
+        let skip = SkipPaths::new(&ctx.dirs.home, skip_paths);
+        let scope = WatchScope::new(ctx.dirs, roots, excluded, skip_paths);
+        let scan = Walker {
+            dirs: ctx.dirs,
+            excluded,
+            skip: &skip,
+            known: stored.as_ref(),
+            started: SystemTime::now(),
+        }
+        .scan(roots);
+        let current = Generation {
+            scope: Some(scope.clone()),
+            ..Generation::new(scan.files.clone(), scan.skipped.clone())
+        };
+
         let prev = typed_cursor::<ConfigCursor>(cursor);
         let base = prev
             .as_ref()
@@ -596,6 +814,7 @@ impl ConfigFiles {
 
         let manifest = Manifest {
             previous: base.clone().filter(|b| b.hash != current.hash),
+            stats: scan.stats.clone(),
             current: current.clone(),
         };
         if stored.as_ref() != Some(&manifest)
@@ -608,16 +827,41 @@ impl ConfigFiles {
             hash: current.hash.clone(),
             checked: ctx.now,
         });
-        match (prev, base) {
-            (Some(prev), Some(base)) => Outcome::ok(diff(ctx, &base, &scan, prev.checked), next),
-            (Some(_), None) => Outcome {
-                message: Some(format!(
+        let mut notes = Vec::new();
+        if scan.unnamed > 0 {
+            notes.push(format!(
+                "{} file(s) not watched: the name holds a control character or is longer than {SUBJECT_MAX} characters",
+                scan.unnamed
+            ));
+        }
+        let events = match (prev, base) {
+            (Some(prev), Some(mut base)) => {
+                let (left, entered) = rescope(ctx.dirs, &mut base, &scope, &scan);
+                if left + entered > 0 {
+                    notes.push(format!(
+                        "watch scope changed: {left} file(s) left it, {entered} entered it; no events for them"
+                    ));
+                }
+                let events = diff(ctx, &base, &scan, prev.checked);
+                match unrecorded(ctx, events, prev.checked) {
+                    Ok(events) => events,
+                    Err(e) => {
+                        return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
+                    }
+                }
+            }
+            (Some(_), None) => {
+                notes.push(format!(
                     "{} was missing or out of date; took a new baseline",
                     ctx.dirs.display(manifest_file)
-                )),
-                ..Outcome::ok(Vec::new(), next)
-            },
-            (None, _) => Outcome::ok(Vec::new(), next), // baseline
+                ));
+                Vec::new()
+            }
+            (None, _) => Vec::new(), // baseline
+        };
+        Outcome {
+            message: (!notes.is_empty()).then(|| notes.join("; ")),
+            ..Outcome::ok(events, next)
         }
     }
 }
@@ -632,7 +876,7 @@ impl Collector for ConfigFiles {
             .config
             .watch_paths
             .iter()
-            .map(|p| ctx.dirs.expand(p))
+            .filter_map(|p| ctx.dirs.expand_config(p))
             .collect();
         let excluded = [Plugins::dir(ctx.sources, &ctx.dirs.home)];
         self.collect_from(ctx, cursor, &roots, &excluded, &Manifest::file(ctx.dirs))
@@ -837,6 +1081,7 @@ mod tests {
         let m = Manifest {
             current: g2.clone(),
             previous: Some(g1.clone()),
+            ..Manifest::default()
         };
         let text = serde_json::to_string(&m).unwrap();
         assert!(text.starts_with("{\"hash\":"), "{text}");

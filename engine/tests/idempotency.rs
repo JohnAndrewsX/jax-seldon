@@ -7,6 +7,7 @@ mod support;
 use std::path::Path;
 use std::process::Output;
 
+use seldon::collectors::config::ConfigFiles;
 use seldon::collectors::omarchy::Omarchy;
 use seldon::collectors::pacman::Pacman;
 use seldon::collectors::snapper::Snapper;
@@ -99,6 +100,60 @@ mod idempotency {
         assert_eq!(b.run(&Omarchy, "2026-10-02T10:00:00+02:00").events.len(), 1);
         b.sources.omarchy_version = b.scratch.stub("omarchy-version", "echo 4.0.7-1");
         assert_eq!(b.run(&Omarchy, "2026-10-03T10:00:00+02:00").events.len(), 1);
+    }
+
+    #[test]
+    fn a_failed_cursor_save_does_not_repeat_config_events() {
+        // the config collector diffs against the generation its cursor
+        // names; after a crash between the ledger write and the cursor
+        // save that is the generation before the events (WP-069)
+        let mut b = support::Bench::new("crash-config");
+        let home = b.dirs.home.clone();
+        let file = |rel: &str, text: &str| {
+            let path = home.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        file(".config/hypr/monitors.conf", "monitor=,preferred,auto,1\n");
+        file(".config/hypr/old.conf", "x\n");
+        assert!(
+            b.run(&ConfigFiles, "2026-10-01T10:00:00+02:00")
+                .events
+                .is_empty()
+        );
+        let before = b.cursors.clone();
+
+        file(
+            ".config/hypr/monitors.conf",
+            "monitor=,preferred,auto,1.25\n",
+        );
+        file(".config/hypr/new.conf", "y\n");
+        std::fs::remove_file(home.join(".config/hypr/old.conf")).unwrap();
+        let written = b.run(&ConfigFiles, "2026-10-01T10:10:00+02:00");
+        assert_eq!(written.events.len(), 3, "{:?}", written.events);
+
+        b.cursors = before;
+        let again = b.run(&ConfigFiles, "2026-10-01T10:20:00+02:00");
+        assert!(again.ok, "{:?}", again.message);
+        assert!(again.events.is_empty(), "{:?}", again.events);
+        assert_eq!(b.ledger_events(Source::Config).len(), 3);
+
+        // the next real change is recorded, also one back to an old state
+        file(".config/hypr/monitors.conf", "monitor=,preferred,auto,1\n");
+        let back = b.run(&ConfigFiles, "2026-10-01T10:30:00+02:00");
+        assert_eq!(back.events.len(), 1);
+        assert_eq!(back.events[0].kind, Kind::ConfigChange);
+        file(
+            ".config/hypr/monitors.conf",
+            "monitor=,preferred,auto,1.25\n",
+        );
+        assert_eq!(
+            b.run(&ConfigFiles, "2026-10-01T10:40:00+02:00")
+                .events
+                .len(),
+            1,
+            "the same step as at 10:10, after the cursor moved on"
+        );
     }
 
     #[test]
