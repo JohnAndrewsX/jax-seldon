@@ -164,6 +164,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A case id in two files makes `index --check` exit 1 (was 2) with a
   plain message and the fix; `index` and `status` warn about it
   (WP-070).
+- The index stays under its 1 MB budget with long texts: in
+  `index.events` and `index.drift`, a `detail`, `resolutionDetail` or
+  `meta` value longer than 256 bytes is cut and ends in
+  `… (N more characters in the ledger)`; the ledger, the ledger views and
+  `drift show` keep the full text. An index that still reaches 1 MB (many
+  open cases) makes `index` and `status` warn and name the largest
+  section (WP-076).
 
 ### Plugin
 
@@ -211,6 +218,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gates the release build, so a dependency advisory stops a release
   unless `packaging/audit-ignore.txt` accepts it with a reason and an
   expiry; the weekly audit stays advisory (WP-072).
+- `just check-perf` (not in `check`): SPEC-ENGINE §1's budgets at the
+  stated scale on an optimised build — `status` at 10 011 ledger lines,
+  304 cases and 365 journal files < 100 ms, `hook claude-code` at 10 000
+  lines and just below the 1000-line rebuild threshold < 5 ms.
+  `just bench` asserts the ×150 index build (10 650 lines) as well as ×10. The
+  panel harness's `work-live` step waits for each engine step's result
+  instead of catching "Completing …" under load (WP-076).
 
 ## [0.1.1] - 2026-10-02
 

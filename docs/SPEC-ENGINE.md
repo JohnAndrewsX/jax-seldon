@@ -681,8 +681,26 @@ zero-width space (U+200B) after `<!--`, so a title, subject or message
 can neither end nor open a fence (WP-065). The dossier fences of
 `system/*.md` are not neutralised yet (follow-up, WP-075).
 
+Size budget (CONTRACT.md rule 5, < 1 MB; WP-076): in `index.events` and
+`index.drift`, a `detail`, `resolutionDetail` or string value of `meta`
+that takes more than 256 bytes in JSON is cut on a character boundary and
+ends in `… (N more characters in the ledger)`, N the characters left out;
+the ledger line, the `ledger/*.md` views and `drift show` keep the full
+text, `subject` (at most 512 characters) is never cut. With the counts of
+rule 4 this bounds both sections: 500 events and 200 drift items with
+4096-character texts come to about 520 KB. No field marks the cut
+(`meta.truncated` stays reserved, ADR-0020). Open cases, decisions and
+memory topics are not capped: an index of 1 000 000 bytes or more makes
+`index` and `status` warn (`warnings`, stderr) and name the largest
+section.
+
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
-warm. Measured in `cargo bench` with the fixture logbook scaled ×10.
+warm. `cargo bench --bench index` (`just bench`) asserts the index build
+in-process on the fixture logbook scaled ×10 and ×150 (10 650 ledger
+lines, 1 200 cases); `just check-perf` also asserts `seldon status` at
+10 011 ledger lines, 304 cases and 365 journal files, median wall time of
+11 runs, process start included (release, 2026-10-04 on the dev host:
+×150 build 80 ms, `status` 47 ms; WP-076).
 
 ## 7. Redaction
 
@@ -795,7 +813,14 @@ rebuilds the index the cheap way (no git spawn, `.git/HEAD` read
 directly), after releasing the lock and without waiting for it again
 (another writer that holds it rebuilds after its own write), and only
 while the ledger has at most 1000 lines; above that the next `capture`
-or `status` brings the index up to date. WP-062's redaction is not
+or `status` brings the index up to date. Budget (§1, WP-057's
+threshold): < 5 ms per call, median wall time of an optimised build
+with the state on tmpfs, for a call it does not record and for a
+recorded command, just below the threshold (with the rebuild) and at
+10 000 lines; `just check-perf` asserts all four (2026-10-04, dev host:
+1.3 ms not recorded, 3.5 ms recorded with the rebuild, 1.8 ms recorded
+above the threshold; WP-076). On a disk the sync of §1 comes on top.
+WP-062's redaction is not
 slower than before it: measured 2026-10-03 on a loaded dev host (load
 average 3 to 8), release builds interleaved with a build of the code
 before it, median of 21 runs each, a recorded command took 19 to 36 %
