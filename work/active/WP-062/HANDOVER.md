@@ -91,8 +91,10 @@ guide de), plus this handover.
   the state dir and `git log -p`; the hook line reads
   `curl -u ‹redacted› https://‹redacted›@example.invalid/r > ~/.config/hypr/r`.
 - `cargo test` (all), `cargo clippy --all-targets -- -D warnings`,
-  `cargo fmt --check`, `scripts/docs-check.sh` ok; `just check` at the
-  end (result below).
+  `cargo fmt --check`, `scripts/docs-check.sh` ok; `just check` at
+  `fdc593f` (the tree of this handover minus this file): exit 0,
+  `check: ok`, host steps included (plugin validate, qmllint,
+  plugin-test with the real-home guard).
 
 **Learned** (memory/pitfalls.md)
 
