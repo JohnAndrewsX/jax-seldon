@@ -419,8 +419,40 @@ pub fn slugify(s: &str) -> String {
 
 /// SHA-256 (FIPS 180-4) of `bytes`. Implemented here because no hashing
 /// crate is on the allowed list (AGENTS.md §7); the config collector hashes
-/// files of at most 1 MB, so a plain one-shot implementation is enough.
+/// files of at most 1 MB, so a plain one-shot implementation is enough. The
+/// whole blocks are hashed in place; only the last one or two, with the
+/// padding, are copied.
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    let (blocks, rest) = bytes.as_chunks::<64>();
+    for block in blocks {
+        sha256_block(&mut h, block);
+    }
+    // the rest + 0x80 + zero padding + 64-bit big-endian bit length: one
+    // block, or two when the rest leaves less than 9 bytes
+    let mut tail = [0u8; 128];
+    tail[..rest.len()].copy_from_slice(rest);
+    tail[rest.len()] = 0x80;
+    let end = if rest.len() < 56 { 64 } else { 128 };
+    tail[end - 8..end].copy_from_slice(&((bytes.len() as u64).wrapping_mul(8)).to_be_bytes());
+    let (blocks, _) = tail[..end].as_chunks::<64>();
+    for block in blocks {
+        sha256_block(&mut h, block);
+    }
+
+    let mut out = [0u8; 32];
+    let (chunks, _) = out.as_chunks_mut::<4>();
+    for (chunk, word) in chunks.iter_mut().zip(h) {
+        *chunk = word.to_be_bytes();
+    }
+    out
+}
+
+/// One SHA-256 compression step: `h` after the 64-byte `block`.
+fn sha256_block(h: &mut [u32; 8], block: &[u8; 64]) {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
         0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
@@ -433,66 +465,43 @@ pub fn sha256(bytes: &[u8]) -> [u8; 32] {
         0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
         0xc67178f2,
     ];
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    // message + 0x80 + zero padding + 64-bit big-endian bit length, a
-    // multiple of 64 bytes
-    let mut msg = bytes.to_vec();
-    msg.push(0x80);
-    while msg.len() % 64 != 56 {
-        msg.push(0);
+    let mut w = [0u32; 64];
+    let (words, _) = block.as_chunks::<4>();
+    for (i, word) in words.iter().enumerate() {
+        w[i] = u32::from_be_bytes(*word);
     }
-    msg.extend_from_slice(&((bytes.len() as u64).wrapping_mul(8)).to_be_bytes());
-
-    let (blocks, _) = msg.as_chunks::<64>();
-    for block in blocks {
-        let mut w = [0u32; 64];
-        let (words, _) = block.as_chunks::<4>();
-        for (i, word) in words.iter().enumerate() {
-            w[i] = u32::from_be_bytes(*word);
-        }
-        for i in 16..64 {
-            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
-            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[i - 7])
-                .wrapping_add(s1);
-        }
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
-        for i in 0..64 {
-            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-            let ch = (e & f) ^ (!e & g);
-            let t1 = hh
-                .wrapping_add(s1)
-                .wrapping_add(ch)
-                .wrapping_add(K[i])
-                .wrapping_add(w[i]);
-            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-            let maj = (a & b) ^ (a & c) ^ (b & c);
-            let t2 = s0.wrapping_add(maj);
-            hh = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
-        }
-        for (x, y) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
-            *x = x.wrapping_add(y);
-        }
+    for i in 16..64 {
+        let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+        let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16]
+            .wrapping_add(s0)
+            .wrapping_add(w[i - 7])
+            .wrapping_add(s1);
     }
-
-    let mut out = [0u8; 32];
-    let (chunks, _) = out.as_chunks_mut::<4>();
-    for (chunk, word) in chunks.iter_mut().zip(h) {
-        *chunk = word.to_be_bytes();
+    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = *h;
+    for i in 0..64 {
+        let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+        let ch = (e & f) ^ (!e & g);
+        let t1 = hh
+            .wrapping_add(s1)
+            .wrapping_add(ch)
+            .wrapping_add(K[i])
+            .wrapping_add(w[i]);
+        let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+        let maj = (a & b) ^ (a & c) ^ (b & c);
+        let t2 = s0.wrapping_add(maj);
+        hh = g;
+        g = f;
+        f = e;
+        e = d.wrapping_add(t1);
+        d = c;
+        c = b;
+        b = a;
+        a = t1.wrapping_add(t2);
     }
-    out
+    for (x, y) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
+        *x = x.wrapping_add(y);
+    }
 }
 
 /// [`sha256`] as 64 lowercase hex digits.
@@ -558,9 +567,39 @@ mod tests {
             sha256_hex(&vec![b'a'; 1_000_000]),
             "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
         );
-        // padding edges: 55, 56 and 64 bytes
-        for n in [55, 56, 63, 64, 65] {
-            assert_eq!(sha256_hex(&vec![0u8; n]).len(), 64);
+        // padding edges: the length fits into the last block (55), needs
+        // a block of its own (56, 63, 119, 120), whole blocks (64, 128)
+        for (n, hex) in [
+            (
+                55,
+                "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318",
+            ),
+            (
+                56,
+                "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a",
+            ),
+            (
+                63,
+                "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34",
+            ),
+            (
+                65,
+                "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0",
+            ),
+            (
+                119,
+                "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb",
+            ),
+            (
+                120,
+                "2f3d335432c70b580af0e8e1b3674a7c020d683aa5f73aaaedfdc55af904c21c",
+            ),
+            (
+                128,
+                "6836cf13bac400e9105071cd6af47084dfacad4e5e302c94bfed24e013afb73e",
+            ),
+        ] {
+            assert_eq!(sha256_hex(&vec![b'a'; n]), hex, "{n} bytes");
         }
         assert_eq!(
             sha256_hex(&[0u8; 64]),
