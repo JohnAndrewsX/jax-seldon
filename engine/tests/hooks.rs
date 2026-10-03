@@ -511,6 +511,47 @@ mod claude_code {
         let each = start.elapsed() / 10;
         assert!(each.as_millis() < 400, "{each:?} per hook call");
     }
+
+    /// SPEC-ENGINE §1 and §8 at the stated scale (WP-076): with 10 000
+    /// ledger lines (above WP-057's 1000-line threshold, so no index
+    /// rebuild) a call the hook does not record and a recorded command
+    /// each take < 5 ms, median wall time of 21 calls, process start
+    /// included (`assert_within_budget`). The recorded command syncs its ledger line and case file:
+    /// on tmpfs, as in the default temp dir here; on a disk the sync alone
+    /// takes longer (SPEC §1).
+    #[test]
+    #[ignore = "release timing at scale: `just check-perf`"]
+    fn fast_enough_at_10_000_ledger_lines() {
+        const BUDGET: std::time::Duration = std::time::Duration::from_millis(5);
+        common::assert_optimised();
+        let h = Hooks::new();
+        let case = h.active_case();
+        common::scale::filler_notes(&h.logbook, 10_000);
+        assert!(h.ledger().len() > 10_000);
+
+        let skipped = payload("claude-code-non-mutating.json", "PreToolUse");
+        common::assert_within_budget("hook, not recorded, 10 000 lines", BUDGET, 21, || {
+            h.hook("claude-code", &skipped);
+        });
+        assert_eq!(h.commands().len(), 0);
+
+        let mut recorded: Value =
+            serde_json::from_str(&payload("claude-code-mutating.json", "PreToolUse")).unwrap();
+        let mut n = 0;
+        common::assert_within_budget("hook, recorded, 10 000 lines", BUDGET, 21, || {
+            n += 1;
+            recorded["tool_use_id"] = json!(format!("toolu_perf{n:04}"));
+            h.hook("claude-code", &recorded.to_string());
+        });
+        let commands = h.commands();
+        assert!(
+            commands.len() >= 22,
+            "every call recorded: {}",
+            commands.len()
+        );
+        assert_eq!(commands.len(), n);
+        assert!(commands.iter().all(|c| c["case"] == json!(case)));
+    }
 }
 
 /// WP-057: the hook reads the case under the state lock, like every other

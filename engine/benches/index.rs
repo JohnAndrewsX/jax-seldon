@@ -1,7 +1,8 @@
 //! `cargo bench --bench index`: the index build (read the logbook, derive,
-//! write `index.json` atomically) on the fixture logbook scaled ×10 must
-//! take < 100 ms (SPEC-ENGINE §6, WP-007). Also reports ×150, which is
-//! about the 10 000 events of the SPEC-ENGINE §1 budget (not asserted).
+//! write `index.json` atomically) must take < 100 ms (SPEC-ENGINE §6) on
+//! the fixture logbook scaled ×10 (WP-007) and ×150 (10 650 ledger lines,
+//! 1 200 cases: more cases than the 300 of the budget; WP-076). Median of
+//! 21 runs after a warm-up.
 //!
 //! Plain `std::time` (no bench crate: AGENTS.md §7). Everything is written
 //! to a temp dir; no real XDG directory is touched.
@@ -25,16 +26,19 @@ fn main() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/logbook");
     let tmp = std::env::temp_dir().join(format!("seldon-bench-index-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
-    let mut over_budget = false;
+    let mut over_budget = Vec::new();
     for factor in [10, 150] {
         let median = bench(&fixture, &tmp.join(format!("x{factor}")), factor);
-        if factor == 10 && median >= BUDGET {
-            over_budget = true;
+        if median >= BUDGET {
+            over_budget.push(format!("×{factor}"));
         }
     }
     let _ = std::fs::remove_dir_all(&tmp);
-    if over_budget {
-        eprintln!("index build ×10 is over the {BUDGET:?} budget");
+    if !over_budget.is_empty() {
+        eprintln!(
+            "index build {} over the {BUDGET:?} budget",
+            over_budget.join(", ")
+        );
         std::process::exit(1);
     }
 }

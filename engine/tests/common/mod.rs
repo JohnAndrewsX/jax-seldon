@@ -454,3 +454,53 @@ pub fn write_executable(path: &Path, text: &str) {
     assert!(status.success(), "cannot write {}", path.display());
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
+
+/// Fails a timing budget test in a debug build: SPEC-ENGINE §1's budgets
+/// hold for release code (`just check-perf` runs `--profile bench`, WP-076).
+pub fn assert_optimised() {
+    if cfg!(debug_assertions) {
+        panic!("a timing budget needs an optimised build: run `just check-perf`");
+    }
+}
+
+/// The median wall time of `runs` calls of `f` after one warm-up call, and
+/// every time, sorted (WP-076).
+pub fn median_time(
+    runs: usize,
+    mut f: impl FnMut(),
+) -> (std::time::Duration, Vec<std::time::Duration>) {
+    f();
+    let mut times: Vec<std::time::Duration> = (0..runs)
+        .map(|_| {
+            let start = std::time::Instant::now();
+            f();
+            start.elapsed()
+        })
+        .collect();
+    times.sort();
+    (times[runs / 2], times)
+}
+
+/// Asserts that the [`median_time`] of `f` is under `budget`. A median at
+/// or over it is measured once more before the test fails, so a load spike
+/// of a shared host does not fail it; a slow build fails both times.
+/// Prints every measurement. Returns the median that counted.
+pub fn assert_within_budget(
+    what: &str,
+    budget: std::time::Duration,
+    runs: usize,
+    mut f: impl FnMut(),
+) -> std::time::Duration {
+    let mut medians = Vec::new();
+    for attempt in 1..=2 {
+        let (median, times) = median_time(runs, &mut f);
+        eprintln!(
+            "{what}: median {median:?} (budget {budget:?}, attempt {attempt}), all {times:?}"
+        );
+        medians.push(median);
+        if median < budget {
+            return median;
+        }
+    }
+    panic!("{what}: medians {medians:?}, budget {budget:?}");
+}

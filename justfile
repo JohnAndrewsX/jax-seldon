@@ -42,6 +42,17 @@ check-watch:
 check-rss:
     cargo test --manifest-path engine/Cargo.toml --locked --profile bench --features watch --test watch rss_stays_under_10_mb
 
+# Not part of `check` (optimised compile, timing on a quiet host); required
+# before the handover of a WP that touches the index build, `status` or the
+# hooks. SPEC-ENGINE §1 budgets at the stated scale, bench profile (WP-076):
+# the index build bench (x10, x150 < 100 ms), `status` at 10 011 ledger
+# lines / 304 cases / 365 journal files < 100 ms, `hook claude-code` at
+# 10 000 lines < 5 ms (not recorded and recorded). A median over budget is
+# measured once more before the check fails.
+check-perf:
+    cargo bench --manifest-path engine/Cargo.toml --locked --bench index
+    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks -- --ignored --test-threads=1 --nocapture at_10_000_ledger_lines
+
 # The AUR package (WP-040): PKGBUILD and helper syntax, shellcheck when
 # installed, .SRCINFO in step with the PKGBUILD. Never runs makepkg.
 # The release body from CHANGELOG.md (WP-048): tests/release/.
@@ -172,7 +183,7 @@ plugin-test:
     echo "plugin-test: ok"
 
 # Not part of `check` (it needs a release compile); CI runs it as its own step.
-# Index build on the fixture logbook scaled x10, release; fails over 100 ms.
+# Index build on the fixture logbook scaled x10 and x150, release; fails over 100 ms.
 bench:
     cargo bench --manifest-path engine/Cargo.toml --locked --bench index
 

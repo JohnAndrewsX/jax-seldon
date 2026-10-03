@@ -1291,3 +1291,39 @@ fn a_long_command_line_is_whole_in_the_ledger_and_clipped_in_the_index() {
         assert!(text.len() <= build::TEXT_MAX, "{text:?}");
     }
 }
+
+// --------------------------------------------------------------------------
+// SPEC-ENGINE §1 at the stated scale (WP-076): release only, `just
+// check-perf` (`--profile bench --ignored`).
+// --------------------------------------------------------------------------
+
+/// `seldon status` at the scale of the budget (`scale::stated_scale`:
+/// 10 011 ledger lines, 304 cases, 365 journal files): median wall time of
+/// 11 runs, process start included, < 100 ms (`assert_within_budget`).
+#[test]
+#[ignore = "release timing at scale: `just check-perf`"]
+fn status_at_10_000_ledger_lines_is_under_100_ms() {
+    const BUDGET: Duration = Duration::from_millis(100);
+    common::assert_optimised();
+    let env = Env::new(Snapper::Missing);
+    let root = env.tmp.path().join("logbook");
+    let lines = common::scale::stated_scale(&fixture_logbook(), &root);
+    assert_eq!(lines, 10_011);
+    let args = ["--logbook", root.to_str().unwrap(), "status", "--json"];
+    let out = env.at(GENERATED_AT, &args);
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let v = common::json(&out);
+    assert_eq!(v["events"], json!(500));
+    assert_eq!(v["warnings"], json!([]));
+    let ix = json_file(&env.home.join(".local/state/seldon/index.json"));
+    let cases: usize = ["queued", "active", "verification"]
+        .iter()
+        .map(|g| ix["cases"][g].as_array().unwrap().len())
+        .sum();
+    eprintln!("stated scale: {cases} open cases");
+
+    common::assert_within_budget("status at the stated scale", BUDGET, 11, || {
+        let out = env.at(GENERATED_AT, &args);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    });
+}
