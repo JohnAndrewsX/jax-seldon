@@ -357,3 +357,34 @@ mod hand_edits {
         assert_eq!(read(&path), text);
     }
 }
+
+/// A case id is ASCII only (`C-YYYY-NNN`): a control or format character
+/// in the id of a case file is refused on load, so no reader of a loaded
+/// case ever prints one (WP-066).
+mod case_ids {
+    use super::*;
+
+    #[test]
+    fn control_characters_in_a_case_id_are_refused_on_load() {
+        let path = common::fixture_logbook().join("work/queued/C-2026-005-tokyo-night.md");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(model::parse::<Case>(&text).is_ok());
+        for escape in [
+            "\\0", "\\a", "\\t", "\\n", "\\r", "\\e", "\\x7f", "\\N", "\\L", "\\P", "\\u200b",
+            "\\u202e", "\\ufeff",
+        ] {
+            for id in [
+                format!("C-2026-005{escape}"),
+                format!("{escape}C-2026-005"),
+                format!("C-2026-{escape}005"),
+            ] {
+                let bad = text.replacen("id: C-2026-005\n", &format!("id: \"{id}\"\n"), 1);
+                assert_ne!(bad, text);
+                let err = model::parse::<Case>(&bad)
+                    .map(|(c, _)| c.id)
+                    .expect_err(&id);
+                assert!(err.to_string().starts_with("`id`"), "{id}: {err}");
+            }
+        }
+    }
+}
