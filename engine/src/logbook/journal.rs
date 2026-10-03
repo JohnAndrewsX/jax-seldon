@@ -118,7 +118,7 @@ fn append_to(
                 cases: Vec::new(),
             };
             let mut doc = Document::parse(existing).map_err(invalid)?;
-            model::update(&mut doc, &journal);
+            model::update(&mut doc, &journal).map_err(invalid)?;
             (journal, doc)
         }
         Err(e) => return Err(invalid(e)),
@@ -127,7 +127,7 @@ fn append_to(
         && !journal.cases.iter().any(|c| c == case)
     {
         journal.cases.push(case.to_string());
-        model::update(&mut doc, &journal);
+        model::update(&mut doc, &journal).map_err(invalid)?;
     }
     let nl = if doc.body.contains("\r\n") {
         "\r\n"

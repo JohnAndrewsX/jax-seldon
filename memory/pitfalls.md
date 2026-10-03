@@ -1225,3 +1225,16 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A reset in `onFilterChanged` that `onRowsChanged` must see depends on
   handler order.** Keep the last filter the rows were seen with and do the
   reset in `onRowsChanged` (ChangelogTab `rowsFilter`).
+
+## 2026-10-03 · WP-066 (Engine)
+
+- **serde_yaml accepts a flow list continued at column 0**
+  (`agents: [a,\nb]`). A line-by-line model of frontmatter cannot place
+  that second line; only reading the whole block back catches it.
+  `model::update` therefore runs `Frontmatter::check` before any write.
+- **A fallback can hide the fix it backs up.** `set` asks the whole
+  block when an entry's own lines disagree; that made the unchanged-`tags`
+  acceptance test pass with the line grouping reverted. Test grouping on
+  a key the engine actually changes (`agents` via `log --actor agent:…`).
+- **`is_plain` quotes YAML 1.1 booleans**, including `y` and `n`: a test
+  that expects `id: y` gets `id: "y"`. Use other letters.

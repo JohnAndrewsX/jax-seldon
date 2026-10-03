@@ -878,7 +878,7 @@ fn append_day(
         }
     }
     if journal.cases.len() != before {
-        model::update(&mut doc, &journal);
+        model::update(&mut doc, &journal)?;
     }
     doc.body = join_blocks(&doc.body, block);
     Ok(doc.render())
@@ -940,8 +940,10 @@ fn plan_memory(
             Some(old) => match model::parse::<Memory>(old) {
                 Ok((mut memory, mut doc)) => {
                     memory.updated = Some(now.date_naive());
-                    model::update(&mut doc, &memory);
-                    join_blocks(&doc.render(), &joined)
+                    match model::update(&mut doc, &memory) {
+                        Ok(()) => join_blocks(&doc.render(), &joined),
+                        Err(_) => join_blocks(old, &joined),
+                    }
                 }
                 Err(_) => join_blocks(old, &joined),
             },

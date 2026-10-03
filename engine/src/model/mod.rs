@@ -83,17 +83,26 @@ pub fn render_new<R: Record>(record: &R, body: &str) -> String {
 }
 
 /// Writes `record` into an existing document, touching only changed keys.
-/// A document without frontmatter gets a canonical block.
-pub fn update<R: Record>(doc: &mut Document, record: &R) {
+/// A document without frontmatter gets a canonical block. The new block is
+/// read back first ([`Frontmatter::check`], then as `R`): when it would
+/// not read back as `record`, the update is refused and `doc` is left as
+/// it was, so the caller writes nothing (WP-066).
+pub fn update<R: Record>(doc: &mut Document, record: &R) -> Result<(), FrontmatterError> {
     let values = record.to_values();
-    match doc.frontmatter.as_mut() {
+    let mut next = doc.clone();
+    match next.frontmatter.as_mut() {
         Some(fm) => {
             for (key, value) in &values {
                 fm.set(key, value, R::KEYS);
             }
         }
-        None => doc.frontmatter = Some(Frontmatter::canonical(&values)),
+        None => next.set_frontmatter(Frontmatter::canonical(&values)),
     }
+    let fm = next.frontmatter()?;
+    fm.check(&values)?;
+    R::from_frontmatter(fm).map_err(|e| FrontmatterError::Refused(e.to_string()))?;
+    *doc = next;
+    Ok(())
 }
 
 pub(crate) fn field(key: &str, message: impl Into<String>) -> FrontmatterError {
@@ -225,6 +234,31 @@ mod tests {
         assert!(!is_agent("agent:Claude"));
         assert!(is_slug("dev-env"));
         assert!(!is_slug("-dev"));
+    }
+
+    const CASE: &str = "---\nid: C-2026-005\ntype: case\ntitle: \"T\"\nstatus: queued\nzone: yellow\nrisk: R1\npriority: normal\narea:\ncreated: 2026-09-29\nstarted:\nclosed:\nsnapshotBefore:\nagents: [agent:a,\nagent:b]\nevents: []\ntags: []\n---\n# Body\n";
+
+    #[test]
+    fn update_refuses_a_block_that_would_not_read_back() {
+        let (mut case, mut doc) = parse::<Case>(CASE).unwrap();
+        assert_eq!(case.agents, ["agent:a", "agent:b"]);
+        update(&mut doc, &case).unwrap();
+        assert_eq!(doc.render(), CASE);
+        case.agents.push("agent:c".into());
+        let err = update(&mut doc, &case).unwrap_err();
+        assert!(matches!(err, FrontmatterError::Refused(_)), "{err}");
+        assert_eq!(doc.render(), CASE);
+    }
+
+    #[test]
+    fn update_puts_a_new_block_after_the_bom() {
+        let mut doc = Document::parse("\u{feff}text\n").unwrap();
+        let memory: Memory = serde_yaml::from_str("type: memory\ntopic: t").unwrap();
+        update(&mut doc, &memory).unwrap();
+        let text = doc.render();
+        assert!(text.starts_with("\u{feff}---\n"), "{text:?}");
+        assert!(text.ends_with("---\ntext\n"), "{text:?}");
+        parse::<Memory>(&text).unwrap();
     }
 
     #[test]

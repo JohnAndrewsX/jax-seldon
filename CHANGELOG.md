@@ -107,6 +107,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules are compiled once per process and only when a text can match
   them, so a recorded agent command is faster than before. Existing files
   and history are not rewritten (WP-062).
+- Saving a case keeps valid hand-edited frontmatter valid: a blank line
+  or a column-0 comment inside a block list stays with the list, a quoted
+  key (`"title": …`) is the same key, and every frontmatter update is
+  read back before the file is written; one that would not read back is
+  refused with exit 1 and the file stays as it was. A file that starts
+  with a UTF-8 BOM (kept on save) or has spaces or tabs after a `---`
+  fence now parses (WP-066).
 
 ### Plugin
 

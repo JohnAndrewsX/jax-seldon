@@ -38,7 +38,7 @@ fn assert_round_trip<R: Record + std::fmt::Debug>(files: &[PathBuf]) -> Vec<R> {
             assert_eq!(rendered, text, "{}: canonical form differs", path.display());
             // writing the unchanged record back is a no-op
             let mut doc2 = Document::parse(&text).unwrap();
-            model::update(&mut doc2, &record);
+            model::update(&mut doc2, &record).unwrap();
             assert_eq!(
                 doc2.render(),
                 text,
@@ -162,7 +162,7 @@ mod lossless_update {
         let (mut case, mut doc) = model::parse::<Case>(&text).unwrap();
         case.status = CaseStatus::Completed;
         case.closed = NaiveDate::from_ymd_opt(2026, 10, 2);
-        model::update(&mut doc, &case);
+        model::update(&mut doc, &case).unwrap();
         let out = doc.render();
         let changed: Vec<(&str, &str)> = text
             .lines()
@@ -177,5 +177,214 @@ mod lossless_update {
             ]
         );
         assert_eq!(text.lines().count(), out.lines().count());
+    }
+}
+
+/// Hand edits and files from other editors (WP-066): a save keeps them,
+/// and a save whose frontmatter would not read back is refused.
+mod hand_edits {
+    use super::*;
+    use common::{Env, Snapper, find_file, json, read, stderr};
+    use seldon::logbook::cases::CaseFile;
+    use seldon::model::CaseStatus;
+
+    const T0: &str = "2026-10-01T10:12:00+02:00";
+    const T1: &str = "2026-10-01T11:00:30+02:00";
+    const BOM: &str = "\u{feff}";
+
+    /// A fresh logbook with one queued case; its id and path.
+    fn new_case(env: &Env, title: &str) -> (PathBuf, String, PathBuf) {
+        let root = env.init_logbook();
+        let id = add_case(env, title);
+        let path = find_file(&root.join("work/queued"), &format!("{id}-"));
+        (root, id, path)
+    }
+
+    fn add_case(env: &Env, title: &str) -> String {
+        let out = env.at(T0, &["plan", "new", "--json", "--", title]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        json(&out)["case"]["id"].as_str().unwrap().to_string()
+    }
+
+    /// `text` with `from` replaced once; panics when `from` is not there.
+    fn edit(text: &str, from: &str, to: &str) -> String {
+        assert!(text.contains(from), "{from:?} not in\n{text}");
+        text.replacen(from, to, 1)
+    }
+
+    fn run_ok(env: &Env, args: &[&str]) -> serde_json::Value {
+        let out = env.at(T1, args);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        assert!(!stderr(&out).contains("skipped"), "{}", stderr(&out));
+        json(&out)
+    }
+
+    const TAGS: &str = "tags:\n# hand-written tags, keep sorted\n  - editor\n\n  - tools\n";
+
+    #[test]
+    fn a_comment_a_blank_line_and_a_quoted_key_survive_a_save() {
+        let env = Env::new(Snapper::Missing);
+        let (root, id, path) = new_case(&env, "Try a font");
+        let text = edit(&read(&path), "tags: []\n", TAGS);
+        let text = edit(
+            &text,
+            "title: \"Try a font\"\n",
+            "\"title\": \"Try a font\"\n",
+        );
+        std::fs::write(&path, &text).unwrap();
+
+        let show = run_ok(&env, &["plan", "show", &id, "--json"]);
+        assert_eq!(show["case"]["tags"], serde_json::json!(["editor", "tools"]));
+        assert_eq!(show["case"]["title"], "Try a font");
+
+        run_ok(&env, &["plan", "start", &id, "--json"]);
+        run_ok(
+            &env,
+            &["log", "--case", &id, "--json", "--", "tried a font"],
+        );
+        let path = find_file(&root.join("work/active"), &format!("{id}-"));
+        let after = read(&path);
+        // the property first: the file still parses, with one title
+        let (case, doc) = model::parse::<Case>(&after).unwrap_or_else(|e| panic!("{e}\n{after}"));
+        let keys: Vec<&str> = doc.frontmatter.as_ref().unwrap().keys().collect();
+        assert_eq!(keys.iter().filter(|k| **k == "title").count(), 1, "{after}");
+        assert_eq!(case.status, CaseStatus::Active);
+        assert_eq!(case.tags, ["editor", "tools"]);
+        assert_eq!(case.events.len(), 1);
+        // and the hand-written lines are still there, byte for byte
+        assert!(after.contains(TAGS), "{after}");
+        assert!(after.contains("\n\"title\": \"Try a font\"\n"), "{after}");
+
+        let show = run_ok(&env, &["plan", "show", &id, "--json"]);
+        assert_eq!(show["case"]["status"], "active");
+    }
+
+    /// The engine changes `agents` when an agent writes a note: the list is
+    /// rewritten whole, its hand-written comment stays.
+    #[test]
+    fn a_hand_edited_list_the_engine_changes_stays_valid() {
+        let env = Env::new(Snapper::Missing);
+        let (root, id, path) = new_case(&env, "Agents");
+        let agents = "agents:\n# who worked here\n\n  - agent:claude-code\n";
+        std::fs::write(&path, edit(&read(&path), "agents: []\n", agents)).unwrap();
+
+        run_ok(&env, &["plan", "start", &id, "--json"]);
+        let args = [
+            "log",
+            "--case",
+            &id,
+            "--actor",
+            "agent:codex",
+            "--json",
+            "--",
+            "x",
+        ];
+        run_ok(&env, &args);
+        let after = read(&find_file(&root.join("work/active"), &format!("{id}-")));
+        let (case, _) = model::parse::<Case>(&after).unwrap_or_else(|e| panic!("{e}\n{after}"));
+        assert_eq!(case.agents, ["agent:claude-code", "agent:codex"]);
+        assert!(
+            after.contains("agents: [agent:claude-code, agent:codex]\n# who worked here\n"),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn a_bom_and_padded_fences_parse_and_the_bom_stays() {
+        let env = Env::new(Snapper::Missing);
+        let (root, bom_id, bom_path) = new_case(&env, "BOM case");
+        let pad_id = add_case(&env, "Padded case");
+        let pad_path = find_file(&root.join("work/queued"), &format!("{pad_id}-"));
+        let bom_text = format!("{BOM}{}", read(&bom_path));
+        std::fs::write(&bom_path, &bom_text).unwrap();
+        let pad_text = edit(&read(&pad_path), "---\n", "--- \n");
+        let pad_text = edit(&pad_text, "\n---\n", "\n--- \t\n");
+        std::fs::write(&pad_path, &pad_text).unwrap();
+
+        let list = run_ok(&env, &["plan", "list", "--json"]);
+        let ids: Vec<&str> = list["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, [bom_id.as_str(), pad_id.as_str()]);
+        for id in [&bom_id, &pad_id] {
+            run_ok(&env, &["plan", "show", id, "--json"]);
+            run_ok(&env, &["plan", "start", id, "--json"]);
+        }
+
+        let active = root.join("work/active");
+        let bom_after = read(&find_file(&active, &format!("{bom_id}-")));
+        assert!(
+            bom_after.starts_with(&format!("{BOM}---\n")),
+            "{bom_after:?}"
+        );
+        assert_eq!(bom_after.matches(BOM).count(), 1, "{bom_after:?}");
+        let pad_after = read(&find_file(&active, &format!("{pad_id}-")));
+        assert!(pad_after.starts_with("--- \n"), "{pad_after:?}");
+        assert!(pad_after.contains("\n--- \t\n"), "{pad_after:?}");
+        for text in [&bom_after, &pad_after] {
+            let (case, _) = model::parse::<Case>(text).unwrap();
+            assert_eq!(case.status, CaseStatus::Active);
+        }
+    }
+
+    /// A column-0 line inside a flow list is valid YAML that the
+    /// line-by-line entry model cannot place: changing that list would
+    /// leave the old tail behind. The save is refused, the file unchanged.
+    #[test]
+    fn a_save_that_would_not_read_back_is_refused_and_the_file_is_unchanged() {
+        let env = Env::new(Snapper::Missing);
+        let (root, _, path) = new_case(&env, "Flow list");
+        let text = edit(
+            &read(&path),
+            "agents: []\n",
+            "agents: [agent:claude-code,\nagent:codex]\n",
+        );
+        std::fs::write(&path, &text).unwrap();
+        let logbook = Logbook::open(&root).unwrap();
+        let mut file = CaseFile::load(&path).unwrap();
+        assert_eq!(file.case.agents, ["agent:claude-code", "agent:codex"]);
+
+        // an unchanged list is not rewritten: the save goes through
+        file.save(&logbook).unwrap();
+        assert_eq!(read(&path), text);
+
+        file.add_agent("agent:zed");
+        let err = file.save(&logbook).unwrap_err().to_string();
+        assert!(err.contains("refused"), "{err}");
+        assert_eq!(read(&path), text);
+    }
+}
+
+/// A case id is ASCII only (`C-YYYY-NNN`): a control or format character
+/// in the id of a case file is refused on load, so no reader of a loaded
+/// case ever prints one (WP-066).
+mod case_ids {
+    use super::*;
+
+    #[test]
+    fn control_characters_in_a_case_id_are_refused_on_load() {
+        let path = common::fixture_logbook().join("work/queued/C-2026-005-tokyo-night.md");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(model::parse::<Case>(&text).is_ok());
+        for escape in [
+            "\\0", "\\a", "\\t", "\\n", "\\r", "\\e", "\\x7f", "\\N", "\\L", "\\P", "\\u200b",
+            "\\u202e", "\\ufeff",
+        ] {
+            for id in [
+                format!("C-2026-005{escape}"),
+                format!("{escape}C-2026-005"),
+                format!("C-2026-{escape}005"),
+            ] {
+                let bad = text.replacen("id: C-2026-005\n", &format!("id: \"{id}\"\n"), 1);
+                assert_ne!(bad, text);
+                let err = model::parse::<Case>(&bad)
+                    .map(|(c, _)| c.id)
+                    .expect_err(&id);
+                assert!(err.to_string().starts_with("`id`"), "{id}: {err}");
+            }
+        }
     }
 }

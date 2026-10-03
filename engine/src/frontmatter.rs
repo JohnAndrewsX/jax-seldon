@@ -13,6 +13,11 @@
 //!   `key:` for null, flow lists `[a, b]`, free text in double quotes.
 //!
 //! Frontmatter stays flat (memory/pitfalls.md): scalars and lists of scalars.
+//!
+//! Files from other editors parse too: a leading UTF-8 BOM (kept on render),
+//! spaces or tabs after a fence, quoted keys, and blank or column-0 comment
+//! lines inside a block list. Before a changed block is written,
+//! [`Frontmatter::check`] reads it back (WP-066).
 
 use std::fmt::Write as _;
 
@@ -20,6 +25,7 @@ use serde::de::DeserializeOwned;
 use serde_yaml::Value as Yaml;
 
 const FENCE: &str = "---";
+const BOM: char = '\u{feff}';
 
 /// Errors while reading frontmatter.
 #[derive(Debug, thiserror::Error)]
@@ -32,6 +38,11 @@ pub enum FrontmatterError {
     Yaml(#[from] serde_yaml::Error),
     #[error("`{key}`: {message}")]
     Field { key: String, message: String },
+    #[error(
+        "update refused, the frontmatter would not read back ({0}); \
+         the file is left as it was, rewrite the hand-edited lines in plain YAML"
+    )]
+    Refused(String),
 }
 
 /// A Markdown file: optional frontmatter plus the body after it.
@@ -43,19 +54,21 @@ pub struct Document {
 
 impl Document {
     /// Splits `text` into frontmatter and body. A file that does not start
-    /// with a `---` line has no frontmatter; the whole text is the body.
+    /// with a `---` line (after an optional BOM) has no frontmatter; the
+    /// whole text is the body.
     pub fn parse(text: &str) -> Result<Self, FrontmatterError> {
-        let Some(open_len) = fence_len(text) else {
+        let bom = if text.starts_with(BOM) {
+            BOM.len_utf8()
+        } else {
+            0
+        };
+        let Some(open_len) = fence_len(&text[bom..]).map(|n| bom + n) else {
             return Ok(Document {
                 frontmatter: None,
                 body: text.to_string(),
             });
         };
-        let mut fm = Frontmatter {
-            open: text[..open_len].to_string(),
-            entries: Vec::new(),
-            close: String::new(),
-        };
+        let mut lines = Vec::new();
         let mut pos = open_len;
         loop {
             if pos >= text.len() {
@@ -64,13 +77,16 @@ impl Document {
             let end = text[pos..].find('\n').map_or(text.len(), |i| pos + i + 1);
             let line = &text[pos..end];
             if fence_len(line).is_some() {
-                fm.close = line.to_string();
                 return Ok(Document {
-                    frontmatter: Some(fm),
+                    frontmatter: Some(Frontmatter {
+                        open: text[..open_len].to_string(),
+                        entries: group(&lines),
+                        close: line.to_string(),
+                    }),
                     body: text[end..].to_string(),
                 });
             }
-            fm.push_line(line);
+            lines.push(line);
             pos = end;
         }
     }
@@ -88,21 +104,34 @@ impl Document {
     pub fn frontmatter(&self) -> Result<&Frontmatter, FrontmatterError> {
         self.frontmatter.as_ref().ok_or(FrontmatterError::Missing)
     }
+
+    /// Puts `fm` in front of the body. A BOM at the start of the body moves
+    /// in front of the block, where a reader expects it.
+    pub fn set_frontmatter(&mut self, mut fm: Frontmatter) {
+        if let Some(rest) = self.body.strip_prefix(BOM) {
+            fm.open.insert(0, BOM);
+            self.body = rest.to_string();
+        }
+        self.frontmatter = Some(fm);
+    }
 }
 
-/// Length of a `---` fence line at the start of `s` (with its line ending),
-/// or `None` if `s` does not start with one.
+/// Length of a `---` fence line at the start of `s` (with its trailing
+/// spaces or tabs and its line ending), or `None` if `s` does not start
+/// with one.
 fn fence_len(s: &str) -> Option<usize> {
     let rest = s.strip_prefix(FENCE)?;
-    if rest.is_empty() {
-        Some(FENCE.len())
-    } else if rest.starts_with('\n') {
-        Some(FENCE.len() + 1)
-    } else if rest.starts_with("\r\n") {
-        Some(FENCE.len() + 2)
+    let after = rest.trim_start_matches([' ', '\t']);
+    let eol = if after.is_empty() {
+        0
+    } else if after.starts_with('\n') {
+        1
+    } else if after.starts_with("\r\n") {
+        2
     } else {
-        None
-    }
+        return None;
+    };
+    Some(s.len() - after.len() + eol)
 }
 
 /// The frontmatter block, entry by entry, with its raw text.
@@ -172,17 +201,31 @@ impl Frontmatter {
     }
 
     /// Sets `key` to `value`. An existing entry is rewritten only when its
-    /// value differs; everything else stays byte-identical. A missing key is
+    /// value differs (it keeps its column-0 comment lines, after the new
+    /// `key: value` line); everything else stays byte-identical. A missing key is
     /// inserted before the first key that follows it in `order` (or at the
     /// end), unless `value` is empty (null or `[]`), in which case nothing is
     /// added. Returns whether the text changed.
     pub fn set(&mut self, key: &str, value: &FmValue, order: &[&str]) -> bool {
         if let Some(i) = self.position(key) {
-            let entry = &mut self.entries[i];
-            if entry_value(entry).is_ok_and(|current| current == value.to_yaml()) {
+            let target = value.to_yaml();
+            // An entry's own lines may not hold its whole value (valid YAML
+            // the line model cannot place): the whole block decides then.
+            if entry_value(&self.entries[i]).is_ok_and(|current| current == target)
+                || self
+                    .block_value(key)
+                    .is_some_and(|current| current == target)
+            {
                 return false;
             }
-            entry.raw = render_entry(key, value);
+            let entry = &mut self.entries[i];
+            let comments: String = entry
+                .raw
+                .split_inclusive('\n')
+                .skip(1)
+                .filter(|l| l.starts_with('#'))
+                .collect();
+            entry.raw = render_entry(key, value) + &comments;
             return true;
         }
         if value.is_empty() {
@@ -207,6 +250,28 @@ impl Frontmatter {
         true
     }
 
+    /// Reads the block back as a file would be read and checks that every
+    /// key holds the value written (an absent key may stand for an empty
+    /// one, as [`Frontmatter::set`] does not add those). A writer calls it
+    /// before the text goes to disk: a hand edit the line model misplaced
+    /// makes the update fail instead of the file.
+    pub fn check(&self, values: &[(&str, FmValue)]) -> Result<(), FrontmatterError> {
+        let refused = |e: &dyn std::fmt::Display| FrontmatterError::Refused(e.to_string());
+        let doc = Document::parse(&self.render()).map_err(|e| refused(&e))?;
+        let back = doc.frontmatter().map_err(|e| refused(&e))?;
+        let mapping: serde_yaml::Mapping = back.deserialize().map_err(|e| refused(&e))?;
+        for (key, value) in values {
+            let ok = match mapping.get(*key) {
+                Some(found) => *found == value.to_yaml(),
+                None => value.is_empty(),
+            };
+            if !ok {
+                return Err(refused(&format!("`{key}` reads back as another value")));
+            }
+        }
+        Ok(())
+    }
+
     /// Removes `key`. Returns whether it was present.
     pub fn remove(&mut self, key: &str) -> bool {
         match self.position(key) {
@@ -228,40 +293,99 @@ impl Frontmatter {
             .position(|e| e.key.as_deref() == Some(key))
     }
 
-    fn push_line(&mut self, line: &str) {
-        if let Some(key) = key_of(line) {
-            self.entries.push(Entry {
-                key: Some(key.to_string()),
-                raw: line.to_string(),
-            });
-            return;
-        }
-        let continues = line.starts_with([' ', '\t']) && !line.trim().is_empty()
-            || line.starts_with("- ")
-            || line.trim_end() == "-";
-        match self.entries.last_mut() {
-            Some(last) if continues && last.key.is_some() => last.raw.push_str(line),
-            _ => self.entries.push(Entry {
-                key: None,
-                raw: line.to_string(),
-            }),
-        }
+    /// The value the whole block gives `key`, if the block parses.
+    fn block_value(&self, key: &str) -> Option<Yaml> {
+        let mapping: serde_yaml::Mapping = self.deserialize().ok()?;
+        mapping.get(key).cloned()
     }
 }
 
-/// The key of a `key: value` line at column 0, if it is one.
-fn key_of(line: &str) -> Option<&str> {
-    let first = line.chars().next()?;
-    if first.is_whitespace() || matches!(first, '#' | '-' | '"' | '\'' | '[' | '{') {
-        return None;
+/// Groups the lines between the fences into entries: a `key:` line at
+/// column 0 starts one; indented and `- ` lines continue it. Blank lines
+/// and column-0 comments continue it too when the next other line does
+/// (a comment or blank line inside a block list); otherwise they are an
+/// entry without a key.
+fn group(lines: &[&str]) -> Vec<Entry> {
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if let Some(key) = key_of(lines[i]) {
+            entries.push(Entry {
+                key: Some(key),
+                raw: lines[i].to_string(),
+            });
+            i += 1;
+            continue;
+        }
+        let filler = lines[i..].iter().take_while(|l| is_filler(l)).count();
+        let joins = lines.get(i + filler).is_some_and(|l| continues(l));
+        // the filler run, plus the continuation line when there is no filler
+        let n = if filler == 0 { 1 } else { filler };
+        let raw = lines[i..i + n].concat();
+        match entries.last_mut() {
+            Some(last) if joins && last.key.is_some() => last.raw.push_str(&raw),
+            _ => entries.push(Entry { key: None, raw }),
+        }
+        i += n;
     }
-    let colon = line.find(':')?;
-    let after = &line[colon + 1..];
+    entries
+}
+
+/// A blank line or a comment at column 0.
+fn is_filler(line: &str) -> bool {
+    line.trim().is_empty() || line.starts_with('#')
+}
+
+/// An indented line or a block list item: part of the entry above.
+fn continues(line: &str) -> bool {
+    line.starts_with([' ', '\t']) && !line.trim().is_empty()
+        || line.starts_with("- ")
+        || line.trim_end() == "-"
+}
+
+/// The key of a `key: value` line at column 0, if it is one. A quoted key
+/// (`"title": …`, `'title': …`) is returned unquoted.
+fn key_of(line: &str) -> Option<String> {
+    let first = line.chars().next()?;
+    let (key, after) = match first {
+        '"' | '\'' => {
+            let end = quoted_end(line, first)?;
+            let key: String = serde_yaml::from_str(&line[..end]).ok()?;
+            let after = line[end..].trim_start_matches([' ', '\t']);
+            (key, after.strip_prefix(':')?)
+        }
+        c if c.is_whitespace() || matches!(c, '#' | '-' | '[' | '{') => return None,
+        _ => {
+            let colon = line.find(':')?;
+            (line[..colon].trim_end().to_string(), &line[colon + 1..])
+        }
+    };
     if !(after.is_empty() || after.starts_with([' ', '\t', '\n', '\r'])) {
         return None;
     }
-    let key = line[..colon].trim_end();
     (!key.is_empty()).then_some(key)
+}
+
+/// The byte index after the closing quote of the quoted scalar that
+/// `line` starts with (`"…"` with `\` escapes, `'…'` with `''`).
+fn quoted_end(line: &str, quote: char) -> Option<usize> {
+    let mut chars = line.char_indices().skip(1);
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' if quote == '"' => {
+                chars.next();
+            }
+            c if c == quote => {
+                if quote == '\'' && line[i + 1..].starts_with('\'') {
+                    chars.next();
+                } else {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn entry_value(entry: &Entry) -> Result<Yaml, serde_yaml::Error> {
@@ -455,6 +579,117 @@ mod tests {
             doc.render(),
             "---\nid: C-2026-001\ntitle: \"A\"\nstatus: active\nstarted: 2026-10-01\nclosed:\ntags:\n  - a\n  - b\n---\n# Body\n\ntext\n"
         );
+    }
+
+    #[test]
+    fn a_bom_and_padded_fences_round_trip() {
+        for text in [
+            "\u{feff}---\nid: x\n---\nbody\n",
+            "--- \nid: x\n---\t \nbody\n",
+            "\u{feff}---  \r\nid: x\r\n--- \r\nbody\r\n",
+            "---\nid: x\n--- ",
+        ] {
+            let doc = Document::parse(text).unwrap();
+            let fm = doc.frontmatter.as_ref().expect(text);
+            assert_eq!(fm.get("id"), Some(Yaml::from("x")), "{text:?}");
+            assert_eq!(doc.render(), text);
+        }
+        for text in ["\u{feff}# Title\n", "---x\nid: x\n---\n", "--- x\n"] {
+            let doc = Document::parse(text).unwrap();
+            assert!(doc.frontmatter.is_none(), "{text:?}");
+            assert_eq!(doc.render(), text);
+        }
+        assert!(matches!(
+            Document::parse("---\nid: x\n---x\n"),
+            Err(FrontmatterError::Unterminated)
+        ));
+    }
+
+    #[test]
+    fn set_frontmatter_moves_a_bom_to_the_front() {
+        let mut doc = Document::parse("\u{feff}# Day\n").unwrap();
+        doc.set_frontmatter(Frontmatter::canonical(&[("id", FmValue::str("x"))]));
+        assert_eq!(doc.render(), "\u{feff}---\nid: x\n---\n# Day\n");
+        assert!(
+            Document::parse(&doc.render())
+                .unwrap()
+                .frontmatter
+                .is_some()
+        );
+    }
+
+    const HAND: &str = "---\ntags:\n# keep sorted\n\n  - a\n# more\n  - b\n\n# about the id\nid: x\n\"title\": \"Old\"\n'it''s': y\n---\n";
+
+    #[test]
+    fn blank_and_comment_lines_inside_a_list_stay_with_it() {
+        let mut doc = Document::parse(HAND).unwrap();
+        assert_eq!(doc.render(), HAND);
+        let fm = doc.frontmatter.as_mut().unwrap();
+        assert_eq!(
+            fm.entries[0].raw,
+            "tags:\n# keep sorted\n\n  - a\n# more\n  - b\n"
+        );
+        assert_eq!(fm.entries[1].key, None);
+        let order = ["tags", "id", "title"];
+        assert!(!fm.set("tags", &FmValue::list(&["a", "b"]), &order));
+        assert!(fm.set("id", &FmValue::str("z"), &order));
+        assert_eq!(doc.render(), HAND.replace("id: x", "id: z"));
+        // a rewritten list keeps its comments, the list's lines go
+        let fm = doc.frontmatter.as_mut().unwrap();
+        assert!(fm.set("tags", &FmValue::list(&["c"]), &order));
+        let tail = "\n# about the id\nid: z\n\"title\": \"Old\"\n'it''s': y\n---\n";
+        assert_eq!(
+            doc.render(),
+            format!("---\ntags: [c]\n# keep sorted\n# more\n{tail}")
+        );
+    }
+
+    #[test]
+    fn quoted_keys_are_keys() {
+        let mut doc = Document::parse(HAND).unwrap();
+        let fm = doc.frontmatter.as_mut().unwrap();
+        let keys: Vec<_> = fm.keys().collect();
+        assert_eq!(keys, ["tags", "id", "title", "it's"]);
+        assert!(!fm.set("title", &FmValue::text("Old"), &["title"]));
+        assert!(fm.set("title", &FmValue::text("New"), &["title"]));
+        assert_eq!(
+            doc.render(),
+            HAND.replace("\"title\": \"Old\"", "title: \"New\"")
+        );
+        for (line, key) in [
+            ("\"a\\\"b\": 1\n", Some("a\"b")),
+            ("'a:b' : 1\n", Some("a:b")),
+            ("\"a\":1\n", None),
+            ("\"a\n", None),
+            ("\"\": 1\n", None),
+        ] {
+            assert_eq!(key_of(line).as_deref(), key, "{line:?}");
+        }
+    }
+
+    /// Valid YAML the line model cannot place: a flow list continued at
+    /// column 0. Unchanged, it is left alone; changed, the old tail would
+    /// stay behind, and the read-back check refuses the block.
+    #[test]
+    fn check_refuses_a_block_that_does_not_read_back() {
+        let text = "---\nagents: [a,\nb]\nid: x\n---\n";
+        let mut doc = Document::parse(text).unwrap();
+        let fm = doc.frontmatter.as_mut().unwrap();
+        let unchanged = [
+            ("agents", FmValue::list(&["a", "b"])),
+            ("id", FmValue::str("x")),
+        ];
+        assert!(!fm.set("agents", &unchanged[0].1, &[]));
+        fm.check(&unchanged).unwrap();
+        assert!(fm.set("agents", &FmValue::list(&["c"]), &[]));
+        assert!(matches!(
+            fm.check(&[("agents", FmValue::list(&["c"]))]),
+            Err(FrontmatterError::Refused(_))
+        ));
+        // a block that parses but holds another value is refused too
+        let fm = Frontmatter::canonical(&[("id", FmValue::str("x"))]);
+        assert!(fm.check(&[("id", FmValue::str("y"))]).is_err());
+        assert!(fm.check(&[("tags", FmValue::List(vec![]))]).is_ok());
     }
 
     #[test]
