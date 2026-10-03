@@ -181,18 +181,46 @@ impl Run {
 /// `ETXTBSY` on Linux ("Text file busy").
 const ETXTBSY: i32 = 26;
 
-/// Runs `program args…` with stdin closed and a timeout, capturing output.
+/// Runs `program args…` with stdin closed and a timeout, capturing output,
+/// in its own process group ([`run_command`]).
 pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) -> Run {
+    run_with(command(program, args, cwd), timeout, Group::Own)
+}
+
+/// [`run`] in the engine's own process group, for `git`: git and what it
+/// runs (hooks, a signing prompt) may use the terminal, which a background
+/// process group cannot read. At the deadline only `program` is killed;
+/// the wait for the output pipes ends at the same deadline (plus
+/// [`DRAIN_GRACE`]) all the same.
+pub fn run_in_engine_group(
+    program: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+    timeout: Duration,
+) -> Run {
+    run_with(command(program, args, cwd), timeout, Group::Engine)
+}
+
+fn command(program: &str, args: &[&str], cwd: Option<&Path>) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(args);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
-    run_command(cmd, timeout)
+    cmd
 }
 
-/// How long the output pipes may stay open after the process group was
-/// killed at the deadline.
+/// The process group a program runs in.
+#[derive(Clone, Copy)]
+enum Group {
+    /// Its own: killed as a whole at the deadline.
+    Own,
+    /// The engine's: only the program is killed.
+    Engine,
+}
+
+/// How long the output pipes may stay open after the program (or its
+/// process group) was killed at the deadline.
 const DRAIN_GRACE: Duration = Duration::from_millis(200);
 
 /// [`run`] for a command built by the caller (fixed program and argv, plus
@@ -200,11 +228,17 @@ const DRAIN_GRACE: Duration = Duration::from_millis(200);
 /// captured, in its own process group. The timeout covers the program and
 /// its output pipes: at the deadline the whole group is killed, also when
 /// the program has exited and something it started still holds a pipe.
-pub fn run_command(mut cmd: Command, timeout: Duration) -> Run {
+pub fn run_command(cmd: Command, timeout: Duration) -> Run {
+    run_with(cmd, timeout, Group::Own)
+}
+
+fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0);
+        .stderr(Stdio::piped());
+    if let Group::Own = group {
+        cmd.process_group(0);
+    }
     // ETXTBSY: the program was just written and another thread's forked
     // child still holds the write descriptor until it execs. Brief; retry.
     let mut spawned = cmd.spawn();
@@ -229,20 +263,20 @@ pub fn run_command(mut cmd: Command, timeout: Duration) -> Run {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() >= deadline => {
-                kill_group(&mut child);
+                stop(&mut child, group);
                 let _ = child.wait();
                 return Run::TimedOut;
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
             Err(e) => {
-                kill_group(&mut child);
+                stop(&mut child, group);
                 return Run::Failed(e.to_string());
             }
         }
     };
     if !(out.wait_until(deadline) && err.wait_until(deadline)) {
         // the program has exited; what it started keeps a pipe open
-        kill_group(&mut child);
+        stop(&mut child, group);
         let grace = Instant::now() + DRAIN_GRACE;
         if !(out.wait_until(grace) && err.wait_until(grace)) {
             return Run::TimedOut;
@@ -295,6 +329,16 @@ const SIGKILL: i32 = 9;
 unsafe extern "C" {
     /// kill(2); a negative `pid` signals the process group `-pid`.
     fn kill(pid: i32, sig: i32) -> i32;
+}
+
+/// Kills `child` and, when it leads its own group, the whole group.
+fn stop(child: &mut Child, group: Group) {
+    match group {
+        Group::Own => kill_group(child),
+        Group::Engine => {
+            let _ = child.kill();
+        }
+    }
 }
 
 /// Kills the process group `child` leads (it was spawned with

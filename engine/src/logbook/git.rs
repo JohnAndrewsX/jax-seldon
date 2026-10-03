@@ -19,7 +19,7 @@ const FALLBACK_IDENTITY: [&str; 4] = [
 
 /// `git --version`, or `None` if git is not installed.
 pub fn version() -> Option<String> {
-    match sys::run("git", &["--version"], None, TIMEOUT) {
+    match sys::run_in_engine_group("git", &["--version"], None, TIMEOUT) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -49,7 +49,7 @@ pub fn init(root: &Path) -> Result<(), String> {
 pub fn commit_all(root: &Path, summary: &str) -> Result<(), String> {
     git(root, &["add", "-A"])?;
     if matches!(
-        sys::run("git", &["diff", "--cached", "--quiet"], Some(root), TIMEOUT),
+        sys::run_in_engine_group("git", &["diff", "--cached", "--quiet"], Some(root), TIMEOUT),
         Run::Exited { code: Some(0), .. }
     ) && has_head(root)
     {
@@ -57,7 +57,7 @@ pub fn commit_all(root: &Path, summary: &str) -> Result<(), String> {
     }
     let message = format!("seldon: {summary}");
     let has_identity = matches!(
-        sys::run("git", &["config", "--get", "user.email"], Some(root), TIMEOUT),
+        sys::run_in_engine_group("git", &["config", "--get", "user.email"], Some(root), TIMEOUT),
         Run::Exited { code: Some(0), ref stdout, .. } if !stdout.trim().is_empty()
     );
     let mut args: Vec<&str> = Vec::new();
@@ -71,7 +71,7 @@ pub fn commit_all(root: &Path, summary: &str) -> Result<(), String> {
 /// Whether the repository has a first commit (`diff --cached` against an
 /// unborn HEAD says nothing useful).
 fn has_head(root: &Path) -> bool {
-    sys::run(
+    sys::run_in_engine_group(
         "git",
         &["rev-parse", "--verify", "-q", "HEAD"],
         Some(root),
@@ -81,7 +81,7 @@ fn has_head(root: &Path) -> bool {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<(), String> {
-    match sys::run("git", args, Some(root), TIMEOUT) {
+    match sys::run_in_engine_group("git", args, Some(root), TIMEOUT) {
         Run::Exited { code: Some(0), .. } => Ok(()),
         Run::Exited { stderr, .. } => Err(format!(
             "git {} failed: {}",

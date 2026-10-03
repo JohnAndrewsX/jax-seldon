@@ -247,7 +247,7 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
                     continue;
                 }
                 if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)
+                    sys::create_dir_private(parent)
                         .with_context(|| format!("cannot create {}", parent.display()))?;
                 }
                 std::fs::copy(entry.path(), &target)

@@ -278,15 +278,60 @@ mod cli {
     }
 
     #[test]
-    fn a_missing_ledger_folder_is_created_private() {
+    fn missing_folders_are_created_private() {
         let env = Env::new(Snapper::NoPermissions);
-        let root = env.init_logbook();
-        std::fs::remove_dir_all(root.join("ledger")).unwrap();
-        let out = with_umask(&env.command(&["log", "--", "made-up note"]), "022")
-            .output()
-            .unwrap();
-        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        assert_private_tree(&root.join("ledger"));
+        let run = |args: &[&str], vars: &[(&str, &Path)]| {
+            let mut cmd = env.command(args);
+            for (key, value) in vars {
+                cmd.env(key, value);
+            }
+            let out = with_umask(&cmd, "022").output().unwrap();
+            assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        };
+        // an agent kit with nested folders, copied into the logbook
+        let kit = env.tmp.path().join("kit");
+        std::fs::create_dir_all(kit.join("skills/zones")).unwrap();
+        std::fs::write(kit.join("skills/zones/SKILL.md"), "# zones\n").unwrap();
+        let root = env.tmp.path().join("logbook");
+        run(
+            &[
+                "init",
+                "--non-interactive",
+                "--no-capture",
+                "--path",
+                root.to_str().unwrap(),
+                "--harness",
+                "omarchy-agent",
+            ],
+            &[("SELDON_OMARCHY_AGENT_KIT", &kit)],
+        );
+        assert_eq!(mode(&root.join(".claude/skills")), 0o700);
+        assert_eq!(mode(&root.join(".claude/skills/zones")), 0o700);
+
+        // status folders, the ledger folder
+        for dir in ["work/queued", "work/active", "ledger"] {
+            std::fs::remove_dir_all(root.join(dir)).unwrap();
+        }
+        run(&["plan", "new", "--", "made-up case"], &[]);
+        run(&["plan", "start", "C-2026-001"], &[]);
+        run(&["log", "--", "made-up note"], &[]);
+        for dir in ["work/queued", "work/active", "ledger"] {
+            assert_private_tree(&root.join(dir));
+        }
+
+        // a settings file in folders that do not exist yet
+        let settings = env.home.join("project/.claude/settings.json");
+        run(
+            &[
+                "hook",
+                "install",
+                "claude-code",
+                "--settings",
+                settings.to_str().unwrap(),
+            ],
+            &[],
+        );
+        assert_private_tree(&env.home.join("project"));
     }
 
     #[test]
@@ -342,5 +387,98 @@ mod cli {
         assert_eq!(mode(&real), 0o600);
         assert!(temp_files(&dotfiles).is_empty());
         assert!(temp_files(link.parent().unwrap()).is_empty());
+    }
+}
+
+mod git {
+    use super::*;
+    use std::io::Write as _;
+    use std::os::unix::process::CommandExt as _;
+    use std::process::Stdio;
+
+    /// A `pre-commit` hook in the logbook's repository.
+    fn pre_commit(root: &Path, body: &str) {
+        let hook = root.join(".git/hooks/pre-commit");
+        std::fs::write(&hook, format!("#!/bin/sh\n{body}\n")).unwrap();
+        set_mode(&hook, 0o755);
+    }
+
+    #[test]
+    fn git_and_its_hooks_run_in_the_engine_process_group() {
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            eprintln!("note: git not installed; skipped");
+            return;
+        }
+        let root = env.init_logbook();
+        let out_file = env.tmp.path().join("hook-group");
+        // field 5 of /proc/<pid>/stat is the process group
+        pre_commit(
+            &root,
+            &format!(
+                "read -r stat < /proc/$$/stat\nset -- $stat\necho \"$5\" > '{}'",
+                out_file.display()
+            ),
+        );
+        let child = env
+            .command(&["log", "--", "made-up note"])
+            .process_group(0)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let engine = child.id();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(read(&out_file).trim(), engine.to_string());
+    }
+
+    #[test]
+    fn a_commit_hook_can_read_the_terminal() {
+        let script = Path::new("/usr/bin/script");
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git || !script.exists() {
+            eprintln!("note: git or script(1) not installed; skipped");
+            return;
+        }
+        let root = env.init_logbook();
+        let answer = env.tmp.path().join("hook-answer");
+        pre_commit(
+            &root,
+            &format!(
+                "read answer < /dev/tty\necho \"$answer\" > '{}'",
+                answer.display()
+            ),
+        );
+        // `seldon log` on a pseudo-terminal (script(1)), as in a shell
+        let seldon = env.command(&["log", "--", "made-up note"]);
+        let line = format!(
+            "'{}' log -- 'made-up note'",
+            seldon.get_program().to_str().unwrap()
+        );
+        let mut cmd = std::process::Command::new(script);
+        cmd.args(["-qec", &line, "/dev/null"]).env_clear();
+        for (key, value) in seldon.get_envs() {
+            if let Some(value) = value {
+                cmd.env(key, value);
+            }
+        }
+        cmd.current_dir(seldon.get_current_dir().unwrap());
+        let started = Instant::now();
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"yes\n").unwrap();
+        let out = child.wait_with_output().unwrap();
+        let took = started.elapsed();
+
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(took < Duration::from_secs(5), "took {took:?}");
+        assert_eq!(read(&answer).trim(), "yes");
+        let last = env.git(&root, &["log", "-1", "--format=%s"]);
+        assert_eq!(common::stdout(&last).trim(), "seldon: note");
     }
 }

@@ -1105,9 +1105,7 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
     if !merged.added.is_empty() {
         let mut text = serde_json::to_string_pretty(&root).map_err(anyhow::Error::from)?;
         text.push('\n');
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
+        // write_atomic creates a missing directory (0700)
         crate::sys::write_atomic(path, text.as_bytes())?;
     }
     Ok(merged)

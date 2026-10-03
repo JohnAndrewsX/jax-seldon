@@ -116,7 +116,7 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
         return None;
     }
     let timeout = Duration::from_secs(10);
-    let head = match sys::run(
+    let head = match sys::run_in_engine_group(
         "git",
         &["rev-parse", "--short", "HEAD"],
         Some(root),
@@ -130,14 +130,15 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
         Run::Exited { .. } => None,
         _ => return None,
     };
-    let dirty = match sys::run("git", &["status", "--porcelain"], Some(root), timeout) {
-        Run::Exited {
-            code: Some(0),
-            stdout,
-            ..
-        } => !stdout.trim().is_empty(),
-        _ => return None,
-    };
+    let dirty =
+        match sys::run_in_engine_group("git", &["status", "--porcelain"], Some(root), timeout) {
+            Run::Exited {
+                code: Some(0),
+                stdout,
+                ..
+            } => !stdout.trim().is_empty(),
+            _ => return None,
+        };
     Some(model::GitInfo {
         head,
         dirty: Some(dirty),

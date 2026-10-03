@@ -116,7 +116,7 @@ impl CaseFile {
             )));
         }
         if let Some(dir) = target.parent() {
-            std::fs::create_dir_all(dir)
+            crate::sys::create_dir_private(dir)
                 .with_context(|| format!("cannot create {}", dir.display()))?;
         }
         // Move first, then write: there is never a second file with this id.
