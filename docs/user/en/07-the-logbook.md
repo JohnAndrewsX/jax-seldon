@@ -175,6 +175,44 @@ To keep a second logbook, for a test, run `seldon init --path <DIR>`.
 `init` sets the new folder as `logbook` in the config. Change
 it back, or use `--logbook <DIR>` for single commands.
 
+## Back up and restore the state directory
+
+The logbook is not all that Seldon keeps. The engine's own bookkeeping
+lives in `~/.local/state/seldon/`:
+
+| File | What it holds |
+|---|---|
+| `cursors.json` | where each collector stopped reading, tied to the path of your logbook |
+| `manifest.json` | a fingerprint of each watched config file |
+| `owned.json` | files Seldon wrote itself that the next capture has not yet seen; present only while one is waiting |
+| `index.json` | what the plugin reads; the engine rebuilds it, so it needs no backup |
+
+If this folder is lost, nothing fails and nothing warns you. The
+collectors start over from the current state. `pacman` and `snapper`
+read their sources again and skip what the ledger already holds. The
+collectors that compare states (config, plugins, Omarchy, theme) take
+the machine as it is now as their new starting point, and a change made
+while the state was gone is not recorded.
+
+Back the folder up with the logbook, while no `seldon` command runs:
+
+```sh
+tar -C ~/.local/state -czf ~/seldon-state-2026-10-03.tar.gz seldon
+```
+
+To restore it, put the folder back and run a capture. Restore it for the
+same logbook path: a state tied to another path starts over, as after
+[moving the logbook](#moving-or-copying-the-logbook). An older backup is
+better than none; the next capture records what changed since:
+
+```sh
+rm -r ~/.local/state/seldon
+tar -C ~/.local/state -xzf ~/seldon-state-2026-10-03.tar.gz
+seldon capture
+```
+
+`seldon doctor` then shows only `ok`.
+
 ---
 
 Previous: [Configuration](06-configuration.md) · [Index](README.md) · Next: [Rebuild, dossier and update impact](08-rebuild-dossier-update-impact.md)

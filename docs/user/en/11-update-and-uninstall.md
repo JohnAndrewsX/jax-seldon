@@ -106,17 +106,27 @@ step 5.
    seldon init --remove-theme-hook
    ```
 
-4. Claude Code's hooks live in the logbook's `.claude/settings.json`.
-   They go with the logbook. If you installed them into
-   `~/.claude/settings.json`, take them out of that file; your own
-   settings and hooks stay:
+4. Claude Code's hooks. If you keep the logbook, take them out of it:
+   they live in the logbook's `.claude/settings.json`, and without this
+   step Claude Code keeps calling a `seldon` that is gone. The command
+   removes only Seldon's hooks; your own settings and hooks stay, and a
+   file that held nothing else is deleted:
+
+   ```sh
+   seldon hook uninstall claude-code
+   ```
+
+   If you also installed them into `~/.claude/settings.json`, take them
+   out of that file too, with the same command and `--settings`:
 
    ```sh
    seldon hook uninstall claude-code --settings ~/.claude/settings.json
    ```
 
-   The next `seldon capture` records both removals without opening
-   drift, in case you keep the logbook.
+   Each command prints what it removed, or says that nothing was
+   installed. The next `seldon capture` records both removals without
+   opening drift. If you delete the logbook as well, its own hooks go
+   with it and only the second command is needed.
 
 5. The engine. The installer removes exactly the files it installed,
    the man page and the completions included; a file you changed since
