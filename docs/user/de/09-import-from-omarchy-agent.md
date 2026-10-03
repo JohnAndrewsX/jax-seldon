@@ -1,6 +1,6 @@
 # Import aus omarchy-agent
 
-<!-- source: en/09-import-from-omarchy-agent.md @ 779624f -->
+<!-- source: en/09-import-from-omarchy-agent.md @ ec1a8a5 -->
 
 Diese Seite ist für dich, wenn du vor Seldon ein Logbuch mit dem
 omarchy-agent-Kit geführt hast: einen Obsidian-Vault mit `pipeline/`,
