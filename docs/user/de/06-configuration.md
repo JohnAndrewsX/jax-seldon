@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 26945df -->
+<!-- source: en/06-configuration.md @ b69de2f -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
