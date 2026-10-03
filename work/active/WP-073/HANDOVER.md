@@ -213,3 +213,82 @@ commands, 455 command lines)`. Plugin harnesses: panel-view 733,
 overlay-view 319, bar-view 131, service-states 247, install.test 132,
 real-home-guard 11, all passing. shellcheck is not installed on this
 host, so only `bash -n` ran.
+
+## Fix round 1 (review: SEND BACK, B1 + N1 + N3)
+
+Commit `2d77dce` (engine, tests, SPEC §4), plus this handover update.
+
+**Done**
+
+- **B1.** The wider window let an agent command that had already proved
+  one change also claim a later change by a person to the same subject.
+  Example: the agent disables at 10:05, which is recorded; a person
+  re-enables, then disables again; the 10:20 capture gave the second
+  disable to the agent.
+  - Now, for an event stamped with the capture time, the cause must be
+    later than the newest known event with the same source and subject
+    (`Stamps::newest_known`, applied in `attribute_in`).
+  - The known events are the ledger range that `attribute_capture`
+    already loads.
+  - The event's subject is compared after redaction, because the ledger
+    holds subjects redacted. `attribute_capture` passes the ledger's
+    redactor; the in-process `attribute_stamped` compares subjects as
+    they are.
+  - Events timed by their change (mtime) keep their old window,
+    unchanged. SPEC §4 attribution paragraph: one sentence for the rule.
+- **N1.** End-to-end test for the wider window on a `config-remove`.
+- **N3.** SPEC §4 snapper paragraph: one sentence names the known limit
+  (the repeated hour when summer time ends: the list path reads the
+  earlier instant, the info files give UTC, so a switch between them can
+  give a false delete plus snapshot; to be fixed later). No code change.
+
+**Verified by**
+
+- New tests in `tests/attribution.rs`:
+  - `capture_time::a_proving_command_claims_no_later_plugin_change`:
+    - `disable` command at 10:05 → the 10:06 `plugin-disable` is the
+      agent's;
+    - enable → the 10:10 `plugin-enable` is `system`, open drift;
+    - disable → the 10:20 `plugin-disable` is `system`, no case, and
+      open in `seldon drift --json`.
+  - `capture_time::a_proving_command_claims_no_later_config_removal`:
+    - `rm ~/.bashrc` at 10:05 → the 10:06 `config-remove` is the
+      agent's;
+    - the file is put back (10:10 `config-add`, actor not asserted, see
+      the follow-ups);
+    - removed again → the 10:20 `config-remove` is `system`, open drift.
+  - `capture_time::a_config_removal_found_15_minutes_later_is_the_agents`
+    (N1): `rm ~/.bashrc` at 10:05, capture at 10:20 (last check 10:00)
+    → the `config-remove` at 10:20 is the agent's.
+  - Positive case still attributed:
+    `a_plugin_change_found_15_minutes_later_is_the_agents` (unchanged)
+    and N1.
+  - In-process: `rules::a_capture_time_event_reaches_back_to_the_last_check`
+    has two more cases. An event of the same plugin between the command
+    and the capture blocks the command. An event of another plugin does
+    not.
+- Mutants (each alone, restored with `git checkout HEAD --` + touch):
+
+  | # | Mutant | Killed by |
+  |---|---|---|
+  | R1 | the newest-known rule switched off | both B1 end-to-end tests (`agent:claude-code` ≠ `system`) and the in-process case |
+  | R2 | config's `since` filtered away (`since.filter(\|_\| false)`) | `a_config_removal_found_15_minutes_later_is_the_agents` (`system` ≠ agent) |
+  | R3 | any event of the source blocks, whatever its subject | the in-process case "another plugin's event does not block" |
+
+- `cargo fmt --check` ok. `cargo clippy --all-targets -- -D warnings`
+  clean.
+- Suites: lib 182, attribution 19, collectors 18, collectors_user 30,
+  hooks 51, idempotency 9. All passed, 0 failed.
+- `scripts/docs-check.sh`: ok (391 links, 455 command lines).
+- `just check` was not run again this round, as the review's list asked.
+  The last full run (on `8e767bc`) is above.
+
+**Follow-ups (not this round)**
+
+- Config attribution should check the verb: an `rm` names its operand as
+  a write target, so it also proves a `config-add` of that path. In the
+  B1 config test the re-added file's `config-add` can go to the agent.
+- Plugins: a marker for a cursor that got stuck after a failed save. The
+  "return" case from "Not done" (enabling recorded, cursor save failed,
+  disabled again before the next capture) stays open.
+- Snapper DST limit (N3), as named in SPEC §4.
