@@ -581,9 +581,9 @@ space or quote, so a password may contain `/ ? # : @`; userinfo without
 a `:` (a bare token) is cut up to the last `@` before the path. Redacting
 twice gives the same text: a match that lies inside an existing
 `‹redacted›` is left alone. An invalid user pattern is a user error
-(exit 1): Seldon refuses to write rather than leak. `subject` is cut at
-512 and `detail` at 4096 characters after redaction. Files written before
-a rule existed are not rewritten.
+(exit 1): Seldon writes nothing rather than unredacted text. `subject` is
+cut at 512 and `detail` at 4096 characters after redaction. Files written
+before a rule existed are not rewritten.
 
 `[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
 pattern with `/` matches the full path (`~/` = home), as a file or as a
