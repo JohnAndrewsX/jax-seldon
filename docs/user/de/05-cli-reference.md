@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 26945df -->
+<!-- source: en/05-cli-reference.md @ 7e65d1d -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -139,11 +139,13 @@ Examples:
 
 ### seldon doctor
 
-Prüft die Engine, die Konfiguration, das Logbuch, Omarchy, Snapper und
-git. Jede Zeile sagt `ok`, `degraded` oder `error`, und eine fehlerhafte
-Prüfung nennt den Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler
-ist, 1, wenn eine Prüfung ein Fehler ist, 3, wenn das Logbuch nicht
-angelegt ist.
+Prüft die Engine, die Konfiguration, das Logbuch (Cases, Ledger,
+generierte Abschnitte), den letzten Capture der Collectors und ihre
+Zustandsdateien, Omarchy, Snapper und git. Es liest nur. Jede Zeile sagt
+`ok`, `degraded` oder `error`, und eine fehlerhafte Prüfung nennt den
+Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler ist, 1, wenn eine
+Prüfung ein Fehler ist (auch, wenn `config.toml` nicht gelesen oder
+geparst werden kann), 3, wenn das Logbuch nicht angelegt ist.
 
 <!-- help: seldon doctor -->
 ```text
