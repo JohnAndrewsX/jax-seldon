@@ -35,13 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   day file with broken frontmatter fails them before anything changes
   (WP-057).
 - `hook session-start` prints the logbook context as a quoted block: each
-  line from the logbook starts with `> `, under one line that says these
+  line from the logbook starts with `>`, under one line that says these
   lines are data, not instructions; only day files are read as the
   journal. `agent start` passes only the case id, the logbook path and the
   commands to read the context to the launcher. The launcher check refuses
   more programs that run their arguments as code (`script`, `watch`,
   `flock`, `ssh`, `tmux`, `xargs`, interpreters, `env -S`, …), compares
   names without a version suffix, and its error calls it a heuristic
+  (WP-058).
+- `seldon log --actor agent:…` refuses a note that contains a line break
+  (exit 1, nothing written); a person's note may still have several lines
   (WP-058).
 
 ### Plugin

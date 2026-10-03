@@ -651,7 +651,7 @@ Start an agent on an active case
 Usage: seldon agent [OPTIONS] <COMMAND>
 
 Commands:
-  start  Launch an agent on an active case, with the case as the active case and `seldon hook session-start` as its prompt
+  start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook
   help   Print this message or the help of the given subcommand(s)
 
 Options:
@@ -667,7 +667,7 @@ aktiv sein. Der Launcher kommt aus `config.toml`; siehe
 
 <!-- help: seldon agent start -->
 ```text
-Launch an agent on an active case, with the case as the active case and `seldon hook session-start` as its prompt
+Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook
 
 Usage: seldon agent start [OPTIONS] <ID>
 

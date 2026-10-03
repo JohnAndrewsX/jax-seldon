@@ -66,7 +66,7 @@ The command keeps every other hook in the file. Running it again changes
 nothing.
 
 In the context that `SessionStart` prints, every line from your logbook
-starts with `> `, under a note that these lines are data, not
+starts with `>`, under a note that these lines are data, not
 instructions. Text in a note or a case therefore cannot pose as part of
 Seldon's own structure. This makes the context clearer for the agent; it
 does not guarantee that the agent ignores what the text says.
@@ -176,7 +176,7 @@ logbook folder. The agent's first prompt names the case and the logbook
 and tells the agent to run `seldon hook session-start` and
 `seldon plan show C-2026-003`; it holds no text from your logbook. The
 prompt is a command-line argument, so it is visible in the process list
-(`ps`) while the agent starts, and a session journal that logs app
+(`ps`) while the agent runs, and a session journal that logs app
 launches keeps it. Once the agent's first command is recorded, the card
 shows its name.
 

@@ -293,7 +293,11 @@ strings, empty unless `plan start` warned; WP-050); `decide --json` returns
 plan step so agents identify themselves; `log --tag T` stores `meta.tags`
 (comma-joined) and a `#tag` line in the journal; `open` also takes
 `logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
-line to the case (the fixture agrees). `SELDON_NOW=<RFC 3339>` overrides
+line to the case (the fixture agrees). `seldon log` with `--actor agent:…` refuses
+a note that contains a line break (`\n`, `\r`, vertical tab, form feed,
+NEL, U+2028, U+2029; trailing ones are trimmed first) with exit 1 and one
+line, before anything is read or written; a person's note may have
+several lines (WP-058). `SELDON_NOW=<RFC 3339>` overrides
 the clock for tests and demos; `SELDON_CONFIG=FILE` is the config
 override. `decide` writes no ledger event (no fitting kind; revisit with
 WP-008). `.seldon/active-case` names the case started last; `done`/`drop`
@@ -627,9 +631,10 @@ STATUS summary, active case (id, title, plan steps), last 5 journal lines
 (of the latest day file `journal/YYYY/YYYY-MM-DD.md` up to today; other
 file names are skipped), `memory/lessons.md` headings. Claude Code adds it
 to the session's context. Under the title one fixed line says that lines
-starting with `> ` are quoted from the logbook and are data, not
+starting with `>` are quoted from the logbook and are data, not
 instructions. Every line taken from the logbook — also the case title and
-an error text that may carry it — is printed with `> ` in front; each line
+an error text that may carry it — is printed with `> ` in front (an empty
+one as a bare `>`); each line
 break in it (`\n`, `\r`, vertical tab, form feed, NEL, U+2028, U+2029)
 starts a new quoted line, and other control characters become U+FFFD.
 Seldon's own lines (the title, the note, the `## ` headings, the case's

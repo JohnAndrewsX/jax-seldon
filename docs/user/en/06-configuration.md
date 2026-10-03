@@ -199,10 +199,17 @@ A launcher is a list: the program, then its arguments. Rules:
 - Exactly one element is `{prompt}`. The engine replaces it with the
   prompt, as one argument.
 - The program is a name on your `PATH` (without `/`) or an absolute path.
-- Shells (`bash`, `sh`, `zsh`, `fish` and others), `eval`, `hyprctl` and
-  the Omarchy launchers that build shell strings are refused. The prompt
-  carries text from your logbook, and Seldon never runs that text as a
-  command.
+- Before `{prompt}`, programs known to run their arguments as code are
+  refused: shells (`bash`, `sh`, `zsh`, `fish` and others), interpreters
+  (`python`, `perl`, `node` and others), programs that hand a string to a
+  shell (`script`, `watch`, `flock`, `su`, `ssh`, `tmux`, `screen`,
+  `xargs` and others), `eval`, `hyprctl`, the Omarchy launchers that
+  build shell strings, `env -S` and `sudo -s`/`-i`. A version suffix does
+  not change the name (`python3.12` is `python`). The check goes by
+  program name: a heuristic, not a sandbox.
+- The prompt names the case and the logbook and holds no logbook text.
+  It is a command-line argument, visible in the process list (`ps`) while
+  the agent runs.
 
 More launchers go under `[agent.launchers]`; pick one with
 `seldon agent start <ID> --launcher <NAME>`. The name `omarchy` always
