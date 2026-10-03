@@ -166,6 +166,9 @@ Appended to `memory/pitfalls.md` (WP-069):
    path redacted. The WP asks for default `skipPaths`, so I followed it.
    A separate collector-only key would avoid this but is a new config
    key. Accept, or queue a follow-up?
+   **Decided by the orchestrator:** the default skipPaths also apply to
+   recorded agent commands through the shared key (ADR-0014 §4); this is
+   accepted as is, with no collector-only key.
 3. ~~Existing installs keep `skipPaths = []`.~~ Decided in review round
    1 (Q1): an empty list means the defaults. Done.
 
