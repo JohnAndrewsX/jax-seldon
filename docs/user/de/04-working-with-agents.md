@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ a670433 -->
+<!-- source: en/04-working-with-agents.md @ 26945df -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -70,7 +70,7 @@ Der Befehl lässt jeden anderen Hook in der Datei stehen. Ein zweiter
 Aufruf ändert nichts.
 
 Im Kontext, den `SessionStart` ausgibt, beginnt jede Zeile aus deinem
-Logbuch mit `> `, unter einem Hinweis, dass diese Zeilen Daten sind und
+Logbuch mit `>`, unter einem Hinweis, dass diese Zeilen Daten sind und
 keine Anweisungen. Text in einer Notiz oder einem Case kann sich deshalb
 nicht als Teil von Seldons eigener Struktur ausgeben. Das macht den
 Kontext für den Agenten klarer; es garantiert nicht, dass der Agent
@@ -186,8 +186,8 @@ Die Engine macht den Case zum aktiven Case und startet einen Agenten im
 Ordner des Logbuchs. Der erste Prompt des Agenten nennt den Case und das
 Logbuch und sagt dem Agenten, `seldon hook session-start` und
 `seldon plan show C-2026-003` auszuführen; er enthält keinen Text aus
-deinem Logbuch. Der Prompt ist ein Kommandozeilenargument: Während der
-Agent startet, ist er in der Prozessliste (`ps`) sichtbar, und ein
+deinem Logbuch. Der Prompt ist ein Kommandozeilenargument: Solange der
+Agent läuft, ist er in der Prozessliste (`ps`) sichtbar, und ein
 Sitzungsjournal, das Programmstarts protokolliert, behält ihn. Sobald der
 erste Befehl des Agenten aufgezeichnet ist, zeigt die Karte seinen
 Namen.

@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 6dc4b5e -->
+<!-- source: en/06-configuration.md @ 26945df -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -214,10 +214,18 @@ Ein Launcher ist eine Liste: das Programm, dann seine Argumente. Regeln:
   Prompt, als ein einziges Argument.
 - Das Programm ist ein Name in deinem `PATH` (ohne `/`) oder ein
   absoluter Pfad.
-- Shells (`bash`, `sh`, `zsh`, `fish` und andere), `eval`, `hyprctl` und
-  die Omarchy-Starter, die Shell-Strings bauen, lehnt die Engine ab. Der
-  Prompt enthält Text aus deinem Logbuch, und Seldon führt diesen Text
-  nie als Befehl aus.
+- Vor `{prompt}` lehnt die Engine Programme ab, die ihre Argumente
+  bekanntermaßen als Code ausführen: Shells (`bash`, `sh`, `zsh`, `fish`
+  und andere), Interpreter (`python`, `perl`, `node` und andere),
+  Programme, die einen String an eine Shell geben (`script`, `watch`,
+  `flock`, `su`, `ssh`, `tmux`, `screen`, `xargs` und andere), `eval`,
+  `hyprctl`, die Omarchy-Starter, die Shell-Strings bauen, `env -S` und
+  `sudo -s`/`-i`. Ein Versionsanhang ändert den Namen nicht
+  (`python3.12` ist `python`). Die Prüfung geht nach dem Programmnamen:
+  eine Heuristik, keine Sandbox.
+- Der Prompt nennt den Case und das Logbuch und enthält keinen Text aus
+  dem Logbuch. Er ist ein Kommandozeilenargument und in der Prozessliste
+  (`ps`) sichtbar, solange der Agent läuft.
 
 Weitere Launcher gehören unter `[agent.launchers]`; du wählst einen mit
 `seldon agent start <ID> --launcher <NAME>`. Der Name `omarchy` erreicht

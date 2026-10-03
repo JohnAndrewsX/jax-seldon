@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ dfd9523 -->
+<!-- source: en/05-cli-reference.md @ 26945df -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -661,7 +661,9 @@ Options:
 ### seldon agent start
 
 Macht den Case zum aktiven Case und startet einen Agenten im Ordner des
-Logbuchs, mit dem Kontext des Case als erstem Prompt. Der Case muss
+Logbuchs. Der erste Prompt nennt den Case und das Logbuch und sagt dem
+Agenten, `seldon hook session-start` und `seldon plan show <ID>`
+auszuführen; er enthält keinen Text aus dem Logbuch. Der Case muss
 aktiv sein. Der Launcher kommt aus `config.toml`; siehe
 [Konfiguration](06-configuration.md#agent-launcher).
 
