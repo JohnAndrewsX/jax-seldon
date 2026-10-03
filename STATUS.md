@@ -16,6 +16,7 @@ decisions).
 |---|---|---|---|---|---|
 | WP-067 | plugin: tab focus, changelog cursor, IPC handler once | Plugin | `plugin-067` (opus) | `wt/WP-067` · `wp/067-review` | 2026-10-03 |
 | WP-066 | frontmatter: hand-edited lists, BOM, fence spaces | Engine | `engine-066` (opus) | `wt/WP-066` · `wp/066-review` | 2026-10-03 |
+| WP-065 | views and ledger: robust fences, per-line decoding | Engine | `engine-065` (opus) | `wt/WP-065` · `wp/065-review` | 2026-10-03 |
 | WP-068 | plugin: call failures logged and retried, busy sheets, engineMin | Plugin | `plugin-068` (opus) | `wt/WP-068` · `wp/068-review` | 2026-10-03 |
 
 ## Queued (next up)
