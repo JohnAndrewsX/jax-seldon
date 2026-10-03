@@ -232,6 +232,14 @@ pub fn run_command(cmd: Command, timeout: Duration) -> Run {
     run_with(cmd, timeout, Group::Own)
 }
 
+/// [`run_command`] in the engine's own process group, for a `git` command
+/// the caller built (its environment controlled, `logbook::git`): git and
+/// what it runs (hooks, a signing prompt) may use the terminal, as with
+/// [`run_in_engine_group`]. At the deadline only the program is killed.
+pub fn run_command_in_engine_group(cmd: Command, timeout: Duration) -> Run {
+    run_with(cmd, timeout, Group::Engine)
+}
+
 fn run_with(mut cmd: Command, timeout: Duration, group: Group) -> Run {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())

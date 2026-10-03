@@ -10,7 +10,9 @@
 //! `.git` never makes git walk up into a repository around the logbook,
 //! and [`commit_all`] checks `git rev-parse --show-toplevel` against the
 //! logbook before it writes. Everything else (the user's git config,
-//! hooks, signing, the terminal for a passphrase prompt) stays as it is.
+//! hooks, signing, the terminal for a passphrase prompt) stays as it is:
+//! git runs in the engine's process group
+//! ([`sys::run_command_in_engine_group`]).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -81,13 +83,13 @@ fn absolute(path: &Path) -> PathBuf {
 }
 
 fn run(root: Option<&Path>, args: &[&str]) -> Run {
-    sys::run_command(command(root, args), TIMEOUT)
+    sys::run_command_in_engine_group(command(root, args), TIMEOUT)
 }
 
 /// A read-only query in the logbook's repository, with the same
 /// environment as every other git call here (`logbook.git` in the index).
 pub fn query(root: &Path, args: &[&str], timeout: Duration) -> Run {
-    sys::run_command(command(Some(root), args), timeout)
+    sys::run_command_in_engine_group(command(Some(root), args), timeout)
 }
 
 /// Whether `root` is the logbook's own repository: the top of the work

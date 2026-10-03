@@ -397,3 +397,75 @@ fn a_linked_work_tree_of_the_logbooks_repository_is_committed() {
     assert_ne!(before, after, "the linked work tree's branch got no commit");
     assert_eq!(stdout(&env.git(&linked, &["status", "--porcelain"])), "");
 }
+
+/// `(pid, process group)` from a `/proc/<pid>/stat` line.
+fn pid_and_group(stat: &str) -> (i64, i64) {
+    let pid = stat.split_whitespace().next().unwrap().parse().unwrap();
+    let after = &stat[stat.rfind(')').unwrap() + 1..];
+    let group = after.split_whitespace().nth(2).unwrap().parse().unwrap();
+    (pid, group)
+}
+
+/// WP-061 on top of WP-064: the git commands `logbook::git` builds run in
+/// the engine's process group (hooks and a signing prompt may use the
+/// terminal), while other programs (here snapper) get their own.
+#[test]
+fn git_runs_in_the_engines_process_group() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let bin = env.tmp.path().join("bin");
+    let host_git = std::fs::read_link(bin.join("git")).unwrap();
+    let log = env.tmp.path().join("groups.log");
+    // remove the link first: writing to it would write the host's git
+    std::fs::remove_file(bin.join("git")).unwrap();
+    let wrapper = format!(
+        "#!/bin/sh\nread -r stat < /proc/$$/stat\necho \"git $1 $stat\" >> '{log}'\nexec '{git}' \"$@\"\n",
+        log = log.display(),
+        git = host_git.display()
+    );
+    std::fs::write(bin.join("git"), wrapper).unwrap();
+    std::fs::set_permissions(bin.join("git"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    env.stub(
+        "snapper",
+        &format!(
+            "read -r stat < /proc/$$/stat\necho \"snapper - $stat\" >> '{}'\necho 'No permissions.' >&2; exit 1",
+            log.display()
+        ),
+    );
+
+    let out = env.seldon(&["--json", "log", "--", "note in the engine's group"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(json(&out)["git"]["committed"], true, "{}", stderr(&out));
+    let out = env.seldon(&["--json", "doctor", "--path", root.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+
+    // seldon inherits this process's group; git must share it
+    let (_, engine_group) = pid_and_group(&std::fs::read_to_string("/proc/self/stat").unwrap());
+    let calls = std::fs::read_to_string(&log).unwrap();
+    let mut git_calls = 0;
+    let mut snapper_calls = 0;
+    for line in calls.lines() {
+        let mut parts = line.splitn(3, ' ');
+        let (program, verb, stat) = (
+            parts.next().unwrap(),
+            parts.next().unwrap(),
+            parts.next().unwrap(),
+        );
+        let (pid, group) = pid_and_group(stat);
+        if program == "git" {
+            git_calls += 1;
+            assert_eq!(group, engine_group, "git {verb} ran in its own group");
+        } else {
+            snapper_calls += 1;
+            assert_ne!(group, engine_group, "snapper ran in the engine's group");
+            assert_eq!(group, pid, "snapper leads its own group");
+        }
+    }
+    assert!(calls.contains("git rev-parse "), "{calls}");
+    assert!(calls.contains("git add "), "{calls}");
+    assert!(git_calls > 3 && snapper_calls > 0, "{calls}");
+}
