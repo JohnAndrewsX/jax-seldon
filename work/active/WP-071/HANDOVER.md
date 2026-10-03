@@ -1,7 +1,55 @@
 ```
 WP-071 HANDOVER — shell parser: one parser for hook and attribution; pkexec, run0, option clusters; version/help; `>&` and heredocs
-Branch: wp/071-review (worktree wt/WP-071), commits 3671b80, 8dd7a32, 8e06065, 562e4d0 (+ this handover) on b476c75, not pushed.
+Branch: wp/071-review (worktree wt/WP-071), rebased onto main ef46863 (WP-069), round-1 commits 05df7b3, c0e1edb, 1218c5f, bcf8be0, 8f1e491 plus the fix-round commits after them; not pushed.
 ```
+
+## Fix round 1 (review SEND BACK)
+
+- **Rebase** onto main ef46863 (WP-069 landed). CHANGELOG `[Unreleased]`
+  and `memory/pitfalls.md` conflicted; both sides kept (WP-065/066/069
+  bullets and sections first, WP-071 after them). The suites passed
+  unchanged after the rebase.
+- **B1 (blocking): floating words no longer match below a pattern.** A
+  word that starts with an unknown part (`$X/tail`, `"$(pwd)"/tail`) was
+  compared with `{p}/**`, so it matched every path pattern. With WP-069's
+  default `skipPaths` (`~/.config/omarchy/**/*.log`, …) lines such as
+  `pacman -U $PKGDEST/x.pkg.tar.zst` or `yay -S zed | tee
+  "$TMPDIR/yay.log"` were stored as `<program> ‹redacted›` and lost their
+  package intent. Now `SkipGlob::floating_overlaps` (hook.rs) matches such
+  a word only:
+  - against a name pattern, by the word's last component;
+  - against a path pattern, by the pattern's last components, which must
+    be literal (no `*`/`?`) and match the word's known tail one by one;
+  - never against `{p}/**`, and never against a pattern's glob tail.
+
+  `$D/private.conf` and `"$(pwd)"/private.conf` still match
+  `~/d/private.conf`. `$X/public.conf`, `"$(pwd)"/public.log`
+  (`~/d/**/*.log` configured) and `$TMPDIR/yay.log` (defaults) do not.
+  Tests:
+  - two new rows in the `shell_parser.rs` table, whose end-to-end run uses
+    `init`'s default `skipPaths` (`pacman -U $PKGDEST/…`, `yay -S zed |
+    tee "$TMPDIR/yay.log"`): recorded unredacted with intent `[zed]`;
+  - the requested controls plus `$X/private.conf` in
+    `skip_paths_read_variables_and_globs`, now with the patterns
+    `~/d/private.conf` and `~/d/**/*.log`.
+- **B2: SPEC limits.** §8, at the "re-parsed" sentence: the commands
+  inside `$(…)`, backticks and `<(…)` are not classified (their words count
+  only for `skipPaths`); `env -S` strings are not opened; a heredoc fed to
+  a shell is stdin, not commands. §4's intent sentence points to that
+  list. The §8 `skipPaths` sentence describes the floating rule and the
+  unknown-only rule.
+- **N1: I kept a flag, not the SPEC wording.** `Word::Pattern` has
+  `only_unknown` (nothing known but `/`: `$1`, `$NAME`, `$D/$F`) in place
+  of the all-star test, so a glob of the word's own (`*`) is checked (`cd
+  ~/d && sed … *` is redacted when `~/d/private.conf` is skipped). The
+  SPEC sentence says both.
+- **N2:** `-` (targets from stdin) is no package name in
+  `PacmanCommand.targets`, so it is not in the intent either (`pacman -S
+  - < list.txt` → red, intent empty; a table row and a unit test).
+- **Guard block, reported:** a read-only `grep -n` over
+  `engine/tests/shell_parser.rs` whose pattern contained a package
+  command was blocked ("privileged or package command"). Not reworded; I
+  read the file with the Read tool instead.
 
 ## Done
 
@@ -81,9 +129,11 @@ Branch: wp/071-review (worktree wt/WP-071), commits 3671b80, 8dd7a32, 8e06065, 5
    - The `skipPaths` check matches such a glob against the configured
      patterns with `globs_overlap` (`*`/`?` within one path component,
      `**` across components, the way `SkipPaths` reads its patterns).
-   - A word that is *only* an unknown value (`$1`, `$NAME`) names no path.
-     Otherwise every line with one, such as a `git commit -m "$(cat
-     <<'EOF' …)"`, would be redacted once `skipPaths` is set.
+   - A word in which nothing but `/` is known (`$1`, `$NAME`, `$D/$F`;
+     `Word::Pattern.only_unknown`) names no path. Otherwise every line with
+     one, such as a `git commit -m "$(cat <<'EOF' …)"`, would be redacted
+     once `skipPaths` is set. A word that starts with an unknown part
+     follows the floating rule of fix round 1 (B1).
 8. **Tests.**
    - `engine/tests/shell_parser.rs` (new):
      - a 60-row table read in-process by `classify` and `command_intent`,
@@ -116,14 +166,21 @@ Branch: wp/071-review (worktree wt/WP-071), commits 3671b80, 8dd7a32, 8e06065, 5
      about §5).
    - `CHANGELOG.md` `[Unreleased]`: one Engine bullet.
 
-## Not done
+## Not done (limits, now in SPEC §8)
 
-- Commands *inside* `$(…)`/backticks are still not segments of the line
-  (`echo $(pacman -S x)` is not classified). That was the state before
-  this WP; opening them would change classification broadly. A candidate
-  for a later WP.
+- Commands *inside* `$(…)`, backticks and `<(…)` are still not segments
+  of the line (`echo $(pacman -S x)` is not classified). That was the
+  state before this WP; opening them would change classification
+  broadly. A candidate for a later WP.
 - `env -S 'cmd …'` (split string) is still read as a value, not as a
   command line.
+
+Follow-ups (noted, not done, as the review asks):
+
+- A heredoc body fed to a shell (`bash <<EOF … EOF`, `sh -s <<…`) is not
+  read as commands.
+- More wrappers: `xargs`, `flock`, `su -c`, `systemd-run` (and
+  `stdbuf`, `setsid`, `ionice` if wanted).
 - `((cmd) )`-style nested subshells written without a blank (`((cd x &&
   rm y))`) read as arithmetic now, as bash does when the text is valid
   arithmetic. Bash falls back to subshells only when it is not.
@@ -167,6 +224,25 @@ Branch: wp/071-review (worktree wt/WP-071), commits 3671b80, 8dd7a32, 8e06065, 5
   no manual run against `~/Seldon` or `~/.config/seldon`; no guard
   block occurred.
 
+- **Fix round 1:**
+  - fmt and `cargo clippy --all-targets -- -D warnings` clean;
+  - `cargo test --no-fail-fast --lib --test shell_parser --test
+    attribution --test hooks --test collectors`: 181 + 5 + 13 + 51 + 16
+    passed, 0 failed;
+  - full engine suite: `cargo test --no-fail-fast`, 576 passed, 0 failed;
+  - mutants, same script with `--test collectors` added:
+    - B1 floating word below a pattern (`floating_overlaps` →
+      `overlaps`): **killed** by 2 (`skip_paths_read_variables_and_globs`,
+      `the_recorded_line_carries_the_intent`);
+    - N1 all-star test instead of `only_unknown`: **killed** by 1
+      (`skip_paths_read_variables_and_globs`, the `*` row);
+    - N2 `-` is a package: **killed** by 3
+      (`hook_and_intent_read_the_table_alike`,
+      `pkgcmd::tests::intent_reads_like_the_hook`,
+      `the_recorded_line_carries_the_intent`).
+  - `just check` was not rerun in this round; the review asked for the
+    suites above.
+
 ## Learned
 
 Appended to `memory/pitfalls.md` (WP-071 section):
@@ -176,7 +252,8 @@ Appended to `memory/pitfalls.md` (WP-071 section):
 - a glob overlap test must keep `*` inside one component;
 - a word that is only an unknown value must not match;
 - `sudo -k <cmd>` runs the command;
-- the WP's "§5" sentence is in §4.
+- the WP's "§5" sentence is in §4;
+- fix round 1: a word with an unknown head is no path below a pattern.
 
 ## Decisions needed
 

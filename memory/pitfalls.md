@@ -1352,3 +1352,10 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The WP named SPEC §5 for the attribution intent sentence;** the
   sentence is in §4 (pacman collector). Check the section before editing
   "only the paragraphs named".
+- **Fix round 1: a word with an unknown head must not match below a
+  pattern.** `$X/tail` as the glob `**/tail` overlaps `{p}/**` for every
+  path pattern, and WP-069 made `skipPaths` non-empty by default, so every
+  `$PKGDEST/…` or `"$TMPDIR/x.log"` line was recorded redacted and lost
+  its package intent. A floating word now matches only name patterns and
+  a pattern's literal last components. Test such rules with the default
+  config, not only with a hand-set pattern list.
