@@ -403,3 +403,33 @@ pub fn assert_valid_index(instance: &serde_json::Value) {
     let errors = index_errors(instance);
     assert!(errors.is_empty(), "index is invalid: {errors:#?}");
 }
+
+/// `cmd` run through `/bin/sh` with the file mode creation mask `umask`
+/// (octal, e.g. `"022"`): same program, arguments, environment and
+/// working directory.
+pub fn with_umask(cmd: &Command, umask: &str) -> Command {
+    let mut sh = Command::new("/bin/sh");
+    sh.arg("-c")
+        .arg(format!("umask {umask}; exec \"$0\" \"$@\""))
+        .arg(cmd.get_program())
+        .args(cmd.get_args())
+        .env_clear();
+    for (key, value) in cmd.get_envs() {
+        if let Some(value) = value {
+            sh.env(key, value);
+        }
+    }
+    if let Some(dir) = cmd.get_current_dir() {
+        sh.current_dir(dir);
+    }
+    sh
+}
+
+/// The permission bits of `path` (a symbolic link is followed).
+pub fn mode(path: &Path) -> u32 {
+    std::fs::metadata(path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        .permissions()
+        .mode()
+        & 0o777
+}

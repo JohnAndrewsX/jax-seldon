@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `log` and `plan done` read the day before they write the ledger, so a
   day file with broken frontmatter fails them before anything changes
   (WP-057).
+- Atomic writes follow symbolic links, keep the file's mode and create
+  new logbook, config and state files 0600 in 0700 directories, whatever
+  the umask; a failed write removes its temp file, and a new logbook's
+  `.gitignore` ignores `.*.tmp-*`. A program the engine runs gets its own
+  process group: at the timeout the whole group is stopped, and a helper
+  that keeps the output pipe open no longer holds the engine past it
+  (WP-064).
 
 ### Plugin
 

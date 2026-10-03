@@ -24,6 +24,8 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
 
+File modes (WP-064): a directory the engine creates (the logbook and its folders, the config and state directories) is 0700 and a new file 0600, whatever the umask; existing files and directories keep their mode, the engine never tightens them. Every rewrite goes through `sys::write_atomic`: a temp file `.<name>.tmp-<pid>` next to the target (new logbooks ignore `.*.tmp-*` in `.gitignore`) with the target's permission bits, synced, renamed over the target, the directory synced; the temp file is removed when any step fails. A symbolic link at the path is followed: the link stays and its target is replaced (a link to a missing file creates the target). The theme hook script is written 0755. `.git/` is written by git under its own rules.
+
 ## 3. Commands
 
 ```
