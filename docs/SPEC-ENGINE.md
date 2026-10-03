@@ -183,17 +183,25 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # date, not UTF-8) or a day file with invalid frontmatter is an error.
                                                # Dry run: only the report, autocommit `seldon: import omarchy-agent
                                                # (dry run)`. --apply: refused (exit 1, report written) while there
-                                               # are errors; else ledger first, then cases (never overwritten), days,
+                                               # are errors; before its first write it autocommits the logbook's
+                                               # pending changes as `seldon: before import omarchy-agent` and is
+                                               # refused (exit 1, nothing written) while the work tree is still not
+                                               # clean (--no-commit, autocommit off, a failed commit; WP-061); then
+                                               # ledger first, then cases (never overwritten), days,
                                                # memory, deviations, the report ("applied"), the marker
                                                # .seldon/imports/omarchy-agent.json {source, vault, importedAt, cases:
                                                # {old: new}, counts}; one autocommit `seldon: import omarchy-agent`;
                                                # index rebuilt. A write that fails after the ledger append is an
-                                               # error that says nothing was committed and how to undo it (`git
-                                               # checkout -- . && git clean -fd` in the logbook). The marker makes
+                                               # error that says nothing was committed and how to undo it with the
+                                               # import's own files only (`git checkout <commit before the import>
+                                               # -- <files it changed> && rm -f -- <files it created>` in the
+                                               # logbook, also kept in .seldon/imports/omarchy-agent.undo.json, which
+                                               # the undo removes too). The marker makes
                                                # every later run write nothing ("Nothing changed", changed: false);
                                                # import notes in the ledger without the marker (an apply that did
                                                # not finish, or a deleted .seldon/) are a user error (exit 1) with
-                                               # the same undo, never "nothing changed" and never a second import. Not a directory / not a vault → exit 1.
+                                               # the kept undo (without it: `git -C <logbook> status` lists what to
+                                               # take back), never "nothing changed" and never a second import. Not a directory / not a vault → exit 1.
                                                # --json → {mode: dry-run|apply, changed, alreadyImported: null|{by,
                                                # importedAt}, vault, report, errors, counts: {cases, renumbered,
                                                # journalSessions, journalDays, memorySections, memoryFiles,
@@ -361,7 +369,27 @@ exit 3 (what the plugin's banner expects). `status` autocommits as
 `seldon: status` only when a logbook file changed; `index` never commits.
 Every writing command calls `index::rebuild_if_initialised` after its
 autocommit and before releasing the lock; a failed rebuild is a warning,
-never a command failure. Broken files (torn ledger line, invalid case
+never a command failure.
+
+The autocommit (WP-061): `git add -A` and `git commit -m "seldon:
+<summary>"` in the logbook, when `[git] autocommit` is on, `--no-commit`
+is not given and the logbook has its own `.git`. Every git command runs in
+the logbook with the variables that point git at another repository
+removed (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+`GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+`GIT_COMMON_DIR`, `GIT_NAMESPACE`, `GIT_CEILING_DIRECTORIES` and the rest
+of `git rev-parse --local-env-vars`), so a `seldon` started from a git hook
+or with an exported `GIT_DIR` still commits only into the logbook. The
+user's git configuration applies (hooks, `commit.gpgsign`, a passphrase
+prompt on the terminal). A detached HEAD (`git symbolic-ref -q HEAD`
+fails) is not committed and nothing is staged. A commit that is not made
+(detached HEAD, a stale `.git/index.lock`, a refusing hook) is one line on
+stderr, `seldon: warning: git: not committed: <reason>`, and
+`"git": {"committed": false, "error": "<reason>"}` in `--json`; the
+command still exits 0, because the data is written. `doctor`'s `git` check
+is degraded, with a fix line, while autocommit is on and a
+`.git/index.lock` exists, HEAD is detached, or `git commit --dry-run`
+fails. Broken files (torn ledger line, invalid case
 frontmatter) are skipped with a warning that `--json` and stderr surface.
 
 `message` carries the full detail (e.g. the unrecognised subcommand name),
