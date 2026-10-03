@@ -60,7 +60,7 @@ enum Command {
     /// Create a logbook (wizard; --non-interactive takes defaults)
     Init(InitCmd),
 
-    /// Check engine, config, logbook, omarchy, snapper and git
+    /// Check engine, config, logbook, collector state, omarchy, snapper and git
     Doctor {
         /// Logbook to check (same as the global --logbook)
         #[arg(long, value_name = "DIR")]

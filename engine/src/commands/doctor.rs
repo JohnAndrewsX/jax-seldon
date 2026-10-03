@@ -1,6 +1,6 @@
-//! `seldon doctor`: engine, config, logbook, cases, ledger, fences, state,
-//! omarchy, snapper and git checks (SPEC-ENGINE §3). Read-only: no lock,
-//! no write; never runs anything with privileges.
+//! `seldon doctor`: engine, config, logbook, cases, ledger, fences,
+//! collectors, state, omarchy, snapper and git checks (SPEC-ENGINE §3).
+//! Read-only: no lock, no write; never runs anything with privileges.
 //!
 //! Every check is `ok`, `degraded` (works with less, e.g. snapper without
 //! permissions, ADR-0011) or `error`. Exit 0 without errors, 3 when the

@@ -29,7 +29,7 @@ Usage: seldon [OPTIONS] [COMMAND]
 Commands:
   contract-version  Print the engine/plugin contract version
   init              Create a logbook (wizard; --non-interactive takes defaults)
-  doctor            Check engine, config, logbook, omarchy, snapper and git
+  doctor            Check engine, config, logbook, collector state, omarchy, snapper and git
   capture           Run collectors and append new events to the ledger
   log               Write a note: a ledger event and a journal entry
   event             Record an event by hand (hooks, scripts)
@@ -147,7 +147,7 @@ angelegt ist.
 
 <!-- help: seldon doctor -->
 ```text
-Check engine, config, logbook, omarchy, snapper and git
+Check engine, config, logbook, collector state, omarchy, snapper and git
 
 Usage: seldon doctor [OPTIONS]
 

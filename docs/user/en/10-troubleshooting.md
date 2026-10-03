@@ -10,16 +10,23 @@ exit codes and the most common problems.
 seldon doctor
 ```
 
-It checks six things and prints a fix for each one that is not `ok`:
+It checks eleven things and prints a fix for each one that is not `ok`.
+It only reads: it changes no file, takes no lock and runs nothing with
+`sudo`.
 
 | Check | `ok` means | When it is not ok |
 |---|---|---|
 | `engine` | the engine runs; its version and contract | (if you can run `doctor`, this is ok) |
-| `config` | `~/.config/seldon/config.toml` was read | `degraded`: no config yet, defaults in use; fix `seldon init`. `error`: the file is not valid TOML |
+| `config` | `~/.config/seldon/config.toml` was read, and its `[redaction] patterns` compile | `degraded`: no config yet, defaults in use; fix `seldon init`. `error`: the file cannot be read, is not valid, or has a pattern that does not compile; every command stops on it. When the file cannot be read or parsed, the logbook is "not checked" (its path is in that file) |
 | `logbook` | the logbook exists; machine, language, counts | `error`: not initialised at that path; the fix names the `seldon init` command |
+| `cases` | every case id has one file | `error`: a case exists twice (a stale copy); keep the file in the folder of its status |
+| `ledger` | every line of `ledger/*.jsonl` is an event | `degraded`: lines that are not events (a torn write, a hand edit) are skipped; the row names month, count and lines |
+| `fences` | the generated parts of `STATUS.md` and `DECISIONS.md` have their marker lines | `degraded`: a marker line is missing, so `seldon status` leaves the file alone; or an end marker closes no fence. `error`: the file cannot be read |
+| `collectors` | the last capture of every enabled collector succeeded | `degraded`: the row lists each failing collector with its message and fix |
+| `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable |
 | `omarchy` | `omarchy-version` answered | the Omarchy collector cannot read the version |
 | `snapper` | snapshots can be listed | `degraded`: your user may not list snapshots; see [Snapshots are not recorded](#snapshots-are-not-recorded) |
-| `git` | git is there; the logbook is a repository | git is missing, or the logbook is not a repository; autocommit is off then |
+| `git` | git is there; the logbook is a repository | git is missing, or the logbook is not a repository; autocommit is off then. `degraded`: something keeps every autocommit from committing (a stale `.git/index.lock`, a detached HEAD, …); the fix says what to do |
 
 `doctor --json` prints the same as JSON. The plugin reads it to choose
 its banner.
