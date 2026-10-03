@@ -157,6 +157,9 @@ pub enum Commit {
     Skipped(&'static str),
     /// Reported, never fatal: the logbook write already happened.
     Failed(String),
+    /// A failed autocommit whose warning is already on stderr (F-503): the
+    /// human output adds nothing, `--json` carries the error.
+    Warned(String),
 }
 
 impl Commit {
@@ -164,7 +167,9 @@ impl Commit {
         match self {
             Commit::Committed(message) => json!({ "committed": true, "message": message }),
             Commit::Skipped(reason) => json!({ "committed": false, "reason": reason }),
-            Commit::Failed(error) => json!({ "committed": false, "error": error }),
+            Commit::Failed(error) | Commit::Warned(error) => {
+                json!({ "committed": false, "error": error })
+            }
         }
     }
 
@@ -179,7 +184,10 @@ impl Commit {
 
 /// `git add -A` + `git commit -m "seldon: <summary>"` in the logbook when
 /// `git.autocommit` is on, `--no-commit` is not given and the logbook is a
-/// repository (SPEC-LOGBOOK §1).
+/// repository (SPEC-LOGBOOK §1). A failure (a stale `.git/index.lock`, a
+/// refusing hook, a detached HEAD) is one warning line on stderr and the
+/// `error` of `--json` `git`; the command still exits 0, because the data
+/// is written (SPEC-ENGINE §3, WP-061).
 pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &str) -> Commit {
     if ctx.no_commit {
         return Commit::Skipped("--no-commit");
@@ -192,7 +200,14 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     }
     match git::commit_all(&logbook.root, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
-        Err(e) => Commit::Failed(e),
+        Err(e) => {
+            // not eprintln!: a closed stderr must not abort the command
+            let _ = writeln!(
+                std::io::stderr(),
+                "seldon: warning: git: not committed: {e}"
+            );
+            Commit::Warned(e)
+        }
     }
 }
 
