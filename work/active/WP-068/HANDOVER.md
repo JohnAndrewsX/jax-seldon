@@ -112,3 +112,27 @@ Decisions needed:
 
 Touched outside WP scope: none (tests/plugin/service-states.sh writes a
 sheet harness into its temp dir at run time; no new repository file).
+
+Addendum (after the orchestrator's decision to edit panel-view.sh):
+- `b07bc29` tests: panel-view accepts the engine-call warnings (WP-068).
+  One `expected_warnings` pattern above `clean_log` and one more
+  `grep -v` in it. The pattern names exactly the six warnings that the
+  cases cause on purpose: `log exit 1: unknown case C-2026-004`,
+  `plan exit 1: C-2026-008 is active; …`, `agent exit 1: C-2026-004 is
+  queued; …`, and `plan|drift|decide exit 4: the logbook is locked by
+  another seldon (pid 4242)`. Checked against the six lines of the failed
+  run: all 6 match. Two near misses (another case id, a `capture exit 4`)
+  do not match. WP-067 only adds lines near the end of the file (around
+  line 1041), and its new cases make only start-up calls, so no new
+  warnings come in with that merge.
+- `just check` (run once) → **exit 1**. Everything is green up to
+  plugin-test: model.test 84 passed, real-home-guard 11/0,
+  service-states 247/0. panel-view: 692 passed, 1 failed:
+  `work-live #32: .view.work.result = Completing C-2026-005…` (the
+  pending text). This is the known transient result-line flake of
+  `work-live` under load (memory/pitfalls.md, WP-063). That step passed
+  in the first `just check` run, and WP-068 does not change when a plan
+  result arrives. To classify it I re-ran only `bash
+  tests/plugin/panel-view.sh` once: **693 passed, 0 failed, exit 0**,
+  real-home guard ok.
+
