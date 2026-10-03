@@ -88,3 +88,62 @@ active or queued WP names the file.
 - A rejected value is shown verbatim in a code span, so the user knows
   what to check. It is not presented as a command, and section 7 already
   shows subjects the same way. The reviewer may prefer an escaped form.
+  (Answered in the fix round: control characters are escaped, the value
+  stays visible.)
+
+## Fix round 1 (review: SEND BACK, B1 + N1 + N2)
+
+Commits `f62ede2` (engine + test), `0141b01` (SPEC).
+
+**Done**
+
+- **B1:** `render::code` now writes control characters (C0, DEL, C1,
+  including `\n`, `\r`, `\t`) and U+2028/U+2029 as visible escapes
+  (`\n`, `\r`, `\t`, `\u{1b}`). Other text keeps its bytes, for example
+  `home-a\x2db.mount` and `ä`. This holds for the whole document,
+  section 7 included. The golden `REBUILD.md` is still unchanged.
+- **N1:** the "Before the logbook" block and the two "all at once" lines
+  now pass their names through `shell_arg::quote`, like every other
+  command. For valid names this changes no byte.
+- **N2:** SPEC-ENGINE §3 now says the URL check refuses user info, query
+  and fragment. It also names the code-span escapes.
+
+**Verified by**
+
+- New test `a_value_with_line_breaks_stays_inside_its_code_span`
+  (`engine/tests/rebuild.rs`). Scratch ledger lines carry a made-up value
+  that spans lines and holds its own `sh` fence, in these places:
+  - a package subject (§2, the not-reproduced line);
+  - plugin ids (§4: a line with a command and a not-reproduced line);
+  - a theme (§5, not reproduced);
+  - a unit file path (§6);
+  - open and dismissed items (§7).
+
+  The test asserts exactly one `sh` fence opener (the "Before the
+  logbook" block) and exactly two fence lines in the whole document. It
+  also checks that each value appears escaped in its section.
+- Mutant: with the previous `code()` (no escaping) the test fails,
+  finding 12 `sh` openers instead of 1.
+- New unit test
+  `render::tests::a_code_span_shows_control_characters_as_escapes`.
+- `cargo fmt --check` and `cargo clippy --all-targets -D warnings` are
+  clean. `cargo test --test rebuild` passed 10/10, `--test dossier`
+  12/12, and the lib tests for `dossier`/`rebuild` 27/27.
+
+**Not done / open questions**
+
+- Three values that section 1 and the line suffixes print outside a
+  code span are not escaped by this change:
+  - the Omarchy version (`meta.to` of the last update, or
+    `omarchy.summary`);
+  - the agent actor;
+  - the `[[case]]` id.
+
+  The engine checks actor and case when it writes an event, but not
+  when it loads a ledger line that was edited by hand. The version is
+  never checked. A line break in one of them would still break the
+  document's layout. A follow-up could route them through
+  `code`/`visible` or `one_line`. This is left to the reviewer, because
+  B1's decision named `code()`.
+- `just check` was not re-run for this round. The rebuild and dossier
+  suites, fmt and clippy were run as the review asked.
