@@ -147,3 +147,41 @@ Commits `f62ede2` (engine + test), `0141b01` (SPEC).
   B1's decision named `code()`.
 - `just check` was not re-run for this round. The rebuild and dossier
   suites, fmt and clippy were run as the review asked.
+
+## Fix round 2 (review: SEND BACK, three values printed outside a span)
+
+Commit `e1c530a`. This round closes the open item from fix round 1.
+
+**Done**
+
+`render.rs` now passes these ledger values through `visible()` (the
+escaping that `code()` uses) before it prints them as plain text:
+- the Omarchy version, in §1 and in the omarchy-base line of §2;
+- the agent actor, in the line suffix and in §7;
+- `[[case]]` ids, in the §2 case heading, the line suffix and the §7
+  proposal.
+
+Valid values keep their bytes. The fixture document is byte-identical:
+the golden test passes and `engine/tests/golden/` has no diff.
+
+**Verified by**
+
+- `a_value_with_line_breaks_stays_inside_its_code_span` now also feeds
+  multi-line values into four more places:
+  - an update event's `meta.to` (§1, and §2's omarchy-base line, with the
+    dossier version removed);
+  - an install with an agent actor (§2 suffix, §7);
+  - an install with a case (§2 heading);
+  - a plugin with a case (§4 suffix).
+
+  It still asserts exactly one `sh` fence opener.
+- Mutants: undoing any one of the six reachable call sites makes the
+  test fail (2 openers instead of 1). The §7 proposed case cannot be
+  reached with such a value, because case files check their id when
+  they are loaded. Its escaping is kept as a second layer.
+- `cargo fmt --check` and `cargo clippy --all-targets -D warnings` are
+  clean. `cargo test --test rebuild` passed 10/10, `--test dossier`
+  12/12, and the lib tests for `dossier`/`rebuild` 27/27.
+
+**Not done:** checking actor and case ids when a ledger line is loaded
+(a follow-up outside this WP). `just check` was not re-run this round.
