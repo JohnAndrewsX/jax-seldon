@@ -133,17 +133,21 @@ Add a folder with many files only if you want to follow each one.
 
 Before the engine writes anything, it removes secrets from the text: from
 every field of an event (the command line, the subject, the detail text
-and the other values), and from the text you give `seldon log`,
+and the other values), and from the text and tags you give `seldon log`,
 `seldon plan new`, a step's `--reason`, `seldon decide` and
 `seldon drift explain` or `dismiss`. The journal, the case and decision
 files and `STATUS.md` therefore hold the same text as the ledger. A
 redacted value reads `‹redacted›`. The built-in rules cover:
 
-- `--password`, `--token`, `--api-key`, `--with-token`, `--secret` and
-  similar options, and their values;
-- `token=`, `API_KEY=`, `PASSWORD=`, `PGPASSWORD=`, `MYSQL_PWD=` and
-  other `…KEY=`, `…SECRET=`, `…PASSWORD=` assignments;
-- `Authorization:`, `X-Api-Key:`, `Private-Token:` and similar headers;
+- `--password` and `token=` and their values;
+- `--token`, `--api-key`, `--with-token`, `--secret` and similar
+  options, and `API_KEY=`, `PASSWORD=`, `PGPASSWORD=`, `MYSQL_PWD=` and
+  other `…KEY=`, `…SECRET=`, `…PASSWORD=` assignments, when the value
+  looks like a credential: at least 16 characters, or at least 8 that
+  mix two of lower case, upper case, digits and other characters (so
+  `sort --key=2` and `hotkey=Super` stay as they are);
+- `Authorization:`, `X-Api-Key:`, `Private-Token:` and other headers
+  whose name ends in Key, Token, Secret or Auth;
 - AWS access keys (`AKIA…`, `ASIA…`), GitHub tokens (`ghp_…`, `gho_…`,
   `github_pat_…` and the other `gh…_` forms), GitLab tokens (`glpat-…`),
   Slack tokens (`xoxb-…`), API keys (`sk-…`, `sk_…`);

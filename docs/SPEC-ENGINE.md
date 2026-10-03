@@ -554,16 +554,18 @@ warm. Measured in `cargo bench` with the fixture logbook scaled ×10.
 
 Before writing any event, `subject`, `detail` and every string value of
 `meta` are passed through redaction. The commands that write free text
-into the logbook (`log`, `plan new` and the `plan` step reasons, `decide`,
-`drift explain|dismiss`) pass that text through the same redaction before
+into the logbook (`log` with its tags, `plan new` and the `plan` step
+reasons, `decide`, `drift explain|dismiss`) pass that text through the
+same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The rules
 (`redact::BUILTIN`, in this order): URLs with userinfo; `--password`;
 `--token`, `--api-key`, `--with-token`, `--secret`, `--client-secret` and
 similar options; `token=`; `…KEY=`, `…SECRET=`, `…PASSWORD=`, `…PASSWD=`,
 `…PASSPHRASE=`, `…_PWD=`, `…_PASS=`, `SSHPASS=` assignments (also
-`PGPASSWORD=`, `?api_key=`); `Authorization:`; `X-…Key:`, `X-…Token:`,
-`X-…Secret:`, `X-…Auth…:`, `Api-Key:`, `Private-Token:` headers;
+`PGPASSWORD=`, `?api_key=`); `Authorization:`; headers whose name ends in
+a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
+`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`);
 `(AKIA|ASIA)[0-9A-Z]{16}`; `gh[pousr]_[A-Za-z0-9]{36,}` and
 `github_pat_…`; `glpat-…`; `xox[abposr]-…`; `sk-`/`sk_` keys
 (`\bsk[-_][A-Za-z0-9_-]{20,}`); anything after `-p ` for
@@ -571,7 +573,12 @@ similar options; `token=`; `…KEY=`, `…SECRET=`, `…PASSWORD=`, `…PASSWD=`
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
 login`; and user-supplied patterns in `config.toml [redaction] patterns`.
 Replacement: `‹redacted›`. The hook never records stdin/stdout of
-commands, only the command line. Redaction over-matches by design
+commands, only the command line. The `--token`-style options and the
+`…KEY=`-style assignments mask a value only when it looks like a
+credential: without its quotes, at least 16 characters, or at least 8
+that mix two of lower case, upper case, digits and other characters
+(`redact::looks_like_credential`), so `sort --key=2`, `hotkey=Super` and
+`the key=value pairs` stay as they are. Redaction over-matches by design
 (WP-004): the `sk` rule also matches `sk_`/`sk-proj-`/`sk_live_` (at a
 word start, so `task-…` is not cut), `token=` and the assignments are
 case-insensitive, quoted values are redacted whole, mysql's attached
@@ -579,8 +586,11 @@ case-insensitive, quoted values are redacted whole, mysql's attached
 holds a `:` is cut from `://` up to the last `@` before the next white
 space or quote, so a password may contain `/ ? # : @`; userinfo without
 a `:` (a bare token) is cut up to the last `@` before the path. Redacting
-twice gives the same text: a match that lies inside an existing
-`‹redacted›` is left alone. An invalid user pattern is a user error
+twice gives the same text for the built-in rules: a match that lies
+inside an existing `‹redacted›` is left alone (a user pattern that
+matches across the marker's edge is applied as written). Each built-in
+rule is compiled once per process, and only when the text holds one of
+its literal triggers (`redact::triggers`). An invalid user pattern is a user error
 (exit 1): Seldon writes nothing rather than unredacted text. `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
 before a rule existed are not rewritten.
@@ -626,9 +636,11 @@ rebuilds the index the cheap way (no git spawn, `.git/HEAD` read
 directly), after releasing the lock and without waiting for it again
 (another writer that holds it rebuilds after its own write), and only
 while the ledger has at most 1000 lines; above that the next `capture`
-or `status` brings the index up to date. Measured in release on the dev host (WP-057): about
-2 ms per recorded command at any ledger size, 3 to 5 ms with the
-rebuild (empty to 1000-line ledger); a non-mutating command about 1 ms.
+or `status` brings the index up to date. Measured in release on the dev
+host (WP-062, interleaved with a build of the code before it, median of
+21 runs each): about 1.4 ms per recorded command above 1000 ledger lines,
+1.8 to 3.7 ms with the rebuild (empty to 1000-line ledger), 2.5 ms for a
+command with secrets in it; a non-mutating command about 1 ms (WP-057).
 `seldon hook generic` takes `{"command","actor","cwd",
 "startedAt"?}` with the same rules. `seldon hook install claude-code
 [--settings FILE]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
