@@ -136,13 +136,28 @@ impl Bench {
             state_dir: home.join(".local/state/seldon"),
             home,
         };
+        // every field spelled out, no `Sources::default()` (the host's
+        // paths and programs; WP-076): each test passes its own paths to
+        // `collect_from`, so these are never read
+        let missing = tmp.path().join("no-such-program").display().to_string();
+        let sources = Sources {
+            pacman_log: tmp.path().join("pacman.log"),
+            pacman_db_lock: tmp.path().join("db.lck"),
+            snapper: missing.clone(),
+            snapshots: tmp.path().join("no-snapshots"),
+            omarchy_version: missing.clone(),
+            pacman: missing.clone(),
+            omarchy: missing,
+            plugins_dir: Some(tmp.path().join("plugins")),
+            theme_file: Some(tmp.path().join("theme.name")),
+        };
         Bench {
             lock: lock::acquire(&tmp.path().join("lock")).unwrap(),
             ledger: Ledger::at(tmp.path().join("logbook/ledger"), Redactor::builtin()),
             tmp,
             dirs,
             config: Config::default(),
-            sources: Sources::default(),
+            sources,
             cursors: BTreeMap::new(),
             written: Vec::new(),
         }
@@ -1629,5 +1644,28 @@ mod hook {
         let out = run_hook(&bin, &["kanagawa"]);
         assert_eq!(out.status.code(), Some(0));
         assert!(out.stdout.is_empty() && out.stderr.is_empty());
+    }
+}
+
+/// WP-076: every source of the [`Bench`] lies under its temp dir, never a
+/// host path or a program found on the host's PATH.
+#[test]
+fn the_bench_reads_nothing_of_the_host() {
+    let b = Bench::new("hostless");
+    let s = &b.sources;
+    let paths = [
+        s.pacman_log.as_path(),
+        &s.pacman_db_lock,
+        &s.snapshots,
+        s.plugins_dir.as_deref().expect("plugins_dir"),
+        s.theme_file.as_deref().expect("theme_file"),
+    ];
+    let programs = [&s.snapper, &s.omarchy_version, &s.pacman, &s.omarchy].map(Path::new);
+    for p in paths.into_iter().chain(programs) {
+        assert!(
+            p.starts_with(b.tmp.path()),
+            "{} is not a scratch path",
+            p.display()
+        );
     }
 }
