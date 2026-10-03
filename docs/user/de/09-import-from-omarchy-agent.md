@@ -1,6 +1,6 @@
 # Import aus omarchy-agent
 
-<!-- source: en/09-import-from-omarchy-agent.md @ 0b02abe -->
+<!-- source: en/09-import-from-omarchy-agent.md @ 779624f -->
 
 Diese Seite ist für dich, wenn du vor Seldon ein Logbuch mit dem
 omarchy-agent-Kit geführt hast: einen Obsidian-Vault mit `pipeline/`,
@@ -118,11 +118,12 @@ aus:
 
 ```sh
 cd ~/Seldon
-git checkout <commit> -- memory/lessons.md && rm -f -- work/queued/C-2026-002-zweiter-editor.md …
+git --literal-pathspecs checkout <commit> -- memory/lessons.md && rm -f -- work/queued/C-2026-002-zweiter-editor.md …
 ```
 
-`git checkout <commit> --` setzt die Dateien, die der Import geändert
-hat, auf den Commit direkt vor ihm zurück. `rm -f` entfernt die Dateien,
+`git --literal-pathspecs checkout <commit> --` setzt die Dateien, die der
+Import geändert hat, auf den Commit direkt vor ihm zurück und liest die
+Dateinamen so, wie sie sind (keine Platzhalter). `rm -f` entfernt die Dateien,
 die er angelegt hat. Alle anderen Dateien im Logbuch bleiben, wie sie
 sind. Führ den Befehl bald aus: Eine Ledger-Zeile, die ein Hook nach dem
 Fehlschlag an eine der Ledger-Dateien des Imports anhängt, wird mit
@@ -131,7 +132,10 @@ aus.
 
 Bis du ihn rückgängig machst, verweigert jedes neue `--apply` den Start
 (Exit 1) und gibt denselben Befehl aus (er liegt in
-`.seldon/imports/omarchy-agent.undo.json`).
+`.seldon/imports/omarchy-agent.undo.json`). Wurde diese Datei so
+geändert, dass sie Dateien außerhalb der Ordner des Imports oder keinen
+Commit nennt, gibt Seldon keinen Befehl aus und verweist stattdessen auf
+`git status`.
 
 ---
 
