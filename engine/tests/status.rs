@@ -581,6 +581,9 @@ fn a_damaged_status_md_is_left_alone() {
     for damaged in [
         notes.replace("<!-- seldon:end -->\n", ""),
         notes.replace("<!-- seldon:begin status -->\n", ""),
+        // end marker gone, a complete begin…end block pasted below
+        notes.replace("<!-- seldon:end -->\n", "")
+            + "\n<!-- seldon:begin status -->\npasted\n<!-- seldon:end -->\n",
     ] {
         std::fs::write(&path, &damaged).unwrap();
         let out = status(&env, NOW);

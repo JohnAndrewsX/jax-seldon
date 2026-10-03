@@ -692,8 +692,13 @@ mod tests {
                 .replace("<!-- seldon:end -->\n", ""),
             // the template with notes added is no longer the template
             format!("{GENERATED_HEADER}\n# Status — x\n\nNo status yet.\nMine.\n"),
+            // the end marker is gone, but a complete block pasted below
+            // would lend the first begin marker its end
+            notes.replace("<!-- seldon:end -->\n", "")
+                + "\n<!-- seldon:begin status -->\npasted\n<!-- seldon:end -->\n",
         ] {
-            assert!(merge_status(Some(&damaged), "B\n").is_err(), "{damaged}");
+            let err = merge_status(Some(&damaged), "B\n").unwrap_err();
+            assert!(!err.is_empty(), "{damaged}");
         }
         // REBUILD.md and the import report: the old text stays below
         let open = notes.replace("<!-- seldon:end -->\n", "");

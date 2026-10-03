@@ -261,16 +261,22 @@ pub const FENCE_END: &str = "<!-- seldon:end -->";
 
 /// Generated fences `<!-- seldon:begin NAME -->\n…<!-- seldon:end -->` in
 /// file order (SPEC-LOGBOOK §3); the content excludes the marker lines.
+/// A `\r\n` marker line is a marker line too (WP-065 review).
 pub fn fences(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut rest = text;
     while let Some(start) = rest.find(FENCE_BEGIN) {
         let after = &rest[start + FENCE_BEGIN.len()..];
-        let Some(close) = after.find(" -->\n") else {
+        // the marker line ends in `\n` or `\r\n` (a CRLF dossier file)
+        let Some((name, content)) = after.match_indices(" -->").find_map(|(i, _)| {
+            let rest = &after[i + " -->".len()..];
+            let content = rest
+                .strip_prefix('\n')
+                .or_else(|| rest.strip_prefix("\r\n"))?;
+            Some((&after[..i], content))
+        }) else {
             break;
         };
-        let name = &after[..close];
-        let content = &after[close + " -->\n".len()..];
         if name.is_empty()
             || !name
                 .chars()
@@ -379,6 +385,41 @@ mod tests {
         assert_eq!(rows[0]["explicit"], "323");
         assert_eq!(f[2].1, "");
         assert!(fence_table("").is_empty());
+    }
+
+    /// WP-065 review: a CRLF dossier file has the same fences.
+    #[test]
+    fn crlf_fences_are_fences() {
+        let lf = "# x\n<!-- seldon:begin omarchy.summary -->\n- theme: tokyo-night\n<!-- seldon:end -->\n<!-- seldon:begin a --> no\n<!-- seldon:begin packages.history -->\n| date | total |\n|---|---|\n| 2026-09-01 | 2004 |\n<!-- seldon:end -->\n";
+        let crlf = lf.replace('\n', "\r\n");
+        let (a, b) = (fences(lf), fences(&crlf));
+        let names = |f: &[(String, String)]| f.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&a), ["omarchy.summary", "packages.history"]);
+        assert_eq!(names(&b), names(&a));
+        assert_eq!(fence_kv(&b[0].1)["theme"], "tokyo-night");
+        assert_eq!(fence_table(&b[1].1), fence_table(&a[1].1));
+        assert_eq!(fence_table(&b[1].1)[0]["total"], "2004");
+    }
+
+    /// F-132: the month, the count, five line numbers, then how many more.
+    #[test]
+    fn bad_lines_warning_names_month_and_count() {
+        assert_eq!(bad_lines_warning("2026-10", &[]), None);
+        let one = bad_lines_warning("2026-10", &[2]).unwrap();
+        assert!(
+            one.starts_with("ledger/2026-10.jsonl: 1 line skipped, ") && one.ends_with(": line 2"),
+            "{one}"
+        );
+        let seven = bad_lines_warning("2026-09", &[1, 3, 5, 7, 9, 11, 13]).unwrap();
+        assert!(
+            seven.starts_with("ledger/2026-09.jsonl: 7 lines skipped, "),
+            "{seven}"
+        );
+        assert!(
+            seven.ends_with(": line 1, 3, 5, 7, 9 and 2 more"),
+            "{seven}"
+        );
+        assert!(!seven.contains("11"), "{seven}");
     }
 
     #[test]
