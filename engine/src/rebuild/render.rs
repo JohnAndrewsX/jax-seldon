@@ -2,10 +2,14 @@
 //! logbook language (SPEC-LOGBOOK §2), one line per item with the ledger
 //! event it comes from. Nothing here depends on the clock, so an unchanged
 //! logbook renders the same bytes.
+//!
+//! Every name that goes into a command passes its [`shell_arg`] check and
+//! [`shell_arg::quote`]; an item whose name fails is listed as "not
+//! reproduced: invalid name", with no command, and gets a warning.
 
 use std::fmt::Write as _;
 
-use super::{Origin, Rebuild, Scope, Why};
+use super::{Origin, Plugin, REL_PATH, Rebuild, Scope, Why, shell_arg};
 use crate::index::model::DriftItem;
 use crate::model::Language;
 use crate::model::event::Resolution;
@@ -55,6 +59,7 @@ struct Words {
     proposed: &'static str,
     group: &'static str,
     dismissed_intro: &'static str,
+    invalid_name: &'static str,
     none: &'static str,
 }
 
@@ -102,6 +107,7 @@ const EN: Words = Words {
     proposed: "proposed",
     group: "events in this transaction",
     dismissed_intro: "Dismissed on purpose; do not set these up again.",
+    invalid_name: "not reproduced: invalid name",
     none: "none",
 };
 
@@ -149,6 +155,7 @@ const DE: Words = Words {
     proposed: "Vorschlag",
     group: "Ereignisse in dieser Transaktion",
     dismissed_intro: "Bewusst verworfen; nicht wieder einrichten.",
+    invalid_name: "nicht nachgebaut: ungültiger Name",
     none: "keine",
 };
 
@@ -159,9 +166,11 @@ fn words(language: Language) -> &'static Words {
     }
 }
 
-/// The content of the `rebuild` fence.
-pub fn text(r: &Rebuild, language: Language) -> String {
+/// The content of the `rebuild` fence, and a warning per name left out
+/// of the commands.
+pub fn text(r: &Rebuild, language: Language) -> (String, Vec<String>) {
     let w = words(language);
+    let mut warnings = Vec::new();
     let mut t = format!("# Rebuild — {}\n\n{}\n", r.machine, w.intro);
     if let Some(ts) = &r.last_event {
         let when = ts.get(..16).unwrap_or(ts).replacen('T', " ", 1);
@@ -207,13 +216,18 @@ pub fn text(r: &Rebuild, language: Language) -> String {
             w.from_aur,
             w.before_skip
         );
-        if before.repo.is_empty() && before.aur.is_empty() {
+        if before.repo.is_empty() && before.aur.is_empty() && before.invalid.is_empty() {
             let _ = writeln!(t, "- {}", w.none);
-        } else {
+        } else if !before.repo.is_empty() || !before.aur.is_empty() {
             t.push_str("```sh\n");
             t.push_str(&command_lines("omarchy pkg add", &before.repo));
             t.push_str(&command_lines("omarchy pkg aur add", &before.aur));
             t.push_str("```\n");
+        }
+        // `dossier::parse_explicit` checked these names
+        for name in &before.invalid {
+            warn(&mut warnings, "package", name);
+            let _ = writeln!(t, "{}", not_reproduced(name, w));
         }
         if before.omarchy > 0 {
             let [more, class] = w.more_with_omarchy;
@@ -243,8 +257,19 @@ pub fn text(r: &Rebuild, language: Language) -> String {
                 None => t.push_str("\n### Without a case\n"),
             }
         }
-        let aur = format!("omarchy pkg aur add {}", p.name);
-        let repo = format!("omarchy pkg add {}", p.name);
+        let Some(name) = arg(
+            &mut warnings,
+            "package",
+            &p.name,
+            shell_arg::is_package_name,
+        ) else {
+            t.push_str(&not_reproduced(&p.name, w));
+            t.push_str(&suffix(&p.why, w, false));
+            t.push('\n');
+            continue;
+        };
+        let aur = format!("omarchy pkg aur add {name}");
+        let repo = format!("omarchy pkg add {name}");
         let _ = match p.origin {
             Origin::Repo => write!(t, "- {}", code(&repo)),
             Origin::Aur => write!(t, "- {}", code(&aur)),
@@ -264,6 +289,7 @@ pub fn text(r: &Rebuild, language: Language) -> String {
             .packages
             .iter()
             .filter(|p| p.origin == origin && !p.why.open)
+            .filter(|p| shell_arg::is_package_name(&p.name))
             .map(|p| p.name.as_str())
             .collect();
         if names.len() > 1 {
@@ -312,77 +338,41 @@ pub fn text(r: &Rebuild, language: Language) -> String {
     }
     for p in &r.plugins {
         let _ = write!(t, "- {} — ", code(&p.id));
-        match (&p.cloned_from, &p.url) {
-            (Some(from), _) => {
-                // `omarchy plugin clone` names the copy `$USER.<id without
-                // omarchy.>` and enables it (Omarchy 4.0.4)
-                let clone = format!(
-                    "{}.{}",
-                    w.username,
-                    from.strip_prefix("omarchy.").unwrap_or(from)
-                );
-                let _ = write!(
-                    t,
-                    "{} ({} {}, {})",
-                    code(&format!("omarchy plugin clone {from}")),
-                    w.becomes,
-                    code(&clone),
-                    w.enabled_by_clone
-                );
-                if p.enabled == Some(false) {
-                    let _ = write!(
-                        t,
-                        ", {} {}",
-                        w.then,
-                        code(&format!("omarchy plugin disable {clone}"))
-                    );
-                }
-                t.push_str(&suffix(&p.why, w, true));
-                t.push('\n');
-                continue;
-            }
-            (None, Some(url)) => {
-                let _ = write!(t, "{}", code(&format!("omarchy plugin add {url}")));
-            }
-            (None, None) => {
-                let _ = write!(
-                    t,
-                    "{} ({})",
-                    code("omarchy plugin add <url>"),
-                    w.url_unknown
-                );
-            }
-        }
-        match p.enabled {
-            Some(true) => {
-                let _ = write!(
-                    t,
-                    ", {} {}",
-                    w.then,
-                    code(&format!("omarchy plugin enable {}", p.id))
-                );
-            }
-            Some(false) => {
-                let _ = write!(t, ", {}", w.stays_disabled);
-            }
-            None => {}
+        match plugin_steps(p, w, &mut warnings) {
+            Some(steps) => t.push_str(&steps),
+            None => t.push_str(w.invalid_name),
         }
         t.push_str(&suffix(&p.why, w, true));
         t.push('\n');
     }
     if !r.first_party_disabled.is_empty() {
-        let ids: Vec<String> = r.first_party_disabled.iter().map(|i| code(i)).collect();
+        let ids: Vec<String> = r
+            .first_party_disabled
+            .iter()
+            .map(
+                |i| match arg(&mut warnings, "plugin", i, shell_arg::is_plugin_id) {
+                    Some(_) => code(i),
+                    None => format!("{} ({})", code(i), w.invalid_name),
+                },
+            )
+            .collect();
         let _ = writeln!(t, "\n{} {}", w.first_party_disabled, ids.join(", "));
     }
 
     t.push_str("\n## 5. Theme\n");
     match &r.theme {
         Some(theme) => {
-            let _ = write!(
-                t,
-                "- {}",
-                code(&format!("omarchy theme set {}", theme.name))
-            );
+            match arg(
+                &mut warnings,
+                "theme",
+                &theme.name,
+                shell_arg::is_theme_slug,
+            ) {
+                Some(name) => {
+                    let _ = write!(t, "- {}", code(&format!("omarchy theme set {name}")));
+                }
+                None => t.push_str(&not_reproduced(&theme.name, w)),
+            }
             if theme.why.event.is_none() {
                 let _ = write!(t, " · {}", w.theme_dossier);
             }
@@ -406,24 +396,35 @@ pub fn text(r: &Rebuild, language: Language) -> String {
         let _ = writeln!(t, "- {}", w.none);
     }
     for u in user {
-        let enable = code(&format!("systemctl --user enable --now {}", u.unit));
+        let mut enable = || {
+            arg(&mut warnings, "unit", &u.unit, shell_arg::is_unit_name)
+                .map(|unit| code(&format!("systemctl --user enable --now {unit}")))
+        };
         match &u.path {
             Some(path) => {
                 let reload = code("systemctl --user daemon-reload");
-                let (step, then) = match (u.removed, u.enabled) {
-                    (true, _) => (w.removed, reload),
-                    (false, true) => (w.restore, enable),
-                    (false, false) => (w.restore, reload),
+                let steps = match (u.removed, u.enabled) {
+                    (true, _) => Some((w.removed, reload)),
+                    (false, true) => enable().map(|e| (w.restore, e)),
+                    (false, false) => Some((w.restore, reload)),
                 };
-                let _ = write!(t, "- {}", code(path));
-                if u.drop_in {
-                    let _ = write!(t, " ({} {})", w.drop_in, code(&u.unit));
+                match steps {
+                    Some((step, then)) => {
+                        let _ = write!(t, "- {}", code(path));
+                        if u.drop_in {
+                            let _ = write!(t, " ({} {})", w.drop_in, code(&u.unit));
+                        }
+                        let _ = write!(t, " — {step}, {} {then}", w.then);
+                    }
+                    None => t.push_str(&not_reproduced(path, w)),
                 }
-                let _ = write!(t, " — {step}, {} {then}", w.then);
             }
-            None => {
-                let _ = write!(t, "- {} — {enable}", code(&u.unit));
-            }
+            None => match enable() {
+                Some(e) => {
+                    let _ = write!(t, "- {} — {e}", code(&u.unit));
+                }
+                None => t.push_str(&not_reproduced(&u.unit, w)),
+            },
         }
         t.push_str(&suffix(&u.why, w, true));
         t.push('\n');
@@ -431,12 +432,17 @@ pub fn text(r: &Rebuild, language: Language) -> String {
     if !system.is_empty() {
         t.push_str("\n### System units\n");
         for u in system {
-            let _ = write!(
-                t,
-                "- {} — {}",
-                code(&u.unit),
-                code(&format!("sudo systemctl enable --now {}", u.unit))
-            );
+            match arg(&mut warnings, "unit", &u.unit, shell_arg::is_unit_name) {
+                Some(unit) => {
+                    let _ = write!(
+                        t,
+                        "- {} — {}",
+                        code(&u.unit),
+                        code(&format!("sudo systemctl enable --now {unit}"))
+                    );
+                }
+                None => t.push_str(&not_reproduced(&u.unit, w)),
+            }
             t.push_str(&suffix(&u.why, w, true));
             t.push('\n');
         }
@@ -468,7 +474,96 @@ pub fn text(r: &Rebuild, language: Language) -> String {
         }
         let _ = writeln!(t, " · {}", code(&d.event));
     }
-    t
+    (t, warnings)
+}
+
+/// What section 4 says after the plugin's id: the commands that set it up,
+/// or `None` when a name in them fails its check.
+fn plugin_steps(p: &Plugin, w: &Words, warnings: &mut Vec<String>) -> Option<String> {
+    let mut s = String::new();
+    if let Some(from) = &p.cloned_from {
+        let source = arg(warnings, "plugin", from, shell_arg::is_plugin_id)?;
+        // `omarchy plugin clone` names the copy `$USER.<id without
+        // omarchy.>` and enables it (Omarchy 4.0.4)
+        let clone = format!(
+            "{}.{}",
+            w.username,
+            from.strip_prefix("omarchy.").unwrap_or(from)
+        );
+        let _ = write!(
+            s,
+            "{} ({} {}, {})",
+            code(&format!("omarchy plugin clone {source}")),
+            w.becomes,
+            code(&clone),
+            w.enabled_by_clone
+        );
+        if p.enabled == Some(false) {
+            let _ = write!(
+                s,
+                ", {} {}",
+                w.then,
+                code(&format!("omarchy plugin disable {clone}"))
+            );
+        }
+        return Some(s);
+    }
+    match &p.url {
+        Some(url) => {
+            let url = arg(warnings, "plugin URL", url, shell_arg::is_https_url)?;
+            s.push_str(&code(&format!("omarchy plugin add {url}")));
+        }
+        None => {
+            let _ = write!(
+                s,
+                "{} ({})",
+                code("omarchy plugin add <url>"),
+                w.url_unknown
+            );
+        }
+    }
+    match p.enabled {
+        Some(true) => {
+            let id = arg(warnings, "plugin", &p.id, shell_arg::is_plugin_id)?;
+            let _ = write!(
+                s,
+                ", {} {}",
+                w.then,
+                code(&format!("omarchy plugin enable {id}"))
+            );
+        }
+        Some(false) => {
+            let _ = write!(s, ", {}", w.stays_disabled);
+        }
+        None => {}
+    }
+    Some(s)
+}
+
+/// `value` as one shell word when `valid` accepts it; else `None` and a
+/// warning.
+fn arg(
+    warnings: &mut Vec<String>,
+    what: &str,
+    value: &str,
+    valid: fn(&str) -> bool,
+) -> Option<String> {
+    if valid(value) {
+        return Some(shell_arg::quote(value).into_owned());
+    }
+    warn(warnings, what, value);
+    None
+}
+
+fn warn(warnings: &mut Vec<String>, what: &str, value: &str) {
+    warnings.push(format!(
+        "{REL_PATH}: {what} {value:?} not reproduced: invalid name"
+    ));
+}
+
+/// `- `value` — not reproduced: invalid name`, for an item with no command.
+fn not_reproduced(value: &str, w: &Words) -> String {
+    format!("- {} — {}", code(value), w.invalid_name)
 }
 
 /// ` · [[case]] title · linked · explained: … · open · agent · `id``;
@@ -556,12 +651,15 @@ fn command_lines(cmd: &str, names: &[String]) -> String {
     lines.join(" \\\n") + "\n"
 }
 
-/// An inline code span that survives backticks in `s`.
+/// An inline code span that survives backticks in `s`: its fence is one
+/// backtick longer than the longest run in `s`.
 fn code(s: &str) -> String {
-    if s.contains('`') {
-        format!("`` {s} ``")
-    } else {
+    let longest = s.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    if longest == 0 {
         format!("`{s}`")
+    } else {
+        let fence = "`".repeat(longest + 1);
+        format!("{fence} {s} {fence}")
     }
 }
 
@@ -573,6 +671,13 @@ fn one_line(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_code_span_outlasts_the_backticks_inside() {
+        assert_eq!(code("zed"), "`zed`");
+        assert_eq!(code("a`b"), "`` a`b ``");
+        assert_eq!(code("a``b`"), "``` a``b` ```");
+    }
 
     #[test]
     fn long_commands_are_continued_lines() {

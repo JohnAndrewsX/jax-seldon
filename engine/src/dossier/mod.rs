@@ -516,6 +516,10 @@ pub struct Explicit {
     /// them, counts as `user`).
     pub omarchy: bool,
     pub pre_logbook: bool,
+    /// The name passed [`is_package_name`](crate::rebuild::shell_arg::is_package_name);
+    /// one that fails is kept so the
+    /// rebuild can list it as not reproduced.
+    pub valid_name: bool,
 }
 
 /// Reads a `packages.explicit` body (see [`packages_explicit`]); lines in
@@ -530,10 +534,11 @@ pub fn parse_explicit(body: &str) -> Vec<Explicit> {
                 USER => (false, parts.next()?),
                 since => (false, since),
             };
-            if name.is_empty() || name.contains(char::is_whitespace) {
+            if name.is_empty() {
                 return None;
             }
             Some(Explicit {
+                valid_name: crate::rebuild::shell_arg::is_package_name(name),
                 name: name.to_string(),
                 aur: match origin {
                     "aur" => true,
@@ -823,7 +828,8 @@ mod tests {
                 name: "yay".into(),
                 aur: true,
                 omarchy: true,
-                pre_logbook: true
+                pre_logbook: true,
+                valid_name: true
             }
         );
         assert!(!parsed[2].pre_logbook);
@@ -836,17 +842,24 @@ mod tests {
                     name: "yay".into(),
                     aur: true,
                     omarchy: false,
-                    pre_logbook: true
+                    pre_logbook: true,
+                    valid_name: true
                 },
                 Explicit {
                     name: "zed".into(),
                     aur: false,
                     omarchy: false,
-                    pre_logbook: false
+                    pre_logbook: false,
+                    valid_name: true
                 }
             ]
         );
         assert!(parse_explicit("- yay · aur · user\n- x · git · user · pre-logbook\n").is_empty());
+        // a name that is not a package name is kept, marked
+        let odd =
+            parse_explicit("- -x · repo · user · pre-logbook\n- a b · aur · user · pre-logbook\n");
+        assert_eq!(odd.len(), 2);
+        assert!(odd.iter().all(|p| !p.valid_name), "{odd:?}");
         assert_eq!(
             packages_summary(&p),
             "- explicit: 3\n- total: 40\n- aur: 2\n"

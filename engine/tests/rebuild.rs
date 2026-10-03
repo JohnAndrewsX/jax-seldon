@@ -562,3 +562,399 @@ fn without_a_logbook_it_exits_3() {
     assert_eq!(out.status.code(), Some(3), "{}", stdout(&out));
     assert!(!missing.join("outputs").exists());
 }
+
+/// Made-up names with shell syntax, a leading `-` and a quote; each
+/// carries `tag` (so a command that holds one is found) and ends in `end`.
+fn odd(tag: &str, end: &str) -> Vec<String> {
+    vec![
+        format!("x;{tag}1{end}"),
+        format!("x$({tag}2){end}"),
+        format!("x`{tag}3`{end}"),
+        format!("x${{IFS}}{tag}4{end}"),
+        format!("x|{tag}5{end}"),
+        format!("x&&{tag}6{end}"),
+        format!("-{tag}7{end}"),
+        format!("x'{tag}8{end}"),
+    ]
+}
+
+/// The inline code spans of a line (CommonMark: a run of n backticks is
+/// closed by the next run of exactly n; one space each side is trimmed).
+fn code_spans(line: &str) -> Vec<&str> {
+    let b = line.as_bytes();
+    let run = |i: usize| b[i..].iter().take_while(|&&c| c == b'`').count();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let n = run(i);
+        let mut j = i + n;
+        let mut close = None;
+        while j < b.len() {
+            if b[j] == b'`' {
+                let m = run(j);
+                if m == n {
+                    close = Some(j);
+                    break;
+                }
+                j += m;
+            } else {
+                j += 1;
+            }
+        }
+        let Some(j) = close else {
+            i += n;
+            continue;
+        };
+        let c = &line[i + n..j];
+        let c = match c.strip_prefix(' ').and_then(|c| c.strip_suffix(' ')) {
+            Some(inner) if !inner.trim().is_empty() => inner,
+            _ => c,
+        };
+        out.push(c);
+        i = j + n;
+    }
+    out
+}
+
+/// Every command of the document: the lines of its `sh` blocks and the
+/// code spans that start with a program the guide runs.
+fn commands(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_block = false;
+    for line in text.lines() {
+        if in_block {
+            if line == "```" {
+                in_block = false;
+            } else {
+                out.push(line.to_string());
+            }
+        } else if line == "```sh" {
+            in_block = true;
+        } else {
+            out.extend(
+                code_spans(line)
+                    .into_iter()
+                    .filter(|c| {
+                        ["omarchy ", "systemctl ", "sudo "]
+                            .iter()
+                            .any(|p| c.starts_with(p))
+                    })
+                    .map(String::from),
+            );
+        }
+    }
+    out
+}
+
+/// Asserts that no command holds `tag`.
+fn no_command_holds(text: &str, tag: &str) {
+    let hits: Vec<String> = commands(text)
+        .into_iter()
+        .filter(|c| c.contains(tag))
+        .collect();
+    assert!(hits.is_empty(), "{tag} in a command: {hits:?}\n{text}");
+}
+
+/// Asserts that a line lists `value` as not reproduced.
+fn listed_as_not_reproduced(text: &str, value: &str) {
+    assert!(
+        text.lines()
+            .any(|l| l.contains("not reproduced: invalid name") && code_spans(l).contains(&value)),
+        "{value:?} is not listed as not reproduced\n{text}"
+    );
+}
+
+/// Asserts that `out["warnings"]` names `value`.
+fn warned(out: &Value, value: &str) {
+    let needle = format!("{value:?} not reproduced: invalid name");
+    assert!(
+        out["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w.as_str().unwrap().contains(&needle)),
+        "no warning for {value:?}: {}",
+        out["warnings"]
+    );
+}
+
+/// Puts `rows` (Markdown lines) at the end of the fence `name` of `file`.
+fn add_rows(lb: &Path, file: &str, name: &str, rows: &[String]) {
+    let path = lb.join("system").join(file);
+    let text = read(&path);
+    let begin = format!("<!-- seldon:begin {name} -->\n");
+    let start = text.find(&begin).unwrap() + begin.len();
+    let end = start + text[start..].find("<!-- seldon:end -->").unwrap();
+    let mut rows = rows.join("\n");
+    rows.push('\n');
+    std::fs::write(&path, format!("{}{rows}{}", &text[..end], &text[end..])).unwrap();
+}
+
+/// A ledger id for the n-th test event of a group (`tag`: four Crockford
+/// letters).
+fn test_id(tag: &str, n: usize) -> String {
+    format!("01M3W000000000000000{tag}{n:02}")
+}
+
+#[test]
+fn names_that_fail_their_check_never_reach_a_command() {
+    let env = Env::new(Snapper::Missing);
+    let lb = english_fixture(&env);
+    let later = "2026-10-01T18:00:00+02:00";
+
+    // packages fence: the user's pre-logbook packages
+    let fence = odd("PKGFENCE", "");
+    let mut rows = vec![
+        "- firefox · repo · user · pre-logbook".to_string(),
+        "- brave-bin · aur · user · pre-logbook".to_string(),
+    ];
+    for (i, v) in fence.iter().enumerate() {
+        let origin = if i % 2 == 0 { "repo" } else { "aur" };
+        rows.push(format!("- {v} · {origin} · user · pre-logbook"));
+    }
+    add_rows(&lb, "packages.md", "packages.explicit", &rows);
+
+    // ledger subjects: explicit installs from the repositories, the AUR
+    // and an unknown command, explained so the "all at once" lines see them
+    let subjects = odd("PKGLEDGER", "");
+    let commands_by_origin = [
+        Some("pacman -S x"),
+        Some("pacman -U --noconfirm -- /tmp/x-1-1-x86_64.pkg.tar.zst"),
+        None,
+    ];
+    let events: Vec<Value> = subjects
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            pacman(
+                &test_id("PACK", i),
+                "2026-10-01T17:20:00+02:00",
+                "install",
+                v,
+                commands_by_origin[i % 3],
+            )
+        })
+        .collect();
+    // user units with a unit file (config events) and enabled in the dossier
+    let unit_paths = odd("USERPATH", ".service");
+    let mut events = events;
+    for (i, v) in unit_paths.iter().enumerate() {
+        events.push(config(
+            &test_id("CNFG", i),
+            "2026-10-01T17:21:00+02:00",
+            "config-add",
+            &format!("~/.config/systemd/user/{v}"),
+        ));
+    }
+    append(&lb, &events);
+    for i in 0..subjects.len() {
+        run_at(
+            &env,
+            &lb,
+            later,
+            &["drift", "explain", &test_id("PACK", i), "--", "test"],
+            0,
+        );
+    }
+
+    // services.enabled: user units without a file, system units
+    let user_rows = odd("USERROW", ".service");
+    let system_rows = odd("SYSROW", ".service");
+    let mut rows: Vec<String> = Vec::new();
+    for v in &unit_paths {
+        rows.push(format!("| {v} | user | — |"));
+    }
+    for v in &user_rows {
+        rows.push(format!("| {v} | user | [[C-2026-004]] |"));
+    }
+    for v in &system_rows {
+        rows.push(format!("| {v} | system | [[C-2026-008]] |"));
+    }
+    add_rows(&lb, "services.md", "services.enabled", &rows);
+
+    // plugins.list: clones of an odd source, first-party plugins disabled
+    let clones = odd("PLUGCLONE", "");
+    let first_party = odd("FIRSTPARTY", "");
+    let mut rows: Vec<String> = Vec::new();
+    for (i, v) in clones.iter().enumerate() {
+        rows.push(format!("| user.clone{i} | yes | no | {v} |"));
+    }
+    for v in &first_party {
+        rows.push(format!("| {v} | no | yes | — |"));
+    }
+    add_rows(&lb, "plugins.md", "plugins.list", &rows);
+
+    // plugin-add events: odd URLs, odd ids to enable, a URL to quote
+    let urls: Vec<String> = odd("PLUGURL", "")
+        .into_iter()
+        .map(|v| match v.starts_with('-') {
+            true => v,
+            false => format!("https://example.org/{v}"),
+        })
+        .collect();
+    for (i, url) in urls.iter().enumerate() {
+        let id = format!("io.example.url{i}");
+        let meta = format!("url={url}");
+        let args = [
+            "event",
+            "plugins",
+            "plugin-add",
+            "--subject",
+            &id,
+            "--meta",
+            &meta,
+        ];
+        run_at(&env, &lb, later, &args, 0);
+    }
+    let ids = odd("PLUGID", "");
+    for id in &ids {
+        let args = [
+            "event",
+            "plugins",
+            "plugin-add",
+            "--subject",
+            id,
+            "--meta",
+            "enabled=true",
+        ];
+        run_at(&env, &lb, later, &args, 0);
+    }
+    let tilde = "https://git.example.org/~someone/clock-plus";
+    let meta = format!("url={tilde}");
+    let args = [
+        "event",
+        "plugins",
+        "plugin-add",
+        "--subject",
+        "io.example.tilde",
+        "--meta",
+        &meta,
+        "--meta",
+        "enabled=true",
+    ];
+    run_at(&env, &lb, later, &args, 0);
+
+    let out = run_at(&env, &lb, later, &["rebuild"], 0);
+    let text = doc(&lb);
+
+    for tag in [
+        "PKGFENCE",
+        "PKGLEDGER",
+        "USERPATH",
+        "USERROW",
+        "SYSROW",
+        "PLUGCLONE",
+        "FIRSTPARTY",
+        "PLUGURL",
+        "PLUGID",
+    ] {
+        no_command_holds(&text, tag);
+    }
+    // a `|` cannot be part of a table cell, so the table sinks never see
+    // those values whole; everything else is listed and warned about
+    let whole = |v: &&String| !v.contains('|');
+    let unit_files: Vec<String> = unit_paths
+        .iter()
+        .filter(whole)
+        .map(|v| format!("~/.config/systemd/user/{v}"))
+        .collect();
+    for v in fence
+        .iter()
+        .chain(&subjects)
+        .chain(user_rows.iter().filter(whole))
+        .chain(system_rows.iter().filter(whole))
+        .chain(clones.iter().filter(whole))
+        .chain(urls.iter())
+        .chain(ids.iter())
+    {
+        warned(&out, v);
+    }
+    for v in fence
+        .iter()
+        .chain(&subjects)
+        .chain(&unit_files)
+        .chain(user_rows.iter().filter(whole))
+        .chain(system_rows.iter().filter(whole))
+        .chain(ids.iter())
+    {
+        listed_as_not_reproduced(&text, v);
+    }
+    // a plugin line names its id; the clone source or URL was the odd part
+    let plugins = section(&text, "4. Plugins");
+    for (i, v) in clones.iter().enumerate() {
+        if v.contains('|') {
+            continue;
+        }
+        let line = format!("- `user.clone{i}` — not reproduced: invalid name");
+        assert!(plugins.contains(&line.as_str()), "{line}\n{text}");
+    }
+    for i in 0..urls.len() {
+        let line = format!("- `io.example.url{i}` — not reproduced: invalid name");
+        assert!(
+            plugins.iter().any(|l| l.starts_with(&line)),
+            "{line}\n{text}"
+        );
+    }
+    let disabled = plugins
+        .iter()
+        .find(|l| l.starts_with("First-party plugins disabled here"))
+        .unwrap();
+    for v in first_party.iter().filter(whole) {
+        warned(&out, v);
+        let shown = code_spans(disabled);
+        assert!(shown.contains(&v.as_str()), "{v:?}: {disabled}");
+        assert!(
+            disabled.contains(" (not reproduced: invalid name)"),
+            "{disabled}"
+        );
+    }
+
+    // valid names stay as they were; a URL with a `~` is quoted
+    assert!(
+        text.contains("```sh\nomarchy pkg add firefox\nomarchy pkg aur add brave-bin\n```\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "- `io.example.tilde` — `omarchy plugin add '{tilde}'`, then `omarchy plugin enable io.example.tilde`"
+        )),
+        "{text}"
+    );
+    assert!(text.contains("\nAll repository packages at once (open ones left out): `omarchy pkg add btop tailscale zed`\n"), "{text}");
+    assert!(
+        text.contains("- `tailscaled.service` — `sudo systemctl enable --now tailscaled.service`")
+    );
+}
+
+#[test]
+fn a_theme_name_that_fails_its_check_is_not_set() {
+    let env = Env::new(Snapper::Missing);
+    let lb = english_fixture(&env);
+    for (i, v) in odd("THEME", "").iter().enumerate() {
+        let now = format!("2026-10-01T18:{i:02}:00+02:00");
+        run_at(
+            &env,
+            &lb,
+            &now,
+            &["event", "theme", "theme-set", "--subject", v],
+            0,
+        );
+        let out = run_at(&env, &lb, &now, &["rebuild"], 0);
+        let text = doc(&lb);
+        no_command_holds(&text, "THEME");
+        listed_as_not_reproduced(&text, v);
+        warned(&out, v);
+        assert_eq!(
+            section(&text, "5. Theme")
+                .iter()
+                .filter(|l| l.starts_with("- "))
+                .count(),
+            1,
+            "{text}"
+        );
+    }
+}

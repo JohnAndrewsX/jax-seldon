@@ -9,9 +9,12 @@
 //! `rebuild` fence of the file, keeping user text outside it.
 //!
 //! Every item that comes from the ledger carries its event id, so each
-//! line of the document traces back to a ledger line.
+//! line of the document traces back to a ledger line. A name goes into a
+//! command only after a [`shell_arg`] check; one that fails is listed as
+//! not reproduced.
 
 pub mod render;
+pub mod shell_arg;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -146,6 +149,9 @@ pub struct Dismissed {
 pub struct Before {
     pub repo: Vec<String>,
     pub aur: Vec<String>,
+    /// The user's names that fail [`shell_arg::is_package_name`]: listed,
+    /// never put into a command.
+    pub invalid: Vec<String>,
     /// Pre-logbook packages Omarchy's package lists name.
     pub omarchy: usize,
     /// The Omarchy version those lists belong to (`omarchy.summary`, else
@@ -583,6 +589,8 @@ pub fn collect(
             {
                 if p.omarchy {
                     before.omarchy += 1;
+                } else if !p.valid_name {
+                    before.invalid.push(p.name);
                 } else if p.aur {
                     before.aur.push(p.name);
                 } else {
@@ -591,6 +599,7 @@ pub fn collect(
             }
             before.repo.sort();
             before.aur.sort();
+            before.invalid.sort();
             before
         });
 
