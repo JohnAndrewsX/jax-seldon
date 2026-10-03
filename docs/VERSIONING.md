@@ -107,7 +107,11 @@ All on `main`, after every work package of the release is merged:
    the link references; run `bash packaging/release-notes.sh X.Y.Z`.
 3. `just check` green; commit (`release: X.Y.Z`); push.
 4. Run the release workflow's dry run on `main` and read its summary
-   (packaging/README.md, "Dry run"). It must be green.
+   (packaging/README.md, "Dry run"). It must be green. One gate, before
+   anything is built, is `cargo audit` of `engine/Cargo.lock`: a
+   dependency advisory stops the release until the crate is updated or
+   the advisory is accepted in `packaging/audit-ignore.txt`
+   (CONTRIBUTING.md, "Dependency advisories").
 5. Tag and push: `git tag -a vX.Y.Z -m "Seldon X.Y.Z"`,
    `git push origin vX.Y.Z`. The workflow builds, publishes the GitHub
    release with the CHANGELOG section as its notes, then the AUR package

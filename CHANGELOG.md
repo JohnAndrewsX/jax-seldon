@@ -135,6 +135,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--settings`; the logbook guide (en, de) gains "Back up and restore the
   state directory"; the watcher README says the release binary and the
   AUR package already include `watch` (WP-056).
+- CI: the workflow actions are pinned to commits and the build container
+  to an image digest, each with its version as a comment; `cargo audit`
+  gates the release build, so a dependency advisory stops a release
+  unless `packaging/audit-ignore.txt` accepts it with a reason and an
+  expiry; the weekly audit stays advisory (WP-072).
 
 ## [0.1.1] - 2026-10-02
 
