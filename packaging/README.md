@@ -16,6 +16,8 @@ publishes both through `.github/workflows/release.yml`.
 | `check-srcinfo.sh` | checks `.SRCINFO` against the PKGBUILD without makepkg (`just check-packaging`) |
 | `release-notes.sh X.Y.Z [CHANGELOG]` | prints the version's `CHANGELOG.md` section, the release body; exit 1 without it (`tests/release/`) |
 | `expected-files.txt` | the exact file list of the built package (`tar tf`, dot files left out) |
+| `audit-ignore.txt` | RustSec advisories accepted for `engine/Cargo.lock`, each with an expiry and a reason (CONTRIBUTING.md, "Dependency advisories") |
+| `audit-ignore.sh [FILE [TODAY]]` | checks that list and prints its ids for `cargo audit --ignore`; exit 1 on an expired or malformed entry (`tests/release/`) |
 
 ## What the package contains
 
@@ -67,7 +69,7 @@ The workflow then runs, in order:
 
 | Job | Runs on | Does |
 |---|---|---|
-| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` |
+| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` |
 | `release` | tag | GitHub release `vX.Y.Z` with the four assets (the three above and `install.sh`, also listed in `SHA256SUMS`; README.md "Install"); the release notes are that `CHANGELOG.md` section (`packaging/release-notes.sh`) |
 | `bump` | tag | commits the updated `PKGBUILD` and `.SRCINFO` to `main` (`packaging: jax-seldon X.Y.Z`). Skipped with a warning if `main`'s `packaging/` changed after the tag; then bump by hand (below) |
 | `aur` | tag | clones `ssh://aur@aur.archlinux.org/jax-seldon.git`, commits `PKGBUILD` + `.SRCINFO` (`Update to X.Y.Z`), pushes `master`. The host key is pinned (Ed25519 `SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4`, as published on aur.archlinux.org). **Skipped with a notice** without `AUR_SSH_PRIVATE_KEY` |
@@ -112,6 +114,56 @@ When `bump` was skipped, or for a packaging-only change (`pkgrel`):
    disagree.
 3. Commit to `main`. For a `pkgrel` change, push `PKGBUILD` and `.SRCINFO`
    to the AUR repository by hand; the workflow publishes on tags only.
+
+## Pinned actions and image
+
+Every `uses:` in `.github/workflows/` names a full commit SHA, with the
+release it belongs to as a comment, and every job container names an
+image digest, with the dated tag as a comment:
+
+```
+- uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+container: archlinux:base-devel@sha256:51dd…cc3 # base-devel-20260927.0.600689
+```
+
+A run therefore uses exactly the reviewed action code and image until a
+commit changes the pin. `tests/release/workflow-pins.test.sh` (part of
+`just check-packaging`) fails on a tag or branch reference, a short SHA,
+a missing comment, an image without a digest, or one action pinned to
+two commits; it also checks the release gate in `release.yml` (see the
+`build` row above). It cannot tell whether a SHA belongs to the version
+in its comment (that needs the network); the refresh steps below
+resolve both together. The toolchain inside the image still comes from
+the Arch repositories at run time.
+
+**Refreshing the pins** is a manual step, done in one commit for all
+three workflows (each action and the image have one pin everywhere):
+
+- *When:* about once a month, when an action publishes a release, or
+  when the toolchain install step fails because the image is too old
+  (for example, its keyring no longer knows a packager's key).
+- *An action:* resolve the release tag to its commit. An annotated tag
+  points at a tag object first; resolve that once more:
+
+  ```
+  gh api repos/actions/checkout/git/ref/tags/v4.4.0 --jq '.object.type + " " + .object.sha'
+  # "tag <sha>" → gh api repos/actions/checkout/git/tags/<sha> --jq .object.sha
+  ```
+
+  Read the action's release notes between the old and the new version
+  before you change the pin.
+- *The image:* the digest of `base-devel` and the dated tag that has the
+  same digest:
+
+  ```
+  curl -fsS 'https://hub.docker.com/v2/repositories/library/archlinux/tags?page_size=5&name=base-devel-' \
+    | jq -r '.results[] | "\(.name) \(.digest)"'
+  ```
+
+  Take the newest line; the digest goes after `@`, the name into the
+  comment.
+- *Then:* `just check-packaging`, and the release dry run on the branch
+  ("Dry run" above) must be green before the change is merged.
 
 ## One-time setup (operator)
 

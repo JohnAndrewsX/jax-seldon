@@ -1,7 +1,8 @@
 # Release: a tag vX.Y.Z publishes the engine and the plugin (WP-040).
 #
 #   build    (tag and dry run)  the version's CHANGELOG.md section exists;
-#            `just check`; static musl binary with the watch feature;
+#            `cargo audit` passes (the release gate); `just check`;
+#            static musl binary with the watch feature;
 #            source tarball, binary tarball, SHA256SUMS;
 #            PKGBUILD/.SRCINFO for the version; a real makepkg build of
 #            the PKGBUILD from the source tarball, its file list and the
@@ -46,7 +47,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: archlinux:base-devel
+    # pinned like ci.yml (packaging/README.md, "Pinned actions and image")
+    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
     env:
       SELDON_SKIP_HOST_CHECKS: "1"
     outputs:
@@ -54,11 +56,12 @@ jobs:
     steps:
       # Arch's `rust` ships cargo, clippy and rustfmt; `rust-musl` adds the
       # musl target for the static release asset (AGENTS.md §7); shellcheck
-      # makes `just check-packaging` lint the PKGBUILD and its scripts.
+      # makes `just check-packaging` lint the PKGBUILD and its scripts;
+      # cargo-audit runs the release gate below.
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck
+        run: pacman -Syu --noconfirm --needed git rust rust-musl just jq shellcheck cargo-audit
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0  # git subtree split needs the history
 
@@ -83,6 +86,21 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: bash packaging/release-notes.sh "$VERSION" CHANGELOG.md > /dev/null
+
+      # The release gate (CONTRIBUTING.md, "Dependency advisories"): a
+      # RustSec advisory, an unmaintained or a yanked crate in
+      # engine/Cargo.lock stops the build, and with it every publishing
+      # job. Accepted advisories are listed, with a reason and an expiry,
+      # in packaging/audit-ignore.txt; an expired or malformed entry stops
+      # the build too. The advisory database is fetched at run time; when
+      # that fails, the build fails.
+      - name: cargo audit
+        run: |
+          ids=$(bash packaging/audit-ignore.sh)
+          args=()
+          for id in $ids; do args+=(--ignore "$id"); done
+          echo "accepted advisories: ${ids:-none}"
+          cargo audit --file engine/Cargo.lock --deny warnings "${args[@]}"
 
       - name: just check
         run: just check
@@ -194,13 +212,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
           path: dist/
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: packaging
           path: |
@@ -209,7 +227,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package
           path: package/
@@ -225,11 +243,11 @@ jobs:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
       # the tag's CHANGELOG.md and packaging/release-notes.sh
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dist
           path: dist
@@ -259,12 +277,12 @@ jobs:
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
           fetch-depth: 0  # the tag, to compare packaging/
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: packaging
           path: packaging-new
@@ -308,7 +326,7 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         if: steps.key.outputs.present == 'true'
         with:
           name: packaging
@@ -357,7 +375,7 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: steps.token.outputs.present == 'true'
         with:
           fetch-depth: 0

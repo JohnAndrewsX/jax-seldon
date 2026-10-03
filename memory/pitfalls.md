@@ -1260,3 +1260,29 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   touched). `outputs/REBUILD.md` and the import report use `merge_fence`:
   there the old text stays below a fresh fence. When you change one,
   run `rebuild::tests` and `import` too.
+## 2026-10-03 · WP-072 (Packaging)
+
+- **`cargo-audit` and `actionlint` are not on the dev host.** Build
+  cargo-audit into the scratchpad (`CARGO_TARGET_DIR=<scratch>/target
+  cargo install --locked --root <scratch> cargo-audit`, then delete the
+  target dir) and run it with `--db <scratch>/advisory-db` so the
+  advisory database stays out of `~/.cargo`; actionlint and shellcheck
+  come from `actionlint-py` / `shellcheck-py` in a scratch venv (actionlint
+  lints `run:` scripts with the shellcheck it finds on PATH).
+- **A known advisory for a release dry run:** an extra
+  `[[package]]` in `engine/Cargo.lock` breaks the `--locked` steps that
+  run before the audit. Add a real dev-dependency at an affected version
+  instead (`cargo add --manifest-path engine/Cargo.toml --dev
+  bumpalo@=3.11.0` → RUSTSEC-2022-0078; bumpalo is already in the tree,
+  cargo downgrades it and `--locked` stays happy), on a throw-away branch.
+- **Looking up pins:** `gh api repos/<owner>/<action>/git/ref/tags/<tag>`
+  gives `object.type` `commit` (lightweight tag, use the sha) or `tag`
+  (annotated: resolve `git/tags/<sha>` once more). Docker Hub's
+  `v2/repositories/library/archlinux/tags?name=base-devel-` lists the
+  dated tags with their digests; the dated tag with the same digest as
+  `base-devel` goes into the comment.
+- **`some_function | grep -q PATTERN` in a bash test under `pipefail` is
+  flaky:** grep exits at the first match, the writer gets SIGPIPE, and the
+  pipeline fails although the line was there (a mutant check reported
+  "not found" only sometimes). Capture to a file or use a here-string,
+  then grep (same class as the `zcat | grep -q` item of WP-049).

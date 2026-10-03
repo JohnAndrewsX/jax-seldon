@@ -113,17 +113,36 @@ answer within a week.
 
 ## Dependency advisories
 
-`.github/workflows/audit.yml` runs `cargo audit` on `engine/Cargo.lock`
-every Monday, on demand (*Actions → audit → Run workflow*), and on every
-push or pull request that changes the lock file. It is **advisory for
-now**: the `cargo audit` step may fail (`continue-on-error`), and a
-RustSec finding, an unmaintained or a yanked crate then shows as a
-**warning annotation** on the run and in its summary while the job stays
-green. Act on it anyway — update the crate, or document why it does not
-apply.
+`cargo audit` checks `engine/Cargo.lock` against the RustSec advisory
+database in two places:
 
-It becomes **blocking** (`continue-on-error` removed from the step) once
-four consecutive weekly runs have had no warning, and at the latest
-before `1.0.0`. From then on an advisory that does not affect Seldon is
-ignored only by an entry in `.cargo/audit.toml` at the repository root,
-with the advisory id and a one-line reason, reviewed like code.
+- **The release build gates on it.** The `build` job of
+  `.github/workflows/release.yml` runs it before anything else is built,
+  in the dry run and for a tag. A RustSec advisory, an unmaintained or a
+  yanked crate fails the build, and nothing is published. So does a
+  failure to fetch the advisory database.
+- **The weekly run warns early.** `.github/workflows/audit.yml` runs the
+  same check every Monday, on demand (*Actions → audit → Run workflow*),
+  and on every push or pull request that changes the lock file or the
+  list below. It is advisory: a finding shows as a **warning
+  annotation** on the run and in its summary while the job stays green.
+  Act on it before the next release — that release will fail on it.
+
+Acting on a finding means updating the crate (`cargo update -p <crate>`
+in `engine/`), or, when the advisory does not affect Seldon, accepting
+it in `packaging/audit-ignore.txt`, one line per advisory:
+
+```
+RUSTSEC-2024-0001  2027-01-31  only used by a test helper; no untrusted input reaches it
+```
+
+The date is the expiry, at most one year ahead; from that day on the
+entry fails the release build, `just check` and therefore CI on every
+push and pull request (and the weekly run warns), until someone reviews
+it again and moves the date, or removes it. That is intended: an
+expired acceptance is noticed at once, not at the next release. Each
+entry needs a reason and is reviewed like code.
+`packaging/audit-ignore.sh` checks the list and
+`tests/release/audit-ignore.test.sh` (part of `just check`) checks the
+real list against today's date and covers the rules. A yanked crate has no advisory id and cannot be accepted:
+update it.
