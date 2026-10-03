@@ -479,7 +479,13 @@ again"), the live loop without the dev override (capture, then status
 writes the index; calls never overlap), engine exit 3, the exact argv of
 the banner fixes (fake `wl-copy` and terminal launcher record it), the
 crisis strip text, `index-variants/snapper-degraded.json` with the argv of
-its *Copy* and *Run in terminal*, `XDG_STATE_HOME` (absolute and the
+its *Copy* and *Run in terminal*, its three actions and the hint after
+*Run in terminal*, which a reload of the unchanged index keeps (WP-054);
+live, the hint after *Run in terminal*, then *Check again* running the
+same `capture` and `status` as *Capture now* (`["fix", action, banner]`
+and `["snapshot"]` in `HARNESS_ACTIONS`): with snapper fixed the banner
+is gone, still failing it stays with the new message and without the
+hint; `XDG_STATE_HOME` (absolute and the
 ignored relative form), and dev mode never running the engine.
 `tests/plugin/fake-seldon` stands in for the engine.
 

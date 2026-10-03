@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Plugin
+
+- The "Snapshots not readable" banner has a third action, *Check again*
+  (WP-054), which runs a capture (the same call as *Capture now*), so the
+  banner clears right after the snapper fix instead of at the next
+  automatic capture; after *Run in terminal* it says "When the command
+  has finished, press Check again" (fixes #2).
+
 ## [0.1.1] - 2026-10-02
 
 ### Engine
