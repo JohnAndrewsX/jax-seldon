@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-058 | engine: restructure the session-start context and the agent start prompt | Engine | `engine-058` (opus) | `wt/WP-058` · `wp/058-review` | 2026-10-03 |
 | WP-064 | engine: atomic writes keep symlinks and modes; timeouts cover pipes | Engine | `engine-064` (opus) | `wt/WP-064` · `wp/064-review` | 2026-10-03 |
 | WP-060 | snapper: read snapshot info files when listing is not permitted; banner text | Engine | `engine-060` (opus) | `wt/WP-060` · `wp/060-review` | 2026-10-03 |
 
@@ -37,6 +36,9 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-058 session-start context delimits logbook text as data,
+  agent start prompt without logbook text, one-line agent notes (two Opus
+  review rounds, stage 2 by the orchestrator) — merged.
 - 2026-10-03 WP-057 agent hook reads the case under the lock (race tests),
   patient lock wait, session-stop runs every step, journal day without
   frontmatter, duplicate case id in `index --check` — merged (Opus review
