@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-064 | engine: atomic writes keep symlinks and modes; timeouts cover pipes | Engine | `engine-064` (opus) | `wt/WP-064` · `wp/064-review` | 2026-10-03 |
 | WP-063 | hook: recording scope and path exclusions | Engine | `engine-063` (opus) | `wt/WP-063` · `wp/063-review` | 2026-10-03 |
 | WP-061 | git: autocommit in its own repository, detached HEAD, failures; import undo | Engine | `engine-061` (opus) | `wt/WP-061` · `wp/061-review` | 2026-10-03 |
 | WP-062 | redaction: more built-in rules, applied to every text field | Engine | `engine-062` (opus) | `wt/WP-062` · `wp/062-review` | 2026-10-03 |
@@ -38,6 +37,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-064 atomic writes follow symlinks and keep modes, new files
+  private, sync policy (durable data synced, rebuildable files not), run
+  timeouts cover pipes, git stays in the engine's process group (four
+  review rounds; a test-stub race fixed on the way) — merged.
 - 2026-10-03 WP-060 snapshots read from the info files when listing is not
   permitted, an empty snapshot directory keeps snapper degraded, the banner
   names what the opt-in grants; the opt-in command itself waits for the
