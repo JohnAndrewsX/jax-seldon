@@ -54,13 +54,20 @@ const ETXTBSY: i32 = 26;
 /// Runs `program args…` with stdin closed and a timeout, capturing output.
 pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) -> Run {
     let mut cmd = Command::new(program);
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.args(args);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
+    run_command(cmd, timeout)
+}
+
+/// [`run`] for a command built by the caller (fixed program and argv, plus
+/// environment, e.g. `snapper` with `LC_ALL=C`): stdin closed, output
+/// captured, killed after `timeout`.
+pub fn run_command(mut cmd: Command, timeout: Duration) -> Run {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     // ETXTBSY: the program was just written and another thread's forked
     // child still holds the write descriptor until it execs. Brief; retry.
     let mut spawned = cmd.spawn();

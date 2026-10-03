@@ -47,6 +47,9 @@ impl Drop for TempDir {
 pub enum Snapper {
     /// Exit 1, `No permissions.` on stderr (the Omarchy default, ADR-0011).
     NoPermissions,
+    /// [`Snapper::NoPermissions`] as snapper translates it: German
+    /// `Keine Berechtigungen.` unless `LC_ALL` is `C` (issue #1).
+    NoPermissionsLocalized,
     /// Prints a JSON list with two snapshots plus `current`.
     Allowed,
     /// Not on PATH.
@@ -72,6 +75,12 @@ impl Env {
         stub(&bin, "omarchy-version", "echo 4.0.4-1");
         match snapper {
             Snapper::NoPermissions => stub(&bin, "snapper", "echo 'No permissions.' >&2; exit 1"),
+            Snapper::NoPermissionsLocalized => stub(
+                &bin,
+                "snapper",
+                "if [ \"$LC_ALL\" = C ]; then echo 'No permissions.' >&2; \
+                 else echo 'Keine Berechtigungen.' >&2; fi; exit 1",
+            ),
             Snapper::Allowed => stub(
                 &bin,
                 "snapper",

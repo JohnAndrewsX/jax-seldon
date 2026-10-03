@@ -14,6 +14,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::{Context, Output};
+use crate::collectors::snapper;
 use crate::config::Config;
 use crate::error::{Error, Exit, Result};
 use crate::logbook::{Logbook, git, layout};
@@ -282,14 +283,14 @@ fn check_omarchy(config: &Config) -> Check {
     }
 }
 
-/// `snapper --jsonout list` as the user. Without `ALLOW_USERS` it fails
-/// with `No permissions.`; that is degraded with the fix, never sudo
-/// (ADR-0011).
+/// `snapper --jsonout list` as the user, in the C locale
+/// ([`snapper::list_command`]). Without `ALLOW_USERS` it fails with
+/// `No permissions.`; that is degraded with the fix, never sudo (ADR-0011).
 pub fn check_snapper(config: &Config) -> Check {
     if !config.collectors.snapper {
         return Check::new("snapper", Status::Ok, "collector disabled in config.toml");
     }
-    let run = sys::run("snapper", &["--jsonout", "list"], None, PROBE_TIMEOUT);
+    let run = snapper::run_list("snapper", PROBE_TIMEOUT);
     match &run {
         Run::Exited {
             code: Some(0),
@@ -319,7 +320,7 @@ pub fn check_snapper(config: &Config) -> Check {
                 "snapper --jsonout list printed no JSON object",
             ),
         },
-        Run::Exited { stderr, .. } if stderr.contains("No permissions") => Check::new(
+        Run::Exited { stderr, .. } if snapper::is_no_permissions(stderr) => Check::new(
             "snapper",
             Status::Degraded,
             "No permissions. Snapshots are not recorded until you allow your user once (ADR-0011)",
