@@ -10,7 +10,7 @@ use seldon::error::Exit;
 use seldon::ledger::Ledger;
 use seldon::logbook::lock;
 use seldon::model::event::{Event, Kind, Meta, Source};
-use seldon::redact::{BUILTIN, REDACTED, Redactor};
+use seldon::redact::{BUILTIN, REDACTED, Redactor, triggers};
 use support::{Bench, Scratch, fixture, ts};
 
 /// (rule, input, secret that must disappear, text that must stay)
@@ -180,20 +180,20 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "secret-assignment",
-        "PASSWORD=fakePw6 ./run.sh",
-        "fakePw6",
+        "PASSWORD=fakePass6 ./run.sh",
+        "fakePass6",
         "PASSWORD=‹redacted› ./run.sh",
     ),
     (
         "secret-assignment",
-        "PGPASSWORD=fakePw7 psql -h db -U app",
-        "fakePw7",
+        "PGPASSWORD=fakePass7 psql -h db -U app",
+        "fakePass7",
         "PGPASSWORD=‹redacted› psql -h db -U app",
     ),
     (
         "secret-assignment",
-        "MYSQL_PWD=fakePw8 mysqldump shop",
-        "fakePw8",
+        "MYSQL_PWD=fakePass8 mysqldump shop",
+        "fakePass8",
         "MYSQL_PWD=‹redacted› mysqldump shop",
     ),
     (
@@ -321,6 +321,12 @@ const CLEAR: &[&str] = &[
     "mysql -u root shop",
     "Rotated the deploy key today",
     "XKB_DEFAULT_LAYOUT=de EDITOR=nvim zeditor",
+    "the key=value pairs",
+    "sort --key=2 names.txt",
+    "hotkey=Super",
+    "curl -H 'X-Author: me' https://example.com",
+    "tool --token short",
+    "PASSWORD=x ./run.sh",
 ];
 
 mod redaction {
@@ -348,11 +354,50 @@ mod redaction {
     }
 
     #[test]
+    fn every_row_holds_a_trigger_of_its_rule() {
+        for rule in BUILTIN {
+            assert!(!triggers(rule).is_empty(), "{rule} has no trigger");
+        }
+        for (rule, input, ..) in TABLE {
+            let lower = input.to_ascii_lowercase();
+            assert!(
+                triggers(rule).iter().any(|t| lower.contains(t)),
+                "{rule}: no trigger in `{input}`"
+            );
+        }
+        // the marker can never trigger a rule
+        let marker = REDACTED.to_ascii_lowercase();
+        for rule in BUILTIN {
+            assert!(!triggers(rule).iter().any(|t| marker.contains(t)), "{rule}");
+        }
+    }
+
+    #[test]
     fn harmless_text_stays() {
         let r = Redactor::builtin();
         for text in CLEAR {
             assert_eq!(r.redact(text), *text, "{:?}", r.matching_rules(text));
         }
+    }
+
+    #[test]
+    fn a_value_must_look_like_a_credential() {
+        use seldon::redact::looks_like_credential;
+        for (value, expected) in [
+            ("fakePw7", false),         // 7 characters, mixed
+            ("fakePw78", true),         // 8, mixed
+            ("lowercaseonly", false),   // 13, one class
+            ("lowercaseonlyabc", true), // 16
+            ("12345678", false),        // 8, one class
+            ("'fake pw 9'", true),      // quotes do not count
+            ("\"\"", false),
+        ] {
+            assert_eq!(looks_like_credential(value), expected, "{value}");
+        }
+        let r = Redactor::builtin();
+        assert_eq!(r.redact("API_KEY=fakePw7"), "API_KEY=fakePw7");
+        assert_eq!(r.redact("API_KEY=fakePw78"), format!("API_KEY={REDACTED}"));
+        assert!(r.matching_rules("hotkey=Super").is_empty());
     }
 
     #[test]
@@ -458,7 +503,7 @@ mod redaction {
         let mut meta = Meta {
             version: Some("token=fakeVersion".into()),
             from: Some("https://u:fakeFrom@h.example/a".into()),
-            to: Some("API_KEY=fakeTo".into()),
+            to: Some("API_KEY=fakeToValue1".into()),
             ..Meta::default()
         };
         meta.extra.insert(
@@ -623,6 +668,24 @@ mod commands {
         assert_eq!(v["event"]["detail"], masked.as_str());
         let day = read(&root.join("journal/2026/2026-10-03.md"));
         assert!(day.contains(&masked), "{day}");
+        assert_nowhere(&env, &root, &[&secret]);
+    }
+
+    #[test]
+    fn log_masks_a_tag_in_the_journal_and_the_ledger() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let secret = token("TAG");
+        let v = run(
+            &env,
+            &["log", "--tag", &secret, "--tag", "keys", "--", "rotated"],
+        );
+        assert_eq!(
+            v["event"]["meta"]["tags"],
+            format!("{REDACTED},keys").as_str()
+        );
+        let day = read(&root.join("journal/2026/2026-10-03.md"));
+        assert!(day.contains(&format!("#{REDACTED} #keys")), "{day}");
         assert_nowhere(&env, &root, &[&secret]);
     }
 
