@@ -135,8 +135,9 @@ Always left out:
   rewrite would open one more drift item. Add a plugin's other busy
   files the same way.
 
-A file whose size and modification time are the same as at the last
-capture is not read again.
+A file whose size, modification time, change time and inode are the
+same as at the last capture is not read again. The change time catches
+an edit whose modification time was put back (`touch -r`).
 
 Unit files under `~/.config/systemd/` are red zone. Everything else here
 is yellow.
@@ -195,9 +196,10 @@ than leak.
 
 `skipPaths` names files the config collector and the hooks never open,
 hash or name. The default covers busy plugin files (see [Watched
-paths](#watched-paths)); a config file written by an earlier Seldon
-keeps its own list, often `[]`: add the defaults from the example above
-if you want them.
+paths](#watched-paths)). An empty list, `skipPaths = []` as earlier
+versions of `seldon init` wrote it, also means the default. A list of
+your own replaces the default, so copy its patterns from the example
+above into your list if you want to keep them.
 
 ```toml
 [redaction]
@@ -210,7 +212,9 @@ skipPaths = ["~/.config/hypr/secrets.lua", "*.key", "**/tokens/**"]
 | a relative path, such as `app/secret.conf` | that path below any folder |
 | a name without `/`, such as `*.key` | any file or folder with that name |
 
-`*` and `?` stay within one path part; `**` crosses parts.
+`*` and `?` stay within one path part; `**` crosses parts and stands for
+at least one folder: `~/.config/omarchy/**/state.json` matches
+`~/.config/omarchy/app/state.json`, not `~/.config/omarchy/state.json`.
 
 Redaction helps, but it only catches what it recognises. Never put a
 secret into a note, a case or a command line if you can avoid it.
