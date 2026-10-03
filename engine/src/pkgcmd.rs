@@ -41,7 +41,8 @@ pub struct PacmanCommand {
     /// `s|i|l|g|p|w|c`, `-R`/`-U` with `p`, and their long forms.
     pub query: bool,
     /// Package names the command names (`repo/` and version constraints
-    /// stripped; for `-U`, the name from the package file name).
+    /// stripped; for `-U`, the name from the package file name; not `-`,
+    /// which reads them from stdin).
     pub targets: Vec<String>,
 }
 
@@ -187,8 +188,10 @@ pub fn parse_command(argv: &[&str]) -> Option<PacmanCommand> {
             Some(Op::Yay) => !flags.contains(&'c'),
             _ => false,
         };
+    // `-` reads the targets from stdin: no package name
     cmd.targets = words
         .into_iter()
+        .filter(|&w| w != "-")
         .map(|w| {
             if cmd.op == Some(Op::Upgrade) {
                 package_file_name(w)
@@ -1380,8 +1383,13 @@ pub enum Word {
     /// unknown variable or a substitution is `**`, a `[…]` class `?`, its
     /// own `*` and `?` stay.
     /// `floating`: the word starts with an unknown part, so it can be an
-    /// absolute or a relative path.
-    Pattern { glob: String, floating: bool },
+    /// absolute or a relative path. `only_unknown`: nothing in it is known
+    /// but `/` (`$1`, `$NAME`, `$D/$F`), so it says nothing about a path.
+    Pattern {
+        glob: String,
+        floating: bool,
+        only_unknown: bool,
+    },
 }
 
 impl Vars {
@@ -1421,10 +1429,11 @@ impl Vars {
         let mut i = 0;
         while let Some(&c) = chars.get(i) {
             // what `$…` or a substitution at `i` stands for, and its end
+            // an unknown part is `\0` until the end, then `**`
             let mut unknown = |glob: &mut String| {
                 floating |= glob.is_empty();
                 wild = true;
-                glob.push_str("**");
+                glob.push('\0');
             };
             let name_at = |from: usize| {
                 let end = (from..chars.len())
@@ -1489,7 +1498,11 @@ impl Vars {
             }
         }
         if wild {
-            Word::Pattern { glob, floating }
+            Word::Pattern {
+                only_unknown: glob.chars().all(|c| c == '\0' || c == '/'),
+                glob: glob.replace('\0', "**"),
+                floating,
+            }
         } else {
             Word::Literal(glob)
         }
@@ -1852,6 +1865,9 @@ mod tests {
             command_intent("omarchy-pkg-aur-install zed").packages,
             ["zed"]
         );
+        // `-` reads the names from stdin
+        assert_eq!(command_intent("pacman -S - < list.txt"), Intent::default());
+        assert_eq!(command_intent("yay -S --needed - zed").packages, ["zed"]);
         assert!(command_intent("omarchy-update-system-pkgs").full_upgrade);
     }
 
@@ -1905,6 +1921,12 @@ mod tests {
         let pat = |s: &str, floating: bool| Word::Pattern {
             glob: s.to_string(),
             floating,
+            only_unknown: false,
+        };
+        let unknown = |s: &str| Word::Pattern {
+            glob: s.to_string(),
+            floating: true,
+            only_unknown: true,
         };
         assert_eq!(v.expand("$F"), lit("~/d/a.conf"));
         assert_eq!(v.expand("${G}/z"), lit("x y/z"));
@@ -1914,7 +1936,12 @@ mod tests {
         assert_eq!(v.expand("~/$J"), pat("~/**", false), "only for one command");
         assert_eq!(v.expand("~/d/p*.c[o]nf"), pat("~/d/p*.c?nf", false));
         assert_eq!(v.expand("$(pwd)/x"), pat("**/x", true));
-        assert_eq!(v.expand("${F:-y}"), pat("**", true));
+        assert_eq!(v.expand("${F:-y}"), unknown("**"));
+        assert_eq!(v.expand("$1"), unknown("**"));
+        assert_eq!(v.expand("$A/$B"), unknown("**/**"));
+        // a glob of its own is no unknown value
+        assert_eq!(v.expand("*"), pat("*", false));
+        assert_eq!(v.expand("$A*"), pat("***", true));
         assert_eq!(v.expand("a$1b"), pat("a**b", false));
         // the words of the line carry the values
         let segments = simple_commands(&parse_shell("F=~/x; tee $F > \"$F.bak\""));

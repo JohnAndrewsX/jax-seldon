@@ -97,6 +97,22 @@ const TABLE: &[Row] = &[
     row("pacman -Syu", Some(Red), true, &[]),
     row("pacman -Sy", Some(Red), false, &[]),
     row("pacman -Qi x", None, false, &[]),
+    row("pacman -S - < list.txt", Some(Red), false, &[]),
+    // a path under an unknown folder is below no skipped folder (the
+    // end-to-end run has the default `skipPaths`, `~/.config/omarchy/**/*.log`
+    // among them): the record keeps the line and its packages
+    row(
+        "pacman -U $PKGDEST/zed-1.0-1-x86_64.pkg.tar.zst",
+        Some(Red),
+        false,
+        &["zed"],
+    ),
+    row(
+        "yay -S zed | tee \"$TMPDIR/yay.log\"",
+        Some(Red),
+        false,
+        &["zed"],
+    ),
     row("P=zed; pacman -S $P", Some(Red), false, &["zed"]),
     // Omarchy routes, as a command and as a script
     row(
@@ -382,19 +398,34 @@ fn heredoc_bodies_in_substitutions_are_cut() {
 #[test]
 fn skip_paths_read_variables_and_globs() {
     let b = Bench::new();
-    b.skip(&["~/d/private.conf"]);
+    b.skip(&["~/d/private.conf", "~/d/**/*.log"]);
     let redacted = "sed ‹redacted›";
     for (n, (line, recorded)) in [
         ("F=private.conf; sed -i s/a/b/ ~/d/$F", redacted),
         ("export D=~/d; sed -i s/a/b/ \"$D/private.conf\"", redacted),
         ("sed -i s/a/b/ ~/d/priv*.conf", redacted),
         ("sed -i s/a/b/ ~/d/[p]rivate.conf", redacted),
+        ("sed -i s/a/b/ ~/d/sub/x.log", redacted),
+        // a glob of its own is read (`*` in ~/d can name private.conf)
+        ("cd ~/d && sed -i s/a/b/ /tmp/x *", redacted),
+        // an unknown folder before a skipped tail: the literal tail counts
         ("sed -i s/a/b/ /tmp/x \"$(pwd)\"/private.conf", redacted),
+        ("sed -i s/a/b/ /tmp/x $X/private.conf", redacted),
+        // … but it is no path below a pattern, nor a pattern's glob tail
+        (
+            "sed -i s/a/b/ /tmp/x $X/public.conf",
+            "sed -i s/a/b/ /tmp/x $X/public.conf",
+        ),
+        (
+            "sed -i s/a/b/ /tmp/x \"$(pwd)\"/public.log",
+            "sed -i s/a/b/ /tmp/x \"$(pwd)\"/public.log",
+        ),
         // a word that is only an unknown value names no path
         (
             "cd ~/d && sed -i s/a/b/ $NAME",
             "cd ~/d && sed -i s/a/b/ $NAME",
         ),
+        ("sed -i s/a/b/ /tmp/x $D/$F", "sed -i s/a/b/ /tmp/x $D/$F"),
         (
             "sed -i s/a/b/ ~/d/public.conf",
             "sed -i s/a/b/ ~/d/public.conf",

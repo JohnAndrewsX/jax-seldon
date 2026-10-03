@@ -813,7 +813,9 @@ fn bash_record(command: &str, setup: &Setup, cwd: &Path) -> Option<Record> {
 /// `-C DIR`, `env -C DIR`), as the classifier reads them. A variable the
 /// line sets to a literal is read with its value (`F=x; cat ~/d/$F`); a
 /// word with a glob or an unknown part (`priv*.conf`, `$D/id_rsa`) counts
-/// when a path it can name matches. It matches more than the shell would
+/// when a path it can name matches ([`SkipGlob::floating_overlaps`] for one
+/// that starts with an unknown part; one with nothing known but `/` names
+/// no path). It matches more than the shell would
 /// open.
 fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
     if setup.config.redaction.skip_paths.is_empty() {
@@ -851,11 +853,14 @@ fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
                     .iter()
                     .any(|d| setup.skip.matches(&scope.resolve(&w, d))),
                 // only unknown parts: no path in it
-                Word::Pattern { glob, .. } if glob.chars().all(|c| c == '*' || c == '?') => false,
+                Word::Pattern {
+                    only_unknown: true, ..
+                } => false,
                 Word::Pattern {
                     glob,
                     floating: true,
-                } => globs.iter().any(|g| g.overlaps(&glob)),
+                    ..
+                } => globs.iter().any(|g| g.floating_overlaps(&glob)),
                 Word::Pattern { glob, .. } => dirs.iter().any(|d| {
                     let path = scope.resolve(&glob, d);
                     globs.iter().any(|g| g.overlaps(&path.to_string_lossy()))
@@ -881,6 +886,35 @@ impl SkipGlob {
             SkipGlob::Name(name) => globs_overlap(path.rsplit('/').next().unwrap_or(path), name),
             SkipGlob::Path(p) => globs_overlap(path, p) || globs_overlap(path, &format!("{p}/**")),
         }
+    }
+
+    /// Whether a path the floating glob `word` (`$X/tail`, `"$(pwd)"/x`:
+    /// its first component holds the unknown part) can name matches: a
+    /// name pattern by the word's last component; a path pattern only by
+    /// its last components, which must be literal and match the word's
+    /// known tail, never by a path below the pattern. So `$D/id_rsa` is
+    /// `~/.ssh/id_rsa`, while `$TMPDIR/yay.log` is no
+    /// `~/.config/omarchy/**/*.log` and `$PKGDEST/x.pkg.tar.zst` is below
+    /// no skipped folder.
+    fn floating_overlaps(&self, word: &str) -> bool {
+        let SkipGlob::Path(p) = self else {
+            return self.overlaps(word);
+        };
+        let literal = |c: &&str| !c.contains(['*', '?']);
+        let pattern: Vec<&str> = p.split('/').collect();
+        let parts: Vec<&str> = word.split('/').collect();
+        let (head, tail) = parts.split_first().unwrap_or((&"", &[]));
+        if tail.is_empty() {
+            // `$Xname`: the pattern's last component
+            return pattern
+                .last()
+                .is_some_and(|last| literal(last) && globs_overlap(head, last));
+        }
+        pattern.len() > tail.len()
+            && pattern[pattern.len() - tail.len()..]
+                .iter()
+                .zip(tail)
+                .all(|(pc, wc)| literal(pc) && globs_overlap(wc, pc))
     }
 }
 
