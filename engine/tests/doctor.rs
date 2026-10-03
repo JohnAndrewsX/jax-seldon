@@ -794,6 +794,23 @@ mod doctor {
         std::fs::write(&decisions_md, &decisions).unwrap();
         assert_eq!(fences(&env)["status"], "ok");
 
+        // not UTF-8: `status` stops on it, so doctor says error
+        std::fs::write(&decisions_md, b"# Decisions \xc3\n").unwrap();
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(1), "{v}");
+        let c = check(&v, "fences");
+        assert_eq!(c["status"], "error", "{c}");
+        assert!(
+            c["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("DECISIONS.md: cannot read ("),
+            "{c}"
+        );
+        assert_eq!(c["fix"], "make the file readable UTF-8 text again");
+        assert_eq!(env.seldon(&["status"]).status.code(), Some(2));
+        std::fs::write(&decisions_md, &decisions).unwrap();
+
         // the end marker removed, and two stale ones further down: the
         // writer would take "my notes" as fence body; doctor sees the
         // stray one at the end but cannot tell which end is the fence's

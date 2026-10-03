@@ -307,8 +307,9 @@ that are not events, per month with the count and the first line
 numbers (degraded: every reader skips them); `fences`, the generated
 fence of `STATUS.md` or `DECISIONS.md` that `status` leaves alone (no end
 marker of its own, or `STATUS.md` with the header but without the
-fence; degraded, the fix names the marker lines), and an end marker
-that closes no fence (degraded). doctor cannot tell an intact fence from
+fence; degraded, the fix names the marker lines), an end marker
+that closes no fence (degraded), and a file that cannot be read as text
+(error: `status` stops on it). doctor cannot tell an intact fence from
 one whose own end marker was removed while a later end marker remains:
 the writer then takes the text up to that marker as the fence body and
 replaces it. The row says so when it finds a stray end marker; with only

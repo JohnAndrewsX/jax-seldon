@@ -351,8 +351,10 @@ fn check_ledger(logbook: &Logbook) -> Check {
 /// fence is a trap: if the fence's own end marker is (or was) removed,
 /// the writer takes the text up to that stray one as the fence body and
 /// replaces it. Doctor cannot tell a removed end marker followed by a
-/// stray one from an intact fence, and says so.
+/// stray one from an intact fence, and says so. A file that cannot be read
+/// as text stops `status` (exit 2): an error.
 fn check_fences(logbook: &Logbook) -> Check {
+    let mut unreadable: Vec<String> = Vec::new();
     let mut damaged: Vec<(String, String)> = Vec::new();
     let mut stray: Vec<String> = Vec::new();
     for (rel, name) in [
@@ -363,7 +365,7 @@ fn check_fences(logbook: &Logbook) -> Check {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => {
-                damaged.push((format!("{rel}: cannot read: {e}"), rel.to_string()));
+                unreadable.push(format!("{rel}: cannot read ({e})"));
                 continue;
             }
         };
@@ -390,6 +392,14 @@ fn check_fences(logbook: &Logbook) -> Check {
                 at.join(", ")
             ));
         }
+    }
+    if !unreadable.is_empty() {
+        return Check::new(
+            "fences",
+            Status::Error,
+            format!("{}; `seldon status` stops on it", unreadable.join("; ")),
+        )
+        .fix("make the file readable UTF-8 text again");
     }
     if !damaged.is_empty() {
         let (messages, fixes): (Vec<String>, Vec<String>) = damaged.into_iter().unzip();
