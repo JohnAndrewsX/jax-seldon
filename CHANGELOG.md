@@ -50,11 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when `snapper list` is not permitted; the events are the same, so
   switching between the two adds none. `doctor` and `init` say what the
   snapper fix grants besides listing (WP-060).
-- More built-in redaction rules: `--token`/`--api-key`-style options
-  and `…KEY=`/`…PASSWORD=`-style assignments (when the value looks like
-  a credential, so `sort --key=2` stays as it is), `X-…-Key:`-style
-  headers, GitHub, GitLab and Slack tokens, `sk_` keys, `curl -u`,
-  `sshpass -p` and registry `login -p`; a URL password may contain
+- More built-in redaction rules: `--token`/`--secret`-style options and
+  `…PASSWORD=`/`…_PWD=`-style assignments (any value), `--api-key` and
+  `…KEY=` (when the value looks like a credential, so `sort --key=2`
+  stays as it is), `X-…-Key:`-style headers, GitHub, GitLab and Slack
+  tokens, `sk_` keys, `curl -u`, `sshpass -p` and registry `login -p`;
+  a URL password may contain
   `/ ? # :`. Notes and their tags, case and decision titles, step
   reasons, drift explanations, event subjects and every `meta` value are
   redacted before they are written, so the journal, case and decision
