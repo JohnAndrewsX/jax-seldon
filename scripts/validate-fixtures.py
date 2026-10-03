@@ -1174,6 +1174,36 @@ def self_checks(today):
     return out, len(cases) + len(proposals) + 2
 
 
+# --------------------------------------------------------------------------- snapshot info files
+
+def check_snapshot_info_files():
+    import xml.etree.ElementTree as ET
+    out = []
+    with open(os.path.join(FIX, "logs", "snapper.json"), encoding="utf-8") as f:
+        listed = {s["number"]: s for s in json.load(f)["root"] if s["number"] != 0}
+    base = os.path.join(FIX, "logs", "snapshots")
+    dirs = sorted(int(d) for d in os.listdir(base) if d.isdigit())
+    if dirs != sorted(listed):
+        out.append(f"{rel(base)}: numbers {dirs} != logs/snapper.json {sorted(listed)}")
+    for n in dirs:
+        path = os.path.join(base, str(n), "info.xml")
+        if n not in listed:
+            continue
+        s, root = listed[n], ET.parse(path).getroot()
+        text = lambda tag: (root.findtext(tag) or "")
+        local = dt.datetime.strptime(s["date"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone(dt.timedelta(hours=2)))
+        want = {"num": str(n), "type": s["type"], "pre_num": str(s["pre-number"]) if s["type"] == "post" else "",
+                "description": s["description"], "cleanup": s["cleanup"],
+                "date": local.astimezone(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}
+        have = {k: text(k) for k in want}
+        if have != want:
+            out.append(f"{rel(path)}: {have} != logs/snapper.json {want}")
+        userdata = {u.findtext("key"): u.findtext("value") for u in root.findall("userdata")}
+        if userdata != (s["userdata"] or {}):
+            out.append(f"{rel(path)}: userdata {userdata} != logs/snapper.json {s['userdata']}")
+    return out
+
+
 # --------------------------------------------------------------------------- main
 
 def collect_instances():
@@ -1316,6 +1346,11 @@ def main():
         want.pop("tool_response", None)
         problems += [f"{rel(pre)} {d} (must equal {os.path.basename(post)} as PreToolUse without tool_response)"
                      for d in diff(have, want)]
+
+    # 3c. logs/snapshots/<n>/info.xml mirror logs/snapper.json (the snapper collector's info-file
+    #     path, WP-060): same numbers, type, pre-number, description, cleanup, userdata; `date` in UTC
+    #     there, local time (the fixture's +02:00) in the list
+    problems += check_snapshot_info_files()
 
     # 4. ADR-0013 mutation self-checks on the sample logbook
     errs, n_checks = self_checks(today)
