@@ -305,6 +305,25 @@ impl Undo {
         }
     }
 
+    /// Whether a kept undo can be printed as it is: `base` a commit hash,
+    /// every path relative and inside the logbook. The file lives in the
+    /// logbook, which agents and editors write too; a command built from
+    /// anything else is not offered.
+    fn is_sane(&self) -> bool {
+        let base_ok = self
+            .base
+            .as_deref()
+            .is_none_or(|b| matches!(b.len(), 40 | 64) && b.chars().all(|c| c.is_ascii_hexdigit()));
+        let path_ok = |p: &String| {
+            let path = std::path::Path::new(p);
+            !p.is_empty()
+                && path
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+        };
+        base_ok && self.restore.iter().chain(&self.remove).all(path_ok)
+    }
+
     /// The shell line, run in the logbook.
     fn command(&self) -> String {
         let quoted = |paths: &[String]| {
@@ -423,7 +442,8 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
     let root = logbook.root.display();
     let undo = std::fs::read_to_string(logbook.path(undo_path()))
         .ok()
-        .and_then(|text| serde_json::from_str::<Undo>(&text).ok());
+        .and_then(|text| serde_json::from_str::<Undo>(&text).ok())
+        .filter(Undo::is_sane);
     let way_back = match undo {
         Some(undo) => format!(
             "After a failed apply, undo it with `{}` in {root} (it touches only the files that apply wrote) and run it again",
@@ -541,4 +561,48 @@ fn plan_json(
         "marker": marker,
         "git": commit.json(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn undo(base: Option<&str>, restore: &[&str], remove: &[&str]) -> Undo {
+        Undo {
+            base: base.map(str::to_string),
+            restore: restore.iter().map(|p| p.to_string()).collect(),
+            remove: remove.iter().map(|p| p.to_string()).collect(),
+            root: PathBuf::new(),
+        }
+    }
+
+    #[test]
+    fn the_undo_command_quotes_and_names_only_its_files() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let u = undo(
+            Some(sha),
+            &["memory/lessons.md", "ledger/2026-10.jsonl"],
+            &["work/queued/C-2026-002-a b.md", "memory/it's.md"],
+        );
+        assert!(u.is_sane());
+        assert_eq!(
+            u.command(),
+            format!(
+                "git checkout {sha} -- memory/lessons.md ledger/2026-10.jsonl && rm -f -- 'work/queued/C-2026-002-a b.md' 'memory/it'\\''s.md'"
+            )
+        );
+        assert_eq!(undo(None, &[], &["a.md"]).command(), "rm -f -- a.md");
+        assert_eq!(undo(None, &["a.md"], &[]).command(), "git checkout -- a.md");
+    }
+
+    #[test]
+    fn a_kept_undo_from_outside_the_logbook_is_not_offered() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert!(!undo(Some("HEAD; rm -rf ~"), &["a.md"], &[]).is_sane());
+        assert!(!undo(Some(sha), &[], &["../outside.md"]).is_sane());
+        assert!(!undo(Some(sha), &["/etc/passwd"], &[]).is_sane());
+        assert!(!undo(Some(sha), &["memory/../../x"], &[]).is_sane());
+        assert!(!undo(Some(sha), &[""], &[]).is_sane());
+        assert!(undo(Some(sha), &["memory/lessons.md"], &[".seldon/x.json"]).is_sane());
+    }
 }
