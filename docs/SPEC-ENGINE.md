@@ -114,7 +114,12 @@ seldon rebuild [--json]                        # outputs/REBUILD.md (WP-032): 1 
                                                # 5 theme, 6 units (incl. cased `services.enabled` rows; system scope
                                                # separately), 7 open drift (marked in place too) + dismissed
                                                # ("deliberately not reproduced"); English headings, prose in the
-                                               # logbook language; fence `rebuild`, text outside kept; written
+                                               # logbook language. A name goes into a command only after its check
+                                               # (`rebuild::shell_arg`: package name, unit name, theme slug, plugin
+                                               # id, https URL without query; none with a leading `-`) and is
+                                               # single-quoted unless it is plain; an item whose name fails is
+                                               # listed as "not reproduced: invalid name" with no command and a
+                                               # warning (WP-059). Fence `rebuild`, text outside kept; written
                                                # atomically and only on change, autocommit `seldon: rebuild`; no
                                                # ledger write, no index rebuild. --json → {path, sections:
                                                # {packages, deviations, plugins, units, open}, files, git, warnings}
