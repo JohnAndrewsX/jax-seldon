@@ -1064,3 +1064,10 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A file-mode test on tmpfs says nothing about cost.** `fsync` is free
   on tmpfs (`/tmp`, the tests' temp dir); time on the real disk (a
   scratch dir under `engine/target/`) before claiming latency.
+- **A child in its own process group cannot read the terminal.**
+  `process_group(0)` makes it a background group: a git hook or a
+  signing prompt that reads `/dev/tty` gets `SIGTTIN` and stops until
+  the timeout (30 s for git, under the lock). git runs in the engine's
+  group (`sys::run_in_engine_group`); collectors keep their own. Test a
+  terminal read under `script -qec '<cmd>' /dev/null` with the answer
+  on its stdin (`file_writes.rs` `git::`).

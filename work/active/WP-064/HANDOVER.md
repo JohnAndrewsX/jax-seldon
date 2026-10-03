@@ -6,8 +6,55 @@ Branch `wp/064-review`. Round 1: `6b95373` (engine), `cce00da` (tests,
 SPEC-ENGINE §2, CHANGELOG), `624bc0c` (handover). Round 2, the
 orchestrator's decisions on the four open items: `b190752` (private
 modes for the remaining creators), `8c3aa97` (no sync for rebuildable
-files), `792b984` (SPEC-ENGINE §1/§2/§4, SPEC-LOGBOOK, CHANGELOG), plus
-this update.
+files), `792b984` (SPEC-ENGINE §1/§2/§4, SPEC-LOGBOOK, CHANGELOG),
+`2844757` (handover). Round 3, after review: `5a59ab0` (git's process
+group, the remaining folders), `cd0eee9` (SPEC-ENGINE §4, CHANGELOG),
+plus this update.
+
+**Round 3 (review SEND BACK)**
+
+1. git no longer gets its own process group. Any process group other
+   than the terminal's foreground group cannot read the terminal: a
+   pre-commit hook or a signing prompt that reads it was stopped, and
+   the commit ran into the 30 s timeout while the lock was held. The new
+   `sys::run_in_engine_group` runs every `git` call on the logbook
+   (`logbook/git.rs`: version, staged diff, user.email, commit;
+   `index/mod.rs`: HEAD and dirty state) in the engine's group. At the
+   deadline only git is killed, and the pipe wait stays bounded by the
+   same deadline plus 200 ms. Collectors, dossier queries and `omarchy
+   hook install` keep their own group (`sys::run`, `sys::run_command`).
+   The plugins collector's read-only `git rev-parse` in plugin folders
+   goes through the collector runner and keeps its own group: it runs
+   no hooks.
+   Tests:
+   - `git::git_and_its_hooks_run_in_the_engine_process_group` (a
+     stand-in): the engine is started as a group leader, and a
+     `pre-commit` hook writes its process group from `/proc/$$/stat`.
+     It equals the engine's pid.
+   - `git::a_commit_hook_can_read_the_terminal` (a pty): `seldon log`
+     runs under `script(1)`, and a `pre-commit` hook reads a line from
+     `/dev/tty`. The commit lands within 5 s (a manual run took 272 ms)
+     and the hook got the line. The test is skipped with a note when
+     git or `/usr/bin/script` is missing.
+
+   SPEC-ENGINE §4 states the split and the up-to-200 ms grace.
+2. The last three engine-made folders that were 0755 are now 0700:
+   - `commands/hook.rs` no longer creates the settings folder itself;
+     `write_atomic` creates it 0700.
+   - `logbook/cases.rs` creates a missing status folder on a case move
+     with `sys::create_dir_private`.
+   - `commands/setup.rs` `copy_tree` creates the agent kit's folders
+     with `sys::create_dir_private`; the copied files keep the kit's
+     modes, as before.
+
+   Test: `cli::missing_folders_are_created_private` (umask 022) covers
+   an `init` with a nested agent kit, `plan new` into a missing
+   `work/queued`, `plan start` into a missing `work/active`, `log` into
+   a missing `ledger/` (this replaces `a_missing_ledger_folder_is_created_private`),
+   and `hook install --settings` into two folders that do not exist yet.
+3. Atomicity (temp file plus rename) and the sync policy (which files
+   are synced) are verified by review, not by a test. A test on tmpfs
+   cannot observe a sync or a crash between steps.
 
 **Round 2**
 
@@ -102,15 +149,21 @@ this update.
 
 **Verified by**
 
-- `just check` on `792b984` → exit 0, `check: ok`; 931 cargo tests
+- `just check` on `cd0eee9` (round 3) → exit 0, `check: ok`; 935 cargo
+  tests passed, 0 failed; `docs-check: ok (382 links, 14 translated
+  pages, 40 commands, 437 command lines)`; `just check-rss` passed. The
+  requested suites (`--lib sys::`, `--test hooks`, `plan`, `init`,
+  `file_writes`) passed: 3, 39, 15, 30 and 16 tests.
+- Round 2 `just check` on `792b984` → exit 0, `check: ok`; 931 cargo tests
   passed, 0 failed (58 suites, with and without `watch`); fmt and clippy
   `-D warnings` clean; `docs-check: ok (382 links, 14 translated pages,
   40 commands, 437 command lines)`; plugin harnesses passed. shellcheck
   is not installed here (`bash -n` only). `just check-rss` (required
   because `engine/src/index/` changed): passed.
 - Round 1 result `just check` on `cce00da`: exit 0, 929 tests.
-- `cargo test --test file_writes`: 14 passed (round 1 names below; round 2
-  renamed the init test and added the ledger-folder test):
+- `cargo test --test file_writes`: 16 passed (round 1 names below;
+  round 2 renamed the init test; round 3 added the `git::` tests and
+  `missing_folders_are_created_private`):
   - `atomic::a_symlinked_file_is_written_through`,
     `a_link_to_a_missing_file_creates_the_target`,
     `a_link_loop_is_an_error`, `the_mode_of_an_existing_file_is_kept`
@@ -154,9 +207,14 @@ this update.
   | round 2: lock directory via `create_dir_all` | `new_logbook_…_under_any_umask` |
   | round 2: `write_new` via plain `OpenOptions` | `new_logbook_…_under_any_umask` |
   | round 2: launch log without `.mode(0o600)` | `new_logbook_…_under_any_umask` |
+  | round 3: git in its own process group | both `git::` tests (the pty test ran into the 30 s git timeout: 30.15 s) |
+  | round 3: settings folder via `create_dir_all` (`hook.rs`) | `missing_folders_are_created_private` |
+  | round 3: status folder via `create_dir_all` (`cases.rs`) | `missing_folders_are_created_private` |
+  | round 3: kit folders via `create_dir_all` (`setup.rs`) | `missing_folders_are_created_private` |
 
   The missing sync in `write_generated` cannot be observed by a test
-  (tmpfs, no simulated crash); it is a policy, checked by review.
+  (tmpfs, no simulated crash); it is a policy, checked by review (see
+  Round 3, item 3).
 
 - Manual runs (scratch HOME/XDG, `SELDON_TEST_GUARD`, made-up values),
   pre-fix binary vs this branch:
@@ -182,6 +240,9 @@ this update.
 
 **Learned** (added to `memory/pitfalls.md`)
 
+- Round 3: a program in its own process group cannot read the terminal
+  (it gets `SIGTTIN` and stops); test that with `script(1)`.
+
 - A mutation loop that restores the source with a copy made before the
   mutant gives the file an older mtime than the last build; cargo then
   keeps the mutant's binary. Touch the restored file.
@@ -194,4 +255,6 @@ sentence, which went to §4 instead of §5 (see Round 2).
 the `.gitignore` text). Round 2, approved by the orchestrator:
 `logbook/lock.rs`, `ledger.rs`, `commands/mod.rs`, `commands/agent.rs`,
 `index/mod.rs`, `index/views.rs`, `commands/rebuild.rs`,
-`docs/SPEC-LOGBOOK.md` (one row), SPEC-ENGINE §1 and §4.
+`docs/SPEC-LOGBOOK.md` (one row), SPEC-ENGINE §1 and §4. Round 3, from
+the review: `logbook/git.rs`, `index/mod.rs`, `commands/hook.rs`,
+`logbook/cases.rs`, `commands/setup.rs` (`copy_tree`).
