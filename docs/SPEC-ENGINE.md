@@ -517,7 +517,8 @@ git itself is killed, with the same bounded pipe wait. Rules:
   description) and a `snapshot` of the new one, both at the new
   snapshot's date, the deletion first. A cursor entry without a date
   (written before WP-073) gets one without an event. Without
-  `ALLOW_USERS` the command fails with a permission error; the collector then reads the snapshots from the info files
+  `ALLOW_USERS` the command fails with a permission error; the collector
+  then reads the snapshots from the info files
   (`/.snapshots/<number>/info.xml`, `SELDON_SNAPSHOTS_DIR`; under
   `SELDON_TEST_GUARD` without it `<guard>/.snapshots`) with the same events
   and cursor, so switching between list and info files adds no events (an
