@@ -15,6 +15,7 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-058 | engine: restructure the session-start context and the agent start prompt | Engine | `engine-058` (opus) | `wt/WP-058` · `wp/058-review` | 2026-10-03 |
+| WP-064 | engine: atomic writes keep symlinks and modes; timeouts cover pipes | Engine | `engine-064` (opus) | `wt/WP-064` · `wp/064-review` | 2026-10-03 |
 | WP-060 | snapper: read snapshot info files when listing is not permitted; banner text | Engine | `engine-060` (opus) | `wt/WP-060` · `wp/060-review` | 2026-10-03 |
 
 ## Queued (next up)
