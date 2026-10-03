@@ -229,7 +229,8 @@ seldon hook generic                            # stdin: {"command":"…","actor"
 seldon hook session-start | session-stop       # context print / journal stub
 seldon watch [--interval SECS] [--json]        # feature "watch" (off by default, ADR-0005; without it: exit 1
                                                # "built without the watch feature"). Watches ledger/ work/ journal/
-                                               # decisions/ system/ memory/ (recursive) and .seldon/logbook.toml;
+                                               # decisions/ system/ memory/ areas/ (recursive; areas/ since WP-075)
+                                               # and .seldon/logbook.toml;
                                                # one rebuild at start, then reacts to changes: after SECS quiet
                                                # (default and minimum 2; at most 5×SECS into a burst) rebuilds
                                                # index.json under the lock (a held lock delays, retried every
