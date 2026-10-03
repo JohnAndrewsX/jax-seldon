@@ -53,6 +53,13 @@ The import writes everything in one go and makes one commit,
 `seldon: import omarchy-agent`. It refuses (exit 1) while the report has
 errors.
 
+Before its first write, the import commits the changes the logbook
+already has (your edits, ledger lines from hooks) as
+`seldon: before import omarchy-agent`. If they cannot be committed (with
+`--no-commit`, with `autocommit = false`, or when the commit fails), the
+import refuses to start (exit 1) and writes nothing. Commit them
+yourself, then run `--apply` again.
+
 Running it again is safe. A second `--apply` says "Nothing changed" and
 writes nothing. The marker `.seldon/imports/omarchy-agent.json` records
 that the import is done.
@@ -96,16 +103,27 @@ their content.
 ## If something goes wrong
 
 If `--apply` fails halfway, the engine says that nothing was committed
-and tells you how to undo the partial write:
+and prints the command that undoes the partial write. It names only the
+files the import wrote. It looks like this:
 
 ```sh
 cd ~/Seldon
-git checkout -- . && git clean -fd
+git --literal-pathspecs checkout <commit> -- memory/lessons.md && rm -f -- work/queued/C-2026-002-zweiter-editor.md …
 ```
 
-This removes every uncommitted change in the logbook, including edits of
-your own since the last `seldon` command. Copy those elsewhere first.
-Then fix the cause and run `--apply` again.
+`git --literal-pathspecs checkout <commit> --` takes the files the import
+changed back to the commit made just before it, and reads the file names
+as they are (no wildcards). `rm -f` removes the files it created. Other
+files in the logbook stay as they are. Run the command soon: a ledger
+line that a hook adds to one of the import's ledger files after the
+failure is taken back with it. Then fix the cause and run `--apply`
+again.
+
+Until you undo it, every new `--apply` refuses (exit 1) and prints the
+same command (it is kept in `.seldon/imports/omarchy-agent.undo.json`).
+If that file was changed so that it names files outside the import's
+folders, or no commit, Seldon prints no command and points you to
+`git status` instead.
 
 ---
 

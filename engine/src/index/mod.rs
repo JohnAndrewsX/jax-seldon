@@ -68,7 +68,7 @@ pub fn to_text(index: &Index) -> String {
 /// Replaces `path` with the index atomically: a reader sees the old file
 /// or the new one, never a partial one (CONTRACT.md rule 2).
 pub fn write(path: &Path, index: &Index) -> anyhow::Result<()> {
-    sys::write_generated(path, to_text(index).as_bytes())
+    sys::write_atomic(path, to_text(index).as_bytes())
 }
 
 /// `state` from `cursors.json`: one row per collector in the schema's
@@ -110,18 +110,15 @@ pub fn collector_state(dirs: &Dirs, config: &Config, root: &Path) -> model::Stat
 }
 
 /// `logbook.git`: the short HEAD and whether the work tree has changes;
-/// `None` when the logbook is not a repository or git is missing.
+/// `None` when the logbook is not a repository or git is missing. git runs
+/// with the logbook's own environment (`git::query`: no inherited
+/// `GIT_DIR`, no walking up into a repository around the logbook).
 pub fn git_info(root: &Path) -> Option<model::GitInfo> {
     if !git::is_repo(root) {
         return None;
     }
     let timeout = Duration::from_secs(10);
-    let head = match sys::run_in_engine_group(
-        "git",
-        &["rev-parse", "--short", "HEAD"],
-        Some(root),
-        timeout,
-    ) {
+    let head = match git::query(root, &["rev-parse", "--short", "HEAD"], timeout) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -130,15 +127,14 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
         Run::Exited { .. } => None,
         _ => return None,
     };
-    let dirty =
-        match sys::run_in_engine_group("git", &["status", "--porcelain"], Some(root), timeout) {
-            Run::Exited {
-                code: Some(0),
-                stdout,
-                ..
-            } => !stdout.trim().is_empty(),
-            _ => return None,
-        };
+    let dirty = match git::query(root, &["status", "--porcelain"], timeout) {
+        Run::Exited {
+            code: Some(0),
+            stdout,
+            ..
+        } => !stdout.trim().is_empty(),
+        _ => return None,
+    };
     Some(model::GitInfo {
         head,
         dirty: Some(dirty),

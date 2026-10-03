@@ -1,6 +1,6 @@
 # Import aus omarchy-agent
 
-<!-- source: en/09-import-from-omarchy-agent.md @ c47054b -->
+<!-- source: en/09-import-from-omarchy-agent.md @ ec1a8a5 -->
 
 Diese Seite ist für dich, wenn du vor Seldon ein Logbuch mit dem
 omarchy-agent-Kit geführt hast: einen Obsidian-Vault mit `pipeline/`,
@@ -60,6 +60,13 @@ Der Import schreibt alles in einem Zug und macht einen Commit,
 `seldon: import omarchy-agent`. Er verweigert sich (Exit 1), solange der
 Bericht Fehler enthält.
 
+Vor dem ersten Schreiben committet der Import die Änderungen, die das
+Logbuch schon hat (deine Änderungen, Ledger-Zeilen aus Hooks), als
+`seldon: before import omarchy-agent`. Lassen sie sich nicht committen
+(mit `--no-commit`, mit `autocommit = false` oder wenn der Commit
+scheitert), verweigert der Import den Start (Exit 1) und schreibt nichts.
+Committe sie selbst und führ `--apply` dann noch einmal aus.
+
 Ein zweiter Lauf ist sicher. Ein zweites `--apply` meldet „Nothing
 changed“ und schreibt nichts. Die Markierung
 `.seldon/imports/omarchy-agent.json` hält fest, dass der Import erledigt
@@ -105,16 +112,30 @@ Datei und Zeilennummer, nie mit ihrem Inhalt.
 ## Wenn etwas schiefgeht
 
 Scheitert `--apply` mittendrin, sagt die Engine, dass nichts committet
-wurde, und wie du das halbe Schreiben rückgängig machst:
+wurde, und gibt den Befehl aus, der das halbe Schreiben rückgängig macht.
+Er nennt nur die Dateien, die der Import geschrieben hat. Er sieht so
+aus:
 
 ```sh
 cd ~/Seldon
-git checkout -- . && git clean -fd
+git --literal-pathspecs checkout <commit> -- memory/lessons.md && rm -f -- work/queued/C-2026-002-zweiter-editor.md …
 ```
 
-Das entfernt jede nicht committete Änderung im Logbuch, auch deine
-eigenen Änderungen seit dem letzten `seldon`-Befehl. Kopier sie vorher
-woandershin. Dann behebe die Ursache und führ `--apply` noch einmal aus.
+`git --literal-pathspecs checkout <commit> --` setzt die Dateien, die der
+Import geändert hat, auf den Commit direkt vor ihm zurück und liest die
+Dateinamen so, wie sie sind (keine Platzhalter). `rm -f` entfernt die Dateien,
+die er angelegt hat. Alle anderen Dateien im Logbuch bleiben, wie sie
+sind. Führ den Befehl bald aus: Eine Ledger-Zeile, die ein Hook nach dem
+Fehlschlag an eine der Ledger-Dateien des Imports anhängt, wird mit
+zurückgenommen. Dann behebe die Ursache und führ `--apply` noch einmal
+aus.
+
+Bis du ihn rückgängig machst, verweigert jedes neue `--apply` den Start
+(Exit 1) und gibt denselben Befehl aus (er liegt in
+`.seldon/imports/omarchy-agent.undo.json`). Wurde diese Datei so
+geändert, dass sie Dateien außerhalb der Ordner des Imports oder keinen
+Commit nennt, gibt Seldon keinen Befehl aus und verweist stattdessen auf
+`git status`.
 
 ---
 
