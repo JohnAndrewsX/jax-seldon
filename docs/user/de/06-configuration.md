@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ abfa9b9 -->
+<!-- source: en/06-configuration.md @ e58949f -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -150,14 +150,15 @@ Case- und Entscheidungsdateien und `STATUS.md` enthalten deshalb
 denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 `‹redacted›`. Die eingebauten Regeln erfassen:
 
-- `--password` und `token=` samt ihren Werten;
-- `--token`, `--api-key`, `--with-token`, `--secret` und ähnliche
-  Optionen sowie `API_KEY=`, `PASSWORD=`, `PGPASSWORD=`, `MYSQL_PWD=` und
-  andere Zuweisungen der Form `…KEY=`, `…SECRET=`, `…PASSWORD=`, wenn der
-  Wert wie ein Zugangsdatum aussieht: mindestens 16 Zeichen, oder
-  mindestens 8, die zwei von Kleinbuchstaben, Großbuchstaben, Ziffern und
-  anderen Zeichen mischen (`sort --key=2` und `hotkey=Super` bleiben also,
-  wie sie sind);
+- `--password`, `--token`, `--with-token`, `--secret`, `--passphrase`
+  und ähnliche Optionen sowie `token=`, `PASSWORD=`, `PGPASSWORD=`,
+  `MYSQL_PWD=`, `SECRET=` und andere Zuweisungen der Form `…PASSWORD=`,
+  `…SECRET=`, `…_PASS=`, mit jedem Wert;
+- `--api-key`, `--access-key`, `--secret-key` sowie `API_KEY=` und
+  andere Zuweisungen der Form `…KEY=`, wenn der Wert wie ein Zugangsdatum
+  aussieht: mindestens 16 Zeichen, oder mindestens 8, die zwei von
+  Kleinbuchstaben, Großbuchstaben, Ziffern und anderen Zeichen mischen
+  (`sort --key=2` und `hotkey=Super` bleiben also, wie sie sind);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
   deren Name auf Key, Token, Secret oder Auth endet;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
