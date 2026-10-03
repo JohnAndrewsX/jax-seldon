@@ -1048,3 +1048,19 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Test output names the dev host.** The index's `logbook.machine` in a
   panic message is the real host name plus a suffix: never paste raw test
   failures into a handover or commit; quote the assertion only.
+## 2026-10-03 · WP-064 (Engine)
+
+- **A mutant restored from a pre-mutant copy keeps the mutant's binary.**
+  `cp f f.bak; mutate f; cargo test; mv f.bak f` gives `f` the older
+  mtime of the copy, so cargo's fingerprint says "fresh" and
+  `target/debug/seldon` stays the last mutant (the next test run failed
+  for no visible reason). `touch` (or `os.utime`) the restored file.
+- **`std::process::Command` cannot set the umask.** A test that needs a
+  umask runs the engine through `/bin/sh -c 'umask 022; exec "$0" "$@"'`
+  (`common::with_umask`, which copies program, args, env and cwd).
+- **`OpenOptions::mode` and `DirBuilder::mode` are narrowed by the
+  umask.** Only an explicit `File::set_permissions` (fchmod) keeps an
+  existing file's 0664 under umask 022; `sys::write_atomic` does that.
+- **A file-mode test on tmpfs says nothing about cost.** `fsync` is free
+  on tmpfs (`/tmp`, the tests' temp dir); time on the real disk (a
+  scratch dir under `engine/target/`) before claiming latency.
