@@ -10,7 +10,7 @@ use seldon::error::Exit;
 use seldon::ledger::Ledger;
 use seldon::logbook::lock;
 use seldon::model::event::{Event, Kind, Meta, Source};
-use seldon::redact::{BUILTIN, REDACTED, Redactor, triggers};
+use seldon::redact::{BUILTIN, REDACTED, Redactor, trigger_text, triggers};
 use support::{Bench, Scratch, fixture, ts};
 
 /// (rule, input, secret that must disappear, text that must stay)
@@ -155,7 +155,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "--with-token ‹redacted›",
     ),
     (
-        "secret-option",
+        "key-option",
         "tool --api-key=fakeKeyValue2 --verbose",
         "fakeKeyValue2",
         "--api-key=‹redacted› --verbose",
@@ -173,7 +173,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "--client-secret ‹redacted›",
     ),
     (
-        "secret-assignment",
+        "key-assignment",
         "export API_KEY=fakeKey5",
         "fakeKey5",
         "export API_KEY=‹redacted›",
@@ -197,7 +197,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "MYSQL_PWD=‹redacted› mysqldump shop",
     ),
     (
-        "secret-assignment",
+        "key-assignment",
         "curl 'https://api.example/v1?api_key=fakeKey9&page=2'",
         "fakeKey9",
         "api_key=‹redacted›&page=2",
@@ -297,6 +297,106 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakePw17",
         "podman login -p‹redacted› quay.example",
     ),
+    // a name that can only mean a credential masks any non-empty value
+    (
+        "secret-option",
+        "tool --token short",
+        "short",
+        "tool --token ‹redacted›",
+    ),
+    (
+        "secret-option",
+        "tool --token abc --verbose",
+        "abc",
+        "--token ‹redacted› --verbose",
+    ),
+    (
+        "secret-option",
+        "tool --secret hunter2",
+        "hunter2",
+        "tool --secret ‹redacted›",
+    ),
+    (
+        "secret-option",
+        "gpg --passphrase abc --batch",
+        "abc",
+        "--passphrase ‹redacted› --batch",
+    ),
+    (
+        "secret-assignment",
+        "PASSWORD=x ./run.sh",
+        "=x",
+        "PASSWORD=‹redacted› ./run.sh",
+    ),
+    (
+        "secret-assignment",
+        "PASSWORD=hunter2 ./run.sh",
+        "hunter2",
+        "PASSWORD=‹redacted› ./run.sh",
+    ),
+    (
+        "secret-assignment",
+        "passwd=abc",
+        "abc",
+        "passwd=‹redacted›",
+    ),
+    ("secret-assignment", "secret=x1", "x1", "secret=‹redacted›"),
+    (
+        "secret-assignment",
+        "DB_PASS=short ./app",
+        "short",
+        "DB_PASS=‹redacted› ./app",
+    ),
+    (
+        "secret-assignment",
+        "MYSQL_PWD=pw mysql shop",
+        "=pw",
+        "MYSQL_PWD=‹redacted› mysql shop",
+    ),
+    (
+        "secret-assignment",
+        "PGPASSWORD=pw psql -h db",
+        "=pw",
+        "PGPASSWORD=‹redacted› psql -h db",
+    ),
+    (
+        "secret-assignment",
+        "SSHPASS=pw sshpass -e ssh host",
+        "=pw",
+        "SSHPASS=‹redacted› sshpass -e ssh host",
+    ),
+    (
+        "secret-assignment",
+        "PASSWORD=\"hunter2\" ./run.sh",
+        "hunter2",
+        "PASSWORD=‹redacted› ./run.sh",
+    ),
+    (
+        "secret-assignment",
+        "export SECRET='a b c'",
+        "a b c",
+        "export SECRET=‹redacted›",
+    ),
+    // case-insensitive matching folds the Kelvin sign onto `k` and the
+    // long s onto `s`; the triggers do the same
+    (
+        "token-assignment",
+        "to\u{212A}en=fakeValue1",
+        "fakeValue1",
+        "to\u{212A}en=‹redacted›",
+    ),
+    (
+        "key-assignment",
+        "API_\u{212A}EY=fakeKey55",
+        "fakeKey55",
+        "API_\u{212A}EY=‹redacted›",
+    ),
+    (
+        "secret-assignment",
+        "PA\u{17F}\u{17F}WORD=pw",
+        "=pw",
+        "PA\u{17F}\u{17F}WORD=‹redacted›",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -324,9 +424,8 @@ const CLEAR: &[&str] = &[
     "the key=value pairs",
     "sort --key=2 names.txt",
     "hotkey=Super",
+    "tool --api-key=auto",
     "curl -H 'X-Author: me' https://example.com",
-    "tool --token short",
-    "PASSWORD=x ./run.sh",
 ];
 
 mod redaction {
@@ -359,14 +458,14 @@ mod redaction {
             assert!(!triggers(rule).is_empty(), "{rule} has no trigger");
         }
         for (rule, input, ..) in TABLE {
-            let lower = input.to_ascii_lowercase();
+            let lower = trigger_text(input);
             assert!(
                 triggers(rule).iter().any(|t| lower.contains(t)),
                 "{rule}: no trigger in `{input}`"
             );
         }
         // the marker can never trigger a rule
-        let marker = REDACTED.to_ascii_lowercase();
+        let marker = trigger_text(REDACTED);
         for rule in BUILTIN {
             assert!(!triggers(rule).iter().any(|t| marker.contains(t)), "{rule}");
         }

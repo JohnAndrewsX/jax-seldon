@@ -15,9 +15,11 @@
 //!
 //! Every rule errs towards redacting too much: a value may be quoted, a
 //! key may be `GITHUB_TOKEN=`, and `sk-proj-…` keys contain hyphens.
-//! The `--token`-style options and the `…KEY=`-style assignments mask a
-//! value only when it looks like a credential ([`looks_like_credential`]),
-//! so `sort --key=2` or `hotkey=Super` stay as they are.
+//! A name that can only mean a credential (`--token`, `--secret`,
+//! `PASSWORD=`, `…_PWD=`, …) masks any non-empty value. A name that ends
+//! in `key` (`--api-key`, `…KEY=`) masks a value only when it looks like
+//! a credential ([`looks_like_credential`]), so `sort --key=2` or
+//! `hotkey=Super` stay as they are.
 //!
 //! Redacting twice gives the same text for the built-in rules: a match
 //! that lies inside an existing [`REDACTED`] marker is left alone, so text
@@ -68,7 +70,8 @@ impl Rule {
             .get_or_init(|| Regex::new(&self.pattern).expect("built-in redaction pattern compiles"))
     }
 
-    /// Whether `lower` (the text in ASCII lower case) may hold a match.
+    /// Whether `lower` (the text through [`trigger_text`]) may hold a
+    /// match.
     fn triggered(&self, lower: &str) -> bool {
         self.triggers.is_empty() || self.triggers.iter().any(|t| lower.contains(t))
     }
@@ -94,16 +97,41 @@ fn markers(text: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// `value` without its surrounding quotes.
+fn unquoted(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+        .unwrap_or(value)
+}
+
+/// Whether a value after a credential name is not empty (`PASSWORD=""`
+/// names no secret).
+pub fn has_value(value: &str) -> bool {
+    !unquoted(value).is_empty()
+}
+
+/// `text` as the triggers see it: ASCII letters in lower case, plus the
+/// two other characters that case-insensitive matching folds onto an
+/// ASCII letter, the Kelvin sign (U+212A → `k`) and the long s
+/// (U+017F → `s`). Other characters stay as they are.
+pub fn trigger_text(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\u{212A}' => 'k',
+            '\u{017F}' => 's',
+            c => c.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
 /// Whether a value after a key or option looks like a credential: without
 /// its quotes, at least [`CREDENTIAL_LONG`] characters, or at least
 /// [`CREDENTIAL_MIN`] that mix two of lower case, upper case, digits and
 /// other characters.
 pub fn looks_like_credential(value: &str) -> bool {
-    let v = value
-        .strip_prefix('"')
-        .and_then(|v| v.strip_suffix('"'))
-        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-        .unwrap_or(value);
+    let v = unquoted(value);
     let len = v.chars().count();
     let classes = [
         v.chars().any(|c| c.is_lowercase()),
@@ -130,12 +158,14 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 16] = [
+pub const BUILTIN: [&str; 18] = [
     "url-userinfo",
     "password-option",
     "secret-option",
+    "key-option",
     "token-assignment",
     "secret-assignment",
+    "key-assignment",
     "authorization-header",
     "secret-header",
     "aws-access-key",
@@ -153,18 +183,20 @@ pub const BUILTIN: [&str; 16] = [
 /// regex is compiled the first time a text triggers its rule.
 static BUILTIN_RULES: LazyLock<Vec<Rule>> = LazyLock::new(builtin_rules);
 
-/// Literal text, in ASCII lower case, that every match of the built-in
-/// rule `name` contains (any one of them). A rule is tried only when the
-/// text holds one; the replacement `‹redacted›` holds none of them, so
-/// the text after an earlier rule needs no new check.
+/// Literal text, in lower case, that every match of the built-in rule
+/// `name` contains (any one of them), as [`trigger_text`] spells it. A
+/// rule is tried only when the text holds one; the replacement
+/// `‹redacted›` holds none of them, so the text after an earlier rule
+/// needs no new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         "url-userinfo" => &["://"],
         "password-option" => &["--password"],
-        "secret-option" => &["token", "key", "secret", "passphrase"],
+        "secret-option" => &["token", "secret", "passphrase"],
+        "key-option" => &["key"],
         "token-assignment" => &["token="],
+        "key-assignment" => &["key="],
         "secret-assignment" => &[
-            "key=",
             "secret=",
             "password=",
             "passwd=",
@@ -199,10 +231,10 @@ fn rule(name: &'static str, pattern: &str, replacement: &str) -> Rule {
     }
 }
 
-/// A rule whose group `v` must look like a credential.
-fn credential_rule(name: &'static str, pattern: &str) -> Rule {
+/// A rule whose group `v` must pass `check`.
+fn checked_rule(name: &'static str, pattern: &str, check: fn(&str) -> bool) -> Rule {
     Rule {
-        check: Some(looks_like_credential),
+        check: Some(check),
         ..rule(name, pattern, KEEP_PREFIX)
     }
 }
@@ -224,27 +256,43 @@ fn builtin_rules() -> Vec<Rule> {
             &format!(r"(?i)(--password(?:=|\s+))(?:{VALUE})"),
             KEEP_PREFIX,
         ),
-        // `--token X`, `--api-key=X`, `--with-token X`,
-        // `--client-secret X`; not `--token-file X`
-        credential_rule(
+        // `--token X`, `--with-token X`, `--secret X`, `--client-secret X`,
+        // `--passphrase X`: any value; not `--token-file X`
+        checked_rule(
             "secret-option",
+            &format!(r"(?i)(--(?:[a-z0-9]+-)*(?:token|secret|passphrase)(?:=|\s+))(?P<v>{VALUE})"),
+            has_value,
+        ),
+        // `--api-key=X`, `--access-key X`, `--secret-key X`: only a value
+        // that looks like a credential
+        checked_rule(
+            "key-option",
             &format!(
-                r"(?i)(--(?:[a-z0-9]+-)*(?:token|api-?key|secret|secret-key|access-key|passphrase)(?:=|\s+))(?P<v>{VALUE})"
+                r"(?i)(--(?:[a-z0-9]+-)*(?:api-?key|access-key|secret-key)(?:=|\s+))(?P<v>{VALUE})"
             ),
+            looks_like_credential,
         ),
         rule(
             "token-assignment",
             &format!(r"(?i)(token=)(?:{VALUE})"),
             KEEP_PREFIX,
         ),
-        // `API_KEY=…`, `PGPASSWORD=…`, `MYSQL_PWD=…`, `?api_key=…`;
-        // not the shell's own `PWD=`/`OLDPWD=` (`…TOKEN=` is the rule
-        // above)
-        credential_rule(
+        // `PASSWORD=…`, `PGPASSWORD=…`, `MYSQL_PWD=…`, `DB_PASS=…`,
+        // `SECRET=…`: any value; not the shell's own `PWD=`/`OLDPWD=`
+        // (`…TOKEN=` is the rule above)
+        checked_rule(
             "secret-assignment",
             &format!(
-                r"(?i)(\b[a-z0-9_]*(?:key|secret|password|passwd|passphrase|_pwd|_pass|sshpass)=)(?P<v>{VALUE})"
+                r"(?i)(\b[a-z0-9_]*(?:secret|password|passwd|passphrase|_pwd|_pass|sshpass)=)(?P<v>{VALUE})"
             ),
+            has_value,
+        ),
+        // `API_KEY=…`, `?api_key=…`: only a value that looks like a
+        // credential, so `hotkey=Super` and `key=value` stay
+        checked_rule(
+            "key-assignment",
+            &format!(r"(?i)(\b[a-z0-9_]*key=)(?P<v>{VALUE})"),
+            looks_like_credential,
         ),
         // the header value up to a closing quote or the end of the line
         rule(
@@ -347,7 +395,7 @@ impl Redactor {
     /// `text` with every secret replaced by [`REDACTED`].
     pub fn redact(&self, text: &str) -> String {
         let mut out = text.to_string();
-        let lower = text.to_ascii_lowercase();
+        let lower = trigger_text(text);
         for rule in self.rules() {
             if !rule.triggered(&lower) || !rule.regex().is_match(&out) {
                 continue;
@@ -372,7 +420,7 @@ impl Redactor {
     /// (diagnostics, tests, the import report).
     pub fn matching_rules(&self, text: &str) -> Vec<&'static str> {
         let markers = markers(text);
-        let lower = text.to_ascii_lowercase();
+        let lower = trigger_text(text);
         self.rules()
             .filter(|r| {
                 r.triggered(&lower)
