@@ -385,7 +385,7 @@ mutating verb. Rules:
   error; the collector then reports `ok: false` and the fix command, never
   sudo (ADR-0011). snapper is run with `LC_ALL=C` (and without
   `LANGUAGE`); its messages are matched in English, whatever the user's
-  locale (`doctor` and `init` run the same command).
+  locale (`doctor` and `init` use the same argv and locale).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
   stale); `repoHead` (7-character short hash, like `logbook.git.head`)
