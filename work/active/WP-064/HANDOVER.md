@@ -2,8 +2,40 @@
 WP-064 HANDOVER
 ```
 
-Branch `wp/064-review`. Commits: `6b95373` (engine), `cce00da` (tests,
-SPEC-ENGINE §2, CHANGELOG), plus this handover.
+Branch `wp/064-review`. Round 1: `6b95373` (engine), `cce00da` (tests,
+SPEC-ENGINE §2, CHANGELOG), `624bc0c` (handover). Round 2, the
+orchestrator's decisions on the four open items: `b190752` (private
+modes for the remaining creators), `8c3aa97` (no sync for rebuildable
+files), `792b984` (SPEC-ENGINE §1/§2/§4, SPEC-LOGBOOK, CHANGELOG), plus
+this update.
+
+**Round 2**
+
+1. The lock file and its directories (`logbook/lock.rs`), the ledger
+   folder and month files (`ledger.rs`), files made by `write_new` (new
+   cases and ADRs, `commands/mod.rs`) and the agent launch log
+   (`commands/agent.rs`) are now created 0600 / 0700. The test's
+   exception list is gone (only `.git` is skipped). The CLI test is now
+   `new_logbook_and_state_files_are_private_under_any_umask` and runs
+   `init`, `log`, `plan new`, `plan start`, `decide` and `agent start`
+   under umask 022 and 000. A new test,
+   `a_missing_ledger_folder_is_created_private`, covers the ledger
+   folder.
+2. SPEC-LOGBOOK §2 lists `.*.tmp-*` in the `.gitignore` row.
+3. Sync policy: `sys::write_generated` (atomic, keeps the mode, no file
+   or directory sync) writes `index.json` (`index/mod.rs`), `STATUS.md`
+   and the ledger views (`index/views.rs`), and `outputs/REBUILD.md`
+   (`commands/rebuild.rs`). Everything else stays synced: ledger appends
+   (already `sync_data`), case files, journal days, config, cursors,
+   `owned.json`, the manifest, the dossier files, and `DECISIONS.md`
+   (its text outside the fence is the user's). A recorded command still
+   exceeds the 5 ms budget (see Verified by), so SPEC-ENGINE §1 now gives
+   the measured cost and the reason (the case file is synced). The case
+   file sync is unchanged.
+4. Process groups: documented in **SPEC-ENGINE §4**, the intro paragraph
+   on the programs the engine runs, not in §5. §5 covers drift
+   reconciliation and mentions no subprocesses, while §4 is where the
+   timeouts are specified. Move the sentence if §5 was meant on purpose.
 
 **Done**
 
@@ -47,15 +79,11 @@ SPEC-ENGINE §2, CHANGELOG), plus this handover.
 
 **Not done**
 
-- Files created outside `write_atomic` and the layout keep the umask
-  mode. A manual `init` + `log` + `plan new` under umask 022 shows
-  exactly these: the state directory and the lock file
-  (`logbook/lock.rs`, which creates the state directory first), ledger
-  month files (`ledger.rs` `append_file`), new case and ADR files
-  (`commands/mod.rs` `write_new`), and `agent-launch.log`
-  (`commands/agent.rs`). Each is a one-line switch to the new sys
-  helpers. They are outside this WP's file list; I asked the orchestrator
-  and had no answer by handover. See Decisions needed.
+- A helper that leaves the process group (`setsid`) and keeps a pipe
+  open is not killed. The call still returns at the deadline plus
+  200 ms, but one blocked reader thread stays behind: harmless for
+  one-shot commands, and under `seldon watch` one per such timeout
+  (accepted by the orchestrator, no action).
 - `.git/` follows git's own rules (0755/0644 under umask 022);
   `git init --shared=0600` would make it private (`logbook/git.rs`, not
   in scope).
@@ -74,12 +102,15 @@ SPEC-ENGINE §2, CHANGELOG), plus this handover.
 
 **Verified by**
 
-- `just check` on `cce00da` → exit 0, `check: ok`; 929 cargo tests
+- `just check` on `792b984` → exit 0, `check: ok`; 931 cargo tests
   passed, 0 failed (58 suites, with and without `watch`); fmt and clippy
   `-D warnings` clean; `docs-check: ok (382 links, 14 translated pages,
   40 commands, 437 command lines)`; plugin harnesses passed. shellcheck
-  is not installed here (`bash -n` only).
-- `cargo test --test file_writes`: 13 passed:
+  is not installed here (`bash -n` only). `just check-rss` (required
+  because `engine/src/index/` changed): passed.
+- Round 1 result `just check` on `cce00da`: exit 0, 929 tests.
+- `cargo test --test file_writes`: 14 passed (round 1 names below; round 2
+  renamed the init test and added the ledger-folder test):
   - `atomic::a_symlinked_file_is_written_through`,
     `a_link_to_a_missing_file_creates_the_target`,
     `a_link_loop_is_an_error`, `the_mode_of_an_existing_file_is_kept`
@@ -117,16 +148,37 @@ SPEC-ENGINE §2, CHANGELOG), plus this handover.
   | only the direct child killed at timeout | `a_timeout_stops_the_whole_process_group` |
   | `.gitignore` without the pattern | `a_new_logbook_ignores_temp_files` |
   | layout files without mode 0600 | `init_creates_…_under_any_umask` |
+  | round 2: ledger month file without `.mode(0o600)` | `new_logbook_and_state_files_are_private_under_any_umask` |
+  | round 2: ledger folder via `create_dir_all` | `a_missing_ledger_folder_is_created_private` (survived until that test was added: `init` already makes `ledger/`) |
+  | round 2: lock file without `.mode(0o600)` | `new_logbook_…_under_any_umask` |
+  | round 2: lock directory via `create_dir_all` | `new_logbook_…_under_any_umask` |
+  | round 2: `write_new` via plain `OpenOptions` | `new_logbook_…_under_any_umask` |
+  | round 2: launch log without `.mode(0o600)` | `new_logbook_…_under_any_umask` |
+
+  The missing sync in `write_generated` cannot be observed by a test
+  (tmpfs, no simulated crash); it is a policy, checked by review.
 
 - Manual runs (scratch HOME/XDG, `SELDON_TEST_GUARD`, made-up values),
   pre-fix binary vs this branch:
   - `capture --all` with a made-up snapper wrapper that runs `sleep 25 &`
     before printing a snapshot list: before 25.2 s, after 10.2 s (the
     snapper timeout), exit 0, snapper `ok`, no `sleep` left;
-  - cost of the syncs on btrfs (debug build, average of 10 runs): `log`
-    85 → 97 ms, `status` 37 → 46 ms, a recorded agent command
-    (`hook claude-code`, mutating fixture) 23 → 38 ms. On tmpfs no
-    difference.
+  - cost of the syncs, round 1 (debug build, mean of 10): `log`
+    85 → 97 ms, `status` 37 → 46 ms, recorded agent command 23 → 38 ms.
+  - round 2, **release build**, the hook only (inputs prepared, mean of
+    30, `claude-code-mutating.json` with an active case):
+
+    | | pre-fix | this branch |
+    |---|---|---|
+    | recorded command, btrfs | 7.3 ms | 13.3 ms |
+    | recorded command, tmpfs | 3.3 ms | 3.3 ms |
+    | non-recorded call (`claude-code-non-mutating.json`), btrfs | — | 1.1 ms |
+    | process start (`--version`) | 0.87 ms | 0.83 ms |
+
+    The extra ~6 ms on btrfs are the case file's sync and its
+    directory's sync (the ledger line was already synced before this
+    WP). The pre-fix 7.3 ms was already over the 5 ms budget on a real
+    disk, because of the ledger sync.
 
 **Learned** (added to `memory/pitfalls.md`)
 
@@ -134,29 +186,12 @@ SPEC-ENGINE §2, CHANGELOG), plus this handover.
   mutant gives the file an older mtime than the last build; cargo then
   keeps the mutant's binary. Touch the restored file.
 
-**Decisions needed**
+**Decisions needed:** none open. Round 1's four items were decided by
+the orchestrator and done in round 2. The only deviation is item 4's
+sentence, which went to §4 instead of §5 (see Round 2).
 
-1. Switch the four remaining creators (`logbook/lock.rs`, `ledger.rs`
-   `append_file`, `commands/mod.rs` `write_new`, `commands/agent.rs`
-   launch log) to `sys::create_dir_private` / an `.mode(0o600)` open, in
-   this WP or a follow-up. Until then the state directory is created
-   0755 by the lock, and ledger and new case files are 0644 (inside a
-   0700 logbook). The test's exception list names them, so the switch is
-   a one-line test change each.
-2. `docs/SPEC-LOGBOOK.md` line 40 lists the `.gitignore` contents; it
-   lacks `.*.tmp-*` now. Not in my file list; one-word edit.
-3. Sync cost: about +15 ms per recorded agent command on a real disk
-   (two fsyncs per rewritten file, mostly the case file and
-   `index.json`). Keep syncing every rewrite (WP text), or skip the
-   syncs for rebuildable generated files (`index.json`, `STATUS.md`,
-   ledger views)?
-4. Process groups: a terminal Ctrl-C no longer reaches a program the
-   engine runs; the engine itself stops and the program finishes on its
-   own (at most the 10 s / 30 s timeouts it would have had). A program
-   whose helper leaves the process group (`setsid`) and keeps the pipe
-   open leaves one blocked reader thread behind; harmless for one-shot
-   commands, and under `seldon watch` one per such timeout. No action
-   proposed.
-
-**Touched outside WP scope:** `engine/tests/init.rs` (one assertion:
-the `.gitignore` text gains `.*.tmp-*`; needed for `just check`).
+**Touched outside WP scope:** `engine/tests/init.rs` (one assertion,
+the `.gitignore` text). Round 2, approved by the orchestrator:
+`logbook/lock.rs`, `ledger.rs`, `commands/mod.rs`, `commands/agent.rs`,
+`index/mod.rs`, `index/views.rs`, `commands/rebuild.rs`,
+`docs/SPEC-LOGBOOK.md` (one row), SPEC-ENGINE §1 and §4.
