@@ -663,6 +663,26 @@ mod commands {
     }
 
     #[test]
+    fn plan_done_masks_a_title_edited_by_hand_in_the_journal() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let secret = token("HAND");
+        let v = run(&env, &["plan", "new", "--", "Rotate the key"]);
+        let id = v["case"]["id"].as_str().unwrap().to_string();
+        let path = find_file(&root.join("work/queued"), &id);
+        let text = read(&path).replace("Rotate the key", &format!("Rotate {secret}"));
+        std::fs::write(&path, text).unwrap();
+        run(&env, &["plan", "start", &id]);
+        run(&env, &["plan", "verify", &id]);
+        run(&env, &["plan", "done", &id]);
+        let journal = read(&root.join("journal/2026/2026-10-03.md"));
+        assert!(
+            journal.contains(&format!("Case completed: Rotate {REDACTED}")),
+            "{journal}"
+        );
+    }
+
+    #[test]
     fn decide_masks_the_title() {
         let env = Env::new(Snapper::Missing);
         let root = env.init_logbook();
