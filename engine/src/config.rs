@@ -164,6 +164,21 @@ impl Dirs {
         std::path::absolute(&p).unwrap_or(p)
     }
 
+    /// A path value of `config.toml` (`logbook`, `watchPaths`) as an
+    /// absolute path: `~`, `$HOME` and `${HOME}` forms, and a relative
+    /// value, lie under the home directory, never under the current
+    /// directory (the plugin captures from the shell's directory, a hook
+    /// from the agent's); `.` and `..` are folded. `None` for an empty
+    /// value. The hooks read `watchPaths` the same way
+    /// ([`crate::attribution::home_path`]).
+    pub fn expand_config(&self, value: &str) -> Option<PathBuf> {
+        if value.trim().is_empty() {
+            return None;
+        }
+        let path = crate::attribution::home_path(value, &self.home);
+        Some(crate::attribution::normalise(Path::new(&path)))
+    }
+
     /// `path` with the home directory written as `~` (for display only).
     pub fn display(&self, path: &Path) -> String {
         match path.strip_prefix(&self.home) {
@@ -218,8 +233,11 @@ pub fn resolve_logbook(
     if let Some(p) = env.filter(|p| !p.is_empty()) {
         return (dirs.expand(p), LogbookSource::Env);
     }
-    if let Some(p) = config.and_then(|c| c.logbook.as_deref()) {
-        return (dirs.expand(&p.to_string_lossy()), LogbookSource::Config);
+    if let Some(p) = config
+        .and_then(|c| c.logbook.as_deref())
+        .and_then(|p| dirs.expand_config(&p.to_string_lossy()))
+    {
+        return (p, LogbookSource::Config);
     }
     (dirs.default_logbook(), LogbookSource::Default)
 }
@@ -228,12 +246,14 @@ pub fn resolve_logbook(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {
-    /// Absolute logbook path.
+    /// The logbook path; a relative one lies under the home directory
+    /// ([`Dirs::expand_config`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logbook: Option<PathBuf>,
     /// Language of the logbook prose (ADR-0007).
     pub language: Language,
-    /// Paths the config collector hashes; `~` is expanded at use.
+    /// Paths the config collector hashes; expanded at use
+    /// ([`Dirs::expand_config`]).
     pub watch_paths: Vec<String>,
     /// Agent harnesses chosen in the wizard (`claude-code`, `omarchy-agent`).
     pub harnesses: Vec<String>,
@@ -345,12 +365,50 @@ impl Default for GitConfig {
 }
 
 /// Extra redaction (SPEC-ENGINE §7).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Redaction {
     pub patterns: Vec<String>,
+    /// Default [`DEFAULT_SKIP_PATHS`], also for an empty list (the
+    /// `skipPaths = []` that `init` wrote before WP-069); a list of the
+    /// user's own replaces them. `init` writes the list into the file.
+    #[serde(deserialize_with = "skip_paths_or_defaults")]
     pub skip_paths: Vec<String>,
 }
+
+/// `[redaction] skipPaths` as read: an empty list is the defaults.
+fn skip_paths_or_defaults<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Vec<String>, D::Error> {
+    let paths = Vec::<String>::deserialize(d)?;
+    Ok(if paths.is_empty() {
+        Redaction::default().skip_paths
+    } else {
+        paths
+    })
+}
+
+impl Default for Redaction {
+    fn default() -> Self {
+        Redaction {
+            patterns: Vec::new(),
+            skip_paths: DEFAULT_SKIP_PATHS.map(String::from).to_vec(),
+        }
+    }
+}
+
+/// State, history, cache and log files that shell plugins keep in a folder
+/// of their own under `~/.config/omarchy/` and rewrite every few minutes:
+/// watched, each rewrite would be one more drift item (WP-069). Omarchy's
+/// own files there (`shell.json`, `extensions/`, `hooks/`, `themed/`) do
+/// not match.
+pub const DEFAULT_SKIP_PATHS: [&str; 5] = [
+    "~/.config/omarchy/**/history.json",
+    "~/.config/omarchy/**/history/",
+    "~/.config/omarchy/**/state.json",
+    "~/.config/omarchy/**/cache/",
+    "~/.config/omarchy/**/*.log",
+];
 
 /// Drift grouping (ADR-0013).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -601,6 +659,97 @@ mod tests {
             r(None, Some("~/lb"), None).0,
             PathBuf::from("/home/user/lb")
         );
+    }
+
+    #[test]
+    fn config_paths_resolve_under_home_whatever_the_cwd() {
+        let d = dirs();
+        let e = |v: &str| d.expand_config(v);
+        let home = |rel: &str| Some(PathBuf::from("/home/user").join(rel));
+        assert_eq!(e("dotfiles"), home("dotfiles"));
+        assert_eq!(e("./dotfiles/../.config/nvim"), home(".config/nvim"));
+        assert_eq!(e("~/.config/nvim"), home(".config/nvim"));
+        assert_eq!(e("$HOME/.config/nvim"), home(".config/nvim"));
+        assert_eq!(e("${HOME}/.bashrc"), home(".bashrc"));
+        assert_eq!(e("~"), Some(PathBuf::from("/home/user")));
+        assert_eq!(e("$HOME"), Some(PathBuf::from("/home/user")));
+        assert_eq!(
+            e("/etc/pacman.conf"),
+            Some(PathBuf::from("/etc/pacman.conf"))
+        );
+        assert_eq!(
+            e(""),
+            None,
+            "an empty value is no path, not the home folder"
+        );
+        assert_eq!(e("  "), None);
+        // the logbook key: relative to home; the flag and the variable are
+        // typed in a shell and stay relative to its directory
+        let config = Config {
+            logbook: Some(PathBuf::from("Logbooks/seldon")),
+            ..Config::default()
+        };
+        assert_eq!(
+            resolve_logbook(&d, None, None, Some(&config)),
+            (
+                PathBuf::from("/home/user/Logbooks/seldon"),
+                LogbookSource::Config
+            )
+        );
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            resolve_logbook(&d, None, Some("lb"), Some(&config)).0,
+            cwd.join("lb")
+        );
+        // an empty logbook value is the default
+        let empty = Config {
+            logbook: Some(PathBuf::new()),
+            ..Config::default()
+        };
+        assert_eq!(
+            resolve_logbook(&d, None, None, Some(&empty)),
+            (PathBuf::from("/home/user/Seldon"), LogbookSource::Default)
+        );
+    }
+
+    #[test]
+    fn default_skip_paths_skip_plugin_state_not_omarchy_config() {
+        use crate::collectors::config::SkipPaths;
+        let skip = SkipPaths::new(
+            Path::new("/home/user"),
+            &Config::default().redaction.skip_paths,
+        );
+        let m = |rel: &str| skip.matches(&Path::new("/home/user").join(rel));
+        // made-up plugin data under a folder of its own
+        assert!(m(".config/omarchy/example-timer/history.json"));
+        assert!(m(".config/omarchy/example-timer/state.json"));
+        assert!(m(".config/omarchy/example-timer/data/state.json"));
+        assert!(m(".config/omarchy/example-timer/history/2026-10.json"));
+        assert!(m(".config/omarchy/example-timer/cache"));
+        assert!(m(".config/omarchy/example-timer/debug.log"));
+        // Omarchy's own config and other folders stay watched
+        for rel in [
+            ".config/omarchy/shell.json",
+            ".config/omarchy/history.json",
+            ".config/omarchy/extensions/omarchy-menu.jsonc",
+            ".config/omarchy/hooks/theme-set.d/seldon-theme-set.sh",
+            ".config/omarchy/example-timer/settings.json",
+            ".config/hypr/state.json",
+        ] {
+            assert!(!m(rel), "{rel} is skipped");
+        }
+        // written into a new file; an empty list (what `init` wrote before)
+        // and a missing key are the defaults; a list of one's own replaces them
+        let text = toml::to_string(&Config::default()).unwrap();
+        assert!(
+            text.contains("skipPaths = [\"~/.config/omarchy/**/history.json\""),
+            "{text}"
+        );
+        let read = |text: &str| toml::from_str::<Config>(text).unwrap().redaction.skip_paths;
+        assert_eq!(read("[redaction]\nskipPaths = []\n"), DEFAULT_SKIP_PATHS);
+        assert_eq!(read("[redaction]\npatterns = []\n"), DEFAULT_SKIP_PATHS);
+        assert_eq!(read(""), DEFAULT_SKIP_PATHS);
+        assert_eq!(read("[redaction]\nskipPaths = [\"*.key\"]\n"), ["*.key"]);
     }
 
     #[test]

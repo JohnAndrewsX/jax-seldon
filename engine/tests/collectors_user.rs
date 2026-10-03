@@ -829,7 +829,7 @@ mod config {
                 .config
                 .watch_paths
                 .iter()
-                .map(|p| b.dirs.expand(p))
+                .filter_map(|p| b.dirs.expand_config(p))
                 .collect();
             let excluded = vec![b.home(".config/omarchy/plugins")];
             let manifest = Manifest::file(&b.dirs);
@@ -958,11 +958,37 @@ mod config {
         let out = c.run("2026-10-01T10:10:00+02:00");
         assert!(out.ok);
         assert!(out.events.is_empty(), "{:?}", out.events);
-        let text = c.manifest_text();
-        for needle in ["secrets.conf", "api.key", "private", "notes.txt"] {
-            assert!(!text.contains(needle), "{needle} in the manifest:\n{text}");
+        // the files are never listed; the scope keeps the patterns as
+        // config.toml has them (WP-069)
+        let m = c.manifest();
+        let listed =
+            serde_json::to_string(&(&m.current.files, &m.current.skipped, &m.stats)).unwrap();
+        for needle in [
+            "secrets.conf",
+            "api.key",
+            "private",
+            "notes.txt",
+            "more.txt",
+        ] {
+            assert!(
+                !listed.contains(needle),
+                "{needle} in the manifest:\n{listed}"
+            );
         }
-        assert!(text.contains("hyprland.conf"));
+        assert!(listed.contains("hyprland.conf"));
+        let text = c.manifest_text();
+        assert!(
+            !text.contains("notes.txt") && !text.contains("more.txt"),
+            "{text}"
+        );
+        assert_eq!(
+            m.current.scope.unwrap().skip,
+            [
+                "*.key",
+                "~/.config/hypr/secrets.conf",
+                "~/.config/omarchy/private/"
+            ]
+        );
     }
 
     #[test]
@@ -1055,6 +1081,227 @@ mod config {
         assert!(out.message.unwrap().contains("new baseline"));
         c.file(".config/hypr/a.conf", "3\n");
         assert_eq!(c.run("2026-10-01T10:20:00+02:00").events.len(), 1);
+    }
+
+    /// Kinds and subjects of `out`'s events.
+    fn kinds(out: &Outcome) -> Vec<(Kind, &str)> {
+        out.events
+            .iter()
+            .map(|e| (e.kind, e.subject.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn a_narrowed_scope_is_no_removal() {
+        let mut c = ConfigBench::new("config-narrow");
+        c.file(".config/hypr/hyprland.conf", "a\n");
+        c.file(".config/omarchy/shell.json", "{}\n");
+        c.file(".config/omarchy/extensions/menu.jsonc", "{}\n");
+        c.file(".config/omarchy/backgrounds/x.png", b"\x89PNG\0");
+        c.file(".config/systemd/user/a.service", "[Unit]\n");
+        c.file(".bashrc", "export A=1\n");
+        c.run("2026-10-01T10:00:00+02:00");
+
+        // a watch path removed: its files left the scope, nothing was deleted
+        c.b.config.watch_paths = vec![
+            "~/.config/hypr".into(),
+            "~/.config/systemd".into(),
+            "~/.bashrc".into(),
+        ];
+        std::fs::remove_file(c.b.home(".config/hypr/hyprland.conf")).unwrap();
+        let out = c.run("2026-10-01T10:10:00+02:00");
+        assert!(out.ok);
+        assert_eq!(
+            kinds(&out),
+            [(Kind::ConfigRemove, "~/.config/hypr/hyprland.conf")],
+            "only the real deletion"
+        );
+        assert_eq!(
+            out.message.as_deref(),
+            Some("watch scope changed: 3 file(s) left it, 0 entered it; no events for them")
+        );
+        let scope = c.manifest().current.scope.unwrap();
+        assert_eq!(
+            scope.watch,
+            ["~/.bashrc", "~/.config/hypr", "~/.config/systemd"]
+        );
+        assert_eq!(scope.exclude, ["~/.config/omarchy/plugins"]);
+
+        // a skipPaths pattern added: no removal, the file is not named
+        c.b.config.redaction.skip_paths = vec!["*.service".into()];
+        let out = c.run("2026-10-01T10:20:00+02:00");
+        assert!(out.events.is_empty(), "{:?}", out.events);
+        assert_eq!(
+            out.message.as_deref(),
+            Some("watch scope changed: 1 file(s) left it, 0 entered it; no events for them")
+        );
+
+        // the same scope again: no notice
+        let out = c.run("2026-10-01T10:30:00+02:00");
+        assert!(out.events.is_empty() && out.message.is_none(), "{out:?}");
+        assert_eq!(c.b.written.len(), 1);
+    }
+
+    #[test]
+    fn a_widened_scope_is_no_flood() {
+        let mut c = ConfigBench::new("config-widen");
+        c.b.config.watch_paths = vec!["~/.config/hypr".into()];
+        c.b.config.redaction.skip_paths = vec!["secret.conf".into()];
+        c.file(".config/hypr/hyprland.conf", "a\n");
+        c.file(".config/hypr/secret.conf", "token=1\n");
+        for i in 0..20 {
+            c.file(&format!(".config/nvim/lua/plugin{i}.lua"), "return {}\n");
+        }
+        c.file(".config/nvim/big.bin", b"\0\0");
+        c.run("2026-10-01T10:00:00+02:00");
+
+        // a watch path added, a pattern taken out: what enters is the
+        // new baseline; a file created under a path watched before is new
+        c.b.config.watch_paths.push("~/.config/nvim".into());
+        c.b.config.redaction.skip_paths.clear();
+        c.file(".config/hypr/new.conf", "b\n");
+        let out = c.run("2026-10-01T10:10:00+02:00");
+        assert_eq!(kinds(&out), [(Kind::ConfigAdd, "~/.config/hypr/new.conf")]);
+        assert_eq!(
+            out.message.as_deref(),
+            Some("watch scope changed: 0 file(s) left it, 22 entered it; no events for them")
+        );
+        // from now on they are watched like the others
+        c.file(".config/nvim/lua/plugin3.lua", "return { x = 1 }\n");
+        c.file(".config/hypr/secret.conf", "token=2\n");
+        let out = c.run("2026-10-01T10:20:00+02:00");
+        assert_eq!(
+            kinds(&out),
+            [
+                (Kind::ConfigChange, "~/.config/hypr/secret.conf"),
+                (Kind::ConfigChange, "~/.config/nvim/lua/plugin3.lua"),
+            ]
+        );
+        assert_eq!(out.message, None);
+    }
+
+    #[test]
+    fn a_manifest_without_a_scope_still_drops_what_left_it() {
+        // a manifest written before WP-069: the old scope is unknown, so
+        // what left the scope is dropped, and nothing counts as entered
+        let mut c = ConfigBench::new("config-old-manifest");
+        c.file(".config/hypr/hyprland.conf", "a\n");
+        c.file(".config/omarchy/shell.json", "{}\n");
+        c.run("2026-10-01T10:00:00+02:00");
+        let mut m: Value = serde_json::from_str(&c.manifest_text()).unwrap();
+        m.as_object_mut().unwrap().remove("scope");
+        m.as_object_mut().unwrap().remove("stats");
+        write(&Manifest::file(&c.b.dirs), m.to_string());
+
+        c.b.config.watch_paths = vec!["~/.config/hypr".into(), "~/.config/waybar".into()];
+        c.file(".config/waybar/config.jsonc", "{}\n");
+        let out = c.run("2026-10-01T10:10:00+02:00");
+        assert_eq!(
+            kinds(&out),
+            [(Kind::ConfigAdd, "~/.config/waybar/config.jsonc")]
+        );
+        assert_eq!(
+            out.message.as_deref(),
+            Some("watch scope changed: 1 file(s) left it, 0 entered it; no events for them")
+        );
+    }
+
+    #[test]
+    fn default_skip_paths_skip_plugin_state() {
+        // ConfigBench keeps Config::default()'s [redaction] skipPaths
+        let mut c = ConfigBench::new("config-default-skip");
+        c.file(".config/omarchy/example-timer/history.json", "[1]\n");
+        c.file(".config/omarchy/example-timer/settings.json", "{}\n");
+        c.run("2026-10-01T10:00:00+02:00");
+        c.file(".config/omarchy/example-timer/history.json", "[1,2]\n");
+        c.file(".config/omarchy/example-timer/settings.json", "{\"a\":1}\n");
+        let out = c.run("2026-10-01T10:10:00+02:00");
+        assert_eq!(
+            kinds(&out),
+            [(
+                Kind::ConfigChange,
+                "~/.config/omarchy/example-timer/settings.json"
+            )]
+        );
+        let m = c.manifest();
+        assert!(
+            !m.current
+                .files
+                .contains_key("~/.config/omarchy/example-timer/history.json")
+        );
+    }
+
+    #[test]
+    fn an_unchanged_file_is_not_read_again() {
+        let mut c = ConfigBench::new("config-stat");
+        let old = "2026-09-01T08:00:00+02:00";
+        for f in ["a", "b", "d"] {
+            c.file(&format!(".config/hypr/{f}.conf"), format!("{f}{f}{f}{f}\n"));
+            c.touch(&format!(".config/hypr/{f}.conf"), old);
+        }
+        c.run("2026-10-01T10:00:00+02:00");
+        assert_eq!(c.manifest().stats.len(), 3);
+
+        // a stored hash no file has: while size, times and inode match, the
+        // walk takes it as it is, so the file was not read
+        let fake = "f".repeat(64);
+        let mut m: Value = serde_json::from_str(&c.manifest_text()).unwrap();
+        m["files"]["~/.config/hypr/a.conf"] = json!(fake);
+        write(&Manifest::file(&c.b.dirs), m.to_string());
+        let out = c.run("2026-10-01T10:10:00+02:00");
+        assert!(out.events.is_empty(), "{:?}", out.events);
+        assert_eq!(c.manifest().current.files["~/.config/hypr/a.conf"], fake);
+
+        // the change time moves on (coarse clocks: let a tick pass)
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        // an edit of the same size in place, the mtime put back (`touch
+        // -r`): the change time differs, so it is read again
+        c.file(".config/hypr/a.conf", "AAAA\n");
+        c.touch(".config/hypr/a.conf", old);
+        // the same size and a new mtime: read again
+        c.file(".config/hypr/b.conf", "BBBB\n");
+        c.touch(".config/hypr/b.conf", "2026-09-01T08:00:01+02:00");
+        let out = c.run("2026-10-01T10:20:00+02:00");
+        assert_eq!(
+            kinds(&out),
+            [
+                (Kind::ConfigChange, "~/.config/hypr/a.conf"),
+                (Kind::ConfigChange, "~/.config/hypr/b.conf"),
+            ]
+        );
+        assert_eq!(out.events[0].meta.hash_from.as_deref(), Some(fake.as_str()));
+        assert_ne!(c.manifest().current.files["~/.config/hypr/a.conf"], fake);
+
+        // a file written just now is read at every walk until it is older
+        // than the walk by two seconds (a write in the same tick)
+        c.file(".config/hypr/c.conf", "cccc\n");
+        let out = c.run("2026-10-01T10:30:00+02:00");
+        assert_eq!(kinds(&out), [(Kind::ConfigAdd, "~/.config/hypr/c.conf")]);
+        assert!(!c.manifest().stats.contains_key("~/.config/hypr/c.conf"));
+        c.file(".config/hypr/c.conf", "CCCC\n");
+        let out = c.run("2026-10-01T10:40:00+02:00");
+        assert_eq!(kinds(&out), [(Kind::ConfigChange, "~/.config/hypr/c.conf")]);
+    }
+
+    #[test]
+    fn a_name_with_control_characters_is_skipped_with_a_warning() {
+        let mut c = ConfigBench::new("config-control");
+        c.file(".config/hypr/ok.conf", "a\n");
+        c.file(".config/hypr/evil\x1b[2Jname.conf", "b\n");
+        c.file(".config/hypr/tab\there/x.conf", "c\n");
+        let out = c.run("2026-10-01T10:00:00+02:00");
+        assert!(out.ok);
+        assert_eq!(
+            out.message.as_deref(),
+            Some(
+                "2 file(s) not watched: the name holds a control character or is longer than 512 characters"
+            )
+        );
+        let text = c.manifest_text();
+        assert!(!text.contains("evil") && !text.contains("tab"), "{text}");
+        c.file(".config/hypr/evil\x1b[2Jname.conf", "changed\n");
+        let out = c.run("2026-10-01T10:10:00+02:00");
+        assert!(out.events.is_empty(), "{:?}", out.events);
     }
 
     #[test]
@@ -1209,6 +1456,77 @@ mod capture {
         let third = c.capture();
         assert_eq!(third["written"], 0, "{third}");
         assert_eq!(c.ledger().len(), 3);
+    }
+
+    #[test]
+    fn relative_config_paths_do_not_follow_the_working_directory() {
+        // the plugin captures from the shell's directory, a hook from the
+        // agent's: `logbook = "Logbook"` and `watchPaths = ["dotfiles"]`
+        // name the same folders from both (WP-069)
+        let env = Env::new(Snapper::NoPermissions);
+        let out = env.seldon(&[
+            "init",
+            "--non-interactive",
+            "--no-git",
+            "--no-capture",
+            "--path",
+            env.home.join("Logbook").to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        // the first run says where noisy files go (F-250)
+        assert!(
+            common::stdout(&out).contains("list them in [redaction] skipPaths"),
+            "{}",
+            common::stdout(&out)
+        );
+        let mut config = Config::load(&env.config_file()).unwrap().unwrap();
+        assert_eq!(
+            config.redaction.skip_paths,
+            seldon::config::DEFAULT_SKIP_PATHS,
+            "init writes the default list into the file"
+        );
+        config.logbook = Some(PathBuf::from("Logbook"));
+        config.watch_paths = vec!["dotfiles".into(), "~/.config/omarchy".into()];
+        // what `init` wrote before WP-069: an empty list is the defaults
+        config.redaction.skip_paths = Vec::new();
+        config.save(&env.config_file()).unwrap();
+        assert!(common::read(&env.config_file()).contains("skipPaths = []"));
+        write(&env.home.join("dotfiles/app.conf"), "a = 1\n");
+        write(
+            &env.home.join(".config/omarchy/example-timer/history.json"),
+            "[1]\n",
+        );
+        let (a, b) = (env.tmp.path().join("a"), env.home.join(".config"));
+        std::fs::create_dir_all(&a).unwrap();
+        let capture = |cwd: &Path| {
+            let out = env
+                .command(&["capture", "--source", "config", "--json"])
+                .current_dir(cwd)
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            json(&out)
+        };
+        let first = capture(&a);
+        assert_eq!(
+            first["logbook"].as_str(),
+            Some(env.home.join("Logbook").to_str().unwrap())
+        );
+        assert_eq!(first["written"], 0);
+        let other = capture(&b);
+        assert_eq!(other["written"], 0, "{other}");
+        assert_eq!(other["logbook"], first["logbook"]);
+        write(&env.home.join("dotfiles/app.conf"), "a = 2\n");
+        assert_eq!(capture(&b)["written"], 1);
+        assert_eq!(capture(&a)["written"], 0);
+        let manifest: Manifest = serde_json::from_slice(
+            &std::fs::read(env.home.join(".local/state/seldon/manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            manifest.current.files.keys().collect::<Vec<_>>(),
+            ["~/dotfiles/app.conf"]
+        );
     }
 
     #[test]
