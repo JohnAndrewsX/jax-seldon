@@ -124,8 +124,8 @@ of a mutating PreToolUse each, median):
 SPEC §8 now carries "about 2 ms … 3 to 5 ms with the rebuild"; SPEC §1's
 "`hook` < 5 ms" holds on this host.
 
-**Gates:** `just check` exit 0 ("check: ok"; 881 tests passed, 0 failed
-over all `cargo test` runs, plugin tests included), run on `0f44b84`.
+**Gates:** `just check` exit 0 ("check: ok"; 881 passed, 0 failed over the
+`cargo test` runs with and without `watch`; plugin-test ok), run on `0f44b84`.
 `just check-rss` exit 0 (`rss_stays_under_10_mb_on_the_x10_fixture` ok).
 
 ## Learned
