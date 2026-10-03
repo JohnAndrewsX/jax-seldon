@@ -32,6 +32,9 @@ FocusScope {
   property string priority: Model.NEW_CASE_DEFAULTS.priority
   // The title of the case being created, until the engine answers.
   property string sentTitle: ""
+  // Why the last Create did not go out although the form was fine: another
+  // case action was pending (Service.busyRefusal). Cleared by the next Create.
+  property string notice: ""
 
   property alias title: titleField.text
   property alias area: areaField.text
@@ -40,8 +43,10 @@ FocusScope {
   readonly property bool enabledHere: !!service && service.canWrite
   readonly property var result: service && service.planResult && service.planResult.action === "new" ? service.planResult : null
   readonly property bool pending: !!result && result.pending
-  // A created case is reported on the tab; the sheet shows progress and refusals.
-  readonly property string resultText: result && (result.pending || !result.ok) ? result.text : ""
+  // A created case is reported on the tab; the sheet shows progress and
+  // refusals, and the busy notice in place of either.
+  readonly property string resultText: root.notice !== "" ? root.notice
+    : result && (result.pending || !result.ok) ? result.text : ""
   readonly property bool areaValid: root.area === "" || Model.AREA.test(root.area)
   readonly property color dim: Util.alpha(foreground, 0.65)
   readonly property real labelWidth: Style.space(64)
@@ -55,9 +60,11 @@ FocusScope {
 
   function submit() {
     if (!root.service || root.pending) return false
+    var refusals = root.service.busyRefusals
     var sent = root.service.plan("new", {
       title: root.title, zone: root.zone, risk: root.risk, area: root.area, priority: root.priority
     })
+    root.notice = !sent && root.service.busyRefusals !== refusals ? root.service.busyRefusal.text : ""
     if (sent) root.sentTitle = root.title
     return sent
   }
@@ -271,7 +278,7 @@ FocusScope {
       visible: text !== ""
       textFormat: Text.PlainText
       text: root.resultText
-      color: root.result && !root.result.ok ? root.urgent : root.dim
+      color: root.notice === "" && root.result && !root.result.ok ? root.urgent : root.dim
       wrapMode: Text.Wrap
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

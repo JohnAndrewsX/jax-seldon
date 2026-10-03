@@ -147,6 +147,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `jax.seldon.panel` IPC target, so the shell no longer logs "another
   handler is registered"; the next widget takes the target over when the
   owner's monitor goes (WP-067).
+- Every engine call that fails leaves one line in the shell journal
+  (`journalctl --user -t omarchy-shell`): the command, its exit code and
+  the first line of its error (WP-068).
+- A capture that finds another seldon holding the lock (exit 4) is tried
+  again after 30 s, up to three times; meanwhile the Changelog says
+  "waiting for another seldon process" instead of showing an error
+  (WP-068).
+- *Create* in the new-case sheet and the drift sheet's action no longer
+  do nothing while another case or drift action is pending: the sheet
+  says "Another action is running — try again in a moment" (WP-068).
+- The drift sheet keeps its first Enter and its notice when a new index
+  arrives with the same item; only a change to the form disarms (WP-068).
+- An engine older than the plugin's `engineMin` gets an "Engine too old"
+  banner with the update command (WP-068).
 
 ### Packaging and docs
 

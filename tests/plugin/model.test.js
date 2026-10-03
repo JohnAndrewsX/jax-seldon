@@ -1385,4 +1385,58 @@ test("timeline markers: the canvas paths are the A12 16-grid files' paths", () =
   same(M.TIMELINE_LEGEND.map((e) => e.label), ["releases", "snapshots", "cases", "crises"])
 })
 
+test("engineMin (WP-068): a version below the manifest's engineMin gets the update banner, equal or above none", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "plugin/manifest.json"), "utf8"))
+  assert.strictEqual(M.engineMinOf(manifest), manifest.seldon.engineMin)
+  assert.strictEqual(M.engineMinOf(null), "")
+  assert.strictEqual(M.engineMinOf({ seldon: {} }), "")
+  const b = M.engineOutdatedBanner("ok", "0.1.9", "0.2.0")
+  assert.ok(b)
+  assert.strictEqual(b.title, "Engine too old")
+  assert.strictEqual(b.tone, "urgent")
+  assert.strictEqual(b.command, M.UPDATE_ENGINE_COMMAND)
+  assert.ok(b.detail.indexOf("Update the engine to at least 0.2.0") !== -1, b.detail)
+  assert.ok(b.detail.indexOf("0.1.9") !== -1, b.detail)
+  same(b.actions.map((a) => a.id), ["terminal", "copy", "recheck"])
+  assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.0", "0.2.0"), null)
+  assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.1", "0.2.0"), null)
+  assert.strictEqual(M.engineOutdatedBanner("ok", "1.0.0", "0.2.0"), null)
+  // Numbers, not text: 0.10 is newer than 0.9.
+  assert.strictEqual(M.engineOutdatedBanner("ok", "0.10.0", "0.9.0"), null)
+  assert.ok(M.engineOutdatedBanner("ok", "0.9.0", "0.10.0"))
+  // A dev or pre-release build counts as its version.
+  assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.0-dev", "0.2.0"), null)
+  assert.ok(M.engineOutdatedBanner("ok", "0.1.0-fake", "0.2.0"))
+  // Unknown on either side: no claim.
+  assert.strictEqual(M.engineOutdatedBanner("ok", "", "0.2.0"), null)
+  assert.strictEqual(M.engineOutdatedBanner("ok", "0.1.0", ""), null)
+  assert.strictEqual(M.engineOutdatedBanner("ok", "garbage", "0.2.0"), null)
+  // It replaces the other status banners but the two that name their own fix.
+  for (const s of ["notInitialised", "indexMissing", "indexStale"])
+    assert.strictEqual(M.engineOutdatedBanner(s, "0.1.0", "0.2.0").title, "Engine too old", s)
+  assert.strictEqual(M.engineOutdatedBanner("engineMissing", "0.1.0", "0.2.0"), null)
+  assert.strictEqual(M.engineOutdatedBanner("contractMismatch", "0.1.0", "0.2.0"), null)
+  // The engine of this tree meets the manifest of this tree.
+  const engine = fs.readFileSync(path.join(root, "engine/Cargo.toml"), "utf8").match(/^version = "([^"]+)"/m)[1]
+  assert.strictEqual(M.engineOutdatedBanner("ok", engine, manifest.seldon.engineMin), null)
+})
+
+test("callWarning (WP-068): one line with the exit code and the first stderr line", () => {
+  assert.strictEqual(M.callWarning(["capture", "--all"], 0, "{}", "noise"), "")
+  assert.strictEqual(M.callWarning(["capture", "--all"], 2, "", "seldon: boom\nsecond line"),
+    "jax.seldon: seldon capture exit 2: seldon: boom")
+  assert.strictEqual(M.callWarning(["status", "--json"], 2, "", "\n  \nlate line\n"), "jax.seldon: seldon status exit 2: late line")
+  // `--json` errors go to stdout: their message stands in for an empty stderr.
+  assert.strictEqual(M.callWarning(["capture"], 4, '{"error":{"code":4,"message":"another seldon process holds the lock"}}', ""),
+    "jax.seldon: seldon capture exit 4: another seldon process holds the lock")
+  assert.strictEqual(M.callWarning(["log"], 1, "", ""), "jax.seldon: seldon log exit 1: seldon exited with code 1")
+})
+
+test("busy and lock texts (WP-068)", () => {
+  assert.strictEqual(M.BUSY_TEXT, "Another action is running — try again in a moment")
+  assert.strictEqual(M.LOCK_RETRY_MS, 30000)
+  assert.strictEqual(M.LOCK_RETRIES, 3)
+  assert.ok(M.LOCK_WAIT_TEXT.indexOf("waiting for another seldon process") === 0)
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

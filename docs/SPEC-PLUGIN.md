@@ -72,6 +72,26 @@ plugin/
 - Exposes `function run(args)` for other files; **only fixed argument
   arrays**, never strings assembled from index content except as single
   arguments (case ids, event ids validated by regex before use).
+- Every engine call that exits above 0 (the probe included) logs one
+  `console.warn` line, `jax.seldon: seldon <command> exit <code>: <first
+  stderr line>` (the engine's JSON error message when stderr is empty), so
+  `journalctl --user -t omarchy-shell` shows each failing timed capture
+  (WP-068).
+- Exit 4 (lock held) of a `capture` or `status` is not an error: the call
+  runs again after 30 s, at most 3 times (a locked capture takes its queued
+  `status` along); meanwhile the capture result reads "waiting for another
+  seldon process; trying again shortly" in the neutral tone and
+  `capturing` stays true. After the third retry the exit is an error as
+  before. An explicit *Capture now* replaces a pending retry (WP-068).
+- One call at a time per family (plan and agent, drift, decide): a call
+  refused because one of its family is pending returns false and sets
+  `busyRefusal` to `{ family, action, caseId, eventId, text }` with the
+  text "Another action is running — try again in a moment"; the new-case
+  and drift sheets show it in the neutral tone (WP-068).
+- Engine minimum: the manifest's `seldon.engineMin` (injected by the
+  shell) is compared with the probed version (`major.minor.patch`; a
+  pre-release suffix counts as its version). An older engine gets the
+  "Engine too old" banner (§5) and one warning line (WP-068).
 
 ## 4. BarWidget.qml
 
@@ -211,7 +231,11 @@ ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
 terminal*, *Copy* and *Check again*; contract
 mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, the GitHub installer one-liner when the engine is older (until the
-AUR package is live, ADR-0024); snapshots
+AUR package is live, ADR-0024); engine older than the manifest's
+`engineMin` (§3; in place of every status banner but engine missing and
+contract mismatch) → "Engine too old", "Update the engine to at least
+X", the same installer one-liner with *Update in terminal*, *Copy* and
+*Check again* (WP-068); snapshots
 not readable (ADR-0011) → the one-line snapper fix with *Run in
 terminal*, *Copy* and *Check again*; the detail is the engine's message,
 then on its own line what the fix grants besides listing (it also lets the

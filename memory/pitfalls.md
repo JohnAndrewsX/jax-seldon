@@ -1286,3 +1286,22 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   pipeline fails although the line was there (a mutant check reported
   "not found" only sometimes). Capture to a file or use a here-string,
   then grep (same class as the `zcat | grep -q` item of WP-049).
+
+## 2026-10-03 · WP-068 (Plugin Dev)
+
+- **A QML `var` property notifies on every new object, equal or not.** A
+  binding that builds an object from index data (`form`, `item`) fires its
+  `…Changed` handler at each index reload. Key "did it really change" on
+  a `string` property (e.g. `JSON.stringify(form)`): a string property
+  notifies only when its value differs.
+- **`console.warn` lines fail `clean_log` in service-states.sh.** Since
+  every failing engine call logs one warning, a case that expects a
+  failing call names it: `clean_log <case> "<regex of the warning>"`.
+- **The capture-cycle harness "settles" during a lock-retry wait** unless
+  `capturing` covers the wait; Service.capturing includes it, and the
+  cases wait with `HARNESS_UNTIL=capturing=false`. Set
+  `SELDON_LOCK_RETRY_MS` in a harness run, never 30 s.
+- **Sheets can be driven without panel-view.sh** (owned by another WP):
+  service-states.sh scenario 35 writes its own small harness next to
+  copies of the shell's Commons/ and Ui/ and calls the sheets' functions
+  (`submit`, `enterKey`, `clickSubmit`) directly.

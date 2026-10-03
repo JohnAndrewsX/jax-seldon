@@ -32,10 +32,10 @@ import "../Model.js" as Model
 //
 // Writing follows the Work tab (WP-020): Enter in a text field or on the
 // action button arms the call and shows "Press Enter again: …", the second
-// Enter runs it; a click runs it at once. Any change to the form disarms.
-// The fields keep their text until the engine has resolved the item, so a
-// refusal never loses it; Esc closes the sheet and keeps the draft (per
-// event). The resolved rows arrive with the next index (Service.qml's
+// Enter runs it; a click runs it at once. Any change to the form disarms;
+// a new index with the same item does not. The fields keep their text
+// until the engine has resolved the item, so a refusal never loses it;
+// Esc closes the sheet and keeps the draft (per event). The resolved rows arrive with the next index (Service.qml's
 // FileView); then the sheet shows the folded resolution and, for a linked
 // or explained item, *Open case*.
 //
@@ -65,7 +65,8 @@ FocusScope {
   property string armedSig: ""
   // The argument list sent, as JSON, until the engine answers.
   property string sentSig: ""
-  // A refusal of the plugin's own (nothing reached the engine).
+  // A refusal of the plugin's own (nothing reached the engine): a form the
+  // engine would refuse, or another drift action still pending (neutral).
   property string notice: ""
   // The item as it was while still open, for the summary after it resolves.
   property var lastItem: null
@@ -96,6 +97,9 @@ FocusScope {
     area: root.area,
     itemZone: root.shown ? root.shown.zone : ""
   })
+  // The form's content: a new index rebuilds `form` (a new object every
+  // time), so only a change of this text is a change to the form (F-555).
+  readonly property string formKey: JSON.stringify(form)
   readonly property var built: Model.driftArgs(action, form)
   readonly property string sig: built.args ? JSON.stringify(built.args) : ""
   readonly property bool armed: sig !== "" && armedSig === sig
@@ -109,7 +113,7 @@ FocusScope {
   readonly property var memberLines: shown && shown.grouped ? Model.memberLines(members, shown.members) : []
   readonly property string resolution: Model.eventResolution(indexData, eventId)
   readonly property string resultText: root.notice !== "" ? root.notice : result ? result.text : ""
-  readonly property bool resultOk: root.notice === "" && !!result && result.ok
+  readonly property bool resultOk: root.notice !== "" ? root.notice === Model.BUSY_TEXT : !!result && result.ok
   readonly property string caseToOpen: result && result.ok && !result.pending && result.caseId !== "" ? result.caseId : ""
   readonly property string hint: !root.isOpen ? ""
     : !root.canWrite ? root.writeBlocker
@@ -223,7 +227,9 @@ FocusScope {
     root.notice = ""
     if (!root.service) return false
     var sig = root.sig
+    var refusals = root.service.busyRefusals
     var sent = root.service.drift(root.action, root.form)
+    if (!sent && root.service.busyRefusals !== refusals) root.notice = root.service.busyRefusal.text
     if (sent) root.sentSig = sig
     return sent
   }
@@ -232,7 +238,7 @@ FocusScope {
     if (root.caseToOpen !== "" && root.service) root.service.openInEditor(root.caseToOpen)
   }
 
-  onFormChanged: {
+  onFormKeyChanged: {
     root.armedSig = ""
     root.notice = ""
   }
