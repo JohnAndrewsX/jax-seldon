@@ -182,6 +182,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `skipPaths` for every path it can name, where a path under an unknown
   folder (`$TMPDIR/yay.log`) only matches a pattern's literal last
   components (WP-071).
+- The plugins collector drops events the ledger already has since its
+  last check, so a capture whose cursor save failed after the ledger
+  write repeats no plugin event. When the config collector's cursor is
+  behind the manifest (a failed cursor save), the config events recorded
+  since are taken into account, so a file that went back to its old
+  content before the next capture is recorded as changed back (WP-073).
+- A plugin removal, enabling or disabling, and a config file removal,
+  carry the capture time; such a change happened after the collector's
+  last check, so the agent command that caused it may now lie up to
+  10 minutes before that check. With the default 15-minute capture
+  interval these changes are no longer drift by `system` (WP-073).
+- `omarchy plugin <verb> <id>` proves only a plugin event of its own
+  kind (`add` also an enabling): an agent's `omarchy plugin update x`
+  no longer claims a person's enabling of `x` (WP-073).
+- `seldon capture` runs on `SELDON_NOW` like every other command: event
+  times, month files, `lastRun` and the collectors' last check follow
+  it (WP-073).
+- The snapper collector notices a snapshot number that was deleted and
+  used again before the next capture (another date): it records the
+  deletion of the old snapshot and the new snapshot, both at the new
+  snapshot's date. Cursors from before keep their snapshots and learn
+  the dates without events (WP-073).
+- The agent hooks ignore an empty `watchPaths` entry, as the config
+  collector does, instead of watching the whole home folder (WP-073).
 
 ### Plugin
 
