@@ -202,7 +202,8 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # not finish, or a deleted .seldon/) are a user error (exit 1) with
                                                # the kept undo, offered only with a hash base whenever it restores and
                                                # paths in the import's folders (ledger/ work/ journal/ memory/ system/
-                                               # outputs/ .seldon/imports/), no `.git`, no glob or pathspec magic
+                                               # outputs/ .seldon/imports/), no `.git`, no glob or pathspec magic,
+                                               # no existing part of a path a symbolic link
                                                # (otherwise, and without it: `git -C <logbook> status` lists what to
                                                # take back), never "nothing changed" and never a second import. Not a directory / not a vault → exit 1.
                                                # --json → {mode: dry-run|apply, changed, alreadyImported: null|{by,
@@ -387,7 +388,10 @@ parent, so a `seldon` started from a git hook or with an exported
 `GIT_DIR` still commits only into the logbook, and an empty or broken
 `.git` never lets git walk up into a repository around it. Before it
 writes, the autocommit checks that `git rev-parse --show-toplevel` is the
-logbook; otherwise nothing is committed. `index`'s `logbook.git` reads
+logbook and that its git directory (`--absolute-git-dir`) is
+`<logbook>/.git`, or a `worktrees/<name>` entry whose `gitdir` file names
+`<logbook>/.git` (a linked work tree); a `.git` file that points at
+another repository's git directory is not committed to. `index`'s `logbook.git` reads
 git with the same environment. The
 user's git configuration applies (hooks, `commit.gpgsign`, a passphrase
 prompt on the terminal). A detached HEAD (`git symbolic-ref -q HEAD`
