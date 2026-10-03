@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 1957e15 -->
+<!-- source: en/06-configuration.md @ 559c0d3 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -325,6 +325,11 @@ an), schreibt es `autocommit = false`: Das Logbuch ist kein Repository,
 und `seldon doctor` meldet das als deine Wahl, nicht als Fehler. Willst
 du Git später nutzen, führe `git -C <logbook> init` aus und setze
 `autocommit = true`.
+
+`seldon init` nimmt seine Git-Vorgabe aus `autocommit` in einer
+bestehenden Datei: Bei `autocommit = false` legt es kein Repository an
+und behält den Wert, außer du gibst `--git` an oder sagst im Assistenten
+Ja.
 
 ## Einstellungen des Plugins
 
