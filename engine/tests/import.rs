@@ -473,7 +473,10 @@ fn a_failed_apply_says_how_to_undo_it() {
     let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
     assert!(message.contains("nothing was committed"), "{message}");
     let undo = undo_command(&message);
-    assert!(undo.starts_with("git checkout "), "{undo}");
+    assert!(
+        undo.starts_with("git --literal-pathspecs checkout "),
+        "{undo}"
+    );
     assert!(!undo.contains(" . ") && !undo.contains("clean"), "{undo}");
     assert_eq!(commit_count(&env, &root), commits, "nothing committed");
     assert!(!root.join(MARKER).exists());
@@ -623,6 +626,101 @@ fn a_dirty_logbook_without_a_commit_is_refused() {
     );
     assert_eq!(tree(&root), before, "the refusal wrote something");
     assert_eq!(commit_count(&env, &root), commits);
+}
+
+/// An apply that fails at the deviation rows (read-only `system/`); its
+/// error message, or `None` when permissions do not stop the write (root).
+fn failed_apply(env: &Env, root: &Path, vault: &Path) -> Option<String> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let system = root.join("system");
+    std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(system.join("probe"), "x").is_ok() {
+        std::fs::remove_file(system.join("probe")).unwrap();
+        std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return None;
+    }
+    let out = import(env, vault, &["--apply", "--json"]);
+    std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stdout(&out));
+    Some(json(&out)["error"]["message"].as_str().unwrap().to_string())
+}
+
+/// WP-061: the kept undo lives in the logbook, which agents write too. A
+/// tampered one (no hash base, a path outside the import's folders,
+/// pathspec magic) is never printed as a command; the refusal points at
+/// `git status` instead.
+#[test]
+fn a_tampered_undo_file_is_not_offered_as_a_command() {
+    let (env, root, vault) = setup();
+    if !env.has_git || failed_apply(&env, &root, &vault).is_none() {
+        return;
+    }
+    let undo_file = root.join(".seldon/imports/omarchy-agent.undo.json");
+    let kept: serde_json::Value = serde_json::from_str(&read(&undo_file)).unwrap();
+    let base = kept["base"].clone();
+    assert!(base.as_str().is_some_and(|b| b.len() == 40), "{kept}");
+
+    // the real one is offered
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+    assert!(
+        message.contains("undo it with `git --literal-pathspecs checkout "),
+        "{message}"
+    );
+
+    let tampered = [
+        serde_json::json!({ "base": null, "restore": ["memory/lessons.md"], "remove": [] }),
+        serde_json::json!({ "base": "HEAD", "restore": ["memory/lessons.md"], "remove": [] }),
+        serde_json::json!({ "base": base, "restore": [".git/config"], "remove": [] }),
+        serde_json::json!({ "base": base, "restore": [], "remove": [".git/HEAD"] }),
+        serde_json::json!({ "base": base, "restore": [], "remove": ["PROJECT.md"] }),
+        serde_json::json!({ "base": base, "restore": [], "remove": ["../outside"] }),
+        serde_json::json!({ "base": base, "restore": [":/"], "remove": [] }),
+        serde_json::json!({ "base": base, "restore": ["memory/*"], "remove": [] }),
+    ];
+    for undo in tampered {
+        std::fs::write(&undo_file, undo.to_string()).unwrap();
+        let before = tree(&root);
+        let out = import(&env, &vault, &["--apply", "--json"]);
+        assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+        let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(
+            !message.contains("undo it with"),
+            "{undo} offered: {message}"
+        );
+        assert!(
+            message.contains(&format!("`git -C {} status`", root.display())),
+            "{message}"
+        );
+        assert_eq!(tree(&root), before);
+    }
+}
+
+/// WP-061: an undo file left behind by an earlier failure is removed by
+/// the apply that succeeds, and the import commit records that.
+#[test]
+fn a_successful_apply_removes_a_leftover_undo_file() {
+    let (env, root, vault) = setup();
+    let undo_file = root.join(".seldon/imports/omarchy-agent.undo.json");
+    std::fs::create_dir_all(undo_file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &undo_file,
+        r#"{"base":null,"restore":[],"remove":["ledger/2026-08.jsonl"]}"#,
+    )
+    .unwrap();
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(!undo_file.exists(), "the leftover undo file is still there");
+    assert!(root.join(MARKER).exists());
+    if env.has_git {
+        assert_eq!(stdout(&env.git(&root, &["status", "--porcelain"])), "");
+        let tracked = env.git(
+            &root,
+            &["ls-files", ".seldon/imports/omarchy-agent.undo.json"],
+        );
+        assert_eq!(stdout(&tracked), "", "the undo file is in HEAD");
+    }
 }
 
 #[test]

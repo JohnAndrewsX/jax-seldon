@@ -305,21 +305,39 @@ impl Undo {
         }
     }
 
-    /// Whether a kept undo can be printed as it is: `base` a commit hash,
-    /// every path relative and inside the logbook. The file lives in the
-    /// logbook, which agents and editors write too; a command built from
-    /// anything else is not offered.
+    /// Whether a kept undo can be printed as it is: a commit hash as
+    /// `base` whenever files are restored, and every path relative, in one
+    /// of the folders the import writes ([`UNDO_DIRS`], `.seldon/imports/`),
+    /// never through a `.git`, without glob or pathspec-magic characters
+    /// (the command also says `--literal-pathspecs`) and without control
+    /// characters. The file lives in the logbook, which
+    /// agents and editors write too; a command built from anything else is
+    /// not offered.
     fn is_sane(&self) -> bool {
-        let base_ok = self
-            .base
-            .as_deref()
-            .is_none_or(|b| matches!(b.len(), 40 | 64) && b.chars().all(|c| c.is_ascii_hexdigit()));
+        let hash = |b: &str| matches!(b.len(), 40 | 64) && b.chars().all(|c| c.is_ascii_hexdigit());
+        let base_ok = match self.base.as_deref() {
+            Some(b) => hash(b),
+            None => self.restore.is_empty(),
+        };
         let path_ok = |p: &String| {
-            let path = std::path::Path::new(p);
-            !p.is_empty()
-                && path
-                    .components()
-                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+            if p.chars()
+                .any(|c| c.is_control() || matches!(c, '*' | '?' | '[' | '\\'))
+                || p.starts_with(':')
+            {
+                return false;
+            }
+            let mut parts = Vec::new();
+            for c in std::path::Path::new(p).components() {
+                match c {
+                    std::path::Component::Normal(part) if part != ".git" => parts.push(part),
+                    _ => return false,
+                }
+            }
+            match parts.as_slice() {
+                [first, _, ..] if UNDO_DIRS.iter().any(|d| first == d) => true,
+                [first, second, _, ..] => *first == ".seldon" && *second == "imports",
+                _ => false,
+            }
         };
         base_ok && self.restore.iter().chain(&self.remove).all(path_ok)
     }
@@ -339,7 +357,10 @@ impl Undo {
                 .base
                 .as_deref()
                 .map_or(String::new(), |b| format!("{b} "));
-            steps.push(format!("git checkout {base}-- {}", quoted(&self.restore)));
+            steps.push(format!(
+                "git --literal-pathspecs checkout {base}-- {}",
+                quoted(&self.restore)
+            ));
         }
         if !self.remove.is_empty() {
             steps.push(format!("rm -f -- {}", quoted(&self.remove)));
@@ -347,6 +368,9 @@ impl Undo {
         steps.join(" && ")
     }
 }
+
+/// The logbook folders an apply writes into (besides `.seldon/imports/`).
+const UNDO_DIRS: [&str; 6] = ["ledger", "work", "journal", "memory", "system", "outputs"];
 
 /// Where a failed apply keeps its undo, for the next run's refusal.
 fn undo_path() -> String {
@@ -588,21 +612,62 @@ mod tests {
         assert_eq!(
             u.command(),
             format!(
-                "git checkout {sha} -- memory/lessons.md ledger/2026-10.jsonl && rm -f -- 'work/queued/C-2026-002-a b.md' 'memory/it'\\''s.md'"
+                "git --literal-pathspecs checkout {sha} -- memory/lessons.md ledger/2026-10.jsonl && rm -f -- 'work/queued/C-2026-002-a b.md' 'memory/it'\\''s.md'"
             )
         );
         assert_eq!(undo(None, &[], &["a.md"]).command(), "rm -f -- a.md");
-        assert_eq!(undo(None, &["a.md"], &[]).command(), "git checkout -- a.md");
+        assert_eq!(
+            undo(None, &["a.md"], &[]).command(),
+            "git --literal-pathspecs checkout -- a.md"
+        );
     }
 
     #[test]
-    fn a_kept_undo_from_outside_the_logbook_is_not_offered() {
+    fn a_kept_undo_outside_the_imports_files_is_not_offered() {
         let sha = "0123456789abcdef0123456789abcdef01234567";
-        assert!(!undo(Some("HEAD; rm -rf ~"), &["a.md"], &[]).is_sane());
-        assert!(!undo(Some(sha), &[], &["../outside.md"]).is_sane());
-        assert!(!undo(Some(sha), &["/etc/passwd"], &[]).is_sane());
-        assert!(!undo(Some(sha), &["memory/../../x"], &[]).is_sane());
-        assert!(!undo(Some(sha), &[""], &[]).is_sane());
-        assert!(undo(Some(sha), &["memory/lessons.md"], &[".seldon/x.json"]).is_sane());
+        let ok = |u: Undo| u.is_sane();
+        // a hash base whenever files are restored
+        assert!(!ok(undo(Some("HEAD; rm -rf ~"), &["memory/a.md"], &[])));
+        assert!(!ok(undo(Some("HEAD"), &["memory/a.md"], &[])));
+        assert!(!ok(undo(None, &["memory/a.md"], &[])));
+        assert!(ok(undo(None, &[], &["memory/a.md"])));
+        // only the import's own folders, relative, never through .git
+        for bad in [
+            "../outside.md",
+            "/etc/passwd",
+            "memory/../../x",
+            "",
+            "memory",
+            "PROJECT.md",
+            "AGENTS.md",
+            ".git/config",
+            "memory/.git/config",
+            ".seldon/logbook.toml",
+            ".seldon/imports",
+            "inbox/idee.md",
+            // glob and pathspec magic, control characters
+            "memory/*",
+            ":/memory/a.md",
+            "memory/[ab].md",
+            "memory/a?.md",
+            "memory/a\nb.md",
+        ] {
+            assert!(!ok(undo(Some(sha), &[bad], &[])), "{bad:?} offered");
+            assert!(!ok(undo(Some(sha), &[], &[bad])), "{bad:?} offered");
+        }
+        assert!(ok(undo(
+            Some(sha),
+            &[
+                "memory/lessons.md",
+                "system/deviations.md",
+                "ledger/2026-10.jsonl"
+            ],
+            &[
+                "work/queued/C-2026-002-x.md",
+                "journal/2026/2026-08-20.md",
+                "outputs/IMPORT-omarchy-agent.md",
+                ".seldon/imports/omarchy-agent.undo.json",
+            ],
+        )));
     }
 }
