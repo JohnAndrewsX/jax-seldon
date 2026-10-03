@@ -16,6 +16,8 @@ decisions).
 |---|---|---|---|---|---|
 | WP-064 | engine: atomic writes keep symlinks and modes; timeouts cover pipes | Engine | `engine-064` (opus) | `wt/WP-064` · `wp/064-review` | 2026-10-03 |
 | WP-063 | hook: recording scope and path exclusions | Engine | `engine-063` (opus) | `wt/WP-063` · `wp/063-review` | 2026-10-03 |
+| WP-061 | git: autocommit in its own repository, detached HEAD, failures; import undo | Engine | `engine-061` (opus) | `wt/WP-061` · `wp/061-review` | 2026-10-03 |
+| WP-062 | redaction: more built-in rules, applied to every text field | Engine | `engine-062` (opus) | `wt/WP-062` · `wp/062-review` | 2026-10-03 |
 
 ## Queued (next up)
 
