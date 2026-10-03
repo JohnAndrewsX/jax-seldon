@@ -562,3 +562,194 @@ mod end_to_end {
         assert_eq!(theme["case"], case.as_str());
     }
 }
+
+/// Package attribution reads a hook's command line with the hook's own
+/// parser (WP-071): what the hook records as an agent's package command is
+/// what the pacman collector attributes to the agent, and a command the
+/// hook does not take for one (`yay --version`) claims nothing.
+mod packages {
+    use super::*;
+    use seldon::attribution::{causes, find_cause};
+
+    const T0: &str = "2026-10-01T10:00:00+02:00";
+    const SINCE: &str = "2026-10-01T09:00:00+02:00";
+
+    struct Bench {
+        env: Env,
+        logbook: PathBuf,
+    }
+
+    impl Bench {
+        /// A logbook with C-2026-001 active.
+        fn new() -> Self {
+            let env = Env::new(Snapper::Missing);
+            let logbook = env.tmp.path().join("logbook");
+            let b = Bench { env, logbook };
+            b.run(
+                &[
+                    "init",
+                    "--non-interactive",
+                    "--no-capture",
+                    "--no-git",
+                    "--path",
+                    b.logbook.to_str().unwrap(),
+                ],
+                None,
+            );
+            b.run(&["plan", "new", "--zone", "red", "--", "Editors"], None);
+            b.run(&["plan", "start", "C-2026-001"], None);
+            b
+        }
+
+        fn run(&self, args: &[&str], stdin: Option<&str>) -> Output {
+            let tmp = self.env.tmp.path();
+            let mut child = self
+                .env
+                .command(args)
+                .env("SELDON_NOW", T0)
+                .env("SELDON_PACMAN_LOG", tmp.join("pacman.log"))
+                .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(stdin.unwrap_or("").as_bytes())
+                .unwrap();
+            let out = child.wait_with_output().unwrap();
+            assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+            out
+        }
+
+        /// `seldon hook generic` for an agent's command started at `at`.
+        fn hook(&self, command: &str, at: &str) {
+            let payload = json!({
+                "command": command,
+                "actor": "agent:codex",
+                "cwd": self.logbook,
+                "startedAt": at,
+            });
+            self.run(&["hook", "generic"], Some(&payload.to_string()));
+        }
+
+        /// Writes the package log and captures it; (subject, actor, case)
+        /// of each package event.
+        fn capture(&self, log: &str) -> Vec<(String, String, String)> {
+            std::fs::write(self.env.tmp.path().join("pacman.log"), log).unwrap();
+            self.run(&["capture", "--source", "pacman", "--since", SINCE], None);
+            common::ledger(&self.logbook)
+                .iter()
+                .filter(|e| e["source"] == "pacman")
+                .map(|e| {
+                    (
+                        e["subject"].as_str().unwrap().to_string(),
+                        e["actor"].as_str().unwrap().to_string(),
+                        e["case"].as_str().unwrap_or("-").to_string(),
+                    )
+                })
+                .collect()
+        }
+    }
+
+    /// One install transaction of `package` at 10:`minute`:30.
+    fn install(minute: u32, package: &str) -> String {
+        let at = |s: u32| format!("[2026-10-01T10:{minute:02}:{s:02}+0200]");
+        format!(
+            "{} [PACMAN] Running 'pacman -S {package}'\n\
+             {} [ALPM] transaction started\n\
+             {} [ALPM] installed {package} (1.0-1)\n\
+             {} [ALPM] transaction completed\n",
+            at(30),
+            at(31),
+            at(32),
+            at(32)
+        )
+    }
+
+    /// F-530, F-531: wrappers and option clusters the old intent split did
+    /// not read; each install is the agent's, in its case.
+    #[test]
+    fn a_wrapped_install_is_the_agents() {
+        let b = Bench::new();
+        let lines = [
+            "sudo -u root pacman -S zed1",
+            "sudo -Eu root pacman -S zed2",
+            "pkexec pacman -S zed3",
+            "run0 pacman -S zed4",
+            "timeout 600 yay -S zed5",
+            "bash -c 'yay -S zed6'",
+            "nice -n 10 pacman -S zed7",
+        ];
+        let mut log = String::new();
+        for (n, line) in lines.iter().enumerate() {
+            let minute = n as u32 + 1;
+            b.hook(line, &format!("2026-10-01T10:{minute:02}:00+02:00"));
+            log.push_str(&install(minute, &format!("zed{minute}")));
+        }
+        let got = b.capture(&log);
+        let want: Vec<(String, String, String)> = (1..=lines.len())
+            .map(|n| {
+                (
+                    format!("zed{n}"),
+                    "agent:codex".to_string(),
+                    "C-2026-001".to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(got, want);
+    }
+
+    /// F-532: `yay --version` is no full upgrade, so a person's `-Syu`
+    /// two minutes later stays theirs (drift), not the agent's.
+    #[test]
+    fn a_version_probe_claims_no_upgrade() {
+        let b = Bench::new();
+        b.hook("yay --version", "2026-10-01T10:01:00+02:00");
+        assert!(
+            common::ledger(&b.logbook)
+                .iter()
+                .all(|e| e["kind"] != "command"),
+            "the hook records no command"
+        );
+        let got = b.capture(
+            "[2026-10-01T10:03:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+             [2026-10-01T10:03:01+0200] [ALPM] transaction started\n\
+             [2026-10-01T10:03:02+0200] [ALPM] upgraded zed (1.0-1 -> 1.1-1)\n\
+             [2026-10-01T10:03:02+0200] [ALPM] transaction completed\n",
+        );
+        assert_eq!(
+            got,
+            [("zed".to_string(), ACTOR_SYSTEM.to_string(), "-".to_string())]
+        );
+    }
+
+    /// The same from a ledger an older engine wrote: a recorded `yay
+    /// --version` or `yay -h` is no cause for a full upgrade.
+    #[test]
+    fn a_recorded_probe_is_no_cause() {
+        let began = ts("2026-10-01T10:03:00+02:00");
+        for command in ["yay --version", "yay -h", "paru -V", "yay -G zed"] {
+            let known = causes(&[hook(
+                "2026-10-01T10:01:00+02:00",
+                "agent:codex",
+                Some("C-2026-001"),
+                command,
+            )]);
+            assert!(
+                find_cause(&known, "zed", began, true, true).is_none(),
+                "{command}"
+            );
+        }
+        let known = causes(&[hook(
+            "2026-10-01T10:01:00+02:00",
+            "agent:codex",
+            None,
+            "sudo -u root pacman -S zed",
+        )]);
+        assert!(find_cause(&known, "zed", began, true, false).is_some());
+    }
+}
