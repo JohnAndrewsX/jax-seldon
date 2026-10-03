@@ -250,7 +250,8 @@ pub fn rebuild_if_initialised_fast(ctx: &Context) -> bool {
 }
 
 /// Ledger lines up to which [`rebuild_if_initialised_fast`] rebuilds
-/// (SPEC-ENGINE §8: about 4 ms of rebuild in release on the dev host).
+/// (SPEC-ENGINE §8; release, dev host: the rebuild adds about 3 ms to a
+/// 2 ms hook call at 1000 lines).
 pub const FAST_REBUILD_MAX_LINES: usize = 1000;
 
 /// Whether the `*.jsonl` files in `dir` hold more than `max` lines. Reads
