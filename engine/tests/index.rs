@@ -1320,7 +1320,16 @@ fn status_at_10_000_ledger_lines_is_under_100_ms() {
         .iter()
         .map(|g| ix["cases"][g].as_array().unwrap().len())
         .sum();
-    eprintln!("stated scale: {cases} open cases");
+    assert_eq!(cases, 228, "open cases of the stated scale");
+    let files: usize = ["queued", "active", "completed"]
+        .iter()
+        .map(|f| {
+            std::fs::read_dir(root.join("work").join(f))
+                .unwrap()
+                .count()
+        })
+        .sum();
+    assert_eq!(files, 304, "case files of the stated scale");
 
     common::assert_within_budget("status at the stated scale", BUDGET, 11, || {
         let out = env.at(GENERATED_AT, &args);
