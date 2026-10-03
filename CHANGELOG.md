@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automatic capture; after *Run in terminal* it says "When the command
   has finished, press Check again" (fixes #2).
 
+### Packaging and docs
+
+- The uninstall guide (en, de) removes the hooks of a kept logbook with
+  `seldon hook uninstall claude-code` and the global ones with
+  `--settings`; the logbook guide (en, de) gains "Back up and restore the
+  state directory"; the watcher README says the release binary and the
+  AUR package already include `watch` (WP-056).
+
 ## [0.1.1] - 2026-10-02
 
 ### Engine
