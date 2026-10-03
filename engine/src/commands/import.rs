@@ -147,6 +147,9 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     let mut undo = Undo::new(&logbook);
     let files = write_plan(ctx, &config, &logbook, &lock, &plan, &mut undo)
         .map_err(|e| after_failure(&logbook, &undo, e))?;
+    // the undo of an earlier failure that wrote no ledger note (so no
+    // refusal reported it) is moot now
+    let _ = std::fs::remove_file(logbook.path(undo_path()));
     let marker_rel = marker_path(SOURCE);
 
     let commit = autocommit(ctx, &config, &logbook, &format!("import {SOURCE}"));
