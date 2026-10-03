@@ -22,11 +22,11 @@
 
 use std::fmt::Write as _;
 
-use chrono::{DateTime, FixedOffset, Local, Timelike as _};
+use chrono::{DateTime, FixedOffset, Timelike as _};
 use serde_json::json;
 
 use super::{Context, Output};
-use crate::attribution;
+use crate::attribution::{self, Stamps};
 use crate::collectors::config::OwnWrites;
 use crate::collectors::{self, CollectorState, Ctx, Cursors, REGISTRY, Sources, Tz};
 use crate::config::Config;
@@ -94,8 +94,8 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         None => Vec::new(),
     };
 
-    let now = Local::now().fixed_offset();
-    let now = now.with_nanosecond(0).unwrap_or(now);
+    // the invocation's clock (`$SELDON_NOW` sets it), whole seconds
+    let now = ctx.now.with_nanosecond(0).unwrap_or(ctx.now);
     let baseline = match since {
         Some(s) => s,
         None => created(&logbook)?,

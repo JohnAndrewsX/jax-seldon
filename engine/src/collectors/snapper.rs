@@ -6,9 +6,15 @@
 //! a `post`). Numbers that disappear become `snapshot-delete` events at
 //! capture time. Snapshot 0 (`current`) is not a snapshot.
 //!
-//! The cursor is the set of known snapshots (number, type, description), so
-//! a deletion can name what was deleted. Without a cursor, snapshots older
-//! than the baseline are recorded as known without an event.
+//! The cursor is the set of known snapshots (number, type, description,
+//! date), so a deletion can name what was deleted. snapper gives a new
+//! snapshot the number after the highest one, so a number comes back when
+//! the newest snapshot is deleted before the next one is made: a known
+//! number with another date becomes a `snapshot-delete` of the old snapshot
+//! and a `snapshot` of the new one, both at the new snapshot's date. A
+//! cursor entry without a date (written before WP-073) gets one without an
+//! event. Without a cursor, snapshots older than the baseline are recorded
+//! as known without an event.
 //!
 //! snapper translates its messages (`Keine Berechtigungen.` under
 //! `LANG=de_DE.UTF-8`), so every invocation is built by [`list_command`]
@@ -87,6 +93,11 @@ pub struct Known {
     pub snapshot_type: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// The snapshot's date as an instant (missing in cursors before WP-073,
+    /// and for a snapshot without a usable date): the same number with
+    /// another date is another snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<DateTime<FixedOffset>>,
 }
 
 /// `cursors.json` → `snapper.cursor`: snapshot number → what it was.
@@ -385,11 +396,22 @@ fn diff(
     let first_run = cursor.is_none();
     let known = cursor.unwrap_or_default().known;
     let mut events = Vec::new();
-    for s in list.iter().filter(|s| !known.contains_key(&s.number)) {
+    for s in list {
         let Some(ts) = snapshot_ts(ctx.tz, &s.date, origin) else {
             continue; // no usable date: remembered, not reported
         };
-        if first_run && ts < ctx.baseline {
+        if let Some(k) = known.get(&s.number) {
+            // a known number with another date: deleted and created again
+            // (snapper reuses the number after the highest one). An entry
+            // without a date (an older cursor) only gets one.
+            match k.date {
+                Some(date) if date != ts => {
+                    // the deletion goes before the creation it made room for
+                    events.push(deleted(ts, s.number, k));
+                }
+                _ => continue,
+            }
+        } else if first_run && ts < ctx.baseline {
             continue;
         }
         let mut e =
@@ -410,20 +432,7 @@ fn diff(
         .chain(kept.iter().copied())
         .collect();
     for (number, k) in known.iter().filter(|(n, _)| !present.contains(n)) {
-        let mut e = Event::new(
-            ctx.now,
-            Source::Snapper,
-            Kind::SnapshotDelete,
-            number.to_string(),
-        )
-        .meta(Meta {
-            snapshot_type: Some(k.snapshot_type.clone()),
-            ..Meta::default()
-        });
-        if !k.description.is_empty() {
-            e = e.detail(&k.description);
-        }
-        events.push(e);
+        events.push(deleted(ctx.now, *number, k));
     }
     let events = dedupe(ctx, events)?;
     let next = SnapperCursor {
@@ -435,6 +444,7 @@ fn diff(
                     Known {
                         snapshot_type: s.snapshot_type.clone(),
                         description: s.description.clone(),
+                        date: snapshot_ts(ctx.tz, &s.date, origin),
                     },
                 )
             })
@@ -447,12 +457,33 @@ fn diff(
     Ok((events, next))
 }
 
+/// A `snapshot-delete` of the snapshot `k` the cursor knew as `number`, at
+/// `ts`.
+fn deleted(ts: DateTime<FixedOffset>, number: u64, k: &Known) -> Event {
+    let mut e = Event::new(
+        ts,
+        Source::Snapper,
+        Kind::SnapshotDelete,
+        number.to_string(),
+    )
+    .meta(Meta {
+        snapshot_type: Some(k.snapshot_type.clone()),
+        ..Meta::default()
+    });
+    if !k.description.is_empty() {
+        e = e.detail(&k.description);
+    }
+    e
+}
+
 /// Drops `snapshot` events already in the ledger (same number and time),
 /// e.g. after a crash between the ledger write and the cursor save.
 ///
 /// Likewise a `snapshot-delete` whose number the ledger already records as
 /// deleted after its last creation: deletions carry capture time, so only
-/// the subject can tell them apart.
+/// the subject can tell them apart. The deletion of a reused number
+/// carries the new snapshot's time instead and goes when that snapshot is
+/// in the ledger already.
 fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
     let created = || {
         events
@@ -485,12 +516,24 @@ fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
     } else {
         HashSet::new()
     };
+    // deletions of a reused number: at the time of the snapshot replacing it
+    let replaced: HashSet<(String, i64)> = events
+        .iter()
+        .filter(|e| e.kind == Kind::Snapshot)
+        .map(|e| (e.subject.clone(), e.ts.timestamp()))
+        .collect();
     Ok(events
         .into_iter()
-        .filter(|e| match e.kind {
-            Kind::Snapshot => !seen.contains(&(e.subject.clone(), e.ts.timestamp())),
-            Kind::SnapshotDelete => !deleted.contains(&e.subject),
-            _ => true,
+        .filter(|e| {
+            let key = (e.subject.clone(), e.ts.timestamp());
+            match e.kind {
+                Kind::Snapshot => !seen.contains(&key),
+                Kind::SnapshotDelete if replaced.contains(&key) => {
+                    !seen.contains(&key) && !deleted.contains(&e.subject)
+                }
+                Kind::SnapshotDelete => !deleted.contains(&e.subject),
+                _ => true,
+            }
         })
         .collect())
 }
