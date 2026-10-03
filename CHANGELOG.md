@@ -154,10 +154,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (WP-074).
 - `init` saves `config.toml` before it writes the logbook, and the
   layout writes `.seldon/logbook.toml` last: a config that cannot be
-  saved no longer leaves a logbook that the next `init` refuses (WP-074).
+  saved no longer leaves a logbook that the next `init` refuses. When
+  the layout fails (read-only parent, disk full, a mistyped path),
+  `init` puts `config.toml` back as it was and removes what it created,
+  so the working logbook stays the configured one (WP-074).
 - `init --no-git` writes `[git] autocommit = false`, so `doctor` no
   longer reports the chosen setup as degraded with a `git init` fix.
-  Existing configs keep their value (WP-074).
+  Without `--git`/`--no-git`, `init` takes the git choice from an
+  existing config's `autocommit`, so a hand-set `false` stays; configs
+  that `init` does not rewrite keep their value (WP-074).
 - `init --theme-hook` takes the state lock before it writes the hook
   and holds it through the own-write record: a capture that starts
   meanwhile gets exit 4 instead of reporting the hook as drift. While
