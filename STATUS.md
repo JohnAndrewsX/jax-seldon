@@ -16,7 +16,6 @@ decisions).
 |---|---|---|---|---|---|
 | WP-064 | engine: atomic writes keep symlinks and modes; timeouts cover pipes | Engine | `engine-064` (opus) | `wt/WP-064` · `wp/064-review` | 2026-10-03 |
 | WP-063 | hook: recording scope and path exclusions | Engine | `engine-063` (opus) | `wt/WP-063` · `wp/063-review` | 2026-10-03 |
-| WP-060 | snapper: read snapshot info files when listing is not permitted; banner text | Engine | `engine-060` (opus) | `wt/WP-060` · `wp/060-review` | 2026-10-03 |
 
 ## Queued (next up)
 
@@ -37,6 +36,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-060 snapshots read from the info files when listing is not
+  permitted, an empty snapshot directory keeps snapper degraded, the banner
+  names what the opt-in grants; the opt-in command itself waits for the
+  operator's ADR decision (two Opus review rounds) — merged.
 - 2026-10-03 WP-058 session-start context delimits logbook text as data,
   agent start prompt without logbook text, one-line agent notes (two Opus
   review rounds, stage 2 by the orchestrator) — merged.
