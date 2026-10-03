@@ -16,6 +16,9 @@ decisions).
 |---|---|---|---|---|---|
 | WP-066 | frontmatter: hand-edited lists, BOM, fence spaces | Engine | `engine-066` (opus) | `wt/WP-066` · `wp/066-review` | 2026-10-03 |
 | WP-065 | views and ledger: robust fences, per-line decoding | Engine | `engine-065` (opus) | `wt/WP-065` · `wp/065-review` | 2026-10-03 |
+| WP-069 | config collector: scope, default skips, home paths, rehash, dedupe | Engine | `engine-069` (opus) | `wt/WP-069` · `wp/069-review` | 2026-10-03 |
+| WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
+| WP-072 | ci: pin actions and images; audit gates the release | Packaging | `ci-072` (opus) | `wt/WP-072` · `wp/072-review` | 2026-10-03 |
 | WP-068 | plugin: call failures logged and retried, busy sheets, engineMin | Plugin | `plugin-068` (opus) | `wt/WP-068` · `wp/068-review` | 2026-10-03 |
 
 ## Queued (next up)
