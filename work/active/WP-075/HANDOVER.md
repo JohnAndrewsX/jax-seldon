@@ -56,14 +56,14 @@ Done:
   entry.
 
 Not done:
-- `engine/systemd/README.md` line 16-17 still lists the watched folders
-  without `areas/`. Not in this WP's files; a one-line follow-up.
-- `docs/TESTING.md` rows for `tests/import.rs`, `tests/dossier.rs` and
-  `tests/watch.rs` do not name the new tests yet (not in this WP's files).
-- SPEC-ENGINE §3 `seldon dossier` lines do not yet say "an unreadable
-  system file is skipped" (the WP names only the watch and import lines).
-  The code now does what the spec's "a failed part is skipped with a
-  warning" promises.
+- (The README, TESTING.md and SPEC §3 dossier follow-ups listed here in
+  round 1 are done in the review round below.)
+- Out of scope (review decision): a chmod-000 file in `system/` makes the
+  autocommit's `git add` fail. The dossier skips the file, but git cannot
+  stage it.
+- Accepted for now (review decision): the skip warning shows up twice,
+  once in the dossier's stdout/JSON (from its index derivation) and once
+  on stderr from the index rebuild after the commit.
 - A vault folder that cannot be *listed* still aborts the plan
   (`cannot list …`), as before. Out of scope.
 - Not done: the finding's optional "extra check" (refuse an apply when a
@@ -101,6 +101,37 @@ Verified by:
   a `dossier/mod.rs` unit test changed (fmt and that module's tests
   re-run).
 - `just check-rss`: exit 0 (`rss_stays_under_10_mb_on_the_x10_fixture ... ok`).
+
+Review round 1 (SEND BACK), fixed on the same branch after `git rebase
+main` (CHANGELOG and pitfalls conflicts resolved by keeping WP-069's
+entries and then WP-075's):
+- **B1** (`dossier/mod.rs` `deviations_table`, `fill_case`): a path cell
+  now matches a cased path when it equals the path or
+  `views::neutralise(path)` (`same_path`). Before, a cased config path
+  with `<!-- seldon:end -->` got one more row on every run. Test
+  `tests/dossier.rs::a_marker_in_a_cased_path_is_listed_once`: one new
+  row, one user row (neutralised path, empty case) filled, then two more
+  runs report `unchanged`, `files: []` and the same bytes. Before the fix
+  it FAILED (the user row was not found, so a second `d.conf` row was
+  added). Mutants, each run on its own: raw compare in the new-row check
+  → FAILED; raw compare in `fill_case` → FAILED.
+- **N1** (`import/omarchy_agent.rs` `plan_deviations`): the listed-path
+  check compares both forms too. No test can reach it, so the mutant is
+  equivalent: `first_path` refuses a path with white space, and
+  `<!-- seldon:` contains a space, so a kit path can never hold a
+  marker. I note it rather than add a test.
+- **N3**: `engine/systemd/README.md` lists `areas/`; `docs/TESTING.md`
+  import row says seven notes and names the five new import tests, the
+  dossier row the three new integration tests and the unit cases, the
+  watch row the area test; SPEC-ENGINE §3 `seldon dossier` has the skip
+  rule with the default-file and "may hold" append guard; the CHANGELOG
+  says "the same zero-width space after `<!--` in `<!-- seldon:`".
+- Checks of this round: `cargo fmt --check` ok; `cargo clippy
+  --all-targets -- -D warnings` and with `--features watch` ok; `cargo
+  test --test import` 17 ok, `--test dossier` 15 ok, `--lib` 177 ok,
+  `--features watch --test watch` 9 ok; `scripts/docs-check.sh` exit 0
+  (`docs-check: ok`); full `just check` on the rebased branch (at fb14d4c): exit 0, `check: ok`,
+  60 test binaries ok, none failed.
 
 Learned: memory/pitfalls.md "2026-10-04 · WP-075": the dossier already
 warns through the index derivation; `common::read` panics on Latin-1

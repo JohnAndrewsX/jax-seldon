@@ -1348,3 +1348,11 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   leave it out (engine/Cargo.toml comment, F-135).
 - **Tests that count import notes (`meta.import`) include the apply's own
   note** (no case, subject `omarchy-agent`): six cases → seven notes.
+- **Neutralising what a writer stores changes what its readers must
+  compare.** After `Files::set` began to neutralise fence bodies,
+  `deviations_table` and `fill_case` still compared path cells with the
+  raw path, so a path holding `<!-- seldon:end -->` got one more row on
+  every run (review B1). When a write transforms values, grep every
+  reader that matches stored cells against fresh values (`listed`,
+  `contains`, `==` on cells), and test with two runs: the second must
+  report nothing changed.
