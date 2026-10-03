@@ -261,6 +261,101 @@ fn a_capture_without_the_config_collector_keeps_the_record() {
 }
 
 #[test]
+fn a_capture_during_the_theme_hook_install_finds_the_lock_held() {
+    // WP-052/WP-074: init holds the state lock from the script to the
+    // own-write record. The `omarchy` stub copies the hook into place and
+    // then starts a capture, as the plugin's timer could: it must get exit
+    // 4, not see the copy before its record
+    let env = env();
+    let tmp = env.tmp.path();
+    let (code, out) = (tmp.join("race.code"), tmp.join("race.out"));
+    env.stub(
+        "omarchy",
+        &format!(
+            "P=$PATH\nPATH=/usr/bin:/bin\nif [ \"$1 $2\" = 'hook install' ]; then\n\
+             \x20 d=\"$HOME/.config/omarchy/hooks/$3.d\"\n\
+             \x20 mkdir -p \"$d\" && cp \"$4\" \"$d/${{4##*/}}\" && chmod 755 \"$d/${{4##*/}}\"\n\
+             \x20 PATH=$P '{seldon}' --json capture --all > '{out}' 2>&1\n\
+             \x20 echo $? > '{code}'\n\
+             fi\nexit 0",
+            seldon = env!("CARGO_BIN_EXE_seldon"),
+            out = out.display(),
+            code = code.display(),
+        ),
+    );
+    let v = init(&env, &["--theme-hook"]);
+    assert_eq!(v["themeHook"]["installed"], true, "{}", v["themeHook"]);
+    assert_eq!(
+        read(&code).trim(),
+        "4",
+        "the capture during the install: {}",
+        read(&out)
+    );
+    assert_eq!(v["themeHook"]["ownWrites"], serde_json::json!([HOOK]));
+    // the next capture finds the record: explained, no drift
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["explainedOwn"], 1, "{c}");
+    let (event, resolutions) = event_and_resolutions(&env, HOOK);
+    assert_explained_by_seldon(&event, &resolutions, "seldon init --theme-hook");
+    assert_eq!(drift(&env), (0, Vec::new()));
+}
+
+/// Every file and directory under `dir` with its bytes, sorted.
+fn tree(dir: &std::path::Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).unwrap() {
+            let path = entry.unwrap().path();
+            let rel = path.strip_prefix(dir).unwrap().to_path_buf();
+            if path.is_dir() && !path.is_symlink() {
+                out.push((rel, None));
+                stack.push(path);
+            } else {
+                out.push((rel, std::fs::read(&path).ok()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn a_held_lock_stops_init_with_the_theme_hook_before_any_write() {
+    // while another seldon holds the state lock: exit 4, no file changed
+    // (no logbook, no config, no script, no hook), no owned.json record,
+    // `omarchy` never runs
+    let env = env();
+    let calls = env.tmp.path().join("omarchy.calls");
+    env.stub(
+        "omarchy",
+        &format!("echo \"$*\" >> '{}'\nexit 0", calls.display()),
+    );
+    let lock = seldon::logbook::lock::acquire(&env.lock_file()).unwrap();
+    let before = tree(env.tmp.path());
+    let root = logbook(&env);
+    let out = run(
+        &env,
+        &[
+            "--json",
+            "init",
+            "--non-interactive",
+            "--no-git",
+            "--theme-hook",
+            "--path",
+            root.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
+    assert_eq!(json(&out)["error"]["code"], 4);
+    assert!(tree(env.tmp.path()) == before, "files byte-identical");
+    assert!(!owned_file(&env).exists());
+    assert!(!home_path(&env, HOOK).exists());
+    assert!(!calls.exists(), "omarchy ran: {}", read(&calls));
+    drop(lock);
+}
+
+#[test]
 fn hook_install_under_a_watched_path_leaves_no_drift() {
     let env = env();
     // the user also watches Claude Code's global settings

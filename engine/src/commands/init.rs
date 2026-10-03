@@ -14,8 +14,9 @@
 //! as the backfill window), a backfill can be marked as the pre-Seldon
 //! baseline, and the capture is committed; then `seldon dossier` fills
 //! `system/*.md` once (WP-035, its own commit), and the theme hook is
-//! installed on opt-in and recorded as the engine's own write, so the next
-//! capture explains its `config-add` (SPEC-ENGINE §5 rule 7, WP-038).
+//! installed on opt-in and recorded as the engine's own write under one
+//! hold of the state lock, so the next capture explains its `config-add`
+//! (SPEC-ENGINE §5 rule 7, WP-038, WP-074).
 //! The steps after the layout report failures; they never undo the
 //! logbook ([`super::setup`]).
 
@@ -34,7 +35,6 @@ use super::dossier::{self, DossierArgs};
 use super::setup::{self, BASELINE_REASON, ThemeHook};
 use super::{Commit, Context, Output, autocommit};
 use crate::collectors::Sources;
-use crate::collectors::config::OwnOp;
 use crate::config::{Collectors, Config, HARNESSES};
 use crate::error::{Error, Result};
 use crate::logbook::layout::{self, NewLogbook};
@@ -200,20 +200,11 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     // the dossier once, after the first capture (WP-035); `capture` and
     // `status` never refresh it
     let dossier = first_dossier(&lb_ctx, &capture);
-    let theme_hook = if choices.theme_hook {
-        setup::install_theme_hook(&ctx.dirs, &Sources::from_env().omarchy)
+    // under the lock from the script to the own-write record
+    let (theme_hook, own_hook) = if choices.theme_hook {
+        setup::theme_hook_step(&ctx.dirs, &config, &Sources::from_env().omarchy)
     } else {
-        ThemeHook::NotRequested
-    };
-    let own_hook = match &theme_hook {
-        ThemeHook::Installed { hook, .. } => Some(setup::record_own_writes(
-            ctx,
-            &config,
-            std::slice::from_ref(hook),
-            "seldon init --theme-hook",
-            OwnOp::Install,
-        )),
-        _ => None,
+        (ThemeHook::NotRequested, None)
     };
 
     let mut next = vec!["seldon doctor".to_string()];
