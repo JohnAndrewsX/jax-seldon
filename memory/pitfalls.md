@@ -1326,3 +1326,29 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Tests that prove "not read again"** need the same inode: `fs::write`
   truncates in place, `set_modified` puts the old mtime back; an atomic
   rename would change the inode and defeat the fixture.
+
+## 2026-10-03 · WP-071 (Engine)
+
+- **The recorded command line is parsed a second time.** Attribution
+  reads `meta.command` (the hook's cut text) with the same parser, so a
+  cut must leave text that parses to the same commands. Cutting a heredoc
+  body *and* its delimiter line left `cat <<EOF` unterminated in the
+  record, and the re-parse swallowed every later line (`… \npacman -S x`
+  lost its package). Only the end-to-end table (hook generic, then
+  `attribution::causes` on the written event) showed it; the in-process
+  table passed. Keep the delimiter line when anything follows it.
+- **A glob overlap test must keep `*` inside one path component.** With
+  `*` crossing `/`, `~/d/*.txt` "overlapped" everything below a skipped
+  directory (`~/d/private.conf/**` matches `~/d/private.conf/a.txt`).
+  `*`/`?` stay in a component, `**` and an unknown variable cross them,
+  as `SkipPaths` reads its patterns.
+- **A word that is only an unknown value (`$1`, `$NAME`) would match
+  every skip pattern** as a floating `**`; such words are read as naming
+  no path, or every `git commit -m "$(cat <<'EOF' …)"` would be redacted
+  once `skipPaths` is set.
+- **`sudo -k <command>` runs the command** (it only ignores the cached
+  credentials); the old probe list skipped it. `-l`, `-v`, `-K`, `-V`
+  are the probes.
+- **The WP named SPEC §5 for the attribution intent sentence;** the
+  sentence is in §4 (pacman collector). Check the section before editing
+  "only the paragraphs named".
