@@ -1134,3 +1134,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The panel harness's `work-live` can catch a transient result line
   under load** ("Dropping C-…" instead of "active → dropped"); it uses
   the fake engine, two immediate re-runs passed 692/692.
+## 2026-10-03 · WP-067 (Plugin Dev)
+
+- **A headless Quickshell has no IPC server under a long TMPDIR.** The
+  socket is `$XDG_RUNTIME_DIR/quickshell/by-id/<id>/ipc.sock`, and a unix
+  socket path has at most 107 bytes; a scratchpad-length runtime dir gives
+  "Failed to start IPC server" (bar-view filters that line). A harness
+  that drives `quickshell ipc` gets `mktemp -d /tmp/seldon-ipc.XXXXXX`.
+  `IpcHandler` registration (and its duplicate warning) works without the
+  server.
+- **`quickshell ipc call` prints "Target not found." with exit 0.**
+  Assert the output, not the exit code.
+- **Quickshell promotes a leftover handler** when the active one for a
+  target is destroyed, but a handler that was disabled (`enabled: false`)
+  is not a candidate: enabling one instance only needs an explicit
+  takeover when the owner goes (BarWidget `claimIpc`).
+- **Two mechanisms for one fix let either mutant survive.** The tab-change
+  focus fix (Panel.selectTab) and the tabs' hide handlers each give the
+  keys back alone; only a case one of them cannot cover (an open case
+  picker: focus moves, `popupOpen` keeps `editing` true) kills the other's
+  mutant. Run each mutant separately before claiming a line is tested.
+- **A reset in `onFilterChanged` that `onRowsChanged` must see depends on
+  handler order.** Keep the last filter the rows were seen with and do the
+  reset in `onRowsChanged` (ChangelogTab `rowsFilter`).
