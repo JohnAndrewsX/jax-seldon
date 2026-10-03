@@ -22,8 +22,10 @@
 //!   `omarchy hook install theme-set <file>`, a fixed argument list
 //!   (AGENTS.md §8). Tests stub `omarchy` (`SELDON_OMARCHY`, or `PATH`).
 //!   The installed copy lies under the watched `~/.config/omarchy`, so it
-//!   is recorded as the engine's own write ([`record_own_writes`]): the
-//!   next capture explains its `config-add` (SPEC-ENGINE §5 rule 7).
+//!   is recorded as the engine's own write: the next capture explains its
+//!   `config-add` (SPEC-ENGINE §5 rule 7). [`theme_hook_step`] holds the
+//!   state lock from the script to the record, so no capture sees the copy
+//!   first; while another `seldon` holds it, nothing is written.
 //!   `init --remove-theme-hook` ([`remove_theme_hook`]) deletes that copy
 //!   and the script in the state directory; the deletion is recorded the
 //!   same way ([`delete_own_file`]), so the next capture explains its
@@ -274,23 +276,11 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
 pub type OwnRecord = std::result::Result<Vec<String>, String>;
 
 /// Records `paths` as written by the engine with the command `by` and
-/// `op` (SPEC-ENGINE §5 rule 7), under the state lock; only paths the
-/// config collector watches are recorded. `Ok` names them; `Err` is a
-/// line for the report, never fatal: the next capture then shows the file
-/// as drift.
-pub fn record_own_writes(
-    ctx: &Context,
-    config: &Config,
-    paths: &[PathBuf],
-    by: &str,
-    op: OwnOp,
-) -> OwnRecord {
-    let lock = ctx.lock().map_err(|e| e.to_string())?;
-    record_own_writes_under(&lock, ctx, config, paths, by, op)
-}
-
-/// [`record_own_writes`] for a caller that holds the state lock across the
-/// write and the record, so no capture sees the file in between.
+/// `op` (SPEC-ENGINE §5 rule 7); only paths the config collector watches
+/// are recorded. The caller holds the state lock across the write and the
+/// record, so no capture sees the file in between. `Ok` names them; `Err`
+/// is a line for the report, never fatal: the next capture then shows the
+/// file as drift.
 pub fn record_own_writes_under(
     lock: &Lock,
     ctx: &Context,
@@ -306,7 +296,7 @@ pub fn record_own_writes_under(
 /// command `by` when the config collector watches it, then deletes it,
 /// under the state lock ([`config::delete_own_file`]). `Err` when the lock
 /// is held or the file cannot be deleted (a record written first stays,
-/// harmless); the [`OwnRecord`] as for [`record_own_writes`].
+/// harmless); the [`OwnRecord`] as for [`record_own_writes_under`].
 pub fn delete_own_file(ctx: &Context, config: &Config, path: &Path, by: &str) -> Result<OwnRecord> {
     let lock = ctx.lock()?;
     delete_own_file_under(&lock, ctx, config, path, by)
@@ -324,7 +314,7 @@ pub fn delete_own_file_under(
     Ok(recorded.map_err(|e| format!("{e:#}")))
 }
 
-/// The report of [`record_own_writes`] as one JSON value: the recorded
+/// The report of [`record_own_writes_under`] as one JSON value: the recorded
 /// `~`-paths, or `{"error": …}`.
 pub fn own_writes_json(r: &OwnRecord) -> Value {
     match r {
@@ -333,7 +323,7 @@ pub fn own_writes_json(r: &OwnRecord) -> Value {
     }
 }
 
-/// The warning for a failed [`record_own_writes`].
+/// The warning for a failed [`record_own_writes_under`].
 pub fn own_writes_warning(error: &str) -> String {
     format!("not recorded as seldon's own write ({error}); the next capture shows it as drift")
 }
@@ -424,10 +414,11 @@ pub enum ThemeHook {
 }
 
 impl ThemeHook {
-    /// The command the user can run by hand after a failure.
+    /// The command the user can run by hand after a failure; none when
+    /// the script was never written (a held lock, a failed write).
     pub fn fix(&self) -> Option<String> {
         match self {
-            ThemeHook::Failed { script, .. } => Some(format!(
+            ThemeHook::Failed { script, .. } if is_file(script) => Some(format!(
                 "omarchy hook install theme-set {}",
                 script.display()
             )),
@@ -473,15 +464,71 @@ pub fn theme_hook_target(dirs: &Dirs) -> PathBuf {
         .join(THEME_HOOK_NAME)
 }
 
+/// The command [`theme_hook_step`] records as the installer.
+pub const INSTALL_THEME_HOOK: &str = "seldon init --theme-hook";
+
+/// The theme hook step of `init --theme-hook`: takes the state lock
+/// before anything is written, installs the hook ([`install_theme_hook`])
+/// and records the installed copy as the engine's own write (SPEC-ENGINE
+/// §5 rule 7), then lets the lock go. No capture can see the copy before
+/// its record, so the next capture's `config-add` is explained. While
+/// another `seldon` holds the lock, nothing is written and the step fails
+/// without a fix (the next capture finds theme switches anyway). The
+/// [`OwnRecord`] is `Some` only after an install.
+pub fn theme_hook_step(
+    dirs: &Dirs,
+    config: &Config,
+    omarchy: &str,
+) -> (ThemeHook, Option<OwnRecord>) {
+    let lock = match crate::logbook::lock::acquire(&dirs.lock_file()) {
+        Ok(lock) => lock,
+        Err(e) => {
+            return (
+                ThemeHook::Failed {
+                    script: theme_hook_script(dirs),
+                    error: format!(
+                        "{e}; nothing was written (the next capture still records theme switches)"
+                    ),
+                },
+                None,
+            );
+        }
+    };
+    let theme_hook = install_theme_hook(&lock, dirs, omarchy);
+    let own = match &theme_hook {
+        ThemeHook::Installed { hook, .. } => Some(
+            config::record_own_writes(
+                &lock,
+                dirs,
+                config,
+                std::slice::from_ref(hook),
+                INSTALL_THEME_HOOK,
+                OwnOp::Install,
+            )
+            .map_err(|e| format!("{e:#}")),
+        ),
+        _ => None,
+    };
+    drop(lock);
+    (theme_hook, own)
+}
+
+/// Where `init --theme-hook` writes the script that `omarchy hook install`
+/// copies: `<state>/hooks/`.
+fn theme_hook_script(dirs: &Dirs) -> PathBuf {
+    dirs.state_dir.join("hooks").join(THEME_HOOK_NAME)
+}
+
 /// Writes the theme hook script to `<state>/hooks/` and runs
 /// `<omarchy> hook install theme-set <script>` once, unless Omarchy's hook
-/// directory has it already.
-pub fn install_theme_hook(dirs: &Dirs, omarchy: &str) -> ThemeHook {
+/// directory has it already. The caller holds the state lock until the
+/// installed copy is recorded ([`theme_hook_step`]).
+pub fn install_theme_hook(_lock: &Lock, dirs: &Dirs, omarchy: &str) -> ThemeHook {
     let hook = theme_hook_target(dirs);
     if hook.exists() {
         return ThemeHook::AlreadyInstalled { hook };
     }
-    let script = dirs.state_dir.join("hooks").join(THEME_HOOK_NAME);
+    let script = theme_hook_script(dirs);
     let failed = |error: String| ThemeHook::Failed {
         script: script.clone(),
         error,
@@ -542,7 +589,7 @@ pub struct ThemeHookRemoval {
 /// stay. Nothing installed, nothing changed.
 pub fn remove_theme_hook(ctx: &Context, config: &Config) -> Result<ThemeHookRemoval> {
     let hook = theme_hook_target(&ctx.dirs);
-    let script = ctx.dirs.state_dir.join("hooks").join(THEME_HOOK_NAME);
+    let script = theme_hook_script(&ctx.dirs);
     let own = if is_file(&hook) {
         Some(delete_own_file(ctx, config, &hook, REMOVE_THEME_HOOK)?)
     } else {
@@ -591,6 +638,42 @@ mod tests {
     fn the_theme_hook_is_the_shipped_script() {
         assert!(THEME_HOOK_SCRIPT.starts_with("#!/bin/bash\n"));
         assert!(THEME_HOOK_SCRIPT.contains("seldon event theme theme-set --subject \"$1\""));
+    }
+
+    #[test]
+    fn the_theme_hook_step_writes_nothing_while_the_lock_is_held() {
+        // the lock comes before the script, `omarchy` and the record: with
+        // it held elsewhere the step fails at once, without a fix
+        let tmp = std::env::temp_dir().join(format!("seldon-theme-hook-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let home = tmp.join("home");
+        let dirs = Dirs {
+            xdg_config_home: home.join(".config"),
+            state_dir: home.join(".local/state/seldon"),
+            home,
+        };
+        let held = crate::logbook::lock::acquire(&dirs.lock_file()).unwrap();
+        // a program that is not there: the step must not get as far as it
+        let omarchy = tmp.join("no-omarchy");
+        let (step, own) = theme_hook_step(&dirs, &Config::default(), omarchy.to_str().unwrap());
+        assert!(!theme_hook_script(&dirs).exists(), "the script was written");
+        assert!(!theme_hook_target(&dirs).exists());
+        assert!(!dirs.state_dir.join("owned.json").exists());
+        match &step {
+            ThemeHook::Failed { error, .. } => {
+                assert!(error.contains("holds the lock"), "{error}");
+                assert!(error.contains("; nothing was written"), "{error}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(own, None);
+        assert_eq!(
+            step.fix(),
+            None,
+            "no command for a script that is not there"
+        );
+        drop(held);
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

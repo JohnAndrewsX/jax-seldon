@@ -64,8 +64,9 @@ pub struct NewLogbook {
 
 /// Creates the layout under `root`, which must not exist or be empty (the
 /// caller checks). Never overwrites a file. New directories are 0700 and
-/// files 0600 (`sys::NEW_DIR_MODE`, `sys::NEW_FILE_MODE`). Returns the
-/// files written, relative to `root`, in write order.
+/// files 0600 (`sys::NEW_DIR_MODE`, `sys::NEW_FILE_MODE`). The marker
+/// `.seldon/logbook.toml` is written last. Returns the files written,
+/// relative to `root`, in write order.
 pub fn create(root: &Path, spec: &NewLogbook) -> anyhow::Result<Vec<PathBuf>> {
     let mut written = Vec::new();
     for dir in REQUIRED_DIRS.iter().chain(KEEP_DIRS) {
@@ -74,13 +75,6 @@ pub fn create(root: &Path, spec: &NewLogbook) -> anyhow::Result<Vec<PathBuf>> {
             .with_context(|| format!("cannot create {}", path.display()))?;
     }
 
-    let meta = LogbookMeta {
-        schema_version: SCHEMA_VERSION,
-        created: spec.created,
-        machine_id: spec.machine_id.clone(),
-        language: spec.language,
-    };
-    write_new(root, META_FILE, &meta.to_toml(), &mut written)?;
     write_new(root, ".gitignore", GITIGNORE, &mut written)?;
 
     let vars = Vars {
@@ -101,6 +95,15 @@ pub fn create(root: &Path, spec: &NewLogbook) -> anyhow::Result<Vec<PathBuf>> {
             write_new(root, path, &text, &mut written)?;
         }
     }
+    // the marker last: a layout that stopped half-way is no logbook
+    // (`Logbook::is_initialised`), so `doctor` does not call it ok
+    let meta = LogbookMeta {
+        schema_version: SCHEMA_VERSION,
+        created: spec.created,
+        machine_id: spec.machine_id.clone(),
+        language: spec.language,
+    };
+    write_new(root, META_FILE, &meta.to_toml(), &mut written)?;
     Ok(written)
 }
 
