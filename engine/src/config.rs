@@ -244,6 +244,10 @@ pub struct Config {
     /// `seldon agent start` (WP-022); not written while it is the default.
     #[serde(skip_serializing_if = "AgentConfig::is_default")]
     pub agent: AgentConfig,
+    /// Which agent sessions the hooks serve (SPEC-ENGINE §8); not written
+    /// while it is the default.
+    #[serde(skip_serializing_if = "HooksConfig::is_default")]
+    pub hooks: HooksConfig,
 }
 
 impl Default for Config {
@@ -258,6 +262,7 @@ impl Default for Config {
             redaction: Redaction::default(),
             drift: DriftConfig::default(),
             agent: AgentConfig::default(),
+            hooks: HooksConfig::default(),
         }
     }
 }
@@ -421,6 +426,32 @@ impl AgentConfig {
     fn is_default(&self) -> bool {
         *self == AgentConfig::default()
     }
+}
+
+/// `[hooks]` (SPEC-ENGINE §8).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HooksConfig {
+    pub scope: HookScope,
+}
+
+impl HooksConfig {
+    fn is_default(&self) -> bool {
+        *self == HooksConfig::default()
+    }
+}
+
+/// The sessions whose commands the agent hooks record and which get the
+/// logbook context: the session's directory is the `cwd` of the hook's
+/// payload.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HookScope {
+    /// Sessions whose directory lies inside the logbook.
+    #[default]
+    Logbook,
+    /// Every session that runs the hooks, wherever it works.
+    All,
 }
 
 const CONFIG_HEADER: &str = "# Seldon engine configuration (docs/SPEC-ENGINE.md §2). Edit freely;\n# `seldon init` rewrites this file and drops comments.\n\n";
@@ -610,6 +641,28 @@ mod tests {
         assert_eq!(config.agent.launcher, ["x"]);
         assert_eq!(table["logbook"].as_str(), Some("/tmp/lb"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hook_scope() {
+        let parse = |text: &str| toml::from_str::<Config>(text).map(|c| c.hooks.scope);
+        assert_eq!(parse("").unwrap(), HookScope::Logbook);
+        assert_eq!(
+            parse("[hooks]\nscope = \"logbook\"\n").unwrap(),
+            HookScope::Logbook
+        );
+        assert_eq!(parse("[hooks]\nscope = \"all\"\n").unwrap(), HookScope::All);
+        assert!(parse("[hooks]\nscope = \"everywhere\"\n").is_err());
+        // the default is not written; the other value is
+        let text = |config: &Config| toml::to_string(config).unwrap();
+        let mut config = Config::default();
+        assert!(!text(&config).contains("[hooks]"), "{}", text(&config));
+        config.hooks.scope = HookScope::All;
+        assert!(
+            text(&config).contains("[hooks]\nscope = \"all\""),
+            "{}",
+            text(&config)
+        );
     }
 
     #[test]

@@ -1134,3 +1134,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The panel harness's `work-live` can catch a transient result line
   under load** ("Dropping C-…" instead of "active → dropped"); it uses
   the fake engine, two immediate re-runs passed 692/692.
+
+## 2026-10-03 · WP-063 (Engine)
+
+- **Hook payloads in tests need a `cwd` inside the test logbook.** Since
+  the hooks serve only sessions inside the logbook (`[hooks] scope`
+  default `"logbook"`), a payload whose `cwd` is a made-up path such as
+  `/home/user/Seldon` records nothing. `tests/hooks.rs` maps
+  `FIXTURE_CWD` to the logbook in `Hooks::piped`/`spawn_hook`; other
+  test files pass the logbook path. A test about sessions elsewhere sets
+  `scope = "all"` (`Hooks::configure`).
+- **The guard hook reads payload text as commands.** A manual run whose
+  JSON payload holds `~/.config/hypr/…` (or that creates
+  `$HOME/.config/…` in a scratch HOME) is blocked as a write under
+  `~/.config`, whatever `HOME` is. Report it; put such runs into an
+  integration test instead.
+- **`git add -p` is not available here** (interactive), so one file with
+  several independent changes lands in one commit; plan the split before
+  editing if small commits matter.

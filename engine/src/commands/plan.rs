@@ -395,14 +395,19 @@ fn list(ctx: &Context, args: ListArgs) -> Result<Output> {
     ))
 }
 
+/// `plan show`: the case file's path and text as quoted lines (`> `, as
+/// `hook session-start` prints logbook text), under a line that says what
+/// they are; `--json` gives them unquoted.
 fn show(ctx: &Context, id: &str) -> Result<Output> {
     let (_, logbook) = ctx.open_logbook()?;
     let file = cases::find(&logbook, id)?;
-    let human = format!(
-        "{}\n{}",
-        file.relative(&logbook),
-        file.doc.render().trim_end()
+    let mut human = format!(
+        "Case {id}: its file's path and text.\n{}\n",
+        super::hook::DATA_NOTE
     );
+    super::hook::quote(&mut human, &file.relative(&logbook));
+    super::hook::quote(&mut human, file.doc.render().trim_end());
+    let human = human.trim_end().to_string();
     let mut json = json!({ "case": case_json(&logbook, &file) });
     json["body"] = Value::String(file.doc.body.clone());
     json["activeCase"] = Value::Bool(cases::active_case(&logbook).as_deref() == Some(id));

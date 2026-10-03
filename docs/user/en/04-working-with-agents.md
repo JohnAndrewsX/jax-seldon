@@ -119,14 +119,23 @@ the logbook.
    seldon plan done C-2026-003
    ```
 
-The hooks only run when Claude Code starts in the logbook folder. To
-record Claude Code sessions in every folder, install the hooks into your
-user settings instead:
+The hooks only run when Claude Code starts in the logbook folder. You
+can also install them into your user settings, so that Claude Code runs
+them in every folder:
 `seldon hook install claude-code --settings ~/.claude/settings.json`.
-Then every Claude Code session on this machine writes into your
-logbook, in any project, with the active case. Red and yellow commands
-are recorded in every session; green commands only while a case is
-active.
+Seldon still records commands and prints its context only for sessions
+in the logbook folder or below it; in other projects the hooks do
+nothing, and `hook install` says so. To have every Claude Code session on
+this machine write into your logbook, in any project, with the active
+case, set this in `~/.config/seldon/config.toml`:
+
+```toml
+[hooks]
+scope = "all"
+```
+
+Red and yellow commands are then recorded in every session; green
+commands only while a case is active.
 
 ## The active case
 
