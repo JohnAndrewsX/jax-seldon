@@ -1225,3 +1225,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A reset in `onFilterChanged` that `onRowsChanged` must see depends on
   handler order.** Keep the last filter the rows were seen with and do the
   reset in `onRowsChanged` (ChangelogTab `rowsFilter`).
+
+## 2026-10-03 · WP-069 (Engine Dev)
+
+- **The guard blocks a manual scratch-HOME run that writes
+  `$HOME/.config/...`**, even with `HOME`, the `XDG_*` variables and
+  `SELDON_TEST_GUARD` pointing into the scratch dir: it reads the command
+  text, not the environment. Do not rephrase around it; put the scenario
+  into a CLI test (`common::Env` sets the guard and a temp `HOME`) and
+  report the block.
+- **A collector's scan can only prune with the *current* scope; seeing
+  what *entered* needs the old one.** Pruning a base generation by
+  "is this path still reachable now" works even for manifests without a
+  stored scope; "this file is new because the scope widened" needs the
+  scope the base was taken in (`Generation.scope`).
+- **Size + mtime caching needs a racy-window guard.** Linux file times
+  are coarse (a jiffy, or seconds on some file systems): a write right
+  after the read can keep the mtime. Only cache a stat whose mtime lies
+  at least 2 s before the walk started (`config::RACY`), and compare
+  against the wall clock, not `ctx.now` (tests fake it).
+- **Tests that prove "not read again"** need the same inode: `fs::write`
+  truncates in place, `set_modified` puts the old mtime back; an atomic
+  rename would change the inode and defeat the fixture.
