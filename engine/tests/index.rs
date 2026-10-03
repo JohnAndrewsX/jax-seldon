@@ -1078,3 +1078,216 @@ fn a_case_id_twice_warns_in_index_and_status() {
     let out = env.at(AT, &["index", "--check"]);
     assert_eq!(out.status.code(), Some(1), "{}", common::stderr(&out));
 }
+
+// --------------------------------------------------------------------------
+// Size budget (CONTRACT.md rule 5, WP-076): the free texts of index events
+// and drift items are clipped with a visible marker; the ledger keeps them
+// whole.
+// --------------------------------------------------------------------------
+
+/// What `clip` appends: `… (N more characters in the ledger)`.
+fn marked(text: &str) -> Option<usize> {
+    let (_, tail) = text.rsplit_once("… (")?;
+    let n = tail
+        .strip_suffix(" more characters in the ledger)")
+        .or_else(|| tail.strip_suffix(" more character in the ledger)"))?;
+    n.parse().ok()
+}
+
+/// Bytes of `text` as a JSON string, without the quotes.
+fn json_bytes(text: &str) -> usize {
+    serde_json::to_string(text).unwrap().len() - 2
+}
+
+/// `DETAIL_MAX` characters that JSON escaping makes longer still.
+fn long_text(tag: &str) -> String {
+    let mut text = format!("{tag} ");
+    while text.chars().count() < 4096 {
+        text.push_str("\"cat\" <<EOF \\ päckage ✓ 🚀\t\u{1}\n");
+    }
+    text.chars().take(4096).collect()
+}
+
+#[test]
+fn clip_keeps_short_texts_and_marks_long_ones() {
+    use build::{TEXT_MAX, clip};
+    for unit in ["a", "ä", "🚀", "\"", "\u{1}", " ", "ab "] {
+        for repeat in 0..=300 {
+            let text = unit.repeat(repeat);
+            let clipped = clip(&text);
+            if json_bytes(&text) <= TEXT_MAX {
+                assert_eq!(clipped, text, "{unit:?}×{repeat}");
+                continue;
+            }
+            assert!(
+                json_bytes(&clipped) <= TEXT_MAX,
+                "{unit:?}×{repeat}: {clipped:?}"
+            );
+            let left = marked(&clipped).unwrap_or_else(|| panic!("no marker: {clipped:?}"));
+            let head = clipped.rsplit_once("… (").unwrap().0;
+            assert!(text.starts_with(head), "{unit:?}×{repeat}");
+            assert_eq!(head.chars().count() + left, text.chars().count());
+        }
+    }
+    assert_eq!(marked(&clip(&"x".repeat(257))), Some(40));
+}
+
+#[test]
+fn long_texts_keep_the_index_under_its_size_budget() {
+    let mut loaded = fixture_loaded();
+    let note = loaded
+        .events
+        .iter()
+        .find(|e| e.kind == Kind::Note)
+        .unwrap()
+        .clone();
+    let drift = loaded
+        .events
+        .iter()
+        .find(|e| build::is_open_drift(e) && e.source != seldon::model::event::Source::Pacman)
+        .unwrap()
+        .clone();
+    let id = |i: u32| ulid::Ulid::from_parts(1_800_000_000_000, u128::from(i) + 1);
+    // newer than every fixture event (the newest is at 17:00)
+    let ts = |i: u32| now() - chrono::Duration::milliseconds(100 * i64::from(i));
+    let mut targets = Vec::new();
+    for i in 0..300u32 {
+        let mut e = drift.clone();
+        (e.id, e.ts, e.tx_id) = (id(i), ts(i), None);
+        e.detail = Some(long_text(&format!("drift {i}")));
+        loaded.events.push(e);
+    }
+    for i in 300..900u32 {
+        let mut e = note.clone();
+        (e.id, e.ts) = (id(i), ts(i));
+        e.detail = Some(long_text(&format!("note {i}")));
+        e.meta.command = Some(long_text(&format!("command {i}")));
+        e.meta
+            .extra
+            .insert("tags".into(), json!(long_text(&format!("tags {i}"))));
+        targets.push(e.clone());
+        loaded.events.push(e);
+    }
+    for (i, target) in targets.iter().enumerate() {
+        let mut r = resolution(target, 0, false);
+        r.id = id(1000 + i as u32);
+        r.detail = Some(long_text(&format!("resolution {i}")));
+        loaded.events.push(r);
+    }
+    let built = build::build(loaded, &input());
+    let ix = &built.index;
+    assert_eq!(ix.events.len(), 500);
+    assert_eq!(ix.drift.len(), build::MAX_DRIFT);
+
+    let size = index::to_text(ix).len();
+    eprintln!("index with 500 long events and 200 long drift items: {size} bytes");
+    assert!(size < build::SIZE_BUDGET, "{size} bytes");
+    assert!(
+        built.warnings.iter().all(|w| !w.contains("budget")),
+        "{:?}",
+        built.warnings
+    );
+    common::assert_valid_index(&serde_json::to_value(ix).unwrap());
+
+    let v = serde_json::to_value(ix).unwrap();
+    let mut clipped = 0;
+    let texts = v["events"].as_array().unwrap().iter().flat_map(|e| {
+        [
+            &e["detail"],
+            &e["resolutionDetail"],
+            &e["meta"]["command"],
+            &e["meta"]["tags"],
+        ]
+    });
+    for text in texts.chain(v["drift"].as_array().unwrap().iter().map(|d| &d["detail"])) {
+        let Some(text) = text.as_str() else { continue };
+        assert!(json_bytes(text) <= build::TEXT_MAX, "{text:?}");
+        if marked(text).is_some() {
+            clipped += 1;
+        }
+    }
+    // the drift items of the test (the fixture's crises come first); the
+    // newest 500 events: 300 drift events (detail) and 200 notes (detail,
+    // command, tags, resolution detail)
+    let items = ix
+        .drift
+        .iter()
+        .filter(|d| d.detail.as_deref().is_some_and(|t| t.starts_with("drift ")))
+        .count();
+    assert!(items > 190, "{items}");
+    assert_eq!(clipped, items + 300 + 4 * 200, "texts clipped");
+
+    // the ledger and the folded events (the Markdown views) keep it all
+    let whole = |text: &str| text.chars().count() == 4096 && marked(text).is_none();
+    let note_500 = built.ledger.iter().find(|e| e.id == id(500)).unwrap();
+    assert!(whole(note_500.detail.as_deref().unwrap()));
+    assert!(whole(note_500.meta.command.as_deref().unwrap()));
+    let folded = built.folded.iter().find(|f| f.event.id == id(500)).unwrap();
+    assert!(whole(folded.resolution_detail.as_deref().unwrap()));
+}
+
+#[test]
+fn an_index_over_its_budget_warns() {
+    let mut loaded = fixture_loaded();
+    let open = loaded
+        .cases
+        .iter()
+        .find(|c| c.case.status == seldon::model::CaseStatus::Active)
+        .unwrap()
+        .clone();
+    for i in 0..3000 {
+        let mut c = open.clone();
+        c.case.id = format!("C-2025-{i:04}");
+        c.case.title = format!("{i} {}", "long title ".repeat(20));
+        loaded.cases.push(c);
+    }
+    let built = build::build(loaded, &input());
+    let size = index::to_text(&built.index).len();
+    assert!(size >= build::SIZE_BUDGET, "{size} bytes");
+    let want = format!(
+        "index.json is {size} bytes, over its budget of 1000000 (CONTRACT.md rule 5); the largest section is `cases`"
+    );
+    assert!(
+        built.warnings.iter().any(|w| w.starts_with(&want)),
+        "{:?}",
+        built.warnings
+    );
+}
+
+#[test]
+fn a_long_command_line_is_whole_in_the_ledger_and_clipped_in_the_index() {
+    const AT: &str = "2026-10-03T09:00:00+02:00";
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let text = format!("cat <<EOF{}", " line of a heredoc".repeat(200));
+    let out = env.at(
+        AT,
+        &[
+            "event",
+            "agent",
+            "command",
+            "--subject",
+            "cat",
+            "--actor",
+            "agent:claude-code",
+            "--detail",
+            &text,
+            "--meta",
+            &format!("command={text}"),
+            "--json",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let line = common::ledger(&root).pop().unwrap();
+    assert_eq!(line["detail"], json!(text));
+    assert_eq!(line["meta"]["command"], json!(text));
+
+    let ix = json_file(&env.home.join(".local/state/seldon/index.json"));
+    let e = &ix["events"][0];
+    assert_eq!(e["id"], line["id"]);
+    for text in [&e["detail"], &e["meta"]["command"]] {
+        let text = text.as_str().unwrap();
+        assert!(marked(text).is_some(), "{text:?}");
+        assert!(text.len() <= build::TEXT_MAX, "{text:?}");
+    }
+}
