@@ -202,7 +202,8 @@ struct InitCmd {
     ])]
     remove_theme_hook: bool,
 
-    /// Make the logbook a git repository with a first commit (default)
+    /// Make the logbook a git repository with a first commit (default unless
+    /// the existing config says otherwise)
     #[arg(long, overrides_with = "no_git")]
     git: bool,
 

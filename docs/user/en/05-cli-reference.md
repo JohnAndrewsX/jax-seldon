@@ -121,7 +121,7 @@ Options:
       --no-capture           Do not run the first capture
       --theme-hook           Install Omarchy's theme-set hook (`omarchy hook install theme-set`)
       --remove-theme-hook    Remove the theme-set hook that --theme-hook installed, and nothing else; needs no logbook
-      --git                  Make the logbook a git repository with a first commit (default)
+      --git                  Make the logbook a git repository with a first commit (default unless the existing config says otherwise)
       --no-git               Do not use git
 
 Examples:
