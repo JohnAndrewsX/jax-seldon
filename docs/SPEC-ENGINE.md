@@ -9,7 +9,11 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 3. Idempotent collectors with persistent cursors.
 4. Every command has `--json`; human output is for terminals, JSON is for
    agents and the plugin.
-5. Fast: `status` < 100 ms at 10 000 events; `hook` < 5 ms.
+5. Fast: `status` < 100 ms at 10 000 events; `hook` < 5 ms for a call
+   it does not record (about 1 ms). A recorded command returns only
+   after its ledger line and the updated case file are synced to disk,
+   so the case file survives a crash: about 3 ms on tmpfs and 13 ms on
+   a btrfs disk (release build, measured in WP-064).
 6. Never executes system changes. It may *print* commands.
 
 ## 2. Files the engine owns
@@ -23,6 +27,8 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/lock` | flock during writes |
 | `<logbook>/.seldon/` | logbook.toml, active-case, templates/ |
+
+File modes (WP-064): a directory the engine creates (the logbook and its folders, the config and state directories) is 0700 and a new file 0600, whatever the umask; existing files and directories keep their mode, the engine never tightens them. Every rewrite goes through `sys::write_atomic`: a temp file `.<name>.tmp-<pid>` next to the target (new logbooks ignore `.*.tmp-*` in `.gitignore`) with the target's permission bits, synced, renamed over the target, the directory synced; the temp file is removed when any step fails. Files the engine rebuilds from the ledger and the logbook (`index.json`, `STATUS.md`, the `ledger/*.md` views, `outputs/REBUILD.md`) are written the same way without the two syncs (`sys::write_generated`): the next build writes them again. Ledger lines are synced when appended. A symbolic link at the path is followed: the link stays and its target is replaced (a link to a missing file creates the target). The theme hook script is written 0755. `.git/` is written by git under its own rules.
 
 ## 3. Commands
 
@@ -372,7 +378,16 @@ events; it queries pacman read-only (`-Qqe`, `-Qqm`, `-Q`) and systemd
 read-only (`list-unit-files --state=enabled`), and reads Omarchy's
 package lists (`omarchy-base.packages`, `omarchy-other.packages`) as
 plain files; no package manager or `systemctl` is ever invoked with a
-mutating verb. Rules:
+mutating verb. Every program the engine runs with a timeout (collectors,
+dossier queries, `omarchy hook install`) starts in its own process group
+with stdin closed and its output captured; the timeout covers the output
+pipes too: at the deadline the whole group is killed, including a helper
+the program started that still holds a pipe, and the pipes get up to
+200 ms more before the call counts as timed out (WP-064); a terminal
+Ctrl-C stops the engine, not the program. git on the logbook (autocommit,
+the git state in the index) stays in the engine's process group, because git,
+its hooks or a signing prompt may read the terminal: at the deadline only
+git itself is killed, with the same bounded pipe wait. Rules:
 
 - **pacman** — parse `/var/log/pacman.log` from the saved byte offset; verify
   inode; on rotation restart from 0 and dedupe by `(ts, kind, subject,

@@ -218,20 +218,17 @@ pub(crate) fn one_line(what: &str, text: &str) -> Result<String> {
 /// overwritten.
 pub(crate) fn write_new(path: &Path, text: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+        crate::sys::create_dir_private(dir)
+            .with_context(|| format!("cannot create {}", dir.display()))?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::AlreadyExists => {
-                Error::user(format!("{} already exists", path.display()))
-            }
-            _ => anyhow::Error::new(e)
-                .context(format!("cannot create {}", path.display()))
-                .into(),
-        })?;
+    let mut file = crate::sys::create_new_private(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::AlreadyExists => {
+            Error::user(format!("{} already exists", path.display()))
+        }
+        _ => anyhow::Error::new(e)
+            .context(format!("cannot create {}", path.display()))
+            .into(),
+    })?;
     file.write_all(text.as_bytes())
         .with_context(|| format!("cannot write {}", path.display()))?;
     Ok(())

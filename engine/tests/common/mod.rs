@@ -403,3 +403,54 @@ pub fn assert_valid_index(instance: &serde_json::Value) {
     let errors = index_errors(instance);
     assert!(errors.is_empty(), "index is invalid: {errors:#?}");
 }
+
+/// `cmd` run through `/bin/sh` with the file mode creation mask `umask`
+/// (octal, e.g. `"022"`): same program, arguments, environment and
+/// working directory.
+pub fn with_umask(cmd: &Command, umask: &str) -> Command {
+    let mut sh = Command::new("/bin/sh");
+    sh.arg("-c")
+        .arg(format!("umask {umask}; exec \"$0\" \"$@\""))
+        .arg(cmd.get_program())
+        .args(cmd.get_args())
+        .env_clear();
+    for (key, value) in cmd.get_envs() {
+        if let Some(value) = value {
+            sh.env(key, value);
+        }
+    }
+    if let Some(dir) = cmd.get_current_dir() {
+        sh.current_dir(dir);
+    }
+    sh
+}
+
+/// The permission bits of `path` (a symbolic link is followed).
+pub fn mode(path: &Path) -> u32 {
+    std::fs::metadata(path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        .permissions()
+        .mode()
+        & 0o777
+}
+
+/// Writes the executable `path` (mode 0755) with `text` from a child
+/// process. Written by the test process, the file's write descriptor can
+/// be inherited by a child another test thread forks at that moment, and
+/// a program that executes the file before that child execs fails with
+/// `ETXTBSY` ("text file busy"). `sys::run` retries that; bash and git do
+/// not. The child's descriptors are never inherited by the test process's
+/// forks. No PATH lookup: `printf` and the redirection are `sh` builtins.
+pub fn write_executable(path: &Path, text: &str) {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let status = Command::new("/bin/sh")
+        .args(["-c", "printf '%s' \"$2\" > \"$1\"", "sh"])
+        .arg(path)
+        .arg(text)
+        .status()
+        .unwrap();
+    assert!(status.success(), "cannot write {}", path.display());
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}

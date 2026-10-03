@@ -37,7 +37,7 @@ Seldon/
 ├── .seldon/                  logbook.toml, active-case, templates/ (engine-managed)
 ├── .claude/ .codex/          optional agent harnesses (installed by wizard)
 ├── .obsidian/                optional, created only if the wizard is told to
-└── .gitignore                .obsidian/workspace*, .seldon/active-case
+└── .gitignore                .obsidian/workspace*, .seldon/active-case, .*.tmp-*
 ```
 
 File and folder names: lowercase, hyphens, English. Prose: user's language.

@@ -247,7 +247,7 @@ fn copy_tree(from: &Path, to: &Path) -> anyhow::Result<Copied> {
                     continue;
                 }
                 if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)
+                    sys::create_dir_private(parent)
                         .with_context(|| format!("cannot create {}", parent.display()))?;
                 }
                 std::fs::copy(entry.path(), &target)
@@ -564,10 +564,7 @@ fn is_file(path: &Path) -> bool {
 }
 
 fn write_script(path: &Path) -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-    sys::write_atomic(path, THEME_HOOK_SCRIPT.as_bytes())?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-        .with_context(|| format!("cannot make {} executable", path.display()))
+    sys::write_atomic_mode(path, THEME_HOOK_SCRIPT.as_bytes(), 0o755)
 }
 
 #[cfg(test)]

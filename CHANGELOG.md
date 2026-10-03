@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when `snapper list` is not permitted; the events are the same, so
   switching between the two adds none. `doctor` and `init` say what the
   snapper fix grants besides listing (WP-060).
+- Atomic writes follow symbolic links, keep the file's mode and create
+  new logbook, config and state files 0600 in 0700 directories, whatever
+  the umask; a failed write removes its temp file, and a new logbook's
+  `.gitignore` ignores `.*.tmp-*`. Rewrites are synced to disk, except
+  files the engine rebuilds (`index.json`, `STATUS.md`, ledger views,
+  `outputs/REBUILD.md`); a recorded agent command therefore takes about
+  13 ms on a btrfs disk (was 7 ms). A program the engine runs gets its own
+  process group: at the timeout the whole group is stopped, and a helper
+  that keeps the output pipe open no longer holds the engine past it.
+  git stays in the engine's group, so a commit hook or signing prompt can
+  still use the terminal (WP-064).
 
 ### Plugin
 

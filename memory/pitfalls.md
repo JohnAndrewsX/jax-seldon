@@ -1100,3 +1100,37 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A test whose result depends on host permissions** (`chmod 000` is
   ignored for root) checks first whether the read actually fails, and
   asserts the skip only then.
+## 2026-10-03 · WP-064 (Engine)
+
+- **A mutant restored from a pre-mutant copy keeps the mutant's binary.**
+  `cp f f.bak; mutate f; cargo test; mv f.bak f` gives `f` the older
+  mtime of the copy, so cargo's fingerprint says "fresh" and
+  `target/debug/seldon` stays the last mutant (the next test run failed
+  for no visible reason). `touch` (or `os.utime`) the restored file.
+- **`std::process::Command` cannot set the umask.** A test that needs a
+  umask runs the engine through `/bin/sh -c 'umask 022; exec "$0" "$@"'`
+  (`common::with_umask`, which copies program, args, env and cwd).
+- **`OpenOptions::mode` and `DirBuilder::mode` are narrowed by the
+  umask.** Only an explicit `File::set_permissions` (fchmod) keeps an
+  existing file's 0664 under umask 022; `sys::write_atomic` does that.
+- **A file-mode test on tmpfs says nothing about cost.** `fsync` is free
+  on tmpfs (`/tmp`, the tests' temp dir); time on the real disk (a
+  scratch dir under `engine/target/`) before claiming latency.
+- **A child in its own process group cannot read the terminal.**
+  `process_group(0)` makes it a background group: a git hook or a
+  signing prompt that reads `/dev/tty` gets `SIGTTIN` and stops until
+  the timeout (30 s for git, under the lock). git runs in the engine's
+  group (`sys::run_in_engine_group`); collectors keep their own. Test a
+  terminal read under `script -qec '<cmd>' /dev/null` with the answer
+  on its stdin (`file_writes.rs` `git::`).
+- **A stub run by bash or git, not by `sys::run`, must not be written by
+  the test process.** The `ETXTBSY` race above hit
+  `collectors_user.rs` `hook::records_the_slug_silently` under a loaded
+  `just check` (bash runs the stub, its error is hidden, the argv file is
+  missing → `NotFound`). Measured with 6 spawning threads: about 7 % of
+  freshly written stubs are busy, with or without `process_group(0)`.
+  Write such files with `common::write_executable` (a child process
+  writes them, so no fork of the test process inherits the descriptor).
+- **The panel harness's `work-live` can catch a transient result line
+  under load** ("Dropping C-…" instead of "active → dropped"); it uses
+  the fake engine, two immediate re-runs passed 692/692.

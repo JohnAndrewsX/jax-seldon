@@ -8,7 +8,6 @@
 mod common;
 
 use std::collections::BTreeMap;
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::SystemTime;
@@ -45,10 +44,10 @@ fn write(path: &Path, text: impl AsRef<[u8]>) {
     std::fs::write(path, text).unwrap();
 }
 
-/// An executable `sh` script at `path`.
+/// An executable `sh` script at `path`, written without a descriptor the
+/// test's other threads can inherit (`common::write_executable`).
 fn script(path: &Path, body: &str) {
-    write(path, format!("#!/bin/sh\n{body}\n"));
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    common::write_executable(path, &format!("#!/bin/sh\n{body}\n"));
 }
 
 /// `sh` that prints `file` with builtins only (the CLI tests run with a

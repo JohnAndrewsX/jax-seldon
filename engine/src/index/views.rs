@@ -33,7 +33,7 @@ pub fn write_ledger_views(logbook: &Logbook, built: &Built) -> anyhow::Result<Ve
     let mut written = Vec::new();
     for (month, text) in ledger_views(built) {
         let rel = format!("ledger/{month}.md");
-        if write_if_changed(logbook, &rel, &text)? {
+        if write_if_changed(logbook, &rel, &text, Durable::No)? {
             written.push(rel);
         }
     }
@@ -401,7 +401,7 @@ pub fn write_status(logbook: &Logbook, built: &Built) -> anyhow::Result<bool> {
         existing.as_deref(),
         &status_text(built, logbook.meta.language),
     );
-    write_if_changed(logbook, "STATUS.md", &text)
+    write_if_changed(logbook, "STATUS.md", &text, Durable::No)
 }
 
 /// The body of the `decisions.index` fence of `DECISIONS.md`: the table
@@ -492,19 +492,36 @@ pub fn write_decisions_index(logbook: &Logbook, rows: &[DecisionRow]) -> anyhow:
             format!("# Decisions\n\n{FENCE_BEGIN}{DECISIONS_FENCE} -->\n{content}{FENCE_END}\n")
         }
     };
-    Ok(if write_if_changed(logbook, REL, &text)? {
+    Ok(if write_if_changed(logbook, REL, &text, Durable::Yes)? {
         Fill::Written
     } else {
         Fill::Unchanged
     })
 }
 
-fn write_if_changed(logbook: &Logbook, rel: &str, text: &str) -> anyhow::Result<bool> {
+/// How [`write_if_changed`] writes: `Yes` syncs (`DECISIONS.md`, whose
+/// text outside the fence is the user's), `No` does not (a view rebuilt
+/// from the ledger).
+#[derive(Clone, Copy)]
+enum Durable {
+    Yes,
+    No,
+}
+
+fn write_if_changed(
+    logbook: &Logbook,
+    rel: &str,
+    text: &str,
+    durable: Durable,
+) -> anyhow::Result<bool> {
     let path = logbook.path(rel);
     if std::fs::read(&path).is_ok_and(|old| old == text.as_bytes()) {
         return Ok(false);
     }
-    sys::write_atomic(&path, text.as_bytes())?;
+    match durable {
+        Durable::Yes => sys::write_atomic(&path, text.as_bytes())?,
+        Durable::No => sys::write_generated(&path, text.as_bytes())?,
+    }
     Ok(true)
 }
 

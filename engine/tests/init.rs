@@ -60,7 +60,7 @@ mod init {
         assert!(!root.join(".obsidian").exists());
         assert_eq!(
             std::fs::read_to_string(root.join(".gitignore")).unwrap(),
-            ".obsidian/workspace*\n.seldon/active-case\n"
+            ".obsidian/workspace*\n.seldon/active-case\n.*.tmp-*\n"
         );
 
         // .seldon/logbook.toml and PROJECT.md agree

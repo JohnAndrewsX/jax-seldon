@@ -4,6 +4,7 @@
 //! A second writer fails at once with exit 4; nothing waits.
 
 use std::fs::{File, OpenOptions, TryLockError};
+use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
@@ -20,12 +21,14 @@ pub struct Lock {
 /// Takes the lock at `path`, creating the file and its directory.
 pub fn acquire(path: &Path) -> Result<Lock> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+        crate::sys::create_dir_private(dir)
+            .with_context(|| format!("cannot create {}", dir.display()))?;
     }
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
+        .mode(crate::sys::NEW_FILE_MODE)
         .open(path)
         .with_context(|| format!("cannot open {}", path.display()))?;
     match file.try_lock() {
