@@ -1326,3 +1326,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Tests that prove "not read again"** need the same inode: `fs::write`
   truncates in place, `set_modified` puts the old mtime back; an atomic
   rename would change the inode and defeat the fixture.
+
+## 2026-10-04 · WP-075 (Engine)
+
+- **`seldon dossier` already warns about an unreadable `system/*.md`.**
+  It runs `index::derive` first, and the index reader skips the same
+  files with `system/<name>: cannot read: …; skipped`. A second warning
+  from `dossier::Files::read` printed every bad file twice. The reader
+  only skips; the warning stays the derivation's.
+- **`common::read` panics on a non-UTF-8 file.** A test that plants a
+  Latin-1 file in `system/` cannot use `system_files`/`bodies` on that
+  logbook; read with `read_to_string(..).ok()` and skip the file.
+- **An earlier guard can make a mutant equivalent.** Reading a vault file
+  through `vault.join(rel)` instead of its real `PathBuf` survives every
+  test, because files with non-UTF-8 names never reach the read (they are
+  report errors first); for every file that is read, `rel` is the real
+  name. Say so in the handover instead of inventing a test.
+- **The WP-034 note "the default release build has no watcher" is out of
+  date:** the release workflow and the PKGBUILD build with
+  `--features watch`; only a plain `cargo build` and `just build-release`
+  leave it out (engine/Cargo.toml comment, F-135).
+- **Tests that count import notes (`meta.import`) include the apply's own
+  note** (no case, subject `omarchy-agent`): six cases → seven notes.

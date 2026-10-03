@@ -1105,8 +1105,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// F-550: a file that is not UTF-8 is skipped with a warning and never
-    /// written; the fences of the readable files are still set. A missing
+    /// F-550: a file that is not UTF-8 is skipped (the index derivation
+    /// warns) and never written; the fences of the readable files are
+    /// still set. A missing
     /// fence is not appended while its default file, or a file that holds
     /// its begin marker, could not be read.
     #[test]
