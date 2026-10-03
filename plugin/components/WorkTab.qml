@@ -184,7 +184,12 @@ Item {
     root.cursor = Math.max(0, Math.min(root.cursor, root.cases.length - 1))
     root.selectedId = root.cases.length > 0 ? root.cases[root.cursor].id : ""
   }
-  onVisibleChanged: if (!visible) root.disarm()
+  // Another tab shown: disarm; the sheet stays open but gives the keys back
+  // (a hidden field keeps Qt's active focus; WP-067).
+  onVisibleChanged: if (!visible) {
+    root.disarm()
+    if (root.editing) root.leaveRequested()
+  }
   onCursorActiveChanged: if (!cursorActive) root.disarm()
 
   Column {

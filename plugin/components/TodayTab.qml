@@ -70,6 +70,10 @@ Item {
   }
 
   onRowsChanged: if (root.cursor >= root.rows.length) root.cursor = Math.max(0, root.rows.length - 1)
+  // Another tab shown: a hidden field keeps Qt's active focus, so the
+  // QuickEntry closes its picker and gives the keys back; the draft stays
+  // (WP-067).
+  onVisibleChanged: if (!visible && root.editing) quickEntry.leave()
 
   // The heading sits outside the list: a ListView header scrolls away when
   // the model is replaced (a new index), which hid it on the test host.

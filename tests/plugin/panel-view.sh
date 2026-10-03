@@ -1041,6 +1041,79 @@ if [[ -n ${PANEL_SHOTS:-} ]]; then
   done
 fi
 
+# 25. A tab change gives the keys back (WP-067): a hidden tab's field keeps
+#     Qt's active focus, so keys and Enter reached a field nobody sees. Type
+#     in Today's QuickEntry, click the Work tab, press j and Enter: the
+#     panel has the keys, j moves Work's cursor, the note is not sent and
+#     its draft stays. The same for the new-case sheet left through IPC
+#     `tab` (Panel.selectTabById): the sheet stays open with its title, no
+#     case is created. Only the start-up calls reach the engine.
+mkdir -p "$work/home-tab-focus"
+run tab-focus "" \
+  "text:n;type:abc;click:Work;text:j;key:Return;settle;text:1;text:n;key:Escape;text:+;type:xyz;tab:changelog;key:Return;settle;text:3;text:1;text:n;key:Tab;key:Down;tab:work" \
+  HOME="$work/home-tab-focus" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect tab-focus 2 .view.today.quickEntry.editing true
+expect tab-focus 2 .view.keys false
+expect tab-focus 3 .view.tab work
+expect tab-focus 3 .view.today.quickEntry.editing false
+expect tab-focus 3 .view.keys true
+expect tab-focus 4 .view.today.quickEntry.text abc
+expect tab-focus 4 .view.cursorActive true
+expect tab-focus 4 .view.work.cursor C-2026-005
+expect tab-focus 6 .view.today.quickEntry.result ""
+expect tab-focus 6 .view.today.quickEntry.text abc
+expect tab-focus 8 .view.tab today
+expect tab-focus 8 .view.today.quickEntry.editing true
+expect tab-focus 8 .view.today.quickEntry.text abc
+expect tab-focus 11 .view.work.sheet.editing true
+expect tab-focus 11 .view.work.sheet.title xyz
+expect tab-focus 12 .view.tab changelog
+expect tab-focus 12 .view.work.sheet.editing false
+expect tab-focus 12 .view.keys true
+expect tab-focus 15 .view.tab work
+expect tab-focus 15 .view.work.sheet.open true
+expect tab-focus 15 .view.work.sheet.title xyz
+expect tab-focus 15 .view.work.result ""
+expect tab-focus 19 .view.today.quickEntry.editing true
+expect tab-focus 20 .view.tab work
+expect tab-focus 20 .view.today.quickEntry.editing false
+expect tab-focus 20 .view.keys true
+want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)")
+got=$(cat "$work/home-tab-focus/argv.log" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   tab-focus: engine argv"
+else
+  fail=$((fail + 1)); echo "FAIL tab-focus: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+fi
+clean_log tab-focus
+
+# 26. The Changelog cursor follows its event (WP-067): the cursor on row 4
+#     (tokyo-night, open drift), then "Capture now" writes an index with two
+#     newer events at the top. The cursor moves to row 6 with its event, and
+#     Enter opens tokyo-night's drift sheet, not row 4's snapshot. A new
+#     filter still starts at the top.
+jq '.events = [
+    {id: "01M3W2NEWEVENT000000000001", ts: "2026-10-01T18:31:00+02:00", source: "manual", kind: "note",
+     subject: "journal", detail: "Second event above the cursor", zone: "green", actor: "human", case: null},
+    {id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00", source: "manual", kind: "note",
+     subject: "journal", detail: "First event above the cursor", zone: "green", actor: "human", case: null}
+  ] + .events' "$fx/index.sample.json" >"$work/after-two.json"
+mkdir -p "$work/home-cursor-follow"
+run cursor-follow "" "tab:changelog;key:Down;key:Down*4;text:c;wait:changelog.rows=64;key:Return;key:Escape;text:f" \
+  HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
+expect cursor-follow 3 .view.cursor 4
+expect cursor-follow 3 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
+expect cursor-follow 5 .view.changelog.rows 64
+expect cursor-follow 5 .view.cursor 6
+expect cursor-follow 5 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
+expect cursor-follow 6 .view.drift.open true
+expect cursor-follow 6 .view.drift.subject tokyo-night
+expect cursor-follow 6 .view.changelog.expanded ""
+expect cursor-follow 8 .view.changelog.filter pacman
+expect cursor-follow 8 .view.cursor 0
+expect cursor-follow 8 .view.changelog.selected "$(jq -r '[.events[] | select(.source == "pacman")][0].id' "$fx/index.sample.json")"
+clean_log cursor-follow
+
 real_home_check panel-view
 
 echo "panel-view: $pass passed, $fail failed"

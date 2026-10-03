@@ -180,6 +180,31 @@ check "uninit dimmed" "$(field uninit .pill.dimmed)" true
 check "uninit ready" "$(field uninit .ready)" true
 clean_log uninit
 
+# 4. Two monitors, two widgets (WP-067): the bar builds the widget once per
+# monitor, and `jax.seldon.panel` takes one handler. Exactly one widget
+# registers it (no "another handler is registered" warning), an IPC `open`
+# opens that widget's panel, and once its monitor is gone the other widget
+# takes the target over. The IPC socket needs a short runtime dir (a unix
+# socket path has at most 107 bytes; a long TMPDIR fails "Failed to start
+# IPC server").
+ipc_rt=$(mktemp -d /tmp/seldon-ipc.XXXXXX)
+ln -s "$qs_bin" "$work/bin/quickshell"
+run ipc tokyo-night 12 "$fx/index.sample.json" HARNESS_IPC="$config/shell.qml" XDG_RUNTIME_DIR="$ipc_rt"
+rm -rf "$ipc_rt"
+sed 's/\x1b\[[0-9;]*m//g' "$work/ipc.log" | grep -a "HARNESS ipc " | sed 's/.*HARNESS ipc //' >"$work/ipc.json" || true
+check "ipc owners" "$(field ipc '.owners | map(tostring) | join(",")')" "true,false"
+check "ipc open exit" "$(field ipc .open.exit)" 0
+check "ipc open output" "$(field ipc .open.out)" ""
+check "ipc open reaches the owner" "$(field ipc '.opened | map(tostring) | join(",")')" "true,false"
+check "ipc close" "$(field ipc '.closed | map(tostring) | join(",")')" "false,false"
+check "ipc owners after" "$(field ipc '.ownersAfter | map(tostring) | join(",")')" "null,true"
+check "ipc open after exit" "$(field ipc .openAfter.exit)" 0
+# "Target not found." (still exit 0) when nobody took the target over
+check "ipc open after output" "$(field ipc .openAfter.out)" ""
+check "ipc open after reaches the new owner" "$(field ipc '.openedAfter | map(tostring) | join(",")')" "null,true"
+check "ipc one handler" "$(grep -a -c 'another handler is registered' "$work/ipc.log" || true)" 0
+clean_log ipc
+
 real_home_check bar-view
 
 echo "bar-view: $pass passed, $fail failed"

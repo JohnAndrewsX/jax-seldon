@@ -118,6 +118,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The "Snapshots not readable" banner names what the snapper fix grants:
   its `ALLOW_USERS` entry also lets your user create, change and delete
   root snapshots without a password (WP-060).
+- A tab change gives the keys back to the panel: a note or a new case
+  typed on a tab you left is no longer sent by an Enter on another tab;
+  the draft and an open sheet stay (WP-067).
+- The Changelog cursor stays on its event when a new index adds rows
+  above it, so Enter opens the drift sheet or row you chose (WP-067).
+- On a bar with several monitors only one widget registers the
+  `jax.seldon.panel` IPC target, so the shell no longer logs "another
+  handler is registered"; the next widget takes the target over when the
+  owner's monitor goes (WP-067).
 
 ### Packaging and docs
 
