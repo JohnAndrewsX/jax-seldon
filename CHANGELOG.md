@@ -127,6 +127,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line, the bad line skipped, and one warning names the month and the
   count. A ledger line with an actor or a case the engine would refuse to
   write is skipped the same way (WP-065).
+- `doctor` finds what makes captures and commands fail: an invalid
+  `[redaction] patterns` entry, a corrupt or unreadable `cursors.json`,
+  `manifest.json` or `owned.json` (each an error with its fix), ledger
+  lines that are skipped (per month, with the count), a `STATUS.md` or
+  `DECISIONS.md` fence that `status` leaves alone, an end marker that
+  closes no fence, and a case id in two files. With a `config.toml` that
+  does not parse it exits 1 and reports the logbook as "not checked"
+  instead of checking the default path and exiting 3. The snapper probe
+  honours `SELDON_SNAPPER`. doctor stays read-only (WP-070).
+- A corrupt `cursors.json` is shown in the index: every enabled collector
+  is `ok: false` with the message, and `index` and `status` warn
+  (WP-070).
+- A case id in two files makes `index --check` exit 1 (was 2) with a
+  plain message and the fix; `index` and `status` warn about it
+  (WP-070).
 
 ### Plugin
 

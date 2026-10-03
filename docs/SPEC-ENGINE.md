@@ -242,7 +242,8 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # limit) → exit 2; a failing re-watch later is an error line. RSS
                                                # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
-seldon doctor                                  # engine, config, logbook, omarchy, snapper, git checks
+seldon doctor                                  # engine, config, logbook, cases, ledger, fences, state,
+                                               # omarchy, snapper, git checks (read-only)
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
 # prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
 # path as one argument; without a terminal (the plugin) it launches
@@ -285,13 +286,38 @@ parses them):
 seldon --version --json          → {"name":"seldon","version":"0.1.0"}
 seldon contract-version --json   → {"contractVersion":1}
 any user error with --json       → {"error":{"code":1,"message":"<detail>"}}  (exit 1)
-seldon doctor --json             → {"ok":bool,"logbook":"<path>",
+seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
                                      "checks":[{"name","status":"ok|degraded|error","message","fix"?}]}
                                     exit 0 (no error), 1 (a check is error), 3 (not initialised)
 ```
 
 `doctor --path DIR` is an alias of the global `--logbook DIR`. The plugin's
 banner states parse the doctor shape; it is not part of `schema/`.
+
+doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
+where one exists. `config`: `config.toml` parses and its `[redaction]
+patterns` compile (an invalid pattern makes every writing command
+refuse: error). When `config.toml` does not parse, the logbook path it
+names is not known: the `logbook` row is "not checked: config.toml is
+invalid", `"logbook"` is `null`, and doctor exits 1, never 3 with the
+default path (a path from `--logbook`, `--path` or `SELDON_LOGBOOK` is
+still checked; the exit code stays 1). With an open logbook: `cases`, a
+case id in two files (error, the `index --check` rule); `ledger`, lines
+that are not events, per month with the count and the first line
+numbers (degraded: every reader skips them); `fences`, the generated
+fence of `STATUS.md` or `DECISIONS.md` that `status` leaves alone (no end
+marker of its own, or `STATUS.md` with the header but without the
+fence; degraded, the fix names the marker lines), and an end marker
+that closes no fence (degraded). doctor cannot tell an intact fence from
+one whose own end marker was removed while a later end marker remains:
+the writer then takes the text up to that marker as the fence body and
+replaces it. The row says so when it finds a stray end marker; with only
+one end marker left, nothing in the file shows it. `state`:
+`cursors.json`, `manifest.json` and `owned.json` in the state directory
+parse (missing is fine); each corrupt or unreadable one is an error row
+with what it breaks and the fix (`mv <file> <file>.bad`). The `snapper`
+probe runs the program the collector runs (`SELDON_SNAPPER`, default
+`snapper`).
 
 ```
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
@@ -369,13 +395,19 @@ seldon status --json  → the index shape above plus "status","state","git":{"co
 ```
 
 `index --check` validates before writing and refuses an invalid index
-(exit 2). Before `init` both commands write the `notInitialised` index and
+(exit 2). A case id found in two files (a stale copy, WP-057) is not a
+schema error but the user's to fix: `--check` refuses with exit 1 and
+names both files ("keep one file"); `index` and `status` write the index
+and warn. Before `init` both commands write the `notInitialised` index and
 exit 3 (what the plugin's banner expects). `status` autocommits as
 `seldon: status` only when a logbook file changed; `index` never commits.
 Every writing command calls `index::rebuild_if_initialised` after its
 autocommit and before releasing the lock; a failed rebuild is a warning,
 never a command failure. Broken files (torn ledger line, invalid case
 frontmatter) are skipped with a warning that `--json` and stderr surface.
+A `cursors.json` that cannot be read (every capture fails on it) is a
+warning too, and every enabled collector row in `state.collectors` is
+`ok: false` with that message and no `lastRun` (WP-070).
 
 The autocommit (WP-061): `git add -A` and `git commit -m "seldon:
 <summary>"` in the logbook, when `[git] autocommit` is on, `--no-commit`
