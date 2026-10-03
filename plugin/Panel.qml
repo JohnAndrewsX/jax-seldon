@@ -80,9 +80,13 @@ Panel {
   readonly property int wipLimit: Model.clampWipLimit(setting("wipLimit", Model.WIP_LIMIT_DEFAULT))
   readonly property var currentTab: tabItems[tabIndex]
 
+  // Every tab change (keys, a click on the strip, IPC `tab`) gives the keys
+  // back to the panel: a hidden tab's field keeps Qt's active focus, so
+  // typed keys and Enter would reach a field nobody sees (WP-067).
   function selectTab(i) {
     var n = root.tabNames.length
     root.tabIndex = ((i % n) + n) % n
+    if (root.opened && !keyCatcher.activeFocus) keyCatcher.forceActiveFocus()
   }
 
   function selectTabById(id) {
@@ -166,6 +170,8 @@ Panel {
       tab: root.tabIds[root.tabIndex],
       cursorActive: root.cursorActive,
       cursor: root.currentTab.cursor,
+      // The panel's key catcher has the keys (no text field does).
+      keys: keyCatcher.activeFocus,
       tabStrip: { oneLine: tabStrip.fitsOneLine, widths: tabStrip.cellWidths.join(",") },
       status: root.service ? root.service.status : "",
       pill: root.service ? Model.pillText(root.service.counts) : "",
@@ -202,7 +208,8 @@ Panel {
         driftTones: rows.filter(function(r) { return r.drift }).map(function(r) { return r.subject + " " + r.tone }),
         resolved: rows.filter(function(r) { return r.resolution !== "" }).map(function(r) { return r.subject + ": " + Model.rowStatus(r) }),
         more: changelogTab.moreDrift,
-        expanded: changelogTab.expandedId
+        expanded: changelogTab.expandedId,
+        selected: changelogTab.selectedId
       },
       drift: root.driftView(),
       work: root.workView(),

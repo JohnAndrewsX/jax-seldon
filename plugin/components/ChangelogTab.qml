@@ -36,6 +36,12 @@ Item {
 
   property string filter: "all"
   property int cursor: 0
+  // The event the cursor is on, by id: new events arrive at the top with
+  // every index write, so the cursor follows its event, not its row number
+  // (WP-067; WorkTab and DecisionsTab do the same).
+  property string selectedId: ""
+  // The filter `rows` was last seen with; a new filter starts at the top.
+  property string rowsFilter: "all"
   property string expandedId: ""
   property bool sheetOpen: false
   property alias sheet: sheet
@@ -57,9 +63,24 @@ Item {
     return Math.max(0, Math.min(root.rows.length - 1, i))
   }
 
+  function select(i) {
+    root.cursor = root.clampCursor(i)
+    root.selectedId = root.rows.length > 0 ? root.rows[root.cursor].id : ""
+  }
+
   function move(dy) {
     if (root.rows.length === 0) return
-    root.cursor = root.clampCursor(root.cursor + dy)
+    root.select(root.cursor + dy)
+  }
+
+  function findSelected() {
+    for (var i = 0; i < root.rows.length; i++) {
+      if (root.rows[i].id === root.selectedId) {
+        root.cursor = i
+        return true
+      }
+    }
+    return false
   }
 
   function activate() {
@@ -82,12 +103,8 @@ Item {
     var id = Model.firstCrisis(root.indexData)
     if (id === "") return false
     root.setFilter("all")
-    for (var i = 0; i < root.rows.length; i++) {
-      if (root.rows[i].id === id) {
-        root.cursor = i
-        break
-      }
-    }
+    root.selectedId = id
+    root.findSelected()
     return root.openSheet(id)
   }
 
@@ -113,11 +130,22 @@ Item {
   }
 
   onFilterChanged: {
-    root.cursor = 0
     root.expandedId = ""
     list.positionViewAtBeginning()
   }
-  onRowsChanged: if (root.cursor >= root.rows.length) root.cursor = Math.max(0, root.rows.length - 1)
+  // A new filter starts at the top; a new index keeps the cursor on its
+  // event, or on the same row number when the event is gone. Done here, not
+  // in onFilterChanged, so it never depends on which of the two runs first.
+  onRowsChanged: {
+    if (root.rowsFilter !== root.filter) {
+      root.rowsFilter = root.filter
+      root.select(0)
+    } else if (!root.findSelected()) {
+      // No rows for a moment (an unreadable index): keep the event.
+      if (root.rows.length > 0) root.select(root.cursor)
+      else root.cursor = 0
+    }
+  }
   // Another tab shown (a click on the tab strip, IPC): the sheet stays open
   // but gives the keys back.
   onVisibleChanged: if (!visible && root.editing) root.leaveRequested()
@@ -284,16 +312,16 @@ Item {
           muted: root.muted
           fontFamily: root.fontFamily
           onClicked: {
-            root.cursor = delegateRoot.index
+            root.select(delegateRoot.index)
             root.cursorWanted()
             root.activate()
           }
           onHoveredRow: {
-            root.cursor = delegateRoot.index
+            root.select(delegateRoot.index)
             root.cursorWanted()
           }
           onResolveRequested: {
-            root.cursor = delegateRoot.index
+            root.select(delegateRoot.index)
             root.cursorWanted()
             root.openSheet(delegateRoot.modelData.id)
           }
