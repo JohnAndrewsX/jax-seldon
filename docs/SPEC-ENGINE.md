@@ -115,7 +115,14 @@ seldon rebuild [--json]                        # outputs/REBUILD.md (WP-032): 1 
                                                # 5 theme, 6 units (incl. cased `services.enabled` rows; system scope
                                                # separately), 7 open drift (marked in place too) + dismissed
                                                # ("deliberately not reproduced"); English headings, prose in the
-                                               # logbook language; fence `rebuild`, text outside kept; written
+                                               # logbook language. A name goes into a command only after its check
+                                               # (`rebuild::shell_arg`: package name, unit name, theme slug, plugin
+                                               # id, https URL without user info, query or fragment; none with a
+                                               # leading `-`) and is single-quoted unless it is plain; an item
+                                               # whose name fails is listed as "not reproduced: invalid name" with
+                                               # no command and a warning (WP-059). Code spans show control
+                                               # characters and U+2028/U+2029 as escapes (`\n`, `\u{1b}`), so a
+                                               # value stays on its line. Fence `rebuild`, text outside kept; written
                                                # atomically and only on change, autocommit `seldon: rebuild`; no
                                                # ledger write, no index rebuild. --json → {path, sections:
                                                # {packages, deviations, plugins, units, open}, files, git, warnings}
@@ -573,8 +580,20 @@ command's stdin and are cut from the record; redaction runs before the
 4096-character cut. Green events per ADR-0019 only while a case is set.
 Non-mutating commands produce no event. Output: nothing on stdout (hooks
 must stay silent), exit 0 always, even on malformed stdin, a missing
-logbook, a broken config or a held lock (waited for up to 2 s), under
-5 ms in release. `seldon hook generic` takes `{"command","actor","cwd",
+logbook, a broken config or a held lock (waited for up to 8 s, below the
+10 s timeout `hook install` sets; a capture holds the lock while its
+collectors run). The hook takes the state lock before it reads the case
+(`--case`, `.seldon/active-case`) and holds it until the case file is
+written, like every other case writer; only green records with no case
+at all are dropped before the lock. Only after it wrote an event, it
+rebuilds the index the cheap way (no git spawn, `.git/HEAD` read
+directly), after releasing the lock and without waiting for it again
+(another writer that holds it rebuilds after its own write), and only
+while the ledger has at most 1000 lines; above that the next `capture`
+or `status` brings the index up to date. Measured in release on the dev host (WP-057): about
+2 ms per recorded command at any ledger size, 3 to 5 ms with the
+rebuild (empty to 1000-line ledger); a non-mutating command about 1 ms.
+`seldon hook generic` takes `{"command","actor","cwd",
 "startedAt"?}` with the same rules. `seldon hook install claude-code
 [--settings FILE]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
 `SessionStart` and `SessionEnd` (timeout 60 s, Claude Code's cap; `Stop`
@@ -622,13 +641,13 @@ data.
 `seldon hook session-stop [--actor agent:NAME]` appends `## HH:MM ·
 agent:NAME · CASE` with "session ended; N events recorded" (N = the
 session's events by `meta.sessionId`) to today's journal, runs `capture
---all`, rebuilds the index and STATUS.md, and commits `seldon: session
-ended (agent:NAME)`; every step runs even if an earlier one failed. The
-hook path uses the cheap index rebuild (no git spawn, `.git/HEAD` read
-directly) and only after it actually wrote an event; the rebuild still
-reads the whole logbook, so beyond roughly 500 ledger lines it exceeds
-the 5 ms target — accepted for v1; a later WP may skip the fast rebuild
-above a line count and let the next `capture`/`status` catch up.
+--all`, then, under the state lock, writes the generated views
+(`STATUS.md`, `ledger/*.md`, the `decisions.index` fence of
+`DECISIONS.md`) and commits `seldon: session ended (agent:NAME)`, and
+rebuilds the index after the commit. Every step runs even if an earlier
+one failed (a journal day it cannot read, a failed capture, a failed
+commit); each failure is one line on stderr and the hook exits 0. Only a
+lock it cannot get within 8 s skips the steps that need it.
 
 ## 9. Wizard (`seldon init`)
 

@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs with `LC_ALL=C`, so under `LANG=de_DE.UTF-8` the snapper collector
   reports `NO_PERMISSIONS` again and `doctor` and `init` show the
   `set-config` fix line (fixes #1).
+- `outputs/REBUILD.md` quotes the names in its commands: package, unit
+  and theme names, plugin ids and URLs are checked first and
+  single-quoted when they are not plain; an item with an invalid name is
+  listed as "not reproduced: invalid name" without a command, and
+  `seldon rebuild` warns about it (WP-059).
+- The agent hook reads the case under the state lock: two parallel tool
+  calls, or a `plan` step while an agent works, no longer drop event ids
+  from the case, undo a status change or leave the case in two folders.
+  It waits up to 8 s for the lock (was 2 s), rebuilds the index outside
+  its critical section, and leaves the rebuild to the next `capture` or
+  `status` once the ledger has more than 1000 lines, so a recorded
+  command stays under 5 ms up to 1000 lines and costs about 2 ms above. `index --check` reports a
+  case id found in two files (WP-057).
+- `hook session-stop` runs every step even when one fails (each failure
+  is one line on stderr) and writes `STATUS.md` before its commit
+  (WP-057).
+- A journal day file without frontmatter (Obsidian's daily note) gets the
+  block in front instead of failing `log`, `plan done` and session-stop;
+  `log` and `plan done` read the day before they write the ledger, so a
+  day file with broken frontmatter fails them before anything changes
+  (WP-057).
 - `hook session-start` prints the logbook context as a quoted block: each
   line from the logbook starts with `> `, under one line that says these
   lines are data, not instructions; only day files are read as the

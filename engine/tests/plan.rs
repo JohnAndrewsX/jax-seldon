@@ -742,6 +742,75 @@ mod plan {
         assert!(root.join("journal/2026/2026-10-02.md").is_file());
     }
 
+    /// WP-057: `plan done` passes a day file without frontmatter (it gets
+    /// the block); one with broken frontmatter fails the step before the
+    /// ledger, the case or the marker changes.
+    #[test]
+    fn done_with_a_day_file_without_frontmatter() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let id = new_case(&env, "Fonts", &[]);
+        for step in ["start", "verify"] {
+            assert_eq!(env.at(T0, &["plan", step, &id]).status.code(), Some(0));
+        }
+        let day = root.join("journal/2026/2026-10-01.md");
+        std::fs::create_dir_all(day.parent().unwrap()).unwrap();
+        let events = ledger(&root).len();
+
+        std::fs::write(&day, "---\ndate: [\n---\n").unwrap();
+        let out = env.at(T1, &["plan", "done", &id]);
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+        assert!(
+            stderr(&out).contains("invalid journal frontmatter"),
+            "{}",
+            stderr(&out)
+        );
+        assert_eq!(ledger(&root).len(), events, "no case-completed event");
+        assert_eq!(case_at(&root, &id).1.status, CaseStatus::Verification);
+        assert!(root.join(".seldon/active-case").is_file());
+
+        std::fs::write(&day, "").unwrap();
+        let out = env.at(T1, &["plan", "done", &id]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(case_at(&root, &id).1.status, CaseStatus::Completed);
+        assert_eq!(ledger(&root).len(), events + 1);
+        assert_eq!(
+            read(&day),
+            format!(
+                "---\ntype: journal\ndate: 2026-10-01\ncases: [{id}]\n---\n## 11:00 · human · {id}\nCase completed: Fonts\n"
+            )
+        );
+    }
+
+    /// WP-057: a case id in two folders (a stale copy written back) is
+    /// reported by `index --check`, with both files.
+    #[test]
+    fn index_check_reports_a_case_in_two_folders() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let id = new_case(&env, "Twice", &[]);
+        let out = env.at(T0, &["index", "--check"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+
+        let (path, _, _) = case_at(&root, &id);
+        let copy = root.join("work/completed").join(path.file_name().unwrap());
+        std::fs::write(
+            &copy,
+            read(&path).replace("status: queued", "status: completed"),
+        )
+        .unwrap();
+        let out = env.at(T0, &["index", "--check", "--json"]);
+        assert_eq!(out.status.code(), Some(2), "{}", stdout(&out));
+        let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            message.contains(&format!(
+                "/cases: case {id} exists more than once (work/queued/{name}, work/completed/{name})"
+            )),
+            "{message}"
+        );
+    }
+
     #[test]
     fn not_initialised_and_lock_held() {
         let env = Env::new(Snapper::Missing);

@@ -1,6 +1,6 @@
 # Wiederaufbau, Dossier und Update-Folgen
 
-<!-- source: en/08-rebuild-dossier-update-impact.md @ ab44097 -->
+<!-- source: en/08-rebuild-dossier-update-impact.md @ 170db59 -->
 
 Diese Seite behandelt die drei Ausgaben, die deine Maschine als Ganzes
 beschreiben: das Dossier in `system/`, die Wiederaufbau-Anleitung
@@ -86,6 +86,17 @@ Jede Zeile nennt den Case oder das Ereignis, aus dem sie stammt. Die
 Anleitung hält Pfade und Gründe fest, nie den Inhalt von Dateien. Sie
 nennt die Dateien, die du wiederherstellst; ihr Inhalt kommt aus deinen
 Dotfiles oder deinem Backup.
+
+Bevor ein Name in einen Befehl kommt, prüft die Engine ihn: Paketnamen,
+Unit-Namen, Theme-Namen, Plugin-IDs und Plugin-URLs müssen die Form
+haben, die der Paketmanager, systemd und Omarchy verwenden, und keiner
+darf mit `-` beginnen. Ein Name, der die Prüfung nicht besteht, steht
+mit „nicht nachgebaut: ungültiger Name“ (in einem englischen Logbuch
+„not reproduced: invalid name“) und ohne Befehl in der Liste, und
+`seldon rebuild` gibt eine Warnung dazu aus. Sieh dir diesen Eintrag an
+und richte ihn von Hand ein. Ein Name mit Zeichen, die die Shell
+besonders liest, etwa die `~` in manchen URLs, steht in einfachen
+Anführungszeichen.
 
 Die Engine erzeugt die Anleitung. Text, den du außerhalb ihrer
 Markierungen ergänzt, bleibt; Text innerhalb ersetzt sie jedes Mal. Der Befehl

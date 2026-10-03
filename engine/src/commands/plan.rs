@@ -260,6 +260,14 @@ fn step(
         Language::De => format!("Case abgeschlossen: {}", file.case.title),
     });
 
+    // the journal day is read before the ledger is written: a day file
+    // the engine cannot read fails the step before anything changes
+    // (WP-057)
+    let journal_entry = stub
+        .as_deref()
+        .map(|text| journal::prepare(&logbook, &ctx.now, &args.actor, Some(&args.id), text))
+        .transpose()?;
+
     // the ledger first: if it cannot be written, the case is not moved,
     // the marker and the journal stay as they are
     let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
@@ -279,10 +287,8 @@ fn step(
         }
         Transition::Verify => Value::Null,
     };
-    let journal_entry = match &stub {
-        Some(text) => {
-            Some(journal::append(&logbook, &ctx.now, &args.actor, Some(&args.id), text)?.path)
-        }
+    let journal_entry = match journal_entry {
+        Some(pending) => Some(pending.write()?.path),
         None => None,
     };
     let commit = autocommit(ctx, &config, &logbook, &format!("{} {}", args.id, to));

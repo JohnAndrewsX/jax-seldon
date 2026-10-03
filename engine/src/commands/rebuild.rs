@@ -51,7 +51,7 @@ pub fn run(ctx: &Context, _args: RebuildArgs) -> Result<Output> {
     let since = logbook.meta.created.to_string();
     let doc = rebuild::collect(&built, &dossier, since.get(..10).unwrap_or(&since), title);
     let counts = doc.counts();
-    let content = rebuild::render::text(&doc, logbook.meta.language);
+    let (content, skipped) = rebuild::render::text(&doc, logbook.meta.language);
 
     let path = logbook.path(REL_PATH);
     let existing = match std::fs::read_to_string(&path) {
@@ -86,7 +86,8 @@ pub fn run(ctx: &Context, _args: RebuildArgs) -> Result<Output> {
         counts.open
     );
     human.push_str(&commit.human());
-    human.push_str(&warnings_human(&built.warnings));
+    let warnings: Vec<String> = built.warnings.iter().cloned().chain(skipped).collect();
+    human.push_str(&warnings_human(&warnings));
     Ok(Output::ok(
         human,
         json!({
@@ -94,7 +95,7 @@ pub fn run(ctx: &Context, _args: RebuildArgs) -> Result<Output> {
             "sections": counts,
             "files": files,
             "git": commit.json(),
-            "warnings": built.warnings,
+            "warnings": warnings,
         }),
     ))
 }

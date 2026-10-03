@@ -9,6 +9,10 @@
 //! change that needs more fails loudly instead of passing silently. The
 //! tests hold it to the `jsonschema` crate on the sample and on the
 //! must-fail fixtures.
+//!
+//! One rule is not in the schema: a case id appears once in an index
+//! (`cases.*`). Two case files with one id (a stale copy written back to
+//! its old folder, WP-057) are reported with both paths.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -84,6 +88,9 @@ impl Validator {
         match self.docs.get(&id) {
             Some(schema) => self.walk(instance, schema, &id, "", &mut errs),
             None => errs.push(format!("no schema {name}")),
+        }
+        if name == "index.schema.json" {
+            errs.extend(duplicate_cases(instance));
         }
         errs
     }
@@ -304,6 +311,36 @@ impl Validator {
     }
 }
 
+/// One line per case id that appears more than once in `cases.*`, with
+/// the paths of its files.
+fn duplicate_cases(index: &Value) -> Vec<String> {
+    let mut seen: Vec<(&str, Vec<&str>)> = Vec::new();
+    for group in ["queued", "active", "verification", "completed"] {
+        let Some(list) = index["cases"][group].as_array() else {
+            continue;
+        };
+        for case in list {
+            let Some(id) = case["id"].as_str() else {
+                continue;
+            };
+            let path = case["path"].as_str().unwrap_or("?");
+            match seen.iter_mut().find(|(i, _)| *i == id) {
+                Some((_, paths)) => paths.push(path),
+                None => seen.push((id, vec![path])),
+            }
+        }
+    }
+    seen.into_iter()
+        .filter(|(_, paths)| paths.len() > 1)
+        .map(|(id, paths)| {
+            format!(
+                "/cases: case {id} exists more than once ({}); keep one file",
+                paths.join(", ")
+            )
+        })
+        .collect()
+}
+
 fn at(path: &str) -> &str {
     if path.is_empty() { "/" } else { path }
 }
@@ -408,6 +445,35 @@ mod tests {
                 .iter()
                 .any(|e| e.contains("'case'")),
             "if/then of a linked resolution"
+        );
+    }
+
+    #[test]
+    fn a_case_id_twice_is_an_error() {
+        let v = Validator::new();
+        let sample: Value =
+            serde_json::from_str(include_str!("../../../fixtures/index.sample.json")).unwrap();
+        assert_eq!(duplicate_cases(&sample), Vec::<String>::new());
+        let mut twice = sample.clone();
+        let mut copy = twice["cases"]["active"][0].clone();
+        let id = copy["id"].as_str().unwrap().to_string();
+        copy["status"] = json!("completed");
+        copy["path"] = json!(format!("work/completed/{id}-copy.md"));
+        twice["cases"]["completed"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, copy);
+        let errs = v.validate(&twice, "index.schema.json");
+        assert_eq!(errs.len(), 1, "{errs:?}");
+        assert!(
+            errs[0].starts_with(&format!(
+                "/cases: case {id} exists more than once (work/active/"
+            )),
+            "{errs:?}"
+        );
+        assert!(
+            errs[0].contains(&format!("work/completed/{id}-copy.md")),
+            "{errs:?}"
         );
     }
 }
