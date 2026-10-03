@@ -240,10 +240,11 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
 
     let shown_root = ctx.dirs.display(&root);
     let mut human = format!(
-        "Logbook created at {shown_root} (machine {machine_id}, language {}, {} files).\nConfig: {}\n",
+        "Logbook created at {shown_root} (machine {machine_id}, language {}, {} files).\nConfig: {}\n{}\n",
         choices.language,
         files.len(),
         ctx.dirs.display(&config_file),
+        setup::SKIP_PATHS_HINT,
     );
     for h in &harnesses {
         human.push_str(&format!("Harness {}: {}\n", h.name, h.human));
@@ -285,6 +286,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             "obsidian": choices.obsidian,
             "collectors": choices.collectors,
             "watchPaths": choices.watch_paths,
+            "skipPaths": config.redaction.skip_paths,
             "harnesses": choices.harnesses,
             "harnessSetup": harnesses
                 .iter()
@@ -532,6 +534,16 @@ fn defaults(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choice
     }
 }
 
+/// The wizard's "more paths" answer as `watchPaths` entries: comma
+/// separated, each resolved like a config value (relative to the home
+/// folder, whatever the directory `init` runs in) and stored as `~/…`.
+fn typed_watch_paths(dirs: &crate::config::Dirs, text: &str) -> Vec<String> {
+    text.split(',')
+        .filter_map(|s| dirs.expand_config(s.trim()))
+        .map(|p| dirs.display(&p))
+        .collect()
+}
+
 fn locale_language() -> Language {
     let locale = ["LC_ALL", "LC_MESSAGES", "LANG"]
         .iter()
@@ -627,17 +639,11 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
             .map_err(prompt_err)?;
         let mut paths: Vec<String> = keep.iter().map(|i| c.watch_paths[*i].clone()).collect();
         let extra: String = Input::with_theme(&theme)
-            .with_prompt("More paths, comma-separated (empty for none)")
+            .with_prompt("More paths, comma-separated, relative to your home (empty for none)")
             .allow_empty(true)
             .interact_text()
             .map_err(prompt_err)?;
-        paths.extend(
-            extra
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from),
-        );
+        paths.extend(typed_watch_paths(&ctx.dirs, &extra));
         c.watch_paths = paths;
     }
 
@@ -792,5 +798,27 @@ mod tests {
         std::fs::remove_dir_all(home.join("src")).unwrap();
         assert_eq!(path_options(&dirs).len(), 2);
         std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn typed_watch_paths_are_stored_under_home() {
+        let dirs = Dirs {
+            home: "/home/user".into(),
+            xdg_config_home: "/home/user/.config".into(),
+            state_dir: "/home/user/.local/state/seldon".into(),
+        };
+        assert_eq!(
+            typed_watch_paths(
+                &dirs,
+                ".config/nvim, ~/.config/kitty ,$HOME/bin/,, /etc/keyd/default.conf"
+            ),
+            [
+                "~/.config/nvim",
+                "~/.config/kitty",
+                "~/bin",
+                "/etc/keyd/default.conf"
+            ]
+        );
+        assert!(typed_watch_paths(&dirs, " ").is_empty());
     }
 }
