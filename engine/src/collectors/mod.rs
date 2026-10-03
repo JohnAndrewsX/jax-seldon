@@ -18,7 +18,8 @@
 //! `capture --since`), so history from before the logbook is not drift.
 //!
 //! Read-only on the host: collectors read files and run fixed programs with
-//! fixed argv through [`crate::sys::run`]; nothing here changes the system.
+//! fixed argv through [`crate::sys::run`] (snapper through
+//! [`snapper::run_list`], in the C locale); nothing here changes the system.
 
 pub mod config;
 pub mod omarchy;

@@ -86,6 +86,65 @@ mod doctor {
         assert!(text.trim_end().ends_with("doctor: ok"));
     }
 
+    /// Issue #1: snapper's permission error is recognised in a German
+    /// locale. The stub answers in German unless `LC_ALL=C`, like snapper's
+    /// own catalog; the collector state, `init`'s hint and `doctor`'s fix
+    /// line must all appear.
+    #[test]
+    fn snapper_permission_error_is_recognised_in_any_locale() {
+        let env = Env::new(Snapper::NoPermissionsLocalized);
+        let german = |args: &[&str]| {
+            env.command(args)
+                .env("LANG", "de_DE.UTF-8")
+                .env("LANGUAGE", "de")
+                .output()
+                .expect("run seldon")
+        };
+        let root = env.tmp.path().join("logbook");
+        let out = german(&[
+            "init",
+            "--non-interactive",
+            "--path",
+            root.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let text = stdout(&out);
+        assert!(
+            text.contains("Snapper: degraded — No permissions."),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "{}   # optional: snapshots in the timeline (ADR-0011)",
+                seldon::commands::doctor::SNAPPER_FIX
+            )),
+            "{text}"
+        );
+        assert!(!text.contains("Keine"), "{text}");
+
+        let cursors: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(env.home.join(".local/state/seldon/cursors.json")).unwrap(),
+        )
+        .unwrap();
+        let state = &cursors["collectors"]["snapper"];
+        assert_eq!(state["ok"], false, "{state}");
+        assert_eq!(
+            state["message"],
+            seldon::collectors::snapper::NO_PERMISSIONS,
+            "{state}"
+        );
+        assert_eq!(state["fix"], seldon::commands::doctor::SNAPPER_FIX);
+
+        let out = german(&["doctor", "--path", root.to_str().unwrap()]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let text = stdout(&out);
+        assert!(
+            text.contains(&format!("fix: {}", seldon::commands::doctor::SNAPPER_FIX)),
+            "{text}"
+        );
+        assert!(!text.contains("Keine"), "{text}");
+    }
+
     /// WP-050: the `logbook` row shortens the home to `~` like the header.
     #[test]
     fn logbook_row_shows_paths_like_the_header() {

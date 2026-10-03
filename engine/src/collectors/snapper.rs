@@ -10,6 +10,11 @@
 //! a deletion can name what was deleted. Without a cursor, snapshots older
 //! than the baseline are recorded as known without an event.
 //!
+//! snapper translates its messages (`Keine Berechtigungen.` under
+//! `LANG=de_DE.UTF-8`), so every invocation is built by [`list_command`]
+//! with `LC_ALL=C` and without `LANGUAGE`, and its stderr is matched in
+//! English (issue #1).
+//!
 //! Without `ALLOW_USERS`, snapper exits 1 with `No permissions.` on stderr.
 //! The collector then degrades: `ok: false`, a message, and the one-line fix,
 //! which is printed and never run. Nothing is invented and the cursor stays.
@@ -20,15 +25,17 @@
 //! snapshot number.
 
 use std::collections::{BTreeMap, HashSet};
+use std::process::Command;
+use std::time::Duration;
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{Collector, Ctx, Outcome, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, to_cursor, typed_cursor};
 use crate::commands::doctor::SNAPPER_FIX;
 use crate::model::event::{Event, Kind, Meta, Source};
-use crate::sys::Run;
+use crate::sys::{self, Run};
 
 pub struct Snapper;
 
@@ -66,19 +73,43 @@ pub struct SnapperCursor {
 /// The degraded message for a permission error (index and doctor).
 pub const NO_PERMISSIONS: &str = "snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see `seldon doctor`.";
 
+/// `program --jsonout list` (`program` is `snapper`, or `SELDON_SNAPPER`),
+/// with `LC_ALL=C` and `LANGUAGE` removed so snapper's messages stay
+/// English whatever the user's locale (issue #1). The one place a snapper
+/// command is built: the collector and `doctor` (and through it `init`)
+/// run it with [`run_list`].
+pub fn list_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.args(["--jsonout", "list"])
+        .env("LC_ALL", "C")
+        .env_remove("LANGUAGE");
+    cmd
+}
+
+/// Runs [`list_command`] with `timeout`.
+pub fn run_list(program: &str, timeout: Duration) -> Run {
+    sys::run_command(list_command(program), timeout)
+}
+
+/// Whether snapper's stderr is its permission error (English, see
+/// [`list_command`]).
+pub fn is_no_permissions(stderr: &str) -> bool {
+    stderr.contains("No permissions")
+}
+
 impl Collector for Snapper {
     fn name(&self) -> &'static str {
         "snapper"
     }
 
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
-        let stdout = match ctx.run(&ctx.sources.snapper, &["--jsonout", "list"]) {
+        let stdout = match run_list(&ctx.sources.snapper, RUN_TIMEOUT) {
             Run::Exited {
                 code: Some(0),
                 stdout,
                 ..
             } => stdout,
-            Run::Exited { stderr, .. } if stderr.contains("No permissions") => {
+            Run::Exited { stderr, .. } if is_no_permissions(&stderr) => {
                 return Outcome::degraded(NO_PERMISSIONS, Some(SNAPPER_FIX.to_string()));
             }
             Run::Exited { code, stderr, .. } => {
@@ -258,5 +289,21 @@ mod tests {
         );
         assert!(parse_list("{}").is_err());
         assert!(parse_list("No permissions.").is_err());
+    }
+
+    /// Issue #1: the one snapper command is `--jsonout list` in the C
+    /// locale, with `LANGUAGE` removed.
+    #[test]
+    fn list_command_runs_in_the_c_locale() {
+        use std::ffi::OsStr;
+        let cmd = list_command("snapper");
+        assert_eq!(cmd.get_program(), "snapper");
+        let args: Vec<&OsStr> = cmd.get_args().collect();
+        assert_eq!(args, ["--jsonout", "list"]);
+        let envs: Vec<(&OsStr, Option<&OsStr>)> = cmd.get_envs().collect();
+        assert!(envs.contains(&(OsStr::new("LC_ALL"), Some(OsStr::new("C")))));
+        assert!(envs.contains(&(OsStr::new("LANGUAGE"), None)));
+        assert!(is_no_permissions("No permissions.\n"));
+        assert!(!is_no_permissions("Keine Berechtigungen.\n"));
     }
 }
