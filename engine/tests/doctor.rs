@@ -515,4 +515,378 @@ mod doctor {
             "doctor wrote into the logbook's .git"
         );
     }
+
+    /// WP-070: `doctor --json` with its exit code.
+    fn doctor(env: &Env, extra: &[&str]) -> (Option<i32>, serde_json::Value) {
+        let mut args = vec!["doctor", "--json"];
+        args.extend_from_slice(extra);
+        let out = env.seldon(&args);
+        (out.status.code(), json(&out))
+    }
+
+    /// F-540: with a config.toml that does not parse, the logbook path it
+    /// names is not known. doctor does not guess the default (exit 3, an
+    /// `init` fix that fails on the same config) but exits 1 with the
+    /// config error first and the logbook "not checked".
+    #[test]
+    fn an_invalid_config_is_not_reported_as_a_missing_logbook() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("language = \"en\""), "{text}");
+        std::fs::write(
+            &config,
+            text.replace("language = \"en\"", "language = \"fr\""),
+        )
+        .unwrap();
+
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(1), "{v}");
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["logbook"], serde_json::Value::Null, "{v}");
+        let checks = v["checks"].as_array().unwrap();
+        let names: Vec<&str> = checks.iter().map(|c| c["name"].as_str().unwrap()).collect();
+        assert_eq!(names[..3], ["engine", "config", "logbook"], "{v}");
+        assert_eq!(checks[1]["status"], "error");
+        assert!(
+            checks[1]["message"]
+                .as_str()
+                .unwrap()
+                .contains("unknown variant `fr`"),
+            "{v}"
+        );
+        assert_eq!(checks[2]["status"], "error");
+        assert_eq!(
+            checks[2]["message"],
+            "not checked: config.toml is invalid, so the logbook path is not known"
+        );
+        assert!(checks[2].get("fix").is_none(), "{v}");
+        let text = v.to_string();
+        assert!(!text.contains("not initialised"), "{text}");
+        assert!(!text.contains("seldon init"), "{text}");
+
+        let out = env.seldon(&["doctor"]);
+        assert_eq!(out.status.code(), Some(1));
+        assert!(
+            stdout(&out)
+                .starts_with("seldon doctor · logbook not known (config.toml is invalid)\n"),
+            "{}",
+            stdout(&out)
+        );
+
+        // a path given on the command line is still checked; the exit code
+        // stays the config error's
+        let (code, v) = doctor(&env, &["--path", root.to_str().unwrap()]);
+        assert_eq!(code, Some(1), "{v}");
+        assert_eq!(check(&v, "logbook")["status"], "ok", "{v}");
+        let missing = env.tmp.path().join("nowhere");
+        let (code, v) = doctor(&env, &["--path", missing.to_str().unwrap()]);
+        assert_eq!(code, Some(1), "the config error wins over exit 3: {v}");
+    }
+
+    /// F-541: a `[redaction] patterns` entry that does not compile makes
+    /// every writing command refuse; doctor says so, with the fix.
+    #[test]
+    fn an_invalid_redaction_pattern_is_a_config_error() {
+        let env = Env::new(Snapper::NoPermissions);
+        init(&env);
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("\npatterns = []"), "{text}");
+        std::fs::write(
+            &config,
+            text.replace("\npatterns = []", "\npatterns = [\"(unclosed\"]"),
+        )
+        .unwrap();
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(1), "{v}");
+        let c = check(&v, "config");
+        assert_eq!(c["status"], "error", "{c}");
+        let message = c["message"].as_str().unwrap();
+        assert!(message.contains("invalid regex `(unclosed`"), "{message}");
+        assert!(!message.contains('\n'), "one line: {message}");
+        assert_eq!(
+            c["fix"],
+            "fix or remove that pattern under [redaction] patterns in ~/.config/seldon/config.toml"
+        );
+        // the logbook is still found through the config
+        assert_eq!(check(&v, "logbook")["status"], "ok", "{v}");
+    }
+
+    /// F-541: each collector state file is loaded strictly; a corrupt one
+    /// is an error that names the file, what it breaks, and the fix.
+    #[test]
+    fn a_corrupt_state_file_is_an_error_with_its_fix() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = env.tmp.path().join("logbook");
+        let out = env.seldon(&[
+            "init",
+            "--non-interactive",
+            "--path",
+            root.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let state = env.home.join(".local/state/seldon");
+        // init's capture wrote the cursors and the config manifest
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(0), "{v}");
+        let ok = check(&v, "state");
+        assert_eq!(ok["status"], "ok", "{ok}");
+        assert_eq!(
+            ok["message"],
+            "~/.local/state/seldon: cursors.json, manifest.json readable"
+        );
+
+        for (name, says) in [
+            ("cursors.json", "every capture fails"),
+            ("manifest.json", "new config baseline"),
+            ("owned.json", "reported as drift"),
+        ] {
+            let file = state.join(name);
+            let kept = std::fs::read(&file).ok();
+            std::fs::write(&file, "{\"logbook\": ").unwrap();
+            let (code, v) = doctor(&env, &[]);
+            assert_eq!(code, Some(1), "{name}: {v}");
+            let c = check(&v, "state");
+            assert_eq!(c["status"], "error", "{name}: {c}");
+            let message = c["message"].as_str().unwrap();
+            assert!(
+                message.starts_with(&format!("~/.local/state/seldon/{name} is corrupt (")),
+                "{message}"
+            );
+            assert!(message.contains(says), "{message}");
+            assert_eq!(
+                c["fix"],
+                format!("mv {0} {0}.bad", file.display()),
+                "{name}: {c}"
+            );
+            match kept {
+                Some(bytes) => std::fs::write(&file, bytes).unwrap(),
+                None => std::fs::remove_file(&file).unwrap(),
+            }
+        }
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(0), "{v}");
+    }
+
+    /// F-132: ledger lines that are not events are skipped by every
+    /// reader; doctor names the month, the count and the lines.
+    #[test]
+    fn bad_ledger_lines_are_counted() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(check(&v, "ledger")["status"], "ok", "{v}");
+        let month = root.join("ledger/2026-10.jsonl");
+        // not JSON, then a write torn inside `ü`
+        std::fs::write(&month, b"not an event\n{\"subject\":\"L\xc3").unwrap();
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(0), "degraded is not an error: {v}");
+        let c = check(&v, "ledger");
+        assert_eq!(c["status"], "degraded", "{c}");
+        let message = c["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("ledger/2026-10.jsonl: 2 lines skipped, ")
+                && message.contains(": line 1, 2;"),
+            "{message}"
+        );
+        assert!(c["fix"].as_str().unwrap().starts_with("repair or delete"));
+    }
+
+    /// WP-057 follow-up: a case id in two files is an error in doctor too.
+    #[test]
+    fn a_case_id_twice_is_an_error() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let out = env.seldon(&["plan", "new", "--json", "--", "Twice"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let id = json(&out)["case"]["id"].as_str().unwrap().to_string();
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(check(&v, "cases")["status"], "ok", "{v}");
+
+        let queued = common::find_file(&root.join("work/queued"), &id);
+        let name = queued.file_name().unwrap().to_string_lossy().into_owned();
+        std::fs::write(
+            root.join("work/completed").join(&name),
+            std::fs::read_to_string(&queued)
+                .unwrap()
+                .replace("status: queued", "status: completed"),
+        )
+        .unwrap();
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(1), "{v}");
+        let c = check(&v, "cases");
+        assert_eq!(c["status"], "error", "{c}");
+        let message = c["message"].as_str().unwrap();
+        assert!(
+            message.starts_with(&format!("case {id} exists more than once (")),
+            "{message}"
+        );
+        for rel in [
+            format!("work/queued/{name}"),
+            format!("work/completed/{name}"),
+        ] {
+            assert!(message.contains(&rel), "{message}");
+        }
+        assert!(c["fix"].as_str().unwrap().contains("stale copy"), "{c}");
+    }
+
+    /// WP-065 follow-up: a damaged STATUS.md or DECISIONS.md fence is
+    /// reported with the markers to restore; an end marker that closes no
+    /// fence is reported with what doctor cannot tell.
+    #[test]
+    fn damaged_fences_and_stray_end_markers_are_reported() {
+        const END: &str = "<!-- seldon:end -->";
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let out = env.seldon(&["status"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let status_md = root.join("STATUS.md");
+        let decisions_md = root.join("DECISIONS.md");
+        let status = std::fs::read_to_string(&status_md).unwrap();
+        let decisions = std::fs::read_to_string(&decisions_md).unwrap();
+        assert_eq!(status.matches(END).count(), 1, "{status}");
+        assert_eq!(decisions.matches(END).count(), 1, "{decisions}");
+        let fences = |env: &Env| {
+            let (code, v) = doctor(env, &[]);
+            assert_eq!(code, Some(0), "degraded is not an error: {v}");
+            check(&v, "fences").clone()
+        };
+        assert_eq!(fences(&env)["status"], "ok");
+
+        // STATUS.md: the end marker removed, notes below it
+        let removed = status.replace(END, "my notes");
+        std::fs::write(&status_md, &removed).unwrap();
+        let c = fences(&env);
+        assert_eq!(c["status"], "degraded", "{c}");
+        assert!(
+            c["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("STATUS.md: the status fence has no end marker of its own; "),
+            "{c}"
+        );
+        assert_eq!(
+            c["fix"],
+            "restore the marker lines `<!-- seldon:begin status -->` and `<!-- seldon:end -->` in STATUS.md"
+        );
+        // doctor and `status` agree: status leaves the file alone
+        let out = env.seldon(&["status"]);
+        assert!(
+            stdout(&out).contains("warning: STATUS.md: the status fence has no end marker"),
+            "{}",
+            stdout(&out)
+        );
+        assert_eq!(std::fs::read_to_string(&status_md).unwrap(), removed);
+        std::fs::write(&status_md, &status).unwrap();
+
+        // DECISIONS.md: the same for its decisions.index fence
+        std::fs::write(&decisions_md, decisions.replace(END, "")).unwrap();
+        let c = fences(&env);
+        assert_eq!(c["status"], "degraded", "{c}");
+        assert!(
+            c["message"].as_str().unwrap().starts_with(
+                "DECISIONS.md: the decisions.index fence has no end marker of its own"
+            ),
+            "{c}"
+        );
+        std::fs::write(&decisions_md, &decisions).unwrap();
+        assert_eq!(fences(&env)["status"], "ok");
+
+        // the end marker removed, and two stale ones further down: the
+        // writer would take "my notes" as fence body; doctor sees the
+        // stray one at the end but cannot tell which end is the fence's
+        assert!(status.ends_with(&format!("{END}\n")), "{status}");
+        std::fs::write(
+            &status_md,
+            format!(
+                "{}my notes\n{END}\nmore\n{END}\n",
+                status.strip_suffix(&format!("{END}\n")).unwrap()
+            ),
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&status_md).unwrap();
+        let last = text.lines().count();
+        let c = fences(&env);
+        assert_eq!(c["status"], "degraded", "{c}");
+        let message = c["message"].as_str().unwrap();
+        assert!(
+            message.starts_with(&format!(
+                "STATUS.md: the end marker on line {last} closes no fence. "
+            )),
+            "{message}"
+        );
+        assert!(message.contains("doctor cannot tell"), "{message}");
+        assert!(c["fix"].as_str().unwrap().contains("stray"), "{c}");
+    }
+
+    /// WP-053 follow-up: doctor probes the program the snapper collector
+    /// runs (`SELDON_SNAPPER`), not a bare `snapper`.
+    #[test]
+    fn the_snapper_probe_honours_seldon_snapper() {
+        let env = Env::new(Snapper::Missing);
+        let root = init(&env);
+        env.stub(
+            "snapper-other",
+            r#"echo '{"root":[{"number":0,"description":"current"},{"number":5}]}'"#,
+        );
+        let out = env
+            .command(&["doctor", "--path", root.to_str().unwrap(), "--json"])
+            .env("SELDON_SNAPPER", "snapper-other")
+            .output()
+            .unwrap();
+        let v = json(&out);
+        let c = check(&v, "snapper");
+        assert_eq!(c["status"], "ok", "{c}");
+        assert!(
+            c["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("1 snapshots (config root)."),
+            "{c}"
+        );
+        // without the variable: the bare name, which is missing here
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(check(&v, "snapper")["status"], "degraded", "{v}");
+    }
+
+    /// doctor stays read-only with every new check failing: the state
+    /// directory, the config, the logbook and its `.git` are
+    /// byte-identical afterwards, and no index or lock appears.
+    #[test]
+    fn doctor_writes_nothing_while_reporting_problems() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let out = env.seldon(&["status"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let state = env.home.join(".local/state/seldon");
+        std::fs::remove_file(state.join("index.json")).unwrap();
+        let _ = std::fs::remove_file(env.lock_file());
+        for name in ["cursors.json", "manifest.json", "owned.json"] {
+            std::fs::write(state.join(name), "{").unwrap();
+        }
+        std::fs::write(root.join("ledger/2026-10.jsonl"), b"\xc3\n").unwrap();
+        let status = std::fs::read_to_string(root.join("STATUS.md")).unwrap();
+        std::fs::write(
+            root.join("STATUS.md"),
+            status.replace("<!-- seldon:end -->", ""),
+        )
+        .unwrap();
+        let before = (snapshot(&env.home), snapshot(&root));
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(1), "{v}");
+        for name in ["ledger", "fences", "state"] {
+            assert_ne!(check(&v, name)["status"], "ok", "{name}: {v}");
+        }
+        assert!(
+            before == (snapshot(&env.home), snapshot(&root)),
+            "doctor wrote into the state directory, the config or the logbook"
+        );
+        assert!(!state.join("index.json").exists());
+        assert!(!env.lock_file().exists());
+        if env.has_git {
+            assert!(root.join(".git").is_dir());
+        }
+    }
 }

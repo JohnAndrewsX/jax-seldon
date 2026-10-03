@@ -1,10 +1,11 @@
-//! `seldon doctor`: engine, config, logbook, omarchy, snapper and git checks
-//! (SPEC-ENGINE §3). Read-only; never runs anything with privileges.
+//! `seldon doctor`: engine, config, logbook, cases, ledger, fences, state,
+//! omarchy, snapper and git checks (SPEC-ENGINE §3). Read-only: no lock,
+//! no write; never runs anything with privileges.
 //!
 //! Every check is `ok`, `degraded` (works with less, e.g. snapper without
 //! permissions, ADR-0011) or `error`. Exit 0 without errors, 3 when the
-//! logbook is not initialised, 1 for any other error (the fix is in the
-//! user's files or config).
+//! logbook is not initialised (and `config.toml` is readable), 1 for any
+//! other error (the fix is in the user's files or config).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -13,12 +14,18 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::json;
 
+use super::index::duplicate_cases;
 use super::{Context, Output};
-use crate::collectors::{Sources, snapper};
-use crate::config::Config;
+use crate::collectors::config::{Manifest, OwnWrites};
+use crate::collectors::{Cursors, Sources, cursors_file, snapper};
+use crate::config::{Config, LogbookSource};
 use crate::error::{Error, Exit, Result};
+use crate::index::load::{FENCE_BEGIN, FENCE_END, bad_lines_warning};
+use crate::index::views::{self, DECISIONS_FENCE, STATUS_FENCE};
+use crate::ledger::Ledger;
 use crate::logbook::{Logbook, git, layout};
 use crate::model::{self, Area, Case, Decision, Journal, Memory, Record};
+use crate::redact::Redactor;
 use crate::sys::{self, Run};
 use crate::{CONTRACT_VERSION, VERSION};
 
@@ -89,9 +96,10 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
 
     let config_file = ctx.config_file.clone();
     let shown = ctx.dirs.display(&config_file);
+    let mut config_invalid = false;
     let config = match ctx.load_config() {
         Ok(Some(c)) => {
-            checks.push(Check::new("config", Status::Ok, shown));
+            checks.push(check_patterns(&c, shown));
             Some(c)
         }
         Ok(None) => {
@@ -107,16 +115,41 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
         }
         Err(Error::User(message)) => {
             checks.push(Check::new("config", Status::Error, message));
+            config_invalid = true;
             None
         }
         Err(e) => return Err(e),
     };
     let effective = config.clone().unwrap_or_default();
 
+    // F-540: without a readable config.toml the default path is a guess
+    // (every other command stops at the config error); a path from
+    // `--logbook`, `--path` or the environment is still checked
     let (root, source) = ctx.resolve_logbook(path, config.as_ref());
-    let (logbook_check, logbook) = check_logbook(&root, &ctx.dirs.display(&root), source);
-    let not_initialised = logbook_check.status == Status::Error && !Logbook::is_initialised(&root);
-    checks.push(logbook_check);
+    let known = !(config_invalid && source == LogbookSource::Default);
+    let mut not_initialised = false;
+    let logbook = if known {
+        let (logbook_check, logbook, cases) =
+            check_logbook(&root, &ctx.dirs.display(&root), source);
+        not_initialised = logbook_check.status == Status::Error
+            && !Logbook::is_initialised(&root)
+            && !config_invalid;
+        checks.push(logbook_check);
+        if let Some(logbook) = &logbook {
+            checks.push(check_cases(&cases));
+            checks.push(check_ledger(logbook));
+            checks.push(check_fences(logbook));
+        }
+        logbook
+    } else {
+        checks.push(Check::new(
+            "logbook",
+            Status::Error,
+            "not checked: config.toml is invalid, so the logbook path is not known",
+        ));
+        None
+    };
+    checks.extend(check_state(ctx));
     checks.push(check_omarchy(&effective));
     checks.push(check_snapper(&effective));
     checks.push(check_git(&effective, logbook.as_ref()));
@@ -130,7 +163,11 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
         Exit::UserError
     };
 
-    let mut human = format!("seldon doctor · {}\n", ctx.dirs.display(&root));
+    let mut human = if known {
+        format!("seldon doctor · {}\n", ctx.dirs.display(&root))
+    } else {
+        "seldon doctor · logbook not known (config.toml is invalid)\n".to_string()
+    };
     for c in &checks {
         let _ = writeln!(
             human,
@@ -151,19 +188,20 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
 
     Ok(Output {
         human,
-        json: json!({ "ok": ok, "logbook": root, "checks": checks }),
+        json: json!({ "ok": ok, "logbook": known.then_some(root), "checks": checks }),
         exit,
     })
 }
 
 /// Initialised, readable, complete layout, every record parses, every case
 /// in the folder of its status. `shown` is `root` as the header prints it
-/// (`~`-shortened).
+/// (`~`-shortened). Also returns `(id, relative path)` of every case file
+/// that parses.
 fn check_logbook(
     root: &Path,
     shown: &str,
-    source: crate::config::LogbookSource,
-) -> (Check, Option<Logbook>) {
+    source: LogbookSource,
+) -> (Check, Option<Logbook>, Vec<(String, String)>) {
     let logbook = match Logbook::open(root) {
         Ok(l) => l,
         Err(Error::NotInitialised(_)) => {
@@ -173,13 +211,17 @@ fn check_logbook(
                 format!("not initialised at {shown} (path from {source})"),
             )
             .fix(format!("seldon init --path {shown}"));
-            return (check, None);
+            return (check, None, Vec::new());
         }
-        Err(e) => return (Check::new("logbook", Status::Error, e.to_string()), None),
+        Err(e) => {
+            let check = Check::new("logbook", Status::Error, e.to_string());
+            return (check, None, Vec::new());
+        }
     };
 
     let mut problems: Vec<String> = Vec::new();
     let mut misplaced: Vec<String> = Vec::new();
+    let mut ids: Vec<(String, String)> = Vec::new();
     let cases = check_files::<Case>(
         root,
         logbook.case_files(),
@@ -189,6 +231,7 @@ fn check_logbook(
             if folder.is_some_and(|f| f != case.status.folder()) {
                 misplaced.push(format!("{rel} (status {})", case.status));
             }
+            ids.push((case.id.clone(), rel.to_string()));
         },
     );
     let decisions =
@@ -233,7 +276,230 @@ fn check_logbook(
             Check::new("logbook", Status::Ok, summary)
         }
     };
-    (check, Some(logbook))
+    (check, Some(logbook), ids)
+}
+
+/// `config.toml` parsed; its `[redaction] patterns` must compile too, or
+/// every command that writes free text refuses (F-541).
+fn check_patterns(config: &Config, shown: String) -> Check {
+    match Redactor::for_config(config) {
+        Ok(_) => Check::new("config", Status::Ok, shown),
+        Err(e) => Check::new(
+            "config",
+            Status::Error,
+            format!(
+                "{shown}: {}; capture, log, event and the hooks refuse to write until it compiles",
+                one_line(&e.to_string())
+            ),
+        )
+        .fix(format!(
+            "fix or remove that pattern under [redaction] patterns in {shown}"
+        )),
+    }
+}
+
+/// A case id in two files (WP-057): every command that finds a case by id
+/// refuses it, and `index --check` exits 1. `cases` are `(id, relative
+/// path)` of the case files that parse.
+fn check_cases(cases: &[(String, String)]) -> Check {
+    let twice = duplicate_cases(cases.iter().map(|(i, p)| (i.as_str(), p.as_str())));
+    if twice.is_empty() {
+        return Check::new("cases", Status::Ok, "every case id has one file");
+    }
+    Check::new("cases", Status::Error, twice.join("; "))
+        .fix("delete the stale copy of each case and keep the file in the folder of its status")
+}
+
+/// Ledger lines that are not events (a torn write, a hand edit; F-132):
+/// every reader skips them, so their events are missing from the index
+/// and the views.
+fn check_ledger(logbook: &Logbook) -> Check {
+    let ledger = Ledger::new(logbook, Redactor::builtin());
+    let (months, bad) = match ledger.months().and_then(|m| Ok((m, ledger.bad_lines()?))) {
+        Ok(found) => found,
+        Err(e) => return Check::new("ledger", Status::Error, format!("{e:#}")),
+    };
+    if bad.is_empty() {
+        let noun = if months.len() == 1 { "month" } else { "months" };
+        return Check::new(
+            "ledger",
+            Status::Ok,
+            format!("{} {noun}, every line an event", months.len()),
+        );
+    }
+    let lines: Vec<String> = bad
+        .iter()
+        .filter_map(|(month, lines)| bad_lines_warning(month, lines))
+        .collect();
+    Check::new(
+        "ledger",
+        Status::Degraded,
+        format!(
+            "{}; their events are missing from the index and the views",
+            lines.join("; ")
+        ),
+    )
+    .fix(
+        "repair or delete those lines by hand (the ledger is plain JSON Lines, one event per line)",
+    )
+}
+
+/// The generated fences of `STATUS.md` and `DECISIONS.md`. A damaged one
+/// (no end marker of its own, or `STATUS.md` with the header but without
+/// the fence) is left alone by `status` with a warning (WP-065); doctor
+/// asks the same question the writer asks. An end marker that closes no
+/// fence is a trap: if the fence's own end marker is (or was) removed,
+/// the writer takes the text up to that stray one as the fence body and
+/// replaces it. Doctor cannot tell a removed end marker followed by a
+/// stray one from an intact fence, and says so.
+fn check_fences(logbook: &Logbook) -> Check {
+    let mut damaged: Vec<(String, String)> = Vec::new();
+    let mut stray: Vec<String> = Vec::new();
+    for (rel, name) in [
+        ("STATUS.md", STATUS_FENCE),
+        ("DECISIONS.md", DECISIONS_FENCE),
+    ] {
+        let text = match std::fs::read_to_string(logbook.path(rel)) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                damaged.push((format!("{rel}: cannot read: {e}"), rel.to_string()));
+                continue;
+            }
+        };
+        let broken = if name == STATUS_FENCE {
+            views::merge_status(Some(&text), "").err()
+        } else {
+            views::fence_damaged(&text, name)
+                .then(|| format!("the {name} fence has no end marker of its own"))
+        };
+        if let Some(why) = broken {
+            damaged.push((
+                format!("{rel}: {why}; `seldon status` leaves the file as it is"),
+                format!(
+                    "restore the marker lines `{FENCE_BEGIN}{name} -->` and `{FENCE_END}` in {rel}"
+                ),
+            ));
+            continue;
+        }
+        let lines = stray_end_markers(&text);
+        if !lines.is_empty() {
+            let at: Vec<String> = lines.iter().map(usize::to_string).collect();
+            stray.push(format!(
+                "{rel}: the end marker on line {} closes no fence. If the {name} fence's own end marker was removed, `seldon status` takes the text up to the next end marker as the fence body and replaces it, your text included; doctor cannot tell a removed end marker from an intact fence",
+                at.join(", ")
+            ));
+        }
+    }
+    if !damaged.is_empty() {
+        let (messages, fixes): (Vec<String>, Vec<String>) = damaged.into_iter().unzip();
+        let messages = messages.into_iter().chain(stray).collect::<Vec<_>>();
+        return Check::new("fences", Status::Degraded, messages.join("; ")).fix(fixes.join("; "));
+    }
+    if !stray.is_empty() {
+        return Check::new("fences", Status::Degraded, stray.join("; ")).fix(format!(
+            "delete the stray `{FENCE_END}` line(s), and check that each generated fence ends where its generated text ends"
+        ));
+    }
+    Check::new(
+        "fences",
+        Status::Ok,
+        "STATUS.md and DECISIONS.md: every generated fence has its end marker",
+    )
+}
+
+/// 1-based line numbers of end markers that close no fence: one before
+/// any begin marker, or a second one after a fence was closed.
+fn stray_end_markers(text: &str) -> Vec<usize> {
+    let mut markers: Vec<(usize, bool)> = text
+        .match_indices(FENCE_BEGIN)
+        .map(|(at, _)| (at, true))
+        .chain(text.match_indices(FENCE_END).map(|(at, _)| (at, false)))
+        .collect();
+    markers.sort_unstable();
+    let mut open = false;
+    let mut out = Vec::new();
+    for (at, begin) in markers {
+        if begin {
+            open = true;
+        } else if open {
+            open = false;
+        } else {
+            out.push(text[..at].matches('\n').count() + 1);
+        }
+    }
+    out
+}
+
+/// The collector state files, loaded as strictly as `capture` loads
+/// `cursors.json` (F-541); `manifest.json` and `owned.json` are read
+/// leniently by the collector, so a corrupt one costs reports silently.
+/// Missing files are fine (a new baseline). One row per broken file.
+fn check_state(ctx: &Context) -> Vec<Check> {
+    type Parse = fn(&[u8]) -> std::result::Result<(), serde_json::Error>;
+    let files: [(PathBuf, Parse, &str); 3] = [
+        (
+            cursors_file(&ctx.dirs),
+            |b| serde_json::from_slice::<Cursors>(b).map(drop),
+            "every capture fails until it is moved away; the next capture then takes a new baseline for every collector",
+        ),
+        (
+            Manifest::file(&ctx.dirs),
+            |b| serde_json::from_slice::<Manifest>(b).map(drop),
+            "the next capture takes a new config baseline and does not report the config changes since the last one",
+        ),
+        (
+            OwnWrites::file(&ctx.dirs),
+            |b| serde_json::from_slice::<OwnWrites>(b).map(drop),
+            "the engine's own writes under the watched paths are reported as drift",
+        ),
+    ];
+    let mut present = Vec::new();
+    let mut broken = Vec::new();
+    for (path, parse, effect) in files {
+        let shown = ctx.dirs.display(&path);
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        match std::fs::read(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => broken.push(
+                Check::new(
+                    "state",
+                    Status::Error,
+                    format!("{shown}: cannot read: {e}; {effect}"),
+                )
+                .fix(format!("chmod u+rw {}", path.display())),
+            ),
+            Ok(bytes) => match parse(&bytes) {
+                Ok(()) => present.push(name),
+                Err(e) => broken.push(
+                    Check::new(
+                        "state",
+                        Status::Error,
+                        format!("{shown} is corrupt ({e}); {effect}"),
+                    )
+                    .fix(format!("mv {0} {0}.bad", path.display())),
+                ),
+            },
+        }
+    }
+    if !broken.is_empty() {
+        return broken;
+    }
+    let dir = ctx.dirs.display(&ctx.dirs.state_dir);
+    let message = if present.is_empty() {
+        format!("{dir}: no collector state yet")
+    } else {
+        format!("{dir}: {} readable", present.join(", "))
+    };
+    vec![Check::new("state", Status::Ok, message)]
+}
+
+/// `text` on one line: a regex error spans several.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Parses every file of one record type; failures go to `problems`.
@@ -300,7 +566,8 @@ pub fn check_snapper(config: &Config) -> Check {
     if !config.collectors.snapper {
         return Check::new("snapper", Status::Ok, "collector disabled in config.toml");
     }
-    let run = snapper::run_list("snapper", PROBE_TIMEOUT);
+    // the program the collector runs (`SELDON_SNAPPER`, WP-053 follow-up)
+    let run = snapper::run_list(&Sources::from_env().snapper, PROBE_TIMEOUT);
     match &run {
         Run::Exited {
             code: Some(0),
