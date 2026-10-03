@@ -1100,3 +1100,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A test whose result depends on host permissions** (`chmod 000` is
   ignored for root) checks first whether the read actually fails, and
   asserts the skip only then.
+## 2026-10-03 · WP-062 (Engine)
+
+- **A made-up token of the wrong length tests nothing.** A manual run
+  with `ghp_` plus 34 characters (the rule wants 36) stayed in clear
+  text, and it looked like the fix had failed. Count with `${#T}` before
+  you read a miss as a rule defect; in tests build the value with
+  `format!("ghp_{tag}{}", "0".repeat(36 - tag.len()))`.
+- **Built-in redaction rules must not match the same text.** The import
+  report counts redacted lines per rule (`Redactor::matching_rules`); a
+  new `…TOKEN=` rule next to `token-assignment` counted one line twice
+  and moved `tests/golden/IMPORT-omarchy-agent.md`. Keep the rules
+  disjoint rather than bless the golden.
+- **A clear row proves a narrowed rule only if the old rule matched it.**
+  `python-task-manager-application` was one character too short for the
+  old `sk-…{20,}` rule, so the mutant with the old rule passed. Run the
+  mutant against every negative row you add for a narrowing.
+- **`curl -o <path>` is not a write for the agent hook;** a redirection
+  (`> ~/.config/…`) is. A manual hook reproduction with `-o` records
+  nothing. Write such payloads with the Write tool (the guard reads a
+  `~/.config` redirection in a Bash line as a write).
+- **Event `meta` values are scalars** (`event.schema.json`,
+  `Event::validate`): a list in `meta.extra` makes the whole append fail.
