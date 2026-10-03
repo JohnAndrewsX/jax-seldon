@@ -1071,3 +1071,14 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   group (`sys::run_in_engine_group`); collectors keep their own. Test a
   terminal read under `script -qec '<cmd>' /dev/null` with the answer
   on its stdin (`file_writes.rs` `git::`).
+- **A stub run by bash or git, not by `sys::run`, must not be written by
+  the test process.** The `ETXTBSY` race above hit
+  `collectors_user.rs` `hook::records_the_slug_silently` under a loaded
+  `just check` (bash runs the stub, its error is hidden, the argv file is
+  missing → `NotFound`). Measured with 6 spawning threads: about 7 % of
+  freshly written stubs are busy, with or without `process_group(0)`.
+  Write such files with `common::write_executable` (a child process
+  writes them, so no fork of the test process inherits the descriptor).
+- **The panel harness's `work-live` can catch a transient result line
+  under load** ("Dropping C-…" instead of "active → dropped"); it uses
+  the fake engine, two immediate re-runs passed 692/692.

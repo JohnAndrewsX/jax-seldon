@@ -9,7 +9,43 @@ modes for the remaining creators), `8c3aa97` (no sync for rebuildable
 files), `792b984` (SPEC-ENGINE §1/§2/§4, SPEC-LOGBOOK, CHANGELOG),
 `2844757` (handover). Round 3, after review: `5a59ab0` (git's process
 group, the remaining folders), `cd0eee9` (SPEC-ENGINE §4, CHANGELOG),
-plus this update.
+`1850752` (handover). Round 4, after the orchestrator's `just check`
+failure: `a50afda` (test stubs), plus this update.
+
+**Round 4 (orchestrator: `hook::records_the_slug_silently` failed under
+`--features watch`)**
+
+- Cause: a test race, not the engine and not the `hook.rs` change. The
+  test runs `engine/hooks/theme-set.sh` with bash and a stub `seldon`;
+  it never starts the engine binary. The stub is written by the test
+  process while other test threads of `collectors_user` fork programs.
+  A child forked during the write holds the stub's write descriptor
+  until it execs, and bash's exec of the stub then fails with `ETXTBSY`.
+  The hook hides the error (by design), so the argv file is never
+  written and `read_to_string` reports `NotFound`. `sys::run` retries
+  `ETXTBSY`; bash does not. Already in `memory/pitfalls.md` as a class.
+- Not reproduced on demand: 5 + 5 single runs and 6 + 6 whole-file runs
+  (plain and `watch`), plus 160 parallel runs of the test binary, all
+  passed. Measured directly with a scratch program (6 threads spawning
+  `/bin/true`, 3000 fresh stubs exec'd): 205 and 232 busy without a
+  process group, 209 and 224 with `process_group(0)`. So this branch's
+  process groups do not widen the race.
+- Fix: `common::write_executable` (appended to `tests/common/mod.rs`)
+  writes the file from a child process (`/bin/sh` builtins, no PATH),
+  so no fork of the test process can inherit its descriptor.
+  `collectors_user.rs` `script()` and the `pre-commit` hooks in
+  `file_writes.rs` (git does not retry either) use it.
+- Coverage: `stubs::a_stub_written_while_threads_spawn_is_never_busy`
+  writes 300 stubs while four threads spawn programs, executes each and
+  expects no `ETXTBSY`. 20 runs in a row passed. Mutant (the helper
+  writes with `std::fs::write` in the test process): killed 3 of 3 runs.
+- `just check` on `a50afda` → exit 0, `check: ok`, 937 cargo tests
+  (`records_the_slug_silently` passed in the plain and `watch` runs).
+  The run before it failed once in the plugin harness (`panel-view`
+  `work-live #45`: the transient "Dropping C-2026-004…" line instead of
+  the result). That scenario runs the fake engine, not this branch's
+  binary. Two direct re-runs passed 692/692, and the full re-run above
+  is green.
 
 **Round 3 (review SEND BACK)**
 
@@ -257,4 +293,6 @@ the `.gitignore` text). Round 2, approved by the orchestrator:
 `index/mod.rs`, `index/views.rs`, `commands/rebuild.rs`,
 `docs/SPEC-LOGBOOK.md` (one row), SPEC-ENGINE §1 and §4. Round 3, from
 the review: `logbook/git.rs`, `index/mod.rs`, `commands/hook.rs`,
-`logbook/cases.rs`, `commands/setup.rs` (`copy_tree`).
+`logbook/cases.rs`, `commands/setup.rs` (`copy_tree`). Round 4, from
+the orchestrator: `engine/tests/collectors_user.rs` (`script()` helper,
+one unused import removed).
