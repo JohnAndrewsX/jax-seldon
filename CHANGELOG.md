@@ -61,6 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that keeps the output pipe open no longer holds the engine past it.
   git stays in the engine's group, so a commit hook or signing prompt can
   still use the terminal (WP-064).
+- The autocommit commits only into the logbook's own repository: git
+  runs with `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and the other
+  repository variables removed, so a `seldon` started from a git hook or
+  with an exported `GIT_DIR` no longer commits the logbook into another
+  repository. A detached HEAD is not committed. A commit that is not made
+  is one warning line on stderr and the `error` of `--json` `git` (exit
+  stays 0). `doctor` reports a stale `.git/index.lock`, a detached HEAD
+  and a failing commit dry run as degraded, each with a fix line (WP-061).
+- `import omarchy-agent --apply` commits the logbook's pending changes
+  first (`seldon: before import omarchy-agent`) and refuses a work tree
+  it cannot commit. The undo of a failed apply names only the files the
+  import wrote, instead of `git checkout -- . && git clean -fd`, which
+  also removed uncommitted data that was not the import's (WP-061).
 
 ### Plugin
 
