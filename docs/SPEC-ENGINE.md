@@ -366,11 +366,15 @@ read-only (`list-unit-files --state=enabled`), and reads Omarchy's
 package lists (`omarchy-base.packages`, `omarchy-other.packages`) as
 plain files; no package manager or `systemctl` is ever invoked with a
 mutating verb. Every program the engine runs with a timeout (collectors,
-dossier queries, git) starts in its own process group with stdin closed
-and its output captured; the timeout covers the output pipes too, and at
-the deadline the whole group is killed, including a helper the program
-started that still holds a pipe (WP-064); a terminal Ctrl-C stops the
-engine, not the program. Rules:
+dossier queries, `omarchy hook install`) starts in its own process group
+with stdin closed and its output captured; the timeout covers the output
+pipes too: at the deadline the whole group is killed, including a helper
+the program started that still holds a pipe, and the pipes get up to
+200 ms more before the call counts as timed out (WP-064); a terminal
+Ctrl-C stops the engine, not the program. git on the logbook (autocommit,
+the git state in the index) stays in the engine's process group, because git,
+its hooks or a signing prompt may read the terminal: at the deadline only
+git itself is killed, with the same bounded pipe wait. Rules:
 
 - **pacman** — parse `/var/log/pacman.log` from the saved byte offset; verify
   inode; on rotation restart from 0 and dedupe by `(ts, kind, subject,

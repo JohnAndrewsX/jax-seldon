@@ -42,8 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `outputs/REBUILD.md`); a recorded agent command therefore takes about
   13 ms on a btrfs disk (was 7 ms). A program the engine runs gets its own
   process group: at the timeout the whole group is stopped, and a helper
-  that keeps the output pipe open no longer holds the engine past it
-  (WP-064).
+  that keeps the output pipe open no longer holds the engine past it.
+  git stays in the engine's group, so a commit hook or signing prompt can
+  still use the terminal (WP-064).
 
 ### Plugin
 
