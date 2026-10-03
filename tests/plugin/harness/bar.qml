@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
@@ -25,11 +26,21 @@ import qs.Ui
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin folder (required)
 //   HARNESS_SHOT        PNG path to save the window to (optional)
+//   HARNESS_IPC         config path of this harness: two widgets, as the bar
+//                       builds one per monitor, and the IPC target driven
+//                       through `quickshell ipc` (WP-067). Prints
+//                       `HARNESS ipc {json}` instead of the bar report: which
+//                       widget owns `jax.seldon.panel`, which one an IPC
+//                       `open` reaches, and the same once the owner is gone.
 ShellRoot {
   id: root
 
   property var service: null
   property var widget: null
+  // Every widget, for the facade's moduleWidgets (the bar's live instances).
+  property var widgets: []
+  readonly property string ipcConfig: Quickshell.env("HARNESS_IPC") || ""
+  property var ipcReport: ({})
   property bool done: false
   readonly property string pluginDir: Quickshell.env("HARNESS_PLUGIN_DIR") || ""
   readonly property double startMs: Date.now()
@@ -94,6 +105,7 @@ ShellRoot {
     fontFamily: Style.font.family
     barSize: Style.bar.sizeHorizontal
     foregroundAnimationEnabled: false
+    _moduleWidgets: function(id) { return id === "jax.seldon" ? root.widgets.filter(function(w) { return !!w }) : [] }
   }
 
   QtObject {
@@ -124,12 +136,80 @@ ShellRoot {
       width: root.widget ? root.widget.implicitWidth : 0
       height: Style.bar.sizeHorizontal
     }
+
+    // The second monitor's bar (HARNESS_IPC only).
+    Item {
+      id: slot2
+      x: 120
+      width: 100
+      height: Style.bar.sizeHorizontal
+    }
   }
 
   Component.onCompleted: {
     root.service = root.load("Service.qml", null, {})
     root.widget = root.load("BarWidget.qml", slot, { bar: api, moduleName: "jax.seldon" })
     if (root.widget) root.widget.anchors.fill = slot
+    var all = [root.widget]
+    if (root.ipcConfig !== "") all.push(root.load("BarWidget.qml", slot2, { bar: api, moduleName: "jax.seldon" }))
+    root.widgets = all
+  }
+
+  // ---- HARNESS_IPC: phases on a timer, each IPC call through Process.
+  property int ipcPhase: 0
+  property string ipcPending: ""
+
+  function owners() { return root.widgets.map(function(w) { return w ? w.ipcOwner : null }) }
+  function openedState() { return root.widgets.map(function(w) { return w ? w.opened : null }) }
+
+  function ipcCall(tag, args) {
+    root.ipcPending = tag
+    ipcProc.command = ["quickshell", "ipc", "-p", root.ipcConfig, "call", "jax.seldon.panel"].concat(args)
+    ipcProc.running = true
+  }
+
+  Process {
+    id: ipcProc
+    stdout: StdioCollector { id: ipcOut }
+    stderr: StdioCollector { id: ipcErr }
+    onExited: function(code) {
+      var r = root.ipcReport
+      r[root.ipcPending] = { exit: code, out: ipcOut.text.trim(), err: ipcErr.text.trim() }
+      root.ipcReport = r
+      root.ipcPending = ""
+      ipcStep.restart()
+    }
+  }
+
+  Timer {
+    id: ipcStep
+    interval: 300
+    onTriggered: {
+      var r = root.ipcReport
+      root.ipcPhase++
+      if (root.ipcPhase === 1) {
+        r.owners = root.owners()
+        root.ipcCall("open", ["open"])
+      } else if (root.ipcPhase === 2) {
+        r.opened = root.openedState()
+        root.ipcCall("close", ["close"])
+      } else if (root.ipcPhase === 3) {
+        // The owner's monitor goes away.
+        r.closed = root.openedState()
+        var gone = root.widgets[0]
+        root.widgets = [null, root.widgets[1]]
+        gone.destroy()
+        ipcStep.restart()
+      } else if (root.ipcPhase === 4) {
+        r.ownersAfter = root.owners()
+        root.ipcCall("openAfter", ["open"])
+      } else {
+        r.openedAfter = root.openedState()
+        console.log("HARNESS ipc " + JSON.stringify(r))
+        Qt.quit()
+      }
+      root.ipcReport = r
+    }
   }
 
   Timer {
@@ -142,6 +222,10 @@ ShellRoot {
       var ready = root.service && root.service.ready && root.widget && root.widget.service && glyph && glyph.ready
       if ((!ready || waited < 1000) && waited < 15000) return
       root.done = true
+      if (root.ipcConfig !== "") {
+        ipcStep.start()
+        return
+      }
       root.report()
       var shot = Quickshell.env("HARNESS_SHOT") || ""
       if (shot === "") {

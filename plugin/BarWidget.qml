@@ -110,10 +110,36 @@ BarWidget {
     target.service = root.service
   }
 
+  // ---- One handler for `jax.seldon.panel` (WP-067). The bar builds this
+  // widget once per monitor (plus a placeholder for an anchored centre
+  // module), and an IPC target takes one handler: every further instance
+  // made the shell log "another handler is registered". The first live
+  // instance the bar lists owns the target; when it goes, the others look
+  // again. Without the bar's list (a harness) the widget owns it alone.
+  property bool ipcOwner: false
+
+  function claimIpc(leaving) {
+    var items = root.bar && typeof root.bar.moduleWidgets === "function" ? root.bar.moduleWidgets(root.moduleName) : []
+    var live = []
+    for (var i = 0; i < items.length; i++)
+      if (items[i] && items[i] !== leaving) live.push(items[i])
+    root.ipcOwner = root !== leaving && (live.length === 0 || live[0] === root)
+  }
+
+  Component.onCompleted: Qt.callLater(root.claimIpc, null)
+  Component.onDestruction: {
+    if (!root.ipcOwner) return
+    // Let go first, so the next owner's handler is the only one.
+    root.ipcOwner = false
+    var items = root.bar && typeof root.bar.moduleWidgets === "function" ? root.bar.moduleWidgets(root.moduleName) : []
+    for (var i = 0; i < items.length; i++)
+      if (items[i] && items[i] !== root && typeof items[i].claimIpc === "function") items[i].claimIpc(root)
+  }
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  onBarChanged: { root.findService(); root.injectPanel() }
+  onBarChanged: { root.findService(); root.injectPanel(); Qt.callLater(root.claimIpc, null) }
   onSettingsChanged: root.injectPanel()
   onServiceChanged: { root.pushSettings(); root.injectPanel() }
   onCaptureIntervalChanged: root.pushSettings()
@@ -139,6 +165,7 @@ BarWidget {
 
   IpcHandler {
     target: "jax.seldon.panel"
+    enabled: root.ipcOwner
 
     function open(): void { root.open() }
     function close(): void { root.close() }
