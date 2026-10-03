@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ e58949f -->
+<!-- source: en/06-configuration.md @ f40bcb1 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -145,8 +145,10 @@ Immer ausgenommen:
   Ohne sie öffnete jedes Neuschreiben einen weiteren Drift-Eintrag.
   Weitere unruhige Dateien eines Plugins ergänzt du genauso.
 
-Eine Datei, deren Größe und Änderungszeit seit der letzten Erfassung
-gleich sind, liest der Collector nicht noch einmal.
+Eine Datei, deren Größe, Änderungszeit, Statusänderungszeit (ctime) und
+Inode seit der letzten Erfassung gleich sind, liest der Collector nicht
+noch einmal. Die ctime erkennt eine Änderung, deren Änderungszeit
+zurückgesetzt wurde (`touch -r`).
 
 Unit-Dateien unter `~/.config/systemd/` gehören zur roten Zone. Alles
 andere hier ist gelb.
@@ -207,10 +209,11 @@ nicht, als etwas preiszugeben.
 
 `skipPaths` nennt Dateien, die der Config-Collector und die Hooks nie
 öffnen, hashen oder nennen. Die Vorgabe deckt unruhige Plugin-Dateien ab
-(siehe [Beobachtete Pfade](#beobachtete-pfade)); die
-Konfigurationsdatei einer früheren Seldon-Version behält ihre eigene
-Liste, oft `[]`: Übernimm die Vorgaben aus dem Beispiel oben, wenn du
-sie willst.
+(siehe [Beobachtete Pfade](#beobachtete-pfade)). Eine leere Liste,
+`skipPaths = []`, wie frühere Versionen von `seldon init` sie
+schrieben, bedeutet ebenfalls die Vorgabe. Eine eigene Liste ersetzt die
+Vorgabe; übernimm deren Muster aus dem Beispiel oben in deine Liste,
+wenn du sie behalten willst.
 
 ```toml
 [redaction]
@@ -224,7 +227,9 @@ skipPaths = ["~/.config/hypr/secrets.lua", "*.key", "**/tokens/**"]
 | ein Name ohne `/`, etwa `*.key` | jede Datei und jeden Ordner mit diesem Namen |
 
 `*` und `?` bleiben innerhalb eines Pfadteils; `**` geht über Teile
-hinweg.
+hinweg und steht für mindestens einen Ordner:
+`~/.config/omarchy/**/state.json` trifft
+`~/.config/omarchy/app/state.json`, nicht `~/.config/omarchy/state.json`.
 
 Die Schwärzung hilft, aber sie fängt nur, was sie erkennt. Schreib nie
 ein Geheimnis in eine Notiz, einen Case oder eine Befehlszeile, wenn du
