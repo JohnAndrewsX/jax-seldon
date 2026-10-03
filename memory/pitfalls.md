@@ -1117,8 +1117,15 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   old `sk-…{20,}` rule, so the mutant with the old rule passed. Run the
   mutant against every negative row you add for a narrowing.
 - **`curl -o <path>` is not a write for the agent hook;** a redirection
-  (`> ~/.config/…`) is. A manual hook reproduction with `-o` records
-  nothing. Write such payloads with the Write tool (the guard reads a
-  `~/.config` redirection in a Bash line as a write).
+  is. A manual hook reproduction with `-o` records nothing. For a
+  recorded command, use a payload whose paths lie outside `~/.config`
+  (with an active case the hook records it), or a fixture from
+  `fixtures/hooks/`; if the guard blocks a command, report the block.
+- **Compiling the redaction regexes is most of a recorded hook's cost.**
+  16 rules compiled per `Redactor::builtin()` call, twice per hook run,
+  added about 3 ms (over the 5 ms budget near 1000 ledger lines). Compile
+  each rule once per process and only when the text holds one of its
+  literal triggers; time A/B builds interleaved (rotate the order every
+  round) so host load hits both alike.
 - **Event `meta` values are scalars** (`event.schema.json`,
   `Event::validate`): a list in `meta.extra` makes the whole append fail.
