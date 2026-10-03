@@ -637,7 +637,8 @@ file gets CRLF in its new body. In the fence bodies of `STATUS.md`,
 `DECISIONS.md` and `outputs/*.md` the engine writes, `<!-- seldon:` gets a
 zero-width space (U+200B) after `<!--`, so a title, subject or message
 can neither end nor open a fence (WP-065). The dossier fences of
-`system/*.md` are not neutralised yet (follow-up, WP-075).
+`system/*.md` get the same, the rows kept from the old body included
+(WP-075).
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. Measured in `cargo bench` with the fixture logbook scaled ×10.

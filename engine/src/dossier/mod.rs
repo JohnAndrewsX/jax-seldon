@@ -18,8 +18,6 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context as _;
-
 use crate::collectors::plugins::Listed;
 use crate::index::Built;
 use crate::index::load::{FENCE_BEGIN, FENCE_END, fence_table, has_table_separator};
@@ -144,19 +142,46 @@ pub struct Files {
     dir: PathBuf,
     language: Language,
     files: Vec<File>,
+    /// Files that could not be read as text: never written, and a fence
+    /// one of them may hold is never appended elsewhere (F-550).
+    unread: Vec<Unread>,
 }
 
 #[derive(Debug, Clone)]
 struct File {
+    /// For display and the returned paths (`system/<name>`).
     name: String,
+    /// Where it is read from and written to (a name that is not UTF-8
+    /// stays as it is).
+    path: PathBuf,
     /// The bytes on disk; `None` for a file the engine creates.
     old: Option<String>,
     text: String,
 }
 
+/// A `system/*.md` file that is not UTF-8 or cannot be read.
+#[derive(Debug, Clone)]
+struct Unread {
+    name: String,
+    /// The bytes, lossily decoded, when they could be read: they tell
+    /// which fences the file holds. `None`: it may hold any.
+    lossy: Option<String>,
+}
+
+impl Unread {
+    fn may_hold(&self, fence: &str) -> bool {
+        self.lossy
+            .as_deref()
+            .is_none_or(|t| t.contains(&format!("{FENCE_BEGIN}{fence} -->")))
+    }
+}
+
 impl Files {
     /// Reads every `*.md` directly in `dir`, sorted by name (the order the
-    /// index reads fences in: the first fence of a name wins).
+    /// index reads fences in: the first fence of a name wins). A file that
+    /// is not UTF-8 or cannot be read is skipped and never written (F-550),
+    /// as the index reader skips it; the warning is the index
+    /// derivation's, which `seldon dossier` runs on the same files first.
     pub fn read(dir: &Path, language: Language) -> anyhow::Result<Self> {
         let mut paths: Vec<PathBuf> = match std::fs::read_dir(dir) {
             Ok(entries) => entries
@@ -170,22 +195,34 @@ impl Files {
         };
         paths.sort();
         let mut files = Vec::new();
+        let mut unread = Vec::new();
         for path in paths {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("cannot read {}", path.display()))?;
-            files.push(File {
-                name: path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                old: Some(text.clone()),
-                text,
-            });
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            match std::fs::read_to_string(&path) {
+                Ok(text) => files.push(File {
+                    name,
+                    path,
+                    old: Some(text.clone()),
+                    text,
+                }),
+                // not UTF-8: the lossy text still shows its fence markers
+                Err(e) => unread.push(Unread {
+                    lossy: (e.kind() == std::io::ErrorKind::InvalidData)
+                        .then(|| std::fs::read(&path).ok())
+                        .flatten()
+                        .map(|b| String::from_utf8_lossy(&b).into_owned()),
+                    name,
+                }),
+            }
         }
         Ok(Files {
             dir: dir.to_path_buf(),
             language,
             files,
+            unread,
         })
     }
 
@@ -197,12 +234,17 @@ impl Files {
             .find_map(|f| views::fence_body(&f.text, name).map(String::from))
     }
 
-    /// Sets the body of `fence` to `content`; `Ok(true)` when that changed
-    /// it. A file with a damaged fence of that name ([`views::fence_damaged`]:
-    /// a begin marker without an end marker of its own) is left alone and
-    /// the fence skipped; the `Err` is the warning (WP-050).
+    /// Sets the body of `fence` to `content` ([`views::neutralise`]d, so a
+    /// value can neither end the fence nor open one, WP-075); `Ok(true)`
+    /// when that changed it. A file with a damaged fence of that name
+    /// ([`views::fence_damaged`]: a begin marker without an end marker of
+    /// its own) is left alone and the fence skipped; the `Err` is the
+    /// warning (WP-050). A fence no readable file has is not appended while
+    /// its default file or a file that may hold it could not be read
+    /// (F-550): the fence is skipped with a warning.
     pub fn set(&mut self, fence: &Fence, content: &str) -> Result<bool, String> {
         debug_assert!(content.is_empty() || content.ends_with('\n'));
+        let content = &*views::neutralise(content);
         if let Some(f) = self
             .files
             .iter()
@@ -222,13 +264,27 @@ impl Files {
                 return Ok(true);
             }
         }
-        // no file has it: append it to its default file
+        // no file has it: append it to its default file, unless that file
+        // or one that may hold the fence could not be read
+        if let Some(u) = self.unread.iter().find(|u| u.name == fence.file) {
+            return Err(format!(
+                "system/{} (the file of the {} fence) could not be read; fence kept",
+                u.name, fence.name
+            ));
+        }
+        if let Some(u) = self.unread.iter().find(|u| u.may_hold(fence.name)) {
+            return Err(format!(
+                "system/{} could not be read and may hold the {} fence; fence kept",
+                u.name, fence.name
+            ));
+        }
         let language = self.language;
         let index = match self.files.iter().position(|f| f.name == fence.file) {
             Some(i) => i,
             None => {
                 self.files.push(File {
                     name: fence.file.to_string(),
+                    path: self.dir.join(fence.file),
                     old: None,
                     text: format!("# {}\n", pick(title(fence.file), language)),
                 });
@@ -264,7 +320,7 @@ impl Files {
             if f.old.as_deref() == Some(f.text.as_str()) {
                 continue;
             }
-            sys::write_atomic(&self.dir.join(&f.name), f.text.as_bytes())?;
+            sys::write_atomic(&f.path, f.text.as_bytes())?;
             written.push(format!("system/{}", f.name));
         }
         Ok(written)
@@ -1046,6 +1102,181 @@ mod tests {
         let mut again = Files::read(&dir, Language::En).unwrap();
         assert!(!again.set(&fence, "- explicit: 2\n").unwrap());
         assert!(again.changed().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F-550: a file that is not UTF-8 is skipped with a warning and never
+    /// written; the fences of the readable files are still set. A missing
+    /// fence is not appended while its default file, or a file that holds
+    /// its begin marker, could not be read.
+    #[test]
+    fn a_file_that_is_not_utf8_is_skipped_and_never_written() {
+        let dir =
+            std::env::temp_dir().join(format!("seldon-dossier-latin1-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fence = |name: &str| *FENCES.iter().find(|f| f.name == name).unwrap();
+        let notes: &[u8] = b"# Notizen\n\nGr\xfc\xdfe\n";
+        // a default fence file in Latin-1, without its fence
+        let plugins: &[u8] = b"# Plugins\n\nMein Gr\xfc\xdf.\n";
+        // a user file in Latin-1 that holds the hardware fence
+        let held: &[u8] = b"# Rechner\n<!-- seldon:begin hardware.summary -->\n- cpu: \xe4\n<!-- seldon:end -->\n";
+        let packages =
+            "# P\n<!-- seldon:begin packages.summary -->\n- explicit: 1\n<!-- seldon:end -->\n";
+        std::fs::write(dir.join("notes.md"), notes).unwrap();
+        std::fs::write(dir.join("plugins.md"), plugins).unwrap();
+        std::fs::write(dir.join("rechner.md"), held).unwrap();
+        std::fs::write(dir.join("packages.md"), packages).unwrap();
+
+        let mut files = Files::read(&dir, Language::En).unwrap();
+        let unread: Vec<&str> = files.unread.iter().map(|u| u.name.as_str()).collect();
+        assert_eq!(unread, ["notes.md", "plugins.md", "rechner.md"]);
+        assert_eq!(
+            files.set(&fence("packages.summary"), "- explicit: 2\n"),
+            Ok(true)
+        );
+        // appended to a file that was read (and created)
+        assert_eq!(files.set(&fence("services.enabled"), "- a\n"), Ok(true));
+        assert_eq!(
+            files.set(&fence("plugins.list"), "- x\n"),
+            Err(
+                "system/plugins.md (the file of the plugins.list fence) could not be read; fence kept"
+                    .into()
+            )
+        );
+        assert_eq!(
+            files.set(&fence("hardware.summary"), "- cpu: x\n"),
+            Err(
+                "system/rechner.md could not be read and may hold the hardware.summary fence; fence kept"
+                    .into()
+            )
+        );
+        assert_eq!(
+            files.changed(),
+            ["system/packages.md", "system/services.md"]
+        );
+        files.write().unwrap();
+        assert_eq!(std::fs::read(dir.join("notes.md")).unwrap(), notes);
+        assert_eq!(std::fs::read(dir.join("plugins.md")).unwrap(), plugins);
+        assert_eq!(std::fs::read(dir.join("rechner.md")).unwrap(), held);
+        assert!(!dir.join("hardware.md").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("packages.md")).unwrap(),
+            packages.replace("explicit: 1", "explicit: 2")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file that cannot be read at all may hold any fence: none is
+    /// appended, the fences of the other files are set.
+    #[test]
+    fn an_unreadable_file_blocks_only_appending() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir =
+            std::env::temp_dir().join(format!("seldon-dossier-noread-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fence = |name: &str| *FENCES.iter().find(|f| f.name == name).unwrap();
+        let secret = dir.join("secret.md");
+        std::fs::write(&secret, "x\n").unwrap();
+        std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&secret).is_ok() {
+            // root reads it anyway
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+        let packages =
+            "<!-- seldon:begin packages.summary -->\n- explicit: 1\n<!-- seldon:end -->\n";
+        std::fs::write(dir.join("packages.md"), packages).unwrap();
+        let mut files = Files::read(&dir, Language::En).unwrap();
+        assert_eq!(files.unread.len(), 1);
+        assert_eq!(files.unread[0].name, "secret.md");
+        assert_eq!(files.unread[0].lossy, None);
+        assert_eq!(
+            files.set(&fence("packages.summary"), "- explicit: 2\n"),
+            Ok(true)
+        );
+        assert!(
+            files
+                .set(&fence("hardware.summary"), "- cpu: x\n")
+                .unwrap_err()
+                .starts_with("system/secret.md could not be read and may hold ")
+        );
+        assert_eq!(files.changed(), ["system/packages.md"]);
+        std::fs::set_permissions(&secret, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file whose name is not UTF-8 is written back to that name, not to
+    /// its lossy spelling.
+    #[test]
+    fn a_name_that_is_not_utf8_is_written_back_to_itself() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let dir = std::env::temp_dir().join(format!("seldon-dossier-name-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fence = |name: &str| *FENCES.iter().find(|f| f.name == name).unwrap();
+        let path = dir.join(std::ffi::OsStr::from_bytes(b"ger\xe4te.md"));
+        std::fs::write(
+            &path,
+            "<!-- seldon:begin hardware.summary -->\n- cpu: a\n<!-- seldon:end -->\n",
+        )
+        .unwrap();
+        let mut files = Files::read(&dir, Language::En).unwrap();
+        assert!(files.unread.is_empty());
+        assert_eq!(
+            files.set(&fence("hardware.summary"), "- cpu: b\n"),
+            Ok(true)
+        );
+        files.write().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "<!-- seldon:begin hardware.summary -->\n- cpu: b\n<!-- seldon:end -->\n"
+        );
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// WP-075 (WP-065's gap): a value with a fence marker can neither end
+    /// the fence nor open one; the next run sees the same body.
+    #[test]
+    fn fence_bodies_are_neutralised() {
+        let dir =
+            std::env::temp_dir().join(format!("seldon-dossier-marker-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fence = |name: &str| *FENCES.iter().find(|f| f.name == name).unwrap();
+        let after = "\n## Mine\n\nMeine Notiz.\n";
+        std::fs::write(
+            dir.join("deviations.md"),
+            format!("# D\n<!-- seldon:begin deviations.table -->\n<!-- seldon:end -->\n{after}"),
+        )
+        .unwrap();
+        let content = "| path | reason | date | case |\n|---|---|---|---|\n\
+                       | ~/x | a <!-- seldon:end --> b | 2026-10-01 | — |\n\
+                       | ~/y | <!-- seldon:begin hardware.summary --> | 2026-10-01 | — |\n";
+        let mut files = Files::read(&dir, Language::En).unwrap();
+        assert_eq!(files.set(&fence("deviations.table"), content), Ok(true));
+        files.write().unwrap();
+        let text = std::fs::read_to_string(dir.join("deviations.md")).unwrap();
+        assert_eq!(
+            crate::index::load::fences(&text),
+            vec![(
+                "deviations.table".to_string(),
+                views::neutralise(content).into_owned()
+            )]
+        );
+        assert!(
+            text.ends_with(&format!("<!-- seldon:end -->\n{after}")),
+            "{text}"
+        );
+        let mut again = Files::read(&dir, Language::En).unwrap();
+        assert_eq!(again.set(&fence("deviations.table"), content), Ok(false));
+        assert_eq!(
+            again.set(&fence("hardware.summary"), "- cpu: x\n"),
+            Ok(true)
+        );
+        assert_eq!(again.changed(), ["system/hardware.md"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
