@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ b69de2f -->
+<!-- source: en/06-configuration.md @ 1262516 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -141,15 +141,30 @@ verfolgen willst.
 
 ## Schwärzung
 
-Bevor die Engine ein Ereignis schreibt, entfernt sie Geheimnisse aus der
-Befehlszeile und dem Detailtext. Ein geschwärzter Wert lautet
+Bevor die Engine etwas schreibt, entfernt sie Geheimnisse aus dem Text:
+aus jedem Feld eines Ereignisses (der Befehlszeile, dem Subjekt, dem
+Detailtext und den übrigen Werten) und aus dem Text, den du
+`seldon log`, `seldon plan new`, dem `--reason` eines Schritts,
+`seldon decide` und `seldon drift explain` oder `dismiss` gibst. Journal,
+Case- und Entscheidungsdateien und `STATUS.md` enthalten deshalb
+denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 `‹redacted›`. Die eingebauten Regeln erfassen:
 
-- `--password`, `token=`, `Authorization:` und ihre Werte;
-- AWS-Zugangsschlüssel (`AKIA…`), GitHub-Tokens (`ghp_…`), API-Schlüssel
-  (`sk-…`);
-- das Passwort nach `-p` bei `mysql`, `psql` und `smbclient`;
-- Benutzer und Passwort in einer URL (`https://user:secret@host`).
+- `--password`, `--token`, `--api-key`, `--with-token`, `--secret` und
+  ähnliche Optionen samt ihren Werten;
+- `token=`, `API_KEY=`, `PASSWORD=`, `PGPASSWORD=`, `MYSQL_PWD=` und
+  andere Zuweisungen der Form `…KEY=`, `…SECRET=`, `…PASSWORD=`;
+- `Authorization:`, `X-Api-Key:`, `Private-Token:` und ähnliche Header;
+- AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
+  `gho_…`, `github_pat_…` und die übrigen `gh…_`-Formen), GitLab-Tokens
+  (`glpat-…`), Slack-Tokens (`xoxb-…`), API-Schlüssel (`sk-…`, `sk_…`);
+- das Passwort nach `-p` bei `mysql`, `psql` und `smbclient`, nach
+  `sshpass -p` und nach `docker login -p` (auch `podman`);
+- Benutzer und Passwort nach `curl -u`;
+- Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
+  wenn das Passwort `/`, `?`, `#` oder `:` enthält.
+
+Text, der geschrieben wurde, bevor es eine Regel gab, bleibt, wie er ist.
 
 Die Regeln schwärzen lieber zu viel als zu wenig. Eigene Regeln trägst
 du als reguläre Ausdrücke ein; jeder ersetzt seinen ganzen Treffer:
