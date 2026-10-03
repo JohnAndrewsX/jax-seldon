@@ -999,3 +999,17 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   run is before the start-up capture writes the index: a banner that needs
   the index is not there yet. Use `["fix", action, banner]` in
   `HARNESS_ACTIONS`, which waits for the start-up calls.
+
+## 2026-10-03 · WP-060 (Engine)
+
+- **snapper's `info.xml` stores `date` in UTC; `snapper list` prints
+  local time.** Read from the info files, convert from UTC to the local
+  offset, or every snapshot moves by the zone offset.
+- **`Bench` (tests/support) builds `Sources` with `..Sources::default()`,
+  i.e. the host paths.** A test with a denied snapper stub must set
+  `b.sources.snapshots` to a scratch path, otherwise the info-file fallback
+  reads the host's `/.snapshots`. Binary tests are safe: under
+  `SELDON_TEST_GUARD` the default is `<guard>/.snapshots`.
+- **A test whose result depends on host permissions** (`chmod 000` is
+  ignored for root) checks first whether the read actually fails, and
+  asserts the skip only then.
