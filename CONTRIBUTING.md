@@ -137,9 +137,12 @@ RUSTSEC-2024-0001  2027-01-31  only used by a test helper; no untrusted input re
 ```
 
 The date is the expiry, at most one year ahead; from that day on the
-entry fails the release build (and warns weekly) until someone reviews
-it again and moves the date, or removes it. Each entry needs a reason
-and is reviewed like code. `packaging/audit-ignore.sh` checks the list
-and `tests/release/audit-ignore.test.sh` (part of `just check`) covers
-the rules. A yanked crate has no advisory id and cannot be accepted:
+entry fails the release build, `just check` and therefore CI on every
+push and pull request (and the weekly run warns), until someone reviews
+it again and moves the date, or removes it. That is intended: an
+expired acceptance is noticed at once, not at the next release. Each
+entry needs a reason and is reviewed like code.
+`packaging/audit-ignore.sh` checks the list and
+`tests/release/audit-ignore.test.sh` (part of `just check`) checks the
+real list against today's date and covers the rules. A yanked crate has no advisory id and cannot be accepted:
 update it.

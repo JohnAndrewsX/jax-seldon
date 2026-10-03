@@ -131,8 +131,10 @@ commit changes the pin. `tests/release/workflow-pins.test.sh` (part of
 `just check-packaging`) fails on a tag or branch reference, a short SHA,
 a missing comment, an image without a digest, or one action pinned to
 two commits; it also checks the release gate in `release.yml` (see the
-`build` row above). The toolchain inside the image still comes from the
-Arch repositories at run time.
+`build` row above). It cannot tell whether a SHA belongs to the version
+in its comment (that needs the network); the refresh steps below
+resolve both together. The toolchain inside the image still comes from
+the Arch repositories at run time.
 
 **Refreshing the pins** is a manual step, done in one commit for all
 three workflows (each action and the image have one pin everywhere):
