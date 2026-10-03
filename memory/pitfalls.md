@@ -1385,3 +1385,23 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   its package intent. A floating word now matches only name patterns and
   a pattern's literal last components. Test such rules with the default
   config, not only with a hand-set pattern list.
+
+## 2026-10-04 · WP-073 (Engine)
+
+- **`common::Env` CLI tests have only the stub directory on PATH.** A
+  stub that runs `cat` fails ("exec: cat: not found"), and the plugins
+  collector reports it as "… (it needs the running Omarchy shell)",
+  which looks like a different fault. Use `/bin/cat` in such stubs, and
+  assert the capture's `ok` so the failure names the collector message.
+- **A deletion that frees a number must not carry a later time than the
+  creation that reuses it.** The snapper dedupe reads "the latest snapper
+  event per number" from the ledger; a capture-time `snapshot-delete`
+  behind the new `snapshot` would make a snapshot that exists look
+  deleted. Give both the new snapshot's date, push the delete first (the
+  capture sort is stable, and ties go by file order).
+- **The attribution window paragraph is in SPEC-ENGINE §4, not §5**
+  (again: WP-071 noted the same for the intent sentence).
+- **Small commits without `git add -p`:** `git diff -U2`, split into
+  hunks with a short script, feed the chosen hunks to `git apply --cached
+  --recount -`. Adjacent new tests in one file land in one hunk; add
+  them in separate places if they must go into separate commits.
