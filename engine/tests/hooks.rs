@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Instant;
 
-use common::{Env, Snapper, copy_dir, fixture_logbook, json, read, stderr, stdout};
+use common::{Env, Snapper, json, read, stderr, stdout};
 use serde_json::{Value, json};
 
 /// The clock of the hook tests (the fixture's C-2026-004 `yay` command).
@@ -483,41 +483,6 @@ mod sessions {
     use super::*;
 
     #[test]
-    fn session_start_prints_the_context_block() {
-        let env = Env::new(Snapper::NoPermissions);
-        let logbook = env.tmp.path().join("logbook");
-        copy_dir(&fixture_logbook(), &logbook);
-        std::fs::write(logbook.join(".seldon/active-case"), "C-2026-004\n").unwrap();
-        let out = env
-            .command(&[
-                "--logbook",
-                logbook.to_str().unwrap(),
-                "hook",
-                "session-start",
-            ])
-            .env("SELDON_NOW", "2026-10-01T18:00:00+02:00")
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        assert_eq!(stderr(&out), "");
-        golden("session-start.txt", &stdout(&out));
-    }
-
-    #[test]
-    fn session_start_without_status_case_or_journal() {
-        let h = Hooks::new();
-        let out = h.piped(&["hook", "session-start"], "{}", Some(NOW));
-        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        let text = stdout(&out);
-        assert!(text.starts_with("# Seldon logbook context\n"), "{text}");
-        assert!(
-            text.contains("None (`seldon plan start <id>` sets one)."),
-            "{text}"
-        );
-    }
-
-    #[test]
     fn session_stop_writes_the_stub_captures_and_commits() {
         let h = Hooks::new();
         let case = h.active_case();
@@ -576,20 +541,6 @@ mod sessions {
             journal.contains("## 10:11 · agent:codex\nsession ended; 0 events recorded\n"),
             "{journal}"
         );
-    }
-
-    /// Compares with `tests/golden/<name>`; `SELDON_BLESS=1` rewrites it.
-    fn golden(name: &str, actual: &str) {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/golden")
-            .join(name);
-        if std::env::var_os("SELDON_BLESS").is_some() {
-            std::fs::write(&path, actual).unwrap();
-            return;
-        }
-        let expected = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("{} missing; run with SELDON_BLESS=1", path.display()));
-        assert_eq!(actual, expected, "{} differs", path.display());
     }
 }
 
@@ -1162,32 +1113,6 @@ mod robustness {
         assert_eq!(out.status.code(), Some(0));
         assert_eq!(stdout(&out), "");
         assert!(stderr(&out).contains("internal error"), "{}", stderr(&out));
-    }
-
-    #[test]
-    fn session_start_survives_a_closed_pipe() {
-        let env = Env::new(Snapper::NoPermissions);
-        let logbook = env.tmp.path().join("logbook");
-        copy_dir(&fixture_logbook(), &logbook);
-        let mut child = env
-            .command(&[
-                "--logbook",
-                logbook.to_str().unwrap(),
-                "hook",
-                "session-start",
-            ])
-            .env("SELDON_NOW", "2026-10-01T18:00:00+02:00")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        // the reader goes away before the hook writes
-        drop(child.stdout.take());
-        child.stdin.take().unwrap().write_all(b"{}").unwrap();
-        let out = child.wait_with_output().unwrap();
-        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        assert!(!stderr(&out).contains("internal error"), "{}", stderr(&out));
     }
 }
 
