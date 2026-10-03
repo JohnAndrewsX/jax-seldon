@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-066 | frontmatter: hand-edited lists, BOM, fence spaces | Engine | `engine-066` (opus) | `wt/WP-066` · `wp/066-review` | 2026-10-03 |
 | WP-065 | views and ledger: robust fences, per-line decoding | Engine | `engine-065` (opus) | `wt/WP-065` · `wp/065-review` | 2026-10-03 |
 | WP-069 | config collector: scope, default skips, home paths, rehash, dedupe | Engine | `engine-069` (opus) | `wt/WP-069` · `wp/069-review` | 2026-10-03 |
 | WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
@@ -40,6 +39,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-066 hand-edited frontmatter stays valid on save (read back
+  before write, refused unchanged otherwise), BOM and padded fences, case
+  ids with control characters refused on load (Opus review APPROVE) —
+  merged; follow-ups in WP-077 and WP-075.
 - 2026-10-03 WP-067 tab changes give the keys back, the Changelog cursor
   follows its event, one widget registers the panel IPC target (Opus
   review APPROVE) — merged. Operator item: a live check of the IPC
