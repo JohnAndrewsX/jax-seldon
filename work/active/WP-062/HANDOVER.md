@@ -8,7 +8,63 @@ fields and the command boundary), `2b33701` and `2cc9bef` (tests),
 guide de), `fdc593f`, `17a76fc`, `5d347bb`. Round 2, after review:
 `13d8d9d` (engine and tests), `abfa9b9` (SPEC-ENGINE §7 and §8 timing,
 user guide en), `8fe678f` (user guide de), `93ebae2` (CHANGELOG,
-pitfalls), plus this update.
+pitfalls), `e097cd3`. Round 3, after review: `823e80c` (engine and
+tests), `e58949f` (SPEC-ENGINE §7 and §8, user guide en), `69a941c`
+(user guide de), `d61b932` (CHANGELOG), plus this update.
+
+**Round 3 (review SEND BACK)**
+
+1. **Credential names mask any value; only `key` names keep the shape
+   check.** `secret-option` (`--token`, `--with-token`, `--secret`,
+   `--client-secret`, `--passphrase`) and `secret-assignment`
+   (`…SECRET=`, `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`,
+   `…_PASS=`, `SSHPASS=`) mask any non-empty value (`has_value`: an
+   empty `""` names no secret); `--password` and `token=` as before.
+   Two new rules keep `looks_like_credential` (unchanged thresholds:
+   16 characters, or 8 that mix two of lower, upper, digit, other):
+   `key-option` (`--api-key`, `--access-key`, `--secret-key`) and
+   `key-assignment` (`…KEY=`). `BUILTIN` is now 18; the rules stay
+   disjoint (`--secret-key` and `SECRET_KEY=` only match the `key`
+   rules). New must-mask rows: `tool --token short`, `PASSWORD=x`
+   (both moved from the clear list), `PASSWORD=hunter2`, `passwd=abc`,
+   `secret=x1`, `DB_PASS=short`, `MYSQL_PWD=pw`, `PGPASSWORD=pw`,
+   `SSHPASS=pw`, `PASSWORD="hunter2"`, `export SECRET='a b c'`,
+   `tool --secret hunter2`, `--token abc`, `--passphrase abc`. The four
+   earlier false positives stay clear, plus a new clear row
+   `tool --api-key=auto`. Mutants: either credential rule with the shape
+   check → `every_builtin_pattern` fails; either `key` rule without it →
+   `harmless_text_stays` fails (`key-assignment` also
+   `a_value_must_look_like_a_credential`).
+2. **Folded trigger text.** `redact::trigger_text` lowers ASCII and maps
+   the Kelvin sign (U+212A) to `k` and the long s (U+017F) to `s`, the
+   two characters case-insensitive matching folds onto an ASCII letter;
+   both the trigger check and `matching_rules` use it. Rows:
+   `to\u{212A}en=…` (token-assignment), `API_\u{212A}EY=…`
+   (key-assignment), `PA\u{17F}\u{17F}WORD=pw` (secret-assignment); the
+   trigger test uses the same function. Mutants: either mapping removed
+   → `every_builtin_pattern` and `every_row_holds_a_trigger_of_its_rule`
+   fail.
+3. **SPEC §8 timing** is now a dated comparison, no absolute figures:
+   "not slower than before it: measured 2026-10-03 on a loaded dev host
+   (load average 3 to 8) … a recorded command took 19 to 36 % less
+   time". Re-measured on the round-3 code: release builds of `main` and
+   `823e80c`, interleaved as in round 2, median of 21 (ms):
+
+   | Case | `main` | `823e80c` |
+   |---|---|---|
+   | ledger 2 → 23 | 6.81 | 5.13 |
+   | 975 → 996, with rebuild | 5.92 | 4.36 |
+   | 1005 → 1026, no rebuild | 2.59 | 1.66 |
+   | secret fixture, 2 → 23 | 4.29 | 3.47 |
+
+   The host was busy (load average up to 8), so only the ratio is in
+   the SPEC; the round-2 table below was taken at load 1 to 3.5.
+
+Verified (round 3): `cargo fmt --check`, `cargo clippy --all-targets --
+-D warnings`, `redaction` 17, `log` 12, `hooks` 39, `import` 7, lib 153,
+`scripts/docs-check.sh` ok; 6 round-3 mutants caught, sources restored
+(`git diff --exit-code`), debug binary rebuilt; scratch release builds
+and bench homes deleted.
 
 **Round 2 (review SEND BACK)**
 
@@ -48,8 +104,9 @@ pitfalls), plus this update.
    hence the triggers. SPEC-ENGINE §8 carries the new numbers; §1's
    "`hook` < 5 ms" holds again (it did not hold for `5d347bb` near 1000
    lines), so line 12 is unchanged.
-3. **Clear text (F).** `secret-option` and `secret-assignment` mask a
-   value only when it looks like a credential
+3. **Clear text (F).** (Superseded by round 3 for the credential names:
+   now only the `key` rules check the shape.) `secret-option` and
+   `secret-assignment` mask a value only when it looks like a credential
    (`redact::looks_like_credential`): without its quotes, at least 16
    characters (`CREDENTIAL_LONG`), or at least 8 (`CREDENTIAL_MIN`) that
    mix two of lower case, upper case, digits and other characters.
