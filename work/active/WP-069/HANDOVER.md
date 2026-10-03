@@ -26,8 +26,9 @@ Branch: wp/069-review (worktree wt/WP-069), commits on b476c75, not pushed.
    `**/history/`, `**/state.json`, `**/cache/` and `**/*.log`. The `**`
    needs a folder, so Omarchy's top-level `shell.json`,
    `extensions/`, `hooks/` and `themed/` stay watched. `init` writes the
-   list into new files; an existing config keeps its own list (the
-   `alwaysRed` precedent). `init` prints a `skipPaths` hint under the
+   list into new files. An empty list (`skipPaths = []`, as `init` wrote
+   it before) also means the defaults; a non-empty list replaces them
+   (review round 1, Q1). `init` prints a `skipPaths` hint under the
    config line (`setup::SKIP_PATHS_HINT`), and its JSON has `skipPaths`.
 3. **F-544: home-relative paths.** `Dirs::expand_config` resolves a
    config value (`~`, `~/…`, `$HOME/…`, `${HOME}/…`, or relative) under
@@ -44,9 +45,11 @@ Branch: wp/069-review (worktree wt/WP-069), commits on b476c75, not pushed.
    redacted subject, `hashFrom` and `hashTo` (the theme collector's
    pattern). A ledger read error degrades the collector and keeps the
    cursor.
-5. **F-402: no rehash.** `Manifest.stats` stores `[size, mtimeNs, inode]`
-   for each hashed file of the current generation. On a match, the walk
-   reuses the stored hash and does not open the file. A file modified
+5. **F-402: no rehash.** `Manifest.stats` stores
+   `[size, mtimeNs, ctimeNs, inode]` for each hashed file of the current
+   generation. On a match of all four, the walk reuses the stored hash
+   and does not open the file. The ctime catches a same-size in-place
+   edit whose mtime was put back (`touch -r`; review round 1, B1). A file modified
    less than 2 s before the walk started (wall clock) is not cached,
    because coarse timestamps let a write right after the read keep the
    mtime. `sys::sha256` now hashes whole blocks in place and copies only
@@ -163,11 +166,8 @@ Appended to `memory/pitfalls.md` (WP-069):
    path redacted. The WP asks for default `skipPaths`, so I followed it.
    A separate collector-only key would avoid this but is a new config
    key. Accept, or queue a follow-up?
-3. **Existing installs keep `skipPaths = []`.** The operator's
-   config.toml has the empty list that `init` wrote. The defaults reach
-   new configs only (the `alwaysRed` precedent), so the operator has to
-   add them by hand or re-run `init`. The guide says so. The alternative
-   is a built-in list applied on top of the user's.
+3. ~~Existing installs keep `skipPaths = []`.~~ Decided in review round
+   1 (Q1): an empty list means the defaults. Done.
 
 ## Touched outside WP scope
 
@@ -190,3 +190,78 @@ Appended to `memory/pitfalls.md` (WP-069):
 - `manifest.json` now holds `skipPaths` patterns, which are the same
   text as in config.toml, in the same user's 0600 state dir. Matched
   files are still never named.
+
+## Review round 1 (SEND BACK → fixed)
+
+Commits:
+- `426483d` engine: empty `skipPaths` means the defaults
+- `bd36bb4` engine: ctime in `FileStat`, tests reworked
+- `f40bcb1` docs: SPEC §2/§4/§7, en guide, CHANGELOG
+- `docs(de)` commit: German guide follows `en` at `f40bcb1`
+
+- **B1. ctime in `FileStat`.** `FileStat(size, mtimeNs, ctimeNs, inode)`.
+  - The 2 s racy window still checks the mtime only. A write sets both
+    times, and a ctime window would leave every freshly written file
+    uncached, which a test cannot prove without a 2 s sleep.
+  - `an_unchanged_file_is_not_read_again` now writes a planted hash
+    (`"f" × 64`) for `a.conf` into `manifest.json`. The next capture
+    keeps that hash with no event, which proves the file was not read.
+  - The test then does a same-size in-place edit with the mtime put
+    back. That edit is read again: `config-change` with
+    `hashFrom = fake`.
+  - A 20 ms sleep before the edit lets coarse clocks tick.
+  - SPEC §2 (manifest row), SPEC §4 and guide 06 en/de now name size,
+    mtime, ctime and inode.
+- **Q1. Empty `skipPaths` = defaults.** `Redaction.skip_paths` is read
+  through `skip_paths_or_defaults`. A missing key or `[]` gives
+  `DEFAULT_SKIP_PATHS`; a non-empty list replaces them. Because the
+  change is in deserialisation, the hooks and the collector see the
+  same list without touching `hook.rs`. `init` writes the defaults
+  explicitly. Tests:
+  - unit: `default_skip_paths_skip_plugin_state_not_omarchy_config`
+    covers `[]`, a missing key, an empty file and an own list;
+  - CLI: `relative_config_paths_do_not_follow_the_working_directory`
+    saves `skipPaths = []` and checks that a plugin `history.json` under
+    a watched `~/.config/omarchy` is not in the manifest.
+
+  SPEC §2, guide 06 en/de and the CHANGELOG bullet say so.
+- **N1.** `docs/user/de/06-configuration.md` is stamped
+  `<!-- source: en/06-configuration.md @ f40bcb1 -->`, the commit of the
+  last English change. `docs-check` passes with no warning.
+- **N3. Manifest growth.** `stats` and `scope` make `manifest.json`
+  about 2.2× larger: 222 KB → 489 KB at 2000 files. That is an estimate
+  from serde's pretty layout, where each stats number gets its own line.
+  `scope` is constant (< 1 KB).
+- **§7.** One clause: `**` stands for at least one folder (`a/**/b`
+  matches `a/x/b`, not `a/b`). The defaults rely on that to leave the
+  files directly in `~/.config/omarchy/` watched. Also in guide 06
+  en/de.
+- **Checks:**
+  - `cargo fmt --check` and `cargo clippy --all-targets -D warnings`:
+    clean.
+  - Suites: `collectors` 16, `collectors_user` 30 and `idempotency` 7
+    tests pass, and `--lib` 160.
+  - `just docs-check`: `docs-check: ok (391 links, 14 translated pages, …)`.
+- **Mutants of this round.** All four failed their test:
+
+  | Mutant | What it reverts | Failing test |
+  |---|---|---|
+  | B1-no-ctime | ctime stored as 0 | `an_unchanged_file_is_not_read_again` (collectors_user.rs:1265) |
+  | B1-no-reuse | never reuse a stored hash | `an_unchanged_file_is_not_read_again` (:1252) |
+  | Q1-empty-cli | empty list stays empty | `relative_config_paths_…` (:1526) |
+  | Q1-empty-unit | empty list stays empty | `default_skip_paths_skip_plugin_state_not_omarchy_config` (config.rs:749) |
+
+  Mutant lines in the table of the first round may have shifted by a few
+  lines.
+
+### Follow-ups (not this round)
+
+- **A failed cursor save, then the file goes back.** Capture 1 writes
+  `A→B`, then its cursor save fails. The file returns to `A` before the
+  next capture, which diffs `A` against `A` and writes nothing. The
+  ledger then holds `A→B` without the `B→A` that would close it.
+- **The hooks read an empty watch path as the whole home.**
+  `attribution::home_path("")` yields the home folder, so the hooks'
+  `Scope` treats `watchPaths = [""]` as the whole home. The collector
+  (`Dirs::expand_config`) ignores an empty value. They should agree; the
+  fix belongs in `attribution.rs`/`hook.rs`, outside this WP.
