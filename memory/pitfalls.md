@@ -999,3 +999,15 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   run is before the start-up capture writes the index: a banner that needs
   the index is not there yet. Use `["fix", action, banner]` in
   `HARNESS_ACTIONS`, which waits for the start-up calls.
+
+## 2026-10-03 · WP-056 (Docs)
+
+- **A manual run documented as `~/.local/state/seldon` needs
+  `XDG_STATE_HOME=$HOME/.local/state` in the scratch.** The TESTING.md
+  recipe sets `XDG_STATE_HOME=$S/state`, so a literal `tar -C
+  ~/.local/state …` from the docs fails there ("Cannot open"). Point the
+  XDG state dir at `$S/home/.local/state` (still under `$S`, the guard
+  accepts it) to run the doc text as written.
+- **Stamp the de pages after the en commit, not before.** `docs-check`
+  compares the source stamp with the en page's last commit: commit the
+  en change first, then write its short hash into the de pages.
