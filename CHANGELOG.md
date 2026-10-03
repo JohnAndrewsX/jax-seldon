@@ -65,15 +65,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs with `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and the other
   repository variables removed, so a `seldon` started from a git hook or
   with an exported `GIT_DIR` no longer commits the logbook into another
-  repository. A detached HEAD is not committed. A commit that is not made
-  is one warning line on stderr and the `error` of `--json` `git` (exit
-  stays 0). `doctor` reports a stale `.git/index.lock`, a detached HEAD
-  and a failing commit dry run as degraded, each with a fix line (WP-061).
+  repository, and an empty or broken `.git` no longer lets git commit
+  into a repository around the logbook. A detached HEAD is not committed.
+  A commit that is not made is one warning line on stderr and the `error`
+  of `--json` `git` (exit stays 0). `doctor` reports an unusable `.git`,
+  a stale `.git/index.lock`, a read-only `.git`, a detached HEAD and a
+  committer git cannot resolve as degraded, each with a fix line, without
+  writing into `.git` (WP-061).
 - `import omarchy-agent --apply` commits the logbook's pending changes
   first (`seldon: before import omarchy-agent`) and refuses a work tree
   it cannot commit. The undo of a failed apply names only the files the
   import wrote, instead of `git checkout -- . && git clean -fd`, which
-  also removed uncommitted data that was not the import's (WP-061).
+  also removed uncommitted data that was not the import's; a kept undo
+  that names other files is not printed (WP-061).
 
 ### Plugin
 
