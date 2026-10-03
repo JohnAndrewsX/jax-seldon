@@ -399,8 +399,7 @@ mod git {
     /// A `pre-commit` hook in the logbook's repository.
     fn pre_commit(root: &Path, body: &str) {
         let hook = root.join(".git/hooks/pre-commit");
-        std::fs::write(&hook, format!("#!/bin/sh\n{body}\n")).unwrap();
-        set_mode(&hook, 0o755);
+        common::write_executable(&hook, &format!("#!/bin/sh\n{body}\n"));
     }
 
     #[test]
@@ -480,5 +479,47 @@ mod git {
         assert_eq!(read(&answer).trim(), "yes");
         let last = env.git(&root, &["log", "-1", "--format=%s"]);
         assert_eq!(common::stdout(&last).trim(), "seldon: note");
+    }
+}
+
+/// `common::write_executable`: a stub written while other threads start
+/// programs can always be executed (no `ETXTBSY`).
+mod stubs {
+    use super::*;
+    use std::process::{Command, Stdio};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn a_stub_written_while_threads_spawn_is_never_busy() {
+        let tmp = TempDir::new("stubs");
+        let stop = Arc::new(AtomicBool::new(false));
+        let spawners: Vec<_> = (0..4)
+            .map(|_| {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        let _ = Command::new("/bin/sh")
+                            .args(["-c", ":"])
+                            .stdout(Stdio::piped())
+                            .output();
+                    }
+                })
+            })
+            .collect();
+        let mut busy = 0;
+        for i in 0..300 {
+            let stub = tmp.path().join(format!("stub-{i}"));
+            common::write_executable(&stub, "#!/bin/sh\nexit 0\n");
+            match Command::new(&stub).status() {
+                Err(e) if e.raw_os_error() == Some(26) => busy += 1,
+                other => assert!(other.unwrap().success()),
+            }
+        }
+        stop.store(true, Ordering::Relaxed);
+        for s in spawners {
+            s.join().unwrap();
+        }
+        assert_eq!(busy, 0, "{busy} of 300 stubs were busy");
     }
 }

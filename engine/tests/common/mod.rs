@@ -433,3 +433,24 @@ pub fn mode(path: &Path) -> u32 {
         .mode()
         & 0o777
 }
+
+/// Writes the executable `path` (mode 0755) with `text` from a child
+/// process. Written by the test process, the file's write descriptor can
+/// be inherited by a child another test thread forks at that moment, and
+/// a program that executes the file before that child execs fails with
+/// `ETXTBSY` ("text file busy"). `sys::run` retries that; bash and git do
+/// not. The child's descriptors are never inherited by the test process's
+/// forks. No PATH lookup: `printf` and the redirection are `sh` builtins.
+pub fn write_executable(path: &Path, text: &str) {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let status = Command::new("/bin/sh")
+        .args(["-c", "printf '%s' \"$2\" > \"$1\"", "sh"])
+        .arg(path)
+        .arg(text)
+        .status()
+        .unwrap();
+    assert!(status.success(), "cannot write {}", path.display());
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
