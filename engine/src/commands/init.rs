@@ -6,8 +6,11 @@
 //! defaults. Defaults come from an existing `config.toml` where it has a
 //! value (a file without `language` leaves the language to the locale).
 //!
-//! Then the logbook is written, the harnesses are set up (inside the
-//! first commit), the first capture runs (`capture --all`, with `--since`
+//! Then `config.toml` is saved (with the choices, `[git] autocommit =
+//! false` for no git) before anything is written into the logbook folder,
+//! so a failed save leaves nothing `init` would refuse next time; the
+//! logbook is written (its marker last), the harnesses are set up (inside
+//! the first commit), the first capture runs (`capture --all`, with `--since`
 //! as the backfill window), a backfill can be marked as the pre-Seldon
 //! baseline, and the capture is committed; then `seldon dossier` fills
 //! `system/*.md` once (WP-035, its own commit), and the theme hook is
@@ -168,15 +171,19 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         today: now.date_naive(),
         obsidian: choices.obsidian,
     };
-    let files = layout::create(&root, &spec)?;
-
+    // the config first: if it cannot be saved, nothing is written into
+    // the logbook folder and the same `init` runs again once that is fixed
     let mut config = existing.unwrap_or_default();
     config.logbook = Some(root.clone());
     config.language = Some(choices.language);
     config.collectors = choices.collectors;
     config.watch_paths = choices.watch_paths.clone();
     config.harnesses = choices.harnesses.clone();
+    // the git choice is kept: without a repository there is nothing to
+    // commit to, and `doctor` reads `autocommit = false` as chosen
+    config.git.autocommit = choices.git;
     config.save(&config_file)?;
+    let files = layout::create(&root, &spec)?;
 
     // inside the first commit: the harness files are part of the logbook
     let harnesses = setup::harnesses(&ctx.dirs, &root, &choices.harnesses);

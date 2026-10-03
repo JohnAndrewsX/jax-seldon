@@ -286,6 +286,88 @@ mod init {
     }
 
     #[test]
+    fn a_config_that_cannot_be_saved_leaves_nothing_init_refuses() {
+        // F-543: the config is saved before the layout, so a failed save
+        // writes nothing into the logbook folder; once the config folder
+        // is writable again, the same init runs
+        use std::os::unix::fs::PermissionsExt as _;
+        let env = Env::new(Snapper::Allowed);
+        let dir = env.config_file().parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::write(dir.join("probe"), "").is_ok() {
+            // root ignores the mode: nothing to test here
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            eprintln!("skipped: the read-only config folder is writable (root?)");
+            return;
+        }
+        let root = env.tmp.path().join("logbook");
+        let out = init(&env, &["--no-git", "--json"]);
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+        assert!(
+            !root.exists() || std::fs::read_dir(&root).unwrap().next().is_none(),
+            "nothing written into the logbook folder"
+        );
+        assert!(!env.config_file().exists());
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let out = init(&env, &["--no-git", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(Logbook::is_initialised(&root));
+        let config: toml::Table = std::fs::read_to_string(env.config_file())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(config["logbook"].as_str(), root.to_str());
+    }
+
+    #[test]
+    fn a_layout_that_stops_half_way_is_no_logbook() {
+        // F-543: the marker `.seldon/logbook.toml` is written last, so a
+        // layout that fails on the way (here: a folder where a template
+        // goes) leaves nothing that `init` or `doctor` takes for a logbook
+        use seldon::logbook::layout::{self, NewLogbook};
+        let env = Env::new(Snapper::Allowed);
+        let root = env.tmp.path().join("logbook");
+        std::fs::create_dir_all(root.join("DECISIONS.md")).unwrap();
+        let spec = NewLogbook {
+            language: Language::En,
+            machine_id: "machine-0000".into(),
+            created: "2026-10-04T10:00:00+02:00".parse().unwrap(),
+            today: chrono::NaiveDate::from_ymd_opt(2026, 10, 4).unwrap(),
+            obsidian: false,
+        };
+        assert!(layout::create(&root, &spec).is_err());
+        assert!(!Logbook::is_initialised(&root));
+        assert!(root.join("AGENTS.md").is_file() || root.join(".gitignore").is_file());
+    }
+
+    #[test]
+    fn no_git_is_stored_and_doctor_reads_it_as_chosen() {
+        // F-545: `--no-git` writes `autocommit = false`; doctor's git check
+        // is then ok, without a `git init` fix
+        let env = Env::new(Snapper::Allowed);
+        let root = env.tmp.path().join("logbook");
+        let out = init(&env, &["--no-git"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let config: toml::Table = std::fs::read_to_string(env.config_file())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(config["git"]["autocommit"].as_bool(), Some(false));
+        let out = env.seldon(&["doctor", "--path", root.to_str().unwrap(), "--json"]);
+        let v = json(&out);
+        let git = v["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "git")
+            .unwrap();
+        assert_eq!(git["status"], "ok", "{git}");
+        assert!(git.get("fix").is_none(), "{git}");
+    }
+
+    #[test]
     fn default_path_is_home_seldon_and_env_overrides_it() {
         let env = Env::new(Snapper::Allowed);
         let out = env.seldon(&["init", "--non-interactive", "--no-capture", "--no-git"]);
