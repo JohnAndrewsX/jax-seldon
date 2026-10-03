@@ -977,3 +977,10 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   dated section.** Merge into its existing `### Plugin` / `### Packaging
   and docs` lists (no second heading, no blank line inside a list) and
   check with `bash packaging/release-notes.sh <version> CHANGELOG.md`.
+- **Host programs translate their messages (WP-053, issue #1).** snapper
+  says `Keine Berechtigungen.` under `LANG=de_DE.UTF-8`; matching stderr
+  for `No permissions` fails in every locale snapper ships. Run any
+  program whose stderr is matched with `LC_ALL=C` and without `LANGUAGE`
+  (`collectors::snapper::list_command`). The tests' `common::Env` sets
+  `LANG=C`, which hides this; a locale test must override `LANG` on the
+  command (`env.command(..).env("LANG", "de_DE.UTF-8")`).
