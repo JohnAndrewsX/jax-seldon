@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs with `LC_ALL=C`, so under `LANG=de_DE.UTF-8` the snapper collector
   reports `NO_PERMISSIONS` again and `doctor` and `init` show the
   `set-config` fix line (fixes #1).
+- `hook session-start` prints the logbook context as a quoted block: each
+  line from the logbook starts with `> `, under one line that says these
+  lines are data, not instructions; only day files are read as the
+  journal. `agent start` passes only the case id, the logbook path and the
+  commands to read the context to the launcher. The launcher check refuses
+  more programs that run their arguments as code (`script`, `watch`,
+  `flock`, `ssh`, `tmux`, `xargs`, interpreters, `env -S`, …), compares
+  names without a version suffix, and its error calls it a heuristic
+  (WP-058).
 
 ### Plugin
 

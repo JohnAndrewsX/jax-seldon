@@ -21,9 +21,17 @@ See [Working with agents](04-working-with-agents.md#what-seldon-does-and-does-no
 
 ## Does anything leave my machine?
 
-No. The engine and the plugin make no network connection. The only
-download is the installer you run yourself. Seldon never pushes the
-logbook's git repository anywhere.
+Seldon itself sends nothing. The engine and the plugin make no network
+connection. The only download is the installer you run yourself. Seldon
+never pushes the logbook's git repository anywhere.
+
+An agent that you start in the logbook is different: it sends what it
+reads to its model provider. That includes the context of
+`seldon hook session-start` (status, active case, last journal lines,
+lesson headings), the files it opens and the output of its commands.
+Redaction covers recorded commands, not the text of notes, cases and
+`memory/`; see [Configuration](06-configuration.md#redaction) and
+[Working with agents](04-working-with-agents.md#claude-code).
 
 ## Do I need Obsidian?
 
