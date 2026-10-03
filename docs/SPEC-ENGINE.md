@@ -160,7 +160,10 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # line under the title and meta.originalId; one Log line names the
                                                # source; one ledger `manual/note` per case, `ts` = created at local
                                                # midnight, actor human, meta {import: omarchy-agent, originalId,
-                                               # originalStatus, source}, its id in the case's `events`. Journal
+                                               # originalStatus, source}, its id in the case's `events`; before
+                                               # them, in the same write, one note for the apply itself (subject
+                                               # `omarchy-agent`, no case, `ts` = the apply, meta {import:
+                                               # omarchy-agent}), so a vault without cases is guarded too (WP-075). Journal
                                                # journal/YYYY-MM.md split at `## YYYY-MM-DD…` headings outside code
                                                # fences; each day's sessions (headings one level deeper) under
                                                # `## Imported from omarchy-agent` in journal/YYYY/YYYY-MM-DD.md,
@@ -181,7 +184,12 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # patterns included) and `/home/<user>` at the start of a path becomes
                                                # `~`. A case the kit layout says to import but that cannot be mapped
                                                # (no or invalid frontmatter, unknown status/zone/risk/priority, bad
-                                               # date, not UTF-8) or a day file with invalid frontmatter is an error.
+                                               # date, not UTF-8, a file or folder name that is not UTF-8 (shown
+                                               # with U+FFFD), not readable) or a day file with invalid frontmatter
+                                               # is an error; the plan goes on (WP-075). A listed file is listed
+                                               # whatever its name. Frontmatter may start after a UTF-8 BOM and its
+                                               # `---` lines may end in spaces or tabs, as in the logbook (WP-066).
+                                               # VAULT is a path: `~/` is the home, other bytes are kept.
                                                # Dry run: only the report, autocommit `seldon: import omarchy-agent
                                                # (dry run)`. --apply: refused (exit 1, report written) while there
                                                # are errors; before its first write it autocommits the logbook's

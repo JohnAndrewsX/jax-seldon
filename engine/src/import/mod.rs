@@ -176,22 +176,35 @@ impl Rewriter {
 }
 
 /// Splits `text` into its YAML frontmatter block (without the `---` lines)
-/// and the body. No frontmatter: `None` and the whole text.
+/// and the body. No frontmatter: `None` and the whole text. Like the
+/// logbook's reader (`frontmatter::Document::parse`, WP-066), a leading
+/// UTF-8 BOM is skipped (and never part of the result) and a fence may
+/// have spaces or tabs after its `---`.
 pub fn split_frontmatter(text: &str) -> (Option<&str>, &str) {
-    let Some(rest) = text
-        .strip_prefix("---\n")
-        .or_else(|| text.strip_prefix("---\r\n"))
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let Some(open) = text
+        .split_inclusive('\n')
+        .next()
+        .filter(|l| l.ends_with('\n') && is_fence_line(l))
     else {
         return (None, text);
     };
+    let rest = &text[open.len()..];
     let mut pos = 0;
     for line in rest.split_inclusive('\n') {
-        if line.trim_end() == "---" {
+        if is_fence_line(line) {
             return (Some(&rest[..pos]), &rest[pos + line.len()..]);
         }
         pos += line.len();
     }
     (None, text)
+}
+
+/// `---`, then only spaces or tabs up to the line end.
+fn is_fence_line(line: &str) -> bool {
+    line.trim_end_matches(['\n', '\r'])
+        .strip_prefix("---")
+        .is_some_and(|pad| pad.chars().all(|c| c == ' ' || c == '\t'))
 }
 
 /// A frontmatter block as a YAML mapping; anything else (no block, not a
@@ -386,6 +399,27 @@ mod tests {
         assert_eq!(yaml_str(&map, "closed"), None);
         assert_eq!(split_frontmatter("# no\n"), (None, "# no\n"));
         assert_eq!(split_frontmatter("---\nopen\n"), (None, "---\nopen\n"));
+        // a BOM and padded fences, as other editors write them (WP-066)
+        for text in [
+            "\u{feff}---\nid: C-1\n---\n# T\n",
+            "---  \nid: C-1\n---\t\n# T\n",
+            "\u{feff}---\t \r\nid: C-1\r\n--- \r\n# T\n",
+        ] {
+            let (fm, body) = split_frontmatter(text);
+            assert_eq!(fm.map(str::trim_end), Some("id: C-1"), "{text:?}");
+            assert_eq!(body, "# T\n", "{text:?}");
+        }
+        // a BOM without frontmatter is not part of the body either
+        assert_eq!(split_frontmatter("\u{feff}# T\n"), (None, "# T\n"));
+        // not a fence: text after the dashes, more dashes, no line end
+        for text in [
+            "---x\nid: x\n---\n",
+            "--- x\nid: x\n---\n",
+            "----\nid: x\n---\n",
+            "---",
+        ] {
+            assert_eq!(split_frontmatter(text), (None, text), "{text:?}");
+        }
         assert!(yaml_map(Some(": : :\n  - [")).is_empty());
     }
 

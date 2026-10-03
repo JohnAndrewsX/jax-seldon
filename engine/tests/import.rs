@@ -288,12 +288,26 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
         index["warnings"]
     );
 
-    // one note per case at its created date, attached to the case
+    // one note for the apply, at its time and without a case (F-141),
+    // then one per case at its created date, attached to the case
     let notes: Vec<serde_json::Value> = common::ledger(&root)
         .into_iter()
         .filter(|e| e["meta"]["import"] == "omarchy-agent")
         .collect();
-    assert_eq!(notes.len(), 6);
+    assert_eq!(notes.len(), 7);
+    let apply = notes.iter().find(|e| e["case"].is_null()).unwrap();
+    assert_eq!(apply["subject"], "omarchy-agent");
+    assert_eq!(apply["actor"], "human");
+    assert!(
+        apply["ts"]
+            .as_str()
+            .unwrap()
+            .starts_with("2026-10-02T10:00:00")
+    );
+    assert_eq!(
+        apply["detail"],
+        "import from omarchy-agent: 6 case(s), 3 journal day(s), 4 memory file(s), 2 deviation row(s)"
+    );
     let note = notes.iter().find(|e| e["case"] == "C-2026-007").unwrap();
     assert_eq!(note["kind"], "note");
     assert_eq!(note["source"], "manual");
@@ -503,7 +517,8 @@ fn a_failed_apply_says_how_to_undo_it() {
             .iter()
             .filter(|e| e["meta"]["import"] == "omarchy-agent")
             .count(),
-        6
+        7,
+        "the apply's note and one per case"
     );
     assert_eq!(commit_count(&env, &root), commits + 1);
 }
@@ -800,4 +815,225 @@ fn a_directory_that_is_not_a_vault_is_a_user_error() {
         Some(1),
         "--apply conflicts with --dry-run"
     );
+}
+
+/// F-141: the apply writes its own ledger note before the first file, so
+/// a vault without cases (only journal and knowledge) is never imported
+/// twice: not after the marker is deleted, not after a failed apply.
+#[test]
+fn a_vault_without_cases_is_never_imported_twice() {
+    let caseless = |vault: &Path| {
+        for dir in ["pipeline", "archive", "system"] {
+            std::fs::remove_dir_all(vault.join(dir)).unwrap();
+        }
+    };
+    let imported_blocks = |root: &Path| {
+        read(&root.join("journal/2026/2026-08-20.md"))
+            .matches("## Imported from omarchy-agent")
+            .count()
+    };
+
+    // the marker deleted after a good apply
+    let (env, root, vault) = setup();
+    caseless(&vault);
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let j = json(&out);
+    assert_eq!(j["counts"]["cases"], 0);
+    assert_eq!(j["counts"]["journalDays"], 3);
+    let notes: Vec<serde_json::Value> = common::ledger(&root)
+        .into_iter()
+        .filter(|e| e["meta"]["import"] == "omarchy-agent")
+        .collect();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0]["case"].is_null());
+    assert_eq!(imported_blocks(&root), 1);
+    std::fs::remove_file(root.join(MARKER)).unwrap();
+    let before = tree(&root);
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+    assert!(
+        message.contains(".seldon/imports/omarchy-agent.json is missing"),
+        "{message}"
+    );
+    assert_eq!(tree(&root), before, "nothing imported a second time");
+    assert_eq!(imported_blocks(&root), 1);
+
+    // a failed apply (memory/ cannot be written), fixed, applied again
+    use std::os::unix::fs::PermissionsExt as _;
+    let (env, root, vault) = setup();
+    caseless(&vault);
+    let memory = root.join("memory");
+    std::fs::set_permissions(&memory, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(memory.join("probe"), "x").is_ok() {
+        // running as root: permissions do not stop the write
+        std::fs::set_permissions(&memory, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+    let out = import(&env, &vault, &["--apply"]);
+    std::fs::set_permissions(&memory, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert_eq!(imported_blocks(&root), 1, "the journal was written");
+    let before = tree(&root);
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("is missing"), "{}", stderr(&out));
+    assert_eq!(tree(&root), before);
+    assert_eq!(imported_blocks(&root), 1);
+}
+
+/// F-143: a file to import whose name is not UTF-8 is an error of the
+/// report (a dry run still exits 0 and plans the rest, `--apply` is
+/// refused as for any error); a listed file under such a name is only
+/// listed; an unreadable file is an error too. Nothing aborts the plan.
+#[test]
+fn a_file_name_that_is_not_utf8_is_a_report_error() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+    let (env, root, vault) = setup();
+    let case = read(&vault.join("pipeline/cases/C-2026-004-tastatur-layout.md"))
+        .replace("C-2026-004", "C-2026-009");
+    let bad = vault
+        .join("pipeline/cases")
+        .join(OsStr::from_bytes(b"C-2026-009-m\xe4use.md"));
+    std::fs::write(&bad, &case).unwrap();
+    std::fs::write(
+        vault
+            .join("pipeline/inbox")
+            .join(OsStr::from_bytes(b"n\xf6tiz.md")),
+        "Idee.\n",
+    )
+    .unwrap();
+
+    let out = import(&env, &vault, &["--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let j = json(&out);
+    assert_eq!(j["errors"], 1, "{j}");
+    assert_eq!(j["counts"]["cases"], 6);
+    let skipped = j["skipped"].as_array().unwrap();
+    assert!(skipped.contains(&serde_json::json!({
+        "path": "pipeline/cases/C-2026-009-m\u{fffd}use.md",
+        "reason": "file name is not UTF-8",
+        "error": true,
+    })));
+    assert!(
+        skipped
+            .iter()
+            .any(|s| s["path"] == "pipeline/inbox/n\u{fffd}tiz.md" && s["error"] == false),
+        "{skipped:?}"
+    );
+    let report = read(&root.join(REPORT));
+    assert!(
+        report.contains(
+            "| pipeline/cases/C-2026-009-m\u{fffd}use.md | **error:** file name is not UTF-8"
+        ),
+        "{report}"
+    );
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(!root.join(MARKER).exists());
+
+    // a case that cannot be read: an error as well, not an abort
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let locked = vault.join("pipeline/cases/C-2026-002-zweiter-editor.md");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&locked).is_err() {
+        let out = import(&env, &vault, &["--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let j = json(&out);
+        assert_eq!(j["errors"], 2, "{j}");
+        assert!(j["skipped"].as_array().unwrap().iter().any(|s| {
+            s["path"] == "pipeline/cases/C-2026-002-zweiter-editor.md"
+                && s["reason"].as_str().unwrap().starts_with("cannot read: ")
+                && s["error"] == true
+        }));
+    }
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    // without the bad case the rest is imported; the listed file stays listed
+    std::fs::remove_file(&bad).unwrap();
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let j = json(&out);
+    assert_eq!(j["errors"], 0);
+    assert_eq!(j["counts"]["cases"], 6);
+    assert!(root.join(MARKER).is_file());
+}
+
+/// F-143: the vault argument is a path, not text: a folder whose name is
+/// not UTF-8 is read (shown with U+FFFD).
+#[test]
+fn a_vault_path_that_is_not_utf8_is_read() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+    let (env, _root, _vault) = setup();
+    let odd = env.home.join(OsStr::from_bytes(b"vault-\xe4"));
+    copy_dir(&fixture_vault(), &odd);
+    let out = env
+        .command(&["import", "omarchy-agent"])
+        .arg(&odd)
+        .arg("--json")
+        .env("SELDON_NOW", NOW)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let j = json(&out);
+    assert_eq!(j["vault"], "~/vault-\u{fffd}");
+    assert_eq!(j["counts"]["cases"], 6);
+    assert_eq!(j["errors"], 0);
+}
+
+/// WP-066 follow-up: a kit file with a BOM and padded `---` fences (as
+/// other editors write them) imports like any other.
+#[test]
+fn a_bom_and_padded_fences_import() {
+    let (env, root, vault) = setup();
+    let path = vault.join("pipeline/cases/C-2026-004-tastatur-layout.md");
+    let text = read(&path);
+    let padded = format!(
+        "\u{feff}---  \r\n{}",
+        text.strip_prefix("---\n")
+            .unwrap()
+            .replacen("\n---\n", "\n---\t\n", 1)
+    );
+    std::fs::write(&path, &padded).unwrap();
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let j = json(&out);
+    assert_eq!(j["errors"], 0, "{j}");
+    assert_eq!(j["counts"]["cases"], 6);
+    let case = read(&find_file(&root.join("work/queued"), "C-2026-004-"));
+    assert!(case.starts_with("---\nid: C-2026-004\n"), "{case}");
+    assert!(!case.contains('\u{feff}'));
+}
+
+/// WP-075 (WP-065's gap): a fence marker in a kit heading neither ends
+/// nor opens a fence of `system/deviations.md`.
+#[test]
+fn a_marker_in_a_kit_heading_cannot_end_the_deviations_fence() {
+    let (env, root, vault) = setup();
+    let path = vault.join("system/deviations.md");
+    let text = read(&path).replace(
+        "### Q1 — Eigene Tastenkürzel",
+        "### Q1 — Eigene <!-- seldon:end --> Tastenkürzel",
+    );
+    std::fs::write(&path, text).unwrap();
+    let dev = root.join("system/deviations.md");
+    let before = read(&dev);
+    let out = import(&env, &vault, &["--apply"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let after = read(&dev);
+    let fences = seldon::index::load::fences(&after);
+    assert_eq!(fences.len(), 1, "{after}");
+    assert!(
+        fences[0].1.contains(
+            "| ~/.config/hypr/bindings.lua | Q1 — Eigene <!--\u{200b} seldon:end --> Tastenkürzel"
+        ),
+        "{after}"
+    );
+    // the user's text after the fence is where it was
+    let tail = |t: &str| t[t.find("<!-- seldon:end -->").unwrap()..].to_string();
+    assert_eq!(tail(&after), tail(&before));
 }
