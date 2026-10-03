@@ -47,11 +47,12 @@ check-rss:
 # hooks. SPEC-ENGINE §1 budgets at the stated scale, bench profile (WP-076):
 # the index build bench (x10, x150 < 100 ms), `status` at 10 011 ledger
 # lines / 304 cases / 365 journal files < 100 ms, `hook claude-code` at
-# 10 000 lines < 5 ms (not recorded and recorded). A median over budget is
+# 10 000 lines and just below the 1000-line rebuild threshold < 5 ms (not
+# recorded and recorded; the temp dir on tmpfs). A median over budget is
 # measured once more before the check fails.
 check-perf:
     cargo bench --manifest-path engine/Cargo.toml --locked --bench index
-    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks -- --ignored --test-threads=1 --nocapture at_10_000_ledger_lines
+    cargo test --manifest-path engine/Cargo.toml --locked --profile bench --test index --test hooks -- --ignored --test-threads=1 --nocapture
 
 # The AUR package (WP-040): PKGBUILD and helper syntax, shellcheck when
 # installed, .SRCINFO in step with the PKGBUILD. Never runs makepkg.

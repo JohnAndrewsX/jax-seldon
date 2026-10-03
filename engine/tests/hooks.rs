@@ -512,25 +512,16 @@ mod claude_code {
         assert!(each.as_millis() < 400, "{each:?} per hook call");
     }
 
-    /// SPEC-ENGINE §1 and §8 at the stated scale (WP-076): with 10 000
-    /// ledger lines (above WP-057's 1000-line threshold, so no index
-    /// rebuild) a call the hook does not record and a recorded command
-    /// each take < 5 ms, median wall time of 21 calls, process start
-    /// included (`assert_within_budget`). The recorded command syncs its ledger line and case file:
-    /// on tmpfs, as in the default temp dir here; on a disk the sync alone
-    /// takes longer (SPEC §1).
-    #[test]
-    #[ignore = "release timing at scale: `just check-perf`"]
-    fn fast_enough_at_10_000_ledger_lines() {
+    /// SPEC-ENGINE §1 and §8 at scale (WP-076): a call the hook does not
+    /// record and a recorded command each take < 5 ms, median wall time of
+    /// 21 calls, process start included (`assert_within_budget`). A
+    /// recorded command syncs its ledger line and case file: on tmpfs, as
+    /// in the default temp dir here; on a disk the sync alone takes longer
+    /// (SPEC §1). Returns the number of commands recorded.
+    fn hook_budget(h: &Hooks, case: &str, lines: &str) -> usize {
         const BUDGET: std::time::Duration = std::time::Duration::from_millis(5);
-        common::assert_optimised();
-        let h = Hooks::new();
-        let case = h.active_case();
-        common::scale::filler_notes(&h.logbook, 10_000);
-        assert!(h.ledger().len() > 10_000);
-
         let skipped = payload("claude-code-non-mutating.json", "PreToolUse");
-        common::assert_within_budget("hook, not recorded, 10 000 lines", BUDGET, 21, || {
+        common::assert_within_budget(&format!("hook, not recorded, {lines}"), BUDGET, 21, || {
             h.hook("claude-code", &skipped);
         });
         assert_eq!(h.commands().len(), 0);
@@ -538,19 +529,57 @@ mod claude_code {
         let mut recorded: Value =
             serde_json::from_str(&payload("claude-code-mutating.json", "PreToolUse")).unwrap();
         let mut n = 0;
-        common::assert_within_budget("hook, recorded, 10 000 lines", BUDGET, 21, || {
-            n += 1;
-            recorded["tool_use_id"] = json!(format!("toolu_perf{n:04}"));
-            h.hook("claude-code", &recorded.to_string());
-        });
-        let commands = h.commands();
-        assert!(
-            commands.len() >= 22,
-            "every call recorded: {}",
-            commands.len()
+        common::assert_within_budget(
+            &format!("hook, recorded (tmpfs), {lines}"),
+            BUDGET,
+            21,
+            || {
+                n += 1;
+                recorded["tool_use_id"] = json!(format!("toolu_perf{n:04}"));
+                h.hook("claude-code", &recorded.to_string());
+            },
         );
-        assert_eq!(commands.len(), n);
+        let commands = h.commands();
+        assert_eq!(commands.len(), n, "every call recorded");
         assert!(commands.iter().all(|c| c["case"] == json!(case)));
+        n
+    }
+
+    /// At 10 000 ledger lines, above WP-057's threshold: no index rebuild.
+    #[test]
+    #[ignore = "release timing at scale: `just check-perf`"]
+    fn fast_enough_at_10_000_ledger_lines() {
+        common::assert_optimised();
+        let h = Hooks::new();
+        let case = h.active_case();
+        common::scale::filler_notes(&h.logbook, 10_000);
+        assert!(h.ledger().len() > seldon::index::FAST_REBUILD_MAX_LINES);
+        hook_budget(&h, &case, "10 000 lines");
+    }
+
+    /// Just below WP-057's threshold, the hook's worst case: every recorded
+    /// command also rebuilds the index.
+    #[test]
+    #[ignore = "release timing at scale: `just check-perf`"]
+    fn fast_enough_just_below_the_rebuild_threshold() {
+        common::assert_optimised();
+        let h = Hooks::new();
+        let case = h.active_case();
+        // room for 2 × (1 + 21) recorded commands (a re-measurement)
+        let fill = seldon::index::FAST_REBUILD_MAX_LINES - 50 - h.ledger().len();
+        common::scale::filler_notes(&h.logbook, fill);
+        let n = hook_budget(&h, &case, "950 lines");
+        let ledger = h.ledger();
+        assert!(ledger.len() <= seldon::index::FAST_REBUILD_MAX_LINES);
+        // the last command's rebuild wrote it into the index
+        let last = h.commands().pop().unwrap();
+        let state = h.home().join(".local/state/seldon/index.json");
+        let ix: Value = serde_json::from_str(&read(&state)).unwrap();
+        let events = ix["events"].as_array().unwrap();
+        assert!(
+            events.iter().any(|e| e["id"] == last["id"]),
+            "the last of {n} commands is not in the index"
+        );
     }
 }
 
