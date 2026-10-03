@@ -1011,3 +1011,22 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Stamp the de pages after the en commit, not before.** `docs-check`
   compares the source stamp with the en page's last commit: commit the
   en change first, then write its short hash into the de pages.
+
+## 2026-10-03 · WP-058 (Engine)
+
+- **`str::lines()` splits only at `\n`** (and drops a trailing `\r`). A
+  lone `\r`, vertical tab, form feed, NEL, U+2028 or U+2029 stays inside
+  the "line", while a reader of the text may still break there. Code that
+  prefixes or checks text line by line must split at all of them.
+- **A test that checks "every output line has the prefix" must split the
+  output the same way.** Splitting the output at `\n` only let a mutant
+  (renderer splitting at `\n` only) pass all tests; the gap showed only in
+  the mutant run. Run the mutant before trusting such an assertion.
+- **File names in the logbook are free text.** `Logbook::journal_files()`
+  returns every `.md` in a year folder, whatever its name (a newline
+  included); a reader that prints a path should check its shape first
+  (session-start accepts only `journal/YYYY/YYYY-MM-DD.md`).
+- **Mutants without stash:** copy the file from `git show main:<path>`
+  (or edit it) in place, keep the real version in the scratchpad, restore
+  it with `cp` and confirm with `cmp`. The stash stack is shared with
+  other worktrees.
