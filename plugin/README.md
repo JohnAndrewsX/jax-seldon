@@ -192,8 +192,8 @@ the proposed events and the actions its status allows:
 *Drop* and *Start agent*, which ask for a second click. *Start agent* runs
 `seldon agent start <id>`: the engine makes the case the active case and
 launches the agent configured in `~/.config/seldon/config.toml`
-(`[agent] launcher`; by default `omarchy agent prompt`) with the case's
-context as its first prompt. The line under
+(`[agent] launcher`; by default `omarchy agent prompt`) with a prompt
+that names the case and the logbook. The line under
 the columns shows the engine's answer (`C-2026-005: queued → active`) or
 why it refused.
 

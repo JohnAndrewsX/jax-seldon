@@ -156,6 +156,7 @@ mod tests {
             "a\u{2029}b",
             "a\u{85}b",
             "a\u{0B}b",
+            "a\u{0C}b",
         ] {
             assert!(has_line_break(text), "{text:?}");
         }

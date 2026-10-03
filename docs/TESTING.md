@@ -1018,7 +1018,7 @@ ssh, export `OMARCHY_PATH=/usr/share/omarchy` and put `$OMARCHY_PATH/bin` on
    a` twice. Pass: `work.result` reads "Agent started on C-… · launcher
    default (omarchy)", a terminal window with app-id `org.omarchy.agent`
    appears (`hyprctl clients`), its agent starts in `~/Seldon-smoke` with
-   the context block as its first prompt, and
+   a prompt that names the case and the logbook, and
    `~/Seldon-smoke/.seldon/active-case` names the case. Restore: close the
    agent window (end the agent session first, so its hooks finish) and
    remove `~/.local/state/seldon/agent-launch.log` with the state dir in

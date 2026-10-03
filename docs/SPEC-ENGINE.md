@@ -295,7 +295,7 @@ plan step so agents identify themselves; `log --tag T` stores `meta.tags`
 `logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
 line to the case (the fixture agrees). `seldon log` with `--actor agent:…` refuses
 a note that contains a line break (`\n`, `\r`, vertical tab, form feed,
-NEL, U+2028, U+2029; trailing ones are trimmed first) with exit 1 and one
+NEL, U+2028, U+2029; leading and trailing ones are trimmed first) with exit 1 and one
 line, before anything is read or written; a person's note may have
 several lines (WP-058). `SELDON_NOW=<RFC 3339>` overrides
 the clock for tests and demos; `SELDON_CONFIG=FILE` is the config
