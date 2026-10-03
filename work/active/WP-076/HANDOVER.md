@@ -29,8 +29,10 @@ Branch `wp/076-review`, worktree `wt/WP-076`. Commits on top of `402fa0a`:
   - `subject` is not clipped: it is at most 512 characters by schema,
     and the plugin and drift use it as an identifier.
   - `built.folded` and `built.ledger` stay whole, so the ledger line,
-    the `ledger/*.md` views and `drift show` keep the full text.
-    `drift list` shows the clipped detail.
+    the `ledger/*.md` views and the member events of `drift show` keep
+    the full text. `drift list` and the `item` of `drift show` come from
+    `index.drift` and show the clipped detail. (Corrected in round 2,
+    N3.)
   - `over_budget()` counts the serialised bytes without allocating. If
     the index is ≥ `SIZE_BUDGET` = 1 000 000 bytes, it adds a warning
     that names the largest section (`index`/`status` stdout and `--json`
@@ -185,3 +187,113 @@ Six bullets are in `memory/pitfalls.md` (2026-10-04 · WP-076):
   verified).
 - No host writes, no guard block. The engine ran only in scratch
   HOME/XDG with `SELDON_TEST_GUARD` (`common::Env`).
+
+## Review round 1 (SEND BACK): round 2
+
+Commits on top of `902fde4`:
+
+- `83ba56a` engine: the bench asserts x150 only under SELDON_BENCH_X150=1 (check-perf), re-measures once before failing
+- `acd51ba` engine: the user-collector test bench sets scratch sources, none of the host's
+- `51e2dc9` engine: the status budget test asserts the open cases and case files of its scale
+- `d272c57` decisions: ADR-0025 (index text clip, extends ADR-0020)
+- `ef3624c` docs: CONTRACT rule 5 as built (ADR-0025); SPEC §6 bench opt-in, drift show wording; CHANGELOG
+- `ec029a8` docs: just check-perf in TESTING
+- plus the commit that updates this handover
+
+### What changed
+
+- **B1, Decision 1 = (b).** `engine/benches/index.rs`:
+  - ×10 is always asserted. ×150 is always printed and asserted only
+    with `SELDON_BENCH_X150=1`. Each line says `asserted` or
+    `printed only` and gives the attempt number.
+  - An asserted case over budget is measured once more (the scaled
+    logbook is kept) before the bench exits 1.
+  - `.github/workflows/ci.yml` is not touched: CI's `just bench` runs
+    without the variable, so the CI gate is ×10 only.
+  - `justfile`: `check-perf` runs the bench with
+    `SELDON_BENCH_X150=1`. Its comment now says that every check, the
+    bench included, measures once more; the `bench` comment says that
+    ×150 is printed and that `check-perf` asserts it.
+- **N1.** `tests/collectors_user.rs` `Bench::new` spells out scratch
+  sources (paths under its temp dir, a missing program for snapper,
+  omarchy-version, pacman and omarchy) instead of `Sources::default()`.
+  New test `the_bench_reads_nothing_of_the_host` (same shape as the one
+  in `support`). The support helper is not reused: the file has its own
+  `Bench`, and `mod support` would bring a second one.
+- **N2.** `status_at_10_000_ledger_lines_is_under_100_ms` asserts 228
+  open cases in the index and 304 case files under `work/`; the
+  completed group in the index is capped at 50, so the files carry the
+  full count.
+- **N3.** The wording is corrected here (Done, F-134), in SPEC-ENGINE
+  §6 and in the CHANGELOG bullet, which had the same mistake.
+- **Decision 2.**
+  - `decisions/ADR-0025-index-text-clip.md` (accepted, 2026-10-04)
+    extends ADR-0020, with the content as decided.
+  - Its consequences also note the plugin over-budget warning as an
+    operator decision (Decision 5).
+  - A row in the `DECISIONS.md` index; that file is outside the WP
+    list, but an ADR is indexed there.
+  - CONTRACT.md rule 5 now describes the actual behaviour and cites
+    ADR-0025: the counts of rule 4 plus the clip, cases, decisions and
+    topics uncut, a warning at ≥ 1 000 000 bytes, `meta.truncated`
+    deferred. Wording only; no schema or fixture change. SPEC §6 cites
+    ADR-0025 too.
+- **Decision 3.** `docs/TESTING.md` "Other recipes" names
+  `just check-perf`: what it runs, that it needs an optimised build and
+  a quiet host, that it is opt-in and not in `check` or CI, and that it
+  re-measures once.
+- **CHANGELOG.** I edited this WP's own two unreleased bullets instead
+  of adding contradicting ones. The `check-perf` bullet says that
+  `just bench` (CI) asserts ×10, only prints ×150, and re-measures once;
+  the clip bullet has the `drift show` correction and cites ADR-0025.
+- SPEC §6's performance paragraph now says the same as the bench: ×10
+  in `just bench`/CI, ×150 under `check-perf`.
+
+### Mutants (round 2)
+
+Each was applied to the working tree, run and reverted; none was
+committed.
+
+| Mutant | Result |
+|---|---|
+| bench `BUDGET` 50 ms, `SELDON_BENCH_X150=1` | ×150 77.2 ms (attempt 1), 76.8 ms (attempt 2), "index build ×150 over the 50ms budget", exit 1 |
+| bench `BUDGET` 50 ms, no opt-in | ×150 81.0 ms "(printed only, attempt 1)", exit 0 |
+| `collectors_user` `Bench` back to `Sources::default()` | `the_bench_reads_nothing_of_the_host` FAILED |
+| `stated_scale` case factor 38 → 10 | `status_at_10_000_ledger_lines_is_under_100_ms` FAILED: "open cases of the stated scale", left 60, right 228 |
+
+### Verified by (round 2, 2026-10-04, load 3.5 to 5)
+
+- `cargo fmt --check` ok.
+- `cargo clippy --all-targets -- -D warnings` exit 0.
+- `--test index --test status --test hooks --test collectors_user`:
+  24 + 11 + 51 + 31 passed, 0 failed (3 ignored = the release tests).
+- `docs-check` ok.
+- `just bench` three times in a row without the opt-in, all exit 0,
+  with ×150 printed only:
+  - run 1: ×10 4.53 ms, ×150 77.9 ms;
+  - run 2: ×10 4.22 ms, ×150 77.6 ms;
+  - run 3: ×10 4.43 ms, ×150 78.0 ms.
+- `just check-perf` exit 0, every check on attempt 1:
+  - ×150 77.3 ms (asserted);
+  - `status` 45.4 ms;
+  - hook at 10 000 lines: 1.34 ms not recorded, 1.73 ms recorded;
+  - hook at 950 lines: 1.31 ms not recorded, 3.67 ms recorded.
+- `just check` was not re-run in round 2: the brief listed the suites
+  above.
+
+### Decisions resolved
+
+1. CI bench gate: option (b), done as above.
+2. ADR-0025 written, CONTRACT rule 5 updated. I agree rule 5 should
+   change: its old text promised a section truncation with a field that
+   does not exist.
+3. `just check-perf` documented in TESTING.md; the clip in
+   `validate-fixtures.py` stays with WP-077.
+5. The over-budget warning for the plugin is recorded, with no action.
+
+### Touched outside WP scope (round 2)
+
+- `engine/tests/collectors_user.rs`: N1, as the review asked.
+- `decisions/ADR-0025-index-text-clip.md`, `DECISIONS.md` (index row),
+  `docs/CONTRACT.md` rule 5, `docs/TESTING.md`: Decisions 2 and 3.
+
