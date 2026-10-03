@@ -516,7 +516,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   another date becomes a `snapshot-delete` of the old snapshot (its
   description) and a `snapshot` of the new one, both at the new
   snapshot's date, the deletion first. A cursor entry without a date
-  (written before WP-073) gets one without an event. Without
+  (written before WP-073) gets one without an event. Known limit: the
+  list gives local time, the info files UTC; a snapshot made in the
+  repeated hour when summer time ends is read from the list as the
+  earlier of its two instants, so a switch between list and info files
+  can give it another date and record a false `snapshot-delete` plus
+  `snapshot` (to be fixed later). Without
   `ALLOW_USERS` the command fails with a permission error; the collector
   then reads the snapshots from the info files
   (`/.snapshots/<number>/info.xml`, `SELDON_SNAPSHOTS_DIR`; under
@@ -606,7 +611,11 @@ capture time (`plugin-remove|enable|disable`, `config-remove`) happened
 somewhere after its collector's last check, so for it the command may
 start from 10 minutes before that check up to the capture (WP-073); with
 the default 15-minute capture interval a fixed 10 minutes before the
-capture time would miss about a third of them. For plugins events the
+capture time would miss about a third of them. Such a command must also
+be later than the newest recorded event of the same source and subject:
+a command that came before the last recorded change cannot have caused
+a newer one, so an agent's `disable` that proved one disabling does not
+claim a person's later disabling of the same plugin. For plugins events the
 command's verb must match the kind: `omarchy plugin <verb> <id>` proves
 only `plugin-<verb>` of that id, and `add` also `plugin-enable`
 (WP-073).

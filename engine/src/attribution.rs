@@ -17,7 +17,10 @@
 //!   An event stamped with the capture time (a plugin removal, enabling or
 //!   disabling, a config removal) happened somewhere after the collector's
 //!   last check: for it the command may start from [`ATTRIBUTION_WINDOW`]
-//!   before that check up to the capture ([`attribute_capture`]). Proof:
+//!   before that check up to the capture ([`attribute_capture`]), and it
+//!   must be later than the newest recorded event of the same source and
+//!   subject, so a command that already proved one change cannot claim a
+//!   later one. Proof:
 //!   - config: the event's path is a path the command *writes*
 //!     ([`write_targets`]: a redirection, `tee`, `sed -i`, the destination
 //!     of `cp|mv|install|ln` or a file directly in it, an `mv` source,
@@ -42,6 +45,7 @@ use chrono::{DateTime, Duration, FixedOffset};
 use crate::ledger::Ledger;
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source};
 use crate::pkgcmd::{Intent, parse_shell, segments_intent, simple_commands, write_targets};
+use crate::redact::Redactor;
 
 /// How long before a collector event (a pacman transaction's start) an
 /// agent command still counts as its cause (ADR-0014 §1, ADR-0017 §2).
@@ -149,6 +153,29 @@ impl Stamps {
     fn in_window(&self, cause: &Cause, e: &Event) -> bool {
         cause.ts <= e.ts && self.earliest(e) - cause.ts <= ATTRIBUTION_WINDOW
     }
+
+    /// For an event that carries the capture time: the newest event in
+    /// `known` with its source and subject (`subject` as the ledger holds
+    /// it), not after it. A cause must be later than that event: a command
+    /// that came before the last recorded change of the subject cannot
+    /// have caused a newer one (an agent's `omarchy plugin disable x`,
+    /// recorded, then a person enables and disables `x` again within the
+    /// wider window: the second disabling is not the agent's).
+    fn newest_known(
+        &self,
+        e: &Event,
+        subject: &str,
+        known: &[Event],
+    ) -> Option<DateTime<FixedOffset>> {
+        if self.now != Some(e.ts) {
+            return None;
+        }
+        known
+            .iter()
+            .filter(|k| k.source == e.source && k.subject == subject && k.ts <= e.ts)
+            .map(|k| k.ts)
+            .max()
+    }
 }
 
 /// The shared pass (see the module docs): sets `actor` and `case` of each
@@ -160,14 +187,29 @@ pub fn attribute(events: &mut [Event], known: &[Event], home: &Path) {
 
 /// [`attribute`] for the events of one capture ([`Stamps`]).
 pub fn attribute_stamped(events: &mut [Event], known: &[Event], home: &Path, stamps: &Stamps) {
+    attribute_in(events, known, home, stamps, None);
+}
+
+/// [`attribute_stamped`]; `redactor` gives an event's subject as the
+/// ledger in `known` holds it.
+fn attribute_in(
+    events: &mut [Event],
+    known: &[Event],
+    home: &Path,
+    stamps: &Stamps,
+    redactor: Option<&Redactor>,
+) {
     let causes = causes(known);
     if causes.is_empty() {
         return;
     }
     for e in events.iter_mut().filter(|e| open_to_attribution(e)) {
+        let subject = redactor.map_or_else(|| e.subject.clone(), |r| r.redact(&e.subject));
+        let after = stamps.newest_known(e, &subject, known);
         let cause = causes
             .iter()
             .filter(|c| stamps.in_window(c, e))
+            .filter(|c| after.is_none_or(|t| c.ts > t))
             .filter(|c| proves(c, e, home))
             .max_by_key(|c| c.ts);
         if let Some(c) = cause {
@@ -204,7 +246,7 @@ pub fn attribute_capture(
         return Ok(());
     };
     let known = ledger.read_range(first - ATTRIBUTION_WINDOW, last)?;
-    attribute_stamped(events, &known, home, stamps);
+    attribute_in(events, &known, home, stamps, Some(ledger.redactor()));
     Ok(())
 }
 
