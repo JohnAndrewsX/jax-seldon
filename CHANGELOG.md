@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs with `LC_ALL=C`, so under `LANG=de_DE.UTF-8` the snapper collector
   reports `NO_PERMISSIONS` again and `doctor` and `init` show the
   `set-config` fix line (fixes #1).
+- `outputs/REBUILD.md` quotes the names in its commands: package, unit
+  and theme names, plugin ids and URLs are checked first and
+  single-quoted when they are not plain; an item with an invalid name is
+  listed as "not reproduced: invalid name" without a command, and
+  `seldon rebuild` warns about it (WP-059).
 
 ### Plugin
 

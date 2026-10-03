@@ -80,6 +80,14 @@ Each line names the case or event it comes from. The guide records paths
 and reasons, never file contents. It names the files to restore; their
 content comes from your dotfiles or backup.
 
+Before a name goes into a command, the engine checks it: package names,
+unit names, theme names, plugin ids and plugin URLs must have the form
+the package manager, systemd and Omarchy use, and none may start with
+`-`. A name that fails is listed with "not reproduced: invalid name"
+and no command, and `seldon rebuild` prints a warning for it. Look at
+that item and set it up by hand. A name that holds characters the shell
+reads specially, such as the `~` in some URLs, is put in single quotes.
+
 The guide is generated. Text you add outside its markers stays; text
 inside is replaced each time. The command writes the file only when it
 changed and commits as `seldon: rebuild`.
