@@ -6,11 +6,11 @@
 //! list.
 
 use anyhow::Context as _;
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, NaiveDate};
 
 use super::Logbook;
 use crate::error::{Error, Result};
-use crate::frontmatter::Document;
+use crate::frontmatter::{Document, FrontmatterError};
 use crate::model::{self, Journal, JournalEntry};
 use crate::sys;
 
@@ -24,7 +24,8 @@ pub struct Appended {
 }
 
 /// Appends an entry for `now` to the day's journal, creating the file
-/// (with frontmatter) when it is the first entry of the day.
+/// (with frontmatter) when it is the first entry of the day
+/// ([`prepare`], then [`Pending::write`]).
 pub fn append(
     logbook: &Logbook,
     now: &DateTime<FixedOffset>,
@@ -32,6 +33,39 @@ pub fn append(
     case: Option<&str>,
     text: &str,
 ) -> Result<Appended> {
+    prepare(logbook, now, actor, case, text)?.write()
+}
+
+/// A journal entry whose day file is read and checked, not yet written.
+/// A command that writes the ledger too prepares the entry first: a day
+/// file it cannot read then fails the command before the ledger changes,
+/// and only the write itself is left for after the ledger (WP-057).
+#[derive(Debug)]
+pub struct Pending {
+    path: std::path::PathBuf,
+    text: String,
+    appended: Appended,
+}
+
+impl Pending {
+    /// Writes the day's file.
+    pub fn write(self) -> Result<Appended> {
+        sys::write_atomic(&self.path, self.text.as_bytes())?;
+        Ok(self.appended)
+    }
+}
+
+/// Reads the day's journal and builds its text with the entry for `now`
+/// at the end. A day file without frontmatter (Obsidian's "Open today's
+/// daily note" makes an empty one) gets the block in front of its text;
+/// broken frontmatter is the user's to fix (exit 1).
+pub fn prepare(
+    logbook: &Logbook,
+    now: &DateTime<FixedOffset>,
+    actor: &str,
+    case: Option<&str>,
+    text: &str,
+) -> Result<Pending> {
     let date = now.date_naive();
     let rel = Journal::relative_path(date);
     let path = logbook.path(&rel);
@@ -44,7 +78,7 @@ pub fn append(
     let block = format!("{}\n{}\n", entry.heading(), escape(text.trim_end()));
 
     let (text, created) = match std::fs::read_to_string(&path) {
-        Ok(existing) => (append_to(&existing, &block, case, &rel)?, false),
+        Ok(existing) => (append_to(&existing, &block, case, date, &rel)?, false),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let record = Journal {
                 date,
@@ -58,14 +92,37 @@ pub fn append(
                 .into());
         }
     };
-    sys::write_atomic(&path, text.as_bytes())?;
-    Ok(Appended { path: rel, created })
+    Ok(Pending {
+        path,
+        text,
+        appended: Appended { path: rel, created },
+    })
 }
 
-/// The day's text with `block` at the end and `case` in `cases:`.
-fn append_to(existing: &str, block: &str, case: Option<&str>, rel: &str) -> Result<String> {
-    let (mut journal, mut doc): (Journal, Document) = model::parse(existing)
-        .map_err(|e| Error::user(format!("{rel}: invalid journal frontmatter: {e}")))?;
+/// The day's text with `block` at the end and `case` in `cases:`; a text
+/// without frontmatter gets a new block for `date` in front.
+fn append_to(
+    existing: &str,
+    block: &str,
+    case: Option<&str>,
+    date: NaiveDate,
+    rel: &str,
+) -> Result<String> {
+    let invalid =
+        |e: FrontmatterError| Error::user(format!("{rel}: invalid journal frontmatter: {e}"));
+    let (mut journal, mut doc): (Journal, Document) = match model::parse(existing) {
+        Ok(parsed) => parsed,
+        Err(FrontmatterError::Missing) => {
+            let journal = Journal {
+                date,
+                cases: Vec::new(),
+            };
+            let mut doc = Document::parse(existing).map_err(invalid)?;
+            model::update(&mut doc, &journal);
+            (journal, doc)
+        }
+        Err(e) => return Err(invalid(e)),
+    };
     if let Some(case) = case
         && !journal.cases.iter().any(|c| c == case)
     {
@@ -131,15 +188,58 @@ pub fn ensure_day(logbook: &Logbook, now: &DateTime<FixedOffset>) -> Result<Appe
 mod tests {
     use super::*;
 
+    fn date() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 10, 1).unwrap()
+    }
+
+    #[test]
+    fn a_day_without_frontmatter_gets_the_block_in_front() {
+        let out = append_to("", "## 10:40 · human\nnew\n", None, date(), "x").unwrap();
+        assert_eq!(
+            out,
+            "---\ntype: journal\ndate: 2026-10-01\ncases: []\n---\n## 10:40 · human\nnew\n"
+        );
+        let out = append_to(
+            "Wrote this in Obsidian.\n",
+            "## 10:40 · human · C-2026-004\nnew\n",
+            Some("C-2026-004"),
+            date(),
+            "x",
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            "---\ntype: journal\ndate: 2026-10-01\ncases: [C-2026-004]\n---\nWrote this in Obsidian.\n\n## 10:40 · human · C-2026-004\nnew\n"
+        );
+        // broken frontmatter stays the user's to fix
+        let err = append_to(
+            "---\ndate: [\n---\n",
+            "## 10:40 · human\nx\n",
+            None,
+            date(),
+            "x",
+        );
+        assert!(err.is_err());
+        let err = append_to(
+            "---\ndate: 2026-10-01\n",
+            "## 10:40 · human\nx\n",
+            None,
+            date(),
+            "x",
+        );
+        assert!(err.is_err());
+    }
+
     #[test]
     fn append_keeps_the_text_before() {
         let day = "---\ntype: journal\ndate: 2026-10-01\ncases: [C-2026-003]\n---\n## 09:25 · agent:claude-code · C-2026-003\nline\n";
-        let out = append_to(day, "## 10:40 · human\nnew\n", None, "x").unwrap();
+        let out = append_to(day, "## 10:40 · human\nnew\n", None, date(), "x").unwrap();
         assert_eq!(out, format!("{day}\n## 10:40 · human\nnew\n"));
         let out = append_to(
             day,
             "## 10:40 · human · C-2026-004\nnew\n",
             Some("C-2026-004"),
+            date(),
             "x",
         )
         .unwrap();

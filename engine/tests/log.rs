@@ -247,6 +247,41 @@ mod log {
         assert!(ledger(&root).is_empty());
     }
 
+    /// WP-057: the journal day is read before the ledger is written, so a
+    /// day file the engine cannot read leaves no note behind, and a
+    /// retry after the fix writes exactly one.
+    #[test]
+    fn a_day_it_cannot_read_writes_no_note() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let day = root.join("journal/2026/2026-10-01.md");
+        std::fs::create_dir_all(day.parent().unwrap()).unwrap();
+        let broken = "---\ndate: [\n---\nmine\n";
+        std::fs::write(&day, broken).unwrap();
+        for _ in 0..2 {
+            let out = env.at(T0, &["log", "--json", "--", "first try"]);
+            assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+            let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+            assert!(
+                message.starts_with("journal/2026/2026-10-01.md: invalid journal frontmatter"),
+                "{message}"
+            );
+        }
+        assert!(ledger(&root).is_empty(), "no note without its journal line");
+        assert_eq!(read(&day), broken);
+
+        // an empty day file (Obsidian's daily note) is accepted
+        std::fs::write(&day, "").unwrap();
+        let out = env.at(T0, &["log", "--", "second try"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(ledger(&root).len(), 1);
+        assert_eq!(ledger(&root)[0]["detail"], "second try");
+        assert_eq!(
+            read(&day),
+            "---\ntype: journal\ndate: 2026-10-01\ncases: []\n---\n## 10:12 · human\nsecond try\n"
+        );
+    }
+
     #[test]
     fn months_and_days_follow_the_timestamp() {
         let env = Env::new(Snapper::Missing);
