@@ -16,7 +16,6 @@ decisions).
 |---|---|---|---|---|---|
 | WP-057 | hook: case updates under the lock, patient lock wait, session-stop on every step | Engine | `engine-057` (opus) | `wt/WP-057` · `wp/057-review` | 2026-10-03 |
 | WP-058 | engine: restructure the session-start context and the agent start prompt | Engine | `engine-058` (opus) | `wt/WP-058` · `wp/058-review` | 2026-10-03 |
-| WP-059 | engine: quote generated commands in REBUILD.md | Engine | `engine-059` (opus) | `wt/WP-059` · `wp/059-review` | 2026-10-03 |
 | WP-060 | snapper: read snapshot info files when listing is not permitted; banner text | Engine | `engine-060` (opus) | `wt/WP-060` · `wp/060-review` | 2026-10-03 |
 
 ## Queued (next up)
@@ -38,6 +37,9 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-059 REBUILD.md checks and shell-quotes every generated
+  command name and escapes control characters in displayed values (three
+  Opus review rounds, 12+ mutants) — merged.
 - 2026-10-03 WP-056 user guide and watcher README: uninstall with a kept
   logbook, state-directory backup and restore (Sonnet worker and review) —
   merged.
