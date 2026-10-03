@@ -308,7 +308,7 @@ const CLEAR: &[&str] = &[
     "omarchy update",
     "skip-this sk-short",
     "Logbuch angelegt. Theme osaka-jade, 39 Plugins.",
-    "yay -S python-task-manager-application",
+    "yay -S python-task-manager-application-git",
     "docker run -p 8080:80 nginx",
     "ssh -p 2222 me@host.example",
     "sort -u names.txt",
