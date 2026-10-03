@@ -5,7 +5,9 @@
 //! init` it writes the `notInitialised` index (so the plugin shows its
 //! banner) and exits 3. `--check` validates the new index against
 //! `schema/index.schema.json` first and refuses to write an invalid one
-//! (exit 2: the engine produced it).
+//! (exit 2: the engine produced it). A case id in two files (WP-057) is
+//! the user's to fix: `--check` refuses with exit 1, a plain rebuild
+//! warns ([`duplicate_cases`]).
 
 use std::path::PathBuf;
 
@@ -77,6 +79,13 @@ pub(crate) fn rebuild_with<T>(
     }
     let logbook = Logbook::open(&root)?;
     let mut built = index::derive(ctx, &config, &logbook)?;
+    let duplicates = duplicate_cases(
+        built
+            .index
+            .cases
+            .all()
+            .map(|c| (c.id.as_str(), c.path.as_str())),
+    );
     let mut files = views::write_ledger_views(&logbook, &built)?;
     if status {
         match views::write_status(&logbook, &built)? {
@@ -104,8 +113,16 @@ pub(crate) fn rebuild_with<T>(
             )
             .into());
         }
+        if !duplicates.is_empty() {
+            return Err(Error::user(format!(
+                "{}; {} not written",
+                duplicates.join("; "),
+                ctx.dirs.display(&index_path)
+            )));
+        }
         Some(true)
     } else {
+        built.warnings.extend(duplicates);
         None
     };
     index::write(&index_path, &built.index)?;
@@ -140,6 +157,67 @@ pub(crate) fn rebuilt_json(r: &Rebuilt) -> Value {
     out
 }
 
+/// One line per case id that appears more than once in `cases` (`(id,
+/// relative path)`), with the paths of its files and the fix: a stale
+/// copy written back to its old folder (WP-057). Every command that finds
+/// a case by id refuses such an id. Not a schema rule: `index --check`
+/// exits 1 on it, `index` and `status` warn, `doctor` reports it from the
+/// case files.
+pub(crate) fn duplicate_cases<'a>(
+    cases: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<String> {
+    let mut seen: Vec<(&str, Vec<&str>)> = Vec::new();
+    for (id, path) in cases {
+        match seen.iter_mut().find(|(i, _)| *i == id) {
+            Some((_, paths)) => paths.push(path),
+            None => seen.push((id, vec![path])),
+        }
+    }
+    seen.into_iter()
+        .filter(|(_, paths)| paths.len() > 1)
+        .map(|(id, paths)| {
+            format!(
+                "case {id} exists more than once ({}); keep one file",
+                paths.join(", ")
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn warnings_human(warnings: &[String]) -> String {
     warnings.iter().map(|w| format!("\nwarning: {w}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_case_id_twice_is_named_with_both_files() {
+        let sample: Value =
+            serde_json::from_str(include_str!("../../../fixtures/index.sample.json")).unwrap();
+        let pairs = |ix: &Value| -> Vec<(String, String)> {
+            ["queued", "active", "verification", "completed"]
+                .iter()
+                .flat_map(|g| ix["cases"][g].as_array().unwrap().clone())
+                .map(|c| {
+                    let s = |k: &str| c[k].as_str().unwrap().to_string();
+                    (s("id"), s("path"))
+                })
+                .collect()
+        };
+        let run = |p: &[(String, String)]| {
+            duplicate_cases(p.iter().map(|(i, p)| (i.as_str(), p.as_str())))
+        };
+        let mut cases = pairs(&sample);
+        assert_eq!(run(&cases), Vec::<String>::new());
+        let (id, path) = cases[0].clone();
+        cases.push((id.clone(), format!("work/completed/{id}-copy.md")));
+        assert_eq!(
+            run(&cases),
+            [format!(
+                "case {id} exists more than once ({path}, work/completed/{id}-copy.md); keep one file"
+            )]
+        );
+    }
 }

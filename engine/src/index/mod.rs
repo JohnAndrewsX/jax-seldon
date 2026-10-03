@@ -45,14 +45,16 @@ pub fn derive_at(
     logbook: &Logbook,
     now: DateTime<FixedOffset>,
 ) -> anyhow::Result<Built> {
-    let loaded = load::load(logbook, now.date_naive())?;
+    let mut loaded = load::load(logbook, now.date_naive())?;
+    let (state, cursors_error) = collector_state(dirs, config, &logbook.root);
+    loaded.warnings.extend(cursors_error);
     let input = Input {
         now,
         logbook_path: logbook.root.display().to_string(),
         language: logbook.meta.language.as_str().to_string(),
         machine: logbook.meta.machine_id.clone(),
         git: None,
-        state: collector_state(dirs, config, &logbook.root),
+        state,
         always_red: config.drift.always_red.clone(),
     };
     Ok(build::build(loaded, &input))
@@ -76,8 +78,23 @@ pub fn write(path: &Path, index: &Index) -> anyhow::Result<()> {
 /// and `lastRun` when the cursors belong to this logbook. `lastCapture`
 /// is the latest `lastRun`. (`fix` has no field in the index; `doctor`
 /// and `capture --json` carry it.)
-pub fn collector_state(dirs: &Dirs, config: &Config, root: &Path) -> model::State {
-    let cursors = Cursors::load(&collectors::cursors_file(dirs)).unwrap_or_default();
+///
+/// A `cursors.json` that cannot be read makes every capture fail (F-133):
+/// every enabled collector is then `ok: false` with that message, and the
+/// second value is the load warning.
+pub fn collector_state(
+    dirs: &Dirs,
+    config: &Config,
+    root: &Path,
+) -> (model::State, Option<String>) {
+    let file = collectors::cursors_file(dirs);
+    let (cursors, cause) = match Cursors::load(&file) {
+        Ok(c) => (c, None),
+        Err(e) => (Cursors::default(), Some(e.root_cause().to_string())),
+    };
+    let broken = cause.as_ref().map(|c| {
+        format!("cursors.json is corrupt or unreadable, so every capture fails ({c}); `seldon doctor` has the fix")
+    });
     let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let mine = cursors.logbook.as_deref() == Some(canonical.as_path());
     let mut last_capture: Option<DateTime<FixedOffset>> = None;
@@ -93,20 +110,37 @@ pub fn collector_state(dirs: &Dirs, config: &Config, root: &Path) -> model::Stat
             {
                 last_capture = Some(t);
             }
+            let enabled = config.collectors.get(name).unwrap_or(true);
+            if enabled && let Some(message) = &broken {
+                return model::CollectorRow {
+                    name,
+                    enabled,
+                    ok: false,
+                    message: Some(message.clone()),
+                    last_run: None,
+                };
+            }
             model::CollectorRow {
                 name,
-                enabled: config.collectors.get(name).unwrap_or(true),
+                enabled,
                 ok: state.is_none_or(|s| s.ok),
                 message: state.and_then(|s| s.message.clone()),
                 last_run,
             }
         })
         .collect();
-    model::State {
+    let state = model::State {
         status: model::Status::Ok,
         last_capture: last_capture.map(|t| crate::model::event::format_ts(&t)),
         collectors: rows,
-    }
+    };
+    let warning = cause.map(|c| {
+        format!(
+            "{}: corrupt or unreadable ({c}); every enabled collector is shown as failing",
+            dirs.display(&file)
+        )
+    });
+    (state, warning)
 }
 
 /// `logbook.git`: the short HEAD and whether the work tree has changes;
