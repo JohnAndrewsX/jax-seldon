@@ -96,7 +96,8 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
 
     let config_file = ctx.config_file.clone();
     let shown = ctx.dirs.display(&config_file);
-    let mut config_invalid = false;
+    // why the logbook path cannot be known, when config.toml is broken
+    let mut config_invalid: Option<&str> = None;
     let config = match ctx.load_config() {
         Ok(Some(c)) => {
             checks.push(check_patterns(&c, shown));
@@ -114,11 +115,21 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             None
         }
         Err(Error::User(message)) => {
-            checks.push(Check::new("config", Status::Error, message));
-            config_invalid = true;
+            checks.push(Check::new("config", Status::Error, message).fix(format!(
+                "correct {shown} (the message names the key), or move it away and run seldon init"
+            )));
+            config_invalid = Some("config.toml is invalid");
             None
         }
-        Err(e) => return Err(e),
+        // unreadable: a row and exit 1 like an invalid file, not a bare exit 2
+        Err(e) => {
+            checks.push(
+                Check::new("config", Status::Error, one_line(&format!("{e}")))
+                    .fix(format!("chmod u+r {}", config_file.display())),
+            );
+            config_invalid = Some("config.toml cannot be read");
+            None
+        }
     };
     let effective = config.clone().unwrap_or_default();
 
@@ -126,26 +137,34 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     // (every other command stops at the config error); a path from
     // `--logbook`, `--path` or the environment is still checked
     let (root, source) = ctx.resolve_logbook(path, config.as_ref());
-    let known = !(config_invalid && source == LogbookSource::Default);
+    let known = !(config_invalid.is_some() && source == LogbookSource::Default);
     let mut not_initialised = false;
     let logbook = if known {
-        let (logbook_check, logbook, cases) =
+        let (mut logbook_check, logbook, cases) =
             check_logbook(&root, &ctx.dirs.display(&root), source);
         not_initialised = logbook_check.status == Status::Error
             && !Logbook::is_initialised(&root)
-            && !config_invalid;
+            && config_invalid.is_none();
+        // `seldon init` stops at the same config error
+        if config_invalid.is_some()
+            && let Some(fix) = &mut logbook_check.fix
+        {
+            *fix = format!("after fixing config.toml: {fix}");
+        }
         checks.push(logbook_check);
         if let Some(logbook) = &logbook {
             checks.push(check_cases(&cases));
             checks.push(check_ledger(logbook));
             checks.push(check_fences(logbook));
+            checks.push(check_collectors(ctx, &effective, logbook));
         }
         logbook
     } else {
+        let why = config_invalid.unwrap_or_default();
         checks.push(Check::new(
             "logbook",
             Status::Error,
-            "not checked: config.toml is invalid, so the logbook path is not known",
+            format!("not checked: {why}, so the logbook path is not known"),
         ));
         None
     };
@@ -166,7 +185,10 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     let mut human = if known {
         format!("seldon doctor · {}\n", ctx.dirs.display(&root))
     } else {
-        "seldon doctor · logbook not known (config.toml is invalid)\n".to_string()
+        format!(
+            "seldon doctor · logbook not known ({})\n",
+            config_invalid.unwrap_or_default()
+        )
     };
     for c in &checks {
         let _ = writeln!(
@@ -441,32 +463,85 @@ fn stray_end_markers(text: &str) -> Vec<usize> {
     out
 }
 
+/// The last capture's result per collector, from `cursors.json` (SPEC-ENGINE
+/// §2 keeps each collector's `ok`, `message` and `fix` there): every
+/// enabled collector whose last run failed is listed with its message,
+/// degraded, with the fixes the collectors gave. Only cursors of this
+/// logbook count (another logbook's are not this one's state). A file
+/// that cannot be read is the `state` row's error.
+fn check_collectors(ctx: &Context, config: &Config, logbook: &Logbook) -> Check {
+    let Ok(cursors) = Cursors::load(&cursors_file(&ctx.dirs)) else {
+        return Check::new(
+            "collectors",
+            Status::Degraded,
+            "not checked: cursors.json cannot be read (see the state row)",
+        );
+    };
+    let canonical = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
+    if cursors.logbook.as_deref() != Some(canonical.as_path()) {
+        return Check::new("collectors", Status::Ok, "no capture for this logbook yet");
+    }
+    let mut failing = Vec::new();
+    let mut fixes = Vec::new();
+    for (name, state) in &cursors.collectors {
+        if state.ok || !config.collectors.get(name).unwrap_or(true) {
+            continue;
+        }
+        let message = state.message.as_deref().unwrap_or("failed");
+        failing.push(format!("{name}: {}", one_line(message)));
+        if let Some(fix) = &state.fix {
+            fixes.push(fix.clone());
+        }
+    }
+    if failing.is_empty() {
+        return Check::new(
+            "collectors",
+            Status::Ok,
+            "the last capture of every enabled collector succeeded",
+        );
+    }
+    let check = Check::new(
+        "collectors",
+        Status::Degraded,
+        format!("last capture failed: {}", failing.join("; ")),
+    );
+    if fixes.is_empty() {
+        check
+    } else {
+        check.fix(fixes.join("; "))
+    }
+}
+
 /// The collector state files, loaded as strictly as `capture` loads
 /// `cursors.json` (F-541); `manifest.json` and `owned.json` are read
 /// leniently by the collector, so a corrupt one costs reports silently.
 /// Missing files are fine (a new baseline). One row per broken file.
 fn check_state(ctx: &Context) -> Vec<Check> {
     type Parse = fn(&[u8]) -> std::result::Result<(), serde_json::Error>;
-    let files: [(PathBuf, Parse, &str); 3] = [
+    // (file, parser, what a corrupt one does, what an unreadable one does)
+    let files: [(PathBuf, Parse, &str, &str); 3] = [
         (
             cursors_file(&ctx.dirs),
             |b| serde_json::from_slice::<Cursors>(b).map(drop),
             "every capture fails until it is moved away; the next capture then takes a new baseline for every collector",
+            "every capture fails until it can be read again",
         ),
         (
             Manifest::file(&ctx.dirs),
             |b| serde_json::from_slice::<Manifest>(b).map(drop),
             "the next capture takes a new config baseline and does not report the config changes since the last one",
+            "the config collector reports degraded until it can be read again",
         ),
         (
             OwnWrites::file(&ctx.dirs),
             |b| serde_json::from_slice::<OwnWrites>(b).map(drop),
             "the engine's own writes under the watched paths are reported as drift",
+            "the engine's own writes are neither recorded nor explained until it can be read again, so they are reported as drift",
         ),
     ];
     let mut present = Vec::new();
     let mut broken = Vec::new();
-    for (path, parse, effect) in files {
+    for (path, parse, effect, unreadable) in files {
         let shown = ctx.dirs.display(&path);
         let name = path
             .file_name()
@@ -478,7 +553,7 @@ fn check_state(ctx: &Context) -> Vec<Check> {
                 Check::new(
                     "state",
                     Status::Error,
-                    format!("{shown}: cannot read: {e}; {effect}"),
+                    format!("{shown}: cannot read: {e}; {unreadable}"),
                 )
                 .fix(format!("chmod u+rw {}", path.display())),
             ),
@@ -546,7 +621,9 @@ fn check_omarchy(config: &Config) -> Check {
     if !config.collectors.omarchy {
         return Check::new("omarchy", Status::Ok, "collector disabled in config.toml");
     }
-    match sys::run("omarchy-version", &[], None, PROBE_TIMEOUT) {
+    // the program the collector runs (`SELDON_OMARCHY_VERSION`)
+    let program = Sources::from_env().omarchy_version;
+    match sys::run(&program, &[], None, PROBE_TIMEOUT) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -557,12 +634,14 @@ fn check_omarchy(config: &Config) -> Check {
         Run::NotFound => Check::new(
             "omarchy",
             Status::Degraded,
-            "omarchy-version not found; not an Omarchy system? The omarchy, plugins and theme collectors will report ok: false",
+            format!(
+                "{program} not found; not an Omarchy system? The omarchy, plugins and theme collectors will report ok: false"
+            ),
         ),
         other => Check::new(
             "omarchy",
             Status::Degraded,
-            format!("omarchy-version failed: {}", describe(&other)),
+            format!("{program} failed: {}", describe(&other)),
         ),
     }
 }

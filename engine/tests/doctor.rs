@@ -562,9 +562,14 @@ mod doctor {
             "not checked: config.toml is invalid, so the logbook path is not known"
         );
         assert!(checks[2].get("fix").is_none(), "{v}");
+        // review N2: the config row says how to get out
+        assert_eq!(
+            checks[1]["fix"],
+            "correct ~/.config/seldon/config.toml (the message names the key), or move it away and run seldon init"
+        );
         let text = v.to_string();
         assert!(!text.contains("not initialised"), "{text}");
-        assert!(!text.contains("seldon init"), "{text}");
+        assert!(!text.contains("seldon init --path"), "{text}");
 
         let out = env.seldon(&["doctor"]);
         assert_eq!(out.status.code(), Some(1));
@@ -583,6 +588,119 @@ mod doctor {
         let missing = env.tmp.path().join("nowhere");
         let (code, v) = doctor(&env, &["--path", missing.to_str().unwrap()]);
         assert_eq!(code, Some(1), "the config error wins over exit 3: {v}");
+        // review N3: `seldon init` stops at the same config error
+        let fix = check(&v, "logbook")["fix"].as_str().unwrap().to_string();
+        assert!(
+            fix.starts_with("after fixing config.toml: seldon init --path "),
+            "{fix}"
+        );
+    }
+
+    /// Review N2: a config.toml that cannot be read is a config row with a
+    /// chmod fix and exit 1 (was a bare exit 2), the logbook not checked.
+    #[test]
+    fn an_unreadable_config_is_a_config_error() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let env = Env::new(Snapper::NoPermissions);
+        init(&env);
+        let config = env.config_file();
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&config).is_ok() {
+            // root reads it anyway
+            return;
+        }
+        let (code, v) = doctor(&env, &[]);
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(code, Some(1), "{v}");
+        let c = check(&v, "config");
+        assert_eq!(c["status"], "error", "{c}");
+        assert!(
+            c["message"].as_str().unwrap().contains("cannot read"),
+            "{c}"
+        );
+        assert_eq!(c["fix"], format!("chmod u+r {}", config.display()));
+        assert_eq!(
+            check(&v, "logbook")["message"],
+            "not checked: config.toml cannot be read, so the logbook path is not known"
+        );
+        assert_eq!(v["logbook"], serde_json::Value::Null, "{v}");
+    }
+
+    /// Review B1: a collector whose last capture failed (`cursors.json`,
+    /// this logbook's) is degraded in doctor with its message and fix; a
+    /// disabled one and another logbook's cursors are not reported.
+    #[test]
+    fn a_failing_collector_is_reported_with_its_fix() {
+        let env = Env::new(Snapper::Allowed);
+        let root = init(&env);
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(
+            check(&v, "collectors")["message"],
+            "no capture for this logbook yet",
+            "{v}"
+        );
+        let state = env.home.join(".local/state/seldon");
+        std::fs::create_dir_all(&state).unwrap();
+        let cursors = |logbook: &Path| {
+            serde_json::json!({
+                "logbook": logbook,
+                "collectors": {
+                    "pacman": {"ok": true, "lastRun": "2026-10-03T09:00:00+02:00"},
+                    "plugins": {"ok": false, "message": "omarchy plugin list failed: exit 2",
+                                "lastRun": "2026-10-03T09:00:00+02:00"},
+                    "snapper": {"ok": false, "message": "No permissions.",
+                                "fix": "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes",
+                                "lastRun": "2026-10-03T09:00:00+02:00"},
+                    "theme": {"ok": false, "message": "theme file missing",
+                              "lastRun": "2026-10-03T09:00:00+02:00"}
+                }
+            })
+            .to_string()
+        };
+        let canonical = std::fs::canonicalize(&root).unwrap();
+        std::fs::write(state.join("cursors.json"), cursors(&canonical)).unwrap();
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("theme = true"), "{text}");
+        std::fs::write(&config, text.replace("theme = true", "theme = false")).unwrap();
+
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(0), "degraded is not an error: {v}");
+        let c = check(&v, "collectors");
+        assert_eq!(c["status"], "degraded", "{c}");
+        assert_eq!(
+            c["message"],
+            "last capture failed: plugins: omarchy plugin list failed: exit 2; snapper: No permissions."
+        );
+        assert_eq!(
+            c["fix"],
+            "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
+        );
+
+        // another logbook's cursors are not this one's state
+        std::fs::write(
+            state.join("cursors.json"),
+            cursors(&env.tmp.path().join("other")),
+        )
+        .unwrap();
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(check(&v, "collectors")["status"], "ok", "{v}");
+    }
+
+    /// Review Q3: the omarchy probe runs `SELDON_OMARCHY_VERSION` like the
+    /// collector.
+    #[test]
+    fn the_omarchy_probe_honours_seldon_omarchy_version() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        env.stub("omarchy-version-other", "echo 9.9.9-1");
+        let out = env
+            .command(&["doctor", "--path", root.to_str().unwrap(), "--json"])
+            .env("SELDON_OMARCHY_VERSION", "omarchy-version-other")
+            .output()
+            .unwrap();
+        let v = json(&out);
+        assert_eq!(check(&v, "omarchy")["message"], "Omarchy 9.9.9-1", "{v}");
     }
 
     /// F-541: a `[redaction] patterns` entry that does not compile makes
@@ -668,6 +786,38 @@ mod doctor {
         }
         let (code, v) = doctor(&env, &[]);
         assert_eq!(code, Some(0), "{v}");
+    }
+
+    /// Review N4: an unreadable state file's row says what reading it
+    /// needs, matching its chmod fix (not "move it away").
+    #[test]
+    fn an_unreadable_state_file_says_what_its_fix_does() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let env = Env::new(Snapper::NoPermissions);
+        init(&env);
+        let state = env.home.join(".local/state/seldon");
+        std::fs::create_dir_all(&state).unwrap();
+        let file = state.join("cursors.json");
+        std::fs::write(&file, "{}").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&file).is_ok() {
+            return; // root reads it anyway
+        }
+        let (code, v) = doctor(&env, &[]);
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(code, Some(1), "{v}");
+        let c = check(&v, "state");
+        let message = c["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("~/.local/state/seldon/cursors.json: cannot read: "),
+            "{message}"
+        );
+        assert!(
+            message.ends_with("; every capture fails until it can be read again"),
+            "{message}"
+        );
+        assert!(!message.contains("moved away"), "{message}");
+        assert_eq!(c["fix"], format!("chmod u+rw {}", file.display()));
     }
 
     /// F-132: ledger lines that are not events are skipped by every
@@ -875,8 +1025,26 @@ mod doctor {
     fn doctor_writes_nothing_while_reporting_problems() {
         let env = Env::new(Snapper::NoPermissions);
         let root = init(&env);
+        let out = env.seldon(&["plan", "new", "--json", "--", "Twice"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let id = json(&out)["case"]["id"].as_str().unwrap().to_string();
         let out = env.seldon(&["status"]);
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        // a case id in two files, an invalid redaction pattern
+        let queued = common::find_file(&root.join("work/queued"), &id);
+        std::fs::copy(
+            &queued,
+            root.join("work/completed")
+                .join(queued.file_name().unwrap()),
+        )
+        .unwrap();
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        std::fs::write(
+            &config,
+            text.replace("\npatterns = []", "\npatterns = [\"(unclosed\"]"),
+        )
+        .unwrap();
         let state = env.home.join(".local/state/seldon");
         std::fs::remove_file(state.join("index.json")).unwrap();
         let _ = std::fs::remove_file(env.lock_file());
@@ -893,7 +1061,7 @@ mod doctor {
         let before = (snapshot(&env.home), snapshot(&root));
         let (code, v) = doctor(&env, &[]);
         assert_eq!(code, Some(1), "{v}");
-        for name in ["ledger", "fences", "state"] {
+        for name in ["config", "cases", "ledger", "fences", "state"] {
             assert_ne!(check(&v, name)["status"], "ok", "{name}: {v}");
         }
         assert!(
