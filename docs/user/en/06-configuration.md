@@ -49,7 +49,7 @@ autocommit = true
 
 [redaction]
 patterns = []
-skipPaths = []
+skipPaths = ["~/.config/omarchy/**/history.json", "~/.config/omarchy/**/history/", "~/.config/omarchy/**/state.json", "~/.config/omarchy/**/cache/", "~/.config/omarchy/**/*.log"]
 
 [agent]
 launcher = ["omarchy", "agent", "prompt", "{prompt}"]
@@ -59,20 +59,26 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 
 | Key | Default | Meaning |
 |---|---|---|
-| `logbook` | `~/Seldon` | the logbook folder |
+| `logbook` | `~/Seldon` | the logbook folder; a relative path lies under your home folder |
 | `language` | from your locale | `en` or `de`: the language of the text the engine writes into the logbook (journal lines, `STATUS.md`) |
 | `watchPaths` | see [Watched paths](#watched-paths) | files and folders the config collector watches |
 | `harnesses` | `[]` | the agent harnesses you chose in the wizard; for your information |
 | `[collectors]` | all `true` | which collectors a capture runs |
 | `[git] autocommit` | `true` | commit the logbook after every command that writes |
 | `[redaction] patterns` | `[]` | your own secret patterns, see [Redaction](#redaction) |
-| `[redaction] skipPaths` | `[]` | files the engine never opens or names |
+| `[redaction] skipPaths` | plugin state files | files the engine never opens or names, see [Redaction](#redaction) |
 | `[drift] alwaysRed` | six names | packages whose upgrade is always a crisis, see [Drift](#drift) |
 | `[agent] launcher` | `omarchy agent prompt` | what `seldon agent start` runs, see [Agent launcher](#agent-launcher) |
 | `[agent.launchers]` | none | more launchers by name |
 
 The logbook path is taken from, in this order: `--logbook`,
 `SELDON_LOGBOOK`, `logbook` in the config, `~/Seldon`.
+
+Paths in the config file (`logbook`, `watchPaths`) may start with `~/`
+or `$HOME/`. A relative path lies under your home folder, whatever folder
+`seldon` runs in: the plugin and the agent hooks run it from different
+folders. `--logbook` and `SELDON_LOGBOOK` are relative to the current
+folder, as in any shell command.
 
 ## Collectors
 
@@ -107,8 +113,9 @@ file below them at each capture and records what was added, changed or
 removed. It records the path and two short hashes, never the content.
 
 Defaults: `~/.config/hypr`, `~/.config/omarchy`, `~/.config/waybar`,
-`~/.bashrc`, `~/.zshrc`. Missing paths are skipped. Add your own, for
-example:
+`~/.bashrc`, `~/.zshrc`. Missing paths are skipped. A relative path such
+as `.config/nvim` means `~/.config/nvim`; the wizard stores the paths you
+type in that form. Add your own, for example:
 
 ```toml
 watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.config/nvim", "~/.config/systemd/user"]
@@ -119,15 +126,29 @@ Always left out:
 - `~/.config/omarchy/plugins/` (the plugins collector covers it);
 - `.git` folders, and folders reached through a symlink;
 - binary files and files over 1 MiB (listed as skipped, without a hash);
-- everything in `[redaction] skipPaths`.
+- files whose name holds a control character, or whose path is longer
+  than 512 characters: the capture counts them in a warning;
+- everything in `[redaction] skipPaths`. Its default holds the files that
+  shell plugins keep in a folder of their own under `~/.config/omarchy/`
+  and rewrite every few minutes: `history.json`, `state.json`, the
+  `history/` and `cache/` folders and `*.log` files. Without it, each
+  rewrite would open one more drift item. Add a plugin's other busy
+  files the same way.
+
+A file whose size and modification time are the same as at the last
+capture is not read again.
 
 Unit files under `~/.config/systemd/` are red zone. Everything else here
 is yellow.
 
-When you add a path, the next capture records every file in it as
-added, and each one opens as drift. Dismiss them, for example with
-`seldon drift dismiss <EVENT> -- "started watching ~/.config/nvim"`.
-Add a folder with many files only if you want to follow each one.
+Changing what is watched is not a change of files. When you add a path,
+or take a pattern out of `skipPaths`, the next capture takes the files
+that come into view as they are, without an event. When you remove a
+path, or add a pattern, the files that leave the view are not recorded
+as removed. The capture says it in one line, for example `watch scope
+changed: 514 file(s) left it, 0 entered it; no events for them`. From
+then on the new files are watched like the others. Add a folder with
+many files only if you want to follow each one.
 
 ## Redaction
 
@@ -173,7 +194,10 @@ An invalid pattern is an error (exit 1): Seldon refuses to write rather
 than leak.
 
 `skipPaths` names files the config collector and the hooks never open,
-hash or name:
+hash or name. The default covers busy plugin files (see [Watched
+paths](#watched-paths)); a config file written by an earlier Seldon
+keeps its own list, often `[]`: add the defaults from the example above
+if you want them.
 
 ```toml
 [redaction]

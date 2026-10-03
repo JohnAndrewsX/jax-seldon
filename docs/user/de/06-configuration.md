@@ -53,7 +53,7 @@ autocommit = true
 
 [redaction]
 patterns = []
-skipPaths = []
+skipPaths = ["~/.config/omarchy/**/history.json", "~/.config/omarchy/**/history/", "~/.config/omarchy/**/state.json", "~/.config/omarchy/**/cache/", "~/.config/omarchy/**/*.log"]
 
 [agent]
 launcher = ["omarchy", "agent", "prompt", "{prompt}"]
@@ -63,14 +63,14 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 
 | Schlüssel | Vorgabe | Bedeutung |
 |---|---|---|
-| `logbook` | `~/Seldon` | der Ordner des Logbuchs |
+| `logbook` | `~/Seldon` | der Ordner des Logbuchs; ein relativer Pfad liegt unter deinem Home-Ordner |
 | `language` | aus deiner Locale | `en` oder `de`: die Sprache der Texte, die die Engine ins Logbuch schreibt (Journal-Zeilen, `STATUS.md`) |
 | `watchPaths` | siehe [Beobachtete Pfade](#beobachtete-pfade) | Dateien und Ordner, die der Config-Collector beobachtet |
 | `harnesses` | `[]` | die Agenten-Harnesses, die du im Assistenten gewählt hast; zur Information |
 | `[collectors]` | alle `true` | welche Collectors eine Erfassung startet |
 | `[git] autocommit` | `true` | das Logbuch nach jedem schreibenden Befehl committen |
 | `[redaction] patterns` | `[]` | deine eigenen Muster für Geheimnisse, siehe [Schwärzung](#schwärzung) |
-| `[redaction] skipPaths` | `[]` | Dateien, die die Engine nie öffnet oder nennt |
+| `[redaction] skipPaths` | Zustandsdateien von Plugins | Dateien, die die Engine nie öffnet oder nennt, siehe [Schwärzung](#schwärzung) |
 | `[drift] alwaysRed` | sechs Namen | Pakete, deren Upgrade immer eine Krise ist, siehe [Drift](#drift) |
 | `[agent] launcher` | `omarchy agent prompt` | was `seldon agent start` startet, siehe [Agent-Launcher](#agent-launcher) |
 | `[agent.launchers]` | keine | weitere Launcher mit Namen |
@@ -78,6 +78,13 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 Den Pfad des Logbuchs nimmt die Engine in dieser Reihenfolge:
 `--logbook`, `SELDON_LOGBOOK`, `logbook` aus der Konfiguration,
 `~/Seldon`.
+
+Pfade in der Konfigurationsdatei (`logbook`, `watchPaths`) dürfen mit
+`~/` oder `$HOME/` beginnen. Ein relativer Pfad liegt unter deinem
+Home-Ordner, egal in welchem Ordner `seldon` läuft: Das Plugin und die
+Agenten-Hooks starten es aus verschiedenen Ordnern. `--logbook` und
+`SELDON_LOGBOOK` gelten relativ zum aktuellen Ordner, wie bei jedem
+Shell-Befehl.
 
 ## Collectors
 
@@ -114,8 +121,10 @@ hinzugekommen, geändert oder entfernt ist. Er zeichnet den Pfad und zwei
 kurze Hashes auf, nie den Inhalt.
 
 Vorgaben: `~/.config/hypr`, `~/.config/omarchy`, `~/.config/waybar`,
-`~/.bashrc`, `~/.zshrc`. Fehlende Pfade überspringt der Collector. Ergänze
-eigene, zum Beispiel:
+`~/.bashrc`, `~/.zshrc`. Fehlende Pfade überspringt der Collector. Ein
+relativer Pfad wie `.config/nvim` bedeutet `~/.config/nvim`; der
+Assistent speichert getippte Pfade in dieser Form. Ergänze eigene, zum
+Beispiel:
 
 ```toml
 watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.config/nvim", "~/.config/systemd/user"]
@@ -127,17 +136,30 @@ Immer ausgenommen:
 - `.git`-Ordner und Ordner, die über einen Symlink erreicht werden;
 - Binärdateien und Dateien über 1 MiB (als übersprungen gelistet, ohne
   Hash);
-- alles in `[redaction] skipPaths`.
+- Dateien, deren Name ein Steuerzeichen enthält oder deren Pfad länger
+  als 512 Zeichen ist: Die Erfassung zählt sie in einer Warnung;
+- alles in `[redaction] skipPaths`. Die Vorgabe enthält die Dateien, die
+  Shell-Plugins in einem eigenen Ordner unter `~/.config/omarchy/`
+  halten und alle paar Minuten neu schreiben: `history.json`,
+  `state.json`, die Ordner `history/` und `cache/` und `*.log`-Dateien.
+  Ohne sie öffnete jedes Neuschreiben einen weiteren Drift-Eintrag.
+  Weitere unruhige Dateien eines Plugins ergänzt du genauso.
+
+Eine Datei, deren Größe und Änderungszeit seit der letzten Erfassung
+gleich sind, liest der Collector nicht noch einmal.
 
 Unit-Dateien unter `~/.config/systemd/` gehören zur roten Zone. Alles
 andere hier ist gelb.
 
-Fügst du einen Pfad hinzu, zeichnet die nächste Erfassung jede Datei
-darin als hinzugefügt auf, und jede öffnet als Drift. Verwirf sie, zum
-Beispiel mit
-`seldon drift dismiss <EVENT> -- "beobachte jetzt ~/.config/nvim"`.
-Nimm einen Ordner mit vielen Dateien nur auf, wenn du jede einzelne
-verfolgen willst.
+Was beobachtet wird zu ändern, ist keine Änderung an Dateien. Fügst du
+einen Pfad hinzu oder nimmst ein Muster aus `skipPaths` heraus, nimmt
+die nächste Erfassung die Dateien, die neu in den Blick kommen, so auf,
+wie sie sind, ohne Event. Entfernst du einen Pfad oder fügst ein Muster
+hinzu, gelten die Dateien, die aus dem Blick fallen, nicht als entfernt.
+Die Erfassung sagt das in einer Zeile, zum Beispiel `watch scope
+changed: 514 file(s) left it, 0 entered it; no events for them`. Danach
+beobachtet sie die neuen Dateien wie alle anderen. Nimm einen Ordner mit
+vielen Dateien nur auf, wenn du jede einzelne verfolgen willst.
 
 ## Schwärzung
 
@@ -184,7 +206,11 @@ Ein ungültiges Muster ist ein Fehler (Exit 1): Seldon schreibt lieber gar
 nicht, als etwas preiszugeben.
 
 `skipPaths` nennt Dateien, die der Config-Collector und die Hooks nie
-öffnen, hashen oder nennen:
+öffnen, hashen oder nennen. Die Vorgabe deckt unruhige Plugin-Dateien ab
+(siehe [Beobachtete Pfade](#beobachtete-pfade)); die
+Konfigurationsdatei einer früheren Seldon-Version behält ihre eigene
+Liste, oft `[]`: Übernimm die Vorgaben aus dem Beispiel oben, wenn du
+sie willst.
 
 ```toml
 [redaction]

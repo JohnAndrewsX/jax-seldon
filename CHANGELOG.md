@@ -107,6 +107,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rules are compiled once per process and only when a text can match
   them, so a recorded agent command is faster than before. Existing files
   and history are not rewritten (WP-062).
+- Changing `watchPaths` or `[redaction] skipPaths` no longer floods the
+  drift list: files that leave the watched scope are not recorded as
+  removed, files that enter it are taken as they are, and the capture
+  says so in one line. `manifest.json` keeps the scope of each
+  generation (WP-069).
+- `[redaction] skipPaths` has a default for the state, history, cache
+  and log files that shell plugins rewrite under `~/.config/omarchy/*/`,
+  and `init` points at `skipPaths`; an existing config keeps its own
+  list (WP-069).
+- A relative `logbook` or `watchPaths` value in `config.toml`, and
+  `$HOME/…`, lie under the home folder instead of the folder `seldon`
+  runs in, so the plugin and the agent hooks watch the same files; the
+  wizard stores typed watch paths as `~/…` (WP-069).
+- The config collector drops events the ledger already has, so a
+  capture whose cursor save failed after the ledger write repeats no
+  config event; it reuses the stored hash of a file whose size, mtime
+  and inode are unchanged, and SHA-256 no longer copies its input. A
+  watched file whose name holds a control character is skipped with a
+  warning (WP-069).
 
 ### Plugin
 
