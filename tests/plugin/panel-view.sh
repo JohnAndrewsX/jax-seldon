@@ -90,10 +90,15 @@ shows() {
   expect "$1" "$2" "[.texts[] | select(. == \"$3\")] | length > 0" true
 }
 
+# The one-line warnings of the engine calls some cases make the fake engine
+# refuse on purpose (WP-068); any other warning still fails the case.
+expected_warnings='jax\.seldon: seldon (log exit 1: unknown case C-2026-004$|plan exit 1: C-2026-008 is active; |agent exit 1: C-2026-004 is queued; |(plan|drift|decide) exit 4: the logbook is locked by another seldon \(pid 4242\)$)'
+
 clean_log() {
   local bad
   bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop" \
-    | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" || true)
+    | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
+    | grep -a -v -E "$expected_warnings" || true)
   if [[ -z $bad ]]; then
     pass=$((pass + 1))
     echo "ok   $1: log clean"
