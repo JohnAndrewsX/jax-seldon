@@ -702,3 +702,144 @@ fn host_strings_go_through_the_users_redaction_patterns() {
     assert_eq!(bad.status.code(), Some(1), "{}", stdout(&bad));
     assert_eq!(system_files(&lb), before);
 }
+
+/// F-550: one `system/*.md` that is not UTF-8 is skipped with a warning
+/// (like the index reader skips it) and kept byte for byte; every fence is
+/// still built, exactly as without the file.
+#[test]
+fn a_file_that_is_not_utf8_is_skipped_and_the_fences_are_built() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let clean = fixture_copy(&env);
+    let lb = env.tmp.path().join("latin1");
+    copy_dir(&fixture_logbook(), &lb);
+    let notes: &[u8] = b"# Notizen\n\nGr\xfc\xdfe\n";
+    std::fs::write(lb.join("system/notes-latin1.md"), notes).unwrap();
+
+    let expected = dossier(&env, &clean, &[]);
+    let out = dossier(&env, &lb, &[]);
+    assert_eq!(
+        out["warnings"],
+        json!(["system/notes-latin1.md: cannot read: stream did not contain valid UTF-8; skipped"]),
+        "{out}"
+    );
+    assert_eq!(out["sections"], expected["sections"], "{out}");
+    assert!(
+        ALL_FENCES
+            .iter()
+            .all(|f| out["sections"][f] == "written" || out["sections"][f] == "unchanged"),
+        "{out}"
+    );
+    assert_eq!(out["files"], expected["files"]);
+    assert_eq!(utf8_bodies(&lb), bodies(&clean));
+    assert_eq!(
+        std::fs::read(lb.join("system/notes-latin1.md")).unwrap(),
+        notes
+    );
+}
+
+/// F-550: a default fence file that is not UTF-8 is never replaced by a
+/// fresh one; its fences are skipped with a warning, the others built.
+#[test]
+fn a_default_file_that_is_not_utf8_keeps_its_fences() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let lb = fixture_copy(&env);
+    let plugins = std::fs::read(lb.join("system/plugins.md")).unwrap();
+    let mut latin1 = plugins.clone();
+    latin1.extend_from_slice(b"\nMein Gr\xfc\xdf.\n");
+    std::fs::write(lb.join("system/plugins.md"), &latin1).unwrap();
+    let out = dossier(&env, &lb, &[]);
+    assert_eq!(out["sections"]["plugins.list"], "skipped", "{out}");
+    assert_eq!(out["sections"]["packages.summary"], "written", "{out}");
+    assert_eq!(
+        out["warnings"],
+        json!([
+            "system/plugins.md (the file of the plugins.list fence) could not be read; fence kept",
+            "system/plugins.md: cannot read: stream did not contain valid UTF-8; skipped"
+        ]),
+        "{out}"
+    );
+    assert_eq!(std::fs::read(lb.join("system/plugins.md")).unwrap(), latin1);
+    assert!(
+        !utf8_bodies(&lb).contains_key("plugins.list"),
+        "no second plugins.list fence"
+    );
+}
+
+/// Every fence body of the UTF-8 files of `system/`.
+fn utf8_bodies(lb: &Path) -> BTreeMap<String, String> {
+    std::fs::read_dir(lb.join("system"))
+        .unwrap()
+        .filter_map(|e| std::fs::read_to_string(e.unwrap().path()).ok())
+        .flat_map(|t| fences(&t))
+        .collect()
+}
+
+/// WP-075 review B1: a cased config path holding a fence marker is written
+/// neutralised, and the next run finds that row again: one row, filled
+/// once, and a second run changes nothing.
+#[test]
+fn a_marker_in_a_cased_path_is_listed_once() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let lb = fixture_copy(&env);
+    let event = |path: &str| {
+        run_at(
+            &env,
+            &lb,
+            NOW,
+            &[
+                "event",
+                "config",
+                "config-change",
+                "--subject",
+                path,
+                "--case",
+                "C-2026-004",
+            ],
+            0,
+        );
+    };
+    // a new row for one path, the empty case cell of a user row for another
+    let added = "~/.config/a<!-- seldon:end -->b.conf";
+    let filled = "~/.config/c<!-- seldon:end -->d.conf";
+    let path = lb.join("system/deviations.md");
+    let user_row = "| ~/.config/c<!--\u{200b} seldon:end -->d.conf | mine | 2026-09-01 | — |\n";
+    let text = read(&path).replacen(
+        "<!-- seldon:end -->",
+        &format!("{user_row}<!-- seldon:end -->"),
+        1,
+    );
+    std::fs::write(&path, &text).unwrap();
+    event(added);
+    event(filled);
+
+    let out = dossier(&env, &lb, &["--section", "deviations"]);
+    assert_eq!(out["sections"]["deviations.table"], "written", "{out}");
+    let first = read(&path);
+    let body = &fences(&first)
+        .into_iter()
+        .find(|(n, _)| n == "deviations.table")
+        .unwrap()
+        .1;
+    assert_eq!(
+        body.matches("a<!--\u{200b} seldon:end -->b.conf").count(),
+        1,
+        "{body}"
+    );
+    assert_eq!(body.matches("d.conf").count(), 1, "{body}");
+    assert!(
+        body.contains("| ~/.config/c<!--\u{200b} seldon:end -->d.conf | mine | 2026-09-01 | [[C-2026-004]] |\n"),
+        "{body}"
+    );
+    for _ in 0..2 {
+        let again = dossier(&env, &lb, &["--section", "deviations"]);
+        assert_eq!(
+            again["sections"]["deviations.table"], "unchanged",
+            "{again}"
+        );
+        assert_eq!(again["files"], json!([]), "{again}");
+        assert_eq!(read(&path), first);
+    }
+}

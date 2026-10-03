@@ -3,8 +3,8 @@
 //! default: compiled only with the cargo feature `watch`; without it the
 //! command is a user error (exit 1).
 //!
-//! - Watches `ledger/`, `work/`, `journal/`, `decisions/`, `system/` and
-//!   `memory/` recursively, and `.seldon/logbook.toml`. The logbook root is
+//! - Watches `ledger/`, `work/`, `journal/`, `decisions/`, `system/`,
+//!   `memory/` and `areas/` recursively, and `.seldon/logbook.toml`. The logbook root is
 //!   watched on its own (not recursively) only to pick up one of those
 //!   folders when it is created later.
 //! - Generated files never trigger a rebuild: `ledger/*.md` and
@@ -30,7 +30,7 @@
 //!   disappears); exit 2 when the watches cannot be set up at start (the
 //!   inotify watch limit). A watch that fails later (a folder that vanished
 //!   or was replaced) is an `error` line; the watcher goes on.
-//! - After an inotify overflow (rescan) the six folders are watched afresh,
+//! - After an inotify overflow (rescan) the seven folders are watched afresh,
 //!   so a subfolder whose create event was lost is not left unwatched.
 
 use clap::Args;
@@ -83,9 +83,17 @@ mod imp {
     use crate::index::{self, Built};
     use crate::logbook::Logbook;
 
-    /// Watched recursively (WP-034); everything the index reads.
-    pub(super) const DIRS: [&str; 6] =
-        ["ledger", "work", "journal", "decisions", "system", "memory"];
+    /// Watched recursively (WP-034); everything the index reads (`areas/`
+    /// for `system.areas`, WP-075).
+    pub(super) const DIRS: [&str; 7] = [
+        "ledger",
+        "work",
+        "journal",
+        "decisions",
+        "system",
+        "memory",
+        "areas",
+    ];
     /// Watched through its folder: editors and `write_atomic` replace it.
     const META: &str = ".seldon/logbook.toml";
     /// Generated at the root by `seldon status`.
@@ -163,7 +171,7 @@ mod imp {
                     };
                     // a watched folder appeared, went or was replaced: drop
                     // its old watch and watch what is there now; after a
-                    // rescan (lost events) all six, for subfolders whose
+                    // rescan (lost events) all seven, for subfolders whose
                     // create event was lost
                     let moved: Vec<&str> = DIRS
                         .into_iter()
@@ -550,6 +558,9 @@ mod tests {
             "decisions/ADR-0001-x.md",
             "system/packages.md",
             "memory/lessons.md",
+            "areas/printer/README.md",
+            "areas/printer",
+            "areas",
             ".seldon/logbook.toml",
             "work",
         ] {

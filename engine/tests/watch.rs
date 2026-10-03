@@ -2,8 +2,8 @@
 //! (`cargo test --features watch`, `just check-watch`): a change triggers
 //! exactly one debounced rebuild after the one at start, a burst one,
 //! generated files and reads none, a held lock delays the rebuild without
-//! failing, a replaced folder is watched again, SIGTERM/SIGINT end it with
-//! exit 0, and the resident size stays under 10 MB on the ×10 fixture. Without the feature: a clear user error (exit 1).
+//! failing, a replaced folder is watched again, a new area counts (WP-075),
+//! SIGTERM/SIGINT end it with exit 0, and the resident size stays under 10 MB on the ×10 fixture. Without the feature: a clear user error (exit 1).
 //! Everything runs in a temp home (common::Env, SELDON_TEST_GUARD).
 
 mod common;
@@ -286,7 +286,15 @@ mod with_feature {
         std::fs::write(root.join("memory/lessons.md~"), "x").unwrap();
         std::fs::write(root.join("PROJECT.md"), read(&root.join("PROJECT.md"))).unwrap();
         // reads of every watched file
-        for dir in ["ledger", "work", "journal", "decisions", "system", "memory"] {
+        for dir in [
+            "ledger",
+            "work",
+            "journal",
+            "decisions",
+            "system",
+            "memory",
+            "areas",
+        ] {
             read_tree(&root.join(dir));
         }
         // `seldon index` and `seldon status` write the views, STATUS.md and
@@ -305,6 +313,58 @@ mod with_feature {
         .unwrap();
         let line = w.rebuilt(INTERVAL + SLACK);
         assert_eq!(line["paths"], json!([".seldon/logbook.toml"]), "{line}");
+    }
+
+    /// The area names in `index.json`.
+    fn areas(env: &Env) -> Vec<String> {
+        index(env)["system"]["areas"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|a| a["name"].as_str().unwrap().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_new_area_triggers_a_rebuild() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let w = Watch::start(&env, &[]);
+        assert!(!areas(&env).contains(&"printer".to_string()));
+
+        // the index reads areas/*/README.md into system.areas (F-135)
+        std::fs::create_dir(root.join("areas/printer")).unwrap();
+        std::fs::write(root.join("areas/printer/README.md"), "# printer\n").unwrap();
+        let line = w.rebuilt(INTERVAL + SLACK);
+        assert!(
+            line["paths"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| p.as_str().unwrap().starts_with("areas/printer")),
+            "{line}"
+        );
+        assert!(
+            areas(&env).contains(&"printer".to_string()),
+            "{:?}",
+            areas(&env)
+        );
+        w.assert_quiet(INTERVAL + SLACK);
+
+        // a folder `areas/` made after the start is watched too
+        std::fs::rename(root.join("areas"), root.join("areas.old")).unwrap();
+        let line = w.rebuilt(INTERVAL + SLACK);
+        assert_eq!(line["paths"], json!(["areas"]), "{line}");
+        assert_eq!(areas(&env), Vec::<String>::new());
+        std::fs::create_dir(root.join("areas")).unwrap();
+        let line = w.rebuilt(INTERVAL + SLACK);
+        assert_eq!(line["paths"], json!(["areas"]), "{line}");
+        std::fs::create_dir(root.join("areas/scanner")).unwrap();
+        std::fs::write(root.join("areas/scanner/README.md"), "# scanner\n").unwrap();
+        w.rebuilt(INTERVAL + SLACK);
+        assert_eq!(areas(&env), ["scanner"]);
     }
 
     fn read_tree(dir: &Path) {

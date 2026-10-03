@@ -5,7 +5,8 @@
 //! the lock and write `outputs/IMPORT-omarchy-agent.md` (only on change).
 //! The dry run writes nothing else and commits the report as `seldon:
 //! import omarchy-agent (dry run)`. `--apply` refuses while the plan has
-//! errors; otherwise it appends one `note` per case to the ledger, writes
+//! errors; otherwise it appends one `note` for the apply and one per case
+//! to the ledger, writes
 //! the cases, journal days, memory files and deviation rows, the report and
 //! the marker `.seldon/imports/omarchy-agent.json`, commits once as
 //! `seldon: import omarchy-agent` and rebuilds the index. Before its first
@@ -16,7 +17,8 @@
 //! (also kept in `.seldon/imports/omarchy-agent.undo.json`). The marker
 //! makes every later run a no-op ("nothing changed"); import notes in the
 //! ledger without the marker are refused with the same undo, so the import
-//! never runs twice and is never reported done when it is not.
+//! never runs twice and is never reported done when it is not. The apply's
+//! own note makes that hold for a vault without cases too (F-141).
 
 use std::path::{Path, PathBuf};
 
@@ -73,7 +75,7 @@ pub fn run(ctx: &Context, args: ImportArgs) -> Result<Output> {
 
 fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
-    let vault = ctx.dirs.expand(&args.vault.to_string_lossy());
+    let vault = vault_path(ctx, &args.vault);
     let shown = ctx.dirs.display(&vault);
     let lock = ctx.lock()?;
     let mode = if args.apply { "apply" } else { "dry-run" };
@@ -147,7 +149,7 @@ fn omarchy_agent(ctx: &Context, args: OmarchyAgentArgs) -> Result<Output> {
     let mut undo = Undo::new(&logbook);
     let files = write_plan(ctx, &config, &logbook, &lock, &plan, &mut undo)
         .map_err(|e| after_failure(&logbook, &undo, e))?;
-    // the undo of an earlier failure that wrote no ledger note (so no
+    // the undo of an earlier failure in the ledger write (no note, so no
     // refusal reported it) is moot now
     let _ = std::fs::remove_file(logbook.path(undo_path()));
     let marker_rel = marker_path(SOURCE);
@@ -180,13 +182,16 @@ fn write_plan(
     plan: &Plan,
     undo: &mut Undo,
 ) -> Result<Vec<String>> {
-    let events: Vec<Event> = plan.cases.iter().map(note).collect();
+    // the apply's note first, then one per case (in the same order back)
+    let events: Vec<Event> = std::iter::once(apply_note(ctx, plan))
+        .chain(plan.cases.iter().map(note))
+        .collect();
     for e in &events {
         undo.note(&format!("ledger/{}.jsonl", e.month()));
     }
     let written = emit(lock, config, logbook, events)?;
     let mut files: Vec<String> = Vec::new();
-    for (c, event) in plan.cases.iter().zip(&written) {
+    for (c, event) in plan.cases.iter().zip(&written[1..]) {
         let mut case = c.case.clone();
         case.events.push(event.id.to_string());
         undo.note(&c.path);
@@ -427,6 +432,36 @@ fn after_failure(logbook: &Logbook, undo: &Undo, e: Error) -> Error {
         Error::Engine(a) => Error::Engine(anyhow::anyhow!("{a:#}; {hint}")),
         other => other,
     }
+}
+
+/// The vault argument as a path: `~` is the home directory, the rest is
+/// taken as given, bytes and all (a name that is not UTF-8 stays as it is,
+/// F-143).
+fn vault_path(ctx: &Context, vault: &Path) -> PathBuf {
+    match vault.strip_prefix("~") {
+        Ok(rest) => ctx.dirs.expand("~").join(rest),
+        Err(_) => std::path::absolute(vault).unwrap_or_else(|_| vault.to_path_buf()),
+    }
+}
+
+/// The apply's own ledger note, the first line it writes, with or without
+/// cases: a later run without the marker finds it and is refused, so a
+/// vault of only journal and knowledge files is never imported twice
+/// (F-141). At the time of the apply, by the human who runs it, no case.
+fn apply_note(ctx: &Context, plan: &Plan) -> Event {
+    let mut meta = Meta::default();
+    meta.extra
+        .insert("import".into(), Value::String(SOURCE.into()));
+    Event::new(ctx.now, Source::Manual, Kind::Note, SOURCE)
+        .detail(format!(
+            "import from {SOURCE}: {} case(s), {} journal day(s), {} memory file(s), {} deviation row(s)",
+            plan.cases.len(),
+            plan.days.len(),
+            plan.memory.len(),
+            plan.rows.len()
+        ))
+        .actor("human")
+        .meta(meta)
 }
 
 /// The ledger note of an imported case: at its `created` date, by the

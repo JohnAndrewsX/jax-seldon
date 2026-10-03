@@ -14,9 +14,9 @@ only if you want the watcher.
 ## What the watcher does
 
 - Watches `ledger/`, `work/`, `journal/`, `decisions/`, `system/`,
-  `memory/` (recursively) and `.seldon/logbook.toml` in the logbook that
-  `seldon` resolves (`--logbook` > `SELDON_LOGBOOK` > `config.toml` >
-  `~/Seldon`).
+  `memory/`, `areas/` (recursively) and `.seldon/logbook.toml` in the
+  logbook that `seldon` resolves (`--logbook` > `SELDON_LOGBOOK` >
+  `config.toml` > `~/Seldon`).
 - Rebuilds once right after it starts, so the index reflects edits made
   while it was not running; after that it reacts to changes.
 - Waits until the logbook has been quiet for `--interval` seconds (default

@@ -36,7 +36,9 @@ notify = { version = "8.2.0", default-features = false, optional = true }
 [features]
 default = []
 # `seldon watch`: rebuild index.json when the logbook changes (ADR-0005:
-# optional, off by default; the release build leaves it out).
+# optional, off by default). The published release binary and the Arch
+# package are built with it (release workflow, PKGBUILD); a plain
+# `cargo build` and `just build-release` leave it out.
 watch = ["dep:notify"]
 
 [profile.release]

@@ -204,6 +204,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meanwhile gets exit 4 instead of reporting the hook as drift. While
   another `seldon` holds the lock, the step writes nothing (WP-074,
   WP-052).
+- `import omarchy-agent --apply` writes one ledger note of its own before
+  the first file, so a vault without cases (only journal and knowledge)
+  is no longer imported a second time after a failed apply or a deleted
+  `.seldon/` (WP-075).
+- `import omarchy-agent` lists a vault file whose name is not UTF-8, or
+  that cannot be read, as an error of the report instead of stopping
+  with a wrong "No such file" error; a vault folder with such a name is
+  read. A kit file with a UTF-8 BOM or spaces after a `---` fence
+  imports (WP-075).
+- One `system/*.md` that is not UTF-8 or not readable no longer stops
+  `seldon dossier`: the file is skipped with a warning and never written,
+  and the other fences are built. Dossier fence bodies get the same
+  zero-width space after `<!--` in `<!-- seldon:` as `STATUS.md`, so a
+  value can neither end nor open a fence (WP-075).
+- `seldon watch` also watches `areas/`: a new, renamed or removed area
+  rebuilds the index (WP-075).
 
 ### Plugin
 

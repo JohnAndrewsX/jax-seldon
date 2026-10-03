@@ -103,7 +103,13 @@ seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|
                                                # default file under a heading in the logbook language. A failed
                                                # query skips its fences (warning, fence kept); so does a fence
                                                # whose begin marker has no end marker of its own (WP-050: no
-                                               # second fence is appended; `import` reports it as an error). Files written
+                                               # second fence is appended; `import` reports it as an error). A
+                                               # system/*.md that is not UTF-8 or not readable is skipped (the
+                                               # index's `cannot read …; skipped` warning) and never written; a
+                                               # fence no readable file has is then not appended while its default
+                                               # file is such a file, or one that may hold it (its lossy bytes have
+                                               # the begin marker, or it could not be read at all): warning, fence
+                                               # kept (WP-075). Files written
                                                # atomically and only on change, autocommit `seldon: dossier`,
                                                # index rebuilt; no ledger write. `init` runs it once after the
                                                # first capture; `capture` and `status` never do. --json →
@@ -160,7 +166,10 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # line under the title and meta.originalId; one Log line names the
                                                # source; one ledger `manual/note` per case, `ts` = created at local
                                                # midnight, actor human, meta {import: omarchy-agent, originalId,
-                                               # originalStatus, source}, its id in the case's `events`. Journal
+                                               # originalStatus, source}, its id in the case's `events`; before
+                                               # them, in the same write, one note for the apply itself (subject
+                                               # `omarchy-agent`, no case, `ts` = the apply, meta {import:
+                                               # omarchy-agent}), so a vault without cases is guarded too (WP-075). Journal
                                                # journal/YYYY-MM.md split at `## YYYY-MM-DD…` headings outside code
                                                # fences; each day's sessions (headings one level deeper) under
                                                # `## Imported from omarchy-agent` in journal/YYYY/YYYY-MM-DD.md,
@@ -181,7 +190,12 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # patterns included) and `/home/<user>` at the start of a path becomes
                                                # `~`. A case the kit layout says to import but that cannot be mapped
                                                # (no or invalid frontmatter, unknown status/zone/risk/priority, bad
-                                               # date, not UTF-8) or a day file with invalid frontmatter is an error.
+                                               # date, not UTF-8, a file or folder name that is not UTF-8 (shown
+                                               # with U+FFFD), not readable) or a day file with invalid frontmatter
+                                               # is an error; the plan goes on (WP-075). A listed file is listed
+                                               # whatever its name. Frontmatter may start after a UTF-8 BOM and its
+                                               # `---` lines may end in spaces or tabs, as in the logbook (WP-066).
+                                               # VAULT is a path: `~/` is the home, other bytes are kept.
                                                # Dry run: only the report, autocommit `seldon: import omarchy-agent
                                                # (dry run)`. --apply: refused (exit 1, report written) while there
                                                # are errors; before its first write it autocommits the logbook's
@@ -229,7 +243,8 @@ seldon hook generic                            # stdin: {"command":"…","actor"
 seldon hook session-start | session-stop       # context print / journal stub
 seldon watch [--interval SECS] [--json]        # feature "watch" (off by default, ADR-0005; without it: exit 1
                                                # "built without the watch feature"). Watches ledger/ work/ journal/
-                                               # decisions/ system/ memory/ (recursive) and .seldon/logbook.toml;
+                                               # decisions/ system/ memory/ areas/ (recursive; areas/ since WP-075)
+                                               # and .seldon/logbook.toml;
                                                # one rebuild at start, then reacts to changes: after SECS quiet
                                                # (default and minimum 2; at most 5×SECS into a burst) rebuilds
                                                # index.json under the lock (a held lock delays, retried every
@@ -683,7 +698,8 @@ file gets CRLF in its new body. In the fence bodies of `STATUS.md`,
 `DECISIONS.md` and `outputs/*.md` the engine writes, `<!-- seldon:` gets a
 zero-width space (U+200B) after `<!--`, so a title, subject or message
 can neither end nor open a fence (WP-065). The dossier fences of
-`system/*.md` are not neutralised yet (follow-up, WP-075).
+`system/*.md` get the same, the rows kept from the old body included
+(WP-075).
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. Measured in `cargo bench` with the fixture logbook scaled ×10.

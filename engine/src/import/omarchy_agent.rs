@@ -48,6 +48,7 @@ use crate::dossier::{self, FENCES};
 use crate::error::{Error, Result};
 use crate::frontmatter::Document;
 use crate::index::load::{fence_table, has_table_separator};
+use crate::index::views;
 use crate::logbook::Logbook;
 use crate::logbook::cases::{self, LOG_COMMENT};
 use crate::model::{
@@ -246,14 +247,19 @@ pub fn plan(
     }
     let mut files = Vec::new();
     let mut skipped = Vec::new();
-    walk(vault, "", &mut files, &mut skipped)?;
+    walk(vault, "", true, &mut files, &mut skipped)?;
 
     let mut scrub = Scrubber::new(redactor);
     let mut kit_cases = Vec::new();
     let mut journals = Vec::new();
     let mut knowledge: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let mut deviations = None;
-    for rel in &files {
+    for VaultFile {
+        rel,
+        path,
+        utf8_name,
+    } in &files
+    {
         let class = classify(rel);
         match &class {
             Class::Listed(reason) => {
@@ -267,7 +273,13 @@ pub fn plan(
             Class::Ignored => continue,
             _ => {}
         }
-        let text = match std::fs::read(vault.join(rel)) {
+        // a file to import whose name (or folder's name) is not UTF-8: its
+        // name could not be written or linked in the logbook (F-143)
+        if !utf8_name {
+            skipped.push(error(rel, "file name is not UTF-8"));
+            continue;
+        }
+        let text = match std::fs::read(path) {
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(t) => scrub.text(rel, &t),
                 Err(_) => {
@@ -276,9 +288,8 @@ pub fn plan(
                 }
             },
             Err(e) => {
-                return Err(anyhow::Error::new(e)
-                    .context(format!("cannot read {}", vault.join(rel).display()))
-                    .into());
+                skipped.push(error(rel, &format!("cannot read: {e}")));
+                continue;
             }
         };
         match class {
@@ -346,19 +357,35 @@ fn error(path: &str, reason: &str) -> Skipped {
     }
 }
 
+/// A file of the vault.
+struct VaultFile {
+    /// Vault-relative, for the report and the mapping (lossy when a name
+    /// is not UTF-8).
+    rel: String,
+    /// The file itself, read through this path, never through `rel`.
+    path: PathBuf,
+    /// Every part of `rel` is the name as it is on disk.
+    utf8_name: bool,
+}
+
 /// Every file under `dir`, vault-relative, sorted; `.git/` is left out,
-/// `.obsidian/` and symbolic links are listed as skipped.
-fn walk(root: &Path, rel: &str, files: &mut Vec<String>, skipped: &mut Vec<Skipped>) -> Result<()> {
-    let dir = root.join(rel);
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
+/// `.obsidian/` and symbolic links are listed as skipped. A name that is
+/// not UTF-8 is listed with U+FFFD in `rel` and read through `path`.
+fn walk(
+    dir: &Path,
+    rel: &str,
+    utf8: bool,
+    files: &mut Vec<VaultFile>,
+    skipped: &mut Vec<Skipped>,
+) -> Result<()> {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .and_then(|r| r.map(|e| e.map(|e| e.path())).collect())
         .map_err(|e| anyhow::Error::new(e).context(format!("cannot list {}", dir.display())))?;
     entries.sort();
     for path in entries {
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let os_name = path.file_name().unwrap_or_default();
+        let utf8 = utf8 && os_name.to_str().is_some();
+        let name = os_name.to_string_lossy().into_owned();
         let child = if rel.is_empty() {
             name.clone()
         } else {
@@ -381,10 +408,14 @@ fn walk(root: &Path, rel: &str, files: &mut Vec<String>, skipped: &mut Vec<Skipp
                     reason: "Obsidian settings of the vault".into(),
                     error: false,
                 }),
-                _ => walk(root, &child, files, skipped)?,
+                _ => walk(&path, &child, utf8, files, skipped)?,
             }
         } else {
-            files.push(child);
+            files.push(VaultFile {
+                rel: child,
+                path,
+                utf8_name: utf8,
+            });
         }
     }
     Ok(())
@@ -1114,7 +1145,9 @@ fn plan_deviations(
             skipped.push(skip("names no path (`~/…` or `/…`)"));
             continue;
         };
-        if listed.contains(&path) {
+        // the body is neutralised (`dossier::Files::set`); a kit path has no
+        // white space, so it never holds a marker, but compare both forms
+        if listed.contains(&path) || listed.contains(&*views::neutralise(&path)) {
             skipped.push(skip(&format!("`{path}` is already listed")));
             continue;
         }

@@ -1419,3 +1419,32 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   write (`ancestors().take_while(!exists).last()`); when the folder
   existed (empty, checked under the lock), empty it but keep it. Test
   both branches: a mutant of either survives a test of the other.
+## 2026-10-04 · WP-075 (Engine)
+
+- **`seldon dossier` already warns about an unreadable `system/*.md`.**
+  It runs `index::derive` first, and the index reader skips the same
+  files with `system/<name>: cannot read: …; skipped`. A second warning
+  from `dossier::Files::read` printed every bad file twice. The reader
+  only skips; the warning stays the derivation's.
+- **`common::read` panics on a non-UTF-8 file.** A test that plants a
+  Latin-1 file in `system/` cannot use `system_files`/`bodies` on that
+  logbook; read with `read_to_string(..).ok()` and skip the file.
+- **An earlier guard can make a mutant equivalent.** Reading a vault file
+  through `vault.join(rel)` instead of its real `PathBuf` survives every
+  test, because files with non-UTF-8 names never reach the read (they are
+  report errors first); for every file that is read, `rel` is the real
+  name. Say so in the handover instead of inventing a test.
+- **The WP-034 note "the default release build has no watcher" is out of
+  date:** the release workflow and the PKGBUILD build with
+  `--features watch`; only a plain `cargo build` and `just build-release`
+  leave it out (engine/Cargo.toml comment, F-135).
+- **Tests that count import notes (`meta.import`) include the apply's own
+  note** (no case, subject `omarchy-agent`): six cases → seven notes.
+- **Neutralising what a writer stores changes what its readers must
+  compare.** After `Files::set` began to neutralise fence bodies,
+  `deviations_table` and `fill_case` still compared path cells with the
+  raw path, so a path holding `<!-- seldon:end -->` got one more row on
+  every run (review B1). When a write transforms values, grep every
+  reader that matches stored cells against fresh values (`listed`,
+  `contains`, `==` on cells), and test with two runs: the second must
+  report nothing changed.
