@@ -19,6 +19,12 @@
 #   FAKE_SELDON_WRITTEN  what `capture --json` reports as written (default 0)
 #   FAKE_SELDON_LOCKED   if set, every `plan`, resolving `drift`, `decide` and
 #                        `agent` call exits 4 (lock held)
+#   FAKE_SELDON_CAPTURE_LOCKED  N: the first N `capture` calls exit 4 (lock
+#                        held, the engine's JSON error), counted in
+#                        $HOME/locked-captures (WP-068)
+#   FAKE_SELDON_CAPTURE_EXIT  if set, every `capture` exits with this code,
+#                        writes FAKE_SELDON_CAPTURE_STDERR (default two
+#                        lines) to stderr and nothing to stdout (WP-068)
 #   FAKE_SELDON_UNKNOWN_CASE  the case id `log`, `open`, `plan` and `agent`
 #                        do not know (default C-2026-999): exit 1, "unknown case <id>"
 #   FAKE_SELDON_NO_LAUNCHER  if set, `agent start` answers as the engine does
@@ -379,6 +385,17 @@ case "$cmd" in
   capture)
     sleep 0.3
     [[ $mode == uninit ]] && uninit
+    if [[ -n ${FAKE_SELDON_CAPTURE_EXIT:-} ]]; then
+      printf '%s\n' "${FAKE_SELDON_CAPTURE_STDERR:-$'seldon: collector failed\nsecond line'}" >&2
+      exit "$FAKE_SELDON_CAPTURE_EXIT"
+    fi
+    locked=0
+    [[ -f $HOME/locked-captures ]] && locked=$(<"$HOME/locked-captures")
+    if ((locked < ${FAKE_SELDON_CAPTURE_LOCKED:-0})); then
+      echo $((locked + 1)) >"$HOME/locked-captures"
+      echo "{\"error\":{\"code\":4,\"message\":\"another seldon process holds the lock $HOME/.local/state/seldon/lock\"}}"
+      exit 4
+    fi
     n=0
     [[ -f $HOME/captures ]] && n=$(<"$HOME/captures")
     echo $((n + 1)) >"$HOME/captures"

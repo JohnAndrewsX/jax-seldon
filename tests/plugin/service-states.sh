@@ -68,10 +68,13 @@ expect() {
 }
 
 # QML errors and warnings, except the one a missing engine must cause.
+# clean_log <case> [regex] — also allow the warnings the regex matches (the
+# one-line journal warning of an engine call the case expects to fail).
 clean_log() {
   local bad
   bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN" \
-    | grep -a -v -E "Process failed to start|WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" || true)
+    | grep -a -v -E "Process failed to start|WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
+    | grep -a -v -E "${2:-^$}" || true)
   if [[ -z $bad ]]; then
     pass=$((pass + 1))
     echo "ok   $1: log clean"
@@ -428,7 +431,7 @@ expect errors .logResult.text "unknown case C-2026-999"
 expect errors .logResult.ok false
 expect errors .openResult.text "unknown case C-2026-999"
 expect errors .lastError "seldon open: unknown case C-2026-999"
-clean_log errors
+clean_log errors "jax.seldon: seldon (log|open) exit 1: unknown case C-2026-999$"
 
 # 21. Dev mode and a missing engine: actions are refused with a reason.
 mkdir -p "$work/home-act-dev"
@@ -481,7 +484,7 @@ if [[ $columns == "$want" ]]; then
 else
   fail=$((fail + 1)); echo "FAIL plan: index columns $columns"
 fi
-clean_log plan
+clean_log plan "jax.seldon: seldon plan exit 1: C-2026-003 is active; "
 
 # 23. Refused before the engine is asked: no title, a bad area slug, an id
 #     that is not a case id, a step the contract does not list.
@@ -579,7 +582,7 @@ expect_index '[.drift[].subject]' '["ollama"]'
 expect_index '[.summary.openDrift, .summary.crisis]' '[1,1]'
 expect_index '[.cases.completed[] | [.id, .zone, .risk, (.area // "")]] | .[0:2]' '[["C-2026-010","red","R3","browser"],["C-2026-009","red","R1",""]]'
 expect_index '.cases.queued[0].proposedEvents' 'null'
-clean_log drift
+clean_log drift "jax.seldon: seldon drift exit 1: unknown case C-2026-999$"
 
 # 26. The re-run alone: its no-op answer is the result ("Already resolved").
 mkdir -p "$work/home-drift-again"
@@ -726,7 +729,7 @@ if [[ $(cat "$work/home-agent/active-case" 2>/dev/null) == C-2026-003 ]]; then
 else
   fail=$((fail + 1)); echo "FAIL agent: active-case $(cat "$work/home-agent/active-case" 2>/dev/null)"
 fi
-clean_log agent
+clean_log agent "jax.seldon: seldon agent exit 1: C-2026-005 is queued; "
 mkdir -p "$work/home-agent-queued"
 actions=$(jq -cn '[["agent", "C-2026-005"]]')
 run agent-queued 2500 PATH="$fake_path" HOME="$work/home-agent-queued" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
@@ -745,6 +748,329 @@ mkdir -p "$work/home-agent-dev"
 run agent-devmode 2500 PATH="$fake_path" HOME="$work/home-agent-dev" SELDON_INDEX="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 expect agent-devmode .planResult.text "Dev mode is read-only"
 argv_check agent-dev "$(q --version --json)"
+
+# 31. Every engine call that exits above 0 leaves one journal line with
+#     the exit code and the first stderr line (WP-068): a capture that
+#     fails with exit 2 and two stderr lines; the status after it succeeds.
+mkdir -p "$work/home-capture-fails"
+run capture-fails 3000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-capture-fails" \
+  FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_EXIT=2 \
+  FAKE_SELDON_CAPTURE_STDERR=$'seldon: collector exploded\nsecond line'
+warn_lines() { # warn_lines <case>: the plugin's engine-call warnings, in order
+  sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "WARN" | grep -a -o "jax.seldon: seldon .*" || true
+}
+if [[ $(warn_lines capture-fails) == "jax.seldon: seldon capture exit 2: seldon: collector exploded" ]]; then
+  pass=$((pass + 1)); echo "ok   capture-fails: one warning with the exit code and the first stderr line"
+else
+  fail=$((fail + 1)); echo "FAIL capture-fails: warnings were:"; warn_lines capture-fails | sed 's/^/     /'
+fi
+expect capture-fails .captureResult.text "seldon: collector exploded"
+expect capture-fails .captureResult.ok false
+clean_log capture-fails "jax.seldon: seldon capture exit 2: seldon: collector exploded$"
+
+# 32. Exit 4 (lock held) of a capture is tried again (here after 1.5 s, in
+#     a real session 30 s), with a neutral result line and no error, and
+#     the status that followed it comes along; the third capture gets the
+#     lock. A snapshot during the first wait shows the neutral text.
+lock_msg() { echo "another seldon process holds the lock $work/home-$1/.local/state/seldon/lock"; }
+mkdir -p "$work/home-capture-locked"
+run capture-locked 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-locked" \
+  FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_LOCKED=2 SELDON_LOCK_RETRY_MS=1500 \
+  HARNESS_ACTIONS='[["snapshot"]]'
+waiting=$(sed 's/\x1b\[[0-9;]*m//g' "$work/capture-locked.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
+  | jq -r '[.captureResult.text, .captureResult.ok, .lastError, .capturing, .lockRetries] | map(tostring) | join(" | ")' 2>/dev/null || true)
+want_waiting="waiting for another seldon process; trying again shortly | true |  | true | 1"
+if [[ $waiting == "$want_waiting" ]]; then
+  pass=$((pass + 1)); echo "ok   capture-locked: neutral text while waiting, no error"
+else
+  fail=$((fail + 1)); echo "FAIL capture-locked: while waiting: $waiting (want $want_waiting)"
+fi
+argv_check capture-locked "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" \
+  "$(q capture --all --json --quiet)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+expect capture-locked .captureResult.text "nothing new"
+expect capture-locked .captureResult.ok true
+expect capture-locked .lastError ""
+expect capture-locked .lockRetries 0
+expect capture-locked .status ok
+if [[ $(warn_lines capture-locked | grep -c -x -F "jax.seldon: seldon capture exit 4: $(lock_msg capture-locked)") == 2 \
+    && $(warn_lines capture-locked | wc -l) == 2 ]]; then
+  pass=$((pass + 1)); echo "ok   capture-locked: one warning per locked capture"
+else
+  fail=$((fail + 1)); echo "FAIL capture-locked: warnings were:"; warn_lines capture-locked | sed 's/^/     /'
+fi
+clean_log capture-locked "jax.seldon: seldon capture exit 4: another seldon process holds the lock "
+
+# 33. A lock that stays: three retries, then the capture's error is its
+#     result as before, and the status queued with it runs.
+mkdir -p "$work/home-capture-gives-up"
+run capture-gives-up 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-gives-up" \
+  FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_LOCKED=99 SELDON_LOCK_RETRY_MS=400
+argv_check capture-gives-up "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" \
+  "$(q capture --all --json --quiet)" "$(q capture --all --json --quiet)" "$(q capture --all --json --quiet)" \
+  "$(q status --json)")"
+expect capture-gives-up .captureResult.text "$(lock_msg capture-gives-up)"
+expect capture-gives-up .captureResult.ok false
+expect capture-gives-up .lockRetries 0
+if [[ $(warn_lines capture-gives-up | wc -l) == 4 ]]; then
+  pass=$((pass + 1)); echo "ok   capture-gives-up: four warnings, one per attempt"
+else
+  fail=$((fail + 1)); echo "FAIL capture-gives-up: warnings were:"; warn_lines capture-gives-up | sed 's/^/     /'
+fi
+
+# 34. A one-at-a-time guard that refuses tells the caller (WP-068): a
+#     second plan call, a second drift call and a second decide while the
+#     first is pending get no engine call, a `false` and Model.BUSY_TEXT
+#     in busyRefusal; the pending result lines stay pending until their
+#     engine answers.
+busy_text="Another action is running — try again in a moment"
+mkdir -p "$work/home-busy"
+actions=$(jq -cn --arg u "$UNIT" --arg t "$THEME" '[
+  ["plan", "start", "C-2026-005"], ["plan", "new", {title: "Second case", zone: "yellow", risk: "R1"}], ["snapshot"], ["wait"],
+  ["drift", "dismiss", {eventId: $u, text: "x"}], ["drift", "link", {eventId: $t, caseId: "C-2026-005"}], ["snapshot"], ["wait"],
+  ["decide", "first"], ["decide", "second"], ["snapshot"]]')
+run busy 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-busy" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
+argv_check busy "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q plan start C-2026-005 --json)" "$(q drift dismiss $UNIT --json -- x)" "$(q decide --no-edit --json -- first)" \
+  "$(q open ADR-0005 --editor --json)")"
+refusals=$(sed 's/\x1b\[[0-9;]*m//g' "$work/busy.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
+  | jq -r '[.busyRefusal.family, .busyRefusal.action, .busyRefusal.caseId, .busyRefusal.eventId, .busyRefusal.text,
+      ((.planResult // {}).pending), ((.driftResult // {}).pending), ((.decideResult // {}).pending)] | map(tostring) | join(" | ")' 2>/dev/null || true)
+want_refusals=$(printf '%s\n' "plan | new |  |  | $busy_text | true | null | null" \
+  "drift | link |  | $THEME | $busy_text | false | true | null" \
+  "decide | decide |  |  | $busy_text | false | false | true")
+if [[ $refusals == "$want_refusals" ]]; then
+  pass=$((pass + 1)); echo "ok   busy: each refusal names its call and the busy text; the pending lines stay"
+else
+  fail=$((fail + 1)); echo "FAIL busy: refusals were:"; echo "$refusals" | sed 's/^/     /'
+fi
+if [[ $(grep -a 'HARNESS action ' "$work/busy.log" | sed 's/.* //' | tr '\n' ' ') == "true false true false true false " ]]; then
+  pass=$((pass + 1)); echo "ok   busy: the second call of each family is refused"
+else
+  fail=$((fail + 1)); echo "FAIL busy: $(grep -a 'HARNESS action' "$work/busy.log")"
+fi
+
+# 35. The sheets (WP-068), in a headless window against the installed
+#     shell's Commons/ and Ui/ (copied, as panel-view.sh does) and the fake
+#     engine. A small harness written here drives NewCaseSheet and
+#     DriftSheet through their own functions and prints each step.
+#       busy    a pending `plan start`, then Create in the new-case sheet; a
+#               pending `drift dismiss` on another event, then the drift
+#               sheet's action: each sheet shows the busy text, neutral,
+#               and nothing reaches the engine
+#       rearm   the drift sheet's notice ("Give a reason first") and its
+#               arm (first Enter) survive an index rewrite by the engine
+#               (`status`, same content, new generatedAt); a typed reason
+#               clears the notice; the second Enter after the rewrite runs
+shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
+if [[ -d $shell_dir/Commons && -d $shell_dir/Ui ]]; then
+  sheets="$work/sheets"
+  mkdir -p "$sheets/Commons" "$sheets/Ui"
+  cp "$shell_dir"/Commons/* "$sheets/Commons/"
+  cp "$shell_dir"/Ui/* "$sheets/Ui/"
+  cp "$root/tests/plugin/harness/KeyboardPanel.qml" "$sheets/Ui/KeyboardPanel.qml"
+  # The shell's Style.qml asks Hyprland and fontconfig; outside Hyprland it
+  # keeps its defaults when they fail.
+  printf '#!/bin/sh\nexit 1\n' >"$work/bin-base/hyprctl"
+  printf '#!/bin/sh\necho monospace\n' >"$work/bin-base/fc-match"
+  chmod 755 "$work/bin-base/hyprctl" "$work/bin-base/fc-match"
+  cat >"$sheets/shell.qml" <<'QML'
+import QtQuick
+import QtQuick.Window
+import Quickshell
+
+// Sheet harness (tests/plugin/service-states.sh, scenario 35). Loads
+// Service.qml as the shell does, NewCaseSheet and DriftSheet in an
+// offscreen window, then runs HARNESS_SHEETS ("busy" or "rearm") step by
+// step: each step waits until the service is idle (and, after an index
+// rewrite, until the index was read again), acts, and prints
+// "SHEETS <tag> <json>".
+ShellRoot {
+  id: root
+
+  property var service: null
+  property var newCase: null
+  property var drift: null
+  property int reloads: 0
+  property int reloadMark: 0
+  property int step: 0
+  readonly property string pluginDir: Quickshell.env("HARNESS_PLUGIN_DIR") || ""
+  readonly property string script: Quickshell.env("HARNESS_SHEETS") || ""
+  readonly property string theme: "01M3VTGNY0NZG4AY80814WSKGR"
+  readonly property string unit: "01M3VNJ9JGZ9169T01XCW16FT0"
+
+  function load(file, parent, props) {
+    var component = Qt.createComponent("file://" + root.pluginDir + "/" + file, Component.PreferSynchronous)
+    if (component.status !== Component.Ready) {
+      console.log("SHEETS error " + component.errorString())
+      Qt.quit()
+      return null
+    }
+    return component.createObject(parent, props)
+  }
+
+  function texts(item, out) {
+    if (!item || item.visible === false) return out
+    if (item.text !== undefined && item.font !== undefined && typeof item.text === "string" && item.text !== "")
+      out.push(item.text)
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) texts(kids[i], out)
+    return out
+  }
+
+  function idle() {
+    var s = root.service
+    return !!s && s.ready && !s.busy && !s.probing && s.queue.length === 0 && !s.capturing
+      && s.index !== null && root.reloads > root.reloadMark
+  }
+
+  function report(tag, extra) {
+    var out = {
+      newCase: { notice: root.newCase.notice, resultText: root.newCase.resultText, texts: root.texts(root.newCase, []) },
+      drift: { armed: root.drift.armed, notice: root.drift.notice, hint: root.drift.hint,
+        resultText: root.drift.resultText, resultOk: root.drift.resultOk, texts: root.texts(root.drift, []) },
+      extra: extra === undefined ? null : extra
+    }
+    console.log("SHEETS " + tag + " " + JSON.stringify(out))
+  }
+
+  // Ask the engine to rewrite the index; the next step waits until the
+  // service has read it again.
+  function rewriteIndex() {
+    root.reloadMark = root.reloads
+    root.service.run(["status", "--json"])
+  }
+
+  readonly property var scripts: ({
+    busy: [
+      function() {
+        root.service.plan("start", "C-2026-005")
+        root.newCase.title = "Second case"
+        root.report("new-case", root.newCase.submit())
+      },
+      function() {
+        root.service.drift("dismiss", { eventId: root.unit, text: "x" })
+        root.drift.openFor(root.theme)
+        root.report("drift", root.drift.clickSubmit())
+      },
+      function() { root.report("after") }
+    ],
+    rearm: [
+      function() {
+        root.drift.openFor(root.unit)
+        root.drift.setAction("dismiss")
+        root.report("notice", root.drift.enterKey())
+        root.rewriteIndex()
+      },
+      function() {
+        root.report("notice-after-rewrite")
+        root.drift.reason = "because"
+        root.report("typed")
+        root.report("armed", root.drift.enterKey())
+        root.rewriteIndex()
+      },
+      function() {
+        root.report("armed-after-rewrite")
+        root.report("second-enter", root.drift.enterKey())
+      },
+      function() { root.report("after") }
+    ]
+  })
+
+  Window {
+    id: window
+    width: 460
+    height: 1000
+    visible: true
+
+    Column {
+      id: column
+      width: 440
+    }
+  }
+
+  Component.onCompleted: {
+    var component = Qt.createComponent("file://" + root.pluginDir + "/Service.qml", Component.PreferSynchronous)
+    if (component.status !== Component.Ready) {
+      console.log("SHEETS error " + component.errorString())
+      Qt.quit()
+      return
+    }
+    root.service = component.createObject(null)
+    root.service.parsedChanged.connect(function() { root.reloads++ })
+    root.newCase = root.load("components/NewCaseSheet.qml", column, { service: root.service, width: 440 })
+    root.drift = root.load("components/DriftSheet.qml", column, { service: root.service, width: 440 })
+    if (root.drift) root.drift.indexData = Qt.binding(function() { return root.service.index })
+  }
+
+  Timer {
+    interval: 100
+    repeat: true
+    running: true
+    onTriggered: {
+      var steps = root.scripts[root.script] || []
+      if (root.step >= steps.length) {
+        Qt.quit()
+        return
+      }
+      if (!root.idle()) return
+      steps[root.step]()
+      root.step++
+    }
+  }
+}
+QML
+  sheets_run() { # sheets_run <case> <script> [VAR=value ...]
+    local name=$1 script=$2 home="$work/home-$1"
+    shift 2
+    mkdir -p "$home"
+    env -u SELDON_INDEX -u SELDON_NOW -u SELDON_CONFIG -u SELDON_LOGBOOK QT_QPA_PLATFORM=offscreen \
+      HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CONFIG_HOME="$home/.config" PATH="$fake_path" \
+      HARNESS_PLUGIN_DIR="$plugin" HARNESS_SHEETS="$script" FAKE_SELDON_FIXTURE="$fx/index.sample.json" "$@" \
+      "$timeout_bin" 60 "$qs_bin" -p "$sheets/shell.qml" >"$work/$name.log" 2>&1 || true
+    sed 's/\x1b\[[0-9;]*m//g' "$work/$name.log" | grep -a "SHEETS " | sed 's/.*SHEETS //' >"$work/$name.steps" || true
+  }
+  sheet_expect() { # sheet_expect <case> <tag> <jq filter> <value>
+    local got="<no step $2>"
+    grep -a -q "^$2 " "$work/$1.steps" \
+      && got=$(grep -a "^$2 " "$work/$1.steps" | head -n 1 | sed "s/^$2 //" | jq -r "$3" 2>/dev/null || true)
+    if [[ $got == "$4" ]]; then
+      pass=$((pass + 1)); echo "ok   $1 $2: $3 = $4"
+    else
+      fail=$((fail + 1)); echo "FAIL $1 $2: $3 = $got (want $4)"
+      grep -a -E "SHEETS error|ERROR|WARN" "$work/$1.log" | tail -n 5 | sed 's/^/     /'
+    fi
+  }
+
+  sheets_run sheets-busy busy
+  sheet_expect sheets-busy new-case .extra false
+  sheet_expect sheets-busy new-case .newCase.resultText "$busy_text"
+  sheet_expect sheets-busy new-case "[.newCase.texts[] | select(. == \"$busy_text\")] | length" 1
+  sheet_expect sheets-busy drift .extra false
+  sheet_expect sheets-busy drift .drift.resultText "$busy_text"
+  sheet_expect sheets-busy drift .drift.resultOk true
+  sheet_expect sheets-busy drift "[.drift.texts[] | select(. == \"$busy_text\")] | length" 1
+  # The other calls' answers and index rewrites leave both notices in place.
+  sheet_expect sheets-busy after .newCase.resultText "$busy_text"
+  sheet_expect sheets-busy after .drift.resultText "$busy_text"
+  argv_check sheets-busy "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+    "$(q plan start C-2026-005 --json)" "$(q drift dismiss $UNIT --json -- x)")"
+  clean_log sheets-busy
+
+  sheets_run sheets-rearm rearm
+  sheet_expect sheets-rearm notice .drift.notice "Give a reason first"
+  sheet_expect sheets-rearm notice-after-rewrite .drift.notice "Give a reason first"
+  sheet_expect sheets-rearm typed .drift.notice ""
+  sheet_expect sheets-rearm armed .drift.armed true
+  sheet_expect sheets-rearm armed .drift.hint "Press Enter again: Dismiss ~/.config/systemd/user/ollama.service"
+  sheet_expect sheets-rearm armed-after-rewrite .drift.armed true
+  sheet_expect sheets-rearm armed-after-rewrite .drift.hint "Press Enter again: Dismiss ~/.config/systemd/user/ollama.service"
+  sheet_expect sheets-rearm second-enter .extra true
+  argv_check sheets-rearm "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+    "$(q status --json)" "$(q status --json)" "$(q drift dismiss $UNIT --json -- because)")"
+  clean_log sheets-rearm
+else
+  fail=$((fail + 1)); echo "FAIL sheets: the installed shell's Commons/ and Ui/ not found at $shell_dir"
+fi
 
 real_home_check service-states
 

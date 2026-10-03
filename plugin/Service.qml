@@ -23,6 +23,8 @@ import "Model.js" as Model
 //   SELDON_NOW    with SELDON_INDEX, the clock used for staleness (RFC 3339).
 //                 Without it the clock is pinned to the index's generatedAt,
 //                 so a fixture never turns stale on its own.
+//   SELDON_LOCK_RETRY_MS  the wait before a capture or status that found the
+//                 lock held runs again (default 30000; the harness's).
 Item {
   id: root
 
@@ -50,6 +52,9 @@ Item {
   // next successful call or by an index written after it was set.
   property bool engineNotInitialised: false
   property double notInitialisedAtMs: 0
+  // The lowest engine this plugin works with (manifest `seldon.engineMin`,
+  // docs/VERSIONING.md); "" until the shell has injected the manifest.
+  readonly property string engineMin: Model.engineMinOf(root.manifest)
 
   // ---- Index file.
   property string fileState: "loading"     // loading | loaded | missing | invalid
@@ -70,12 +75,13 @@ Item {
   })
   readonly property var counts: Model.counts(index)
   readonly property string lastCapture: Model.lastCapture(index)
-  readonly property var banner: Model.bannerFor(status, {
-    indexContractVersion: indexContractVersion,
-    parseError: parsed ? parsed.error : "",
-    generatedAt: index ? index.generatedAt : "",
-    nowMs: nowMs
-  })
+  readonly property var banner: Model.engineOutdatedBanner(status, engineVersion, engineMin)
+    || Model.bannerFor(status, {
+      indexContractVersion: indexContractVersion,
+      parseError: parsed ? parsed.error : "",
+      generatedAt: index ? index.generatedAt : "",
+      nowMs: nowMs
+    })
   // What the index itself reports, shown under the status banner on every tab
   // (SPEC-PLUGIN §5), only while its counts mean something.
   readonly property bool indexShown: index !== null && Model.showsCounts(status)
@@ -105,8 +111,17 @@ Item {
   property string lastError: ""
   property int captureIntervalMin: Model.CAPTURE_INTERVAL_MIN_DEFAULT
 
-  // Capture (and the status that follows it) is queued or running.
-  readonly property bool capturing: root.queued("capture") || root.queued("status")
+  // Exit 4 (lock held) of a capture or status: what runs again when
+  // lockRetry fires ("capture", which brings its status, or "status"), and
+  // how many retries this run of the lock has had (Model.LOCK_RETRIES).
+  property string lockRetryHead: ""
+  property int lockRetries: 0
+  readonly property int lockRetryMs: Number(Quickshell.env("SELDON_LOCK_RETRY_MS")) > 0
+    ? Number(Quickshell.env("SELDON_LOCK_RETRY_MS")) : Model.LOCK_RETRY_MS
+
+  // Capture (and the status that follows it) is queued, running or waiting
+  // for a held lock.
+  readonly property bool capturing: root.queued("capture") || root.queued("status") || root.lockRetryHead !== ""
 
   // Panel actions write through the engine; this says whether they can, and
   // if not, why (shown in place of the action).
@@ -115,6 +130,13 @@ Item {
     : root.status === "notInitialised" ? "Run seldon init first"
     : ""
   readonly property bool canWrite: root.writeBlocker === ""
+
+  // The last call a one-at-a-time guard refused because another call of
+  // its family was pending: { family, action, caseId, eventId, text } or
+  // null, shown by the sheet that asked (Model.BUSY_TEXT). busyRefusals
+  // counts them, so a sheet can tell that its own call was the one refused.
+  property var busyRefusal: null
+  property int busyRefusals: 0
 
   // The last result of each panel action, { ok, pending, text } or null:
   // QuickEntry (`log`), Open in editor (`open`), Capture now (`capture`),
@@ -173,10 +195,13 @@ Item {
   }
 
   function probeDone(exitCode, out, err) {
+    root.warnFailure(["--version"], exitCode, out, err)
     if (exitCode === 0) {
       root.engineVersion = Model.engineVersion(out)
       root.engineDetail = ""
       root.engineState = "present"
+      if (Model.versionBelow(root.engineVersion, root.engineMin))
+        console.warn("jax.seldon: engine " + root.engineVersion + " is older than engineMin " + root.engineMin)
       if (!root.devMode) root.captureCycle()
     } else {
       // A seldon that cannot even report its version is no usable engine.
@@ -192,6 +217,19 @@ Item {
     root.engineVersion = ""
     root.engineDetail = "seldon not found on PATH"
     root.engineState = "missing"
+  }
+
+  // One journal line per engine call that exited above 0 (Model.callWarning).
+  function warnFailure(args, exitCode, out, err) {
+    var line = Model.callWarning(args, exitCode, out, err)
+    if (line !== "") console.warn(line)
+  }
+
+  // A one-at-a-time guard refused: tell the caller why (Model.BUSY_TEXT).
+  function refuseBusy(family, action, caseId, eventId) {
+    root.busyRefusal = { family: family, action: action, caseId: caseId, eventId: eventId, text: Model.BUSY_TEXT }
+    root.busyRefusals++
+    return false
   }
 
   // Queue one engine call. `args` excludes the program name and must be one
@@ -252,9 +290,9 @@ Item {
   // priority }) or `seldon plan start|verify|done|drop <caseId>`. One plan
   // call at a time; the moved case arrives with the index (FileView).
   function plan(action, input) {
-    if (root.planResult && root.planResult.pending) return false
-    var built = Model.planArgs(action, input)
     var caseId = action === "new" ? "" : String(input || "")
+    if (root.planResult && root.planResult.pending) return root.refuseBusy("plan", action, caseId, "")
+    var built = Model.planArgs(action, input)
     if (built.error) {
       root.planResult = { ok: false, pending: false, text: built.error, action: action, caseId: caseId }
       return false
@@ -274,9 +312,9 @@ Item {
   // answers at once; the answer shares the plan result line (`action`
   // "agent") and its one-at-a-time rule.
   function startAgent(caseId) {
-    if (root.planResult && root.planResult.pending) return false
-    var built = Model.agentArgs(caseId)
     var id = String(caseId || "")
+    if (root.planResult && root.planResult.pending) return root.refuseBusy("plan", "agent", id, "")
+    var built = Model.agentArgs(caseId)
     if (built.error) {
       root.planResult = { ok: false, pending: false, text: built.error, action: "agent", caseId: id }
       return false
@@ -293,9 +331,9 @@ Item {
   // caseId, only, text, zone, risk, area, itemZone }, see Model.driftArgs).
   // One drift call at a time; the resolved rows arrive with the index.
   function drift(action, input) {
-    if (root.driftResult && root.driftResult.pending) return false
-    var built = Model.driftArgs(action, input)
     var eventId = input && typeof input.eventId === "string" ? input.eventId : ""
+    if (root.driftResult && root.driftResult.pending) return root.refuseBusy("drift", action, "", eventId)
+    var built = Model.driftArgs(action, input)
     if (built.error) {
       root.driftResult = { ok: false, pending: false, text: built.error, action: action, eventId: eventId, caseId: "", already: false }
       return false
@@ -315,7 +353,7 @@ Item {
   // from its answer (checked against the schema pattern by Model.decideResult).
   // One decide call at a time.
   function decide(title) {
-    if (root.decideResult && root.decideResult.pending) return false
+    if (root.decideResult && root.decideResult.pending) return root.refuseBusy("decide", "decide", "", "")
     var built = Model.decideArgs(title)
     if (built.error) {
       root.decideResult = { ok: false, pending: false, text: built.error, decisionId: "" }
@@ -396,6 +434,13 @@ Item {
     watchdog.stop()
     root.busy = false
     root.currentArgs = []
+    root.warnFailure(args, exitCode, out, err)
+    if (exitCode === 4 && root.retryLater(args)) {
+      root.finished(args, exitCode, out)
+      root.pump()
+      return
+    }
+    if (args[0] === "capture" || args[0] === "status") root.lockRetries = 0
     var result = args[0] === "log" ? Model.logResult(exitCode, out, err)
       : args[0] === "open" ? Model.openResult(exitCode, out, err)
       : args[0] === "capture" ? Model.captureResult(exitCode, out, err)
@@ -432,6 +477,47 @@ Item {
     root.pump()
   }
 
+  // Exit 4 of a capture or status: another seldon holds the lock for a
+  // moment (a hook, the CLI). Run it again after lockRetryMs, at most
+  // Model.LOCK_RETRIES times, with a neutral capture result meanwhile; a
+  // locked capture takes its queued status along, which would only find
+  // the lock too. False when this is not such a call or the retries are
+  // used up: then the exit is an error like any other.
+  function retryLater(args) {
+    var head = args[0]
+    if (head !== "capture" && head !== "status") return false
+    if (root.lockRetries >= Model.LOCK_RETRIES) {
+      root.lockRetries = 0
+      return false
+    }
+    if (head === "capture") {
+      var rest = []
+      var dropped = false
+      for (var i = 0; i < root.queue.length; i++) {
+        if (!dropped && root.queue[i][0] === "status") dropped = true
+        else rest.push(root.queue[i])
+      }
+      root.queue = rest
+      root.captureResult = { ok: true, pending: false, text: Model.LOCK_WAIT_TEXT }
+    }
+    if (root.lockRetryHead !== "capture") root.lockRetryHead = head
+    root.lockRetries++
+    lockRetry.interval = root.lockRetryMs
+    lockRetry.restart()
+    return true
+  }
+
+  function retryLocked() {
+    var head = root.lockRetryHead
+    root.lockRetryHead = ""
+    if (root.engineState !== "present" || root.devMode) {
+      root.lockRetries = 0
+      return
+    }
+    if (head === "capture") root.captureNow()
+    else if (head === "status" && !root.queued("status")) root.run(["status", "--json"])
+  }
+
   function runnerFailedToStart() {
     var args = root.currentArgs
     watchdog.stop()
@@ -448,6 +534,11 @@ Item {
   // Capture, then status (which rewrites the index). Never queued twice.
   function captureNow() {
     if (root.queued("capture")) return false
+    // An explicit capture replaces a pending lock retry (its counter stays).
+    if (root.lockRetryHead !== "") {
+      lockRetry.stop()
+      root.lockRetryHead = ""
+    }
     if (!root.run(["capture", "--all", "--json", "--quiet"])) return false
     root.run(["status", "--json"])
     return true
@@ -502,6 +593,9 @@ Item {
       engineDetail: root.engineDetail,
       busy: root.busy,
       capturing: root.capturing,
+      lockRetries: root.lockRetries,
+      engineMin: root.engineMin,
+      busyRefusal: root.busyRefusal,
       canWrite: root.canWrite,
       lastError: root.lastError,
       logResult: root.logResult,
@@ -632,6 +726,13 @@ Item {
     repeat: true
     running: true
     onTriggered: root.liveNowMs = Date.now()
+  }
+
+  // The retry of a capture or status that found the lock held.
+  Timer {
+    id: lockRetry
+    repeat: false
+    onTriggered: root.retryLocked()
   }
 
   // A hung engine must not stall the queue forever.

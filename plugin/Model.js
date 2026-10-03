@@ -2694,3 +2694,74 @@ function overlayGrid(width, height, gap, minWidth, minHeight) {
   }
   return { mode: mode, contentHeight: y, slots: slots }
 }
+
+// ---- Engine-call failures, busy guards, engine minimum (WP-068) -------------
+
+// What a one-at-a-time guard (Service.plan, startAgent, drift, decide)
+// answers the sheet whose call it refused.
+var BUSY_TEXT = "Another action is running — try again in a moment"
+
+// Exit 4 (lock held) of a capture or status: try again after LOCK_RETRY_MS,
+// at most LOCK_RETRIES times, and say so in a neutral text meanwhile.
+var LOCK_RETRY_MS = 30000
+var LOCK_RETRIES = 3
+var LOCK_WAIT_TEXT = "waiting for another seldon process; trying again shortly"
+
+// The journal line for an engine call that exited above 0:
+// "jax.seldon: seldon <command> exit <code>: <first stderr line>", or the
+// engine's JSON error message when stderr is empty (`--json` errors go to
+// stdout). "" for exit 0. Plain text on one line.
+function callWarning(args, exitCode, stdoutText, stderrText) {
+  if (!(exitCode > 0)) return ""
+  var head = Array.isArray(args) && args.length > 0 ? String(args[0]) : "?"
+  var lines = String(stderrText || "").split("\n")
+  var first = ""
+  for (var i = 0; i < lines.length && first === ""; i++) first = lines[i].trim()
+  if (first === "") first = engineError(stdoutText, "", exitCode)
+  return "jax.seldon: seldon " + head + " exit " + exitCode + ": " + first
+}
+
+// "0.1.10" → [0, 1, 10]; a pre-release or build suffix is ignored, so a
+// dev build of a version counts as that version. null when not readable.
+function versionCore(text) {
+  var m = /^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+].*)?$/.exec(String(text || "").trim())
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+}
+
+// True only when both versions are readable and `version` < `min`.
+function versionBelow(version, min) {
+  var v = versionCore(version)
+  var m = versionCore(min)
+  if (!v || !m) return false
+  for (var i = 0; i < 3; i++) if (v[i] !== m[i]) return v[i] < m[i]
+  return false
+}
+
+// `seldon.engineMin` of the manifest the shell injects; "" without one.
+function engineMinOf(manifest) {
+  var s = isObject(manifest) && isObject(manifest.seldon) ? manifest.seldon : null
+  return s && typeof s.engineMin === "string" ? s.engineMin : ""
+}
+
+// The "Index format mismatch" family's engine variant: the engine answers,
+// but older than the manifest's engineMin (docs/VERSIONING.md). Shown in
+// place of every status banner but engineMissing and contractMismatch (each
+// names its own fix); null when the engine is new enough or either version
+// is unknown.
+function engineOutdatedBanner(status, engineVersion, engineMin) {
+  if (status === "engineMissing" || status === "contractMismatch") return null
+  if (!versionBelow(engineVersion, engineMin)) return null
+  return {
+    status: "engineOutdated",
+    tone: "urgent",
+    title: "Engine too old",
+    detail: "This plugin needs engine " + engineMin + " or newer; seldon reports " + engineVersion
+      + ". Update the engine to at least " + engineMin + ", then check again.",
+    command: UPDATE_ENGINE_COMMAND,
+    actions: [
+      { id: "terminal", label: "Update in terminal" },
+      { id: "copy", label: "Copy" },
+      { id: "recheck", label: "Check again" }
+    ]
+  }
+}
