@@ -1134,3 +1134,23 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **The panel harness's `work-live` can catch a transient result line
   under load** ("Dropping C-…" instead of "active → dropped"); it uses
   the fake engine, two immediate re-runs passed 692/692.
+## 2026-10-03 · WP-061 (Engine)
+
+- **`env.git(...)` in tests has no identity.** `common::Env::git` clears
+  the environment and the scratch HOME has no `user.email`, so a test's
+  own `git commit` fails silently unless it passes `-c user.name=… -c
+  user.email=…` and checks the exit status. `tests/import.rs` had one
+  such commit that never happened; it showed only when the import began
+  committing pending changes.
+- **git's stderr is several lines** ("fatal: Unable to create
+  '…/index.lock': File exists." plus a blank line and a hint). Anything
+  that promises "one warning line" must join git's lines first
+  (`logbook/git.rs` `failure`).
+- **`git commit --dry-run` exits 1 for "nothing to commit"** and 128 for
+  real failures; it takes `.git/index.lock` even with
+  `GIT_OPTIONAL_LOCKS=0`, so it does catch a lock it cannot create.
+- **A shell-command hint in a message is a test fixture too:** extract it
+  (between backticks) and run it with `sh -c` in the logbook, then check
+  that unrelated changes made *after* the failure survive. That is what
+  told the file-scoped undo apart from `git checkout -- . && git clean
+  -fd`; a commit-first fix alone would have passed the old test.
