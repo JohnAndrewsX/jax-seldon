@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 4ce0827 -->
+<!-- source: en/04-working-with-agents.md @ 26945df -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -69,10 +69,24 @@ seldon hook install claude-code
 Der Befehl lässt jeden anderen Hook in der Datei stehen. Ein zweiter
 Aufruf ändert nichts.
 
+Im Kontext, den `SessionStart` ausgibt, beginnt jede Zeile aus deinem
+Logbuch mit `>`, unter einem Hinweis, dass diese Zeilen Daten sind und
+keine Anweisungen. Text in einer Notiz oder einem Case kann sich deshalb
+nicht als Teil von Seldons eigener Struktur ausgeben. Das macht den
+Kontext für den Agenten klarer; es garantiert nicht, dass der Agent
+ignoriert, was der Text sagt.
+
+Seldon selbst sendet nichts über das Netz. Der Agent schon: Er sendet,
+was er liest, an seinen Modellanbieter, auch diesen Kontext, die Dateien,
+die er öffnet, und die Ausgabe seiner Befehle. Die Schwärzung gilt für
+aufgezeichnete Befehle, nicht für den Text von Notizen, Cases und
+`memory/` (siehe [Konfiguration](06-configuration.md#schwärzung)). Halte
+Geheimnisse aus dem Logbuch heraus.
+
 | Hook | Führt aus | Wirkung |
 |---|---|---|
 | `PreToolUse` | `seldon hook claude-code` | zeichnet jeden ändernden Befehl und jede Dateiänderung auf, mit Agent und aktivem Case |
-| `SessionStart` | `seldon hook session-start` | gibt dem Agenten den Status, den aktiven Case mit seinem Plan, die letzten Journal-Zeilen und die Überschriften der Lektionen |
+| `SessionStart` | `seldon hook session-start` | gibt dem Agenten den Status, den aktiven Case mit seinem Plan, die letzten Journal-Zeilen und die Überschriften der Lektionen, jede Zeile aus dem Logbuch als Zitat |
 | `SessionEnd` | `seldon hook session-stop` | schreibt „session ended; N events recorded“ ins Journal, erfasst, baut `STATUS.md` neu und committet |
 
 ### Einen Case bearbeiten
@@ -170,9 +184,13 @@ seldon agent start C-2026-003
 
 Die Engine macht den Case zum aktiven Case und startet einen Agenten im
 Ordner des Logbuchs. Der erste Prompt des Agenten nennt den Case und das
-Logbuch und enthält denselben Kontext, den `seldon hook session-start`
-ausgibt. Sobald der erste Befehl des Agenten aufgezeichnet ist, zeigt die
-Karte seinen Namen.
+Logbuch und sagt dem Agenten, `seldon hook session-start` und
+`seldon plan show C-2026-003` auszuführen; er enthält keinen Text aus
+deinem Logbuch. Der Prompt ist ein Kommandozeilenargument: Solange der
+Agent läuft, ist er in der Prozessliste (`ps`) sichtbar, und ein
+Sitzungsjournal, das Programmstarts protokolliert, behält ihn. Sobald der
+erste Befehl des Agenten aufgezeichnet ist, zeigt die Karte seinen
+Namen.
 
 Standardmäßig startet die Engine Omarchys Standard-Agenten über
 `omarchy agent prompt` in einem eigenen Terminalfenster. Welcher Agent
@@ -193,8 +211,11 @@ omarchy = ["omarchy", "agent", "prompt", "{prompt}"]
 ```
 
 Die Engine ersetzt `{prompt}` durch den Prompt, als ein einziges
-Argument. Sie startet den Launcher nie über eine Shell und lehnt Shells als
-Launcher ab. `--launcher NAME` wählt einen aus `[agent.launchers]`.
+Argument. Sie startet den Launcher nie über eine Shell. Vor `{prompt}`
+lehnt sie Shells, Interpreter und andere Programme ab, die ihre Argumente
+bekanntermaßen als Code ausführen. Die Prüfung geht nach dem
+Programmnamen: eine Heuristik, keine Sandbox. `--launcher NAME` wählt
+einen aus `[agent.launchers]`.
 Scheitert der Launcher, steht sein Fehler in
 `~/.local/state/seldon/agent-launch.log`.
 [Konfiguration](06-configuration.md#agent-launcher) nennt die Regeln.

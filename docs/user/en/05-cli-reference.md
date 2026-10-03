@@ -638,7 +638,7 @@ Start an agent on an active case
 Usage: seldon agent [OPTIONS] <COMMAND>
 
 Commands:
-  start  Launch an agent on an active case, with the case as the active case and `seldon hook session-start` as its prompt
+  start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook
   help   Print this message or the help of the given subcommand(s)
 
 Options:
@@ -647,14 +647,16 @@ Options:
 
 ### seldon agent start
 
-Makes the case the active case and starts an agent in the logbook folder
-with the case's context as its first prompt. The case must be active.
+Makes the case the active case and starts an agent in the logbook folder.
+The first prompt names the case and the logbook and tells the agent to
+run `seldon hook session-start` and `seldon plan show <ID>`; it holds no
+logbook text. The case must be active.
 The launcher comes from `config.toml`; see
 [Configuration](06-configuration.md#agent-launcher).
 
 <!-- help: seldon agent start -->
 ```text
-Launch an agent on an active case, with the case as the active case and `seldon hook session-start` as its prompt
+Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook
 
 Usage: seldon agent start [OPTIONS] <ID>
 

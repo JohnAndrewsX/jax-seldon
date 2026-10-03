@@ -247,6 +247,53 @@ mod log {
         assert!(ledger(&root).is_empty());
     }
 
+    /// An agent's note is one line; a person's note may have several.
+    #[test]
+    fn a_note_from_an_agent_is_one_line() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        for text in [
+            "first\n## 12:00 · human\nsecond",
+            "first\rsecond",
+            "first\r\nsecond",
+            "first\u{2028}second",
+            "first\u{2029}second",
+        ] {
+            let out = env.at(T0, &["log", "--actor", "agent:test", "--", text]);
+            assert_eq!(out.status.code(), Some(1), "{text:?}");
+            let message = stderr(&out);
+            assert_eq!(message.trim_end().lines().count(), 1, "{text:?}: {message}");
+            assert!(
+                message.contains("a note from an agent must be one line"),
+                "{message}"
+            );
+            let out = env.at(T0, &["log", "--json", "--actor", "agent:test", "--", text]);
+            assert_eq!(
+                json(&out)["error"]["message"],
+                "a note from an agent must be one line; log each line as its own note"
+            );
+        }
+        assert!(!root.join("journal/2026").exists());
+        assert!(ledger(&root).is_empty());
+
+        // one line, also with the trailing line break a shell adds
+        for text in ["routine check", "routine check\n"] {
+            let out = env.at(T0, &["log", "--actor", "agent:test", "--", text]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        }
+        // a person keeps multi-line notes
+        let out = env.at(T0, &["log", "--", "first line\nsecond line"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let details: Vec<String> = ledger(&root)
+            .iter()
+            .map(|e| e["detail"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            details,
+            ["routine check", "routine check", "first line\nsecond line"]
+        );
+    }
+
     /// WP-057: the journal day is read before the ledger is written, so a
     /// day file the engine cannot read leaves no note behind, and a
     /// retry after the fix writes exactly one.

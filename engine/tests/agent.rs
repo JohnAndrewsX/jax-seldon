@@ -1,5 +1,6 @@
 //! `seldon agent start` (WP-022): the launcher argv from config.toml, the
-//! prompt as one argument, the detached launch, the refusals.
+//! prompt as one argument (the case id and the logbook path, no logbook
+//! text), the detached launch, the refusals.
 
 mod common;
 
@@ -101,20 +102,17 @@ fn launches_the_default_launcher_with_the_prompt_as_one_argument() {
     assert_eq!(args.len(), 3, "{args:?}");
     assert_eq!(args[..2], ["agent", "prompt"]);
     let prompt = &args[2];
-    assert!(
-        prompt.starts_with(&format!(
-            "Work case C-2026-001 in the Seldon logbook at {}; every mutating command is recorded.\n\n# Seldon logbook context\n",
+    assert_eq!(
+        *prompt,
+        format!(
+            "Work case C-2026-001 in the Seldon logbook at {}. First run `seldon hook session-start` \
+             (the logbook context) and `seldon plan show C-2026-001` (the case file). Every \
+             mutating command is recorded.",
             root.display()
-        )),
-        "{prompt}"
+        )
     );
-    // the session-start block, with the case now active, title as written
-    assert!(
-        prompt.contains(
-            "## Active case\nC-2026-001 — Install zed as \"second\" editor; $(touch pwned) `id` & more"
-        ),
-        "{prompt}"
-    );
+    // the agent reads the title itself; it is not in the arguments
+    assert!(!prompt.contains("Install zed"), "{prompt}");
     assert!(!env.tmp.path().join("pwned").exists());
     assert!(!root.join("pwned").exists());
 
@@ -199,6 +197,69 @@ fn the_launcher_comes_from_config() {
 }
 
 #[test]
+fn the_launcher_arguments_hold_no_logbook_text() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    // records its argv and also writes it to stderr, the launch log
+    let argv = env.tmp.path().join("omarchy.argv");
+    env.stub(
+        "omarchy",
+        &format!(
+            "printf '%s\\0' \"$@\" >> '{}'; printf 'args: %s\\n' \"$*\" >&2",
+            argv.display()
+        ),
+    );
+    // made-up text in each place the session-start block reads
+    let out = env.at(
+        T0,
+        &[
+            "log",
+            "--case",
+            "C-2026-001",
+            "--",
+            "JOURNAL-SENTINEL-7f3a\nsecond line",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    std::fs::write(
+        root.join("memory/lessons.md"),
+        "# Lessons\n\n## LESSON-SENTINEL-7f3a\n",
+    )
+    .unwrap();
+    let out = env.at(T0, &["status"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+
+    let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let v = json(&out);
+    assert_eq!(
+        v["argv"],
+        serde_json::json!(["omarchy", "agent", "prompt", "{prompt}"])
+    );
+    let args = recorded(&argv);
+    let all = args.join("\n");
+    assert!(all.contains("C-2026-001"), "{all}");
+    assert!(all.contains(root.to_str().unwrap()), "{all}");
+    assert!(all.contains("seldon hook session-start"), "{all}");
+    for text in [
+        "SENTINEL",
+        "Install zed",
+        "second line",
+        "Seldon logbook context",
+        "\n",
+    ] {
+        assert!(!args[2].contains(text), "{text:?} in {:?}", args[2]);
+    }
+    // nor in the launch log, which got the arguments
+    let logged = read(&env.lock_file().with_file_name("agent-launch.log"));
+    assert!(
+        logged.contains("args: agent prompt Work case C-2026-001"),
+        "{logged}"
+    );
+    assert!(!logged.contains("SENTINEL"), "{logged}");
+}
+
+#[test]
 fn a_shell_launcher_is_refused_before_anything_changes() {
     let env = Env::new(Snapper::Missing);
     let root = logbook(&env);
@@ -208,7 +269,8 @@ fn a_shell_launcher_is_refused_before_anything_changes() {
     assert_eq!(out.status.code(), Some(1));
     let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
     assert!(
-        message.contains("runs its arguments as shell code"),
+        message.contains("`bash` can run its arguments as code")
+            && message.contains("a heuristic check by program name, not a sandbox"),
         "{message}"
     );
     assert!(!calls.exists(), "never started");

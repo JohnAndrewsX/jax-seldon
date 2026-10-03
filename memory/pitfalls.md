@@ -1048,3 +1048,39 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Test output names the dev host.** The index's `logbook.machine` in a
   panic message is the real host name plus a suffix: never paste raw test
   failures into a handover or commit; quote the assertion only.
+
+## 2026-10-03 · WP-058 (Engine)
+
+- **`str::lines()` splits only at `\n`** (and drops a trailing `\r`). A
+  lone `\r`, vertical tab, form feed, NEL, U+2028 or U+2029 stays inside
+  the "line", while a reader of the text may still break there. Code that
+  prefixes or checks text line by line must split at all of them.
+- **A test that checks "every output line has the prefix" must split the
+  output the same way.** Splitting the output at `\n` only let a mutant
+  (renderer splitting at `\n` only) pass all tests; the gap showed only in
+  the mutant run. Run the mutant before trusting such an assertion.
+- **File names in the logbook are free text.** `Logbook::journal_files()`
+  returns every `.md` in a year folder, whatever its name (a newline
+  included); a reader that prints a path should check its shape first
+  (session-start accepts only `journal/YYYY/YYYY-MM-DD.md`).
+- **Mutants without stash:** copy the file from `git show main:<path>`
+  (or edit it) in place, keep the real version in the scratchpad, restore
+  it with `cp` and confirm with `cmp`. The stash stack is shared with
+  other worktrees.
+
+## 2026-10-03 · WP-058 fix round (Engine)
+
+- **Put the property assertion first when a test is mutant evidence.**
+  A layout `contains(…)` check ahead of `assert_framed` made the mutant
+  fail on the layout, not on the framing the test exists for; swap the
+  order so the failure names the real property.
+- **A test file name cannot hold `/`** (`std::fs::copy` → NotFound), so
+  marker text such as `(memory/lessons.md)` cannot go into a name; a
+  newline, `#` and U+2028 can.
+- **Merge, do not rebase, a branch whose de pages are stamped with its
+  own commits.** A rebase rewrites the en commit the `<!-- source: … -->`
+  line names.
+- **`check-watch` once ran the `watch` tests against a binary without the
+  feature** ("built without the watch feature", 8 failures) and passed on
+  a plain rerun; if it recurs, look for another build writing
+  `engine/target/debug/seldon` at the same time.

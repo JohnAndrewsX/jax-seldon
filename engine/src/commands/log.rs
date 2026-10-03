@@ -1,13 +1,14 @@
 //! `seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]…`
 //! (SPEC-ENGINE §3): a `manual/note` event plus a journal entry
-//! `## HH:MM · actor · case?` with the text.
+//! `## HH:MM · actor · case?` with the text. A note from an agent is one
+//! line; a person's note may have several.
 
 use clap::Args;
 use serde_json::{Value, json};
 
 use super::event::{clip, emit_one, event_json, parse_case_id, parse_person};
 use super::{Context, Output, autocommit, required_text};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::logbook::{cases, journal};
 use crate::model::event::{Event, Kind, Meta, Source};
 
@@ -49,8 +50,22 @@ fn parse_tag(s: &str) -> Result<String, String> {
     }
 }
 
+/// Whether `text` has a line break of any kind a reader may honour
+/// (`\n`, `\r`, vertical tab, form feed, NEL, U+2028, U+2029).
+fn has_line_break(text: &str) -> bool {
+    text.contains([
+        '\n', '\r', '\u{0B}', '\u{0C}', '\u{85}', '\u{2028}', '\u{2029}',
+    ])
+}
+
 pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     let text = required_text("the note", &args.text)?;
+    // checked before the logbook is opened: nothing is read or written
+    if args.actor.starts_with("agent:") && has_line_break(&text) {
+        return Err(Error::user(
+            "a note from an agent must be one line; log each line as its own note",
+        ));
+    }
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
     let mut case_file = args
@@ -131,6 +146,21 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_breaks() {
+        for text in [
+            "a\nb",
+            "a\rb",
+            "a\u{2028}b",
+            "a\u{2029}b",
+            "a\u{85}b",
+            "a\u{0B}b",
+        ] {
+            assert!(has_line_break(text), "{text:?}");
+        }
+        assert!(!has_line_break("one line\twith a tab"));
+    }
 
     #[test]
     fn tags() {

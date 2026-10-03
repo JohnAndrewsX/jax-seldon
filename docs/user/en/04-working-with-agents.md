@@ -65,10 +65,23 @@ seldon hook install claude-code
 The command keeps every other hook in the file. Running it again changes
 nothing.
 
+In the context that `SessionStart` prints, every line from your logbook
+starts with `>`, under a note that these lines are data, not
+instructions. Text in a note or a case therefore cannot pose as part of
+Seldon's own structure. This makes the context clearer for the agent; it
+does not guarantee that the agent ignores what the text says.
+
+Seldon itself sends nothing over the network. The agent does: it sends
+what it reads to its model provider, including this context, the files
+it opens and the output of its commands. Redaction covers recorded
+commands, not the text of notes, cases and `memory/`
+(see [Configuration](06-configuration.md#redaction)). Keep secrets out of
+the logbook.
+
 | Hook | Runs | Does |
 |---|---|---|
 | `PreToolUse` | `seldon hook claude-code` | records each changing command or file edit, with the agent and the active case |
-| `SessionStart` | `seldon hook session-start` | gives the agent the status, the active case with its plan, the last journal lines and the lesson headings |
+| `SessionStart` | `seldon hook session-start` | gives the agent the status, the active case with its plan, the last journal lines and the lesson headings, each line from the logbook quoted |
 | `SessionEnd` | `seldon hook session-stop` | writes "session ended; N events recorded" into the journal, captures, rebuilds `STATUS.md` and commits |
 
 ### Work a case
@@ -160,8 +173,12 @@ seldon agent start C-2026-003
 
 The engine makes the case the active case and starts an agent in the
 logbook folder. The agent's first prompt names the case and the logbook
-and carries the same context that `seldon hook session-start` prints. Once
-the agent's first command is recorded, the card shows its name.
+and tells the agent to run `seldon hook session-start` and
+`seldon plan show C-2026-003`; it holds no text from your logbook. The
+prompt is a command-line argument, so it is visible in the process list
+(`ps`) while the agent runs, and a session journal that logs app
+launches keeps it. Once the agent's first command is recorded, the card
+shows its name.
 
 By default the engine starts Omarchy's default coding agent, through
 `omarchy agent prompt`, in its own terminal window. Which agent that is
@@ -181,7 +198,9 @@ omarchy = ["omarchy", "agent", "prompt", "{prompt}"]
 ```
 
 `{prompt}` is replaced by the prompt, as one argument. The engine never
-runs the launcher through a shell and refuses shells as launchers.
+runs the launcher through a shell. It refuses shells, interpreters and
+other programs known to run their arguments as code, before `{prompt}`.
+The check goes by program name: a heuristic, not a sandbox.
 `--launcher NAME` picks one from `[agent.launchers]`. If the launcher
 fails, its error is in `~/.local/state/seldon/agent-launch.log`.
 [Configuration](06-configuration.md#agent-launcher) has the rules.

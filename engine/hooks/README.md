@@ -104,10 +104,12 @@ plan start <id>`). It:
 1. checks the launcher (below) before it writes anything;
 2. makes the case the active case (`.seldon/active-case`), so the agent's
    recorded commands land on it;
-3. builds the prompt: `Work case C-… in the Seldon logbook at <path>;
-   every mutating command is recorded.`, a blank line, then the block of
-   `seldon hook session-start` (status, the case and its plan, journal,
-   lessons);
+3. builds the prompt from the case id and the logbook path only: it
+   names both, tells the agent to run `seldon hook session-start` (the
+   logbook context) and `seldon plan show C-…` (the case file), and says
+   that every mutating command is recorded. No logbook text goes into the
+   launcher's arguments, which other programs can read in the process
+   list (`ps`) while the agent runs;
 4. runs the launcher **detached** in the logbook directory, with
    `SELDON_LOGBOOK` set to it (and `SELDON_CONFIG` when a non-default
    config was used): stdin and stdout null, stderr appended to
@@ -152,17 +154,20 @@ Rules, checked on every start (a broken launcher is exit 1, nothing runs):
   `omarchy-launch-or-focus-webapp`: `eval exec setsid $LAUNCH_COMMAND`;
   `omarchy-launch-terminal-tmux`: a fixed `bash -c "tmux …"` that also
   drops its arguments, so the prompt would be lost), and no `hyprctl`
-  (`dispatch exec` takes a shell string): the prompt carries logbook text
-  and is never run as code (AGENTS.md §8);
+  (`dispatch exec` takes a shell string), and no other program known to
+  run its arguments as code (interpreters, `script`, `watch`, `flock`,
+  `ssh`, `tmux`, `xargs`, `env -S`, `sudo -s`, …; a heuristic by program
+  name): the prompt is never run as code (AGENTS.md §8). It names the
+  case and the logbook and holds no logbook text;
 - no `omarchy launch …` before `{prompt}`: the `omarchy` CLI dispatches
   it by route to an `omarchy-launch-*` script, so the list above could not
   see which one. Name the launcher itself (`omarchy-launch-tui`). Other
   `omarchy` routes (`omarchy agent prompt`) are allowed.
 
-The refusal list is a **heuristic**, not a sandbox: it knows the shells
-and Omarchy launchers above, not every program that runs a string as code
-(`python -c`, `perl -e`, `node -e`, `xargs`, `ssh host …`, a wrapper
-script of your own). `config.toml` is your own file; what it names runs
+The refusal list is a **heuristic** by program name, not a sandbox: it
+knows the programs above (names compared without a version suffix, so
+`python3.12` is `python`), not every program that runs a string as code
+(an editor's `-c`, a debugger's `-ex`, a wrapper script of your own). `config.toml` is your own file; what it names runs
 with your rights. The rules make the common mistakes impossible, nothing
 more.
 

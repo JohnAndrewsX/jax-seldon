@@ -2,14 +2,18 @@
 //! to work an active case.
 //!
 //! The case becomes the active case (`.seldon/active-case`), so the agent's
-//! recorded commands land on it. The prompt is one line naming the case and
-//! the logbook, then the context block of `seldon hook session-start`. The
+//! recorded commands land on it. The prompt holds no logbook text: it
+//! names the case id and the logbook path and points the agent to
+//! `seldon hook session-start` and `seldon plan show <id>`
+//! ([`prompt`]). It is one argument of the launcher, so it shows in the
+//! process list and in a session journal that logs the launch. The
 //! launcher is an argv list from `config.toml` (`[agent] launcher`, or
 //! `[agent.launchers] NAME` with `--launcher NAME`; default
 //! [`DEFAULT_AGENT_LAUNCHER`]); its element `{prompt}` is replaced by the
 //! prompt as one argument. Nothing goes through a shell (AGENTS.md §8):
-//! the launcher is checked before anything is written, and a launcher that
-//! runs its arguments as shell code is refused.
+//! the launcher is checked before anything is written, and a launcher whose
+//! program is known to run its arguments as code is refused (a check by
+//! program name, not a sandbox).
 //!
 //! The launcher starts detached in the logbook directory, with
 //! `SELDON_LOGBOOK` set to it ([`launch_detached`], as `open --editor`).
@@ -25,7 +29,7 @@ use serde_json::json;
 
 use super::event::parse_case_id;
 use super::open::launch_detached;
-use super::{CONFIG_ENV, Context, Output, hook};
+use super::{CONFIG_ENV, Context, Output};
 use crate::config::{AgentConfig, DEFAULT_AGENT_LAUNCHER, LOGBOOK_ENV};
 use crate::error::{Error, Result};
 use crate::logbook::{Logbook, cases};
@@ -45,23 +49,78 @@ pub const OMARCHY_NAME: &str = "omarchy";
 /// Where the launcher's stderr goes, in the state directory.
 pub const LAUNCH_LOG: &str = "agent-launch.log";
 
-/// Programs that run their arguments as shell code: shells, Omarchy
-/// launchers that join their arguments into a `bash -c` or `eval` string,
-/// and `hyprctl` (`dispatch exec` takes a shell string). The prompt carries
-/// logbook text, so it is never handed to one of them. A heuristic, not a
-/// sandbox: interpreters (`python -c`, `perl -e`) and `xargs` are not
-/// listed; the config is the user's own file.
-const SHELL_STRING_RUNNERS: [&str; 16] = [
+/// Programs that can run their arguments as code: shells, interpreters,
+/// programs that hand a string to a shell (`script -c`, `watch`, `flock -c`,
+/// `su -c`, `ssh`, `tmux`, `screen`, `xargs`, `parallel`, the compositors'
+/// `exec` messages), Omarchy launchers that join their arguments into a
+/// `bash -c` or `eval` string, and `hyprctl` (`dispatch exec` takes a shell
+/// string). The prompt is never handed to one of them. A heuristic by
+/// program name, not a sandbox: the config is the user's own file, and a
+/// program missing here is not checked. Names are compared without a
+/// version suffix (`python3.12` is `python`, [`program_name`]).
+const CODE_RUNNERS: &[&str] = &[
+    // shells
     "sh",
     "bash",
+    "rbash",
     "zsh",
     "dash",
+    "ash",
     "ksh",
     "mksh",
+    "oksh",
+    "loksh",
+    "pdksh",
+    "yash",
+    "posh",
+    "csh",
+    "tcsh",
     "fish",
     "nu",
     "xonsh",
+    "elvish",
+    "osh",
+    "ysh",
+    "rc",
+    "pwsh",
+    "busybox",
+    "toybox",
     "eval",
+    // run a string through a shell
+    "script",
+    "watch",
+    "flock",
+    "su",
+    "runuser",
+    "ssh",
+    "mosh",
+    "tmux",
+    "screen",
+    "xargs",
+    "parallel",
+    "swaymsg",
+    "i3-msg",
+    "niri",
+    // interpreters
+    "python",
+    "pypy",
+    "perl",
+    "ruby",
+    "irb",
+    "node",
+    "nodejs",
+    "deno",
+    "bun",
+    "php",
+    "lua",
+    "luajit",
+    "tclsh",
+    "wish",
+    "expect",
+    "awk",
+    "gawk",
+    "mawk",
+    "nawk",
     "omarchy-launch-floating-terminal-with-presentation",
     "omarchy-launch-or-focus",
     "omarchy-launch-or-focus-tui",
@@ -70,6 +129,39 @@ const SHELL_STRING_RUNNERS: [&str; 16] = [
     "omarchy-launch-terminal-tmux",
     "hyprctl",
 ];
+
+/// Programs that run a string as code with one of their options: `env -S`
+/// splits a string into a command line, `sudo -s`/`-i` runs it in a shell.
+/// An element before `{prompt}` that is the long option, or a short option
+/// cluster with one of the letters, is refused.
+const CODE_OPTIONS: [(&str, &[char], &[&str]); 2] = [
+    ("env", &['S'], &["--split-string"]),
+    ("sudo", &['s', 'i'], &["--shell", "--login"]),
+];
+
+/// The name a program is checked by: the base name without a version
+/// suffix of digits and dots (`/usr/bin/python3.12` is `python`).
+fn program_name(arg: &str) -> &str {
+    let base = arg.rsplit('/').next().unwrap_or(arg);
+    match base.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.') {
+        "" => base,
+        name => name,
+    }
+}
+
+/// Whether `arg` is one of `long` (alone or with `=`) or a short option
+/// cluster (`-xyz`, not `--`) with one of `short`.
+fn has_option(arg: &str, short: &[char], long: &[&str]) -> bool {
+    if long
+        .iter()
+        .any(|l| arg == *l || arg.strip_prefix(l).is_some_and(|r| r.starts_with('=')))
+    {
+        return true;
+    }
+    arg.strip_prefix('-')
+        .filter(|r| !r.starts_with('-'))
+        .is_some_and(|r| r.chars().any(|c| short.contains(&c)))
+}
 
 /// `seldon agent <command>`.
 #[derive(Debug, Clone, Args)]
@@ -81,7 +173,7 @@ pub struct AgentArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub enum AgentCommand {
     /// Launch an agent on an active case, with the case as the active case
-    /// and `seldon hook session-start` as its prompt
+    /// and a prompt that names the case and the logbook
     Start {
         /// The case (must be active)
         #[arg(value_name = "ID", value_parser = parse_case_id)]
@@ -132,8 +224,8 @@ impl Launcher {
     }
 
     /// The rules of the config: a program name without `/` or an absolute
-    /// path first, `{prompt}` exactly once as a whole element, and no shell
-    /// that would read the prompt as code.
+    /// path first, `{prompt}` exactly once as a whole element, and no
+    /// program before it that is known to run its arguments as code.
     fn check(&self) -> Result<()> {
         let bad = |why: String| {
             Err(Error::user(format!(
@@ -166,20 +258,33 @@ impl Launcher {
             _ => return bad(format!("`{PROMPT}` must appear once")),
         };
         let before = &self.argv[..at];
-        let base = |a: &str| a.rsplit('/').next().unwrap_or(a).to_string();
-        if let Some(shell) = before
+        const HEURISTIC: &str =
+            "the prompt is never handed to it (a heuristic check by program name, not a sandbox)";
+        if let Some(runner) = before
             .iter()
-            .find(|a| SHELL_STRING_RUNNERS.contains(&base(a).as_str()))
+            .find(|a| CODE_RUNNERS.contains(&program_name(a)))
         {
             return bad(format!(
-                "`{shell}` runs its arguments as shell code; the prompt is never handed to it"
+                "`{runner}` can run its arguments as code; {HEURISTIC}"
             ));
+        }
+        for (i, a) in before.iter().enumerate() {
+            let Some((program, short, long)) =
+                CODE_OPTIONS.iter().find(|(p, ..)| program_name(a) == *p)
+            else {
+                continue;
+            };
+            if let Some(option) = before[i + 1..].iter().find(|o| has_option(o, short, long)) {
+                return bad(format!(
+                    "`{program} {option}` can run its arguments as code; {HEURISTIC}"
+                ));
+            }
         }
         // `omarchy launch …` dispatches to `omarchy-launch-*` by route, so
         // the list above cannot see which one: name the launcher directly
         if before
             .windows(2)
-            .any(|w| base(&w[0]) == "omarchy" && w[1] == "launch")
+            .any(|w| program_name(&w[0]) == "omarchy" && w[1] == "launch")
         {
             return bad(
                 "`omarchy launch …` is refused; name the launcher itself, e.g. `omarchy-launch-tui`"
@@ -219,14 +324,8 @@ fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
 
     let previous = cases::active_case(&logbook);
     cases::set_active_case(&logbook, id)?;
-    let launched = hook::session_start(ctx).and_then(|block| {
-        let prompt = format!(
-            "Work case {id} in the Seldon logbook at {}; every mutating command is recorded.\n\n{block}",
-            logbook.root.display()
-        );
-        launch(ctx, &logbook, &launcher, &prompt).map_err(Error::User)
-    });
-    if let Err(e) = launched {
+    let launched = launch(ctx, &logbook, &launcher, &prompt(id, &logbook.root));
+    if let Err(e) = launched.map_err(Error::User) {
         restore(&logbook, id, previous.as_deref());
         return Err(e);
     }
@@ -249,6 +348,18 @@ fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
             "previousActiveCase": previous,
         }),
     ))
+}
+
+/// The launcher's prompt: the case id (checked by `cases::find`), the
+/// logbook path from the config and fixed text. The agent reads the
+/// logbook context itself, so no logbook text is in the process arguments.
+pub fn prompt(id: &str, root: &Path) -> String {
+    format!(
+        "Work case {id} in the Seldon logbook at {}. First run `seldon hook session-start` \
+         (the logbook context) and `seldon plan show {id}` (the case file). Every mutating \
+         command is recorded.",
+        root.display()
+    )
 }
 
 /// Puts `.seldon/active-case` back as it was before `id` was set.
@@ -396,7 +507,10 @@ mod tests {
             &["omarchy-launch-terminal-tmux", "{prompt}"],
             &["hyprctl", "dispatch", "exec", "{prompt}"],
         ] {
-            assert!(refused(shell).contains("shell code"), "{shell:?}");
+            assert!(
+                refused(shell).contains("can run its arguments as code"),
+                "{shell:?}"
+            );
         }
         // the omarchy CLI's route to the same launchers, refused outright
         for route in [
@@ -424,5 +538,97 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn programs_that_run_code_are_refused_by_name() {
+        for name in [
+            "rbash", "ash", "oksh", "loksh", "pdksh", "yash", "posh", "csh", "tcsh", "elvish",
+            "osh", "ysh", "rc", "pwsh", "busybox", "toybox", "script", "watch", "flock", "su",
+            "runuser", "ssh", "mosh", "tmux", "screen", "xargs", "parallel", "swaymsg", "i3-msg",
+            "niri", "python", "pypy", "perl", "ruby", "irb", "node", "nodejs", "deno", "bun",
+            "php", "lua", "luajit", "tclsh", "wish", "expect", "awk", "gawk", "mawk", "nawk",
+        ] {
+            for launcher in [
+                &[name, "{prompt}"][..],
+                &[name, "-c", "{prompt}"],
+                &["env", "X=1", name, "{prompt}"],
+                &["alacritty", "-e", name, "{prompt}"],
+            ] {
+                let e = refused(launcher);
+                assert!(
+                    e.contains(&format!("`{name}` can run its arguments as code"))
+                        && e.contains("a heuristic check by program name, not a sandbox"),
+                    "{launcher:?}: {e}"
+                );
+            }
+        }
+        // a version suffix or a path does not hide the name
+        for (program, name) in [
+            ("python3", "python3"),
+            ("/usr/bin/python3.12", "/usr/bin/python3.12"),
+            ("perl5.40", "perl5.40"),
+            ("lua5.4", "lua5.4"),
+            ("/bin/rbash", "/bin/rbash"),
+        ] {
+            let e = refused(&[program, "-c", "{prompt}"]);
+            assert!(e.contains(&format!("`{name}` can run")), "{e}");
+        }
+        assert_eq!(program_name("/usr/bin/python3.12"), "python");
+        assert_eq!(program_name("i3-msg"), "i3-msg");
+        assert_eq!(program_name("2048"), "2048");
+        // an agent whose name ends in digits is still an agent
+        assert!(Launcher::resolve(&agent(&["claude2", "{prompt}"]), None).is_ok());
+    }
+
+    #[test]
+    fn options_that_run_code_are_refused() {
+        for (launcher, shown) in [
+            (&["env", "-S", "{prompt}"][..], "`env -S`"),
+            (&["/usr/bin/env", "-vS", "{prompt}"], "`env -vS`"),
+            (
+                &["env", "--split-string", "{prompt}"],
+                "`env --split-string`",
+            ),
+            (
+                &["env", "--split-string=x", "{prompt}"],
+                "`env --split-string=x`",
+            ),
+            (&["sudo", "-s", "{prompt}"], "`sudo -s`"),
+            (&["sudo", "-i", "{prompt}"], "`sudo -i`"),
+            (&["sudo", "-Es", "{prompt}"], "`sudo -Es`"),
+            (&["sudo", "--login", "{prompt}"], "`sudo --login`"),
+            (&["sudo", "--shell", "{prompt}"], "`sudo --shell`"),
+            (&["alacritty", "-e", "env", "-S", "{prompt}"], "`env -S`"),
+        ] {
+            let e = refused(launcher);
+            assert!(
+                e.contains(&format!("{shown} can run its arguments as code"))
+                    && e.contains("heuristic"),
+                "{launcher:?}: {e}"
+            );
+        }
+        // plain `env` and `sudo` run an argv; options after the prompt are arguments
+        for ok in [
+            &["env", "X=1", "claude", "{prompt}"][..],
+            &["env", "-u", "X", "claude", "{prompt}"],
+            &["sudo", "-u", "agent", "claude", "{prompt}"],
+            &["env", "claude", "{prompt}", "-S"],
+            &["claude", "-s", "{prompt}"],
+        ] {
+            assert!(Launcher::resolve(&agent(ok), None).is_ok(), "{ok:?}");
+        }
+    }
+
+    #[test]
+    fn the_prompt_names_the_case_and_the_logbook_only() {
+        let p = prompt("C-2026-007", Path::new("/home/u/Seldon"));
+        assert_eq!(
+            p,
+            "Work case C-2026-007 in the Seldon logbook at /home/u/Seldon. First run \
+             `seldon hook session-start` (the logbook context) and `seldon plan show C-2026-007` \
+             (the case file). Every mutating command is recorded."
+        );
+        assert!(!p.contains('\n'));
     }
 }

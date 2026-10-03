@@ -1,6 +1,6 @@
 # FAQ
 
-<!-- source: en/12-faq.md @ 2e4bfa8 -->
+<!-- source: en/12-faq.md @ a670433 -->
 
 Kurze Antworten auf die Fragen, die zuerst kommen. Jede Antwort verweist
 auf die Seite mit den Einzelheiten.
@@ -24,9 +24,19 @@ Befehl an. Für Grenzen nimm die Berechtigungen deines Agenten. Siehe
 
 ## Verlässt etwas meine Maschine?
 
-Nein. Engine und Plugin bauen keine Netzwerkverbindung auf. Der einzige
-Download ist der Installer, den du selbst startest. Seldon pusht das
-git-Repository des Logbuchs nirgendwohin.
+Seldon selbst sendet nichts. Engine und Plugin bauen keine
+Netzwerkverbindung auf. Der einzige Download ist der Installer, den du
+selbst startest. Seldon pusht das git-Repository des Logbuchs
+nirgendwohin.
+
+Ein Agent, den du im Logbuch startest, ist etwas anderes: Er sendet, was
+er liest, an seinen Modellanbieter. Dazu gehören der Kontext von
+`seldon hook session-start` (Status, aktiver Case, letzte Journal-Zeilen,
+Überschriften der Lektionen), die Dateien, die er öffnet, und die Ausgabe
+seiner Befehle. Die Schwärzung gilt für aufgezeichnete Befehle, nicht für
+den Text von Notizen, Cases und `memory/`; siehe
+[Konfiguration](06-configuration.md#schwärzung) und
+[Mit Agenten arbeiten](04-working-with-agents.md#claude-code).
 
 ## Brauche ich Obsidian?
 
