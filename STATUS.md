@@ -17,7 +17,6 @@ decisions).
 | WP-076 | index: size budget enforced; perf budgets at stated scale | Engine | `engine-076` (opus) | `wt/WP-076` · `wp/076-review` | 2026-10-04 |
 | WP-073 | collectors: plugins dedupe, attribution window, verbs, SELDON_NOW, snapper numbers | Engine | `engine-073` (opus) | `wt/WP-073` · `wp/073-review` | 2026-10-04 |
 | WP-075 | import/dossier/watch: case-less vault, non-UTF-8, bad file, areas | Engine | `engine-075` (opus) | `wt/WP-075` · `wp/075-review` | 2026-10-04 |
-| WP-074 | init: language, config before layout, --no-git, theme hook under the lock (folds WP-052) | Engine | `engine-074` (opus) | `wt/WP-074` · `wp/074-review` | 2026-10-04 |
 
 ## Queued (next up)
 
@@ -38,6 +37,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-074 init: language setting, config saved before the layout
+  and restored on a failed layout, --no-git kept across re-runs, theme hook
+  installed and recorded under one lock (WP-052 folded in; two Opus rounds)
+  — merged.
 - 2026-10-04 WP-071 one shell parser for hook and attribution, pkexec/run0
   and sudo clusters, version/help probes, redirects and heredocs, floating
   words match no path below a skipPaths pattern (two Opus rounds, 14+
