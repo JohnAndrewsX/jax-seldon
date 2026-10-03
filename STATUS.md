@@ -15,7 +15,7 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-076 | index: size budget enforced; perf budgets at stated scale | Engine | `engine-076` (opus) | `wt/WP-076` · `wp/076-review` | 2026-10-04 |
-| WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
+| WP-073 | collectors: plugins dedupe, attribution window, verbs, SELDON_NOW, snapper numbers | Engine | `engine-073` (opus) | `wt/WP-073` · `wp/073-review` | 2026-10-04 |
 | WP-075 | import/dossier/watch: case-less vault, non-UTF-8, bad file, areas | Engine | `engine-075` (opus) | `wt/WP-075` · `wp/075-review` | 2026-10-04 |
 | WP-074 | init: language, config before layout, --no-git, theme hook under the lock (folds WP-052) | Engine | `engine-074` (opus) | `wt/WP-074` · `wp/074-review` | 2026-10-04 |
 
@@ -38,6 +38,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-071 one shell parser for hook and attribution, pkexec/run0
+  and sudo clusters, version/help probes, redirects and heredocs, floating
+  words match no path below a skipPaths pattern (two Opus rounds, 14+
+  mutants) — merged. **Wave 4 complete.**
 - 2026-10-04 WP-070 doctor checks config, state files, patterns, ledger
   lines, fences, duplicate case ids and the last capture's collector state
   (read-only, proven); `index --check` exits 1 for a duplicate case id (two
