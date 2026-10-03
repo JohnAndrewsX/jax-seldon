@@ -46,6 +46,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `seldon log --actor agent:…` refuses a note that contains a line break
   (exit 1, nothing written); a person's note may still have several lines
   (WP-058).
+- Agent hooks record and print context only for sessions inside the
+  logbook: `hook claude-code`, `hook generic`, `hook session-start` and
+  `hook session-stop` do nothing when the payload's `cwd` lies outside it.
+  This changes existing installs in a user-wide settings file such as
+  `~/.claude/settings.json`: sessions in other projects are no longer
+  recorded; `[hooks] scope = "all"` in `config.toml` keeps the old
+  behaviour. `hook install --settings` warns when the file is outside the
+  logbook. `skipPaths` also applies to recorded commands: a command line
+  that names a matching path is recorded as `<program> ‹redacted›`
+  (WP-063).
+- A PostToolUse hook checks for an already recorded tool call under the
+  state lock, so two calls for one tool call write one event; when the
+  lock stays held past the wait, stderr says the command was not recorded.
+  `seldon plan show` prints the case file as quoted lines (`> `) under
+  the same note `hook session-start` uses; `--json` is unchanged (WP-063).
 
 ### Plugin
 

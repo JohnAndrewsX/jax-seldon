@@ -566,8 +566,9 @@ is recorded redacted.
 `seldon hook claude-code` reads the **PreToolUse** JSON from stdin
 (ADR-0017: the event carries the start time, `meta.toolUseId` and
 `meta.sessionId`; a PostToolUse for a recorded `tool_use_id` writes
-nothing; a PostToolUse-only install records with the arrival time and
-rarely attributes), extracts `tool_input.command` (or `file_path` for
+nothing, checked under the state lock so that two PostToolUse calls for
+one tool call write one event; a PostToolUse-only install records with
+the arrival time and rarely attributes), extracts `tool_input.command` (or `file_path` for
 `Edit|Write|MultiEdit`, ADR-0014 §4), and classifies with the shared
 command parser (`pkgcmd.rs`): package managers via `is_mutating` (query
 sub-commands never, ADR-0017 §5; `pacman -Sy` counts), `omarchy
@@ -582,11 +583,20 @@ sub-commands inside the XDG config home or the logbook; the string of
 the payload's `cwd` and earlier `cd`s in the line; heredoc bodies are the
 command's stdin and are cut from the record; redaction runs before the
 4096-character cut. Green events per ADR-0019 only while a case is set.
-Non-mutating commands produce no event. Output: nothing on stdout (hooks
-must stay silent), exit 0 always, even on malformed stdin, a missing
-logbook, a broken config or a held lock (waited for up to 8 s, below the
-10 s timeout `hook install` sets; a capture holds the lock while its
-collectors run). The hook takes the state lock before it reads the case
+Non-mutating commands produce no event. A command line that names a path
+`[redaction] skipPaths` matches (§7) is recorded as `<program>
+‹redacted›` (the event's subject), as an `Edit` of such a file is
+recorded as `Edit ‹redacted›`; the line is read for such paths more
+widely than the shell would open them: its write targets, every word of
+its commands (`sh -c` and `eval` strings opened), every token of the line
+between blanks, quotes and shell operators (files read with `<`, words
+inside `$(…)`), each also after its first `=`, relative paths against
+`cwd` and every directory a `cd` in the line moves to (WP-063).
+Output: nothing on stdout (hooks must stay silent), exit 0 always, even
+on malformed stdin, a missing logbook, a broken config or a held lock
+(waited for up to 8 s, below the 10 s timeout `hook install` sets; a
+capture holds the lock while its collectors run; after the wait, stderr
+says the lock is held and the command was not recorded). The hook takes the state lock before it reads the case
 (`--case`, `.seldon/active-case`) and holds it until the case file is
 written, like every other case writer; only green records with no case
 at all are dropped before the lock. Only after it wrote an event, it
@@ -598,7 +608,25 @@ or `status` brings the index up to date. Measured in release on the dev host (WP
 2 ms per recorded command at any ledger size, 3 to 5 ms with the
 rebuild (empty to 1000-line ledger); a non-mutating command about 1 ms.
 `seldon hook generic` takes `{"command","actor","cwd",
-"startedAt"?}` with the same rules. `seldon hook install claude-code
+"startedAt"?}` with the same rules.
+
+Session scope (WP-063): the hooks serve the sessions inside the logbook.
+`hook claude-code`, `hook generic`, `hook session-start` and `hook
+session-stop` do nothing — no event, no context block, no journal line,
+no capture, no commit, exit 0 — when the payload's `cwd` is not the
+logbook or a directory below it (compared as written and with symbolic
+links resolved; a `cwd` that is not an absolute path counts as outside).
+A call whose stdin names no `cwd` (an agent or a person running the hook
+itself) is served. `config.toml [hooks] scope` sets this: `"logbook"`
+(the default; not written to the file) or `"all"`, which serves every
+session wherever it works, as the hooks did before WP-063. A settings
+file that only the logbook's sessions read (the default
+`<logbook>/.claude/settings.json`) gives the same result under both; the
+setting matters for a settings file outside the logbook, such as the
+user-wide `~/.claude/settings.json`, whose hooks Claude Code runs in every
+session of the user.
+
+`seldon hook install claude-code
 [--settings FILE]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
 `SessionStart` and `SessionEnd` (timeout 60 s, Claude Code's cap; `Stop`
 would fire after every reply) into `<logbook>/.claude/settings.json`
@@ -608,7 +636,14 @@ written with sorted keys. When it writes a file under a watched path
 records the file as the engine's own write (§5 rule 7), so the next
 capture explains its config event; `--json` adds `ownWrites` (the
 recorded `~`-paths, `{error}` when they could not be recorded, `null` when nothing
-was added). Other agents call `hook generic` themselves.
+was added). A settings file outside the logbook (any `--settings` path
+not inside it, compared as for the session scope) gets a warning, in the
+report as `warning: …` and under `--json` in `warnings` (empty
+otherwise), also when nothing was added: Claude Code runs the hooks in
+every session that reads the file, and the text says what Seldon does in
+the sessions outside the logbook under the current `[hooks] scope`
+(nothing under `"logbook"`; records and prints the context under
+`"all"`). Other agents call `hook generic` themselves.
 
 `seldon hook uninstall claude-code [--settings FILE]` (WP-049) is the
 inverse: it takes out each hook `install` writes (same event, matcher and
@@ -626,7 +661,8 @@ reading the settings file to the commit (WP-049 review), so no capture or
 `watch` sees the written file before its record; while another `seldon`
 holds the lock they change nothing and exit 4.
 
-`seldon hook session-start` prints a compact context block to stdout:
+`seldon hook session-start` prints a compact context block to stdout
+(nothing for a session outside the session scope above):
 STATUS summary, active case (id, title, plan steps), last 5 journal lines
 (of the latest day file `journal/YYYY/YYYY-MM-DD.md` up to today; other
 file names are skipped), `memory/lessons.md` headings. Claude Code adds it
