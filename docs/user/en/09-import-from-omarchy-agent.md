@@ -108,11 +108,12 @@ files the import wrote. It looks like this:
 
 ```sh
 cd ~/Seldon
-git checkout <commit> -- memory/lessons.md && rm -f -- work/queued/C-2026-002-zweiter-editor.md …
+git --literal-pathspecs checkout <commit> -- memory/lessons.md && rm -f -- work/queued/C-2026-002-zweiter-editor.md …
 ```
 
-`git checkout <commit> --` takes the files the import changed back to the
-commit made just before it. `rm -f` removes the files it created. Other
+`git --literal-pathspecs checkout <commit> --` takes the files the import
+changed back to the commit made just before it, and reads the file names
+as they are (no wildcards). `rm -f` removes the files it created. Other
 files in the logbook stay as they are. Run the command soon: a ledger
 line that a hook adds to one of the import's ledger files after the
 failure is taken back with it. Then fix the cause and run `--apply`
@@ -120,6 +121,9 @@ again.
 
 Until you undo it, every new `--apply` refuses (exit 1) and prints the
 same command (it is kept in `.seldon/imports/omarchy-agent.undo.json`).
+If that file was changed so that it names files outside the import's
+folders, or no commit, Seldon prints no command and points you to
+`git status` instead.
 
 ---
 

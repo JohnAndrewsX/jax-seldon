@@ -193,14 +193,17 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # {old: new}, counts}; one autocommit `seldon: import omarchy-agent`;
                                                # index rebuilt. A write that fails after the ledger append is an
                                                # error that says nothing was committed and how to undo it with the
-                                               # import's own files only (`git checkout <commit before the import>
+                                               # import's own files only (`git --literal-pathspecs checkout <commit before the import>
                                                # -- <files it changed> && rm -f -- <files it created>` in the
                                                # logbook, also kept in .seldon/imports/omarchy-agent.undo.json, which
                                                # the undo removes too). The marker makes
                                                # every later run write nothing ("Nothing changed", changed: false);
                                                # import notes in the ledger without the marker (an apply that did
                                                # not finish, or a deleted .seldon/) are a user error (exit 1) with
-                                               # the kept undo (without it: `git -C <logbook> status` lists what to
+                                               # the kept undo, offered only with a hash base whenever it restores and
+                                               # paths in the import's folders (ledger/ work/ journal/ memory/ system/
+                                               # outputs/ .seldon/imports/), no `.git`, no glob or pathspec magic
+                                               # (otherwise, and without it: `git -C <logbook> status` lists what to
                                                # take back), never "nothing changed" and never a second import. Not a directory / not a vault → exit 1.
                                                # --json → {mode: dry-run|apply, changed, alreadyImported: null|{by,
                                                # importedAt}, vault, report, errors, counts: {cases, renumbered,
@@ -369,7 +372,8 @@ exit 3 (what the plugin's banner expects). `status` autocommits as
 `seldon: status` only when a logbook file changed; `index` never commits.
 Every writing command calls `index::rebuild_if_initialised` after its
 autocommit and before releasing the lock; a failed rebuild is a warning,
-never a command failure.
+never a command failure. Broken files (torn ledger line, invalid case
+frontmatter) are skipped with a warning that `--json` and stderr surface.
 
 The autocommit (WP-061): `git add -A` and `git commit -m "seldon:
 <summary>"` in the logbook, when `[git] autocommit` is on, `--no-commit`
@@ -377,9 +381,14 @@ is not given and the logbook has its own `.git`. Every git command runs in
 the logbook with the variables that point git at another repository
 removed (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
 `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
-`GIT_COMMON_DIR`, `GIT_NAMESPACE`, `GIT_CEILING_DIRECTORIES` and the rest
-of `git rev-parse --local-env-vars`), so a `seldon` started from a git hook
-or with an exported `GIT_DIR` still commits only into the logbook. The
+`GIT_COMMON_DIR`, `GIT_NAMESPACE` and the rest of `git rev-parse
+--local-env-vars`) and `GIT_CEILING_DIRECTORIES` set to the logbook's
+parent, so a `seldon` started from a git hook or with an exported
+`GIT_DIR` still commits only into the logbook, and an empty or broken
+`.git` never lets git walk up into a repository around it. Before it
+writes, the autocommit checks that `git rev-parse --show-toplevel` is the
+logbook; otherwise nothing is committed. `index`'s `logbook.git` reads
+git with the same environment. The
 user's git configuration applies (hooks, `commit.gpgsign`, a passphrase
 prompt on the terminal). A detached HEAD (`git symbolic-ref -q HEAD`
 fails) is not committed and nothing is staged. A commit that is not made
@@ -387,10 +396,12 @@ fails) is not committed and nothing is staged. A commit that is not made
 stderr, `seldon: warning: git: not committed: <reason>`, and
 `"git": {"committed": false, "error": "<reason>"}` in `--json`; the
 command still exits 0, because the data is written. `doctor`'s `git` check
-is degraded, with a fix line, while autocommit is on and a
-`.git/index.lock` exists, HEAD is detached, or `git commit --dry-run`
-fails. Broken files (torn ledger line, invalid case
-frontmatter) are skipped with a warning that `--json` and stderr surface.
+is degraded, with a fix line, when the logbook's `.git` is not its own
+usable repository, and, while autocommit is on, when a `.git/index.lock`
+exists, `.git` is read-only, HEAD is detached or names no commit, or git
+cannot resolve the committer and author (`git var`, with the fallback
+identity the autocommit uses). doctor takes no lock and writes nothing
+into `.git` (file metadata and read-only git queries only).
 
 `message` carries the full detail (e.g. the unrecognised subcommand name),
 not just the error kind. Detection of `--json` must not sniff raw argv for
