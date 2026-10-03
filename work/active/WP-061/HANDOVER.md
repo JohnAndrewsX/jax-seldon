@@ -62,12 +62,8 @@ Branch `wp/061-review`, worktree `wt/WP-061`. No PR, no push.
 
 ## Not done
 
-- `engine/src/index/mod.rs` `git_info` (`rev-parse`, `status
-  --porcelain` for `logbook.git`) still runs git with the inherited
-  environment. It only reads, but under an inherited `GIT_DIR` the index
-  reports the other repository's HEAD and dirty state. That file is not
-  in this WP. The fix is a one-liner once `git.rs` exposes a read helper
-  (for example make `git::run` public). Proposed as a follow-up.
+- ~~`index/mod.rs` `git_info` reads git with the inherited
+  environment~~: done in fix round 1 (Q4).
 - F-503's index/plugin part (last commit result in `index.json`, a
   plugin banner) is still waiting for the operator decision, as the WP
   says.
@@ -173,13 +169,10 @@ Appended to `memory/pitfalls.md`, under "2026-10-03 · WP-061":
 
 ## Decisions needed
 
-- `docs/TESTING.md` is not in this WP's file list, but its rows for
-  `tests/import.rs` (it still names the `git checkout -- . && git clean
-  -fd` hint) and `tests/doctor.rs` are now stale, and the new
-  `tests/git.rs` has no row. May I (or a docs WP) update those three
-  rows?
-- Follow-up for `index/mod.rs` `git_info` (inherited environment; see
-  "Not done").
+- None open from round 0. The TESTING.md rows and `index/mod.rs` were
+  assigned in the review and are done (fix round 1). B3 (rebase onto
+  WP-064, `sys::run_command_in_engine_group`, process-group test) waits
+  for the orchestrator's go.
 
 ## Touched outside WP scope
 
@@ -190,3 +183,112 @@ went into `doctor.rs` next to `check_git` (`autocommit_blocked`,
 `human_age`) and into `import.rs` next to the undo code (`Undo`,
 `commit_pending`, `shell_quote`, `undo_path`). The new `git.rs` helpers
 are `is_detached`, `branches`, `commit_dry_run`, `is_dirty` and `head`.
+
+## Fix round 1 (review SEND BACK)
+
+B3 is not done yet; it waits for the message that WP-064 is merged.
+
+Done:
+- **B1**: `git.rs` `command()` sets `GIT_CEILING_DIRECTORIES` to the
+  logbook's parent (resolved path), instead of removing it. `commit_all`
+  calls the new `check_toplevel()` first: `git rev-parse --show-toplevel`
+  must equal the logbook root (both canonicalised), otherwise nothing is
+  committed.
+  - An empty or broken `.git` gives "the logbook's .git is not a usable
+    repository: fatal: not a git repository …".
+  - A `.git` that resolves to another work tree gives "… belongs to
+    another work tree (<path>)".
+  - doctor runs the same check whenever the logbook has a `.git`:
+    degraded, with fix `git -C <root> init` for an unusable one.
+  - git messages now keep only git's `fatal:`/`error:` lines, so the
+    advice text is left out.
+- **B2**: `Undo::is_sane` now requires:
+  - a 40- or 64-hex `base` whenever `restore` is non-empty;
+  - every path in `ledger/ work/ journal/ memory/ system/ outputs/`
+    (at least one level deeper) or under `.seldon/imports/`;
+  - no `.git` component, no `..`, no absolute or empty path;
+  - no `* ? [ \`, no leading `:` and no control characters.
+  The printed restore is `git --literal-pathspecs checkout <sha> -- …`.
+- **N1**: test `a_successful_apply_removes_a_leftover_undo_file`.
+- **N2**: doctor no longer runs `git commit --dry-run`. The checks after
+  the index.lock check, all lock-free:
+  - `.git` read-only (file metadata), fix `chmod u+w <root>/.git`;
+  - detached HEAD;
+  - `check_head` (`rev-parse --verify -q HEAD`, an unborn branch is fine
+    via `symbolic-ref` + `show-ref --verify`), fix `git -C <root> status`;
+  - `check_identity` (`git var GIT_COMMITTER_IDENT` and
+    `GIT_AUTHOR_IDENT`, with the same fallback identity the autocommit
+    uses), fix `git -C <root> config user.name "Your Name"`.
+- **N3**: `docs/TESTING.md`: the import hint (~59), the doctor row, and
+  a new `tests/git.rs` row.
+- **Q4**: `index::git_info` runs `rev-parse` and `status` through
+  `git::query` (same environment and ceiling).
+- Docs: the SPEC-ENGINE autocommit paragraph (ceiling, toplevel check,
+  index, the new doctor probes, "doctor writes nothing into .git").
+  - Also restored: in round 0 I split the original "Broken files …"
+    sentence off its paragraph; it is back where it was.
+  - The SPEC `import` lines now say what a kept undo must look like.
+  - en/de 09 show `--literal-pathspecs` and say that a tampered undo is
+    not offered; the de page is stamped `779624f`.
+  - My own `[Unreleased]` CHANGELOG lines are updated (they had said
+    "commit dry run").
+
+New and changed tests:
+- `tests/git.rs`:
+  - `an_empty_dot_git_inside_another_repository_commits_nowhere`: the
+    parent's HEAD and index are unchanged, the empty `.git` stays empty,
+    there is one warning with the reason, `--json` `git.error`, and
+    `index` shows no HEAD.
+  - `the_index_reads_the_logbooks_head_under_an_inherited_git_dir`.
+- `tests/doctor.rs`:
+  - `a_read_only_dot_git_is_degraded`, which replaces the dry-run test.
+  - `an_identity_git_cannot_resolve_is_degraded` (empty `user.name`).
+  - `an_empty_dot_git_is_degraded_with_its_fix` (inside a parent
+    repository).
+  - `doctor_leaves_dot_git_untouched`: a tracked file's mtime is moved
+    an hour ahead, then `.git` is compared byte for byte.
+- `tests/import.rs`:
+  - `a_tampered_undo_file_is_not_offered_as_a_command`: eight tampered
+    files (null or `HEAD` base with a restore, `.git/config`,
+    `.git/HEAD`, `PROJECT.md`, `../outside`, `:/`, `memory/*`); each
+    refusal prints no command, points to `git -C … status`, and writes
+    nothing.
+  - `a_successful_apply_removes_a_leftover_undo_file`.
+- Unit test `a_kept_undo_outside_the_imports_files_is_not_offered`
+  (17 bad paths, the base rules, one good set).
+
+Mutants. Each was applied in place and restored from the index, and
+each fails its test:
+- F1 (B1 ceiling not set):
+  - `an_empty_dot_git…` (tests/git.rs:210, the reason is "belongs to
+    another work tree", not "not a usable repository");
+  - doctor `an_empty_dot_git_is_degraded_with_its_fix` (tests/doctor.rs:485).
+- F2 (B1 toplevel check removed from `commit_all`): `an_empty_dot_git…`
+  (tests/git.rs:210).
+- F3 (B2 `.filter(Undo::is_sane)` removed): `a_tampered_undo_file…`
+  (tests/import.rs:688, the command is offered).
+- F4 (N1 `remove_file` removed): `a_successful_apply_removes…`
+  (tests/import.rs:714).
+- F5 (N2 `git commit --dry-run` put back into doctor):
+  `doctor_leaves_dot_git_untouched` (tests/doctor.rs:513, `.git`
+  changed).
+- F6 (Q4 `git_info` back on `sys::run`): `the_index_reads…`
+  (tests/git.rs:287, it reports the other repository's HEAD).
+- F7 (B2 base `None` allowed with a restore): the unit test
+  (src/commands/import.rs:632).
+
+Verified by:
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+  are clean.
+- Suites: `--test git` 5/5, `--test import` 11/11, `--test doctor`
+  16/16, `--test index` 17/17, lib 156/156. The full `cargo test` is
+  483 passed, 0 failed.
+- `bash scripts/docs-check.sh`: ok.
+- `cargo build` was run after the mutant loop.
+
+Not done in this round: B3 (waits for the go). Full `just check` will be
+run after the B3 rebase.
+
+Touched outside the original file list:
+- `engine/src/index/mod.rs` (`git_info` only, Q4) and `docs/TESTING.md`
+  (two rows, one new row, N3). Both were assigned in the review.
