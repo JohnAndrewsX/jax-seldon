@@ -17,12 +17,13 @@ decisions).
 | WP-070 | doctor: invalid config, corrupt state, bad patterns; index ok:false | Engine | `engine-070` (opus) | `wt/WP-070` · `wp/070-review` | 2026-10-03 |
 | WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
 | WP-075 | import/dossier/watch: case-less vault, non-UTF-8, bad file, areas | Engine | `engine-075` (opus) | `wt/WP-075` · `wp/075-review` | 2026-10-04 |
+| WP-074 | init: language, config before layout, --no-git, theme hook under the lock (folds WP-052) | Engine | `engine-074` (opus) | `wt/WP-074` · `wp/074-review` | 2026-10-04 |
 
 ## Queued (next up)
 
 Review v0.1.1 wave plan (22 WPs, WP-055…076; waves of file-disjoint
 packages, 4 Highs in wave 1): WP-057/058 after WP-055; then waves 2–5 as
-the orchestrator's plan says. WP-052 folds into WP-074. WP-033 (update-impact, option C, after AUR) · WP-042 (marketplace
+the orchestrator's plan says. WP-052 folded into WP-074 (retired). WP-033 (update-impact, option C, after AUR) · WP-042 (marketplace
 submission, after AUR) · WP-052 (`init --theme-hook` write under the
 lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 
