@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 1262516 -->
+<!-- source: en/06-configuration.md @ abfa9b9 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -143,18 +143,23 @@ verfolgen willst.
 
 Bevor die Engine etwas schreibt, entfernt sie Geheimnisse aus dem Text:
 aus jedem Feld eines Ereignisses (der Befehlszeile, dem Subjekt, dem
-Detailtext und den übrigen Werten) und aus dem Text, den du
+Detailtext und den übrigen Werten) und aus dem Text und den Tags, die du
 `seldon log`, `seldon plan new`, dem `--reason` eines Schritts,
 `seldon decide` und `seldon drift explain` oder `dismiss` gibst. Journal,
 Case- und Entscheidungsdateien und `STATUS.md` enthalten deshalb
 denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 `‹redacted›`. Die eingebauten Regeln erfassen:
 
-- `--password`, `--token`, `--api-key`, `--with-token`, `--secret` und
-  ähnliche Optionen samt ihren Werten;
-- `token=`, `API_KEY=`, `PASSWORD=`, `PGPASSWORD=`, `MYSQL_PWD=` und
-  andere Zuweisungen der Form `…KEY=`, `…SECRET=`, `…PASSWORD=`;
-- `Authorization:`, `X-Api-Key:`, `Private-Token:` und ähnliche Header;
+- `--password` und `token=` samt ihren Werten;
+- `--token`, `--api-key`, `--with-token`, `--secret` und ähnliche
+  Optionen sowie `API_KEY=`, `PASSWORD=`, `PGPASSWORD=`, `MYSQL_PWD=` und
+  andere Zuweisungen der Form `…KEY=`, `…SECRET=`, `…PASSWORD=`, wenn der
+  Wert wie ein Zugangsdatum aussieht: mindestens 16 Zeichen, oder
+  mindestens 8, die zwei von Kleinbuchstaben, Großbuchstaben, Ziffern und
+  anderen Zeichen mischen (`sort --key=2` und `hotkey=Super` bleiben also,
+  wie sie sind);
+- `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
+  deren Name auf Key, Token, Secret oder Auth endet;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
   `gho_…`, `github_pat_…` und die übrigen `gh…_`-Formen), GitLab-Tokens
   (`glpat-…`), Slack-Tokens (`xoxb-…`), API-Schlüssel (`sk-…`, `sk_…`);
