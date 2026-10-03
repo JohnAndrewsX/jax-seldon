@@ -132,10 +132,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `manifest.json` or `owned.json` (each an error with its fix), ledger
   lines that are skipped (per month, with the count), a `STATUS.md` or
   `DECISIONS.md` fence that `status` leaves alone, an end marker that
-  closes no fence, and a case id in two files. With a `config.toml` that
-  does not parse it exits 1 and reports the logbook as "not checked"
-  instead of checking the default path and exiting 3. The snapper probe
-  honours `SELDON_SNAPPER`. doctor stays read-only (WP-070).
+  closes no fence, a case id in two files, and every enabled collector
+  whose last capture failed (with the collector's message and fix). With
+  a `config.toml` that cannot be read or does not parse it exits 1 with
+  a fix line and reports the logbook as "not checked" instead of checking
+  the default path and exiting 3 (or a bare exit 2 for an unreadable
+  file). The omarchy and snapper probes honour `SELDON_OMARCHY_VERSION`
+  and `SELDON_SNAPPER`. doctor stays read-only (WP-070).
 - A corrupt `cursors.json` is shown in the index: every enabled collector
   is `ok: false` with the message, and `index` and `status` warn
   (WP-070).

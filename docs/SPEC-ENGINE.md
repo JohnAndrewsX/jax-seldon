@@ -242,8 +242,8 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # limit) → exit 2; a failing re-watch later is an error line. RSS
                                                # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
-seldon doctor                                  # engine, config, logbook, cases, ledger, fences, state,
-                                               # omarchy, snapper, git checks (read-only)
+seldon doctor                                  # engine, config, logbook, cases, ledger, fences, collectors,
+                                               # state, omarchy, snapper, git checks (read-only)
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
 # prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
 # path as one argument; without a terminal (the plugin) it launches
@@ -295,13 +295,17 @@ seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
 banner states parse the doctor shape; it is not part of `schema/`.
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
-where one exists. `config`: `config.toml` parses and its `[redaction]
-patterns` compile (an invalid pattern makes every writing command
-refuse: error). When `config.toml` does not parse, the logbook path it
+where one exists. `config`: `config.toml` can be read, parses and its
+`[redaction] patterns` compile (an invalid pattern makes every writing
+command refuse: error). A parse error's fix says to correct the file
+(the message names the key) or move it away and run `seldon init`; an
+unreadable file is a config error with a `chmod` fix, not a bare exit
+2. When `config.toml` cannot be read or parsed, the logbook path it
 names is not known: the `logbook` row is "not checked: config.toml is
-invalid", `"logbook"` is `null`, and doctor exits 1, never 3 with the
-default path (a path from `--logbook`, `--path` or `SELDON_LOGBOOK` is
-still checked; the exit code stays 1). With an open logbook: `cases`, a
+invalid" (or "cannot be read"), `"logbook"` is `null`, and doctor exits
+1, never 3 with the default path (a path from `--logbook`, `--path` or
+`SELDON_LOGBOOK` is still checked; the exit code stays 1, and an `init`
+fix starts "after fixing config.toml:"). With an open logbook: `cases`, a
 case id in two files (error, the `index --check` rule); `ledger`, lines
 that are not events, per month with the count and the first line
 numbers (degraded: every reader skips them); `fences`, the generated
@@ -309,16 +313,22 @@ fence of `STATUS.md` or `DECISIONS.md` that `status` leaves alone (no end
 marker of its own, or `STATUS.md` with the header but without the
 fence; degraded, the fix names the marker lines), an end marker
 that closes no fence (degraded), and a file that cannot be read as text
-(error: `status` stops on it). doctor cannot tell an intact fence from
+(error: `status` stops on it); `collectors`, every enabled collector
+whose last capture failed according to `cursors.json` (only when the
+cursors belong to this logbook), with its message and the fixes the
+collectors stored (degraded). doctor cannot tell an intact fence from
 one whose own end marker was removed while a later end marker remains:
 the writer then takes the text up to that marker as the fence body and
 replaces it. The row says so when it finds a stray end marker; with only
 one end marker left, nothing in the file shows it. `state`:
 `cursors.json`, `manifest.json` and `owned.json` in the state directory
 parse (missing is fine); each corrupt or unreadable one is an error row
-with what it breaks and the fix (`mv <file> <file>.bad`). The `snapper`
-probe runs the program the collector runs (`SELDON_SNAPPER`, default
-`snapper`).
+with what it breaks and the fix (`mv <file> <file>.bad`, or `chmod` for
+an unreadable one). A corrupt `manifest.json` or `owned.json` is read as
+empty by the collector, which takes a new baseline without a report;
+whether that stays silent is an open decision. The `omarchy`
+and `snapper` probes run the programs the collectors run
+(`SELDON_OMARCHY_VERSION`, `SELDON_SNAPPER`).
 
 ```
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
