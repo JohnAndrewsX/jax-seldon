@@ -65,7 +65,8 @@ use crate::logbook::{Logbook, journal};
 use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, Source, Zone, zone_for};
 use crate::model::is_agent;
 use crate::pkgcmd::{
-    ShellLine, Target, parse_command, parse_shell, simple_commands, write_targets,
+    ShellLine, Target, Word, Workdir, globs_overlap, line_vars, omarchy_route, parse_command,
+    parse_shell, simple_commands, workdirs, write_targets,
 };
 use crate::redact::{REDACTED, Redactor};
 
@@ -331,12 +332,15 @@ impl Scope {
 /// Whether `line`, run in `cwd`, changes anything (SPEC-ENGINE §8,
 /// ADR-0019), and what it records: the first of its most severe mutating
 /// commands. `sh -c '…'` and `eval '…'` are read as the commands inside;
-/// a `cd` changes the directory for the commands after it.
+/// `cd`, `pushd` and `popd` change the directory for the commands after
+/// them, and a program's `-C DIR` or a wrapper's `env -C DIR` its own
+/// ([`workdirs`]).
 pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation> {
-    let mut cwd = cwd.to_path_buf();
+    let segments = simple_commands(line);
+    let dirs = workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d));
     let mut found: Option<Mutation> = None;
-    for segment in simple_commands(line) {
-        let mutation = classify_segment(segment.argv(), &segment.writes, scope, &mut cwd);
+    for (segment, dirs) in segments.iter().zip(&dirs) {
+        let mutation = classify_segment(segment.argv(), &segment.writes, scope, dirs);
         if let Some(m) = mutation
             && found.as_ref().is_none_or(|f| m.rank() > f.rank())
         {
@@ -349,23 +353,17 @@ pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation>
 /// One simple command: pacman-like programs (every mutating operation is
 /// red), `omarchy` routes, `systemctl` unit changes, `git` sub-commands
 /// that change a repository, foreign package managers, and the files it
-/// writes ([`write_targets`]). Updates `cwd` on `cd`.
+/// writes ([`write_targets`]): redirections in the shell's directory, the
+/// program's own operands where it runs.
 fn classify_segment(
     argv: &[String],
     writes: &[String],
     scope: &Scope,
-    cwd: &mut PathBuf,
+    dirs: &Workdir,
 ) -> Option<Mutation> {
     let word = argv.first().map(String::as_str).unwrap_or("");
     let program = word.rsplit('/').next().unwrap_or(word);
     let args = argv.get(1..).unwrap_or_default();
-    if program == "cd" {
-        *cwd = match args.iter().find(|a| !a.starts_with('-')) {
-            Some(dir) => scope.resolve(dir, cwd),
-            None => scope.home.clone(),
-        };
-    }
-    let cwd: &Path = cwd;
     let subject = if program.is_empty() { "sh" } else { program };
     let mutation = |(zone, needs_case): (Option<Zone>, bool)| Mutation {
         subject: subject.to_string(),
@@ -377,27 +375,30 @@ fn classify_segment(
     let command = match parse_command(&argv_str) {
         Some(cmd) => cmd.is_mutating().then_some((Some(Zone::Red), false)),
         None => match program {
-            "omarchy" => omarchy(&route(args)).map(|z| (z, false)),
-            p if p.starts_with("omarchy-") => {
-                let mut words: Vec<&str> = p["omarchy-".len()..].split('-').collect();
-                words.extend(route(args));
-                omarchy(&words).map(|z| (z, false))
-            }
+            p if p == "omarchy" || p.starts_with("omarchy-") => omarchy_route(argv)
+                .and_then(|route| omarchy(&route))
+                .map(|z| (z, false)),
             "systemctl" => args
                 .iter()
                 .find(|a| !a.starts_with('-'))
                 .filter(|verb| SYSTEMCTL_VERBS.contains(&verb.as_str()))
                 .map(|_| (Some(Zone::Red), false)),
-            "git" => git(args, scope, cwd),
+            "git" => git(args, scope, &dirs.program),
             p if FOREIGN_PACKAGE_MANAGERS.contains(&p) => {
                 foreign_install(p, args).then_some((Some(Zone::Green), true))
             }
             _ => None,
         },
     };
-    let paths: Vec<(PathBuf, bool)> = write_targets(argv, writes)
+    let paths: Vec<(PathBuf, bool)> = writes
         .iter()
-        .map(|t| (scope.resolve(t.word(), cwd), matches!(t, Target::Tree(_))))
+        .map(|w| (scope.resolve(w, &dirs.shell), false))
+        .chain(write_targets(argv, &[]).iter().map(|t| {
+            (
+                scope.resolve(t.word(), &dirs.program),
+                matches!(t, Target::Tree(_)),
+            )
+        }))
         .collect();
     let files = scope.writes(&paths);
     [command, files]
@@ -516,13 +517,16 @@ fn omarchy(route: &[&str]) -> Option<Option<Zone>> {
 /// A `git` sub-command that changes a repository: in `~/.config` the config
 /// zone of its directory; in the logbook green and always recorded
 /// (SPEC-ENGINE §8); anywhere else green, only with a case (ADR-0019).
-fn git(args: &[String], scope: &Scope, cwd: &Path) -> Option<(Option<Zone>, bool)> {
-    let mut dir = cwd.to_path_buf();
+/// `dir` is where git runs, its `-C DIR` already followed ([`workdirs`]).
+fn git(args: &[String], scope: &Scope, dir: &Path) -> Option<(Option<Zone>, bool)> {
+    let mut dir = dir.to_path_buf();
     let mut it = args.iter();
     let sub = loop {
         let a = it.next()?;
         match a.as_str() {
-            "-C" => dir = scope.resolve(it.next()?, &dir),
+            "-C" => {
+                it.next()?;
+            }
             "--work-tree" | "--git-dir" => {
                 let d = scope.resolve(it.next()?, &dir);
                 dir = if a == "--git-dir" {
@@ -804,31 +808,29 @@ fn bash_record(command: &str, setup: &Setup, cwd: &Path) -> Option<Record> {
 /// shell operators, `:` and `,` (which also holds the files read with `<`,
 /// the words inside `$(…)` and the parts of a list such as `PATH=a:b`);
 /// each also after its first `=` (`--file=PATH`, `VAR=PATH`). A relative
-/// path is tried against `cwd` and
-/// against every directory a `cd` or `pushd` in the line moves to or a
-/// `-C DIR` names (`git -C`, `make -C`). It matches more than the shell
-/// would open; paths built from variables or globs are read as written.
+/// path is tried against `cwd` and against every directory the line's
+/// commands work in ([`workdirs`]: `cd`, `pushd`, `popd`, a program's
+/// `-C DIR`, `env -C DIR`), as the classifier reads them. A variable the
+/// line sets to a literal is read with its value (`F=x; cat ~/d/$F`); a
+/// word with a glob or an unknown part (`priv*.conf`, `$D/id_rsa`) counts
+/// when a path it can name matches ([`SkipGlob::floating_overlaps`] for one
+/// that starts with an unknown part; one with nothing known but `/` names
+/// no path). It matches more than the shell would
+/// open.
 fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
     if setup.config.redaction.skip_paths.is_empty() {
         return false;
     }
     let scope = &setup.scope;
+    let segments = simple_commands(line);
     let mut dirs = vec![cwd.to_path_buf()];
+    for d in workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d)) {
+        dirs.extend([d.shell, d.program]);
+    }
+    dirs.sort_unstable();
+    dirs.dedup();
     let mut words: Vec<String> = Vec::new();
-    for segment in simple_commands(line) {
-        let argv = segment.argv();
-        let program = argv.first().map(|w| w.rsplit('/').next().unwrap_or(w));
-        let here = dirs.last().cloned().unwrap_or_else(|| cwd.to_path_buf());
-        if matches!(program, Some("cd" | "pushd")) {
-            dirs.push(match argv[1..].iter().find(|a| !a.starts_with('-')) {
-                Some(dir) => scope.resolve(dir, &here),
-                None => scope.home.clone(),
-            });
-        }
-        // `git -C DIR`, `make -C DIR`, `tar -C DIR`: the command works there
-        for pair in argv.windows(2).filter(|p| p[0] == "-C") {
-            dirs.push(scope.resolve(&pair[1], &here));
-        }
+    for segment in segments {
         words.extend(segment.words);
         words.extend(segment.writes);
     }
@@ -838,17 +840,103 @@ fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
             .filter(|t| !t.is_empty())
             .map(str::to_string),
     );
+    let vars = line_vars(line);
+    let globs = skip_globs(&setup.config.redaction.skip_paths, &scope.home);
     words.iter().any(|word| {
         let after_equals = word.split_once('=').map(|(_, value)| value);
         [Some(word.as_str()), after_equals]
             .into_iter()
             .flatten()
             .filter(|w| !w.is_empty())
-            .any(|w| {
-                dirs.iter()
-                    .any(|d| setup.skip.matches(&scope.resolve(w, d)))
+            .any(|w| match vars.expand(w) {
+                Word::Literal(w) => dirs
+                    .iter()
+                    .any(|d| setup.skip.matches(&scope.resolve(&w, d))),
+                // only unknown parts: no path in it
+                Word::Pattern {
+                    only_unknown: true, ..
+                } => false,
+                Word::Pattern {
+                    glob,
+                    floating: true,
+                    ..
+                } => globs.iter().any(|g| g.floating_overlaps(&glob)),
+                Word::Pattern { glob, .. } => dirs.iter().any(|d| {
+                    let path = scope.resolve(&glob, d);
+                    globs.iter().any(|g| g.overlaps(&path.to_string_lossy()))
+                }),
             })
     })
+}
+
+/// A `[redaction] skipPaths` pattern as a glob over absolute paths, read
+/// the way `SkipPaths` reads it: without `/` a last path component, else a
+/// path and everything below it (`~` the home directory; a relative
+/// pattern starts at any directory).
+enum SkipGlob {
+    Name(String),
+    Path(String),
+}
+
+impl SkipGlob {
+    /// Whether a path the glob `path` (absolute, or starting with an unknown
+    /// part) can name matches.
+    fn overlaps(&self, path: &str) -> bool {
+        match self {
+            SkipGlob::Name(name) => globs_overlap(path.rsplit('/').next().unwrap_or(path), name),
+            SkipGlob::Path(p) => globs_overlap(path, p) || globs_overlap(path, &format!("{p}/**")),
+        }
+    }
+
+    /// Whether a path the floating glob `word` (`$X/tail`, `"$(pwd)"/x`:
+    /// its first component holds the unknown part) can name matches: a
+    /// name pattern by the word's last component; a path pattern only by
+    /// its last components, which must be literal and match the word's
+    /// known tail, never by a path below the pattern. So `$D/id_rsa` is
+    /// `~/.ssh/id_rsa`, while `$TMPDIR/yay.log` is no
+    /// `~/.config/omarchy/**/*.log` and `$PKGDEST/x.pkg.tar.zst` is below
+    /// no skipped folder.
+    fn floating_overlaps(&self, word: &str) -> bool {
+        let SkipGlob::Path(p) = self else {
+            return self.overlaps(word);
+        };
+        let literal = |c: &&str| !c.contains(['*', '?']);
+        let pattern: Vec<&str> = p.split('/').collect();
+        let parts: Vec<&str> = word.split('/').collect();
+        let (head, tail) = parts.split_first().unwrap_or((&"", &[]));
+        if tail.is_empty() {
+            // `$Xname`: the pattern's last component
+            return pattern
+                .last()
+                .is_some_and(|last| literal(last) && globs_overlap(head, last));
+        }
+        pattern.len() > tail.len()
+            && pattern[pattern.len() - tail.len()..]
+                .iter()
+                .zip(tail)
+                .all(|(pc, wc)| literal(pc) && globs_overlap(wc, pc))
+    }
+}
+
+fn skip_globs(patterns: &[String], home: &Path) -> Vec<SkipGlob> {
+    let home = home.to_string_lossy();
+    patterns
+        .iter()
+        .map(|p| p.trim().trim_end_matches('/'))
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            if !p.contains('/') && p != "~" {
+                return SkipGlob::Name(p.to_string());
+            }
+            match p.strip_prefix('~') {
+                Some(rest) if rest.is_empty() || rest.starts_with('/') => {
+                    SkipGlob::Path(format!("{home}{rest}"))
+                }
+                _ if p.starts_with('/') => SkipGlob::Path(p.to_string()),
+                _ => SkipGlob::Path(format!("**/{p}")),
+            }
+        })
+        .collect()
 }
 
 /// `Edit`/`Write`/`MultiEdit`: one record per path. A watched path takes

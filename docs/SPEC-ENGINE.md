@@ -491,8 +491,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `transaction started` (ADR-0013 §5). `meta.command` is parsed as argv,
   never matched as a substring; the parser (`command_intent`,
   `parse_command`, `is_plain_full_upgrade`) is shared with the hook (§8)
-  and the drift routine rule (§5). Rotation: the tail of `<log>.1` with the
-  old inode is read first, then the new file from 0; a rotation to another
+  and the drift routine rule (§5): the intent of a hook `command` event is
+  read from its recorded line with the hook's own shell parser (quotes,
+  wrappers, `sh -c`, heredocs), so a line the hook records as a package
+  command is the line attribution reads one from; the parser's limits are
+  listed in §8 (WP-071). Rotation: the tail of `<log>.1` with the old
+  inode is read first, then the new file from 0; a rotation to another
   name loses the lines between the old offset and the rotation (never
   duplicates, thanks to dedupe). Attribution follows ADR-0014 §1 as
   sharpened by ADR-0017 §2–§5, with this reading of "named the subject": a
@@ -759,7 +763,11 @@ one tool call write one event; a PostToolUse-only install records with
 the arrival time and rarely attributes), extracts `tool_input.command` (or `file_path` for
 `Edit|Write|MultiEdit`, ADR-0014 §4), and classifies with the shared
 command parser (`pkgcmd.rs`): package managers via `is_mutating` (query
-sub-commands never, ADR-0017 §5; `pacman -Sy` counts), `omarchy
+sub-commands never, ADR-0017 §5; `pacman -Sy` counts; `-V`, `-h`,
+`--version`, `--help`, yay's `-P` and `-G` never; yay's `-Yc` does) after
+the wrappers `sudo`, `doas`, `pkexec`, `run0`, `env`, `nice`, `timeout`,
+`time`, `nohup`, `command`, `exec` with their options and option clusters
+(`sudo -Eu root`; `command -v`, `sudo -l` run nothing), `omarchy
 (update|pkg add|aur add|drop|remove|install|remove|reinstall|plugin
 add|clone|enable|disable|remove|update|theme set|install|remove|update)`
 and the `omarchy-*` scripts, `systemctl (enable|disable|start|stop|mask|
@@ -767,9 +775,20 @@ unmask)`, `cp|mv|install|ln|tee|sed -i|rm|rmdir|unlink|truncate` and
 redirections whose target — or `mv` source — lies in a watched path
 (`watchPaths` plus `~/.config/systemd`, always), `git` changing
 sub-commands inside the XDG config home or the logbook; the string of
-`bash|sh|zsh -c` and `eval` is re-parsed. Relative paths resolve against
-the payload's `cwd` and earlier `cd`s in the line; heredoc bodies are the
-command's stdin and are cut from the record; redaction runs before the
+`bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
+commands inside `$(…)`, backticks and `<(…)` are not classified (their
+words count only for `skipPaths`); the string of `env -S` is not opened
+as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
+any other and is not read as commands. A variable the line sets to a
+literal (`F=x; … $F`) is read with its value. Relative paths resolve
+against the payload's `cwd` and the `cd`, `pushd` and `popd` earlier in
+the line (redirections), and for a program's own operands also against
+`env -C`, `sudo -D`, `run0 -D` and its `-C DIR` (`git -C`, `make -C`);
+`>& file` is a write. Heredoc bodies are the command's stdin and are cut
+from the record, also inside `$(…)`, backticks and `<(…)`; the delimiter
+line stays when commands follow it, so the record reads as the same
+commands; `<<` inside `((…))`, `$((…))` and `$[…]` is a shift, not a
+heredoc (WP-071). Redaction runs before the
 4096-character cut. Green events per ADR-0019 only while a case is set.
 Non-mutating commands produce no event. A command line that names a path
 `[redaction] skipPaths` matches (§7) is recorded as `<program>
@@ -780,9 +799,18 @@ its commands (`sh -c` and `eval` strings opened), every token of the line
 between blanks, quotes, shell operators, `:` and `,` (files read with
 `<`, words inside `$(…)`, the parts of a list such as `PATH=a:b`), each
 also after its first `=`, relative paths against `cwd` and every
-directory a `cd` or `pushd` in the line moves to or a `-C DIR` names
-(`git -C`, `make -C`). Paths built from shell variables or globs are read
-as written (WP-063).
+directory the line's commands work in, read as the classifier reads them
+(`cd`, `pushd`, `popd`, `-C DIR`, `env -C`). A variable the line sets to a
+literal is read with its value; a word with a glob or an unknown part
+(`priv*.conf`, `$D/id_rsa`, `"$(pwd)"/x`) counts when a path it can name
+matches (`*` and `?` within one path component, an unknown part across
+components). A word that starts with an unknown part (`$X/tail`,
+`"$(pwd)"/tail`) matches a name pattern by its last component and a path
+pattern only by the pattern's literal last components, never by a path
+below a pattern, so `$TMPDIR/yay.log` is not taken for
+`~/.config/omarchy/**/*.log`. A word in which nothing but `/` is known
+(`$1`, `$NAME`, `$D/$F`) names no path; a glob of the word's own (`*`)
+does (WP-063, WP-071).
 Output: nothing on stdout (hooks must stay silent), exit 0 always, even
 on malformed stdin, a missing logbook, a broken config or a held lock
 (waited for up to 8 s, below the 10 s timeout `hook install` sets; a

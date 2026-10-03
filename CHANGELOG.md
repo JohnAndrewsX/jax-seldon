@@ -164,6 +164,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A case id in two files makes `index --check` exit 1 (was 2) with a
   plain message and the fix; `index` and `status` warn about it
   (WP-070).
+- Package attribution reads an agent's command line with the hook's own
+  parser, so `sudo -u root pacman -S x`, `timeout 600 yay -S x`, `bash -c
+  'yay -S x'` and the other lines the hook records as package commands
+  now attribute the transaction to the agent and its case. The hook and
+  attribution know `pkexec`, `run0` and option clusters such as `sudo -Eu
+  root`; `sudo -k <command>` counts as running the command. `yay
+  --version`, `-V`, `-h`, `--help` and yay's `-P` and `-G` change no
+  package (no event, no full upgrade that claims a person's `-Syu`);
+  `yay -Yc` is a removal. `>& file` is a write. Heredoc bodies inside
+  `$(…)`, backticks and `<(…)` are cut from the record like top-level
+  ones, `<<` inside `((…))` is no heredoc, and a heredoc's delimiter line
+  stays in the record when commands follow it. The classifier follows
+  `pushd`, `popd`, `env -C` and a program's `-C DIR` like the `skipPaths`
+  check; a variable the line sets (`F=x; … $F`) is read with its value,
+  and a path with a glob or an unknown part is checked against
+  `skipPaths` for every path it can name, where a path under an unknown
+  folder (`$TMPDIR/yay.log`) only matches a pattern's literal last
+  components (WP-071).
 
 ### Plugin
 

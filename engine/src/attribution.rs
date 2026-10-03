@@ -35,7 +35,7 @@ use chrono::{DateTime, Duration, FixedOffset};
 
 use crate::ledger::Ledger;
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source};
-use crate::pkgcmd::{Intent, command_intent, parse_shell, simple_commands, write_targets};
+use crate::pkgcmd::{Intent, parse_shell, segments_intent, simple_commands, write_targets};
 
 /// How long before a collector event (a pacman transaction's start) an
 /// agent command still counts as its cause (ADR-0014 §1, ADR-0017 §2).
@@ -61,12 +61,14 @@ pub fn causes(events: &[Event]) -> Vec<Cause> {
         .filter(|e| e.kind == Kind::Command && e.actor != ACTOR_SYSTEM)
         .filter_map(|e| {
             let command = e.meta.command.as_deref()?;
+            // the hook's own reading of the line (WP-071)
+            let segments = simple_commands(&parse_shell(command));
             Some(Cause {
                 ts: e.ts,
                 actor: e.actor.clone(),
                 case: e.case.clone(),
-                intent: command_intent(command),
-                segments: simple_commands(&parse_shell(command))
+                intent: segments_intent(&segments),
+                segments: segments
                     .iter()
                     .map(|s| (s.argv().to_vec(), s.writes.clone()))
                     .collect(),
