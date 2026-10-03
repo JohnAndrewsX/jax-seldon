@@ -1,5 +1,6 @@
 //! Redaction (SPEC-ENGINE §7): one row per built-in pattern, user patterns,
-//! the secret hook fixture, and the ledger path end to end.
+//! the secret hook fixture, and the ledger path end to end. Every secret
+//! here is made up.
 
 mod support;
 
@@ -56,13 +57,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "git clone x --header ‹redacted›",
     ),
     (
-        "openai-key",
+        "sk-key",
         "OPENAI_API_KEY=sk-EXAMPLE0000000000000000000000 run",
         "sk-EXAMPLE",
         "OPENAI_API_KEY=‹redacted› run",
     ),
     (
-        "openai-key",
+        "sk-key",
         "key sk-proj-EXAMPLE_0000000000000000-abc",
         "EXAMPLE_0000",
         "key ‹redacted›",
@@ -115,6 +116,210 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "se@cr",
         "ssh://‹redacted›@host.example:22/repo.git",
     ),
+    // a password with `/`, `?`, `#` or `:`
+    (
+        "url-userinfo",
+        "curl https://bob:fake/pw1@example.invalid/r -o r",
+        "fake/pw1",
+        "curl https://‹redacted›@example.invalid/r -o r",
+    ),
+    (
+        "url-userinfo",
+        "git clone https://bob:fake?pw2@git.example/x.git",
+        "fake?pw2",
+        "https://‹redacted›@git.example/x.git",
+    ),
+    (
+        "url-userinfo",
+        "git clone https://bob:fake#pw3@git.example/x.git",
+        "fake#pw3",
+        "https://‹redacted›@git.example/x.git",
+    ),
+    (
+        "url-userinfo",
+        "git clone https://bob:fake:pw4@git.example/x.git",
+        "fake:pw4",
+        "https://‹redacted›@git.example/x.git",
+    ),
+    (
+        "url-userinfo",
+        "git clone https://faketoken0000@git.example/x.git",
+        "faketoken0000",
+        "git clone https://‹redacted›@git.example/x.git",
+    ),
+    (
+        "secret-option",
+        "gh auth login --with-token fakeTokenValue1",
+        "fakeTokenValue1",
+        "--with-token ‹redacted›",
+    ),
+    (
+        "secret-option",
+        "tool --api-key=fakeKeyValue2 --verbose",
+        "fakeKeyValue2",
+        "--api-key=‹redacted› --verbose",
+    ),
+    (
+        "secret-option",
+        "deploy --token 'fake token 3' --env prod",
+        "fake token 3",
+        "--token ‹redacted› --env prod",
+    ),
+    (
+        "secret-option",
+        "az login --client-secret fakeSecret4",
+        "fakeSecret4",
+        "--client-secret ‹redacted›",
+    ),
+    (
+        "secret-assignment",
+        "export API_KEY=fakeKey5",
+        "fakeKey5",
+        "export API_KEY=‹redacted›",
+    ),
+    (
+        "secret-assignment",
+        "PASSWORD=fakePw6 ./run.sh",
+        "fakePw6",
+        "PASSWORD=‹redacted› ./run.sh",
+    ),
+    (
+        "secret-assignment",
+        "PGPASSWORD=fakePw7 psql -h db -U app",
+        "fakePw7",
+        "PGPASSWORD=‹redacted› psql -h db -U app",
+    ),
+    (
+        "secret-assignment",
+        "MYSQL_PWD=fakePw8 mysqldump shop",
+        "fakePw8",
+        "MYSQL_PWD=‹redacted› mysqldump shop",
+    ),
+    (
+        "secret-assignment",
+        "curl 'https://api.example/v1?api_key=fakeKey9&page=2'",
+        "fakeKey9",
+        "api_key=‹redacted›&page=2",
+    ),
+    (
+        "secret-header",
+        "curl -H 'X-Api-Key: fakeKey10' https://api.example",
+        "fakeKey10",
+        "'X-Api-Key: ‹redacted›' https://api.example",
+    ),
+    (
+        "secret-header",
+        "curl --header \"PRIVATE-TOKEN: fakeToken11\" https://git.example/api",
+        "fakeToken11",
+        "\"PRIVATE-TOKEN: ‹redacted›\" https://git.example/api",
+    ),
+    (
+        "aws-access-key",
+        "AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE aws sts get-caller-identity",
+        "ASIAIOSFODNN7EXAMPLE",
+        "aws sts get-caller-identity",
+    ),
+    // prefixed token forms are spelled in parts, so no source line holds one
+    (
+        "github-token",
+        concat!(
+            "token ",
+            "gho",
+            "_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000 used"
+        ),
+        "FAKEfake",
+        "token ‹redacted› used",
+    ),
+    (
+        "github-token",
+        concat!("export GH=", "github", "_pat_FAKE0fake0FAKE0fake0FAKE_0"),
+        "FAKE0fake",
+        "export GH=‹redacted›",
+    ),
+    (
+        "github-token",
+        concat!("a ", "ghp", "_FAKEfakeFAKEfakeFAKEfakeFAKEfake00001234 b"),
+        "1234",
+        "a ‹redacted› b",
+    ),
+    (
+        "gitlab-token",
+        concat!("glab auth login --stdin ", "gl", "pat-FAKEfakeFAKEfake0000"),
+        "FAKEfake",
+        "glab auth login --stdin ‹redacted›",
+    ),
+    (
+        "slack-token",
+        concat!("SLACK=", "xo", "xb-0000-FAKEfake"),
+        "FAKEfake",
+        "SLACK=‹redacted›",
+    ),
+    (
+        "sk-key",
+        concat!("STRIPE=", "sk", "_live_FAKE0000fake0000x"),
+        "FAKE0000",
+        "STRIPE=‹redacted›",
+    ),
+    (
+        "curl-user",
+        "curl -u admin:fakePw12 https://h.example/x",
+        "fakePw12",
+        "curl -u ‹redacted› https://h.example/x",
+    ),
+    (
+        "curl-user",
+        "curl -sS --user=admin:fakePw13 https://h.example",
+        "fakePw13",
+        "--user=‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        "curl -uadmin:fakePw14 https://h.example",
+        "fakePw14",
+        "curl -u‹redacted› https://h.example",
+    ),
+    (
+        "sshpass-password",
+        "sshpass -p fakePw15 ssh me@host.example",
+        "fakePw15",
+        "sshpass -p ‹redacted› ssh me@host.example",
+    ),
+    (
+        "registry-login-password",
+        "docker login -u me -p fakePw16 registry.example",
+        "fakePw16",
+        "docker login -u me -p ‹redacted› registry.example",
+    ),
+    (
+        "registry-login-password",
+        "podman login -pfakePw17 quay.example",
+        "fakePw17",
+        "podman login -p‹redacted› quay.example",
+    ),
+];
+
+/// Text that looks close to a rule and must come out unchanged.
+const CLEAR: &[&str] = &[
+    "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
+    "yay -S --noconfirm zed",
+    "git -C ~/.config/hypr status --short",
+    "sed -i 's/^bindd = SUPER, E, Editor, exec, .*/bindd = SUPER, E, Editor, exec, zeditor/' ~/.config/hypr/bindings.conf",
+    "omarchy update",
+    "skip-this sk-short",
+    "Logbuch angelegt. Theme osaka-jade, 39 Plugins.",
+    "yay -S python-task-manager-application",
+    "docker run -p 8080:80 nginx",
+    "ssh -p 2222 me@host.example",
+    "sort -u names.txt",
+    "curl --user-agent seldon https://example.com",
+    "curl https://example.com:8443/path?q=1#top",
+    "open https://blog.example/@someone/post",
+    "PWD=/tmp OLDPWD=/var ls",
+    "app --token-file ~/.config/app/token.txt",
+    "docker login --password-stdin -u me registry.example",
+    "mysql -u root shop",
+    "Rotated the deploy key today",
+    "XKB_DEFAULT_LAYOUT=de EDITOR=nvim zeditor",
 ];
 
 mod redaction {
@@ -144,17 +349,42 @@ mod redaction {
     #[test]
     fn harmless_text_stays() {
         let r = Redactor::builtin();
-        for text in [
-            "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*",
-            "yay -S --noconfirm zed",
-            "git -C ~/.config/hypr status --short",
-            "sed -i 's/^bindd = SUPER, E, Editor, exec, .*/bindd = SUPER, E, Editor, exec, zeditor/' ~/.config/hypr/bindings.conf",
-            "omarchy update",
-            "skip-this sk-short",
-            "Logbuch angelegt. Theme osaka-jade, 39 Plugins.",
-        ] {
-            assert_eq!(r.redact(text), text);
+        for text in CLEAR {
+            assert_eq!(r.redact(text), *text, "{:?}", r.matching_rules(text));
         }
+    }
+
+    #[test]
+    fn masking_twice_changes_nothing() {
+        // a user pattern that also matches inside the marker itself
+        let r = Redactor::with_patterns(&["red|act".into()]).unwrap();
+        let mut texts: Vec<String> = TABLE
+            .iter()
+            .map(|(_, input, ..)| input.to_string())
+            .collect();
+        texts.push(
+            TABLE
+                .iter()
+                .map(|(_, input, ..)| *input)
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
+        texts.push(
+            TABLE
+                .iter()
+                .map(|(_, input, ..)| *input)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        texts.push("a red car, token=fakeValue and an act".into());
+        for text in &texts {
+            let once = r.redact(text);
+            assert_eq!(r.redact(&once), once, "`{text}`");
+        }
+        assert_eq!(
+            r.redact("a red car, token=fakeValue"),
+            format!("a {REDACTED} car, token={REDACTED}")
+        );
     }
 
     #[test]
@@ -242,3 +472,4 @@ mod redaction {
         );
     }
 }
+
