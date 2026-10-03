@@ -1348,3 +1348,15 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A unit test that panics leaves its `std::env::temp_dir()` folder
   behind.** After a mutant run, remove your own `/tmp/seldon-*-<pid>`
   folders (only the pids of your run).
+- **A layout that fails half-way, deterministically, in a CLI test:** a
+  logbook path of 4075 bytes (components of at most 255) holds every
+  folder and the short top-level files, but `areas/hyprland/README.md`
+  exceeds PATH_MAX (4095) and fails with ENAMETOOLONG. No root, no ACL,
+  no full disk needed (`tests/init.rs`
+  `a_layout_stopped_half_way_is_undone`). std's `remove_dir_all` works
+  below such a path (it walks with `openat`).
+- **An undo that removes "what init created" must know what was there.**
+  Record the highest missing ancestor of the path *before* the first
+  write (`ancestors().take_while(!exists).last()`); when the folder
+  existed (empty, checked under the lock), empty it but keep it. Test
+  both branches: a mutant of either survives a test of the other.

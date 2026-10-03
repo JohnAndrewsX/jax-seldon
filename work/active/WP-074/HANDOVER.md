@@ -1,5 +1,101 @@
 # WP-074 HANDOVER
 
+## Review round 1 (SEND BACK) — fix round
+
+Commits on the same branch: `8890f7f` (engine: B1, N1, step message),
+`559c0d3` (SPEC §9 + en guide), `da68457` (de guide, re-stamped
+`@ 559c0d3`), `561a8f8` (TESTING.md rows + CHANGELOG N2), plus this
+handover.
+
+- **B1 — a failed layout is undone.** `init` reads the previous
+  `config.toml` bytes (absent → `None`; any other read error stops
+  `init` before a write) and the highest folder of the logbook path that
+  does not exist yet, then saves the config and runs the layout. When
+  `layout::create` fails, `undo_layout` removes that folder (or, when the
+  logbook folder already existed — empty, checked under the lock —
+  empties it and keeps it) and writes the old config bytes back with
+  `sys::write_atomic`, or removes the config when there was none. The
+  error (exit 2) ends with "nothing was kept: <folder> removed again |
+  emptied again, the config file as before", or "the undo failed: …"
+  naming what could not be undone. Tests (`tests/init.rs`):
+  - `a_layout_that_cannot_start_leaves_the_config_byte_identical`:
+    read-only parent → exit 2, a hand-written config (comments, old
+    logbook) byte-identical; without a config the file stays absent;
+    after `chmod 755` the same `init` succeeds. Skips itself where the
+    mode is ignored (root).
+  - `a_layout_stopped_half_way_is_undone`: a 4075-byte logbook path —
+    folders and top files fit, `areas/hyprland/README.md` exceeds
+    PATH_MAX → exit 2 naming the template, config restored, the created
+    folder chain gone; again with the empty folder pre-created → config
+    restored, folder kept and empty; a second `init` (at a normal path)
+    succeeds and names it in the config. The same long path cannot
+    succeed on a re-run (the cause is the path itself); "same init runs
+    after the fix" is proven by the read-only-parent test.
+- **N1 — git order flags > config > default.** `defaults()` takes
+  `args.git.unwrap_or(base.git.autocommit)`; the wizard pre-selects it.
+  A re-run with a hand-set `autocommit = false` keeps it and makes no
+  repository; `--git` turns it on. Test
+  `a_rerun_keeps_a_hand_set_autocommit_false`. SPEC §9 and the guide
+  (en + de) say so.
+- **N2 — CHANGELOG** bullets now say what is true: the undo on a failed
+  layout, and "without `--git`/`--no-git` init takes the choice from an
+  existing config's `autocommit`; configs that `init` does not rewrite
+  keep their value".
+- **TESTING.md** rows for `init.rs` and `own_writes.rs` list the new
+  tests (and the setup unit test).
+
+Mutants of this round (same runner, files restored and checked, binary
+rebuilt):
+
+```
+=== MUTANT: B1 no undo after a failed layout
+    a_layout_that_cannot_start_leaves_the_config_byte_identical ... FAILED  (config restored: left = init's rewrite, right = "# mine…")
+    a_layout_stopped_half_way_is_undone ... FAILED                          (config restored)
+=== MUTANT: B1 undo restores the config but keeps the created folder
+    a_layout_stopped_half_way_is_undone ... FAILED                          ("what init created is gone")
+=== MUTANT: B1 undo keeps the contents of an existing empty root
+    a_layout_stopped_half_way_is_undone ... FAILED                          ("emptied")
+=== MUTANT: N1 git default ignores the config (unwrap_or(true))
+    a_rerun_keeps_a_hand_set_autocommit_false ... FAILED                    (left: Bool(true), right: false)
+```
+
+Checks: `cargo fmt --check` ok; `cargo clippy --all-targets -D warnings`
+ok; `--test init` 37/37, `--test own_writes` 15/15, `--test doctor`
+16/16, lib 175/175; `docs-check: ok`; **`just check` exit 0** (again,
+at the end of the round).
+
+**Theme-hook decision — one deviation, please confirm.** Kept: exit 0,
+step reported failed. Not done as worded: "a hint to re-run `init
+--theme-hook`". `init` refuses an existing logbook before any step
+("is already a logbook", exit 1, whatever the flags; existing test
+`init::existing_logbook_is_a_user_error_and_untouched`), so that hint
+would name a command that fails. The message now says what is true:
+"another seldon process holds the lock …; nothing was written (the next
+capture still records theme switches)", no fix line. If a re-run hint is
+wanted, `init --theme-hook` on an existing logbook would have to run
+only the theme hook step (a small feature: SPEC §9, the CLI reference,
+a test) — say the word and it is one more round, or a follow-up WP.
+
+**Also noted:** `seldon init --help` still calls `--git` "(default)"
+(`engine/src/main.rs`, not in this WP's files; the help block in
+05-cli-reference mirrors it). True without a config; with
+`autocommit = false` the default is now no git. A one-word follow-up.
+
+**Merge note:** main moved (WP-070, WP-071). `git merge-tree` shows two
+conflicts, both append-at-the-end: `CHANGELOG.md` (`[Unreleased]` ›
+Engine) and `memory/pitfalls.md`. Keep both sides. SPEC-ENGINE.md and
+TESTING.md merge cleanly. Branch not rebased or merged (orchestrator's
+merge).
+
+---
+
+## Round 0 (first handover)
+
+Superseded by round 1 where they differ: the layout failure is now
+undone (was "Not done"), TESTING.md is updated (was "Not done"),
+Decision 1 is settled (exit 0), and Decision 3 is replaced by N1 (an
+existing `autocommit = false` is kept unless `--git`).
+
 Branch `wp/074-review`, worktree `wt/WP-074`, based on `e6ef88a` (main has
 not moved since then). No PR, no push.
 
