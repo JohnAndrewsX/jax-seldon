@@ -16,6 +16,7 @@ use crate::logbook::cases::{self, CaseFile, Transition};
 use crate::logbook::{Logbook, journal};
 use crate::model::event::{Event, Kind, Source};
 use crate::model::{Case, CaseStatus, Language, Priority, Risk, Zone};
+use crate::redact::Redactor;
 
 #[derive(Debug, Clone, Args)]
 pub struct PlanArgs {
@@ -125,6 +126,8 @@ pub fn run(ctx: &Context, args: PlanArgs) -> Result<Output> {
 fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
     let title = one_line("the title", &args.title)?;
     let (config, logbook) = ctx.open_logbook()?;
+    // the case file, its name, STATUS.md and the ledger get the redacted title
+    let title = Redactor::for_config(&config)?.redact(&title);
     let lock = ctx.lock()?;
 
     if let Some(area) = args.area.as_deref()
@@ -226,6 +229,8 @@ fn step(
         .map(|r| one_line("--reason", r))
         .transpose()?;
     let (config, logbook) = ctx.open_logbook()?;
+    let redactor = Redactor::for_config(&config)?;
+    let reason = reason.map(|r| redactor.redact(&r));
     let lock = ctx.lock()?;
     let mut file = cases::find(&logbook, &args.id)?;
     let from = file.case.status;
@@ -255,9 +260,11 @@ fn step(
         line.push_str(r);
     }
     file.log(&ctx.now, &line, &args.actor);
-    let stub = (transition == Transition::Done).then(|| match logbook.meta.language {
-        Language::En => format!("Case completed: {}", file.case.title),
-        Language::De => format!("Case abgeschlossen: {}", file.case.title),
+    let stub = (transition == Transition::Done).then(|| {
+        redactor.redact(&match logbook.meta.language {
+            Language::En => format!("Case completed: {}", file.case.title),
+            Language::De => format!("Case abgeschlossen: {}", file.case.title),
+        })
     });
 
     // the journal day is read before the ledger is written: a day file

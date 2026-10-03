@@ -14,6 +14,7 @@ use crate::error::Result;
 use crate::index::{build, load, views};
 use crate::logbook::{Logbook, cases};
 use crate::model::{self, Decision, DecisionStatus};
+use crate::redact::Redactor;
 
 #[derive(Debug, Clone, Args)]
 pub struct DecideArgs {
@@ -33,6 +34,8 @@ pub struct DecideArgs {
 pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
     let title = one_line("the title", &args.title)?;
     let (config, logbook) = ctx.open_logbook()?;
+    // the decision file, its name and DECISIONS.md get the redacted title
+    let title = Redactor::for_config(&config)?.redact(&title);
     let lock = ctx.lock()?;
     if let Some(id) = &args.case_id {
         cases::find(&logbook, id)?;

@@ -11,6 +11,7 @@ use super::{Context, Output, autocommit, required_text};
 use crate::error::{Error, Result};
 use crate::logbook::{cases, journal};
 use crate::model::event::{Event, Kind, Meta, Source};
+use crate::redact::Redactor;
 
 /// Subject of a note without a case (`event.schema.json`).
 pub const JOURNAL_SUBJECT: &str = "journal";
@@ -67,6 +68,10 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         ));
     }
     let (config, logbook) = ctx.open_logbook()?;
+    // the journal and the ledger hold the same redacted text and tags
+    let redactor = Redactor::for_config(&config)?;
+    let text = redactor.redact(&text);
+    let tags: Vec<String> = args.tags.iter().map(|t| redactor.redact(t)).collect();
     let lock = ctx.lock()?;
     let mut case_file = args
         .case_id
@@ -75,10 +80,10 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         .transpose()?;
 
     let mut entry = text.clone();
-    if !args.tags.is_empty() {
-        let tags: Vec<String> = args.tags.iter().map(|t| format!("#{t}")).collect();
+    if !tags.is_empty() {
+        let hashed: Vec<String> = tags.iter().map(|t| format!("#{t}")).collect();
         entry.push('\n');
-        entry.push_str(&tags.join(" "));
+        entry.push_str(&hashed.join(" "));
     }
     // the journal day is read before the ledger is written: a day file
     // the engine cannot read fails the note before anything changes, so
@@ -92,9 +97,9 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     )?;
 
     let mut meta = Meta::default();
-    if !args.tags.is_empty() {
+    if !tags.is_empty() {
         meta.extra
-            .insert("tags".into(), Value::String(args.tags.join(",")));
+            .insert("tags".into(), Value::String(tags.join(",")));
     }
     let event = Event::new(
         ctx.now,

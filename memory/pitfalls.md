@@ -1172,3 +1172,32 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   that unrelated changes made *after* the failure survive. That is what
   told the file-scoped undo apart from `git checkout -- . && git clean
   -fd`; a commit-first fix alone would have passed the old test.
+## 2026-10-03 · WP-062 (Engine)
+
+- **A made-up token of the wrong length tests nothing.** A manual run
+  with `ghp_` plus 34 characters (the rule wants 36) stayed in clear
+  text, and it looked like the fix had failed. Count with `${#T}` before
+  you read a miss as a rule defect; in tests build the value with
+  `format!("ghp_{tag}{}", "0".repeat(36 - tag.len()))`.
+- **Built-in redaction rules must not match the same text.** The import
+  report counts redacted lines per rule (`Redactor::matching_rules`); a
+  new `…TOKEN=` rule next to `token-assignment` counted one line twice
+  and moved `tests/golden/IMPORT-omarchy-agent.md`. Keep the rules
+  disjoint rather than bless the golden.
+- **A clear row proves a narrowed rule only if the old rule matched it.**
+  `python-task-manager-application` was one character too short for the
+  old `sk-…{20,}` rule, so the mutant with the old rule passed. Run the
+  mutant against every negative row you add for a narrowing.
+- **`curl -o <path>` is not a write for the agent hook;** a redirection
+  is. A manual hook reproduction with `-o` records nothing. For a
+  recorded command, use a payload whose paths lie outside `~/.config`
+  (with an active case the hook records it), or a fixture from
+  `fixtures/hooks/`; if the guard blocks a command, report the block.
+- **Compiling the redaction regexes is most of a recorded hook's cost.**
+  16 rules compiled per `Redactor::builtin()` call, twice per hook run,
+  added about 3 ms (over the 5 ms budget near 1000 ledger lines). Compile
+  each rule once per process and only when the text holds one of its
+  literal triggers; time A/B builds interleaved (rotate the order every
+  round) so host load hits both alike.
+- **Event `meta` values are scalars** (`event.schema.json`,
+  `Event::validate`): a list in `meta.extra` makes the whole append fail.

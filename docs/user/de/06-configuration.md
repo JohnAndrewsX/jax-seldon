@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ b69de2f -->
+<!-- source: en/06-configuration.md @ e58949f -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -141,22 +141,43 @@ verfolgen willst.
 
 ## Schwärzung
 
-Bevor die Engine ein Ereignis schreibt, entfernt sie Geheimnisse aus der
-Befehlszeile und dem Detailtext. Ein geschwärzter Wert lautet
+Bevor die Engine etwas schreibt, entfernt sie Geheimnisse aus dem Text:
+aus jedem Feld eines Ereignisses (der Befehlszeile, dem Subjekt, dem
+Detailtext und den übrigen Werten) und aus dem Text und den Tags, die du
+`seldon log`, `seldon plan new`, dem `--reason` eines Schritts,
+`seldon decide` und `seldon drift explain` oder `dismiss` gibst. Journal,
+Case- und Entscheidungsdateien und `STATUS.md` enthalten deshalb
+denselben Text wie das Ledger. Ein geschwärzter Wert lautet
 `‹redacted›`. Die eingebauten Regeln erfassen:
 
-- `--password`, `token=`, `Authorization:` und ihre Werte;
-- AWS-Zugangsschlüssel (`AKIA…`), GitHub-Tokens (`ghp_…`), API-Schlüssel
-  (`sk-…`);
-- das Passwort nach `-p` bei `mysql`, `psql` und `smbclient`;
-- Benutzer und Passwort in einer URL (`https://user:secret@host`).
+- `--password`, `--token`, `--with-token`, `--secret`, `--passphrase`
+  und ähnliche Optionen sowie `token=`, `PASSWORD=`, `PGPASSWORD=`,
+  `MYSQL_PWD=`, `SECRET=` und andere Zuweisungen der Form `…PASSWORD=`,
+  `…SECRET=`, `…_PASS=`, mit jedem Wert;
+- `--api-key`, `--access-key`, `--secret-key` sowie `API_KEY=` und
+  andere Zuweisungen der Form `…KEY=`, wenn der Wert wie ein Zugangsdatum
+  aussieht: mindestens 16 Zeichen, oder mindestens 8, die zwei von
+  Kleinbuchstaben, Großbuchstaben, Ziffern und anderen Zeichen mischen
+  (`sort --key=2` und `hotkey=Super` bleiben also, wie sie sind);
+- `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
+  deren Name auf Key, Token, Secret oder Auth endet;
+- AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
+  `gho_…`, `github_pat_…` und die übrigen `gh…_`-Formen), GitLab-Tokens
+  (`glpat-…`), Slack-Tokens (`xoxb-…`), API-Schlüssel (`sk-…`, `sk_…`);
+- das Passwort nach `-p` bei `mysql`, `psql` und `smbclient`, nach
+  `sshpass -p` und nach `docker login -p` (auch `podman`);
+- Benutzer und Passwort nach `curl -u`;
+- Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
+  wenn das Passwort `/`, `?`, `#` oder `:` enthält.
+
+Text, der geschrieben wurde, bevor es eine Regel gab, bleibt, wie er ist.
 
 Die Regeln schwärzen lieber zu viel als zu wenig. Eigene Regeln trägst
 du als reguläre Ausdrücke ein; jeder ersetzt seinen ganzen Treffer:
 
 ```toml
 [redaction]
-patterns = ["MYAPP_KEY=\\S+", "xoxb-[0-9A-Za-z-]+"]
+patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 ```
 
 Ein ungültiges Muster ist ein Fehler (Exit 1): Seldon schreibt lieber gar

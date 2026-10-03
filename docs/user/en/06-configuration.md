@@ -131,21 +131,42 @@ Add a folder with many files only if you want to follow each one.
 
 ## Redaction
 
-Before the engine writes an event, it removes secrets from the command
-line and the detail text. A redacted value reads `‹redacted›`. The
-built-in rules cover:
+Before the engine writes anything, it removes secrets from the text: from
+every field of an event (the command line, the subject, the detail text
+and the other values), and from the text and tags you give `seldon log`,
+`seldon plan new`, a step's `--reason`, `seldon decide` and
+`seldon drift explain` or `dismiss`. The journal, the case and decision
+files and `STATUS.md` therefore hold the same text as the ledger. A
+redacted value reads `‹redacted›`. The built-in rules cover:
 
-- `--password`, `token=`, `Authorization:` and their values;
-- AWS access keys (`AKIA…`), GitHub tokens (`ghp_…`), API keys (`sk-…`);
-- the password after `-p` for `mysql`, `psql` and `smbclient`;
-- the user and password in a URL (`https://user:secret@host`).
+- `--password`, `--token`, `--with-token`, `--secret`, `--passphrase`
+  and similar options, and `token=`, `PASSWORD=`, `PGPASSWORD=`,
+  `MYSQL_PWD=`, `SECRET=` and other `…PASSWORD=`, `…SECRET=`, `…_PASS=`
+  assignments, with any value;
+- `--api-key`, `--access-key`, `--secret-key` and `API_KEY=` and other
+  `…KEY=` assignments, when the value looks like a credential: at least
+  16 characters, or at least 8 that mix two of lower case, upper case,
+  digits and other characters (so `sort --key=2` and `hotkey=Super` stay
+  as they are);
+- `Authorization:`, `X-Api-Key:`, `Private-Token:` and other headers
+  whose name ends in Key, Token, Secret or Auth;
+- AWS access keys (`AKIA…`, `ASIA…`), GitHub tokens (`ghp_…`, `gho_…`,
+  `github_pat_…` and the other `gh…_` forms), GitLab tokens (`glpat-…`),
+  Slack tokens (`xoxb-…`), API keys (`sk-…`, `sk_…`);
+- the password after `-p` for `mysql`, `psql` and `smbclient`, after
+  `sshpass -p` and after `docker login -p` (also `podman`);
+- the user and password after `curl -u`;
+- the user and password in a URL (`https://user:secret@host`), also
+  when the password contains `/`, `?`, `#` or `:`.
+
+Text written before a rule existed stays as it is.
 
 The rules redact rather too much than too little. Add your own as
 regular expressions; each one replaces its whole match:
 
 ```toml
 [redaction]
-patterns = ["MYAPP_KEY=\\S+", "xoxb-[0-9A-Za-z-]+"]
+patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 ```
 
 An invalid pattern is an error (exit 1): Seldon refuses to write rather
