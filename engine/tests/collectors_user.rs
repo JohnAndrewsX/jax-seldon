@@ -1234,31 +1234,52 @@ mod config {
     #[test]
     fn an_unchanged_file_is_not_read_again() {
         let mut c = ConfigBench::new("config-stat");
-        c.file(".config/hypr/a.conf", "aaaa\n");
-        c.file(".config/hypr/b.conf", "bbbb\n");
-        c.touch(".config/hypr/a.conf", "2026-09-01T08:00:00+02:00");
-        c.touch(".config/hypr/b.conf", "2026-09-01T08:00:00+02:00");
+        let old = "2026-09-01T08:00:00+02:00";
+        for f in ["a", "b", "d"] {
+            c.file(&format!(".config/hypr/{f}.conf"), format!("{f}{f}{f}{f}\n"));
+            c.touch(&format!(".config/hypr/{f}.conf"), old);
+        }
         c.run("2026-10-01T10:00:00+02:00");
-        assert_eq!(c.manifest().stats.len(), 2);
+        assert_eq!(c.manifest().stats.len(), 3);
 
-        // new content of the same size, written in place, the old mtime
-        // put back: the stored hash stands, so the file was not read
+        // a stored hash no file has: while size, times and inode match, the
+        // walk takes it as it is, so the file was not read
+        let fake = "f".repeat(64);
+        let mut m: Value = serde_json::from_str(&c.manifest_text()).unwrap();
+        m["files"]["~/.config/hypr/a.conf"] = json!(fake);
+        write(&Manifest::file(&c.b.dirs), m.to_string());
+        let out = c.run("2026-10-01T10:10:00+02:00");
+        assert!(out.events.is_empty(), "{:?}", out.events);
+        assert_eq!(c.manifest().current.files["~/.config/hypr/a.conf"], fake);
+
+        // the change time moves on (coarse clocks: let a tick pass)
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        // an edit of the same size in place, the mtime put back (`touch
+        // -r`): the change time differs, so it is read again
         c.file(".config/hypr/a.conf", "AAAA\n");
-        c.touch(".config/hypr/a.conf", "2026-09-01T08:00:00+02:00");
-        // the same size and a new mtime: read and hashed again
+        c.touch(".config/hypr/a.conf", old);
+        // the same size and a new mtime: read again
         c.file(".config/hypr/b.conf", "BBBB\n");
         c.touch(".config/hypr/b.conf", "2026-09-01T08:00:01+02:00");
-        let out = c.run("2026-10-01T10:10:00+02:00");
-        assert_eq!(kinds(&out), [(Kind::ConfigChange, "~/.config/hypr/b.conf")]);
+        let out = c.run("2026-10-01T10:20:00+02:00");
+        assert_eq!(
+            kinds(&out),
+            [
+                (Kind::ConfigChange, "~/.config/hypr/a.conf"),
+                (Kind::ConfigChange, "~/.config/hypr/b.conf"),
+            ]
+        );
+        assert_eq!(out.events[0].meta.hash_from.as_deref(), Some(fake.as_str()));
+        assert_ne!(c.manifest().current.files["~/.config/hypr/a.conf"], fake);
 
         // a file written just now is read at every walk until it is older
         // than the walk by two seconds (a write in the same tick)
         c.file(".config/hypr/c.conf", "cccc\n");
-        let out = c.run("2026-10-01T10:20:00+02:00");
+        let out = c.run("2026-10-01T10:30:00+02:00");
         assert_eq!(kinds(&out), [(Kind::ConfigAdd, "~/.config/hypr/c.conf")]);
         assert!(!c.manifest().stats.contains_key("~/.config/hypr/c.conf"));
         c.file(".config/hypr/c.conf", "CCCC\n");
-        let out = c.run("2026-10-01T10:30:00+02:00");
+        let out = c.run("2026-10-01T10:40:00+02:00");
         assert_eq!(kinds(&out), [(Kind::ConfigChange, "~/.config/hypr/c.conf")]);
     }
 
@@ -1465,9 +1486,16 @@ mod capture {
             "init writes the default list into the file"
         );
         config.logbook = Some(PathBuf::from("Logbook"));
-        config.watch_paths = vec!["dotfiles".into()];
+        config.watch_paths = vec!["dotfiles".into(), "~/.config/omarchy".into()];
+        // what `init` wrote before WP-069: an empty list is the defaults
+        config.redaction.skip_paths = Vec::new();
         config.save(&env.config_file()).unwrap();
+        assert!(common::read(&env.config_file()).contains("skipPaths = []"));
         write(&env.home.join("dotfiles/app.conf"), "a = 1\n");
+        write(
+            &env.home.join(".config/omarchy/example-timer/history.json"),
+            "[1]\n",
+        );
         let (a, b) = (env.tmp.path().join("a"), env.home.join(".config"));
         std::fs::create_dir_all(&a).unwrap();
         let capture = |cwd: &Path| {

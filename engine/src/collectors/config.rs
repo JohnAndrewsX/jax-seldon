@@ -30,8 +30,9 @@
 //! Each generation keeps the scope it was taken with ([`WatchScope`]). A file
 //! that left the scope (a watch path removed, a `skipPaths` pattern added) is
 //! no removal, and a file that entered it is no addition: one notice line
-//! counts them. A file whose size, modification time and inode are as the
-//! manifest has them ([`FileStat`]) keeps its stored hash and is not read.
+//! counts them. A file whose size, modification time, change time and inode
+//! are as the manifest has them ([`FileStat`]) keeps its stored hash and is
+//! not read.
 //!
 //! The engine's own writes (SPEC-ENGINE §5 rule 7): when `init`, `hook
 //! install` or one of the removal commands (`hook uninstall`, `init
@@ -177,28 +178,35 @@ fn key_path(dirs: &Dirs, key: &str) -> PathBuf {
     }
 }
 
-/// Size, modification time (ns since 1970) and inode of a hashed file.
-/// While all three are as the manifest has them, the stored hash is reused
-/// and the file is not read.
+/// Size, modification time and change time (ns since 1970) and inode of a
+/// hashed file. While all four are as the manifest has them, the stored
+/// hash is reused and the file is not read. The change time catches an
+/// edit whose modification time was put back (`touch -r`): no one can set
+/// it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FileStat(u64, u64, u64);
+pub struct FileStat(u64, u64, u64, u64);
 
 /// A file modified less than this before a walk started is read again by
 /// the next walk: a write right after the read may have kept the
 /// modification time (timestamps are coarse; some file systems keep
-/// seconds or two).
+/// seconds or two). A write also sets the change time, so the
+/// modification time is the one to check.
 const RACY: Duration = Duration::from_secs(2);
 
 impl FileStat {
     /// `None` for a file modified less than [`RACY`] before `started` (or
-    /// before 1970): its hash is not reused.
+    /// either time before 1970): its hash is not reused.
     fn of(meta: &std::fs::Metadata, started: SystemTime) -> Option<Self> {
         let mtime = meta.modified().ok()?;
+        let ctime = UNIX_EPOCH.checked_add(Duration::new(
+            u64::try_from(meta.ctime()).ok()?,
+            u32::try_from(meta.ctime_nsec()).ok()?,
+        ))?;
         if mtime.checked_add(RACY)? > started {
             return None;
         }
-        let ns = u64::try_from(mtime.duration_since(UNIX_EPOCH).ok()?.as_nanos()).ok()?;
-        Some(FileStat(meta.len(), ns, meta.ino()))
+        let ns = |t: SystemTime| u64::try_from(t.duration_since(UNIX_EPOCH).ok()?.as_nanos()).ok();
+        Some(FileStat(meta.len(), ns(mtime)?, ns(ctime)?, meta.ino()))
     }
 }
 
