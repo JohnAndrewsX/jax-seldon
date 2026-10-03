@@ -158,7 +158,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - One `system/*.md` that is not UTF-8 or not readable no longer stops
   `seldon dossier`: the file is skipped with a warning and never written,
   and the other fences are built. Dossier fence bodies get the same
-  zero-width space after `<!--` as `STATUS.md` (WP-075).
+  zero-width space after `<!--` in `<!-- seldon:` as `STATUS.md`, so a
+  value can neither end nor open a fence (WP-075).
 - `seldon watch` also watches `areas/`: a new, renamed or removed area
   rebuilds the index (WP-075).
 

@@ -103,7 +103,13 @@ seldon dossier [--section packages|services|omarchy|hardware|plugins|deviations|
                                                # default file under a heading in the logbook language. A failed
                                                # query skips its fences (warning, fence kept); so does a fence
                                                # whose begin marker has no end marker of its own (WP-050: no
-                                               # second fence is appended; `import` reports it as an error). Files written
+                                               # second fence is appended; `import` reports it as an error). A
+                                               # system/*.md that is not UTF-8 or not readable is skipped (the
+                                               # index's `cannot read …; skipped` warning) and never written; a
+                                               # fence no readable file has is then not appended while its default
+                                               # file is such a file, or one that may hold it (its lossy bytes have
+                                               # the begin marker, or it could not be read at all): warning, fence
+                                               # kept (WP-075). Files written
                                                # atomically and only on change, autocommit `seldon: dossier`,
                                                # index rebuilt; no ledger write. `init` runs it once after the
                                                # first capture; `capture` and `status` never do. --json →
