@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-055 | engine: session-start context into its own module (prep) | Engine | `engine-055` (haiku) | `wt/WP-055` · `wp/055-review` | 2026-10-03 |
+| WP-057 | hook: case updates under the lock, patient lock wait, session-stop on every step | Engine | `engine-057` (opus) | `wt/WP-057` · `wp/057-review` | 2026-10-03 |
 | WP-056 | docs: uninstall with a kept logbook, state-dir backup, watcher README | Docs | `docs-056` (sonnet) | `wt/WP-056` · `wp/056-review` | 2026-10-03 |
 | WP-059 | engine: quote generated commands in REBUILD.md | Engine | `engine-059` (opus) | `wt/WP-059` · `wp/059-review` | 2026-10-03 |
 | WP-060 | snapper: read snapshot info files when listing is not permitted; banner text | Engine | `engine-060` (opus) | `wt/WP-060` · `wp/060-review` | 2026-10-03 |
@@ -38,6 +38,8 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-055 session-start context moved into its own module (pure
+  move, golden output byte-identical; Haiku worker, Sonnet review) — merged.
 - 2026-10-03 WP-054 snapper banner *Check again* runs a capture, hint
   after *Run in terminal*, fixes #2 — merged (Opus review APPROVE; at
   merge: SPEC §5 rows for the other banners aligned to the buttons,
