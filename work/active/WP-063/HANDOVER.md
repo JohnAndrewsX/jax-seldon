@@ -137,43 +137,86 @@ Learned (memory/pitfalls.md): a hook test whose payload names a session
 directory needs it inside the test logbook now; the guard hook reads
 literal `~/.config/…` text in a manual run's payload as a write.
 
-Decisions needed:
+Decisions needed (round 1; settled by the review, see the fix round):
 
-- **Scope default (operator).** Implemented with `"logbook"` as the
-  default; `"all"` is the switch. Flipping means `#[default]` on
-  `HookScope::All`, the CHANGELOG bullet and the README sentence.
-- **User guide, en + de (`docs/user/*/04-working-with-agents.md` at
-  "The hooks only run when Claude Code starts in the logbook folder…",
-  and `11-update-and-uninstall.md` if wanted).** The en text says a
-  user-wide install records every Claude Code session in any project;
-  under the `"logbook"` default that needs `[hooks] scope = "all"` in
-  `config.toml`. Proposed en replacement for the last three sentences:
-  "Then Claude Code runs the hooks in every folder. Seldon records and
-  prints its context only in sessions inside the logbook unless you set
-  `[hooks] scope = "all"` in `~/.config/seldon/config.toml`; with it,
-  every Claude Code session on this machine writes into your logbook, in
-  any project, with the active case." Not edited: outside the file list,
-  and the wording depends on the default.
-- **SPEC-ENGINE §2 and §3.** §2's config key list lacks `[hooks] scope`;
-  §3's `seldon plan show <ID>` line could say "human output quoted line
-  by line (`> `), as `hook session-start`; `--json` unchanged". Both
-  outside the named paragraphs; §8 documents both.
-- **Guard false positive.** `scripts/guard.sh` blocked a manual run
-  whose `HOME` was a scratch dir under `SELDON_TEST_GUARD`, because the
-  command held `mkdir -p $HOME/.config/hypr` and payload text with
+- Scope default: stays `"logbook"`; `"all"` is the switch (review
+  decision 2).
+- User guide en + de and SPEC §2/§3: done in the fix round (decision 3).
+- **Guard false positive (open).** `scripts/guard.sh` blocked a manual
+  run whose `HOME` was a scratch dir under `SELDON_TEST_GUARD`, because
+  the command held `mkdir -p $HOME/.config/hypr` and payload text with
   `~/.config/hypr/…`. Reported, not worked around; a fix belongs in
   `scripts/guard.sh` with a row in `scripts/guard-test.sh`.
-- **Session-stop included.** The WP names claude-code, generic and
-  session-start; session-stop got the same guard so that a user-wide
-  install does not journal, capture and commit for sessions elsewhere.
-  Revert is one `if`.
-- **`plan show` test location.** In `tests/hooks.rs` (the file list);
-  `tests/plan.rs` would be the natural home.
+- Session-stop has the same scope check (beyond the WP's function list;
+  one `if` to revert). `plan show`'s test lives in `tests/hooks.rs`.
+
+## Fix round (review: stage 1 APPROVE, stage 2 decisions)
+
+Commits: `04e3c6a` (en guide), `6299d29` (engine + tests), `cdef7fd`
+(SPEC §2/§3/§8, CHANGELOG, de guide), plus this handover update.
+WP-064 has not landed on `main` (checked `git log main`: WP-060 merged,
+WP-061/062 started), so no rebase; the CHANGELOG and pitfalls appends
+are left for the orchestrator's merge.
+
+Done:
+
+1. **Scope from `CLAUDE_PROJECT_DIR`.** `in_scope` takes the session's
+   directory from `CLAUDE_PROJECT_DIR` when it is set and not empty
+   (Claude Code sets it for hook commands), else from the payload's
+   `cwd`; with neither the call is served. Relative paths in commands
+   still resolve against the payload's `cwd` (`working_dir` unchanged).
+   Applies to all four hooks. Test
+   `session_scope::the_project_directory_decides`: the variable at the
+   logbook with `cwd` outside → 4 events and the context block; the
+   variable outside with `cwd` in the logbook → nothing more, and
+   session-start prints nothing with or without `cwd`. The test helper
+   sets the variable through `Hooks::project_dir` (the test processes
+   start from a cleared environment).
+2. **Default** stays `"logbook"`.
+3. **Docs.** en and de `04-working-with-agents.md`: a user-wide install
+   makes Claude Code run the hooks everywhere, Seldon serves only
+   sessions in the logbook folder, `hook install` says so, and the
+   `[hooks] scope = "all"` block for recording every project. de source
+   line re-stamped to `04e3c6a` (the en commit). SPEC §2 key list gains
+   `[hooks] scope`; §3's `plan show` line names the quoting; §8 names
+   `CLAUDE_PROJECT_DIR` and the added path forms. CHANGELOG bullet
+   updated. `docs-check`: ok, no warnings.
+4. **skipPaths path forms.** The token pass over the line text also
+   splits at `:` and `,` (`X=PATH:/usr/share`, `a,PATH`); `pushd DIR`
+   counts like `cd`, and every `-C DIR` in a command (`git -C`, `make
+   -C`, `tar -C`) adds `DIR` as a directory for relative words. New rows:
+   `X=~/.config/hypr/private.conf:/usr/share; echo x > …`, `echo
+   ~/…/a.conf,~/…/private.conf > …`, `pushd ~/.config/hypr && cp
+   private.conf ~/.config/hypr/other.conf`, `git -C ~/.config/hypr add
+   private.conf`. The first version split each word at `:`/`,` as well;
+   mutant M17 showed that duplicate unneeded (the token pass alone
+   catches the row), so it was removed.
+   - Left for the shell-parser WP: paths built from shell variables
+     (`F=…; cat …/$F`) and globs (`cat ~/.config/hypr/priv*.conf`) are
+     read as written. Also there: the command classifier follows `cd`
+     but not `pushd` or `-C` for its own write targets (`pushd DIR && cp
+     a b` with relative `b` is classified against the old directory).
+5. **memory/pitfalls.md** is listed below as touched outside scope.
+
+Verified by: `cargo fmt --check`, `cargo clippy --all-targets -- -D
+warnings`, `cargo test` (all binaries: 472 passed, 0 failed; hooks 50,
+plan, own_writes, session_context, agent included), `docs-check` ok.
+Mutants on the fix-round code (restored with `cp`, `cmp` checked,
+binary rebuilt): M16 project directory ignored →
+`the_project_directory_decides` fails; M17 no `:`/`,` in the token
+split → the `X=…:/usr/share` row is recorded in full; M18 no `pushd` →
+the `pushd` row in full; M19 no `-C DIR` → the `git -C` row in full.
+M2 to M15 rerun in this round, each still failing its test (M5 now also
+fails `the_project_directory_decides`): M3 and M5–M15 before the
+per-word split was removed (their code is not touched by it), M2, M4,
+M16–M19 on the final code.
 
 Touched outside WP scope: `engine/src/config.rs` (the `[hooks]` section;
 the WP lists config.rs as read-only, the brief asks for the config
 switch), `engine/src/commands/plan.rs` (follow-up b, allowed by the
 brief), `context.rs` beyond the entry guard (`quote` and `DATA_NOTE`
-made `pub` for `plan show`).
+made `pub` for `plan show`), `memory/pitfalls.md` (append),
+`docs/user/en|de/04-working-with-agents.md` and SPEC §2/§3 (review
+decision 3).
 
-`just check` on `b8891ae` (engine + docs): exit 0 (`check: ok`).
+`just check` on `b8891ae` (round 1): exit 0. `just check` on `cdef7fd` (fix round, engine + docs): exit 0 (`check: ok`).
