@@ -394,7 +394,8 @@ logbook and that its git directory (`--absolute-git-dir`) is
 another repository's git directory is not committed to. `index`'s `logbook.git` reads
 git with the same environment. The
 user's git configuration applies (hooks, `commit.gpgsign`, a passphrase
-prompt on the terminal). A detached HEAD (`git symbolic-ref -q HEAD`
+prompt on the terminal; git runs in the engine's process group, other
+programs in their own, WP-064). A detached HEAD (`git symbolic-ref -q HEAD`
 fails) is not committed and nothing is staged. A commit that is not made
 (detached HEAD, a stale `.git/index.lock`, a refusing hook) is one line on
 stderr, `seldon: warning: git: not committed: <reason>`, and
