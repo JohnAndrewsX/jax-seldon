@@ -451,8 +451,9 @@ git itself is killed, with the same bounded pipe wait. Rules:
   and the drift routine rule (§5): the intent of a hook `command` event is
   read from its recorded line with the hook's own shell parser (quotes,
   wrappers, `sh -c`, heredocs), so a line the hook records as a package
-  command is the line attribution reads one from (WP-071). Rotation: the tail of `<log>.1` with the
-  old inode is read first, then the new file from 0; a rotation to another
+  command is the line attribution reads one from; the parser's limits are
+  listed in §8 (WP-071). Rotation: the tail of `<log>.1` with the old
+  inode is read first, then the new file from 0; a rotation to another
   name loses the lines between the old offset and the rotation (never
   duplicates, thanks to dedupe). Attribution follows ADR-0014 §1 as
   sharpened by ADR-0017 §2–§5, with this reading of "named the subject": a
@@ -731,7 +732,11 @@ unmask)`, `cp|mv|install|ln|tee|sed -i|rm|rmdir|unlink|truncate` and
 redirections whose target — or `mv` source — lies in a watched path
 (`watchPaths` plus `~/.config/systemd`, always), `git` changing
 sub-commands inside the XDG config home or the logbook; the string of
-`bash|sh|zsh -c` and `eval` is re-parsed. A variable the line sets to a
+`bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
+commands inside `$(…)`, backticks and `<(…)` are not classified (their
+words count only for `skipPaths`); the string of `env -S` is not opened
+as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
+any other and is not read as commands. A variable the line sets to a
 literal (`F=x; … $F`) is read with its value. Relative paths resolve
 against the payload's `cwd` and the `cd`, `pushd` and `popd` earlier in
 the line (redirections), and for a program's own operands also against
@@ -756,8 +761,13 @@ directory the line's commands work in, read as the classifier reads them
 literal is read with its value; a word with a glob or an unknown part
 (`priv*.conf`, `$D/id_rsa`, `"$(pwd)"/x`) counts when a path it can name
 matches (`*` and `?` within one path component, an unknown part across
-components); a word that is only an unknown value (`$1`, `$NAME`) names
-no path (WP-063, WP-071).
+components). A word that starts with an unknown part (`$X/tail`,
+`"$(pwd)"/tail`) matches a name pattern by its last component and a path
+pattern only by the pattern's literal last components, never by a path
+below a pattern, so `$TMPDIR/yay.log` is not taken for
+`~/.config/omarchy/**/*.log`. A word in which nothing but `/` is known
+(`$1`, `$NAME`, `$D/$F`) names no path; a glob of the word's own (`*`)
+does (WP-063, WP-071).
 Output: nothing on stdout (hooks must stay silent), exit 0 always, even
 on malformed stdin, a missing logbook, a broken config or a held lock
 (waited for up to 8 s, below the 10 s timeout `hook install` sets; a

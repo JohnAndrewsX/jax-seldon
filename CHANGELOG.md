@@ -161,7 +161,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pushd`, `popd`, `env -C` and a program's `-C DIR` like the `skipPaths`
   check; a variable the line sets (`F=x; … $F`) is read with its value,
   and a path with a glob or an unknown part is checked against
-  `skipPaths` for every path it can name (WP-071).
+  `skipPaths` for every path it can name, where a path under an unknown
+  folder (`$TMPDIR/yay.log`) only matches a pattern's literal last
+  components (WP-071).
 
 ### Plugin
 
