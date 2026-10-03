@@ -14,7 +14,8 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| (none) | | | | | |
+| WP-053 | snapper messages locale-independent (issue #1) | Engine | `engine-053` (opus, high) | `wt/WP-053` · `wp/053-snapper-locale` | 2026-10-03 |
+| WP-054 | snapper banner "Check again" runs a capture (issue #2) | Plugin | `plugin-054` (opus, high) | `wt/WP-054` · `wp/054-snapper-banner` | 2026-10-03 |
 
 ## Queued (next up)
 
