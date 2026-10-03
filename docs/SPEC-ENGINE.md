@@ -684,23 +684,27 @@ can neither end nor open a fence (WP-065). The dossier fences of
 Size budget (CONTRACT.md rule 5, < 1 MB; WP-076): in `index.events` and
 `index.drift`, a `detail`, `resolutionDetail` or string value of `meta`
 that takes more than 256 bytes in JSON is cut on a character boundary and
-ends in `… (N more characters in the ledger)`, N the characters left out;
-the ledger line, the `ledger/*.md` views and `drift show` keep the full
-text, `subject` (at most 512 characters) is never cut. With the counts of
-rule 4 this bounds both sections: 500 events and 200 drift items with
-4096-character texts come to about 520 KB. No field marks the cut
-(`meta.truncated` stays reserved, ADR-0020). Open cases, decisions and
+ends in `… (N more characters in the ledger)`, N the characters left out
+(ADR-0025). The ledger line, the `ledger/*.md` views and the member events
+of `drift show` keep the full text; `drift list` and the `item` of `drift
+show` come from `index.drift` and are clipped. `subject` (at most 512
+characters) is never cut. With the counts of rule 4 this bounds both
+sections: 500 events and 200 drift items with 4096-character texts come
+to about 520 KB. No field marks the cut (`meta.truncated` stays reserved,
+ADR-0020, ADR-0025). Open cases, decisions and
 memory topics are not capped: an index of 1 000 000 bytes or more makes
 `index` and `status` warn (`warnings`, stderr) and name the largest
 section.
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
-warm. `cargo bench --bench index` (`just bench`) asserts the index build
-in-process on the fixture logbook scaled ×10 and ×150 (10 650 ledger
-lines, 1 200 cases); `just check-perf` also asserts `seldon status` at
-10 011 ledger lines, 304 cases and 365 journal files, median wall time of
-11 runs, process start included (release, 2026-10-04 on the dev host:
-×150 build 80 ms, `status` 47 ms; WP-076).
+warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
+build in-process on the fixture logbook scaled ×10 and prints ×150 (10 650
+ledger lines, 1 200 cases); `just check-perf` (opt-in, quiet host) asserts
+×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 011 ledger
+lines, 304 cases and 365 journal files, median wall time of 11 runs,
+process start included. A median over budget is measured once more before
+a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,
+`status` 47 ms; WP-076).
 
 ## 7. Redaction
 
