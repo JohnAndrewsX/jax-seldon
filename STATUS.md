@@ -17,6 +17,7 @@ decisions).
 | WP-070 | doctor: invalid config, corrupt state, bad patterns; index ok:false | Engine | `engine-070` (opus) | `wt/WP-070` · `wp/070-review` | 2026-10-03 |
 | WP-069 | config collector: scope, default skips, home paths, rehash, dedupe | Engine | `engine-069` (opus) | `wt/WP-069` · `wp/069-review` | 2026-10-03 |
 | WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
+| WP-075 | import/dossier/watch: case-less vault, non-UTF-8, bad file, areas | Engine | `engine-075` (opus) | `wt/WP-075` · `wp/075-review` | 2026-10-04 |
 
 ## Queued (next up)
 
