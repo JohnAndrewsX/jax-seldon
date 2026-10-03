@@ -859,7 +859,11 @@ drift consequence, then a date or empty). Then `init` runs, in order
 fails writes nothing into the logbook folder, so the same `init` runs
 again once it is fixed; `[git] autocommit = false` when git is declined,
 `true` when it is chosen) → layout (the marker `.seldon/logbook.toml`
-last, so a layout that stops half-way is no logbook) + harness files (the Omarchy-Agent kit from
+last, so a layout that stops half-way is no logbook; when the layout
+fails, `init` puts `config.toml` back byte for byte, or removes it when
+there was none, and removes what it created for the logbook: the highest
+folder of the path that was not there, or the contents of the empty
+folder that was) + harness files (the Omarchy-Agent kit from
 `${XDG_DATA_HOME:-~/.local/share}/seldon/harness/omarchy-agent/` or
 `$SELDON_OMARCHY_AGENT_KIT`, copied into `<logbook>/.claude/` without
 overwriting, symlinks skipped, modes kept, before the Claude Code hook
@@ -901,7 +905,10 @@ is installed: the undo is next to it in the same help. `--json` →
 `{hook, removed, script, scriptRemoved, ownWrites}`.
 `--non-interactive`: flags, then the existing config, then: `~/Seldon`,
 language from the locale, all collectors, default watched paths,
-harnesses from the config (none on a fresh machine), git on, first
+harnesses from the config (none on a fresh machine), git from the
+config's `[git] autocommit` (on without a config; `--git`/`--no-git`
+win, and the wizard pre-selects the same, so a re-run keeps a hand-set
+`autocommit = false`), first
 capture from now (no backfill, no baseline), no Obsidian, no theme hook.
 `SELDON_TEST_GUARD=<dir>`: the engine refuses to run (exit 2) when its
 resolved home/config/state dirs lie outside that dir — set by every test

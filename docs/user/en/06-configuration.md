@@ -304,6 +304,10 @@ writes `autocommit = false`: the logbook is no repository, and
 `seldon doctor` reports that as your choice, not as a fault. To start
 using git later, run `git -C <logbook> init` and set `autocommit = true`.
 
+`seldon init` takes its git default from `autocommit` in an existing
+file: with `autocommit = false` it makes no repository and keeps the
+value, unless you pass `--git` or say yes in the wizard.
+
 ## Plugin settings
 
 Change them in Omarchy's settings (Setup, Plugins, Seldon) or with
