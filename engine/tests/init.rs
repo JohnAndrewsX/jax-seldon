@@ -23,6 +23,19 @@ mod init {
         env.seldon(&args)
     }
 
+    /// `init --non-interactive --no-capture --path <root>` with `extra`.
+    fn init_at(env: &Env, root: &std::path::Path, extra: &[&str]) -> std::process::Output {
+        let mut args = vec![
+            "init",
+            "--non-interactive",
+            "--no-capture",
+            "--path",
+            root.to_str().unwrap(),
+        ];
+        args.extend_from_slice(extra);
+        env.seldon(&args)
+    }
+
     #[test]
     fn non_interactive_produces_the_spec_layout() {
         let env = Env::new(Snapper::NoPermissions);
@@ -319,6 +332,133 @@ mod init {
             .parse()
             .unwrap();
         assert_eq!(config["logbook"].as_str(), root.to_str());
+    }
+
+    /// A config.toml written by hand: comments and an old logbook, which a
+    /// save would drop or change.
+    const OWN_CONFIG: &str = "# mine\nlogbook = \"~/Old\"\n[redaction]\npatterns = [\"x\"]\n";
+
+    #[test]
+    fn a_layout_that_cannot_start_leaves_the_config_byte_identical() {
+        // B1: the parent folder is read-only, so the layout fails at its
+        // first folder; the config saved before it is put back byte for
+        // byte (or removed when there was none), and after the fix the
+        // same init runs
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = |dir: &std::path::Path, m: u32| {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(m)).unwrap()
+        };
+        for own in [Some(OWN_CONFIG), None] {
+            let env = Env::new(Snapper::Allowed);
+            if let Some(text) = own {
+                std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
+                std::fs::write(env.config_file(), text).unwrap();
+            }
+            let parent = env.tmp.path().join("read-only");
+            std::fs::create_dir_all(&parent).unwrap();
+            mode(&parent, 0o555);
+            if std::fs::write(parent.join("probe"), "").is_ok() {
+                mode(&parent, 0o755);
+                eprintln!("skipped: the read-only folder is writable (root?)");
+                return;
+            }
+            let root = parent.join("logbook");
+            let args = [
+                "init",
+                "--non-interactive",
+                "--no-capture",
+                "--no-git",
+                "--path",
+                root.to_str().unwrap(),
+            ];
+            let out = env.seldon(&args);
+            assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+            match own {
+                Some(text) => assert_eq!(common::read(&env.config_file()), text, "config restored"),
+                None => assert!(!env.config_file().exists(), "config removed again"),
+            }
+            assert!(!root.exists());
+            assert!(
+                stderr(&out).contains("nothing was kept"),
+                "{}",
+                stderr(&out)
+            );
+
+            mode(&parent, 0o755);
+            let out = env.seldon(&args);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            assert!(Logbook::is_initialised(&root));
+        }
+    }
+
+    #[test]
+    fn a_layout_stopped_half_way_is_undone() {
+        // B1: a logbook path so long that the folders and the first files
+        // fit, but `areas/hyprland/README.md` exceeds PATH_MAX (4095 bytes):
+        // the layout stops half-way. init removes the highest folder it
+        // created and restores the config; a second init then succeeds
+        let env = Env::new(Snapper::Allowed);
+        std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
+        std::fs::write(env.config_file(), OWN_CONFIG).unwrap();
+        let top = env.tmp.path().join("long");
+        let mut root = top.clone();
+        while root.as_os_str().len() < 4075 - 201 {
+            root.push("d".repeat(200));
+        }
+        let rest = 4075 - root.as_os_str().len() - 1;
+        root.push("l".repeat(rest));
+        assert_eq!(root.as_os_str().len(), 4075);
+        let out = init_at(&env, &root, &["--no-git"]);
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+        assert!(
+            stderr(&out).contains("README.md"),
+            "the layout stopped at a template: {}",
+            stderr(&out)
+        );
+        assert_eq!(
+            common::read(&env.config_file()),
+            OWN_CONFIG,
+            "config restored"
+        );
+        assert!(!top.exists(), "what init created is gone");
+
+        // an empty folder that was there stays, emptied again
+        std::fs::create_dir_all(&root).unwrap();
+        let out = init_at(&env, &root, &["--no-git"]);
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+        assert_eq!(common::read(&env.config_file()), OWN_CONFIG);
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "emptied");
+        std::fs::remove_dir_all(&top).unwrap();
+
+        let out = init(&env, &["--no-git"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let config: toml::Table = common::read(&env.config_file()).parse().unwrap();
+        assert_eq!(
+            config["logbook"].as_str(),
+            env.tmp.path().join("logbook").to_str()
+        );
+    }
+
+    #[test]
+    fn a_rerun_keeps_a_hand_set_autocommit_false() {
+        // N1: flags, then the existing config, then the default: without
+        // `--git`, `autocommit = false` stays (and no repository is made);
+        // `--git` turns it on
+        let env = Env::new(Snapper::Allowed);
+        std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
+        std::fs::write(env.config_file(), "[git]\nautocommit = false\n").unwrap();
+        let out = init(&env, &["--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(json(&out)["git"]["repository"], false);
+        let config: toml::Table = common::read(&env.config_file()).parse().unwrap();
+        assert_eq!(config["git"]["autocommit"].as_bool(), Some(false));
+        assert!(!env.tmp.path().join("logbook/.git").exists());
+
+        let other = env.tmp.path().join("other");
+        let out = init_at(&env, &other, &["--git"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let config: toml::Table = common::read(&env.config_file()).parse().unwrap();
+        assert_eq!(config["git"]["autocommit"].as_bool(), Some(true));
     }
 
     #[test]

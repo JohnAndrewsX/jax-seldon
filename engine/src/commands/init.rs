@@ -53,7 +53,7 @@ pub struct InitArgs {
     pub language: Option<Language>,
     pub obsidian: bool,
     pub harnesses: Vec<String>,
-    /// `--git` / `--no-git`; `None` = default (on).
+    /// `--git` / `--no-git`; `None` = the config's `[git] autocommit`.
     pub git: Option<bool>,
     /// `--since`: the first capture's backfill window.
     pub since: Option<DateTime<FixedOffset>>,
@@ -172,7 +172,17 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         obsidian: choices.obsidian,
     };
     // the config first: if it cannot be saved, nothing is written into
-    // the logbook folder and the same `init` runs again once that is fixed
+    // the logbook folder and the same `init` runs again once that is fixed;
+    // if the layout fails after it, both are put back ([`undo_layout`])
+    let previous_config = match std::fs::read(&config_file) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(anyhow::Error::new(e)
+                .context(format!("cannot read {}", config_file.display()))
+                .into());
+        }
+    };
     let mut config = existing.unwrap_or_default();
     config.logbook = Some(root.clone());
     config.language = Some(choices.language);
@@ -180,10 +190,28 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     config.watch_paths = choices.watch_paths.clone();
     config.harnesses = choices.harnesses.clone();
     // the git choice is kept: without a repository there is nothing to
-    // commit to, and `doctor` reads `autocommit = false` as chosen
+    // commit to, and `doctor` reads `autocommit = false` as chosen; the
+    // choice came from a flag, the wizard or this file ([`defaults`])
     config.git.autocommit = choices.git;
+    // the highest folder of the logbook path that is not there yet
+    let created = root
+        .ancestors()
+        .take_while(|p| !p.exists())
+        .last()
+        .map(Path::to_path_buf);
     config.save(&config_file)?;
-    let files = layout::create(&root, &spec)?;
+    let files = match layout::create(&root, &spec) {
+        Ok(files) => files,
+        Err(e) => {
+            let undo = undo_layout(
+                &root,
+                created.as_deref(),
+                &config_file,
+                previous_config.as_deref(),
+            );
+            return Err(anyhow::anyhow!("{e:#}; {undo}").into());
+        }
+    };
 
     // inside the first commit: the harness files are part of the logbook
     let harnesses = setup::harnesses(&ctx.dirs, &root, &choices.harnesses);
@@ -524,7 +552,9 @@ fn defaults(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choice
         } else {
             args.harnesses.clone()
         },
-        git: args.git.unwrap_or(true),
+        // `--git`/`--no-git`, else the config's autocommit (default on):
+        // a re-run keeps a hand-set `autocommit = false`
+        git: args.git.unwrap_or(base.git.autocommit),
         capture: args.capture,
         since: args.since,
         baseline: args.since.is_some().then_some(args.baseline),
@@ -679,7 +709,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
     if args.git.is_none() {
         c.git = Confirm::with_theme(&theme)
             .with_prompt("Make the logbook a git repository with a first commit?")
-            .default(true)
+            .default(c.git)
             .interact()
             .map_err(prompt_err)?;
     }
@@ -720,6 +750,54 @@ each one opens as drift: the bar pill starts red, often with crises.
 After the capture you can mark the backfill as the pre-Seldon baseline:
 every open item is dismissed with the reason \"pre-Seldon baseline\";
 the events stay in the ledger.";
+
+/// Undoes a layout that failed: removes what `init` created for the
+/// logbook (`created`, the highest folder that was not there; else the
+/// contents of `root`, which was empty: both checked under the lock) and
+/// puts `config.toml` back as it was (`previous`; removed when there was
+/// none). Returns the sentence for the error message.
+fn undo_layout(
+    root: &Path,
+    created: Option<&Path>,
+    config_file: &Path,
+    previous: Option<&[u8]>,
+) -> String {
+    let remove = |path: &Path| -> std::io::Result<()> {
+        let result = if path.is_dir() && !path.is_symlink() {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
+        };
+        match result {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    };
+    let mut failed = Vec::new();
+    let folder = match created {
+        Some(top) => remove(top).map_err(|e| format!("cannot remove {}: {e}", top.display())),
+        None => std::fs::read_dir(root)
+            .and_then(|mut entries| entries.try_for_each(|e| remove(&e?.path())))
+            .map_err(|e| format!("cannot empty {}: {e}", root.display())),
+    };
+    failed.extend(folder.err());
+    let config = match previous {
+        Some(bytes) => sys::write_atomic(config_file, bytes).map_err(|e| format!("{e:#}")),
+        None => {
+            remove(config_file).map_err(|e| format!("cannot remove {}: {e}", config_file.display()))
+        }
+    };
+    failed.extend(config.err());
+    if failed.is_empty() {
+        let folder = match created {
+            Some(top) => format!("{} removed again", top.display()),
+            None => format!("{} emptied again", root.display()),
+        };
+        format!("nothing was kept: {folder}, the config file as before")
+    } else {
+        format!("the undo failed: {}", failed.join("; "))
+    }
+}
 
 /// What happened with git. Failures are reported, not fatal: the logbook
 /// works without git, and `seldon doctor` shows the fix.

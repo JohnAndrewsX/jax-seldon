@@ -486,7 +486,9 @@ pub fn theme_hook_step(
             return (
                 ThemeHook::Failed {
                     script: theme_hook_script(dirs),
-                    error: format!("{e}; nothing was written"),
+                    error: format!(
+                        "{e}; nothing was written (the next capture still records theme switches)"
+                    ),
                 },
                 None,
             );
@@ -660,7 +662,7 @@ mod tests {
         match &step {
             ThemeHook::Failed { error, .. } => {
                 assert!(error.contains("holds the lock"), "{error}");
-                assert!(error.ends_with("nothing was written"), "{error}");
+                assert!(error.contains("; nothing was written"), "{error}");
             }
             other => panic!("{other:?}"),
         }
