@@ -46,6 +46,11 @@ File and folder names: lowercase, hyphens, English. Prose: user's language.
 
 All YAML keys are English, enum values are English, free text may be any
 language. Dates `YYYY-MM-DD`, timestamps RFC 3339 with offset.
+Hand edits are valid input: a leading UTF-8 BOM (kept on save), spaces or
+tabs after a `---` fence, quoted keys, and comments or blank lines inside
+a list are read, and the engine reads every changed block back before it
+writes, refusing the update (file unchanged) when it would not parse to
+the values written (WP-066).
 
 ### Case (`work/*/C-YYYY-NNN-slug.md`)
 

@@ -77,6 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lock stays held past the wait, stderr says the command was not recorded.
   `seldon plan show` prints the case file as quoted lines (`> `) under
   the same note `hook session-start` uses; `--json` is unchanged (WP-063).
+- Saving a case keeps valid hand-edited frontmatter valid: a blank line
+  or a column-0 comment inside a block list stays with the list, a quoted
+  key (`"title": …`) is the same key, and every frontmatter update is
+  read back before the file is written; one that would not read back is
+  refused with exit 1 and the file stays as it was. A file that starts
+  with a UTF-8 BOM (kept on save) or has spaces or tabs after a `---`
+  fence now parses (WP-066).
 
 ### Plugin
 
