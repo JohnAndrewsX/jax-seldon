@@ -616,10 +616,11 @@ outside the fence is the user's. A damaged fence (a begin marker without
 an end marker of its own) or a file with the generated header but no
 fence leaves `STATUS.md` byte for byte as it is, with a warning; only the
 `init` template is replaced. Fence markers end in `\n` or `\r\n`; a CRLF
-file gets CRLF in its new body. In every fence body the engine writes
-(`STATUS.md`, the `decisions.index` fence, `outputs/*.md`), `<!-- seldon:`
-gets a zero-width space (U+200B) after `<!--`, so a title, subject or
-message can neither end nor open a fence (WP-065).
+file gets CRLF in its new body. In the fence bodies of `STATUS.md`,
+`DECISIONS.md` and `outputs/*.md` the engine writes, `<!-- seldon:` gets a
+zero-width space (U+200B) after `<!--`, so a title, subject or message
+can neither end nor open a fence (WP-065). The dossier fences of
+`system/*.md` are not neutralised yet (follow-up, WP-075).
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. Measured in `cargo bench` with the fixture logbook scaled ×10.
