@@ -35,15 +35,19 @@ only if you want the watcher.
 ## Install
 
 1. The release binary from `install.sh` and the AUR package already
-   include `watch` (the release workflow and the PKGBUILD build with
-   `--features watch`), so with either there is nothing to build, and
+   include `watch`. The release workflow and the PKGBUILD build with
+   `--features watch`. With either there is nothing to build, and
    `install.sh --unit` also places the unit (step 3 does the same by
-   hand). Build with the feature only from source: the default build
+   hand).
+
+   Build with the feature only from source. The default build
    (`just build-release`) leaves it out, and `seldon watch` then exits 1
    with "built without the watch feature; rebuild seldon with …". Do not
-   copy a source build over a `seldon` the installer manages: it would
-   no longer be the installer's file, so the next installer run refuses
+   copy a source build over a `seldon` the installer manages. It would
+   no longer be the installer's file: the next installer run refuses
    (`--force` replaces it) and `--uninstall` keeps it.
+
+   Source builds only:
 
    ```
    cargo build --manifest-path engine/Cargo.toml --release --locked \

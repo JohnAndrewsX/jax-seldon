@@ -180,17 +180,20 @@ it back, or use `--logbook <DIR>` for single commands.
 The logbook is not all that Seldon keeps. The engine's own bookkeeping
 lives in `~/.local/state/seldon/`:
 
-| File | What it holds |
+| Path | What it holds |
 |---|---|
 | `cursors.json` | where each collector stopped reading, tied to the path of your logbook |
 | `manifest.json` | a fingerprint of each watched config file |
-| `owned.json` | files Seldon wrote itself that the next capture has not yet seen; present only while one is waiting |
-| `index.json` | what the plugin reads; the engine rebuilds it, so it needs no backup |
+| `owned.json` | files Seldon wrote itself that the next capture has not yet seen. It exists only while one is waiting |
+| `index.json` | what the plugin reads. The engine rebuilds it, so it needs no backup |
+| `hooks/` | the source copy of the theme hook script, if you chose that hook |
+| `agent-launch.log` | the error output of agent launchers; a log, nothing depends on it |
 
 If this folder is lost, nothing fails and nothing warns you. The
 collectors start over from the current state. `pacman` and `snapper`
-read their sources again and skip what the ledger already holds. The
-collectors that compare states (config, plugins, Omarchy, theme) take
+read their sources again and skip what the ledger already holds. A
+snapshot deleted while the state was gone is not recorded as deleted.
+The collectors that compare states (config, plugins, Omarchy, theme) take
 the machine as it is now as their new starting point, and a change made
 while the state was gone is not recorded.
 
@@ -211,7 +214,7 @@ tar -C ~/.local/state -xzf ~/seldon-state-2026-10-03.tar.gz
 seldon capture
 ```
 
-`seldon doctor` then shows only `ok`.
+`seldon doctor` then shows no new problem.
 
 ---
 
