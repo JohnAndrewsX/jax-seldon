@@ -27,6 +27,8 @@ const FIXTURE_CWD: &str = "/home/user/Seldon";
 struct Hooks {
     env: Env,
     logbook: PathBuf,
+    /// Claude Code's `CLAUDE_PROJECT_DIR` for the hook processes, if set.
+    project_dir: std::cell::RefCell<Option<String>>,
 }
 
 impl Hooks {
@@ -34,7 +36,11 @@ impl Hooks {
         let env = Env::new(Snapper::NoPermissions);
         let logbook = env.init_logbook();
         std::fs::write(env.tmp.path().join("pacman.log"), "").unwrap();
-        Hooks { env, logbook }
+        Hooks {
+            env,
+            logbook,
+            project_dir: std::cell::RefCell::new(None),
+        }
     }
 
     fn command(&self, args: &[&str], now: Option<&str>) -> std::process::Command {
@@ -48,6 +54,9 @@ impl Hooks {
             .env("TZ", "Europe/Berlin");
         if let Some(now) = now {
             cmd.env("SELDON_NOW", now);
+        }
+        if let Some(dir) = self.project_dir.borrow().as_deref() {
+            cmd.env("CLAUDE_PROJECT_DIR", dir);
         }
         cmd
     }
@@ -1550,8 +1559,21 @@ mod skip_paths {
                 "echo",
                 "CONF=~/.config/hypr/private.conf; echo x > /tmp/made-up-env",
             ),
+            (
+                "echo",
+                "X=~/.config/hypr/private.conf:/usr/share; echo x > /tmp/made-up-list",
+            ),
+            (
+                "echo",
+                "echo ~/.config/hypr/a.conf,~/.config/hypr/private.conf > /tmp/made-up-csv",
+            ),
             // relative after a `cd`, inside `bash -c`, a name pattern
             ("cp", "cd ~/.config/hypr && cp private.conf other.conf"),
+            (
+                "cp",
+                "pushd ~/.config/hypr && cp private.conf ~/.config/hypr/other.conf",
+            ),
+            ("git", "git -C ~/.config/hypr add private.conf"),
             (
                 "cat",
                 "bash -c 'cat ~/.config/hypr/private.conf >> ~/.bashrc'",
@@ -1735,6 +1757,25 @@ mod session_scope {
         session_stop(&h, &logbook);
         let journal = read(&h.logbook.join("journal/2026/2026-10-01.md"));
         assert!(journal.contains("session ended; "), "{journal}");
+    }
+
+    /// Claude Code sets `CLAUDE_PROJECT_DIR` for its hook commands: it
+    /// decides the session's scope, whatever the payload's `cwd`.
+    #[test]
+    fn the_project_directory_decides() {
+        let h = Hooks::new();
+        let logbook = h.logbook.to_str().unwrap().to_string();
+        *h.project_dir.borrow_mut() = Some(logbook.clone());
+        calls_from(&h, OTHER, 0);
+        assert_eq!(h.commands().len(), 4, "{:?}", h.commands());
+        let text = stdout(&session_start(&h, Some(OTHER)));
+        assert!(text.starts_with("# Seldon logbook context\n"), "{text}");
+
+        *h.project_dir.borrow_mut() = Some(OTHER.to_string());
+        calls_from(&h, &logbook, 1);
+        assert_eq!(h.commands().len(), 4, "nothing more: {:?}", h.commands());
+        assert_eq!(stdout(&session_start(&h, Some(&logbook))), "");
+        assert_eq!(stdout(&session_start(&h, None)), "");
     }
 
     #[test]

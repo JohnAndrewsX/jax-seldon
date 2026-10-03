@@ -628,16 +628,26 @@ fn setup(ctx: &Context) -> Result<Setup> {
     })
 }
 
-/// Whether the hooks serve a session in `cwd`, the directory the hook's
-/// payload names (`None`: it names none, as when an agent or a person runs
-/// the hook itself). With `[hooks] scope = "logbook"`, the default, only a
-/// session inside the logbook; with `"all"` every session. A `cwd` that is
-/// not an absolute path is outside.
+/// Claude Code's project directory, set in the environment of the hook
+/// commands it runs.
+const PROJECT_DIR_ENV: &str = "CLAUDE_PROJECT_DIR";
+
+/// Whether the hooks serve the session the hook is called for. The
+/// session's directory is [`PROJECT_DIR_ENV`] when it is set (the project
+/// stays the same while the agent's `cwd` moves), else `cwd`, the
+/// directory the hook's payload names; with neither (an agent or a person
+/// running the hook itself) the session is served. With `[hooks] scope =
+/// "logbook"`, the default, only a session inside the logbook; with
+/// `"all"` every session. A directory that is not an absolute path is
+/// outside. Relative paths in a command still resolve against `cwd`.
 fn in_scope(config: &Config, logbook: &Path, cwd: Option<&str>) -> bool {
-    match (config.hooks.scope, cwd) {
+    let project = std::env::var(PROJECT_DIR_ENV)
+        .ok()
+        .filter(|d| !d.is_empty());
+    match (config.hooks.scope, project.as_deref().or(cwd)) {
         (HookScope::All, _) | (_, None) => true,
-        (HookScope::Logbook, Some(cwd)) => {
-            Path::new(cwd).is_absolute() && is_inside(Path::new(cwd), logbook)
+        (HookScope::Logbook, Some(dir)) => {
+            Path::new(dir).is_absolute() && is_inside(Path::new(dir), logbook)
         }
     }
 }
@@ -790,12 +800,13 @@ fn bash_record(command: &str, setup: &Setup, cwd: &Path) -> Option<Record> {
 
 /// Whether `line` names a path that `[redaction] skipPaths` matches. Read
 /// as paths: every word of its commands (`sh -c` scripts opened) and every
-/// write target, and every token of the line's text between blanks, quotes
-/// and shell operators (which also holds the files read with `<` and the
-/// words inside `$(…)`), each also after its first `=` (`--file=PATH`,
-/// `VAR=PATH`). A relative path is tried against `cwd` and against every
-/// directory a `cd` in the line moves to. It matches more than the shell
-/// would open, never less.
+/// write target, and every token of the line's text between blanks, quotes,
+/// shell operators, `:` and `,` (which also holds the files read with `<`,
+/// the words inside `$(…)` and the parts of a list such as `PATH=a:b`);
+/// each also after its first `=` (`--file=PATH`, `VAR=PATH`). A relative path is tried against `cwd` and
+/// against every directory a `cd` or `pushd` in the line moves to or a
+/// `-C DIR` names (`git -C`, `make -C`). It matches more than the shell
+/// would open; paths built from variables or globs are read as written.
 fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
     if setup.config.redaction.skip_paths.is_empty() {
         return false;
@@ -806,19 +817,23 @@ fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
     for segment in simple_commands(line) {
         let argv = segment.argv();
         let program = argv.first().map(|w| w.rsplit('/').next().unwrap_or(w));
-        if program == Some("cd") {
-            let here = dirs.last().cloned().unwrap_or_else(|| cwd.to_path_buf());
+        let here = dirs.last().cloned().unwrap_or_else(|| cwd.to_path_buf());
+        if matches!(program, Some("cd" | "pushd")) {
             dirs.push(match argv[1..].iter().find(|a| !a.starts_with('-')) {
                 Some(dir) => scope.resolve(dir, &here),
                 None => scope.home.clone(),
             });
+        }
+        // `git -C DIR`, `make -C DIR`, `tar -C DIR`: the command works there
+        for pair in argv.windows(2).filter(|p| p[0] == "-C") {
+            dirs.push(scope.resolve(&pair[1], &here));
         }
         words.extend(segment.words);
         words.extend(segment.writes);
     }
     words.extend(
         line.text
-            .split(|c: char| c.is_whitespace() || "'\"`<>|&;()".contains(c))
+            .split(|c: char| c.is_whitespace() || "'\"`<>|&;(),:".contains(c))
             .filter(|t| !t.is_empty())
             .map(str::to_string),
     );
