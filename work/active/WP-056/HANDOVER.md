@@ -11,14 +11,20 @@ Done:
   include `watch`; the `--features watch` build is for source builds only
   and must not be copied over an installer-managed `seldon` (the installer
   refuses a foreign `seldon` without `--force`, `--uninstall` keeps it).
-  The step-2 command is now plain `seldon watch`.
+  Step 2 is unchanged. The source-build block is labelled "Source builds only".
 - F-450 (docs): `docs/user/{en,de}/07-the-logbook.md` new section "Back up
   and restore the state directory" (de: "Den Zustandsordner sichern und
   wiederherstellen"): what lives in `~/.local/state/seldon/`, what a lost
   folder does, backup and restore with `tar`.
-- de pages carry the new source stamp (`@ eaea010`, the commit that changed
+- de pages carry the new source stamp (11: `@ eaea010`; 07: `@ 7d77836`, the commits that changed
   the en pages). CHANGELOG `[Unreleased]` entry added.
 - memory/pitfalls.md: two entries appended.
+- Review corrections (4 items): README step 1 split into short sentences with
+  the source-build block marked "Source builds only"; the state-directory
+  table (en, de) lists `hooks/` and `agent-launch.log` (header now "Path");
+  snapper deletions made while the state was gone are said not to be
+  recorded; "`seldon doctor` then shows no new problem". Done in two commits
+  (the de stamp needs the en commit hash first). `docs-check`: ok, no warning.
 
 Not done:
 - The engine part of F-450 (operator decision pending, per the WP).
