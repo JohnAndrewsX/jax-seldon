@@ -49,15 +49,28 @@ pub fn create_new_private(path: &Path) -> std::io::Result<File> {
 /// [`NEW_FILE_MODE`] and new directories [`NEW_DIR_MODE`]. File and
 /// directory are synced; the temp file is removed when anything fails.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    write_atomic_with(path, bytes, None)
+    write_atomic_with(path, bytes, None, true)
 }
 
 /// [`write_atomic`] with the file's permission bits set to exactly `mode`.
 pub fn write_atomic_mode(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
-    write_atomic_with(path, bytes, Some(mode))
+    write_atomic_with(path, bytes, Some(mode), true)
 }
 
-fn write_atomic_with(path: &Path, bytes: &[u8], mode: Option<u32>) -> anyhow::Result<()> {
+/// [`write_atomic`] without the syncs, for files the engine rebuilds from
+/// the ledger and the logbook (`index.json`, `STATUS.md`, the ledger
+/// views, `outputs/REBUILD.md`): after a crash the next build writes them
+/// again.
+pub fn write_generated(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_atomic_with(path, bytes, None, false)
+}
+
+fn write_atomic_with(
+    path: &Path,
+    bytes: &[u8],
+    mode: Option<u32>,
+    sync: bool,
+) -> anyhow::Result<()> {
     let target =
         resolve_links(path).with_context(|| format!("cannot resolve {}", path.display()))?;
     let dir = target
@@ -77,7 +90,7 @@ fn write_atomic_with(path: &Path, bytes: &[u8], mode: Option<u32>) -> anyhow::Re
     };
     let written = file
         .write_all(bytes)
-        .and_then(|()| file.sync_all())
+        .and_then(|()| if sync { file.sync_all() } else { Ok(()) })
         .with_context(|| format!("cannot write {}", tmp.display()))
         .and_then(|()| {
             std::fs::rename(&tmp, &target)
@@ -89,7 +102,7 @@ fn write_atomic_with(path: &Path, bytes: &[u8], mode: Option<u32>) -> anyhow::Re
     }
     // the rename is durable once the directory is synced; a file system
     // that cannot sync a directory still has the new file
-    if let Ok(d) = File::open(dir) {
+    if sync && let Ok(d) = File::open(dir) {
         let _ = d.sync_all();
     }
     Ok(())

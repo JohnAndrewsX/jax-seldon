@@ -68,7 +68,7 @@ pub fn to_text(index: &Index) -> String {
 /// Replaces `path` with the index atomically: a reader sees the old file
 /// or the new one, never a partial one (CONTRACT.md rule 2).
 pub fn write(path: &Path, index: &Index) -> anyhow::Result<()> {
-    sys::write_atomic(path, to_text(index).as_bytes())
+    sys::write_generated(path, to_text(index).as_bytes())
 }
 
 /// `state` from `cursors.json`: one row per collector in the schema's
