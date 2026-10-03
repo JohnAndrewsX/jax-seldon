@@ -287,3 +287,113 @@ fn the_index_reads_the_logbooks_head_under_an_inherited_git_dir() {
     assert_eq!(git["head"].as_str(), Some(&logbook_head[..7]), "{git}");
     assert_eq!(git["dirty"], false, "{git}");
 }
+
+#[test]
+fn a_dot_git_file_pointing_at_another_repository_commits_nowhere() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook_at("parent/logbook", "en");
+    let parent = root.parent().unwrap().to_path_buf();
+    env.git(&parent, &["init", "-q"]);
+    let out = env.git(
+        &parent,
+        &[
+            "-c",
+            "user.name=Other",
+            "-c",
+            "user.email=other@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "parent: first",
+        ],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let parent_head = head(&env, &parent);
+    // the logbook's .git becomes a file that names the parent's git dir:
+    // git takes the logbook as the work tree of the parent's repository
+    std::fs::remove_dir_all(root.join(".git")).unwrap();
+    std::fs::write(
+        root.join(".git"),
+        format!("gitdir: {}\n", parent.join(".git").display()),
+    )
+    .unwrap();
+
+    let out = env.seldon(&["--json", "log", "--", "note with a foreign gitdir"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let warnings = git_warnings(&out);
+    assert_eq!(warnings.len(), 1, "{}", stderr(&out));
+    assert!(
+        warnings[0].starts_with(
+            "seldon: warning: git: not committed: the logbook's .git points at another repository's git directory"
+        ),
+        "{}",
+        warnings[0]
+    );
+    assert_eq!(json(&out)["git"]["committed"], false);
+    assert_eq!(
+        head(&env, &parent),
+        parent_head,
+        "the parent repository moved"
+    );
+    assert_eq!(stdout(&env.git(&parent, &["ls-files"])), "");
+
+    let out = env.seldon(&["--json", "doctor", "--path", root.to_str().unwrap()]);
+    let v = json(&out);
+    let git = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "git")
+        .unwrap()
+        .clone();
+    assert_eq!(git["status"], "degraded", "{git}");
+    assert!(
+        git["message"]
+            .as_str()
+            .unwrap()
+            .contains("points at another repository's git directory"),
+        "{git}"
+    );
+}
+
+#[test]
+fn a_linked_work_tree_of_the_logbooks_repository_is_committed() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let linked = env.tmp.path().join("linked");
+    let out = env.git(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "side",
+            linked.to_str().unwrap(),
+        ],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let before = stdout(&env.git(&root, &["rev-parse", "side"]));
+
+    let out = env.seldon(&[
+        "--json",
+        "--logbook",
+        linked.to_str().unwrap(),
+        "log",
+        "--",
+        "note in a linked work tree",
+    ]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(git_warnings(&out).is_empty(), "{}", stderr(&out));
+    assert_eq!(json(&out)["git"]["committed"], true);
+    let after = stdout(&env.git(&root, &["rev-parse", "side"]));
+    assert_ne!(before, after, "the linked work tree's branch got no commit");
+    assert_eq!(stdout(&env.git(&linked, &["status", "--porcelain"])), "");
+}

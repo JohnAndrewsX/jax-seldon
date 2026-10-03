@@ -90,32 +90,64 @@ pub fn query(root: &Path, args: &[&str], timeout: Duration) -> Run {
     sys::run_command(command(Some(root), args), timeout)
 }
 
-/// Whether `root` is the top of the work tree git finds there: an empty
-/// or broken `.git` (git sees no repository below the ceiling) or a `.git`
-/// that resolves elsewhere is an error that says which.
+/// Whether `root` is the logbook's own repository: the top of the work
+/// tree git finds there, with its git directory at `<root>/.git` or, for a
+/// linked work tree, at `<repo>/worktrees/<name>` whose `gitdir` file
+/// names `<root>/.git`. An empty or broken `.git` (git sees no repository
+/// below the ceiling), a `.git` that resolves to another work tree, and a
+/// `.git` file (`gitdir: …`) that points at another repository's git
+/// directory are errors that say which.
 pub fn check_toplevel(root: &Path) -> Result<(), String> {
-    match run(Some(root), &["rev-parse", "--show-toplevel"]) {
+    let out = match run(
+        Some(root),
+        &["rev-parse", "--show-toplevel", "--absolute-git-dir"],
+    ) {
         Run::Exited {
             code: Some(0),
             stdout,
             ..
-        } => {
-            let top = absolute(Path::new(stdout.trim_end_matches(['\n', '\r'])));
-            if top == absolute(root) {
-                Ok(())
-            } else {
-                Err(format!(
-                    "the logbook's .git belongs to another work tree ({})",
-                    top.display()
-                ))
-            }
+        } => stdout,
+        Run::Exited { stderr, .. } => {
+            return Err(format!(
+                "the logbook's .git is not a usable repository: {}",
+                one_line(&stderr)
+            ));
         }
-        Run::Exited { stderr, .. } => Err(format!(
-            "the logbook's .git is not a usable repository: {}",
-            one_line(&stderr)
-        )),
-        other => Err(failure("rev-parse", &other)),
+        other => return Err(failure("rev-parse", &other)),
+    };
+    let mut lines = out.split('\n');
+    let (Some(top), Some(git_dir)) = (lines.next(), lines.next()) else {
+        return Err(format!("git rev-parse printed no git directory: {out:?}"));
+    };
+    let top = absolute(Path::new(top));
+    if top != absolute(root) {
+        return Err(format!(
+            "the logbook's .git belongs to another work tree ({})",
+            top.display()
+        ));
     }
+    let git_dir = absolute(Path::new(git_dir));
+    let own = absolute(&root.join(".git"));
+    if git_dir == own || is_linked_work_tree_of(&git_dir, &own) {
+        Ok(())
+    } else {
+        Err(format!(
+            "the logbook's .git points at another repository's git directory ({})",
+            git_dir.display()
+        ))
+    }
+}
+
+/// Whether `git_dir` is `<repo>/worktrees/<name>` registered for the
+/// `.git` file `dot_git` (its `gitdir` file names that file).
+fn is_linked_work_tree_of(git_dir: &Path, dot_git: &Path) -> bool {
+    let registered = git_dir
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|n| n == "worktrees");
+    registered
+        && std::fs::read_to_string(git_dir.join("gitdir"))
+            .is_ok_and(|back| absolute(Path::new(back.trim_end_matches(['\n', '\r']))) == dot_git)
 }
 
 /// `git version`, or `None` if git is not installed.
