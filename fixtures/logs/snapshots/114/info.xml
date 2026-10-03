@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<snapshot>
+  <type>pre</type>
+  <num>114</num>
+  <date>2026-10-01 14:30:00</date>
+  <description>tailscale: MagicDNS</description>
+  <userdata>
+    <key>case</key>
+    <value>C-2026-008</value>
+  </userdata>
+</snapshot>

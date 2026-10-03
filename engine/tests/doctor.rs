@@ -67,6 +67,18 @@ mod doctor {
             snapper["fix"],
             "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
         );
+        // what the fix grants besides listing
+        assert_eq!(
+            snapper["message"],
+            format!(
+                "No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). {}",
+                seldon::commands::doctor::SNAPPER_FIX_GRANTS
+            )
+        );
+        assert!(
+            seldon::commands::doctor::SNAPPER_FIX_GRANTS
+                .contains("create, change and delete root snapshots without a password")
+        );
         if env.has_git {
             assert_eq!(check(&v, "git")["status"], "ok", "{v}");
         }
@@ -83,6 +95,10 @@ mod doctor {
             assert!(text.contains(name), "{name} missing in:\n{text}");
         }
         assert!(text.contains("fix: sudo snapper"));
+        assert!(
+            text.contains(seldon::commands::doctor::SNAPPER_FIX_GRANTS),
+            "{text}"
+        );
         assert!(text.trim_end().ends_with("doctor: ok"));
     }
 
@@ -189,7 +205,60 @@ mod doctor {
         assert_eq!(v["logbook"], root.to_str().unwrap());
         assert_eq!(v["ok"], true);
         assert_eq!(check(&v, "snapper")["status"], "ok");
-        assert_eq!(check(&v, "snapper")["message"], "2 snapshots (config root)");
+        assert_eq!(
+            check(&v, "snapper")["message"],
+            format!(
+                "2 snapshots (config root). {}",
+                seldon::commands::doctor::SNAPPER_LIST_GRANTS
+            )
+        );
+    }
+
+    /// Without permission to list, readable info files make snapper `ok`
+    /// without a fix. Under the test guard the default snapshot directory
+    /// is `<guard>/.snapshots`, never the host's.
+    #[test]
+    fn snapper_info_files_are_enough() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = init(&env);
+        let snapper = |extra: &[(&str, &Path)]| {
+            let mut cmd = env.command(&["doctor", "--path", root.to_str().unwrap(), "--json"]);
+            for (k, v) in extra {
+                cmd.env(k, v);
+            }
+            let v = json(&cmd.output().unwrap());
+            check(&v, "snapper").clone()
+        };
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/logs/snapshots");
+        let got = snapper(&[("SELDON_SNAPSHOTS_DIR", &fixture)]);
+        assert_eq!(got["status"], "ok", "{got}");
+        assert_eq!(got.get("fix"), None, "{got}");
+        assert_eq!(
+            got["message"],
+            format!(
+                "snapper list is not permitted; 10 snapshots read from the info files in {}",
+                fixture.display()
+            )
+        );
+
+        // the guard's default: missing → degraded with the fix; present → ok
+        assert_eq!(snapper(&[])["status"], "degraded");
+        let guarded = env.tmp.path().join(".snapshots/7");
+        std::fs::create_dir_all(&guarded).unwrap();
+        std::fs::write(
+            guarded.join("info.xml"),
+            "<snapshot><type>single</type><num>7</num></snapshot>",
+        )
+        .unwrap();
+        let got = snapper(&[]);
+        assert_eq!(got["status"], "ok", "{got}");
+        assert!(
+            got["message"]
+                .as_str()
+                .unwrap()
+                .contains("; 1 snapshot read from the info files"),
+            "{got}"
+        );
     }
 
     #[test]
