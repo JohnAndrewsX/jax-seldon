@@ -420,32 +420,99 @@ mod doctor {
     }
 
     #[test]
-    fn a_commit_that_would_fail_is_degraded() {
+    fn a_read_only_dot_git_is_degraded() {
         use std::os::unix::fs::PermissionsExt as _;
         let env = Env::new(Snapper::NoPermissions);
         if !env.has_git {
             return;
         }
         let root = init(&env);
-        // `.git` read-only: git cannot create its index lock
         let dot_git = root.join(".git");
         std::fs::set_permissions(&dot_git, std::fs::Permissions::from_mode(0o555)).unwrap();
-        if std::fs::write(dot_git.join("probe"), "x").is_ok() {
-            // running as root: permissions do not stop the write
-            std::fs::remove_file(dot_git.join("probe")).unwrap();
-            std::fs::set_permissions(&dot_git, std::fs::Permissions::from_mode(0o755)).unwrap();
-            return;
-        }
         let git = git_check(&env, &root);
         std::fs::set_permissions(&dot_git, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(git["status"], "degraded", "{git}");
         let message = git["message"].as_str().unwrap();
-        assert!(message.contains("a commit would fail"), "{message}");
-        assert!(message.contains("Permission denied"), "{message}");
+        assert!(message.contains(".git is read-only"), "{message}");
         assert_eq!(
             git["fix"],
-            format!("git -C {} commit --dry-run", root.display()),
+            format!("chmod u+w {}", dot_git.display()),
             "{git}"
+        );
+    }
+
+    #[test]
+    fn an_identity_git_cannot_resolve_is_degraded() {
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            return;
+        }
+        let root = init(&env);
+        // an email but an empty name: the autocommit uses it as it is
+        for (key, value) in [("user.email", "someone@example.invalid"), ("user.name", "")] {
+            let out = env.git(&root, &["config", key, value]);
+            assert!(out.status.success(), "{}", stderr(&out));
+        }
+        let git = git_check(&env, &root);
+        assert_eq!(git["status"], "degraded", "{git}");
+        let message = git["message"].as_str().unwrap();
+        assert!(
+            message.contains("git cannot name the committer"),
+            "{message}"
+        );
+        assert!(message.contains("empty ident name"), "{message}");
+        assert_eq!(
+            git["fix"],
+            format!("git -C {} config user.name \"Your Name\"", root.display()),
+            "{git}"
+        );
+    }
+
+    #[test]
+    fn an_empty_dot_git_is_degraded_with_its_fix() {
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            return;
+        }
+        let root = init(&env);
+        // inside another repository: git must not answer for that one
+        env.git(env.tmp.path(), &["init", "-q"]);
+        std::fs::remove_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        let git = git_check(&env, &root);
+        assert_eq!(git["status"], "degraded", "{git}");
+        let message = git["message"].as_str().unwrap();
+        assert!(
+            message.contains("the logbook's .git is not a usable repository"),
+            "{message}"
+        );
+        assert_eq!(
+            git["fix"],
+            format!("git -C {} init", root.display()),
+            "{git}"
+        );
+    }
+
+    /// doctor only reads: no lock, no index refresh, `.git` byte-identical
+    /// even when a tracked file's stat data is stale.
+    #[test]
+    fn doctor_leaves_dot_git_untouched() {
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            return;
+        }
+        let root = init(&env);
+        let project = root.join("PROJECT.md");
+        let file = std::fs::File::options().write(true).open(&project).unwrap();
+        file.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
+            .unwrap();
+        drop(file);
+        let before = snapshot(&root.join(".git"));
+        let git = git_check(&env, &root);
+        assert_eq!(git["status"], "ok", "{git}");
+        assert!(
+            before == snapshot(&root.join(".git")),
+            "doctor wrote into the logbook's .git"
         );
     }
 }

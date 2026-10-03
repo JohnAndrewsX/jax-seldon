@@ -382,6 +382,14 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
     };
     let autocommit = if config.git.autocommit { "on" } else { "off" };
     if git::is_repo(&logbook.root) {
+        if let Err(e) = git::check_toplevel(&logbook.root) {
+            let check = Check::new("git", Status::Degraded, format!("{version}; {e}"));
+            return if e.contains("not a usable repository") {
+                check.fix(format!("git -C {} init", logbook.root.display()))
+            } else {
+                check
+            };
+        }
         if config.git.autocommit
             && let Some(blocked) = autocommit_blocked(&logbook.root, &version)
         {
@@ -412,8 +420,10 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
 
 /// What keeps every autocommit from committing (WP-061), first match: a
 /// `.git/index.lock` (a git process killed half way leaves it behind), a
-/// detached HEAD (the autocommit skips it), a failing `git commit
-/// --dry-run`. Each is degraded with its fix.
+/// read-only `.git`, a detached HEAD (the autocommit skips it), a HEAD
+/// that names no commit, an identity git cannot resolve. Each is degraded
+/// with its fix. Nothing here takes a lock or writes into `.git`: only
+/// file metadata and read-only git queries.
 fn autocommit_blocked(root: &Path, version: &str) -> Option<Check> {
     let lock = root.join(".git/index.lock");
     if let Ok(meta) = std::fs::symlink_metadata(&lock) {
@@ -433,6 +443,17 @@ fn autocommit_blocked(root: &Path, version: &str) -> Option<Check> {
                 ),
             )
             .fix(format!("rm {}", lock.display())),
+        );
+    }
+    let dot_git = root.join(".git");
+    if dot_git.is_dir() && std::fs::metadata(&dot_git).is_ok_and(|m| m.permissions().readonly()) {
+        return Some(
+            Check::new(
+                "git",
+                Status::Degraded,
+                format!("{version}; .git is read-only: every autocommit fails"),
+            )
+            .fix(format!("chmod u+w {}", dot_git.display())),
         );
     }
     match git::is_detached(root) {
@@ -463,15 +484,28 @@ fn autocommit_blocked(root: &Path, version: &str) -> Option<Check> {
             ));
         }
     }
-    match git::commit_dry_run(root) {
+    if let Err(e) = git::check_head(root) {
+        return Some(
+            Check::new(
+                "git",
+                Status::Degraded,
+                format!("{version}; {e}: every autocommit fails"),
+            )
+            .fix(format!("git -C {} status", root.display())),
+        );
+    }
+    match git::check_identity(root) {
         Ok(()) => None,
         Err(e) => Some(
             Check::new(
                 "git",
                 Status::Degraded,
-                format!("{version}; a commit would fail, so every autocommit fails: {e}"),
+                format!("{version}; git cannot name the committer, so every autocommit fails: {e}"),
             )
-            .fix(format!("git -C {} commit --dry-run", root.display())),
+            .fix(format!(
+                "git -C {} config user.name \"Your Name\"",
+                root.display()
+            )),
         ),
     }
 }
