@@ -26,6 +26,7 @@ use crate::logbook::cases::{self, CaseFile};
 use crate::model::event::{Event, Kind, Resolution, Source};
 use crate::model::{Case, CaseStatus, Priority, Risk, Zone};
 use crate::reconcile::{self, Resolve, Selection};
+use crate::redact::Redactor;
 
 #[derive(Debug, Clone, Args)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -317,6 +318,20 @@ enum Action {
 }
 
 impl Action {
+    /// The action with its free text (intent, reason) through `redactor`.
+    fn redacted(self, redactor: &Redactor) -> Action {
+        match self {
+            Action::Link { case } => Action::Link { case },
+            Action::Explain(explain) => Action::Explain(Explain {
+                intent: redactor.redact(&explain.intent),
+                ..explain
+            }),
+            Action::Dismiss { reason } => Action::Dismiss {
+                reason: redactor.redact(&reason),
+            },
+        }
+    }
+
     fn resolution(&self) -> Resolution {
         match self {
             Action::Link { .. } => Resolution::Linked,
@@ -328,6 +343,8 @@ impl Action {
 
 fn resolve(ctx: &Context, id: &str, only: bool, actor: &str, action: Action) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
+    // the new case and the ledger get the redacted intent or reason
+    let action = action.redacted(&Redactor::for_config(&config)?);
     let lock = ctx.lock()?;
     let built = index::derive(ctx, &config, &logbook)?;
     warn(&built);
@@ -408,7 +425,7 @@ fn resolve(ctx: &Context, id: &str, only: bool, actor: &str, action: Action) -> 
         Resolution::Explained => "explained",
         Resolution::Dismissed => "dismissed",
     };
-    // never the subject: it is not redacted and must not reach a command line
+    // never the subject: free text must not reach a command line
     let summary = match &case_id {
         Some(c) => format!("drift {verb}: {resolved} event(s), {c}"),
         None => format!("drift {verb}: {resolved} event(s)"),

@@ -2,9 +2,10 @@
 //! which this WP's commands (`log`, `event`, `plan`) write ledger events.
 //!
 //! [`emit`] hands the events to WP-004's [`Ledger::append`], which assigns
-//! the ULIDs, redacts `detail` and `meta.command` (SPEC-ENGINE §7), cuts
-//! `detail` to the schema limit and validates every event before anything
-//! is written. Nothing here redacts or numbers events itself.
+//! the ULIDs, redacts `subject`, `detail` and every string `meta` value
+//! (SPEC-ENGINE §7), cuts `subject` and `detail` to the schema limits and
+//! validates every event before anything is written. Nothing here redacts
+//! or numbers events itself.
 
 use chrono::DateTime;
 use clap::Args;
@@ -31,10 +32,7 @@ pub fn emit(
     logbook: &Logbook,
     events: Vec<Event>,
 ) -> Result<Vec<Event>> {
-    let ledger = Ledger::new(
-        logbook,
-        Redactor::with_patterns(&config.redaction.patterns)?,
-    );
+    let ledger = Ledger::new(logbook, Redactor::for_config(config)?);
     ledger.append(lock, events)
 }
 
@@ -201,7 +199,7 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
         file.attach(&event.id.to_string(), &event.actor);
         file.save(&logbook)?;
     }
-    // never the subject: it is not redacted and must not reach a command line
+    // never the subject: free text must not reach a command line
     let summary = format!("event {}/{}", event.source, event.kind);
     let commit = autocommit(ctx, &config, &logbook, &summary);
     crate::index::rebuild_if_initialised(ctx);

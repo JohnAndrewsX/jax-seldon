@@ -1,7 +1,8 @@
 //! Redaction (SPEC-ENGINE §7): one row per built-in pattern, user patterns,
-//! the secret hook fixture, and the ledger path end to end. Every secret
-//! here is made up.
+//! the secret hook fixture, the ledger path end to end, and every command
+//! that writes free text into the logbook. Every secret here is made up.
 
+mod common;
 mod support;
 
 use seldon::collectors::pacman::Pacman;
@@ -450,6 +451,65 @@ mod redaction {
     }
 
     #[test]
+    fn ledger_redacts_the_subject_and_every_meta_value() {
+        let s = Scratch::new("redact-ledger-fields");
+        let ledger = Ledger::at(s.path("ledger"), Redactor::builtin());
+        let lock = lock::acquire(&s.path("lock")).unwrap();
+        let mut meta = Meta {
+            version: Some("token=fakeVersion".into()),
+            from: Some("https://u:fakeFrom@h.example/a".into()),
+            to: Some("API_KEY=fakeTo".into()),
+            ..Meta::default()
+        };
+        meta.extra.insert(
+            "url".into(),
+            serde_json::json!("https://user:fakeUrl@h.example/x"),
+        );
+        meta.extra
+            .insert("other".into(), serde_json::json!("PASSWORD=fakeOther"));
+        meta.extra.insert("count".into(), serde_json::json!(3));
+        let e = Event::new(
+            ts("2026-10-01T10:00:00+02:00"),
+            Source::Manual,
+            Kind::Note,
+            "deploy token=fakeSubject",
+        )
+        .meta(meta);
+        // a subject at the limit that grows when it is redacted
+        let long = format!("{}token=x", "a".repeat(505));
+        let e2 = Event::new(
+            ts("2026-10-01T10:00:01+02:00"),
+            Source::Manual,
+            Kind::Note,
+            &long,
+        );
+        let written = ledger.append(&lock, vec![e, e2]).unwrap();
+        let text = std::fs::read_to_string(ledger.month_file("2026-10")).unwrap();
+        for secret in [
+            "fakeVersion",
+            "fakeFrom",
+            "fakeTo",
+            "fakeUrl",
+            "fakeOther",
+            "fakeSubject",
+            "token=x",
+        ] {
+            assert!(
+                !text.contains(secret),
+                "{secret} reached the ledger: {text}"
+            );
+        }
+        assert_eq!(written[0].subject, format!("deploy token={REDACTED}"));
+        assert_eq!(
+            written[0].meta.extra["url"],
+            format!("https://{REDACTED}@h.example/x")
+        );
+        assert_eq!(written[0].meta.extra["count"], 3);
+        assert_eq!(written[1].subject.chars().count(), 512);
+        assert!(written[1].subject.ends_with('…'));
+    }
+
+    #[test]
     fn collected_command_lines_are_redacted() {
         let mut b = Bench::new("redact-collector");
         let log = b.scratch.path("pkg.log");
@@ -473,3 +533,245 @@ mod redaction {
     }
 }
 
+/// Every command that writes free text into the logbook redacts it before
+/// the first write: the ledger, the journal, case and decision files,
+/// `STATUS.md`, the index and the git history hold the masked text only.
+mod commands {
+    use std::path::{Path, PathBuf};
+
+    use serde_json::Value;
+
+    use super::REDACTED;
+    use super::common::{Env, Snapper, copy_dir, find_file, fixture_logbook, json, read, stderr};
+
+    const T0: &str = "2026-10-03T10:00:00+02:00";
+
+    /// A made-up value of the documented `ghp_` form (36 characters).
+    fn token(tag: &str) -> String {
+        format!("ghp_{tag}{}", "0".repeat(36 - tag.len()))
+    }
+
+    fn run(env: &Env, args: &[&str]) -> Value {
+        let mut all = vec!["--json"];
+        all.extend_from_slice(args);
+        let out = env.at(T0, &all);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        json(&out)
+    }
+
+    fn files(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.file_name().is_some_and(|n| n == ".git") {
+                continue;
+            }
+            if path.is_dir() {
+                files(&path, out);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+
+    /// `seldon status`, then: no file of the logbook or the state
+    /// directory and no commit holds any of `secrets`.
+    fn assert_nowhere(env: &Env, logbook: &Path, secrets: &[&str]) {
+        run(env, &["--logbook", logbook.to_str().unwrap(), "status"]);
+        assert!(logbook.join("STATUS.md").is_file());
+        let mut all = Vec::new();
+        files(logbook, &mut all);
+        files(&env.home.join(".local/state/seldon"), &mut all);
+        for path in &all {
+            let text = String::from_utf8_lossy(&std::fs::read(path).unwrap()).into_owned();
+            for secret in secrets {
+                assert!(
+                    !text.contains(secret) && !path.to_string_lossy().contains(secret),
+                    "{secret} in {}",
+                    path.display()
+                );
+            }
+        }
+        if env.has_git && logbook.join(".git").exists() {
+            let out = env.git(logbook, &["log", "-p", "--all"]);
+            let history = String::from_utf8_lossy(&out.stdout);
+            assert!(!history.is_empty());
+            for secret in secrets {
+                assert!(!history.contains(secret), "{secret} in the git history");
+            }
+        }
+    }
+
+    fn last_ledger_line(logbook: &Path) -> Value {
+        let text = read(&logbook.join("ledger/2026-10.jsonl"));
+        serde_json::from_str(text.lines().last().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn log_masks_the_note_in_the_journal_and_the_ledger() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let secret = token("LOG");
+        let v = run(
+            &env,
+            &[
+                "log",
+                "--",
+                &format!("rotated deploy key, old token {secret}"),
+            ],
+        );
+        let masked = format!("rotated deploy key, old token {REDACTED}");
+        assert_eq!(v["event"]["detail"], masked.as_str());
+        let day = read(&root.join("journal/2026/2026-10-03.md"));
+        assert!(day.contains(&masked), "{day}");
+        assert_nowhere(&env, &root, &[&secret]);
+    }
+
+    #[test]
+    fn plan_masks_the_title_and_the_step_reasons() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let title = token("TITLE");
+        let reason = token("REASON");
+        let v = run(&env, &["plan", "new", "--", &format!("Rotate {title}")]);
+        let id = v["case"]["id"].as_str().unwrap().to_string();
+        assert_eq!(v["case"]["title"], format!("Rotate {REDACTED}").as_str());
+        let queued = read(&find_file(&root.join("work/queued"), &id));
+        assert!(
+            queued.contains(&format!("# {id} — Rotate {REDACTED}")),
+            "{queued}"
+        );
+        run(&env, &["status"]);
+        let status = read(&root.join("STATUS.md"));
+        assert!(
+            status.contains(&format!("[[{id}]] Rotate {REDACTED}")),
+            "{status}"
+        );
+        run(
+            &env,
+            &["plan", "start", &id, "--reason", &format!("with {reason}")],
+        );
+        run(&env, &["plan", "verify", &id]);
+        run(&env, &["plan", "done", &id]);
+        let done = read(&find_file(&root.join("work/completed"), &id));
+        assert!(done.contains(&format!("with {REDACTED}")), "{done}");
+        let journal = read(&root.join("journal/2026/2026-10-03.md"));
+        assert!(
+            journal.contains(&format!("Case completed: Rotate {REDACTED}")),
+            "{journal}"
+        );
+        assert_nowhere(&env, &root, &[&title, &reason]);
+    }
+
+    #[test]
+    fn decide_masks_the_title() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let secret = token("ADR");
+        let v = run(
+            &env,
+            &["decide", "--no-edit", "--", &format!("Use {secret} for CI")],
+        );
+        let path = root.join(v["decision"]["path"].as_str().unwrap());
+        let text = read(&path);
+        assert!(text.contains(&format!("Use {REDACTED} for CI")), "{text}");
+        let index = read(&root.join("DECISIONS.md"));
+        assert!(index.contains(&format!("Use {REDACTED} for CI")), "{index}");
+        assert_nowhere(&env, &root, &[&secret]);
+    }
+
+    #[test]
+    fn drift_explain_and_dismiss_mask_their_text() {
+        let env = Env::new(Snapper::Missing);
+        let lb = env.tmp.path().join("logbook");
+        copy_dir(&fixture_logbook(), &lb);
+        let lbs = lb.to_str().unwrap();
+        let intent = token("INTENT");
+        let reason = token("DISMISS");
+        // the fixture's theme item and the leader of its 09-30 group
+        let v = run(
+            &env,
+            &[
+                "--logbook",
+                lbs,
+                "drift",
+                "explain",
+                "01M3VTGNY0NZG4AY80814WSKGR",
+                "--",
+                &format!("Switched theme, {intent}"),
+            ],
+        );
+        let masked = format!("Switched theme, {REDACTED}");
+        assert_eq!(v["case"]["title"], masked.as_str());
+        let id = v["case"]["id"].as_str().unwrap();
+        let case = read(&find_file(&lb.join("work/completed"), id));
+        assert!(case.contains(&masked), "{case}");
+        run(
+            &env,
+            &[
+                "--logbook",
+                lbs,
+                "drift",
+                "dismiss",
+                "01M3SXBQVR7AW8PJQC1YXDCQ14",
+                "--",
+                &format!("routine, {reason}"),
+            ],
+        );
+        assert_eq!(
+            last_ledger_line(&lb)["detail"],
+            format!("routine, {REDACTED}").as_str()
+        );
+        assert_nowhere(&env, &lb, &[&intent, &reason]);
+    }
+
+    #[test]
+    fn event_masks_the_subject_and_every_meta_value() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let v = run(
+            &env,
+            &[
+                "event",
+                "manual",
+                "note",
+                "--subject",
+                "deploy token=fakeSubjectValue",
+                "--detail",
+                "token=fakeDetailValue",
+                "--meta",
+                "url=https://user:fakeUrlValue@h.example/x",
+                "--meta",
+                "command=curl -u admin:fakeCommandValue https://h.example",
+                "--meta",
+                "version=API_KEY=fakeVersionValue",
+            ],
+        );
+        let line = last_ledger_line(&root);
+        assert_eq!(line, v["event"]);
+        assert_eq!(line["subject"], format!("deploy token={REDACTED}").as_str());
+        assert_eq!(line["detail"], format!("token={REDACTED}").as_str());
+        assert_eq!(
+            line["meta"]["url"],
+            format!("https://{REDACTED}@h.example/x").as_str()
+        );
+        assert_eq!(
+            line["meta"]["command"],
+            format!("curl -u {REDACTED} https://h.example").as_str()
+        );
+        assert_eq!(
+            line["meta"]["version"],
+            format!("API_KEY={REDACTED}").as_str()
+        );
+        assert_nowhere(
+            &env,
+            &root,
+            &[
+                "fakeSubjectValue",
+                "fakeDetailValue",
+                "fakeUrlValue",
+                "fakeCommandValue",
+                "fakeVersionValue",
+            ],
+        );
+    }
+}

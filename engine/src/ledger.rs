@@ -3,10 +3,10 @@
 //!
 //! The ledger is the only way events reach the logbook. [`Ledger::append`]
 //! assigns each event a fresh ULID (monotonic within one call, so ids sort
-//! in write order), redacts `detail` and `meta.command` (SPEC-ENGINE §7),
-//! validates it against the schema rules, and appends it to the month file
-//! of its `ts` (in the event's own offset). Lines are never rewritten;
-//! corrections are new events.
+//! in write order), redacts `subject`, `detail` and every string value of
+//! `meta` (SPEC-ENGINE §7), validates it against the schema rules, and
+//! appends it to the month file of its `ts` (in the event's own offset).
+//! Lines are never rewritten; corrections are new events.
 //!
 //! Appending needs the state lock (`logbook::lock`), which the caller takes
 //! once per command; the `&Lock` parameter proves it is held.
@@ -23,7 +23,7 @@ use ulid::{Generator, Ulid};
 use crate::error::Result;
 use crate::logbook::Logbook;
 use crate::logbook::lock::Lock;
-use crate::model::event::{DETAIL_MAX, Event};
+use crate::model::event::{DETAIL_MAX, Event, Meta, SUBJECT_MAX};
 use crate::redact::Redactor;
 
 /// `ledger/`, relative to the logbook root.
@@ -154,8 +154,9 @@ impl Ledger {
 
     /// Appends `events` and returns them as written (with ids, redacted).
     ///
-    /// Every event gets a new ULID, whatever its `id` was. `detail` and
-    /// `meta.command` are redacted; `detail` is cut to the schema's limit.
+    /// Every event gets a new ULID, whatever its `id` was. `subject`,
+    /// `detail` and every string value of `meta` are redacted; `subject` and
+    /// `detail` are cut to the schema's limits.
     /// If any event is invalid nothing is written (engine error). Lines go
     /// to the month file of each event's `ts`, one `write` per file.
     pub fn append(&self, _lock: &Lock, events: Vec<Event>) -> Result<Vec<Event>> {
@@ -166,12 +167,11 @@ impl Ledger {
         let mut written = Vec::with_capacity(events.len());
         for mut e in events {
             e.id = next_id(&mut ids);
+            e.subject = truncate(&self.redactor.redact(&e.subject), SUBJECT_MAX);
             if let Some(d) = &e.detail {
                 e.detail = Some(truncate(&self.redactor.redact(d), DETAIL_MAX));
             }
-            if let Some(c) = &e.meta.command {
-                e.meta.command = Some(self.redactor.redact(c));
-            }
+            redact_meta(&self.redactor, &mut e.meta);
             e.validate().map_err(|msg| {
                 anyhow::anyhow!("refusing to write an invalid event ({e}): {msg}")
             })?;
@@ -223,6 +223,32 @@ fn append_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     file.write_all(&out)
         .and_then(|()| file.sync_data())
         .with_context(|| format!("cannot append to {}", path.display()))
+}
+
+/// Every string value of `meta`, the conventional keys and the others,
+/// through `redactor` (meta values are scalars, `event.schema.json`).
+fn redact_meta(redactor: &Redactor, meta: &mut Meta) {
+    for value in [
+        &mut meta.command,
+        &mut meta.version,
+        &mut meta.from,
+        &mut meta.to,
+        &mut meta.hash_from,
+        &mut meta.hash_to,
+        &mut meta.snapshot_type,
+        &mut meta.cleanup,
+        &mut meta.tx_id,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        *value = redactor.redact(value);
+    }
+    for value in meta.extra.values_mut() {
+        if let serde_json::Value::String(s) = value {
+            *s = redactor.redact(s);
+        }
+    }
 }
 
 fn truncate(s: &str, max_chars: usize) -> String {

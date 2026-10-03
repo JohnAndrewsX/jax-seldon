@@ -11,6 +11,7 @@ use super::{Context, Output, autocommit, required_text};
 use crate::error::{Error, Result};
 use crate::logbook::{cases, journal};
 use crate::model::event::{Event, Kind, Meta, Source};
+use crate::redact::Redactor;
 
 /// Subject of a note without a case (`event.schema.json`).
 pub const JOURNAL_SUBJECT: &str = "journal";
@@ -67,6 +68,8 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         ));
     }
     let (config, logbook) = ctx.open_logbook()?;
+    // the journal and the ledger hold the same redacted text
+    let text = Redactor::for_config(&config)?.redact(&text);
     let lock = ctx.lock()?;
     let mut case_file = args
         .case_id
