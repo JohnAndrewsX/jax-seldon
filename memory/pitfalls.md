@@ -977,3 +977,18 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   dated section.** Merge into its existing `### Plugin` / `### Packaging
   and docs` lists (no second heading, no blank line inside a list) and
   check with `bash packaging/release-notes.sh <version> CHANGELOG.md`.
+
+## 2026-10-03 · WP-054 (Plugin Dev)
+
+- **In a live harness run, `recheck` also captures.** A successful probe
+  calls `captureCycle()` outside dev mode, so "status banner Check again"
+  and "Capture now" look alike in the final state. Tell them apart by the
+  engine argv (`argv_check`): recheck adds a `--version --json` probe.
+- **The fake engine's `generatedAt` has one-second precision.** Two
+  `status` writes of the same fixture within a second are byte-identical,
+  so "the index changed" cannot be observed. Give the second write other
+  content (`FAKE_SELDON_FIXTURE_AFTER` with a jq-edited copy).
+- **`HARNESS_FIX` fires as soon as the service is ready**, which in a live
+  run is before the start-up capture writes the index: a banner that needs
+  the index is not there yet. Use `["fix", action, banner]` in
+  `HARNESS_ACTIONS`, which waits for the start-up calls.
