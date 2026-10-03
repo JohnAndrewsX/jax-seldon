@@ -60,11 +60,11 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 | Key | Default | Meaning |
 |---|---|---|
 | `logbook` | `~/Seldon` | the logbook folder; a relative path lies under your home folder |
-| `language` | from your locale | `en` or `de`: the language of the text the engine writes into the logbook (journal lines, `STATUS.md`) |
+| `language` | from your locale | `en` or `de`: the language `seldon init` gives a new logbook, see [Language](#language) |
 | `watchPaths` | see [Watched paths](#watched-paths) | files and folders the config collector watches |
 | `harnesses` | `[]` | the agent harnesses you chose in the wizard; for your information |
 | `[collectors]` | all `true` | which collectors a capture runs |
-| `[git] autocommit` | `true` | commit the logbook after every command that writes |
+| `[git] autocommit` | `true` | commit the logbook after every command that writes; `seldon init --no-git` writes `false` |
 | `[redaction] patterns` | `[]` | your own secret patterns, see [Redaction](#redaction) |
 | `[redaction] skipPaths` | plugin state files | files the engine never opens or names, see [Redaction](#redaction) |
 | `[drift] alwaysRed` | six names | packages whose upgrade is always a crisis, see [Drift](#drift) |
@@ -79,6 +79,18 @@ or `$HOME/`. A relative path lies under your home folder, whatever folder
 `seldon` runs in: the plugin and the agent hooks run it from different
 folders. `--logbook` and `SELDON_LOGBOOK` are relative to the current
 folder, as in any shell command.
+
+### Language
+
+`seldon init` writes the logbook in one language: the templates, and
+later the text the engine adds (journal lines, `STATUS.md`). It takes
+`--language`, else `language` from this file, else your locale (`de` for
+a German locale, `en` otherwise), and writes the result here.
+
+The logbook stores its language itself, in `.seldon/logbook.toml`, and
+every command reads it from there. Changing `language` in this file
+later does not change an existing logbook; it only sets the language
+of the next logbook `seldon init` creates.
 
 ## Collectors
 
@@ -286,6 +298,11 @@ along with it. The history is your backup and your undo.
 
 With `false`, or with `--no-commit` on one command, the engine writes the
 files and leaves committing to you. Seldon never pushes.
+
+When you answer no to git in `seldon init` (or pass `--no-git`), it
+writes `autocommit = false`: the logbook is no repository, and
+`seldon doctor` reports that as your choice, not as a fault. To start
+using git later, run `git -C <logbook> init` and set `autocommit = true`.
 
 ## Plugin settings
 
