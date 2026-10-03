@@ -173,7 +173,7 @@ pub struct AgentArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub enum AgentCommand {
     /// Launch an agent on an active case, with the case as the active case
-    /// and `seldon hook session-start` as its prompt
+    /// and a prompt that names the case and the logbook
     Start {
         /// The case (must be active)
         #[arg(value_name = "ID", value_parser = parse_case_id)]
