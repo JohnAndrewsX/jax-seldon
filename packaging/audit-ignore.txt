@@ -1,0 +1,12 @@
+# RustSec advisories accepted for engine/Cargo.lock (CONTRIBUTING.md,
+# "Dependency advisories"). `cargo audit` skips the ids listed here, in
+# the release build and in the weekly audit (packaging/audit-ignore.sh).
+#
+# One advisory per line, three fields separated by blanks:
+#
+#   RUSTSEC-YYYY-NNNN  YYYY-MM-DD  why the advisory does not affect Seldon
+#
+# The date is the expiry, at most one year ahead. From that day on the
+# entry fails the release build until it is reviewed again (new date) or
+# removed. Entries are reviewed like code. Blank lines and lines starting
+# with `#` are ignored.
