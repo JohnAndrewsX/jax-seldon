@@ -4,7 +4,7 @@
 //! harnesses → theme hook → git → backfill. Each step is skipped when its
 //! flag is given; `--non-interactive` skips them all and takes flags or
 //! defaults. Defaults come from an existing `config.toml` where it has a
-//! value.
+//! value (a file without `language` leaves the language to the locale).
 //!
 //! Then the logbook is written, the harnesses are set up (inside the
 //! first commit), the first capture runs (`capture --all`, with `--since`
@@ -172,7 +172,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
 
     let mut config = existing.unwrap_or_default();
     config.logbook = Some(root.clone());
-    config.language = choices.language;
+    config.language = Some(choices.language);
     config.collectors = choices.collectors;
     config.watch_paths = choices.watch_paths.clone();
     config.harnesses = choices.harnesses.clone();
@@ -516,7 +516,7 @@ fn defaults(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Choice
         root,
         language: args
             .language
-            .or(existing.map(|c| c.language))
+            .or(existing.and_then(|c| c.language))
             .unwrap_or_else(locale_language),
         obsidian: args.obsidian,
         collectors: base.collectors,

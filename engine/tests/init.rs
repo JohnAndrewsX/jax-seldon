@@ -240,6 +240,52 @@ mod init {
     }
 
     #[test]
+    fn a_config_without_language_leaves_it_to_the_locale() {
+        // F-542: a config.toml written before init (here: redaction only)
+        // has no language; the locale decides, and init stores the result
+        let env = Env::new(Snapper::Allowed);
+        std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
+        std::fs::write(
+            env.config_file(),
+            "[redaction]\npatterns = [\"mysecret\"]\n",
+        )
+        .unwrap();
+        let init_de = |env: &Env| {
+            let path = env.tmp.path().join("logbook");
+            let out = env
+                .command(&[
+                    "init",
+                    "--non-interactive",
+                    "--no-capture",
+                    "--no-git",
+                    "--path",
+                    path.to_str().unwrap(),
+                ])
+                .env("LANG", "de_DE.UTF-8")
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            Logbook::open(&path).unwrap().meta.language
+        };
+        assert_eq!(init_de(&env), Language::De);
+        let config: toml::Table = std::fs::read_to_string(env.config_file())
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(config["language"].as_str(), Some("de"));
+        assert_eq!(
+            config["redaction"]["patterns"][0].as_str(),
+            Some("mysecret")
+        );
+
+        // a language in the config is honoured over the locale
+        let env = Env::new(Snapper::Allowed);
+        std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
+        std::fs::write(env.config_file(), "language = \"en\"\n").unwrap();
+        assert_eq!(init_de(&env), Language::En);
+    }
+
+    #[test]
     fn default_path_is_home_seldon_and_env_overrides_it() {
         let env = Env::new(Snapper::Allowed);
         let out = env.seldon(&["init", "--non-interactive", "--no-capture", "--no-git"]);

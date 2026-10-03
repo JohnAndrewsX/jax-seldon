@@ -250,8 +250,11 @@ pub struct Config {
     /// ([`Dirs::expand_config`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logbook: Option<PathBuf>,
-    /// Language of the logbook prose (ADR-0007).
-    pub language: Language,
+    /// The language `init` gives a new logbook (ADR-0007); `None` (no key)
+    /// = the locale. An existing logbook keeps its own, in
+    /// `.seldon/logbook.toml`, which every later command reads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<Language>,
     /// Paths the config collector hashes; expanded at use
     /// ([`Dirs::expand_config`]).
     pub watch_paths: Vec<String>,
@@ -274,7 +277,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             logbook: None,
-            language: Language::default(),
+            language: None,
             watch_paths: DEFAULT_WATCH_PATHS.iter().map(|s| s.to_string()).collect(),
             harnesses: Vec::new(),
             collectors: Collectors::default(),
@@ -756,7 +759,7 @@ mod tests {
     fn defaults_round_trip_through_toml() {
         let config = Config {
             logbook: Some(PathBuf::from("/home/user/Seldon")),
-            language: Language::De,
+            language: Some(Language::De),
             ..Config::default()
         };
         let text = toml::to_string(&config).unwrap();
@@ -766,6 +769,19 @@ mod tests {
         assert_eq!(toml::from_str::<Config>(&text).unwrap(), config);
         // an empty file is all defaults
         assert_eq!(toml::from_str::<Config>("").unwrap(), Config::default());
+    }
+
+    #[test]
+    fn a_missing_language_key_is_no_value() {
+        // `init` then takes the locale (SPEC-ENGINE §9), not a default `en`
+        let read = |text: &str| toml::from_str::<Config>(text).unwrap().language;
+        assert_eq!(read("[redaction]\npatterns = [\"mysecret\"]\n"), None);
+        assert_eq!(read("language = \"en\"\n"), Some(Language::En));
+        assert!(
+            !toml::to_string(&Config::default())
+                .unwrap()
+                .contains("language")
+        );
     }
 
     #[test]
@@ -779,7 +795,7 @@ mod tests {
         )
         .unwrap();
         let mut config = Config::load(&path).unwrap().unwrap();
-        assert_eq!(config.language, Language::De);
+        assert_eq!(config.language, Some(Language::De));
         assert!(!config.git.autocommit);
         config.logbook = Some(PathBuf::from("/tmp/lb"));
         config.save(&path).unwrap();
