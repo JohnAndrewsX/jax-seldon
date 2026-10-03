@@ -3,26 +3,143 @@
 //! Subprocesses are always fixed programs with fixed argument lists
 //! (AGENTS.md §8); nothing here goes through a shell.
 
-use std::io::Read;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::fs::{DirBuilder, File, OpenOptions, Permissions};
+use std::io::{Read, Write as _};
+use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
+use std::os::unix::process::CommandExt as _;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
 
+/// Mode of a file the engine creates (SPEC-ENGINE §2).
+pub const NEW_FILE_MODE: u32 = 0o600;
+/// Mode of a directory the engine creates (SPEC-ENGINE §2).
+pub const NEW_DIR_MODE: u32 = 0o700;
+/// Symbolic links followed at most, as the kernel's `MAXSYMLINKS`.
+const MAX_LINKS: usize = 40;
+
+/// Creates `dir` and its missing parents with [`NEW_DIR_MODE`]; existing
+/// directories keep their mode.
+pub fn create_dir_private(dir: &Path) -> std::io::Result<()> {
+    DirBuilder::new()
+        .recursive(true)
+        .mode(NEW_DIR_MODE)
+        .create(dir)
+}
+
+/// Creates the new file `path` with exactly [`NEW_FILE_MODE`], whatever the
+/// umask; an existing file is an `AlreadyExists` error.
+pub fn create_new_private(path: &Path) -> std::io::Result<File> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(NEW_FILE_MODE)
+        .open(path)?;
+    file.set_permissions(Permissions::from_mode(NEW_FILE_MODE))?;
+    Ok(file)
+}
+
 /// Writes `bytes` to a temp file next to `path` and renames it over `path`.
+/// A symbolic link at `path` is followed: its target is replaced and the
+/// link stays. The target keeps its permission bits; a new file gets
+/// [`NEW_FILE_MODE`] and new directories [`NEW_DIR_MODE`]. File and
+/// directory are synced; the temp file is removed when anything fails.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let dir = path
+    write_atomic_with(path, bytes, None)
+}
+
+/// [`write_atomic`] with the file's permission bits set to exactly `mode`.
+pub fn write_atomic_mode(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
+    write_atomic_with(path, bytes, Some(mode))
+}
+
+fn write_atomic_with(path: &Path, bytes: &[u8], mode: Option<u32>) -> anyhow::Result<()> {
+    let target =
+        resolve_links(path).with_context(|| format!("cannot resolve {}", path.display()))?;
+    let dir = target
         .parent()
-        .with_context(|| format!("{} has no parent directory", path.display()))?;
-    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let name = path
+        .with_context(|| format!("{} has no parent directory", target.display()))?;
+    create_dir_private(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    let mode = mode.unwrap_or_else(|| {
+        std::fs::metadata(&target).map_or(NEW_FILE_MODE, |m| m.permissions().mode() & 0o777)
+    });
+    let name = target
         .file_name()
         .map_or_else(Default::default, |n| n.to_string_lossy());
     let tmp = dir.join(format!(".{name}.tmp-{}", std::process::id()));
-    std::fs::write(&tmp, bytes).with_context(|| format!("cannot write {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("cannot replace {}", path.display()))
+    let mut file = match create_temp(&tmp, mode) {
+        Ok(f) => f,
+        Err(e) => return Err(e).with_context(|| format!("cannot write {}", tmp.display())),
+    };
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .with_context(|| format!("cannot write {}", tmp.display()))
+        .and_then(|()| {
+            std::fs::rename(&tmp, &target)
+                .with_context(|| format!("cannot replace {}", target.display()))
+        });
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return written;
+    }
+    // the rename is durable once the directory is synced; a file system
+    // that cannot sync a directory still has the new file
+    if let Ok(d) = File::open(dir) {
+        let _ = d.sync_all();
+    }
+    Ok(())
+}
+
+/// The temp file at `tmp`, new, with exactly `mode`. A leftover of an
+/// earlier run with the same process id is removed first.
+fn create_temp(tmp: &Path, mode: u32) -> std::io::Result<File> {
+    let open = || {
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode)
+            .open(tmp)
+    };
+    let file = match open() {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            std::fs::remove_file(tmp)?;
+            open()?
+        }
+        other => other?,
+    };
+    // the umask narrows the mode given to open(2); set it exactly
+    if let Err(e) = file.set_permissions(Permissions::from_mode(mode)) {
+        let _ = std::fs::remove_file(tmp);
+        return Err(e);
+    }
+    Ok(file)
+}
+
+/// `path` with every symbolic link in its last component followed (a
+/// relative link is relative to the link's directory). The result may not
+/// exist yet: a link to a missing file resolves to that file.
+fn resolve_links(path: &Path) -> std::io::Result<PathBuf> {
+    let mut p = path.to_path_buf();
+    for _ in 0..MAX_LINKS {
+        match std::fs::symlink_metadata(&p) {
+            Ok(m) if m.file_type().is_symlink() => {
+                let to = std::fs::read_link(&p)?;
+                p = match p.parent() {
+                    Some(dir) => dir.join(to),
+                    None => to,
+                };
+            }
+            Ok(_) => return Ok(p),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(p),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::other("too many levels of symbolic links"))
 }
 
 /// The result of running a program.
@@ -61,13 +178,20 @@ pub fn run(program: &str, args: &[&str], cwd: Option<&Path>, timeout: Duration) 
     run_command(cmd, timeout)
 }
 
+/// How long the output pipes may stay open after the process group was
+/// killed at the deadline.
+const DRAIN_GRACE: Duration = Duration::from_millis(200);
+
 /// [`run`] for a command built by the caller (fixed program and argv, plus
 /// environment, e.g. `snapper` with `LC_ALL=C`): stdin closed, output
-/// captured, killed after `timeout`.
+/// captured, in its own process group. The timeout covers the program and
+/// its output pipes: at the deadline the whole group is killed, also when
+/// the program has exited and something it started still holds a pipe.
 pub fn run_command(mut cmd: Command, timeout: Duration) -> Run {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .process_group(0);
     // ETXTBSY: the program was just written and another thread's forked
     // child still holds the write descriptor until it execs. Brief; retry.
     let mut spawned = cmd.spawn();
@@ -85,35 +209,92 @@ pub fn run_command(mut cmd: Command, timeout: Duration) -> Run {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Run::NotFound,
         Err(e) => return Run::Failed(e.to_string()),
     };
-    let drain = |pipe: Option<Box<dyn Read + Send>>| {
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            if let Some(mut p) = pipe {
-                let _ = p.read_to_end(&mut buf);
-            }
-            String::from_utf8_lossy(&buf).into_owned()
-        })
-    };
-    let out = drain(child.stdout.take().map(|p| Box::new(p) as _));
-    let err = drain(child.stderr.take().map(|p| Box::new(p) as _));
+    let mut out = Drain::start(child.stdout.take().map(|p| Box::new(p) as _));
+    let mut err = Drain::start(child.stderr.take().map(|p| Box::new(p) as _));
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
+                kill_group(&mut child);
                 let _ = child.wait();
                 return Run::TimedOut;
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
-            Err(e) => return Run::Failed(e.to_string()),
+            Err(e) => {
+                kill_group(&mut child);
+                return Run::Failed(e.to_string());
+            }
         }
     };
+    if !(out.wait_until(deadline) && err.wait_until(deadline)) {
+        // the program has exited; what it started keeps a pipe open
+        kill_group(&mut child);
+        let grace = Instant::now() + DRAIN_GRACE;
+        if !(out.wait_until(grace) && err.wait_until(grace)) {
+            return Run::TimedOut;
+        }
+    }
     Run::Exited {
         code: status.code(),
-        stdout: out.join().unwrap_or_default(),
-        stderr: err.join().unwrap_or_default(),
+        stdout: out.text(),
+        stderr: err.text(),
     }
+}
+
+/// One output pipe read to its end by a thread.
+struct Drain {
+    rx: Receiver<Vec<u8>>,
+    bytes: Option<Vec<u8>>,
+}
+
+impl Drain {
+    fn start(pipe: Option<Box<dyn Read + Send>>) -> Drain {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut p) = pipe {
+                let _ = p.read_to_end(&mut buf);
+            }
+            let _ = tx.send(buf);
+        });
+        Drain { rx, bytes: None }
+    }
+
+    /// Whether the pipe reached its end by `deadline`. A thread still
+    /// reading after that is left behind; it ends with the pipe.
+    fn wait_until(&mut self, deadline: Instant) -> bool {
+        if self.bytes.is_none() {
+            let left = deadline.saturating_duration_since(Instant::now());
+            self.bytes = self.rx.recv_timeout(left).ok();
+        }
+        self.bytes.is_some()
+    }
+
+    fn text(&mut self) -> String {
+        String::from_utf8_lossy(&self.bytes.take().unwrap_or_default()).into_owned()
+    }
+}
+
+/// `SIGKILL` on Linux.
+const SIGKILL: i32 = 9;
+
+unsafe extern "C" {
+    /// kill(2); a negative `pid` signals the process group `-pid`.
+    fn kill(pid: i32, sig: i32) -> i32;
+}
+
+/// Kills the process group `child` leads (it was spawned with
+/// `process_group(0)`, so the group id is its pid), then `child` itself in
+/// case the group is already gone.
+fn kill_group(child: &mut Child) {
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // SAFETY: kill(2) takes plain integers and touches no memory; the
+        // group id is the child's own pid, which stays reserved while the
+        // group has members or the child is not yet waited for.
+        unsafe { kill(-pid, SIGKILL) };
+    }
+    let _ = child.kill();
 }
 
 /// Runs `program args…` on the user's terminal (stdin, stdout and stderr

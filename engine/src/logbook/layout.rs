@@ -10,6 +10,7 @@ use serde_json::json;
 use super::templates::{self, TEMPLATES, Vars};
 use super::{LogbookMeta, META_FILE, SCHEMA_VERSION};
 use crate::model::Language;
+use crate::sys;
 
 /// Directories every logbook has.
 pub const REQUIRED_DIRS: &[&str] = &[
@@ -46,8 +47,9 @@ const KEEP_DIRS: &[&str] = &[
     "archive",
 ];
 
-/// `.gitignore` of a new logbook (SPEC-LOGBOOK §2).
-pub const GITIGNORE: &str = ".obsidian/workspace*\n.seldon/active-case\n";
+/// `.gitignore` of a new logbook (SPEC-LOGBOOK §2); `.*.tmp-*` is the temp
+/// file of `sys::write_atomic`.
+pub const GITIGNORE: &str = ".obsidian/workspace*\n.seldon/active-case\n.*.tmp-*\n";
 
 /// What a new logbook is made of.
 #[derive(Debug, Clone)]
@@ -61,13 +63,14 @@ pub struct NewLogbook {
 }
 
 /// Creates the layout under `root`, which must not exist or be empty (the
-/// caller checks). Never overwrites a file. Returns the files written,
-/// relative to `root`, in write order.
+/// caller checks). Never overwrites a file. New directories are 0700 and
+/// files 0600 (`sys::NEW_DIR_MODE`, `sys::NEW_FILE_MODE`). Returns the
+/// files written, relative to `root`, in write order.
 pub fn create(root: &Path, spec: &NewLogbook) -> anyhow::Result<Vec<PathBuf>> {
     let mut written = Vec::new();
     for dir in REQUIRED_DIRS.iter().chain(KEEP_DIRS) {
         let path = root.join(dir);
-        std::fs::create_dir_all(&path)
+        sys::create_dir_private(&path)
             .with_context(|| format!("cannot create {}", path.display()))?;
     }
 
@@ -135,12 +138,9 @@ pub fn is_vacant(dir: &Path) -> std::io::Result<bool> {
 fn write_new(root: &Path, rel: &str, text: &str, written: &mut Vec<PathBuf>) -> anyhow::Result<()> {
     let path = root.join(rel);
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+        sys::create_dir_private(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
+    let mut file = sys::create_new_private(&path)
         .with_context(|| format!("cannot create {}", path.display()))?;
     file.write_all(text.as_bytes())
         .with_context(|| format!("cannot write {}", path.display()))?;
