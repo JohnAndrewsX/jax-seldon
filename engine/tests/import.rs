@@ -697,6 +697,33 @@ fn a_tampered_undo_file_is_not_offered_as_a_command() {
     }
 }
 
+/// WP-061: the kept undo's paths are checked on disk too: when a folder it
+/// names is replaced by a symbolic link to a place outside the logbook,
+/// the printed `rm` would leave the logbook, so no command is offered.
+#[test]
+fn a_kept_undo_through_a_symlinked_folder_is_not_offered() {
+    let (env, root, vault) = setup();
+    if !env.has_git || failed_apply(&env, &root, &vault).is_none() {
+        return;
+    }
+    let kept = read(&root.join(".seldon/imports/omarchy-agent.undo.json"));
+    assert!(kept.contains("\"memory/"), "{kept}");
+    let outside = env.tmp.path().join("outside-memory");
+    std::fs::rename(root.join("memory"), &outside).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("memory")).unwrap();
+    let before = tree(&outside);
+
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+    assert!(!message.contains("undo it with"), "offered: {message}");
+    assert!(
+        message.contains(&format!("`git -C {} status`", root.display())),
+        "{message}"
+    );
+    assert_eq!(tree(&outside), before);
+}
+
 /// WP-061: an undo file left behind by an earlier failure is removed by
 /// the apply that succeeds, and the import commit records that.
 #[test]

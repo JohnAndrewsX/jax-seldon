@@ -18,7 +18,7 @@
 //! ledger without the marker are refused with the same undo, so the import
 //! never runs twice and is never reported done when it is not.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
@@ -310,10 +310,12 @@ impl Undo {
     /// of the folders the import writes ([`UNDO_DIRS`], `.seldon/imports/`),
     /// never through a `.git`, without glob or pathspec-magic characters
     /// (the command also says `--literal-pathspecs`) and without control
-    /// characters. The file lives in the logbook, which
+    /// characters, and with no part of a path under `root` that is a
+    /// symbolic link (a folder replaced by a link would take the printed
+    /// `rm` out of the logbook). The file lives in the logbook, which
     /// agents and editors write too; a command built from anything else is
     /// not offered.
-    fn is_sane(&self) -> bool {
+    fn is_sane(&self, root: &Path) -> bool {
         let hash = |b: &str| matches!(b.len(), 40 | 64) && b.chars().all(|c| c.is_ascii_hexdigit());
         let base_ok = match self.base.as_deref() {
             Some(b) => hash(b),
@@ -339,7 +341,19 @@ impl Undo {
                 _ => false,
             }
         };
-        base_ok && self.restore.iter().chain(&self.remove).all(path_ok)
+        let no_link = |p: &String| {
+            let mut at = root.to_path_buf();
+            Path::new(p).components().all(|c| {
+                at.push(c);
+                !std::fs::symlink_metadata(&at).is_ok_and(|m| m.file_type().is_symlink())
+            })
+        };
+        base_ok
+            && self
+                .restore
+                .iter()
+                .chain(&self.remove)
+                .all(|p| path_ok(p) && no_link(p))
     }
 
     /// The shell line, run in the logbook.
@@ -467,7 +481,7 @@ fn already_imported(logbook: &Logbook) -> Result<Option<Value>> {
     let undo = std::fs::read_to_string(logbook.path(undo_path()))
         .ok()
         .and_then(|text| serde_json::from_str::<Undo>(&text).ok())
-        .filter(Undo::is_sane);
+        .filter(|undo| undo.is_sane(&logbook.root));
     let way_back = match undo {
         Some(undo) => format!(
             "After a failed apply, undo it with `{}` in {root} (it touches only the files that apply wrote) and run it again",
@@ -608,7 +622,7 @@ mod tests {
             &["memory/lessons.md", "ledger/2026-10.jsonl"],
             &["work/queued/C-2026-002-a b.md", "memory/it's.md"],
         );
-        assert!(u.is_sane());
+        assert!(u.is_sane(Path::new("/nonexistent")));
         assert_eq!(
             u.command(),
             format!(
@@ -625,7 +639,7 @@ mod tests {
     #[test]
     fn a_kept_undo_outside_the_imports_files_is_not_offered() {
         let sha = "0123456789abcdef0123456789abcdef01234567";
-        let ok = |u: Undo| u.is_sane();
+        let ok = |u: Undo| u.is_sane(Path::new("/nonexistent"));
         // a hash base whenever files are restored
         assert!(!ok(undo(Some("HEAD; rm -rf ~"), &["memory/a.md"], &[])));
         assert!(!ok(undo(Some("HEAD"), &["memory/a.md"], &[])));
