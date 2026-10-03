@@ -68,9 +68,11 @@ use crate::redact::{REDACTED, Redactor};
 /// The actor of `hook claude-code`.
 pub const CLAUDE_CODE: &str = "agent:claude-code";
 
-/// How long a hook waits for the state lock before it gives up (a capture
-/// may hold it for a moment).
-const LOCK_PATIENCE: Duration = Duration::from_secs(2);
+/// How long a hook waits for the state lock before it gives up. A capture
+/// holds it while its collectors run (each may take seconds), so the wait
+/// is long, but it stays below the 10 s timeout `hook install` gives the
+/// PreToolUse hook: Claude Code would otherwise cancel the hook first.
+const LOCK_PATIENCE: Duration = Duration::from_secs(8);
 
 mod context;
 pub use context::session_start;
@@ -806,6 +808,12 @@ struct Entry<'a> {
 /// case. Records that need a case (ADR-0019, green) are dropped without
 /// one. The command line is redacted before it is cut, so a cut never
 /// leaves half a secret.
+///
+/// The case is read under the state lock, like every other case writer:
+/// a copy read before the wait would write back what a `plan` step or a
+/// second hook changed meanwhile (WP-057). The index is rebuilt after the
+/// lock is released ([`rebuild_after`]), so the next waiting hook does not
+/// wait for it too.
 fn record(
     ctx: &Context,
     setup: &Setup,
@@ -814,6 +822,15 @@ fn record(
     records: Vec<Record>,
     extra: &[(&str, String)],
 ) -> Result<()> {
+    // green records without any case are dropped before the lock: the
+    // common case of an agent working without a case takes no lock
+    if entry.case.is_none()
+        && records.iter().all(|r| r.mutation.needs_case)
+        && cases::active_case(&setup.logbook).is_none()
+    {
+        return Ok(());
+    }
+    let lock = lock_patiently(ctx)?;
     let (id, origin) = match entry.case {
         Some(id) => (Some(id), "case"),
         None => (cases::active_case(&setup.logbook), "active case"),
@@ -834,7 +851,6 @@ fn record(
         return Ok(());
     }
     let (actor, ts) = (entry.actor, entry.ts);
-    let lock = lock_patiently(ctx)?;
     let events: Vec<Event> = records
         .into_iter()
         .map(|r| {
@@ -862,19 +878,30 @@ fn record(
         }
         file.save(&setup.logbook)?;
     }
-    // the hook wrote an event: the no-git rebuild keeps the 5 ms budget
-    crate::index::rebuild_if_initialised_fast(ctx);
     drop(lock);
+    rebuild_after(ctx);
     Ok(())
+}
+
+/// The no-git index rebuild after a hook wrote an event, outside the
+/// record's critical section: the lock is taken again without waiting. If
+/// another `seldon` got it first, that writer rebuilds after its own write
+/// (or, above the line threshold, the next `capture`/`status` does), and
+/// its index holds this hook's event too.
+fn rebuild_after(ctx: &Context) {
+    if let Ok(_lock) = lock::acquire(&ctx.dirs.lock_file()) {
+        crate::index::rebuild_if_initialised_fast(ctx);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
 
-/// The journal stub, `capture --all`, the index rebuild (WP-007) and the
-/// commit. Each step runs even when an earlier one failed; failures are
-/// reported on stderr.
+/// The journal stub, `capture --all`, the generated views (`STATUS.md`,
+/// the `ledger/*.md` months, the decisions index), the commit and the
+/// index (WP-007). Each step runs even when an earlier one failed; each
+/// failure is reported on stderr as it happens (the hook still exits 0).
 fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
     if !is_agent(actor) {
         return Err(Error::user(format!(
@@ -886,16 +913,26 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
         .ok()
         .and_then(|p| p.session_id)
         .filter(|s| !s.is_empty());
+    let report = |step: &str, e: &dyn std::fmt::Display| eprintln!("seldon hook: {step}: {e}");
 
-    let n = session_events(ctx, &config, &logbook, actor, session.as_deref())?;
-    let case = cases::active_case(&logbook);
-    let text = format!(
-        "session ended; {n} {} recorded",
-        if n == 1 { "event" } else { "events" }
-    );
-    {
-        let _lock = lock_patiently(ctx)?;
-        journal::append(&logbook, &ctx.now, actor, case.as_deref(), &text)?;
+    let text = match session_events(ctx, &config, &logbook, actor, session.as_deref()) {
+        Ok(n) => format!(
+            "session ended; {n} {} recorded",
+            if n == 1 { "event" } else { "events" }
+        ),
+        Err(e) => {
+            report("ledger", &e);
+            "session ended".to_string()
+        }
+    };
+    match lock_patiently(ctx) {
+        Ok(_lock) => {
+            let case = cases::active_case(&logbook);
+            if let Err(e) = journal::append(&logbook, &ctx.now, actor, case.as_deref(), &text) {
+                report("journal", &e);
+            }
+        }
+        Err(e) => report("journal", &e),
     }
 
     if let Err(e) = capture::run(
@@ -905,16 +942,58 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
             ..CaptureArgs::default()
         },
     ) {
-        eprintln!("seldon hook: capture: {e}");
+        report("capture", &e);
     }
-    let _lock = lock_patiently(ctx)?;
+
+    let _lock = match lock_patiently(ctx) {
+        Ok(lock) => lock,
+        Err(e) => {
+            report("views, git and index", &e);
+            return Ok(());
+        }
+    };
+    // the views first, so the commit holds them (SPEC-ENGINE §8)
+    let built = match crate::index::derive(ctx, &config, &logbook) {
+        Ok(built) => Some(built),
+        Err(e) => {
+            report("index", &e);
+            None
+        }
+    };
+    if let Some(built) = &built {
+        for w in &built.warnings {
+            eprintln!("seldon: warning: {w}");
+        }
+        if let Err(e) = write_views(&logbook, built) {
+            report("views", &e);
+        }
+    }
     if let super::Commit::Failed(e) =
         autocommit(ctx, &config, &logbook, &format!("session ended ({actor})"))
     {
-        eprintln!("seldon hook: git: {e}");
+        report("git", &e);
     }
     // after the commit, so `logbook.git` shows it (CONTRACT rule 2)
-    crate::index::rebuild_if_initialised(ctx);
+    if let Some(mut built) = built {
+        built.index.logbook.git = crate::index::git_info(&logbook.root);
+        if let Err(e) = crate::index::write(&ctx.dirs.index_file(), &built.index) {
+            report("index", &e);
+        }
+    }
+    Ok(())
+}
+
+/// The generated Markdown `seldon status` writes: the `ledger/*.md`
+/// months, `STATUS.md` and the `decisions.index` fence of `DECISIONS.md`
+/// (each only when its text changed).
+fn write_views(logbook: &Logbook, built: &crate::index::Built) -> Result<()> {
+    use crate::index::views;
+    views::write_ledger_views(logbook, built)?;
+    views::write_status(logbook, built)?;
+    if let views::Fill::Skipped(w) = views::write_decisions_index(logbook, &built.index.decisions)?
+    {
+        eprintln!("seldon: warning: {w}");
+    }
     Ok(())
 }
 

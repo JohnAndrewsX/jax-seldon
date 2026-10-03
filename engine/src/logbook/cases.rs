@@ -81,7 +81,18 @@ impl CaseFile {
     /// Writes the case back: changed frontmatter keys, the body as it is,
     /// into the folder its status belongs to (moving the file if needed).
     /// Returns the previous path when the file moved.
+    ///
+    /// Load and save under one hold of the state lock: a copy read before
+    /// it would write back a stale case. As a last guard, a file that is
+    /// gone from its path (another writer moved it) is not written again,
+    /// which would leave the case twice (WP-057).
     pub fn save(&mut self, logbook: &Logbook) -> Result<Option<PathBuf>> {
+        if !self.path.is_file() {
+            return Err(Error::user(format!(
+                "{} is gone (moved by another seldon?); nothing written",
+                relative(logbook, &self.path)
+            )));
+        }
         model::update(&mut self.doc, &self.case);
         let name = self
             .path
