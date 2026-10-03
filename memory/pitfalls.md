@@ -1326,3 +1326,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Tests that prove "not read again"** need the same inode: `fs::write`
   truncates in place, `set_modified` puts the old mtime back; an atomic
   rename would change the inode and defeat the fixture.
+## 2026-10-04 · WP-074 (Engine Dev)
+
+- **A held lock from the test cannot reach a late step of `init`.**
+  `init` takes the lock first, so a test that holds it gets exit 4
+  before the theme hook step, and a lock-after-write mutant there
+  passes. Race the step from the inside: the `omarchy` stub copies the
+  hook and then runs a real `seldon capture` (save the test's `PATH`
+  before the stub's `PATH=/usr/bin:/bin`, or the capture finds host
+  programs). Fixed: the capture gets exit 4; mutant: it writes the
+  unexplained `config-add` (`tests/own_writes.rs`).
+- **`#[serde(default)]` on a struct makes a missing key the field's
+  default, not "no value".** A key whose absence must fall through to
+  something else (the locale for `language`) has to be an `Option`
+  with `skip_serializing_if`.
+- **"Save the config first" and "write the marker last" fix different
+  failures.** Only the first lets the same `init` run again after a
+  failed config save (with the marker last alone, the folder is no
+  longer empty and `init` still refuses it). The second keeps a layout
+  that stopped half-way from passing as a logbook.
+- **A unit test that panics leaves its `std::env::temp_dir()` folder
+  behind.** After a mutant run, remove your own `/tmp/seldon-*-<pid>`
+  folders (only the pids of your run).
