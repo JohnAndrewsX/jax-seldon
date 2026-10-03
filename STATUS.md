@@ -17,6 +17,8 @@ decisions).
 | WP-061 | git: autocommit in its own repository, detached HEAD, failures; import undo | Engine | `engine-061` (opus) | `wt/WP-061` · `wp/061-review` | 2026-10-03 |
 | WP-062 | redaction: more built-in rules, applied to every text field | Engine | `engine-062` (opus) | `wt/WP-062` · `wp/062-review` | 2026-10-03 |
 | WP-067 | plugin: tab focus, changelog cursor, IPC handler once | Plugin | `plugin-067` (opus) | `wt/WP-067` · `wp/067-review` | 2026-10-03 |
+| WP-066 | frontmatter: hand-edited lists, BOM, fence spaces | Engine | `engine-066` (opus) | `wt/WP-066` · `wp/066-review` | 2026-10-03 |
+| WP-068 | plugin: call failures logged and retried, busy sheets, engineMin | Plugin | `plugin-068` (opus) | `wt/WP-068` · `wp/068-review` | 2026-10-03 |
 
 ## Queued (next up)
 
