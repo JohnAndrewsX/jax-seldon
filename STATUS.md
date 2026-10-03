@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-070 | doctor: invalid config, corrupt state, bad patterns; index ok:false | Engine | `engine-070` (opus) | `wt/WP-070` · `wp/070-review` | 2026-10-03 |
-| WP-069 | config collector: scope, default skips, home paths, rehash, dedupe | Engine | `engine-069` (opus) | `wt/WP-069` · `wp/069-review` | 2026-10-03 |
 | WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
 | WP-075 | import/dossier/watch: case-less vault, non-UTF-8, bad file, areas | Engine | `engine-075` (opus) | `wt/WP-075` · `wp/075-review` | 2026-10-04 |
 
@@ -38,6 +37,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-069 config collector: scope changes no longer record every
+  file, default skipPaths (an empty list means the defaults), home-relative
+  paths, hash reuse by size/mtime/ctime/inode (capture 79 → 11 ms on 2000
+  files), events deduplicated against the ledger (two Opus rounds) — merged.
 - 2026-10-03 WP-068 failed engine calls logged, a locked capture retried
   (bounded), busy sheets say so, engineMin enforced (Opus review APPROVE)
   — merged; small follow-ups queued as WP-078. **Wave 3 complete.**
