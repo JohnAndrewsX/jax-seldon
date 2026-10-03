@@ -212,6 +212,9 @@ done
 shows snapper 1 'sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes'
 shows snapper 1 "Run in terminal"
 shows snapper 1 "Check again"
+# the detail: the engine's message, then what the fix grants
+snapper_grants="The command below adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password."
+expect snapper 1 "[.texts[] | select(endswith(\"\\n$snapper_grants\"))] | length > 0" true
 expect snapper 3 '[.texts[] | select(. == "When the command has finished, press Check again")] | length' 0
 shows snapper 4 "When the command has finished, press Check again"
 shows snapper 3 "failing · snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see \`seldon doctor\`."

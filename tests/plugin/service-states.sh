@@ -262,6 +262,9 @@ expect snapper-degraded .crisis "2 changes in the red zone need a reason"
 snapper_actions="terminal:Run in terminal,copy:Copy,capture:Check again"
 snapper_hint="When the command has finished, press Check again"
 expect snapper-degraded '.snapperActions | join(",")' "$snapper_actions"
+snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
+snapper_grants="The command below adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password."
+expect snapper-degraded .snapperDetail "$snapper_message"$'\n'"$snapper_grants"
 expect snapper-degraded .snapperHint "$snapper_hint"
 snapper_fix='sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes'
 record_check snapper-degraded "$(printf '%s\n' wl-copy -- "$snapper_fix" -- \
@@ -305,7 +308,7 @@ run snapper-still 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snappe
   FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" FAKE_SELDON_FIXTURE_AFTER="$work/snapper-still.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-still.record" HARNESS_UNTIL=snapperHint=
 expect snapper-still .snapper "Snapshots not readable"
-expect snapper-still .snapperDetail "Still no permission."
+expect snapper-still .snapperDetail "Still no permission."$'\n'"$snapper_grants"
 expect snapper-still .snapperHint ""
 argv_check snapper-still "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q capture --all --json --quiet)" "$(q status --json)")"
