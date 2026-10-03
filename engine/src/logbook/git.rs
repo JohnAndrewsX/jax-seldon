@@ -6,10 +6,13 @@
 //! from a git hook, from `git rebase -x` or from a dotfiles helper inherits
 //! `GIT_DIR` and friends, and git gives them priority over the working
 //! directory, so the autocommit would land in that other repository.
-//! Everything else (the user's git config, hooks, signing, the terminal
-//! for a passphrase prompt) stays as it is.
+//! `GIT_CEILING_DIRECTORIES` is the logbook's parent, so an empty or broken
+//! `.git` never makes git walk up into a repository around the logbook,
+//! and [`commit_all`] checks `git rev-parse --show-toplevel` against the
+//! logbook before it writes. Everything else (the user's git config,
+//! hooks, signing, the terminal for a passphrase prompt) stays as it is.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -28,7 +31,8 @@ const FALLBACK_IDENTITY: [&str; 4] = [
 
 /// Variables that point git at another repository, index or object store
 /// (`git rev-parse --local-env-vars`, plus `GIT_NAMESPACE`,
-/// `GIT_CEILING_DIRECTORIES` and `GIT_QUARANTINE_PATH`).
+/// `GIT_CEILING_DIRECTORIES` and `GIT_QUARANTINE_PATH`). The ceiling is set
+/// again to the logbook's parent when the command runs in the logbook.
 const REPOSITORY_VARS: [&str; 18] = [
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -51,7 +55,8 @@ const REPOSITORY_VARS: [&str; 18] = [
 ];
 
 /// `git args…` in `root` (or anywhere when `None`), with
-/// [`REPOSITORY_VARS`] removed from its environment.
+/// [`REPOSITORY_VARS`] removed from its environment and, in `root`,
+/// `GIT_CEILING_DIRECTORIES` set to its parent.
 fn command(root: Option<&Path>, args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
     cmd.args(args);
@@ -60,12 +65,57 @@ fn command(root: Option<&Path>, args: &[&str]) -> Command {
     }
     if let Some(dir) = root {
         cmd.current_dir(dir);
+        if let Some(parent) = absolute(dir).parent() {
+            cmd.env("GIT_CEILING_DIRECTORIES", parent);
+        }
     }
     cmd
 }
 
+/// `path` resolved (symbolic links, `..`), or made absolute when it does
+/// not exist.
+fn absolute(path: &Path) -> PathBuf {
+    path.canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn run(root: Option<&Path>, args: &[&str]) -> Run {
     sys::run_command(command(root, args), TIMEOUT)
+}
+
+/// A read-only query in the logbook's repository, with the same
+/// environment as every other git call here (`logbook.git` in the index).
+pub fn query(root: &Path, args: &[&str], timeout: Duration) -> Run {
+    sys::run_command(command(Some(root), args), timeout)
+}
+
+/// Whether `root` is the top of the work tree git finds there: an empty
+/// or broken `.git` (git sees no repository below the ceiling) or a `.git`
+/// that resolves elsewhere is an error that says which.
+pub fn check_toplevel(root: &Path) -> Result<(), String> {
+    match run(Some(root), &["rev-parse", "--show-toplevel"]) {
+        Run::Exited {
+            code: Some(0),
+            stdout,
+            ..
+        } => {
+            let top = absolute(Path::new(stdout.trim_end_matches(['\n', '\r'])));
+            if top == absolute(root) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "the logbook's .git belongs to another work tree ({})",
+                    top.display()
+                ))
+            }
+        }
+        Run::Exited { stderr, .. } => Err(format!(
+            "the logbook's .git is not a usable repository: {}",
+            one_line(&stderr)
+        )),
+        other => Err(failure("rev-parse", &other)),
+    }
 }
 
 /// `git version`, or `None` if git is not installed.
@@ -103,6 +153,7 @@ pub const DETACHED: &str = "HEAD is detached (no branch is checked out)";
 /// the logbook's history is its backup, so edits made in an editor since
 /// the last command are recorded with the next engine write.
 pub fn commit_all(root: &Path, summary: &str) -> Result<(), String> {
+    check_toplevel(root)?;
     if is_detached(root)? {
         return Err(DETACHED.to_string());
     }
@@ -148,23 +199,45 @@ pub fn branches(root: &Path) -> Vec<String> {
     }
 }
 
-/// `git commit --dry-run` as the autocommit would run it (no hooks, no
-/// signing; it needs `.git/index.lock` like the real commit). "Nothing to
-/// commit" (exit 1) is fine. `GIT_OPTIONAL_LOCKS=0` keeps it from
-/// refreshing the index on the side.
-pub fn commit_dry_run(root: &Path) -> Result<(), String> {
-    let mut args: Vec<&str> = Vec::new();
-    if !has_identity(root) {
-        args.extend(FALLBACK_IDENTITY);
+/// Whether the autocommit could resolve its committer and author, with
+/// the same fallback identity it uses (`git var`, which only reads).
+pub fn check_identity(root: &Path) -> Result<(), String> {
+    for ident in ["GIT_COMMITTER_IDENT", "GIT_AUTHOR_IDENT"] {
+        let mut args: Vec<&str> = Vec::new();
+        if !has_identity(root) {
+            args.extend(FALLBACK_IDENTITY);
+        }
+        args.extend(["var", ident]);
+        match run(Some(root), &args) {
+            Run::Exited { code: Some(0), .. } => {}
+            other => return Err(failure("var", &other)),
+        }
     }
-    args.extend(["commit", "--dry-run", "-q"]);
-    let mut cmd = command(Some(root), &args);
-    cmd.env("GIT_OPTIONAL_LOCKS", "0");
-    match sys::run_command(cmd, TIMEOUT) {
-        Run::Exited {
-            code: Some(0 | 1), ..
-        } => Ok(()),
-        other => Err(failure("commit --dry-run", &other)),
+    Ok(())
+}
+
+/// Whether HEAD is a commit, or an unborn branch; anything else (a ref
+/// that points nowhere, a broken object) is an error.
+pub fn check_head(root: &Path) -> Result<(), String> {
+    match run(Some(root), &["rev-parse", "--verify", "-q", "HEAD"]) {
+        Run::Exited { code: Some(0), .. } => Ok(()),
+        Run::Exited { .. } => {
+            // unborn: HEAD names a branch that has no ref yet
+            let unborn = match run(Some(root), &["symbolic-ref", "-q", "HEAD"]) {
+                Run::Exited {
+                    code: Some(0),
+                    stdout,
+                    ..
+                } => !run(Some(root), &["show-ref", "--verify", "-q", stdout.trim()]).success(),
+                _ => false,
+            };
+            if unborn {
+                Ok(())
+            } else {
+                Err("HEAD does not name a commit".to_string())
+            }
+        }
+        other => Err(failure("rev-parse", &other)),
     }
 }
 
@@ -218,18 +291,30 @@ fn git(root: &Path, args: &[&str]) -> Result<(), String> {
     }
 }
 
-/// The message of a git call that did not succeed, on one line (git's
-/// own message may have several).
+/// git's message on one line: its `fatal:`/`error:` lines when it has
+/// any (the advice around them is left out), else every line.
+fn one_line(stderr: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .split(|c: char| c.is_control())
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let errors: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| l.starts_with("fatal:") || l.starts_with("error:"))
+        .collect();
+    if errors.is_empty() {
+        lines.join(" ")
+    } else {
+        errors.join(" ")
+    }
+}
+
+/// The message of a git call that did not succeed, on one line.
 fn failure(verb: &str, run: &Run) -> String {
     match run {
-        Run::Exited { stderr, .. } => {
-            let text: Vec<&str> = stderr
-                .split(|c: char| c.is_control())
-                .map(str::trim)
-                .filter(|l| !l.is_empty())
-                .collect();
-            format!("git {verb} failed: {}", text.join(" "))
-        }
+        Run::Exited { stderr, .. } => format!("git {verb} failed: {}", one_line(stderr)),
         Run::NotFound => "git is not installed".into(),
         Run::TimedOut => format!("git {verb} timed out"),
         Run::Failed(e) => format!("cannot run git: {e}"),
@@ -249,8 +334,21 @@ mod tests {
             .map(|(key, _)| key.to_string_lossy().into_owned())
             .collect();
         for var in REPOSITORY_VARS {
-            assert!(removed.iter().any(|r| r == var), "{var} is not removed");
+            if var != "GIT_CEILING_DIRECTORIES" {
+                assert!(removed.iter().any(|r| r == var), "{var} is not removed");
+            }
         }
         assert_eq!(cmd.get_current_dir(), Some(Path::new("/logbook")));
+        let ceiling = cmd
+            .get_envs()
+            .find(|(key, _)| *key == "GIT_CEILING_DIRECTORIES")
+            .and_then(|(_, value)| value);
+        assert_eq!(ceiling, Some(std::ffi::OsStr::new("/")));
+        // anywhere (git --version): no ceiling, the inherited one removed
+        let cmd = command(None, &["--version"]);
+        assert!(
+            cmd.get_envs()
+                .any(|(key, value)| key == "GIT_CEILING_DIRECTORIES" && value.is_none())
+        );
     }
 }

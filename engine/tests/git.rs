@@ -173,3 +173,117 @@ fn a_stale_index_lock_is_one_warning_and_exit_0() {
     assert!(git_warnings(&out).is_empty(), "{}", stderr(&out));
     assert_eq!(stdout(&env.git(&root, &["status", "--porcelain"])), "");
 }
+
+#[test]
+fn an_empty_dot_git_inside_another_repository_commits_nowhere() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    // the logbook sits in a work tree of its own; its .git is emptied
+    let root = env.init_logbook_at("parent/logbook", "en");
+    let parent = root.parent().unwrap().to_path_buf();
+    env.git(&parent, &["init", "-q"]);
+    let out = env.git(
+        &parent,
+        &[
+            "-c",
+            "user.name=Other",
+            "-c",
+            "user.email=other@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "parent: first",
+        ],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let parent_head = head(&env, &parent);
+    std::fs::remove_dir_all(root.join(".git")).unwrap();
+    std::fs::create_dir(root.join(".git")).unwrap();
+
+    let out = env.seldon(&["--json", "log", "--", "note with an empty .git"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let warnings = git_warnings(&out);
+    assert_eq!(warnings.len(), 1, "{}", stderr(&out));
+    assert!(
+        warnings[0].starts_with(
+            "seldon: warning: git: not committed: the logbook's .git is not a usable repository"
+        ),
+        "{}",
+        warnings[0]
+    );
+    let j = json(&out);
+    assert_eq!(j["git"]["committed"], false, "{j}");
+    assert!(
+        j["git"]["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("the logbook's .git is not a usable repository"),
+        "{j}"
+    );
+    // nothing committed or staged in the parent, the empty .git stays empty
+    assert_eq!(
+        head(&env, &parent),
+        parent_head,
+        "the parent repository moved"
+    );
+    assert_eq!(stdout(&env.git(&parent, &["ls-files"])), "");
+    assert_eq!(std::fs::read_dir(root.join(".git")).unwrap().count(), 0);
+
+    // the index does not report the parent's HEAD as the logbook's
+    let out = env.seldon(&["--json", "index"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let index: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(json(&out)["index"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        index["logbook"]["git"]["head"].is_null(),
+        "{}",
+        index["logbook"]
+    );
+}
+
+#[test]
+fn the_index_reads_the_logbooks_head_under_an_inherited_git_dir() {
+    let env = Env::new(Snapper::NoPermissions);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let other = env.tmp.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    env.git(&other, &["init", "-q"]);
+    let out = env.git(
+        &other,
+        &[
+            "-c",
+            "user.name=Other",
+            "-c",
+            "user.email=other@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "other: first",
+        ],
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    let out = env
+        .command(&["--json", "index"])
+        .env("GIT_DIR", other.join(".git"))
+        .env("GIT_WORK_TREE", &other)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let index: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(json(&out)["index"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let logbook_head = head(&env, &root);
+    let git = &index["logbook"]["git"];
+    assert_eq!(git["head"].as_str(), Some(&logbook_head[..7]), "{git}");
+    assert_eq!(git["dirty"], false, "{git}");
+}
