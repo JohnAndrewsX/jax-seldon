@@ -180,7 +180,19 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
         .to_string();
     std::fs::write(&lessons, text.replacen(&line, "updated: 2026-09-01", 1)).unwrap();
     if env.has_git {
-        env.git(&root, &["commit", "-qam", "older lessons"]);
+        let out = env.git(
+            &root,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "-qam",
+                "older lessons",
+            ],
+        );
+        assert!(out.status.success(), "{}", stderr(&out));
     }
     let vault_before = tree(&vault);
     let commits = env.has_git.then(|| commit_count(&env, &root));
@@ -383,9 +395,10 @@ fn apply_writes_the_plan_once_and_a_second_apply_changes_nothing() {
         "{message}"
     );
     assert!(
-        message.contains("git checkout -- . && git clean -fd"),
+        message.contains(&format!("`git -C {} status`", root.display())),
         "{message}"
     );
+    assert!(!message.contains("git clean"), "{message}");
     assert_eq!(tree(&root), before);
 }
 
@@ -459,10 +472,9 @@ fn a_failed_apply_says_how_to_undo_it() {
     assert_eq!(out.status.code(), Some(2), "{}", stdout(&out));
     let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
     assert!(message.contains("nothing was committed"), "{message}");
-    assert!(
-        message.contains("`git checkout -- . && git clean -fd`"),
-        "{message}"
-    );
+    let undo = undo_command(&message);
+    assert!(undo.starts_with("git checkout "), "{undo}");
+    assert!(!undo.contains(" . ") && !undo.contains("clean"), "{undo}");
     assert_eq!(commit_count(&env, &root), commits, "nothing committed");
     assert!(!root.join(MARKER).exists());
     assert!(
@@ -471,16 +483,16 @@ fn a_failed_apply_says_how_to_undo_it() {
             .any(|e| e["meta"]["import"] == "omarchy-agent")
     );
 
-    // not reported as done: refused until the logbook is restored
+    // not reported as done: refused until the logbook is restored, with
+    // the same undo
     let out = import(&env, &vault, &["--apply"]);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
     assert!(stderr(&out).contains("is missing"), "{}", stderr(&out));
+    assert_eq!(undo_command(&stderr(&out)), undo);
 
     // the hint works: restore, then the import runs once
-    for args in [&["checkout", "--", "."][..], &["clean", "-fd"]] {
-        let out = env.git(&root, args);
-        assert!(out.status.success(), "{}", stderr(&out));
-    }
+    run_undo(&env, &root, &undo);
+    assert_eq!(stdout(&env.git(&root, &["status", "--porcelain"])), "");
     let out = import(&env, &vault, &["--apply"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(
@@ -491,6 +503,126 @@ fn a_failed_apply_says_how_to_undo_it() {
         6
     );
     assert_eq!(commit_count(&env, &root), commits + 1);
+}
+
+/// The command between the backticks after "undo it with".
+fn undo_command(message: &str) -> String {
+    let start = message
+        .find("undo it with `")
+        .unwrap_or_else(|| panic!("no undo in {message}"))
+        + "undo it with `".len();
+    let len = message[start..].find('`').unwrap();
+    message[start..start + len].to_string()
+}
+
+/// Runs the printed undo in the logbook, as the user would.
+fn run_undo(env: &Env, root: &Path, undo: &str) {
+    let git_dir = env.tmp.path().join("bin");
+    let out = std::process::Command::new("sh")
+        .args(["-c", undo])
+        .env_clear()
+        .env("HOME", &env.home)
+        .env("PATH", format!("{}:/usr/bin:/bin", git_dir.display()))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{undo}: {}", stderr(&out));
+}
+
+/// WP-061 (F-142): pending changes are committed before the first write,
+/// and the undo of a failed apply touches only the files the import wrote:
+/// a hook's ledger line, an inbox note and an edit of a file the import
+/// also writes survive it, and so do changes made after the failure.
+#[test]
+fn a_dirty_logbook_is_committed_first_and_the_undo_keeps_other_changes() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (env, root, vault) = setup();
+    if !env.has_git {
+        return;
+    }
+    // pending: a note (ledger line and journal day), an inbox note, and an
+    // edit of memory/lessons.md, which the import appends to
+    let out = env.at(
+        "2026-10-01T12:00:00+02:00",
+        &["--no-commit", "log", "Pending note before the import."],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    std::fs::create_dir_all(root.join("inbox")).unwrap();
+    std::fs::write(root.join("inbox/idee.md"), "Eine Idee.\n").unwrap();
+    let lessons = root.join("memory/lessons.md");
+    let edited = format!("{}\nMeine eigene Lektion.\n", read(&lessons));
+    std::fs::write(&lessons, &edited).unwrap();
+    let pending = tree(&root);
+    let commits = commit_count(&env, &root);
+
+    let system = root.join("system");
+    std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(system.join("probe"), "x").is_ok() {
+        // running as root: permissions do not stop the write
+        std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+    let out = import(&env, &vault, &["--apply", "--json"]);
+    std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stdout(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+
+    // the pending changes are one commit before the import's first write
+    assert_eq!(commit_count(&env, &root), commits + 1);
+    assert_eq!(
+        last_commit(&env, &root),
+        "seldon: before import omarchy-agent"
+    );
+    assert_ne!(read(&lessons), edited, "the import did not write lessons");
+
+    // after the failure, a new inbox note and an edit of an unrelated file
+    std::fs::write(root.join("inbox/later.md"), "Später.\n").unwrap();
+    let project = root.join("PROJECT.md");
+    let project_text = format!("{}\nNach dem Import.\n", read(&project));
+    std::fs::write(&project, &project_text).unwrap();
+
+    run_undo(&env, &root, &undo_command(&message));
+    let mut expected = pending;
+    expected.insert("inbox/later.md".into(), "Später.\n".into());
+    expected.insert("PROJECT.md".into(), project_text.into_bytes());
+    assert_eq!(
+        tree(&root).keys().collect::<Vec<_>>(),
+        expected.keys().collect::<Vec<_>>()
+    );
+    assert!(tree(&root) == expected, "the undo changed other files");
+    assert!(
+        !common::ledger(&root)
+            .iter()
+            .any(|e| e["meta"]["import"] == "omarchy-agent")
+    );
+    let status = stdout(&env.git(&root, &["status", "--porcelain"]));
+    assert_eq!(status, " M PROJECT.md\n?? inbox/later.md\n");
+}
+
+/// WP-061: with `--no-commit` the pending changes cannot be committed, so
+/// the apply is refused before it writes anything.
+#[test]
+fn a_dirty_logbook_without_a_commit_is_refused() {
+    let (env, root, vault) = setup();
+    if !env.has_git {
+        return;
+    }
+    std::fs::create_dir_all(root.join("inbox")).unwrap();
+    std::fs::write(root.join("inbox/idee.md"), "Eine Idee.\n").unwrap();
+    let before = tree(&root);
+    let commits = commit_count(&env, &root);
+    let out = import(&env, &vault, &["--no-commit", "--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+    assert!(
+        message.starts_with(
+            "the logbook has uncommitted changes (not committed: --no-commit); commit them first"
+        ),
+        "{message}"
+    );
+    assert_eq!(tree(&root), before, "the refusal wrote something");
+    assert_eq!(commit_count(&env, &root), commits);
 }
 
 #[test]
