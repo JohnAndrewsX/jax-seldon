@@ -1006,10 +1006,13 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   local time.** Read from the info files, convert from UTC to the local
   offset, or every snapshot moves by the zone offset.
 - **`Bench` (tests/support) builds `Sources` with `..Sources::default()`,
-  i.e. the host paths.** A test with a denied snapper stub must set
-  `b.sources.snapshots` to a scratch path, otherwise the info-file fallback
-  reads the host's `/.snapshots`. Binary tests are safe: under
-  `SELDON_TEST_GUARD` the default is `<guard>/.snapshots`.
+  i.e. the host paths, for every field it does not set.** A new host path
+  in `Sources` needs a scratch default in `Bench::new` too (WP-060 review:
+  `snapshots`). Binary tests are safe: under `SELDON_TEST_GUARD` the
+  snapshot default is `<guard>/.snapshots`.
+- **An empty snapshot directory is not "no snapshots".** After booting into
+  a snapshot `/.snapshots` is an empty nested subvolume; reading it as
+  empty would delete every known snapshot in the ledger (WP-060 review).
 - **A test whose result depends on host permissions** (`chmod 000` is
   ignored for root) checks first whether the read actually fails, and
   asserts the skip only then.

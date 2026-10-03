@@ -1,6 +1,7 @@
 ```
 WP-060 HANDOVER — snapper: read snapshot info files when listing is not permitted
-Branch: wp/060-review (worktree wt/WP-060), 6 commits on d112d97, not pushed.
+Branch: wp/060-review (worktree wt/WP-060), commits on d112d97, not pushed.
+Round 2 (review SEND BACK): B1, N1, N2, N3 fixed; see "Fix round" below.
 ```
 
 ## Done
@@ -19,12 +20,13 @@ place (engine `SNAPPER_FIX`, plugin `SNAPPER_FIX_COMMAND`, docs).
    between the two adds no events. Non-numeric entries and `0` are
    ignored. An info file that cannot be read or parsed is skipped and named
    in the collector message. Its snapshot is neither new nor deleted, and
-   a known one stays in the cursor. If the directory cannot be read, or
-   every numbered info file in it fails, the collector stays degraded with
-   `NO_PERMISSIONS` and the unchanged fix, as before. An `ok` result from
+   a known one stays in the cursor. If the directory cannot be read, or no
+   snapshot can be read from it (empty, or every numbered info file fails),
+   the collector stays degraded with `NO_PERMISSIONS` and the unchanged fix,
+   as before: no events, cursor unchanged. An `ok` result from
    the info files has the message "snapper list is not permitted; N
    snapshots read from the info files in DIR[; skipped N/info.xml: why]".
-2. **Injectable root**: `Sources.snapshots` (`SELDON_SNAPSHOTS_DIR`, default
+2. **Overridable root**: `Sources.snapshots` (`SELDON_SNAPSHOTS_DIR`, default
    `/.snapshots`). Under `SELDON_TEST_GUARD` without the variable it is
    `<guard>/.snapshots`, so integration tests and guarded manual runs never
    read the host's snapshots.
@@ -52,6 +54,34 @@ place (engine `SNAPPER_FIX`, plugin `SNAPPER_FIX_COMMAND`, docs).
    `fixtures/logs/snapper.json` (dates in UTC, userdata on 114/115).
    `scripts/validate-fixtures.py` step 3c checks that mirror: numbers,
    fields, UTC date, userdata.
+
+## Fix round (review SEND BACK)
+
+- **B1**: `readable_info_files` now returns `None` when no snapshot is read,
+  including an empty readable directory (the state right after booting into
+  a snapshot, when `/.snapshots` is an empty nested subvolume). The
+  collector stays degraded (`NO_PERMISSIONS` + fix), writes no events and
+  keeps the cursor. `doctor` follows through the same function. Tests: the
+  `collectors::snapper_info_files_skip_what_cannot_be_read` step "empty,
+  readable directory" uses the list cursor from the fixture, a denied stub
+  and an empty directory → 0 events, degraded, cursor unchanged.
+  `doctor::snapper_info_files_are_enough` adds an empty
+  `<guard>/.snapshots` → degraded with the fix. Mutant (old condition
+  `is_empty() && !skipped.is_empty()`): the collector test FAILED with
+  `left: ["snapshot-delete 1", "snapshot-delete 105", … "snapshot-delete 115"]`
+  (10 deletes) `right: []`.
+- **N1**: `tests/support/mod.rs` `Bench::new` sets
+  `snapshots: scratch.path("no-snapshots")`. No in-process test reads the
+  host's directory anymore. (This file is now touched; listed below.)
+- **N2**: wording in this handover.
+- **N3**: SPEC-ENGINE §4 snapper paragraph gains a clause for doctor's `ok`
+  message when listing works, and the empty-directory rule.
+- Checked: `cargo fmt --check`, `cargo clippy --all-targets -D warnings`,
+  `cargo test` (27 suites, 0 failed, incl. collectors, doctor, init),
+  `docs-check`. One earlier full `cargo test` run hung in
+  `tests/watch.rs`: the non-feature test's `seldon watch` child ran for 17
+  minutes. I stopped it, and `cargo test --test watch` and the full rerun
+  then passed (0.06 s). Not reproduced; snapper code is not on that path.
 
 ## Not done
 
@@ -121,9 +151,8 @@ place (engine `SNAPPER_FIX`, plugin `SNAPPER_FIX_COMMAND`, docs).
 
 - snapper's `info.xml` stores `date` in UTC, while `snapper list` prints
   local time.
-- `tests/support/mod.rs` `Bench` builds `Sources` with
-  `..Sources::default()`, so host paths are the default. Any in-process
-  test with a denied snapper stub must set `b.sources.snapshots`.
+- An empty snapshot directory is not "no snapshots": after booting into a
+  snapshot `/.snapshots` is an empty nested subvolume (review B1).
 
 ## Decisions needed
 
@@ -135,13 +164,13 @@ place (engine `SNAPPER_FIX`, plugin `SNAPPER_FIX_COMMAND`, docs).
    and adds an undo for an existing `ALLOW_USERS` entry (remove only this
    user, as snapper(8) describes).
 2. Follow-up for files outside this WP's list: `docs/TESTING.md` and
-   `fixtures/README.md` text; the `Bench` default for `sources.snapshots`
-   in `tests/support/mod.rs` (scratch path instead of the host default).
+   `fixtures/README.md` text.
 
 ## Touched outside WP scope
 
 - `engine/src/collectors/mod.rs`: one field `Sources.snapshots` plus its
   `from_env` line. This is the "same pattern as the existing snapper shim"
-  the WP asks for, and the bench needs it to inject the root in-process.
+  the WP asks for, and the bench needs it to set the root in-process.
   No other wave-1 WP touches this file. WP-073 touches it later.
+- `engine/tests/support/mod.rs`: one line in `Bench::new` (review N1).
 - `CHANGELOG.md` `[Unreleased]` (allowed: neutral lines).

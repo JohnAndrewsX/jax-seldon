@@ -388,9 +388,13 @@ mutating verb. Rules:
   and cursor, so switching between list and info files adds no events (an
   info file that cannot be read is skipped and named in the message; its
   snapshot is neither new nor deleted). When the info files cannot be read
-  either, it reports `ok: false` and the fix command, never sudo
-  (ADR-0011); `doctor` and `init` say that the fix's `ALLOW_USERS` entry
-  also lets the user create, change and delete root snapshots without a
+  either, or none is found (an empty directory, e.g. right after booting
+  into a snapshot), it reports `ok: false` and the fix command, writes no
+  events and keeps the cursor, never sudo (ADR-0011); `doctor` and `init`
+  say that the fix's `ALLOW_USERS` entry also lets the user create, change
+  and delete root snapshots without a password, and when listing works,
+  `doctor`'s `ok` message adds that this user may use the snapper config,
+  which also lets it create, change and delete snapshots without a
   password. snapper is run with `LC_ALL=C` (and without
   `LANGUAGE`); its messages are matched in English, whatever the user's
   locale (`doctor` and `init` use the same argv and locale).

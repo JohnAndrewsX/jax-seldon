@@ -241,8 +241,13 @@ mod doctor {
             )
         );
 
-        // the guard's default: missing → degraded with the fix; present → ok
+        // the guard's default: missing or empty → degraded with the fix;
+        // with a snapshot → ok
         assert_eq!(snapper(&[])["status"], "degraded");
+        std::fs::create_dir_all(env.tmp.path().join(".snapshots")).unwrap();
+        let empty = snapper(&[]);
+        assert_eq!(empty["status"], "degraded", "{empty}");
+        assert_eq!(empty["fix"], seldon::commands::doctor::SNAPPER_FIX);
         let guarded = env.tmp.path().join(".snapshots/7");
         std::fs::create_dir_all(&guarded).unwrap();
         std::fs::write(

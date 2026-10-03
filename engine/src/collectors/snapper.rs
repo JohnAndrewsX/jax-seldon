@@ -20,7 +20,8 @@
 //! (`<snapshots>/<number>/info.xml`, [`read_info_files`]), which needs only
 //! read access to the snapshot directory. The events and the cursor are the
 //! same as from the list, so switching between the two ways adds no events.
-//! When the info files cannot be read either, the collector degrades:
+//! When the info files cannot be read either, or none is found, the
+//! collector degrades:
 //! `ok: false`, a message, and the one-line fix, which is printed and never
 //! run. Nothing is invented and the cursor stays. The same goes for a
 //! missing snapper or unreadable output.
@@ -197,11 +198,14 @@ pub fn info_files_message(dir: &Path, info: &InfoFiles) -> String {
 }
 
 /// [`read_info_files`] when it gives a usable answer: the directory is
-/// readable and not every numbered info file in it failed. `None` keeps the
-/// collector degraded.
+/// readable and at least one snapshot was read from it. `None` keeps the
+/// collector degraded with the cursor unchanged. An empty directory is not
+/// an answer: right after booting into a snapshot `/.snapshots` is an empty
+/// nested subvolume, and reading it as "no snapshots" would record every
+/// known snapshot as deleted.
 pub fn readable_info_files(dir: &Path) -> Option<InfoFiles> {
     let info = read_info_files(dir).ok()?;
-    if info.snapshots.is_empty() && !info.skipped.is_empty() {
+    if info.snapshots.is_empty() {
         None
     } else {
         Some(info)

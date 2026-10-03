@@ -676,6 +676,20 @@ mod collectors {
         assert_eq!(out.fix.as_deref(), Some(SNAPPER_FIX));
         assert_eq!(out.cursor, None, "the cursor is kept");
 
+        // an empty, readable directory (e.g. after booting into a
+        // snapshot): degraded, no snapshot-delete, the cursor kept
+        let before = b.cursors["snapper"].clone();
+        let empty = b.scratch.path("empty-snapshots");
+        std::fs::create_dir_all(&empty).unwrap();
+        b.sources.snapshots = empty;
+        let out = b.run(&Snapper, "2026-10-01T17:22:00+02:00");
+        assert_eq!(kinds(&out.events), [""; 0], "no snapshot-delete");
+        assert!(!out.ok);
+        assert_eq!(out.message.as_deref(), Some(NO_PERMISSIONS));
+        assert_eq!(out.fix.as_deref(), Some(SNAPPER_FIX));
+        assert_eq!(out.cursor, None, "the cursor is kept");
+        assert_eq!(b.cursors["snapper"], before);
+
         // the directory itself not readable: degraded
         b.sources.snapshots = fixture("logs/snapshots");
         let locked = b.scratch.path("locked");
