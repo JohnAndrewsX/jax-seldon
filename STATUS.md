@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-053 | snapper messages locale-independent (issue #1) | Engine | `engine-053` (opus, high) | `wt/WP-053` · `wp/053-snapper-locale` | 2026-10-03 |
 | WP-054 | snapper banner "Check again" runs a capture (issue #2) | Plugin | `plugin-054` (opus, high) | `wt/WP-054` · `wp/054-snapper-banner` | 2026-10-03 |
 
 ## Queued (next up)
@@ -34,6 +33,11 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-053 snapper runs in the C locale: one helper builds every
+  snapper command with `LC_ALL=C`, localized-stub test, fixes #1 — merged
+  (Opus review APPROVE, stage 2 by the orchestrator). Follow-ups noted:
+  `C.UTF-8` for non-ASCII snapshot descriptions; doctor should honour
+  `SELDON_SNAPPER` like the collector.
 - 2026-10-02 WP-051 Prime Radiant assets: `assets/` of record (round-3
   masks, round-2 rest), plugin bar glyph tinted by the theme, panel
   header mark, eight state pictograms, timeline markers, README heroes,
