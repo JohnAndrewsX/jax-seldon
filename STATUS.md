@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-063 | hook: recording scope and path exclusions | Engine | `engine-063` (opus) | `wt/WP-063` · `wp/063-review` | 2026-10-03 |
 | WP-061 | git: autocommit in its own repository, detached HEAD, failures; import undo | Engine | `engine-061` (opus) | `wt/WP-061` · `wp/061-review` | 2026-10-03 |
 | WP-062 | redaction: more built-in rules, applied to every text field | Engine | `engine-062` (opus) | `wt/WP-062` · `wp/062-review` | 2026-10-03 |
 | WP-067 | plugin: tab focus, changelog cursor, IPC handler once | Plugin | `plugin-067` (opus) | `wt/WP-067` · `wp/067-review` | 2026-10-03 |
@@ -38,6 +37,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-063 hook recording scope from the project directory (default:
+  only inside a logbook, `[hooks] scope = "all"` keeps the old behaviour),
+  skipPaths on recorded command lines, already-recorded check under the
+  lock, `plan show` delimits the case text (two Opus rounds) — merged.
 - 2026-10-03 WP-064 atomic writes follow symlinks and keep modes, new files
   private, sync policy (durable data synced, rebuildable files not), run
   timeouts cover pipes, git stays in the engine's process group (four
