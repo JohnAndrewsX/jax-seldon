@@ -13,7 +13,11 @@
 //! - **config**, **theme** and **plugins** go through [`attribute`], one
 //!   pass that `seldon capture` runs over all events of a run before it
 //!   appends them. The event must lie at most [`ATTRIBUTION_WINDOW`] after
-//!   the command's start and not before it, and the command must prove it:
+//!   the command's start and not before it, and the command must prove it.
+//!   An event stamped with the capture time (a plugin removal, enabling or
+//!   disabling, a config removal) happened somewhere after the collector's
+//!   last check: for it the command may start from [`ATTRIBUTION_WINDOW`]
+//!   before that check up to the capture ([`attribute_capture`]). Proof:
 //!   - config: the event's path is a path the command *writes*
 //!     ([`write_targets`]: a redirection, `tee`, `sed -i`, the destination
 //!     of `cp|mv|install|ln` or a file directly in it, an `mv` source,
@@ -22,9 +26,11 @@
 //!     the command only reads (`cat x && pacman -S y`) is no proof;
 //!   - theme: `omarchy theme set <name>` or `omarchy-theme-set <name>`,
 //!     where `<name>` becomes the slug the way `omarchy-theme-set` makes it;
-//!   - plugins: `omarchy plugin add|remove|enable|disable|update <id>` (or
-//!     the `omarchy-plugin-<verb>` script), where the word is the id or a
-//!     URL whose last path component is the id.
+//!   - plugins: `omarchy plugin <verb> <id>` (or the
+//!     `omarchy-plugin-<verb>` script) with the verb of the event's kind
+//!     (`add` for `plugin-add` and `plugin-enable`, `remove`, `enable`,
+//!     `disable`, `update` for their own kind), where the word is the id or
+//!     a URL whose last path component is the id.
 //!
 //!   The latest proving command wins. Events that already carry an actor
 //!   other than `system` or a case are left alone.
@@ -114,10 +120,46 @@ fn open_to_attribution(e: &Event) -> bool {
         && e.case.is_none()
 }
 
+/// When the events of one capture happened. A collector stamps a change
+/// it cannot time (a removal, enabling, disabling) with the capture time
+/// `now`; such a change happened after the collector's last check
+/// (`since`, per source), so its cause may have started up to
+/// [`ATTRIBUTION_WINDOW`] before that check.
+#[derive(Debug, Clone, Default)]
+pub struct Stamps {
+    pub now: Option<DateTime<FixedOffset>>,
+    pub since: Vec<(Source, DateTime<FixedOffset>)>,
+}
+
+impl Stamps {
+    /// The earliest instant `e`'s change may have happened: the last check
+    /// of its collector when `e` carries the capture time, else `e.ts`.
+    fn earliest(&self, e: &Event) -> DateTime<FixedOffset> {
+        if self.now != Some(e.ts) {
+            return e.ts;
+        }
+        self.since
+            .iter()
+            .find(|(source, _)| *source == e.source)
+            .map_or(e.ts, |(_, since)| (*since).min(e.ts))
+    }
+
+    /// Whether `cause` lies in `e`'s window: not after `e`, and at most
+    /// [`ATTRIBUTION_WINDOW`] before the earliest instant of its change.
+    fn in_window(&self, cause: &Cause, e: &Event) -> bool {
+        cause.ts <= e.ts && self.earliest(e) - cause.ts <= ATTRIBUTION_WINDOW
+    }
+}
+
 /// The shared pass (see the module docs): sets `actor` and `case` of each
 /// config, theme and plugins event in `events` from the latest cause in
 /// `known` that proves it. `home` resolves the paths a command names.
 pub fn attribute(events: &mut [Event], known: &[Event], home: &Path) {
+    attribute_stamped(events, known, home, &Stamps::default());
+}
+
+/// [`attribute`] for the events of one capture ([`Stamps`]).
+pub fn attribute_stamped(events: &mut [Event], known: &[Event], home: &Path, stamps: &Stamps) {
     let causes = causes(known);
     if causes.is_empty() {
         return;
@@ -125,7 +167,7 @@ pub fn attribute(events: &mut [Event], known: &[Event], home: &Path) {
     for e in events.iter_mut().filter(|e| open_to_attribution(e)) {
         let cause = causes
             .iter()
-            .filter(|c| c.ts <= e.ts && e.ts - c.ts <= ATTRIBUTION_WINDOW)
+            .filter(|c| stamps.in_window(c, e))
             .filter(|c| proves(c, e, home))
             .max_by_key(|c| c.ts);
         if let Some(c) = cause {
@@ -142,13 +184,27 @@ pub fn attribute_from_ledger(
     events: &mut [Event],
     home: &Path,
 ) -> anyhow::Result<()> {
+    attribute_capture(ledger, events, home, &Stamps::default())
+}
+
+/// [`attribute_from_ledger`] for the events of one capture: an event
+/// stamped with the capture time reaches back to [`ATTRIBUTION_WINDOW`]
+/// before its collector's last check ([`Stamps`]).
+pub fn attribute_capture(
+    ledger: &Ledger,
+    events: &mut [Event],
+    home: &Path,
+    stamps: &Stamps,
+) -> anyhow::Result<()> {
     let open = events.iter().filter(|e| open_to_attribution(e));
-    let (Some(first), Some(last)) = (open.clone().map(|e| e.ts).min(), open.map(|e| e.ts).max())
-    else {
+    let (Some(first), Some(last)) = (
+        open.clone().map(|e| stamps.earliest(e)).min(),
+        open.map(|e| e.ts).max(),
+    ) else {
         return Ok(());
     };
     let known = ledger.read_range(first - ATTRIBUTION_WINDOW, last)?;
-    attribute(events, &known, home);
+    attribute_stamped(events, &known, home, stamps);
     Ok(())
 }
 
@@ -170,14 +226,24 @@ fn proves(cause: &Cause, event: &Event, home: &Path) -> bool {
             })
         }),
         Source::Plugins => cause.segments.iter().any(|(argv, _)| {
-            omarchy_route(
-                argv,
-                "plugin",
-                &["add", "remove", "enable", "disable", "update"],
-            )
-            .is_some_and(|args| args.iter().any(|a| names_plugin(a, &event.subject)))
+            omarchy_route(argv, "plugin", plugin_verbs(event.kind))
+                .is_some_and(|args| args.iter().any(|a| names_plugin(a, &event.subject)))
         }),
         _ => false,
+    }
+}
+
+/// The `omarchy plugin` verbs that prove a plugins event of `kind`: its
+/// own, and `add` also for `plugin-enable` (`plugin add --enable` of a
+/// plugin removed since the last check).
+fn plugin_verbs(kind: Kind) -> &'static [&'static str] {
+    match kind {
+        Kind::PluginAdd => &["add"],
+        Kind::PluginRemove => &["remove"],
+        Kind::PluginEnable => &["enable", "add"],
+        Kind::PluginDisable => &["disable"],
+        Kind::PluginUpdate => &["update"],
+        _ => &[],
     }
 }
 

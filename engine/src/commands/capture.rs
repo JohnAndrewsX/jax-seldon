@@ -101,10 +101,15 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         None => created(&logbook)?,
     };
     let sources = Sources::from_env();
-    let (mut events, reports, states) = collect_all(
+    let Collected {
+        mut events,
+        reports,
+        states,
+        stamps,
+    } = collect_all(
         &selected, &config, ctx, &ledger, &cursors, &logbook, &sources, now, baseline,
     );
-    attribution::attribute_from_ledger(&ledger, &mut events, &ctx.dirs.home)?;
+    attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
 
     let written = ledger.append(&lock, events)?;
     for (name, state) in states {
@@ -165,6 +170,16 @@ fn select(config: &Config, args: &CaptureArgs) -> Result<Vec<(&'static str, bool
         .collect())
 }
 
+/// What the collectors of one capture produced.
+struct Collected {
+    /// Sorted by `ts`.
+    events: Vec<Event>,
+    reports: Vec<CollectorReport>,
+    states: Vec<(&'static str, CollectorState)>,
+    /// When the events happened, for attribution.
+    stamps: Stamps,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_all(
     selected: &[(&'static str, bool)],
@@ -176,14 +191,14 @@ fn collect_all(
     sources: &Sources,
     now: DateTime<FixedOffset>,
     baseline: DateTime<FixedOffset>,
-) -> (
-    Vec<Event>,
-    Vec<CollectorReport>,
-    Vec<(&'static str, CollectorState)>,
-) {
+) -> Collected {
     let mut events: Vec<Event> = Vec::new();
     let mut reports = Vec::new();
     let mut states = Vec::new();
+    let mut stamps = Stamps {
+        now: Some(now),
+        since: Vec::new(),
+    };
     for &(name, run) in selected {
         let enabled = config.collectors.get(name).unwrap_or(true);
         if !run {
@@ -233,12 +248,24 @@ fn collect_all(
             message: out.message,
             fix: out.fix,
         });
+        if let Some(since) = out.since {
+            for e in &out.events {
+                if !stamps.since.iter().any(|(s, _)| *s == e.source) {
+                    stamps.since.push((e.source, since));
+                }
+            }
+        }
         events.extend(out.events);
     }
     // one capture reads chronologically in the ledger; ties keep collector
     // and log order, so a transaction's lines keep theirs
     events.sort_by_key(|e| e.ts);
-    (events, reports, states)
+    Collected {
+        events,
+        reports,
+        states,
+        stamps,
+    }
 }
 
 /// The logbook's `created` time from `.seldon/logbook.toml`.

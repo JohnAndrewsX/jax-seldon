@@ -66,6 +66,11 @@ pub struct Outcome {
     /// A command the user can run to fix a degraded collector; printed,
     /// never run by Seldon.
     pub fix: Option<String>,
+    /// The last check the events are measured from (the cursor's
+    /// `checked`): an event stamped with the capture time happened after
+    /// it, which widens its attribution window
+    /// ([`crate::attribution::Stamps`]).
+    pub since: Option<DateTime<FixedOffset>>,
 }
 
 impl Outcome {
