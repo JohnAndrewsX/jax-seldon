@@ -369,9 +369,23 @@ impl Default for GitConfig {
 #[serde(rename_all = "camelCase", default)]
 pub struct Redaction {
     pub patterns: Vec<String>,
-    /// Default [`DEFAULT_SKIP_PATHS`]; `init` writes the list into the
-    /// file, so an existing config keeps its own.
+    /// Default [`DEFAULT_SKIP_PATHS`], also for an empty list (the
+    /// `skipPaths = []` that `init` wrote before WP-069); a list of the
+    /// user's own replaces them. `init` writes the list into the file.
+    #[serde(deserialize_with = "skip_paths_or_defaults")]
     pub skip_paths: Vec<String>,
+}
+
+/// `[redaction] skipPaths` as read: an empty list is the defaults.
+fn skip_paths_or_defaults<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Vec<String>, D::Error> {
+    let paths = Vec::<String>::deserialize(d)?;
+    Ok(if paths.is_empty() {
+        Redaction::default().skip_paths
+    } else {
+        paths
+    })
 }
 
 impl Default for Redaction {
@@ -724,14 +738,18 @@ mod tests {
         ] {
             assert!(!m(rel), "{rel} is skipped");
         }
-        // written into a new file, kept from an existing one
+        // written into a new file; an empty list (what `init` wrote before)
+        // and a missing key are the defaults; a list of one's own replaces them
         let text = toml::to_string(&Config::default()).unwrap();
         assert!(
             text.contains("skipPaths = [\"~/.config/omarchy/**/history.json\""),
             "{text}"
         );
-        let own: Config = toml::from_str("[redaction]\nskipPaths = []\n").unwrap();
-        assert!(own.redaction.skip_paths.is_empty());
+        let read = |text: &str| toml::from_str::<Config>(text).unwrap().redaction.skip_paths;
+        assert_eq!(read("[redaction]\nskipPaths = []\n"), DEFAULT_SKIP_PATHS);
+        assert_eq!(read("[redaction]\npatterns = []\n"), DEFAULT_SKIP_PATHS);
+        assert_eq!(read(""), DEFAULT_SKIP_PATHS);
+        assert_eq!(read("[redaction]\nskipPaths = [\"*.key\"]\n"), ["*.key"]);
     }
 
     #[test]
