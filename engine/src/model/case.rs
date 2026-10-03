@@ -226,7 +226,7 @@ mod tests {
         let (mut case, mut doc) = parse::<Case>(TEXT).unwrap();
         case.status = CaseStatus::Completed;
         case.closed = NaiveDate::from_ymd_opt(2026, 10, 2);
-        update(&mut doc, &case);
+        update(&mut doc, &case).unwrap();
         let expected = TEXT
             .replace("status: active", "status: completed")
             .replace("closed:\n", "closed: 2026-10-02\n");

@@ -93,7 +93,8 @@ impl CaseFile {
                 relative(logbook, &self.path)
             )));
         }
-        model::update(&mut self.doc, &self.case);
+        model::update(&mut self.doc, &self.case)
+            .map_err(|e| Error::user(format!("{}: {e}", relative(logbook, &self.path))))?;
         let name = self
             .path
             .file_name()
