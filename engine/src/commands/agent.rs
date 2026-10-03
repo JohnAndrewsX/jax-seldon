@@ -282,10 +282,12 @@ fn launch(
     // appended, never truncated: an earlier launcher may still write to it;
     // only what this launch adds after `start` is read back
     let log = ctx.dirs.state_dir.join(LAUNCH_LOG);
-    let opened = std::fs::create_dir_all(&ctx.dirs.state_dir).and_then(|()| {
+    let opened = crate::sys::create_dir_private(&ctx.dirs.state_dir).and_then(|()| {
+        use std::os::unix::fs::OpenOptionsExt as _;
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
+            .mode(crate::sys::NEW_FILE_MODE)
             .open(&log)
     });
     let start = opened

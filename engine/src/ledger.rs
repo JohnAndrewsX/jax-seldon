@@ -14,6 +14,7 @@
 use std::collections::BTreeMap;
 use std::fs::OpenOptions;
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
+use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
@@ -184,7 +185,7 @@ impl Ledger {
             text.push_str(&e.to_line());
             text.push('\n');
         }
-        std::fs::create_dir_all(&self.dir)
+        crate::sys::create_dir_private(&self.dir)
             .with_context(|| format!("cannot create {}", self.dir.display()))?;
         for (month, text) in by_month {
             append_file(&self.month_file(&month), text.as_bytes())?;
@@ -207,6 +208,7 @@ fn append_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
         .create(true)
         .read(true)
         .append(true)
+        .mode(crate::sys::NEW_FILE_MODE)
         .open(path)
         .with_context(|| format!("cannot open {}", path.display()))?;
     let len = file.metadata()?.len();

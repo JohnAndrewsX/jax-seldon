@@ -217,15 +217,10 @@ mod run {
 mod cli {
     use super::*;
 
-    /// Every directory under `dir` is 0700 and every file 0600, except
-    /// `.git` (git writes it) and the paths `other` names: files and
-    /// directories the engine creates without `sys::write_atomic` or the
-    /// logbook layout (the lock file and its directories, the ledger's
-    /// month files), whose modes are not part of WP-064.
-    fn assert_private_tree(dir: &Path, other: &dyn Fn(&Path) -> bool) {
-        if !other(dir) {
-            assert_eq!(mode(dir), 0o700, "{}", dir.display());
-        }
+    /// Every directory under `dir` is 0700 and every file 0600 (`.git`,
+    /// which git itself writes, left out).
+    fn assert_private_tree(dir: &Path) {
+        assert_eq!(mode(dir), 0o700, "{}", dir.display());
         for entry in std::fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
@@ -233,50 +228,65 @@ mod cli {
                 continue;
             }
             if entry.file_type().unwrap().is_dir() {
-                assert_private_tree(&path, other);
-            } else if !other(&path) {
+                assert_private_tree(&path);
+            } else {
                 assert_eq!(mode(&path), 0o600, "{}", path.display());
             }
         }
     }
 
     #[test]
-    fn init_creates_private_directories_and_files_under_any_umask() {
+    fn new_logbook_and_state_files_are_private_under_any_umask() {
         for umask in ["022", "000"] {
             let env = Env::new(Snapper::NoPermissions);
+            env.stub("omarchy", "exit 0");
             let root = env.tmp.path().join("logbook");
-            let out = with_umask(
-                &env.command(&[
-                    "init",
-                    "--non-interactive",
-                    "--path",
-                    root.to_str().unwrap(),
-                ]),
-                umask,
-            )
-            .output()
-            .unwrap();
-            assert_eq!(
-                out.status.code(),
-                Some(0),
-                "umask {umask}: {}",
-                stderr(&out)
-            );
+            let path = root.to_str().unwrap();
+            // init, then each command that creates a new kind of file: a
+            // ledger month, a case, an ADR, the agent launch log
+            for args in [
+                &["init", "--non-interactive", "--path", path][..],
+                &["log", "--", "made-up note"],
+                &["plan", "new", "--", "made-up case"],
+                &["plan", "start", "C-2026-001"],
+                &["decide", "--no-edit", "--", "made-up decision"],
+                &["agent", "start", "C-2026-001"],
+            ] {
+                let out = with_umask(&env.command(args), umask).output().unwrap();
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "umask {umask}, {args:?}: {}",
+                    stderr(&out)
+                );
+            }
 
-            let ledger = root.join("ledger");
-            assert_private_tree(&root, &|p| {
-                p.parent() == Some(ledger.as_path()) && p.extension().is_some_and(|e| e == "jsonl")
-            });
+            assert_private_tree(&root);
+            assert!(
+                std::fs::read_dir(root.join("ledger"))
+                    .unwrap()
+                    .any(|e| { e.unwrap().path().extension().is_some_and(|x| x == "jsonl") })
+            );
             // what the engine created under the home: config and state
-            assert_private_tree(&env.home.join(".config"), &|_| false);
+            assert_private_tree(&env.home.join(".config"));
+            assert_private_tree(&env.home.join(".local"));
             let state = env.home.join(".local/state/seldon");
-            assert_private_tree(&env.home.join(".local"), &|p| {
-                state.starts_with(p) || p == state.join("lock")
-            });
-            for file in ["index.json", "cursors.json"] {
+            for file in ["index.json", "cursors.json", "lock", "agent-launch.log"] {
                 assert_eq!(mode(&state.join(file)), 0o600, "{file}");
             }
         }
+    }
+
+    #[test]
+    fn a_missing_ledger_folder_is_created_private() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = env.init_logbook();
+        std::fs::remove_dir_all(root.join("ledger")).unwrap();
+        let out = with_umask(&env.command(&["log", "--", "made-up note"]), "022")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_private_tree(&root.join("ledger"));
     }
 
     #[test]
