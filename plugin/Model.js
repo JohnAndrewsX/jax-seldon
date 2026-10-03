@@ -672,10 +672,17 @@ function collectors(index) {
   return index && isObject(index.state) && Array.isArray(index.state.collectors) ? index.state.collectors : []
 }
 
+// The snapper banner's hint after *Run in terminal* (WP-054, issue #2).
+var SNAPPER_HINT = "When the command has finished, press Check again"
+
 // ADR-0011: snapper runs degraded until the user opts in. The banner shows the
 // engine's message as plain text and offers the constant fix. Action ids are
-// dispatched by Service.fix(actionId, "snapper").
-function snapperBanner(index) {
+// dispatched by Service.fix(actionId, "snapper"). *Check again* is a capture
+// (the same call as *Capture now*): only a capture rewrites the collector
+// state this banner reads; reloading the index would not (WP-054).
+// `hinted`: Run in terminal was clicked and the index has not changed since;
+// the banner then carries SNAPPER_HINT in `hint`.
+function snapperBanner(index, hinted) {
   var list = collectors(index)
   for (var i = 0; i < list.length; i++) {
     var c = list[i]
@@ -690,8 +697,10 @@ function snapperBanner(index) {
       command: SNAPPER_FIX_COMMAND,
       actions: [
         { id: "terminal", label: "Run in terminal" },
-        { id: "copy", label: "Copy" }
-      ]
+        { id: "copy", label: "Copy" },
+        { id: "capture", label: "Check again" }
+      ],
+      hint: hinted === true ? SNAPPER_HINT : ""
     }
   }
   return null

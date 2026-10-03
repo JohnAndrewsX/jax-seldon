@@ -40,6 +40,8 @@ done
 install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin/seldon"
 # The editor launcher the engine calls without a terminal records its argv.
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-launch-editor"
+# So does the floating-terminal launcher behind a banner's Run in terminal.
+install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-launch-floating-terminal-with-presentation"
 # The shell's Style.qml asks Hyprland and fontconfig for gaps, rounding and
 # the font; outside Hyprland it keeps its defaults when they fail.
 printf '#!/bin/sh\nexit 1\n' >"$work/bin/hyprctl"
@@ -200,13 +202,18 @@ expect yesterday 5 .view.cursor 5
 shows yesterday 5 "Snapshots aufgeräumt, 108 und 109 gelöscht."
 clean_log yesterday
 
-# 4. Snapper without permissions (ADR-0011): its banner on every tab.
-run snapper "$fx/index-variants/snapper-degraded.json" "view;tab:changelog;tab:system"
-for step in 1 2 3; do
+# 4. Snapper without permissions (ADR-0011): its banner on every tab, with
+#    Check again (WP-054); after Run in terminal, the hint under the buttons.
+run snapper "$fx/index-variants/snapper-degraded.json" "view;tab:changelog;tab:system;click:Run in terminal" \
+  HARNESS_RECORD="$work/snapper.record"
+for step in 1 2 3 4; do
   expect snapper $step .view.snapper "Snapshots not readable"
 done
 shows snapper 1 'sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes'
 shows snapper 1 "Run in terminal"
+shows snapper 1 "Check again"
+expect snapper 3 '[.texts[] | select(. == "When the command has finished, press Check again")] | length' 0
+shows snapper 4 "When the command has finished, press Check again"
 shows snapper 3 "failing · snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see \`seldon doctor\`."
 clean_log snapper
 

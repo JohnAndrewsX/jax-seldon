@@ -315,10 +315,11 @@ When something is wrong the panel shows one banner with a one-click fix:
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
 | Index format mismatch | Index format mismatch, with both contract versions | *Update in terminal* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older, the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
-| Snapshots not readable | Snapshots not readable, with the engine's message | *Run in terminal* / *Copy*: `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes` (once; Seldon never runs it on its own) |
+| Snapshots not readable | Snapshots not readable, with the engine's message | *Run in terminal* / *Copy*: `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes` (once; Seldon never runs it on its own); then *Check again* runs a capture, like *Capture now*, which clears the banner once snapshots are readable. After *Run in terminal* the banner says "When the command has finished, press Check again" |
 
-The engine is looked for when the shell starts and again on *Check again*
-(or `omarchy-shell jax.seldon.service refresh`), not on every capture.
+The engine is looked for when the shell starts and again on the status
+banner's *Check again* (or `omarchy-shell jax.seldon.service refresh`),
+not on every capture.
 
 ## Configure
 

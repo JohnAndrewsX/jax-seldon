@@ -9,8 +9,9 @@ import "../Model.js" as Model
 //
 // Renders one Model.bannerFor() object: title, the detail (wrapped; the
 // engine-missing one runs to a few lines), the fix command when there is
-// one (wrapped anywhere: the install one-liner is a long URL), and one
-// button per fix action. It only reports
+// one (wrapped anywhere: the install one-liner is a long URL), one
+// button per fix action, and under them the banner's `hint` when it has one
+// (the snapper banner after Run in terminal, WP-054). It only reports
 // clicks; Service.fix() carries them out. Every string is set as plain text.
 // Left of the text, the status's state pictogram (A11, Model.statusPictogram)
 // in the banner's tone, `pictogramSize` square: 48 in the panel, 96 in the
@@ -29,6 +30,7 @@ BorderSurface {
 
   readonly property color toneColor: banner && banner.tone === "urgent" ? urgent : accent
   readonly property string command: banner && banner.command ? banner.command : ""
+  readonly property string hint: banner && banner.hint ? banner.hint : ""
   readonly property string pictogram: banner ? Model.statusPictogram(banner.status) : ""
 
   visible: banner !== null
@@ -110,6 +112,17 @@ BorderSurface {
           onClicked: root.actionRequested(modelData.id)
         }
       }
+    }
+
+    Text {
+      width: parent.width
+      visible: root.hint !== ""
+      textFormat: Text.PlainText
+      text: root.hint
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      wrapMode: Text.Wrap
     }
   }
 }

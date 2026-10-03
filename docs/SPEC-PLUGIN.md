@@ -206,8 +206,13 @@ ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
 and *Open terminal*; contract
 mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, `yay -S jax-seldon` when the engine is older; snapshots
-not readable (ADR-0011) → the one-line snapper fix with *Copy* and *Open
-terminal*; not
+not readable (ADR-0011) → the one-line snapper fix with *Run in
+terminal*, *Copy* and *Check again* (WP-054, issue #2); *Check again*
+runs a capture, the same call as *Capture now* (`capture --all --json
+--quiet`, then `status --json`), because only a capture rewrites the
+collector state this banner reads (reloading the index would not); after
+*Run in terminal* the banner shows "When the command has finished, press
+Check again" under its buttons until the index next changes; not
 initialised → "Run `seldon init`" with *Open terminal*; index stale →
 *Capture now*; crisis → red strip "N changes in the red zone need a reason".
 

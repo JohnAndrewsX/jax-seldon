@@ -15,7 +15,7 @@ import "Model.js" as Model
 //
 // The index lives at ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json
 // (CONTRACT.md rule 1). The engine is probed once at start and again only on
-// "Check again"; the capture timer never probes.
+// the status banner's "Check again"; the capture timer never probes.
 //
 // Development overrides (never set them in a real session):
 //   SELDON_INDEX  read this file instead of the state index.
@@ -80,7 +80,11 @@ Item {
   // (SPEC-PLUGIN §5), only while its counts mean something.
   readonly property bool indexShown: index !== null && Model.showsCounts(status)
   readonly property string crisisText: indexShown ? Model.crisisText(index) : ""
-  readonly property var snapperBanner: indexShown ? Model.snapperBanner(index) : null
+  // The index text when the snapper banner's Run in terminal was clicked;
+  // empty when not. The banner's hint shows until an index with other
+  // content arrives (WP-054).
+  property string snapperHintIndex: ""
+  readonly property var snapperBanner: indexShown ? Model.snapperBanner(index, snapperHintIndex !== "") : null
   // The Prime Radiant's windows, series rows, slot counts and chart data for
   // every period (Model.periodTable: one pass per series, then the charts),
   // computed when the index changes: the overlay is created anew on each
@@ -140,6 +144,7 @@ Item {
   // ---- Index.
 
   function ingest(text) {
+    if (root.snapperHintIndex !== "" && text !== root.snapperHintIndex) root.snapperHintIndex = ""
     var result = Model.parseIndex(text)
     if (root.engineNotInitialised && result.ok
         && Model.timeMs(result.index.generatedAt) > root.notInitialisedAtMs)
@@ -151,6 +156,7 @@ Item {
   }
 
   function ingestFailure(error) {
+    root.snapperHintIndex = ""
     root.parsed = null
     root.fileState = error === FileViewError.FileNotFound ? "missing" : "invalid"
   }
@@ -468,12 +474,14 @@ Item {
     } else if (actionId === "terminal" && command !== "") {
       // Opens on the explicit click only (ADR-0004); `command` is a constant.
       Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", command])
+      if (bannerId === "snapper") root.snapperHintIndex = indexFile.text()
     } else if (actionId === "recheck") {
       root.probeEngine()
       root.reloadIndex()
     } else if (actionId === "build") {
       root.run(["status", "--json"])
     } else if (actionId === "capture") {
+      // Also the snapper banner's "Check again" (WP-054).
       root.captureNow()
     } else {
       return false
@@ -508,7 +516,10 @@ Item {
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),
       banner: root.banner ? root.banner.title : "",
       crisis: root.crisisText,
-      snapper: root.snapperBanner ? root.snapperBanner.title : ""
+      snapper: root.snapperBanner ? root.snapperBanner.title : "",
+      snapperDetail: root.snapperBanner ? root.snapperBanner.detail : "",
+      snapperActions: root.snapperBanner ? root.snapperBanner.actions.map(function(a) { return a.id + ":" + a.label }) : [],
+      snapperHint: root.snapperBanner ? root.snapperBanner.hint : ""
     }
   }
 
@@ -606,7 +617,8 @@ Item {
   }
 
   // Capture cycle (ADR-0005). A missing engine is looked for again only on
-  // "Check again", so a machine without it logs one probe per shell start.
+  // the status banner's "Check again", so a machine without it logs one
+  // probe per shell start.
   Timer {
     interval: root.captureIntervalMin * 60000
     repeat: true
