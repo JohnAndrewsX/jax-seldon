@@ -783,7 +783,8 @@ mod plan {
     }
 
     /// WP-057: a case id in two folders (a stale copy written back) is
-    /// reported by `index --check`, with both files.
+    /// reported by `index --check`, with both files; the user's to fix,
+    /// so exit 1, not the engine's exit 2 (WP-070).
     #[test]
     fn index_check_reports_a_case_in_two_folders() {
         let env = Env::new(Snapper::Missing);
@@ -800,15 +801,16 @@ mod plan {
         )
         .unwrap();
         let out = env.at(T0, &["index", "--check", "--json"]);
-        assert_eq!(out.status.code(), Some(2), "{}", stdout(&out));
+        assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
         let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         assert!(
-            message.contains(&format!(
-                "/cases: case {id} exists more than once (work/queued/{name}, work/completed/{name})"
+            message.starts_with(&format!(
+                "case {id} exists more than once (work/queued/{name}, work/completed/{name}); keep one file; "
             )),
             "{message}"
         );
+        assert!(!message.contains("schema"), "{message}");
     }
 
     #[test]

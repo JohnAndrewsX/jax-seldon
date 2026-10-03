@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 474b2ed -->
+<!-- source: en/10-troubleshooting.md @ 7e65d1d -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -12,17 +12,23 @@ der Engine und die häufigsten Probleme.
 seldon doctor
 ```
 
-Es prüft sechs Dinge und nennt für jedes, das nicht `ok` ist, eine
-Abhilfe:
+Es prüft elf Dinge und nennt für jedes, das nicht `ok` ist, eine
+Abhilfe. Es liest nur: Es ändert keine Datei, nimmt keine Sperre und
+führt nichts mit `sudo` aus.
 
 | Prüfung | `ok` heißt | Wenn sie nicht ok ist |
 |---|---|---|
 | `engine` | die Engine läuft; ihre Version und ihr Vertrag | (wenn du `doctor` ausführen kannst, ist das ok) |
-| `config` | `~/.config/seldon/config.toml` wurde gelesen | `degraded`: noch keine Konfiguration, Vorgaben in Gebrauch; Abhilfe `seldon init`. `error`: die Datei ist kein gültiges TOML |
+| `config` | `~/.config/seldon/config.toml` wurde gelesen, und seine `[redaction] patterns` lassen sich übersetzen | `degraded`: noch keine Konfiguration, Vorgaben in Gebrauch; Abhilfe `seldon init`. `error`: die Datei ist nicht lesbar, nicht gültig, oder ein Muster lässt sich nicht übersetzen; jeder Befehl bricht daran ab. Ist die Datei nicht lesbar oder nicht gültig, wird das Logbuch „not checked“ (sein Pfad steht in dieser Datei) |
 | `logbook` | das Logbuch existiert; Maschine, Sprache, Zahlen | `error`: an diesem Pfad nicht angelegt; die Abhilfe nennt den Befehl `seldon init` |
+| `cases` | jede Case-ID hat eine Datei | `error`: ein Case existiert zweimal (eine veraltete Kopie); behalte die Datei im Ordner ihres Status |
+| `ledger` | jede Zeile in `ledger/*.jsonl` ist ein Ereignis | `degraded`: Zeilen, die keine Ereignisse sind (ein abgerissener Schreibvorgang, eine Handänderung), werden übersprungen; die Zeile nennt Monat, Anzahl und Zeilen |
+| `fences` | die generierten Teile von `STATUS.md` und `DECISIONS.md` haben ihre Markerzeilen | `degraded`: eine Markerzeile fehlt, also lässt `seldon status` die Datei in Ruhe; oder ein End-Marker schließt keinen Abschnitt. `error`: die Datei ist nicht lesbar |
+| `collectors` | der letzte Capture jedes eingeschalteten Collectors ist gelungen | `degraded`: die Zeile nennt jeden fehlgeschlagenen Collector mit Meldung und Abhilfe |
+| `state` | `cursors.json`, `manifest.json` und `owned.json` in `~/.local/state/seldon` sind lesbar | `error`: die Datei ist beschädigt oder nicht lesbar; die Zeile sagt, was das kaputt macht; die Abhilfe verschiebt eine beschädigte Datei oder macht eine unlesbare lesbar |
 | `omarchy` | `omarchy-version` hat geantwortet | der Omarchy-Collector kann die Version nicht lesen |
 | `snapper` | Snapshots lassen sich auflisten | `degraded`: dein Benutzer darf keine Snapshots auflisten; siehe [Snapshots werden nicht aufgezeichnet](#snapshots-werden-nicht-aufgezeichnet) |
-| `git` | git ist da; das Logbuch ist ein Repository | git fehlt, oder das Logbuch ist kein Repository; dann ist Autocommit aus |
+| `git` | git ist da; das Logbuch ist ein Repository | git fehlt, oder das Logbuch ist kein Repository; dann ist Autocommit aus. `degraded`: etwas hindert jeden Autocommit (ein liegengebliebenes `.git/index.lock`, ein losgelöster HEAD, …); die Abhilfe sagt, was zu tun ist |
 
 `doctor --json` gibt dasselbe als JSON aus. Das Plugin liest es, um sein
 Banner zu wählen.

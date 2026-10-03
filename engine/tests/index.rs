@@ -959,3 +959,122 @@ fn a_torn_ledger_line_is_skipped_with_a_warning() {
     assert!(!status.contains("Robot"), "{status}");
     run(&["capture", "--source", "theme"]);
 }
+
+/// F-133: a corrupt `cursors.json` makes every capture fail, so every
+/// enabled collector is `ok: false` with that message (a disabled one
+/// stays as it is), the index carries a load warning, and the index
+/// still validates (no contract change).
+#[test]
+fn a_corrupt_cursors_file_marks_the_collectors_failing() {
+    const AT: &str = "2026-10-03T09:00:00+02:00";
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let config = env.config_file();
+    let text = read(&config);
+    assert!(text.contains("theme = true"), "{text}");
+    std::fs::write(&config, text.replace("theme = true", "theme = false")).unwrap();
+    let cursors = env.home.join(".local/state/seldon/cursors.json");
+    std::fs::write(&cursors, "{").unwrap();
+
+    let out = env.at(AT, &["index", "--check", "--json"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        common::stdout(&out),
+        common::stderr(&out)
+    );
+    let warnings = common::json(&out)["warnings"].clone();
+    assert!(
+        warnings.as_array().unwrap().iter().any(|w| w
+            .as_str()
+            .unwrap()
+            .starts_with("~/.local/state/seldon/cursors.json: corrupt or unreadable (")),
+        "{warnings}"
+    );
+    let index = json_file(&env.home.join(".local/state/seldon/index.json"));
+    common::assert_valid_index(&index);
+    let rows = index["state"]["collectors"].as_array().unwrap();
+    assert_eq!(rows.len(), 6);
+    for row in rows {
+        if row["name"] == "theme" {
+            assert_eq!(row["enabled"], false, "{row}");
+            assert_eq!(row["ok"], true, "{row}");
+            assert!(row.get("message").is_none(), "{row}");
+            continue;
+        }
+        assert_eq!(row["ok"], false, "{row}");
+        assert_eq!(row["lastRun"], Value::Null, "{row}");
+        let message = row["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("cursors.json is corrupt or unreadable, so every capture fails ("),
+            "{message}"
+        );
+    }
+
+    // a readable file again: the rows come from it as before
+    std::fs::remove_file(&cursors).unwrap();
+    let out = env.at(AT, &["index", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let index = json_file(&env.home.join(".local/state/seldon/index.json"));
+    assert!(
+        index["state"]["collectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["ok"] == true),
+        "{index}"
+    );
+}
+
+/// WP-057 follow-up: a case id in two files is the user's to fix.
+/// `index --check` refuses with exit 1 (tests/plan.rs); plain `index` and
+/// `status` write the index and warn, with both files and the fix.
+#[test]
+fn a_case_id_twice_warns_in_index_and_status() {
+    const AT: &str = "2026-10-03T09:00:00+02:00";
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let out = env.at(AT, &["plan", "new", "--json", "--", "Twice"]);
+    assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+    let id = common::json(&out)["case"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let queued = common::find_file(&root.join("work/queued"), &id);
+    let name = queued.file_name().unwrap().to_string_lossy().into_owned();
+    std::fs::write(
+        root.join("work/completed").join(&name),
+        read(&queued).replace("status: queued", "status: completed"),
+    )
+    .unwrap();
+    let want = format!(
+        "case {id} exists more than once (work/queued/{name}, work/completed/{name}); keep one file"
+    );
+    for args in [["index", "--json"], ["status", "--json"]] {
+        let out = env.at(AT, &args);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{args:?}: {}",
+            common::stderr(&out)
+        );
+        let warnings = common::json(&out)["warnings"].clone();
+        assert!(
+            warnings
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|w| *w == json!(want)),
+            "{args:?}: {warnings}"
+        );
+    }
+    let out = env.at(AT, &["index"]);
+    assert!(
+        common::stdout(&out).contains(&format!("\nwarning: {want}")),
+        "{}",
+        common::stdout(&out)
+    );
+    let out = env.at(AT, &["index", "--check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", common::stderr(&out));
+}

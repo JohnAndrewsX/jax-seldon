@@ -1326,3 +1326,30 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Tests that prove "not read again"** need the same inode: `fs::write`
   truncates in place, `set_modified` puts the old mtime back; an atomic
   rename would change the inode and defeat the fixture.
+
+## 2026-10-03 · WP-070 (Engine)
+
+- **`git checkout -- <file>` to undo a mutant also undoes your uncommitted
+  fix in that file.** I lost a small doctor change that way and had to
+  re-apply it. Commit (or WIP-commit) before you run mutants. Then
+  `git checkout HEAD -- <file>` restores exactly the committed state.
+- **Pre-fix runs without stash:** after committing, run
+  `git checkout <base> -- engine/src`, run the new tests with
+  `--no-fail-fast`, then `git checkout HEAD -- engine/src`. The new tests
+  stay and only the code goes back. The stash stack is shared between
+  worktrees, so never use it.
+- **The `init` STATUS.md has no fence.** Text appended to it turns it into
+  "header but no fence", and `status` then leaves it alone. A test of
+  fence handling must run `seldon status` first, so that the fence
+  exists.
+- **Where warnings go:** `index` and `status` print theirs on stdout as
+  `warning: …` (and in `--json` `warnings`). The rebuild after a writing
+  command and the hooks print `seldon: warning: …` on stderr. Assert on
+  the right stream.
+- **`plan new --json` puts the id under `case.id`**, not at the top level.
+- **A mutant whose `None` loses its type does not compile**
+  (`error[E0282]`). Write `None::<String>`. A build error is not a
+  killed mutant.
+- **doctor's "logbook" can be `null`** (since WP-070, with an
+  unparsable config.toml). Anything that reads `doctor --json` must
+  allow it.

@@ -27,7 +27,7 @@ Usage: seldon [OPTIONS] [COMMAND]
 Commands:
   contract-version  Print the engine/plugin contract version
   init              Create a logbook (wizard; --non-interactive takes defaults)
-  doctor            Check engine, config, logbook, omarchy, snapper and git
+  doctor            Check engine, config, logbook, collector state, omarchy, snapper and git
   capture           Run collectors and append new events to the ledger
   log               Write a note: a ledger event and a journal entry
   event             Record an event by hand (hooks, scripts)
@@ -133,14 +133,16 @@ Examples:
 
 ### seldon doctor
 
-Checks the engine, the config, the logbook, Omarchy, snapper and git.
-Each line says `ok`, `degraded` or `error`, and a broken check prints the
-command that fixes it. Exit 0 when nothing is an error, 1 when a check is
-an error, 3 when the logbook is not initialised.
+Checks the engine, the config, the logbook (cases, ledger, generated
+fences), the collectors' last capture and state files, Omarchy, snapper
+and git. It only reads. Each line says `ok`, `degraded` or `error`, and a
+broken check prints the command that fixes it. Exit 0 when nothing is an
+error, 1 when a check is an error (also when `config.toml` cannot be read
+or parsed), 3 when the logbook is not initialised.
 
 <!-- help: seldon doctor -->
 ```text
-Check engine, config, logbook, omarchy, snapper and git
+Check engine, config, logbook, collector state, omarchy, snapper and git
 
 Usage: seldon doctor [OPTIONS]
 
