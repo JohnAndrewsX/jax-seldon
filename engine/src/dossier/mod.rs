@@ -775,12 +775,23 @@ pub fn deviations_table(body: Option<&str>, cased: &[Cased]) -> String {
     }
     let mut t = ensure_newline(&t);
     for c in cased {
-        if listed.contains(&c.path) || c.path.contains('|') {
+        if is_listed(&listed, &c.path) || c.path.contains('|') {
             continue;
         }
         let _ = writeln!(t, "| {} |  | {} | [[{}]] |", c.path, c.date, c.case);
     }
     t
+}
+
+/// Whether `cell` (a path cell of the fence body) is `path`: as written
+/// now, [`views::neutralise`]d like every body [`Files::set`] writes
+/// (WP-075 review), or as an older run wrote it.
+fn same_path(cell: &str, path: &str) -> bool {
+    cell == path || cell == views::neutralise(path)
+}
+
+fn is_listed(listed: &[String], path: &str) -> bool {
+    listed.iter().any(|l| same_path(l, path))
 }
 
 /// The trimmed cells of a table line.
@@ -802,7 +813,7 @@ fn fill_case(line: &str, cased: &[Cased]) -> Option<String> {
     let (core, tail) = line.split_at(line.trim_end().len());
     let inner = core.strip_prefix('|')?.strip_suffix('|')?;
     let (path, _) = inner.split_once('|')?;
-    let c = cased.iter().find(|c| c.path == path.trim())?;
+    let c = cased.iter().find(|c| same_path(path.trim(), &c.path))?;
     let start = inner.rfind('|')?;
     let case = inner[start + 1..].trim();
     if !(case.is_empty() || case == "—" || case == "-") {

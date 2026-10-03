@@ -48,6 +48,7 @@ use crate::dossier::{self, FENCES};
 use crate::error::{Error, Result};
 use crate::frontmatter::Document;
 use crate::index::load::{fence_table, has_table_separator};
+use crate::index::views;
 use crate::logbook::Logbook;
 use crate::logbook::cases::{self, LOG_COMMENT};
 use crate::model::{
@@ -1144,7 +1145,9 @@ fn plan_deviations(
             skipped.push(skip("names no path (`~/…` or `/…`)"));
             continue;
         };
-        if listed.contains(&path) {
+        // the body is neutralised (`dossier::Files::set`); a kit path has no
+        // white space, so it never holds a marker, but compare both forms
+        if listed.contains(&path) || listed.contains(&*views::neutralise(&path)) {
             skipped.push(skip(&format!("`{path}` is already listed")));
             continue;
         }

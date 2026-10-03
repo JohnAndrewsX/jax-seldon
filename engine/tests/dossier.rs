@@ -775,3 +775,71 @@ fn utf8_bodies(lb: &Path) -> BTreeMap<String, String> {
         .flat_map(|t| fences(&t))
         .collect()
 }
+
+/// WP-075 review B1: a cased config path holding a fence marker is written
+/// neutralised, and the next run finds that row again: one row, filled
+/// once, and a second run changes nothing.
+#[test]
+fn a_marker_in_a_cased_path_is_listed_once() {
+    let env = Env::new(Snapper::Missing);
+    env.query_shims();
+    let lb = fixture_copy(&env);
+    let event = |path: &str| {
+        run_at(
+            &env,
+            &lb,
+            NOW,
+            &[
+                "event",
+                "config",
+                "config-change",
+                "--subject",
+                path,
+                "--case",
+                "C-2026-004",
+            ],
+            0,
+        );
+    };
+    // a new row for one path, the empty case cell of a user row for another
+    let added = "~/.config/a<!-- seldon:end -->b.conf";
+    let filled = "~/.config/c<!-- seldon:end -->d.conf";
+    let path = lb.join("system/deviations.md");
+    let user_row = "| ~/.config/c<!--\u{200b} seldon:end -->d.conf | mine | 2026-09-01 | — |\n";
+    let text = read(&path).replacen(
+        "<!-- seldon:end -->",
+        &format!("{user_row}<!-- seldon:end -->"),
+        1,
+    );
+    std::fs::write(&path, &text).unwrap();
+    event(added);
+    event(filled);
+
+    let out = dossier(&env, &lb, &["--section", "deviations"]);
+    assert_eq!(out["sections"]["deviations.table"], "written", "{out}");
+    let first = read(&path);
+    let body = &fences(&first)
+        .into_iter()
+        .find(|(n, _)| n == "deviations.table")
+        .unwrap()
+        .1;
+    assert_eq!(
+        body.matches("a<!--\u{200b} seldon:end -->b.conf").count(),
+        1,
+        "{body}"
+    );
+    assert_eq!(body.matches("d.conf").count(), 1, "{body}");
+    assert!(
+        body.contains("| ~/.config/c<!--\u{200b} seldon:end -->d.conf | mine | 2026-09-01 | [[C-2026-004]] |\n"),
+        "{body}"
+    );
+    for _ in 0..2 {
+        let again = dossier(&env, &lb, &["--section", "deviations"]);
+        assert_eq!(
+            again["sections"]["deviations.table"], "unchanged",
+            "{again}"
+        );
+        assert_eq!(again["files"], json!([]), "{again}");
+        assert_eq!(read(&path), first);
+    }
+}
