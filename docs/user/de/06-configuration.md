@@ -156,7 +156,7 @@ du als reguläre Ausdrücke ein; jeder ersetzt seinen ganzen Treffer:
 
 ```toml
 [redaction]
-patterns = ["MYAPP_KEY=\\S+", "xoxb-[0-9A-Za-z-]+"]
+patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 ```
 
 Ein ungültiges Muster ist ein Fehler (Exit 1): Seldon schreibt lieber gar

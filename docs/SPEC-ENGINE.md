@@ -552,18 +552,38 @@ warm. Measured in `cargo bench` with the fixture logbook scaled ×10.
 
 ## 7. Redaction
 
-Before writing any event, `meta.command` and `detail` are passed through
-redaction: `--password`, `token=`, `Authorization:`, `AKIA[0-9A-Z]{16}`,
-`ghp_[A-Za-z0-9]{36}`, `sk-[A-Za-z0-9]{20,}`, anything after `-p ` for
-`mysql|psql|smbclient`, URLs with userinfo, and user-supplied patterns in
-`config.toml [redaction] patterns`. Replacement: `‹redacted›`. The hook
-never records stdin/stdout of commands, only the command line. Redaction
-over-matches by design (WP-004): `sk-` also matches `sk_`/`sk-proj-`,
-`token=` is case-insensitive, quoted values are redacted whole, mysql's
-attached `-pSECRET` and psql's `-p` port are both redacted, URL userinfo is
-cut up to the last `@` before the path. An invalid user pattern is a user
-error (exit 1): Seldon refuses to write rather than leak. `detail` is cut
-at 4096 characters.
+Before writing any event, `subject`, `detail` and every string value of
+`meta` are passed through redaction. The commands that write free text
+into the logbook (`log`, `plan new` and the `plan` step reasons, `decide`,
+`drift explain|dismiss`) pass that text through the same redaction before
+the first write, so the ledger, the journal, case and decision files,
+`STATUS.md` and the index hold the same redacted text (WP-062). The rules
+(`redact::BUILTIN`, in this order): URLs with userinfo; `--password`;
+`--token`, `--api-key`, `--with-token`, `--secret`, `--client-secret` and
+similar options; `token=`; `…KEY=`, `…SECRET=`, `…PASSWORD=`, `…PASSWD=`,
+`…PASSPHRASE=`, `…_PWD=`, `…_PASS=`, `SSHPASS=` assignments (also
+`PGPASSWORD=`, `?api_key=`); `Authorization:`; `X-…Key:`, `X-…Token:`,
+`X-…Secret:`, `X-…Auth…:`, `Api-Key:`, `Private-Token:` headers;
+`(AKIA|ASIA)[0-9A-Z]{16}`; `gh[pousr]_[A-Za-z0-9]{36,}` and
+`github_pat_…`; `glpat-…`; `xox[abposr]-…`; `sk-`/`sk_` keys
+(`\bsk[-_][A-Za-z0-9_-]{20,}`); anything after `-p ` for
+`mysql|psql|smbclient`; the value after `curl -u`/`--user`; after
+`sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
+login`; and user-supplied patterns in `config.toml [redaction] patterns`.
+Replacement: `‹redacted›`. The hook never records stdin/stdout of
+commands, only the command line. Redaction over-matches by design
+(WP-004): the `sk` rule also matches `sk_`/`sk-proj-`/`sk_live_` (at a
+word start, so `task-…` is not cut), `token=` and the assignments are
+case-insensitive, quoted values are redacted whole, mysql's attached
+`-pSECRET` and psql's `-p` port are both redacted. URL userinfo that
+holds a `:` is cut from `://` up to the last `@` before the next white
+space or quote, so a password may contain `/ ? # : @`; userinfo without
+a `:` (a bare token) is cut up to the last `@` before the path. Redacting
+twice gives the same text: a match that lies inside an existing
+`‹redacted›` is left alone. An invalid user pattern is a user error
+(exit 1): Seldon refuses to write rather than leak. `subject` is cut at
+512 and `detail` at 4096 characters after redaction. Files written before
+a rule existed are not rewritten.
 
 `[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
 pattern with `/` matches the full path (`~/` = home), as a file or as a
