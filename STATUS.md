@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-065 | views and ledger: robust fences, per-line decoding | Engine | `engine-065` (opus) | `wt/WP-065` · `wp/065-review` | 2026-10-03 |
+| WP-070 | doctor: invalid config, corrupt state, bad patterns; index ok:false | Engine | `engine-070` (opus) | `wt/WP-070` · `wp/070-review` | 2026-10-03 |
 | WP-069 | config collector: scope, default skips, home paths, rehash, dedupe | Engine | `engine-069` (opus) | `wt/WP-069` · `wp/069-review` | 2026-10-03 |
 | WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
 | WP-072 | ci: pin actions and images; audit gates the release | Packaging | `ci-072` (opus) | `wt/WP-072` · `wp/072-review` | 2026-10-03 |
@@ -39,6 +39,9 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-065 fence values cannot end their fence, a damaged STATUS.md
+  is left alone and reported, ledger months decoded line by line with bad
+  lines skipped, actor and case checked on load (two Opus rounds) — merged.
 - 2026-10-03 WP-066 hand-edited frontmatter stays valid on save (read back
   before write, refused unchanged otherwise), BOM and padded fences, case
   ids with control characters refused on load (Opus review APPROVE) —
