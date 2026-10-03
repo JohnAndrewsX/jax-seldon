@@ -972,8 +972,15 @@ fn a_value_with_line_breaks_stays_inside_its_code_span() {
         &lb,
         "packages.md",
         "packages.explicit",
-        &["- firefox · repo · user · pre-logbook".to_string()],
+        &[
+            "- firefox · repo · user · pre-logbook".to_string(),
+            "- base-devel · repo · omarchy-base · pre-logbook".to_string(),
+        ],
     );
+    // without a version in the dossier, the omarchy-base line names the
+    // version of the last update event
+    let omarchy = lb.join("system/omarchy.md");
+    std::fs::write(&omarchy, read(&omarchy).replace("- version: 4.0.7-1\n", "")).unwrap();
     let ts = "2026-10-01T17:20:00+02:00";
     let plugin = |id: &str, subject: &str, enabled: Option<bool>| {
         let mut meta = json!({ "version": "1.0" });
@@ -987,6 +994,24 @@ fn a_value_with_line_breaks_stays_inside_its_code_span() {
         })
     };
     let dismissed = test_id("BRKS", 1);
+    let mut by_agent = pacman(
+        &test_id("BRKS", 6),
+        ts,
+        "install",
+        "agentpkg",
+        Some("pacman -S agentpkg"),
+    );
+    by_agent["actor"] = json!(format!("agent:{}", multi_line("ACT")));
+    let mut cased = pacman(
+        &test_id("BRKS", 7),
+        ts,
+        "install",
+        "casedpkg",
+        Some("pacman -S casedpkg"),
+    );
+    cased["case"] = json!(multi_line("CAS"));
+    let mut cased_plugin = plugin(&test_id("BRKS", 8), "io.example.cased", Some(false));
+    cased_plugin["case"] = json!(multi_line("CAS"));
     append(
         &lb,
         &[
@@ -1016,6 +1041,17 @@ fn a_value_with_line_breaks_stays_inside_its_code_span() {
                 "subject": multi_line("THM"), "detail": "x", "actor": "human",
                 "zone": "yellow", "meta": {}
             }),
+            // §1 base version, and the omarchy-base line of §2
+            json!({
+                "id": test_id("BRKS", 9), "ts": "2026-10-01T17:22:00+02:00",
+                "source": "omarchy", "kind": "update", "subject": "omarchy",
+                "detail": "x", "actor": "system", "zone": "red",
+                "meta": { "from": "4.0.7-1", "to": multi_line("VER") }
+            }),
+            // §2 agent suffix and §7 actor; §2 case heading, §4 case suffix
+            by_agent,
+            cased,
+            cased_plugin,
             // §6 a unit file (restore, then reload), §7 open
             config(
                 &test_id("BRKS", 5),
@@ -1047,13 +1083,14 @@ fn a_value_with_line_breaks_stays_inside_its_code_span() {
     // every value is there, escaped, in its section
     let shown = |tag: &str| format!("n{tag}\\n```sh\\necho {tag}\\n```");
     for (heading, tags) in [
-        ("2. Packages", &["PKG"][..]),
-        ("4. Plugins", &["PLA", "PLB"]),
+        ("1. Base", &["VER"][..]),
+        ("2. Packages", &["PKG", "VER", "ACT", "CAS"]),
+        ("4. Plugins", &["PLA", "PLB", "CAS"]),
         ("5. Theme", &["THM"]),
         ("6. User units", &["UNT"]),
         (
             "7. Open questions",
-            &["PKG", "UNT", "DSM", "THM", "PLA", "PLB"],
+            &["PKG", "UNT", "DSM", "THM", "PLA", "PLB", "ACT"],
         ),
     ] {
         let body = section(&text, heading).join("\n");

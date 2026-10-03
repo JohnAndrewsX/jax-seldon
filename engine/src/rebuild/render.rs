@@ -180,7 +180,7 @@ pub fn text(r: &Rebuild, language: Language) -> (String, Vec<String>) {
     t.push_str("\n## 1. Base\n");
     match &r.base.version {
         Some(v) => {
-            let _ = write!(t, "- Omarchy {v}");
+            let _ = write!(t, "- Omarchy {}", visible(v));
             if let Some(d) = &r.base.updated {
                 let _ = write!(t, " · {} {d}", w.updated_on);
             }
@@ -239,7 +239,7 @@ pub fn text(r: &Rebuild, language: Language) -> (String, Vec<String>) {
             let [more, class] = w.more_with_omarchy;
             let _ = write!(t, "\n{} {more}", before.omarchy);
             if let Some(v) = &before.version {
-                let _ = write!(t, " {v}");
+                let _ = write!(t, " {}", visible(v));
             }
             let _ = writeln!(t, " {class}");
         }
@@ -254,7 +254,7 @@ pub fn text(r: &Rebuild, language: Language) -> (String, Vec<String>) {
             group = Some(case);
             match case {
                 Some(id) => {
-                    let _ = write!(t, "\n### [[{id}]]");
+                    let _ = write!(t, "\n### [[{}]]", visible(id));
                     if let Some(title) = &p.why.case_title {
                         let _ = write!(t, " {}", one_line(title));
                     }
@@ -577,7 +577,7 @@ fn not_reproduced(value: &str, w: &Words) -> String {
 fn suffix(why: &Why, w: &Words, with_case: bool) -> String {
     let mut s = String::new();
     if with_case && let Some(case) = &why.case {
-        let _ = write!(s, " · [[{case}]]");
+        let _ = write!(s, " · [[{}]]", visible(case));
         if let Some(title) = &why.case_title {
             let _ = write!(s, " {}", one_line(title));
         }
@@ -598,7 +598,7 @@ fn suffix(why: &Why, w: &Words, with_case: bool) -> String {
         let _ = write!(s, " · {}", w.open);
     }
     if let Some(agent) = &why.agent {
-        let _ = write!(s, " · {agent}");
+        let _ = write!(s, " · {}", visible(agent));
     }
     if let Some(id) = &why.event {
         let _ = write!(s, " · {}", code(id));
@@ -618,13 +618,13 @@ fn drift_line(d: &DriftItem, w: &Words) -> String {
         let _ = write!(line, " {}", one_line(detail));
     }
     if d.actor != "system" {
-        let _ = write!(line, " · {}", d.actor);
+        let _ = write!(line, " · {}", visible(&d.actor));
     }
     if let Some(n) = d.members {
         let _ = write!(line, " · {n} {}", w.group);
     }
     if let Some(case) = &d.proposed_case {
-        let _ = write!(line, " · {} [[{case}]]", w.proposed);
+        let _ = write!(line, " · {} [[{}]]", w.proposed, visible(case));
     }
     let _ = writeln!(line, " · {}", code(&d.event_id));
     line
@@ -673,7 +673,8 @@ fn code(s: &str) -> String {
 }
 
 /// `s` with every control character (C0, DEL, C1) and U+2028/U+2029
-/// written as an escape.
+/// written as an escape; for ledger values printed outside a code span
+/// (version, actor, case id) and inside [`code`].
 fn visible(s: &str) -> std::borrow::Cow<'_, str> {
     let escaped = |c: char| c.is_control() || c == '\u{2028}' || c == '\u{2029}';
     if !s.chars().any(escaped) {
