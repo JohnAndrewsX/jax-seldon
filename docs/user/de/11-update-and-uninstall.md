@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 6f8f1a8 -->
+<!-- source: en/11-update-and-uninstall.md @ eaea010 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -111,17 +111,28 @@ Engine, also führ sie vor Schritt 5 aus.
    seldon init --remove-theme-hook
    ```
 
-4. Die Hooks von Claude Code liegen in `.claude/settings.json` des
-   Logbuchs. Sie gehen mit dem Logbuch. Hast du sie in
-   `~/.claude/settings.json` installiert, nimm sie aus dieser Datei
-   heraus; deine eigenen Einstellungen und Hooks bleiben:
+4. Die Hooks von Claude Code. Behältst du das Logbuch, nimm sie aus ihm
+   heraus: Sie liegen in `.claude/settings.json` des Logbuchs, und ohne
+   diesen Schritt ruft Claude Code weiter ein `seldon` auf, das es nicht
+   mehr gibt. Der Befehl entfernt nur die Hooks von Seldon; deine
+   eigenen Einstellungen und Hooks bleiben, und eine Datei, die sonst
+   nichts enthielt, wird gelöscht:
+
+   ```sh
+   seldon hook uninstall claude-code
+   ```
+
+   Hast du sie auch in `~/.claude/settings.json` installiert, nimm sie
+   auch aus dieser Datei heraus, mit demselben Befehl und `--settings`:
 
    ```sh
    seldon hook uninstall claude-code --settings ~/.claude/settings.json
    ```
 
-   Das nächste `seldon capture` hält beide Entfernungen fest, ohne Drift
-   zu öffnen, falls du das Logbuch behältst.
+   Jeder Befehl gibt aus, was er entfernt hat, oder sagt, dass nichts
+   installiert war. Das nächste `seldon capture` hält beide Entfernungen
+   fest, ohne Drift zu öffnen. Löschst du das Logbuch ebenfalls, gehen
+   seine eigenen Hooks mit ihm, und nur der zweite Befehl ist nötig.
 
 5. Die Engine. Der Installer entfernt genau die Dateien, die er
    installiert hat, Manpage und Vervollständigung eingeschlossen; eine

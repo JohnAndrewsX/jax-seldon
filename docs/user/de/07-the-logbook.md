@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ e6fcf8d -->
+<!-- source: en/07-the-logbook.md @ eaea010 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -183,6 +183,48 @@ Für ein zweites Logbuch, etwa zum Testen, führst du
 `seldon init --path <DIR>` aus. `init` trägt den neuen Ordner als
 `logbook` in die Konfiguration ein. Stell das danach zurück oder nimm
 `--logbook <DIR>` für einzelne Befehle.
+
+## Den Zustandsordner sichern und wiederherstellen
+
+Das Logbuch ist nicht alles, was Seldon aufbewahrt. Die eigene
+Buchführung der Engine liegt in `~/.local/state/seldon/`:
+
+| Datei | Was sie enthält |
+|---|---|
+| `cursors.json` | wo jeder Collector aufgehört hat zu lesen, gebunden an den Pfad deines Logbuchs |
+| `manifest.json` | ein Fingerabdruck jeder beobachteten Konfigurationsdatei |
+| `owned.json` | Dateien, die Seldon selbst geschrieben hat und die das nächste Capture noch nicht gesehen hat; nur vorhanden, solange eine wartet |
+| `index.json` | was das Plugin liest; die Engine baut sie neu auf, sie braucht keine Sicherung |
+
+Geht dieser Ordner verloren, schlägt nichts fehl, und nichts warnt dich.
+Die Collectors fangen beim aktuellen Stand neu an. `pacman` und
+`snapper` lesen ihre Quellen erneut und überspringen, was das Ledger
+schon enthält. Die Collectors, die Zustände vergleichen (Konfiguration,
+Plugins, Omarchy, Theme), nehmen die Maschine, wie sie jetzt ist, als
+neuen Ausgangspunkt, und eine Änderung, die geschah, während der Zustand
+fehlte, wird nicht festgehalten.
+
+Sichere den Ordner zusammen mit dem Logbuch, während kein `seldon`-Befehl
+läuft:
+
+```sh
+tar -C ~/.local/state -czf ~/seldon-state-2026-10-03.tar.gz seldon
+```
+
+Zum Wiederherstellen legst du den Ordner zurück und führst ein Capture
+aus. Stelle ihn für denselben Logbuchpfad wieder her: Ein Zustand, der
+an einen anderen Pfad gebunden ist, fängt neu an, wie nach dem
+[Verschieben des Logbuchs](#das-logbuch-verschieben-oder-kopieren). Eine
+ältere Sicherung ist besser als keine; das nächste Capture hält fest,
+was sich seitdem geändert hat:
+
+```sh
+rm -r ~/.local/state/seldon
+tar -C ~/.local/state -xzf ~/seldon-state-2026-10-03.tar.gz
+seldon capture
+```
+
+`seldon doctor` zeigt danach nur `ok`.
 
 ---
 
