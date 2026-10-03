@@ -59,6 +59,23 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         .map(|id| cases::find(&logbook, id))
         .transpose()?;
 
+    let mut entry = text.clone();
+    if !args.tags.is_empty() {
+        let tags: Vec<String> = args.tags.iter().map(|t| format!("#{t}")).collect();
+        entry.push('\n');
+        entry.push_str(&tags.join(" "));
+    }
+    // the journal day is read before the ledger is written: a day file
+    // the engine cannot read fails the note before anything changes, so
+    // no retry leaves a second ledger note (WP-057)
+    let day = journal::prepare(
+        &logbook,
+        &ctx.now,
+        &args.actor,
+        args.case_id.as_deref(),
+        &entry,
+    )?;
+
     let mut meta = Meta::default();
     if !args.tags.is_empty() {
         meta.extra
@@ -76,20 +93,7 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     .meta(meta);
     // the ledger first: it assigns the id the case file records
     let event = emit_one(&lock, &config, &logbook, event)?;
-
-    let mut entry = text.clone();
-    if !args.tags.is_empty() {
-        let tags: Vec<String> = args.tags.iter().map(|t| format!("#{t}")).collect();
-        entry.push('\n');
-        entry.push_str(&tags.join(" "));
-    }
-    let day = journal::append(
-        &logbook,
-        &ctx.now,
-        &args.actor,
-        args.case_id.as_deref(),
-        &entry,
-    )?;
+    let day = day.write()?;
     if let Some(file) = case_file.as_mut() {
         file.attach(&event.id.to_string(), &event.actor);
         file.save(&logbook)?;

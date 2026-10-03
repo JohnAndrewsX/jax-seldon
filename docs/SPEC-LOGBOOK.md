@@ -143,6 +143,10 @@ Zed installiert, Keybindings nach Omarchy-Defaults gesetzt. Gelernt: …
 ```
 
 Entries are appended as `## HH:MM · actor · case?` headings. Never rewritten.
+A day file without frontmatter (an empty or hand-written daily note, e.g.
+from Obsidian) is accepted: the next entry puts the block (`type: journal`,
+`date`, `cases`) in front of its text, which is kept unchanged; a day file
+with broken frontmatter is a user error and is left untouched (WP-057).
 
 ### Decision (`decisions/ADR-NNNN-slug.md`)
 

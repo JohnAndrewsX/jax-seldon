@@ -230,11 +230,58 @@ pub fn rebuild_if_initialised(ctx: &Context) {
 }
 
 /// [`rebuild_if_initialised`] for latency-bound callers (the hook path,
-/// WP-009, 5 ms budget): spawns no `git`. `logbook.git.head` is read from
-/// the `.git` files ([`git_head_fast`]) and `dirty` is left out (the
-/// schema allows it); the next full rebuild fills it in again.
-pub fn rebuild_if_initialised_fast(ctx: &Context) {
+/// WP-009): spawns no `git`. `logbook.git.head` is read from the `.git`
+/// files ([`git_head_fast`]) and `dirty` is left out (the schema allows
+/// it); the next full rebuild fills it in again.
+///
+/// The rebuild reads the whole logbook, so its cost grows with the ledger
+/// (WP-057). Above [`FAST_REBUILD_MAX_LINES`] ledger lines it does nothing
+/// and returns `false`: the next `capture` or `status` (the plugin runs one
+/// at least every 15 minutes) brings the index up to date. Counting stops
+/// at the threshold, so a large ledger costs one bounded read.
+pub fn rebuild_if_initialised_fast(ctx: &Context) -> bool {
+    let config = ctx.load_config().ok().flatten().unwrap_or_default();
+    let (root, _) = ctx.resolve_logbook(None, Some(&config));
+    if ledger_lines_exceed(&root.join("ledger"), FAST_REBUILD_MAX_LINES) {
+        return false;
+    }
     rebuild_reporting(ctx, GitProbe::HeadOnly);
+    true
+}
+
+/// Ledger lines up to which [`rebuild_if_initialised_fast`] rebuilds
+/// (SPEC-ENGINE §8; release, dev host: the rebuild adds about 3 ms to a
+/// 2 ms hook call at 1000 lines).
+pub const FAST_REBUILD_MAX_LINES: usize = 1000;
+
+/// Whether the `*.jsonl` files in `dir` hold more than `max` lines. Reads
+/// at most until the count passes `max`; an unreadable directory or file
+/// counts as nothing (the rebuild reports it).
+fn ledger_lines_exceed(dir: &Path, max: usize) -> bool {
+    use std::io::Read as _;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    let mut lines = 0;
+    let mut buf = vec![0u8; 64 * 1024];
+    for path in entries.filter_map(|e| e.ok()).map(|e| e.path()) {
+        if path.extension().is_none_or(|e| e != "jsonl") {
+            continue;
+        }
+        let Ok(mut file) = std::fs::File::open(&path) else {
+            continue;
+        };
+        while let Ok(n) = file.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            lines += buf[..n].iter().filter(|&&b| b == b'\n').count();
+            if lines > max {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// How `logbook.git` is filled in by a rebuild.

@@ -68,6 +68,40 @@ impl Hooks {
         child.wait_with_output().unwrap()
     }
 
+    /// `seldon hook <name>` with `payload` on stdin, started and not
+    /// waited for.
+    fn spawn_hook(&self, name: &str, payload: &str) -> std::process::Child {
+        let mut child = self
+            .command(&["hook", name], Some(NOW))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        child
+    }
+
+    /// The case `id` as `plan show --json` reports it, after checking that
+    /// exactly one file holds it.
+    fn case_json(&self, id: &str) -> Value {
+        let files: Vec<PathBuf> = ["queued", "active", "completed"]
+            .iter()
+            .flat_map(|f| std::fs::read_dir(self.logbook.join("work").join(f)).unwrap())
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(id))
+            .collect();
+        assert_eq!(files.len(), 1, "{files:?}");
+        let out = self.run(&["plan", "show", id, "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        json(&out)["case"].clone()
+    }
+
     /// `seldon hook <name>` with `payload`: must be silent and exit 0.
     fn hook(&self, name: &str, payload: &str) -> Output {
         let out = self.piped(&["hook", name], payload, Some(NOW));
@@ -412,6 +446,25 @@ mod claude_code {
         assert_eq!(h.commands().len(), 1);
     }
 
+    /// WP-057: a 5 s hold (a capture with a slow collector) is waited for;
+    /// the old 2 s patience dropped the command.
+    #[test]
+    fn a_lock_held_for_five_seconds_is_waited_for() {
+        let h = Hooks::new();
+        let lock = seldon::logbook::lock::acquire(&h.env.lock_file()).unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            drop(lock);
+        });
+        let out = h.hook(
+            "claude-code",
+            &payload("claude-code-mutating.json", "PreToolUse"),
+        );
+        release.join().unwrap();
+        assert_eq!(stderr(&out), "");
+        assert_eq!(h.commands().len(), 1);
+    }
+
     #[test]
     fn fast_enough() {
         // < 5 ms is the release budget (measured in the handover); a debug
@@ -427,6 +480,127 @@ mod claude_code {
         }
         let each = start.elapsed() / 10;
         assert!(each.as_millis() < 400, "{each:?} per hook call");
+    }
+}
+
+/// WP-057: the hook reads the case under the state lock, like every other
+/// case writer, so what a lock holder changed is never written back.
+mod case_under_the_lock {
+    use super::*;
+    use seldon::ledger::Ledger;
+    use seldon::logbook::{Logbook, cases, lock};
+    use seldon::model::CaseStatus;
+    use seldon::model::event::{Event, Kind, Source};
+    use seldon::redact::Redactor;
+
+    /// A PreToolUse payload for a red command with its own tool-use id.
+    fn red(n: usize) -> String {
+        tool_call(
+            "Bash",
+            json!({ "command": format!("yay -S --noconfirm pkg-{n}") }),
+            &format!("toolu_race_{n}"),
+        )
+    }
+
+    fn event_ids(case: &Value) -> Vec<String> {
+        case["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_change_made_while_the_hook_waits_is_kept() {
+        let h = Hooks::new();
+        let id = h.active_case();
+        let held = lock::acquire(&h.env.lock_file()).unwrap();
+        let child = h.spawn_hook("claude-code", &red(1));
+        // the hook is waiting for the lock by now (it read the case at
+        // once before WP-057)
+        std::thread::sleep(std::time::Duration::from_millis(700));
+
+        // what `log --case` and `plan verify` do under the lock: one
+        // attributed event and a status change
+        let logbook = Logbook::open(&h.logbook).unwrap();
+        let ledger = Ledger::new(&logbook, Redactor::default());
+        let ts = chrono::DateTime::parse_from_rfc3339(NOW).unwrap();
+        let note = Event::new(ts, Source::Manual, Kind::Note, &id)
+            .detail("noted while the agent works")
+            .actor("human")
+            .case(Some(id.clone()));
+        let note = ledger.append(&held, vec![note]).unwrap().remove(0);
+        let mut file = cases::find(&logbook, &id).unwrap();
+        file.attach(&note.id.to_string(), "human");
+        file.case.status = CaseStatus::Verification;
+        file.save(&logbook).unwrap();
+        drop(held);
+
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0));
+        assert_eq!(stderr(&out), "");
+        let commands = h.commands();
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0]["case"], id.as_str());
+        let case = h.case_json(&id);
+        assert_eq!(case["status"], "verification", "the change is kept");
+        let ids = event_ids(&case);
+        assert!(ids.contains(&note.id.to_string()), "{ids:?}");
+        assert!(
+            ids.contains(&commands[0]["id"].as_str().unwrap().to_string()),
+            "{ids:?}"
+        );
+    }
+
+    #[test]
+    fn a_case_moved_while_the_hook_waits_is_not_copied_back() {
+        let h = Hooks::new();
+        let id = h.active_case();
+        let held = lock::acquire(&h.env.lock_file()).unwrap();
+        let child = h.spawn_hook("claude-code", &red(1));
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        // `plan done` moves the file to work/completed/
+        let logbook = Logbook::open(&h.logbook).unwrap();
+        let mut file = cases::find(&logbook, &id).unwrap();
+        file.case.status = CaseStatus::Completed;
+        file.save(&logbook).unwrap();
+        drop(held);
+
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let case = h.case_json(&id);
+        assert_eq!(case["status"], "completed");
+        assert_eq!(
+            event_ids(&case),
+            vec![h.commands()[0]["id"].as_str().unwrap().to_string()]
+        );
+    }
+
+    #[test]
+    fn concurrent_hooks_lose_no_event() {
+        let h = Hooks::new();
+        let id = h.active_case();
+        for round in 0..10 {
+            let children: Vec<_> = (0..2)
+                .map(|k| h.spawn_hook("claude-code", &red(round * 2 + k)))
+                .collect();
+            for child in children {
+                let out = child.wait_with_output().unwrap();
+                assert_eq!(out.status.code(), Some(0));
+                assert_eq!(stderr(&out), "");
+            }
+        }
+        let commands: Vec<String> = h
+            .commands()
+            .iter()
+            .filter(|e| e["case"] == id.as_str())
+            .map(|e| e["id"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(commands.len(), 20);
+        let ids = event_ids(&h.case_json(&id));
+        let missing: Vec<_> = commands.iter().filter(|c| !ids.contains(c)).collect();
+        assert!(missing.is_empty(), "missing from the case: {missing:?}");
     }
 }
 
@@ -524,6 +698,78 @@ mod sessions {
             );
             let status = h.env.git(&h.logbook, &["status", "--porcelain"]);
             assert_eq!(String::from_utf8_lossy(&status.stdout), "");
+        }
+    }
+
+    /// The "session ended" commit of `h`, and a clean tree after it.
+    fn assert_committed(h: &Hooks) {
+        if h.env.has_git {
+            let log = h.env.git(&h.logbook, &["log", "-1", "--format=%s"]);
+            assert_eq!(
+                String::from_utf8_lossy(&log.stdout).trim(),
+                "seldon: session ended (agent:claude-code)"
+            );
+            let status = h.env.git(&h.logbook, &["status", "--porcelain"]);
+            assert_eq!(String::from_utf8_lossy(&status.stdout), "");
+        }
+    }
+
+    /// WP-057: a journal step that fails does not stop the rest.
+    #[test]
+    fn session_stop_runs_every_step_past_a_broken_journal() {
+        let h = Hooks::new();
+        let out = h.run(&["plan", "new", "--", "Broken day"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let day = h.logbook.join("journal/2026/2026-10-01.md");
+        std::fs::create_dir_all(day.parent().unwrap()).unwrap();
+        std::fs::write(&day, "---\ndate: [\n---\n").unwrap();
+        let state = h.home().join(".local/state/seldon");
+        let _ = std::fs::remove_file(state.join("index.json"));
+
+        let stop = "2026-10-01T10:45:00+02:00";
+        let out = h.piped(&["hook", "session-stop"], "", Some(stop));
+        assert_eq!(out.status.code(), Some(0));
+        assert_eq!(stdout(&out), "");
+        let err = stderr(&out);
+        assert!(
+            err.contains(
+                "seldon hook: journal: journal/2026/2026-10-01.md: invalid journal frontmatter"
+            ),
+            "{err}"
+        );
+        assert_eq!(read(&day), "---\ndate: [\n---\n", "the day is left alone");
+        // capture, STATUS.md, the index and the commit still happened
+        assert!(state.join("cursors.json").is_file(), "capture ran");
+        assert!(read(&h.logbook.join("STATUS.md")).contains("Broken day"));
+        let index: Value = serde_json::from_str(&read(&state.join("index.json"))).unwrap();
+        assert_eq!(index["generatedAt"], stop);
+        assert_committed(&h);
+    }
+
+    /// WP-057: STATUS.md is written under the lock before the commit
+    /// (SPEC-ENGINE §8), so the commit and the next session see it.
+    #[test]
+    fn session_stop_rewrites_status_md() {
+        let h = Hooks::new();
+        let out = h.run(&["status"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let status = h.logbook.join("STATUS.md");
+        assert!(!read(&status).contains("Second status test"));
+        let out = h.run(&["plan", "new", "--", "Second status test"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+
+        let out = h.piped(
+            &["hook", "session-stop"],
+            "",
+            Some("2026-10-01T10:45:00+02:00"),
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(stderr(&out), "");
+        assert!(read(&status).contains("Second status test"));
+        assert_committed(&h);
+        if h.env.has_git {
+            let committed = h.env.git(&h.logbook, &["show", "HEAD:STATUS.md"]);
+            assert!(String::from_utf8_lossy(&committed.stdout).contains("Second status test"));
         }
     }
 
@@ -1123,6 +1369,51 @@ mod index {
 
     fn index(h: &Hooks) -> Option<String> {
         std::fs::read_to_string(h.home().join(".local/state/seldon/index.json")).ok()
+    }
+
+    /// WP-057 (F-400): above the line threshold the hook leaves the index
+    /// alone; the next `status` catches up.
+    #[test]
+    fn a_large_ledger_is_left_to_the_next_status() {
+        let h = Hooks::new();
+        // filler notes in an earlier month, one more than the threshold
+        let mut filler = String::new();
+        for n in 0..=seldon::index::FAST_REBUILD_MAX_LINES {
+            let e = json!({
+                "id": ulid::Ulid::from_parts(1_788_000_000_000 + n as u64, n as u128).to_string(),
+                "ts": format!("2026-09-{:02}T08:00:00+02:00", 1 + n % 28),
+                "source": "manual",
+                "kind": "note",
+                "subject": "journal",
+                "detail": format!("filler {n}"),
+                "actor": "human",
+            });
+            filler.push_str(&e.to_string());
+            filler.push('\n');
+        }
+        std::fs::write(h.logbook.join("ledger/2026-09.jsonl"), filler).unwrap();
+        let out = h.run(&["status"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let before = index(&h).expect("status wrote the index");
+
+        h.hook(
+            "claude-code",
+            &payload("claude-code-mutating.json", "PreToolUse"),
+        );
+        let id = h.commands()[0]["id"].as_str().unwrap().to_string();
+        assert_eq!(index(&h).unwrap(), before, "no rebuild above the threshold");
+
+        let out = h.run(&["status"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v: Value = serde_json::from_str(&index(&h).unwrap()).unwrap();
+        assert!(
+            v["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["id"] == id.as_str()),
+            "status brings the index up to date"
+        );
     }
 
     #[test]

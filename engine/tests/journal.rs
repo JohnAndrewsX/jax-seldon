@@ -84,6 +84,37 @@ mod journal {
         );
     }
 
+    /// WP-057: a day file without frontmatter (Obsidian's "Open today's
+    /// daily note" makes one) gets the block in front; its text stays.
+    #[test]
+    fn a_day_without_frontmatter_gets_the_block() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        env.at("2026-10-01T08:00:00+02:00", &["plan", "new", "--", "Fonts"]);
+        let path = root.join("journal/2026/2026-10-01.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "Typed in Obsidian.\n").unwrap();
+        let out = env.at(
+            "2026-10-01T09:00:00+02:00",
+            &["log", "--case", "C-2026-001", "--", "from seldon"],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(
+            read(&path),
+            "---\ntype: journal\ndate: 2026-10-01\ncases: [C-2026-001]\n---\nTyped in Obsidian.\n\n## 09:00 · human · C-2026-001\nfrom seldon\n"
+        );
+        let notes: Vec<_> = ledger(&root)
+            .into_iter()
+            .filter(|e| e["kind"] == "note")
+            .collect();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0]["detail"], "from seldon");
+        // the next append is an ordinary one
+        let out = env.at("2026-10-01T09:30:00+02:00", &["log", "--", "again"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(read(&path).ends_with("from seldon\n\n## 09:30 · human\nagain\n"));
+    }
+
     #[test]
     fn done_writes_a_stub_in_the_logbook_language() {
         let env = Env::new(Snapper::Missing);
