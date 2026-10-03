@@ -958,3 +958,114 @@ fn a_theme_name_that_fails_its_check_is_not_set() {
         );
     }
 }
+
+/// A made-up value that spans lines and holds a fence of its own.
+fn multi_line(tag: &str) -> String {
+    format!("n{tag}\n```sh\necho {tag}\n```")
+}
+
+#[test]
+fn a_value_with_line_breaks_stays_inside_its_code_span() {
+    let env = Env::new(Snapper::Missing);
+    let lb = english_fixture(&env);
+    add_rows(
+        &lb,
+        "packages.md",
+        "packages.explicit",
+        &["- firefox · repo · user · pre-logbook".to_string()],
+    );
+    let ts = "2026-10-01T17:20:00+02:00";
+    let plugin = |id: &str, subject: &str, enabled: Option<bool>| {
+        let mut meta = json!({ "version": "1.0" });
+        if let Some(e) = enabled {
+            meta["enabled"] = json!(e);
+        }
+        json!({
+            "id": id, "ts": ts, "source": "plugins", "kind": "plugin-add",
+            "subject": subject, "detail": "1.0", "actor": "system",
+            "zone": "yellow", "meta": meta
+        })
+    };
+    let dismissed = test_id("BRKS", 1);
+    append(
+        &lb,
+        &[
+            // §2 not reproduced, §7 open
+            pacman(
+                &test_id("BRKS", 0),
+                ts,
+                "install",
+                &multi_line("PKG"),
+                Some("pacman -S x"),
+            ),
+            // §7 dismissed
+            pacman(
+                &dismissed,
+                ts,
+                "install",
+                &multi_line("DSM"),
+                Some("pacman -S x"),
+            ),
+            // §4 a plugin line with a command, and one not reproduced
+            plugin(&test_id("BRKS", 2), &multi_line("PLA"), None),
+            plugin(&test_id("BRKS", 3), &multi_line("PLB"), Some(true)),
+            // §5 not reproduced
+            json!({
+                "id": test_id("BRKS", 4), "ts": "2026-10-01T17:21:00+02:00",
+                "source": "theme", "kind": "theme-set",
+                "subject": multi_line("THM"), "detail": "x", "actor": "human",
+                "zone": "yellow", "meta": {}
+            }),
+            // §6 a unit file (restore, then reload), §7 open
+            config(
+                &test_id("BRKS", 5),
+                ts,
+                "config-add",
+                &format!("~/.config/systemd/user/{}.service", multi_line("UNT")),
+            ),
+        ],
+    );
+    run_at(
+        &env,
+        &lb,
+        NOW,
+        &["drift", "dismiss", &dismissed, "--", "test"],
+        0,
+    );
+    rebuild(&env, &lb);
+    let text = doc(&lb);
+
+    let openers = text.lines().filter(|l| l.starts_with("```sh")).count();
+    assert_eq!(openers, 1, "only the Before the logbook block\n{text}");
+    assert_eq!(
+        text.lines()
+            .filter(|l| l.trim_start().starts_with("```"))
+            .count(),
+        2,
+        "{text}"
+    );
+    // every value is there, escaped, in its section
+    let shown = |tag: &str| format!("n{tag}\\n```sh\\necho {tag}\\n```");
+    for (heading, tags) in [
+        ("2. Packages", &["PKG"][..]),
+        ("4. Plugins", &["PLA", "PLB"]),
+        ("5. Theme", &["THM"]),
+        ("6. User units", &["UNT"]),
+        (
+            "7. Open questions",
+            &["PKG", "UNT", "DSM", "THM", "PLA", "PLB"],
+        ),
+    ] {
+        let body = section(&text, heading).join("\n");
+        for tag in tags {
+            assert!(body.contains(&shown(tag)), "{tag} in {heading}\n{text}");
+        }
+    }
+    let not_reproduced = |tag: &str| {
+        text.lines()
+            .any(|l| l.contains(&shown(tag)) && l.contains("not reproduced: invalid name"))
+    };
+    for tag in ["PKG", "PLB", "THM"] {
+        assert!(not_reproduced(tag), "{tag}\n{text}");
+    }
+}

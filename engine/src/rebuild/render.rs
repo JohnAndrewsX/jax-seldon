@@ -220,11 +220,17 @@ pub fn text(r: &Rebuild, language: Language) -> (String, Vec<String>) {
             let _ = writeln!(t, "- {}", w.none);
         } else if !before.repo.is_empty() || !before.aur.is_empty() {
             t.push_str("```sh\n");
-            t.push_str(&command_lines("omarchy pkg add", &before.repo));
-            t.push_str(&command_lines("omarchy pkg aur add", &before.aur));
+            // `dossier::parse_explicit` checked these names
+            let quoted = |names: &[String]| -> Vec<String> {
+                names
+                    .iter()
+                    .map(|n| shell_arg::quote(n).into_owned())
+                    .collect()
+            };
+            t.push_str(&command_lines("omarchy pkg add", &quoted(&before.repo)));
+            t.push_str(&command_lines("omarchy pkg aur add", &quoted(&before.aur)));
             t.push_str("```\n");
         }
-        // `dossier::parse_explicit` checked these names
         for name in &before.invalid {
             warn(&mut warnings, "package", name);
             let _ = writeln!(t, "{}", not_reproduced(name, w));
@@ -285,12 +291,12 @@ pub fn text(r: &Rebuild, language: Language) -> (String, Vec<String>) {
         (Origin::Repo, w.all_repo, "omarchy pkg add"),
         (Origin::Aur, w.all_aur, "omarchy pkg aur add"),
     ] {
-        let mut names: Vec<&str> = r
+        let mut names: Vec<std::borrow::Cow<str>> = r
             .packages
             .iter()
             .filter(|p| p.origin == origin && !p.why.open)
             .filter(|p| shell_arg::is_package_name(&p.name))
-            .map(|p| p.name.as_str())
+            .map(|p| shell_arg::quote(&p.name))
             .collect();
         if names.len() > 1 {
             names.sort_unstable();
@@ -652,8 +658,11 @@ fn command_lines(cmd: &str, names: &[String]) -> String {
 }
 
 /// An inline code span that survives backticks in `s`: its fence is one
-/// backtick longer than the longest run in `s`.
+/// backtick longer than the longest run in `s`. Control characters and
+/// line or paragraph separators are shown as escapes (`\n`, `\u{1b}`), so
+/// the span stays on its line; other text keeps its bytes.
 fn code(s: &str) -> String {
+    let s = &visible(s);
     let longest = s.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     if longest == 0 {
         format!("`{s}`")
@@ -661,6 +670,28 @@ fn code(s: &str) -> String {
         let fence = "`".repeat(longest + 1);
         format!("{fence} {s} {fence}")
     }
+}
+
+/// `s` with every control character (C0, DEL, C1) and U+2028/U+2029
+/// written as an escape.
+fn visible(s: &str) -> std::borrow::Cow<'_, str> {
+    let escaped = |c: char| c.is_control() || c == '\u{2028}' || c == '\u{2029}';
+    if !s.chars().any(escaped) {
+        return s.into();
+    }
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if escaped(c) => {
+                let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
+            }
+            c => out.push(c),
+        }
+    }
+    out.into()
 }
 
 /// User text on one line.
@@ -671,6 +702,18 @@ fn one_line(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_code_span_shows_control_characters_as_escapes() {
+        assert_eq!(code("home-a\\x2db.mount"), "`home-a\\x2db.mount`");
+        assert_eq!(code("ä · ok"), "`ä · ok`");
+        assert_eq!(code("a\nb\r\tc"), "`a\\nb\\r\\tc`");
+        assert_eq!(
+            code("a\u{1b}b\u{7f}\u{85}\u{2028}\u{2029}"),
+            "`a\\u{1b}b\\u{7f}\\u{85}\\u{2028}\\u{2029}`"
+        );
+        assert_eq!(code("x\n```sh\n`y`"), "```` x\\n```sh\\n`y` ````");
+    }
 
     #[test]
     fn a_code_span_outlasts_the_backticks_inside() {
