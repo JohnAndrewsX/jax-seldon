@@ -5,7 +5,42 @@ WP-072 HANDOVER
 "ci: pin actions and images; audit gates the release". Branch
 `wp/072-review`. Commits: `bd82bee` (accepted-advisory list and its
 check), `0d9c633` (workflows, pins test, justfile), `ef76075` (docs,
-CHANGELOG), plus the commit with this handover and `memory/pitfalls.md`.
+CHANGELOG), `e0979e9` (this handover, `memory/pitfalls.md`). Round 2:
+`4fe35d7` (pins test), `c4989c0` (docs), plus this update.
+
+**Round 2 (review: APPROVE with a fix round)**
+
+- N1: `workflow-pins.test.sh` now reads the `cargo audit` step itself
+  (`step`, `run_block`) and requires: no `if:`; no `shell:` of its own
+  (`shell: bash {0}` would drop `-e`); the exact line
+  `ids=$(bash packaging/audit-ignore.sh)`; no `||` and no `set +e` /
+  `set +o` in the run block; `cargo audit --file engine/Cargo.lock
+  --deny warnings "${args[@]}"` as the block's last line. New built-in
+  changes, all caught: `if: false`; `shell: bash {0}`; `set +e` plus
+  `echo done` after the audit line ("not the last line"); `set +e`
+  alone; `|| true` on the ids line; `|| true` on the audit line.
+- N4: `bump`, `aur` and `plugin` must each have
+  `needs: [build, release]`; the release job's check is tightened to
+  exactly `build` (or `[build]`). New built-in changes, all caught:
+  `aur` needs only `build`, `plugin` needs only `release`, `bump`
+  without `needs`.
+- N3: CONTRIBUTING.md says an expired entry also fails `just check`, and
+  so CI on every push and pull request, and that this is intended.
+  Shown: a scratch copy with `RUSTSEC-2022-0078 2026-10-01 …` appended
+  to the real list → `audit-ignore.test.sh` exit 1, "expired on
+  2026-10-01".
+- N2: packaging/README.md names the test's limit (a SHA is not checked
+  against its version comment; the refresh steps resolve both). The
+  test's header says the same.
+- Verified: `bash tests/release/audit-ignore.test.sh` → ok (21);
+  `bash tests/release/workflow-pins.test.sh` → ok (24: the real
+  workflows, the count, 22 built-in changes), looped 10 times clean;
+  `just check-packaging` with shellcheck on PATH (scratch venv) → ok;
+  shellcheck on `tests/release/*.sh` and `packaging/audit-ignore.sh`
+  clean (one `SC2016` disabled on the literal workflow line, with a
+  comment); actionlint on the workflows → ok. The full `just check` was
+  not re-run (round 2 touches only the test and two docs; round 1's run
+  is below).
 
 ## Done
 
