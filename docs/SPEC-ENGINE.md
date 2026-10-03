@@ -383,7 +383,9 @@ mutating verb. Rules:
   `snapshot` events with description; a `pre`/`post` pair is linked via
   `meta.pairOf`. Without `ALLOW_USERS` the command fails with a permission
   error; the collector then reports `ok: false` and the fix command, never
-  sudo (ADR-0011).
+  sudo (ADR-0011). snapper is run with `LC_ALL=C` (and without
+  `LANGUAGE`); its messages are matched in English, whatever the user's
+  locale (`doctor` and `init` run the same command).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
   stale); `repoHead` (7-character short hash, like `logbook.git.head`)

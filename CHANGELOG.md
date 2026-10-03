@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- snapper's permission error is recognised in every locale: snapper now
+  runs with `LC_ALL=C`, so under `LANG=de_DE.UTF-8` the snapper collector
+  reports `NO_PERMISSIONS` again and `doctor` and `init` show the
+  `set-config` fix line (fixes #1).
+
 ## [0.1.1] - 2026-10-02
 
 ### Engine
