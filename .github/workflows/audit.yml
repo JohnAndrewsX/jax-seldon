@@ -1,10 +1,12 @@
 # RustSec advisories for engine/Cargo.lock (WP-048): weekly, by hand, and
-# on every push or pull request that changes the lock file.
+# on every push or pull request that changes the lock file or the list of
+# accepted advisories (packaging/audit-ignore.txt).
 #
-# Advisory only for now: a finding (vulnerability, unmaintained or yanked
-# crate) leaves the job green with a warning annotation on the run.
-# CONTRIBUTING.md ("Dependency advisories") says when it becomes blocking:
-# then `continue-on-error` goes from the `cargo audit` step.
+# Advisory: a finding (an advisory, an unmaintained or a yanked crate, or
+# an expired entry in the accepted list) leaves the job green with a
+# warning annotation on the run. The release build runs the same check as
+# a gate (release.yml, CONTRIBUTING.md "Dependency advisories"), so the
+# warning here is the early notice.
 name: audit
 
 on:
@@ -15,10 +17,14 @@ on:
     branches: [main]
     paths:
       - engine/Cargo.lock
+      - packaging/audit-ignore.txt
+      - packaging/audit-ignore.sh
       - .github/workflows/audit.yml
   pull_request:
     paths:
       - engine/Cargo.lock
+      - packaging/audit-ignore.txt
+      - packaging/audit-ignore.sh
       - .github/workflows/audit.yml
 
 permissions:
@@ -27,7 +33,8 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    container: archlinux:base-devel
+    # pinned like ci.yml (packaging/README.md, "Pinned actions and image")
+    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -36,18 +43,24 @@ jobs:
       - name: Install cargo-audit
         run: pacman -Syu --noconfirm --needed git cargo-audit
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: cargo audit
         id: audit
         continue-on-error: true
-        run: cargo audit --file engine/Cargo.lock --deny warnings
+        shell: bash  # -eo pipefail; the ignore list fails the step when invalid
+        run: |
+          ids=$(bash packaging/audit-ignore.sh)
+          args=()
+          for id in $ids; do args+=(--ignore "$id"); done
+          echo "accepted advisories: ${ids:-none}"
+          cargo audit --file engine/Cargo.lock --deny warnings "${args[@]}"
 
       - name: Report findings
         if: steps.audit.outcome == 'failure'
         run: |
-          echo "::warning title=cargo audit::cargo audit failed for engine/Cargo.lock (RustSec findings, or the advisory database could not be fetched); see the cargo audit step log (CONTRIBUTING.md, Dependency advisories)"
+          echo "::warning title=cargo audit::cargo audit failed for engine/Cargo.lock (RustSec findings, an expired entry in packaging/audit-ignore.txt, or the advisory database could not be fetched); the next release build fails the same way. See the cargo audit step log (CONTRIBUTING.md, Dependency advisories)"
           {
             echo '## cargo audit: findings'
-            echo 'See the log of the cargo audit step. Update the crate, or document why the advisory does not apply.'
+            echo 'See the log of the cargo audit step. Update the crate, or accept the advisory in packaging/audit-ignore.txt with a reason and an expiry. Until then the release build fails.'
           } >> "$GITHUB_STEP_SUMMARY"

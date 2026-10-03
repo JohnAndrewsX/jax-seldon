@@ -18,7 +18,9 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    container: archlinux:base-devel
+    # Actions and the image are pinned (commit SHA, image digest) with the
+    # version as a comment; packaging/README.md says how to refresh them.
+    container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
     env:
       SELDON_SKIP_HOST_CHECKS: "1"
       CARGO_TERM_COLOR: always
@@ -27,7 +29,7 @@ jobs:
       - name: Install toolchain
         run: pacman -Syu --noconfirm --needed git rust just jq shellcheck
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: just check
         run: just check
