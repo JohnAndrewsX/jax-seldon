@@ -382,6 +382,11 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
     };
     let autocommit = if config.git.autocommit { "on" } else { "off" };
     if git::is_repo(&logbook.root) {
+        if config.git.autocommit
+            && let Some(blocked) = autocommit_blocked(&logbook.root, &version)
+        {
+            return blocked;
+        }
         Check::new(
             "git",
             Status::Ok,
@@ -402,6 +407,82 @@ fn check_git(config: &Config, logbook: Option<&Logbook>) -> Check {
             Status::Ok,
             format!("{version}; logbook is not a repository; autocommit off"),
         )
+    }
+}
+
+/// What keeps every autocommit from committing (WP-061), first match: a
+/// `.git/index.lock` (a git process killed half way leaves it behind), a
+/// detached HEAD (the autocommit skips it), a failing `git commit
+/// --dry-run`. Each is degraded with its fix.
+fn autocommit_blocked(root: &Path, version: &str) -> Option<Check> {
+    let lock = root.join(".git/index.lock");
+    if let Ok(meta) = std::fs::symlink_metadata(&lock) {
+        let age = meta
+            .modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .map_or_else(String::new, |d| {
+                format!(" (last changed {} ago)", human_age(d.as_secs()))
+            });
+        return Some(
+            Check::new(
+                "git",
+                Status::Degraded,
+                format!(
+                    "{version}; .git/index.lock exists{age}: every autocommit fails while it is there; remove it when no git command is running in the logbook"
+                ),
+            )
+            .fix(format!("rm {}", lock.display())),
+        );
+    }
+    match git::is_detached(root) {
+        Ok(true) => {
+            let branches = git::branches(root);
+            let branch = match branches.as_slice() {
+                [one] => one.as_str(),
+                _ => "<branch>",
+            };
+            return Some(
+                Check::new(
+                    "git",
+                    Status::Degraded,
+                    format!(
+                        "{version}; {}: autocommit skips every commit until a branch is checked out",
+                        git::DETACHED
+                    ),
+                )
+                .fix(format!("git -C {} switch {branch}", root.display())),
+            );
+        }
+        Ok(false) => {}
+        Err(e) => {
+            return Some(Check::new(
+                "git",
+                Status::Degraded,
+                format!("{version}; {e}"),
+            ));
+        }
+    }
+    match git::commit_dry_run(root) {
+        Ok(()) => None,
+        Err(e) => Some(
+            Check::new(
+                "git",
+                Status::Degraded,
+                format!("{version}; a commit would fail, so every autocommit fails: {e}"),
+            )
+            .fix(format!("git -C {} commit --dry-run", root.display())),
+        ),
+    }
+}
+
+/// `45 s`, `12 min`, `3 h`, `2 d`.
+fn human_age(secs: u64) -> String {
+    match secs {
+        0..60 => format!("{secs} s"),
+        60..3600 => format!("{} min", secs / 60),
+        3600..86400 => format!("{} h", secs / 3600),
+        _ => format!("{} d", secs / 86400),
     }
 }
 

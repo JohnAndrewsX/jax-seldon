@@ -349,4 +349,103 @@ mod doctor {
             "doctor wrote into fixtures/logbook"
         );
     }
+
+    /// WP-061: what keeps every autocommit from committing is degraded,
+    /// with the fix; `log` itself only warns (`tests/git.rs`).
+    fn git_check(env: &Env, root: &Path) -> serde_json::Value {
+        let out = env.seldon(&["doctor", "--path", root.to_str().unwrap(), "--json"]);
+        let v = json(&out);
+        assert_eq!(out.status.code(), Some(0), "{v}");
+        assert_eq!(v["ok"], true, "degraded is not an error: {v}");
+        check(&v, "git").clone()
+    }
+
+    #[test]
+    fn a_stale_index_lock_is_degraded_with_its_fix() {
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            return;
+        }
+        let root = init(&env);
+        let lock = root.join(".git/index.lock");
+        std::fs::write(&lock, "").unwrap();
+        let git = git_check(&env, &root);
+        assert_eq!(git["status"], "degraded", "{git}");
+        let message = git["message"].as_str().unwrap();
+        assert!(message.contains(".git/index.lock exists"), "{message}");
+        assert!(message.contains("every autocommit fails"), "{message}");
+        assert_eq!(git["fix"], format!("rm {}", lock.display()), "{git}");
+
+        // gone: green again
+        std::fs::remove_file(&lock).unwrap();
+        let git = git_check(&env, &root);
+        assert_eq!(git["status"], "ok", "{git}");
+        assert!(git.get("fix").is_none(), "{git}");
+    }
+
+    #[test]
+    fn a_detached_head_is_degraded_with_its_fix() {
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            return;
+        }
+        let root = init(&env);
+        let branch = stdout(&env.git(&root, &["branch", "--show-current"]))
+            .trim()
+            .to_string();
+        assert!(!branch.is_empty());
+        let out = env.git(&root, &["checkout", "-q", "--detach"]);
+        assert!(out.status.success(), "{}", stderr(&out));
+        let git = git_check(&env, &root);
+        assert_eq!(git["status"], "degraded", "{git}");
+        let message = git["message"].as_str().unwrap();
+        assert!(message.contains("HEAD is detached"), "{message}");
+        assert_eq!(
+            git["fix"],
+            format!("git -C {} switch {branch}", root.display()),
+            "{git}"
+        );
+
+        // with autocommit off a detached HEAD is the user's business
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("autocommit = true"), "{text}");
+        std::fs::write(
+            &config,
+            text.replace("autocommit = true", "autocommit = false"),
+        )
+        .unwrap();
+        let git = git_check(&env, &root);
+        assert_eq!(git["status"], "ok", "{git}");
+    }
+
+    #[test]
+    fn a_commit_that_would_fail_is_degraded() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let env = Env::new(Snapper::NoPermissions);
+        if !env.has_git {
+            return;
+        }
+        let root = init(&env);
+        // `.git` read-only: git cannot create its index lock
+        let dot_git = root.join(".git");
+        std::fs::set_permissions(&dot_git, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::write(dot_git.join("probe"), "x").is_ok() {
+            // running as root: permissions do not stop the write
+            std::fs::remove_file(dot_git.join("probe")).unwrap();
+            std::fs::set_permissions(&dot_git, std::fs::Permissions::from_mode(0o755)).unwrap();
+            return;
+        }
+        let git = git_check(&env, &root);
+        std::fs::set_permissions(&dot_git, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(git["status"], "degraded", "{git}");
+        let message = git["message"].as_str().unwrap();
+        assert!(message.contains("a commit would fail"), "{message}");
+        assert!(message.contains("Permission denied"), "{message}");
+        assert_eq!(
+            git["fix"],
+            format!("git -C {} commit --dry-run", root.display()),
+            "{git}"
+        );
+    }
 }
