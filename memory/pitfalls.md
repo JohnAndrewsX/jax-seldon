@@ -999,3 +999,19 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   run is before the start-up capture writes the index: a banner that needs
   the index is not there yet. Use `["fix", action, banner]` in
   `HARNESS_ACTIONS`, which waits for the start-up calls.
+
+## 2026-10-03 · WP-059 (Engine)
+
+- **A mutant's binary outlives `git checkout -- file`.** A mutation loop
+  that runs `cargo test` and then restores the source leaves
+  `engine/target/debug/seldon` built from the last mutant. A manual run
+  right after it showed unquoted output that the tests (rebuilt) did
+  not. Run `cargo build` after the loop before any manual run.
+- **The scratch-HOME export lasts for the whole Bash call.** A `cargo`
+  command later in the same call, after `rm -rf $S`, runs with a missing
+  `$HOME/.cargo` and prints nothing useful. Keep manual runs and cargo
+  in separate calls.
+- **A Markdown table cell cannot hold `|`.** `fence_table` splits on it,
+  so a fence-fed value with `|` never arrives whole. Tests that feed
+  values through `services.enabled` or `plugins.list` can only assert
+  "not in a command" for those values.
