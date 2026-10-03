@@ -17,7 +17,6 @@ decisions).
 | WP-070 | doctor: invalid config, corrupt state, bad patterns; index ok:false | Engine | `engine-070` (opus) | `wt/WP-070` · `wp/070-review` | 2026-10-03 |
 | WP-069 | config collector: scope, default skips, home paths, rehash, dedupe | Engine | `engine-069` (opus) | `wt/WP-069` · `wp/069-review` | 2026-10-03 |
 | WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
-| WP-068 | plugin: call failures logged and retried, busy sheets, engineMin | Plugin | `plugin-068` (opus) | `wt/WP-068` · `wp/068-review` | 2026-10-03 |
 
 ## Queued (next up)
 
@@ -38,6 +37,9 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-068 failed engine calls logged, a locked capture retried
+  (bounded), busy sheets say so, engineMin enforced (Opus review APPROVE)
+  — merged; small follow-ups queued as WP-078. **Wave 3 complete.**
 - 2026-10-03 WP-072 actions and the build image pinned by commit and
   digest, cargo audit gates the release with a dated ignore list, pins
   and ignore tests in `just check`; positive dry run green, a probe branch
