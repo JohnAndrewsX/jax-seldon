@@ -15,7 +15,7 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-057 | hook: case updates under the lock, patient lock wait, session-stop on every step | Engine | `engine-057` (opus) | `wt/WP-057` · `wp/057-review` | 2026-10-03 |
-| WP-056 | docs: uninstall with a kept logbook, state-dir backup, watcher README | Docs | `docs-056` (sonnet) | `wt/WP-056` · `wp/056-review` | 2026-10-03 |
+| WP-058 | engine: restructure the session-start context and the agent start prompt | Engine | `engine-058` (opus) | `wt/WP-058` · `wp/058-review` | 2026-10-03 |
 | WP-059 | engine: quote generated commands in REBUILD.md | Engine | `engine-059` (opus) | `wt/WP-059` · `wp/059-review` | 2026-10-03 |
 | WP-060 | snapper: read snapshot info files when listing is not permitted; banner text | Engine | `engine-060` (opus) | `wt/WP-060` · `wp/060-review` | 2026-10-03 |
 
@@ -38,6 +38,9 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-03 WP-056 user guide and watcher README: uninstall with a kept
+  logbook, state-directory backup and restore (Sonnet worker and review) —
+  merged.
 - 2026-10-03 WP-055 session-start context moved into its own module (pure
   move, golden output byte-identical; Haiku worker, Sonnet review) — merged.
 - 2026-10-03 WP-054 snapper banner *Check again* runs a capture, hint
