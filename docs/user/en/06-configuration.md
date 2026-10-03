@@ -139,13 +139,15 @@ and the other values), and from the text and tags you give `seldon log`,
 files and `STATUS.md` therefore hold the same text as the ledger. A
 redacted value reads `‹redacted›`. The built-in rules cover:
 
-- `--password` and `token=` and their values;
-- `--token`, `--api-key`, `--with-token`, `--secret` and similar
-  options, and `API_KEY=`, `PASSWORD=`, `PGPASSWORD=`, `MYSQL_PWD=` and
-  other `…KEY=`, `…SECRET=`, `…PASSWORD=` assignments, when the value
-  looks like a credential: at least 16 characters, or at least 8 that
-  mix two of lower case, upper case, digits and other characters (so
-  `sort --key=2` and `hotkey=Super` stay as they are);
+- `--password`, `--token`, `--with-token`, `--secret`, `--passphrase`
+  and similar options, and `token=`, `PASSWORD=`, `PGPASSWORD=`,
+  `MYSQL_PWD=`, `SECRET=` and other `…PASSWORD=`, `…SECRET=`, `…_PASS=`
+  assignments, with any value;
+- `--api-key`, `--access-key`, `--secret-key` and `API_KEY=` and other
+  `…KEY=` assignments, when the value looks like a credential: at least
+  16 characters, or at least 8 that mix two of lower case, upper case,
+  digits and other characters (so `sort --key=2` and `hotkey=Super` stay
+  as they are);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` and other headers
   whose name ends in Key, Token, Secret or Auth;
 - AWS access keys (`AKIA…`, `ASIA…`), GitHub tokens (`ghp_…`, `gho_…`,

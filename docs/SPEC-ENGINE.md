@@ -560,10 +560,11 @@ same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The rules
 (`redact::BUILTIN`, in this order): URLs with userinfo; `--password`;
-`--token`, `--api-key`, `--with-token`, `--secret`, `--client-secret` and
-similar options; `token=`; `…KEY=`, `…SECRET=`, `…PASSWORD=`, `…PASSWD=`,
-`…PASSPHRASE=`, `…_PWD=`, `…_PASS=`, `SSHPASS=` assignments (also
-`PGPASSWORD=`, `?api_key=`); `Authorization:`; headers whose name ends in
+`--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`
+and similar options; `--api-key`, `--access-key`, `--secret-key`;
+`token=`; `…SECRET=`, `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`,
+`…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
+assignments (also `?api_key=`); `Authorization:`; headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
 `X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`);
 `(AKIA|ASIA)[0-9A-Z]{16}`; `gh[pousr]_[A-Za-z0-9]{36,}` and
@@ -573,8 +574,14 @@ a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
 login`; and user-supplied patterns in `config.toml [redaction] patterns`.
 Replacement: `‹redacted›`. The hook never records stdin/stdout of
-commands, only the command line. The `--token`-style options and the
-`…KEY=`-style assignments mask a value only when it looks like a
+commands, only the command line. A name that can only mean a
+credential masks any non-empty value: `--password`, `--token`,
+`--with-token`, `--secret`, `--client-secret`, `--passphrase`
+(`password-option`, `secret-option`) and `token=`, `…SECRET=`,
+`…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`, `…_PASS=`,
+`SSHPASS=` (`token-assignment`, `secret-assignment`). A name that ends
+in `key` (`--api-key`, `--access-key`, `--secret-key`: `key-option`;
+`…KEY=`: `key-assignment`) masks a value only when it looks like a
 credential: without its quotes, at least 16 characters, or at least 8
 that mix two of lower case, upper case, digits and other characters
 (`redact::looks_like_credential`), so `sort --key=2`, `hotkey=Super` and
@@ -590,7 +597,9 @@ twice gives the same text for the built-in rules: a match that lies
 inside an existing `‹redacted›` is left alone (a user pattern that
 matches across the marker's edge is applied as written). Each built-in
 rule is compiled once per process, and only when the text holds one of
-its literal triggers (`redact::triggers`). An invalid user pattern is a user error
+its literal triggers (`redact::triggers`), checked on the text in lower
+case with the Kelvin sign and the long s folded onto `k` and `s`, as
+case-insensitive matching folds them (`redact::trigger_text`). An invalid user pattern is a user error
 (exit 1): Seldon writes nothing rather than unredacted text. `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
 before a rule existed are not rewritten.
@@ -636,11 +645,13 @@ rebuilds the index the cheap way (no git spawn, `.git/HEAD` read
 directly), after releasing the lock and without waiting for it again
 (another writer that holds it rebuilds after its own write), and only
 while the ledger has at most 1000 lines; above that the next `capture`
-or `status` brings the index up to date. Measured in release on the dev
-host (WP-062, interleaved with a build of the code before it, median of
-21 runs each): about 1.4 ms per recorded command above 1000 ledger lines,
-1.8 to 3.7 ms with the rebuild (empty to 1000-line ledger), 2.5 ms for a
-command with secrets in it; a non-mutating command about 1 ms (WP-057).
+or `status` brings the index up to date. WP-062's redaction is not
+slower than before it: measured 2026-10-03 on a loaded dev host (load
+average 3 to 8), release builds interleaved with a build of the code
+before it, median of 21 runs each, a recorded command took 19 to 36 %
+less time with an empty ledger, near 1000 lines with the rebuild, above
+1000 lines without it, and for a command with secrets in it. A
+non-mutating command compiles no redaction rule.
 `seldon hook generic` takes `{"command","actor","cwd",
 "startedAt"?}` with the same rules. `seldon hook install claude-code
 [--settings FILE]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
