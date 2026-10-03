@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-070 | doctor: invalid config, corrupt state, bad patterns; index ok:false | Engine | `engine-070` (opus) | `wt/WP-070` · `wp/070-review` | 2026-10-03 |
+| WP-076 | index: size budget enforced; perf budgets at stated scale | Engine | `engine-076` (opus) | `wt/WP-076` · `wp/076-review` | 2026-10-04 |
 | WP-071 | shell parser: one parser; pkexec/run0; version/help; redirects and heredocs | Engine | `engine-071` (opus) | `wt/WP-071` · `wp/071-review` | 2026-10-03 |
 | WP-075 | import/dossier/watch: case-less vault, non-UTF-8, bad file, areas | Engine | `engine-075` (opus) | `wt/WP-075` · `wp/075-review` | 2026-10-04 |
 | WP-074 | init: language, config before layout, --no-git, theme hook under the lock (folds WP-052) | Engine | `engine-074` (opus) | `wt/WP-074` · `wp/074-review` | 2026-10-04 |
@@ -38,6 +38,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-070 doctor checks config, state files, patterns, ledger
+  lines, fences, duplicate case ids and the last capture's collector state
+  (read-only, proven); `index --check` exits 1 for a duplicate case id (two
+  Opus rounds) — merged.
 - 2026-10-04 WP-069 config collector: scope changes no longer record every
   file, default skipPaths (an empty list means the defaults), home-relative
   paths, hash reuse by size/mtime/ctime/inode (capture 79 → 11 ms on 2000
