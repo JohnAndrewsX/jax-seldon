@@ -803,7 +803,8 @@ fn bash_record(command: &str, setup: &Setup, cwd: &Path) -> Option<Record> {
 /// write target, and every token of the line's text between blanks, quotes,
 /// shell operators, `:` and `,` (which also holds the files read with `<`,
 /// the words inside `$(…)` and the parts of a list such as `PATH=a:b`);
-/// each also after its first `=` (`--file=PATH`, `VAR=PATH`). A relative path is tried against `cwd` and
+/// each also after its first `=` (`--file=PATH`, `VAR=PATH`). A relative
+/// path is tried against `cwd` and
 /// against every directory a `cd` or `pushd` in the line moves to or a
 /// `-C DIR` names (`git -C`, `make -C`). It matches more than the shell
 /// would open; paths built from variables or globs are read as written.
