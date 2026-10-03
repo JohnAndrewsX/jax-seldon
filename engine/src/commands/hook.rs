@@ -9,9 +9,13 @@
 //!   '…'` and `eval '…'` are read as the commands inside); `Edit`, `Write`
 //!   and `MultiEdit` become `subject: edit|write|multiedit`, `meta.command
 //!   "<Tool> <~path>"`, the path redacted when it matches `[redaction]
-//!   skipPaths`. `PostToolUse` writes nothing for a tool call that is
-//!   already recorded; one that is not (a settings file with only the
-//!   PostToolUse hook) is recorded with the time it arrives.
+//!   skipPaths`; a command line that names such a path is recorded as
+//!   `<program> ‹redacted›`. `PostToolUse` writes nothing for a tool call
+//!   that is already recorded; one that is not (a settings file with only
+//!   the PostToolUse hook) is recorded with the time it arrives.
+//! - Scope: the hooks serve a session whose payload `cwd` lies inside the
+//!   logbook, or names no `cwd`; `[hooks] scope = "all"` serves every
+//!   session ([`in_scope`]).
 //! - Zones: what a collector tracks keeps its zone (red packages, services
 //!   and updates; yellow config under `watchPaths`, plugins, themes). Any
 //!   other change (a file written outside `watchPaths` and the logbook, a
@@ -52,7 +56,7 @@ use super::event::{clip, parse_case_id, parse_person};
 use super::{Context, Output, autocommit};
 use crate::attribution::{home_path, normalise};
 use crate::collectors::config::{OwnOp, SkipPaths};
-use crate::config::{Config, Dirs};
+use crate::config::{Config, Dirs, HookScope};
 use crate::error::{Error, Result};
 use crate::ledger::Ledger;
 use crate::logbook::cases::{self, CaseFile};
@@ -75,7 +79,7 @@ pub const CLAUDE_CODE: &str = "agent:claude-code";
 const LOCK_PATIENCE: Duration = Duration::from_secs(8);
 
 mod context;
-pub use context::session_start;
+pub use context::{DATA_NOTE, quote, session_start};
 
 /// `seldon hook <command>`.
 #[derive(Debug, Clone, Args)]
@@ -162,10 +166,12 @@ pub fn run_agent_hook(context: impl FnOnce() -> Result<Context>, command: HookCo
     let result = context().and_then(|ctx| match command {
         HookCommand::ClaudeCode => claude_code(&ctx, &stdin),
         HookCommand::Generic { case_id } => generic(&ctx, &stdin, case_id),
-        HookCommand::SessionStart => session_start(&ctx).map(|block| {
-            let mut out = std::io::stdout().lock();
-            let _ = out.write_all(block.as_bytes()).and_then(|()| out.flush());
-        }),
+        HookCommand::SessionStart => {
+            session_start(&ctx, payload_cwd(&stdin).as_deref()).map(|block| {
+                let mut out = std::io::stdout().lock();
+                let _ = out.write_all(block.as_bytes()).and_then(|()| out.flush());
+            })
+        }
         HookCommand::SessionStop { actor } => session_stop(&ctx, &actor, &stdin),
         HookCommand::Install { .. } | HookCommand::Uninstall { .. } => Ok(()),
     });
@@ -601,21 +607,75 @@ struct Record {
     command: String,
 }
 
-/// The config, the logbook and its scope, for a hook that records.
+/// The config, the logbook, its scope and the `[redaction] skipPaths`, for
+/// a hook that records.
 struct Setup {
     config: Config,
     logbook: Logbook,
     scope: Scope,
+    skip: SkipPaths,
 }
 
 fn setup(ctx: &Context) -> Result<Setup> {
     let (config, logbook) = ctx.open_logbook()?;
     let scope = Scope::new(&ctx.dirs, &config, &logbook.root);
+    let skip = SkipPaths::new(&ctx.dirs.home, &config.redaction.skip_paths);
     Ok(Setup {
         config,
         logbook,
         scope,
+        skip,
     })
+}
+
+/// Whether the hooks serve a session in `cwd`, the directory the hook's
+/// payload names (`None`: it names none, as when an agent or a person runs
+/// the hook itself). With `[hooks] scope = "logbook"`, the default, only a
+/// session inside the logbook; with `"all"` every session. A `cwd` that is
+/// not an absolute path is outside.
+fn in_scope(config: &Config, logbook: &Path, cwd: Option<&str>) -> bool {
+    match (config.hooks.scope, cwd) {
+        (HookScope::All, _) | (_, None) => true,
+        (HookScope::Logbook, Some(cwd)) => {
+            Path::new(cwd).is_absolute() && is_inside(Path::new(cwd), logbook)
+        }
+    }
+}
+
+/// Whether the absolute `path` is `root` or lies below it: as written
+/// (`.` and `..` folded), or with symbolic links resolved as far as the
+/// path exists, so a logbook reached through a link counts both ways.
+fn is_inside(path: &Path, root: &Path) -> bool {
+    normalise(path).starts_with(normalise(root))
+        || resolved(&normalise(path)).starts_with(resolved(&normalise(root)))
+}
+
+/// `path` with its longest existing ancestor's symbolic links resolved.
+fn resolved(path: &Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut base = path;
+    loop {
+        if let Ok(mut real) = std::fs::canonicalize(base) {
+            real.extend(rest.iter().rev());
+            return real;
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name);
+                base = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// The `cwd` a hook payload names, if it is a JSON object that has one (a
+/// `cwd` that is not a string counts as one that is outside every
+/// directory).
+fn payload_cwd(stdin: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(stdin).ok()?;
+    v.get("cwd")
+        .map(|c| c.as_str().unwrap_or_default().to_string())
 }
 
 /// The directory a payload's `cwd` names, else the process's.
@@ -636,19 +696,20 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
     };
     let tool = payload.tool_name.as_deref().unwrap_or("");
     let setup = setup(ctx)?;
+    if !in_scope(&setup.config, &setup.logbook.root, payload.cwd.as_deref()) {
+        return Ok(());
+    }
     let cwd = working_dir(payload.cwd.as_deref(), &ctx.dirs);
     let records = match tool {
         "Bash" => {
             let Some(command) = payload.tool_input.get("command").and_then(Value::as_str) else {
                 return Ok(());
             };
-            bash_record(command, &setup.scope, &cwd)
+            bash_record(command, &setup, &cwd)
                 .into_iter()
                 .collect::<Vec<_>>()
         }
-        "Edit" | "Write" | "MultiEdit" => {
-            edit_records(ctx, &setup, tool, &payload.tool_input, &cwd)
-        }
+        "Edit" | "Write" | "MultiEdit" => edit_records(&setup, tool, &payload.tool_input, &cwd),
         _ => Vec::new(),
     };
     if records.is_empty() {
@@ -658,15 +719,10 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
         &setup.logbook,
         Redactor::with_patterns(&setup.config.redaction.patterns)?,
     );
-    if post
-        && let Some(id) = &payload.tool_use_id
-        && already_recorded(&ledger, ctx, id)?
-    {
-        return Ok(());
-    }
+    let tool_use_id = payload.tool_use_id.filter(|s| !s.is_empty());
     let mut extra = Vec::new();
-    if let Some(id) = payload.tool_use_id.filter(|s| !s.is_empty()) {
-        extra.push(("toolUseId", id));
+    if let Some(id) = &tool_use_id {
+        extra.push(("toolUseId", id.clone()));
     }
     if let Some(id) = payload.session_id.filter(|s| !s.is_empty()) {
         extra.push(("sessionId", id));
@@ -675,6 +731,7 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
         actor: CLAUDE_CODE,
         ts: ctx.now,
         case: None,
+        unless_recorded: tool_use_id.as_deref().filter(|_| post),
     };
     record(ctx, &setup, ledger, entry, records, &extra)
 }
@@ -696,8 +753,11 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
         None => ctx.now,
     };
     let setup = setup(ctx)?;
+    if !in_scope(&setup.config, &setup.logbook.root, payload.cwd.as_deref()) {
+        return Ok(());
+    }
     let cwd = working_dir(payload.cwd.as_deref(), &ctx.dirs);
-    let Some(rec) = bash_record(&payload.command, &setup.scope, &cwd) else {
+    let Some(rec) = bash_record(&payload.command, &setup, &cwd) else {
         return Ok(());
     };
     let ledger = Ledger::new(
@@ -708,17 +768,70 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
         actor: &actor,
         ts,
         case,
+        unless_recorded: None,
     };
     record(ctx, &setup, ledger, entry, vec![rec], &[])
 }
 
-/// A shell command line as a record, if it is mutating.
-fn bash_record(command: &str, scope: &Scope, cwd: &Path) -> Option<Record> {
+/// A shell command line as a record, if it is mutating. A line that names
+/// a path `[redaction] skipPaths` matches is recorded as `<program>
+/// ‹redacted›` (the program of [`Mutation::subject`]), as an `Edit` of such
+/// a file is recorded as `Edit ‹redacted›`.
+fn bash_record(command: &str, setup: &Setup, cwd: &Path) -> Option<Record> {
     let line = parse_shell(command);
-    let mutation = classify(&line, scope, cwd)?;
-    Some(Record {
-        mutation,
-        command: line.text,
+    let mutation = classify(&line, &setup.scope, cwd)?;
+    let command = if names_skipped_path(&line, setup, cwd) {
+        format!("{} {REDACTED}", mutation.subject)
+    } else {
+        line.text
+    };
+    Some(Record { mutation, command })
+}
+
+/// Whether `line` names a path that `[redaction] skipPaths` matches. Read
+/// as paths: every word of its commands (`sh -c` scripts opened) and every
+/// write target, and every token of the line's text between blanks, quotes
+/// and shell operators (which also holds the files read with `<` and the
+/// words inside `$(…)`), each also after its first `=` (`--file=PATH`,
+/// `VAR=PATH`). A relative path is tried against `cwd` and against every
+/// directory a `cd` in the line moves to. It matches more than the shell
+/// would open, never less.
+fn names_skipped_path(line: &ShellLine, setup: &Setup, cwd: &Path) -> bool {
+    if setup.config.redaction.skip_paths.is_empty() {
+        return false;
+    }
+    let scope = &setup.scope;
+    let mut dirs = vec![cwd.to_path_buf()];
+    let mut words: Vec<String> = Vec::new();
+    for segment in simple_commands(line) {
+        let argv = segment.argv();
+        let program = argv.first().map(|w| w.rsplit('/').next().unwrap_or(w));
+        if program == Some("cd") {
+            let here = dirs.last().cloned().unwrap_or_else(|| cwd.to_path_buf());
+            dirs.push(match argv[1..].iter().find(|a| !a.starts_with('-')) {
+                Some(dir) => scope.resolve(dir, &here),
+                None => scope.home.clone(),
+            });
+        }
+        words.extend(segment.words);
+        words.extend(segment.writes);
+    }
+    words.extend(
+        line.text
+            .split(|c: char| c.is_whitespace() || "'\"`<>|&;()".contains(c))
+            .filter(|t| !t.is_empty())
+            .map(str::to_string),
+    );
+    words.iter().any(|word| {
+        let after_equals = word.split_once('=').map(|(_, value)| value);
+        [Some(word.as_str()), after_equals]
+            .into_iter()
+            .flatten()
+            .filter(|w| !w.is_empty())
+            .any(|w| {
+                dirs.iter()
+                    .any(|d| setup.skip.matches(&scope.resolve(w, d)))
+            })
     })
 }
 
@@ -726,13 +839,7 @@ fn bash_record(command: &str, scope: &Scope, cwd: &Path) -> Option<Record> {
 /// its config zone (ADR-0014 §4); any other path outside the logbook is
 /// green and recorded only with a case (ADR-0019). Only the path is read
 /// from `tool_input`, never the content.
-fn edit_records(
-    ctx: &Context,
-    setup: &Setup,
-    tool: &str,
-    input: &Value,
-    cwd: &Path,
-) -> Vec<Record> {
+fn edit_records(setup: &Setup, tool: &str, input: &Value, cwd: &Path) -> Vec<Record> {
     let mut paths: Vec<&str> = input
         .get("file_path")
         .and_then(Value::as_str)
@@ -749,13 +856,12 @@ fn edit_records(
     }
     paths.sort_unstable();
     paths.dedup();
-    let skip = SkipPaths::new(&ctx.dirs.home, &setup.config.redaction.skip_paths);
     paths
         .into_iter()
         .map(|p| setup.scope.resolve(p, cwd))
         .filter_map(|p| {
             let (zone, needs_case) = setup.scope.writes(&[(p.clone(), false)])?;
-            let shown = if skip.matches(&p) {
+            let shown = if setup.skip.matches(&p) {
                 REDACTED.to_string()
             } else {
                 setup.scope.display(&p)
@@ -796,12 +902,14 @@ fn lock_patiently(ctx: &Context) -> Result<Lock> {
     }
 }
 
-/// Who recorded the commands, when they started, and their case if the
-/// caller named one (else `.seldon/active-case`).
+/// Who recorded the commands, when they started, their case if the caller
+/// named one (else `.seldon/active-case`), and for a `PostToolUse` the
+/// tool call's id: nothing is written when the ledger holds it already.
 struct Entry<'a> {
     actor: &'a str,
     ts: chrono::DateTime<chrono::FixedOffset>,
     case: Option<String>,
+    unless_recorded: Option<&'a str>,
 }
 
 /// Appends one `agent/command` event per record and attaches them to the
@@ -811,9 +919,11 @@ struct Entry<'a> {
 ///
 /// The case is read under the state lock, like every other case writer:
 /// a copy read before the wait would write back what a `plan` step or a
-/// second hook changed meanwhile (WP-057). The index is rebuilt after the
-/// lock is released ([`rebuild_after`]); the rebuild itself is capped at
-/// 1000 ledger lines, which is what keeps a recorded command cheap.
+/// second hook changed meanwhile (WP-057). A `PostToolUse` looks for its
+/// tool call in the ledger under the lock too, so two of them for one call
+/// write one event. The index is rebuilt after the lock is released
+/// ([`rebuild_after`]); the rebuild itself is capped at 1000 ledger lines,
+/// which is what keeps a recorded command cheap.
 fn record(
     ctx: &Context,
     setup: &Setup,
@@ -830,7 +940,18 @@ fn record(
     {
         return Ok(());
     }
-    let lock = lock_patiently(ctx)?;
+    let lock = match lock_patiently(ctx) {
+        Ok(lock) => lock,
+        Err(e @ Error::LockHeld(_)) => {
+            return Err(anyhow::anyhow!("{e}; command not recorded").into());
+        }
+        Err(e) => return Err(e),
+    };
+    if let Some(id) = entry.unless_recorded
+        && already_recorded(&ledger, ctx, id)?
+    {
+        return Ok(());
+    }
     let (id, origin) = match entry.case {
         Some(id) => (Some(id), "case"),
         None => (cases::active_case(&setup.logbook), "active case"),
@@ -909,6 +1030,9 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
         )));
     }
     let (config, logbook) = ctx.open_logbook()?;
+    if !in_scope(&config, &logbook.root, payload_cwd(stdin).as_deref()) {
+        return Ok(());
+    }
     let session = serde_json::from_str::<ToolPayload>(stdin)
         .ok()
         .and_then(|p| p.session_id)
@@ -1119,10 +1243,14 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
 /// (so the next capture explains its config event), and commits the
 /// logbook when its own settings file changed. The state lock is held from
 /// the read to the commit: no capture sees the written file before its
-/// record.
+/// record. A settings file outside the logbook gets a warning that says
+/// which sessions the hooks then serve ([`scope_warning`]).
 fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     let (path, logbook) = settings_file(ctx, settings)?;
     let shown = ctx.dirs.display(&path);
+    let warnings: Vec<String> = scope_warning(ctx, &path, logbook.as_ref())
+        .into_iter()
+        .collect();
     let lock = ctx.lock()?;
     let Merged { added, present } = merge_claude_hooks(&path, &shown)?;
     let own = (!added.is_empty()).then(|| {
@@ -1165,16 +1293,56 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     if let Some(c) = &commit {
         human.push_str(&c.human());
     }
+    for w in &warnings {
+        let _ = write!(human, "\nwarning: {w}");
+    }
     Ok(Output::ok(
         human,
         json!({
             "settings": path,
             "added": added,
             "present": present,
+            "warnings": warnings,
             "ownWrites": own.as_ref().map_or(Value::Null, super::setup::own_writes_json),
             "git": commit.map_or(Value::Null, |c| c.json()),
         }),
     ))
+}
+
+/// The warning for a settings file outside the logbook: Claude Code runs
+/// the hooks in every session that reads the file, and `[hooks] scope`
+/// decides what Seldon does in the sessions outside the logbook.
+fn scope_warning(
+    ctx: &Context,
+    path: &Path,
+    logbook: Option<&(Config, Logbook)>,
+) -> Option<String> {
+    let loaded;
+    let (config, root) = match logbook {
+        Some((config, logbook)) => (config, logbook.root.clone()),
+        None => {
+            loaded = ctx.load_config().ok().flatten().unwrap_or_default();
+            (&loaded, ctx.resolve_logbook(None, Some(&loaded)).0)
+        }
+    };
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    if is_inside(&path, &root) {
+        return None;
+    }
+    let root = ctx.dirs.display(&root);
+    Some(match config.hooks.scope {
+        HookScope::Logbook => format!(
+            "this settings file is outside the logbook ({root}). Claude Code runs the hooks \
+             in every session that reads it; Seldon records commands and prints the logbook \
+             context only for sessions whose directory is inside the logbook \
+             ([hooks] scope = \"logbook\", the default)."
+        ),
+        HookScope::All => format!(
+            "this settings file is outside the logbook ({root}). Claude Code runs the hooks \
+             in every session that reads it, and with [hooks] scope = \"all\" Seldon records \
+             the commands of each of them in the logbook and prints the logbook context there."
+        ),
+    })
 }
 
 /// What [`unmerge_claude_hooks`] found: one label per hook of
