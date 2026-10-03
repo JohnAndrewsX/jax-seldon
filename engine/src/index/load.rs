@@ -82,10 +82,8 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
     let ledger = Ledger::new(logbook, Redactor::builtin());
     for month in ledger.months()? {
         let file = ledger.read_month(&month)?;
-        for n in file.bad_lines {
-            out.warnings.push(format!(
-                "ledger/{month}.jsonl:{n}: not a valid event, skipped"
-            ));
+        if let Some(w) = bad_lines_warning(&month, &file.bad_lines) {
+            out.warnings.push(w);
         }
         out.events.extend(file.events);
     }
@@ -181,6 +179,29 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
         out.areas.push((name, dir.join("AGENTS.md").is_file()));
     }
     Ok(out)
+}
+
+/// One warning per month with bad lines: the month, how many, and the
+/// first line numbers (F-132); `None` without bad lines.
+pub fn bad_lines_warning(month: &str, lines: &[usize]) -> Option<String> {
+    const SHOWN: usize = 5;
+    if lines.is_empty() {
+        return None;
+    }
+    let shown: Vec<String> = lines.iter().take(SHOWN).map(usize::to_string).collect();
+    let more = match lines.len().saturating_sub(SHOWN) {
+        0 => String::new(),
+        n => format!(" and {n} more"),
+    };
+    let (count, noun) = match lines.len() {
+        1 => (1, "line"),
+        n => (n, "lines"),
+    };
+    Some(format!(
+        "ledger/{month}.jsonl: {count} {noun} skipped, not a valid event \
+         (not UTF-8, not JSON, or a bad actor or case): line {}{more}",
+        shown.join(", ")
+    ))
 }
 
 fn read(path: &Path) -> Result<String, String> {
