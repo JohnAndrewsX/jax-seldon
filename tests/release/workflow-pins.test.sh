@@ -8,7 +8,13 @@
 #   - one action or image has one pin across all workflows;
 #   - release.yml's build job installs cargo-audit and runs
 #     `cargo audit` with the reviewed ignore list before `just check`;
-#     release.yml has no `continue-on-error`; release needs build.
+#     the step has no `if:` or `shell:` of its own, nothing in its run
+#     block ignores a failure, and `cargo audit` is its last line;
+#     release.yml has no `continue-on-error`; release needs build, and
+#     bump, aur and plugin need [build, release].
+#
+# Limit: a SHA is not checked against its version comment (that needs
+# the network); the refresh steps in packaging/README.md resolve both.
 #
 # Usage: bash tests/release/workflow-pins.test.sh
 set -euo pipefail
@@ -32,6 +38,24 @@ job() {
     in_jobs && /^[^ #]/ { in_jobs = 0; on = 0 }
     on { print }
   ' "$1"
+}
+
+# the lines of one step (`      - name: NAME`) of a job's text, up to the next step
+step() {
+  awk -v want="      - name: $2" '
+    /^      - / { on = ($0 == want) }
+    on { print }
+  ' <<< "$1"
+}
+
+# the lines of a step's `run: |` block, without their indentation
+run_block() {
+  awk '
+    /^        run: \|/ { on = 1; next }
+    on && /^          / { print substr($0, 11); next }
+    on && /^[[:space:]]*$/ { next }
+    on { on = 0 }
+  ' <<< "$1"
 }
 
 # problems DIR: one line per problem in the workflows of DIR; none = ok
@@ -76,12 +100,35 @@ problems() {
   elif [[ -z $check_at || $audit_at -gt $check_at ]]; then
     echo "$release: cargo audit does not run before just check in the build job"
   fi
-  grep -q 'bash packaging/audit-ignore.sh' <<< "$build" \
-    || echo "$release: the build job does not read packaging/audit-ignore.sh"
-  # here-strings, not `| grep -q`: an early exit of grep would SIGPIPE
-  # the writer and fail the pipeline under pipefail
-  grep -E -q '^    needs:[[:space:]]*\[?build' <<< "$(job "$release" release)" \
+  # the step itself: unconditional, the workflow's `bash -eo pipefail`,
+  # every command's failure fails it, and cargo audit decides last.
+  # Here-strings, not `| grep -q`: an early exit of grep would SIGPIPE
+  # the writer and fail the pipeline under pipefail.
+  local audit block
+  audit=$(step "$build" "cargo audit")
+  block=$(run_block "$audit")
+  if [[ -z $audit ]]; then
+    echo "$release: the build job has no step named cargo audit"
+  else
+    ! grep -E -q '^        if:' <<< "$audit" \
+      || echo "$release: the cargo audit step has an if: condition"
+    ! grep -E -q '^        shell:' <<< "$audit" \
+      || echo "$release: the cargo audit step sets its own shell"
+    # shellcheck disable=SC2016  # the workflow's line, literally
+    grep -x -q -F 'ids=$(bash packaging/audit-ignore.sh)' <<< "$block" \
+      || echo "$release: the cargo audit step does not read packaging/audit-ignore.sh"
+    ! grep -E -q '\|\||set \+[eo]' <<< "$block" \
+      || echo "$release: the cargo audit step ignores a failure (|| or set +e)"
+    grep -E -q '^cargo audit --file engine/Cargo\.lock --deny warnings "\$\{args\[@\]\}"$' <<< "$(tail -n 1 <<< "$block")" \
+      || echo "$release: cargo audit is not the last line of its step"
+  fi
+  grep -E -q '^    needs:[[:space:]]*(build|\[[[:space:]]*build[[:space:]]*\])[[:space:]]*$' <<< "$(job "$release" release)" \
     || echo "$release: the release job does not need build"
+  local j
+  for j in bump aur plugin; do
+    grep -E -q '^    needs:[[:space:]]*\[[[:space:]]*build[[:space:]]*,[[:space:]]*release[[:space:]]*\][[:space:]]*$' <<< "$(job "$release" "$j")" \
+      || echo "$release: the $j job does not need [build, release]"
+  done
 }
 
 # --- the real workflows ---
@@ -143,6 +190,24 @@ expect_problem "cargo audit after just check" "before just check" \
   's/^(      - name: cargo audit)$/      - name: early\n        run: just check\n\n\1/'
 expect_problem "release job without build" "does not need build" \
   '0,/^    needs: build$/{/^    needs: build$/d}'
+expect_problem "cargo audit step with if: false" "has an if: condition" \
+  's/^(      - name: cargo audit)$/\1\n        if: false/'
+expect_problem "cargo audit step with its own shell" "sets its own shell" \
+  's/^(      - name: cargo audit)$/\1\n        shell: bash {0}/'
+expect_problem "set +e and a command after cargo audit" "not the last line" \
+  's/^(          )(cargo audit --file .*)$/\1set +e\n\1\2\n\1echo done/'
+expect_problem "set +e alone" "ignores a failure" \
+  's/^(          )(ids=\$\(bash packaging\/audit-ignore.sh\))$/\1set +e\n\1\2/'
+expect_problem "|| true on the ids line" "ignores a failure" \
+  's/^(          ids=\$\(bash packaging\/audit-ignore.sh\))$/\1 || true/'
+expect_problem "cargo audit || true" "ignores a failure" \
+  's/^(          cargo audit --file .*)$/\1 || true/'
+expect_problem "aur without release" "aur job does not need" \
+  '/^  aur:$/,/^    needs:/s/^    needs: \[build, release\]$/    needs: build/'
+expect_problem "plugin without build" "plugin job does not need" \
+  '/^  plugin:$/,/^    needs:/s/^    needs: \[build, release\]$/    needs: release/'
+expect_problem "bump without needs" "bump job does not need" \
+  '/^  bump:$/,/^    needs:/{/^    needs:/d}'
 
 if ((fails > 0)); then
   echo "workflow-pins.test: $fails failure(s)" >&2
