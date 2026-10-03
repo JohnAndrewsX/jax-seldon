@@ -7,6 +7,7 @@
 //! A view is written only when its text changed, so a rebuild does not
 //! touch files (or git) for nothing.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
@@ -322,22 +323,60 @@ fn drift_line(d: &DriftItem, today: &str, w: &Words) -> String {
 }
 
 /// `STATUS.md` with the `status` fence replaced by `content`
-/// ([`merge_fence`]).
-pub fn merge_status(existing: Option<&str>, content: &str) -> String {
-    merge_fence(existing, STATUS_FENCE, content)
+/// ([`try_merge_fence`]); the `Err` says why the file must stay as it is.
+/// The `init` template is the one header file without the fence that is
+/// replaced.
+pub fn merge_status(existing: Option<&str>, content: &str) -> Result<String, String> {
+    try_merge_fence(existing, STATUS_FENCE, content, is_status_template)
+}
+
+/// Whether `text` is the `STATUS.md` that `init` wrote (any language, any
+/// machine id): fully generated, so `status` may replace it.
+fn is_status_template(text: &str) -> bool {
+    let template = crate::logbook::templates::find("STATUS.md").expect("a built-in template");
+    Language::ALL.iter().any(|&language| {
+        template
+            .text(language)
+            .split_once("{{machineId}}")
+            .and_then(|(pre, post)| text.strip_prefix(pre)?.strip_suffix(post))
+            .is_some_and(|id| !id.contains('\n'))
+    })
+}
+
+/// The start of every fence marker. Text written into a fence has it
+/// broken by a zero-width space ([`neutralise`]).
+const MARKER: &str = "<!-- seldon:";
+
+/// `text` with every `<!-- seldon:` broken into `<!--`, U+200B, ` seldon:`
+/// (F-130), so a value from the logbook (a case or decision title, a drift
+/// subject, a collector message) can neither end its fence nor open one.
+/// It renders the same: inside a code span the zero-width space is not
+/// seen, outside one the text is still an HTML comment. A broken marker
+/// stays as it is.
+pub fn neutralise(text: &str) -> Cow<'_, str> {
+    if text.contains(MARKER) {
+        Cow::Owned(text.replace(MARKER, "<!--\u{200B} seldon:"))
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 /// `text` with the body of its first fence `name` replaced by `content`
 /// (which ends in a newline, or is empty); the marker lines and every
-/// byte outside them stay as they are. `None` when `text` has no complete
-/// fence `name`.
+/// byte outside them stay as they are. In a file with `\r\n` line ends
+/// (the begin marker's line) `content` gets them too. `None` when `text`
+/// has no complete fence `name`.
 pub fn replace_fence(text: &str, name: &str, content: &str) -> Option<String> {
-    let body = fence_body(text, name)?;
-    let start = body.as_ptr() as usize - text.as_ptr() as usize;
+    let (start, len, crlf) = fence_span(text, name)?;
+    let content = if crlf {
+        Cow::Owned(content.replace('\n', "\r\n"))
+    } else {
+        Cow::Borrowed(content)
+    };
     Some(format!(
         "{}{content}{}",
         &text[..start],
-        &text[start + body.len()..]
+        &text[start + len..]
     ))
 }
 
@@ -345,10 +384,27 @@ pub fn replace_fence(text: &str, name: &str, content: &str) -> Option<String> {
 /// [`replace_fence`] finds it, so "has the fence" and "can replace it"
 /// never disagree (a damaged marker elsewhere in the file cannot hide it).
 pub fn fence_body<'a>(text: &'a str, name: &str) -> Option<&'a str> {
-    let begin = format!("{FENCE_BEGIN}{name} -->\n");
-    let start = text.find(&begin)? + begin.len();
-    let len = text[start..].find(FENCE_END)?;
+    let (start, len, _) = fence_span(text, name)?;
     Some(&text[start..start + len])
+}
+
+/// `(start, length, crlf)` of the body of the first fence `name`: the
+/// first begin marker that ends its line (`\n` or `\r\n`), up to the next
+/// end marker.
+fn fence_span(text: &str, name: &str) -> Option<(usize, usize, bool)> {
+    let begin = format!("{FENCE_BEGIN}{name} -->");
+    let (start, crlf) = text.match_indices(&begin).find_map(|(at, _)| {
+        let rest = &text[at + begin.len()..];
+        if rest.starts_with('\n') {
+            Some((at + begin.len() + 1, false))
+        } else if rest.starts_with("\r\n") {
+            Some((at + begin.len() + 2, true))
+        } else {
+            None
+        }
+    })?;
+    let len = text[start..].find(FENCE_END)?;
+    Some((start, len, crlf))
 }
 
 /// Whether `text` has a begin marker of fence `name` whose body cannot be
@@ -363,33 +419,69 @@ pub fn fence_damaged(text: &str, name: &str) -> bool {
 }
 
 /// A generated file (`STATUS.md`, `outputs/REBUILD.md`) with its fence
-/// `name` replaced by `content`; the rest of an existing file is kept
-/// (WP-032 review item 6: one merge, two callers). A file without the
-/// fence that starts with the generated header (the `init` template,
-/// older engines) is replaced; one without the header is user text and is
-/// kept below the fence. The header is always the first line.
-pub fn merge_fence(existing: Option<&str>, name: &str, content: &str) -> String {
-    let block = format!("{FENCE_BEGIN}{name} -->\n{content}{FENCE_END}\n");
-    let fresh = || format!("{GENERATED_HEADER}\n{block}");
+/// `name` replaced by `content` ([`neutralise`]d); the rest of an existing
+/// file is kept (WP-032 review item 6: one merge, several callers). A file
+/// without the fence is replaced when it is blank (the header aside) or
+/// `template` says it is fully generated; one without the header is user
+/// text and is kept below the fence. The header is always the first line.
+///
+/// `Err` (the file must stay as it is, F-131): a damaged fence
+/// ([`fence_damaged`]), or a file with the generated header but without
+/// the fence (its markers were removed by hand): which part is the user's
+/// cannot be told.
+pub fn try_merge_fence(
+    existing: Option<&str>,
+    name: &str,
+    content: &str,
+    template: impl Fn(&str) -> bool,
+) -> Result<String, String> {
+    let content = neutralise(content);
+    let fresh = || format!("{GENERATED_HEADER}\n{FENCE_BEGIN}{name} -->\n{content}{FENCE_END}\n");
     let Some(old) = existing else {
-        return fresh();
+        return Ok(fresh());
     };
-    if let Some(merged) = replace_fence(old, name, content) {
-        return if merged.starts_with(GENERATED_HEADER) {
+    if fence_damaged(old, name) {
+        return Err(format!("the {name} fence has no end marker of its own"));
+    }
+    if let Some(merged) = replace_fence(old, name, &content) {
+        return Ok(if merged.starts_with(GENERATED_HEADER) {
             merged
         } else {
             format!("{GENERATED_HEADER}\n{merged}")
-        };
+        });
     }
-    if old.starts_with(GENERATED_HEADER) || old.trim().is_empty() {
-        return fresh();
+    let below_header = old.strip_prefix(GENERATED_HEADER).unwrap_or(old);
+    if below_header.trim().is_empty() || template(old) {
+        return Ok(fresh());
     }
-    format!("{}\n{old}", fresh())
+    if old.starts_with(GENERATED_HEADER) {
+        return Err(format!(
+            "the generated header is there but the {name} fence is not"
+        ));
+    }
+    Ok(format!("{}\n{old}", fresh()))
 }
 
-/// Regenerates `STATUS.md`; `true` when it changed.
-pub fn write_status(logbook: &Logbook, built: &Built) -> anyhow::Result<bool> {
-    let path = logbook.path("STATUS.md");
+/// [`try_merge_fence`] for files the user asked for (`outputs/REBUILD.md`,
+/// the import report): a file it would leave alone gets a fresh fence on
+/// top and keeps all of its old text below (without a second header
+/// line), so nothing is lost and the next run finds the new fence first.
+pub fn merge_fence(existing: Option<&str>, name: &str, content: &str) -> String {
+    try_merge_fence(existing, name, content, |_| false).unwrap_or_else(|_| {
+        let old = existing.unwrap_or_default();
+        let old = old
+            .strip_prefix(GENERATED_HEADER)
+            .map_or(old, |rest| rest.trim_start_matches(['\r', '\n']));
+        let fresh = try_merge_fence(None, name, content, |_| false).unwrap_or_default();
+        format!("{fresh}\n{old}")
+    })
+}
+
+/// Regenerates `STATUS.md`. A damaged fence, or the header without the
+/// fence, leaves the file as it is ([`Fill::Skipped`], F-131).
+pub fn write_status(logbook: &Logbook, built: &Built) -> anyhow::Result<Fill> {
+    const REL: &str = "STATUS.md";
+    let path = logbook.path(REL);
     let existing = match std::fs::read_to_string(&path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -397,11 +489,23 @@ pub fn write_status(logbook: &Logbook, built: &Built) -> anyhow::Result<bool> {
             return Err(anyhow::Error::new(e).context(format!("cannot read {}", path.display())));
         }
     };
-    let text = merge_status(
+    let text = match merge_status(
         existing.as_deref(),
         &status_text(built, logbook.meta.language),
-    );
-    write_if_changed(logbook, "STATUS.md", &text, Durable::No)
+    ) {
+        Ok(text) => text,
+        Err(why) => {
+            return Ok(Fill::Skipped(format!(
+                "{REL}: {why}; file not updated (restore the marker lines \
+                 `{FENCE_BEGIN}{STATUS_FENCE} -->` and `{FENCE_END}`)"
+            )));
+        }
+    };
+    Ok(if write_if_changed(logbook, REL, &text, Durable::No)? {
+        Fill::Written
+    } else {
+        Fill::Unchanged
+    })
 }
 
 /// The body of the `decisions.index` fence of `DECISIONS.md`: the table
@@ -473,7 +577,7 @@ pub fn write_decisions_index(logbook: &Logbook, rows: &[DecisionRow]) -> anyhow:
         )));
     }
     let body = old.as_deref().and_then(|t| fence_body(t, DECISIONS_FENCE));
-    let content = decisions_index(body, rows);
+    let content = neutralise(&decisions_index(body, rows)).into_owned();
     let text = match old.as_deref() {
         Some(t) => match replace_fence(t, DECISIONS_FENCE, &content) {
             Some(text) => text,
@@ -529,15 +633,19 @@ fn write_if_changed(
 mod tests {
     use super::*;
 
+    fn merge(existing: Option<&str>, content: &str) -> String {
+        merge_status(existing, content).unwrap()
+    }
+
     #[test]
     fn merge_keeps_user_text_outside_the_fence() {
-        let fresh = merge_status(None, "A\n");
+        let fresh = merge(None, "A\n");
         assert_eq!(
             fresh,
             format!("{GENERATED_HEADER}\n<!-- seldon:begin status -->\nA\n<!-- seldon:end -->\n")
         );
         let edited = format!("{fresh}\nMy notes.\n");
-        let again = merge_status(Some(&edited), "B\n");
+        let again = merge(Some(&edited), "B\n");
         assert_eq!(
             again,
             format!(
@@ -547,25 +655,95 @@ mod tests {
         // user text above the fence, header removed by hand
         let above = "Intro\n<!-- seldon:begin status -->\nold\n<!-- seldon:end -->\nTail";
         assert_eq!(
-            merge_status(Some(above), "C\n"),
+            merge(Some(above), "C\n"),
             format!(
                 "{GENERATED_HEADER}\nIntro\n<!-- seldon:begin status -->\nC\n<!-- seldon:end -->\nTail"
             )
         );
-        // the init template is fully generated; a user file is kept below
-        let template = format!("{GENERATED_HEADER}\n# Status — x\n\nNo status yet.\n");
-        assert_eq!(
-            merge_status(Some(&template), "D\n"),
-            merge_status(None, "D\n")
-        );
+        // the init template (any language) is fully generated; a user file
+        // is kept below
+        for language in Language::ALL {
+            let template = crate::logbook::templates::find("STATUS.md")
+                .unwrap()
+                .text(language)
+                .replace("{{machineId}}", "box-1a2b");
+            assert_eq!(merge(Some(&template), "D\n"), merge(None, "D\n"));
+        }
         let user = "# My status\nhand-written\n";
         assert_eq!(
-            merge_status(Some(user), "E\n"),
-            format!("{}\n{user}", merge_status(None, "E\n"))
+            merge(Some(user), "E\n"),
+            format!("{}\n{user}", merge(None, "E\n"))
         );
         // idempotent
-        let once = merge_status(Some(user), "E\n");
-        assert_eq!(merge_status(Some(&once), "E\n"), once);
+        let once = merge(Some(user), "E\n");
+        assert_eq!(merge(Some(&once), "E\n"), once);
+    }
+
+    /// F-131: a fence whose markers were edited away leaves the file alone.
+    #[test]
+    fn a_damaged_status_file_is_not_merged() {
+        let fresh = merge(None, "A\n");
+        let notes = format!("{fresh}\n## My notes\nKeep this.\n");
+        for damaged in [
+            notes.replace("<!-- seldon:end -->\n", ""),
+            notes.replace("<!-- seldon:begin status -->\n", ""),
+            notes
+                .replace("<!-- seldon:begin status -->\n", "")
+                .replace("<!-- seldon:end -->\n", ""),
+            // the template with notes added is no longer the template
+            format!("{GENERATED_HEADER}\n# Status — x\n\nNo status yet.\nMine.\n"),
+        ] {
+            assert!(merge_status(Some(&damaged), "B\n").is_err(), "{damaged}");
+        }
+        // REBUILD.md and the import report: the old text stays below
+        let open = notes.replace("<!-- seldon:end -->\n", "");
+        let kept = merge_fence(Some(&open), STATUS_FENCE, "B\n");
+        assert_eq!(
+            kept,
+            format!(
+                "{GENERATED_HEADER}\n<!-- seldon:begin status -->\nB\n<!-- seldon:end -->\n\n\
+                 <!-- seldon:begin status -->\nA\n\n## My notes\nKeep this.\n"
+            )
+        );
+        assert_eq!(
+            merge_fence(Some(&kept), STATUS_FENCE, "B\n"),
+            kept,
+            "stable"
+        );
+    }
+
+    /// F-131: `\r\n` line ends are a fence too; the new body gets them.
+    #[test]
+    fn a_crlf_fence_is_merged_with_crlf() {
+        let crlf = merge(None, "A\nB\n").replace('\n', "\r\n") + "\r\nMine.\r\n";
+        let merged = merge(Some(&crlf), "C\n");
+        assert_eq!(
+            merged,
+            format!(
+                "{GENERATED_HEADER}\r\n<!-- seldon:begin status -->\r\nC\r\n<!-- seldon:end -->\r\n\r\nMine.\r\n"
+            )
+        );
+        assert_eq!(fence_body(&merged, STATUS_FENCE), Some("C\r\n"));
+        assert!(!fence_damaged(&merged, STATUS_FENCE));
+    }
+
+    /// F-130: a value with a fence marker cannot end or open the fence.
+    #[test]
+    fn values_cannot_close_the_fence() {
+        let content = "- [[C-2026-001]] Document the <!-- seldon:end --> marker\n\
+                       - <!-- seldon:begin status --> twice\n";
+        let once = merge(None, content);
+        let body = fence_body(&once, STATUS_FENCE).unwrap();
+        assert_eq!(body, neutralise(content));
+        assert!(!body.contains(MARKER), "{body}");
+        assert!(body.contains("Document the <!--\u{200B} seldon:end --> marker"));
+        let mut text = once.clone();
+        for _ in 0..3 {
+            text = merge(Some(&text), content);
+        }
+        assert_eq!(text, once, "stable");
+        assert_eq!(neutralise(&neutralise(content)), neutralise(content));
+        assert!(matches!(neutralise("plain <!-- x -->"), Cow::Borrowed(_)));
     }
 
     #[test]

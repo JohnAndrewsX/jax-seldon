@@ -78,10 +78,12 @@ pub(crate) fn rebuild_with<T>(
     let logbook = Logbook::open(&root)?;
     let mut built = index::derive(ctx, &config, &logbook)?;
     let mut files = views::write_ledger_views(&logbook, &built)?;
-    if status && views::write_status(&logbook, &built)? {
-        files.push("STATUS.md".into());
-    }
     if status {
+        match views::write_status(&logbook, &built)? {
+            views::Fill::Written => files.push("STATUS.md".into()),
+            views::Fill::Unchanged => {}
+            views::Fill::Skipped(w) => built.warnings.push(w),
+        }
         match views::write_decisions_index(&logbook, &built.index.decisions)? {
             views::Fill::Written => files.push("DECISIONS.md".into()),
             views::Fill::Unchanged => {}
