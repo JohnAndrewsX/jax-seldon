@@ -468,6 +468,8 @@ mod collectors {
     #[test]
     fn snapper_degrades_without_permissions() {
         let mut b = Bench::new("snapper-perm");
+        // no snapshot directory either: nothing to read instead
+        b.sources.snapshots = b.scratch.path("no-snapshots");
         b.sources.snapper = b.scratch.stub(
             "snapper",
             &format!(
@@ -494,6 +496,211 @@ mod collectors {
         );
         b.sources.snapper = b.scratch.stub("snapper", "echo not json");
         assert!(!b.run(&Snapper, "2026-10-01T17:05:00+02:00").ok);
+    }
+
+    /// A snapper stub that answers like snapper without permission.
+    fn no_permission(b: &Bench) -> String {
+        b.scratch.stub(
+            "snapper-denied",
+            &format!(
+                "cat '{}' >&2; exit 1",
+                fixture("logs/snapper-no-permissions.stderr").display()
+            ),
+        )
+    }
+
+    /// `fixtures/logs/snapshots` copied into the bench's scratch dir.
+    fn snapshots_copy(b: &Bench) -> std::path::PathBuf {
+        let to = b.scratch.path("snapshots");
+        for entry in std::fs::read_dir(fixture("logs/snapshots")).unwrap() {
+            let entry = entry.unwrap();
+            let dir = to.join(entry.file_name());
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::copy(entry.path().join("info.xml"), dir.join("info.xml")).unwrap();
+        }
+        to
+    }
+
+    fn kinds(events: &[Event]) -> Vec<String> {
+        events
+            .iter()
+            .map(|e| format!("{} {}", e.kind, e.subject))
+            .collect()
+    }
+
+    /// Without permission to list, the info files give the same events as
+    /// the list, and switching between the two adds none.
+    #[test]
+    fn snapper_reads_the_info_files_when_listing_is_not_permitted() {
+        // the list: snapper-before.json, then snapper.json
+        let mut list = Bench::new("snapper-list");
+        list.sources.snapper = list
+            .scratch
+            .stub_cat("snapper", &fixture("logs/snapper-before.json"));
+        list.run(&Snapper, "2026-09-30T18:00:00+02:00");
+        list.sources.snapper = list
+            .scratch
+            .stub_cat("snapper", &fixture("logs/snapper.json"));
+        let want = list.run(&Snapper, "2026-09-30T19:05:00+02:00");
+        assert_eq!(want.events.len(), 7);
+
+        // the same cursor, then the info files of snapper.json's state
+        let mut b = Bench::new("snapper-info");
+        b.sources.snapper = b
+            .scratch
+            .stub_cat("snapper", &fixture("logs/snapper-before.json"));
+        b.run(&Snapper, "2026-09-30T18:00:00+02:00");
+        b.sources.snapper = no_permission(&b);
+        b.sources.snapshots = fixture("logs/snapshots");
+        let got = b.run(&Snapper, "2026-09-30T19:05:00+02:00");
+        assert!(got.ok, "{:?}", got.message);
+        assert_eq!(got.fix, None);
+        assert_eq!(
+            normalised_sorted(&got.events),
+            normalised_sorted(&want.events)
+        );
+        assert_eq!(got.cursor, want.cursor, "the same cursor");
+        let message = got.message.unwrap();
+        assert!(
+            message.starts_with(
+                "snapper list is not permitted; 10 snapshots read from the info files in "
+            ),
+            "{message}"
+        );
+
+        // a second capture, then list ↔ info files: nothing new
+        assert_eq!(
+            kinds(&b.run(&Snapper, "2026-09-30T19:10:00+02:00").events),
+            [""; 0]
+        );
+        b.sources.snapper = b.scratch.stub_cat("snapper", &fixture("logs/snapper.json"));
+        let out = b.run(&Snapper, "2026-09-30T19:15:00+02:00");
+        assert!(out.ok);
+        assert_eq!(out.message, None);
+        assert_eq!(kinds(&out.events), [""; 0]);
+        b.sources.snapper = no_permission(&b);
+        assert_eq!(
+            kinds(&b.run(&Snapper, "2026-09-30T19:20:00+02:00").events),
+            [""; 0]
+        );
+
+        // a first run from the info files takes the same baseline as the list
+        let mut fresh_list = Bench::new("snapper-fresh-list");
+        fresh_list.baseline = support::ts("2026-09-30T00:00:00+02:00");
+        let want = fresh_list.run(&Snapper, "2026-10-01T17:05:00+02:00");
+        let mut fresh = Bench::new("snapper-fresh-info");
+        fresh.baseline = support::ts("2026-09-30T00:00:00+02:00");
+        fresh.sources.snapper = no_permission(&fresh);
+        fresh.sources.snapshots = fixture("logs/snapshots");
+        let got = fresh.run(&Snapper, "2026-10-01T17:05:00+02:00");
+        assert_eq!(
+            kinds(&got.events),
+            [
+                "snapshot 111",
+                "snapshot 112",
+                "snapshot 113",
+                "snapshot 114",
+                "snapshot 115"
+            ]
+        );
+        assert_eq!(
+            normalised_sorted(&got.events),
+            normalised_sorted(&want.events)
+        );
+    }
+
+    /// An info file that cannot be read is skipped and named; its snapshot
+    /// is neither new nor deleted. Other entries are ignored.
+    #[test]
+    fn snapper_info_files_skip_what_cannot_be_read() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut b = Bench::new("snapper-skip");
+        b.run(&Snapper, "2026-10-01T17:05:00+02:00"); // the list's cursor
+        let dir = snapshots_copy(&b);
+        std::fs::create_dir_all(dir.join("lost+found")).unwrap();
+        std::fs::write(dir.join("README"), "not a snapshot").unwrap();
+        // 112: no <num>; 113: not readable (where permissions apply)
+        std::fs::write(
+            dir.join("112/info.xml"),
+            "<?xml version=\"1.0\"?>\n<snapshot>\n  <type>single</type>\n</snapshot>\n",
+        )
+        .unwrap();
+        let unreadable = dir.join("113/info.xml");
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = std::fs::read(&unreadable).is_err();
+        b.sources.snapper = no_permission(&b);
+        b.sources.snapshots = dir.clone();
+        let out = b.run(&Snapper, "2026-10-01T17:10:00+02:00");
+        assert!(out.ok, "{:?}", out.message);
+        assert_eq!(
+            kinds(&out.events),
+            [""; 0],
+            "no snapshot-delete for 112 or 113"
+        );
+        let message = out.message.unwrap();
+        assert!(
+            message.contains("; skipped 112/info.xml: no <num>"),
+            "{message}"
+        );
+        if denied {
+            assert!(
+                message.contains("; skipped 113/info.xml: permission denied"),
+                "{message}"
+            );
+        }
+        let known = &out.cursor.unwrap()["known"];
+        assert_eq!(known["112"]["type"], "single", "kept in the cursor");
+        assert_eq!(known["113"]["description"], "pre: ollama");
+
+        // readable again: still nothing new
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::copy(
+            fixture("logs/snapshots/112/info.xml"),
+            dir.join("112/info.xml"),
+        )
+        .unwrap();
+        let out = b.run(&Snapper, "2026-10-01T17:15:00+02:00");
+        assert_eq!(kinds(&out.events), [""; 0]);
+        assert!(!out.message.unwrap().contains("skipped"));
+
+        // every numbered info file unreadable: degraded, as without the files
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let info = entry.unwrap().path().join("info.xml");
+            if info.exists() {
+                std::fs::write(&info, "<snapshot></snapshot>").unwrap();
+            }
+        }
+        let out = b.run(&Snapper, "2026-10-01T17:20:00+02:00");
+        assert!(!out.ok);
+        assert_eq!(out.message.as_deref(), Some(NO_PERMISSIONS));
+        assert_eq!(out.fix.as_deref(), Some(SNAPPER_FIX));
+        assert_eq!(out.cursor, None, "the cursor is kept");
+
+        // an empty, readable directory (e.g. after booting into a
+        // snapshot): degraded, no snapshot-delete, the cursor kept
+        let before = b.cursors["snapper"].clone();
+        let empty = b.scratch.path("empty-snapshots");
+        std::fs::create_dir_all(&empty).unwrap();
+        b.sources.snapshots = empty;
+        let out = b.run(&Snapper, "2026-10-01T17:22:00+02:00");
+        assert_eq!(kinds(&out.events), [""; 0], "no snapshot-delete");
+        assert!(!out.ok);
+        assert_eq!(out.message.as_deref(), Some(NO_PERMISSIONS));
+        assert_eq!(out.fix.as_deref(), Some(SNAPPER_FIX));
+        assert_eq!(out.cursor, None, "the cursor is kept");
+        assert_eq!(b.cursors["snapper"], before);
+
+        // the directory itself not readable: degraded
+        b.sources.snapshots = fixture("logs/snapshots");
+        let locked = b.scratch.path("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_dir(&locked).is_err() {
+            b.sources.snapshots = locked.clone();
+            let out = b.run(&Snapper, "2026-10-01T17:25:00+02:00");
+            assert_eq!(out.message.as_deref(), Some(NO_PERMISSIONS));
+        }
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]

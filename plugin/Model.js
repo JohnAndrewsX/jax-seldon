@@ -53,6 +53,10 @@ var INIT_COMMAND = "seldon init"
 // snapshots. `$USER` is expanded by the shell the user pastes it into (or by
 // the terminal launcher's bash -c); nothing else in it varies.
 var SNAPPER_FIX_COMMAND = "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
+// What SNAPPER_FIX_COMMAND grants besides listing (snapper(8): ALLOW_USERS
+// has no read-only level); the banner shows it under the engine's message,
+// like `seldon doctor` (SNAPPER_FIX_GRANTS there).
+var SNAPPER_FIX_GRANTS = "The command below adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password."
 // The engineMissing banner's text. The AUR package does not exist yet
 // (operator, 2026-10-02); flip this with INSTALL_ENGINE_COMMAND (WP-044).
 var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub: the command below downloads install.sh from the release, which checks the engine against SHA256SUMS. Then check again."
@@ -676,7 +680,8 @@ function collectors(index) {
 var SNAPPER_HINT = "When the command has finished, press Check again"
 
 // ADR-0011: snapper runs degraded until the user opts in. The banner shows the
-// engine's message as plain text and offers the constant fix. Action ids are
+// engine's message as plain text, then what the fix grants
+// (SNAPPER_FIX_GRANTS), and offers the constant fix. Action ids are
 // dispatched by Service.fix(actionId, "snapper"). *Check again* is a capture
 // (the same call as *Capture now*): only a capture rewrites the collector
 // state this banner reads; reloading the index would not (WP-054).
@@ -691,9 +696,9 @@ function snapperBanner(index, hinted) {
       status: "snapperDegraded",
       tone: "accent",
       title: "Snapshots not readable",
-      detail: typeof c.message === "string" && c.message !== ""
+      detail: (typeof c.message === "string" && c.message !== ""
         ? c.message
-        : "The snapper collector has no permission to list snapshots.",
+        : "The snapper collector has no permission to list snapshots.") + "\n" + SNAPPER_FIX_GRANTS,
       command: SNAPPER_FIX_COMMAND,
       actions: [
         { id: "terminal", label: "Run in terminal" },

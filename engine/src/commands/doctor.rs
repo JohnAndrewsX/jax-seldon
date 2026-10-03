@@ -14,7 +14,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::{Context, Output};
-use crate::collectors::snapper;
+use crate::collectors::{Sources, snapper};
 use crate::config::Config;
 use crate::error::{Error, Exit, Result};
 use crate::logbook::{Logbook, git, layout};
@@ -25,6 +25,14 @@ use crate::{CONTRACT_VERSION, VERSION};
 /// The one command that lets the user read snapper without root (ADR-0011).
 /// Printed, never run.
 pub const SNAPPER_FIX: &str = "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes";
+
+/// What [`SNAPPER_FIX`] grants besides listing: snapper(8) has no read-only
+/// level for `ALLOW_USERS`. Shown with the fix (doctor, init, the plugin's
+/// banner) and when listing works for the user.
+pub const SNAPPER_FIX_GRANTS: &str = "The fix adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password.";
+
+/// Appended to the `ok` message when `snapper list` works for the user.
+pub const SNAPPER_LIST_GRANTS: &str = "This user may use the snapper config, which also lets it create, change and delete snapshots without a password.";
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -285,7 +293,9 @@ fn check_omarchy(config: &Config) -> Check {
 
 /// `snapper --jsonout list` as the user, in the C locale
 /// ([`snapper::list_command`]). Without `ALLOW_USERS` it fails with
-/// `No permissions.`; that is degraded with the fix, never sudo (ADR-0011).
+/// `No permissions.`; then the snapshot info files are read instead
+/// ([`snapper::readable_info_files`]), and when they are not readable
+/// either, that is degraded with the fix, never sudo (ADR-0011).
 pub fn check_snapper(config: &Config) -> Check {
     if !config.collectors.snapper {
         return Check::new("snapper", Status::Ok, "collector disabled in config.toml");
@@ -311,7 +321,10 @@ pub fn check_snapper(config: &Config) -> Check {
                 Check::new(
                     "snapper",
                     Status::Ok,
-                    format!("{snapshots} snapshots (config {})", names.join(", ")),
+                    format!(
+                        "{snapshots} snapshots (config {}). {SNAPPER_LIST_GRANTS}",
+                        names.join(", ")
+                    ),
                 )
             }
             _ => Check::new(
@@ -320,12 +333,24 @@ pub fn check_snapper(config: &Config) -> Check {
                 "snapper --jsonout list printed no JSON object",
             ),
         },
-        Run::Exited { stderr, .. } if snapper::is_no_permissions(stderr) => Check::new(
-            "snapper",
-            Status::Degraded,
-            "No permissions. Snapshots are not recorded until you allow your user once (ADR-0011)",
-        )
-        .fix(SNAPPER_FIX),
+        Run::Exited { stderr, .. } if snapper::is_no_permissions(stderr) => {
+            let dir = Sources::from_env().snapshots;
+            match snapper::readable_info_files(&dir) {
+                Some(info) => Check::new(
+                    "snapper",
+                    Status::Ok,
+                    snapper::info_files_message(&dir, &info),
+                ),
+                None => Check::new(
+                    "snapper",
+                    Status::Degraded,
+                    format!(
+                        "No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). {SNAPPER_FIX_GRANTS}"
+                    ),
+                )
+                .fix(SNAPPER_FIX),
+            }
+        }
         Run::NotFound => Check::new(
             "snapper",
             Status::Degraded,

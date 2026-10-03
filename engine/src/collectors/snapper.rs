@@ -16,23 +16,30 @@
 //! English (issue #1).
 //!
 //! Without `ALLOW_USERS`, snapper exits 1 with `No permissions.` on stderr.
-//! The collector then degrades: `ok: false`, a message, and the one-line fix,
-//! which is printed and never run. Nothing is invented and the cursor stays.
-//! The same goes for a missing snapper or unreadable output.
+//! The collector then reads the snapshots from the info files instead
+//! (`<snapshots>/<number>/info.xml`, [`read_info_files`]), which needs only
+//! read access to the snapshot directory. The events and the cursor are the
+//! same as from the list, so switching between the two ways adds no events.
+//! When the info files cannot be read either, or none is found, the
+//! collector degrades:
+//! `ok: false`, a message, and the one-line fix, which is printed and never
+//! run. Nothing is invented and the cursor stays. The same goes for a
+//! missing snapper or unreadable output.
 //!
 //! Only the `root` config is read (it is the only one on Omarchy; with one
 //! config of another name, that one), because the event subject is the bare
 //! snapshot number.
 
 use std::collections::{BTreeMap, HashSet};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, FixedOffset, Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, Tz, to_cursor, typed_cursor};
 use crate::commands::doctor::SNAPPER_FIX;
 use crate::model::event::{Event, Kind, Meta, Source};
 use crate::sys::{self, Run};
@@ -53,6 +60,24 @@ pub struct Snapshot {
     pub cleanup: String,
     #[serde(default)]
     pub description: String,
+}
+
+/// Where a list of [`Snapshot`]s came from; it decides the zone of `date`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// `snapper --jsonout list`: local time.
+    List,
+    /// The info files: UTC, as snapper stores it.
+    InfoFiles,
+}
+
+/// The snapshots read from the info files of a snapshot directory.
+#[derive(Debug, Clone, Default)]
+pub struct InfoFiles {
+    pub snapshots: Vec<Snapshot>,
+    /// Numbered directories whose `info.xml` could not be read or parsed:
+    /// still present (never reported as deleted), and why.
+    pub skipped: Vec<(u64, String)>,
 }
 
 /// What the cursor remembers of a snapshot.
@@ -110,7 +135,10 @@ impl Collector for Snapper {
                 ..
             } => stdout,
             Run::Exited { stderr, .. } if is_no_permissions(&stderr) => {
-                return Outcome::degraded(NO_PERMISSIONS, Some(SNAPPER_FIX.to_string()));
+                return match readable_info_files(&ctx.sources.snapshots) {
+                    Some(info) => from_info_files(ctx, cursor, &ctx.sources.snapshots, &info),
+                    None => Outcome::degraded(NO_PERMISSIONS, Some(SNAPPER_FIX.to_string())),
+                };
             }
             Run::Exited { code, stderr, .. } => {
                 let code = code.map_or("a signal".to_string(), |c| format!("exit {c}"));
@@ -127,9 +155,200 @@ impl Collector for Snapper {
             Ok(l) => l,
             Err(e) => return Outcome::degraded(format!("unexpected snapper output: {e}"), None),
         };
-        match diff(ctx, typed_cursor(cursor), &list) {
+        match diff(ctx, typed_cursor(cursor), &list, Origin::List, &[]) {
             Ok((events, next)) => Outcome::ok(events, to_cursor(&next)),
             Err(e) => Outcome::degraded(format!("{e:#}"), None),
+        }
+    }
+}
+
+/// The collector's result from the info files: `ok`, with a message that
+/// says so and names every skipped info file.
+fn from_info_files(ctx: &Ctx, cursor: Option<&Value>, dir: &Path, info: &InfoFiles) -> Outcome {
+    let kept: Vec<u64> = info.skipped.iter().map(|(n, _)| *n).collect();
+    match diff(
+        ctx,
+        typed_cursor(cursor),
+        &info.snapshots,
+        Origin::InfoFiles,
+        &kept,
+    ) {
+        Ok((events, next)) => {
+            let mut out = Outcome::ok(events, to_cursor(&next));
+            out.message = Some(info_files_message(dir, info));
+            out
+        }
+        Err(e) => Outcome::degraded(format!("{e:#}"), None),
+    }
+}
+
+/// "snapper list is not permitted; N snapshots read from the info files in
+/// DIR", plus one clause per skipped info file.
+pub fn info_files_message(dir: &Path, info: &InfoFiles) -> String {
+    let mut m = format!(
+        "snapper list is not permitted; {} snapshot{} read from the info files in {}",
+        info.snapshots.len(),
+        if info.snapshots.len() == 1 { "" } else { "s" },
+        dir.display()
+    );
+    for (n, why) in &info.skipped {
+        m.push_str(&format!("; skipped {n}/info.xml: {why}"));
+    }
+    m
+}
+
+/// [`read_info_files`] when it gives a usable answer: the directory is
+/// readable and at least one snapshot was read from it. `None` keeps the
+/// collector degraded with the cursor unchanged. An empty directory is not
+/// an answer: right after booting into a snapshot `/.snapshots` is an empty
+/// nested subvolume, and reading it as "no snapshots" would record every
+/// known snapshot as deleted.
+pub fn readable_info_files(dir: &Path) -> Option<InfoFiles> {
+    let info = read_info_files(dir).ok()?;
+    if info.snapshots.is_empty() {
+        None
+    } else {
+        Some(info)
+    }
+}
+
+/// Reads `dir/<number>/info.xml` for every numbered directory in `dir` (the
+/// snapshot directory of the `root` config, `/.snapshots`). Other entries
+/// are ignored. An info file that cannot be read or parsed is skipped and
+/// named in [`InfoFiles::skipped`]. Fails only when `dir` itself cannot be
+/// read.
+pub fn read_info_files(dir: &Path) -> std::io::Result<InfoFiles> {
+    let mut numbers: Vec<u64> = std::fs::read_dir(dir)?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            // only plain decimal numbers, as snapper names them
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            name.parse::<u64>().ok()
+        })
+        .filter(|n| *n != 0)
+        .collect();
+    numbers.sort_unstable();
+    let mut info = InfoFiles::default();
+    for number in numbers {
+        let file = dir.join(number.to_string()).join("info.xml");
+        let parsed = std::fs::read_to_string(&file)
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => "missing".to_string(),
+                kind => kind.to_string(),
+            })
+            .and_then(|text| parse_info(&text, number));
+        match parsed {
+            Ok(s) => info.snapshots.push(s),
+            Err(why) => info.skipped.push((number, why)),
+        }
+    }
+    Ok(info)
+}
+
+/// One `info.xml` (snapper's flat format: `<snapshot>` with `<type>`,
+/// `<num>`, `<date>` in UTC, and optionally `<pre_num>`, `<description>`,
+/// `<cleanup>`, `<uid>`, `<userdata>`). `<num>` must equal the directory's
+/// `number`, as snapper requires. `<userdata>` is not part of the events and
+/// is not read.
+pub fn parse_info(text: &str, number: u64) -> Result<Snapshot, String> {
+    if !text.contains("<snapshot>") {
+        return Err("not a snapshot info file".into());
+    }
+    let num = element(text, "num").ok_or("no <num>")?;
+    if num.trim().parse::<u64>().ok() != Some(number) {
+        return Err(format!("<num> {} does not match the directory", num.trim()));
+    }
+    let snapshot_type = element(text, "type").ok_or("no <type>")?.trim().to_string();
+    if !matches!(snapshot_type.as_str(), "single" | "pre" | "post") {
+        return Err(format!("unknown <type> {snapshot_type}"));
+    }
+    let pre_number = match element(text, "pre_num") {
+        Some(p) => Some(
+            p.trim()
+                .parse::<u64>()
+                .map_err(|_| format!("<pre_num> {} is not a number", p.trim()))?,
+        ),
+        None => None,
+    };
+    Ok(Snapshot {
+        number,
+        snapshot_type,
+        pre_number,
+        date: element(text, "date").unwrap_or_default().trim().to_string(),
+        cleanup: element(text, "cleanup").unwrap_or_default(),
+        description: element(text, "description").unwrap_or_default(),
+    })
+}
+
+/// The unescaped text of the first `<name>…</name>` (or `<name/>`, empty)
+/// in `text`. The info format has no attributes and no nesting under these
+/// names.
+fn element(text: &str, name: &str) -> Option<String> {
+    if text.contains(&format!("<{name}/>")) {
+        return Some(String::new());
+    }
+    let open = format!("<{name}>");
+    let start = text.find(&open)? + open.len();
+    let end = start + text[start..].find(&format!("</{name}>"))?;
+    Some(unescape(&text[start..end]))
+}
+
+/// XML's five named entities and numeric character references; anything
+/// else is kept as written.
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        rest = &rest[amp..];
+        let decoded = rest.find(';').and_then(|semi| {
+            let entity = &rest[1..semi];
+            let c = match entity {
+                "amp" => Some('&'),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "quot" => Some('"'),
+                "apos" => Some('\''),
+                _ => entity
+                    .strip_prefix("#x")
+                    .and_then(|h| u32::from_str_radix(h, 16).ok())
+                    .or_else(|| entity.strip_prefix('#').and_then(|d| d.parse().ok()))
+                    .and_then(char::from_u32),
+            }?;
+            Some((c, semi + 1))
+        });
+        match decoded {
+            Some((c, len)) => {
+                out.push(c);
+                rest = &rest[len..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A snapshot's `date` as an instant: local time from the list, UTC from
+/// the info files. `None` for an empty or unparsable date, or a local time
+/// in a DST gap.
+fn snapshot_ts(tz: Tz, date: &str, origin: Origin) -> Option<DateTime<FixedOffset>> {
+    let naive = NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S").ok()?;
+    match origin {
+        Origin::List => tz.localize(naive),
+        Origin::InfoFiles => {
+            let utc = naive.and_utc();
+            Some(match tz {
+                Tz::Local => utc.with_timezone(&Local).fixed_offset(),
+                Tz::Fixed(off) => utc.with_timezone(&off),
+            })
         }
     }
 }
@@ -154,20 +373,20 @@ pub fn parse_list(stdout: &str) -> anyhow::Result<Vec<Snapshot>> {
 }
 
 /// Events for the difference between the cursor and `list`, and the next
-/// cursor.
+/// cursor. `kept` are numbers that exist but could not be read: they are
+/// neither new nor deleted, and a known one stays in the cursor.
 fn diff(
     ctx: &Ctx,
     cursor: Option<SnapperCursor>,
     list: &[Snapshot],
+    origin: Origin,
+    kept: &[u64],
 ) -> anyhow::Result<(Vec<Event>, SnapperCursor)> {
     let first_run = cursor.is_none();
     let known = cursor.unwrap_or_default().known;
     let mut events = Vec::new();
     for s in list.iter().filter(|s| !known.contains_key(&s.number)) {
-        let Some(ts) = NaiveDateTime::parse_from_str(&s.date, "%Y-%m-%d %H:%M:%S")
-            .ok()
-            .and_then(|n| ctx.tz.localize(n))
-        else {
+        let Some(ts) = snapshot_ts(ctx.tz, &s.date, origin) else {
             continue; // no usable date: remembered, not reported
         };
         if first_run && ts < ctx.baseline {
@@ -185,7 +404,11 @@ fn diff(
         }
         events.push(e);
     }
-    let present: HashSet<u64> = list.iter().map(|s| s.number).collect();
+    let present: HashSet<u64> = list
+        .iter()
+        .map(|s| s.number)
+        .chain(kept.iter().copied())
+        .collect();
     for (number, k) in known.iter().filter(|(n, _)| !present.contains(n)) {
         let mut e = Event::new(
             ctx.now,
@@ -215,6 +438,10 @@ fn diff(
                     },
                 )
             })
+            .chain(
+                kept.iter()
+                    .filter_map(|n| known.get(n).map(|k| (*n, k.clone()))),
+            )
             .collect(),
     };
     Ok((events, next))
@@ -289,6 +516,99 @@ mod tests {
         );
         assert!(parse_list("{}").is_err());
         assert!(parse_list("No permissions.").is_err());
+    }
+
+    fn info(body: &str) -> String {
+        format!("<?xml version=\"1.0\"?>\n<snapshot>\n{body}</snapshot>\n")
+    }
+
+    #[test]
+    fn parses_info_files() {
+        // the fixture tree mirrors snapper.json; dates are UTC there
+        let text = include_str!("../../../fixtures/logs/snapshots/115/info.xml");
+        let post = parse_info(text, 115).unwrap();
+        assert_eq!(
+            (
+                post.snapshot_type.as_str(),
+                post.pre_number,
+                post.date.as_str()
+            ),
+            ("post", Some(114), "2026-10-01 14:30:04")
+        );
+        assert_eq!(post.description, "tailscale: MagicDNS");
+        assert_eq!(post.cleanup, "");
+        let pre = parse_info(
+            include_str!("../../../fixtures/logs/snapshots/114/info.xml"),
+            114,
+        )
+        .unwrap();
+        assert_eq!((pre.snapshot_type.as_str(), pre.pre_number), ("pre", None));
+
+        // optional fields missing: empty; entities decoded
+        let s = parse_info(
+            &info("  <type>single</type>\n  <num>7</num>\n  <uid>1000</uid>\n"),
+            7,
+        )
+        .unwrap();
+        assert_eq!(
+            (s.date.as_str(), s.description.as_str(), s.cleanup.as_str()),
+            ("", "", "")
+        );
+        let s = parse_info(
+            &info("<type>single</type><num>8</num><date>2026-10-01 07:00:00</date><description>a &lt;b&gt; &amp; &quot;c&quot; &apos;d&apos; &#228;&#xFC; &bogus; &amp</description><cleanup>number</cleanup><userdata><key>description</key><value>x</value></userdata>"),
+            8,
+        )
+        .unwrap();
+        assert_eq!(s.description, "a <b> & \"c\" 'd' äü &bogus; &amp");
+        assert_eq!(s.cleanup, "number");
+        let s = parse_info(&info("<type>single</type><num>9</num><description/>"), 9).unwrap();
+        assert_eq!(s.description, "");
+
+        // required fields
+        let err = |body: &str, n: u64| parse_info(&info(body), n).unwrap_err();
+        assert_eq!(err("<type>single</type>", 1), "no <num>");
+        assert_eq!(err("<num>1</num>", 1), "no <type>");
+        assert_eq!(
+            err("<type>single</type><num>2</num>", 1),
+            "<num> 2 does not match the directory"
+        );
+        assert_eq!(
+            err("<type>other</type><num>1</num>", 1),
+            "unknown <type> other"
+        );
+        assert_eq!(
+            err("<type>post</type><num>1</num><pre_num>x</pre_num>", 1),
+            "<pre_num> x is not a number"
+        );
+        assert_eq!(parse_info("", 1).unwrap_err(), "not a snapshot info file");
+    }
+
+    #[test]
+    fn reads_only_numbered_directories() {
+        let dir = std::env::temp_dir().join(format!("seldon-snapshots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (name, body) in [
+            ("3", info("<type>single</type><num>3</num>")),
+            ("12", info("<type>pre</type><num>12</num>")),
+            ("0", info("<type>single</type><num>0</num>")),
+            ("+4", info("<type>single</type><num>4</num>")),
+            ("5a", info("<type>single</type><num>5</num>")),
+            ("lost+found", String::new()),
+        ] {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+            std::fs::write(dir.join(name).join("info.xml"), body).unwrap();
+        }
+        std::fs::create_dir_all(dir.join("13")).unwrap(); // no info.xml
+        let got = read_info_files(&dir).unwrap();
+        assert_eq!(
+            got.snapshots.iter().map(|s| s.number).collect::<Vec<_>>(),
+            [3, 12]
+        );
+        assert_eq!(got.skipped, [(13, "missing".to_string())]);
+        assert!(readable_info_files(&dir).is_some());
+        assert!(read_info_files(&dir.join("missing")).is_err());
+        assert!(readable_info_files(&dir.join("missing")).is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Issue #1: the one snapper command is `--jsonout list` in the C

@@ -100,7 +100,9 @@ sind normal:
 - `snapper` braucht deinen Benutzer in `ALLOW_USERS` der
   Snapper-Konfiguration. Omarchy setzt das nicht. Die Abhilfe ist
   `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes`, die
-  du selbst ausführst, oder gar nicht.
+  du selbst ausführst, oder gar nicht. `ALLOW_USERS` kennt keine
+  Nur-Lese-Stufe: Dein Benutzer kann danach auch Snapshots von root ohne
+  Passwort anlegen, ändern und löschen.
 - `plugins` fragt die laufende Omarchy-Shell. Erfasst du von einem TTY
   ohne Desktop-Sitzung, ist er für diese Erfassung `degraded`.
 

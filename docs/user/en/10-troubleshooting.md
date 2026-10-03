@@ -78,6 +78,9 @@ sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
 ```
 
 This changes the root snapper config. Seldon never runs it for you.
+It adds your user to `ALLOW_USERS`, which has no read-only level: your
+user can then also create, change and delete root snapshots without a
+password, not only list them. Decide whether you want that.
 
 ### A change does not show up
 

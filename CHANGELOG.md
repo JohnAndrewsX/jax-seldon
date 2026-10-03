@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `seldon log --actor agent:…` refuses a note that contains a line break
   (exit 1, nothing written); a person's note may still have several lines
   (WP-058).
+- Snapshots are read from the info files (`/.snapshots/<number>/info.xml`)
+  when `snapper list` is not permitted; the events are the same, so
+  switching between the two adds none. `doctor` and `init` say what the
+  snapper fix grants besides listing (WP-060).
 
 ### Plugin
 
@@ -54,6 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   banner clears right after the snapper fix instead of at the next
   automatic capture; after *Run in terminal* it says "When the command
   has finished, press Check again" (fixes #2).
+- The "Snapshots not readable" banner names what the snapper fix grants:
+  its `ALLOW_USERS` entry also lets your user create, change and delete
+  root snapshots without a password (WP-060).
 
 ### Packaging and docs
 

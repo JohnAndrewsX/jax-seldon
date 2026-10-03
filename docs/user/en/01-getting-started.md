@@ -90,7 +90,7 @@ The wizard ends with a summary like this (shortened):
 Logbook created at ~/Seldon (machine <machine>, language en, 31 files).
 Config: ~/.config/seldon/config.toml
 Git: repository initialised, first commit "seldon: init logbook"
-Snapper: degraded — No permissions. Snapshots are not recorded until you allow your user once (ADR-0011)
+Snapper: degraded — No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). The fix adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password.
 First capture: 0 event(s); degraded: snapper (see seldon doctor); 0 open drift item(s), 0 crisis
 Dossier: Wrote system/hardware.md, system/omarchy.md, system/packages.md, system/plugins.md, system/services.md (7 fence(s) changed)
 Next steps:
@@ -116,7 +116,7 @@ seldon doctor · ~/Seldon
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  /home/you/Seldon · machine <machine> · en · 0 cases, 0 decisions, 0 journal days
   ok        omarchy  Omarchy 4.0.4-1
-  degraded  snapper  No permissions. Snapshots are not recorded until you allow your user once (ADR-0011)
+  degraded  snapper  No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). The fix adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password.
                      fix: sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
   ok        git      git version 2.55.0; logbook is a repository; autocommit on
 doctor: ok
@@ -124,8 +124,10 @@ doctor: ok
 
 All lines should say `ok`, except `snapper`, which may say `degraded`.
 If you want snapshots on the timeline, run the fix that `doctor` prints.
-It changes the root snapper config, so the decision is yours. Seldon never
-runs it for you.
+It changes the root snapper config, so the decision is yours: it adds your
+user to `ALLOW_USERS`, and snapper has no read-only level there, so your
+user can then also create, change and delete root snapshots without a
+password. Seldon never runs it for you.
 
 ## Step 4: Add the bar plugin
 

@@ -248,7 +248,11 @@ test("snapperBanner: only for an enabled snapper collector that fails (ADR-0011)
   assert.strictEqual(b.title, "Snapshots not readable")
   assert.strictEqual(b.command, M.SNAPPER_FIX_COMMAND)
   assert.ok(/^\S+ snapper -c root set-config ALLOW_USERS=\$USER SYNC_ACL=yes$/.test(b.command), b.command)
-  assert.ok(b.detail.indexOf("ALLOW_USERS") !== -1, "shows the engine message")
+  const message = degraded.state.collectors.find((c) => c.name === "snapper").message
+  // the engine's message, then what the fix grants besides listing
+  assert.strictEqual(b.detail, message + "\n" + M.SNAPPER_FIX_GRANTS)
+  assert.strictEqual(M.SNAPPER_FIX_GRANTS, "The command below adds your user to ALLOW_USERS of the root snapper config, " +
+    "which also lets your user create, change and delete root snapshots without a password.")
   same(b.actions.map((a) => a.id), ["terminal", "copy", "capture"])
   assert.strictEqual(b.hint, "")
   const off = JSON.parse(JSON.stringify(degraded))
@@ -256,7 +260,8 @@ test("snapperBanner: only for an enabled snapper collector that fails (ADR-0011)
   assert.strictEqual(M.snapperBanner(off), null)
   const bare = JSON.parse(JSON.stringify(degraded))
   bare.state.collectors.forEach((c) => { delete c.message })
-  assert.ok(M.snapperBanner(bare).detail !== "")
+  assert.strictEqual(M.snapperBanner(bare).detail,
+    "The snapper collector has no permission to list snapshots.\n" + M.SNAPPER_FIX_GRANTS)
 })
 
 test("snapperBanner: Check again is a capture, the hint follows Run in terminal (WP-054, #2)", () => {

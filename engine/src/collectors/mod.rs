@@ -118,6 +118,11 @@ pub struct Sources {
     pub pacman_db_lock: PathBuf,
     /// `SELDON_SNAPPER`, default `snapper`.
     pub snapper: String,
+    /// `SELDON_SNAPSHOTS_DIR`, default `/.snapshots`: the `root` config's
+    /// snapshot directory, read when `snapper list` is not permitted. Under
+    /// `SELDON_TEST_GUARD` without the variable it is `<guard>/.snapshots`,
+    /// so a guarded run never reads the host's snapshots.
+    pub snapshots: PathBuf,
     /// `SELDON_OMARCHY_VERSION`, default `omarchy-version`.
     pub omarchy_version: String,
     /// `SELDON_PACMAN`, default `pacman`; only ever run as `-Q omarchy`
@@ -140,6 +145,7 @@ impl Default for Sources {
             pacman_log: PathBuf::from("/var/log/pacman.log"),
             pacman_db_lock: PathBuf::from("/var/lib/pacman/db.lck"),
             snapper: "snapper".into(),
+            snapshots: PathBuf::from("/.snapshots"),
             omarchy_version: "omarchy-version".into(),
             pacman: "pacman".into(),
             omarchy: "omarchy".into(),
@@ -157,6 +163,12 @@ impl Sources {
             pacman_log: var("SELDON_PACMAN_LOG").map_or(d.pacman_log, PathBuf::from),
             pacman_db_lock: var("SELDON_PACMAN_DB_LOCK").map_or(d.pacman_db_lock, PathBuf::from),
             snapper: var("SELDON_SNAPPER").unwrap_or(d.snapper),
+            snapshots: var("SELDON_SNAPSHOTS_DIR")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join(".snapshots"))
+                })
+                .unwrap_or(d.snapshots),
             omarchy_version: var("SELDON_OMARCHY_VERSION").unwrap_or(d.omarchy_version),
             pacman: var("SELDON_PACMAN").unwrap_or(d.pacman),
             omarchy: var("SELDON_OMARCHY").unwrap_or(d.omarchy),

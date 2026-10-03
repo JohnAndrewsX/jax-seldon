@@ -208,7 +208,9 @@ mismatch → `omarchy plugin update jax.seldon` when the plugin is older
 than the index, the GitHub installer one-liner when the engine is older (until the
 AUR package is live, ADR-0024); snapshots
 not readable (ADR-0011) → the one-line snapper fix with *Run in
-terminal*, *Copy* and *Check again* (WP-054, issue #2); *Check again*
+terminal*, *Copy* and *Check again*; the detail is the engine's message,
+then on its own line what the fix grants besides listing (it also lets the
+user create, change and delete root snapshots without a password) (WP-054, issue #2); *Check again*
 runs a capture, the same call as *Capture now* (`capture --all --json
 --quiet`, then `status --json`), because only a capture rewrites the
 collector state this banner reads (reloading the index would not); after

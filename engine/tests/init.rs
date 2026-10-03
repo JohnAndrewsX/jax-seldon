@@ -98,6 +98,11 @@ mod init {
             text.contains("sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"),
             "{text}"
         );
+        // with what it grants besides listing
+        assert!(
+            text.contains(seldon::commands::doctor::SNAPPER_FIX_GRANTS),
+            "{text}"
+        );
     }
 
     #[test]

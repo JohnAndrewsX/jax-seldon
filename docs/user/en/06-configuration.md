@@ -94,7 +94,9 @@ on, and `seldon doctor` names the fix. Two cases are normal:
 - `snapper` needs your user in the snapper config's `ALLOW_USERS`. Omarchy
   does not set it. The fix is
   `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes`, which
-  you run yourself, or not at all.
+  you run yourself, or not at all. `ALLOW_USERS` has no read-only level:
+  your user can then also create, change and delete root snapshots
+  without a password.
 - `plugins` asks the running Omarchy shell. When you capture from a TTY
   without a desktop session, it is degraded for that capture.
 

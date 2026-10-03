@@ -120,6 +120,7 @@ impl Bench {
                 .path("bin/no-such-program")
                 .to_string_lossy()
                 .into_owned(),
+            snapshots: scratch.path("no-snapshots"),
             ..Sources::default()
         };
         Bench {

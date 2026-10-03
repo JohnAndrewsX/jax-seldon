@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 2382ac3 -->
+<!-- source: en/10-troubleshooting.md @ 474b2ed -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -84,7 +84,10 @@ sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
 ```
 
 Das ändert die Snapper-Konfiguration von root. Seldon führt es nie für
-dich aus.
+dich aus. Es trägt deinen Benutzer in `ALLOW_USERS` ein, und das kennt
+keine Nur-Lese-Stufe: Dein Benutzer kann danach Snapshots von root ohne
+Passwort auch anlegen, ändern und löschen, nicht nur auflisten. Entscheide,
+ob du das willst.
 
 ### Eine Änderung erscheint nicht
 
