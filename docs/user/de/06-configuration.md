@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ f40bcb1 -->
+<!-- source: en/06-configuration.md @ 1957e15 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -64,11 +64,11 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 | Schlüssel | Vorgabe | Bedeutung |
 |---|---|---|
 | `logbook` | `~/Seldon` | der Ordner des Logbuchs; ein relativer Pfad liegt unter deinem Home-Ordner |
-| `language` | aus deiner Locale | `en` oder `de`: die Sprache der Texte, die die Engine ins Logbuch schreibt (Journal-Zeilen, `STATUS.md`) |
+| `language` | aus deiner Locale | `en` oder `de`: die Sprache, die `seldon init` einem neuen Logbuch gibt, siehe [Sprache](#sprache) |
 | `watchPaths` | siehe [Beobachtete Pfade](#beobachtete-pfade) | Dateien und Ordner, die der Config-Collector beobachtet |
 | `harnesses` | `[]` | die Agenten-Harnesses, die du im Assistenten gewählt hast; zur Information |
 | `[collectors]` | alle `true` | welche Collectors eine Erfassung startet |
-| `[git] autocommit` | `true` | das Logbuch nach jedem schreibenden Befehl committen |
+| `[git] autocommit` | `true` | das Logbuch nach jedem schreibenden Befehl committen; `seldon init --no-git` schreibt `false` |
 | `[redaction] patterns` | `[]` | deine eigenen Muster für Geheimnisse, siehe [Schwärzung](#schwärzung) |
 | `[redaction] skipPaths` | Zustandsdateien von Plugins | Dateien, die die Engine nie öffnet oder nennt, siehe [Schwärzung](#schwärzung) |
 | `[drift] alwaysRed` | sechs Namen | Pakete, deren Upgrade immer eine Krise ist, siehe [Drift](#drift) |
@@ -85,6 +85,19 @@ Home-Ordner, egal in welchem Ordner `seldon` läuft: Das Plugin und die
 Agenten-Hooks starten es aus verschiedenen Ordnern. `--logbook` und
 `SELDON_LOGBOOK` gelten relativ zum aktuellen Ordner, wie bei jedem
 Shell-Befehl.
+
+### Sprache
+
+`seldon init` schreibt das Logbuch in einer Sprache: die Vorlagen und
+später die Texte, die die Engine ergänzt (Journal-Zeilen, `STATUS.md`).
+Es nimmt `--language`, sonst `language` aus dieser Datei, sonst deine
+Locale (`de` bei einer deutschen Locale, sonst `en`), und schreibt das
+Ergebnis hierher.
+
+Das Logbuch speichert seine Sprache selbst, in `.seldon/logbook.toml`,
+und jeder Befehl liest sie von dort. Änderst du `language` in dieser
+Datei später, ändert das ein bestehendes Logbuch nicht; es legt nur die
+Sprache des nächsten Logbuchs fest, das `seldon init` anlegt.
 
 ## Collectors
 
@@ -306,6 +319,12 @@ Rückgängig.
 
 Mit `false` oder mit `--no-commit` an einem Befehl schreibt die Engine
 die Dateien und überlässt dir das Committen. Seldon pusht nie.
+
+Antwortest du in `seldon init` bei Git mit Nein (oder gibst `--no-git`
+an), schreibt es `autocommit = false`: Das Logbuch ist kein Repository,
+und `seldon doctor` meldet das als deine Wahl, nicht als Fehler. Willst
+du Git später nutzen, führe `git -C <logbook> init` aus und setze
+`autocommit = true`.
 
 ## Einstellungen des Plugins
 
