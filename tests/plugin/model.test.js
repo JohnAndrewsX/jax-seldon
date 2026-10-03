@@ -249,13 +249,32 @@ test("snapperBanner: only for an enabled snapper collector that fails (ADR-0011)
   assert.strictEqual(b.command, M.SNAPPER_FIX_COMMAND)
   assert.ok(/^\S+ snapper -c root set-config ALLOW_USERS=\$USER SYNC_ACL=yes$/.test(b.command), b.command)
   assert.ok(b.detail.indexOf("ALLOW_USERS") !== -1, "shows the engine message")
-  same(b.actions.map((a) => a.id), ["terminal", "copy"])
+  same(b.actions.map((a) => a.id), ["terminal", "copy", "capture"])
+  assert.strictEqual(b.hint, "")
   const off = JSON.parse(JSON.stringify(degraded))
   off.state.collectors.forEach((c) => { if (c.name === "snapper") c.enabled = false })
   assert.strictEqual(M.snapperBanner(off), null)
   const bare = JSON.parse(JSON.stringify(degraded))
   bare.state.collectors.forEach((c) => { delete c.message })
   assert.ok(M.snapperBanner(bare).detail !== "")
+})
+
+test("snapperBanner: Check again is a capture, the hint follows Run in terminal (WP-054, #2)", () => {
+  const b = M.snapperBanner(degraded)
+  same(b.actions.map((a) => a.label), ["Run in terminal", "Copy", "Check again"])
+  // The same action id as the stale banner's Capture now: Service.fix
+  // dispatches both to captureNow(), not to the index-only recheck.
+  const capture = M.bannerFor("indexStale", { generatedAt: sampleIndex.generatedAt, nowMs: Date.now() }).actions[0]
+  same(capture, { id: "capture", label: "Capture now" })
+  assert.strictEqual(b.actions[2].id, capture.id)
+  assert.ok(b.actions.every((a) => a.id !== "recheck"))
+  assert.strictEqual(M.SNAPPER_HINT, "When the command has finished, press Check again")
+  assert.strictEqual(M.snapperBanner(degraded, true).hint, M.SNAPPER_HINT)
+  assert.strictEqual(M.snapperBanner(degraded, false).hint, "")
+  assert.strictEqual(M.snapperBanner(degraded, "yes").hint, "")
+  same(M.snapperBanner(degraded, true).actions, b.actions)
+  assert.strictEqual(M.snapperBanner(sampleIndex, true), null)
+  assert.strictEqual(M.snapperBanner(null, true), null)
 })
 
 test("changelogRows: 62 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {

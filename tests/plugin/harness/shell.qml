@@ -36,6 +36,9 @@ import Quickshell
 //                       ["driftShow", eventId] → Service.driftShow(eventId)
 //                       ["decide", title]     → Service.decide(title)
 //                       ["agent", caseId]     → Service.startAgent(caseId)
+//                       ["fix", action, banner] → Service.fix(action, banner)
+//                                             (banner "status" or "snapper")
+//                       ["snapshot"]          print a "HARNESS snapshot" line
 //                       ["wait"]              wait until no engine call is
 //                                             queued or running, then go on
 ShellRoot {
@@ -124,11 +127,16 @@ ShellRoot {
         var a = root.actions[root.actionIndex]
         root.actionIndex++
         if (a[0] === "wait") return
+        if (a[0] === "snapshot") {
+          root.emit("snapshot")
+          continue
+        }
         var done = a[0] === "log" ? s.log(a[1], a[2])
           : a[0] === "open" ? s.openInEditor(a[1])
           : a[0] === "capture" ? s.captureNow()
           : a[0] === "plan" ? s.plan(a[1], a[2])
           : a[0] === "agent" ? s.startAgent(a[1])
+          : a[0] === "fix" ? s.fix(a[1], a[2])
           : a[0] === "drift" ? s.drift(a[1], a[2])
           : a[0] === "driftShow" ? s.driftShow(a[1])
           : a[0] === "decide" ? s.decide(a[1])

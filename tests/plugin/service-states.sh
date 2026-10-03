@@ -225,6 +225,19 @@ record_check() { # record_check <case> <expected record>
     fail=$((fail + 1)); echo "FAIL $1: fix commands were:"; echo "$got" | sed 's/^/     /'
   fi
 }
+# argv_check <case> <expected argv lines, as `printf '%q '` writes them>
+argv_check() {
+  local got want
+  got=$(cat "$work/home-$1/argv.log" 2>/dev/null || true)
+  want=$2
+  if [[ $got == "$want" ]]; then
+    pass=$((pass + 1)); echo "ok   $1: engine argv ($(wc -l <<<"$got") calls)"
+  else
+    fail=$((fail + 1)); echo "FAIL $1: engine argv differs"
+    diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fi
+}
+q() { printf '%q ' "$@"; }
 run fix-engine 3000 PATH="$work/bin-tools:$base_path" SELDON_INDEX="$fx/index.sample.json" \
   HARNESS_FIX=copy,terminal HARNESS_RECORD="$work/fix-engine.record"
 install_engine="curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
@@ -238,16 +251,65 @@ run fix-init 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-vari
 record_check fix-init "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "seldon init" --)"
 
 # 14b. Snapper without permissions (ADR-0011): its banner, with the constant
-#      fix behind Copy and Run in terminal.
+#      fix behind Copy and Run in terminal, and Check again (WP-054). After
+#      Run in terminal the hint shows, and a reload of the unchanged index
+#      ("Check again" on the status banner, at 1.5 s) keeps it.
 run snapper-degraded 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-variants/snapper-degraded.json" \
-  HARNESS_FIX=snapper:copy,snapper:terminal HARNESS_RECORD="$work/snapper-degraded.record"
+  HARNESS_FIX=snapper:copy,snapper:terminal HARNESS_RECHECK_MS=1500 HARNESS_RECORD="$work/snapper-degraded.record"
 expect snapper-degraded .status ok
 expect snapper-degraded .snapper "Snapshots not readable"
 expect snapper-degraded .crisis "2 changes in the red zone need a reason"
+snapper_actions="terminal:Run in terminal,copy:Copy,capture:Check again"
+snapper_hint="When the command has finished, press Check again"
+expect snapper-degraded '.snapperActions | join(",")' "$snapper_actions"
+expect snapper-degraded .snapperHint "$snapper_hint"
 snapper_fix='sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes'
 record_check snapper-degraded "$(printf '%s\n' wl-copy -- "$snapper_fix" -- \
   omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
 clean_log snapper-degraded
+
+# 14f. Issue #2, live: the engine reports snapper failing until the user's
+#      fix. Run in terminal shows the hint (no engine call); Check again runs
+#      the same capture-then-status as Capture now; the fake's index after
+#      the second capture has snapper ok, so banner and hint are gone.
+mkdir -p "$work/home-snapper-live"
+actions='[["snapshot"], ["fix", "terminal", "snapper"], ["snapshot"], ["fix", "capture", "snapper"], ["wait"]]'
+run snapper-live 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-live" \
+  FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" FAKE_SELDON_FIXTURE_AFTER="$fx/index.sample.json" \
+  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-live.record" HARNESS_UNTIL=snapper=
+snaps=$(sed 's/\x1b\[[0-9;]*m//g' "$work/snapper-live.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
+  | jq -r -s 'map([.snapper, (.snapperActions | join(",")), .snapperHint] | join(" | ")) | .[]' 2>/dev/null || true)
+want_snaps=$(printf '%s\n' "Snapshots not readable | $snapper_actions | " \
+  "Snapshots not readable | $snapper_actions | $snapper_hint")
+if [[ $snaps == "$want_snaps" ]]; then
+  pass=$((pass + 1)); echo "ok   snapper-live: banner, then the hint after Run in terminal"
+else
+  fail=$((fail + 1)); echo "FAIL snapper-live: snapshots were:"; echo "$snaps" | sed 's/^/     /'
+fi
+expect snapper-live .status ok
+expect snapper-live .snapper ""
+expect snapper-live .snapperHint ""
+expect snapper-live .lastError ""
+argv_check snapper-live "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q capture --all --json --quiet)" "$(q status --json)")"
+record_check snapper-live "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
+clean_log snapper-live
+#      Check again before the fix took: the capture's new index still has
+#      snapper failing (another message, so the index differs even when
+#      both writes fall in the same second), so the banner stays, with the
+#      new message and without the hint.
+mkdir -p "$work/home-snapper-still"
+jq '(.state.collectors[] | select(.name == "snapper") | .message) = "Still no permission."' \
+  "$fx/index-variants/snapper-degraded.json" >"$work/snapper-still.json"
+run snapper-still 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-still" \
+  FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" FAKE_SELDON_FIXTURE_AFTER="$work/snapper-still.json" \
+  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-still.record" HARNESS_UNTIL=snapperHint=
+expect snapper-still .snapper "Snapshots not readable"
+expect snapper-still .snapperDetail "Still no permission."
+expect snapper-still .snapperHint ""
+argv_check snapper-still "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log snapper-still
 
 # 14d. A failing non-snapper collector (index-variants/plugins-degraded): no
 #      banner of its own today; the service stays ok and the log clean.
@@ -298,19 +360,6 @@ expect xdg-relative .indexPath "$work/home-xdg-rel/.local/state/seldon/index.jso
 #     now" while one is queued is dropped. Open hands the engine's path to
 #     the editor launcher (a recorder here) and the result line reads the
 #     engine's `open --json` output.
-# argv_check <case> <expected argv lines, as `printf '%q '` writes them>
-argv_check() {
-  local got want
-  got=$(cat "$work/home-$1/argv.log" 2>/dev/null || true)
-  want=$2
-  if [[ $got == "$want" ]]; then
-    pass=$((pass + 1)); echo "ok   $1: engine argv ($(wc -l <<<"$got") calls)"
-  else
-    fail=$((fail + 1)); echo "FAIL $1: engine argv differs"
-    diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
-  fi
-}
-q() { printf '%q ' "$@"; }
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-tools/omarchy-launch-editor"
 mkdir -p "$work/home-actions"
 note2='a "b" c'
