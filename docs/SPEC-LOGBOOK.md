@@ -176,7 +176,13 @@ Generated sections are fenced:
 <!-- seldon:end -->
 ```
 
-Text outside fences is user-owned and preserved. `seldon dossier`
+Text outside fences is user-owned and preserved. A marker line ends in
+`\n` or `\r\n`. A damaged fence (a begin marker without an end marker of
+its own) is left alone with a warning until the markers are restored. In
+`STATUS.md`, the `decisions.index` fence and `outputs/*.md`, a value from
+the logbook (a title, a subject, a message) that contains `<!-- seldon:`
+is written with a zero-width space after `<!--`: it renders the same and
+can neither end nor open the fence. `seldon dossier`
 (SPEC-ENGINE §3) writes the fence bodies, nothing else:
 
 | Fence | File | Content |

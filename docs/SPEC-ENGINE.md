@@ -605,7 +605,21 @@ case and the index folds its `case` onto the explained event (ADR-0021).
 for today and yesterday, `decisions/*.md` frontmatter, `system/*.md`
 generated fences, `memory/*.md` frontmatter + first 20 lines, `areas/*/`.
 Produces `index.json` per CONTRACT.md. Writes atomically (temp + rename).
-`STATUS.md` is rendered from the same data.
+A ledger month is read as bytes and decoded line by line: a line that is
+not UTF-8 (a write torn inside a multi-byte character), not an event, or
+names an actor or a case that the ledger would refuse to write is skipped,
+and one warning per month names the month, the count and the first line
+numbers (`--json` `warnings`, stderr); `Ledger::bad_lines` gives the same
+per month (WP-065).
+`STATUS.md` is rendered from the same data into its `status` fence; text
+outside the fence is the user's. A damaged fence (a begin marker without
+an end marker of its own) or a file with the generated header but no
+fence leaves `STATUS.md` byte for byte as it is, with a warning; only the
+`init` template is replaced. Fence markers end in `\n` or `\r\n`; a CRLF
+file gets CRLF in its new body. In every fence body the engine writes
+(`STATUS.md`, the `decisions.index` fence, `outputs/*.md`), `<!-- seldon:`
+gets a zero-width space (U+200B) after `<!--`, so a title, subject or
+message can neither end nor open a fence (WP-065).
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. Measured in `cargo bench` with the fixture logbook scaled ×10.

@@ -114,6 +114,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused with exit 1 and the file stays as it was. A file that starts
   with a UTF-8 BOM (kept on save) or has spaces or tabs after a `---`
   fence now parses (WP-066).
+- `STATUS.md` and `DECISIONS.md` no longer grow on each `status` when a
+  case or decision title (or a drift subject, a collector message)
+  contains a fence marker: `<!-- seldon:` in a value is written with a
+  zero-width space after `<!--` (WP-065).
+- `status` no longer deletes the user's text in `STATUS.md` when a marker
+  line was removed by hand: the file stays as it is, with a warning, until
+  the markers are restored. A `STATUS.md` with CRLF line ends merges
+  (WP-065).
+- One ledger line torn inside a multi-byte character (`ü`) no longer stops
+  `status`, `index`, `drift` and `capture`: the month is decoded line by
+  line, the bad line skipped, and one warning names the month and the
+  count. A ledger line with an actor or a case the engine would refuse to
+  write is skipped the same way (WP-065).
 
 ### Plugin
 
