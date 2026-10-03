@@ -16,7 +16,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language`, `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths`; `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve, §8; WP-063; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events}}}`, bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message |
@@ -46,7 +46,8 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # (no --snapshot, no snapshotBefore) prints a warning and never refuses
 # (ADR-0023); R3's also asks for the human's explicit go per step (WP-050)
 seldon plan list [--status S] [--area A]
-seldon plan show <ID>
+seldon plan show <ID>                            # the case file's path and text as quoted lines (`> `, as
+                                                 # hook session-start, §8), under one note line; --json unquoted
 seldon drift [--crisis-only] [--json]            # read-only: index items, crises first; totals count all
 seldon drift show <EVENT> --json                 # {event, open, item, txId, members} — full member list of a group
 seldon drift link <EVENT> <CASE> [--only] [--actor A]
@@ -589,9 +590,12 @@ Non-mutating commands produce no event. A command line that names a path
 recorded as `Edit ‹redacted›`; the line is read for such paths more
 widely than the shell would open them: its write targets, every word of
 its commands (`sh -c` and `eval` strings opened), every token of the line
-between blanks, quotes and shell operators (files read with `<`, words
-inside `$(…)`), each also after its first `=`, relative paths against
-`cwd` and every directory a `cd` in the line moves to (WP-063).
+between blanks, quotes, shell operators, `:` and `,` (files read with
+`<`, words inside `$(…)`, the parts of a list such as `PATH=a:b`), each
+also after its first `=`, relative paths against `cwd` and every
+directory a `cd` or `pushd` in the line moves to or a `-C DIR` names
+(`git -C`, `make -C`). Paths built from shell variables or globs are read
+as written (WP-063).
 Output: nothing on stdout (hooks must stay silent), exit 0 always, even
 on malformed stdin, a missing logbook, a broken config or a held lock
 (waited for up to 8 s, below the 10 s timeout `hook install` sets; a
@@ -611,13 +615,17 @@ rebuild (empty to 1000-line ledger); a non-mutating command about 1 ms.
 "startedAt"?}` with the same rules.
 
 Session scope (WP-063): the hooks serve the sessions inside the logbook.
-`hook claude-code`, `hook generic`, `hook session-start` and `hook
+A session's directory is `CLAUDE_PROJECT_DIR` when that is set in the
+hook's environment (Claude Code sets it for its hook commands; it stays
+the project while the agent's `cwd` moves), else the payload's `cwd`;
+relative paths in a command still resolve against `cwd`. `hook
+claude-code`, `hook generic`, `hook session-start` and `hook
 session-stop` do nothing — no event, no context block, no journal line,
-no capture, no commit, exit 0 — when the payload's `cwd` is not the
-logbook or a directory below it (compared as written and with symbolic
-links resolved; a `cwd` that is not an absolute path counts as outside).
-A call whose stdin names no `cwd` (an agent or a person running the hook
-itself) is served. `config.toml [hooks] scope` sets this: `"logbook"`
+no capture, no commit, exit 0 — when that directory is not the logbook
+or a directory below it (compared as written and with symbolic links
+resolved; a directory that is not an absolute path counts as outside).
+A call with neither (an agent or a person running the hook itself) is
+served. `config.toml [hooks] scope` sets this: `"logbook"`
 (the default; not written to the file) or `"all"`, which serves every
 session wherever it works, as the hooks did before WP-063. A settings
 file that only the logbook's sessions read (the default

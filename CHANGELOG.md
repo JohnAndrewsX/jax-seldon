@@ -48,7 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (WP-058).
 - Agent hooks record and print context only for sessions inside the
   logbook: `hook claude-code`, `hook generic`, `hook session-start` and
-  `hook session-stop` do nothing when the payload's `cwd` lies outside it.
+  `hook session-stop` do nothing when the session's directory
+  (`CLAUDE_PROJECT_DIR`, else the payload's `cwd`) lies outside it.
   This changes existing installs in a user-wide settings file such as
   `~/.claude/settings.json`: sessions in other projects are no longer
   recorded; `[hooks] scope = "all"` in `config.toml` keeps the old

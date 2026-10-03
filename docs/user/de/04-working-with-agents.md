@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 26945df -->
+<!-- source: en/04-working-with-agents.md @ 04e3c6a -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -125,14 +125,24 @@ Geheimnisse aus dem Logbuch heraus.
    seldon plan done C-2026-003
    ```
 
-Die Hooks laufen nur, wenn Claude Code im Ordner des Logbuchs startet. Um
-Claude-Code-Sitzungen in jedem Ordner aufzuzeichnen, installierst du die
-Hooks stattdessen in deine Benutzereinstellungen:
+Die Hooks laufen nur, wenn Claude Code im Ordner des Logbuchs startet. Du
+kannst sie auch in deine Benutzereinstellungen installieren, dann führt
+Claude Code sie in jedem Ordner aus:
 `seldon hook install claude-code --settings ~/.claude/settings.json`.
-Dann schreibt jede Claude-Code-Sitzung auf dieser Maschine in dein
-Logbuch, in jedem Projekt, mit dem aktiven Case. Rote und gelbe Befehle
-werden in jeder Sitzung aufgezeichnet, grüne nur, solange ein Case aktiv
-ist.
+Seldon zeichnet trotzdem nur Befehle von Sitzungen im Ordner des Logbuchs
+oder darunter auf und gibt nur dort seinen Kontext aus; in anderen
+Projekten tun die Hooks nichts, und `hook install` weist darauf hin.
+Damit jede Claude-Code-Sitzung auf dieser Maschine in dein Logbuch
+schreibt, in jedem Projekt, mit dem aktiven Case, setzt du in
+`~/.config/seldon/config.toml`:
+
+```toml
+[hooks]
+scope = "all"
+```
+
+Dann werden rote und gelbe Befehle in jeder Sitzung aufgezeichnet, grüne
+nur, solange ein Case aktiv ist.
 
 ## Der aktive Case
 
