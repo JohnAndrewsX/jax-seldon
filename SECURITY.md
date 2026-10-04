@@ -51,14 +51,18 @@ which repository and for which tag, produced the file.
 `install.sh` verifies the engine tarball itself when the GitHub CLI
 (`gh`) is installed and logged in, and installs nothing when the check
 fails. Without `gh` it checks the checksum only and prints one note;
-`install.sh --require-verified` refuses instead. To verify an asset by
-hand, with the same identity `install.sh` demands:
+`install.sh --require-verified` refuses instead. When `gh` itself fails
+(a proxy, expired credentials), `install.sh --skip-provenance` installs
+on the checksum alone and says so; that is your decision, not a default.
+To verify an asset by hand, with the same identity `install.sh` demands:
 
 ```sh
 gh attestation verify seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz \
+  --hostname github.com \
   --repo JohnAndrewsX/jax-seldon \
   --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml \
-  --source-ref refs/tags/vX.Y.Z
+  --source-ref refs/tags/vX.Y.Z \
+  --deny-self-hosted-runners
 ```
 
 The release workflow also attests in a dry run (a manual run on a

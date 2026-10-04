@@ -35,6 +35,7 @@ For zsh it prints one `fpath=(…)` line to add to `~/.zshrc` before
 | `--unit` | also install the watcher's user unit, see [The optional watcher](#the-optional-watcher) |
 | `--force` | replace a `seldon`, a completion or a man page the script did not install, such as one you built yourself |
 | `--require-verified` | install only when `gh` verified the build provenance; refuse when `gh` is missing or not logged in, and for releases up to v0.1.1, which were made before attestations |
+| `--skip-provenance` | do not ask `gh`, check only the checksum (a note says so); for a `gh` that fails on its own, for example behind a proxy. Not together with `--require-verified` |
 | `--uninstall` | remove what the script installed |
 
 With the one-liner, pass options after `bash -s --`, for example

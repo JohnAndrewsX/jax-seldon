@@ -28,7 +28,8 @@ checks the engine against the release's checksums and installs
 in, the script also checks that the project's release workflow built the
 download; otherwise it prints one note that only the checksum was
 checked. `--require-verified` makes it refuse instead of installing
-without that check.
+without that check; `--skip-provenance` leaves `gh` out when `gh` itself
+fails, for example behind a proxy.
 
 Download the script and the checksum file from the latest release,
 read the script, verify it and run it:

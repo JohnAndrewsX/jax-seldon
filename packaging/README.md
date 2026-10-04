@@ -100,12 +100,13 @@ exercised before a tag depends on it: the dry run's assets get real,
 public attestations, but with the branch as their source ref
 (`refs/heads/<branch>`), which `install.sh` (`--source-ref
 refs/tags/vX.Y.Z`) never accepts. Check one with `gh run download <id>
--n dist` and `gh attestation verify dist/SHA256SUMS --repo
-JohnAndrewsX/jax-seldon --source-ref refs/heads/<branch>`. The run summary shows the checksums, the
-attestation link, the `packaging/` diff a tag would commit, and whether
-the two secrets are set (true/false, never the value). The artifacts `dist` (release assets),
-`packaging` (PKGBUILD, .SRCINFO) and `package` (the built
-`.pkg.tar.zst`) can be downloaded and inspected (`gh run download`).
+-n dist -D dist` and `gh attestation verify dist/SHA256SUMS --repo
+JohnAndrewsX/jax-seldon --source-ref refs/heads/<branch>`. The run
+summary shows the checksums, the attestation link, the `packaging/` diff
+a tag would commit, and whether the two secrets are set (true/false,
+never the value). The artifacts `dist` (release assets), `packaging`
+(PKGBUILD, .SRCINFO) and `package` (the built `.pkg.tar.zst`) can be
+downloaded and inspected (`gh run download`).
 
 ### Bumping by hand
 

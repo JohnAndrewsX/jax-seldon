@@ -351,7 +351,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release workflow's attestation for the release's tag; a failed check
   installs nothing. Without `gh`, or for a release up to v0.1.1, one note
   says only the checksum was checked; the new `--require-verified`
-  refuses instead. SECURITY.md gains "Verifying a release"; the READMEs,
+  refuses instead, and `--skip-provenance` leaves a failing `gh` out on
+  request. SECURITY.md gains "Verifying a release"; the READMEs,
   the install and update guides (en, de), packaging/README.md and the
   tag flow in docs/VERSIONING.md describe it (WP-080).
 

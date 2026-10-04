@@ -194,6 +194,7 @@ Options (with the one-liner: `| bash -s -- --unit`):
 | `--unit` | also install the optional watcher unit into `~/.config/systemd/user/` (installed, not enabled; see [`engine/systemd/README.md`](engine/systemd/README.md)) |
 | `--force` | replace a `seldon` (or unit) the script did not install, such as a self-built binary; without it the script refuses and changes nothing |
 | `--require-verified` | install only when `gh` verified the download's build provenance; refuses when `gh` is missing or not logged in, or for a release up to v0.1.1 (made before attestations) |
+| `--skip-provenance` | do not ask `gh`; only the checksum is checked (a note says so). For a `gh` that fails on its own, for example behind a proxy; not with `--require-verified` |
 | `--uninstall` | remove what the script installed (give the same `--prefix`) |
 
 - **Update:** run `install.sh` again, either form. It replaces `seldon`
