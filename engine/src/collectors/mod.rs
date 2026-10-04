@@ -16,6 +16,10 @@
 //! takes a *baseline*: it emits only what happened at or after
 //! [`Ctx::baseline`] (default: the logbook's `created` time, or
 //! `capture --since`), so history from before the logbook is not drift.
+//! It says so in [`Outcome::baseline`], naming the state file that was
+//! missing or unreadable ([`Lost`]); when the ledger already holds events of
+//! that source, `capture` records the gap as a state reset
+//! ([`STATE_RESET`]) instead of starting over silently.
 //!
 //! Read-only on the host: collectors read files and run fixed programs with
 //! fixed argv through [`crate::sys::run`] (snapper through
@@ -71,7 +75,38 @@ pub struct Outcome {
     /// it, which widens its attribution window
     /// ([`crate::attribution::Stamps`]).
     pub since: Option<DateTime<FixedOffset>>,
+    /// The run took a new baseline because this state file was missing or
+    /// unreadable (`None`: it continued from its saved state).
+    pub baseline: Option<Lost>,
 }
+
+/// The state file whose loss made a collector take a new baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Lost {
+    /// The collector's entry in `cursors.json`: missing (a new or lost
+    /// state directory, another logbook) or not readable as its cursor.
+    Cursor,
+    /// `manifest.json` (config): missing, corrupt, or without the
+    /// generation the cursor names.
+    Manifest,
+    /// `owned.json` (config): corrupt, so the engine's own writes are lost.
+    Owned,
+}
+
+impl Lost {
+    /// The file's kind as `meta.files` of a state reset names it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Lost::Cursor => "cursors",
+            Lost::Manifest => "manifest",
+            Lost::Owned => "owned",
+        }
+    }
+}
+
+/// Subject of the `seldon` `note` a capture writes when collectors lost
+/// their state although the ledger holds their events (WP-081).
+pub const STATE_RESET: &str = "state-reset";
 
 impl Outcome {
     pub fn ok(events: Vec<Event>, cursor: Value) -> Self {
@@ -81,6 +116,13 @@ impl Outcome {
             ok: true,
             ..Outcome::default()
         }
+    }
+
+    /// Sets [`Outcome::baseline`]: `Some` when the run took a new baseline
+    /// because that state file was missing or unreadable.
+    pub fn baseline(mut self, lost: Option<Lost>) -> Self {
+        self.baseline = lost;
+        self
     }
 
     /// Degraded: no events, cursor unchanged.

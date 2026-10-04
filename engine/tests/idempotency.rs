@@ -367,10 +367,20 @@ mod idempotency {
         assert_eq!(cli.capture(&[])["written"], 0);
 
         // cursors.json lost after the capture that wrote the update and the
-        // deletions: nothing is written again, even from the old baseline
+        // deletions: nothing is written again, even from the old baseline;
+        // only the state reset is recorded, once (WP-081)
         let cursors = cli.env.home.join(".local/state/seldon/cursors.json");
         std::fs::remove_file(&cursors).unwrap();
-        assert_eq!(cli.capture(&["--since", FIXTURE_CREATED])["written"], 0);
+        let lost = cli.capture(&["--since", FIXTURE_CREATED]);
+        assert_eq!(lost["written"], 1, "{lost}");
+        let reset = cli.ledger().pop().unwrap();
+        assert_eq!(
+            (reset.source, reset.kind, reset.subject.as_str()),
+            (Source::Seldon, Kind::Note, "state-reset")
+        );
+        assert_eq!(reset.meta.extra["sources"], "snapper,pacman,omarchy");
+        assert_eq!(reset.meta.extra["files"], "cursors");
+        assert_eq!(cli.capture(&[])["written"], 0, "the reset is recorded once");
 
         let events = cli.ledger();
         events.iter().for_each(assert_schema_valid);
