@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 32dd831 -->
+<!-- source: en/10-troubleshooting.md @ e8bf173 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -170,7 +170,7 @@ dich später in die Irre.
 `seldon capture` hat eine Zeile wie diese ausgegeben:
 
 ```
-warning: state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing or unreadable, …
+warning: state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook, …
 ```
 
 Der Zustandsordner der Engine, `~/.local/state/seldon`, fehlte, gehörte
@@ -190,7 +190,15 @@ führe ein Capture aus; dieses Capture hält fest, was sich seit der
 Sicherung geändert hat (siehe
 [Den Zustandsordner sichern und wiederherstellen](07-the-logbook.md#den-zustandsordner-sichern-und-wiederherstellen)).
 Ohne Sicherung gibt es nichts wiederherzustellen: Das nächste Capture
-nimmt die Zeile weg, die Notiz bleibt im Ledger.
+nimmt die Zeile weg, die Notiz bleibt im Ledger. Dasselbe gilt, wenn
+der Zustand zu einem anderen Logbuch gehörte (du hast das Logbuch
+verschoben oder einen Befehl mit `--logbook` für ein anderes
+ausgeführt); die Warnung sagt das dann.
+
+Ein Capture, das ein beschädigtes `owned.json` findet, verschiebt es
+nach `owned.json.bad` im selben Ordner. Seldon liest diese Datei nie
+wieder; sie bleibt nur zum Nachsehen, du kannst sie löschen, und das
+nächste beschädigte `owned.json` ersetzt sie.
 
 ### Der Theme-Collector ist degraded
 

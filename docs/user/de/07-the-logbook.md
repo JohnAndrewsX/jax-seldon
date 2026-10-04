@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ 32dd831 -->
+<!-- source: en/07-the-logbook.md @ e8bf173 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -177,7 +177,9 @@ Zum Verschieben verschiebst du den Ordner und richtest die Konfiguration
 auf den neuen Ort aus: Ändere `logbook` in
 `~/.config/seldon/config.toml`. Der Zustand der Engine
 (`~/.local/state/seldon/`) gehört zu einem Logbuch. Richtest du sie auf
-ein anderes aus, fangen die Collectors beim aktuellen Stand neu an.
+ein anderes aus, fangen die Collectors beim aktuellen Stand neu an, und
+das erste Capture hält einen Zustands-Reset im Ledger fest; es gibt
+nichts wiederherzustellen.
 
 Für ein zweites Logbuch, etwa zum Testen, führst du
 `seldon init --path <DIR>` aus. `init` trägt den neuen Ordner als
