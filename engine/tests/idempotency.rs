@@ -537,6 +537,39 @@ mod state_reset {
     }
 
     #[test]
+    fn plugins_and_theme_with_events_have_a_reset() {
+        let cli = Cli::new();
+        cli.capture(&[]);
+        std::fs::write(cli.env.tmp.path().join("theme.name"), "tokyo-night\n").unwrap();
+        cli.stub(
+            "omarchy",
+            &format!(
+                "[ \"$2\" = list ] && exec /bin/cat '{}'; exit 1",
+                fixture("logs/plugin-list-after.json").display()
+            ),
+        );
+        let changed = cli.capture(&[]);
+        let ran = |name: &str| {
+            let c = changed["collectors"].as_array().unwrap();
+            c.iter().find(|c| c["name"] == name).unwrap()["events"].clone()
+        };
+        assert!(ran("theme").as_u64().unwrap() > 0, "{changed}");
+        assert!(ran("plugins").as_u64().unwrap() > 0, "{changed}");
+        let file = state(&cli).join("cursors.json");
+        let mut cursors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let collectors = cursors["collectors"].as_object_mut().unwrap();
+        collectors.remove("theme");
+        collectors.remove("plugins");
+        std::fs::write(&file, cursors.to_string()).unwrap();
+        assert_eq!(cli.capture(&[])["written"], 1);
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1);
+        assert_eq!(reset[0].meta.extra["sources"], "plugins,theme");
+        assert_eq!(cli.capture(&[])["written"], 0);
+    }
+
+    #[test]
     fn an_unreadable_cursor_is_a_reset() {
         let cli = Cli::new();
         cli.capture(&["--since", FIXTURE_CREATED]);
