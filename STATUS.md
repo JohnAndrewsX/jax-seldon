@@ -9,13 +9,12 @@ Open: WP-042 marketplace submission (after the operator's release setup),
 WP-038 (engine attributes its own installs), WP-033 and WP-043 (operator
 decisions).
 **Contract version:** 1 (draft)
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-04
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-076 | index: size budget enforced; perf budgets at stated scale | Engine | `engine-076` (opus) | `wt/WP-076` · `wp/076-review` | 2026-10-04 |
-| WP-073 | collectors: plugins dedupe, attribution window, verbs, SELDON_NOW, snapper numbers | Engine | `engine-073` (opus) | `wt/WP-073` · `wp/073-review` | 2026-10-04 |
 
 ## Queued (next up)
 
@@ -36,6 +35,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-073 collectors: plugins dedupe against the ledger, capture-time
+  attribution window with the newest-known-event rule, verb-aware plugin
+  proofs, capture on SELDON_NOW, snapper reused snapshot numbers, hooks
+  ignore an empty watch path; merged after two review rounds.
 - 2026-10-04 WP-075 import guards a case-less vault, reads non-UTF-8 names,
   accepts a BOM; dossier skips an unreadable system file and neutralises
   fence bodies idempotently; watch covers areas/ (two Opus rounds) — merged.
