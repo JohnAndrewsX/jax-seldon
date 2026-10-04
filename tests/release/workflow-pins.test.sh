@@ -16,7 +16,9 @@
 #     build job has exactly contents: read, id-token: write and
 #     attestations: write, and an unconditional `Attest the release
 #     assets` step (actions/attest-build-provenance) that names the binary
-#     tarball, the source tarball, SHA256SUMS and install.sh (WP-080).
+#     tarball, the source tarball, SHA256SUMS and install.sh (WP-080);
+#     that step is the last one before `Summary`, after every check, and
+#     no other job has an `id-token:` or `attestations:` permission.
 #
 # Limit: a SHA is not checked against its version comment (that needs
 # the network); the refresh steps in packaging/README.md resolve both.
@@ -153,8 +155,19 @@ problems() {
       grep -x -q -F "            $subject" <<< "$attest" \
         || echo "$release: the attest step does not name $subject"
     done
+    # the step before Summary (a step is `- name:` or a bare `- uses:`)
+    local before
+    before=$(awk '/^      - / { if ($0 == "      - name: Summary") { print prev; exit } prev = $0 }' <<< "$build")
+    [[ $before == "      - name: Attest the release assets" ]] \
+      || echo "$release: the attest step is not the last step before Summary"
   fi
+  # only build signs: no other job may ask for an OIDC token or attestations
   local j
+  while read -r j; do
+    [[ $j == build ]] && continue
+    ! grep -E -q '^[[:space:]]+(id-token|attestations):' <<< "$(job "$release" "$j")" \
+      || echo "$release: the $j job has id-token or attestations permissions (only build signs)"
+  done <<< "$(awk '/^jobs:/ { on = 1; next } on && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { sub(/:.*/, ""); print $1 } on && /^[^ #]/ { on = 0 }' "$release")"
   for j in bump aur plugin; do
     grep -E -q '^    needs:[[:space:]]*\[[[:space:]]*build[[:space:]]*,[[:space:]]*release[[:space:]]*\][[:space:]]*$' <<< "$(job "$release" "$j")" \
       || echo "$release: the $j job does not need [build, release]"
@@ -252,6 +265,10 @@ expect_problem "install.sh not attested" "does not name dist/install.sh" \
   '/^            dist\/install\.sh$/d'
 expect_problem "source tarball not attested" "does not name dist/jax-seldon-" \
   '/^            dist\/jax-seldon-/d'
+expect_problem "id-token on the release job" "release job has id-token" \
+  '/^  release:$/,/^    permissions:$/s/^(    permissions:)$/\1\n      id-token: write/'
+expect_problem "attest step before Build the package" "not the last step before Summary" \
+  '/^      - name: Attest the release assets$/,/^      - name: Summary$/{/^      - name: Summary$/!d}; s/^      - name: Build the package$/      - name: Attest the release assets\n        uses: actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2\n\n&/'
 
 if ((fails > 0)); then
   echo "workflow-pins.test: $fails failure(s)" >&2
