@@ -3,7 +3,7 @@
 //! A collector is a [`Collector`]: given a [`Ctx`] and its saved cursor it
 //! returns an [`Outcome`] — new events, the cursor to save, and whether it
 //! ran fully (`ok`) or degraded (`ok: false` with a message and an optional
-//! one-line fix, ADR-0011). Collectors never write; `seldon capture`
+//! one-line fix, ADR-0026). Collectors never write; `seldon capture`
 //! (`commands/capture.rs`) runs them in [`REGISTRY`] order, appends all
 //! events through the ledger and then saves the cursors, so a failed write
 //! never advances a cursor.

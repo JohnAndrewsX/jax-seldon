@@ -192,7 +192,7 @@ fn ledger_views_equal_the_fixture_views() {
 #[test]
 fn snapper_degraded_equals_the_variant() {
     let env = Env::new(Snapper::Missing);
-    let message = "snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see `seldon doctor`.";
+    let message = seldon::collectors::snapper::NO_PERMISSIONS;
     let (_, _, index) = golden_run(&env, Some(("snapper", message)), |_| {});
     common::assert_valid_index(&index);
     assert_same(

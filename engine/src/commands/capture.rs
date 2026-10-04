@@ -3,7 +3,7 @@
 //! Runs the selected collectors in registry order under the state lock,
 //! appends their events to the ledger in one pass (sorted by `ts`, stable),
 //! then saves `cursors.json`. A collector that degrades (`ok: false`, e.g.
-//! snapper without permissions, ADR-0011) does not fail the capture; it is
+//! snapper without permissions, ADR-0026) does not fail the capture; it is
 //! reported with its message and fix. Running it twice in a row writes
 //! nothing the second time.
 //!

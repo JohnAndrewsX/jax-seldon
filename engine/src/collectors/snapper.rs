@@ -1,4 +1,4 @@
-//! `snapper` collector (SPEC-ENGINE §4, ADR-0011).
+//! `snapper` collector (SPEC-ENGINE §4, ADR-0026).
 //!
 //! Runs `snapper --jsonout list` as the user, never with sudo. New snapshot
 //! numbers become `snapshot` events (`ts` = the snapshot's date in the local
@@ -17,19 +17,19 @@
 //! as known without an event.
 //!
 //! snapper translates its messages (`Keine Berechtigungen.` under
-//! `LANG=de_DE.UTF-8`), so every invocation is built by [`list_command`]
-//! with `LC_ALL=C` and without `LANGUAGE`, and its stderr is matched in
-//! English (issue #1).
+//! `LANG=de_DE.UTF-8`), so every invocation ([`list_command`],
+//! [`get_config_command`]) runs with `LC_ALL=C` and without `LANGUAGE`, and
+//! its stderr is matched in English (issue #1).
 //!
-//! Without `ALLOW_USERS`, snapper exits 1 with `No permissions.` on stderr.
-//! The collector then reads the snapshots from the info files instead
-//! (`<snapshots>/<number>/info.xml`, [`read_info_files`]), which needs only
-//! read access to the snapshot directory. The events and the cursor are the
-//! same as from the list, so switching between the two ways adds no events.
-//! When the info files cannot be read either, or none is found, the
-//! collector degrades:
-//! `ok: false`, a message, and the one-line fix, which is printed and never
-//! run. Nothing is invented and the cursor stays. The same goes for a
+//! For a user the snapper config does not list, snapper exits 1 with `No
+//! permissions.` on stderr. The collector then reads the snapshots from the
+//! info files instead (`<snapshots>/<number>/info.xml`, [`read_info_files`]),
+//! which needs only read access to the snapshot directory: the read grant
+//! of ADR-0026. The events and the cursor are the same as from the list, so
+//! switching between the two ways adds no events. When the info files cannot
+//! be read either, or none is found, the collector degrades: `ok: false`, a
+//! message, and the one-line read grant, which is printed and never run.
+//! Nothing is invented and the cursor stays. The same goes for a
 //! missing snapper or unreadable output.
 //!
 //! Only the `root` config is read (it is the only one on Omarchy; with one
@@ -107,19 +107,64 @@ pub struct SnapperCursor {
 }
 
 /// The degraded message for a permission error (index and doctor).
-pub const NO_PERMISSIONS: &str = "snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see `seldon doctor`.";
+pub const NO_PERMISSIONS: &str = "snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant.";
 
 /// `program --jsonout list` (`program` is `snapper`, or `SELDON_SNAPPER`),
 /// with `LC_ALL=C` and `LANGUAGE` removed so snapper's messages stay
-/// English whatever the user's locale (issue #1). The one place a snapper
-/// command is built: the collector and `doctor` (and through it `init`)
-/// run it with [`run_list`].
+/// English whatever the user's locale (issue #1). The collector and
+/// `doctor` (and through it `init`) run it with [`run_list`].
 pub fn list_command(program: &str) -> Command {
+    command(program, &["--jsonout", "list"])
+}
+
+/// `program --jsonout -c root get-config`, read-only, in the same locale as
+/// [`list_command`]. snapper answers it only for a user the root config
+/// lists (or root); `doctor` runs it to find the old opt-in (ADR-0026).
+pub fn get_config_command(program: &str) -> Command {
+    command(program, &["--jsonout", "-c", "root", "get-config"])
+}
+
+/// The one place a snapper command is built: `LC_ALL=C`, no `LANGUAGE`.
+fn command(program: &str, args: &[&str]) -> Command {
     let mut cmd = Command::new(program);
-    cmd.args(["--jsonout", "list"])
-        .env("LC_ALL", "C")
-        .env_remove("LANGUAGE");
+    cmd.args(args).env("LC_ALL", "C").env_remove("LANGUAGE");
     cmd
+}
+
+/// Reverts the old opt-in of ADR-0011 (`ALLOW_USERS=$USER SYNC_ACL=yes`).
+/// snapper then also drops the ACL that `SYNC_ACL` gave the user on the
+/// snapshot directory, so `doctor` prints it before the read grant
+/// (ADR-0026). Printed, never run.
+pub const REVERT_OPT_IN: &str = "sudo snapper -c root set-config ALLOW_USERS=\"\"";
+
+/// Whether `ALLOW_USERS` of the root snapper config names the current user
+/// (`USER`, else `LOGNAME`): runs [`get_config_command`] with `timeout`.
+/// `false` when that fails (the user is not listed) or the user is not
+/// known.
+pub fn lists_current_user(program: &str, timeout: Duration) -> bool {
+    let Some(user) = ["USER", "LOGNAME"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok())
+        .find(|u| !u.is_empty())
+    else {
+        return false;
+    };
+    match sys::run_command(get_config_command(program), timeout) {
+        Run::Exited {
+            code: Some(0),
+            stdout,
+            ..
+        } => allow_users(&stdout).is_some_and(|users| users.contains(&user)),
+        _ => false,
+    }
+}
+
+/// The names in `ALLOW_USERS` of `snapper --jsonout get-config` output (a
+/// flat JSON object of strings; the names are separated by blanks).
+pub fn allow_users(stdout: &str) -> Option<Vec<String>> {
+    let config: Value = serde_json::from_str(stdout).ok()?;
+    let users = config.get("ALLOW_USERS")?.as_str()?;
+    Some(users.split_whitespace().map(str::to_string).collect())
 }
 
 /// Runs [`list_command`] with `timeout`.
@@ -668,5 +713,26 @@ mod tests {
         assert!(envs.contains(&(OsStr::new("LANGUAGE"), None)));
         assert!(is_no_permissions("No permissions.\n"));
         assert!(!is_no_permissions("Keine Berechtigungen.\n"));
+    }
+
+    /// ADR-0026: `get-config` of the root config, read-only, in the same
+    /// locale; `ALLOW_USERS` split at blanks.
+    #[test]
+    fn get_config_command_runs_in_the_c_locale() {
+        use std::ffi::OsStr;
+        let cmd = get_config_command("snapper");
+        assert_eq!(cmd.get_program(), "snapper");
+        let args: Vec<&OsStr> = cmd.get_args().collect();
+        assert_eq!(args, ["--jsonout", "-c", "root", "get-config"]);
+        let envs: Vec<(&OsStr, Option<&OsStr>)> = cmd.get_envs().collect();
+        assert!(envs.contains(&(OsStr::new("LC_ALL"), Some(OsStr::new("C")))));
+        assert!(envs.contains(&(OsStr::new("LANGUAGE"), None)));
+
+        let out = r#"{"ALLOW_GROUPS": "", "ALLOW_USERS": " alice\tbob ", "SYNC_ACL": "yes"}"#;
+        assert_eq!(allow_users(out), Some(vec!["alice".into(), "bob".into()]));
+        assert_eq!(allow_users(r#"{"ALLOW_USERS": ""}"#), Some(vec![]));
+        assert_eq!(allow_users(r#"{"SYNC_ACL": "yes"}"#), None);
+        assert_eq!(allow_users(r#"{"root": []}"#), None);
+        assert_eq!(allow_users("No permissions."), None);
     }
 }

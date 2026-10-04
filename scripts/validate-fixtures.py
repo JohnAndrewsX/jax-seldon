@@ -962,12 +962,12 @@ def diff(a, b, path=""):
 # subset: test, add, replace, remove), so a variant never drifts from the sample. `--write-index`
 # regenerates them; the check fails when a variant file differs from sample + overlay.
 VARIANTS = {
-    # ADR-0011: snapper runs without ALLOW_USERS; everything else as in the sample.
+    # ADR-0026: snapper can neither list nor read the snapshot directory; everything else as in the sample.
     "snapper-degraded": [
         {"op": "test", "path": "/state/collectors/1/name", "value": "snapper"},
         {"op": "replace", "path": "/state/collectors/1/ok", "value": False},
         {"op": "add", "path": "/state/collectors/1/message",
-         "value": "snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see `seldon doctor`."},
+         "value": "snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant."},
     ],
     # `seldon index` before `seldon init`: no logbook, every section empty.
     "not-initialised": [

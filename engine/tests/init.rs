@@ -105,17 +105,65 @@ mod init {
         assert_eq!(config["language"].as_str(), Some("en"));
         assert_eq!(config["git"]["autocommit"].as_bool(), Some(true));
 
-        // snapper hint is printed, never run
+        // the read grant is printed, never run (ADR-0026)
         let text = stdout(&out);
         assert!(
-            text.contains("sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"),
+            text.contains(
+                "  sudo setfacl -m u:$USER:rx /.snapshots   # optional: snapshots in the timeline (ADR-0026)\n"
+            ),
             "{text}"
         );
-        // with what it grants besides listing
+        // with what it grants
         assert!(
             text.contains(seldon::commands::doctor::SNAPPER_FIX_GRANTS),
             "{text}"
         );
+    }
+
+    /// ADR-0026: for a user still listed in `ALLOW_USERS`, init's snapper
+    /// step is the revert followed by the read grant; for another user
+    /// there is no snapper step.
+    #[test]
+    fn a_listed_user_gets_the_revert_step() {
+        let env = Env::new(Snapper::Allowed);
+        env.stub(
+            "snapper",
+            "case \"$*\" in\n\
+             '--jsonout list') echo '{\"root\":[{\"number\":1}]}' ;;\n\
+             '--jsonout -c root get-config') echo '{\"ALLOW_USERS\": \"alice\"}' ;;\n\
+             *) exit 64 ;;\n\
+             esac",
+        );
+        let run = |user: &str, dir: &str| {
+            let root = env.tmp.path().join(dir);
+            let out = env
+                .command(&[
+                    "init",
+                    "--non-interactive",
+                    "--no-capture",
+                    "--path",
+                    root.to_str().unwrap(),
+                ])
+                .env("USER", user)
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            stdout(&out)
+        };
+        let text = run("alice", "listed");
+        assert!(
+            text.contains(
+                "  sudo snapper -c root set-config ALLOW_USERS=\"\" && sudo setfacl -m u:$USER:rx /.snapshots   # recommended: a read grant instead of the snapper opt-in (ADR-0026)\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("Snapper: ok — 1 snapshots (config root)."),
+            "{text}"
+        );
+        let text = run("carol", "other");
+        assert!(!text.contains("snapper -c root"), "{text}");
+        assert!(!text.contains("setfacl"), "{text}");
     }
 
     #[test]
