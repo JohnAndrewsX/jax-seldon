@@ -446,6 +446,9 @@ Options:
 
 Listet Cases: ID, Status, Zone, Risiko, Bereich und Titel. `--status`
 nimmt `queued`, `active`, `verification`, `completed` oder `dropped`.
+Eine Case-Datei, die sich nicht laden lässt, nennt eine `warning:`-Zeile
+nach der Liste (`warnings` in `--json`); die übrigen Cases werden
+trotzdem gelistet.
 
 <!-- help: seldon plan list -->
 ```text
