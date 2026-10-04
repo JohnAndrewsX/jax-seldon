@@ -205,7 +205,8 @@ check "ipc open after reaches the new owner" "$(field ipc '.openedAfter | map(to
 check "ipc one handler" "$(grep -a -c 'another handler is registered' "$work/ipc.log" || true)" 0
 clean_log ipc
 
-# 5. An anchored centre module (WP-078): the bar lists a zero-size, hidden
+# 5. A widget in the bar's centre section (WP-078; once a centre anchor is
+# set, the default): the bar lists a zero-size, hidden
 # placeholder first and the drawn widget second. The drawn one owns the
 # target (as the shell's pickDrawnSlot routes a hotkey) and IPC `open`
 # reaches it; a live reconfiguration that draws the placeholder and hides

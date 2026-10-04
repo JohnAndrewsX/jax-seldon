@@ -111,9 +111,11 @@ BarWidget {
   }
 
   // ---- One handler for `jax.seldon.panel` (WP-067). The bar builds this
-  // widget once per monitor, plus a zero-size, hidden placeholder for an
-  // anchored centre module, and an IPC target takes one handler: every
-  // further instance made the shell log "another handler is registered".
+  // widget once per monitor, plus a zero-size, hidden placeholder in the
+  // bar's centre section (once a centre anchor is set, the default, the
+  // shell mounts the centre list a second time), and an IPC target takes
+  // one handler: every further instance made the shell log "another
+  // handler is registered".
   // The first drawn instance the bar lists owns the target, a placeholder
   // only when none is drawn (Model.pickDrawnWidget, as the shell's
   // pickDrawnSlot routes a panel hotkey; WP-078). When an instance comes,

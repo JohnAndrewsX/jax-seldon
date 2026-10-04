@@ -33,8 +33,8 @@ import qs.Ui
 //                       widget owns `jax.seldon.panel`, which one an IPC
 //                       `open` reaches, and the same once the owner is gone.
 //   HARNESS_IPC_PLACEHOLDER  with HARNESS_IPC: the first widget the bar
-//                       lists is a zero-size, hidden placeholder (an anchored
-//                       centre module, WP-078), the second is drawn. After
+//                       lists is a zero-size, hidden placeholder (a module in the
+//                       bar's centre section, WP-078), the second is drawn. After
 //                       open/close a reconfiguration draws the placeholder
 //                       and hides the other (report `ownersSwapped`,
 //                       `openedSwapped`), then the owner goes.
@@ -152,7 +152,7 @@ ShellRoot {
       height: Style.bar.sizeHorizontal
     }
 
-    // An anchored centre module's placeholder (HARNESS_IPC_PLACEHOLDER):
+    // A centre-section module's placeholder (HARNESS_IPC_PLACEHOLDER):
     // hidden and zero-size until the reconfiguration step draws it.
     Item {
       id: slot0

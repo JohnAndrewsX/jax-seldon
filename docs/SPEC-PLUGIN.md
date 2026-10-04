@@ -351,8 +351,10 @@ item and only while it is loaded. Routes the plugin must honour:
   first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
   and toggle the panel independently of the overlay (WP-010). The bar
   builds the widget once per monitor (plus a zero-size, hidden placeholder
-  for an anchored centre module), and a target takes one handler: only
-  the first drawn instance the bar lists (`bar.moduleWidgets`; visible
+  in the bar's centre section: once a centre anchor is set, the default,
+  the shell mounts the whole centre list a second time, hidden), and a
+  target takes one handler: only the first drawn instance the bar lists
+  (`bar.moduleWidgets`; visible
   and not zero-size, as the shell's `pickDrawnSlot` routes a panel
   hotkey) enables its handler, a placeholder only when no instance is
   drawn (WP-078). When an instance comes, goes, or is drawn or hidden,

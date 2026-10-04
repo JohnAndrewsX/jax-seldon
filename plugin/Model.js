@@ -2778,9 +2778,10 @@ function engineOutdatedBanner(status, engineVersion, engineMin) {
 
 // ---- Bar IPC owner (WP-078) -------------------------------------------------
 
-// A bar widget the user can see: visible and not zero-size. An anchored
-// centre module is mounted twice, the drawn copy and a zero-size, hidden
-// placeholder (the shell's BarModel.isDrawnSlot, on the widget itself).
+// A bar widget the user can see: visible and not zero-size. In the bar's
+// centre section (once a centre anchor is set, the default) every module is
+// mounted twice, the drawn copy and a zero-size, hidden placeholder (the
+// shell's BarModel.isDrawnSlot, on the widget itself).
 function isDrawnWidget(item) {
   return !!item && item.visible === true && item.width > 0 && item.height > 0
 }

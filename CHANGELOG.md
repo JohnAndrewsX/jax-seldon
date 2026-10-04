@@ -301,11 +301,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already did; before, a click on *Capturing* did nothing (WP-078).
 - The plugin README's States table lists the "Engine too old" banner
   and its fixes (WP-078).
-- With the Seldon widget as the bar's centre anchor, `jax.seldon.panel`
-  belongs to the widget you can see, not to the bar's zero-size
-  placeholder, so `omarchy-shell jax.seldon.panel open` opens the
-  panel under the pill; the target follows a bar reconfiguration
-  (WP-078).
+- In the bar's centre section (once a centre anchor is set, the
+  default) `jax.seldon.panel` belongs to the widget you can see, not to
+  the zero-size placeholder the bar mounts for it, so
+  `omarchy-shell jax.seldon.panel open` opens the panel under the pill;
+  the target follows a bar reconfiguration (WP-078).
 
 ### Packaging and docs
 
