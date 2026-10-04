@@ -1496,3 +1496,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `wait:` (the card), as `work-live` does since WP-076. A temporary
   `sleep 1` after `rewrite_index` in `plan_step` of `fake-seldon` (not
   committed) reproduces the race every time.
+
+## 2026-10-04 · WP-077 (Engine)
+
+- **A mutant restored with an older mtime is still the binary.** A script
+  that copies the file aside, writes the mutant and moves the copy back
+  leaves the source older than the last build: cargo then keeps the
+  mutant's lib and `seldon` binary until some other file of the crate
+  changes. The next "baseline" run tests the mutant (here: a parity test
+  failed against an engine without `trim_end`). `touch` the file after the
+  restore, and run the baseline once after the last mutant.
+- **Python's `str.rstrip()` is not Rust's `trim_end()`.** Python strips
+  U+001C..U+001F (they are `isspace()`), Rust only Unicode White_Space.
+  A reference that mirrors an engine cut names the set
+  (`WHITE_SPACE` in `scripts/validate-fixtures.py`); the parity probes
+  put those characters at the cut, and `\b`/`\f` too (2 JSON bytes, not
+  6): without a `\b\f` probe that mutant survived.
+- **serde names a refused enum value raw:** `unknown variant `…`` comes
+  from serde, not from a `validate()` the engine owns, so escaping the
+  engine's own messages is not enough; `FrontmatterError::Yaml` shows its
+  message through `frontmatter::printable`.
+- **A mutant that keeps the `?` is no mutant.** Replacing `x.prepare(…)?`
+  by `let _ = x.prepare(…)?` still propagates; swallow the error
+  (`.ok()`) instead.
