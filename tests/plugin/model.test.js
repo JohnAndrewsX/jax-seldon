@@ -1456,6 +1456,12 @@ test("plugin/README.md States lists every banner with its fixes (WP-078)", () =>
     const row = rows.find((r) => r.split(" | ")[1].includes(b.title))
     assert.ok(row, "States has a row whose banner is " + b.title)
     for (const a of b.actions) assert.ok(row.includes("*" + a.label + "*"), b.title + ": the row names *" + a.label + "*")
+    // The command the fix runs or copies: the install line by name (its
+    // `|` is escaped in the table), every other one verbatim.
+    if (b.command === M.INSTALL_ENGINE_COMMAND)
+      assert.ok(row.includes("GitHub one-liner"), b.title + ": the row names the GitHub one-liner")
+    else if (b.command !== "")
+      assert.ok(row.includes("`" + b.command + "`"), b.title + ": the row has `" + b.command + "`")
   }
 })
 
