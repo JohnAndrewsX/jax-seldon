@@ -869,12 +869,15 @@ fi
 
 # 35. The sheets (WP-068), in a headless window against the installed
 #     shell's Commons/ and Ui/ (copied, as panel-view.sh does) and the fake
-#     engine. A small harness written here drives NewCaseSheet and
-#     DriftSheet through their own functions and prints each step.
+#     engine. A small harness written here drives NewCaseSheet, DriftSheet
+#     and NewDecisionSheet through their own functions and prints each step.
 #       busy    a pending `plan start`, then Create in the new-case sheet; a
 #               pending `drift dismiss` on another event, then the drift
-#               sheet's action: each sheet shows the busy text, neutral,
-#               and nothing reaches the engine
+#               sheet's action; a pending `decide` another panel sent, then
+#               Create and Enter twice in the new-decision sheet (WP-078):
+#               each sheet shows the busy text, neutral, and nothing
+#               reaches the engine. The decision sheet's own pending call
+#               refuses a second Create silently (no busy text)
 #       rearm   the drift sheet's notice ("Give a reason first") and its
 #               arm (first Enter) survive an index rewrite by the engine
 #               (`status`, same content, new generatedAt); a typed reason
@@ -890,14 +893,17 @@ if [[ -d $shell_dir/Commons && -d $shell_dir/Ui ]]; then
   # keeps its defaults when they fail.
   printf '#!/bin/sh\nexit 1\n' >"$work/bin-base/hyprctl"
   printf '#!/bin/sh\necho monospace\n' >"$work/bin-base/fc-match"
-  chmod 755 "$work/bin-base/hyprctl" "$work/bin-base/fc-match"
+  # A created decision is opened in the editor (`seldon open … --editor`).
+  printf '#!/bin/sh\nexit 0\n' >"$work/bin-base/omarchy-launch-editor"
+  chmod 755 "$work/bin-base/hyprctl" "$work/bin-base/fc-match" "$work/bin-base/omarchy-launch-editor"
   cat >"$sheets/shell.qml" <<'QML'
 import QtQuick
 import QtQuick.Window
 import Quickshell
 
 // Sheet harness (tests/plugin/service-states.sh, scenario 35). Loads
-// Service.qml as the shell does, NewCaseSheet and DriftSheet in an
+// Service.qml as the shell does, NewCaseSheet, DriftSheet and
+// NewDecisionSheet in an
 // offscreen window, then runs HARNESS_SHEETS ("busy" or "rearm") step by
 // step: each step waits until the service is idle (and, after an index
 // rewrite, until the index was read again), acts, and prints
@@ -908,6 +914,7 @@ ShellRoot {
   property var service: null
   property var newCase: null
   property var drift: null
+  property var decision: null
   property int reloads: 0
   property int reloadMark: 0
   property int step: 0
@@ -946,6 +953,9 @@ ShellRoot {
       newCase: { notice: root.newCase.notice, resultText: root.newCase.resultText, texts: root.texts(root.newCase, []) },
       drift: { armed: root.drift.armed, notice: root.drift.notice, hint: root.drift.hint,
         resultText: root.drift.resultText, resultOk: root.drift.resultOk, texts: root.texts(root.drift, []) },
+      decision: { title: root.decision.title, armed: root.decision.armed, notice: root.decision.notice,
+        ownPending: root.decision.ownPending, resultText: root.decision.resultText,
+        resultOk: root.decision.resultOk, texts: root.texts(root.decision, []) },
       extra: extra === undefined ? null : extra
     }
     console.log("SHEETS " + tag + " " + JSON.stringify(out))
@@ -969,6 +979,19 @@ ShellRoot {
         root.service.drift("dismiss", { eventId: root.unit, text: "x" })
         root.drift.openFor(root.theme)
         root.report("drift", root.drift.clickSubmit())
+      },
+      function() {
+        // The decision another panel's sheet sent (one service for all).
+        root.service.decide("First decision")
+        root.decision.title = "Second decision"
+        root.report("decision", root.decision.clickSubmit())
+        root.report("decision-arm", root.decision.enterKey())
+        root.report("decision-enter", root.decision.enterKey())
+      },
+      function() {
+        root.decision.title = "Third decision"
+        var sent = root.decision.clickSubmit()
+        root.report("decision-own", [sent, root.decision.clickSubmit()])
       },
       function() { root.report("after") }
     ],
@@ -1017,6 +1040,7 @@ ShellRoot {
     root.service.parsedChanged.connect(function() { root.reloads++ })
     root.newCase = root.load("components/NewCaseSheet.qml", column, { service: root.service, width: 440 })
     root.drift = root.load("components/DriftSheet.qml", column, { service: root.service, width: 440 })
+    root.decision = root.load("components/NewDecisionSheet.qml", column, { service: root.service, width: 440 })
     if (root.drift) root.drift.indexData = Qt.binding(function() { return root.service.index })
   }
 
@@ -1067,11 +1091,34 @@ QML
   sheet_expect sheets-busy drift .drift.resultText "$busy_text"
   sheet_expect sheets-busy drift .drift.resultOk true
   sheet_expect sheets-busy drift "[.drift.texts[] | select(. == \"$busy_text\")] | length" 1
-  # The other calls' answers and index rewrites leave both notices in place.
+  sheet_expect sheets-busy decision .extra false
+  sheet_expect sheets-busy decision .decision.notice "$busy_text"
+  sheet_expect sheets-busy decision .decision.resultText "$busy_text"
+  sheet_expect sheets-busy decision .decision.resultOk true
+  sheet_expect sheets-busy decision "[.decision.texts[] | select(. == \"$busy_text\")] | length" 1
+  sheet_expect sheets-busy decision .decision.title "Second decision"
+  # Enter arms (the notice stays), the second Enter is refused the same way.
+  sheet_expect sheets-busy decision-arm .decision.armed true
+  sheet_expect sheets-busy decision-arm .decision.resultText "$busy_text"
+  sheet_expect sheets-busy decision-enter .extra false
+  sheet_expect sheets-busy decision-enter .decision.armed false
+  sheet_expect sheets-busy decision-enter .decision.resultText "$busy_text"
+  sheet_expect sheets-busy decision-enter .decision.resultOk true
+  # Its own pending call: the second Create is refused without the busy text.
+  sheet_expect sheets-busy decision-own '.extra | map(tostring) | join(",")' "true,false"
+  sheet_expect sheets-busy decision-own .decision.notice ""
+  sheet_expect sheets-busy decision-own .decision.ownPending true
+  sheet_expect sheets-busy decision-own .decision.resultText "Creating the decision…"
+  # The other calls' answers and index rewrites leave both notices in place;
+  # the decision sheet's own decision was created and its title cleared.
   sheet_expect sheets-busy after .newCase.resultText "$busy_text"
   sheet_expect sheets-busy after .drift.resultText "$busy_text"
+  sheet_expect sheets-busy after .decision.title ""
+  sheet_expect sheets-busy after .decision.resultText ""
   argv_check sheets-busy "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
-    "$(q plan start C-2026-005 --json)" "$(q drift dismiss $UNIT --json -- x)")"
+    "$(q plan start C-2026-005 --json)" "$(q drift dismiss $UNIT --json -- x)" \
+    "$(q decide --no-edit --json -- "First decision")" "$(q open ADR-0005 --editor --json)" \
+    "$(q decide --no-edit --json -- "Third decision")" "$(q open ADR-0006 --editor --json)")"
   clean_log sheets-busy
 
   sheets_run sheets-rearm rearm

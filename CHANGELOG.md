@@ -292,6 +292,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   banner with the update command (WP-068).
 - An engine error whose message has several lines leaves one journal
   line too: the warning keeps the message's first line (WP-078).
+- *Create* in the new-decision sheet no longer does nothing while a
+  decision sent from another monitor's panel is pending: it says
+  "Another action is running — try again in a moment", like the
+  new-case and drift sheets (WP-078).
 
 ### Packaging and docs
 
