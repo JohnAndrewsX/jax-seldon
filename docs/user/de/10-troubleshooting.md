@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 9942b70 -->
+<!-- source: en/10-troubleshooting.md @ 32dd831 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -25,7 +25,7 @@ führt nichts mit `sudo` aus.
 | `ledger` | jede Zeile in `ledger/*.jsonl` ist ein Ereignis | `degraded`: Zeilen, die keine Ereignisse sind (ein abgerissener Schreibvorgang, eine Handänderung), werden übersprungen; die Zeile nennt Monat, Anzahl und Zeilen |
 | `fences` | die generierten Teile von `STATUS.md` und `DECISIONS.md` haben ihre Markerzeilen | `degraded`: eine Markerzeile fehlt, also lässt `seldon status` die Datei in Ruhe; oder ein End-Marker schließt keinen Abschnitt. `error`: die Datei ist nicht lesbar |
 | `collectors` | der letzte Capture jedes eingeschalteten Collectors ist gelungen | `degraded`: die Zeile nennt jeden fehlgeschlagenen Collector mit Meldung und Abhilfe |
-| `state` | `cursors.json`, `manifest.json` und `owned.json` in `~/.local/state/seldon` sind lesbar | `error`: die Datei ist beschädigt oder nicht lesbar; die Zeile sagt, was das kaputt macht; die Abhilfe verschiebt eine beschädigte Datei oder macht eine unlesbare lesbar |
+| `state` | `cursors.json`, `manifest.json` und `owned.json` in `~/.local/state/seldon` sind lesbar | `error`: die Datei ist beschädigt oder nicht lesbar; die Zeile sagt, was das kaputt macht; die Abhilfe verschiebt eine beschädigte Datei oder macht eine unlesbare lesbar. `degraded`: das letzte Capture hat einen Zustands-Reset festgehalten; siehe [Ein Zustands-Reset wurde festgehalten](#ein-zustands-reset-wurde-festgehalten) |
 | `omarchy` | `omarchy-version` hat geantwortet | der Omarchy-Collector kann die Version nicht lesen |
 | `snapper` | Snapshots lassen sich auflisten | `degraded`: dein Benutzer darf keine Snapshots auflisten; siehe [Snapshots werden nicht aufgezeichnet](#snapshots-werden-nicht-aufgezeichnet) |
 | `git` | git ist da; das Logbuch ist ein Repository | git fehlt, oder das Logbuch ist kein Repository; dann ist Autocommit aus. `degraded`: etwas hindert jeden Autocommit (ein liegengebliebenes `.git/index.lock`, ein losgelöster HEAD, …); die Abhilfe sagt, was zu tun ist |
@@ -164,6 +164,33 @@ dich später in die Irre.
   Engine ab; die Meldung sagt, warum.
 - Erscheint das Fenster des Agenten nicht, lies
   `~/.local/state/seldon/agent-launch.log`.
+
+### Ein Zustands-Reset wurde festgehalten
+
+`seldon capture` hat eine Zeile wie diese ausgegeben:
+
+```
+warning: state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing or unreadable, …
+```
+
+Der Zustandsordner der Engine, `~/.local/state/seldon`, fehlte, gehörte
+zu einem anderen Logbuch oder enthielt eine Datei, die sie nicht lesen
+konnte, während dein Ledger schon Ereignisse dieser Collectors hatte.
+Sie haben beim aktuellen Stand der Maschine neu angefangen. Änderungen
+seit ihrem letzten Capture können im Ledger fehlen: `pacman` und
+`snapper` lesen ihre Quellen erneut und verpassen wenig, die anderen
+Collectors verpassen jede Änderung dazwischen.
+
+Das Capture hat eine Notiz mit dem Betreff `state-reset` ins Ledger
+geschrieben, damit die Lücke sichtbar bleibt, und `seldon doctor` zeigt
+bis zum nächsten Capture eine `state`-Zeile mit `degraded`.
+
+Hast du eine Sicherung des Zustandsordners, stelle sie wieder her und
+führe ein Capture aus; dieses Capture hält fest, was sich seit der
+Sicherung geändert hat (siehe
+[Den Zustandsordner sichern und wiederherstellen](07-the-logbook.md#den-zustandsordner-sichern-und-wiederherstellen)).
+Ohne Sicherung gibt es nichts wiederherzustellen: Das nächste Capture
+nimmt die Zeile weg, die Notiz bleibt im Ledger.
 
 ### Der Theme-Collector ist degraded
 

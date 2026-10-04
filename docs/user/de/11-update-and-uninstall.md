@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ eaea010 -->
+<!-- source: en/11-update-and-uninstall.md @ 32dd831 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -148,6 +148,12 @@ Engine, also führ sie vor Schritt 5 aus.
    ```sh
    rm -r ~/.config/seldon ~/.local/state/seldon
    ```
+
+   Wenn du Seldon vielleicht wieder installierst und das Logbuch
+   behältst, sichere den Zustandsordner vorher (siehe
+   [Den Zustandsordner sichern und wiederherstellen](07-the-logbook.md#den-zustandsordner-sichern-und-wiederherstellen))
+   und stelle ihn vor dem ersten Capture wieder her. Sonst fängt dieses
+   Capture neu an und hält einen Zustands-Reset im Ledger fest.
 
 Was bleibt, ist dein Logbuch, `~/Seldon`, wenn du keinen anderen Ort
 gewählt hast. Es ist reines Markdown in einem git-Repository und bleibt
