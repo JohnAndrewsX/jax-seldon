@@ -1097,6 +1097,15 @@ fn record(
             e
         })
         .collect();
+    // a save the case would refuse fails before the ledger changes (WP-077)
+    if let Some(file) = &case_file {
+        let ids = cases::pending_ids(events.len());
+        file.prepare(&setup.logbook, |f| {
+            for (id, e) in ids.iter().zip(&events) {
+                f.attach(id, &e.actor);
+            }
+        })?;
+    }
     let written = ledger.append(&lock, events)?;
     if let Some(file) = case_file.as_mut() {
         for e in &written {

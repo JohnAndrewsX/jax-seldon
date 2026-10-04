@@ -397,12 +397,20 @@ fn resolve(ctx: &Context, id: &str, only: bool, actor: &str, action: Action) -> 
     events.extend(case_events.next());
     events.extend(lines);
     events.extend(case_events);
+    let ts = reconcile::ts_index(&built.ledger);
+    let attach = |file: &mut CaseFile| {
+        reconcile::attach(file, &sel.members, |id| ts.get(id).copied());
+        file.add_agent(actor);
+    };
+    // a linked case its save would refuse fails before the ledger changes
+    // (WP-077); `explain` writes a new file, whole
+    if let (Action::Link { .. }, Some(file)) = (&action, &case_file) {
+        file.prepare(&logbook, attach)?;
+    }
     let written = emit(&lock, &config, &logbook, events)?;
 
     if let Some(file) = case_file.as_mut() {
-        let ts = reconcile::ts_index(&built.ledger);
-        reconcile::attach(file, &sel.members, |id| ts.get(id).copied());
-        file.add_agent(actor);
+        attach(file);
         match &action {
             Action::Explain(explain) => {
                 area_created = explain

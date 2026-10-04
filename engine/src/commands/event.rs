@@ -193,6 +193,11 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
             &ctx.dirs.home,
         )?;
     }
+    // a save the case would refuse fails before the ledger changes (WP-077)
+    if let Some(file) = &case_file {
+        let id = cases::pending_ids(1).remove(0);
+        file.prepare(&logbook, |f| f.attach(&id, &event.actor))?;
+    }
     // the ledger first: it assigns the id the case file records
     let event = emit_one(&lock, &config, &logbook, event)?;
     if let Some(file) = case_file.as_mut() {

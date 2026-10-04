@@ -319,6 +319,27 @@ pub fn assert_valid_case(case: &serde_json::Value) {
     assert_valid(&case_schema, case, "case");
 }
 
+/// Every file under `dir` (except `.git/`) with its bytes, by relative path.
+pub fn tree(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fn walk(root: &Path, dir: &Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.file_name().is_some_and(|n| n == ".git") {
+                continue;
+            }
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                let rel = path.strip_prefix(root).unwrap().to_string_lossy();
+                out.insert(rel.into_owned(), std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(dir, dir, &mut out);
+    out
+}
+
 /// The one file in `dir` whose name starts with `prefix`.
 pub fn find_file(dir: &Path, prefix: &str) -> PathBuf {
     let found: Vec<PathBuf> = std::fs::read_dir(dir)

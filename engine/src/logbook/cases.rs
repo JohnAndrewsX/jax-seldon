@@ -87,6 +87,45 @@ impl CaseFile {
     /// gone from its path (another writer moved it) is not written again,
     /// which would leave the case twice (WP-057).
     pub fn save(&mut self, logbook: &Logbook) -> Result<Option<PathBuf>> {
+        let target = self.checked(logbook)?;
+        let text = self.doc.render();
+        if target == self.path {
+            sys::write_atomic(&self.path, text.as_bytes())?;
+            return Ok(None);
+        }
+        if let Some(dir) = target.parent() {
+            crate::sys::create_dir_private(dir)
+                .with_context(|| format!("cannot create {}", dir.display()))?;
+        }
+        // Move first, then write: there is never a second file with this id.
+        std::fs::rename(&self.path, &target).with_context(|| {
+            format!(
+                "cannot move {} to {}",
+                self.path.display(),
+                target.display()
+            )
+        })?;
+        sys::write_atomic(&target, text.as_bytes())?;
+        Ok(Some(std::mem::replace(&mut self.path, target)))
+    }
+
+    /// Checks that [`save`](Self::save) will write this case once `change`
+    /// is made to it, without writing anything: `change` and the save's
+    /// checks run on a clone. A command that writes the ledger, then the
+    /// journal, then the case prepares the case first: a save that would
+    /// be refused then fails the command before the ledger or the journal
+    /// changes (WP-077), as [`journal::prepare`](super::journal::prepare)
+    /// does for the day file.
+    pub fn prepare(&self, logbook: &Logbook, change: impl FnOnce(&mut CaseFile)) -> Result<()> {
+        let mut next = self.clone();
+        change(&mut next);
+        next.checked(logbook).map(drop)
+    }
+
+    /// The save's checks: the file is still there, the frontmatter takes
+    /// the case ([`model::update`], into `doc`), and the folder of its
+    /// status has no other file of this name. Returns the target path.
+    fn checked(&mut self, logbook: &Logbook) -> Result<PathBuf> {
         if !self.path.is_file() {
             return Err(Error::user(format!(
                 "{} is gone (moved by another seldon?); nothing written",
@@ -104,33 +143,23 @@ impl CaseFile {
             .path("work")
             .join(self.case.status.folder())
             .join(name);
-        let text = self.doc.render();
-        if target == self.path {
-            sys::write_atomic(&self.path, text.as_bytes())?;
-            return Ok(None);
-        }
-        if target.exists() {
+        if target != self.path && target.exists() {
             return Err(Error::user(format!(
                 "cannot move {} to {}: the target exists",
                 relative(logbook, &self.path),
                 relative(logbook, &target)
             )));
         }
-        if let Some(dir) = target.parent() {
-            crate::sys::create_dir_private(dir)
-                .with_context(|| format!("cannot create {}", dir.display()))?;
-        }
-        // Move first, then write: there is never a second file with this id.
-        std::fs::rename(&self.path, &target).with_context(|| {
-            format!(
-                "cannot move {} to {}",
-                self.path.display(),
-                target.display()
-            )
-        })?;
-        sys::write_atomic(&target, text.as_bytes())?;
-        Ok(Some(std::mem::replace(&mut self.path, target)))
+        Ok(target)
     }
+}
+
+/// Stand-ins for the ids the ledger assigns, for a [`CaseFile::prepare`]
+/// before the ledger write: `n` distinct ULIDs of the same shape.
+pub fn pending_ids(n: usize) -> Vec<String> {
+    (1..=n as u128)
+        .map(|i| ulid::Ulid::from_parts(1_800_000_000_000, i).to_string())
+        .collect()
 }
 
 /// `path` relative to the logbook root, `/`-separated.
