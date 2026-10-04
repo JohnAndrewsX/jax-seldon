@@ -37,6 +37,37 @@ Seldon has a single maintainer. Expect an acknowledgement within 7 days
 and an assessment within 30 days. Fixed issues are credited in the
 advisory and in `CHANGELOG.md` unless you ask otherwise.
 
+## Verifying a release
+
+Every release asset after v0.1.1 (the engine tarball
+`seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz`, the source tarball
+`jax-seldon-X.Y.Z.tar.gz`, `SHA256SUMS` and `install.sh`) carries a
+GitHub artifact attestation: build provenance, signed through Sigstore
+with the identity of the release workflow run that built it from the
+tag. A checksum only proves that a download matches `SHA256SUMS`, which
+comes from the same release; the attestation proves which workflow, in
+which repository and for which tag, produced the file.
+
+`install.sh` verifies the engine tarball itself when the GitHub CLI
+(`gh`) is installed and logged in, and installs nothing when the check
+fails. Without `gh` it checks the checksum only and prints one note;
+`install.sh --require-verified` refuses instead. To verify an asset by
+hand, with the same identity `install.sh` demands:
+
+```sh
+gh attestation verify seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz \
+  --repo JohnAndrewsX/jax-seldon \
+  --signer-workflow JohnAndrewsX/jax-seldon/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z
+```
+
+The release workflow also attests in a dry run (a manual run on a
+branch); those attestations name the branch, not a tag, as their source
+ref, so `--source-ref refs/tags/vX.Y.Z` never accepts one of them.
+Releases up to v0.1.1 have no attestation. An attestation that is
+missing or does not verify for a release after v0.1.1 is a security
+issue: report it as above.
+
 ## Scope
 
 How Seldon runs, and therefore what counts as a vulnerability:

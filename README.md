@@ -78,7 +78,11 @@ The engine is one program, `seldon`.
 `install.sh` downloads the static `seldon` binary of a release, checks it
 against the release's `SHA256SUMS` and refuses on a mismatch, then
 installs `~/.local/bin/seldon` (and the alias `jax-seldon`). It runs as
-your user and never asks for root.
+your user and never asks for root. With the GitHub CLI (`gh`) installed
+and logged in, it also checks that the release workflow of this
+repository built the download (`gh attestation verify`); without `gh` it
+says that only the checksum was checked, and `--require-verified` makes
+it refuse instead ([SECURITY.md](SECURITY.md#verifying-a-release)).
 
 Checked form — download, read, verify, run:
 
@@ -189,6 +193,7 @@ Options (with the one-liner: `| bash -s -- --unit`):
 | `--prefix DIR` | install into `DIR/bin` instead of `~/.local/bin` |
 | `--unit` | also install the optional watcher unit into `~/.config/systemd/user/` (installed, not enabled; see [`engine/systemd/README.md`](engine/systemd/README.md)) |
 | `--force` | replace a `seldon` (or unit) the script did not install, such as a self-built binary; without it the script refuses and changes nothing |
+| `--require-verified` | install only when `gh` verified the download's build provenance; refuses when `gh` is missing or not logged in, or for a release up to v0.1.1 (made before attestations) |
 | `--uninstall` | remove what the script installed (give the same `--prefix`) |
 
 - **Update:** run `install.sh` again, either form. It replaces `seldon`

@@ -55,6 +55,9 @@ Three steps: the engine, your logbook, the plugin. None needs `sudo`.
 **1. The engine.** AUR package: coming soon; until then install it from
 GitHub. `install.sh` checks the release against its `SHA256SUMS`, refuses
 on a mismatch, installs `~/.local/bin/seldon` and never asks for root.
+With the GitHub CLI (`gh`) logged in it also verifies the build
+provenance (`gh attestation verify`); `--require-verified` refuses an
+install without that check.
 
 Download, read, verify, run:
 
@@ -73,7 +76,8 @@ curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/i
 ```
 
 Run it again to update. Its options (`--version`, `--prefix`, `--unit`
-for the optional watcher, `--force` over a self-built `seldon`) are in the
+for the optional watcher, `--force` over a self-built `seldon`,
+`--require-verified`) are in the
 [project README](https://github.com/JohnAndrewsX/jax-seldon#install-options-update-and-removal).
 Check the engine with `seldon --version`. If your shell says
 `command not found`, open a new terminal.
