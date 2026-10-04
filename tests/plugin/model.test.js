@@ -241,18 +241,19 @@ test("crisisText: the red strip of SPEC-PLUGIN §5", () => {
   assert.strictEqual(M.crisisText(null), "")
 })
 
-test("snapperBanner: only for an enabled snapper collector that fails (ADR-0011)", () => {
+test("snapperBanner: only for an enabled snapper collector that fails (ADR-0026)", () => {
   assert.strictEqual(M.snapperBanner(sampleIndex), null)
   assert.strictEqual(M.snapperBanner(null), null)
   const b = M.snapperBanner(degraded)
   assert.strictEqual(b.title, "Snapshots not readable")
   assert.strictEqual(b.command, M.SNAPPER_FIX_COMMAND)
-  assert.ok(/^\S+ snapper -c root set-config ALLOW_USERS=\$USER SYNC_ACL=yes$/.test(b.command), b.command)
+  assert.strictEqual(b.command, "sudo setfacl -m u:$USER:rx /.snapshots")
   const message = degraded.state.collectors.find((c) => c.name === "snapper").message
-  // the engine's message, then what the fix grants besides listing
+  // the engine's message, then what the fix grants
   assert.strictEqual(b.detail, message + "\n" + M.SNAPPER_FIX_GRANTS)
-  assert.strictEqual(M.SNAPPER_FIX_GRANTS, "The command below adds your user to ALLOW_USERS of the root snapper config, " +
-    "which also lets your user create, change and delete root snapshots without a password.")
+  assert.strictEqual(M.SNAPPER_FIX_GRANTS, "The command below grants your user read access to the snapshot directory " +
+    "listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: " +
+    "no snapshot creation, change or deletion.")
   same(b.actions.map((a) => a.id), ["terminal", "copy", "capture"])
   assert.strictEqual(b.hint, "")
   const off = JSON.parse(JSON.stringify(degraded))

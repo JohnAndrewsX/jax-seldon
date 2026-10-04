@@ -9,7 +9,7 @@ import "Model.js" as Model
 // the `jax.seldon.panel` IPC target that BarWidget.qml owns.
 //
 // Top to bottom: title, tab strip, the status banner (WP-010), the
-// snapper-degraded banner (ADR-0011), the red crisis strip, then the current
+// snapper-degraded banner (ADR-0026), the red crisis strip, then the current
 // tab. The banners and the strip sit above the tabs, so every tab shows them.
 // Tabs: Today, Changelog, Work, Decisions, System, Memory, in the order of
 // their fixed digits.
