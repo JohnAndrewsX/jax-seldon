@@ -834,6 +834,7 @@ if [[ $(warn_lines capture-gives-up | wc -l) == 4 ]]; then
 else
   fail=$((fail + 1)); echo "FAIL capture-gives-up: warnings were:"; warn_lines capture-gives-up | sed 's/^/     /'
 fi
+clean_log capture-gives-up "jax.seldon: seldon capture exit 4: another seldon process holds the lock "
 
 # 34. A one-at-a-time guard that refuses tells the caller (WP-068): a
 #     second plan call, a second drift call and a second decide while the
