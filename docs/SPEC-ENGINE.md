@@ -45,10 +45,10 @@ seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case o
 seldon capture [--source pacman,snapper,omarchy,plugins,theme,config | --all] [--since TS]
 seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]
 seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [--meta k=v]
-# log, event, `hook claude-code` and `drift link` change a case after their ledger
-# line: its save is checked first, and a save that would be refused (WP-066)
-# fails the command before the ledger or the journal changes (exit 1; the hook
-# records nothing and says so on stderr) (WP-077)
+# log, event, the agent hooks (claude-code, generic) and `drift link` change a
+# case after their ledger line: its save is checked first, and a save that would
+# be refused (WP-066) fails the command before the ledger or the journal changes
+# (exit 1; a hook records nothing and says so on stderr) (WP-077)
 seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
 seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A]
 # --snapshot: `plan start` only (WP-049: the other steps do not offer it; clap
