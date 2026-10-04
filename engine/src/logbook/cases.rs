@@ -215,15 +215,27 @@ pub fn find(logbook: &Logbook, id: &str) -> Result<CaseFile> {
     }
 }
 
-/// Every case, sorted by id (ADR-0012 §9 orders the open groups by id).
-pub fn all(logbook: &Logbook) -> Result<Vec<CaseFile>> {
-    let mut out = logbook
-        .case_files()?
-        .iter()
-        .map(|p| CaseFile::load(p))
-        .collect::<Result<Vec<_>>>()?;
+/// Every case that loads, sorted by id (ADR-0012 §9 orders the open
+/// groups by id), and a warning for each case file that does not, worded
+/// as the index's (`<path>: invalid case: …; skipped`, WP-077).
+pub fn all(logbook: &Logbook) -> Result<(Vec<CaseFile>, Vec<String>)> {
+    let (mut out, mut warnings) = (Vec::new(), Vec::new());
+    for path in logbook.case_files()? {
+        let rel = relative(logbook, &path);
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) => {
+                warnings.push(format!("{rel}: cannot read: {e}; skipped"));
+                continue;
+            }
+        };
+        match model::parse::<Case>(&text) {
+            Ok((case, doc)) => out.push(CaseFile { path, case, doc }),
+            Err(e) => warnings.push(format!("{rel}: invalid case: {e}; skipped")),
+        }
+    }
     out.sort_by(|a, b| a.case.id.cmp(&b.case.id));
-    Ok(out)
+    Ok((out, warnings))
 }
 
 /// The next free case id of `year`. Ids are never reused: every case file
