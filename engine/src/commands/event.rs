@@ -80,7 +80,8 @@ pub fn parse_actor(s: &str) -> Result<String, String> {
         Ok(s.to_string())
     } else {
         Err(format!(
-            "`{s}` is not an actor (human, system, agent:<name> with a lowercase name)"
+            "`{}` is not an actor (human, system, agent:<name> with a lowercase name)",
+            s.escape_debug()
         ))
     }
 }
@@ -98,7 +99,10 @@ pub fn parse_case_id(s: &str) -> Result<String, String> {
     if is_case_id(s) {
         Ok(s.to_string())
     } else {
-        Err(format!("`{s}` is not a case id (C-YYYY-NNN)"))
+        Err(format!(
+            "`{}` is not a case id (C-YYYY-NNN)",
+            s.escape_debug()
+        ))
     }
 }
 

@@ -175,7 +175,10 @@ pub fn check_id(id: &str) -> Result<()> {
     if is_case_id(id) {
         Ok(())
     } else {
-        Err(Error::user(format!("`{id}` is not a case id (C-YYYY-NNN)")))
+        Err(Error::user(format!(
+            "`{}` is not a case id (C-YYYY-NNN)",
+            id.escape_debug()
+        )))
     }
 }
 
@@ -574,6 +577,14 @@ pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
 mod tests {
     use super::*;
     use chrono::TimeZone as _;
+
+    /// Every caller checks the id first today; the message is escaped
+    /// anyway (WP-077).
+    #[test]
+    fn a_refused_id_is_named_escaped() {
+        let err = check_id("C-\u{1b}[31mX").unwrap_err().to_string();
+        assert_eq!(err, "`C-\\u{1b}[31mX` is not a case id (C-YYYY-NNN)");
+    }
 
     fn now() -> DateTime<FixedOffset> {
         FixedOffset::east_opt(7200)

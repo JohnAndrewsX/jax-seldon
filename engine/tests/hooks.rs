@@ -774,6 +774,32 @@ mod generic {
         }
         assert!(h.ledger().is_empty());
     }
+
+    /// An agent's payload value the hook refuses is named escaped on
+    /// stderr, never with its control characters (WP-077).
+    #[test]
+    fn a_refused_payload_value_is_named_escaped() {
+        let h = Hooks::new();
+        let esc = "\u{1b}[31mX";
+        for (key, value) in [
+            ("actor", format!("agent:{esc}")),
+            ("case", format!("C-{esc}")),
+            ("startedAt", format!("2026-10-01{esc}")),
+        ] {
+            let mut payload =
+                json!({"command": "pacman -S x", "actor": "agent:codex", "cwd": FIXTURE_CWD});
+            payload[key] = json!(value);
+            let out = h.piped(&["hook", "generic"], &payload.to_string(), Some(NOW));
+            assert_eq!(out.status.code(), Some(0), "{key}");
+            let err = stderr(&out);
+            assert!(
+                !err.chars().any(|c| c.is_control() && c != '\n'),
+                "{key}: {err:?}"
+            );
+            assert!(err.contains("\\u{1b}[31mX"), "{key}: {err:?}");
+        }
+        assert!(h.ledger().is_empty());
+    }
 }
 
 mod sessions {
