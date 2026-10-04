@@ -130,3 +130,73 @@ plugin-validate, qmllint (29 files, tokens ok), model.test, install.test
 - Plugin `Model.js` functions are appended at the end.
 - Nothing outside the repository. No `~/.config` and no real logbook were
   touched; the real-home guard is part of every harness script.
+
+## Round 2 (review: SEND BACK, F1–F3 + troubleshooting guides)
+
+Commits on top of `6ae3feb`:
+
+- `f1c29ac` plugin: new-decision Create state is tested through submitEnabled
+- `db4282c` plugin tests: README States rows must carry their banner's command
+- `bcfb97f` docs: the placeholder belongs to the bar's centre section, not only its anchor
+- `9942b70` docs: Engine too old row in the troubleshooting banners (en, de)
+- `08dc647` docs(de): troubleshooting source line at 9942b70
+- plus the commit with this section
+
+**F1 (blocking): the Create button's state is tested.**
+- NewDecisionSheet has `readonly property bool submitEnabled: root.canWrite && !root.ownPending`.
+  The button's `enabled` is bound to it, and the button has
+  `objectName: "decisionSubmit"`.
+- The scenario 35 harness reports `submitEnabled` and also `buttonEnabled`,
+  the button's own `enabled`, found by objectName.
+- Step `decision`: no "Creating" text, `submitEnabled` true,
+  `buttonEnabled` true.
+- Step `decision-own`: `submitEnabled` false, `buttonEnabled` false, one
+  "Creating" text.
+- I added `buttonEnabled` beyond the proposal. Without it, a mutant that
+  binds the button's `enabled` straight to `!root.pending` and bypasses
+  `submitEnabled` survived (44/0).
+- Mutants (scenario 35 alone, restored after each):
+  - all four bindings (text, iconText, iconSpinning, submitEnabled)
+    back to `root.pending` → 3 FAIL (`Creating` 1, `submitEnabled`
+    false, `buttonEnabled` false);
+  - the label alone → 1 FAIL;
+  - `submitEnabled` alone → 1 FAIL;
+  - the button's `enabled` bypassing `submitEnabled` → 1 FAIL
+    (`buttonEnabled`).
+
+**F2: the README States test checks the commands.** For every banner
+with a command, the row must hold the command verbatim in backticks. The
+install line is the exception: its `|` is escaped in the table, so the
+row must say "GitHub one-liner" instead. Mutants (restored after each):
+- `omarchy plugin update jax.seldon` removed from the mismatch row →
+  FAIL;
+- `seldon init` removed → FAIL;
+- "GitHub one-liner" removed from the Engine too old row → FAIL.
+
+The snapper row goes through the same verbatim check but has no mutant of
+its own. The guard hook blocked the command that held it, because its
+text contained the snapper fix line. Message, verbatim:
+`PreToolUse:Bash hook error: [bash "$CLAUDE_PROJECT_DIR/scripts/guard.sh"]: guard: blocked (AGENTS.md §6 red zone): privileged or package command`.
+Nothing in that command ran. I left that mutant out and did not route
+around the block.
+
+**F3: wording.** The text now says "in the bar's centre section (once a
+centre anchor is set, the default)". This is in CHANGELOG, SPEC-PLUGIN
+§8 and the BarWidget comment. I made the same fix in the Model.js
+`isDrawnWidget` comment and the bar harness comments (bar.qml,
+bar-view.sh case 5), which used the same narrow wording.
+
+**Troubleshooting guides.** `docs/user/en/10-troubleshooting.md` and
+`docs/user/de/10-troubleshooting.md` gain an "Engine too old" row after
+"Index format mismatch": the cause (`engineMin`) and the fix (*Update in
+terminal*, then *Check again*). The de source line now points at
+`9942b70` (a separate docs(de) commit).
+
+**Verified:**
+- `omarchy plugin validate plugin/`: ok.
+- `just qmllint`: ok (29 files, tokens ok).
+- `node tests/plugin/model.test.js`: 87 passed.
+- `just docs-check`: ok (395 links, 14 translated pages).
+- `bash tests/plugin/service-states.sh`: run once, no other harness
+  running; 275 passed, 0 failed, exit 0.
+- Not run, as instructed: the full `just check`.
