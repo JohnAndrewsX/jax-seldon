@@ -768,6 +768,24 @@ expect capture-fails .captureResult.text "seldon: collector exploded"
 expect capture-fails .captureResult.ok false
 clean_log capture-fails "jax.seldon: seldon capture exit 2: seldon: collector exploded$"
 
+# 31b. With an empty stderr the engine's JSON error message stands in, and
+#      it too is cut to its first line (WP-078): a message of two lines
+#      leaves one journal line and nothing of its second line in the log.
+mkdir -p "$work/home-capture-fails-json"
+json_err='{"error":{"code":2,"message":"index unreadable: line 3\ncaused by: bad utf-8"}}'
+run capture-fails-json 3000 HARNESS_UNTIL=status=ok PATH="$fake_path" HOME="$work/home-capture-fails-json" \
+  FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_EXIT=2 FAKE_SELDON_CAPTURE_STDERR= \
+  FAKE_SELDON_CAPTURE_STDOUT="$json_err"
+if [[ $(warn_lines capture-fails-json) == "jax.seldon: seldon capture exit 2: index unreadable: line 3" \
+    && $(sed 's/\x1b\[[0-9;]*m//g' "$work/capture-fails-json.log" | grep -a -v "HARNESS " | grep -a -c "caused by") == 0 ]]; then
+  pass=$((pass + 1)); echo "ok   capture-fails-json: one warning with the first line of the JSON message"
+else
+  fail=$((fail + 1)); echo "FAIL capture-fails-json: warnings were:"
+  sed 's/\x1b\[[0-9;]*m//g' "$work/capture-fails-json.log" | grep -a -v "HARNESS " | grep -a -A2 "jax.seldon: seldon" | sed 's/^/     /'
+fi
+expect capture-fails-json .captureResult.ok false
+clean_log capture-fails-json "jax.seldon: seldon capture exit 2: index unreadable: line 3$"
+
 # 32. Exit 4 (lock held) of a capture is tried again (here after 1.5 s, in
 #     a real session 30 s), with a neutral result line and no error, and
 #     the status that followed it comes along; the third capture gets the

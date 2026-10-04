@@ -1432,6 +1432,14 @@ test("callWarning (WP-068): one line with the exit code and the first stderr lin
   assert.strictEqual(M.callWarning(["log"], 1, "", ""), "jax.seldon: seldon log exit 1: seldon exited with code 1")
 })
 
+test("callWarning (WP-078): the JSON fallback is cut to its first line", () => {
+  const out = JSON.stringify({ error: { code: 2, message: "\n  index unreadable: line 3\n  caused by: bad utf-8\n" } })
+  assert.strictEqual(M.callWarning(["status", "--json"], 2, out, ""), "jax.seldon: seldon status exit 2: index unreadable: line 3")
+  assert.strictEqual(M.callWarning(["status", "--json"], 2, out, " \n"), "jax.seldon: seldon status exit 2: index unreadable: line 3")
+  const blank = JSON.stringify({ error: { code: 2, message: " \n " } })
+  assert.strictEqual(M.callWarning(["capture"], 2, blank, ""), "jax.seldon: seldon capture exit 2: seldon exited with code 2")
+})
+
 test("busy and lock texts (WP-068)", () => {
   assert.strictEqual(M.BUSY_TEXT, "Another action is running — try again in a moment")
   assert.strictEqual(M.LOCK_RETRY_MS, 30000)

@@ -74,9 +74,9 @@ plugin/
   arguments (case ids, event ids validated by regex before use).
 - Every engine call that exits above 0 (the probe included) logs one
   `console.warn` line, `jax.seldon: seldon <command> exit <code>: <first
-  stderr line>` (the engine's JSON error message when stderr is empty), so
-  `journalctl --user -t omarchy-shell` shows each failing timed capture
-  (WP-068).
+  stderr line>` (the first line of the engine's JSON error message when
+  stderr is empty, WP-078), so `journalctl --user -t omarchy-shell` shows
+  each failing timed capture (WP-068).
 - Exit 4 (lock held) of a `capture` or `status` is not an error: the call
   runs again after 30 s, at most 3 times (a locked capture takes its queued
   `status` along); meanwhile the capture result reads "waiting for another

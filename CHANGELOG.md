@@ -290,6 +290,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrives with the same item; only a change to the form disarms (WP-068).
 - An engine older than the plugin's `engineMin` gets an "Engine too old"
   banner with the update command (WP-068).
+- An engine error whose message has several lines leaves one journal
+  line too: the warning keeps the message's first line (WP-078).
 
 ### Packaging and docs
 

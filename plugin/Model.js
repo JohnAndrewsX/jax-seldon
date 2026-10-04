@@ -2710,15 +2710,25 @@ var LOCK_WAIT_TEXT = "waiting for another seldon process; trying again shortly"
 // The journal line for an engine call that exited above 0:
 // "jax.seldon: seldon <command> exit <code>: <first stderr line>", or the
 // engine's JSON error message when stderr is empty (`--json` errors go to
-// stdout). "" for exit 0. Plain text on one line.
+// stdout), cut to its first line too (WP-078). "" for exit 0. Plain text on
+// one line.
 function callWarning(args, exitCode, stdoutText, stderrText) {
   if (!(exitCode > 0)) return ""
   var head = Array.isArray(args) && args.length > 0 ? String(args[0]) : "?"
-  var lines = String(stderrText || "").split("\n")
-  var first = ""
-  for (var i = 0; i < lines.length && first === ""; i++) first = lines[i].trim()
-  if (first === "") first = engineError(stdoutText, "", exitCode)
+  var first = firstLine(stderrText)
+  if (first === "") first = firstLine(engineError(stdoutText, "", exitCode))
+  if (first === "") first = "seldon exited with code " + exitCode
   return "jax.seldon: seldon " + head + " exit " + exitCode + ": " + first
+}
+
+// The first line of `text` that is not blank, trimmed; "" when none is.
+function firstLine(text) {
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    if (line !== "") return line
+  }
+  return ""
 }
 
 // "0.1.10" → [0, 1, 10]; a pre-release or build suffix is ignored, so a
