@@ -236,8 +236,9 @@ an agent working on this repository follows the repository's
 
 ## Project status
 
-v0.1.1 (2026-10-03): shell completions, man page, the Prime Radiant
-mark in the bar and the panel, clean removal commands. Before 1.0.0 a
+v0.1.2 (2026-10-04): the fixes from the external review of 0.1.1,
+build-provenance attestations verified by the installer, snapshot access
+by a read grant, a trace for a lost state directory. Before 1.0.0 a
 minor release may still change the CLI, the logbook layout or the
 contract; the [changelog](CHANGELOG.md) then says so under Breaking.
 Next: the AUR package, the listing in the Omarchy plugin directory and
