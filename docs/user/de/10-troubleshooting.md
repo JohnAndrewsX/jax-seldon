@@ -45,6 +45,7 @@ Knopf, der es behebt.
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` fehlt oder ist kaputt | *Build index* startet `seldon status` |
 | Index is stale | der Index ist älter als zwei Stunden | *Capture now* |
 | Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`. Engine: *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
+| Engine too old | die Engine ist älter, als dieses Plugin sie braucht (das `engineMin` in seinem Manifest) | *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)), dann *Check again* |
 | Snapshots not readable | Snapper weist deinen Benutzer ab | *Run in terminal* startet die einmalige Snapper-Abhilfe; dort tippst du dein Passwort |
 
 Das Plugin sucht die Engine beim Start der Shell und wenn du *Check
