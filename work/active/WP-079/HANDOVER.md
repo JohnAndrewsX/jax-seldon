@@ -152,7 +152,10 @@ that the tree is clean.
 
 ## just check
 
-(filled in below after the run)
+Round 1 at `42e4a2c`: exit 0, after the parallel runs of WP-080 and WP-081
+had finished (no overlap). The last lines read: install.test 132 passed,
+plugin-validate ok, model.test.js 87, real-home-guard 11, service-states
+275, panel-view 743, overlay-view 319, bar-view 143, `check: ok`.
 
 ## Not done
 
@@ -206,3 +209,78 @@ that the tree is clean.
 - Merge risk with WP-081:
   - `docs/TESTING.md` line 73 (the doctor row is one long line)
   - the CHANGELOG section ends
+
+## Round 2 (review: APPROVE with N1–N3 and decisions Q2, Q3)
+
+Commits:
+
+- `576e823` engine: the snapper revert also turns SYNC_ACL off; tests
+  for USER before LOGNAME and no get-config after a refused list
+- `fd98ecb` docs: snapper revert turns SYNC_ACL off (ADR-0026,
+  SPEC-ENGINE, guide 10); the plugin does not read doctor; CHANGELOG
+  describes the shipped banner
+- `2d662a6` docs(de): troubleshooting, stamped at `fd98ecb`
+- plus the commit with this section and the TESTING row
+
+### What changed
+
+- **N1.** `snapper_revert_hint_only_for_a_listed_user` has a new case:
+  `USER=carol` with `LOGNAME=alice` gets no fix, because `USER` wins.
+- **N2.** In the same test, a stub refuses `list` and answers
+  `get-config` as for a listed user, with `USER=alice`. The row is
+  `degraded` with `SNAPPER_FIX`, and the call log is exactly
+  `--jsonout list`, so no `get-config` ran.
+  - It lives in the revert test, not in `green_after_init…`, because only
+    that test logs the stub's calls.
+- **N3.** CHANGELOG, Unreleased:
+  - The Plugin WP-060 line now says the banner names read access to the
+    snapshot directory listing and the info files, with no snapshot
+    creation, change or deletion (WP-060, WP-079).
+  - My WP-079 Plugin line now only says the banner offers the read grant
+    instead of the opt-in, so the two lines do not repeat each other.
+  - The Engine WP-060 line lost "besides listing".
+- **Q2.**
+  - `REVERT_OPT_IN` is now
+    `sudo snapper -c root set-config ALLOW_USERS="" SYNC_ACL=no`. The
+    doctor fix is that line `&& sudo setfacl -m u:$USER:rx /.snapshots`.
+  - The doctor message says "(this empties ALLOW_USERS and turns SYNC_ACL
+    off)".
+  - Tests: doctor and init.
+  - ADR-0026 now gives the line and one sentence on why `SYNC_ACL=no`: a
+    later `set-config` would otherwise rewrite the directory's ACL from
+    the lists and remove the grant.
+  - SPEC-ENGINE §4 and guide 10 (en, de) are updated. The plugin README
+    does not name the revert, so it is unchanged.
+  - I no longer claim that the revert certainly drops the opt-in's ACL
+    entry. With `SYNC_ACL=no` in the same call I could not check snapper's
+    behaviour without running it, so the texts say "may drop". The grant
+    afterwards sets the entry either way.
+- **Q3.**
+  - SPEC-ENGINE §3 now says the doctor shape is not in `schema/` and that
+    the plugin does not run `doctor`. Its banners come from `index.json`,
+    the `seldon --version --json` probe and the results of its engine
+    calls.
+  - Guide 10 (en, de): "The plugin does not run `doctor`: it chooses its
+    banner from the index and from its own engine calls."
+  - The de page is re-stamped in its own commit.
+- I left doctor.rs line 6 alone, as asked.
+
+### Mutants (round 2)
+
+| # | Claim | Mutant | Killed by |
+|---|---|---|---|
+| R1 | `USER` before `LOGNAME` | order swapped | doctor `snapper_revert…` (carol/alice case) |
+| R2 | `get-config` only after `list` succeeded | `lists_current_user` called before `run_list` | doctor `snapper_revert…` (call log of the refused-list case) |
+| R3 | the revert turns `SYNC_ACL` off | `REVERT_OPT_IN` without `SYNC_ACL=no` | doctor `snapper_revert…`, init `a_listed_user_gets_the_revert_step` |
+
+After the last mutant I rebuilt the engine and confirmed that the tree is
+clean.
+
+### Verified
+
+- `cargo fmt` and `cargo clippy --all-targets -D warnings` are clean.
+- Suites doctor (29), init (38), index (25), collectors (19) and lib (193)
+  are green.
+- `node tests/plugin/model.test.js`: 87 passed.
+- `bash scripts/docs-check.sh`: 0.
+- No second `just check`, as instructed.
