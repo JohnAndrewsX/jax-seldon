@@ -316,7 +316,8 @@ seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
 banner states parse the doctor shape; it is not part of `schema/`.
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
-where one exists. `config`: `config.toml` can be read, parses and its
+where one exists (an `ok` row has a fix only for the old snapper opt-in,
+§4). `config`: `config.toml` can be read, parses and its
 `[redaction] patterns` compile (an invalid pattern makes every writing
 command refuse: error). A parse error's fix says to correct the file
 (the message names the key) or move it away and run `seldon init`; an
@@ -355,7 +356,7 @@ and `snapper` probes run the programs the collectors run
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
                           "sinceIgnored":[…],"explainedOwn":N}   # explainedOwn: §5 rule 7
-                         exit 0 also when a collector is degraded (ok:false + fix, ADR-0011);
+                         exit 0 also when a collector is degraded (ok:false + fix, ADR-0026);
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
 ```
 
@@ -542,8 +543,9 @@ git itself is killed, with the same bounded pipe wait. Rules:
   repeated hour when summer time ends is read from the list as the
   earlier of its two instants, so a switch between list and info files
   can give it another date and record a false `snapshot-delete` plus
-  `snapshot` (to be fixed later). Without
-  `ALLOW_USERS` the command fails with a permission error; the collector
+  `snapshot` (to be fixed later). For a
+  user the snapper config does not list, the command fails with a
+  permission error; the collector
   then reads the snapshots from the info files
   (`/.snapshots/<number>/info.xml`, `SELDON_SNAPSHOTS_DIR`; under
   `SELDON_TEST_GUARD` without it `<guard>/.snapshots`) with the same events
@@ -551,15 +553,25 @@ git itself is killed, with the same bounded pipe wait. Rules:
   info file that cannot be read is skipped and named in the message; its
   snapshot is neither new nor deleted). When the info files cannot be read
   either, or none is found (an empty directory, e.g. right after booting
-  into a snapshot), it reports `ok: false` and the fix command, writes no
-  events and keeps the cursor, never sudo (ADR-0011); `doctor` and `init`
-  say that the fix's `ALLOW_USERS` entry also lets the user create, change
-  and delete root snapshots without a password, and when listing works,
-  `doctor`'s `ok` message adds that this user may use the snapper config,
-  which also lets it create, change and delete snapshots without a
-  password. snapper is run with `LC_ALL=C` (and without
-  `LANGUAGE`); its messages are matched in English, whatever the user's
-  locale (`doctor` and `init` use the same argv and locale).
+  into a snapshot), it reports `ok: false` and the fix command, the read
+  grant `sudo setfacl -m u:$USER:rx /.snapshots`, writes no events and
+  keeps the cursor, never sudo (ADR-0026); `NO_PERMISSIONS` points at that
+  grant. `doctor` and `init` say what it grants: read access to the
+  snapshot directory listing and the snapshot info files (files inside a
+  snapshot keep their own permissions), no snapshot creation, change or
+  deletion. When listing works, `doctor`'s `ok` message adds that this
+  user may use the snapper config, which also lets it create, change and
+  delete snapshots without a password. When `snapper -c root get-config`
+  then succeeds and its `ALLOW_USERS` names the current user (`USER`, else
+  `LOGNAME`; the old opt-in of ADR-0011), the row stays `ok`, its message
+  says so, and its fix is the revert followed by the read grant:
+  `sudo snapper -c root set-config ALLOW_USERS="" && sudo setfacl -m
+  u:$USER:rx /.snapshots` (`SYNC_ACL=yes` drops the user's ACL with the
+  users list, so the grant comes second); `init` prints that fix as a
+  recommended next step. snapper is run with `LC_ALL=C` (and without
+  `LANGUAGE`), `list` and `get-config` alike; its messages are matched in
+  English, whatever the user's locale (`doctor` and `init` use the same
+  argv and locale).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
   stale); `repoHead` (7-character short hash, like `logbook.git.head`)

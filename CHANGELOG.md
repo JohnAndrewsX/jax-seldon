@@ -268,6 +268,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `plan list` lists the other cases when one case file does not load, and
   names that file in a warning line (`warnings` in `--json`); it exited 1
   before (WP-077).
+- The snapper fix is a read grant on the snapshot directory,
+  `sudo setfacl -m u:$USER:rx /.snapshots`, instead of adding your user
+  to the snapper config's `ALLOW_USERS`, which also allowed creating,
+  changing and deleting root snapshots; Seldon reads the snapshot info
+  files with it. `doctor`, `init` and the collector's message print the
+  new line and say what it grants. When your user is still listed in
+  `ALLOW_USERS`, `doctor` (and `init`) print the revert
+  `sudo snapper -c root set-config ALLOW_USERS=""` followed by the read
+  grant (WP-079, ADR-0026 supersedes ADR-0011).
 
 ### Plugin
 
@@ -318,6 +327,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the zero-size placeholder the bar mounts for it, so
   `omarchy-shell jax.seldon.panel open` opens the panel under the pill;
   the target follows a bar reconfiguration (WP-078).
+- The "Snapshots not readable" banner offers the read grant
+  `sudo setfacl -m u:$USER:rx /.snapshots` and says what it grants: read
+  access to the snapshot directory listing and the snapshot info files,
+  no snapshot creation, change or deletion (WP-079, ADR-0026).
 
 ### Packaging and docs
 
@@ -343,6 +356,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prints ×150; a median over budget is measured once more. The panel
   harness's `work-live` step waits for each engine step's result
   instead of catching "Completing …" under load (WP-076).
+- Getting started, configuration and troubleshooting (en, de) give the
+  read grant as the snapper fix; troubleshooting explains the revert of
+  the old `ALLOW_USERS` opt-in. The AUR package's snapper optdepend says
+  it needs read access to `/.snapshots` (WP-079).
 
 ## [0.1.1] - 2026-10-02
 

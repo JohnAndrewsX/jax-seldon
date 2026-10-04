@@ -109,12 +109,12 @@ Each collector only reads. Turn one off with `false`;
 A collector that cannot read its source is `degraded`: the capture goes
 on, and `seldon doctor` names the fix. Two cases are normal:
 
-- `snapper` needs your user in the snapper config's `ALLOW_USERS`. Omarchy
-  does not set it. The fix is
-  `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes`, which
-  you run yourself, or not at all. `ALLOW_USERS` has no read-only level:
-  your user can then also create, change and delete root snapshots
-  without a password.
+- `snapper` needs read access to the snapshot directory `/.snapshots`.
+  Omarchy does not give it to your user. The fix is
+  `sudo setfacl -m u:$USER:rx /.snapshots`, which you run yourself, or not
+  at all. It lets Seldon read the snapshot list and the info files, nothing
+  else: your user cannot create, change or delete snapshots with it. Files
+  inside a snapshot keep their own permissions.
 - `plugins` asks the running Omarchy shell. When you capture from a TTY
   without a desktop session, it is degraded for that capture.
 
