@@ -83,8 +83,11 @@ pub struct Outcome {
 /// The state file whose loss made a collector take a new baseline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Lost {
-    /// The collector's entry in `cursors.json`: missing (a new or lost
-    /// state directory, another logbook) or not readable as its cursor.
+    /// `cursors.json` belonged to another logbook. Set by `capture`, which
+    /// knows the binding, for a collector that reported [`Lost::Cursor`].
+    Logbook,
+    /// The collector's cursor in `cursors.json`: none (a new or lost state
+    /// directory, another logbook) or not readable as its cursor.
     Cursor,
     /// `manifest.json` (config): missing, corrupt, or without the
     /// generation the cursor names.
@@ -97,6 +100,7 @@ impl Lost {
     /// The file's kind as `meta.files` of a state reset names it.
     pub fn as_str(self) -> &'static str {
         match self {
+            Lost::Logbook => "logbook",
             Lost::Cursor => "cursors",
             Lost::Manifest => "manifest",
             Lost::Owned => "owned",

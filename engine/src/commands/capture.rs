@@ -20,11 +20,13 @@
 //! collector explains the files the engine wrote itself (`init
 //! --theme-hook`, `hook install`; SPEC-ENGINE §5 rule 7).
 //!
-//! A collector that took a new baseline because its state was missing or
-//! unreadable ([`collectors::Lost`]) although the ledger holds events of its
-//! source lost the changes in between. The capture records that as one
-//! `seldon` `note` with the subject [`STATE_RESET`] and prints a warning
-//! (WP-081). The first capture of a logbook holds no such events: no note.
+//! A collector that took a new baseline because its state was missing,
+//! unreadable or another logbook's ([`collectors::Lost`]) although the
+//! ledger holds events of its source lost the changes in between. The
+//! capture records that as one `seldon` `note` with the subject
+//! [`STATE_RESET`] and prints a warning (WP-081). A collector that never
+//! ran successfully for this logbook loses nothing (`loss`), and the first
+//! capture of a logbook holds no events of its sources: no note.
 //! A corrupt `owned.json` counts for the config collector; a capture that
 //! runs that collector moves it to `owned.json.bad` after the ledger write,
 //! so the next capture does not report it again.
@@ -94,6 +96,11 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     );
     let cursors_path = collectors::cursors_file(&ctx.dirs);
     let mut cursors = Cursors::load(&cursors_path)?;
+    let binding = match &cursors.logbook {
+        None => Binding::None,
+        Some(bound) if *bound == logbook.root => Binding::This,
+        Some(_) => Binding::Other,
+    };
     cursors.bind(&logbook.root);
     // --since only sets the baseline of collectors without a cursor
     let since_ignored: Vec<&str> = match since {
@@ -119,16 +126,23 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         reports,
         states,
         stamps,
-        mut lost,
+        lost,
     } = collect_all(
         &selected, &config, ctx, &ledger, &cursors, &logbook, &sources, now, baseline,
     );
+    let mut lost: Vec<(&'static str, Lost)> = lost
+        .into_iter()
+        .filter_map(|(name, l)| {
+            let had_cursor = cursors.cursor(&logbook.root, name).is_some();
+            Some((name, loss(l, binding, had_cursor)?))
+        })
+        .collect();
     owned_corrupt &= reports.iter().any(|r| r.name == "config" && r.ran && r.ok);
     if owned_corrupt {
         lost.push(("config", Lost::Owned));
     }
     attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
-    let reset = state_reset(&ledger, &lost, now)?;
+    let reset = state_reset(&ledger, &lost, baseline, now)?;
     events.extend(reset.as_ref().map(|r| r.note.clone()));
 
     let written = ledger.append(&lock, events)?;
@@ -173,6 +187,31 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     ))
 }
 
+/// What `cursors.json` was bound to before this capture bound it to the
+/// logbook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Binding {
+    /// No file, or no logbook in it: a new or lost state directory.
+    None,
+    This,
+    Other,
+}
+
+/// Whether a collector's baseline for want of `lost` is a loss. Bound to
+/// another logbook, a missing cursor is [`Lost::Logbook`]. Bound to this
+/// logbook, a collector without a cursor never ran successfully here
+/// (degraded so far, disabled, or new): its first baseline loses nothing,
+/// even when the ledger holds events of its source that something else
+/// wrote (the theme hook, an agent); only a cursor that is there and does
+/// not read is lost.
+fn loss(lost: Lost, binding: Binding, had_cursor: bool) -> Option<Lost> {
+    match (lost, binding) {
+        (Lost::Cursor, Binding::Other) => Some(Lost::Logbook),
+        (Lost::Cursor, Binding::This) => had_cursor.then_some(Lost::Cursor),
+        (l, _) => Some(l),
+    }
+}
+
 /// Whether `path` exists and is not a valid `owned.json` (the collector
 /// reads such a file as empty).
 fn is_corrupt(path: &std::path::Path) -> bool {
@@ -192,6 +231,7 @@ struct Reset {
 fn state_reset(
     ledger: &Ledger,
     lost: &[(&'static str, Lost)],
+    baseline: DateTime<FixedOffset>,
     now: DateTime<FixedOffset>,
 ) -> Result<Option<Reset>> {
     let mut wanted: Vec<Source> = lost.iter().filter_map(|(n, _)| n.parse().ok()).collect();
@@ -231,8 +271,9 @@ fn state_reset(
     meta.extra.insert("files".into(), json!(files.join(",")));
     let note = Event::new(now, Source::Seldon, Kind::Note, STATE_RESET)
         .detail(format!(
-            "state directory missing or unreadable: new baseline for {} at {}; changes made while it was missing may not be recorded",
+            "state directory missing, unreadable or bound to another logbook: new baseline for {} at {}, recorded {}; changes made in between may not be recorded",
             named.join(", "),
+            format_ts(&baseline),
             format_ts(&now)
         ))
         .meta(meta);
@@ -270,8 +311,13 @@ fn recorded_sources(ledger: &Ledger, wanted: &[Source]) -> Result<Vec<Source>> {
 /// The capture's warning for a state reset: what was lost and where the
 /// restore steps are.
 fn reset_warning(ctx: &Context, reset: &Reset) -> String {
+    let hint = if reset.lost.iter().any(|(_, l)| *l == Lost::Logbook) {
+        "Nothing can be restored: the state belonged to another logbook path, and the new baseline is this logbook's (user guide: Moving or copying the logbook)"
+    } else {
+        "If you have a backup of it, restore it and run `seldon capture` again (user guide: Back up and restore the state directory)"
+    };
     format!(
-        "state reset recorded: {} took a new baseline because {} was missing or unreadable, so changes made meanwhile may be missing. If you have a backup of it, restore it and run `seldon capture` again (user guide: Back up and restore the state directory)",
+        "state reset recorded: {} took a new baseline because {} was missing, unreadable or bound to another logbook, so changes made in between may be missing. {hint}",
         reset_sources(&reset.lost).join(", "),
         ctx.dirs.display(&ctx.dirs.state_dir)
     )

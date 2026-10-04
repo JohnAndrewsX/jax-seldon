@@ -841,7 +841,7 @@ mod doctor {
         assert_eq!(rows[0]["status"], "degraded");
         assert_eq!(
             rows[0]["message"],
-            "the last capture recorded a state reset: config took a new baseline (manifest missing or unreadable in ~/.local/state/seldon), so changes made meanwhile may be missing"
+            "the last capture recorded a state reset: config took a new baseline (manifest missing or unreadable in ~/.local/state/seldon), so changes made in between may be missing"
         );
         let fix = rows[0]["fix"].as_str().unwrap();
         assert!(
@@ -857,6 +857,28 @@ mod doctor {
 
         assert_eq!(capture("2026-10-04T10:15:00+02:00")["written"], 0);
         let (_, v) = doctor(&env, &[]);
+        let rows = states(&v);
+        assert_eq!(rows.len(), 1, "{v}");
+        assert_eq!(rows[0]["status"], "ok");
+
+        // review F3 (R3): the cursors of another logbook, last run before
+        // this logbook's reset, do not make it "the last capture" here
+        let root = env.tmp.path().join("logbook");
+        let other = env.tmp.path().join("other");
+        let out = env.seldon(&[
+            "init",
+            "--non-interactive",
+            "--no-capture",
+            "--path",
+            other.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let out = env.at(
+            "2026-10-04T09:00:00+02:00",
+            &["capture", "--source", "config", "--json"],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let (_, v) = doctor(&env, &["--path", root.to_str().unwrap()]);
         let rows = states(&v);
         assert_eq!(rows.len(), 1, "{v}");
         assert_eq!(rows[0]["status"], "ok");

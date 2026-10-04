@@ -484,12 +484,12 @@ mod state_reset {
         assert_eq!(first["warnings"], serde_json::json!([]));
 
         std::fs::remove_dir_all(state(&cli)).unwrap();
-        let out = cli.run(&["capture", "--all"]);
+        let out = cli.run(&["capture", "--all", "--since", "2026-09-15T00:00:00+02:00"]);
         assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
         let human = common::stdout(&out);
         assert!(
             human.contains(
-                "\nwarning: state reset recorded: snapper, pacman took a new baseline because ~/.local/state/seldon was missing or unreadable"
+                "\nwarning: state reset recorded: snapper, pacman took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook"
             ),
             "{human}"
         );
@@ -506,7 +506,7 @@ mod state_reset {
         let detail = r.detail.as_deref().unwrap();
         assert!(
             detail.starts_with(&format!(
-                "state directory missing or unreadable: new baseline for snapper (cursors), pacman (cursors) at {}",
+                "state directory missing, unreadable or bound to another logbook: new baseline for snapper (cursors), pacman (cursors) at 2026-09-15T00:00:00+02:00, recorded {}; ",
                 r.ts.to_rfc3339()
             )),
             "{detail}"
@@ -527,9 +527,11 @@ mod state_reset {
         let file = state(&cli).join("cursors.json");
         let mut cursors: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-        let collectors = cursors["collectors"].as_object_mut().unwrap();
-        collectors.remove("theme");
-        collectors.remove("plugins");
+        // cursors that do not read (an entry without one is a collector
+        // that never ran successfully here: no loss)
+        for name in ["theme", "plugins"] {
+            cursors["collectors"][name]["cursor"] = serde_json::json!(7);
+        }
         std::fs::write(&file, cursors.to_string()).unwrap();
         let out = cli.capture(&[]);
         assert_eq!(out["written"], 0, "{out}");
@@ -558,15 +560,189 @@ mod state_reset {
         let file = state(&cli).join("cursors.json");
         let mut cursors: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-        let collectors = cursors["collectors"].as_object_mut().unwrap();
-        collectors.remove("theme");
-        collectors.remove("plugins");
+        // cursors that do not read (an entry without one is a collector
+        // that never ran successfully here: no loss)
+        for name in ["theme", "plugins"] {
+            cursors["collectors"][name]["cursor"] = serde_json::json!(7);
+        }
         std::fs::write(&file, cursors.to_string()).unwrap();
         assert_eq!(cli.capture(&[])["written"], 1);
         let reset = resets(&cli);
         assert_eq!(reset.len(), 1);
         assert_eq!(reset[0].meta.extra["sources"], "plugins,theme");
         assert_eq!(cli.capture(&[])["written"], 0);
+    }
+
+    /// Review F1: the theme hook wrote a `theme-set` while the theme
+    /// collector was degraded (no theme file yet): its first successful run
+    /// is a baseline, not a loss.
+    #[test]
+    fn a_first_successful_run_after_a_degraded_init_is_no_reset() {
+        let env = common::Env::new(common::Snapper::Missing);
+        let log = env.tmp.path().join("pkg.log");
+        std::fs::write(&log, "").unwrap();
+        let run = |args: &[&str]| {
+            let out = env
+                .command(args)
+                .env("SELDON_PACMAN_LOG", &log)
+                .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+                .env("SELDON_OMARCHY", env.tmp.path().join("no-omarchy"))
+                .output()
+                .unwrap();
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{args:?}: {}",
+                common::stderr(&out)
+            );
+            out
+        };
+        let root = env.tmp.path().join("logbook");
+        let init = run(&[
+            "init",
+            "--non-interactive",
+            "--no-git",
+            "--path",
+            root.to_str().unwrap(),
+            "--json",
+        ]);
+        let init = common::json(&init);
+        let theme = init["capture"]["collectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "theme")
+            .unwrap();
+        assert_eq!(theme["ok"], false, "no theme file yet: {theme}");
+        run(&["event", "theme", "theme-set", "--subject", "tokyo-night"]);
+        let file = env.home.join(".local/state/omarchy/current/theme.name");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "tokyo-night\n").unwrap();
+        let out = common::json(&run(&["capture", "--json"]));
+        assert_eq!(out["warnings"], serde_json::json!([]), "{out}");
+        let ledger = seldon::ledger::Ledger::at(root.join("ledger"), Default::default());
+        let notes: Vec<Event> = ledger
+            .read_all()
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.subject == "state-reset")
+            .collect();
+        assert!(notes.is_empty(), "{notes:?}");
+        let doctor = common::json(&run(&["doctor", "--json"]));
+        let rows = doctor["checks"].as_array().unwrap();
+        assert!(
+            rows.iter()
+                .all(|c| c["name"] != "state" || c["status"] == "ok"),
+            "{doctor}"
+        );
+    }
+
+    /// Review F1: a collector disabled since the first capture and enabled
+    /// later takes its first baseline without a note.
+    #[test]
+    fn a_collector_enabled_later_is_no_reset() {
+        let cli = Cli::new();
+        let config = cli.env.config_file();
+        let mut toml: toml::Table = std::fs::read_to_string(&config).unwrap().parse().unwrap();
+        let mut off = toml::Table::new();
+        off.insert("theme".into(), toml::Value::Boolean(false));
+        toml.insert("collectors".into(), toml::Value::Table(off));
+        std::fs::write(&config, toml.to_string()).unwrap();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        let out = cli.run(&["event", "theme", "theme-set", "--subject", "tokyo-night"]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        toml.remove("collectors");
+        std::fs::write(&config, toml.to_string()).unwrap();
+        let out = cli.capture(&[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert!(resets(&cli).is_empty());
+    }
+
+    /// Review F2: cursors bound to another logbook are no backup to restore;
+    /// the note says `logbook`, and the warning and doctor say so.
+    #[test]
+    fn state_of_another_logbook_is_a_reset_without_a_restore() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        let other = cli.env.tmp.path().join("other");
+        let out = cli.env.seldon(&[
+            "init",
+            "--non-interactive",
+            "--no-git",
+            "--no-capture",
+            "--path",
+            other.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        let out = cli.run(&[
+            "capture",
+            "--all",
+            "--json",
+            "--logbook",
+            other.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        assert_eq!(
+            common::json(&out)["warnings"],
+            serde_json::json!([]),
+            "no events there"
+        );
+
+        let back = cli.capture(&[]);
+        assert_eq!(back["written"], 1, "{back}");
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1);
+        assert_eq!(reset[0].meta.extra["files"], "logbook");
+        assert_eq!(reset[0].meta.extra["sources"], "snapper,pacman");
+        let detail = reset[0].detail.as_deref().unwrap();
+        assert!(
+            detail.contains("snapper (logbook), pacman (logbook)"),
+            "{detail}"
+        );
+        let warning = back["warnings"][0].as_str().unwrap();
+        assert!(
+            warning.ends_with(
+                "Nothing can be restored: the state belonged to another logbook path, and the new baseline is this logbook's (user guide: Moving or copying the logbook)"
+            ),
+            "{warning}"
+        );
+        let doctor = common::json(&cli.run(&["doctor", "--json"]));
+        let row = doctor["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "state" && c["status"] == "degraded")
+            .unwrap_or_else(|| panic!("{doctor}"))
+            .clone();
+        assert!(
+            row["message"]
+                .as_str()
+                .unwrap()
+                .contains("(the state in ~/.local/state/seldon belonged to another logbook)"),
+            "{row}"
+        );
+        assert!(
+            row["fix"]
+                .as_str()
+                .unwrap()
+                .starts_with("nothing to restore: "),
+            "{row}"
+        );
+    }
+
+    /// Review F3 (R1): only a run of the config collector reads and moves
+    /// a corrupt `owned.json`.
+    #[test]
+    fn a_corrupt_owned_file_waits_for_the_config_collector() {
+        let cli = Cli::new();
+        config_event(&cli);
+        let owned = state(&cli).join("owned.json");
+        std::fs::write(&owned, "[").unwrap();
+        let out = cli.run(&["capture", "--source", "pacman", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        assert_eq!(common::json(&out)["warnings"], serde_json::json!([]));
+        assert!(owned.is_file());
+        assert!(resets(&cli).is_empty());
     }
 
     #[test]

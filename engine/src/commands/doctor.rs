@@ -542,24 +542,46 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
     if reset.ts < last {
         return None;
     }
-    let meta = |key: &str| {
+    let meta = |key: &str| -> Vec<String> {
         let value = reset.meta.extra.get(key).and_then(|v| v.as_str());
-        value.unwrap_or_default().replace(',', ", ")
+        let value = value.unwrap_or_default();
+        value
+            .split(',')
+            .filter(|v| !v.is_empty())
+            .map(String::from)
+            .collect()
     };
     let state = ctx.dirs.display(&ctx.dirs.state_dir);
+    let (rebound, files): (Vec<String>, Vec<String>) =
+        meta("files").into_iter().partition(|f| f == "logbook");
+    let mut why = Vec::new();
+    if !rebound.is_empty() {
+        why.push(format!("the state in {state} belonged to another logbook"));
+    }
+    if !files.is_empty() {
+        why.push(format!(
+            "{} missing or unreadable in {state}",
+            files.join(", ")
+        ));
+    }
+    let fix = if rebound.is_empty() {
+        format!(
+            "restore a backup of {state} and run seldon capture (user guide: Back up and restore the state directory); without a backup, run seldon capture to clear this row"
+        )
+    } else {
+        "nothing to restore: the state belonged to another logbook path and the new baseline is this logbook's; run seldon capture to clear this row".to_string()
+    };
     Some(
         Check::new(
             "state",
             Status::Degraded,
             format!(
-                "the last capture recorded a state reset: {} took a new baseline ({} missing or unreadable in {state}), so changes made meanwhile may be missing",
-                meta("sources"),
-                meta("files")
+                "the last capture recorded a state reset: {} took a new baseline ({}), so changes made in between may be missing",
+                meta("sources").join(", "),
+                why.join("; ")
             ),
         )
-        .fix(format!(
-            "restore a backup of {state} and run seldon capture (user guide: Back up and restore the state directory); without a backup, run seldon capture to clear this row"
-        )),
+        .fix(fix),
     )
 }
 

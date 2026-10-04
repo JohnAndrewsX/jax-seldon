@@ -16,7 +16,7 @@ use std::os::unix::fs::MetadataExt as _;
 use seldon::collectors::omarchy::Omarchy;
 use seldon::collectors::pacman::{self, Pacman, PacmanCursor};
 use seldon::collectors::snapper::{NO_PERMISSIONS, Snapper};
-use seldon::collectors::to_cursor;
+use seldon::collectors::{Lost, to_cursor};
 use seldon::commands::doctor::SNAPPER_FIX;
 use seldon::model::event::{Event, Kind, Source};
 use support::{
@@ -556,6 +556,7 @@ mod collectors {
         let got = b.run(&Snapper, "2026-09-30T19:05:00+02:00");
         assert!(got.ok, "{:?}", got.message);
         assert_eq!(got.fix, None);
+        assert_eq!(got.baseline, None, "continued from its cursor");
         assert_eq!(
             normalised_sorted(&got.events),
             normalised_sorted(&want.events)
@@ -594,6 +595,7 @@ mod collectors {
         fresh.sources.snapper = no_permission(&fresh);
         fresh.sources.snapshots = fixture("logs/snapshots");
         let got = fresh.run(&Snapper, "2026-10-01T17:05:00+02:00");
+        assert_eq!(got.baseline, Some(Lost::Cursor), "WP-081");
         assert_eq!(
             kinds(&got.events),
             [
