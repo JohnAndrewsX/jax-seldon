@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-078 | plugin: follow-ups from the WP-067/068 reviews | Plugin | `plugin-078` (opus) | `wt/WP-078` · `wp/078-review` | 2026-10-04 |
+| — | no active work package | | | | |
 
 ## Queued (next up)
 
@@ -35,6 +35,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-078 plugin: callWarning first line, new-decision sheet busy
+  refusal, Changelog Capture now replaces a pending retry, "Engine too old"
+  rows in README and the troubleshooting guides (en, de), IPC owner prefers
+  a drawn widget, harness clean_log; two review rounds; merged.
 - 2026-10-04 WP-077 engine: a refused case save writes nothing (prepared
   before the ledger write in log, event, the agent hooks and drift link),
   validation errors and warnings name values and file names escaped, plan
