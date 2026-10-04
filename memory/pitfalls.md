@@ -1543,3 +1543,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   carries the `WARN qml:` prefix. A check that "nothing of line two is in
   the log" must skip the HARNESS report lines, which carry the same text
   JSON-escaped (service-states 31b).
+
+## 2026-10-04 · WP-080 (Packaging)
+
+- **`gh attestation verify` exits 4 when gh is not logged in** (also for a
+  public repo: it needs the API). Treat 4 as "tool unavailable", not as a
+  failed verification, or every user with a logged-out gh is refused.
+- **A tampered asset and a release without attestations look the same**
+  to `gh` (both: no attestation for the digest, HTTP 404). install.sh
+  therefore decides by version (attestations start after v0.1.1) and only
+  then asks gh.
+- **`--repo` alone accepts any attestation the repository's workflows
+  made,** including a branch dry run's. `--source-ref refs/tags/vX.Y.Z`
+  rejects those ("expected SourceRepositoryRef to be refs/tags/v0.1.1,
+  got refs/heads/…"); `--signer-workflow <owner>/<repo>/.github/workflows/release.yml`
+  rejects other workflows. Checked against the real dry-run assets.
+- **The install test links every host tool into its PATH dirs;** the
+  host's real gh would then verify mock tarballs over the network. Leave
+  `gh` out of those dirs and put a stub first also where a test uses the
+  host's `$PATH`.
+- **A Python edit script in a bash heredoc that itself contains a heredoc
+  ending in `EOF`** ends the outer heredoc early and runs the rest as
+  shell. Write such scripts to the scratchpad with the file tool, or use
+  a different inner delimiter.
