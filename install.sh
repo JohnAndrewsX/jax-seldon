@@ -2,12 +2,18 @@
 # install.sh — install, update or remove the Seldon engine from a GitHub release.
 #
 #   install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force]
+#              [--require-verified]
 #   install.sh --uninstall [--prefix DIR]
 #
 # Downloads seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz and SHA256SUMS
 # from the release (the latest one unless --version is given), checks the
 # tarball with `sha256sum -c` and refuses on a mismatch before anything is
-# written. Then installs <prefix>/bin/seldon and the symlink
+# written. Then it checks the tarball's build provenance when the GitHub
+# CLI is installed and logged in: `gh attestation verify` must find an
+# attestation that release.yml of JohnAndrewsX/jax-seldon made for the
+# release's tag, or nothing is installed. Without a usable gh (or for a
+# release up to v0.1.1, made before attestations) one note says that only
+# the checksum was checked; --require-verified refuses instead. Then installs <prefix>/bin/seldon and the symlink
 # <prefix>/bin/jax-seldon -> seldon (prefix default ~/.local), the man page
 # <prefix>/share/man/man1/seldon.1 and the shell completions for each of
 # bash, zsh and fish that is installed here (zsh, fish: on PATH; each:
@@ -31,12 +37,14 @@
 #
 # Exit codes: 0 ok; 1 usage error, or a refusal you can fix (a foreign
 # file in the way, a seldon not installed by this script, the unit still
-# enabled); 2 download, verification or
+# enabled, --require-verified without a usable gh); 2 download,
+# verification (checksum or provenance) or
 # any other failure. Every refusal and failure comes before the first write.
 #
 # Test hooks (tests/install/install.test.sh): SELDON_INSTALL_API_URL and
 # SELDON_INSTALL_DOWNLOAD_URL replace the GitHub URLs below,
-# SELDON_INSTALL_SHARE the /usr/share where the shells are looked for.
+# SELDON_INSTALL_SHARE the /usr/share where the shells are looked for; a
+# stub `gh` first on PATH stands in for the GitHub CLI.
 
 set -euo pipefail
 
@@ -48,12 +56,14 @@ UNIT_NAME="seldon-watch.service"
 UNIT_EXEC_DEFAULT="ExecStart=%h/.local/bin/seldon watch"
 SYSTEM_SHARE="${SELDON_INSTALL_SHARE:-/usr/share}"
 PLUGIN_URL="https://github.com/JohnAndrewsX/jax-seldon-plugin.git"
+# the workflow whose attestations install.sh accepts (WP-080)
+RELEASE_WORKFLOW="$REPO/.github/workflows/release.yml"
 
 say() { printf '%s\n' "$*"; }
 warn() { printf 'install.sh: %s\n' "$*" >&2; }
 usage_error() {
   warn "$*"
-  warn "usage: install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force] | --uninstall [--prefix DIR]"
+  warn "usage: install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force] [--require-verified] | --uninstall [--prefix DIR]"
   exit 1
 }
 refuse() {
@@ -70,6 +80,7 @@ usage() {
 install.sh — install, update or remove the Seldon engine from a GitHub release
 
   install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force]
+             [--require-verified]
   install.sh --uninstall [--prefix DIR]
 
   --version vX.Y.Z  install this release (default: the latest)
@@ -79,12 +90,19 @@ install.sh — install, update or remove the Seldon engine from a GitHub release
                     ~/.config/systemd/user/ (installed, not enabled)
   --force           replace a seldon (or unit, completion, man page)
                     this script did not install, e.g. a self-built binary
+  --require-verified
+                    refuse unless the GitHub CLI (gh, logged in) verified
+                    the download's build provenance
   --uninstall       remove what this script installed under DIR; your
                     logbook, config and index stay
   -h, --help        this text
 
 The download is checked against the release's SHA256SUMS; a mismatch
-installs nothing. No root needed, never uses it.
+installs nothing. When gh is installed and logged in, the download's build
+provenance is checked too (`gh attestation verify`): it must come from
+this repository's release workflow for the release's tag, or nothing is
+installed. Without gh only the checksum is checked, and a note says so.
+No root needed, never uses it.
 EOF
 }
 
@@ -107,6 +125,51 @@ CURL=(curl -fsSL --proto '=https,file' --proto-redir '=https' --retry 2)
 
 fetch() { # url dest
   "${CURL[@]}" -o "$2" -- "$1"
+}
+
+# True when release X.Y.Z carries build-provenance attestations: every
+# release after v0.1.1 (release.yml attests since WP-080).
+attested_release() { # X.Y.Z
+  local major minor patch
+  IFS=. read -r major minor patch <<<"$1"
+  ((10#$major > 0 || 10#$minor > 1 || (10#$minor == 1 && 10#$patch > 1)))
+}
+
+# Checks the downloaded tarball's build provenance with the GitHub CLI:
+# an attestation by release.yml of $REPO, made for the tag, must match its
+# digest. A failed check stops the install; without a usable gh (not
+# installed, too old, not logged in) or for a release before attestations
+# one note says so, and --require-verified refuses instead.
+verify_provenance() { # file tag version
+  local file=$1 tag=$2 version=$3 asset=${1##*/} why="" out rc line
+  if ! attested_release "$version"; then
+    why="$tag was released before attestations (they start after v0.1.1)"
+  elif ! command -v gh >/dev/null 2>&1; then
+    why="the GitHub CLI (gh) is not installed"
+  else
+    out=$(gh attestation verify --help 2>&1) || out=""
+    if [[ $out != *--source-ref* || $out != *--signer-workflow* ]]; then
+      why="this gh has no 'gh attestation verify --source-ref' (update gh)"
+    else
+      rc=0
+      out=$(gh attestation verify "$file" --repo "$REPO" \
+        --signer-workflow "$RELEASE_WORKFLOW" --source-ref "refs/tags/$tag" 2>&1) || rc=$?
+      case $rc in
+        0)
+          say "  attested   $asset (built by release.yml for $tag; gh attestation verify)"
+          return 0
+          ;;
+        4) why="gh is not logged in (gh auth login)" ;;
+        *)
+          while IFS= read -r line; do warn "  gh: $line"; done <<<"$out"
+          fail "build provenance check failed for $asset: no attestation by $REPO's release workflow for $tag matches the download; nothing installed"
+          ;;
+      esac
+    fi
+  fi
+  [[ $REQUIRE_VERIFIED == 0 ]] \
+    || refuse "--require-verified: $why, so the build provenance cannot be checked; nothing installed"
+  say "  note       $why: only the SHA256SUMS checksum was checked, not the build provenance"
 }
 
 # The tag of the latest release, from the GitHub API; jq when present,
@@ -231,6 +294,7 @@ do_install() {
   (cd "$WORK" && sha256sum -c --strict --quiet asset.sha256) \
     || fail "checksum mismatch for $asset: the download does not match SHA256SUMS; nothing installed"
   say "  verified   $asset (sha256 $(sha_of "$WORK/$asset"))"
+  verify_provenance "$WORK/$asset" "$tag" "$version"
 
   tar -xzf "$WORK/$asset" -C "$WORK" "$stage/seldon" "$stage/$UNIT_NAME" \
     || fail "$asset does not have the expected layout ($stage/seldon, $stage/$UNIT_NAME)"
@@ -425,6 +489,7 @@ main() {
   PREFIX_ARG=""
   UNIT=0
   FORCE=0
+  REQUIRE_VERIFIED=0
   local uninstall=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -443,6 +508,7 @@ main() {
       --prefix=*) PREFIX=${1#*=}; PREFIX_ARG=" --prefix $(printf '%q' "${1#*=}")"; shift ;;
       --unit) UNIT=1; shift ;;
       --force) FORCE=1; shift ;;
+      --require-verified) REQUIRE_VERIFIED=1; shift ;;
       --uninstall) uninstall=1; shift ;;
       -h | --help) usage; exit 0 ;;
       *) usage_error "unknown argument '$1'" ;;
@@ -462,7 +528,7 @@ main() {
   fi
 
   if [[ $uninstall == 1 ]]; then
-    [[ -z $VERSION && $UNIT == 0 && $FORCE == 0 ]] || usage_error "--uninstall takes only --prefix"
+    [[ -z $VERSION && $UNIT == 0 && $FORCE == 0 && $REQUIRE_VERIFIED == 0 ]] || usage_error "--uninstall takes only --prefix"
     do_uninstall
   else
     do_install
