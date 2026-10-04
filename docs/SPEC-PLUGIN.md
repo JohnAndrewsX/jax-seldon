@@ -350,10 +350,15 @@ item and only while it is loaded. Routes the plugin must honour:
   the engine; WP-011), following the
   first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
   and toggle the panel independently of the overlay (WP-010). The bar
-  builds the widget once per monitor, and a target takes one handler: only
-  the first instance the bar lists (`bar.moduleWidgets`) enables its
-  handler, and when that instance goes, the next one takes the target
-  over (WP-067); IPC calls act on that instance's panel.
+  builds the widget once per monitor (plus a zero-size, hidden placeholder
+  for an anchored centre module), and a target takes one handler: only
+  the first drawn instance the bar lists (`bar.moduleWidgets`; visible
+  and not zero-size, as the shell's `pickDrawnSlot` routes a panel
+  hotkey) enables its handler, a placeholder only when no instance is
+  drawn (WP-078). When an instance comes, goes, or is drawn or hidden,
+  every instance looks again, the owner first, so the next one takes the
+  target over with one handler at a time (WP-067); IPC calls act on that
+  instance's panel.
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,
   `refresh`, `capture`) — read-only state and the two actions any local
   process could trigger anyway; it is how the test host reads plugin state

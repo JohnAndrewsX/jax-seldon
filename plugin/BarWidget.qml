@@ -111,35 +111,54 @@ BarWidget {
   }
 
   // ---- One handler for `jax.seldon.panel` (WP-067). The bar builds this
-  // widget once per monitor (plus a placeholder for an anchored centre
-  // module), and an IPC target takes one handler: every further instance
-  // made the shell log "another handler is registered". The first live
-  // instance the bar lists owns the target; when it goes, the others look
-  // again. Without the bar's list (a harness) the widget owns it alone.
+  // widget once per monitor, plus a zero-size, hidden placeholder for an
+  // anchored centre module, and an IPC target takes one handler: every
+  // further instance made the shell log "another handler is registered".
+  // The first drawn instance the bar lists owns the target, a placeholder
+  // only when none is drawn (Model.pickDrawnWidget, as the shell's
+  // pickDrawnSlot routes a panel hotkey; WP-078). When an instance comes,
+  // goes, or is drawn or hidden, every instance looks again, the owner
+  // first, so it lets go before the next one takes over. Without the bar's
+  // list (a harness) the widget owns it alone.
   property bool ipcOwner: false
+  readonly property bool drawn: Model.isDrawnWidget(root)
 
-  function claimIpc(leaving) {
-    var items = root.bar && typeof root.bar.moduleWidgets === "function" ? root.bar.moduleWidgets(root.moduleName) : []
-    var live = []
-    for (var i = 0; i < items.length; i++)
-      if (items[i] && items[i] !== leaving) live.push(items[i])
-    root.ipcOwner = root !== leaving && (live.length === 0 || live[0] === root)
+  function liveWidgets() {
+    return root.bar && typeof root.bar.moduleWidgets === "function" ? root.bar.moduleWidgets(root.moduleName) : []
   }
 
-  Component.onCompleted: Qt.callLater(root.claimIpc, null)
+  function claimIpc(leaving) {
+    if (root === leaving) {
+      root.ipcOwner = false
+      return
+    }
+    var pick = Model.pickDrawnWidget(root.liveWidgets(), leaving)
+    root.ipcOwner = pick === null || pick === root
+  }
+
+  function reclaimIpc(leaving) {
+    var items = root.liveWidgets()
+    if (items.indexOf(root) === -1) items = items.concat([root])
+    var owners = items.filter(function(w) { return !!w && w.ipcOwner === true })
+    var others = items.filter(function(w) { return !!w && w.ipcOwner !== true })
+    var order = owners.concat(others)
+    for (var i = 0; i < order.length; i++)
+      if (order[i] !== leaving && typeof order[i].claimIpc === "function") order[i].claimIpc(leaving)
+  }
+
+  onDrawnChanged: Qt.callLater(root.reclaimIpc, null)
+  Component.onCompleted: Qt.callLater(root.reclaimIpc, null)
   Component.onDestruction: {
     if (!root.ipcOwner) return
     // Let go first, so the next owner's handler is the only one.
     root.ipcOwner = false
-    var items = root.bar && typeof root.bar.moduleWidgets === "function" ? root.bar.moduleWidgets(root.moduleName) : []
-    for (var i = 0; i < items.length; i++)
-      if (items[i] && items[i] !== root && typeof items[i].claimIpc === "function") items[i].claimIpc(root)
+    root.reclaimIpc(root)
   }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  onBarChanged: { root.findService(); root.injectPanel(); Qt.callLater(root.claimIpc, null) }
+  onBarChanged: { root.findService(); root.injectPanel(); Qt.callLater(root.reclaimIpc, null) }
   onSettingsChanged: root.injectPanel()
   onServiceChanged: { root.pushSettings(); root.injectPanel() }
   onCaptureIntervalChanged: root.pushSettings()

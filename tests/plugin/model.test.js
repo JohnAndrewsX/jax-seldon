@@ -1466,4 +1466,22 @@ test("busy and lock texts (WP-068)", () => {
   assert.ok(M.LOCK_WAIT_TEXT.indexOf("waiting for another seldon process") === 0)
 })
 
+test("pickDrawnWidget (WP-078): the first drawn widget owns IPC, a placeholder only alone", () => {
+  const w = (name, visible, width, height) => ({ name, visible, width, height })
+  const placeholder = w("placeholder", false, 0, 0)
+  const hiddenSized = w("hidden", false, 40, 26)
+  const zeroWide = w("zero", true, 0, 26)
+  const a = w("a", true, 40, 26)
+  const b = w("b", true, 40, 26)
+  assert.strictEqual(M.pickDrawnWidget([placeholder, a, b]), a)
+  assert.strictEqual(M.pickDrawnWidget([hiddenSized, zeroWide, b]), b)
+  assert.strictEqual(M.pickDrawnWidget([a, b], a), b)
+  assert.strictEqual(M.pickDrawnWidget([placeholder, a], a), placeholder)
+  assert.strictEqual(M.pickDrawnWidget([null, zeroWide, placeholder]), zeroWide)
+  assert.strictEqual(M.pickDrawnWidget([], null), null)
+  assert.strictEqual(M.pickDrawnWidget(undefined, null), null)
+  assert.strictEqual(M.isDrawnWidget(w("x", true, 1, 1)), true)
+  assert.strictEqual(M.isDrawnWidget(w("x", true, 1, 0)), false)
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

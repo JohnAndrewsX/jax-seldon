@@ -2775,3 +2775,29 @@ function engineOutdatedBanner(status, engineVersion, engineMin) {
     ]
   }
 }
+
+// ---- Bar IPC owner (WP-078) -------------------------------------------------
+
+// A bar widget the user can see: visible and not zero-size. An anchored
+// centre module is mounted twice, the drawn copy and a zero-size, hidden
+// placeholder (the shell's BarModel.isDrawnSlot, on the widget itself).
+function isDrawnWidget(item) {
+  return !!item && item.visible === true && item.width > 0 && item.height > 0
+}
+
+// The instance that owns `jax.seldon.panel` among the bar's live widgets
+// (`bar.moduleWidgets`), `leaving` left out: the first drawn one, else the
+// first one at all (only placeholders on screen), else null. Mirrors the
+// shell's BarModel.pickDrawnSlot, so IPC acts on the instance a panel
+// hotkey would.
+function pickDrawnWidget(items, leaving) {
+  var placeholder = null
+  var list = Array.isArray(items) ? items : []
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i]
+    if (!item || item === leaving) continue
+    if (isDrawnWidget(item)) return item
+    if (!placeholder) placeholder = item
+  }
+  return placeholder
+}

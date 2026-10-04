@@ -205,6 +205,30 @@ check "ipc open after reaches the new owner" "$(field ipc '.openedAfter | map(to
 check "ipc one handler" "$(grep -a -c 'another handler is registered' "$work/ipc.log" || true)" 0
 clean_log ipc
 
+# 5. An anchored centre module (WP-078): the bar lists a zero-size, hidden
+# placeholder first and the drawn widget second. The drawn one owns the
+# target (as the shell's pickDrawnSlot routes a hotkey) and IPC `open`
+# reaches it; a live reconfiguration that draws the placeholder and hides
+# the other moves the target with one handler at a time; when the owner
+# goes, the hidden one is the only instance left and takes it.
+ipc_rt=$(mktemp -d /tmp/seldon-ipc.XXXXXX)
+run ipc-placeholder tokyo-night 12 "$fx/index.sample.json" HARNESS_IPC="$config/shell.qml" HARNESS_IPC_PLACEHOLDER=1 \
+  XDG_RUNTIME_DIR="$ipc_rt"
+rm -rf "$ipc_rt"
+sed 's/\x1b\[[0-9;]*m//g' "$work/ipc-placeholder.log" | grep -a "HARNESS ipc " | sed 's/.*HARNESS ipc //' >"$work/ipc-placeholder.json" || true
+check "ipc-placeholder owners" "$(field ipc-placeholder '.owners | map(tostring) | join(",")')" "false,true"
+check "ipc-placeholder open output" "$(field ipc-placeholder .open.out)" ""
+check "ipc-placeholder open reaches the drawn one" "$(field ipc-placeholder '.opened | map(tostring) | join(",")')" "false,true"
+check "ipc-placeholder close" "$(field ipc-placeholder '.closed | map(tostring) | join(",")')" "false,false"
+check "ipc-placeholder owners swapped" "$(field ipc-placeholder '.ownersSwapped | map(tostring) | join(",")')" "true,false"
+check "ipc-placeholder open swapped output" "$(field ipc-placeholder .openSwapped.out)" ""
+check "ipc-placeholder open swapped reaches the drawn one" "$(field ipc-placeholder '.openedSwapped | map(tostring) | join(",")')" "true,false"
+check "ipc-placeholder owners after" "$(field ipc-placeholder '.ownersAfter | map(tostring) | join(",")')" "null,true"
+check "ipc-placeholder open after output" "$(field ipc-placeholder .openAfter.out)" ""
+check "ipc-placeholder open after reaches the last one" "$(field ipc-placeholder '.openedAfter | map(tostring) | join(",")')" "null,true"
+check "ipc-placeholder one handler" "$(grep -a -c 'another handler is registered' "$work/ipc-placeholder.log" || true)" 0
+clean_log ipc-placeholder
+
 real_home_check bar-view
 
 echo "bar-view: $pass passed, $fail failed"
