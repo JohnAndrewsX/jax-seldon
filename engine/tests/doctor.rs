@@ -252,7 +252,7 @@ mod doctor {
             "1 snapshots (config root). {}",
             seldon::commands::doctor::SNAPPER_LIST_GRANTS
         );
-        let revert = "sudo snapper -c root set-config ALLOW_USERS=\"\" && sudo setfacl -m u:$USER:rx /.snapshots";
+        let revert = "sudo snapper -c root set-config ALLOW_USERS=\"\" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots";
 
         stub(listed);
         for vars in [
@@ -266,7 +266,7 @@ mod doctor {
             assert_eq!(
                 got["message"],
                 format!(
-                    "{plain} Your user is in ALLOW_USERS of the root snapper config, the opt-in that ADR-0026 replaces by a read grant: revert it (this empties ALLOW_USERS), then grant read access. {}",
+                    "{plain} Your user is in ALLOW_USERS of the root snapper config, the opt-in that ADR-0026 replaces by a read grant: revert it (this empties ALLOW_USERS and turns SYNC_ACL off), then grant read access. {}",
                     seldon::commands::doctor::SNAPPER_FIX_GRANTS
                 )
             );
@@ -279,8 +279,14 @@ mod doctor {
         );
         assert!(text.contains(&format!("fix: {revert}\n")), "{text}");
 
-        // not listed (a name is matched whole), or no user known
-        for vars in [&[("USER", "carol")][..], &[("USER", "alic")], &[]] {
+        // not listed (a name is matched whole; `USER` before `LOGNAME`), or
+        // no user known
+        for vars in [
+            &[("USER", "carol")][..],
+            &[("USER", "alic")],
+            &[("USER", "carol"), ("LOGNAME", "alice")],
+            &[],
+        ] {
             let got = doctor(vars);
             assert_eq!(got.get("fix"), None, "{vars:?}: {got}");
             assert_eq!(got["message"], plain, "{vars:?}");
@@ -298,6 +304,26 @@ mod doctor {
             "{log}"
         );
         assert!(log.contains("get-config"), "{log}");
+
+        // listing refused: degraded with the read grant, and get-config is
+        // never asked (it runs only after `snapper list` succeeded)
+        std::fs::remove_file(&calls).unwrap();
+        env.stub(
+            "snapper",
+            &format!(
+                "printf '%s\\n' \"$*\" >> '{}'\n\
+                 case \"$*\" in\n\
+                 '--jsonout -c root get-config') {listed} ;;\n\
+                 *) echo 'No permissions.' >&2; exit 1 ;;\n\
+                 esac",
+                calls.display()
+            ),
+        );
+        let got = doctor(&[("USER", "alice")]);
+        assert_eq!(got["status"], "degraded", "{got}");
+        assert_eq!(got["fix"], seldon::commands::doctor::SNAPPER_FIX, "{got}");
+        let log = std::fs::read_to_string(&calls).unwrap();
+        assert_eq!(log, "--jsonout list\n", "{log}");
 
         // no snapper: no revert either
         std::fs::remove_file(env.tmp.path().join("bin/snapper")).unwrap();

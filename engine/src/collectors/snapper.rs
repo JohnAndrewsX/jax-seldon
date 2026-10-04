@@ -132,10 +132,11 @@ fn command(program: &str, args: &[&str]) -> Command {
 }
 
 /// Reverts the old opt-in of ADR-0011 (`ALLOW_USERS=$USER SYNC_ACL=yes`).
-/// snapper then also drops the ACL that `SYNC_ACL` gave the user on the
-/// snapshot directory, so `doctor` prints it before the read grant
+/// `SYNC_ACL=no` keeps a later `set-config` from syncing the read grant's
+/// ACL on the snapshot directory away; the revert may drop the ACL entry
+/// the opt-in made, so `doctor` prints it before the read grant
 /// (ADR-0026). Printed, never run.
-pub const REVERT_OPT_IN: &str = "sudo snapper -c root set-config ALLOW_USERS=\"\"";
+pub const REVERT_OPT_IN: &str = "sudo snapper -c root set-config ALLOW_USERS=\"\" SYNC_ACL=no";
 
 /// Whether `ALLOW_USERS` of the root snapper config names the current user
 /// (`USER`, else `LOGNAME`): runs [`get_config_command`] with `timeout`.

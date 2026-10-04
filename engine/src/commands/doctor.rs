@@ -686,7 +686,7 @@ pub fn check_snapper(config: &Config) -> Check {
                         "snapper",
                         Status::Ok,
                         format!(
-                            "{message} Your user is in ALLOW_USERS of the root snapper config, the opt-in that ADR-0026 replaces by a read grant: revert it (this empties ALLOW_USERS), then grant read access. {SNAPPER_FIX_GRANTS}"
+                            "{message} Your user is in ALLOW_USERS of the root snapper config, the opt-in that ADR-0026 replaces by a read grant: revert it (this empties ALLOW_USERS and turns SYNC_ACL off), then grant read access. {SNAPPER_FIX_GRANTS}"
                         ),
                     )
                     .fix(format!("{} && {SNAPPER_FIX}", snapper::REVERT_OPT_IN))

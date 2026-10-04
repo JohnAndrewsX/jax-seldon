@@ -153,7 +153,7 @@ mod init {
         let text = run("alice", "listed");
         assert!(
             text.contains(
-                "  sudo snapper -c root set-config ALLOW_USERS=\"\" && sudo setfacl -m u:$USER:rx /.snapshots   # recommended: a read grant instead of the snapper opt-in (ADR-0026)\n"
+                "  sudo snapper -c root set-config ALLOW_USERS=\"\" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots   # recommended: a read grant instead of the snapper opt-in (ADR-0026)\n"
             ),
             "{text}"
         );
