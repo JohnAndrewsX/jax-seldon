@@ -357,10 +357,17 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
   state-loss event kind are bundled into one contract v2 ADR for v0.2.0.
 - Global hook installs serve only sessions inside the logbook by default
   (`[hooks] scope = "logbook"`): confirmed.
-- Next release: v0.1.2 prepared on `main` (7f8ca2b; main check, CI and the
-  release dry run green); the tag is the operator's go.
+- v0.1.2 released 2026-10-04 (tag on the operator's go, run 37236761814:
+  build, release, aur (no-op), bump, plugin all green; tarball and install.sh
+  attestations verified with `gh attestation verify`; plugin repository
+  tagged). Next: the contract v2 bundle (v0.2.0) and the 0.1.3 follow-ups.
 
 ## Open questions for the operator
+- **Release v0.1.2 published 2026-10-04:** GitHub release with install.sh,
+  the musl tarball, the source tarball and SHA256SUMS, all attested;
+  PKGBUILD/.SRCINFO bumped on main (395ad08); plugin repository at
+  `v0.1.2`. Your two follow-ups: the `v*` tag ruleset and the snapper
+  revert on your machines (`seldon doctor` prints the line).
 - **Tag ruleset:** the repository has no ruleset protecting `v*` tags.
   Since WP-080 the tag is the trust anchor of the provenance check
   (`--source-ref refs/tags/<tag>`); a ruleset that limits tag creation and
