@@ -144,3 +144,82 @@ Branch `wp/080-review` (worktree `wt/WP-080`), base `2c1d7ec`.
 - `tests/release/workflow-pins.test.sh` (not an input; the natural home
   for the "pinned and least-privilege" claim and its mutants).
 - `memory/pitfalls.md` (learned section).
+
+## Round 2 (review: APPROVE with F1–F4 and one decision)
+
+### Changed
+
+- **F1** (`install.sh`, `059364d`): a gh exit other
+  than 0/4 now fails with "gh attestation verify did not confirm <asset>
+  as built by JohnAndrewsX/jax-seldon's release workflow for <tag> (gh's
+  reason above); nothing installed. If gh itself fails here (a proxy,
+  credentials), --skip-provenance installs on the checksum alone." (exit 2).
+- **Decision: `--skip-provenance`.** Skips the gh check (gh is not called)
+  with the note "build provenance not checked at your request; only the
+  SHA256SUMS checksum was checked". With `--require-verified`: usage
+  error, exit 1; with `--uninstall`: usage error like
+  `--require-verified`. `--help`, usage line, header comment; README row,
+  guides 01/11 en (`d21d88e`) and de (`5b43aab`, re-stamped to
+  `d21d88e`), SECURITY.md one sentence, CHANGELOG clause.
+- **F4 (gh call):** `--hostname github.com` and
+  `--deny-self-hosted-runners` added; the help check now requires all
+  four options it passes (`--hostname --signer-workflow --source-ref
+  --deny-self-hosted-runners`) and names the first missing one. Real gh
+  2.102.0 against dry run 1's assets: `GH_HOST=ghe.example.invalid` with
+  `--hostname github.com … --deny-self-hosted-runners` → rc 0; the same
+  GH_HOST without `--hostname` → rc 1 (the false refusal the reviewer
+  named). SECURITY.md's manual command carries both flags; the exact-argv
+  test follows.
+- **F2** (`tests/release/workflow-pins.test.sh`, `3e47016`): no job but build may have
+  `id-token:` or `attestations:`; "Attest the release assets" must be the
+  step right before "Summary". Self-mutants: `id-token: write` on the
+  release job; the attest step moved before "Build the package" (both
+  found).
+- **F3** (`docs/TESTING.md`): the check-install row names the WP-080
+  scenarios.
+- **F4 (reflow):** docs/VERSIONING.md step 6 and packaging/README.md's
+  dry-run paragraph reflowed; the latter's `gh run download <id> -n dist`
+  became `-n dist -D dist` so its `dist/SHA256SUMS` path exists.
+- Tests (`install.test.sh`, 210 checks): stubs `gh-fail` (exit 1, "no
+  valid Sigstore verifiers could be initialized"), `gh-partial` (no
+  `--deny-self-hosted-runners`); `gh-ok` honours `--hostname`/`GH_HOST`
+  and `--deny-self-hosted-runners`; new mock v9.9.1 attested from a
+  self-hosted runner; cases: gh failing on its own (refused, exit 2,
+  reason shown), `--skip-provenance` with failing gh (installs, note, gh
+  not called), `--skip-provenance` with a tampered release (checksum
+  alone decides), both flags (exit 1, nothing installed),
+  `--uninstall --skip-provenance` (usage error), GH_HOST of another
+  server (still verified on github.com), self-hosted attestation refused,
+  gh without `--deny-self-hosted-runners` (note), `--help`.
+
+### Mutants (round 2; install.sh mutated, install.test.sh run, restored)
+
+| Mutant | Failing checks |
+|---|---|
+| `--skip-provenance` ignored | 5 |
+| both flags allowed together | 3 |
+| `--uninstall` accepts `--skip-provenance` | 5 |
+| `--hostname github.com` dropped | 3 (argv, GH_HOST case) |
+| `--deny-self-hosted-runners` dropped | 4 (argv, self-hosted case) |
+| help check without `--deny-self-hosted-runners` | 2 |
+| `--skip-provenance` hint dropped from the F1 message | 1 |
+| old F1 wording | 5 |
+
+All round-1 mutants still apply to the same code paths (messages in
+their checks updated). workflow-pins.test.sh: 9 WP-080 self-mutants, all
+found.
+
+### Verified by
+
+`bash tests/install/install.test.sh` → 210 passed, 0 failed (shellcheck
+on PATH, so its shellcheck checks ran); `bash
+tests/release/workflow-pins.test.sh` → ok; `shellcheck install.sh
+tests/install/install.test.sh tests/release/workflow-pins.test.sh` →
+clean (0.11.0, scratch venv); `bash scripts/docs-check.sh` → ok, no
+warnings. No `just check` and no dry run, as asked: `.github/` is
+unchanged since round 1 (`git diff --stat ff8023d -- .github/` empty).
+
+### Touched outside scope
+
+None beyond the reviewer's list (CHANGELOG got one clause for the new
+flag).
