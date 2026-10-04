@@ -122,26 +122,35 @@ sed -i 's| refs/tags/v9\.9\.2$| refs/heads/wp/080-review|' "$work/attested"
 # v0.1.1: released before attestations; none exists for it.
 make_release 0.1.1
 sed -i '/ refs\/tags\/v0\.1\.1$/d' "$work/attested"
+# v9.9.1: attested for its tag, but built on a self-hosted runner.
+make_release 9.9.1
+sed -i 's| refs/tags/v9\.9\.1$| refs/tags/v9.9.1 self-hosted|' "$work/attested"
 
 # ---- gh stubs (WP-080) -------------------------------------------------------
-# gh-ok verifies like `gh attestation verify FILE --repo R
-# [--signer-workflow W] [--source-ref REF]`: the file's sha256 must be in
-# $work/attested (with REF, when given). gh-noauth is a gh that is not
-# logged in (exit 4, as gh does); gh-old has no `attestation` command;
-# gh-none is no gh at all. Every call is logged to $work/gh.log.
-mkdir -p "$work/gh-ok" "$work/gh-noauth" "$work/gh-old" "$work/gh-none"
+# gh-ok verifies like `gh attestation verify FILE [--hostname H] --repo R
+# [--signer-workflow W] [--source-ref REF] [--deny-self-hosted-runners]`:
+# the file's sha256 must be in $work/attested (with REF, when given; not
+# self-hosted, when denied); the host is --hostname, else $GH_HOST, else
+# github.com, and only github.com has the attestations. gh-noauth is a gh
+# that is not logged in (exit 4, as gh does); gh-fail exits 1 for a reason
+# of its own (no Sigstore verifier behind a dead proxy); gh-partial lacks
+# --deny-self-hosted-runners; gh-old has no `attestation` command; gh-none
+# is no gh at all. Every call is logged to $work/gh.log.
+mkdir -p "$work/gh-ok" "$work/gh-noauth" "$work/gh-fail" "$work/gh-partial" "$work/gh-old" "$work/gh-none"
 cat >"$work/gh-ok/gh" <<'STUB'
 #!/bin/sh
 echo "gh $*" >>@WORK@/gh.log
 [ "$1 $2" = "attestation verify" ] || { echo "unknown command \"$1\" for \"gh\"" >&2; exit 1; }
 if [ "$3" = --help ]; then
-  printf '  -R, --repo string\n      --signer-workflow string\n      --source-ref string\n'
+  printf '      --deny-self-hosted-runners\n      --hostname string\n  -R, --repo string\n      --signer-workflow string\n      --source-ref string\n'
   exit 0
 fi
-file=$3 repo="" workflow="" ref=""
+file=$3 host=${GH_HOST:-github.com} repo="" workflow="" ref="" deny=""
 shift 3
 while [ $# -gt 0 ]; do
   case $1 in
+    --deny-self-hosted-runners) deny=1; shift; continue ;;
+    --hostname) host=$2 ;;
     --repo) repo=$2 ;;
     --signer-workflow) workflow=$2 ;;
     --source-ref) ref=$2 ;;
@@ -149,12 +158,13 @@ while [ $# -gt 0 ]; do
   esac
   shift 2
 done
+[ "$host" = github.com ] || { echo "Error: HTTP 404: Not Found (https://$host/api/v3/...)" >&2; exit 1; }
 [ "$repo" = JohnAndrewsX/jax-seldon ] || { echo "Error: no attestations in $repo" >&2; exit 1; }
 [ -z "$workflow" ] || [ "$workflow" = JohnAndrewsX/jax-seldon/.github/workflows/release.yml ] \
   || { echo "Error: signer workflow $workflow does not match" >&2; exit 1; }
 sum=$(sha256sum <"$file" | cut -d' ' -f1)
-while read -r s r; do
-  if [ "$s" = "$sum" ] && { [ -z "$ref" ] || [ "$r" = "$ref" ]; }; then
+while read -r s r h; do
+  if [ "$s" = "$sum" ] && { [ -z "$ref" ] || [ "$r" = "$ref" ]; } && { [ -z "$deny" ] || [ "$h" != self-hosted ]; }; then
     echo "Verification succeeded!"
     exit 0
   fi
@@ -166,11 +176,31 @@ cat >"$work/gh-noauth/gh" <<'STUB'
 #!/bin/sh
 echo "gh $*" >>@WORK@/gh.log
 if [ "$3" = --help ]; then
-  printf '      --signer-workflow string\n      --source-ref string\n'
+  printf '      --deny-self-hosted-runners\n      --hostname string\n      --signer-workflow string\n      --source-ref string\n'
   exit 0
 fi
 echo "To get started with GitHub CLI, please run:  gh auth login" >&2
 exit 4
+STUB
+cat >"$work/gh-fail/gh" <<'STUB'
+#!/bin/sh
+echo "gh $*" >>@WORK@/gh.log
+if [ "$3" = --help ]; then
+  printf '      --deny-self-hosted-runners\n      --hostname string\n      --signer-workflow string\n      --source-ref string\n'
+  exit 0
+fi
+echo "Error: failed to create verifier: no valid Sigstore verifiers could be initialized" >&2
+exit 1
+STUB
+cat >"$work/gh-partial/gh" <<'STUB'
+#!/bin/sh
+echo "gh $*" >>@WORK@/gh.log
+if [ "$3" = --help ]; then
+  printf '      --hostname string\n      --signer-workflow string\n      --source-ref string\n'
+  exit 0
+fi
+echo "unknown flag: --deny-self-hosted-runners" >&2
+exit 1
 STUB
 cat >"$work/gh-old/gh" <<'STUB'
 #!/bin/sh
@@ -220,8 +250,10 @@ fake_shell fish
 home="$work/home"
 mkdir -p "$home"
 # run <path-mode: jq|nojq> <api json> args... → $out, $rc; $GH picks the
-# gh stub (ok, noauth, old, none)
+# gh stub (ok, noauth, fail, partial, old, none); a non-empty $GH_HOST_ENV
+# is passed on as GH_HOST
 GH=ok
+GH_HOST_ENV=""
 run_with() {
   local mode=$1 api=$2 path
   shift 2
@@ -231,7 +263,7 @@ run_with() {
   out=$(env -i HOME="$home" PATH="$path" LANG=C.UTF-8 \
     SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
     SELDON_INSTALL_API_URL="file://$work/releases/$api" \
-    SELDON_INSTALL_SHARE="$share" \
+    SELDON_INSTALL_SHARE="$share" ${GH_HOST_ENV:+"GH_HOST=$GH_HOST_ENV"} \
     bash "$script" "$@" 2>&1) || rc=$?
 }
 run() { run_with jq latest.json "$@"; }
@@ -255,7 +287,7 @@ check "latest: says it verified" has "verified   seldon-9.9.9-$target.tar.gz"
 check "latest: says it checked the attestation" \
   has "attested   seldon-9.9.9-$target.tar.gz (built by release.yml for v9.9.9"
 check "latest: gh got the repo, the release workflow and the tag's ref" grep -qE \
-  "^gh attestation verify /.*/seldon-9\.9\.9-$target\.tar\.gz --repo JohnAndrewsX/jax-seldon --signer-workflow JohnAndrewsX/jax-seldon/\.github/workflows/release\.yml --source-ref refs/tags/v9\.9\.9$" \
+  "^gh attestation verify /.*/seldon-9\.9\.9-$target\.tar\.gz --hostname github\.com --repo JohnAndrewsX/jax-seldon --signer-workflow JohnAndrewsX/jax-seldon/\.github/workflows/release\.yml --source-ref refs/tags/v9\.9\.9 --deny-self-hosted-runners$" \
   "$work/gh.log"
 check "latest: next step seldon init" has "seldon init"
 check "latest: PATH note" has "is not on your PATH"
@@ -452,7 +484,7 @@ run --uninstall --force
 check "--uninstall with --force: exit 1" test "$rc" -eq 1
 
 # ---- 6b. build provenance (WP-080): gh ok, failing, absent, not logged in,
-# too old; with and without --require-verified -------------------------------
+# too old; with and without --require-verified, --skip-provenance -----------
 provenance() { # name gh-mode args... → runs into a fresh prefix $pp
   local name=$1
   GH=$2
@@ -470,16 +502,42 @@ check "gh ok, --require-verified: installed" installed 9.9.9
 check "gh ok, --require-verified: attested" has "attested   seldon-9.9.9-$target.tar.gz"
 
 provenance tampered ok --version v9.9.3
-refused "tampered tarball, gh ok" "$pp" "build provenance check failed for seldon-9.9.3-$target.tar.gz"
+refused "tampered tarball, gh ok" "$pp" "gh attestation verify did not confirm seldon-9.9.3-$target.tar.gz as built by JohnAndrewsX/jax-seldon's release workflow for v9.9.3 (gh's reason above); nothing installed"
+check "tampered tarball, gh ok: names --skip-provenance" has "--skip-provenance installs on the checksum alone"
 check "tampered tarball, gh ok: exit 2" test "$rc" -eq 2
 check "tampered tarball, gh ok: checksum passed first" has "verified   seldon-9.9.3-$target.tar.gz"
 check "tampered tarball, gh ok: gh's own words shown" has "gh: Error: no attestation for sha256:"
 provenance tampered-req ok --version v9.9.3 --require-verified
-refused "tampered tarball, gh ok, --require-verified" "$pp" "build provenance check failed"
+refused "tampered tarball, gh ok, --require-verified" "$pp" "gh attestation verify did not confirm"
 check "tampered tarball, gh ok, --require-verified: exit 2" test "$rc" -eq 2
 
 provenance branch ok --version v9.9.2
-refused "attested by a branch dry run, not the tag" "$pp" "build provenance check failed"
+refused "attested by a branch dry run, not the tag" "$pp" "gh attestation verify did not confirm"
+provenance selfhosted ok --version v9.9.1
+refused "attested from a self-hosted runner" "$pp" "gh attestation verify did not confirm"
+GH_HOST_ENV=ghe.example.invalid
+provenance ghhost ok
+GH_HOST_ENV=""
+check "GH_HOST of another server: still checked on github.com, exit 0" test "$rc" -eq 0
+check "GH_HOST of another server: attested" has "attested   seldon-9.9.9-$target.tar.gz"
+
+provenance fail fail
+refused "gh failing on its own (no Sigstore verifier)" "$pp" "gh attestation verify did not confirm seldon-9.9.9-$target.tar.gz"
+check "gh failing on its own: exit 2" test "$rc" -eq 2
+check "gh failing on its own: gh's reason shown" has "gh: Error: failed to create verifier"
+: >"$work/gh.log"
+provenance fail-skip fail --skip-provenance
+check "gh failing, --skip-provenance: exit 0" test "$rc" -eq 0
+check "gh failing, --skip-provenance: installed" installed 9.9.9
+check "gh failing, --skip-provenance: the note" \
+  has "note       build provenance not checked at your request; only the SHA256SUMS checksum was checked"
+check "gh failing, --skip-provenance: gh not asked" test ! -s "$work/gh.log"
+provenance tampered-skip ok --version v9.9.3 --skip-provenance
+check "tampered tarball, --skip-provenance: the checksum alone decides (installed)" test "$rc" -eq 0
+provenance both ok --require-verified --skip-provenance
+check "--require-verified with --skip-provenance: exit 1" test "$rc" -eq 1
+check "--require-verified with --skip-provenance: says why" has "exclude each other"
+check "--require-verified with --skip-provenance: nothing installed" test ! -e "$pp"
 
 provenance none none
 check "no gh: exit 0" test "$rc" -eq 0
@@ -505,10 +563,14 @@ check "gh not logged in, --require-verified: exit 1" test "$rc" -eq 1
 provenance old old
 check "gh without attestation: exit 0" test "$rc" -eq 0
 check "gh without attestation: installed" installed 9.9.9
-check "gh without attestation: says update gh" has "this gh has no 'gh attestation verify --source-ref' (update gh): only the SHA256SUMS"
+check "gh without attestation: says update gh" has "this gh's 'gh attestation verify' has no --hostname (update gh): only the SHA256SUMS"
 provenance old-req old --require-verified
-refused "gh without attestation, --require-verified" "$pp" "--require-verified: this gh has no"
+refused "gh without attestation, --require-verified" "$pp" "--require-verified: this gh's 'gh attestation verify' has no"
 check "gh without attestation, --require-verified: exit 1" test "$rc" -eq 1
+provenance partial partial
+check "gh without --deny-self-hosted-runners: exit 0" test "$rc" -eq 0
+check "gh without --deny-self-hosted-runners: says update gh" \
+  has "has no --deny-self-hosted-runners (update gh): only the SHA256SUMS"
 
 : >"$work/gh.log"
 provenance pre ok --version v0.1.1
@@ -522,8 +584,12 @@ check "release before attestations, --require-verified: exit 1" test "$rc" -eq 1
 
 run --uninstall --require-verified
 check "--uninstall with --require-verified: exit 1" test "$rc" -eq 1
+run --uninstall --skip-provenance
+check "--uninstall with --skip-provenance: exit 1" test "$rc" -eq 1
+check "--uninstall with --skip-provenance: usage error" has "--uninstall takes only --prefix"
 run --help
 check "--help: describes --require-verified" has "--require-verified"
+check "--help: describes --skip-provenance" has "--skip-provenance do not ask gh"
 check "--help: names gh attestation verify" has "gh attestation verify"
 
 # ---- 7. the one-liner form: script on stdin ----------------------------------

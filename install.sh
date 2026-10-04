@@ -2,7 +2,7 @@
 # install.sh — install, update or remove the Seldon engine from a GitHub release.
 #
 #   install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force]
-#              [--require-verified]
+#              [--require-verified | --skip-provenance]
 #   install.sh --uninstall [--prefix DIR]
 #
 # Downloads seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz and SHA256SUMS
@@ -13,7 +13,9 @@
 # attestation that release.yml of JohnAndrewsX/jax-seldon made for the
 # release's tag, or nothing is installed. Without a usable gh (or for a
 # release up to v0.1.1, made before attestations) one note says that only
-# the checksum was checked; --require-verified refuses instead. Then
+# the checksum was checked; --require-verified refuses instead.
+# --skip-provenance leaves gh out at your request (a note says so), for a
+# gh that fails for reasons of its own (a proxy, credentials). Then
 # installs <prefix>/bin/seldon and the symlink
 # <prefix>/bin/jax-seldon -> seldon (prefix default ~/.local), the man page
 # <prefix>/share/man/man1/seldon.1 and the shell completions for each of
@@ -64,7 +66,7 @@ say() { printf '%s\n' "$*"; }
 warn() { printf 'install.sh: %s\n' "$*" >&2; }
 usage_error() {
   warn "$*"
-  warn "usage: install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force] [--require-verified] | --uninstall [--prefix DIR]"
+  warn "usage: install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force] [--require-verified | --skip-provenance] | --uninstall [--prefix DIR]"
   exit 1
 }
 refuse() {
@@ -81,7 +83,7 @@ usage() {
 install.sh — install, update or remove the Seldon engine from a GitHub release
 
   install.sh [--version vX.Y.Z] [--prefix DIR] [--unit] [--force]
-             [--require-verified]
+             [--require-verified | --skip-provenance]
   install.sh --uninstall [--prefix DIR]
 
   --version vX.Y.Z  install this release (default: the latest)
@@ -94,6 +96,8 @@ install.sh — install, update or remove the Seldon engine from a GitHub release
   --require-verified
                     refuse unless the GitHub CLI (gh, logged in) verified
                     the download's build provenance
+  --skip-provenance do not ask gh; only the SHA256SUMS checksum is checked
+                    (for a gh that fails on its own, e.g. behind a proxy)
   --uninstall       remove what this script installed under DIR; your
                     logbook, config and index stay
   -h, --help        this text
@@ -102,8 +106,8 @@ The download is checked against the release's SHA256SUMS; a mismatch
 installs nothing. When gh is installed and logged in, the download's build
 provenance is checked too (`gh attestation verify`): it must come from
 this repository's release workflow for the release's tag, or nothing is
-installed. Without gh only the checksum is checked, and a note says so.
-No root needed, never uses it.
+installed. Without gh, or with --skip-provenance, only the checksum is
+checked, and a note says so. No root needed, never uses it.
 EOF
 }
 
@@ -141,20 +145,28 @@ attested_release() { # X.Y.Z
 # digest. A failed check stops the install; without a usable gh (not
 # installed, too old, not logged in) or for a release before attestations
 # one note says so, and --require-verified refuses instead.
+# --skip-provenance skips the check with a note. --hostname keeps a GH_HOST
+# for another server from turning into a refusal.
 verify_provenance() { # file tag version
-  local file=$1 tag=$2 version=$3 asset=${1##*/} why="" out rc line
+  local file=$1 tag=$2 version=$3 asset=${1##*/} why="" out rc line flag
+  if [[ $SKIP_PROVENANCE == 1 ]]; then
+    say "  note       build provenance not checked at your request; only the SHA256SUMS checksum was checked"
+    return 0
+  fi
   if ! attested_release "$version"; then
     why="$tag was released before attestations (they start after v0.1.1)"
   elif ! command -v gh >/dev/null 2>&1; then
     why="the GitHub CLI (gh) is not installed"
   else
     out=$(gh attestation verify --help 2>&1) || out=""
-    if [[ $out != *--source-ref* || $out != *--signer-workflow* ]]; then
-      why="this gh has no 'gh attestation verify --source-ref' (update gh)"
-    else
+    for flag in --hostname --signer-workflow --source-ref --deny-self-hosted-runners; do
+      [[ $out == *"$flag"* ]] || { why="this gh's 'gh attestation verify' has no $flag (update gh)"; break; }
+    done
+    if [[ -z $why ]]; then
       rc=0
-      out=$(gh attestation verify "$file" --repo "$REPO" \
-        --signer-workflow "$RELEASE_WORKFLOW" --source-ref "refs/tags/$tag" 2>&1) || rc=$?
+      out=$(gh attestation verify "$file" --hostname github.com --repo "$REPO" \
+        --signer-workflow "$RELEASE_WORKFLOW" --source-ref "refs/tags/$tag" \
+        --deny-self-hosted-runners 2>&1) || rc=$?
       case $rc in
         0)
           say "  attested   $asset (built by release.yml for $tag; gh attestation verify)"
@@ -163,7 +175,7 @@ verify_provenance() { # file tag version
         4) why="gh is not logged in (gh auth login)" ;;
         *)
           while IFS= read -r line; do warn "  gh: $line"; done <<<"$out"
-          fail "build provenance check failed for $asset: no attestation by $REPO's release workflow for $tag matches the download; nothing installed"
+          fail "gh attestation verify did not confirm $asset as built by $REPO's release workflow for $tag (gh's reason above); nothing installed. If gh itself fails here (a proxy, credentials), --skip-provenance installs on the checksum alone."
           ;;
       esac
     fi
@@ -491,6 +503,7 @@ main() {
   UNIT=0
   FORCE=0
   REQUIRE_VERIFIED=0
+  SKIP_PROVENANCE=0
   local uninstall=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -510,6 +523,7 @@ main() {
       --unit) UNIT=1; shift ;;
       --force) FORCE=1; shift ;;
       --require-verified) REQUIRE_VERIFIED=1; shift ;;
+      --skip-provenance) SKIP_PROVENANCE=1; shift ;;
       --uninstall) uninstall=1; shift ;;
       -h | --help) usage; exit 0 ;;
       *) usage_error "unknown argument '$1'" ;;
@@ -517,6 +531,8 @@ main() {
   done
 
   [[ -n ${HOME:-} ]] || usage_error "HOME is not set"
+  [[ $REQUIRE_VERIFIED == 0 || $SKIP_PROVENANCE == 0 ]] \
+    || usage_error "--require-verified and --skip-provenance exclude each other"
   if [[ -n $VERSION ]]; then
     [[ $VERSION == v* ]] || VERSION="v$VERSION"
     [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage_error "--version wants vX.Y.Z, not '$VERSION'"
@@ -529,7 +545,7 @@ main() {
   fi
 
   if [[ $uninstall == 1 ]]; then
-    [[ -z $VERSION && $UNIT == 0 && $FORCE == 0 && $REQUIRE_VERIFIED == 0 ]] || usage_error "--uninstall takes only --prefix"
+    [[ -z $VERSION && $UNIT == 0 && $FORCE == 0 && $REQUIRE_VERIFIED == 0 && $SKIP_PROVENANCE == 0 ]] || usage_error "--uninstall takes only --prefix"
     do_uninstall
   else
     do_install
