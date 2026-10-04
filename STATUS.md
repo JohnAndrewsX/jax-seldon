@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-079 | snapper read grant, ADR-0026 supersedes ADR-0011 | Engine | `engine-079` (opus) | `wt/WP-079` · `wp/079-review` | 2026-10-04 |
 | WP-080 | release attestations verified by install.sh | Packaging | `pkg-080` (opus) | `wt/WP-080` · `wp/080-review` | 2026-10-04 |
 | WP-081 | state-directory loss leaves a trace | Engine | `engine-081` (opus) | `wt/WP-081` · `wp/081-review` | 2026-10-04 |
 
@@ -37,6 +36,9 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-079 snapper access by a read grant on `/.snapshots`
+  (ADR-0026 supersedes ADR-0011); doctor and init print the revert of the
+  old opt-in with `SYNC_ACL=no`; two review rounds; merged.
 - 2026-10-04 WP-078 plugin: callWarning first line, new-decision sheet busy
   refusal, Changelog Capture now replaces a pending retry, "Engine too old"
   rows in README and the troubleshooting guides (en, de), IPC owner prefers
