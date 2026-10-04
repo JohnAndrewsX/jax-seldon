@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 2661b43 -->
+<!-- source: en/05-cli-reference.md @ 493d0a9 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -446,6 +446,9 @@ Options:
 
 Listet Cases: ID, Status, Zone, Risiko, Bereich und Titel. `--status`
 nimmt `queued`, `active`, `verification`, `completed` oder `dropped`.
+Eine Case-Datei, die sich nicht laden lässt, nennt eine `warning:`-Zeile
+nach der Liste (`warnings` in `--json`); die übrigen Cases werden
+trotzdem gelistet.
 
 <!-- help: seldon plan list -->
 ```text

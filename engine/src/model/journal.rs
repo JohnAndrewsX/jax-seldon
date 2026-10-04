@@ -33,7 +33,10 @@ impl Record for Journal {
 
     fn validate(&self) -> Result<(), FrontmatterError> {
         match self.cases.iter().find(|c| !is_case_id(c)) {
-            Some(bad) => Err(field("cases", format!("`{bad}` is not C-YYYY-NNN"))),
+            Some(bad) => Err(field(
+                "cases",
+                format!("`{}` is not C-YYYY-NNN", bad.escape_debug()),
+            )),
             None => Ok(()),
         }
     }

@@ -34,7 +34,9 @@ pub enum FrontmatterError {
     Missing,
     #[error("frontmatter is not closed by a `---` line")]
     Unterminated,
-    #[error("frontmatter is not valid YAML: {0}")]
+    /// serde names a value it refuses (`unknown variant`) as it is: the
+    /// message is shown [`printable`].
+    #[error("frontmatter is not valid YAML: {}", printable(&.0.to_string()))]
     Yaml(#[from] serde_yaml::Error),
     #[error("`{key}`: {message}")]
     Field { key: String, message: String },
@@ -43,6 +45,21 @@ pub enum FrontmatterError {
          the file is left as it was, rewrite the hand-edited lines in plain YAML"
     )]
     Refused(String),
+}
+
+/// `text` with every character [`char::escape_debug`] would escape, except
+/// quotes and backslashes, escaped: a message that embeds a refused value
+/// never prints its control or format characters (WP-077).
+pub fn printable(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '"' | '\'' | '\\') {
+            out.push(c);
+        } else {
+            out.extend(c.escape_debug());
+        }
+    }
+    out
 }
 
 /// A Markdown file: optional frontmatter plus the body after it.

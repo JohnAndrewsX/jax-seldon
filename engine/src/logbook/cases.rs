@@ -14,7 +14,7 @@ use chrono::{DateTime, FixedOffset};
 
 use super::{ACTIVE_CASE_FILE, Logbook, templates};
 use crate::error::{Error, Result};
-use crate::frontmatter::Document;
+use crate::frontmatter::{Document, printable};
 use crate::model::{self, Area, Case, CaseStatus, Language, is_agent, is_case_id, is_slug};
 use crate::sys;
 
@@ -87,6 +87,45 @@ impl CaseFile {
     /// gone from its path (another writer moved it) is not written again,
     /// which would leave the case twice (WP-057).
     pub fn save(&mut self, logbook: &Logbook) -> Result<Option<PathBuf>> {
+        let target = self.checked(logbook)?;
+        let text = self.doc.render();
+        if target == self.path {
+            sys::write_atomic(&self.path, text.as_bytes())?;
+            return Ok(None);
+        }
+        if let Some(dir) = target.parent() {
+            crate::sys::create_dir_private(dir)
+                .with_context(|| format!("cannot create {}", dir.display()))?;
+        }
+        // Move first, then write: there is never a second file with this id.
+        std::fs::rename(&self.path, &target).with_context(|| {
+            format!(
+                "cannot move {} to {}",
+                self.path.display(),
+                target.display()
+            )
+        })?;
+        sys::write_atomic(&target, text.as_bytes())?;
+        Ok(Some(std::mem::replace(&mut self.path, target)))
+    }
+
+    /// Checks that [`save`](Self::save) will write this case once `change`
+    /// is made to it, without writing anything: `change` and the save's
+    /// checks run on a clone. A command that writes the ledger, then the
+    /// journal, then the case prepares the case first: a save that would
+    /// be refused then fails the command before the ledger or the journal
+    /// changes (WP-077), as [`journal::prepare`](super::journal::prepare)
+    /// does for the day file.
+    pub fn prepare(&self, logbook: &Logbook, change: impl FnOnce(&mut CaseFile)) -> Result<()> {
+        let mut next = self.clone();
+        change(&mut next);
+        next.checked(logbook).map(drop)
+    }
+
+    /// The save's checks: the file is still there, the frontmatter takes
+    /// the case ([`model::update`], into `doc`), and the folder of its
+    /// status has no other file of this name. Returns the target path.
+    fn checked(&mut self, logbook: &Logbook) -> Result<PathBuf> {
         if !self.path.is_file() {
             return Err(Error::user(format!(
                 "{} is gone (moved by another seldon?); nothing written",
@@ -104,33 +143,23 @@ impl CaseFile {
             .path("work")
             .join(self.case.status.folder())
             .join(name);
-        let text = self.doc.render();
-        if target == self.path {
-            sys::write_atomic(&self.path, text.as_bytes())?;
-            return Ok(None);
-        }
-        if target.exists() {
+        if target != self.path && target.exists() {
             return Err(Error::user(format!(
                 "cannot move {} to {}: the target exists",
                 relative(logbook, &self.path),
                 relative(logbook, &target)
             )));
         }
-        if let Some(dir) = target.parent() {
-            crate::sys::create_dir_private(dir)
-                .with_context(|| format!("cannot create {}", dir.display()))?;
-        }
-        // Move first, then write: there is never a second file with this id.
-        std::fs::rename(&self.path, &target).with_context(|| {
-            format!(
-                "cannot move {} to {}",
-                self.path.display(),
-                target.display()
-            )
-        })?;
-        sys::write_atomic(&target, text.as_bytes())?;
-        Ok(Some(std::mem::replace(&mut self.path, target)))
+        Ok(target)
     }
+}
+
+/// Stand-ins for the ids the ledger assigns, for a [`CaseFile::prepare`]
+/// before the ledger write: `n` distinct ULIDs of the same shape.
+pub fn pending_ids(n: usize) -> Vec<String> {
+    (1..=n as u128)
+        .map(|i| ulid::Ulid::from_parts(1_800_000_000_000, i).to_string())
+        .collect()
 }
 
 /// `path` relative to the logbook root, `/`-separated.
@@ -146,7 +175,10 @@ pub fn check_id(id: &str) -> Result<()> {
     if is_case_id(id) {
         Ok(())
     } else {
-        Err(Error::user(format!("`{id}` is not a case id (C-YYYY-NNN)")))
+        Err(Error::user(format!(
+            "`{}` is not a case id (C-YYYY-NNN)",
+            id.escape_debug()
+        )))
     }
 }
 
@@ -186,15 +218,28 @@ pub fn find(logbook: &Logbook, id: &str) -> Result<CaseFile> {
     }
 }
 
-/// Every case, sorted by id (ADR-0012 §9 orders the open groups by id).
-pub fn all(logbook: &Logbook) -> Result<Vec<CaseFile>> {
-    let mut out = logbook
-        .case_files()?
-        .iter()
-        .map(|p| CaseFile::load(p))
-        .collect::<Result<Vec<_>>>()?;
+/// Every case that loads, sorted by id (ADR-0012 §9 orders the open
+/// groups by id), and a warning for each case file that does not, worded
+/// as the index's (`<path>: invalid case: …; skipped`, WP-077).
+pub fn all(logbook: &Logbook) -> Result<(Vec<CaseFile>, Vec<String>)> {
+    let (mut out, mut warnings) = (Vec::new(), Vec::new());
+    for path in logbook.case_files()? {
+        // a file name may hold any character but `/` and NUL
+        let rel = printable(&relative(logbook, &path));
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) => {
+                warnings.push(format!("{rel}: cannot read: {e}; skipped"));
+                continue;
+            }
+        };
+        match model::parse::<Case>(&text) {
+            Ok((case, doc)) => out.push(CaseFile { path, case, doc }),
+            Err(e) => warnings.push(format!("{rel}: invalid case: {e}; skipped")),
+        }
+    }
     out.sort_by(|a, b| a.case.id.cmp(&b.case.id));
-    Ok(out)
+    Ok((out, warnings))
 }
 
 /// The next free case id of `year`. Ids are never reused: every case file
@@ -533,6 +578,14 @@ pub fn ensure_area(logbook: &Logbook, area: &str) -> Result<Option<String>> {
 mod tests {
     use super::*;
     use chrono::TimeZone as _;
+
+    /// Every caller checks the id first today; the message is escaped
+    /// anyway (WP-077).
+    #[test]
+    fn a_refused_id_is_named_escaped() {
+        let err = check_id("C-\u{1b}[31mX").unwrap_err().to_string();
+        assert_eq!(err, "`C-\\u{1b}[31mX` is not a case id (C-YYYY-NNN)");
+    }
 
     fn now() -> DateTime<FixedOffset> {
         FixedOffset::east_opt(7200)

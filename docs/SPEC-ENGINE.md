@@ -45,13 +45,19 @@ seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case o
 seldon capture [--source pacman,snapper,omarchy,plugins,theme,config | --all] [--since TS]
 seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]
 seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [--meta k=v]
+# log, event, the agent hooks (claude-code, generic) and `drift link` change a
+# case after their ledger line: its save is checked first, and a save that would
+# be refused (WP-066) fails the command before the ledger or the journal changes
+# (exit 1; a hook records nothing and says so on stderr) (WP-077)
 seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
 seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A]
 # --snapshot: `plan start` only (WP-049: the other steps do not offer it; clap
 # refuses it, exit 1). Starting an R2 or R3 case with no snapshot
 # (no --snapshot, no snapshotBefore) prints a warning and never refuses
 # (ADR-0023); R3's also asks for the human's explicit go per step (WP-050)
-seldon plan list [--status S] [--area A]
+seldon plan list [--status S] [--area A]          # a case file that does not load is a warning line
+                                                 # (`<path>: invalid case: …; skipped`, as the index's;
+                                                 # --json `warnings`), the others are listed, exit 0 (WP-077)
 seldon plan show <ID>                            # the case file's path and text as quoted lines (`> `, as
                                                  # hook session-start, §8), under one note line; --json unquoted
 seldon drift [--crisis-only] [--json]            # read-only: index items, crises first; totals count all

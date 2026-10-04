@@ -82,19 +82,31 @@ impl Record for Case {
 
     fn validate(&self) -> Result<(), FrontmatterError> {
         if !is_case_id(&self.id) {
-            return Err(field("id", format!("`{}` is not C-YYYY-NNN", self.id)));
+            return Err(field(
+                "id",
+                format!("`{}` is not C-YYYY-NNN", self.id.escape_debug()),
+            ));
         }
         if self.title.is_empty() {
             return Err(field("title", "must not be empty"));
         }
         if let Some(area) = self.area.as_deref().filter(|a| !is_slug(a)) {
-            return Err(field("area", format!("`{area}` is not a lowercase slug")));
+            return Err(field(
+                "area",
+                format!("`{}` is not a lowercase slug", area.escape_debug()),
+            ));
         }
         if let Some(bad) = self.agents.iter().find(|a| !is_agent(a)) {
-            return Err(field("agents", format!("`{bad}` is not agent:<name>")));
+            return Err(field(
+                "agents",
+                format!("`{}` is not agent:<name>", bad.escape_debug()),
+            ));
         }
         if let Some(bad) = self.events.iter().find(|e| !is_ulid(e)) {
-            return Err(field("events", format!("`{bad}` is not a ULID")));
+            return Err(field(
+                "events",
+                format!("`{}` is not a ULID", bad.escape_debug()),
+            ));
         }
         Ok(())
     }
@@ -139,7 +151,7 @@ macro_rules! str_enum {
                     $($text => Ok($name::$variant),)+
                     _ => Err(format!(
                         concat!("`{}` is not a valid ", stringify!($name), " ({})"),
-                        s,
+                        s.escape_debug(),
                         [$($text),+].join(", ")
                     )),
                 }

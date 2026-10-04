@@ -433,7 +433,9 @@ Options:
 ### seldon plan list
 
 Lists cases: id, status, zone, risk, area and title. `--status` takes
-`queued`, `active`, `verification`, `completed` or `dropped`.
+`queued`, `active`, `verification`, `completed` or `dropped`. A case
+file that does not load is named in a `warning:` line after the list
+(`warnings` in `--json`); the other cases are still listed.
 
 <!-- help: seldon plan list -->
 ```text

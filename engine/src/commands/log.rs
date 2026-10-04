@@ -78,6 +78,12 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         .as_deref()
         .map(|id| cases::find(&logbook, id))
         .transpose()?;
+    // so is the case: a save it would refuse fails the note before the
+    // ledger and the journal change (WP-077)
+    if let Some(file) = &case_file {
+        let id = cases::pending_ids(1).remove(0);
+        file.prepare(&logbook, |f| f.attach(&id, &args.actor))?;
+    }
 
     let mut entry = text.clone();
     if !tags.is_empty() {

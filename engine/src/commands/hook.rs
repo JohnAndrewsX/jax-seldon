@@ -763,8 +763,12 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
         None => None,
     };
     let ts = match payload.started_at.as_deref() {
-        Some(s) => chrono::DateTime::parse_from_rfc3339(s)
-            .map_err(|e| Error::user(format!("startedAt `{s}` is not RFC 3339: {e}")))?,
+        Some(s) => chrono::DateTime::parse_from_rfc3339(s).map_err(|e| {
+            Error::user(format!(
+                "startedAt `{}` is not RFC 3339: {e}",
+                s.escape_debug()
+            ))
+        })?,
         None => ctx.now,
     };
     let setup = setup(ctx)?;
@@ -1097,6 +1101,15 @@ fn record(
             e
         })
         .collect();
+    // a save the case would refuse fails before the ledger changes (WP-077)
+    if let Some(file) = &case_file {
+        let ids = cases::pending_ids(events.len());
+        file.prepare(&setup.logbook, |f| {
+            for (id, e) in ids.iter().zip(&events) {
+                f.attach(id, &e.actor);
+            }
+        })?;
+    }
     let written = ledger.append(&lock, events)?;
     if let Some(file) = case_file.as_mut() {
         for e in &written {

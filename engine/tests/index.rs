@@ -1292,6 +1292,144 @@ fn a_long_command_line_is_whole_in_the_ledger_and_clipped_in_the_index() {
     }
 }
 
+/// Long texts whose cut lands on every kind of character the clip treats
+/// apart: multi-byte, JSON-escaped (2 bytes, `\b` and `\f` among them, and
+/// 6), Unicode white space
+/// (stripped before the marker) and the separators U+001C..U+001F, which
+/// are not white space to Rust but are to Python's `str.rstrip()`.
+fn clip_probes() -> Vec<String> {
+    let units = [
+        "ä✓🚀 ",
+        "\"\\\t\u{1}",
+        "a\u{1f}",
+        "b\u{1c}\u{1d}",
+        "c\u{2003}",
+        "d\n\r ",
+        "e\u{8}\u{c}",
+    ];
+    let mut out = Vec::new();
+    for unit in units {
+        for pad in 0..6 {
+            let mut text = "x".repeat(pad);
+            while text.chars().count() < 600 {
+                text.push_str(unit);
+            }
+            out.push(text);
+        }
+    }
+    out
+}
+
+/// ADR-0025 (WP-077): the reference `derive()` of
+/// `scripts/validate-fixtures.py` clips as the engine does. A copy of the
+/// fixture logbook gets caseless config events whose `detail` and `meta`
+/// strings are long texts ([`clip_probes`]); half of them are dismissed
+/// with a long reason (`resolutionDetail`), the others stay open drift
+/// items. `index.events` and `index.drift` of `seldon index` equal those
+/// of `validate-fixtures.py --derive` on the same copy, marker for marker.
+#[test]
+fn the_reference_derive_clips_texts_as_the_engine_does() {
+    let python = ["python3", "python"].into_iter().find(|p| {
+        std::process::Command::new(p)
+            .arg("--version")
+            .output()
+            .is_ok()
+    });
+    let Some(python) = python else {
+        eprintln!("skipped: no python3 on PATH (scripts/validate-fixtures.py needs it)");
+        return;
+    };
+    let probes = clip_probes();
+    let env = Env::new(Snapper::Missing);
+    let (lb, _, index) = golden_run(&env, None, |lb| {
+        let mut lines = String::new();
+        for (i, text) in probes.iter().enumerate() {
+            // after the fixture's newest event (17:00), before the sample's clock
+            let at = |s: usize| format!("2026-10-01T17:0{}:{:02}+02:00", s / 60, s % 60);
+            let id = |n: usize| ulid::Ulid::from_parts(1_800_000_000_000, n as u128).to_string();
+            let subject = format!("~/.config/wp-077/{i}.conf");
+            let event = json!({
+                "id": id(2 * i + 1), "ts": at(2 * i), "source": "config", "kind": "config-change",
+                "subject": subject, "detail": text, "actor": "human", "zone": "yellow",
+                "meta": { "command": text, "note": format!("{i} {text}") },
+            });
+            lines.push_str(&format!("{event}\n"));
+            if i % 2 == 0 {
+                let reason = &probes[(i + 7) % probes.len()];
+                let r = json!({
+                    "id": id(2 * i + 2), "ts": at(2 * i + 1), "source": "seldon",
+                    "kind": "resolution", "subject": subject, "detail": reason, "actor": "human",
+                    "refersTo": id(2 * i + 1), "resolution": "dismissed",
+                });
+                lines.push_str(&format!("{r}\n"));
+            }
+        }
+        let month = lb.join("ledger/2026-10.jsonl");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&month)
+            .unwrap();
+        std::io::Write::write_all(&mut file, lines.as_bytes()).unwrap();
+    });
+
+    let out = std::process::Command::new(python)
+        .arg(repo("scripts/validate-fixtures.py"))
+        .args([
+            "--derive",
+            lb.to_str().unwrap(),
+            "--today",
+            &GENERATED_AT[..10],
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "validate-fixtures.py --derive: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let derived: Value = serde_json::from_slice(&out.stdout).unwrap();
+
+    let mut d = Vec::new();
+    diff(&derived["events"], &index["events"], "/events", &mut d);
+    diff(&derived["drift"], &index["drift"], "/drift", &mut d);
+    assert!(
+        d.is_empty(),
+        "reference (fixture side) vs engine: {} difference(s):\n{}",
+        d.len(),
+        d.join("\n")
+    );
+
+    // every probe was clipped: 3 texts per event, a reason per dismissed
+    // one, the detail of each open item
+    let texts = index["events"].as_array().unwrap().iter().flat_map(|e| {
+        [
+            &e["detail"],
+            &e["resolutionDetail"],
+            &e["meta"]["command"],
+            &e["meta"]["note"],
+        ]
+    });
+    let all: Vec<&str> = texts
+        .chain(
+            index["drift"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| &d["detail"]),
+        )
+        .filter_map(Value::as_str)
+        .collect();
+    let n = probes.len();
+    assert_eq!(
+        all.iter().filter(|t| marked(t).is_some()).count(),
+        3 * n + n / 2 + n / 2,
+        "clipped texts"
+    );
+    for text in &all {
+        assert!(json_bytes(text) <= build::TEXT_MAX, "{text:?}");
+    }
+}
+
 // --------------------------------------------------------------------------
 // SPEC-ENGINE §1 at the stated scale (WP-076): release only, `just
 // check-perf` (`--profile bench --ignored`).

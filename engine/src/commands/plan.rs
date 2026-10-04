@@ -371,7 +371,9 @@ fn kind(transition: Transition) -> Kind {
 
 fn list(ctx: &Context, args: ListArgs) -> Result<Output> {
     let (_, logbook) = ctx.open_logbook()?;
-    let files: Vec<CaseFile> = cases::all(&logbook)?
+    // a case file that does not load is a warning: the others are listed
+    let (files, warnings) = cases::all(&logbook)?;
+    let files: Vec<CaseFile> = files
         .into_iter()
         .filter(|f| args.status.is_none_or(|s| f.case.status == s))
         .filter(|f| {
@@ -396,9 +398,14 @@ fn list(ctx: &Context, args: ListArgs) -> Result<Output> {
     if files.is_empty() {
         human.push_str("No cases.");
     }
+    let mut human = human.trim_end().to_string();
+    human.push_str(&super::index::warnings_human(&warnings));
     Ok(Output::ok(
-        human.trim_end(),
-        json!({ "cases": files.iter().map(|f| case_json(&logbook, f)).collect::<Vec<_>>() }),
+        human,
+        json!({
+            "cases": files.iter().map(|f| case_json(&logbook, f)).collect::<Vec<_>>(),
+            "warnings": warnings,
+        }),
     ))
 }
 

@@ -237,6 +237,29 @@ mod claude_code {
         assert!(!ledger.contains("Synchronizing"));
     }
 
+    /// A recorded command whose case save would be refused (an `agents:`
+    /// flow list continued at column 0, WP-066) is not recorded at all:
+    /// the hook says so on stderr, exits 0, and no file of the logbook
+    /// changes (WP-077).
+    #[test]
+    fn a_case_whose_save_is_refused_records_nothing() {
+        let h = Hooks::new();
+        let case = h.active_case();
+        let path = common::find_file(&h.logbook.join("work/active"), &case);
+        let text = read(&path).replacen("agents: []\n", "agents: [agent:codex,\nagent:zed]\n", 1);
+        assert!(text.contains("agent:zed"), "{text}");
+        std::fs::write(&path, text).unwrap();
+        let before = common::tree(&h.logbook);
+
+        let out = h.hook(
+            "claude-code",
+            &payload("claude-code-mutating.json", "PreToolUse"),
+        );
+        assert!(stderr(&out).contains("update refused"), "{}", stderr(&out));
+        assert!(h.commands().is_empty(), "{:?}", h.commands());
+        assert!(common::tree(&h.logbook) == before, "the logbook changed");
+    }
+
     #[test]
     fn post_tool_use_after_pre_tool_use_writes_nothing() {
         let h = Hooks::new();
@@ -748,6 +771,32 @@ mod generic {
             let out = h.piped(&["hook", "generic"], &bad.to_string(), Some(NOW));
             assert_eq!(out.status.code(), Some(0), "{bad}");
             assert!(!stderr(&out).is_empty(), "{bad}");
+        }
+        assert!(h.ledger().is_empty());
+    }
+
+    /// An agent's payload value the hook refuses is named escaped on
+    /// stderr, never with its control characters (WP-077).
+    #[test]
+    fn a_refused_payload_value_is_named_escaped() {
+        let h = Hooks::new();
+        let esc = "\u{1b}[31mX";
+        for (key, value) in [
+            ("actor", format!("agent:{esc}")),
+            ("case", format!("C-{esc}")),
+            ("startedAt", format!("2026-10-01{esc}")),
+        ] {
+            let mut payload =
+                json!({"command": "pacman -S x", "actor": "agent:codex", "cwd": FIXTURE_CWD});
+            payload[key] = json!(value);
+            let out = h.piped(&["hook", "generic"], &payload.to_string(), Some(NOW));
+            assert_eq!(out.status.code(), Some(0), "{key}");
+            let err = stderr(&out);
+            assert!(
+                !err.chars().any(|c| c.is_control() && c != '\n'),
+                "{key}: {err:?}"
+            );
+            assert!(err.contains("\\u{1b}[31mX"), "{key}: {err:?}");
         }
         assert!(h.ledger().is_empty());
     }

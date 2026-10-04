@@ -490,6 +490,90 @@ mod plan {
         assert_eq!(json(&out)["warnings"], serde_json::json!([]));
     }
 
+    /// One case file that does not load is a warning line, named as the
+    /// index names it (escaped), and the other cases are listed (WP-077).
+    /// A case file name may hold control characters: the warnings of
+    /// `plan list` and `index` name it escaped (WP-077).
+    #[test]
+    fn a_warning_names_a_case_file_escaped() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        new_case(&env, "a", &[]);
+        let name = "C-2026-009-\u{1b}[31mX.md";
+        std::fs::write(root.join("work/queued").join(name), "no frontmatter\n").unwrap();
+        let want = "work/queued/C-2026-009-\\u{1b}[31mX.md: ";
+        for args in [["plan", "list", "--json"], ["index", "--json", "--check"]] {
+            let out = env.at(T1, &args);
+            assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+            let v = json(&out);
+            let warnings: Vec<&str> = v["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|w| w.as_str().unwrap())
+                .collect();
+            let named: Vec<&&str> = warnings
+                .iter()
+                .filter(|w| w.contains("C-2026-009"))
+                .collect();
+            assert_eq!(named.len(), 1, "{args:?}: {warnings:?}");
+            assert!(named[0].starts_with(want), "{args:?}: {:?}", named[0]);
+            assert!(
+                !named[0].chars().any(char::is_control),
+                "{args:?}: {:?}",
+                named[0]
+            );
+        }
+    }
+
+    #[test]
+    fn list_warns_of_an_invalid_case_and_lists_the_rest() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        new_case(&env, "a", &[]);
+        new_case(&env, "b", &[]);
+        new_case(&env, "c", &[]);
+        let path = find_file(&root.join("work/queued"), "C-2026-002-");
+        let text = read(&path).replacen("status: queued", "status: \"\\e[31mX\"", 1);
+        std::fs::write(&path, text).unwrap();
+        let rel = format!(
+            "work/queued/{}",
+            path.file_name().unwrap().to_string_lossy()
+        );
+
+        let out = env.seldon(&["plan", "list", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        let ids: Vec<&str> = v["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["C-2026-001", "C-2026-003"]);
+        let warnings = v["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        let w = warnings[0].as_str().unwrap();
+        assert!(
+            w.starts_with(&format!("{rel}: invalid case: ")) && w.ends_with("; skipped"),
+            "{w}"
+        );
+        assert!(w.contains("\\u{1b}[31mX"), "{w}");
+
+        let out = env.seldon(&["plan", "list"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let text = stdout(&out);
+        assert!(
+            !text.chars().any(|c| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].starts_with("C-2026-001  queued"), "{text}");
+        assert!(lines[1].starts_with("C-2026-003  queued"), "{text}");
+        assert_eq!(lines[2], format!("warning: {w}"), "{text}");
+        assert_eq!(lines.len(), 3, "{text}");
+    }
+
     #[test]
     fn list_and_show() {
         let env = Env::new(Snapper::Missing);
@@ -520,6 +604,8 @@ mod plan {
                 .code(),
             Some(1)
         );
+
+        assert_eq!(v["warnings"], serde_json::json!([]));
 
         let show = json(&env.seldon(&["plan", "show", "C-2026-002", "--json"]));
         assert_eq!(show["case"]["status"], "active");

@@ -449,12 +449,12 @@ fn parse_case(source: &str, text: &str) -> std::result::Result<KitCase, String> 
         .map_err(|e| format!("frontmatter is not valid YAML: {e}"))?;
     let map = yaml_map(Some(fm));
     if let Some(t) = yaml_str(&map, "type").filter(|t| t != "case") {
-        return Err(format!("type `{t}` is not `case`"));
+        return Err(format!("type `{}` is not `case`", t.escape_debug()));
     }
     let required = |key: &str| yaml_str(&map, key).ok_or(format!("`{key}` is missing"));
     let id = required("id")?;
     if !is_case_id(&id) {
-        return Err(format!("id `{id}` is not C-YYYY-NNN"));
+        return Err(format!("id `{}` is not C-YYYY-NNN", id.escape_debug()));
     }
     let title = required("title")?
         .split_whitespace()
@@ -463,8 +463,12 @@ fn parse_case(source: &str, text: &str) -> std::result::Result<KitCase, String> 
     let status = required("status")?;
     map_status(&status)?;
     let date = |key: &str, value: String| {
-        NaiveDate::parse_from_str(&value, "%Y-%m-%d")
-            .map_err(|_| format!("`{key}: {value}` is not a date (YYYY-MM-DD)"))
+        NaiveDate::parse_from_str(&value, "%Y-%m-%d").map_err(|_| {
+            format!(
+                "`{key}: {}` is not a date (YYYY-MM-DD)",
+                value.escape_debug()
+            )
+        })
     };
     let created = date("created", required("created")?)?;
     let closed = yaml_str(&map, "closed")
@@ -511,7 +515,8 @@ fn map_status(status: &str) -> std::result::Result<(CaseStatus, Option<&'static 
         "dropped" => (CaseStatus::Dropped, None),
         other => {
             return Err(format!(
-                "status `{other}` is not new|planned|in-progress|verification|done|dropped"
+                "status `{}` is not new|planned|in-progress|verification|done|dropped",
+                other.escape_debug()
             ));
         }
     })
@@ -1223,6 +1228,29 @@ mod tests {
             cases::section(&p.body, "Plan").map(|r| &p.body[r]),
             Some("- **Ziel:** x\n\n")
         );
+    }
+
+    /// A refused value of a kit case is named escaped, never with its
+    /// control characters (WP-077).
+    #[test]
+    fn a_refused_value_is_named_escaped() {
+        for (from, key) in [
+            ("type: case", "type"),
+            ("id: C-2026-011", "id"),
+            ("status: verification", "status"),
+            ("created: 2026-08-27", "created"),
+            ("zone: yellow", "zone"),
+            ("risk: R1", "risk"),
+            ("priority: normal", "priority"),
+        ] {
+            let text = CASE.replacen(from, &format!("{key}: \"\\e[31mX\""), 1);
+            assert_ne!(text, CASE);
+            let err = parse_case("cases/C-2026-011-x.md", &text)
+                .map(|_| ())
+                .expect_err(key);
+            assert!(!err.chars().any(char::is_control), "{key}: {err:?}");
+            assert!(err.contains("\\u{1b}[31mX"), "{key}: {err:?}");
+        }
     }
 
     #[test]

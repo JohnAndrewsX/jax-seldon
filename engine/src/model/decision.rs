@@ -53,16 +53,25 @@ impl Record for Decision {
 
     fn validate(&self) -> Result<(), FrontmatterError> {
         if !is_decision_id(&self.id) {
-            return Err(field("id", format!("`{}` is not ADR-NNNN", self.id)));
+            return Err(field(
+                "id",
+                format!("`{}` is not ADR-NNNN", self.id.escape_debug()),
+            ));
         }
         if self.title.is_empty() {
             return Err(field("title", "must not be empty"));
         }
         if let Some(s) = self.supersedes.as_deref().filter(|s| !is_decision_id(s)) {
-            return Err(field("supersedes", format!("`{s}` is not ADR-NNNN")));
+            return Err(field(
+                "supersedes",
+                format!("`{}` is not ADR-NNNN", s.escape_debug()),
+            ));
         }
         match self.cases.iter().find(|c| !is_case_id(c)) {
-            Some(bad) => Err(field("cases", format!("`{bad}` is not C-YYYY-NNN"))),
+            Some(bad) => Err(field(
+                "cases",
+                format!("`{}` is not C-YYYY-NNN", bad.escape_debug()),
+            )),
             None => Ok(()),
         }
     }

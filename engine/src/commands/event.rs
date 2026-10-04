@@ -80,7 +80,8 @@ pub fn parse_actor(s: &str) -> Result<String, String> {
         Ok(s.to_string())
     } else {
         Err(format!(
-            "`{s}` is not an actor (human, system, agent:<name> with a lowercase name)"
+            "`{}` is not an actor (human, system, agent:<name> with a lowercase name)",
+            s.escape_debug()
         ))
     }
 }
@@ -98,7 +99,10 @@ pub fn parse_case_id(s: &str) -> Result<String, String> {
     if is_case_id(s) {
         Ok(s.to_string())
     } else {
-        Err(format!("`{s}` is not a case id (C-YYYY-NNN)"))
+        Err(format!(
+            "`{}` is not a case id (C-YYYY-NNN)",
+            s.escape_debug()
+        ))
     }
 }
 
@@ -192,6 +196,11 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
             std::slice::from_mut(&mut event),
             &ctx.dirs.home,
         )?;
+    }
+    // a save the case would refuse fails before the ledger changes (WP-077)
+    if let Some(file) = &case_file {
+        let id = cases::pending_ids(1).remove(0);
+        file.prepare(&logbook, |f| f.attach(&id, &event.actor))?;
     }
     // the ledger first: it assigns the id the case file records
     let event = emit_one(&lock, &config, &logbook, event)?;

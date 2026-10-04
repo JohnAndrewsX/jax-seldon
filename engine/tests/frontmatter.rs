@@ -358,6 +358,81 @@ mod hand_edits {
     }
 }
 
+/// A case save that would be refused (WP-066) fails the command before
+/// anything is written: no ledger line, no journal entry, no case change
+/// (WP-077). `CaseFile::prepare` runs the save's checks before the ledger
+/// write in `log`, `event` and `drift link` (`hook` in `tests/hooks.rs`).
+mod refused_saves {
+    use super::*;
+    use common::{Env, Snapper, copy_dir, fixture_logbook, stderr, tree};
+
+    /// The sample index's clock.
+    const AT: &str = "2026-10-01T17:05:12+02:00";
+    /// The fixture's active case and the leader of its open 09-30 group.
+    const CASE: &str = "C-2026-004";
+    const FIREFOX: &str = "01M3SXBQVR7AW8PJQC1YXDCQ14";
+
+    /// Runs `args` on a copy of the fixture logbook whose C-2026-004 has
+    /// its `events:` flow list continued at column 0 (valid YAML the line
+    /// model cannot change), and asserts exit 1 with the refusal named and
+    /// every file of the logbook as it was.
+    fn refused(args: &[&str]) {
+        let env = Env::new(Snapper::Missing);
+        let lb = env.tmp.path().join("logbook");
+        copy_dir(&fixture_logbook(), &lb);
+        let path = lb.join("work/active/C-2026-004-zed.md");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let first = "events: [01M3V896207DAXT81MX8G98WZW, ";
+        assert!(text.contains(first));
+        std::fs::write(
+            &path,
+            text.replacen(first, "events: [01M3V896207DAXT81MX8G98WZW,\n", 1),
+        )
+        .unwrap();
+        let before = tree(&lb);
+
+        let mut all = vec!["--logbook", lb.to_str().unwrap()];
+        all.extend_from_slice(args);
+        let out = env.at(AT, &all);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stderr(&out));
+        assert!(stderr(&out).contains("update refused"), "{}", stderr(&out));
+        let after = tree(&lb);
+        for (file, bytes) in &after {
+            assert!(
+                before.get(file) == Some(bytes),
+                "{args:?} wrote {file}:\n{}",
+                String::from_utf8_lossy(bytes)
+            );
+        }
+        assert_eq!(before.len(), after.len(), "{args:?} removed a file");
+    }
+
+    #[test]
+    fn a_note_on_a_case_whose_save_is_refused_writes_nothing() {
+        refused(&["log", "--case", CASE, "--", "tried a font"]);
+    }
+
+    #[test]
+    fn an_event_on_a_case_whose_save_is_refused_writes_nothing() {
+        refused(&[
+            "event",
+            "agent",
+            "command",
+            "--subject",
+            "zed",
+            "--actor",
+            "agent:codex",
+            "--case",
+            CASE,
+        ]);
+    }
+
+    #[test]
+    fn a_drift_link_to_a_case_whose_save_is_refused_writes_nothing() {
+        refused(&["drift", "link", FIREFOX, CASE]);
+    }
+}
+
 /// A case id is ASCII only (`C-YYYY-NNN`): a control or format character
 /// in the id of a case file is refused on load, so no reader of a loaded
 /// case ever prints one (WP-066).
@@ -385,6 +460,66 @@ mod case_ids {
                     .expect_err(&id);
                 assert!(err.to_string().starts_with("`id`"), "{id}: {err}");
             }
+        }
+    }
+
+    /// A refused value is named escaped (`\u{1b}`), never with its control
+    /// characters, which would reach the terminal (WP-077).
+    #[test]
+    fn a_refused_value_is_named_escaped() {
+        const ESC: &str = "\\e[31mX";
+        let fixture =
+            |rel: &str| std::fs::read_to_string(common::fixture_logbook().join(rel)).unwrap();
+        let case = fixture("work/queued/C-2026-005-tokyo-night.md");
+        let decision = fixture("decisions/ADR-0001-language.md");
+        let journal = fixture("journal/2026/2026-10-01.md");
+        let area = fixture("areas/dev-env/README.md");
+        type Parse = fn(&str) -> Option<String>;
+        fn err<R: Record>(text: &str) -> Option<String> {
+            model::parse::<R>(text).err().map(|e| e.to_string())
+        }
+        let checks: [(&str, &str, &str, Parse); 14] = [
+            ("case", &case, "id: C-2026-005", err::<Case>),
+            ("case", &case, "status: queued", err::<Case>),
+            ("case", &case, "zone: yellow", err::<Case>),
+            ("case", &case, "risk: R1", err::<Case>),
+            ("case", &case, "priority: normal", err::<Case>),
+            ("case", &case, "area: themes", err::<Case>),
+            ("case", &case, "agents: []", err::<Case>),
+            ("case", &case, "events: []", err::<Case>),
+            ("decision", &decision, "id: ADR-0001", err::<Decision>),
+            ("decision", &decision, "supersedes:", err::<Decision>),
+            (
+                "decision",
+                &decision,
+                "cases: [C-2026-001]",
+                err::<Decision>,
+            ),
+            ("decision", &decision, "status: accepted", err::<Decision>),
+            (
+                "journal",
+                &journal,
+                "cases: [C-2026-003, C-2026-004]",
+                err::<Journal>,
+            ),
+            ("area", &area, "name: dev-env", err::<Area>),
+        ];
+        for (what, text, line, parse) in checks {
+            let (key, value) = line.split_once(':').unwrap();
+            let bad_value = if value.trim_start().starts_with('[') {
+                format!("[\"{ESC}\"]")
+            } else {
+                format!("\"{ESC}\"")
+            };
+            let bad = text.replacen(
+                &format!("\n{line}\n"),
+                &format!("\n{key}: {bad_value}\n"),
+                1,
+            );
+            assert_ne!(&bad, text, "{what}: {line}");
+            let msg = parse(&bad).unwrap_or_else(|| panic!("{what} {key}: accepted"));
+            assert!(!msg.chars().any(char::is_control), "{what} {key}: {msg:?}");
+            assert!(msg.contains("\\u{1b}[31mX"), "{what} {key}: {msg:?}");
         }
     }
 }
