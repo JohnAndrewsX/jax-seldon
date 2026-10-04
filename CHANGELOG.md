@@ -256,6 +256,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list` and the item of `drift show` show the clipped value. An index that
   still reaches 1 MB (many open cases) makes `index` and `status` warn and
   name the largest section (WP-076, ADR-0025).
+- `log`, `event`, the agent hook and `drift link` check a case's save
+  before they write the ledger: a case whose frontmatter would not read
+  back after the change (WP-066) now fails the command with nothing
+  written, instead of leaving a ledger line or journal entry without the
+  case update (WP-077).
+- Validation errors name a refused id or value escaped (`\u{1b}`), so a
+  control character in a case, decision, journal, area or kit-case value
+  never reaches the terminal (WP-077).
+- `plan list` lists the other cases when one case file does not load, and
+  names that file in a warning line (`warnings` in `--json`); it exited 1
+  before (WP-077).
 
 ### Plugin
 
@@ -293,6 +304,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Packaging and docs
 
+- `scripts/validate-fixtures.py`, the reference `derive()`, clips the
+  index texts exactly as the engine does (ADR-0025: 256 JSON bytes, the
+  same marker and count); `--derive LOGBOOK` prints its derivation, and an
+  engine test compares it with `seldon index` on long texts (WP-077).
 - The uninstall guide (en, de) removes the hooks of a kept logbook with
   `seldon hook uninstall claude-code` and the global ones with
   `--settings`; the logbook guide (en, de) gains "Back up and restore the
