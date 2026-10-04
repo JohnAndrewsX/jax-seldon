@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-076 | index: size budget enforced; perf budgets at stated scale | Engine | `engine-076` (opus) | `wt/WP-076` · `wp/076-review` | 2026-10-04 |
+| — | no active work package | | | | |
 
 ## Queued (next up)
 
@@ -35,6 +35,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-076 index: long event and drift texts clipped at 256 bytes
+  with a visible marker (ADR-0025), size warning at 1 MB, perf budgets at
+  the stated scale in `just check-perf`, collector test benches on scratch
+  paths only; merged after two review rounds.
 - 2026-10-04 WP-073 collectors: plugins dedupe against the ledger, capture-time
   attribution window with the newest-known-event rule, verb-aware plugin
   proofs, capture on SELDON_NOW, snapper reused snapshot numbers, hooks
