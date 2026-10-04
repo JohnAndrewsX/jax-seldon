@@ -2710,15 +2710,25 @@ var LOCK_WAIT_TEXT = "waiting for another seldon process; trying again shortly"
 // The journal line for an engine call that exited above 0:
 // "jax.seldon: seldon <command> exit <code>: <first stderr line>", or the
 // engine's JSON error message when stderr is empty (`--json` errors go to
-// stdout). "" for exit 0. Plain text on one line.
+// stdout), cut to its first line too (WP-078). "" for exit 0. Plain text on
+// one line.
 function callWarning(args, exitCode, stdoutText, stderrText) {
   if (!(exitCode > 0)) return ""
   var head = Array.isArray(args) && args.length > 0 ? String(args[0]) : "?"
-  var lines = String(stderrText || "").split("\n")
-  var first = ""
-  for (var i = 0; i < lines.length && first === ""; i++) first = lines[i].trim()
-  if (first === "") first = engineError(stdoutText, "", exitCode)
+  var first = firstLine(stderrText)
+  if (first === "") first = firstLine(engineError(stdoutText, "", exitCode))
+  if (first === "") first = "seldon exited with code " + exitCode
   return "jax.seldon: seldon " + head + " exit " + exitCode + ": " + first
+}
+
+// The first line of `text` that is not blank, trimmed; "" when none is.
+function firstLine(text) {
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    if (line !== "") return line
+  }
+  return ""
 }
 
 // "0.1.10" → [0, 1, 10]; a pre-release or build suffix is ignored, so a
@@ -2764,4 +2774,31 @@ function engineOutdatedBanner(status, engineVersion, engineMin) {
       { id: "recheck", label: "Check again" }
     ]
   }
+}
+
+// ---- Bar IPC owner (WP-078) -------------------------------------------------
+
+// A bar widget the user can see: visible and not zero-size. In the bar's
+// centre section (once a centre anchor is set, the default) every module is
+// mounted twice, the drawn copy and a zero-size, hidden placeholder (the
+// shell's BarModel.isDrawnSlot, on the widget itself).
+function isDrawnWidget(item) {
+  return !!item && item.visible === true && item.width > 0 && item.height > 0
+}
+
+// The instance that owns `jax.seldon.panel` among the bar's live widgets
+// (`bar.moduleWidgets`), `leaving` left out: the first drawn one, else the
+// first one at all (only placeholders on screen), else null. Mirrors the
+// shell's BarModel.pickDrawnSlot, so IPC acts on the instance a panel
+// hotkey would.
+function pickDrawnWidget(items, leaving) {
+  var placeholder = null
+  var list = Array.isArray(items) ? items : []
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i]
+    if (!item || item === leaving) continue
+    if (isDrawnWidget(item)) return item
+    if (!placeholder) placeholder = item
+  }
+  return placeholder
 }

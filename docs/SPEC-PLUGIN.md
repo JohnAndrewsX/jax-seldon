@@ -74,20 +74,25 @@ plugin/
   arguments (case ids, event ids validated by regex before use).
 - Every engine call that exits above 0 (the probe included) logs one
   `console.warn` line, `jax.seldon: seldon <command> exit <code>: <first
-  stderr line>` (the engine's JSON error message when stderr is empty), so
-  `journalctl --user -t omarchy-shell` shows each failing timed capture
-  (WP-068).
+  stderr line>` (the first line of the engine's JSON error message when
+  stderr is empty, WP-078), so `journalctl --user -t omarchy-shell` shows
+  each failing timed capture (WP-068).
 - Exit 4 (lock held) of a `capture` or `status` is not an error: the call
   runs again after 30 s, at most 3 times (a locked capture takes its queued
   `status` along); meanwhile the capture result reads "waiting for another
   seldon process; trying again shortly" in the neutral tone and
   `capturing` stays true. After the third retry the exit is an error as
-  before. An explicit *Capture now* replaces a pending retry (WP-068).
+  before. An explicit *Capture now* replaces a pending retry (WP-068):
+  the Changelog button (a click while it reads *Capturing*, WP-078), the
+  bar's right click, the `c` key and IPC `capture` alike.
 - One call at a time per family (plan and agent, drift, decide): a call
   refused because one of its family is pending returns false and sets
   `busyRefusal` to `{ family, action, caseId, eventId, text }` with the
-  text "Another action is running — try again in a moment"; the new-case
-  and drift sheets show it in the neutral tone (WP-068).
+  text "Another action is running — try again in a moment"; the new-case,
+  drift and new-decision sheets show it in the neutral tone (WP-068). The
+  new-decision sheet refuses a second Create of its own pending decision
+  without asking; one another panel sent (the bar builds a panel per
+  monitor, all on one service) gets the busy text (WP-078).
 - Engine minimum: the manifest's `seldon.engineMin` (injected by the
   shell) is compared with the probed version (`major.minor.patch`; a
   pre-release suffix counts as its version). An older engine gets the
@@ -166,7 +171,8 @@ exceeds `drift.length` (ADR-0020). Folded rows read `linked to C-…`,
 id; Enter, `e`, double click or *Open* run `open ADR-NNNN --editor --json`
 (id validated); `d` opens the new-decision sheet (title → `decide
 --no-edit --json -- <title>`, then `open <newId> --editor --json` from the
-result; two-press arming; title kept on refusal). Memory tab (digit 6):
+result; two-press arming; title kept on refusal; the busy text of §3
+while a decision sent from another panel is pending). Memory tab (digit 6):
 lessons headings and memory topics with `updated`; Enter, `e` or *Open*
 run `open logbook --editor --json` until the engine gains a memory target
 (`open memory[/<topic>]`, queued). Linked cases per decision need a
@@ -344,10 +350,17 @@ item and only while it is loaded. Routes the plugin must honour:
   the engine; WP-011), following the
   first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
   and toggle the panel independently of the overlay (WP-010). The bar
-  builds the widget once per monitor, and a target takes one handler: only
-  the first instance the bar lists (`bar.moduleWidgets`) enables its
-  handler, and when that instance goes, the next one takes the target
-  over (WP-067); IPC calls act on that instance's panel.
+  builds the widget once per monitor (plus a zero-size, hidden placeholder
+  in the bar's centre section: once a centre anchor is set, the default,
+  the shell mounts the whole centre list a second time, hidden), and a
+  target takes one handler: only the first drawn instance the bar lists
+  (`bar.moduleWidgets`; visible
+  and not zero-size, as the shell's `pickDrawnSlot` routes a panel
+  hotkey) enables its handler, a placeholder only when no instance is
+  drawn (WP-078). When an instance comes, goes, or is drawn or hidden,
+  every instance looks again, the owner first, so the next one takes the
+  target over with one handler at a time (WP-067); IPC calls act on that
+  instance's panel.
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,
   `refresh`, `capture`) — read-only state and the two actions any local
   process could trigger anyway; it is how the test host reads plugin state

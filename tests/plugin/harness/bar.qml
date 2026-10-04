@@ -32,6 +32,12 @@ import qs.Ui
 //                       `HARNESS ipc {json}` instead of the bar report: which
 //                       widget owns `jax.seldon.panel`, which one an IPC
 //                       `open` reaches, and the same once the owner is gone.
+//   HARNESS_IPC_PLACEHOLDER  with HARNESS_IPC: the first widget the bar
+//                       lists is a zero-size, hidden placeholder (a module in the
+//                       bar's centre section, WP-078), the second is drawn. After
+//                       open/close a reconfiguration draws the placeholder
+//                       and hides the other (report `ownersSwapped`,
+//                       `openedSwapped`), then the owner goes.
 ShellRoot {
   id: root
 
@@ -40,6 +46,7 @@ ShellRoot {
   // Every widget, for the facade's moduleWidgets (the bar's live instances).
   property var widgets: []
   readonly property string ipcConfig: Quickshell.env("HARNESS_IPC") || ""
+  readonly property bool placeholderMode: (Quickshell.env("HARNESS_IPC_PLACEHOLDER") || "") !== ""
   property var ipcReport: ({})
   property bool done: false
   readonly property string pluginDir: Quickshell.env("HARNESS_PLUGIN_DIR") || ""
@@ -144,6 +151,16 @@ ShellRoot {
       width: 100
       height: Style.bar.sizeHorizontal
     }
+
+    // A centre-section module's placeholder (HARNESS_IPC_PLACEHOLDER):
+    // hidden and zero-size until the reconfiguration step draws it.
+    Item {
+      id: slot0
+      x: 120
+      width: 0
+      height: 0
+      visible: false
+    }
   }
 
   Component.onCompleted: {
@@ -151,7 +168,13 @@ ShellRoot {
     root.widget = root.load("BarWidget.qml", slot, { bar: api, moduleName: "jax.seldon" })
     if (root.widget) root.widget.anchors.fill = slot
     var all = [root.widget]
-    if (root.ipcConfig !== "") all.push(root.load("BarWidget.qml", slot2, { bar: api, moduleName: "jax.seldon" }))
+    if (root.ipcConfig !== "" && root.placeholderMode) {
+      var placeholder = root.load("BarWidget.qml", slot0, { bar: api, moduleName: "jax.seldon" })
+      if (placeholder) placeholder.anchors.fill = slot0
+      all.unshift(placeholder)
+    } else if (root.ipcConfig !== "") {
+      all.push(root.load("BarWidget.qml", slot2, { bar: api, moduleName: "jax.seldon" }))
+    }
     root.widgets = all
   }
 
@@ -181,33 +204,60 @@ ShellRoot {
     }
   }
 
+  // The owner's monitor goes away.
+  function dropOwner() {
+    var i = root.owners().indexOf(true)
+    if (i === -1) return
+    var gone = root.widgets[i]
+    var rest = root.widgets.slice()
+    rest[i] = null
+    root.widgets = rest
+    gone.destroy()
+  }
+
+  // Each step records what the last one left and starts the next action:
+  // an IPC call (the next step follows its exit) or a local change.
+  readonly property var ipcSteps: {
+    var head = [
+      function(r) { r.owners = root.owners(); root.ipcCall("open", ["open"]) },
+      function(r) { r.opened = root.openedState(); root.ipcCall("close", ["close"]) }
+    ]
+    var swap = [
+      function(r) {
+        // A live reconfiguration: the placeholder is drawn, the other hidden.
+        r.closed = root.openedState()
+        slot0.width = 100
+        slot0.height = Style.bar.sizeHorizontal
+        slot0.visible = true
+        slot.visible = false
+        ipcStep.restart()
+      },
+      function(r) { r.ownersSwapped = root.owners(); root.ipcCall("openSwapped", ["open"]) },
+      function(r) { r.openedSwapped = root.openedState(); root.ipcCall("closeSwapped", ["close"]) },
+      function(r) { root.dropOwner(); ipcStep.restart() }
+    ]
+    var drop = [
+      function(r) { r.closed = root.openedState(); root.dropOwner(); ipcStep.restart() }
+    ]
+    var tail = [
+      function(r) { r.ownersAfter = root.owners(); root.ipcCall("openAfter", ["open"]) },
+      function(r) {
+        r.openedAfter = root.openedState()
+        console.log("HARNESS ipc " + JSON.stringify(r))
+        Qt.quit()
+      }
+    ]
+    return head.concat(root.placeholderMode ? swap : drop, tail)
+  }
+
   Timer {
     id: ipcStep
     interval: 300
     onTriggered: {
       var r = root.ipcReport
+      var step = root.ipcSteps[root.ipcPhase]
       root.ipcPhase++
-      if (root.ipcPhase === 1) {
-        r.owners = root.owners()
-        root.ipcCall("open", ["open"])
-      } else if (root.ipcPhase === 2) {
-        r.opened = root.openedState()
-        root.ipcCall("close", ["close"])
-      } else if (root.ipcPhase === 3) {
-        // The owner's monitor goes away.
-        r.closed = root.openedState()
-        var gone = root.widgets[0]
-        root.widgets = [null, root.widgets[1]]
-        gone.destroy()
-        ipcStep.restart()
-      } else if (root.ipcPhase === 4) {
-        r.ownersAfter = root.owners()
-        root.ipcCall("openAfter", ["open"])
-      } else {
-        r.openedAfter = root.openedState()
-        console.log("HARNESS ipc " + JSON.stringify(r))
-        Qt.quit()
-      }
+      if (step) step(r)
       root.ipcReport = r
     }
   }

@@ -15,7 +15,11 @@ import "../Model.js" as Model
 // runs it; a click on *Create* runs it at once. Any change to the title
 // disarms. The title stays until the engine has created the decision, so a
 // refusal never loses it; then the sheet empties and reports
-// `created(decisionId)`.
+// `created(decisionId)`. While a decision another panel sent (the bar
+// builds one panel per monitor, all on one service) is pending, Create
+// still asks the service, which refuses; the sheet then shows its busy
+// text (Service.busyRefusal) in the neutral tone until the next Create or
+// a change to the title, like the new-case and drift sheets (WP-078).
 //
 // Keyboard: while anything in the sheet has focus, Panel.qml blocks its own
 // keys (`editing`). Tab walks title → Create → Cancel; Esc closes the sheet,
@@ -33,7 +37,8 @@ FocusScope {
   property string armedSig: ""
   // The title sent, until the engine answers.
   property string sentTitle: ""
-  // A refusal of the plugin's own (nothing reached the engine).
+  // A refusal of the plugin's own (nothing reached the engine), or the
+  // service's busy text.
   property string notice: ""
 
   property alias title: titleField.text
@@ -43,13 +48,18 @@ FocusScope {
   readonly property string writeBlocker: service ? service.writeBlocker : "The Seldon service is not running"
   readonly property var result: service ? service.decideResult : null
   readonly property bool pending: !!result && result.pending
+  // This sheet's own decision is pending (the guard of Enter and Create).
+  readonly property bool ownPending: root.pending && root.sentTitle !== ""
+  // Create takes a click unless this sheet's own decision is pending, so a
+  // click during another panel's call gets the busy text.
+  readonly property bool submitEnabled: root.canWrite && !root.ownPending
   readonly property var built: Model.decideArgs(root.title)
   readonly property string sig: built.args ? JSON.stringify(built.args) : ""
   readonly property bool armed: sig !== "" && armedSig === sig
   // A created decision is reported on the tab; the sheet shows progress and refusals.
   readonly property string resultText: root.notice !== "" ? root.notice
     : result && (result.pending || !result.ok) ? result.text : ""
-  readonly property bool resultOk: root.notice === "" && !!result && result.ok
+  readonly property bool resultOk: root.notice !== "" ? root.notice === Model.BUSY_TEXT : !!result && result.ok
   readonly property string hint: !root.canWrite ? root.writeBlocker
     : root.armed ? "Press Enter again: create the decision “" + root.title + "”"
     : ""
@@ -64,7 +74,7 @@ FocusScope {
 
   // Enter in the title field or on Create: arm, then run.
   function enterKey() {
-    if (!root.canWrite || root.pending) return false
+    if (!root.canWrite || root.ownPending) return false
     if (root.built.error) {
       root.notice = root.built.error
       return false
@@ -78,7 +88,7 @@ FocusScope {
 
   // A click on Create runs at once.
   function clickSubmit() {
-    if (!root.canWrite || root.pending) return false
+    if (!root.canWrite || root.ownPending) return false
     if (root.built.error) {
       root.notice = root.built.error
       return false
@@ -91,7 +101,9 @@ FocusScope {
     root.notice = ""
     if (!root.service) return false
     var title = root.title
+    var refusals = root.service.busyRefusals
     var sent = root.service.decide(title)
+    if (!sent && root.service.busyRefusals !== refusals) root.notice = root.service.busyRefusal.text
     if (sent) root.sentTitle = title
     return sent
   }
@@ -171,12 +183,13 @@ FocusScope {
 
         Button {
           id: submitButton
+          objectName: "decisionSubmit"
           anchors.fill: parent
-          text: root.pending ? "Creating" : "Create"
-          iconText: root.pending ? "󰦖" : ""
-          iconSpinning: root.pending
+          text: root.ownPending ? "Creating" : "Create"
+          iconText: root.ownPending ? "󰦖" : ""
+          iconSpinning: root.ownPending
           iconSize: Style.font.caption
-          enabled: root.canWrite && !root.pending
+          enabled: root.submitEnabled
           hasCursor: submitKey.activeFocus || root.armed
           selected: true
           bordered: true

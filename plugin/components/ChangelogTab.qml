@@ -14,7 +14,8 @@ import "../Model.js" as Model
 // drift row opens the DriftSheet (link / explain / dismiss, WP-021), on any
 // other row expands it (full text), f / F cycle the source filter, `e` opens
 // this month's ledger in the editor. *Capture now* spins while the capture
-// and the status after it run; the new rows arrive with the index
+// and the status after it run (and while a locked capture waits for its
+// retry; a click then captures at once); the new rows arrive with the index
 // (Service.qml's FileView), not from the capture's output. So do resolved
 // drift rows: they show the folded resolution once the engine has rebuilt
 // the index. While the sheet is open it takes the tab's place; when the
@@ -231,7 +232,10 @@ Item {
         fontFamily: root.fontFamily
         fontSize: Style.font.caption
         verticalPadding: Style.spacing.xs
-        onClicked: if (!root.capturing) root.captureRequested()
+        // Also while it reads Capturing: during a lock-retry wait a click
+        // captures at once (Service.captureNow ignores a click while a
+        // capture is queued), as the bar and the `c` key do (WP-078).
+        onClicked: root.captureRequested()
       }
     }
 

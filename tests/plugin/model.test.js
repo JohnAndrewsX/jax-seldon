@@ -1432,11 +1432,62 @@ test("callWarning (WP-068): one line with the exit code and the first stderr lin
   assert.strictEqual(M.callWarning(["log"], 1, "", ""), "jax.seldon: seldon log exit 1: seldon exited with code 1")
 })
 
+test("callWarning (WP-078): the JSON fallback is cut to its first line", () => {
+  const out = JSON.stringify({ error: { code: 2, message: "\n  index unreadable: line 3\n  caused by: bad utf-8\n" } })
+  assert.strictEqual(M.callWarning(["status", "--json"], 2, out, ""), "jax.seldon: seldon status exit 2: index unreadable: line 3")
+  assert.strictEqual(M.callWarning(["status", "--json"], 2, out, " \n"), "jax.seldon: seldon status exit 2: index unreadable: line 3")
+  const blank = JSON.stringify({ error: { code: 2, message: " \n " } })
+  assert.strictEqual(M.callWarning(["capture"], 2, blank, ""), "jax.seldon: seldon capture exit 2: seldon exited with code 2")
+})
+
+test("plugin/README.md States lists every banner with its fixes (WP-078)", () => {
+  const readme = fs.readFileSync(path.join(root, "plugin/README.md"), "utf8")
+  const table = readme.slice(readme.indexOf("### States"), readme.indexOf("\n## ", readme.indexOf("### States")))
+  const rows = table.split("\n").filter((l) => l.startsWith("| ") && !l.startsWith("| State "))
+  const banners = [
+    M.bannerFor("engineMissing"), M.bannerFor("notInitialised"),
+    M.bannerFor("indexMissing", { parseError: "empty" }), M.bannerFor("indexMissing", { parseError: "bad json" }),
+    M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00+02:00", nowMs: Date.parse("2026-10-01T14:00:00+02:00") }),
+    M.bannerFor("contractMismatch", { indexContractVersion: 2 }), M.bannerFor("contractMismatch", { indexContractVersion: 0 }),
+    M.engineOutdatedBanner("ok", "0.0.1", "9.0.0"), M.snapperBanner(degraded, false)
+  ]
+  for (const b of banners) {
+    assert.ok(b, "a banner")
+    const row = rows.find((r) => r.split(" | ")[1].includes(b.title))
+    assert.ok(row, "States has a row whose banner is " + b.title)
+    for (const a of b.actions) assert.ok(row.includes("*" + a.label + "*"), b.title + ": the row names *" + a.label + "*")
+    // The command the fix runs or copies: the install line by name (its
+    // `|` is escaped in the table), every other one verbatim.
+    if (b.command === M.INSTALL_ENGINE_COMMAND)
+      assert.ok(row.includes("GitHub one-liner"), b.title + ": the row names the GitHub one-liner")
+    else if (b.command !== "")
+      assert.ok(row.includes("`" + b.command + "`"), b.title + ": the row has `" + b.command + "`")
+  }
+})
+
 test("busy and lock texts (WP-068)", () => {
   assert.strictEqual(M.BUSY_TEXT, "Another action is running — try again in a moment")
   assert.strictEqual(M.LOCK_RETRY_MS, 30000)
   assert.strictEqual(M.LOCK_RETRIES, 3)
   assert.ok(M.LOCK_WAIT_TEXT.indexOf("waiting for another seldon process") === 0)
+})
+
+test("pickDrawnWidget (WP-078): the first drawn widget owns IPC, a placeholder only alone", () => {
+  const w = (name, visible, width, height) => ({ name, visible, width, height })
+  const placeholder = w("placeholder", false, 0, 0)
+  const hiddenSized = w("hidden", false, 40, 26)
+  const zeroWide = w("zero", true, 0, 26)
+  const a = w("a", true, 40, 26)
+  const b = w("b", true, 40, 26)
+  assert.strictEqual(M.pickDrawnWidget([placeholder, a, b]), a)
+  assert.strictEqual(M.pickDrawnWidget([hiddenSized, zeroWide, b]), b)
+  assert.strictEqual(M.pickDrawnWidget([a, b], a), b)
+  assert.strictEqual(M.pickDrawnWidget([placeholder, a], a), placeholder)
+  assert.strictEqual(M.pickDrawnWidget([null, zeroWide, placeholder]), zeroWide)
+  assert.strictEqual(M.pickDrawnWidget([], null), null)
+  assert.strictEqual(M.pickDrawnWidget(undefined, null), null)
+  assert.strictEqual(M.isDrawnWidget(w("x", true, 1, 1)), true)
+  assert.strictEqual(M.isDrawnWidget(w("x", true, 1, 0)), false)
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

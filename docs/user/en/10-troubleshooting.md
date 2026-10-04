@@ -43,6 +43,7 @@ button that fixes it.
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` is missing or broken | *Build index* runs `seldon status` |
 | Index is stale | the index is more than two hours old | *Capture now* |
 | Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
+| Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
 | Snapshots not readable | snapper refuses your user | *Run in terminal* runs the one-time snapper fix; you type your password there |
 
 The plugin looks for the engine when the shell starts and when you press

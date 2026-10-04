@@ -302,6 +302,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrives with the same item; only a change to the form disarms (WP-068).
 - An engine older than the plugin's `engineMin` gets an "Engine too old"
   banner with the update command (WP-068).
+- An engine error whose message has several lines leaves one journal
+  line too: the warning keeps the message's first line (WP-078).
+- *Create* in the new-decision sheet no longer does nothing while a
+  decision sent from another monitor's panel is pending: it says
+  "Another action is running — try again in a moment", like the
+  new-case and drift sheets (WP-078).
+- The Changelog's *Capture now* button captures at once while a locked
+  capture waits for its retry, as the bar's right click and the `c` key
+  already did; before, a click on *Capturing* did nothing (WP-078).
+- The plugin README's States table lists the "Engine too old" banner
+  and its fixes (WP-078).
+- In the bar's centre section (once a centre anchor is set, the
+  default) `jax.seldon.panel` belongs to the widget you can see, not to
+  the zero-size placeholder the bar mounts for it, so
+  `omarchy-shell jax.seldon.panel open` opens the panel under the pill;
+  the target follows a bar reconfiguration (WP-078).
 
 ### Packaging and docs
 
