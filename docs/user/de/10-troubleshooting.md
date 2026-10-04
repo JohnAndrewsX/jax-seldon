@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ fbc65b0 -->
+<!-- source: en/10-troubleshooting.md @ fd98ecb -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -30,8 +30,9 @@ führt nichts mit `sudo` aus.
 | `snapper` | Snapshots lassen sich auflisten oder aus `/.snapshots` lesen | `degraded`: dein Benutzer darf weder Snapshots auflisten noch `/.snapshots` lesen; siehe [Snapshots werden nicht aufgezeichnet](#snapshots-werden-nicht-aufgezeichnet). Eine `ok`-Zeile mit Abhilfe: dein Benutzer steht noch im alten Snapper-Opt-in; siehe [doctor rät, das Snapper-Opt-in zurückzunehmen](#doctor-rät-das-snapper-opt-in-zurückzunehmen) |
 | `git` | git ist da; das Logbuch ist ein Repository | git fehlt, oder das Logbuch ist kein Repository; dann ist Autocommit aus. `degraded`: etwas hindert jeden Autocommit (ein liegengebliebenes `.git/index.lock`, ein losgelöster HEAD, …); die Abhilfe sagt, was zu tun ist |
 
-`doctor --json` gibt dasselbe als JSON aus. Das Plugin liest es, um sein
-Banner zu wählen.
+`doctor --json` gibt dasselbe als JSON aus. Das Plugin führt `doctor`
+nicht aus: Es wählt sein Banner nach dem Index und nach seinen eigenen
+Engine-Aufrufen.
 
 ## Banner im Panel
 
@@ -107,14 +108,15 @@ Steht dein Benutzer noch dort, sagt `seldon doctor` das in der Zeile
 `snapper` und gibt aus:
 
 ```sh
-sudo snapper -c root set-config ALLOW_USERS="" && sudo setfacl -m u:$USER:rx /.snapshots
+sudo snapper -c root set-config ALLOW_USERS="" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots
 ```
 
 Der erste Befehl leert die Liste (trag jeden anderen Benutzer, der darin
-bleiben soll, wieder ein); Snapper entfernt dabei auch den Lesezugriff,
-den es deinem Benutzer auf `/.snapshots` gegeben hat. Der zweite Befehl
-gibt diesen Lesezugriff wieder. Seldon zeichnet Snapshots in beiden
-Fällen weiter auf.
+bleiben soll, wieder ein) und hält Snapper davon ab, die Zugriffsliste
+von `/.snapshots` zu verwalten, damit eine spätere Snapper-Änderung dir
+den Lesezugriff nicht wieder nimmt. Er kann den Lesezugriff entfernen,
+den das alte Opt-in deinem Benutzer gegeben hat; der zweite Befehl gibt
+ihn. Seldon zeichnet Snapshots in beiden Fällen weiter auf.
 
 ### Eine Änderung erscheint nicht
 
