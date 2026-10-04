@@ -353,7 +353,9 @@ A second `state` row, degraded, appears while the ledger's newest
 for this logbook (the last capture recorded it): it names the sources and
 files from the note's `meta`, and its fix is to restore a backup of the
 state directory and run `seldon capture` (without a backup, the next
-capture clears the row). The `omarchy`
+capture clears the row); with `logbook` among the files the fix says that
+nothing can be restored, because the state belonged to another logbook
+path. The `omarchy`
 and `snapper` probes run the programs the collectors run
 (`SELDON_OMARCHY_VERSION`, `SELDON_SNAPPER`).
 
@@ -429,26 +431,41 @@ helper and reconciliation (WP-008) follow.
 
 State reset (WP-081). A collector that takes a baseline because its state
 was missing or unreadable says which state file it missed: `cursors` (no
-entry for this logbook in `cursors.json`, or one that does not read as its
-cursor: a new or lost state directory, another logbook), `manifest`
-(config: `manifest.json` missing, corrupt, or without the generation the
-cursor names) or `owned` (config: `owned.json` corrupt). When the ledger
-already holds at least one event of that collector's source, the changes
-since its last capture may be lost, and the capture appends, with its other
-events, one `note` with `source: seldon`, `actor: system`, subject
-`state-reset`, detail `state directory missing or unreadable: new baseline
-for <source> (<files>), … at <capture time>; changes made while it was
-missing may not be recorded`, and `meta.sources` / `meta.files` (comma
-lists in run order and in the order cursors, manifest, owned). A collector
-whose source the ledger holds no event of (the first capture of a logbook)
-takes its baseline without a note. The next capture continues from the new
-state, so a loss is recorded once; a corrupt `owned.json` is moved to
-`owned.json.bad` by the capture that runs the config collector. The
-capture warns: `warning: state reset recorded: <sources> took a new
-baseline because <state dir> was missing or unreadable, …` on stdout (and
-in `--json` `warnings`), naming the user guide's restore steps (07 "Back up
-and restore the state directory"). A corrupt `cursors.json` still fails
-every capture (exit 2) until it is moved away.
+cursor for this logbook in `cursors.json`, or one that does not read as
+its cursor), `manifest` (config: `manifest.json` missing, corrupt, or
+without the generation the cursor names) or `owned` (config: `owned.json`
+corrupt). `capture` turns `cursors` into a loss by what `cursors.json` was
+bound to before the capture: to no logbook (no file: a new or lost state
+directory) → `cursors`; to another logbook (`bind` drops its cursors) →
+`logbook`; to this logbook → only a cursor that is there and does not read
+is a loss, while a collector without one (every run degraded so far,
+disabled until now, never selected) never ran successfully here and takes
+its first baseline without a note, even when the ledger holds events of
+its source that the theme hook or an agent wrote. When the ledger already
+holds at least one event of the losing collector's source, the changes
+since its last capture may be lost, and the capture appends, with its
+other events, one `note` with `source: seldon`, `actor: system`, subject
+`state-reset`, detail `state directory missing, unreadable or bound to
+another logbook: new baseline for <source> (<files>), … at <baseline>,
+recorded <capture time>; changes made in between may not be recorded`
+(`<baseline>` is the logbook's `created` or `--since`, as for every
+baseline), and `meta.sources` / `meta.files` (comma lists in run order and
+in the order logbook, cursors, manifest, owned). A collector whose source
+the ledger holds no event of (the first capture of a logbook) takes its
+baseline without a note. Known limitation: after `init --no-capture`
+there is no `cursors.json`, so when the theme hook or an agent writes an
+event of a collector's source before the first capture, that capture
+records a state reset that lost nothing. The next capture continues from
+the new state, so a loss is recorded once; a corrupt `owned.json` is moved
+to `owned.json.bad` by the capture that runs the config collector
+successfully (a newer one replaces an older `.bad`). The capture warns:
+`warning: state reset recorded: <sources> took a new baseline because
+<state dir> was missing, unreadable or bound to another logbook, …` on
+stdout (and in `--json` `warnings`), naming the user guide's restore steps
+(07 "Back up and restore the state directory"), or, for `logbook`, that
+nothing can be restored (07 "Moving or copying the logbook"); `hook
+session-stop` prints it on stderr as `seldon: warning: …` (§8). A corrupt
+`cursors.json` still fails every capture (exit 2) until it is moved away.
 
 ```
 seldon index --json   → {"ok","logbook","index":"<path>","generatedAt","events":N,"summary":{…},
@@ -1035,7 +1052,9 @@ session's events by `meta.sessionId`) to today's journal, runs `capture
 rebuilds the index after the commit. Every step runs even if an earlier
 one failed (a journal day it cannot read, a failed capture, a failed
 commit); each failure is one line on stderr and the hook exits 0. Only a
-lock it cannot get within 8 s skips the steps that need it.
+lock it cannot get within 8 s skips the steps that need it. The capture's
+warnings (a state reset, §3) go to stderr as `seldon: warning: …`; stdout
+stays empty (WP-081).
 
 ## 9. Wizard (`seldon init`)
 

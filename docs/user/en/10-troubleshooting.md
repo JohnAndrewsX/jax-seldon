@@ -157,7 +157,7 @@ in the journal. A wrong explanation misleads you later.
 `seldon capture` printed a line like this:
 
 ```
-warning: state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing or unreadable, …
+warning: state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook, …
 ```
 
 The engine's state directory, `~/.local/state/seldon`, was gone, belonged
@@ -175,7 +175,14 @@ If you have a backup of the state directory, restore it and run a
 capture; that capture records what changed since the backup (see
 [Back up and restore the state directory](07-the-logbook.md#back-up-and-restore-the-state-directory)).
 Without a backup there is nothing to restore: the next capture clears
-the row, and the note stays in the ledger.
+the row, and the note stays in the ledger. The same holds when the
+state belonged to another logbook (you moved the logbook, or ran a
+command with `--logbook` for another one); the warning then says so.
+
+A capture that finds a corrupt `owned.json` moves it to
+`owned.json.bad` in the same folder. Seldon never reads that file
+again; it is kept only for a look, you can delete it, and the next
+corrupt `owned.json` replaces it.
 
 ### The theme collector is degraded
 

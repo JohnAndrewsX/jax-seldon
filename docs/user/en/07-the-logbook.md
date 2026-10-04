@@ -169,7 +169,8 @@ want tables; Seldon does not depend on them.
 To move it, move the folder and point the config at the new place:
 change `logbook` in `~/.config/seldon/config.toml`. The engine's state
 (`~/.local/state/seldon/`) belongs to one logbook. When you point it at
-another, the collectors start over from the current state.
+another, the collectors start over from the current state, and the first
+capture records a state reset in the ledger; there is nothing to restore.
 
 To keep a second logbook, for a test, run `seldon init --path <DIR>`.
 `init` sets the new folder as `logbook` in the config. Change
