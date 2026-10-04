@@ -312,8 +312,10 @@ seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
                                     exit 0 (no error), 1 (a check is error), 3 (not initialised)
 ```
 
-`doctor --path DIR` is an alias of the global `--logbook DIR`. The plugin's
-banner states parse the doctor shape; it is not part of `schema/`.
+`doctor --path DIR` is an alias of the global `--logbook DIR`. The doctor
+shape is not part of `schema/`, and the plugin does not run `doctor`: its
+banners come from `index.json`, its `seldon --version --json` probe and the
+results of its engine calls.
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
@@ -565,9 +567,10 @@ git itself is killed, with the same bounded pipe wait. Rules:
   then succeeds and its `ALLOW_USERS` names the current user (`USER`, else
   `LOGNAME`; the old opt-in of ADR-0011), the row stays `ok`, its message
   says so, and its fix is the revert followed by the read grant:
-  `sudo snapper -c root set-config ALLOW_USERS="" && sudo setfacl -m
-  u:$USER:rx /.snapshots` (`SYNC_ACL=yes` drops the user's ACL with the
-  users list, so the grant comes second); `init` prints that fix as a
+  `sudo snapper -c root set-config ALLOW_USERS="" SYNC_ACL=no && sudo
+  setfacl -m u:$USER:rx /.snapshots` (`SYNC_ACL=no` so that a later
+  `set-config` does not sync the grant's ACL away; the revert may drop
+  the opt-in's ACL entry, so the grant comes second); `init` prints that fix as a
   recommended next step. snapper is run with `LC_ALL=C` (and without
   `LANGUAGE`), `list` and `get-config` alike; its messages are matched in
   English, whatever the user's locale (`doctor` and `init` use the same

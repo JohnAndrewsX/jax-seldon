@@ -42,12 +42,15 @@ This replaces ADR-0011 as a whole; the parts it keeps are restated here.
   followed by the read grant:
 
   ```
-  sudo snapper -c root set-config ALLOW_USERS="" && sudo setfacl -m u:$USER:rx /.snapshots
+  sudo snapper -c root set-config ALLOW_USERS="" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots
   ```
 
-  With `SYNC_ACL=yes` snapper removes the ACL it gave the user when the
-  users list changes, so the grant comes after the revert. `doctor` runs
-  `get-config` read-only, in the C locale like `snapper list`.
+  `SYNC_ACL=no` because with `SYNC_ACL=yes` snapper rewrites the user and
+  group entries of the snapshot directory's ACL from `ALLOW_USERS` and
+  `ALLOW_GROUPS` at a later `set-config`, which would remove the read
+  grant again. The revert may drop the ACL entry the old opt-in made, so
+  the grant comes after it. `doctor` runs `get-config` read-only, in the
+  C locale like `snapper list`.
 
 ## Consequences
 - No schema change; `contractVersion` stays 1. The degraded message

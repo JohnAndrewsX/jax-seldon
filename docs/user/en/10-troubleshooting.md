@@ -28,8 +28,9 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `snapper` | snapshots can be listed, or read from `/.snapshots` | `degraded`: your user may neither list snapshots nor read `/.snapshots`; see [Snapshots are not recorded](#snapshots-are-not-recorded). An `ok` row with a fix: your user is still in the old snapper opt-in; see [doctor suggests reverting the snapper opt-in](#doctor-suggests-reverting-the-snapper-opt-in) |
 | `git` | git is there; the logbook is a repository | git is missing, or the logbook is not a repository; autocommit is off then. `degraded`: something keeps every autocommit from committing (a stale `.git/index.lock`, a detached HEAD, …); the fix says what to do |
 
-`doctor --json` prints the same as JSON. The plugin reads it to choose
-its banner.
+`doctor --json` prints the same as JSON. The plugin does not run
+`doctor`: it chooses its banner from the index and from its own engine
+calls.
 
 ## Banners in the panel
 
@@ -100,13 +101,15 @@ delete root snapshots without a password. When your user is still listed
 there, `seldon doctor` says so in the `snapper` row and prints:
 
 ```sh
-sudo snapper -c root set-config ALLOW_USERS="" && sudo setfacl -m u:$USER:rx /.snapshots
+sudo snapper -c root set-config ALLOW_USERS="" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots
 ```
 
 The first command empties the list (add back any other user that should
-stay in it); snapper then also removes the read access it gave your user
-on `/.snapshots`. The second command grants that read access again.
-Seldon keeps recording snapshots either way.
+stay in it) and stops snapper from managing the access list of
+`/.snapshots`, so a later snapper change does not take your read access
+away again. It may remove the read access the old opt-in gave your user;
+the second command grants it. Seldon keeps recording snapshots either
+way.
 
 ### A change does not show up
 

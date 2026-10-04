@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Snapshots are read from the info files (`/.snapshots/<number>/info.xml`)
   when `snapper list` is not permitted; the events are the same, so
   switching between the two adds none. `doctor` and `init` say what the
-  snapper fix grants besides listing (WP-060).
+  snapper fix grants (WP-060).
 - Atomic writes follow symbolic links, keep the file's mode and create
   new logbook, config and state files 0600 in 0700 directories, whatever
   the umask; a failed write removes its temp file, and a new logbook's
@@ -275,8 +275,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files with it. `doctor`, `init` and the collector's message print the
   new line and say what it grants. When your user is still listed in
   `ALLOW_USERS`, `doctor` (and `init`) print the revert
-  `sudo snapper -c root set-config ALLOW_USERS=""` followed by the read
-  grant (WP-079, ADR-0026 supersedes ADR-0011).
+  `sudo snapper -c root set-config ALLOW_USERS="" SYNC_ACL=no` followed
+  by the read grant (WP-079, ADR-0026 supersedes ADR-0011).
 
 ### Plugin
 
@@ -286,8 +286,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automatic capture; after *Run in terminal* it says "When the command
   has finished, press Check again" (fixes #2).
 - The "Snapshots not readable" banner names what the snapper fix grants:
-  its `ALLOW_USERS` entry also lets your user create, change and delete
-  root snapshots without a password (WP-060).
+  read access to the snapshot directory listing and the snapshot info
+  files, no snapshot creation, change or deletion (WP-060, WP-079).
 - A tab change gives the keys back to the panel: a note or a new case
   typed on a tab you left is no longer sent by an Enter on another tab;
   the draft and an open sheet stay (WP-067).
@@ -328,9 +328,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `omarchy-shell jax.seldon.panel open` opens the panel under the pill;
   the target follows a bar reconfiguration (WP-078).
 - The "Snapshots not readable" banner offers the read grant
-  `sudo setfacl -m u:$USER:rx /.snapshots` and says what it grants: read
-  access to the snapshot directory listing and the snapshot info files,
-  no snapshot creation, change or deletion (WP-079, ADR-0026).
+  `sudo setfacl -m u:$USER:rx /.snapshots` instead of the `ALLOW_USERS`
+  opt-in (WP-079, ADR-0026).
 
 ### Packaging and docs
 
