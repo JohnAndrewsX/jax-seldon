@@ -1496,3 +1496,28 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `wait:` (the card), as `work-live` does since WP-076. A temporary
   `sleep 1` after `rewrite_index` in `plan_step` of `fake-seldon` (not
   committed) reproduces the race every time.
+
+## 2026-10-04 · WP-078 (Plugin Dev)
+
+- **One service, one panel per monitor.** Every BarWidget loads its own
+  Panel.qml, and all share Service.qml: a sheet's "result pending" can be
+  another panel's call. Guard a sheet on its *own* pending call
+  (`sentTitle !== ""`) and let the service's busy guard answer the rest
+  (NewDecisionSheet `ownPending`).
+- **The bar widget's `visible` is the effective one.** A widget in the
+  shell's hidden placeholder ModuleList reads `visible: false` and fires
+  `visibleChanged` when an ancestor changes, so `Model.isDrawnWidget(root)`
+  in a binding follows a bar reconfiguration without the slot.
+- **Handing an IPC target over needs the owner to let go first.** When
+  ownership is recomputed on all instances, run the current owner's
+  `claimIpc` before the others (BarWidget `reclaimIpc`); the other order
+  logs "another handler is registered" for a moment (bar-view
+  `ipc-placeholder one handler` catches it).
+- **A bar-harness slot that is `visible: false` and 0×0 is a faithful
+  placeholder;** reveal it by giving it a size and `visible: true`, and
+  hide the drawn slot, to drive a live reconfiguration (bar.qml
+  `HARNESS_IPC_PLACEHOLDER`).
+- **`console.warn` with a newline writes two log lines;** only the first
+  carries the `WARN qml:` prefix. A check that "nothing of line two is in
+  the log" must skip the HARNESS report lines, which carry the same text
+  JSON-escaped (service-states 31b).
