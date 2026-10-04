@@ -14,7 +14,8 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| — | no active work package | | | | |
+| WP-077 | engine: prepared case saves, escaped validation errors, plan list, reference derive() clip | Engine | `engine-077` (opus) | `wt/WP-077` · `wp/077-review` | 2026-10-04 |
+| WP-078 | plugin: follow-ups from the WP-067/068 reviews | Plugin | `plugin-078` (opus) | `wt/WP-078` · `wp/078-review` | 2026-10-04 |
 
 ## Queued (next up)
 
