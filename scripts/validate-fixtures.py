@@ -14,7 +14,8 @@ Schema backends, picked in this order unless --validator / SELDON_SCHEMA_VALIDAT
 The derivation check implements the index rules of ADR-0012 and the drift
 grouping of ADR-0013 for the parts that come from the logbook. It is a fixture
 consistency check, not the engine; the engine's golden test (WP-007) compares
-real `seldon index` output with the same fixture. `--write-index` rewrites those
+real `seldon index` output with the same fixture, and runs `--derive` on scratch logbooks
+(the text clip of ADR-0025, WP-077). `--write-index` rewrites those
 parts of fixtures/index.sample.json and regenerates fixtures/index-variants/ from
 the sample (VARIANTS). Every case's Log is walked through the SPEC-LOGBOOK §3
 state machine, and index times must not precede the events they list. Every run
@@ -62,6 +63,15 @@ ALWAYS_RED = ["linux", "linux-lts", "linux-zen", "linux-hardened", "linux-rt",
               "linux-rt-lts", "linux-omarchy", "systemd", "glibc", "hyprland", "omarchy",
               "omarchy-settings", "quickshell", "limine*", "grub", "mkinitcpio*", "filesystem",
               "pam", "sddm", "uwsm"]
+
+# ADR-0025 (WP-077): the index clips `detail`, `resolutionDetail` and every string of `meta` of
+# its events and drift items to TEXT_MAX bytes of JSON (escapes counted, marker included); keep
+# in step with engine/src/index/build.rs TEXT_MAX and clip().
+TEXT_MAX = 256
+# Rust's char::is_whitespace (Unicode White_Space), which `trim_end` strips; Python's str.rstrip()
+# would strip U+001C..U+001F too.
+WHITE_SPACE = ("\t\n\x0b\x0c\r \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006"
+               "\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000")
 
 # ADR-0015 §4 (supersedes ADR-0012 §13): whole-word, case-sensitive; word characters are
 # [A-Za-z0-9._+-], except that a final `.` not followed by a word character is punctuation.
@@ -494,6 +504,49 @@ def order_event(e):
 
 # --------------------------------------------------------------------------- derivation (ADR-0012)
 
+def json_len(c):
+    """Bytes of one character in a JSON string as serde_json writes it (UTF-8; it escapes only
+    these)."""
+    if c in '"\\\n\r\t\b\f':
+        return 2
+    if ord(c) < 0x20:
+        return 6
+    return len(c.encode("utf-8"))
+
+
+def clip(text):
+    """`text` as the index carries it (ADR-0025): unchanged when it takes at most TEXT_MAX bytes
+    in JSON, else its start, cut on a character boundary and stripped of trailing white space,
+    followed by `… (N more characters in the ledger)`, N the characters left out."""
+    if sum(json_len(c) for c in text) <= TEXT_MAX:
+        return text
+
+    def marker(left):
+        return f"… ({left} more {'character' if left == 1 else 'characters'} in the ledger)"
+    # the marker for every character is at least as long as the real one
+    room = TEXT_MAX - len(marker(len(text)).encode("utf-8"))
+    used, end = 0, 0
+    for i, c in enumerate(text):
+        used += json_len(c)
+        if used > room:
+            break
+        end = i + 1
+    head = text[:end].rstrip(WHITE_SPACE)
+    return head + marker(len(text) - len(head))
+
+
+def clipped(e):
+    """An event as `index.events` lists it: every free text clipped (ADR-0025)."""
+    e = copy.deepcopy(e)
+    for k in ("detail", "resolutionDetail"):
+        if isinstance(e.get(k), str):
+            e[k] = clip(e[k])
+    for k, v in e.get("meta", {}).items():
+        if isinstance(v, str):
+            e["meta"][k] = clip(v)
+    return e
+
+
 def load_logbook(lb, problems, mutate=None, mutate_cases=None):
     """Self-checks only: mutate(ledger) may edit or append (where, event) pairs, and
     mutate_cases(cases) may return changed (path, frontmatter, body) triples, before derivation."""
@@ -610,6 +663,8 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None):
         lead = min(explicit or members, key=lambda m: m["id"])
         d = {"eventId": lead["id"], "ts": lead["ts"], "source": lead["source"], "kind": lead["kind"],
              "subject": lead["subject"], "detail": lead.get("detail"), "actor": lead["actor"]}
+        if d["detail"] is not None:
+            d["detail"] = clip(d["detail"])
         if lead["source"] == "pacman":
             d["zone"] = "yellow" if all(routine(m) for m in members) else "red"
         elif "zone" in lead:
@@ -786,7 +841,7 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None):
         "logbook": {"language": pfm["language"], "machine": pfm["machineId"]},
         "summary": summary,
         "today": today_obj,
-        "events": folded[:500],
+        "events": [clipped(e) for e in folded[:500]],
         "drift": drift,
         "cases": groups,
         "decisions": decisions,
@@ -1252,8 +1307,20 @@ def main():
     ap.add_argument("--write-index", action="store_true",
                     help="rewrite the logbook-derived parts of fixtures/index.sample.json, then validate")
     ap.add_argument("-q", "--quiet", action="store_true")
+    ap.add_argument("--derive", metavar="LOGBOOK",
+                    help="only print the index parts derived from LOGBOOK as JSON, problems on stderr "
+                         "(the engine's parity tests, WP-077)")
+    ap.add_argument("--today", metavar="DATE", help="with --derive: the index's date, YYYY-MM-DD")
     a = ap.parse_args()
     problems = []
+
+    if a.derive:
+        today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
+        derived, _, _ = derive(a.derive, today, problems)
+        json.dump(derived, sys.stdout, ensure_ascii=False)
+        for p in problems:
+            print(f"FAIL {p}", file=sys.stderr)
+        return 1 if problems else 0
 
     schemas = load_schemas()
     backend = pick_backend(schemas, a.validator)
