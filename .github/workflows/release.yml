@@ -6,7 +6,9 @@
 #            source tarball, binary tarball, SHA256SUMS;
 #            PKGBUILD/.SRCINFO for the version; a real makepkg build of
 #            the PKGBUILD from the source tarball, its file list and the
-#            packaged binary checked; `git subtree split --prefix=plugin`.
+#            packaged binary checked; `git subtree split --prefix=plugin`;
+#            a build-provenance attestation for every release asset
+#            (WP-080; install.sh verifies it with `gh attestation verify`).
 #   release  (tag only)  GitHub release with the assets; its notes are the
 #            version's CHANGELOG.md section (packaging/release-notes.sh).
 #   bump     (tag only)  the updated PKGBUILD/.SRCINFO committed to main;
@@ -21,6 +23,9 @@
 # or `gh workflow run release.yml --ref <branch>`). Only `build` runs;
 # nothing is pushed or published. Its summary and the `dist` and
 # `package` artifacts show what a tag would publish. packaging/README.md.
+# The attestation step runs in a dry run too, so it is exercised before a
+# tag needs it; its attestations name the branch as their source ref, and
+# install.sh accepts only those of the release's tag (refs/tags/vX.Y.Z).
 name: release
 
 on:
@@ -49,6 +54,13 @@ jobs:
     runs-on: ubuntu-latest
     # pinned like ci.yml (packaging/README.md, "Pinned actions and image")
     container: archlinux:base-devel@sha256:51dd3d24f7fba779e7c471caeee7804c50e8c134ad948e19685a1c83a42facc3 # base-devel-20260927.0.600689
+    # contents as for the whole workflow; id-token and attestations only
+    # for the attestation step (a Sigstore certificate from the job's OIDC
+    # token, stored in the repository's attestations)
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       SELDON_SKIP_HOST_CHECKS: "1"
     outputs:
@@ -185,11 +197,26 @@ jobs:
           git show "$split:manifest.json" | jq -e '.id == "jax.seldon"'
           echo "plugin split: $split"
 
+      # Build provenance (SLSA v1, signed with the job's identity) for each
+      # asset the release publishes; `gh attestation verify <file> --repo
+      # JohnAndrewsX/jax-seldon` checks one (SECURITY.md). Last before the
+      # summary, so a build that fails a check attests nothing.
+      - name: Attest the release assets
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/seldon-${{ steps.version.outputs.version }}-${{ env.MUSL_TARGET }}.tar.gz
+            dist/jax-seldon-${{ steps.version.outputs.version }}.tar.gz
+            dist/SHA256SUMS
+            dist/install.sh
+
       - name: Summary
         env:
           VERSION: ${{ steps.version.outputs.version }}
           HAS_AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
           HAS_PLUGIN_TOKEN: ${{ secrets.PLUGIN_REPO_TOKEN != '' }}
+          ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
         run: |
           {
             echo "## Seldon $VERSION ($GITHUB_EVENT_NAME)"
@@ -201,6 +228,7 @@ jobs:
             echo
             echo "- AUR_SSH_PRIVATE_KEY set: $HAS_AUR_KEY"
             echo "- PLUGIN_REPO_TOKEN set: $HAS_PLUGIN_TOKEN"
+            echo "- build provenance: $ATTESTATION_URL ($GITHUB_REF)"
             echo
             echo '### SHA256SUMS'
             echo '```'
