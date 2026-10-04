@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ e123118 -->
+<!-- source: en/01-getting-started.md @ 85890fd -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
@@ -53,7 +53,7 @@ seldon --version
 ```
 
 ```text
-seldon 0.1.1
+seldon 0.1.2
 ```
 
 Meldet deine Shell `command not found`, liegt `~/.local/bin` noch nicht
@@ -125,7 +125,7 @@ seldon doctor
 
 ```text
 seldon doctor · ~/Seldon
-  ok        engine   seldon 0.1.1, contract 1
+  ok        engine   seldon 0.1.2, contract 1
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  /home/you/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
   ok        omarchy  Omarchy 4.0.4-1
