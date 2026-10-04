@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ eaea010 -->
+<!-- source: en/11-update-and-uninstall.md @ d21d88e -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -19,7 +19,11 @@ curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/i
 Er ersetzt `seldon`, wenn die Version des Release von der installierten
 abweicht; mit `--version` kann das auch ein älteres Release sein. Bei
 derselben Version ändert er nichts. Er prüft die Engine gegen die `SHA256SUMS` des Release
-und bricht bei einer Abweichung ab.
+und bricht bei einer Abweichung ab. Ist die GitHub-CLI (`gh`) installiert
+und angemeldet, prüft er außerdem die Build-Herkunft (`gh attestation
+verify`): Der Download muss vom Release-Workflow des Projekts für das Tag
+dieses Release stammen, sonst wird nichts installiert. Ohne `gh` meldet
+eine Zeile, dass nur die Prüfsumme geprüft wurde.
 
 Er installiert auch die Manpage (`man seldon`) und die Tab-Vervollständigung
 für bash, zsh und fish, jeweils für eine Shell, die auf deinem Rechner
@@ -32,6 +36,8 @@ installiert ist. Für zsh gibt er eine `fpath=(…)`-Zeile aus, die du in
 | `--prefix DIR` | nach `DIR/bin` installieren, Manpage und Vervollständigung nach `DIR/share`, statt nach `~/.local` |
 | `--unit` | auch die Benutzer-Unit des Watchers installieren, siehe [Der optionale Watcher](#der-optionale-watcher) |
 | `--force` | ein `seldon`, eine Vervollständigung oder eine Manpage ersetzen, die das Skript nicht installiert hat, etwa ein selbst gebautes `seldon` |
+| `--require-verified` | nur installieren, wenn `gh` die Build-Herkunft bestätigt hat; abbrechen, wenn `gh` fehlt oder nicht angemeldet ist, und bei Releases bis v0.1.1, die vor den Attestierungen erschienen sind |
+| `--skip-provenance` | `gh` nicht fragen, nur die Prüfsumme prüfen (eine Zeile sagt das); für ein `gh`, das von sich aus scheitert, etwa hinter einem Proxy. Nicht zusammen mit `--require-verified` |
 | `--uninstall` | entfernen, was das Skript installiert hat |
 
 Beim Einzeiler gibst du Optionen nach `bash -s --` an, zum Beispiel

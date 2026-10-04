@@ -17,7 +17,11 @@ curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/i
 It replaces `seldon` when the release's version differs from the
 installed one; with `--version` that can also be an older release. With
 the same version it changes nothing. It checks the engine against the release's `SHA256SUMS`
-and refuses on a mismatch.
+and refuses on a mismatch. With the GitHub CLI (`gh`) installed and
+logged in it also verifies the build provenance (`gh attestation
+verify`): the download must come from the project's release workflow for
+that release's tag, or nothing is installed. Without `gh` one note says
+that only the checksum was checked.
 
 It also installs the man page (`man seldon`) and the Tab completions for
 bash, zsh and fish, each for a shell that is installed on your machine.
@@ -30,6 +34,8 @@ For zsh it prints one `fpath=(…)` line to add to `~/.zshrc` before
 | `--prefix DIR` | install into `DIR/bin`, the man page and completions into `DIR/share`, instead of `~/.local` |
 | `--unit` | also install the watcher's user unit, see [The optional watcher](#the-optional-watcher) |
 | `--force` | replace a `seldon`, a completion or a man page the script did not install, such as one you built yourself |
+| `--require-verified` | install only when `gh` verified the build provenance; refuse when `gh` is missing or not logged in, and for releases up to v0.1.1, which were made before attestations |
+| `--skip-provenance` | do not ask `gh`, check only the checksum (a note says so); for a `gh` that fails on its own, for example behind a proxy. Not together with `--require-verified` |
 | `--uninstall` | remove what the script installed |
 
 With the one-liner, pass options after `bash -s --`, for example

@@ -359,6 +359,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read grant as the snapper fix; troubleshooting explains the revert of
   the old `ALLOW_USERS` opt-in. The AUR package's snapper optdepend says
   it needs read access to `/.snapshots` (WP-079).
+- Release provenance: the release workflow attests the engine tarball,
+  the source tarball, `SHA256SUMS` and `install.sh` with GitHub artifact
+  attestations (`actions/attest-build-provenance`, also in a dry run).
+  `install.sh` verifies the engine tarball with `gh attestation verify`
+  when the GitHub CLI is installed and logged in, accepting only the
+  release workflow's attestation for the release's tag; a failed check
+  installs nothing. Without `gh`, or for a release up to v0.1.1, one note
+  says only the checksum was checked; the new `--require-verified`
+  refuses instead, and `--skip-provenance` leaves a failing `gh` out on
+  request. SECURITY.md gains "Verifying a release"; the READMEs,
+  the install and update guides (en, de), packaging/README.md and the
+  tag flow in docs/VERSIONING.md describe it (WP-080).
 
 ## [0.1.1] - 2026-10-02
 

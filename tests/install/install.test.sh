@@ -9,6 +9,8 @@
 # ~/.config/systemd/user, the completions and the man page under
 # ~/.local/share are fingerprinted before and compared after. The shells
 # install.sh looks for live in a scratch /usr/share (SELDON_INSTALL_SHARE).
+# The host's gh is never on PATH: a stub stands in for it (WP-080) and
+# checks a download against the attestations the mock releases carry.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -55,7 +57,9 @@ real_before=$(real_fingerprint)
 # $work/releases/download/vX.Y.Z/{seldon-X.Y.Z-<target>.tar.gz,SHA256SUMS,install.sh}
 # and $work/releases/latest.json, as the GitHub API answers.
 # The fake binary answers --version, and `completions <shell>` and
-# `mangen` unless the release is "old" (before WP-049).
+# `mangen` unless the release is "old" (before WP-049). Each tarball is
+# attested for its tag: "<sha256> refs/tags/vX.Y.Z" in $work/attested, what
+# the gh stub below looks up.
 make_release() { # version [old]
   local v=$1 stage="seldon-$1-$target" dir="$work/releases/download/v$1"
   mkdir -p "$dir" "$work/build/$stage"
@@ -78,6 +82,10 @@ make_release() { # version [old]
   printf 'source\n' | gzip >"$dir/jax-seldon-$v.tar.gz"
   cp "$script" "$dir/install.sh"
   (cd "$dir" && sha256sum -- * >SHA256SUMS)
+  attest "$dir/$stage.tar.gz" "refs/tags/v$1"
+}
+attest() { # file ref
+  printf '%s %s\n' "$(sha256sum <"$1" | cut -d' ' -f1)" "$2" >>"$work/attested"
 }
 make_release 9.9.8
 make_release 9.9.9
@@ -100,6 +108,108 @@ stage="seldon-9.9.5-$target"
 sed -i 's/seldon 9\.9\.5/seldon 1.0.0/' "$work/build/$stage/seldon"
 tar czf "$work/releases/download/v9.9.5/$stage.tar.gz" -C "$work/build" "$stage"
 (cd "$work/releases/download/v9.9.5" && rm SHA256SUMS && sha256sum -- * >SHA256SUMS)
+attest "$work/releases/download/v9.9.5/$stage.tar.gz" refs/tags/v9.9.5
+# v9.9.3: tarball and SHA256SUMS both replaced after the release (a binary
+# that still says 9.9.3); its attestation is the original tarball's.
+make_release 9.9.3
+stage="seldon-9.9.3-$target"
+echo "# tampered" >>"$work/build/$stage/seldon"
+tar czf "$work/releases/download/v9.9.3/$stage.tar.gz" -C "$work/build" "$stage"
+(cd "$work/releases/download/v9.9.3" && rm SHA256SUMS && sha256sum -- * >SHA256SUMS)
+# v9.9.2: attested by a dry run of a branch, not for its tag.
+make_release 9.9.2
+sed -i 's| refs/tags/v9\.9\.2$| refs/heads/wp/080-review|' "$work/attested"
+# v0.1.1: released before attestations; none exists for it.
+make_release 0.1.1
+sed -i '/ refs\/tags\/v0\.1\.1$/d' "$work/attested"
+# v9.9.1: attested for its tag, but built on a self-hosted runner.
+make_release 9.9.1
+sed -i 's| refs/tags/v9\.9\.1$| refs/tags/v9.9.1 self-hosted|' "$work/attested"
+
+# ---- gh stubs (WP-080) -------------------------------------------------------
+# gh-ok verifies like `gh attestation verify FILE [--hostname H] --repo R
+# [--signer-workflow W] [--source-ref REF] [--deny-self-hosted-runners]`:
+# the file's sha256 must be in $work/attested (with REF, when given; not
+# self-hosted, when denied); the host is --hostname, else $GH_HOST, else
+# github.com, and only github.com has the attestations. gh-noauth is a gh
+# that is not logged in (exit 4, as gh does); gh-fail exits 1 for a reason
+# of its own (no Sigstore verifier behind a dead proxy); gh-partial lacks
+# --deny-self-hosted-runners; gh-old has no `attestation` command; gh-none
+# is no gh at all. Every call is logged to $work/gh.log.
+mkdir -p "$work/gh-ok" "$work/gh-noauth" "$work/gh-fail" "$work/gh-partial" "$work/gh-old" "$work/gh-none"
+cat >"$work/gh-ok/gh" <<'STUB'
+#!/bin/sh
+echo "gh $*" >>@WORK@/gh.log
+[ "$1 $2" = "attestation verify" ] || { echo "unknown command \"$1\" for \"gh\"" >&2; exit 1; }
+if [ "$3" = --help ]; then
+  printf '      --deny-self-hosted-runners\n      --hostname string\n  -R, --repo string\n      --signer-workflow string\n      --source-ref string\n'
+  exit 0
+fi
+file=$3 host=${GH_HOST:-github.com} repo="" workflow="" ref="" deny=""
+shift 3
+while [ $# -gt 0 ]; do
+  case $1 in
+    --deny-self-hosted-runners) deny=1; shift; continue ;;
+    --hostname) host=$2 ;;
+    --repo) repo=$2 ;;
+    --signer-workflow) workflow=$2 ;;
+    --source-ref) ref=$2 ;;
+    *) echo "unknown flag: $1" >&2; exit 1 ;;
+  esac
+  shift 2
+done
+[ "$host" = github.com ] || { echo "Error: HTTP 404: Not Found (https://$host/api/v3/...)" >&2; exit 1; }
+[ "$repo" = JohnAndrewsX/jax-seldon ] || { echo "Error: no attestations in $repo" >&2; exit 1; }
+[ -z "$workflow" ] || [ "$workflow" = JohnAndrewsX/jax-seldon/.github/workflows/release.yml ] \
+  || { echo "Error: signer workflow $workflow does not match" >&2; exit 1; }
+sum=$(sha256sum <"$file" | cut -d' ' -f1)
+while read -r s r h; do
+  if [ "$s" = "$sum" ] && { [ -z "$ref" ] || [ "$r" = "$ref" ]; } && { [ -z "$deny" ] || [ "$h" != self-hosted ]; }; then
+    echo "Verification succeeded!"
+    exit 0
+  fi
+done <@WORK@/attested
+echo "Error: no attestation for sha256:$sum matches" >&2
+exit 1
+STUB
+cat >"$work/gh-noauth/gh" <<'STUB'
+#!/bin/sh
+echo "gh $*" >>@WORK@/gh.log
+if [ "$3" = --help ]; then
+  printf '      --deny-self-hosted-runners\n      --hostname string\n      --signer-workflow string\n      --source-ref string\n'
+  exit 0
+fi
+echo "To get started with GitHub CLI, please run:  gh auth login" >&2
+exit 4
+STUB
+cat >"$work/gh-fail/gh" <<'STUB'
+#!/bin/sh
+echo "gh $*" >>@WORK@/gh.log
+if [ "$3" = --help ]; then
+  printf '      --deny-self-hosted-runners\n      --hostname string\n      --signer-workflow string\n      --source-ref string\n'
+  exit 0
+fi
+echo "Error: failed to create verifier: no valid Sigstore verifiers could be initialized" >&2
+exit 1
+STUB
+cat >"$work/gh-partial/gh" <<'STUB'
+#!/bin/sh
+echo "gh $*" >>@WORK@/gh.log
+if [ "$3" = --help ]; then
+  printf '      --hostname string\n      --signer-workflow string\n      --source-ref string\n'
+  exit 0
+fi
+echo "unknown flag: --deny-self-hosted-runners" >&2
+exit 1
+STUB
+cat >"$work/gh-old/gh" <<'STUB'
+#!/bin/sh
+echo "gh $*" >>@WORK@/gh.log
+echo "unknown command \"$1\" for \"gh\"" >&2
+exit 1
+STUB
+sed -i "s|@WORK@|$work|g" "$work"/gh-*/gh
+chmod 755 "$work"/gh-*/gh
 
 # ---- recording sudo / systemctl, and a PATH without jq -----------------------
 mkdir -p "$work/trap"
@@ -116,7 +226,7 @@ for dir in "${path_dirs[@]}"; do
   [[ -d $dir ]] || continue
   for f in "$dir"/*; do
     name=${f##*/}
-    [[ $name == zsh || $name == fish || -e $work/host/$name ]] && continue
+    [[ $name == zsh || $name == fish || $name == gh || -e $work/host/$name ]] && continue
     [[ -x $f ]] || continue
     ln -s "$f" "$work/host/$name"
     [[ $name == jq ]] || ln -s "$f" "$work/nojq/$name"
@@ -139,16 +249,21 @@ fake_shell fish
 # ---- runner ------------------------------------------------------------------
 home="$work/home"
 mkdir -p "$home"
-# run <path-mode: jq|nojq> <api json> args... → $out, $rc
+# run <path-mode: jq|nojq> <api json> args... → $out, $rc; $GH picks the
+# gh stub (ok, noauth, fail, partial, old, none); a non-empty $GH_HOST_ENV
+# is passed on as GH_HOST
+GH=ok
+GH_HOST_ENV=""
 run_with() {
   local mode=$1 api=$2 path
   shift 2
-  if [[ $mode == nojq ]]; then path="$work/trap:$work/shells:$work/nojq"; else path="$work/trap:$work/shells:$work/host"; fi
+  if [[ $mode == nojq ]]; then path="$work/nojq"; else path="$work/host"; fi
+  path="$work/trap:$work/gh-$GH:$work/shells:$path"
   rc=0
   out=$(env -i HOME="$home" PATH="$path" LANG=C.UTF-8 \
     SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
     SELDON_INSTALL_API_URL="file://$work/releases/$api" \
-    SELDON_INSTALL_SHARE="$share" \
+    SELDON_INSTALL_SHARE="$share" ${GH_HOST_ENV:+"GH_HOST=$GH_HOST_ENV"} \
     bash "$script" "$@" 2>&1) || rc=$?
 }
 run() { run_with jq latest.json "$@"; }
@@ -169,6 +284,11 @@ check "latest: the 9.9.9 binary" cmp -s "$p/bin/seldon" "$work/build/seldon-9.9.
 check "latest: jax-seldon -> seldon" test "$(readlink "$p/bin/jax-seldon")" = seldon
 check "latest: prints seldon --version" has "seldon 9.9.9 is installed in $p/bin."
 check "latest: says it verified" has "verified   seldon-9.9.9-$target.tar.gz"
+check "latest: says it checked the attestation" \
+  has "attested   seldon-9.9.9-$target.tar.gz (built by release.yml for v9.9.9"
+check "latest: gh got the repo, the release workflow and the tag's ref" grep -qE \
+  "^gh attestation verify /.*/seldon-9\.9\.9-$target\.tar\.gz --hostname github\.com --repo JohnAndrewsX/jax-seldon --signer-workflow JohnAndrewsX/jax-seldon/\.github/workflows/release\.yml --source-ref refs/tags/v9\.9\.9 --deny-self-hosted-runners$" \
+  "$work/gh.log"
 check "latest: next step seldon init" has "seldon init"
 check "latest: PATH note" has "is not on your PATH"
 check "latest: no unit without --unit" test ! -e "$home/.config/systemd/user/seldon-watch.service"
@@ -289,7 +409,7 @@ run --unit --prefix "$work/with space"
 check "unit, prefix with a space: refused, exit 1" test "$rc" -eq 1
 check "unit, prefix with a space: nothing installed" test ! -e "$work/with space"
 rc=0
-out=$(env -i HOME="$home" PATH="$work/trap:$PATH" XDG_CONFIG_HOME="$work/xdg" \
+out=$(env -i HOME="$home" PATH="$work/trap:$work/gh-ok:$PATH" XDG_CONFIG_HOME="$work/xdg" \
   SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
   SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
   bash "$script" --unit --prefix "$work/p5x" 2>&1) || rc=$?
@@ -363,9 +483,118 @@ check "seldon as a symlink: kept" test -L "$work/p12/bin/seldon"
 run --uninstall --force
 check "--uninstall with --force: exit 1" test "$rc" -eq 1
 
+# ---- 6b. build provenance (WP-080): gh ok, failing, absent, not logged in,
+# too old; with and without --require-verified, --skip-provenance -----------
+provenance() { # name gh-mode args... → runs into a fresh prefix $pp
+  local name=$1
+  GH=$2
+  shift 2
+  pp="$work/pv-$name"
+  run --prefix "$pp" "$@"
+  GH=ok
+}
+installed() { cmp -s "$pp/bin/seldon" "$work/build/seldon-$1-$target/seldon"; }
+count() { grep -cF -- "$1" <<<"$out" || true; }
+
+provenance ok-req ok --require-verified
+check "gh ok, --require-verified: exit 0" test "$rc" -eq 0
+check "gh ok, --require-verified: installed" installed 9.9.9
+check "gh ok, --require-verified: attested" has "attested   seldon-9.9.9-$target.tar.gz"
+
+provenance tampered ok --version v9.9.3
+refused "tampered tarball, gh ok" "$pp" "gh attestation verify did not confirm seldon-9.9.3-$target.tar.gz as built by JohnAndrewsX/jax-seldon's release workflow for v9.9.3 (gh's reason above); nothing installed"
+check "tampered tarball, gh ok: names --skip-provenance" has "--skip-provenance installs on the checksum alone"
+check "tampered tarball, gh ok: exit 2" test "$rc" -eq 2
+check "tampered tarball, gh ok: checksum passed first" has "verified   seldon-9.9.3-$target.tar.gz"
+check "tampered tarball, gh ok: gh's own words shown" has "gh: Error: no attestation for sha256:"
+provenance tampered-req ok --version v9.9.3 --require-verified
+refused "tampered tarball, gh ok, --require-verified" "$pp" "gh attestation verify did not confirm"
+check "tampered tarball, gh ok, --require-verified: exit 2" test "$rc" -eq 2
+
+provenance branch ok --version v9.9.2
+refused "attested by a branch dry run, not the tag" "$pp" "gh attestation verify did not confirm"
+provenance selfhosted ok --version v9.9.1
+refused "attested from a self-hosted runner" "$pp" "gh attestation verify did not confirm"
+GH_HOST_ENV=ghe.example.invalid
+provenance ghhost ok
+GH_HOST_ENV=""
+check "GH_HOST of another server: still checked on github.com, exit 0" test "$rc" -eq 0
+check "GH_HOST of another server: attested" has "attested   seldon-9.9.9-$target.tar.gz"
+
+provenance fail fail
+refused "gh failing on its own (no Sigstore verifier)" "$pp" "gh attestation verify did not confirm seldon-9.9.9-$target.tar.gz"
+check "gh failing on its own: exit 2" test "$rc" -eq 2
+check "gh failing on its own: gh's reason shown" has "gh: Error: failed to create verifier"
+: >"$work/gh.log"
+provenance fail-skip fail --skip-provenance
+check "gh failing, --skip-provenance: exit 0" test "$rc" -eq 0
+check "gh failing, --skip-provenance: installed" installed 9.9.9
+check "gh failing, --skip-provenance: the note" \
+  has "note       build provenance not checked at your request; only the SHA256SUMS checksum was checked"
+check "gh failing, --skip-provenance: gh not asked" test ! -s "$work/gh.log"
+provenance tampered-skip ok --version v9.9.3 --skip-provenance
+check "tampered tarball, --skip-provenance: the checksum alone decides (installed)" test "$rc" -eq 0
+provenance both ok --require-verified --skip-provenance
+check "--require-verified with --skip-provenance: exit 1" test "$rc" -eq 1
+check "--require-verified with --skip-provenance: says why" has "exclude each other"
+check "--require-verified with --skip-provenance: nothing installed" test ! -e "$pp"
+
+provenance none none
+check "no gh: exit 0" test "$rc" -eq 0
+check "no gh: installed" installed 9.9.9
+check "no gh: one note line, checksum only" test "$(count "only the SHA256SUMS checksum was checked")" -eq 1
+check "no gh: the note names gh" has "note       the GitHub CLI (gh) is not installed: only the SHA256SUMS checksum was checked"
+# shellcheck disable=SC2016 # $1 is bash -c's argument
+check "no gh: not attested" bash -c '[[ $1 != *"attested   "* ]]' _ "$out"
+provenance none-tampered none --version v9.9.3
+check "no gh, tampered tarball: the checksum alone decides (installed)" test "$rc" -eq 0
+provenance none-req none --require-verified
+refused "no gh, --require-verified" "$pp" "--require-verified: the GitHub CLI (gh) is not installed"
+check "no gh, --require-verified: exit 1" test "$rc" -eq 1
+
+provenance noauth noauth
+check "gh not logged in: exit 0" test "$rc" -eq 0
+check "gh not logged in: installed" installed 9.9.9
+check "gh not logged in: says so once" test "$(count "gh is not logged in (gh auth login): only the SHA256SUMS checksum")" -eq 1
+provenance noauth-req noauth --require-verified
+refused "gh not logged in, --require-verified" "$pp" "--require-verified: gh is not logged in"
+check "gh not logged in, --require-verified: exit 1" test "$rc" -eq 1
+
+provenance old old
+check "gh without attestation: exit 0" test "$rc" -eq 0
+check "gh without attestation: installed" installed 9.9.9
+check "gh without attestation: says update gh" has "this gh's 'gh attestation verify' has no --hostname (update gh): only the SHA256SUMS"
+provenance old-req old --require-verified
+refused "gh without attestation, --require-verified" "$pp" "--require-verified: this gh's 'gh attestation verify' has no"
+check "gh without attestation, --require-verified: exit 1" test "$rc" -eq 1
+provenance partial partial
+check "gh without --deny-self-hosted-runners: exit 0" test "$rc" -eq 0
+check "gh without --deny-self-hosted-runners: says update gh" \
+  has "has no --deny-self-hosted-runners (update gh): only the SHA256SUMS"
+
+: >"$work/gh.log"
+provenance pre ok --version v0.1.1
+check "release before attestations: exit 0" test "$rc" -eq 0
+check "release before attestations: installed" installed 0.1.1
+check "release before attestations: says so" has "v0.1.1 was released before attestations (they start after v0.1.1): only the SHA256SUMS"
+check "release before attestations: gh not asked" test ! -s "$work/gh.log"
+provenance pre-req ok --version v0.1.1 --require-verified
+refused "release before attestations, --require-verified" "$pp" "--require-verified: v0.1.1 was released before attestations"
+check "release before attestations, --require-verified: exit 1" test "$rc" -eq 1
+
+run --uninstall --require-verified
+check "--uninstall with --require-verified: exit 1" test "$rc" -eq 1
+run --uninstall --skip-provenance
+check "--uninstall with --skip-provenance: exit 1" test "$rc" -eq 1
+check "--uninstall with --skip-provenance: usage error" has "--uninstall takes only --prefix"
+run --help
+check "--help: describes --require-verified" has "--require-verified"
+check "--help: describes --skip-provenance" has "--skip-provenance do not ask gh"
+check "--help: names gh attestation verify" has "gh attestation verify"
+
 # ---- 7. the one-liner form: script on stdin ----------------------------------
 rc=0
-out=$(env -i HOME="$home" PATH="$work/trap:$PATH" \
+out=$(env -i HOME="$home" PATH="$work/trap:$work/gh-ok:$PATH" \
   SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
   SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
   bash -s -- --prefix "$work/p8" <"$script" 2>&1) || rc=$?
@@ -374,7 +603,7 @@ check "piped to bash: installed" cmp -s "$work/p8/bin/seldon" "$work/build/seldo
 # a truncated download defines main but never calls it
 head -n -3 "$script" >"$work/truncated.sh"
 rc=0
-out=$(env -i HOME="$home" PATH="$work/trap:$PATH" \
+out=$(env -i HOME="$home" PATH="$work/trap:$work/gh-ok:$PATH" \
   SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
   SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
   bash -s -- --prefix "$work/p9" <"$work/truncated.sh" 2>&1) || rc=$?

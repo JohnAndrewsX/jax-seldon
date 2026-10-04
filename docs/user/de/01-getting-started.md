@@ -27,7 +27,13 @@ Theme-Hook und die Hook-Einstellungen von Claude Code.
 Die Engine ist ein einziges Programm, `seldon`. Das AUR-Paket kommt bald.
 Bis dahin installierst du sie aus dem GitHub-Release des Projekts. Das
 Installationsskript prüft die Engine gegen die Prüfsummen des Release
-und installiert `~/.local/bin/seldon`.
+und installiert `~/.local/bin/seldon`. Ist die GitHub-CLI (`gh`)
+installiert und angemeldet, prüft das Skript außerdem, dass der
+Release-Workflow des Projekts den Download gebaut hat; sonst meldet es in
+einer Zeile, dass nur die Prüfsumme geprüft wurde. Mit
+`--require-verified` bricht es ab, statt ohne diese Prüfung zu
+installieren; `--skip-provenance` lässt `gh` aus, wenn `gh` selbst
+scheitert, etwa hinter einem Proxy.
 
 Lade das Skript und die Prüfsummendatei aus dem neuesten Release
 herunter, lies das Skript, prüfe es und führe es aus:

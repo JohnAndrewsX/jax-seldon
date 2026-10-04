@@ -11,7 +11,14 @@
 #     the step has no `if:` or `shell:` of its own, nothing in its run
 #     block ignores a failure, and `cargo audit` is its last line;
 #     release.yml has no `continue-on-error`; release needs build, and
-#     bump, aur and plugin need [build, release].
+#     bump, aur and plugin need [build, release];
+#   - release.yml's workflow permissions are `contents: read` alone; its
+#     build job has exactly contents: read, id-token: write and
+#     attestations: write, and an unconditional `Attest the release
+#     assets` step (actions/attest-build-provenance) that names the binary
+#     tarball, the source tarball, SHA256SUMS and install.sh (WP-080);
+#     that step is the last one before `Summary`, after every check, and
+#     no other job has an `id-token:` or `attestations:` permission.
 #
 # Limit: a SHA is not checked against its version comment (that needs
 # the network); the refresh steps in packaging/README.md resolve both.
@@ -124,7 +131,43 @@ problems() {
   fi
   grep -E -q '^    needs:[[:space:]]*(build|\[[[:space:]]*build[[:space:]]*\])[[:space:]]*$' <<< "$(job "$release" release)" \
     || echo "$release: the release job does not need build"
+  # build provenance (WP-080): only the build job may sign, and it reads
+  # the repository only
+  local top perms want attest subject
+  top=$(awk '/^permissions:/ { on = 1; next } on && /^  / { print; next } on { exit }' "$release")
+  [[ $top == "  contents: read" ]] \
+    || echo "$release: the workflow permissions are not contents: read alone"
+  perms=$(awk '/^    permissions:/ { on = 1; next } on && /^      / { print; next } on { exit }' <<< "$build" | LC_ALL=C sort)
+  want=$(printf '      %s\n' 'attestations: write' 'contents: read' 'id-token: write')
+  [[ $perms == "$want" ]] \
+    || echo "$release: the build job's permissions are not exactly contents: read, id-token: write, attestations: write"
+  attest=$(step "$build" "Attest the release assets")
+  if [[ -z $attest ]]; then
+    echo "$release: the build job has no step named Attest the release assets"
+  else
+    grep -E -q '^        uses: actions/attest-build-provenance@' <<< "$attest" \
+      || echo "$release: the attest step does not use actions/attest-build-provenance"
+    ! grep -E -q '^        if:' <<< "$attest" \
+      || echo "$release: the attest step has an if: condition"
+    # shellcheck disable=SC2016  # the workflow's expressions, literally
+    for subject in 'dist/seldon-${{ steps.version.outputs.version }}-${{ env.MUSL_TARGET }}.tar.gz' \
+      'dist/jax-seldon-${{ steps.version.outputs.version }}.tar.gz' dist/SHA256SUMS dist/install.sh; do
+      grep -x -q -F "            $subject" <<< "$attest" \
+        || echo "$release: the attest step does not name $subject"
+    done
+    # the step before Summary (a step is `- name:` or a bare `- uses:`)
+    local before
+    before=$(awk '/^      - / { if ($0 == "      - name: Summary") { print prev; exit } prev = $0 }' <<< "$build")
+    [[ $before == "      - name: Attest the release assets" ]] \
+      || echo "$release: the attest step is not the last step before Summary"
+  fi
+  # only build signs: no other job may ask for an OIDC token or attestations
   local j
+  while read -r j; do
+    [[ $j == build ]] && continue
+    ! grep -E -q '^[[:space:]]+(id-token|attestations):' <<< "$(job "$release" "$j")" \
+      || echo "$release: the $j job has id-token or attestations permissions (only build signs)"
+  done <<< "$(awk '/^jobs:/ { on = 1; next } on && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { sub(/:.*/, ""); print $1 } on && /^[^ #]/ { on = 0 }' "$release")"
   for j in bump aur plugin; do
     grep -E -q '^    needs:[[:space:]]*\[[[:space:]]*build[[:space:]]*,[[:space:]]*release[[:space:]]*\][[:space:]]*$' <<< "$(job "$release" "$j")" \
       || echo "$release: the $j job does not need [build, release]"
@@ -208,6 +251,24 @@ expect_problem "plugin without build" "plugin job does not need" \
   '/^  plugin:$/,/^    needs:/s/^    needs: \[build, release\]$/    needs: release/'
 expect_problem "bump without needs" "bump job does not need" \
   '/^  bump:$/,/^    needs:/{/^    needs:/d}'
+expect_problem "workflow may write contents" "not contents: read alone" \
+  '0,/^  contents: read$/s//  contents: write/'
+expect_problem "build job without id-token" "permissions are not exactly" \
+  '/^      id-token: write$/d'
+expect_problem "build job with packages: write" "permissions are not exactly" \
+  's/^(      attestations: write)$/\1\n      packages: write/'
+expect_problem "no attest step" "no step named Attest" \
+  's/^      - name: Attest the release assets$/      - name: Attest/'
+expect_problem "attest step with if: false" "attest step has an if:" \
+  's/^(      - name: Attest the release assets)$/\1\n        if: false/'
+expect_problem "install.sh not attested" "does not name dist/install.sh" \
+  '/^            dist\/install\.sh$/d'
+expect_problem "source tarball not attested" "does not name dist/jax-seldon-" \
+  '/^            dist\/jax-seldon-/d'
+expect_problem "id-token on the release job" "release job has id-token" \
+  '/^  release:$/,/^    permissions:$/s/^(    permissions:)$/\1\n      id-token: write/'
+expect_problem "attest step before Build the package" "not the last step before Summary" \
+  '/^      - name: Attest the release assets$/,/^      - name: Summary$/{/^      - name: Summary$/!d}; s/^      - name: Build the package$/      - name: Attest the release assets\n        uses: actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2\n\n&/'
 
 if ((fails > 0)); then
   echo "workflow-pins.test: $fails failure(s)" >&2

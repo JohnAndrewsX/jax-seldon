@@ -69,7 +69,7 @@ The workflow then runs, in order:
 
 | Job | Runs on | Does |
 |---|---|---|
-| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json` |
+| `build` | tag and dry run | fails unless the tag equals `v` + the `engine/Cargo.toml` version; fails without a `## [X.Y.Z]` section in `CHANGELOG.md` (`release-notes.sh`, docs/VERSIONING.md); **`cargo audit` of `engine/Cargo.lock`, the release gate**: an advisory, an unmaintained or a yanked crate fails the build unless `audit-ignore.txt` accepts its id (an expired entry fails it too); `just check`; static musl binary with `--features watch` (checked: static, `--version --json`, `watch --help`); assets `jax-seldon-X.Y.Z.tar.gz` (`git archive` of the tag — the PKGBUILD's source), `seldon-X.Y.Z-x86_64-unknown-linux-musl.tar.gz` (binary, LICENSE, README, unit, unit README) `install.sh` and `SHA256SUMS`; `set-version.sh` + `makepkg --printsrcinfo`; a real `makepkg -f` of the PKGBUILD from that tarball as an unprivileged user, its file list against `expected-files.txt`, the packaged binary run; `git subtree split --prefix=plugin` and a check of the split's `manifest.json`; **a build-provenance attestation** (`actions/attest-build-provenance`) of the binary tarball, the source tarball, `SHA256SUMS` and `install.sh` — the job alone has `id-token: write` and `attestations: write`; `install.sh` checks it with `gh attestation verify` (SECURITY.md, "Verifying a release") |
 | `release` | tag | GitHub release `vX.Y.Z` with the four assets (the three above and `install.sh`, also listed in `SHA256SUMS`; README.md "Install"); the release notes are that `CHANGELOG.md` section (`packaging/release-notes.sh`) |
 | `bump` | tag | commits the updated `PKGBUILD` and `.SRCINFO` to `main` (`packaging: jax-seldon X.Y.Z`). Skipped with a warning if `main`'s `packaging/` changed after the tag; then bump by hand (below) |
 | `aur` | tag | clones `ssh://aur@aur.archlinux.org/jax-seldon.git`, commits `PKGBUILD` + `.SRCINFO` (`Update to X.Y.Z`), pushes `master`. The host key is pinned (Ed25519 `SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4`, as published on aur.archlinux.org). **Skipped with a notice** without `AUR_SSH_PRIVATE_KEY` |
@@ -95,11 +95,18 @@ gh run watch
 
 Only `build` runs. The version comes from `engine/Cargo.toml`, the source
 tarball is `git archive` of the branch head (no tag needed). Nothing is
-pushed, released or committed. The run summary shows the checksums, the
-`packaging/` diff a tag would commit, and whether the two secrets are set
-(true/false, never the value). The artifacts `dist` (release assets),
-`packaging` (PKGBUILD, .SRCINFO) and `package` (the built
-`.pkg.tar.zst`) can be downloaded and inspected (`gh run download`).
+pushed, released or committed. The attestation step runs too, so it is
+exercised before a tag depends on it: the dry run's assets get real,
+public attestations, but with the branch as their source ref
+(`refs/heads/<branch>`), which `install.sh` (`--source-ref
+refs/tags/vX.Y.Z`) never accepts. Check one with `gh run download <id>
+-n dist -D dist` and `gh attestation verify dist/SHA256SUMS --repo
+JohnAndrewsX/jax-seldon --source-ref refs/heads/<branch>`. The run
+summary shows the checksums, the attestation link, the `packaging/` diff
+a tag would commit, and whether the two secrets are set (true/false,
+never the value). The artifacts `dist` (release assets), `packaging`
+(PKGBUILD, .SRCINFO) and `package` (the built `.pkg.tar.zst`) can be
+downloaded and inspected (`gh run download`).
 
 ### Bumping by hand
 

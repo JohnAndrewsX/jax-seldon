@@ -116,10 +116,14 @@ All on `main`, after every work package of the release is merged:
    `git push origin vX.Y.Z`. The workflow builds, publishes the GitHub
    release with the CHANGELOG section as its notes, then the AUR package
    and the plugin repository.
-6. After the workflow is green: grep `README.md`, `plugin/README.md`,
-   `docs/user/` and `llms.txt` for the previous version and for text
-   bound to it ("from the next release on", sample `seldon --version`
-   output, the project status line) and update it on `main`. Prefer
+6. After the workflow is green: verify the release's build provenance
+   (download the engine tarball with `gh release download vX.Y.Z -p
+   'seldon-*'`, then `gh attestation verify` it with the flags in
+   SECURITY.md, "Verifying a release"; `install.sh` runs the same check).
+   Then grep `README.md`, `plugin/README.md`, `docs/user/` and `llms.txt`
+   for the previous version and for text bound to it ("from the next
+   release on", sample `seldon --version` output, the project status
+   line) and update it on `main`. Prefer
    wording that does not name a version in the first place. The plugin
    repository's README changes only with the next tag (subtree push), so
    keep version-bound text out of `plugin/README.md`.

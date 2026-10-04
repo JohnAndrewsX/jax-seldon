@@ -24,7 +24,12 @@ settings.
 The engine is one program, `seldon`. The AUR package is coming soon. Until
 then you install it from the project's GitHub release. The install script
 checks the engine against the release's checksums and installs
-`~/.local/bin/seldon`.
+`~/.local/bin/seldon`. If the GitHub CLI (`gh`) is installed and logged
+in, the script also checks that the project's release workflow built the
+download; otherwise it prints one note that only the checksum was
+checked. `--require-verified` makes it refuse instead of installing
+without that check; `--skip-provenance` leaves `gh` out when `gh` itself
+fails, for example behind a proxy.
 
 Download the script and the checksum file from the latest release,
 read the script, verify it and run it:
