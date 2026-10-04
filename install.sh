@@ -13,7 +13,8 @@
 # attestation that release.yml of JohnAndrewsX/jax-seldon made for the
 # release's tag, or nothing is installed. Without a usable gh (or for a
 # release up to v0.1.1, made before attestations) one note says that only
-# the checksum was checked; --require-verified refuses instead. Then installs <prefix>/bin/seldon and the symlink
+# the checksum was checked; --require-verified refuses instead. Then
+# installs <prefix>/bin/seldon and the symlink
 # <prefix>/bin/jax-seldon -> seldon (prefix default ~/.local), the man page
 # <prefix>/share/man/man1/seldon.1 and the shell completions for each of
 # bash, zsh and fish that is installed here (zsh, fish: on PATH; each:
