@@ -25,8 +25,9 @@
 //! source lost the changes in between. The capture records that as one
 //! `seldon` `note` with the subject [`STATE_RESET`] and prints a warning
 //! (WP-081). The first capture of a logbook holds no such events: no note.
-//! A corrupt `owned.json` counts for the config collector; once recorded it
-//! is moved to `owned.json.bad`, so the next capture does not report it again.
+//! A corrupt `owned.json` counts for the config collector; a capture that
+//! runs that collector moves it to `owned.json.bad` after the ledger write,
+//! so the next capture does not report it again.
 
 use std::fmt::Write as _;
 
@@ -112,7 +113,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     };
     let sources = Sources::from_env();
     let owned_file = OwnWrites::file(&ctx.dirs);
-    let owned_corrupt = is_corrupt(&owned_file);
+    let mut owned_corrupt = is_corrupt(&owned_file);
     let Collected {
         mut events,
         reports,
@@ -122,7 +123,8 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     } = collect_all(
         &selected, &config, ctx, &ledger, &cursors, &logbook, &sources, now, baseline,
     );
-    if owned_corrupt && reports.iter().any(|r| r.name == "config" && r.ran && r.ok) {
+    owned_corrupt &= reports.iter().any(|r| r.name == "config" && r.ran && r.ok);
+    if owned_corrupt {
         lost.push(("config", Lost::Owned));
     }
     attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
@@ -137,13 +139,13 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     let mut warnings = Vec::new();
     if let Some(reset) = &reset {
         warnings.push(reset_warning(ctx, reset));
-        // recorded: the next capture must not report the same loss again
-        if reset.lost.iter().any(|(_, l)| *l == Lost::Owned)
-            && let Err(e) = std::fs::rename(&owned_file, owned_file.with_extension("json.bad"))
-        {
-            let shown = ctx.dirs.display(&owned_file);
-            warnings.push(format!("cannot move {shown} aside: {e}"));
-        }
+    }
+    // seen (and recorded): the next capture must not report it again
+    if owned_corrupt
+        && let Err(e) = std::fs::rename(&owned_file, owned_file.with_extension("json.bad"))
+    {
+        let shown = ctx.dirs.display(&owned_file);
+        warnings.push(format!("cannot move {shown} aside: {e}"));
     }
     // WP-008: reconciliation, the attributed collector event ids into
     // their case files (ADR-0012 §10); warnings only, the append is done

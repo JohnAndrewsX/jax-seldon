@@ -17,13 +17,14 @@ use serde_json::json;
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
-use crate::collectors::{Cursors, Sources, cursors_file, snapper};
+use crate::collectors::{Cursors, STATE_RESET, Sources, cursors_file, snapper};
 use crate::config::{Config, LogbookSource};
 use crate::error::{Error, Exit, Result};
 use crate::index::load::{FENCE_BEGIN, FENCE_END, bad_lines_warning};
 use crate::index::views::{self, DECISIONS_FENCE, STATUS_FENCE};
 use crate::ledger::Ledger;
 use crate::logbook::{Logbook, git, layout};
+use crate::model::event::{Kind, Source};
 use crate::model::{self, Area, Case, Decision, Journal, Memory, Record};
 use crate::redact::Redactor;
 use crate::sys::{self, Run};
@@ -157,6 +158,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_ledger(logbook));
             checks.push(check_fences(logbook));
             checks.push(check_collectors(ctx, &effective, logbook));
+            checks.extend(check_reset(ctx, logbook));
         }
         logbook
     } else {
@@ -512,6 +514,55 @@ fn check_collectors(ctx: &Context, config: &Config, logbook: &Logbook) -> Check 
     }
 }
 
+/// A state reset the last capture recorded (WP-081): the ledger's newest
+/// `seldon` note `state-reset` is as new as the newest `lastRun` in
+/// `cursors.json` for this logbook. Degraded, with the restore hint; no
+/// row otherwise (the `state` rows check the files themselves).
+fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
+    let cursors = Cursors::load(&cursors_file(&ctx.dirs)).ok()?;
+    let canonical = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
+    if cursors.logbook.as_deref() != Some(canonical.as_path()) {
+        return None;
+    }
+    let last = cursors
+        .collectors
+        .values()
+        .filter_map(|s| chrono::DateTime::parse_from_rfc3339(&s.last_run).ok())
+        .max()?;
+    let ledger = Ledger::new(logbook, Redactor::builtin());
+    let reset = ledger.months().ok()?.iter().rev().find_map(|m| {
+        let events = ledger.read_month(m).ok()?.events;
+        events
+            .into_iter()
+            .filter(|e| {
+                e.source == Source::Seldon && e.kind == Kind::Note && e.subject == STATE_RESET
+            })
+            .max_by_key(|e| e.ts)
+    })?;
+    if reset.ts < last {
+        return None;
+    }
+    let meta = |key: &str| {
+        let value = reset.meta.extra.get(key).and_then(|v| v.as_str());
+        value.unwrap_or_default().replace(',', ", ")
+    };
+    let state = ctx.dirs.display(&ctx.dirs.state_dir);
+    Some(
+        Check::new(
+            "state",
+            Status::Degraded,
+            format!(
+                "the last capture recorded a state reset: {} took a new baseline ({} missing or unreadable in {state}), so changes made meanwhile may be missing",
+                meta("sources"),
+                meta("files")
+            ),
+        )
+        .fix(format!(
+            "restore a backup of {state} and run seldon capture (user guide: Back up and restore the state directory); without a backup, run seldon capture to clear this row"
+        )),
+    )
+}
+
 /// The collector state files, loaded as strictly as `capture` loads
 /// `cursors.json` (F-541); `manifest.json` and `owned.json` are read
 /// leniently by the collector, so a corrupt one costs reports silently.
@@ -523,19 +574,19 @@ fn check_state(ctx: &Context) -> Vec<Check> {
         (
             cursors_file(&ctx.dirs),
             |b| serde_json::from_slice::<Cursors>(b).map(drop),
-            "every capture fails until it is moved away; the next capture then takes a new baseline for every collector",
+            "every capture fails until it is moved away; the next capture then takes a new baseline for every collector, recorded as a state reset for the collectors the ledger holds events of",
             "every capture fails until it can be read again",
         ),
         (
             Manifest::file(&ctx.dirs),
             |b| serde_json::from_slice::<Manifest>(b).map(drop),
-            "the next capture takes a new config baseline and does not report the config changes since the last one",
+            "the next capture takes a new config baseline, recorded as a state reset if the ledger holds config events; the config changes since the last capture are not reported",
             "the config collector reports degraded until it can be read again",
         ),
         (
             OwnWrites::file(&ctx.dirs),
             |b| serde_json::from_slice::<OwnWrites>(b).map(drop),
-            "the engine's own writes under the watched paths are reported as drift",
+            "the engine's own writes under the watched paths are reported as drift; the next capture moves it to owned.json.bad and records a state reset if the ledger holds config events",
             "the engine's own writes are neither recorded nor explained until it can be read again, so they are reported as drift",
         ),
     ];

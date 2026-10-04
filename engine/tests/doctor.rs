@@ -788,6 +788,80 @@ mod doctor {
         assert_eq!(code, Some(0), "{v}");
     }
 
+    /// WP-081: a corrupt manifest is an error that says the capture will
+    /// record a state reset; after that capture a degraded `state` row names
+    /// the reset with the restore hint, until the next capture.
+    #[test]
+    fn a_state_reset_is_shown_until_the_next_capture() {
+        let env = Env::new(Snapper::Missing);
+        init(&env);
+        let capture = |now: &str| {
+            let out = env.at(now, &["capture", "--source", "config", "--json"]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            json(&out)
+        };
+        let states = |v: &serde_json::Value| -> Vec<serde_json::Value> {
+            let checks = v["checks"].as_array().unwrap();
+            checks
+                .iter()
+                .filter(|c| c["name"] == "state")
+                .cloned()
+                .collect()
+        };
+        let conf = env.home.join(".config/hypr/hyprland.conf");
+        std::fs::create_dir_all(conf.parent().unwrap()).unwrap();
+        std::fs::write(&conf, "a = 1\n").unwrap();
+        capture("2026-10-04T10:00:00+02:00");
+        std::fs::write(&conf, "a = 2\n").unwrap();
+        assert_eq!(capture("2026-10-04T10:05:00+02:00")["written"], 1);
+        let (_, v) = doctor(&env, &[]);
+        let rows = states(&v);
+        assert_eq!(rows.len(), 1, "{v}");
+        assert_eq!(rows[0]["status"], "ok");
+
+        let manifest = env.home.join(".local/state/seldon/manifest.json");
+        std::fs::write(&manifest, "{").unwrap();
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(1), "{v}");
+        let rows = states(&v);
+        assert_eq!(rows.len(), 1, "{v}");
+        assert_eq!(rows[0]["status"], "error");
+        let message = rows[0]["message"].as_str().unwrap();
+        assert!(
+            message.contains("new config baseline, recorded as a state reset"),
+            "{message}"
+        );
+
+        let out = capture("2026-10-04T10:10:00+02:00");
+        assert_eq!(out["written"], 1, "the note: {out}");
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(0), "degraded is no error: {v}");
+        let rows = states(&v);
+        assert_eq!(rows.len(), 2, "{v}");
+        assert_eq!(rows[0]["status"], "degraded");
+        assert_eq!(
+            rows[0]["message"],
+            "the last capture recorded a state reset: config took a new baseline (manifest missing or unreadable in ~/.local/state/seldon), so changes made meanwhile may be missing"
+        );
+        let fix = rows[0]["fix"].as_str().unwrap();
+        assert!(
+            fix.starts_with("restore a backup of ~/.local/state/seldon and run seldon capture"),
+            "{fix}"
+        );
+        assert_eq!(rows[1]["status"], "ok", "the manifest is valid again");
+        let human = stdout(&env.seldon(&["doctor"]));
+        assert!(
+            human.contains("degraded  state    the last capture recorded a state reset"),
+            "{human}"
+        );
+
+        assert_eq!(capture("2026-10-04T10:15:00+02:00")["written"], 0);
+        let (_, v) = doctor(&env, &[]);
+        let rows = states(&v);
+        assert_eq!(rows.len(), 1, "{v}");
+        assert_eq!(rows[0]["status"], "ok");
+    }
+
     /// Review N4: an unreadable state file's row says what reading it
     /// needs, matching its chmod fix (not "move it away").
     #[test]

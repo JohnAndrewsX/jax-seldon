@@ -441,6 +441,158 @@ mod idempotency {
     }
 }
 
+/// WP-081: a collector that lost its state although the ledger holds its
+/// events leaves one `seldon` note `state-reset`, a warning, and nothing
+/// the next time.
+mod state_reset {
+    use super::*;
+
+    fn resets(cli: &Cli) -> Vec<Event> {
+        cli.ledger()
+            .into_iter()
+            .filter(|e| e.source == Source::Seldon && e.subject == "state-reset")
+            .collect()
+    }
+
+    fn state(cli: &Cli) -> std::path::PathBuf {
+        cli.env.home.join(".local/state/seldon")
+    }
+
+    /// `capture --source config --json`.
+    fn capture_config(cli: &Cli) -> serde_json::Value {
+        let out = cli.run(&["capture", "--source", "config", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        common::json(&out)
+    }
+
+    /// A config file under a watch path, recorded once as a change.
+    fn config_event(cli: &Cli) {
+        let conf = cli.env.home.join(".config/hypr/hyprland.conf");
+        std::fs::create_dir_all(conf.parent().unwrap()).unwrap();
+        std::fs::write(&conf, "a = 1\n").unwrap();
+        assert_eq!(capture_config(cli)["written"], 0);
+        std::fs::write(&conf, "a = 2\n").unwrap();
+        assert_eq!(capture_config(cli)["written"], 1);
+    }
+
+    #[test]
+    fn a_lost_state_directory_is_recorded_once() {
+        let cli = Cli::new();
+        let first = cli.capture(&["--since", FIXTURE_CREATED]);
+        assert!(first["written"].as_u64().unwrap() > 0, "{first}");
+        assert!(resets(&cli).is_empty(), "the first capture is no reset");
+        assert_eq!(first["warnings"], serde_json::json!([]));
+
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        let out = cli.run(&["capture", "--all"]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        let human = common::stdout(&out);
+        assert!(
+            human.contains(
+                "\nwarning: state reset recorded: snapper, pacman took a new baseline because ~/.local/state/seldon was missing or unreadable"
+            ),
+            "{human}"
+        );
+        assert!(
+            human.contains("(user guide: Back up and restore the state directory)"),
+            "{human}"
+        );
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1, "{reset:?}");
+        let r = &reset[0];
+        assert_eq!((r.kind, r.actor.as_str()), (Kind::Note, "system"));
+        assert_eq!(r.meta.extra["sources"], "snapper,pacman");
+        assert_eq!(r.meta.extra["files"], "cursors");
+        let detail = r.detail.as_deref().unwrap();
+        assert!(
+            detail.starts_with(&format!(
+                "state directory missing or unreadable: new baseline for snapper (cursors), pacman (cursors) at {}",
+                r.ts.to_rfc3339()
+            )),
+            "{detail}"
+        );
+        cli.ledger().iter().for_each(assert_schema_valid);
+
+        let again = cli.capture(&[]);
+        assert_eq!(again["written"], 0, "{again}");
+        assert_eq!(again["warnings"], serde_json::json!([]));
+        assert_eq!(resets(&cli).len(), 1);
+    }
+
+    #[test]
+    fn a_collector_without_events_in_the_ledger_has_no_reset() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        // theme and plugins took their baseline silently: no events of theirs
+        let file = state(&cli).join("cursors.json");
+        let mut cursors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let collectors = cursors["collectors"].as_object_mut().unwrap();
+        collectors.remove("theme");
+        collectors.remove("plugins");
+        std::fs::write(&file, cursors.to_string()).unwrap();
+        let out = cli.capture(&[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert!(resets(&cli).is_empty());
+    }
+
+    #[test]
+    fn an_unreadable_cursor_is_a_reset() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        let file = state(&cli).join("cursors.json");
+        let mut cursors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        cursors["collectors"]["pacman"]["cursor"] = serde_json::json!("not a cursor");
+        std::fs::write(&file, cursors.to_string()).unwrap();
+        let out = cli.capture(&[]);
+        assert_eq!(out["written"], 1, "only the note: {out}");
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1);
+        assert_eq!(reset[0].meta.extra["sources"], "pacman");
+        assert_eq!(cli.capture(&[])["written"], 0);
+    }
+
+    #[test]
+    fn a_corrupt_manifest_is_a_reset() {
+        let cli = Cli::new();
+        config_event(&cli);
+        std::fs::write(state(&cli).join("manifest.json"), "{").unwrap();
+        let out = capture_config(&cli);
+        assert_eq!(out["written"], 1, "{out}");
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1);
+        assert_eq!(reset[0].meta.extra["sources"], "config");
+        assert_eq!(reset[0].meta.extra["files"], "manifest");
+        let warning = out["warnings"][0].as_str().unwrap();
+        assert!(
+            warning.starts_with("state reset recorded: config took a new baseline"),
+            "{warning}"
+        );
+        assert_eq!(capture_config(&cli)["written"], 0);
+    }
+
+    #[test]
+    fn a_corrupt_owned_file_is_a_reset_and_moved_aside() {
+        let cli = Cli::new();
+        config_event(&cli);
+        let owned = state(&cli).join("owned.json");
+        std::fs::write(&owned, "[").unwrap();
+        let out = capture_config(&cli);
+        assert_eq!(out["written"], 1, "{out}");
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1);
+        assert_eq!(reset[0].meta.extra["files"], "owned");
+        assert!(!owned.exists());
+        assert_eq!(
+            std::fs::read_to_string(state(&cli).join("owned.json.bad")).unwrap(),
+            "["
+        );
+        assert_eq!(capture_config(&cli)["written"], 0);
+        assert_eq!(resets(&cli).len(), 1);
+    }
+}
+
 /// `seldon` in a fake home, a fresh logbook, the collectors pointed at
 /// fixture copies through the `SELDON_*` variables, TZ of the fixtures.
 struct Cli {
