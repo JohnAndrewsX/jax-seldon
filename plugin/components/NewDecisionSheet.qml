@@ -50,6 +50,9 @@ FocusScope {
   readonly property bool pending: !!result && result.pending
   // This sheet's own decision is pending (the guard of Enter and Create).
   readonly property bool ownPending: root.pending && root.sentTitle !== ""
+  // Create takes a click unless this sheet's own decision is pending, so a
+  // click during another panel's call gets the busy text.
+  readonly property bool submitEnabled: root.canWrite && !root.ownPending
   readonly property var built: Model.decideArgs(root.title)
   readonly property string sig: built.args ? JSON.stringify(built.args) : ""
   readonly property bool armed: sig !== "" && armedSig === sig
@@ -180,12 +183,13 @@ FocusScope {
 
         Button {
           id: submitButton
+          objectName: "decisionSubmit"
           anchors.fill: parent
           text: root.ownPending ? "Creating" : "Create"
           iconText: root.ownPending ? "󰦖" : ""
           iconSpinning: root.ownPending
           iconSize: Style.font.caption
-          enabled: root.canWrite && !root.ownPending
+          enabled: root.submitEnabled
           hasCursor: submitKey.activeFocus || root.armed
           selected: true
           bordered: true

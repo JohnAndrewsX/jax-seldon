@@ -943,6 +943,18 @@ ShellRoot {
     return out
   }
 
+  // The first item, in tree order, with this objectName.
+  function byName(item, name) {
+    if (!item) return null
+    if (item.objectName === name) return item
+    var kids = item.children
+    for (var i = 0; kids && i < kids.length; i++) {
+      var found = root.byName(kids[i], name)
+      if (found) return found
+    }
+    return null
+  }
+
   function idle() {
     var s = root.service
     return !!s && s.ready && !s.busy && !s.probing && s.queue.length === 0 && !s.capturing
@@ -955,7 +967,9 @@ ShellRoot {
       drift: { armed: root.drift.armed, notice: root.drift.notice, hint: root.drift.hint,
         resultText: root.drift.resultText, resultOk: root.drift.resultOk, texts: root.texts(root.drift, []) },
       decision: { title: root.decision.title, armed: root.decision.armed, notice: root.decision.notice,
-        ownPending: root.decision.ownPending, resultText: root.decision.resultText,
+        ownPending: root.decision.ownPending, submitEnabled: root.decision.submitEnabled,
+        buttonEnabled: root.byName(root.decision, "decisionSubmit").enabled,
+        resultText: root.decision.resultText,
         resultOk: root.decision.resultOk, texts: root.texts(root.decision, []) },
       extra: extra === undefined ? null : extra
     }
@@ -1098,6 +1112,10 @@ QML
   sheet_expect sheets-busy decision .decision.resultOk true
   sheet_expect sheets-busy decision "[.decision.texts[] | select(. == \"$busy_text\")] | length" 1
   sheet_expect sheets-busy decision .decision.title "Second decision"
+  # Create stays a clickable "Create" during another panel's call.
+  sheet_expect sheets-busy decision "[.decision.texts[] | select(. == \"Creating\")] | length" 0
+  sheet_expect sheets-busy decision .decision.submitEnabled true
+  sheet_expect sheets-busy decision .decision.buttonEnabled true
   # Enter arms (the notice stays), the second Enter is refused the same way.
   sheet_expect sheets-busy decision-arm .decision.armed true
   sheet_expect sheets-busy decision-arm .decision.resultText "$busy_text"
@@ -1109,6 +1127,9 @@ QML
   sheet_expect sheets-busy decision-own '.extra | map(tostring) | join(",")' "true,false"
   sheet_expect sheets-busy decision-own .decision.notice ""
   sheet_expect sheets-busy decision-own .decision.ownPending true
+  sheet_expect sheets-busy decision-own .decision.submitEnabled false
+  sheet_expect sheets-busy decision-own .decision.buttonEnabled false
+  sheet_expect sheets-busy decision-own "[.decision.texts[] | select(. == \"Creating\")] | length" 1
   sheet_expect sheets-busy decision-own .decision.resultText "Creating the decision…"
   # The other calls' answers and index rewrites leave both notices in place;
   # the decision sheet's own decision was created and its title cleared.
