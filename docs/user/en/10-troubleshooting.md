@@ -23,7 +23,7 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `ledger` | every line of `ledger/*.jsonl` is an event | `degraded`: lines that are not events (a torn write, a hand edit) are skipped; the row names month, count and lines |
 | `fences` | the generated parts of `STATUS.md` and `DECISIONS.md` have their marker lines | `degraded`: a marker line is missing, so `seldon status` leaves the file alone; or an end marker closes no fence. `error`: the file cannot be read |
 | `collectors` | the last capture of every enabled collector succeeded | `degraded`: the row lists each failing collector with its message and fix |
-| `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable |
+| `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable. `degraded`: the last capture recorded a state reset; see [A state reset was recorded](#a-state-reset-was-recorded) |
 | `omarchy` | `omarchy-version` answered | the Omarchy collector cannot read the version |
 | `snapper` | snapshots can be listed, or read from `/.snapshots` | `degraded`: your user may neither list snapshots nor read `/.snapshots`; see [Snapshots are not recorded](#snapshots-are-not-recorded). An `ok` row with a fix: your user is still in the old snapper opt-in; see [doctor suggests reverting the snapper opt-in](#doctor-suggests-reverting-the-snapper-opt-in) |
 | `git` | git is there; the logbook is a repository | git is missing, or the logbook is not a repository; autocommit is off then. `degraded`: something keeps every autocommit from committing (a stale `.git/index.lock`, a detached HEAD, …); the fix says what to do |
@@ -172,6 +172,38 @@ in the journal. A wrong explanation misleads you later.
   message says why.
 - If the agent window does not appear, read
   `~/.local/state/seldon/agent-launch.log`.
+
+### A state reset was recorded
+
+`seldon capture` printed a line like this:
+
+```
+warning: state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook, …
+```
+
+The engine's state directory, `~/.local/state/seldon`, was gone, belonged
+to another logbook, or held a file it could not read, while your ledger
+already had events of those collectors. They started over from the
+machine as it is now. Changes made since their last capture may be
+missing from the ledger: `pacman` and `snapper` read their sources again
+and miss little, the other collectors miss every change made in between.
+
+The capture wrote a note with the subject `state-reset` to the ledger,
+so the gap stays visible, and `seldon doctor` shows a `degraded` `state`
+row until the next capture.
+
+If you have a backup of the state directory, restore it and run a
+capture; that capture records what changed since the backup (see
+[Back up and restore the state directory](07-the-logbook.md#back-up-and-restore-the-state-directory)).
+Without a backup there is nothing to restore: the next capture clears
+the row, and the note stays in the ledger. The same holds when the
+state belonged to another logbook (you moved the logbook, or ran a
+command with `--logbook` for another one); the warning then says so.
+
+A capture that finds a corrupt `owned.json` moves it to
+`owned.json.bad` in the same folder. Seldon never reads that file
+again; it is kept only for a look, you can delete it, and the next
+corrupt `owned.json` replaces it.
 
 ### The theme collector is degraded
 

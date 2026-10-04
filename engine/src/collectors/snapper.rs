@@ -45,7 +45,7 @@ use chrono::{DateTime, FixedOffset, Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, Tz, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Lost, Outcome, RUN_TIMEOUT, Tz, to_cursor, typed_cursor};
 use crate::commands::doctor::SNAPPER_FIX;
 use crate::model::event::{Event, Kind, Meta, Source};
 use crate::sys::{self, Run};
@@ -212,8 +212,10 @@ impl Collector for Snapper {
             Ok(l) => l,
             Err(e) => return Outcome::degraded(format!("unexpected snapper output: {e}"), None),
         };
-        match diff(ctx, typed_cursor(cursor), &list, Origin::List, &[]) {
-            Ok((events, next)) => Outcome::ok(events, to_cursor(&next)),
+        let cursor: Option<SnapperCursor> = typed_cursor(cursor);
+        let lost = cursor.is_none().then_some(Lost::Cursor);
+        match diff(ctx, cursor, &list, Origin::List, &[]) {
+            Ok((events, next)) => Outcome::ok(events, to_cursor(&next)).baseline(lost),
             Err(e) => Outcome::degraded(format!("{e:#}"), None),
         }
     }
@@ -223,15 +225,11 @@ impl Collector for Snapper {
 /// says so and names every skipped info file.
 fn from_info_files(ctx: &Ctx, cursor: Option<&Value>, dir: &Path, info: &InfoFiles) -> Outcome {
     let kept: Vec<u64> = info.skipped.iter().map(|(n, _)| *n).collect();
-    match diff(
-        ctx,
-        typed_cursor(cursor),
-        &info.snapshots,
-        Origin::InfoFiles,
-        &kept,
-    ) {
+    let cursor: Option<SnapperCursor> = typed_cursor(cursor);
+    let lost = cursor.is_none().then_some(Lost::Cursor);
+    match diff(ctx, cursor, &info.snapshots, Origin::InfoFiles, &kept) {
         Ok((events, next)) => {
-            let mut out = Outcome::ok(events, to_cursor(&next));
+            let mut out = Outcome::ok(events, to_cursor(&next)).baseline(lost);
             out.message = Some(info_files_message(dir, info));
             out
         }

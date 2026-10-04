@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::pacman::{ATTRIBUTION_WINDOW, causes};
-use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Lost, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, Source};
 use crate::sys::{self, Run};
 
@@ -52,7 +52,8 @@ impl Collector for Omarchy {
         });
         let from = match previous {
             Some(p) if p.version != version => p.version,
-            _ => return Outcome::ok(Vec::new(), next),
+            Some(_) => return Outcome::ok(Vec::new(), next),
+            None => return Outcome::ok(Vec::new(), next).baseline(Some(Lost::Cursor)),
         };
         match already_recorded(ctx, &from, &version) {
             Ok(true) => return Outcome::ok(Vec::new(), next),

@@ -850,6 +850,34 @@ mod sessions {
         }
     }
 
+    /// WP-081 review: the capture of session-stop prints a state reset's
+    /// warning on stderr.
+    #[test]
+    fn session_stop_prints_a_state_reset_on_stderr() {
+        let h = Hooks::new();
+        let out = h.run(&["capture", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let out = h.run(&["event", "omarchy", "update", "--subject", "omarchy"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        std::fs::remove_file(h.home().join(".local/state/seldon/cursors.json")).unwrap();
+        let stop = json!({
+            "session_id": "6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34",
+            "hook_event_name": "SessionEnd",
+            "cwd": FIXTURE_CWD,
+            "reason": "prompt_input_exit",
+        });
+        let out = h.piped(&["hook", "session-stop"], &stop.to_string(), Some(NOW));
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(stdout(&out), "");
+        assert!(
+            stderr(&out).contains(
+                "seldon: warning: state reset recorded: omarchy took a new baseline because"
+            ),
+            "{}",
+            stderr(&out)
+        );
+    }
+
     /// The "session ended" commit of `h`, and a clean tree after it.
     fn assert_committed(h: &Hooks) {
         if h.env.has_git {

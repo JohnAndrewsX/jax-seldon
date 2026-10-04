@@ -58,7 +58,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::plugins::Plugins;
-use super::{Collector, Ctx, Outcome, Tz, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Lost, Outcome, Tz, to_cursor, typed_cursor};
 use crate::config::{Config, Dirs};
 use crate::logbook::lock::Lock;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
@@ -919,6 +919,11 @@ impl ConfigFiles {
             .as_ref()
             .zip(prev.as_ref())
             .is_some_and(|(m, c)| m.current.hash != c.hash);
+        let lost = match (&prev, &base) {
+            (None, _) => Some(Lost::Cursor),
+            (Some(_), None) => Some(Lost::Manifest),
+            (Some(_), Some(_)) => None,
+        };
         let events = match (prev, base) {
             (Some(prev), Some(mut base)) => {
                 if behind && let Err(e) = replay(ctx, &mut base, &scan, prev.checked) {
@@ -952,6 +957,7 @@ impl ConfigFiles {
             since,
             ..Outcome::ok(events, next)
         }
+        .baseline(lost)
     }
 }
 

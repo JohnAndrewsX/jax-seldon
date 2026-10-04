@@ -155,6 +155,12 @@ Engine, also führ sie vor Schritt 5 aus.
    rm -r ~/.config/seldon ~/.local/state/seldon
    ```
 
+   Wenn du Seldon vielleicht wieder installierst und das Logbuch
+   behältst, sichere den Zustandsordner vorher (siehe
+   [Den Zustandsordner sichern und wiederherstellen](07-the-logbook.md#den-zustandsordner-sichern-und-wiederherstellen))
+   und stelle ihn vor dem ersten Capture wieder her. Sonst fängt dieses
+   Capture neu an und hält einen Zustands-Reset im Ledger fest.
+
 Was bleibt, ist dein Logbuch, `~/Seldon`, wenn du keinen anderen Ort
 gewählt hast. Es ist reines Markdown in einem git-Repository und bleibt
 ohne Seldon lesbar. Lösch es nur, wenn du sicher bist, dass du seine

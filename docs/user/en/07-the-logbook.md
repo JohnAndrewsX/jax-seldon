@@ -169,7 +169,8 @@ want tables; Seldon does not depend on them.
 To move it, move the folder and point the config at the new place:
 change `logbook` in `~/.config/seldon/config.toml`. The engine's state
 (`~/.local/state/seldon/`) belongs to one logbook. When you point it at
-another, the collectors start over from the current state.
+another, the collectors start over from the current state, and the first
+capture records a state reset in the ledger; there is nothing to restore.
 
 To keep a second logbook, for a test, run `seldon init --path <DIR>`.
 `init` sets the new folder as `logbook` in the config. Change
@@ -189,13 +190,19 @@ lives in `~/.local/state/seldon/`:
 | `hooks/` | the source copy of the theme hook script, if you chose that hook |
 | `agent-launch.log` | the error output of agent launchers; a log, nothing depends on it |
 
-If this folder is lost, nothing fails and nothing warns you. The
-collectors start over from the current state. `pacman` and `snapper`
-read their sources again and skip what the ledger already holds. A
-snapshot deleted while the state was gone is not recorded as deleted.
-The collectors that compare states (config, plugins, Omarchy, theme) take
-the machine as it is now as their new starting point, and a change made
-while the state was gone is not recorded.
+If this folder is lost, nothing fails. The collectors start over from
+the current state. `pacman` and `snapper` read their sources again and
+skip what the ledger already holds. A snapshot deleted while the state
+was gone is not recorded as deleted. The collectors that compare states
+(config, plugins, Omarchy, theme) take the machine as it is now as their
+new starting point, and a change made while the state was gone is not
+recorded.
+
+The capture that starts over says so. It writes a note with the subject
+`state-reset` to the ledger, naming the collectors that started over,
+prints a warning, and `seldon doctor` shows a `state` row until the next
+capture. The same happens when only `manifest.json` or `owned.json` is
+corrupt. See [A state reset was recorded](10-troubleshooting.md#a-state-reset-was-recorded).
 
 Back the folder up with the logbook, while no `seldon` command runs:
 
@@ -206,7 +213,8 @@ tar -C ~/.local/state -czf ~/seldon-state-2026-10-03.tar.gz seldon
 To restore it, put the folder back and run a capture. Restore it for the
 same logbook path: a state tied to another path starts over, as after
 [moving the logbook](#moving-or-copying-the-logbook). An older backup is
-better than none; the next capture records what changed since:
+better than none; the next capture records what changed since. That
+holds also after a capture has already recorded a state reset:
 
 ```sh
 rm -r ~/.local/state/seldon

@@ -52,7 +52,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{Collector, Ctx, Outcome, Tz, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Lost, Outcome, Tz, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, Source};
 
 // The command parser and the hook causes live in neutral modules (WP-009);
@@ -78,8 +78,10 @@ impl Collector for Pacman {
     }
 
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
-        match collect(ctx, typed_cursor(cursor)) {
-            Ok((events, cursor)) => Outcome::ok(events, to_cursor(&cursor)),
+        let cursor: Option<PacmanCursor> = typed_cursor(cursor);
+        let lost = cursor.is_none().then_some(Lost::Cursor);
+        match collect(ctx, cursor) {
+            Ok((events, cursor)) => Outcome::ok(events, to_cursor(&cursor)).baseline(lost),
             Err(e) => Outcome::degraded(format!("{e:#}"), None),
         }
     }

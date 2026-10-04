@@ -1583,3 +1583,17 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   ending in `EOF`** ends the outer heredoc early and runs the rest as
   shell. Write such scripts to the scratchpad with the file tool, or use
   a different inner delimiter.
+## 2026-10-04 · WP-081 (Engine Dev)
+
+- **`Cli::capture` in `tests/idempotency.rs` always adds `--all`,** and
+  `--source` with `--all` is exit 1. A test that captures one collector
+  runs `cli.run(&["capture", "--source", "config", "--json"])`.
+- **"The last capture" in doctor is a whole-second comparison** of the
+  newest `state-reset` note's `ts` with the newest `lastRun` in
+  `cursors.json`. Two captures under the same `SELDON_NOW` keep the row;
+  give each capture in a test its own time.
+- **A collector's baseline is not always a loss:** pacman and snapper
+  re-read their sources and dedupe, the diff collectors miss the gap. The
+  note's detail therefore says "may not be recorded", and the WP rule
+  (no note while the ledger holds no event of the source) keeps the first
+  capture of a logbook quiet.

@@ -1177,14 +1177,20 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
         Err(e) => report("journal", &e),
     }
 
-    if let Err(e) = capture::run(
+    match capture::run(
         ctx,
         CaptureArgs {
             all: true,
             ..CaptureArgs::default()
         },
     ) {
-        report("capture", &e);
+        // the state reset's warning (WP-081); stdout belongs to the harness
+        Ok(out) => {
+            for w in out.json["warnings"].as_array().into_iter().flatten() {
+                eprintln!("seldon: warning: {}", w.as_str().unwrap_or_default());
+            }
+        }
+        Err(e) => report("capture", &e),
     }
 
     let _lock = match lock_patiently(ctx) {

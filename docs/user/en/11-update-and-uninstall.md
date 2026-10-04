@@ -148,6 +148,12 @@ step 5.
    rm -r ~/.config/seldon ~/.local/state/seldon
    ```
 
+   If you might install Seldon again and keep the logbook, back the state
+   directory up first (see
+   [Back up and restore the state directory](07-the-logbook.md#back-up-and-restore-the-state-directory))
+   and restore it before the first capture. Otherwise that capture starts
+   over and records a state reset in the ledger.
+
 What stays is your logbook, `~/Seldon` unless you chose another place.
 It is plain Markdown in a git repository and stays readable without
 Seldon. Delete it only if you are sure you do not need its history:

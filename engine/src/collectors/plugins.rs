@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::config::changed_at;
-use super::{Collector, Ctx, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Lost, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys::{self, Run};
 
@@ -207,6 +207,7 @@ impl Plugins {
             since,
             ..Outcome::ok(events, to_cursor(&next))
         }
+        .baseline(prev.is_none().then_some(Lost::Cursor))
     }
 }
 

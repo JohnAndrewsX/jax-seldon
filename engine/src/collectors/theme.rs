@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::config::changed_at;
-use super::{Collector, Ctx, Outcome, Sources, to_cursor, typed_cursor};
+use super::{Collector, Ctx, Lost, Outcome, Sources, to_cursor, typed_cursor};
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 
 /// Where Omarchy stores the current theme slug, relative to `$HOME`
@@ -70,7 +70,7 @@ impl Theme {
             checked: ctx.now,
         });
         let Some(prev) = typed_cursor::<ThemeCursor>(cursor) else {
-            return Outcome::ok(Vec::new(), next); // baseline
+            return Outcome::ok(Vec::new(), next).baseline(Some(Lost::Cursor));
         };
         if prev.theme == slug {
             return Outcome::ok(Vec::new(), next);

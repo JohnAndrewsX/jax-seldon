@@ -1,6 +1,6 @@
 # Das Logbuch
 
-<!-- source: en/07-the-logbook.md @ 7d77836 -->
+<!-- source: en/07-the-logbook.md @ e8bf173 -->
 
 Diese Seite geht durch den Ordner des Logbuchs: was jeder Ordner und
 jede Datei enthält, welche Teile der Engine gehören und welche dir, wie
@@ -177,7 +177,9 @@ Zum Verschieben verschiebst du den Ordner und richtest die Konfiguration
 auf den neuen Ort aus: Ändere `logbook` in
 `~/.config/seldon/config.toml`. Der Zustand der Engine
 (`~/.local/state/seldon/`) gehört zu einem Logbuch. Richtest du sie auf
-ein anderes aus, fangen die Collectors beim aktuellen Stand neu an.
+ein anderes aus, fangen die Collectors beim aktuellen Stand neu an, und
+das erste Capture hält einen Zustands-Reset im Ledger fest; es gibt
+nichts wiederherzustellen.
 
 Für ein zweites Logbuch, etwa zum Testen, führst du
 `seldon init --path <DIR>` aus. `init` trägt den neuen Ordner als
@@ -198,14 +200,21 @@ Buchführung der Engine liegt in `~/.local/state/seldon/`:
 | `hooks/` | die Quellkopie des Theme-Hook-Skripts, wenn du diesen Hook gewählt hast |
 | `agent-launch.log` | die Fehlerausgabe der Agent-Starter; ein Log, nichts hängt davon ab |
 
-Geht dieser Ordner verloren, schlägt nichts fehl, und nichts warnt dich.
-Die Collectors fangen beim aktuellen Stand neu an. `pacman` und
-`snapper` lesen ihre Quellen erneut und überspringen, was das Ledger
-schon enthält. Ein Snapshot, der gelöscht wurde, während der Zustand
-fehlte, wird nicht als gelöscht festgehalten. Die Collectors, die Zustände vergleichen (Konfiguration,
+Geht dieser Ordner verloren, schlägt nichts fehl. Die Collectors fangen
+beim aktuellen Stand neu an. `pacman` und `snapper` lesen ihre Quellen
+erneut und überspringen, was das Ledger schon enthält. Ein Snapshot, der
+gelöscht wurde, während der Zustand fehlte, wird nicht als gelöscht
+festgehalten. Die Collectors, die Zustände vergleichen (Konfiguration,
 Plugins, Omarchy, Theme), nehmen die Maschine, wie sie jetzt ist, als
 neuen Ausgangspunkt, und eine Änderung, die geschah, während der Zustand
 fehlte, wird nicht festgehalten.
+
+Das Capture, das neu anfängt, sagt das. Es schreibt eine Notiz mit dem
+Betreff `state-reset` ins Ledger, die die neu startenden Collectors
+nennt, gibt eine Warnung aus, und `seldon doctor` zeigt bis zum nächsten
+Capture eine `state`-Zeile. Dasselbe geschieht, wenn nur `manifest.json`
+oder `owned.json` beschädigt ist. Siehe
+[Ein Zustands-Reset wurde festgehalten](10-troubleshooting.md#ein-zustands-reset-wurde-festgehalten).
 
 Sichere den Ordner zusammen mit dem Logbuch, während kein `seldon`-Befehl
 läuft:
@@ -219,7 +228,8 @@ aus. Stelle ihn für denselben Logbuchpfad wieder her: Ein Zustand, der
 an einen anderen Pfad gebunden ist, fängt neu an, wie nach dem
 [Verschieben des Logbuchs](#das-logbuch-verschieben-oder-kopieren). Eine
 ältere Sicherung ist besser als keine; das nächste Capture hält fest,
-was sich seitdem geändert hat:
+was sich seitdem geändert hat. Das gilt auch, wenn ein Capture schon
+einen Zustands-Reset festgehalten hat:
 
 ```sh
 rm -r ~/.local/state/seldon
