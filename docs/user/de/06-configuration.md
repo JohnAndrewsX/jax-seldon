@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 559c0d3 -->
+<!-- source: en/06-configuration.md @ fbc65b0 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -117,12 +117,12 @@ Ein Collector, der seine Quelle nicht lesen kann, ist `degraded`: Die
 Erfassung läuft weiter, und `seldon doctor` nennt die Abhilfe. Zwei Fälle
 sind normal:
 
-- `snapper` braucht deinen Benutzer in `ALLOW_USERS` der
-  Snapper-Konfiguration. Omarchy setzt das nicht. Die Abhilfe ist
-  `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes`, die
-  du selbst ausführst, oder gar nicht. `ALLOW_USERS` kennt keine
-  Nur-Lese-Stufe: Dein Benutzer kann danach auch Snapshots von root ohne
-  Passwort anlegen, ändern und löschen.
+- `snapper` braucht Lesezugriff auf das Snapshot-Verzeichnis
+  `/.snapshots`. Omarchy gibt ihn deinem Benutzer nicht. Die Abhilfe ist
+  `sudo setfacl -m u:$USER:rx /.snapshots`, die du selbst ausführst, oder
+  gar nicht. Damit liest Seldon die Snapshot-Liste und die Info-Dateien,
+  sonst nichts: Snapshots anlegen, ändern oder löschen kann dein Benutzer
+  damit nicht. Dateien in einem Snapshot behalten ihre eigenen Rechte.
 - `plugins` fragt die laufende Omarchy-Shell. Erfasst du von einem TTY
   ohne Desktop-Sitzung, ist er für diese Erfassung `degraded`.
 

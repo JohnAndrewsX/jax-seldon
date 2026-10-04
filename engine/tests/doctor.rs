@@ -63,21 +63,18 @@ mod doctor {
         assert_eq!(check(&v, "omarchy")["message"], "Omarchy 4.0.4-1");
         let snapper = check(&v, "snapper");
         assert_eq!(snapper["status"], "degraded");
-        assert_eq!(
-            snapper["fix"],
-            "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
-        );
-        // what the fix grants besides listing
+        // the read grant of ADR-0026, with what it grants
+        assert_eq!(snapper["fix"], "sudo setfacl -m u:$USER:rx /.snapshots");
         assert_eq!(
             snapper["message"],
             format!(
-                "No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). {}",
+                "No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). {}",
                 seldon::commands::doctor::SNAPPER_FIX_GRANTS
             )
         );
-        assert!(
-            seldon::commands::doctor::SNAPPER_FIX_GRANTS
-                .contains("create, change and delete root snapshots without a password")
+        assert_eq!(
+            seldon::commands::doctor::SNAPPER_FIX_GRANTS,
+            "The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
         );
         if env.has_git {
             assert_eq!(check(&v, "git")["status"], "ok", "{v}");
@@ -94,7 +91,7 @@ mod doctor {
         for name in ["engine", "config", "logbook", "omarchy", "snapper", "git"] {
             assert!(text.contains(name), "{name} missing in:\n{text}");
         }
-        assert!(text.contains("fix: sudo snapper"));
+        assert!(text.contains("fix: sudo setfacl -m u:$USER:rx /.snapshots"));
         assert!(
             text.contains(seldon::commands::doctor::SNAPPER_FIX_GRANTS),
             "{text}"
@@ -131,7 +128,7 @@ mod doctor {
         );
         assert!(
             text.contains(&format!(
-                "{}   # optional: snapshots in the timeline (ADR-0011)",
+                "{}   # optional: snapshots in the timeline (ADR-0026)",
                 seldon::commands::doctor::SNAPPER_FIX
             )),
             "{text}"
@@ -212,6 +209,127 @@ mod doctor {
                 seldon::commands::doctor::SNAPPER_LIST_GRANTS
             )
         );
+    }
+
+    /// ADR-0026: a user still listed in `ALLOW_USERS` (the old opt-in of
+    /// ADR-0011) gets the revert, then the read grant, as the fix of an
+    /// `ok` row; a user who is not listed, a failing `get-config` and a
+    /// missing snapper get none. The stub answers `get-config` only in the
+    /// C locale and logs every call, so doctor runs nothing but the two
+    /// read-only queries.
+    #[test]
+    fn snapper_revert_hint_only_for_a_listed_user() {
+        let env = Env::new(Snapper::Allowed);
+        let root = init(&env);
+        let calls = env.tmp.path().join("snapper-calls.log");
+        let stub = |config: &str| {
+            env.stub(
+                "snapper",
+                &format!(
+                    "printf '%s\\n' \"$*\" >> '{}'\n\
+                     case \"$*\" in\n\
+                     '--jsonout list') echo '{{\"root\":[{{\"number\":0}},{{\"number\":1}}]}}' ;;\n\
+                     '--jsonout -c root get-config') {config} ;;\n\
+                     *) exit 64 ;;\n\
+                     esac",
+                    calls.display()
+                ),
+            )
+        };
+        let listed = "if [ \"$LC_ALL\" = C ]; then \
+                      echo '{\"ALLOW_USERS\": \"alice  bob\", \"SYNC_ACL\": \"yes\"}'; \
+                      else echo 'Keine Berechtigungen.' >&2; exit 1; fi";
+        let doctor = |vars: &[(&str, &str)]| {
+            let mut cmd = env.command(&["doctor", "--path", root.to_str().unwrap(), "--json"]);
+            for (k, v) in vars {
+                cmd.env(k, v);
+            }
+            let out = cmd.output().unwrap();
+            assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+            check(&json(&out), "snapper").clone()
+        };
+        let plain = format!(
+            "1 snapshots (config root). {}",
+            seldon::commands::doctor::SNAPPER_LIST_GRANTS
+        );
+        let revert = "sudo snapper -c root set-config ALLOW_USERS=\"\" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots";
+
+        stub(listed);
+        for vars in [
+            &[("USER", "alice")][..],
+            &[("USER", "bob"), ("LANG", "de_DE.UTF-8"), ("LANGUAGE", "de")],
+            &[("LOGNAME", "alice")],
+        ] {
+            let got = doctor(vars);
+            assert_eq!(got["fix"], revert, "{vars:?}: {got}");
+            assert_eq!(got["status"], "ok", "{got}");
+            assert_eq!(
+                got["message"],
+                format!(
+                    "{plain} Your user is in ALLOW_USERS of the root snapper config, the opt-in that ADR-0026 replaces by a read grant: revert it (this empties ALLOW_USERS and turns SYNC_ACL off), then grant read access. {}",
+                    seldon::commands::doctor::SNAPPER_FIX_GRANTS
+                )
+            );
+        }
+        let text = stdout(
+            &env.command(&["doctor", "--path", root.to_str().unwrap()])
+                .env("USER", "alice")
+                .output()
+                .unwrap(),
+        );
+        assert!(text.contains(&format!("fix: {revert}\n")), "{text}");
+
+        // not listed (a name is matched whole; `USER` before `LOGNAME`), or
+        // no user known
+        for vars in [
+            &[("USER", "carol")][..],
+            &[("USER", "alic")],
+            &[("USER", "carol"), ("LOGNAME", "alice")],
+            &[],
+        ] {
+            let got = doctor(vars);
+            assert_eq!(got.get("fix"), None, "{vars:?}: {got}");
+            assert_eq!(got["message"], plain, "{vars:?}");
+        }
+        // get-config refused (a user listing works for by ALLOW_GROUPS)
+        stub("echo 'No permissions.' >&2; exit 1");
+        let got = doctor(&[("USER", "alice")]);
+        assert_eq!(got.get("fix"), None, "{got}");
+        assert_eq!(got["message"], plain);
+
+        let log = std::fs::read_to_string(&calls).unwrap();
+        assert!(
+            log.lines()
+                .all(|l| l == "--jsonout list" || l == "--jsonout -c root get-config"),
+            "{log}"
+        );
+        assert!(log.contains("get-config"), "{log}");
+
+        // listing refused: degraded with the read grant, and get-config is
+        // never asked (it runs only after `snapper list` succeeded)
+        std::fs::remove_file(&calls).unwrap();
+        env.stub(
+            "snapper",
+            &format!(
+                "printf '%s\\n' \"$*\" >> '{}'\n\
+                 case \"$*\" in\n\
+                 '--jsonout -c root get-config') {listed} ;;\n\
+                 *) echo 'No permissions.' >&2; exit 1 ;;\n\
+                 esac",
+                calls.display()
+            ),
+        );
+        let got = doctor(&[("USER", "alice")]);
+        assert_eq!(got["status"], "degraded", "{got}");
+        assert_eq!(got["fix"], seldon::commands::doctor::SNAPPER_FIX, "{got}");
+        let log = std::fs::read_to_string(&calls).unwrap();
+        assert_eq!(log, "--jsonout list\n", "{log}");
+
+        // no snapper: no revert either
+        std::fs::remove_file(env.tmp.path().join("bin/snapper")).unwrap();
+        let got = doctor(&[("USER", "alice")]);
+        assert_eq!(got["status"], "degraded", "{got}");
+        assert_eq!(got.get("fix"), None, "{got}");
     }
 
     /// Without permission to list, readable info files make snapper `ok`
@@ -649,7 +767,7 @@ mod doctor {
                     "plugins": {"ok": false, "message": "omarchy plugin list failed: exit 2",
                                 "lastRun": "2026-10-03T09:00:00+02:00"},
                     "snapper": {"ok": false, "message": "No permissions.",
-                                "fix": "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes",
+                                "fix": "sudo setfacl -m u:$USER:rx /.snapshots",
                                 "lastRun": "2026-10-03T09:00:00+02:00"},
                     "theme": {"ok": false, "message": "theme file missing",
                               "lastRun": "2026-10-03T09:00:00+02:00"}
@@ -672,10 +790,7 @@ mod doctor {
             c["message"],
             "last capture failed: plugins: omarchy plugin list failed: exit 2; snapper: No permissions."
         );
-        assert_eq!(
-            c["fix"],
-            "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
-        );
+        assert_eq!(c["fix"], "sudo setfacl -m u:$USER:rx /.snapshots");
 
         // another logbook's cursors are not this one's state
         std::fs::write(

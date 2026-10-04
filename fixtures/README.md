@@ -7,7 +7,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | Path | What | Schema |
 |---|---|---|
 | `index.sample.json` | canonical index; the plugin develops against it | `schema/index.schema.json` |
-| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0011), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
+| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0026), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
@@ -111,7 +111,7 @@ add a banner state, add an overlay and run `--write-index`.
 
 | Variant | Overlay | Plugin state it drives |
 |---|---|---|
-| `snapper-degraded` | collector `snapper`: `ok: false` + the ADR-0011 message | degraded collector with a fix command |
+| `snapper-degraded` | collector `snapper`: `ok: false` + the `NO_PERMISSIONS` message (ADR-0026) | degraded collector with a fix command |
 | `not-initialised` | `state.status: notInitialised`, every section empty | "Run `seldon init`" |
 | `index-stale` | `state.status: indexStale` only; `generatedAt` and `lastCapture` stay the sample's. The engine never writes `indexStale`; `plugin/Model.js` derives it, and this variant exercises its data-driven branch | stale banner from the data; with **`SELDON_NOW=2026-10-01T20:05:12+02:00`** (`STALE_NOW` in the script, also the plugin harness's clock) stale by the clock too — the check requires both times more than 2 h before it |
 | `plugins-degraded` | collector `plugins`: `ok: false`, `message` `omarchy plugin list --json: timed out` (the engine's text for a shell IPC timeout) | a failing non-snapper collector |

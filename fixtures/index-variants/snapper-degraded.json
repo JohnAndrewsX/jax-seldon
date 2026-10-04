@@ -26,7 +26,7 @@
         "enabled": true,
         "ok": false,
         "lastRun": "2026-10-01T17:05:00+02:00",
-        "message": "snapper: No permissions. The snapper config does not list this user in ALLOW_USERS; see `seldon doctor`."
+        "message": "snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; `seldon doctor` prints the read grant."
       },
       {
         "name": "omarchy",

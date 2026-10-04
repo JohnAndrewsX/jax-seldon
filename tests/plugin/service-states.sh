@@ -253,7 +253,7 @@ run fix-init 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-vari
   HARNESS_FIX=terminal HARNESS_RECORD="$work/fix-init.record"
 record_check fix-init "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "seldon init" --)"
 
-# 14b. Snapper without permissions (ADR-0011): its banner, with the constant
+# 14b. Snapper without permissions (ADR-0026): its banner, with the constant
 #      fix behind Copy and Run in terminal, and Check again (WP-054). After
 #      Run in terminal the hint shows, and a reload of the unchanged index
 #      ("Check again" on the status banner, at 1.5 s) keeps it.
@@ -266,10 +266,10 @@ snapper_actions="terminal:Run in terminal,copy:Copy,capture:Check again"
 snapper_hint="When the command has finished, press Check again"
 expect snapper-degraded '.snapperActions | join(",")' "$snapper_actions"
 snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
-snapper_grants="The command below adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password."
+snapper_grants="The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
 expect snapper-degraded .snapperDetail "$snapper_message"$'\n'"$snapper_grants"
 expect snapper-degraded .snapperHint "$snapper_hint"
-snapper_fix='sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes'
+snapper_fix='sudo setfacl -m u:$USER:rx /.snapshots'
 record_check snapper-degraded "$(printf '%s\n' wl-copy -- "$snapper_fix" -- \
   omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
 clean_log snapper-degraded

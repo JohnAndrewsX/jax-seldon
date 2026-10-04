@@ -49,14 +49,14 @@ var INSTALL_ENGINE_COMMAND = "curl -fsSL https://github.com/JohnAndrewsX/jax-sel
 var UPDATE_ENGINE_COMMAND = INSTALL_ENGINE_COMMAND
 var UPDATE_PLUGIN_COMMAND = "omarchy plugin update jax.seldon"
 var INIT_COMMAND = "seldon init"
-// ADR-0011: the one-time opt-in that lets the snapper collector read
-// snapshots. `$USER` is expanded by the shell the user pastes it into (or by
-// the terminal launcher's bash -c); nothing else in it varies.
-var SNAPPER_FIX_COMMAND = "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes"
-// What SNAPPER_FIX_COMMAND grants besides listing (snapper(8): ALLOW_USERS
-// has no read-only level); the banner shows it under the engine's message,
-// like `seldon doctor` (SNAPPER_FIX_GRANTS there).
-var SNAPPER_FIX_GRANTS = "The command below adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password."
+// ADR-0026: the one-time read grant on the snapshot directory that lets the
+// snapper collector read the snapshot info files. `$USER` is expanded by the
+// shell the user pastes it into (or by the terminal launcher's bash -c);
+// nothing else in it varies.
+var SNAPPER_FIX_COMMAND = "sudo setfacl -m u:$USER:rx /.snapshots"
+// What SNAPPER_FIX_COMMAND grants; the banner shows it under the engine's
+// message, like `seldon doctor` (SNAPPER_FIX_GRANTS there).
+var SNAPPER_FIX_GRANTS = "The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
 // The engineMissing banner's text. The AUR package does not exist yet
 // (operator, 2026-10-02); flip this with INSTALL_ENGINE_COMMAND (WP-044).
 var ENGINE_MISSING_DETAIL = "The plugin needs the seldon command. AUR package: coming soon; until then install from GitHub: the command below downloads install.sh from the release, which checks the engine against SHA256SUMS. Then check again."
@@ -679,8 +679,8 @@ function collectors(index) {
 // The snapper banner's hint after *Run in terminal* (WP-054, issue #2).
 var SNAPPER_HINT = "When the command has finished, press Check again"
 
-// ADR-0011: snapper runs degraded until the user opts in. The banner shows the
-// engine's message as plain text, then what the fix grants
+// ADR-0026: snapper runs degraded until the user grants read access. The
+// banner shows the engine's message as plain text, then what the fix grants
 // (SNAPPER_FIX_GRANTS), and offers the constant fix. Action ids are
 // dispatched by Service.fix(actionId, "snapper"). *Check again* is a capture
 // (the same call as *Capture now*): only a capture rewrites the collector

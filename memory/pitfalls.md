@@ -1543,3 +1543,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   carries the `WARN qml:` prefix. A check that "nothing of line two is in
   the log" must skip the HARNESS report lines, which carry the same text
   JSON-escaped (service-states 31b).
+
+## 2026-10-04 · WP-079 (Engine Dev)
+
+- **`snapper --jsonout -c root get-config` prints a flat JSON object of
+  strings** (`{"ALLOW_USERS": "a b", "SYNC_ACL": "yes", …}`); it succeeds
+  only for a user the config lists (or root). Build it like `list` with
+  `LC_ALL=C` (`collectors::snapper::get_config_command`).
+- **`rx` on `/.snapshots` opens more than the info files.** The snapshot
+  directories are 0755 and each `snapshot/` keeps the modes of its time,
+  so the grant also exposes old snapshot contents to the user; say so
+  wherever the grant is described as read-only.
+- **`pgrep -f` matches the shell that runs it.** A wait loop
+  `while pgrep -f "just check"; do sleep; done` never ends because its
+  own `bash -c` command line contains the pattern; write the pattern so
+  it does not match itself (`"just chec[k]"`).
+- **A `run_in_background` wait for other WPs' `just check`** keeps the
+  plugin harness from overlapping theirs; two other worktrees ran it at
+  the same time here.

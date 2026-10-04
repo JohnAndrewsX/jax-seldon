@@ -1,6 +1,8 @@
 # ADR-0011 — Snapper collector degrades without privileges; the user opts in
 
-**Status:** accepted · **Date:** 2026-10-01
+**Status:** superseded by ADR-0026 · **Date:** 2026-10-01
+
+> Superseded by [ADR-0026](ADR-0026-snapper-read-grant.md) (2026-10-04): the fix is a read grant on `/.snapshots`, not `ALLOW_USERS`.
 
 ## Context
 `snapper list` needs root unless the snapper config lists the user in

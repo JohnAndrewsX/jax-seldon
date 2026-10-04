@@ -3,7 +3,7 @@
 //! Read-only: no lock, no write; never runs anything with privileges.
 //!
 //! Every check is `ok`, `degraded` (works with less, e.g. snapper without
-//! permissions, ADR-0011) or `error`. Exit 0 without errors, 3 when the
+//! permissions, ADR-0026) or `error`. Exit 0 without errors, 3 when the
 //! logbook is not initialised (and `config.toml` is readable), 1 for any
 //! other error (the fix is in the user's files or config).
 
@@ -29,14 +29,14 @@ use crate::redact::Redactor;
 use crate::sys::{self, Run};
 use crate::{CONTRACT_VERSION, VERSION};
 
-/// The one command that lets the user read snapper without root (ADR-0011).
-/// Printed, never run.
-pub const SNAPPER_FIX: &str = "sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes";
+/// The one command that lets the snapper collector read the snapshots
+/// without root: a read grant on the snapshot directory, whose info files
+/// it then reads (ADR-0026). Printed, never run.
+pub const SNAPPER_FIX: &str = "sudo setfacl -m u:$USER:rx /.snapshots";
 
-/// What [`SNAPPER_FIX`] grants besides listing: snapper(8) has no read-only
-/// level for `ALLOW_USERS`. Shown with the fix (doctor, init, the plugin's
-/// banner) and when listing works for the user.
-pub const SNAPPER_FIX_GRANTS: &str = "The fix adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password.";
+/// What [`SNAPPER_FIX`] grants. Shown with the fix (doctor, init, the
+/// plugin's banner).
+pub const SNAPPER_FIX_GRANTS: &str = "The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.";
 
 /// Appended to the `ok` message when `snapper list` works for the user.
 pub const SNAPPER_LIST_GRANTS: &str = "This user may use the snapper config, which also lets it create, change and delete snapshots without a password.";
@@ -647,16 +647,19 @@ fn check_omarchy(config: &Config) -> Check {
 }
 
 /// `snapper --jsonout list` as the user, in the C locale
-/// ([`snapper::list_command`]). Without `ALLOW_USERS` it fails with
-/// `No permissions.`; then the snapshot info files are read instead
-/// ([`snapper::readable_info_files`]), and when they are not readable
-/// either, that is degraded with the fix, never sudo (ADR-0011).
+/// ([`snapper::list_command`]). For a user the snapper config does not list
+/// it fails with `No permissions.`; then the snapshot info files are read
+/// instead ([`snapper::readable_info_files`]), and when they are not
+/// readable either, that is degraded with the read grant, never sudo
+/// (ADR-0026). When listing works and the root config still lists this
+/// user (the old opt-in of ADR-0011), the fix reverts that first.
 pub fn check_snapper(config: &Config) -> Check {
     if !config.collectors.snapper {
         return Check::new("snapper", Status::Ok, "collector disabled in config.toml");
     }
     // the program the collector runs (`SELDON_SNAPPER`, WP-053 follow-up)
-    let run = snapper::run_list(&Sources::from_env().snapper, PROBE_TIMEOUT);
+    let program = Sources::from_env().snapper;
+    let run = snapper::run_list(&program, PROBE_TIMEOUT);
     match &run {
         Run::Exited {
             code: Some(0),
@@ -674,14 +677,22 @@ pub fn check_snapper(config: &Config) -> Check {
                     })
                     .sum();
                 let names: Vec<&str> = configs.keys().map(String::as_str).collect();
-                Check::new(
-                    "snapper",
-                    Status::Ok,
-                    format!(
-                        "{snapshots} snapshots (config {}). {SNAPPER_LIST_GRANTS}",
-                        names.join(", ")
-                    ),
-                )
+                let message = format!(
+                    "{snapshots} snapshots (config {}). {SNAPPER_LIST_GRANTS}",
+                    names.join(", ")
+                );
+                if snapper::lists_current_user(&program, PROBE_TIMEOUT) {
+                    Check::new(
+                        "snapper",
+                        Status::Ok,
+                        format!(
+                            "{message} Your user is in ALLOW_USERS of the root snapper config, the opt-in that ADR-0026 replaces by a read grant: revert it (this empties ALLOW_USERS and turns SYNC_ACL off), then grant read access. {SNAPPER_FIX_GRANTS}"
+                        ),
+                    )
+                    .fix(format!("{} && {SNAPPER_FIX}", snapper::REVERT_OPT_IN))
+                } else {
+                    Check::new("snapper", Status::Ok, message)
+                }
             }
             _ => Check::new(
                 "snapper",
@@ -701,7 +712,7 @@ pub fn check_snapper(config: &Config) -> Check {
                     "snapper",
                     Status::Degraded,
                     format!(
-                        "No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). {SNAPPER_FIX_GRANTS}"
+                        "No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). {SNAPPER_FIX_GRANTS}"
                     ),
                 )
                 .fix(SNAPPER_FIX),

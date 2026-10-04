@@ -1,5 +1,5 @@
 //! The pacman, snapper and omarchy collectors against `fixtures/logs/`
-//! (WP-004; SPEC-ENGINE §4, ADR-0011, ADR-0013 §5, ADR-0014 §1).
+//! (WP-004; SPEC-ENGINE §4, ADR-0026, ADR-0013 §5, ADR-0014 §1).
 //!
 //! The golden test replays the fixture story and requires exactly the
 //! pacman, snapper and omarchy lines of `fixtures/logbook/ledger/*.jsonl`,

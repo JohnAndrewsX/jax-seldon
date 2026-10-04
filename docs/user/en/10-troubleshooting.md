@@ -25,11 +25,12 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `collectors` | the last capture of every enabled collector succeeded | `degraded`: the row lists each failing collector with its message and fix |
 | `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable |
 | `omarchy` | `omarchy-version` answered | the Omarchy collector cannot read the version |
-| `snapper` | snapshots can be listed | `degraded`: your user may not list snapshots; see [Snapshots are not recorded](#snapshots-are-not-recorded) |
+| `snapper` | snapshots can be listed, or read from `/.snapshots` | `degraded`: your user may neither list snapshots nor read `/.snapshots`; see [Snapshots are not recorded](#snapshots-are-not-recorded). An `ok` row with a fix: your user is still in the old snapper opt-in; see [doctor suggests reverting the snapper opt-in](#doctor-suggests-reverting-the-snapper-opt-in) |
 | `git` | git is there; the logbook is a repository | git is missing, or the logbook is not a repository; autocommit is off then. `degraded`: something keeps every autocommit from committing (a stale `.git/index.lock`, a detached HEAD, …); the fix says what to do |
 
-`doctor --json` prints the same as JSON. The plugin reads it to choose
-its banner.
+`doctor --json` prints the same as JSON. The plugin does not run
+`doctor`: it chooses its banner from the index and from its own engine
+calls.
 
 ## Banners in the panel
 
@@ -44,7 +45,7 @@ button that fixes it.
 | Index is stale | the index is more than two hours old | *Capture now* |
 | Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
 | Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
-| Snapshots not readable | snapper refuses your user | *Run in terminal* runs the one-time snapper fix; you type your password there |
+| Snapshots not readable | snapper refuses your user and `/.snapshots` is not readable | *Run in terminal* runs the one-time read grant; you type your password there |
 
 The plugin looks for the engine when the shell starts and when you press
 *Check again*. After you installed the engine, press *Check again*, or
@@ -78,17 +79,37 @@ you never delete it by hand.
 ### Snapshots are not recorded
 
 `seldon doctor` says `snapper degraded: No permissions`. Omarchy does not
-let your user list snapshots. Seldon works without them; the timeline
-then has no snapshot markers. To allow it, run once:
+let your user list snapshots or read the snapshot directory. Seldon works
+without them; the timeline then has no snapshot markers. To allow it, run
+once:
 
 ```sh
-sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
+sudo setfacl -m u:$USER:rx /.snapshots
 ```
 
-This changes the root snapper config. Seldon never runs it for you.
-It adds your user to `ALLOW_USERS`, which has no read-only level: your
-user can then also create, change and delete root snapshots without a
-password, not only list them. Decide whether you want that.
+Seldon never runs it for you. It gives your user read access to
+`/.snapshots`: Seldon then reads the snapshot list and the info files.
+Your user cannot create, change or delete snapshots with it. Files inside
+a snapshot keep their own permissions, so you can read in an old snapshot
+what you could read when it was taken.
+
+### doctor suggests reverting the snapper opt-in
+
+Earlier versions of Seldon suggested adding your user to the snapper
+config's `ALLOW_USERS`. That also lets your user create, change and
+delete root snapshots without a password. When your user is still listed
+there, `seldon doctor` says so in the `snapper` row and prints:
+
+```sh
+sudo snapper -c root set-config ALLOW_USERS="" SYNC_ACL=no && sudo setfacl -m u:$USER:rx /.snapshots
+```
+
+The first command empties the list (add back any other user that should
+stay in it) and stops snapper from managing the access list of
+`/.snapshots`, so a later snapper change does not take your read access
+away again. It may remove the read access the old opt-in gave your user;
+the second command grants it. Seldon keeps recording snapshots either
+way.
 
 ### A change does not show up
 

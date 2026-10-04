@@ -45,7 +45,7 @@ impl Drop for TempDir {
 /// What the stubbed `snapper` does.
 #[derive(Clone, Copy)]
 pub enum Snapper {
-    /// Exit 1, `No permissions.` on stderr (the Omarchy default, ADR-0011).
+    /// Exit 1, `No permissions.` on stderr (the Omarchy default, ADR-0026).
     NoPermissions,
     /// [`Snapper::NoPermissions`] as snapper translates it: German
     /// `Keine Berechtigungen.` unless `LC_ALL` is `C` (issue #1).

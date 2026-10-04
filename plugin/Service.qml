@@ -556,7 +556,7 @@ Item {
 
   // ---- Banner fixes (AGENTS.md §7: every non-ok state has a one-click fix).
   // bannerId picks the banner whose constant command copy/terminal use:
-  // "status" (default) or "snapper" (ADR-0011).
+  // "status" (default) or "snapper" (ADR-0026).
   function fix(actionId, bannerId) {
     var source = bannerId === "snapper" ? root.snapperBanner : root.banner
     var command = source ? source.command : ""

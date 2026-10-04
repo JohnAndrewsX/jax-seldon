@@ -17,7 +17,7 @@ url='https://github.com/JohnAndrewsX/jax-seldon'
 license=('MIT')
 depends=('gcc-libs' 'git' 'glibc')
 makedepends=('cargo')
-optdepends=('snapper: snapshot events (needs ALLOW_USERS in the snapper config)')
+optdepends=('snapper: snapshot events (needs read access to /.snapshots)')
 # Cargo's release profile strips the binary; a debug package would be empty
 options=('!debug')
 source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")

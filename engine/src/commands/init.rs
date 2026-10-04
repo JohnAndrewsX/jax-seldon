@@ -256,12 +256,12 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     if let Some(fix) = theme_hook.fix() {
         next.push(format!("{fix}   # optional: the theme hook"));
     }
-    if snapper.status == Status::Degraded
-        && let Some(fix) = &snapper.fix
-    {
-        next.push(format!(
-            "{fix}   # optional: snapshots in the timeline (ADR-0011)"
-        ));
+    if let Some(fix) = &snapper.fix {
+        next.push(if snapper.status == Status::Degraded {
+            format!("{fix}   # optional: snapshots in the timeline (ADR-0026)")
+        } else {
+            format!("{fix}   # recommended: a read grant instead of the snapper opt-in (ADR-0026)")
+        });
     }
 
     let shown_root = ctx.dirs.display(&root);

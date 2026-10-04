@@ -242,10 +242,12 @@ AUR package is live, ADR-0024); engine older than the manifest's
 contract mismatch) → "Engine too old", "Update the engine to at least
 X", the same installer one-liner with *Update in terminal*, *Copy* and
 *Check again* (WP-068); snapshots
-not readable (ADR-0011) → the one-line snapper fix with *Run in
-terminal*, *Copy* and *Check again*; the detail is the engine's message,
-then on its own line what the fix grants besides listing (it also lets the
-user create, change and delete root snapshots without a password) (WP-054, issue #2); *Check again*
+not readable (ADR-0026) → the one-line read grant
+`sudo setfacl -m u:$USER:rx /.snapshots` with *Run in terminal*, *Copy*
+and *Check again*; the detail is the engine's message, then on its own
+line what the fix grants (read access to the snapshot directory listing
+and the snapshot info files, no snapshot creation, change or deletion)
+(WP-054, issue #2); *Check again*
 runs a capture, the same call as *Capture now* (`capture --all --json
 --quiet`, then `status --json`), because only a capture rewrites the
 collector state this banner reads (reloading the index would not); after

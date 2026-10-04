@@ -316,7 +316,7 @@ When something is wrong the panel shows one banner with a one-click fix:
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
 | Index format mismatch | Index format mismatch, with both contract versions | *Update in terminal* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older, the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
 | Engine too old (older than the plugin's `engineMin`) | Engine too old, with the version the plugin needs and the one `seldon` reports | *Update in terminal* runs the GitHub one-liner from *Engine missing* (until the AUR package is live, ADR-0024); *Copy*; *Check again* looks for the engine again |
-| Snapshots not readable | Snapshots not readable, with the engine's message and what the fix grants: it adds your user to `ALLOW_USERS`, which also lets your user create, change and delete root snapshots without a password | *Run in terminal* / *Copy*: `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes` (once; Seldon never runs it on its own); then *Check again* runs a capture, like *Capture now*, which clears the banner once snapshots are readable. After *Run in terminal* the banner says "When the command has finished, press Check again" |
+| Snapshots not readable | Snapshots not readable, with the engine's message and what the fix grants: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Run in terminal* / *Copy*: `sudo setfacl -m u:$USER:rx /.snapshots` (once; Seldon never runs it on its own); then *Check again* runs a capture, like *Capture now*, which clears the banner once snapshots are readable. After *Run in terminal* the banner says "When the command has finished, press Check again" |
 
 The engine is looked for when the shell starts and again on the status
 banner's *Check again* (or `omarchy-shell jax.seldon.service refresh`),
@@ -422,7 +422,7 @@ shell plugin. This is everything it does outside its own window:
   the script over TLS from this project's release and the script checks
   the engine against `SHA256SUMS`), `seldon init`,
   `omarchy plugin update jax.seldon`, `yay -S jax-seldon`,
-  `sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes`.
+  `sudo setfacl -m u:$USER:rx /.snapshots`.
   Omarchy's launcher runs it in a terminal window you see
   (`sudo` asks for your password there).
 - **Never shell strings:** every program is started with an argument list,
