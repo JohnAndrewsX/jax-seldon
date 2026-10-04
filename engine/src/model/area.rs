@@ -40,7 +40,7 @@ impl Record for Area {
         } else {
             Err(field(
                 "name",
-                format!("`{}` is not a lowercase slug", self.name),
+                format!("`{}` is not a lowercase slug", self.name.escape_debug()),
             ))
         }
     }

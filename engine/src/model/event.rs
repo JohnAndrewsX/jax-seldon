@@ -280,13 +280,13 @@ impl Event {
         if !is_actor(&self.actor) {
             return Err(format!(
                 "actor `{}` is not human|system|agent:<name>",
-                self.actor
+                self.actor.escape_debug()
             ));
         }
         if let Some(c) = &self.case
             && !is_case_id(c)
         {
-            return Err(format!("case `{c}` is not a case id"));
+            return Err(format!("case `{}` is not a case id", c.escape_debug()));
         }
         if self.tx_id.as_deref() == Some("") || self.meta.tx_id.as_deref() == Some("") {
             return Err("txId must not be empty".into());
@@ -359,6 +359,21 @@ fn de_ts<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<FixedOffset>, D::Er
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An actor or case it refuses is named escaped (WP-077).
+    #[test]
+    fn a_refused_value_is_named_escaped() {
+        let event: Event = serde_json::from_str(PACMAN_LINE).unwrap();
+        let mut bad_actor = event.clone();
+        bad_actor.actor = "agent:\u{1b}[31mX".into();
+        let mut bad_case = event;
+        bad_case.case = Some("C-2026-\u{1b}[31mX".into());
+        for bad in [bad_actor, bad_case] {
+            let err = bad.validate().unwrap_err();
+            assert!(!err.chars().any(char::is_control), "{err:?}");
+            assert!(err.contains("\\u{1b}[31mX"), "{err:?}");
+        }
+    }
 
     const PACMAN_LINE: &str = r#"{"id":"01M1MB2M1GWZYF485HTGVZ1KS3","ts":"2026-09-03T21:14:06+02:00","source":"pacman","kind":"install","subject":"btop","detail":"1.4.5-1","actor":"system","zone":"red","explicit":true,"txId":"tx-20260903T211406","meta":{"command":"pacman -S btop","version":"1.4.5-1"}}"#;
 

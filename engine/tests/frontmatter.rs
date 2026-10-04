@@ -462,4 +462,64 @@ mod case_ids {
             }
         }
     }
+
+    /// A refused value is named escaped (`\u{1b}`), never with its control
+    /// characters, which would reach the terminal (WP-077).
+    #[test]
+    fn a_refused_value_is_named_escaped() {
+        const ESC: &str = "\\e[31mX";
+        let fixture =
+            |rel: &str| std::fs::read_to_string(common::fixture_logbook().join(rel)).unwrap();
+        let case = fixture("work/queued/C-2026-005-tokyo-night.md");
+        let decision = fixture("decisions/ADR-0001-language.md");
+        let journal = fixture("journal/2026/2026-10-01.md");
+        let area = fixture("areas/dev-env/README.md");
+        type Parse = fn(&str) -> Option<String>;
+        fn err<R: Record>(text: &str) -> Option<String> {
+            model::parse::<R>(text).err().map(|e| e.to_string())
+        }
+        let checks: [(&str, &str, &str, Parse); 14] = [
+            ("case", &case, "id: C-2026-005", err::<Case>),
+            ("case", &case, "status: queued", err::<Case>),
+            ("case", &case, "zone: yellow", err::<Case>),
+            ("case", &case, "risk: R1", err::<Case>),
+            ("case", &case, "priority: normal", err::<Case>),
+            ("case", &case, "area: themes", err::<Case>),
+            ("case", &case, "agents: []", err::<Case>),
+            ("case", &case, "events: []", err::<Case>),
+            ("decision", &decision, "id: ADR-0001", err::<Decision>),
+            ("decision", &decision, "supersedes:", err::<Decision>),
+            (
+                "decision",
+                &decision,
+                "cases: [C-2026-001]",
+                err::<Decision>,
+            ),
+            ("decision", &decision, "status: accepted", err::<Decision>),
+            (
+                "journal",
+                &journal,
+                "cases: [C-2026-003, C-2026-004]",
+                err::<Journal>,
+            ),
+            ("area", &area, "name: dev-env", err::<Area>),
+        ];
+        for (what, text, line, parse) in checks {
+            let (key, value) = line.split_once(':').unwrap();
+            let bad_value = if value.trim_start().starts_with('[') {
+                format!("[\"{ESC}\"]")
+            } else {
+                format!("\"{ESC}\"")
+            };
+            let bad = text.replacen(
+                &format!("\n{line}\n"),
+                &format!("\n{key}: {bad_value}\n"),
+                1,
+            );
+            assert_ne!(&bad, text, "{what}: {line}");
+            let msg = parse(&bad).unwrap_or_else(|| panic!("{what} {key}: accepted"));
+            assert!(!msg.chars().any(char::is_control), "{what} {key}: {msg:?}");
+            assert!(msg.contains("\\u{1b}[31mX"), "{what} {key}: {msg:?}");
+        }
+    }
 }

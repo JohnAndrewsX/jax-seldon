@@ -169,7 +169,10 @@ impl FromStr for Language {
         match s {
             "en" => Ok(Language::En),
             "de" => Ok(Language::De),
-            _ => Err(format!("unsupported language `{s}` (en, de)")),
+            _ => Err(format!(
+                "unsupported language `{}` (en, de)",
+                s.escape_debug()
+            )),
         }
     }
 }
@@ -218,6 +221,12 @@ fn all_digits(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_language_is_named_escaped() {
+        let err = "\u{1b}[31mX".parse::<Language>().unwrap_err();
+        assert_eq!(err, "unsupported language `\\u{1b}[31mX` (en, de)");
+    }
 
     #[test]
     fn id_patterns() {
