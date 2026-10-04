@@ -1,6 +1,6 @@
 pkgbase = jax-seldon
 	pkgdesc = Flight recorder and planning desk for an Omarchy system (engine)
-	pkgver = 0.1.1
+	pkgver = 0.1.2
 	pkgrel = 1
 	url = https://github.com/JohnAndrewsX/jax-seldon
 	arch = x86_64
@@ -11,7 +11,7 @@ pkgbase = jax-seldon
 	depends = glibc
 	optdepends = snapper: snapshot events (needs read access to /.snapshots)
 	options = !debug
-	source = jax-seldon-0.1.1.tar.gz::https://github.com/JohnAndrewsX/jax-seldon/releases/download/v0.1.1/jax-seldon-0.1.1.tar.gz
-	sha256sums = 3ebef5d34e9e00c53d19586e16c3103157488fc9e5572b4760ecc00a76498cc4
+	source = jax-seldon-0.1.2.tar.gz::https://github.com/JohnAndrewsX/jax-seldon/releases/download/v0.1.2/jax-seldon-0.1.2.tar.gz
+	sha256sums = d2b60d318e3ec5316ec6775d53288320d96196c5473b6128d0ac7db1fc0bef8e
 
 pkgname = jax-seldon
