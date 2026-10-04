@@ -357,9 +357,16 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
   state-loss event kind are bundled into one contract v2 ADR for v0.2.0.
 - Global hook installs serve only sessions inside the logbook by default
   (`[hooks] scope = "logbook"`): confirmed.
-- Next release: v0.1.2 after WP-079/080/081.
+- Next release: v0.1.2 prepared on `main` (7f8ca2b; main check, CI and the
+  release dry run green); the tag is the operator's go.
 
 ## Open questions for the operator
+- **Tag ruleset:** the repository has no ruleset protecting `v*` tags.
+  Since WP-080 the tag is the trust anchor of the provenance check
+  (`--source-ref refs/tags/<tag>`); a ruleset that limits tag creation and
+  deletion to you closes that gap. Also: after the read grant is live on
+  your machines, revert the old snapper opt-in with the line `seldon
+  doctor` prints.
 - **Review of v0.1.1 processed (2026-10-04):** 22 work packages
   (WP-055…076) merged, follow-ups WP-077/078 merged; the six decisions
   are taken (see *Decided 2026-10-04*). Still yours: a `scripts/guard.sh`
