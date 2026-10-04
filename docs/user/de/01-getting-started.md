@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ fbc65b0 -->
+<!-- source: en/01-getting-started.md @ e123118 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
