@@ -325,6 +325,23 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
   → ADR-0011.
 
 ## Open questions for the operator
+- **Review of v0.1.1 processed (2026-10-04):** 22 work packages
+  (WP-055…076) merged; follow-ups queued as WP-077 and WP-078. Six
+  decisions are yours, none blocks other work: (1) snapper access by a
+  read grant instead of the `ALLOW_USERS` opt-in, as an ADR superseding
+  ADR-0011 (the warning text shipped; only the fix-line change waits);
+  (2) your own machines keep or revert that opt-in; (3) release signing:
+  minisign, Sigstore or GitHub attestations, and whether `install.sh`
+  refuses an unverified download; (4) state-directory loss as a new
+  event kind (contract bump) or as a capture line plus doctor check only;
+  (5) the last autocommit result in `index.json` for a plugin banner
+  (contract bump) — yes, no, later; (6) global hook installs serve only
+  sessions inside the logbook by default (`[hooks] scope`, shipped as
+  default `logbook`) — confirm or change. Also for you: a `scripts/guard.sh`
+  false positive on path words inside command text (seen three times);
+  dependabot for the pinned actions; the plugin-repo README push
+  ("push plugin main"); the live bar check on the test host; a v0.1.2
+  release once you want the review fixes out.
 - **Test host:** unlocked 21:04 UTC, stay-awake on; G2 passed. The
   helper `/tmp/seldon-unlock.sh` there is yours. An incident line
   (`Live smoke: dismissed, test host package`, command not found) sits
