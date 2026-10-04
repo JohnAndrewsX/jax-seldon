@@ -82,7 +82,9 @@ plugin/
   `status` along); meanwhile the capture result reads "waiting for another
   seldon process; trying again shortly" in the neutral tone and
   `capturing` stays true. After the third retry the exit is an error as
-  before. An explicit *Capture now* replaces a pending retry (WP-068).
+  before. An explicit *Capture now* replaces a pending retry (WP-068):
+  the Changelog button (a click while it reads *Capturing*, WP-078), the
+  bar's right click, the `c` key and IPC `capture` alike.
 - One call at a time per family (plan and agent, drift, decide): a call
   refused because one of its family is pending returns false and sets
   `busyRefusal` to `{ family, action, caseId, eventId, text }` with the

@@ -94,11 +94,12 @@ shows() {
 # refuse on purpose (WP-068); any other warning still fails the case.
 expected_warnings='jax\.seldon: seldon (log exit 1: unknown case C-2026-004$|plan exit 1: C-2026-008 is active; |agent exit 1: C-2026-004 is queued; |(plan|drift|decide) exit 4: the logbook is locked by another seldon \(pid 4242\)$)'
 
+# clean_log <case> [regex] — also allow the warnings the regex matches.
 clean_log() {
   local bad
   bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop" \
     | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
-    | grep -a -v -E "$expected_warnings" || true)
+    | grep -a -v -E "$expected_warnings" | grep -a -v -E "${2:-^$}" || true)
   if [[ -z $bad ]]; then
     pass=$((pass + 1))
     echo "ok   $1: log clean"
@@ -1121,6 +1122,32 @@ expect cursor-follow 8 .view.changelog.filter pacman
 expect cursor-follow 8 .view.cursor 0
 expect cursor-follow 8 .view.changelog.selected "$(jq -r '[.events[] | select(.source == "pacman")][0].id' "$fx/index.sample.json")"
 clean_log cursor-follow
+
+# 27. *Capture now* on the Changelog replaces a pending lock retry, as the
+#     bar's right click and the `c` key do (WP-078): the start-up capture
+#     finds the lock held (exit 4), the retry waits 50 s and the button
+#     reads "Capturing"; a click on it captures at once ("nothing new"),
+#     and the retry never runs (one locked and one good capture).
+mkdir -p "$work/home-capture-click"
+run capture-click "" "tab:changelog;view;click:Capturing;settle;view" \
+  HOME="$work/home-capture-click" FAKE_SELDON_FIXTURE="$fx/index.sample.json" \
+  FAKE_SELDON_CAPTURE_LOCKED=1 SELDON_LOCK_RETRY_MS=50000
+expect capture-click 2 .view.capturing true
+expect capture-click 2 .view.captureResult "waiting for another seldon process; trying again shortly"
+shows capture-click 2 "Capturing"
+expect capture-click 5 .view.capturing false
+expect capture-click 5 .view.captureResult "nothing new"
+expect capture-click 5 .view.lastError ""
+shows capture-click 5 "Capture now"
+for counter in locked-captures:1 captures:1; do
+  got=$(cat "$work/home-capture-click/${counter%%:*}" 2>/dev/null || echo 0)
+  if [[ $got == "${counter#*:}" ]]; then
+    pass=$((pass + 1)); echo "ok   capture-click: ${counter%%:*} = $got"
+  else
+    fail=$((fail + 1)); echo "FAIL capture-click: ${counter%%:*} = $got (want ${counter#*:})"
+  fi
+done
+clean_log capture-click "jax\.seldon: seldon capture exit 4: another seldon process holds the lock "
 
 real_home_check panel-view
 

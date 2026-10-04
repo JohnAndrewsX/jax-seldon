@@ -296,6 +296,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision sent from another monitor's panel is pending: it says
   "Another action is running — try again in a moment", like the
   new-case and drift sheets (WP-078).
+- The Changelog's *Capture now* button captures at once while a locked
+  capture waits for its retry, as the bar's right click and the `c` key
+  already did; before, a click on *Capturing* did nothing (WP-078).
 
 ### Packaging and docs
 
