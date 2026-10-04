@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- A lost or corrupt state directory leaves a trace: when a collector
+  has to start over because `~/.local/state/seldon` (its cursor,
+  `manifest.json` or `owned.json`) was missing or unreadable although
+  the ledger already holds its events, `capture` writes one `seldon`
+  note `state-reset` naming the collectors and files, prints a warning
+  (also in `--json` `warnings`) that points at the restore steps, and
+  `doctor` shows a degraded `state` row until the next capture. A
+  corrupt `owned.json` is moved to `owned.json.bad`. The first capture
+  of a logbook is no reset (WP-081).
 - snapper's permission error is recognised in every locale: snapper now
   runs with `LC_ALL=C`, so under `LANG=de_DE.UTF-8` the snapper collector
   reports `NO_PERMISSIONS` again and `doctor` and `init` show the

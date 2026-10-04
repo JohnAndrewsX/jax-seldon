@@ -346,15 +346,22 @@ one end marker left, nothing in the file shows it. `state`:
 parse (missing is fine); each corrupt or unreadable one is an error row
 with what it breaks and the fix (`mv <file> <file>.bad`, or `chmod` for
 an unreadable one). A corrupt `manifest.json` or `owned.json` is read as
-empty by the collector, which takes a new baseline without a report;
-whether that stays silent is an open decision. The `omarchy`
+empty by the collector; the row says that the next capture records it as
+a state reset (§3 `capture`, WP-081) when the ledger holds config events.
+A second `state` row, degraded, appears while the ledger's newest
+`state-reset` note is as new as the newest `lastRun` in `cursors.json`
+for this logbook (the last capture recorded it): it names the sources and
+files from the note's `meta`, and its fix is to restore a backup of the
+state directory and run `seldon capture` (without a backup, the next
+capture clears the row). The `omarchy`
 and `snapper` probes run the programs the collectors run
 (`SELDON_OMARCHY_VERSION`, `SELDON_SNAPPER`).
 
 ```
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
-                          "sinceIgnored":[…],"explainedOwn":N}   # explainedOwn: §5 rule 7
+                          "sinceIgnored":[…],"explainedOwn":N,"warnings":[…]}   # explainedOwn: §5 rule 7;
+                                                                    # warnings: the state reset (WP-081)
                          exit 0 also when a collector is degraded (ok:false + fix, ADR-0011);
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
 ```
@@ -420,6 +427,29 @@ duplicates events. `capture` runs the shared attribution pass before the
 append (ADR-0017), then rebuilds the index (CONTRACT rule 2); the commit
 helper and reconciliation (WP-008) follow.
 
+State reset (WP-081). A collector that takes a baseline because its state
+was missing or unreadable says which state file it missed: `cursors` (no
+entry for this logbook in `cursors.json`, or one that does not read as its
+cursor: a new or lost state directory, another logbook), `manifest`
+(config: `manifest.json` missing, corrupt, or without the generation the
+cursor names) or `owned` (config: `owned.json` corrupt). When the ledger
+already holds at least one event of that collector's source, the changes
+since its last capture may be lost, and the capture appends, with its other
+events, one `note` with `source: seldon`, `actor: system`, subject
+`state-reset`, detail `state directory missing or unreadable: new baseline
+for <source> (<files>), … at <capture time>; changes made while it was
+missing may not be recorded`, and `meta.sources` / `meta.files` (comma
+lists in run order and in the order cursors, manifest, owned). A collector
+whose source the ledger holds no event of (the first capture of a logbook)
+takes its baseline without a note. The next capture continues from the new
+state, so a loss is recorded once; a corrupt `owned.json` is moved to
+`owned.json.bad` by the capture that runs the config collector. The
+capture warns: `warning: state reset recorded: <sources> took a new
+baseline because <state dir> was missing or unreadable, …` on stdout (and
+in `--json` `warnings`), naming the user guide's restore steps (07 "Back up
+and restore the state directory"). A corrupt `cursors.json` still fails
+every capture (exit 2) until it is moved away.
+
 ```
 seldon index --json   → {"ok","logbook","index":"<path>","generatedAt","events":N,"summary":{…},
                          "files":["ledger/2026-10.md",…],"warnings":[…],"valid":bool}
@@ -482,7 +512,10 @@ may contain it.
 
 Each collector implements `fn collect(ctx) -> Vec<Event>` and
 `fn cursor(&self) -> Cursor`. Run order: snapper, pacman, omarchy, plugins,
-theme, config. `seldon dossier` (§3) is not a collector and writes no
+theme, config. A run that takes a baseline because its saved state is
+missing or unreadable names the state file it missed (`cursors`,
+`manifest`, `owned`), so that `capture` can record a state reset (§3,
+WP-081). `seldon dossier` (§3) is not a collector and writes no
 events; it queries pacman read-only (`-Qqe`, `-Qqm`, `-Q`) and systemd
 read-only (`list-unit-files --state=enabled`), and reads Omarchy's
 package lists (`omarchy-base.packages`, `omarchy-other.packages`) as
