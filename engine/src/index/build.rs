@@ -3,6 +3,7 @@
 //! `scripts/validate-fixtures.py`; the golden test (`tests/index.rs`)
 //! holds both to `fixtures/index.sample.json`.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{DateTime, Datelike as _, Duration, FixedOffset, NaiveDate};
@@ -25,6 +26,14 @@ pub const MAX_SNAPSHOTS: usize = 10;
 /// Most open drift items the index lists (ADR-0020): crises first, then
 /// the newest; `summary` still counts all of them.
 pub const MAX_DRIFT: usize = 200;
+/// The size budget of `index.json` in bytes (CONTRACT.md rule 5: < 1 MB).
+pub const SIZE_BUDGET: usize = 1_000_000;
+/// Most bytes one free text of an index event or drift item takes in
+/// `index.json` (JSON-escaped, marker included): `detail`,
+/// `resolutionDetail` and every string in `meta`. 500 events and 200
+/// drift items then fit the [`SIZE_BUDGET`] whatever their ledger lines
+/// hold; the ledger line keeps the full text.
+pub const TEXT_MAX: usize = 256;
 
 /// What the index needs besides the logbook.
 #[derive(Debug, Clone)]
@@ -67,7 +76,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         lessons,
         mut topics,
         areas,
-        warnings,
+        mut warnings,
         ..
     } = loaded;
 
@@ -207,7 +216,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         state: input.state.clone(),
         summary,
         today: today_obj,
-        events: folded.iter().take(MAX_EVENTS).cloned().collect(),
+        events: folded.iter().take(MAX_EVENTS).map(clipped).collect(),
         drift,
         cases: groups,
         decisions: decision_rows,
@@ -215,6 +224,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         memory,
         series,
     };
+    warnings.extend(over_budget(&index));
     Built {
         index,
         ledger: events,
@@ -289,6 +299,114 @@ fn fold(events: &[Event]) -> Vec<IndexEvent> {
         .collect();
     folded.sort_by(|a, b| newest_first(&a.event, &b.event));
     folded
+}
+
+/// `text` as the index carries it: unchanged when it takes at most
+/// [`TEXT_MAX`] bytes in JSON, else its start followed by a visible
+/// marker, `… (3744 more characters in the ledger)` (CONTRACT.md rule 5).
+/// The cut falls on a character boundary.
+pub fn clip(text: &str) -> Cow<'_, str> {
+    // bytes of one character in JSON (serde_json escapes only these)
+    let json_len = |c: char| match c {
+        '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+        c if u32::from(c) < 0x20 => 6,
+        c => c.len_utf8(),
+    };
+    if text.len() * 6 <= TEXT_MAX || text.chars().map(json_len).sum::<usize>() <= TEXT_MAX {
+        return Cow::Borrowed(text);
+    }
+    let marker = |left: usize| {
+        let unit = if left == 1 { "character" } else { "characters" };
+        format!("… ({left} more {unit} in the ledger)")
+    };
+    let total = text.chars().count();
+    // the marker for every character is at least as long as the real one
+    let room = TEXT_MAX - marker(total).len();
+    let (mut used, mut end) = (0, 0);
+    for (i, c) in text.char_indices() {
+        used += json_len(c);
+        if used > room {
+            break;
+        }
+        end = i + c.len_utf8();
+    }
+    let head = text[..end].trim_end();
+    Cow::Owned(format!("{head}{}", marker(total - head.chars().count())))
+}
+
+/// An event as `index.events` lists it: every free text [`clip`]ped.
+fn clipped(f: &IndexEvent) -> IndexEvent {
+    let mut f = f.clone();
+    let meta = &mut f.event.meta;
+    let texts = [
+        &mut f.event.detail,
+        &mut f.resolution_detail,
+        &mut meta.command,
+        &mut meta.version,
+        &mut meta.from,
+        &mut meta.to,
+        &mut meta.hash_from,
+        &mut meta.hash_to,
+        &mut meta.snapshot_type,
+        &mut meta.cleanup,
+        &mut meta.tx_id,
+    ];
+    for text in texts.into_iter().flatten() {
+        if let Cow::Owned(short) = clip(text) {
+            *text = short;
+        }
+    }
+    for value in meta.extra.values_mut() {
+        if let serde_json::Value::String(text) = value
+            && let Cow::Owned(short) = clip(text)
+        {
+            *text = short;
+        }
+    }
+    f
+}
+
+/// A warning when the serialised index is not under [`SIZE_BUDGET`]
+/// (CONTRACT.md rule 5), naming its largest section. Events and drift are
+/// clipped and capped; open cases, decisions and memory topics are not.
+fn over_budget(index: &Index) -> Option<String> {
+    /// Counts the bytes serde_json writes, keeping none of them.
+    struct Count(usize);
+    impl std::io::Write for Count {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0 += buf.len();
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    fn size(value: &impl serde::Serialize) -> usize {
+        let mut count = Count(0);
+        serde_json::to_writer(&mut count, value).expect("the index always serialises");
+        count.0
+    }
+    let total = size(index) + 1; // the newline of `index::to_text`
+    if total < SIZE_BUDGET {
+        return None;
+    }
+    let (name, bytes) = [
+        ("events", size(&index.events)),
+        ("drift", size(&index.drift)),
+        ("cases", size(&index.cases)),
+        ("decisions", size(&index.decisions)),
+        ("memory", size(&index.memory)),
+        ("series", size(&index.series)),
+        ("system", size(&index.system)),
+        ("today", size(&index.today)),
+    ]
+    .into_iter()
+    .max_by_key(|s| s.1)
+    .expect("sections");
+    Some(format!(
+        "index.json is {total} bytes, over its budget of {SIZE_BUDGET} (CONTRACT.md rule 5); \
+         the largest section is `{name}` ({bytes} bytes); the plugin reads the whole file"
+    ))
 }
 
 /// Whether a folded event is open drift (ADR-0012 §6): from a
@@ -368,7 +486,7 @@ fn drift_items(
                 source: lead.source.as_str().to_string(),
                 kind: lead.kind.as_str().to_string(),
                 subject: lead.subject.clone(),
-                detail: lead.detail.clone(),
+                detail: lead.detail.as_deref().map(|d| clip(d).into_owned()),
                 actor: lead.actor.clone(),
                 zone: zone.map(String::from),
                 crisis: zone == Some("red"),

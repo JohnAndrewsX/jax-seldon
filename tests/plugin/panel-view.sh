@@ -392,11 +392,14 @@ clean_log work
 #     following it; Open on the completed case; Done on C-2026-008, which
 #     the index shows in verification but the fake engine's logbook has
 #     active: the engine refuses and its message is the result line; x twice
-#     drops C-2026-004; `e` opens it.
+#     drops C-2026-004; `e` opens it. Each engine step settles (its
+#     result line is the engine's answer, not "Completing …") before the
+#     wait for the index to move the card (WP-076: the result line came
+#     after the card under load).
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
 run work-live "" \
-  "text:3;text:+;type:--help;key:Tab;key:Right;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Left;key:Return;key:Tab;type:Dev;key:Return;key:Backspace*3;type:dev-env;key:Return;settle;wait:work.cursor=C-2026-009;key:Up;key:Up*3;key:Return;key:Return;settle;wait:work.card.status=active;key:Return;key:Return;wait:work.card.status=verification;key:Return;key:Return;wait:work.card.status=completed;key:Return;settle;key:Up;key:Return;key:Down;key:Up;key:Return;key:Return;settle;key:Up;text:x;text:x;wait:work.card.status=dropped;text:e;settle" \
+  "text:3;text:+;type:--help;key:Tab;key:Right;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Left;key:Return;key:Tab;type:Dev;key:Return;key:Backspace*3;type:dev-env;key:Return;settle;wait:work.cursor=C-2026-009;key:Up;key:Up*3;key:Return;key:Return;settle;wait:work.card.status=active;key:Return;key:Return;settle;wait:work.card.status=verification;key:Return;key:Return;settle;wait:work.card.status=completed;key:Return;settle;key:Up;key:Return;key:Down;key:Up;key:Return;key:Return;settle;key:Up;text:x;text:x;settle;wait:work.card.status=dropped;text:e;settle" \
   HOME="$work/home-work" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECORD="$work/work-live.record"
 expect work-live 1 .view.tab work
 expect work-live 1 .view.work.card.hint ""
@@ -437,33 +440,33 @@ expect work-live 26 .view.work.result "C-2026-005: queued → active"
 expect work-live 26 .view.work.wip "3 / 3 active"
 shows work-live 26 "3 / 3 active · at the limit"
 expect work-live 26 '.view.work.card.actions | join(",")' "Verify,Start agent,Drop,Open"
-expect work-live 29 .view.work.result "C-2026-005: active → verification"
-expect work-live 32 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
-expect work-live 32 .view.work.result "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md"
-expect work-live 32 '.view.work.card.actions | join(",")' "Open"
-expect work-live 34 .view.openResult "Opened $work/home-work/Seldon/work/active/C-2026-005.md in omarchy-launch-editor"
-expect work-live 35 .view.work.cursor C-2026-008
-expect work-live 36 .view.work.card.armed done
-expect work-live 37 .view.work.card.armed ""
-expect work-live 38 .view.work.cursor C-2026-008
-expect work-live 38 .view.work.card.armed ""
+expect work-live 30 .view.work.result "C-2026-005: active → verification"
+expect work-live 34 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
+expect work-live 34 .view.work.result "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md"
+expect work-live 34 '.view.work.card.actions | join(",")' "Open"
+expect work-live 36 .view.openResult "Opened $work/home-work/Seldon/work/active/C-2026-005.md in omarchy-launch-editor"
+expect work-live 37 .view.work.cursor C-2026-008
+expect work-live 38 .view.work.card.armed done
+expect work-live 39 .view.work.card.armed ""
+expect work-live 40 .view.work.cursor C-2026-008
+expect work-live 40 .view.work.card.armed ""
 refusal='C-2026-008 is active; `seldon plan done` needs a case that is verification; run `seldon plan verify` first'
-expect work-live 41 .view.work.result "$refusal"
-expect work-live 41 .view.work.resultOk false
-shows work-live 41 "$refusal"
-expect work-live 41 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
-expect work-live 41 .view.work.cursor C-2026-008
-expect work-live 41 .view.lastError ""
-expect work-live 42 .view.work.cursor C-2026-004
-expect work-live 43 .view.work.card.armed drop
-shows work-live 43 "Confirm drop"
-shows work-live 43 "Drop C-2026-004? Press x again or click Confirm drop. This is final."
-expect work-live 45 .view.work.result "C-2026-004: active → dropped"
-expect work-live 45 '.view.work.columns | join(",")' "queued 3,active 2,completed 4"
-expect work-live 45 .view.work.wip "1 / 3 active"
-expect work-live 45 '.view.work.card.actions | join(",")' "Open"
-shows work-live 45 "dropped"
-expect work-live 47 .view.openResult "Opened $work/home-work/Seldon/work/active/C-2026-004.md in omarchy-launch-editor"
+expect work-live 43 .view.work.result "$refusal"
+expect work-live 43 .view.work.resultOk false
+shows work-live 43 "$refusal"
+expect work-live 43 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
+expect work-live 43 .view.work.cursor C-2026-008
+expect work-live 43 .view.lastError ""
+expect work-live 44 .view.work.cursor C-2026-004
+expect work-live 45 .view.work.card.armed drop
+shows work-live 45 "Confirm drop"
+shows work-live 45 "Drop C-2026-004? Press x again or click Confirm drop. This is final."
+expect work-live 48 .view.work.result "C-2026-004: active → dropped"
+expect work-live 48 '.view.work.columns | join(",")' "queued 3,active 2,completed 4"
+expect work-live 48 .view.work.wip "1 / 3 active"
+expect work-live 48 '.view.work.card.actions | join(",")' "Open"
+shows work-live 48 "dropped"
+expect work-live 50 .view.openResult "Opened $work/home-work/Seldon/work/active/C-2026-004.md in omarchy-launch-editor"
 q() { printf '%q ' "$@"; }
 want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- --help)" \

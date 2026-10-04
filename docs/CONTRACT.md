@@ -27,8 +27,14 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    drift items with crises first (ADR-0020; `summary.openDrift` and
    `summary.crisis` always count all). Anything older is in the logbook,
    which the panel can open in the editor.
-5. Size budget: < 1 MB. If a section would exceed it, the engine truncates
-   that section and sets `meta.truncated` (future field; needs a bump).
+5. Size budget: < 1 MB. The engine keeps it with the counts of rule 4 and
+   by clipping long texts (ADR-0025): in `events` and `drift`, a `detail`,
+   `resolutionDetail` or `meta` string longer than 256 bytes of JSON is cut
+   and ends in `… (N more characters in the ledger)`; the ledger keeps the
+   full text. Cases, decisions and memory topics are not cut; an index of
+   1 000 000 bytes or more makes the engine warn and name the largest
+   section. A field that marks a cut (`meta.truncated`) is deferred; it
+   needs a bump.
 6. Every field the plugin displays verbatim is user content; the plugin
    escapes it and never evaluates it.
 7. Fixtures: `fixtures/index.sample.json` is the canonical example. CI

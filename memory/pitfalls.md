@@ -1468,3 +1468,31 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   hunks with a short script, feed the chosen hunks to `git apply --cached
   --recount -`. Adjacent new tests in one file land in one hunk; add
   them in separate places if they must go into separate commits.
+
+## 2026-10-04 · WP-076 (Engine)
+
+- **Timings on the shared dev host spike with the parallel WPs' builds**
+  (load 6 to 15): one `status` median went from 47 ms to 177 ms and back.
+  Compare two builds interleaved in one process or one shell loop, never
+  two runs minutes apart; `common::assert_within_budget` measures a
+  second time before it fails.
+- **The scaled fixture multiplies the cases too.** `status` at ×141
+  (10 011 lines) takes about 92 ms with 1 128 cases and about 48 ms with
+  the 304 cases of the SPEC budget (`scale::stated_scale`); the 365
+  journal files cost nothing. Name the case count with a timing.
+- **The hook has two speeds around WP-057's 1000-line threshold:** a
+  recorded command takes about 3.5 ms just below (it rebuilds the index)
+  and about 1.8 ms above; a call it does not record takes about 1.3 ms
+  at any size. A hook timing names the side of the threshold it is on.
+- **`cargo test` stops after the first failing test binary.** A mutant
+  run over `--test index --test hooks` needs `--no-fail-fast`, or the
+  second binary's result is missing.
+- **Events written at one fixed `SELDON_NOW` tie on `ts`;** newest-first
+  then orders them by the random part of the ULID. Assert that the index
+  holds an event, not that it comes first.
+- **The panel harness's `wait:` checks one path.** An engine step sets the
+  result line when its process exits and the card moves when the index
+  reload arrives, in either order: use `settle` (the result) and then
+  `wait:` (the card), as `work-live` does since WP-076. A temporary
+  `sleep 1` after `rewrite_index` in `plan_step` of `fake-seldon` (not
+  committed) reproduces the race every time.
