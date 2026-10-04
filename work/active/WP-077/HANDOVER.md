@@ -29,9 +29,10 @@ this WP to `work/active/`). Commits on top of it:
   - `log`: after `cases::find`, before `journal::prepare`. So nothing is
     written: no ledger line, no journal entry.
   - `event`: before `emit_one`.
-  - `hook claude-code` (`record`): one stand-in id per event, before
-    `ledger.append`. The hook still exits 0. The refusal is printed on
-    stderr and the command is not recorded.
+  - the agent hooks (claude-code, generic), both through `record`: one
+    stand-in id per event, before `ledger.append`. The hook still exits
+    0. The refusal is printed on stderr and the command is not recorded.
+    (Wording corrected in round 2, N2: it said only `hook claude-code`.)
   - `drift link`: the same `reconcile::attach` and `add_agent` closure,
     run on the clone before `emit` and on the file after it.
     `drift explain` writes a new case whole (`render_new`); it has no
@@ -96,8 +97,8 @@ this WP to `work/active/`). Commits on top of it:
 ### 4. SPEC-ENGINE §3
 
 - One comment block under `seldon event` covers the prepared case save
-  of log, event, the hook and drift link (exit 1; the hook records
-  nothing and says so on stderr).
+  of log, event, the agent hooks (claude-code, generic) and drift link
+  (exit 1; a hook records nothing and says so on stderr).
 - One comment on `seldon plan list` covers the warning line, `--json
   warnings` and exit 0.
 
@@ -267,3 +268,101 @@ this WP to `work/active/`). Commits on top of it:
   - schema-validate, docs-check (393 links);
   - plugin-validate, qmllint, plugin-test (service 247, panel 733,
     overlay 319, bar 131 passed).
+
+## Round 2 (review: SEND BACK, B1 and N1–N4)
+
+Commits on top of `2773689`:
+
+- `5be8ed4` engine: hook generic names a refused actor, case or startedAt escaped
+- `295f61e` engine: plan list and index name an invalid case file escaped in their warnings
+- `493d0a9` docs: CLI reference names plan list's warning line, en and de
+- `ee6cafa` docs(de): CLI reference source line at 493d0a9
+- `e5c93be` docs: the agent hooks (claude-code, generic) in SPEC-ENGINE §3 and CHANGELOG, TESTING table row fixed, ADR-0025 row notes the reference clip
+- plus the commit with this section
+
+### Done
+
+- **B1: `hook generic` escapes agent-supplied values.**
+  - `escape_debug()` at three sites:
+    - `commands/event.rs` `parse_actor`;
+    - `commands/event.rs` `parse_case_id`;
+    - the `startedAt` message in `commands/hook.rs` `generic`.
+  - Also the latent `logbook/cases.rs` `check_id`. Every caller of
+    `cases::find` checks the id first today, so it has a unit test only.
+  - On the clap path the value now shows escaped once. Example:
+    `seldon log --case $'C-\e[31mX' x` gives
+    `invalid value 'C-X' for '--case <ID>': `C-\u{1b}[31mX` is not a case id`.
+    clap strips the control characters from its own `'C-X'` part, so
+    nothing is escaped twice.
+  - Tests:
+    - `hooks.rs::generic::a_refused_payload_value_is_named_escaped`:
+      an ESC sequence in `actor`, `case` and `startedAt` in turn. Each
+      run must exit 0, show no control character on stderr (newline
+      aside), show `\u{1b}[31mX`, and leave the ledger empty.
+    - `logbook::cases::tests::a_refused_id_is_named_escaped`.
+- **N1: file names in warnings.**
+  - `cases::all` (the `plan list` warnings) and `index/load.rs` (the
+    index's `invalid case … skipped` warning) pass the relative path
+    through `frontmatter::printable`. Only the warning text changes; the
+    path a loaded case carries is unchanged.
+  - Test: `plan.rs::plan::a_warning_names_a_case_file_escaped`. It adds a
+    file `work/queued/C-2026-009-<ESC>[31mX.md` without frontmatter.
+    In both `plan list --json` and `index --json --check`, exactly one
+    warning names it. That warning starts with
+    `work/queued/C-2026-009-\u{1b}[31mX.md: ` and holds no control
+    character.
+- **N2:** SPEC-ENGINE §3, this handover (§1 and §4 above) and the
+  CHANGELOG now say "the agent hooks (claude-code, generic)". The
+  escaped-values CHANGELOG line also names a `hook generic` payload and
+  a case file name.
+- **N3:** the CLI reference's `plan list` section has hand-written
+  prose above a generated `--help` block, so I added one sentence to
+  that prose, not to the help text.
+  - `docs/user/en/05-cli-reference.md`: an English sentence.
+  - `docs/user/de/05-cli-reference.md`: the same sentence in German.
+  - The German page is re-stamped to `493d0a9` the way earlier pages
+    were: a separate `docs(de)` commit, because the stamp must name a
+    commit that holds the current English page.
+  - `docs-check` reports no freshness warning.
+- **N4:** the blank line in `docs/TESTING.md` before the `watch.rs` row
+  is deleted, so the `watch.rs` and `index.rs` rows are table rows
+  again. The `plan.rs` and `frontmatter.rs` rows name the two new tests.
+- **Decision 3:** the ADR-0025 row in DECISIONS.md now ends "; the
+  reference clip followed in WP-077". The ADR itself is unchanged.
+- **Decision 2** (the hook records nothing) needed no change. Open
+  questions 1 and 2 above are answered by it and by decision 3.
+
+### Mutants (round 2)
+
+Each was applied alone, with the fixed restore (`touch`):
+
+| # | Mutant | Test | Result |
+|---|---|---|---|
+| R2-B1a | `parse_actor` value not escaped | `generic::a_refused_payload_value_is_named_escaped` | killed |
+| R2-B1b | `parse_case_id` value not escaped | same | killed |
+| R2-B1c | `startedAt` value not escaped | same | killed |
+| R2-B1d | `check_id` value not escaped | `cases::tests::a_refused_id_is_named_escaped` | killed |
+| R2-N1a | `plan list` warning path raw | `a_warning_names_a_case_file_escaped` | killed |
+| R2-N1b | index warning path raw | same | killed |
+
+### How verified (round 2)
+
+- `cargo fmt --check`: clean.
+- `cargo clippy --locked --all-targets -- -D warnings`: clean.
+- `cargo test --lib --test hooks --test plan --test index --test frontmatter`:
+  - lib 192 passed;
+  - frontmatter 18 passed;
+  - hooks 53 passed, 2 ignored (perf);
+  - index 25 passed, 1 ignored (perf);
+  - plan 17 passed.
+- `bash scripts/validate-fixtures.sh`: ok.
+- `just docs-check`: ok (393 links, 14 translated pages, 40 commands,
+  469 command lines).
+- `just check`: not run in this round, as instructed; the orchestrator's
+  gate runs it.
+
+### Touched outside the listed inputs (round 2)
+
+- `engine/src/index/load.rs` (N1), `DECISIONS.md` (decision 3), and
+  `docs/user/{en,de}/05-cli-reference.md` (N3). All of these were named
+  by the review.
