@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-081 | state-directory loss leaves a trace | Engine | `engine-081` (opus) | `wt/WP-081` · `wp/081-review` | 2026-10-04 |
+| — | no active work package | | | | |
 
 ## Queued (next up)
 
@@ -35,6 +35,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-04 WP-081 a lost, corrupt or foreign state directory is recorded
+  as a `state-reset` note (existing kind, no contract change), printed by
+  capture and the session-stop hook, shown by doctor with an honest fix;
+  two review rounds; merged.
 - 2026-10-04 WP-080 release assets carry build-provenance attestations
   (pinned action, least-privilege build job); install.sh verifies them with
   `gh` against the release workflow and the tag, `--require-verified` and
