@@ -14,7 +14,9 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| — | no active work package | | | | |
+| WP-079 | snapper read grant, ADR-0026 supersedes ADR-0011 | Engine | `engine-079` (opus) | `wt/WP-079` · `wp/079-review` | 2026-10-04 |
+| WP-080 | release attestations verified by install.sh | Packaging | `pkg-080` (opus) | `wt/WP-080` · `wp/080-review` | 2026-10-04 |
+| WP-081 | state-directory loss leaves a trace | Engine | `engine-081` (opus) | `wt/WP-081` · `wp/081-review` | 2026-10-04 |
 
 ## Queued (next up)
 
@@ -333,24 +335,28 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
 
+## Decided 2026-10-04 (review follow-ups)
+- Snapper access by a read grant (`setfacl … rx /.snapshots`) instead of
+  the `ALLOW_USERS` opt-in → ADR-0026 supersedes ADR-0011 (WP-079); the
+  operator reverts the opt-in on their machines after the read grant.
+- Release provenance: GitHub artifact attestations now, verified by
+  install.sh when `gh` is present, `--require-verified` optional; minisign
+  later if needed (WP-080).
+- State-directory loss: ledger note of an existing kind + capture line +
+  doctor check, no contract change (WP-081).
+- Autocommit result in `index.json`, `meta.truncated` and a dedicated
+  state-loss event kind are bundled into one contract v2 ADR for v0.2.0.
+- Global hook installs serve only sessions inside the logbook by default
+  (`[hooks] scope = "logbook"`): confirmed.
+- Next release: v0.1.2 after WP-079/080/081.
+
 ## Open questions for the operator
 - **Review of v0.1.1 processed (2026-10-04):** 22 work packages
-  (WP-055…076) merged; follow-ups queued as WP-077 and WP-078. Six
-  decisions are yours, none blocks other work: (1) snapper access by a
-  read grant instead of the `ALLOW_USERS` opt-in, as an ADR superseding
-  ADR-0011 (the warning text shipped; only the fix-line change waits);
-  (2) your own machines keep or revert that opt-in; (3) release signing:
-  minisign, Sigstore or GitHub attestations, and whether `install.sh`
-  refuses an unverified download; (4) state-directory loss as a new
-  event kind (contract bump) or as a capture line plus doctor check only;
-  (5) the last autocommit result in `index.json` for a plugin banner
-  (contract bump) — yes, no, later; (6) global hook installs serve only
-  sessions inside the logbook by default (`[hooks] scope`, shipped as
-  default `logbook`) — confirm or change. Also for you: a `scripts/guard.sh`
-  false positive on path words inside command text (seen three times);
+  (WP-055…076) merged, follow-ups WP-077/078 merged; the six decisions
+  are taken (see *Decided 2026-10-04*). Still yours: a `scripts/guard.sh`
+  false positive on path words inside command text (seen four times);
   dependabot for the pinned actions; the plugin-repo README push
-  ("push plugin main"); the live bar check on the test host; a v0.1.2
-  release once you want the review fixes out.
+  ("push plugin main"); the live bar check on the test host.
 - **Test host:** unlocked 21:04 UTC, stay-awake on; G2 passed. The
   helper `/tmp/seldon-unlock.sh` there is yours. An incident line
   (`Live smoke: dismissed, test host package`, command not found) sits
