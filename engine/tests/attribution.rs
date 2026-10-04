@@ -14,7 +14,7 @@ use std::process::{Output, Stdio};
 
 use chrono::DateTime;
 use common::{Env, Snapper, stderr};
-use seldon::attribution::attribute;
+use seldon::attribution::{Stamps, attribute, attribute_stamped};
 use seldon::model::event::{ACTOR_SYSTEM, Event, Kind, Source};
 use serde_json::json;
 
@@ -259,7 +259,8 @@ mod rules {
                 "omarchy plugin add https://github.com/example/io.github.example.tyme.git",
                 true,
             ),
-            ("omarchy-plugin-enable io.github.example.tyme", true),
+            ("omarchy-plugin-add io.github.example.tyme", true),
+            ("omarchy-plugin-enable io.github.example.tyme", false),
             ("omarchy plugin list --json", false),
             ("omarchy plugin add https://github.com/example/tyme", false),
             (
@@ -280,6 +281,139 @@ mod rules {
             };
             assert_eq!(run(add(), &known), [expected], "{command}");
         }
+    }
+
+    /// `omarchy plugin <verb> <id>` proves only the event kind of its verb;
+    /// `add` also covers `plugin-enable` (WP-073).
+    #[test]
+    fn a_plugin_verb_proves_only_its_kind() {
+        let id = "io.github.example.tyme";
+        let kinds = [
+            Kind::PluginAdd,
+            Kind::PluginRemove,
+            Kind::PluginEnable,
+            Kind::PluginDisable,
+            Kind::PluginUpdate,
+        ];
+        for (verb, proves) in [
+            ("add", &[Kind::PluginAdd, Kind::PluginEnable][..]),
+            ("remove", &[Kind::PluginRemove]),
+            ("enable", &[Kind::PluginEnable]),
+            ("disable", &[Kind::PluginDisable]),
+            ("update", &[Kind::PluginUpdate]),
+        ] {
+            for command in [
+                format!("omarchy plugin {verb} {id}"),
+                format!("omarchy-plugin-{verb} {id}"),
+            ] {
+                let known = [hook(
+                    "2026-10-01T16:09:00+02:00",
+                    "agent:codex",
+                    None,
+                    &command,
+                )];
+                for kind in kinds {
+                    let event =
+                        Event::new(ts("2026-10-01T16:10:00+02:00"), Source::Plugins, kind, id);
+                    let expected = if proves.contains(&kind) {
+                        agent(id, "agent:codex", None)
+                    } else {
+                        system(id)
+                    };
+                    assert_eq!(run(vec![event], &known), [expected], "{command} → {kind}");
+                }
+            }
+        }
+    }
+
+    /// An event stamped with the capture time happened after the
+    /// collector's last check: its cause may start from 10 minutes before
+    /// that check (WP-073).
+    #[test]
+    fn a_capture_time_event_reaches_back_to_the_last_check() {
+        let id = "io.github.example.tyme";
+        let now = "2026-10-01T10:30:00+02:00";
+        let stamps = Stamps {
+            now: Some(ts(now)),
+            since: vec![(Source::Plugins, ts("2026-10-01T10:15:00+02:00"))],
+        };
+        let removal = |at: &str| Event::new(ts(at), Source::Plugins, Kind::PluginRemove, id);
+        let remove = |at: &str| {
+            hook(
+                at,
+                "agent:claude-code",
+                Some("C-2026-001"),
+                &format!("omarchy plugin remove {id}"),
+            )
+        };
+        let stamped = |events: Vec<Event>, known: &[Event]| {
+            let mut events = events;
+            attribute_stamped(&mut events, known, Path::new(HOME), &stamps);
+            events
+                .into_iter()
+                .map(|e| (e.subject, e.actor, e.case))
+                .collect::<Vec<_>>()
+        };
+        let by_agent = agent(id, "agent:claude-code", Some("C-2026-001"));
+        // 22 minutes before the capture, 7 before the last check: in
+        let early = [remove("2026-10-01T10:08:00+02:00")];
+        assert_eq!(
+            stamped(vec![removal(now)], &early),
+            std::slice::from_ref(&by_agent)
+        );
+        assert_eq!(
+            run(vec![removal(now)], &early),
+            [system(id)],
+            "without the last check: 10 minutes before the capture time"
+        );
+        // exactly 10 minutes before the last check: in; one second more: out
+        assert_eq!(
+            stamped(vec![removal(now)], &[remove("2026-10-01T10:05:00+02:00")]),
+            std::slice::from_ref(&by_agent)
+        );
+        assert_eq!(
+            stamped(vec![removal(now)], &[remove("2026-10-01T10:04:59+02:00")]),
+            [system(id)]
+        );
+        // after the capture: out
+        assert_eq!(
+            stamped(vec![removal(now)], &[remove("2026-10-01T10:30:01+02:00")]),
+            [system(id)]
+        );
+        // an event timed by its change keeps its own window
+        assert_eq!(
+            stamped(vec![removal("2026-10-01T10:29:00+02:00")], &early),
+            [system(id)]
+        );
+        // a recorded change of the same plugin after the command: the
+        // command came before it and cannot have caused this newer one
+        let between = |subject: &str| {
+            Event::new(
+                ts("2026-10-01T10:20:00+02:00"),
+                Source::Plugins,
+                Kind::PluginAdd,
+                subject,
+            )
+        };
+        let mut known = early.to_vec();
+        known.push(between(id));
+        assert_eq!(stamped(vec![removal(now)], &known), [system(id)]);
+        let mut known = early.to_vec();
+        known.push(between("io.github.example.other"));
+        assert_eq!(
+            stamped(vec![removal(now)], &known),
+            std::slice::from_ref(&by_agent),
+            "another plugin's event does not block"
+        );
+        // only the source whose collector checked then
+        let config = Event::new(ts(now), Source::Config, Kind::ConfigRemove, "~/.bashrc");
+        let rm = [hook(
+            "2026-10-01T10:08:00+02:00",
+            "agent:claude-code",
+            None,
+            "rm ~/.bashrc",
+        )];
+        assert_eq!(stamped(vec![config], &rm), [system("~/.bashrc")]);
     }
 
     #[test]
@@ -560,6 +694,212 @@ mod end_to_end {
         assert_eq!(theme["kind"], "theme-set");
         assert_eq!(theme["actor"], "agent:claude-code");
         assert_eq!(theme["case"], case.as_str());
+    }
+}
+
+/// Capture-time plugin events through `seldon capture` (WP-073): a
+/// plugin disabled by an agent command 15 minutes before the next capture
+/// (the plugin's default interval) is the agent's; a command from before
+/// the previous capture's window is not.
+mod capture_time {
+    use super::*;
+
+    const ID: &str = "io.github.example.tyme";
+
+    struct Machine {
+        env: Env,
+        logbook: PathBuf,
+    }
+
+    impl Machine {
+        fn new() -> Self {
+            let env = Env::new(Snapper::Missing);
+            let logbook = env.init_logbook();
+            let list = env.tmp.path().join("plugins.json");
+            common::write_executable(
+                &env.tmp.path().join("omarchy-stub"),
+                &format!(
+                    "#!/bin/sh\n[ \"$2\" = list ] && exec /bin/cat '{}'; exit 1\n",
+                    list.display()
+                ),
+            );
+            let m = Machine { env, logbook };
+            m.enabled(true);
+            m
+        }
+
+        fn enabled(&self, enabled: bool) {
+            let list = json!([{ "id": ID, "enabled": enabled, "firstParty": false }]);
+            std::fs::write(self.env.tmp.path().join("plugins.json"), list.to_string()).unwrap();
+        }
+
+        fn run(&self, now: &str, args: &[&str]) -> Output {
+            let tmp = self.env.tmp.path();
+            let out = self
+                .env
+                .command(args)
+                .env("SELDON_NOW", now)
+                .env("SELDON_OMARCHY", tmp.join("omarchy-stub"))
+                .env("SELDON_OMARCHY_PLUGINS_DIR", tmp.join("plugins"))
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+            out
+        }
+
+        /// What `seldon hook` records for an agent's command at `now`.
+        fn command(&self, now: &str, command: &str) {
+            let meta = format!("command={command}");
+            self.run(
+                now,
+                &[
+                    "event",
+                    "agent",
+                    "command",
+                    "--subject",
+                    "omarchy",
+                    "--actor",
+                    "agent:claude-code",
+                    "--meta",
+                    &meta,
+                ],
+            );
+        }
+
+        fn capture(&self, now: &str) {
+            self.capture_source(now, "plugins");
+        }
+
+        fn capture_source(&self, now: &str, source: &str) {
+            let out = self.run(now, &["capture", "--source", source, "--json"]);
+            assert_eq!(common::json(&out)["ok"], true, "{}", common::stdout(&out));
+        }
+
+        /// The last `kind` event of `subject`.
+        fn last(&self, kind: &str, subject: &str) -> serde_json::Value {
+            let ledger = common::ledger(&self.logbook);
+            ledger
+                .iter()
+                .rev()
+                .find(|e| e["kind"] == kind && e["subject"] == subject)
+                .unwrap_or_else(|| panic!("{kind} {subject} in {ledger:?}"))
+                .clone()
+        }
+
+        /// The actor of the last `kind` event of the plugin.
+        fn actor(&self, kind: &str) -> String {
+            self.last(kind, ID)["actor"].as_str().unwrap().to_string()
+        }
+
+        /// Asserts that the last `kind` event of `subject` is `system`'s,
+        /// without a case, and open drift.
+        fn assert_drift(&self, now: &str, kind: &str, subject: &str) {
+            let e = self.last(kind, subject);
+            assert_eq!(e["actor"], ACTOR_SYSTEM, "{e}");
+            assert!(e.get("case").is_none(), "{e}");
+            let drift = common::json(&self.run(now, &["drift", "--json"]));
+            let open: Vec<&str> = drift["drift"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| d["eventId"].as_str().unwrap())
+                .collect();
+            assert!(open.contains(&e["id"].as_str().unwrap()), "{drift}");
+        }
+
+        fn bashrc(&self, text: Option<&str>) {
+            let path = self.env.home.join(".bashrc");
+            match text {
+                Some(t) => std::fs::write(path, t).unwrap(),
+                None => std::fs::remove_file(path).unwrap(),
+            }
+        }
+    }
+
+    const BASHRC: &str = "~/.bashrc";
+
+    #[test]
+    fn a_plugin_change_found_15_minutes_later_is_the_agents() {
+        let m = Machine::new();
+        m.capture("2026-10-01T10:00:00+02:00"); // baseline
+        m.command(
+            "2026-10-01T10:05:00+02:00",
+            &format!("omarchy plugin disable {ID}"),
+        );
+        m.enabled(false);
+        m.capture("2026-10-01T10:20:00+02:00");
+        assert_eq!(m.actor("plugin-disable"), "agent:claude-code");
+
+        // a command 11 minutes before the previous check: it cannot have
+        // caused a change that check did not see yet
+        m.command(
+            "2026-10-01T10:09:00+02:00",
+            &format!("omarchy plugin enable {ID}"),
+        );
+        m.enabled(true);
+        m.capture("2026-10-01T10:30:00+02:00");
+        assert_eq!(m.actor("plugin-enable"), ACTOR_SYSTEM);
+    }
+
+    /// An agent's command that proved one change claims no later change of
+    /// the same plugin inside the wider window: the agent disables, a
+    /// person enables and disables again (review round 1, B1).
+    #[test]
+    fn a_proving_command_claims_no_later_plugin_change() {
+        let m = Machine::new();
+        m.capture("2026-10-01T10:00:00+02:00"); // baseline
+        m.command(
+            "2026-10-01T10:05:00+02:00",
+            &format!("omarchy plugin disable {ID}"),
+        );
+        m.enabled(false);
+        m.capture("2026-10-01T10:06:00+02:00");
+        assert_eq!(m.actor("plugin-disable"), "agent:claude-code");
+        m.enabled(true);
+        m.capture("2026-10-01T10:10:00+02:00");
+        m.assert_drift("2026-10-01T10:10:00+02:00", "plugin-enable", ID);
+        // 10:05 lies in [10:10 − 10 min, 10:20], but before the enabling
+        m.enabled(false);
+        m.capture("2026-10-01T10:20:00+02:00");
+        m.assert_drift("2026-10-01T10:20:00+02:00", "plugin-disable", ID);
+    }
+
+    /// A config removal found 15 minutes after the agent's `rm` is the
+    /// agent's (review round 1, N1).
+    #[test]
+    fn a_config_removal_found_15_minutes_later_is_the_agents() {
+        let m = Machine::new();
+        m.bashrc(Some("alias ll='ls -l'\n"));
+        m.capture_source("2026-10-01T10:00:00+02:00", "config"); // baseline
+        m.command("2026-10-01T10:05:00+02:00", "rm ~/.bashrc");
+        m.bashrc(None);
+        m.capture_source("2026-10-01T10:20:00+02:00", "config");
+        let e = m.last("config-remove", BASHRC);
+        assert_eq!(e["ts"], "2026-10-01T10:20:00+02:00");
+        assert_eq!(e["actor"], "agent:claude-code", "{e}");
+    }
+
+    /// The agent removes the file, a person puts it back and removes it
+    /// again: the second removal is the person's (review round 1, B1).
+    #[test]
+    fn a_proving_command_claims_no_later_config_removal() {
+        let m = Machine::new();
+        m.bashrc(Some("alias ll='ls -l'\n"));
+        m.capture_source("2026-10-01T10:00:00+02:00", "config"); // baseline
+        m.command("2026-10-01T10:05:00+02:00", "rm ~/.bashrc");
+        m.bashrc(None);
+        m.capture_source("2026-10-01T10:06:00+02:00", "config");
+        assert_eq!(
+            m.last("config-remove", BASHRC)["actor"],
+            "agent:claude-code"
+        );
+        m.bashrc(Some("alias ll='ls -la'\n"));
+        m.capture_source("2026-10-01T10:10:00+02:00", "config");
+        m.last("config-add", BASHRC); // whose: a follow-up (an `rm` proves an addition)
+        // 10:05 lies in [10:10 − 10 min, 10:20], but before the addition
+        m.bashrc(None);
+        m.capture_source("2026-10-01T10:20:00+02:00", "config");
+        m.assert_drift("2026-10-01T10:20:00+02:00", "config-remove", BASHRC);
     }
 }
 

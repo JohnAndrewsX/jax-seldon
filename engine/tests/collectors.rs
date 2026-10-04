@@ -7,6 +7,7 @@
 //! fixture's: the bench runs each collector at the `now` the fixture's
 //! capture-time events carry (omarchy `update`, `snapshot-delete`).
 
+mod common;
 mod support;
 
 use std::io::Write as _;
@@ -701,6 +702,135 @@ mod collectors {
             assert_eq!(out.message.as_deref(), Some(NO_PERMISSIONS));
         }
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// `snapper --jsonout list` output of the `root` config:
+    /// `(number, date, description)`, all `single`.
+    fn snapper_list(snapshots: &[(u64, &str, &str)]) -> String {
+        let list: Vec<serde_json::Value> = snapshots
+            .iter()
+            .map(|(n, date, description)| {
+                serde_json::json!({
+                    "number": n, "type": "single", "date": date,
+                    "cleanup": "number", "description": description,
+                })
+            })
+            .collect();
+        serde_json::json!({ "root": list }).to_string()
+    }
+
+    /// snapper reuses the number after the highest one: a known number
+    /// with another date is a deletion and a new snapshot (WP-073).
+    #[test]
+    fn snapper_sees_a_reused_number() {
+        let mut b = Bench::new("snapper-reuse");
+        let list = b.scratch.path("list.json");
+        b.sources.snapper = b.scratch.stub_cat("snapper", &list);
+        let set = |snapshots: &[(u64, &str, &str)]| {
+            std::fs::write(&list, snapper_list(snapshots)).unwrap();
+        };
+        let four = (4, "2026-10-01 08:00:00", "timeline");
+        set(&[four]);
+        b.run(&Snapper, "2026-10-01T08:30:00+02:00");
+        set(&[four, (5, "2026-10-01 08:58:00", "pre: pacman -S foo")]);
+        assert_eq!(
+            kinds(&b.run(&Snapper, "2026-10-01T09:00:00+02:00").events),
+            ["snapshot 5"]
+        );
+        let before = b.cursors.clone();
+
+        // 5 deleted, a new 5 made before the next capture
+        set(&[four, (5, "2026-10-01 09:05:00", "pre: pacman -S bar")]);
+        let out = b.run(&Snapper, "2026-10-01T09:15:00+02:00");
+        assert_eq!(kinds(&out.events), ["snapshot-delete 5", "snapshot 5"]);
+        let (gone, made) = (&out.events[0], &out.events[1]);
+        assert_eq!(gone.detail.as_deref(), Some("pre: pacman -S foo"));
+        assert_eq!(made.detail.as_deref(), Some("pre: pacman -S bar"));
+        // both at the new snapshot's date, the deletion first: the ledger's
+        // last word on 5 is the snapshot that exists
+        assert_eq!(gone.ts, support::ts("2026-10-01T09:05:00+02:00"));
+        assert_eq!(made.ts, gone.ts);
+        let ledger = b.ledger_events(Source::Snapper);
+        assert_eq!(
+            kinds(&ledger[ledger.len() - 2..]),
+            ["snapshot-delete 5", "snapshot 5"]
+        );
+        assert!(
+            b.run(&Snapper, "2026-10-01T09:25:00+02:00")
+                .events
+                .is_empty()
+        );
+        // a crash before the cursor save: nothing twice
+        b.cursors = before;
+        assert!(
+            b.run(&Snapper, "2026-10-01T09:30:00+02:00")
+                .events
+                .is_empty()
+        );
+        assert_eq!(b.ledger_events(Source::Snapper).len(), 4);
+
+        // a cursor from before WP-073 has no dates: they are filled in
+        // without events, and a reuse after that is seen
+        let mut old = b.cursors["snapper"].clone();
+        for known in old["known"].as_object_mut().unwrap().values_mut() {
+            assert!(known.as_object_mut().unwrap().remove("date").is_some());
+        }
+        b.cursors.insert("snapper", old);
+        set(&[four, (5, "2026-10-01 09:40:00", "pre: pacman -S baz")]);
+        assert!(
+            b.run(&Snapper, "2026-10-01T09:45:00+02:00")
+                .events
+                .is_empty(),
+            "an old cursor cannot tell"
+        );
+        assert!(b.cursors["snapper"]["known"]["5"]["date"].is_string());
+        set(&[four, (5, "2026-10-01 09:50:00", "pre: pacman -S qux")]);
+        assert_eq!(
+            kinds(&b.run(&Snapper, "2026-10-01T09:55:00+02:00").events),
+            ["snapshot-delete 5", "snapshot 5"]
+        );
+    }
+
+    /// `seldon capture` runs on the invocation's clock: `SELDON_NOW` sets
+    /// the collectors' `checked` and `lastRun` and the time of a
+    /// capture-time event (WP-073).
+    #[test]
+    fn capture_runs_on_seldon_now() {
+        let env = common::Env::new(common::Snapper::Missing);
+        let lb = env.init_logbook();
+        let hypr = env.home.join(".config/hypr");
+        std::fs::create_dir_all(&hypr).unwrap();
+        std::fs::write(hypr.join("a.conf"), "a\n").unwrap();
+        std::fs::write(hypr.join("b.conf"), "b\n").unwrap();
+        let capture = |now: &str| {
+            let out = env.at(now, &["capture", "--source", "config", "--json"]);
+            assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+            common::json(&out)
+        };
+        let t1 = "2026-12-24T09:00:00+01:00";
+        let t2 = "2026-12-24T10:00:00+01:00";
+        assert_eq!(capture(t1)["written"], 0, "baseline");
+        std::fs::remove_file(hypr.join("b.conf")).unwrap();
+        let out = capture(t2);
+        assert_eq!(out["written"], 1);
+        assert_eq!(out["files"], serde_json::json!(["ledger/2026-12.jsonl"]));
+        let ledger = common::ledger(&lb);
+        let removed = ledger
+            .iter()
+            .find(|e| e["kind"] == "config-remove")
+            .unwrap();
+        assert_eq!(removed["subject"], "~/.config/hypr/b.conf");
+        let at = |v: &serde_json::Value| {
+            chrono::DateTime::parse_from_rfc3339(v.as_str().unwrap()).unwrap()
+        };
+        assert_eq!(at(&removed["ts"]), support::ts(t2));
+        let cursors: serde_json::Value = serde_json::from_str(&common::read(
+            &env.home.join(".local/state/seldon/cursors.json"),
+        ))
+        .unwrap();
+        let config = &cursors["collectors"]["config"];
+        assert_eq!(at(&config["lastRun"]), support::ts(t2));
+        assert_eq!(at(&config["cursor"]["checked"]), support::ts(t2));
     }
 
     #[test]

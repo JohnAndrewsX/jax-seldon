@@ -523,8 +523,22 @@ git itself is killed, with the same bounded pipe wait. Rules:
   later `-Syu` that happens to upgrade `zed`.
 - **snapper** — `snapper --jsonout list`. New snapshot numbers become
   `snapshot` events with description; a `pre`/`post` pair is linked via
-  `meta.pairOf`. Without `ALLOW_USERS` the command fails with a permission
-  error; the collector then reads the snapshots from the info files
+  `meta.pairOf`. The cursor keeps each snapshot's number, type,
+  description and date; a number that disappears becomes a
+  `snapshot-delete` at capture time. snapper gives a new snapshot the
+  number after the highest one, so a number comes back when the newest
+  snapshot is deleted before the next one is made: a known number with
+  another date becomes a `snapshot-delete` of the old snapshot (its
+  description) and a `snapshot` of the new one, both at the new
+  snapshot's date, the deletion first. A cursor entry without a date
+  (written before WP-073) gets one without an event. Known limit: the
+  list gives local time, the info files UTC; a snapshot made in the
+  repeated hour when summer time ends is read from the list as the
+  earlier of its two instants, so a switch between list and info files
+  can give it another date and record a false `snapshot-delete` plus
+  `snapshot` (to be fixed later). Without
+  `ALLOW_USERS` the command fails with a permission error; the collector
+  then reads the snapshots from the info files
   (`/.snapshots/<number>/info.xml`, `SELDON_SNAPSHOTS_DIR`; under
   `SELDON_TEST_GUARD` without it `<guard>/.snapshots`) with the same events
   and cursor, so switching between list and info files adds no events (an
@@ -555,9 +569,14 @@ git itself is killed, with the same bounded pipe wait. Rules:
   seen (ADR-0014 §3). `plugin-update` only for `firstParty: false`
   (ADR-0018); enable/disable fire for every plugin. `plugin-add|update`
   `ts` = the plugin directory's mtime clamped to [last check, now], like
-  theme and config, so the ADR-0017 window can match the agent's command.
-  A non-zero exit, a timeout, non-JSON output or an empty list after a
-  non-empty one → degraded, cursor kept.
+  theme and config, so the ADR-0017 window can match the agent's command;
+  `plugin-remove|enable|disable` get the capture time (the attribution
+  window below reaches back to the last check for them). Events the
+  ledger already holds since the cursor's last check (same kind, id,
+  version, enabled state and `from`/`to`) are dropped, so a capture
+  whose cursor save failed after its ledger write repeats nothing
+  (WP-073). A non-zero exit, a timeout, non-JSON output or an empty list
+  after a non-empty one → degraded, cursor kept.
 - **theme** — current theme name (read how Omarchy stores it from
   `~/.local/share/omarchy/bin/omarchy-theme-set`); diff → `theme-set`.
   Optional hook script installed by the wizard into `theme-set.d/` calls
@@ -589,7 +608,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   left it, M entered it; no events for them`. **Dedupe (WP-069):** events
   the ledger already holds since the cursor's last check (same kind,
   redacted subject, `hashFrom`, `hashTo`) are dropped, so a capture
-  whose cursor save failed after its ledger write repeats nothing.
+  whose cursor save failed after its ledger write repeats nothing. When
+  the cursor names an older generation than the manifest's current one
+  (that save failed), the config events the ledger holds since the
+  cursor's check are first applied to it, each when its `hashFrom` (or,
+  for an addition, no file) matches: a file that went back to its old
+  content before the next capture gets its `B→A` (WP-073).
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
@@ -597,7 +621,19 @@ Proof is an agent hook `command` event that (a) named the subject
 every member of the resulting transaction) and (b) precedes the collector
 event within the same pacman transaction or by at most 10 minutes; then
 the collector event inherits that command's `actor` and `case`. Time
-proximity alone is never proof (ADR-0014 §1).
+proximity alone is never proof (ADR-0014 §1). An event stamped with the
+capture time (`plugin-remove|enable|disable`, `config-remove`) happened
+somewhere after its collector's last check, so for it the command may
+start from 10 minutes before that check up to the capture (WP-073); with
+the default 15-minute capture interval a fixed 10 minutes before the
+capture time would miss about a third of them. Such a command must also
+be later than the newest recorded event of the same source and subject:
+a command that came before the last recorded change cannot have caused
+a newer one, so an agent's `disable` that proved one disabling does not
+claim a person's later disabling of the same plugin. For plugins events the
+command's verb must match the kind: `omarchy plugin <verb> <id>` proves
+only `plugin-<verb>` of that id, and `add` also `plugin-enable`
+(WP-073).
 
 Zones (ADR-0014 §2): red = `pacman`, `omarchy`, systemd units including
 `config-change` under `~/.config/systemd/`; yellow = other `config`,

@@ -239,10 +239,11 @@ pub struct Scope {
 
 impl Scope {
     pub fn new(dirs: &Dirs, config: &Config, logbook: &Path) -> Self {
+        // as the config collector reads them: an empty entry watches nothing
         let mut watched: Vec<PathBuf> = config
             .watch_paths
             .iter()
-            .map(|p| normalise(Path::new(&home_path(p, &dirs.home))))
+            .filter_map(|p| dirs.expand_config(p))
             .collect();
         watched.push(dirs.xdg_config_home.join("systemd"));
         Scope {
@@ -1716,6 +1717,31 @@ mod tests {
 
     fn green(s: &str) -> Option<(String, Option<Zone>)> {
         Some((s.to_string(), Some(Zone::Green)))
+    }
+
+    /// An empty watch path watches nothing, as in the config collector
+    /// (`Dirs::expand_config`), not the whole home directory.
+    #[test]
+    fn an_empty_watch_path_watches_nothing() {
+        let dirs = Dirs {
+            home: "/home/user".into(),
+            xdg_config_home: "/home/user/.config".into(),
+            state_dir: "/home/user/.local/state/seldon".into(),
+        };
+        let config = Config {
+            watch_paths: vec![String::new(), "  ".into(), "notes".into()],
+            ..Config::default()
+        };
+        let scope = Scope::new(&dirs, &config, Path::new("/home/user/Seldon"));
+        assert!(!scope.is_watched(Path::new("/home/user/.profile")));
+        assert!(scope.is_watched(Path::new("/home/user/notes/a.md")));
+        assert!(scope.is_watched(Path::new("/home/user/.config/systemd/user/a.service")));
+        let roots: Vec<PathBuf> = config
+            .watch_paths
+            .iter()
+            .filter_map(|p| dirs.expand_config(p))
+            .collect();
+        assert_eq!(scope.watched[..scope.watched.len() - 1], roots);
     }
 
     #[test]

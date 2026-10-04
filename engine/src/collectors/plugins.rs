@@ -26,7 +26,10 @@
 //!
 //! The cursor is the snapshot `{id: {enabled, version}}`, its SHA-256 and the
 //! time of the last check. Without a cursor the collector takes a baseline
-//! (no events).
+//! (no events). Events the ledger already holds since the last check (same
+//! kind, id, version, enabled state, update step) are dropped: a capture
+//! whose cursor save failed after its ledger write left the old snapshot in
+//! the cursor, and the next diff would repeat them.
 
 use std::collections::BTreeMap;
 use std::io::Read as _;
@@ -187,15 +190,66 @@ impl Plugins {
         }
         let next = PluginsCursor::new(snapshot, ctx.now);
 
-        let events = match &prev {
+        let (events, since) = match &prev {
             Some(prev) if prev.hash != next.hash => {
                 let since = prev.checked.unwrap_or(ctx.now);
-                diff(ctx, &prev.plugins, &next.plugins, &seen, since)
+                let events = diff(ctx, &prev.plugins, &next.plugins, &seen, since);
+                match unrecorded(ctx, events, since) {
+                    Ok(events) => (events, Some(since)),
+                    Err(e) => {
+                        return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
+                    }
+                }
             }
-            _ => Vec::new(), // baseline, or nothing changed
+            _ => (Vec::new(), None), // baseline, or nothing changed
         };
-        Outcome::ok(events, to_cursor(&next))
+        Outcome {
+            since,
+            ..Outcome::ok(events, to_cursor(&next))
+        }
     }
+}
+
+/// `events` without those the ledger holds since `since`: same kind, id,
+/// version, enabled state and update step. A capture whose cursor save
+/// failed after its ledger write left the cursor on the snapshot before
+/// them (the config collector does the same).
+fn unrecorded(
+    ctx: &Ctx,
+    events: Vec<Event>,
+    since: DateTime<FixedOffset>,
+) -> anyhow::Result<Vec<Event>> {
+    if events.is_empty() {
+        return Ok(events);
+    }
+    let recorded: Vec<Event> = ctx
+        .ledger
+        .read_range(since.min(ctx.now), ctx.now)?
+        .into_iter()
+        .filter(|r| r.source == Source::Plugins)
+        .collect();
+    if recorded.is_empty() {
+        return Ok(events);
+    }
+    // the ledger holds subject and meta values redacted
+    let redactor = ctx.ledger.redactor();
+    let same = |held: &Option<String>, new: &Option<String>| {
+        held.as_deref() == new.as_deref().map(|v| redactor.redact(v)).as_deref()
+    };
+    Ok(events
+        .into_iter()
+        .filter(|e| {
+            let subject = redactor.redact(&e.subject);
+            !recorded.iter().any(|r| {
+                r.kind == e.kind
+                    && r.subject == subject
+                    && r.meta.enabled == e.meta.enabled
+                    && same(&r.meta.version, &e.meta.version)
+                    && same(&r.meta.from, &e.meta.from)
+                    && same(&r.meta.to, &e.meta.to)
+            })
+        })
+        .collect())
 }
 
 /// `omarchy plugin list --json`, or the message to degrade with (also

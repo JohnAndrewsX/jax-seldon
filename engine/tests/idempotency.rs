@@ -10,6 +10,7 @@ use std::process::Output;
 use seldon::collectors::config::ConfigFiles;
 use seldon::collectors::omarchy::Omarchy;
 use seldon::collectors::pacman::Pacman;
+use seldon::collectors::plugins::Plugins;
 use seldon::collectors::snapper::Snapper;
 use seldon::collectors::{Collector, REGISTRY};
 use seldon::model::event::{Event, Kind, Source};
@@ -154,6 +155,166 @@ mod idempotency {
             1,
             "the same step as at 10:10, after the cursor moved on"
         );
+    }
+
+    /// A bench whose `omarchy plugin list --json` prints `<scratch>/plugins.json`
+    /// and whose plugin manifests live in `<scratch>/plugins`.
+    fn plugin_bench(tag: &str) -> support::Bench {
+        let mut b = support::Bench::new(tag);
+        let list = b.scratch.path("plugins.json");
+        b.sources.omarchy = b.scratch.stub(
+            "omarchy",
+            &format!("[ \"$2\" = list ] && exec cat '{}'; exit 1", list.display()),
+        );
+        b.sources.plugins_dir = Some(b.scratch.path("plugins"));
+        b
+    }
+
+    /// `plugins.json` and the manifests: `(id, enabled, version)`.
+    fn plugins(b: &support::Bench, list: &[(&str, bool, &str)]) {
+        let entries: Vec<serde_json::Value> = list
+            .iter()
+            .map(|(id, enabled, version)| {
+                let dir = b.scratch.path("plugins").join(id);
+                std::fs::create_dir_all(&dir).unwrap();
+                std::fs::write(
+                    dir.join("manifest.json"),
+                    serde_json::json!({ "id": id, "version": version }).to_string(),
+                )
+                .unwrap();
+                serde_json::json!({ "id": id, "enabled": enabled, "firstParty": false })
+            })
+            .collect();
+        std::fs::write(
+            b.scratch.path("plugins.json"),
+            serde_json::Value::from(entries).to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_failed_cursor_save_does_not_repeat_plugin_events() {
+        // the plugins collector diffs against the snapshot in its cursor;
+        // after a crash between the ledger write and the cursor save that
+        // is the snapshot before the events (WP-073)
+        let mut b = plugin_bench("crash-plugins");
+        plugins(
+            &b,
+            &[
+                ("io.example.a", true, "1.0.0"),
+                ("io.example.b", false, "1.0.0"),
+                ("io.example.d", true, "1.0.0"),
+            ],
+        );
+        assert!(
+            b.run(&Plugins, "2026-10-01T10:00:00+02:00")
+                .events
+                .is_empty()
+        );
+        let before = b.cursors.clone();
+
+        std::fs::remove_dir_all(b.scratch.path("plugins/io.example.d")).unwrap();
+        plugins(
+            &b,
+            &[
+                ("io.example.a", true, "1.1.0"),
+                ("io.example.b", true, "1.0.0"),
+                ("io.example.c", false, "0.1.0"),
+            ],
+        );
+        let written = b.run(&Plugins, "2026-10-01T10:10:00+02:00");
+        let kinds = |out: &seldon::collectors::Outcome| -> Vec<(Kind, String)> {
+            out.events
+                .iter()
+                .map(|e| (e.kind, e.subject.clone()))
+                .collect()
+        };
+        assert_eq!(
+            kinds(&written),
+            [
+                (Kind::PluginUpdate, "io.example.a".into()),
+                (Kind::PluginEnable, "io.example.b".into()),
+                (Kind::PluginAdd, "io.example.c".into()),
+                (Kind::PluginRemove, "io.example.d".into()),
+            ]
+        );
+
+        b.cursors = before;
+        let again = b.run(&Plugins, "2026-10-01T10:20:00+02:00");
+        assert!(again.ok, "{:?}", again.message);
+        assert!(again.events.is_empty(), "{:?}", again.events);
+        assert_eq!(b.ledger_events(Source::Plugins).len(), 4);
+        assert!(
+            b.run(&Plugins, "2026-10-01T10:30:00+02:00")
+                .events
+                .is_empty()
+        );
+
+        // the next real change is recorded, also one back to an old state
+        plugins(
+            &b,
+            &[
+                ("io.example.a", true, "1.1.0"),
+                ("io.example.b", false, "1.0.0"),
+                ("io.example.c", false, "0.1.0"),
+            ],
+        );
+        let back = b.run(&Plugins, "2026-10-01T10:40:00+02:00");
+        assert_eq!(kinds(&back), [(Kind::PluginDisable, "io.example.b".into())]);
+        plugins(
+            &b,
+            &[
+                ("io.example.a", true, "1.1.0"),
+                ("io.example.b", true, "1.0.0"),
+                ("io.example.c", false, "0.1.0"),
+            ],
+        );
+        assert_eq!(
+            kinds(&b.run(&Plugins, "2026-10-01T10:50:00+02:00")),
+            [(Kind::PluginEnable, "io.example.b".into())],
+            "the same step as at 10:10, after the cursor moved on"
+        );
+        assert_eq!(b.ledger_events(Source::Plugins).len(), 6);
+    }
+
+    #[test]
+    fn a_file_back_to_its_content_after_a_failed_cursor_save_is_recorded() {
+        // A→B written, the cursor save failed, the file went back to A
+        // before the next capture: the ledger gets B→A (WP-073)
+        let mut b = support::Bench::new("crash-config-back");
+        let path = b.dirs.home.join(".config/hypr/monitors.conf");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "monitor=,preferred,auto,1\n").unwrap();
+        assert!(
+            b.run(&ConfigFiles, "2026-10-01T10:00:00+02:00")
+                .events
+                .is_empty()
+        );
+        let before = b.cursors.clone();
+
+        std::fs::write(&path, "monitor=,preferred,auto,1.25\n").unwrap();
+        let there = b.run(&ConfigFiles, "2026-10-01T10:10:00+02:00");
+        assert_eq!(there.events.len(), 1, "{:?}", there.events);
+
+        b.cursors = before;
+        std::fs::write(&path, "monitor=,preferred,auto,1\n").unwrap();
+        let back = b.run(&ConfigFiles, "2026-10-01T10:20:00+02:00");
+        assert!(back.ok, "{:?}", back.message);
+        assert_eq!(back.events.len(), 1, "{:?}", back.events);
+        let (a, e) = (&there.events[0], &back.events[0]);
+        assert_eq!(e.kind, Kind::ConfigChange);
+        assert_eq!(e.subject, "~/.config/hypr/monitors.conf");
+        assert_eq!(
+            (&e.meta.hash_from, &e.meta.hash_to),
+            (&a.meta.hash_to, &a.meta.hash_from),
+            "B→A closes A→B"
+        );
+        assert!(
+            b.run(&ConfigFiles, "2026-10-01T10:30:00+02:00")
+                .events
+                .is_empty()
+        );
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
     }
 
     #[test]
