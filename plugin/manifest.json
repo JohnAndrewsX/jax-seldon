@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "jax.seldon",
   "name": "JAX Seldon",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "JohnAndrewsX",
   "license": "MIT",
   "description": "Flight recorder and planning desk for your Omarchy system: ledger, journal, cases, drift, and the Prime Radiant overlay.",
