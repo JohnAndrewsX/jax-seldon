@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 474b2ed -->
+<!-- source: en/01-getting-started.md @ b7cfb82 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
@@ -27,7 +27,12 @@ Theme-Hook und die Hook-Einstellungen von Claude Code.
 Die Engine ist ein einziges Programm, `seldon`. Das AUR-Paket kommt bald.
 Bis dahin installierst du sie aus dem GitHub-Release des Projekts. Das
 Installationsskript prüft die Engine gegen die Prüfsummen des Release
-und installiert `~/.local/bin/seldon`.
+und installiert `~/.local/bin/seldon`. Ist die GitHub-CLI (`gh`)
+installiert und angemeldet, prüft das Skript außerdem, dass der
+Release-Workflow des Projekts den Download gebaut hat; sonst meldet es in
+einer Zeile, dass nur die Prüfsumme geprüft wurde. Mit
+`--require-verified` bricht es ab, statt ohne diese Prüfung zu
+installieren.
 
 Lade das Skript und die Prüfsummendatei aus dem neuesten Release
 herunter, lies das Skript, prüfe es und führe es aus:
