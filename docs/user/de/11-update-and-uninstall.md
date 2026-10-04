@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ b7cfb82 -->
+<!-- source: en/11-update-and-uninstall.md @ d21d88e -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -37,6 +37,7 @@ installiert ist. Für zsh gibt er eine `fpath=(…)`-Zeile aus, die du in
 | `--unit` | auch die Benutzer-Unit des Watchers installieren, siehe [Der optionale Watcher](#der-optionale-watcher) |
 | `--force` | ein `seldon`, eine Vervollständigung oder eine Manpage ersetzen, die das Skript nicht installiert hat, etwa ein selbst gebautes `seldon` |
 | `--require-verified` | nur installieren, wenn `gh` die Build-Herkunft bestätigt hat; abbrechen, wenn `gh` fehlt oder nicht angemeldet ist, und bei Releases bis v0.1.1, die vor den Attestierungen erschienen sind |
+| `--skip-provenance` | `gh` nicht fragen, nur die Prüfsumme prüfen (eine Zeile sagt das); für ein `gh`, das von sich aus scheitert, etwa hinter einem Proxy. Nicht zusammen mit `--require-verified` |
 | `--uninstall` | entfernen, was das Skript installiert hat |
 
 Beim Einzeiler gibst du Optionen nach `bash -s --` an, zum Beispiel

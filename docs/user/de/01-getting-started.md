@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ b7cfb82 -->
+<!-- source: en/01-getting-started.md @ d21d88e -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
@@ -32,7 +32,8 @@ installiert und angemeldet, prüft das Skript außerdem, dass der
 Release-Workflow des Projekts den Download gebaut hat; sonst meldet es in
 einer Zeile, dass nur die Prüfsumme geprüft wurde. Mit
 `--require-verified` bricht es ab, statt ohne diese Prüfung zu
-installieren.
+installieren; `--skip-provenance` lässt `gh` aus, wenn `gh` selbst
+scheitert, etwa hinter einem Proxy.
 
 Lade das Skript und die Prüfsummendatei aus dem neuesten Release
 herunter, lies das Skript, prüfe es und führe es aus:
