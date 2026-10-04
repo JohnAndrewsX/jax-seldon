@@ -1440,6 +1440,25 @@ test("callWarning (WP-078): the JSON fallback is cut to its first line", () => {
   assert.strictEqual(M.callWarning(["capture"], 2, blank, ""), "jax.seldon: seldon capture exit 2: seldon exited with code 2")
 })
 
+test("plugin/README.md States lists every banner with its fixes (WP-078)", () => {
+  const readme = fs.readFileSync(path.join(root, "plugin/README.md"), "utf8")
+  const table = readme.slice(readme.indexOf("### States"), readme.indexOf("\n## ", readme.indexOf("### States")))
+  const rows = table.split("\n").filter((l) => l.startsWith("| ") && !l.startsWith("| State "))
+  const banners = [
+    M.bannerFor("engineMissing"), M.bannerFor("notInitialised"),
+    M.bannerFor("indexMissing", { parseError: "empty" }), M.bannerFor("indexMissing", { parseError: "bad json" }),
+    M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00+02:00", nowMs: Date.parse("2026-10-01T14:00:00+02:00") }),
+    M.bannerFor("contractMismatch", { indexContractVersion: 2 }), M.bannerFor("contractMismatch", { indexContractVersion: 0 }),
+    M.engineOutdatedBanner("ok", "0.0.1", "9.0.0"), M.snapperBanner(degraded, false)
+  ]
+  for (const b of banners) {
+    assert.ok(b, "a banner")
+    const row = rows.find((r) => r.split(" | ")[1].includes(b.title))
+    assert.ok(row, "States has a row whose banner is " + b.title)
+    for (const a of b.actions) assert.ok(row.includes("*" + a.label + "*"), b.title + ": the row names *" + a.label + "*")
+  }
+})
+
 test("busy and lock texts (WP-068)", () => {
   assert.strictEqual(M.BUSY_TEXT, "Another action is running — try again in a moment")
   assert.strictEqual(M.LOCK_RETRY_MS, 30000)
