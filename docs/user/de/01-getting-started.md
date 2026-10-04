@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 474b2ed -->
+<!-- source: en/01-getting-started.md @ fbc65b0 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
@@ -96,7 +96,7 @@ Am Ende fasst der Assistent zusammen, etwa so (gekürzt):
 Logbook created at ~/Seldon (machine <machine>, language de, 31 files).
 Config: ~/.config/seldon/config.toml
 Git: repository initialised, first commit "seldon: init logbook"
-Snapper: degraded — No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). The fix adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password.
+Snapper: degraded — No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.
 First capture: 0 event(s); degraded: snapper (see seldon doctor); 0 open drift item(s), 0 crisis
 Dossier: Wrote system/hardware.md, system/omarchy.md, system/packages.md, system/plugins.md, system/services.md (7 fence(s) changed)
 Next steps:
@@ -123,19 +123,19 @@ seldon doctor · ~/Seldon
   ok        config   ~/.config/seldon/config.toml
   ok        logbook  /home/you/Seldon · machine <machine> · de · 0 cases, 0 decisions, 0 journal days
   ok        omarchy  Omarchy 4.0.4-1
-  degraded  snapper  No permissions. Snapshots are not recorded until you allow your user once (ADR-0011). The fix adds your user to ALLOW_USERS of the root snapper config, which also lets your user create, change and delete root snapshots without a password.
-                     fix: sudo snapper -c root set-config ALLOW_USERS=$USER SYNC_ACL=yes
+  degraded  snapper  No permissions. Snapshots are not recorded until you grant your user read access to the snapshot directory once (ADR-0026). The fix grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion.
+                     fix: sudo setfacl -m u:$USER:rx /.snapshots
   ok        git      git version 2.55.0; logbook is a repository; autocommit on
 doctor: ok
 ```
 
 Alle Zeilen sollten `ok` zeigen, nur `snapper` darf `degraded` sagen.
 Wenn du Snapshots auf der Zeitleiste sehen willst, führe die Abhilfe aus,
-die `doctor` ausgibt. Sie ändert die Snapper-Konfiguration von root, also
-entscheidest du: Sie trägt deinen Benutzer in `ALLOW_USERS` ein, und
-Snapper kennt dort keine Nur-Lese-Stufe. Dein Benutzer kann danach also
-auch Snapshots von root ohne Passwort anlegen, ändern und löschen. Seldon
-führt sie nie für dich aus.
+die `doctor` ausgibt. Sie erlaubt deinem Benutzer, das Snapshot-Verzeichnis
+`/.snapshots` zu lesen, damit Seldon die Snapshot-Liste und die
+Info-Dateien lesen kann; Snapshots anlegen, ändern oder löschen kann er
+damit nicht. Dateien in einem Snapshot behalten ihre eigenen Rechte.
+Seldon führt sie nie für dich aus.
 
 ## Schritt 4: Das Bar-Plugin hinzufügen
 
