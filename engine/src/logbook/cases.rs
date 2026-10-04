@@ -14,7 +14,7 @@ use chrono::{DateTime, FixedOffset};
 
 use super::{ACTIVE_CASE_FILE, Logbook, templates};
 use crate::error::{Error, Result};
-use crate::frontmatter::Document;
+use crate::frontmatter::{Document, printable};
 use crate::model::{self, Area, Case, CaseStatus, Language, is_agent, is_case_id, is_slug};
 use crate::sys;
 
@@ -224,7 +224,8 @@ pub fn find(logbook: &Logbook, id: &str) -> Result<CaseFile> {
 pub fn all(logbook: &Logbook) -> Result<(Vec<CaseFile>, Vec<String>)> {
     let (mut out, mut warnings) = (Vec::new(), Vec::new());
     for path in logbook.case_files()? {
-        let rel = relative(logbook, &path);
+        // a file name may hold any character but `/` and NUL
+        let rel = printable(&relative(logbook, &path));
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) => {

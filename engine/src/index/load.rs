@@ -12,7 +12,7 @@ use std::path::Path;
 
 use chrono::{Duration, NaiveDate};
 
-use crate::frontmatter::Document;
+use crate::frontmatter::{Document, printable};
 use crate::ledger::Ledger;
 use crate::logbook::{Logbook, cases};
 use crate::model::event::{Event, is_actor};
@@ -104,7 +104,9 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
                     plan,
                 });
             }
-            Err(e) => out.warnings.push(format!("{rel}: {e}; skipped")),
+            Err(e) => out
+                .warnings
+                .push(format!("{}: {e}; skipped", printable(&rel))),
         }
     }
     out.cases.sort_by(|a, b| a.case.id.cmp(&b.case.id));

@@ -492,6 +492,40 @@ mod plan {
 
     /// One case file that does not load is a warning line, named as the
     /// index names it (escaped), and the other cases are listed (WP-077).
+    /// A case file name may hold control characters: the warnings of
+    /// `plan list` and `index` name it escaped (WP-077).
+    #[test]
+    fn a_warning_names_a_case_file_escaped() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        new_case(&env, "a", &[]);
+        let name = "C-2026-009-\u{1b}[31mX.md";
+        std::fs::write(root.join("work/queued").join(name), "no frontmatter\n").unwrap();
+        let want = "work/queued/C-2026-009-\\u{1b}[31mX.md: ";
+        for args in [["plan", "list", "--json"], ["index", "--json", "--check"]] {
+            let out = env.at(T1, &args);
+            assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+            let v = json(&out);
+            let warnings: Vec<&str> = v["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|w| w.as_str().unwrap())
+                .collect();
+            let named: Vec<&&str> = warnings
+                .iter()
+                .filter(|w| w.contains("C-2026-009"))
+                .collect();
+            assert_eq!(named.len(), 1, "{args:?}: {warnings:?}");
+            assert!(named[0].starts_with(want), "{args:?}: {:?}", named[0]);
+            assert!(
+                !named[0].chars().any(char::is_control),
+                "{args:?}: {:?}",
+                named[0]
+            );
+        }
+    }
+
     #[test]
     fn list_warns_of_an_invalid_case_and_lists_the_rest() {
         let env = Env::new(Snapper::Missing);
