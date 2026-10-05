@@ -143,3 +143,50 @@ plus a touch, `cargo build` after the loop.
    scripts/docs-check.sh --write` (both branches change help blocks), commit
    the en side, then re-stamp the two de pages with that commit (merge, do
    not rebase; pitfall WP-058).
+
+## Round 2
+
+Review 1 (Opus): APPROVE with F1 to F3; the four decisions accepted as
+written. Stage 2 (Fable): APPROVE after round 2, with one sentence for
+guide 04 (A1 below). Commits (oldest first):
+
+- `9cd6be8` engine: test a refused SELDON_ACTOR on drift resolutions (WP-096)
+- `a56a288` docs: name the commands that take SELDON_ACTOR; hook generic payload in SPEC (WP-096)
+- `385ac64` docs: de guide 04 names the commands that take SELDON_ACTOR, re-stamped (WP-096)
+- `effa0bc` docs: a terminal server does not pass SELDON_ACTOR and SELDON_ATTENDED on (WP-096)
+- `a4bcd20` docs: de guide 04, a terminal server does not pass the variables on, re-stamped (WP-096)
+- this commit: round 2 notes
+
+- **F1** `drift dismiss <THEME> --only -- x` is now in the args loop of
+  `actor_env::a_refused_variable_is_exit_1_and_writes_nothing`. The actor
+  is resolved before the event is looked up, so the fresh logbook needs
+  no drift. The reviewer's mutant O3 (`parse_actor` instead of
+  `parse_person` in `drift::resolve`) was run against the committed code.
+  `system` then passes the parser and the call fails on the unknown event
+  without naming `SELDON_ACTOR`. Result: killed by that test. Restored
+  with `git checkout` + touch + `cargo build`.
+- **F2** Guide 04 en now says that `seldon log`, `plan`, `drift`, `event`
+  and `hook generic` record the name when `--actor` (for `hook generic`,
+  `"actor"`) is missing. It adds that `event` first takes the agent
+  command it finds in the ledger, with that command's case. de is
+  translated and re-stamped to `a56a288`.
+- **F3** SPEC-ENGINE §8: `hook generic` takes
+  `{"command","actor"?,"cwd","case"?,"startedAt"?}`.
+- **A1 (stage 2)** Guide 04 en, after "Seldon itself never reads it.":
+  "Both variables reach the agent only when the launcher starts the
+  terminal; a terminal server (footclient, kitty --single-instance, a
+  wezterm mux) reuses its own environment, and then only --actor names
+  the agent." The wording is as given. Only `footclient`, `kitty
+  --single-instance` and `--actor` are in backticks, as in the rest of
+  the guide. de is translated and re-stamped to `effa0bc`.
+- **Live check (orchestrator):** on the test host (Alacritty) and on the
+  dev host (foot without server), `SELDON_ACTOR` and `SELDON_ATTENDED`
+  reach the agent process through the `omarchy-launch-tui` → uwsm →
+  terminal chain. This answers review question 3 for those two
+  terminals. Terminal servers were not run live; A1 documents the
+  limit.
+- **Verified by:** `cargo test --test actor_env` 6/6; fmt and
+  `clippy --all-targets -D warnings` clean; docs-check ok;
+  `flock /tmp/seldon-check.lock just check` run once on `a4bcd20`, after
+  the last code and docs commit: exit 0, `check: ok`, 0 failures. A first run, started before A1
+  arrived, was stopped while it waited for the lock, so it never ran.
