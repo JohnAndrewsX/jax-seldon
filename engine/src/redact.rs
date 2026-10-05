@@ -6,6 +6,7 @@
 //! anything is written, through [`Redactor::for_config`]. Built-in rules:
 //! URLs with userinfo, `--password` (also wget's `--http-password`),
 //! `--token`/`--api-key`/`--secret`/`--pass`/`--oauth2-bearer`-style
+//! options, the `pass:…` value of openssl's `-pass`/`-passin`/`-passout`-style
 //! options, `token=` and `…KEY=`/`…TOKEN=`/`…SECRET=`/`…PASSWORD=`-style
 //! assignments, `Authorization:` and `X-…-Key:`-style headers, AWS access
 //! keys, GitHub, GitLab and Slack tokens, `sk-`/`sk_` keys, anything after
@@ -79,6 +80,15 @@ const VALUE: &str = r#"(?:"(?:[^"\\]|\\.)*"|"[^"]*"|'[^']*'|[^\s'"&;|‹][^\s'"&
 /// quote that the line does not close (`bob's` in a note, `'admin:pw`)
 /// takes the rest of the line, so a later line stays.
 const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")+(?:['"][^\n]*)?|['"][^\n]*)"#;
+
+/// The value of an openssl pass phrase option that gives the secret
+/// itself: a [`WORD`] whose first part starts with `pass:`, bare or inside
+/// `'…'`, `"…"` or `$'…'` (`pass:p`, `'pass:p w'`, `pass:'p w'`). The
+/// sources `env:`, `file:`, `fd:` and `stdin` name where the secret is
+/// and are no match; nor is a flag (`-twopass`) before the option, since
+/// the value must hold `pass:` (a check on a [`WORD`] would take the
+/// next option as the flag's value and miss its `pass:`).
+const PASS_ARG: &str = r#"(?:(?:"pass:(?:[^"\\\n]|\\(?s:.))*"|'pass:[^'\n]*'|\$'pass:(?:[^'\\\n]|\\(?s:.))*'|pass:|"pass:[^"\n]*")(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")*(?:['"][^\n]*)?|['"]pass:[^\n]*)"#;
 
 /// White space between an option and its value, or a line continuation
 /// (`\` before a line end).
@@ -357,10 +367,11 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 26] = [
+pub const BUILTIN: [&str; 27] = [
     "url-userinfo",
     "password-option",
     "secret-option",
+    "openssl-pass",
     "key-option",
     "token-assignment",
     "secret-assignment",
@@ -407,6 +418,7 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "url-userinfo" => &["://"],
         "password-option" => &["--password", "--http-password", "--ftp-password"],
         "secret-option" => &["token", "secret", "passphrase", "-pass", "bearer"],
+        "openssl-pass" => &["pass:"],
         "key-option" => &["key"],
         "token-assignment" => &["token="],
         "key-assignment" => &["key="],
@@ -572,6 +584,15 @@ fn builtin_rules() -> Vec<Rule> {
                 r"(?i)(--(?:{NOT_NO}-(?:[a-z0-9]+-)*)?(?:token|secret|passphrase|pass|bearer)(?:=|{GAP}+))(?P<v>{WORD})"
             ),
             has_value,
+        ),
+        // openssl's `-pass pass:X`, `-passin`, `-passout`, `-password`,
+        // `-passcerts`, `-keypass`, `-srv_secret`, … (any option whose
+        // name holds `pass` or `secret`, also `--passin=pass:X` as
+        // easyrsa writes it): the whole value, `pass:` included
+        rule(
+            "openssl-pass",
+            &format!(r"(?i)(-[a-z0-9_-]*(?:pass|secret)[a-z0-9_-]*(?:=|{GAP}+))(?:{PASS_ARG})"),
+            KEEP_PREFIX,
         ),
         // `--api-key=X`, `--access-key X`, `--secret-key X`: only a value
         // that looks like a credential

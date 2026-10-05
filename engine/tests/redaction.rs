@@ -1244,6 +1244,110 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "me@",
         "ssh -p 2222 ‹redacted›@host.example",
     ),
+    // openssl's pass phrase options with a `pass:` value: the whole
+    // value is masked, a source (`env:`, `file:`, `fd:`, `stdin`) stays
+    // (WP-106)
+    (
+        "openssl-pass",
+        "openssl genpkey -algorithm ED25519 -aes256 -pass pass:fakeOs1 -out k.pem",
+        "fakeOs1",
+        "-aes256 -pass ‹redacted› -out k.pem",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -in k.pem -passin pass:fakeOs2 -passout pass:fakeOs3 -out k2.pem",
+        "fakeOs",
+        "-passin ‹redacted› -passout ‹redacted› -out k2.pem",
+    ),
+    // a flag before the option is no option with a value
+    (
+        "openssl-pass",
+        "openssl pkcs12 -export -twopass -passin pass:fakeOs4 -password 'pass:fake Os5' -in c.pem",
+        "Os",
+        "-twopass -passin ‹redacted› -password ‹redacted› -in c.pem",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin -passout pass:fakeOs6 -in k.pem",
+        "fakeOs6",
+        "-passin -passout ‹redacted› -in k.pem",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin \"pass:fa\\\"keOs7\" -in k.pem",
+        "keOs7",
+        "-passin ‹redacted› -in k.pem",
+    ),
+    // a double-quoted value that never closes as escapes are read
+    (
+        "openssl-pass",
+        "openssl rsa -passin \"pass:fakeOs8\\\" -in k.pem",
+        "fakeOs8",
+        "-passin ‹redacted› -in k.pem",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin $'pass:fa\\'keOs9' -in k.pem",
+        "keOs9",
+        "-passin ‹redacted› -in k.pem",
+    ),
+    // parts joined to one word: quoted, escaped, continued
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:'fa ke'Os10\"x y\"$'z' -in k.pem",
+        "Os10",
+        "-passin ‹redacted› -in k.pem",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:fake\\;Os11 -in k.pem",
+        "Os11",
+        "-passin ‹redacted› -in k.pem",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:fake\\\nOs12 -in k.pem",
+        "Os12",
+        "-passin ‹redacted› -in k.pem",
+    ),
+    // an unclosed quote takes the rest of its line, not the next one
+    (
+        "openssl-pass",
+        "openssl rsa -passin 'pass:fakeOs13 -in k.pem\nnext 'line'",
+        "fakeOs13",
+        "-passin ‹redacted›\nnext 'line'",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:fake'Os14 -in k.pem\nnext 'line'",
+        "Os14",
+        "-passin ‹redacted›\nnext 'line'",
+    ),
+    // easyrsa's `--passin=pass:…`
+    (
+        "openssl-pass",
+        "easyrsa --passin=pass:fakeOs15 --passout=pass:fakeOs16 build-ca",
+        "fakeOs",
+        "--passin=‹redacted› --passout=‹redacted› build-ca",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -PASSIN PASS:fakeOs17 -in k.pem",
+        "fakeOs17",
+        "-PASSIN ‹redacted› -in k.pem",
+    ),
+    (
+        "openssl-pass",
+        "openssl cmp -secret pass:fakeOs18 -srv_secret pass:fakeOs19 -keypass pass:fakeOs20",
+        "fakeOs",
+        "-secret ‹redacted› -srv_secret ‹redacted› -keypass ‹redacted›",
+    ),
+    (
+        "openssl-pass",
+        "openssl s_client -proxy_pass pass:fakeOs21 -dpass pass:fakeOs22|cat",
+        "fakeOs",
+        "-proxy_pass ‹redacted› -dpass ‹redacted›|cat",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -1327,6 +1431,13 @@ const CLEAR: &[&str] = &[
     "echo http done; wget http://h.example/f -a log.txt",
     // a negation is no credential name (WP-097 round 2)
     "smbclient //srv/share --no-pass -c 'ls'",
+    // a pass phrase source names where the secret is; `pass:` after an
+    // option that names no password, or after none (WP-106)
+    "openssl rsa -passin env:PW -passout file:/run/pw -pass fd:3 -in k.pem",
+    "openssl req -new -passin stdin -passout \"file:$HOME/pw\" -key k.pem",
+    "openssl rsa -passin passfile -in k.pem",
+    "git commit -m pass:fixed",
+    "the pass: column stays",
     // no e-mail address (WP-093): an SSH remote and `host:path`, a host
     // without a dot, versions, npm scopes, systemd units, a scale suffix
     // without a top-level domain, an image digest
@@ -1609,6 +1720,8 @@ mod redaction {
             ("password-option", "tool --password \\\n  fakeGap1"),
             ("secret-option", "tool --token \\\n  fakeGap1"),
             ("key-option", "tool --api-key \\\n  fakeGap1Key"),
+            ("openssl-pass", "openssl rsa -passin \\\n  pass:fakeGap1"),
+            ("openssl-pass", "openssl rsa -passin\\\n  pass:fakeGap1"),
         ] {
             let out = r.redact(input);
             assert!(!out.contains("fakeGap1"), "{rule}: `{input}` → `{out}`");
@@ -1647,6 +1760,36 @@ mod redaction {
             }
             let once = r.redact(input);
             assert_eq!(r.redact(&once), once, "`{input}`");
+        }
+    }
+
+    /// Rule `openssl-pass` matches only its own rows and no row of another
+    /// rule (the import report counts a line once per rule), and a second
+    /// pass changes nothing. A name `secret-option` or `password-option`
+    /// covers (`--pass pass:…`) is masked by that rule first (WP-106).
+    #[test]
+    fn openssl_pass_is_disjoint_and_stable() {
+        let r = Redactor::builtin();
+        for (rule, input, ..) in TABLE {
+            let matched = r.matching_rules(input);
+            if *rule == "openssl-pass" {
+                assert_eq!(matched, vec!["openssl-pass"], "`{input}`");
+            } else {
+                assert!(!matched.contains(&"openssl-pass"), "{rule}: `{input}`");
+            }
+            let once = r.redact(input);
+            assert_eq!(r.redact(&once), once, "`{input}`");
+        }
+        for (input, earlier) in [
+            ("tool --pass pass:fakeOs30 -v", "secret-option"),
+            ("tool --password pass:fakeOs30 -v", "password-option"),
+        ] {
+            assert_eq!(
+                r.matching_rules(input),
+                vec![earlier, "openssl-pass"],
+                "`{input}`"
+            );
+            assert!(r.redact(input).ends_with(&format!(" {REDACTED} -v")));
         }
     }
 
@@ -1705,6 +1848,13 @@ mod redaction {
                 "a-u-x-b-E-a $'c;d' '\n'",
             ),
             ("httpie line", "http -v h.example ", "'a;b' a-a-u 2>&1 "),
+            // pass phrase options with sources, `pass:` after an option
+            // that names no password (WP-106)
+            (
+                "openssl sources",
+                "openssl rsa -passin pass:fakeT1 ",
+                "-passin env:A -passout file:b -twopass -k pass:c ",
+            ),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
                 let line = filled(head, word, kb * 1024);
@@ -1770,6 +1920,13 @@ mod redaction {
                 "httpie options",
                 "http ",
                 "-a a:\"b\" --auth=c:d 2>&1 ",
+                Some(20),
+            ),
+            // openssl pass phrase options, quoted and bare (WP-106)
+            (
+                "openssl options",
+                "openssl pkcs12 ",
+                "-passin pass:a -passout 'pass:b' -twopass ",
                 Some(20),
             ),
         ] {
