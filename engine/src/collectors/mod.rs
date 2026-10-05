@@ -314,6 +314,13 @@ pub struct CollectorState {
     /// Events written by the last run.
     #[serde(default)]
     pub events: usize,
+    /// The collector degraded in a capture in which its state was lost
+    /// (missing, unreadable or another logbook's, while the ledger holds
+    /// events of its source), so it took no baseline then; its first
+    /// successful run records the gap as a state reset and clears this
+    /// (WP-088). Not written while false: older files read unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pending_baseline: bool,
 }
 
 /// `cursors.json` in the state directory.

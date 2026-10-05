@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- A collector that degrades in the capture that records a state reset
+  (snapper without permission, a failing `omarchy`) no longer looks like
+  "never ran here" afterwards: `cursors.json` marks it `pendingBaseline`,
+  and its first successful run records its own state reset note, once.
+  This also holds when it was the only collector that lost its state
+  (WP-088).
+
 ## [0.1.3] - 2026-10-05
 
 ### Engine

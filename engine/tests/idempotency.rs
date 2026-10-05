@@ -836,6 +836,162 @@ mod state_reset {
         assert!(resets(&cli).is_empty());
     }
 
+    /// WP-088: whether `name`'s entry in `cursors.json` waits for its
+    /// baseline (`pendingBaseline`, written only while true).
+    fn pending(cli: &Cli, name: &str) -> bool {
+        let text = std::fs::read_to_string(state(cli).join("cursors.json")).unwrap();
+        let cursors: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let entry = &cursors["collectors"][name];
+        assert!(entry.is_object(), "{name}: {cursors}");
+        match entry.get("pendingBaseline") {
+            None => false,
+            Some(v) => {
+                assert_eq!(v, true, "written only while true: {cursors}");
+                true
+            }
+        }
+    }
+
+    /// WP-088: a collector that degrades in the capture that records a
+    /// state reset takes no baseline then; its first successful run
+    /// records its gap, once.
+    #[test]
+    fn a_collector_degraded_in_the_reset_records_its_gap_when_it_runs() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        cli.stub_snapper_no_permissions();
+        // doctor cannot know that snapper will degrade
+        assert_eq!(predicted(&cli).as_deref(), Some("snapper,pacman"));
+        let out = cli.capture(&[]);
+        assert_eq!(out["ok"], false, "{out}");
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1, "{reset:?}");
+        assert_eq!(reset[0].meta.extra["sources"], "pacman");
+        assert!(pending(&cli, "snapper"));
+        assert!(!pending(&cli, "pacman"), "it took its baseline");
+
+        // degraded again, or not run: it keeps waiting, nothing recorded
+        assert_eq!(predicted(&cli).as_deref(), Some("snapper"));
+        assert_eq!(cli.capture(&[])["written"], 0);
+        assert!(pending(&cli, "snapper"));
+        cli.stub_snapper(&fixture("logs/snapper-before.json"));
+        let out = cli.run(&["capture", "--source", "pacman", "--json"]);
+        assert_eq!(common::json(&out)["written"], 0);
+        assert!(pending(&cli, "snapper"));
+
+        // the first successful run records the gap and clears the mark
+        let out = cli.capture(&[]);
+        assert_eq!(out["written"], 1, "only the note: {out}");
+        let warnings = out["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1, "{out}");
+        assert!(
+            warnings[0]
+                .as_str()
+                .unwrap()
+                .starts_with("state reset recorded: snapper took a new baseline"),
+            "{out}"
+        );
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 2, "{reset:?}");
+        assert_eq!(reset[1].meta.extra["sources"], "snapper");
+        assert_eq!(reset[1].meta.extra["files"], "cursors");
+        assert!(!pending(&cli, "snapper"));
+        assert_eq!(predicted(&cli), None);
+
+        let again = cli.capture(&[]);
+        assert_eq!(again["written"], 0, "{again}");
+        assert_eq!(resets(&cli).len(), 2);
+    }
+
+    /// WP-088: also when the degraded collector is the only one that lost
+    /// its state, so that the capture records no note at all.
+    #[test]
+    fn a_collector_that_alone_lost_its_state_while_degraded_records_it_later() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        cli.stub_snapper_no_permissions();
+        let snapper =
+            |cli: &Cli| common::json(&cli.run(&["capture", "--source", "snapper", "--json"]));
+        let out = snapper(&cli);
+        assert_eq!(
+            (out["ok"].clone(), out["written"].clone()),
+            (false.into(), 0.into()),
+            "{out}"
+        );
+        assert!(resets(&cli).is_empty());
+        assert!(pending(&cli, "snapper"));
+        cli.stub_snapper(&fixture("logs/snapper-before.json"));
+        let out = snapper(&cli);
+        assert_eq!(out["written"], 1, "only the note: {out}");
+        let reset = resets(&cli);
+        assert_eq!(reset.len(), 1, "{reset:?}");
+        assert_eq!(reset[0].meta.extra["sources"], "snapper");
+        assert!(!pending(&cli, "snapper"));
+        assert_eq!(snapper(&cli)["written"], 0);
+    }
+
+    /// WP-088: a degraded collector that lost nothing waits for nothing:
+    /// the capture's gate (no cursor here: it never ran successfully here)
+    /// and ledger rule (no events of its source) hold for the mark too.
+    #[test]
+    fn a_degraded_collector_that_lost_nothing_waits_for_nothing() {
+        // degraded from the first capture on: no events of its source
+        let cli = Cli::new();
+        cli.stub_snapper_no_permissions();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        assert!(!pending(&cli, "snapper"));
+        cli.capture(&[]);
+        assert!(!pending(&cli, "snapper"));
+        cli.stub_snapper(&fixture("logs/snapper-before.json"));
+        let out = cli.capture(&["--since", FIXTURE_CREATED]);
+        assert!(
+            out["written"].as_u64().unwrap() > 0,
+            "its first events: {out}"
+        );
+        assert!(resets(&cli).is_empty());
+
+        // bound here, events of its source, but no cursor entry (WP-081 F1)
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        let file = state(&cli).join("cursors.json");
+        let mut cursors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        cursors["collectors"]
+            .as_object_mut()
+            .unwrap()
+            .remove("snapper");
+        std::fs::write(&file, cursors.to_string()).unwrap();
+        cli.stub_snapper_no_permissions();
+        cli.capture(&[]);
+        assert!(!pending(&cli, "snapper"));
+        cli.stub_snapper(&fixture("logs/snapper-before.json"));
+        assert_eq!(cli.capture(&[])["written"], 0);
+        assert!(resets(&cli).is_empty());
+    }
+
+    /// WP-088: `pendingBaseline` is new; a `cursors.json` without it reads
+    /// as not waiting, and it is written only while true.
+    #[test]
+    fn a_cursors_file_without_the_mark_reads_unchanged() {
+        use seldon::collectors::CollectorState;
+        let old =
+            r#"{"cursor":{"offset":7},"ok":true,"lastRun":"2026-10-01T10:00:00+02:00","events":2}"#;
+        let state: CollectorState = serde_json::from_str(old).unwrap();
+        assert!(!state.pending_baseline);
+        assert_eq!(serde_json::to_string(&state).unwrap(), old);
+        let waiting = CollectorState {
+            pending_baseline: true,
+            ..state
+        };
+        let text = serde_json::to_string(&waiting).unwrap();
+        assert!(
+            text.ends_with(r#""events":2,"pendingBaseline":true}"#),
+            "{text}"
+        );
+    }
+
     #[test]
     fn an_unreadable_cursor_is_a_reset() {
         let cli = Cli::new();
