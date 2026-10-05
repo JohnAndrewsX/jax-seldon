@@ -1110,7 +1110,13 @@ The rules
 (also wget's `--http-password` and `--ftp-password`);
 `--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`,
 curl's `--pass`, `--proxy-pass` and `--oauth2-bearer`, xh's `--bearer`
-and similar options; `--api-key`, `--access-key`, `--secret-key`;
+and similar options; the `pass:…` value of an option whose name holds
+`pass` or `secret` (openssl's `-pass`, `-passin`, `-passout`,
+`-password`, `-passcerts`, `-keypass`, `-secret`, …, also with `=` and
+two dashes, `--passin=pass:…`, as easyrsa writes it): the whole value,
+`pass:` included; a pass phrase source (`env:`, `file:`, `fd:`,
+`stdin`) names where the secret is and stays (`openssl-pass`, WP-106;
+its trigger is `pass:`); `--api-key`, `--access-key`, `--secret-key`;
 `token=`; `…SECRET=`, `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`,
 `…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
 assignments (also `?api_key=`); the non-empty string value of an inline
@@ -1222,9 +1228,12 @@ the option as written, `-u`, and one that every curl line holds would
 compile every curl rule for it); abbreviated long options (`--us`); the
 last of several `sshpass -p` (sshpass uses the last); a `.netrc` or curl
 config file (`curl -n`, `-K`) and its contents shown by another command;
-`openssl … -pass pass:…`; an assignment value that joins quoted and bare
+an assignment value that joins quoted and bare
 parts (`PASSWORD=a'b'` keeps `'b'`); `--no-pass` and other negations,
-which are not `--pass`. Masked too much, by design: an
+which are not `--pass`. Not masked (WP-106): a password given directly
+rather than as `pass:…` (`openssl enc -k`, `-srppass`, keytool's
+`-storepass`); a `pass:` that quotes or an escape split (`pa'ss':x`,
+`\pass:x`), or an option name in quotes. Masked too much, by design: an
 option word inside a quoted argument that spans lines (`git commit -m
 "…curl…⏎… -U flag"`, as on one line); a stray apostrophe (in the
 command's context, up to the line end; an option value with an unclosed
@@ -1236,7 +1245,12 @@ the word after `-a` on a line that holds, or follows a line ending in,
 `http`, `https`, `xh` or `xhs` as a word followed by white space (`http
 redirect … ls -a home`; the gap after the word may be a line end); and a
 `\` at the end of a comment, which continues the command for redaction
-(bash does not). `cert-password` compiles on any curl line holding `-e`
+(bash does not); `pass:…` after any option whose name holds `pass` or
+`secret` (`--bypass pass:x`), the empty `pass:`, and the rest of the line
+after `$"pass:…"`, which reads as an unclosed quote. `--pass pass:…` and
+`--password pass:…` are masked by `secret-option` and `password-option`
+first, and the import report counts them under `openssl-pass` too
+(WP-106). `cert-password` compiles on any curl line holding `-e`
 (`set -e`, `sudo -E`), about 0.3 ms per hook call; accepted. An e-mail address
 (`email`, WP-093) is a local part, `@`, and a domain of at least two
 labels whose last holds letters only (`example.de`, `müller.example`,
