@@ -1741,3 +1741,27 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   so for an event dated after that clock the line lands before the event
   in the ledger and the index does not fold it; the row stays drift.
   Rule 8 dates its line at `max(now, event ts)` since WP-088 round 2.
+
+## 2026-10-05 · WP-091 (Engine Dev)
+
+- **A capture that moves snapper between degraded and ok writes one
+  more line** (the `seldon` note, subject `snapper`). A test that swaps
+  `stub_snapper_no_permissions` for `stub_snapper` (or back) between two
+  captures of the same logbook counts it in `written`; the WP-088 tests
+  now expect 2 there ("the note and access").
+- **`CollectorState.last_run` is an `Option` since WP-091.** An entry
+  with only the `pendingBaseline` mark (a collector not run in the
+  capture that lost the state) has no `lastRun` and no `cursor`; anything
+  that reads `lastRun` (doctor's "last capture", the index) must skip
+  `None`, and "did it ever run here" is `last_run.is_some()`, not "has an
+  entry". An engine before WP-091 cannot load such a `cursors.json`.
+- **`capture --source pacman` in `idempotency.rs` without `--since`
+  writes no pacman events** (its baseline is the logbook's `created`, the
+  real time), and a later `--since` is ignored for it (`sinceIgnored`):
+  a test that needs pacman events in the ledger passes `--since
+  FIXTURE_CREATED` on pacman's first capture.
+- **doctor's `state` rows for a lost state are two since WP-091:** "the
+  next capture will record a state reset for …" (unmarked losses) and
+  "<c> degraded or not run since a state reset (…)" (marked ones;
+  `waiting()` in `idempotency.rs`). `predicted()` no longer names a
+  marked collector.
