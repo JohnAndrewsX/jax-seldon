@@ -185,8 +185,10 @@ Panel {
         detail: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.detail : "",
         tooltip: captureNotice.visible ? captureNotice.tooltipText : "",
         hovered: captureNotice.hovered,
-        // drawn in the foreground (the neutral tone), not the accent
-        neutral: Qt.colorEqual(captureNotice.toneColor, root.foreground)
+        // drawn in the foreground (the neutral tone), not the accent; tell
+        // them apart only in a theme where the two differ
+        neutral: Qt.colorEqual(captureNotice.toneColor, root.foreground),
+        accentTone: Qt.colorEqual(captureNotice.toneColor, captureNotice.accent)
       },
       crisis: crisisStrip.visible ? crisisLabel.text : "",
       today: {

@@ -1154,9 +1154,12 @@ clean_log capture-click "jax\.seldon: seldon capture exit 4: another seldon proc
 #     neutral notice "Capture warned" with the first line of each warning
 #     and no button; the hover shows both in full. *Capture now* on the
 #     Changelog runs a capture without warnings, and the notice is gone.
+#     Tokyo Night, whose accent differs from its foreground, so the tone
+#     check can tell the neutral tone from the accent.
 reset_warning="state reset recorded: pacman took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook, so changes made in between may be missing. If you have a backup of it, restore it and run \`seldon capture\` again (user guide: Back up and restore the state directory)"
 move_warning=$'cannot move ~/.local/state/seldon/owned.json aside: permission denied\ncaused by: EACCES'
-mkdir -p "$work/home-capture-warned"
+mkdir -p "$work/home-capture-warned/.local/state/omarchy/current/theme"
+cp "${OMARCHY_PATH:-/usr/share/omarchy}/themes/tokyo-night/colors.toml" "$work/home-capture-warned/.local/state/omarchy/current/theme/colors.toml"
 run capture-warned "" "view;hover:Capture warned;view;tab:changelog;click:Capture now;settle;view" \
   HOME="$work/home-capture-warned" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_WARNED=1 \
   FAKE_SELDON_CAPTURE_WARNINGS="$(jq -cn --arg a "$reset_warning" --arg b "$move_warning" '[$a, $b]')"
@@ -1166,6 +1169,7 @@ expect capture-warned 1 .view.banner ""
 expect capture-warned 1 .view.captureNotice.title "Capture warned"
 expect capture-warned 1 .view.captureNotice.detail "$notice_detail"
 expect capture-warned 1 .view.captureNotice.neutral true
+expect capture-warned 1 .view.captureNotice.accentTone false
 expect capture-warned 1 .view.captureNotice.hovered false
 expect capture-warned 1 .view.captureNotice.tooltip "$reset_warning"$'\n\n'"$move_warning"
 shows capture-warned 1 "Capture warned"
