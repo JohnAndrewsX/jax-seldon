@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-05
+
 ### Engine
 
 - `doctor` warns before the capture that would record a state reset:
@@ -592,7 +594,8 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.3
 [0.1.2]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.2
 [0.1.1]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.1
 [0.1.0]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.0
