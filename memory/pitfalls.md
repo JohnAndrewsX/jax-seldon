@@ -1641,3 +1641,19 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   02:00 CET on the wall), and 02:00:00 when it begins comes back
   `Single(02:00+01:00)` (03:00 CEST on the wall). Keep only the readings
   whose wall-clock time is the input (WP-082 review F1).
+## 2026-10-05 · WP-085 (Plugin Dev)
+
+- **The shell's default palette has `accent == foreground` (`#cacccc`).**
+  A harness check that a banner is drawn in the foreground, not the
+  accent, passes either way in a HOME without a theme. Copy a theme whose
+  two differ (Tokyo Night) to `$HOME/.local/state/omarchy/current/theme/
+  colors.toml` for that case, and also assert "not the accent", so a
+  theme that failed to load fails the case instead of passing it.
+- **Only a capture that exited 0 can say a warning is gone.** The lock
+  wait writes its own `captureResult` (`retryLater`) and a failed capture
+  has no `warnings`; state derived from "the last capture" must be set in
+  `runnerDone` on exit 0, not from `captureResult`.
+- **A mutant must remove what the test looks for.** Renaming the README
+  row's State column left "Capture warned" in its Banner column, and the
+  States test (it matches the Banner column) still passed; the real
+  mutant deletes the row.

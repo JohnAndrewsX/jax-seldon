@@ -498,11 +498,11 @@ test("logResult, openResult, captureResult read the SPEC-ENGINE §3 shapes", () 
   same(M.openResult(1, '{"error":{"code":1,"message":"cannot open /p: no terminal"}}', ""), { ok: false, text: "cannot open /p: no terminal" })
 
   const cap = (o) => JSON.stringify(Object.assign({ ok: true, logbook: "/l", files: [] }, o))
-  same(M.captureResult(0, cap({ written: 0, collectors: [] }), ""), { ok: true, text: "nothing new" })
-  same(M.captureResult(0, cap({ written: 1 }), ""), { ok: true, text: "1 new event" })
+  same(M.captureResult(0, cap({ written: 0, collectors: [] }), ""), { ok: true, text: "nothing new", warnings: [] })
+  same(M.captureResult(0, cap({ written: 1 }), ""), { ok: true, text: "1 new event", warnings: [] })
   same(M.captureResult(0, cap({ written: 12, collectors: [{ name: "pacman", ok: true }, { name: "snapper", ok: false, fix: "x" }] }), ""),
-    { ok: true, text: "12 new events · failing: snapper" })
-  same(M.captureResult(4, '{"error":{"code":4,"message":"lock held"}}', ""), { ok: false, text: "lock held" })
+    { ok: true, text: "12 new events · failing: snapper", warnings: [] })
+  same(M.captureResult(4, '{"error":{"code":4,"message":"lock held"}}', ""), { ok: false, text: "lock held", warnings: [] })
 })
 
 test("group badge: +(members - 1), the leader not counted twice", () => {
@@ -1450,7 +1450,8 @@ test("plugin/README.md States lists every banner with its fixes (WP-078)", () =>
     M.bannerFor("indexMissing", { parseError: "empty" }), M.bannerFor("indexMissing", { parseError: "bad json" }),
     M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00+02:00", nowMs: Date.parse("2026-10-01T14:00:00+02:00") }),
     M.bannerFor("contractMismatch", { indexContractVersion: 2 }), M.bannerFor("contractMismatch", { indexContractVersion: 0 }),
-    M.engineOutdatedBanner("ok", "0.0.1", "9.0.0"), M.snapperBanner(degraded, false)
+    M.engineOutdatedBanner("ok", "0.0.1", "9.0.0"), M.snapperBanner(degraded, false),
+    M.captureWarningNotice(["state reset recorded: pacman took a new baseline"])
   ]
   for (const b of banners) {
     assert.ok(b, "a banner")
@@ -1489,6 +1490,34 @@ test("pickDrawnWidget (WP-078): the first drawn widget owns IPC, a placeholder o
   assert.strictEqual(M.pickDrawnWidget(undefined, null), null)
   assert.strictEqual(M.isDrawnWidget(w("x", true, 1, 1)), true)
   assert.strictEqual(M.isDrawnWidget(w("x", true, 1, 0)), false)
+})
+
+test("captureResult keeps the capture's warnings; captureWarningNotice (WP-085)", () => {
+  const reset = "state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing, " +
+    "unreadable or bound to another logbook, so changes made in between may be missing. If you have a backup of it, " +
+    "restore it and run `seldon capture` again (user guide: Back up and restore the state directory)"
+  const cap = (o) => JSON.stringify(Object.assign({ ok: true, written: 1, collectors: [] }, o))
+  // kept as the engine wrote them; blank and non-string entries dropped
+  same(M.captureResult(0, cap({ warnings: [reset, "", "  ", 7, null] }), "").warnings, [reset])
+  same(M.captureResult(0, cap({ warnings: "not a list" }), "").warnings, [])
+  same(M.captureResult(0, cap({}), "").warnings, [])
+  // a failed capture carries none, even if its output had a list
+  same(M.captureResult(2, cap({ warnings: [reset] }), "boom").warnings, [])
+
+  assert.strictEqual(M.captureWarningNotice([]), null)
+  assert.strictEqual(M.captureWarningNotice(undefined), null)
+  const one = M.captureWarningNotice([reset])
+  assert.strictEqual(one.title, "Capture warned")
+  assert.strictEqual(one.tone, "neutral")
+  assert.strictEqual(one.detail, reset)
+  assert.strictEqual(one.full, "")
+  assert.strictEqual(one.command, "")
+  same(one.actions, [])
+  assert.strictEqual(M.statusPictogram(one.status), "")
+  // first line of each warning; the full text for the hover
+  const two = M.captureWarningNotice([reset, "\ncannot move ~/.local/state/seldon/owned.json aside: denied\n  caused by: EACCES\n"])
+  assert.strictEqual(two.detail, reset + "\ncannot move ~/.local/state/seldon/owned.json aside: denied")
+  assert.strictEqual(two.full, reset + "\n\ncannot move ~/.local/state/seldon/owned.json aside: denied\n  caused by: EACCES")
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

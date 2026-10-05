@@ -1159,6 +1159,65 @@ else
   fail=$((fail + 1)); echo "FAIL sheets: the installed shell's Commons/ and Ui/ not found at $shell_dir"
 fi
 
+# 36. Capture warnings (WP-085): the start-up capture warns (the engine's
+#     state reset, and a second warning of two lines); the service keeps
+#     them as the engine wrote them and its notice shows the first line of
+#     each. A capture that fails (exit 2) leaves them; the next capture
+#     that finishes without warnings clears them.
+reset_warning="state reset recorded: pacman, config took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook, so changes made in between may be missing. If you have a backup of it, restore it and run \`seldon capture\` again (user guide: Back up and restore the state directory)"
+move_warning=$'cannot move ~/.local/state/seldon/owned.json aside: permission denied\ncaused by: EACCES'
+warnings_json=$(jq -cn --arg a "$reset_warning" --arg b "$move_warning" '[$a, $b]')
+# snap_expect <case> <n> <jq filter> <value> — on the n-th "HARNESS snapshot"
+snap_expect() {
+  local got
+  got=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
+    | sed -n "${2}p" | jq -r "$3" 2>/dev/null || true)
+  if [[ $got == "$4" ]]; then
+    pass=$((pass + 1)); echo "ok   $1 snapshot $2: $3 = $4"
+  else
+    fail=$((fail + 1)); echo "FAIL $1 snapshot $2: $3 = $got (want $4)"
+  fi
+}
+mkdir -p "$work/home-capture-warned"
+run capture-warned 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-warned" \
+  FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_WARNINGS="$warnings_json" \
+  FAKE_SELDON_CAPTURE_WARNED=1 FAKE_SELDON_CAPTURE_EXIT=2 FAKE_SELDON_CAPTURE_EXIT_CALLS=2 \
+  FAKE_SELDON_CAPTURE_STDERR="seldon: collector exploded" \
+  HARNESS_ACTIONS='[["snapshot"],["capture"],["wait"],["snapshot"],["capture"],["wait"]]'
+snap_expect capture-warned 1 .captureResult.text "nothing new"
+snap_expect capture-warned 1 '.captureWarnings | length' 2
+snap_expect capture-warned 1 '.captureWarnings[0]' "$reset_warning"
+snap_expect capture-warned 1 '.captureWarnings[1]' "$move_warning"
+snap_expect capture-warned 1 .captureNotice "$reset_warning"$'\n'"cannot move ~/.local/state/seldon/owned.json aside: permission denied"
+snap_expect capture-warned 2 .captureResult.ok false
+snap_expect capture-warned 2 .captureResult.text "seldon: collector exploded"
+snap_expect capture-warned 2 '.captureWarnings | length' 2
+snap_expect capture-warned 2 .captureNotice "$reset_warning"$'\n'"cannot move ~/.local/state/seldon/owned.json aside: permission denied"
+expect capture-warned .captureResult.text "nothing new"
+expect capture-warned '.captureWarnings | length' 0
+expect capture-warned .captureNotice ""
+argv_check capture-warned "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q capture --all --json --quiet)" "$(q status --json)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log capture-warned "jax.seldon: seldon capture exit 2: seldon: collector exploded$"
+
+# 36b. A locked capture (exit 4) leaves the warnings while it waits; its
+#      retry, which finishes without warnings, clears them.
+mkdir -p "$work/home-capture-warned-locked"
+run capture-warned-locked 3000 HARNESS_UNTIL=capturing=false PATH="$fake_path" HOME="$work/home-capture-warned-locked" \
+  FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_WARNINGS="$warnings_json" \
+  FAKE_SELDON_CAPTURE_WARNED=1 FAKE_SELDON_CAPTURE_EXIT=4 FAKE_SELDON_CAPTURE_EXIT_CALLS=2 FAKE_SELDON_CAPTURE_STDERR= \
+  FAKE_SELDON_CAPTURE_STDOUT='{"error":{"code":4,"message":"another seldon process holds the lock"}}' \
+  SELDON_LOCK_RETRY_MS=1500 HARNESS_ACTIONS='[["capture"],["wait"],["snapshot"]]'
+snap_expect capture-warned-locked 1 .captureResult.text "waiting for another seldon process; trying again shortly"
+snap_expect capture-warned-locked 1 .capturing true
+snap_expect capture-warned-locked 1 '.captureWarnings | length' 2
+expect capture-warned-locked .captureResult.text "nothing new"
+expect capture-warned-locked '.captureWarnings | length' 0
+expect capture-warned-locked .captureNotice ""
+argv_check capture-warned-locked "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
+  "$(q capture --all --json --quiet)" "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log capture-warned-locked "jax.seldon: seldon capture exit 4: another seldon process holds the lock$"
+
 real_home_check service-states
 
 echo "service-states: $pass passed, $fail failed"

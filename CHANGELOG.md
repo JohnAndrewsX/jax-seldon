@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cursors written by earlier versions move to the info file's date
   without an event, and the ledger dedupe counts either instant, also
   after a failed cursor save or a lost state directory (WP-082).
+### Plugin
+
+- A capture the plugin runs (the timer, *Capture now*, *Check again*, the
+  `c` key, the bar's right click) that returns warnings shows them in a
+  neutral "Capture warned" notice on every tab: the first line of each
+  warning, all of it on hover, such as the state reset and the engine's
+  restore hint. A later capture without warnings clears it (WP-085).
 
 ## [0.1.2] - 2026-10-04
 

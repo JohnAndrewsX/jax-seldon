@@ -48,6 +48,7 @@ Knopf, der es behebt.
 | Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`. Engine: *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
 | Engine too old | die Engine ist älter, als dieses Plugin sie braucht (das `engineMin` in seinem Manifest) | *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)), dann *Check again* |
 | Snapshots not readable | Snapper weist deinen Benutzer ab, und `/.snapshots` ist nicht lesbar | *Run in terminal* startet die einmalige Lesefreigabe; dort tippst du dein Passwort |
+| Capture warned | ein Capture, das das Plugin gestartet hat, endete mit einer Warnung, etwa [einem Zustands-Reset](#ein-zustands-reset-wurde-festgehalten); der Hinweis zeigt die erste Zeile jeder Warnung, der Mauszeiger darüber zeigt sie ganz | kein Knopf: tu, was die Warnung sagt. Der Hinweis verschwindet nach dem nächsten Capture ohne Warnungen |
 
 Das Plugin sucht die Engine beim Start der Shell und wenn du *Check
 again* drückst. Hast du die Engine installiert, drück *Check again* oder
@@ -243,7 +244,9 @@ Collectors verpassen jede Änderung dazwischen.
 
 Das Capture hat eine Notiz mit dem Betreff `state-reset` ins Ledger
 geschrieben, damit die Lücke sichtbar bleibt, und `seldon doctor` zeigt
-bis zum nächsten Capture eine `state`-Zeile mit `degraded`.
+bis zum nächsten Capture eine `state`-Zeile mit `degraded`. Hat das
+Plugin dieses Capture gestartet, zeigt das Panel die Warnung als Hinweis
+„Capture warned“, bis ein Capture ohne Warnungen läuft.
 
 Hast du eine Sicherung des Zustandsordners, stelle sie wieder her und
 führe ein Capture aus; dieses Capture hält fest, was sich seit der

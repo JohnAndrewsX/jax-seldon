@@ -16,6 +16,9 @@ import "../Model.js" as Model
 // Left of the text, the status's state pictogram (A11, Model.statusPictogram)
 // in the banner's tone, `pictogramSize` square: 48 in the panel, 96 in the
 // Prime Radiant; none for a status without one (contract mismatch).
+// Tones: "urgent", "neutral" (the foreground: the capture-warning notice,
+// WP-085), else the accent. A banner with `full` shows it in a tooltip
+// while the pointer is over the banner.
 BorderSurface {
   id: root
 
@@ -28,10 +31,20 @@ BorderSurface {
 
   signal actionRequested(string actionId)
 
-  readonly property color toneColor: banner && banner.tone === "urgent" ? urgent : accent
+  readonly property color toneColor: banner && banner.tone === "urgent" ? urgent
+    : banner && banner.tone === "neutral" ? foreground
+    : accent
   readonly property string command: banner && banner.command ? banner.command : ""
   readonly property string hint: banner && banner.hint ? banner.hint : ""
   readonly property string pictogram: banner ? Model.statusPictogram(banner.status) : ""
+  readonly property string tooltipText: banner && banner.full ? banner.full : ""
+  readonly property bool hovered: hover.hovered
+  readonly property bool tooltipShown: tooltip.visible
+  readonly property real tooltipWidth: tooltip.width
+  // The tooltip shows its own wrapping label, and the text fits it (not
+  // cut off at the tooltip's edge).
+  readonly property bool tooltipFits: tooltip.contentItem === tooltipLabel
+    && tooltipLabel.contentWidth <= tooltipLabel.width - tooltipLabel.leftPadding - tooltipLabel.rightPadding + 0.5
 
   visible: banner !== null
   implicitWidth: Style.space(320)
@@ -40,6 +53,35 @@ BorderSurface {
   color: Style.selectedFillFor(toneColor, toneColor)
   borderSpec: Border.controlSpec("normal", toneColor, toneColor)
   padding: Style.spacing.xl
+
+  HoverHandler {
+    id: hover
+  }
+
+  // The shell's tooltip, but never wider than the banner: its own text
+  // item neither wraps nor limits its width, so a long warning ran off the
+  // window. Same tokens, plain text, wrapped (WP-085).
+  PanelToolTip {
+    id: tooltip
+    width: root.width
+    visible: root.tooltipText !== "" && hover.hovered
+    text: root.tooltipText
+    fontFamily: root.fontFamily
+
+    contentItem: Text {
+      id: tooltipLabel
+      textFormat: Text.PlainText
+      text: tooltip.text
+      wrapMode: Text.Wrap
+      color: tooltip.panelForeground
+      font.family: tooltip.fontFamily
+      font.pixelSize: tooltip.fontSize
+      leftPadding: Border.left(tooltip.panelBorderSpec) + Style.spacing.controlPaddingX
+      rightPadding: Border.right(tooltip.panelBorderSpec) + Style.spacing.controlPaddingX
+      topPadding: Border.top(tooltip.panelBorderSpec) + Style.spacing.controlPaddingY
+      bottomPadding: Border.bottom(tooltip.panelBorderSpec) + Style.spacing.controlPaddingY
+    }
+  }
 
   MaskIcon {
     id: pictogramIcon

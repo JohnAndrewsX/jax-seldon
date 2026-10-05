@@ -27,6 +27,14 @@
 #                        lines; set and empty: nothing) to stderr and
 #                        FAKE_SELDON_CAPTURE_STDOUT (default nothing) to
 #                        stdout (WP-068, WP-078)
+#   FAKE_SELDON_CAPTURE_EXIT_CALLS  if set, FAKE_SELDON_CAPTURE_EXIT applies
+#                        only to these `capture` calls (comma list, 1-based,
+#                        every call counted in $HOME/capture-calls) (WP-085)
+#   FAKE_SELDON_CAPTURE_WARNINGS  a JSON list of strings that a successful
+#                        `capture --json` reports as `warnings` (default [])
+#   FAKE_SELDON_CAPTURE_WARNED  if set, only these `capture` calls report the
+#                        warnings (comma list, as _EXIT_CALLS); the others
+#                        report [] (WP-085)
 #   FAKE_SELDON_UNKNOWN_CASE  the case id `log`, `open`, `plan` and `agent`
 #                        do not know (default C-2026-999): exit 1, "unknown case <id>"
 #   FAKE_SELDON_NO_LAUNCHER  if set, `agent start` answers as the engine does
@@ -387,7 +395,13 @@ case "$cmd" in
   capture)
     sleep 0.3
     [[ $mode == uninit ]] && uninit
-    if [[ -n ${FAKE_SELDON_CAPTURE_EXIT:-} ]]; then
+    call=1
+    [[ -f $HOME/capture-calls ]] && call=$(($(<"$HOME/capture-calls") + 1))
+    echo "$call" >"$HOME/capture-calls"
+    # in_list <comma list> — this capture call is one of them
+    in_list() { [[ ,$1, == *,$call,* ]]; }
+    if [[ -n ${FAKE_SELDON_CAPTURE_EXIT:-} ]] \
+      && { [[ -z ${FAKE_SELDON_CAPTURE_EXIT_CALLS:-} ]] || in_list "$FAKE_SELDON_CAPTURE_EXIT_CALLS"; }; then
       err=${FAKE_SELDON_CAPTURE_STDERR-$'seldon: collector failed\nsecond line'}
       [[ -n $err ]] && printf '%s\n' "$err" >&2
       [[ -n ${FAKE_SELDON_CAPTURE_STDOUT:-} ]] && printf '%s\n' "$FAKE_SELDON_CAPTURE_STDOUT"
@@ -403,7 +417,9 @@ case "$cmd" in
     n=0
     [[ -f $HOME/captures ]] && n=$(<"$HOME/captures")
     echo $((n + 1)) >"$HOME/captures"
-    echo "{\"ok\":true,\"logbook\":\"$HOME/Seldon\",\"written\":${FAKE_SELDON_WRITTEN:-0},\"files\":[],\"collectors\":[{\"name\":\"pacman\",\"enabled\":true,\"ran\":true,\"ok\":true,\"events\":${FAKE_SELDON_WRITTEN:-0}}]}"
+    warnings=${FAKE_SELDON_CAPTURE_WARNINGS:-[]}
+    [[ -n ${FAKE_SELDON_CAPTURE_WARNED:-} ]] && ! in_list "$FAKE_SELDON_CAPTURE_WARNED" && warnings=[]
+    echo "{\"ok\":true,\"logbook\":\"$HOME/Seldon\",\"written\":${FAKE_SELDON_WRITTEN:-0},\"files\":[],\"collectors\":[{\"name\":\"pacman\",\"enabled\":true,\"ran\":true,\"ok\":true,\"events\":${FAKE_SELDON_WRITTEN:-0}}],\"warnings\":$warnings}"
     ;;
   status)
     sleep 0.3
