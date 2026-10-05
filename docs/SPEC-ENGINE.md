@@ -579,14 +579,19 @@ first saves `cursors.json` as it loaded it (the same binding and
 entries, or no logbook and no entries when there was no file) with the
 note's time added to `pendingNotes`, and its save after the append
 writes the new state without `pendingNotes`. The next capture after a
-crash between the two loads that state, so it compares as the crashed
-one did; it does not write a note the ledger holds at a time in
+crash between the two loads that state (same binding, same entries)
+and does not write a note the ledger holds at a time in
 `pendingNotes` again, known by its identity, not its detail: the
 snapper note by its subject, the state reset by the sources its
 `meta.sources` names (a source no such note names, e.g. one the crashed
 capture did not run, gets a note of its own). It still prints the
 warning, which the crash hid, and keeps the earlier times when it marks
-a note of its own. A collector that degrades in
+a note of its own. Known limitation: a source the crashed capture
+baselined without a note (the ledger held no event of it before) has
+events now, so the next capture records a state reset for it that lost
+nothing, as after `init --no-capture`; its `recorded` time is the crash
+time, while the baselines were saved by that next capture. A collector
+that degrades in
 a capture in which its state was lost (it would pass the binding gate
 and the ledger rule above) takes no baseline there, so that capture's
 note does not name it, or there is no note when it alone lost its state;
@@ -799,9 +804,11 @@ git itself is killed, with the same bounded pipe wait. Rules:
   state directory or another logbook's state (nothing to compare with),
   for an entry with only the `pendingBaseline` mark (it never ran), or
   in a capture that does not run snapper; the next capture compares with
-  the saved state, so each change is recorded once, also after a crash
-  between the append and the cursor save (§3 state reset). The note is
-  no drift and no own change (§5).
+  the saved state, so no change is recorded twice, also after a crash
+  between the append and the cursor save (§3 state reset). Known
+  limitation: a change that flips back before the next completed
+  capture after such a crash leaves the crashed capture's note and none
+  for the way back. The note is no drift and no own change (§5).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
   stale); `repoHead` (7-character short hash, like `logbook.git.head`)
