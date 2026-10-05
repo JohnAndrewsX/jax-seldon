@@ -29,9 +29,10 @@
 //! nothing is lost. When the cursor save fails after the ledger write, the
 //! events the ledger holds since the cursor's check are applied to that
 //! generation first ([`replay`]), so the diff neither repeats them nor
-//! misses a file that went back to its old content; events the ledger
-//! already holds are dropped as well. The first run (no cursor) is a
-//! baseline: no events.
+//! misses a file that went back to its old content. Files whose names
+//! differ only in a part the redaction masks share a subject in the
+//! ledger; the replay tells them apart by their hashes. The first run (no
+//! cursor) is a baseline: no events.
 //!
 //! Each generation keeps the scope it was taken with ([`WatchScope`]). A file
 //! that left the scope (a watch path removed, a `skipPaths` pattern added) is
@@ -795,106 +796,129 @@ fn rescope(dirs: &Dirs, base: &mut Generation, scope: &WatchScope, scan: &Scan) 
     (left, entered)
 }
 
-/// `events` without those the ledger holds since `since`: same kind, path
-/// and both hashes. A capture whose cursor save failed after its ledger
-/// write left the cursor on the generation before them.
-fn unrecorded(
-    ctx: &Ctx,
-    events: Vec<Event>,
-    since: DateTime<FixedOffset>,
-) -> anyhow::Result<Vec<Event>> {
-    if events.is_empty() {
-        return Ok(events);
-    }
-    let recorded: Vec<Event> = ctx
-        .ledger
-        .read_range(since.min(ctx.now), ctx.now)?
-        .into_iter()
-        .filter(|r| r.source == Source::Config)
-        .collect();
-    if recorded.is_empty() {
-        return Ok(events);
-    }
-    let redactor = ctx.ledger.redactor();
-    Ok(events
-        .into_iter()
-        .filter(|e| {
-            // the ledger holds the subject redacted
-            let subject = redactor.redact(&e.subject);
-            !recorded.iter().any(|r| {
-                r.kind == e.kind
-                    && r.subject == subject
-                    && r.meta.hash_from == e.meta.hash_from
-                    && r.meta.hash_to == e.meta.hash_to
-            })
-        })
-        .collect())
+/// A recorded config event as a step of one file: the states before and
+/// after it (`None`: no file), and the files its subject can name.
+struct Step<'a> {
+    paths: Vec<String>,
+    before: Option<&'a String>,
+    after: Option<&'a String>,
 }
 
-/// Applies to `base` the config events the ledger holds since `since`,
-/// each when it starts from the state `base` has for its path (`hashFrom`,
-/// or no file for an addition), until none applies. After a failed cursor
-/// save the cursor names the generation before those events; with them
-/// applied the diff neither repeats them nor misses a file that went back
-/// to its old content before this capture (`A→B` recorded, now `A`: the
-/// ledger gets `B→A`). A redacted subject that names no file of `base` or
-/// `scan` is left out.
+impl Step<'_> {
+    /// The file this step goes to: one whose state in `base` is the one
+    /// the step starts from and, of several, one whose state in `seen` is
+    /// the one it leaves; `true` when it is the only such file.
+    fn place(&self, base: &Generation, seen: &Generation) -> Option<(&String, bool)> {
+        let fits: Vec<&String> = self
+            .paths
+            .iter()
+            .filter(|p| base.files.get(*p) == self.before)
+            .collect();
+        if let [one] = fits[..] {
+            return Some((one, true));
+        }
+        let ends: Vec<&String> = fits
+            .iter()
+            .copied()
+            .filter(|p| seen.files.get(*p) == self.after)
+            .collect();
+        match ends[..] {
+            [one] => Some((one, true)),
+            _ => ends.first().or(fits.first()).map(|p| (*p, false)),
+        }
+    }
+
+    fn apply(&self, base: &mut Generation, path: &str) {
+        match self.after {
+            Some(hash) => base.files.insert(path.to_string(), hash.clone()),
+            None => base.files.remove(path),
+        };
+    }
+}
+
+/// Applies to `base`, the generation the cursor names, the config events
+/// the ledger holds since `since`, until none applies. After a failed
+/// cursor save they are the events of the captures since, and `seen` is
+/// the generation the last of them stored; with them applied the diff
+/// neither repeats them nor misses a file that went back to its old
+/// content before this capture (`A→B` recorded, now `A`: the ledger gets
+/// `B→A`).
+///
+/// An event goes to a file whose state in `base` is the one it starts
+/// from (`hashFrom`, or no file for an addition). The ledger holds
+/// subjects redacted, so files whose names differ only in a masked part
+/// share one (WP-103); of several such files the event goes to the one
+/// `seen` has in the state the event leaves. An event without a single
+/// such file waits until no other event can be placed, then goes to the
+/// first of them: they have the same content, and the ledger cannot tell
+/// them apart. A subject names the files of `base` and `seen` whose
+/// redaction it is, or, when nothing in it is redacted, its own path; an
+/// event whose subject names no file is left out.
 fn replay(
     ctx: &Ctx,
     base: &mut Generation,
-    scan: &Scan,
+    seen: &Generation,
     since: DateTime<FixedOffset>,
 ) -> anyhow::Result<()> {
     let mut recorded: Vec<Event> = ctx
         .ledger
         .read_range(since.min(ctx.now), ctx.now)?
         .into_iter()
-        .filter(|r| {
-            r.source == Source::Config
-                && matches!(
-                    r.kind,
-                    Kind::ConfigAdd | Kind::ConfigChange | Kind::ConfigRemove
-                )
-        })
+        .filter(|r| r.source == Source::Config)
         .collect();
+    if recorded.is_empty() {
+        return Ok(());
+    }
     recorded.sort_by_key(|r| r.ts);
     // the ledger holds subjects redacted
     let redactor = ctx.ledger.redactor();
-    let paths: BTreeMap<String, String> = base
-        .files
-        .keys()
-        .chain(scan.files.keys())
-        .map(|k| (redactor.redact(k), k.clone()))
-        .collect();
-    let path_of = |subject: &str| match paths.get(subject) {
-        Some(k) => Some(k.clone()),
-        None => (redactor.redact(subject) == subject).then(|| subject.to_string()),
-    };
-    loop {
-        let before = recorded.len();
-        recorded.retain(|r| {
-            let Some(path) = path_of(&r.subject) else {
-                return false;
-            };
-            let state = base.files.get(&path);
+    let mut paths: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let known: BTreeSet<&String> = base.files.keys().chain(seen.files.keys()).collect();
+    for k in known {
+        paths.entry(redactor.redact(k)).or_default().push(k.clone());
+    }
+    let mut steps: Vec<Step> = recorded
+        .iter()
+        .filter_map(|r| {
             let (from, to) = (r.meta.hash_from.as_ref(), r.meta.hash_to.as_ref());
-            match (r.kind, from, to) {
-                (Kind::ConfigAdd, _, Some(to)) if state.is_none() => {
-                    base.files.insert(path, to.clone());
-                }
-                (Kind::ConfigChange, Some(_), Some(to)) if state == from => {
-                    base.files.insert(path, to.clone());
-                }
-                (Kind::ConfigRemove, Some(_), _) if state == from => {
-                    base.files.remove(&path);
-                }
-                _ => return true, // not (yet) applicable
+            let (before, after) = match (r.kind, from, to) {
+                (Kind::ConfigAdd, _, Some(_)) => (None, to),
+                (Kind::ConfigChange, Some(_), Some(_)) => (from, to),
+                (Kind::ConfigRemove, Some(_), _) => (from, None),
+                _ => return None,
+            };
+            let paths = match paths.get(&r.subject) {
+                Some(paths) => paths.clone(),
+                None if redactor.redact(&r.subject) == r.subject => vec![r.subject.clone()],
+                None => return None,
+            };
+            Some(Step {
+                paths,
+                before,
+                after,
+            })
+        })
+        .collect();
+    loop {
+        let before = steps.len();
+        steps.retain(|s| match s.place(base, seen) {
+            Some((path, true)) => {
+                s.apply(base, path);
+                false
             }
-            false
+            _ => true, // not (yet) placed
         });
-        if recorded.len() == before {
-            return Ok(());
+        if steps.len() < before {
+            continue;
         }
+        let Some((i, path)) = steps
+            .iter()
+            .enumerate()
+            .find_map(|(i, s)| Some((i, s.place(base, seen)?.0.clone())))
+        else {
+            return Ok(());
+        };
+        steps.remove(i).apply(base, &path);
     }
 }
 
@@ -961,12 +985,12 @@ impl ConfigFiles {
             ));
         }
         let since = prev.as_ref().map(|p| p.checked);
-        // the cursor names an older generation than the stored one: the
-        // last capture's cursor save (or its ledger write) failed
+        // the generation the last capture stored, when the cursor names an
+        // older one: that capture's cursor save (or its ledger write) failed
         let behind = stored
             .as_ref()
-            .zip(prev.as_ref())
-            .is_some_and(|(m, c)| m.current.hash != c.hash);
+            .map(|m| &m.current)
+            .filter(|g| prev.as_ref().is_some_and(|c| g.hash != c.hash));
         let lost = match (&prev, &base) {
             (None, _) => Some(Lost::Cursor),
             (Some(_), None) => Some(Lost::Manifest),
@@ -974,7 +998,9 @@ impl ConfigFiles {
         };
         let events = match (prev, base) {
             (Some(prev), Some(mut base)) => {
-                if behind && let Err(e) = replay(ctx, &mut base, &scan, prev.checked) {
+                if let Some(seen) = behind
+                    && let Err(e) = replay(ctx, &mut base, seen, prev.checked)
+                {
                     return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
                 }
                 let (left, entered) = rescope(ctx.dirs, &mut base, &scope, &scan);
@@ -983,13 +1009,7 @@ impl ConfigFiles {
                         "watch scope changed: {left} file(s) left it, {entered} entered it; no events for them"
                     ));
                 }
-                let events = diff(ctx, &base, &scan, prev.checked);
-                match unrecorded(ctx, events, prev.checked) {
-                    Ok(events) => events,
-                    Err(e) => {
-                        return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
-                    }
-                }
+                diff(ctx, &base, &scan, prev.checked)
             }
             (Some(_), None) => {
                 notes.push(format!(

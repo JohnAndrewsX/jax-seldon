@@ -14,6 +14,7 @@ use seldon::collectors::plugins::Plugins;
 use seldon::collectors::snapper::Snapper;
 use seldon::collectors::{Collector, REGISTRY};
 use seldon::model::event::{Event, Kind, Source};
+use seldon::redact::REDACTED;
 use support::{FIXTURE_CREATED, assert_schema_valid, fixture, story};
 
 mod idempotency {
@@ -315,6 +316,309 @@ mod idempotency {
                 .is_empty()
         );
         assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    /// Desktop entries whose names differ only in the local part of an
+    /// address (`<name>.webapp@example.com`): the ledger holds all of them
+    /// under one redacted subject, [`twin`] (WP-093).
+    fn twins<const N: usize>(b: &support::Bench, names: [&str; N]) -> [std::path::PathBuf; N] {
+        let dir = b.dirs.home.join(".local/share/applications");
+        std::fs::create_dir_all(&dir).unwrap();
+        names.map(|name| dir.join(format!("Mail ({name}.webapp@example.com).desktop")))
+    }
+
+    fn twin() -> String {
+        format!("~/.local/share/applications/Mail ({REDACTED}@example.com).desktop")
+    }
+
+    /// The desktop entry `Name=<name>`.
+    fn entry_text(name: &str) -> String {
+        format!("[Desktop Entry]\nName={name}\n")
+    }
+
+    /// Writes the entry `name` to `path`; with `mtime`, the file's
+    /// modification time is set to it.
+    fn entry(path: &Path, name: &str, mtime: Option<&str>) {
+        std::fs::write(path, entry_text(name)).unwrap();
+        if let Some(t) = mtime {
+            let at = std::time::UNIX_EPOCH
+                + std::time::Duration::from_secs(support::ts(t).timestamp() as u64);
+            let file = std::fs::File::options().write(true).open(path).unwrap();
+            file.set_modified(at).unwrap();
+        }
+    }
+
+    /// The entry names the twin tests write.
+    const NAMES: [&str; 6] = ["Alice 1", "Alice 2", "Alice 3", "Bob 1", "Bob 2", "Same"];
+
+    type Step = (Kind, Option<&'static str>, Option<&'static str>);
+
+    /// Each event as (kind, from, to), its hashes read back as entry names;
+    /// every event names [`twin`].
+    fn steps(events: &[Event]) -> Vec<Step> {
+        let name = |h: &Option<String>| {
+            h.as_ref().map(|h| {
+                *NAMES
+                    .iter()
+                    .find(|n| seldon::sys::sha256_hex(entry_text(n).as_bytes()) == *h)
+                    .unwrap_or_else(|| panic!("no entry has the hash {h}"))
+            })
+        };
+        events
+            .iter()
+            .map(|e| {
+                assert_eq!(e.subject, twin());
+                (e.kind, name(&e.meta.hash_from), name(&e.meta.hash_to))
+            })
+            .collect()
+    }
+
+    /// Runs the config collector at `10:00`-style `at` on 2026-10-01.
+    fn twin_run(b: &mut support::Bench, at: &str) -> Vec<Step> {
+        let out = b.run(&ConfigFiles, &format!("2026-10-01T{at}:00+02:00"));
+        assert!(out.ok, "{:?}", out.message);
+        steps(&out.events)
+    }
+
+    const ADD: Kind = Kind::ConfigAdd;
+    const CHANGE: Kind = Kind::ConfigChange;
+    const REMOVE: Kind = Kind::ConfigRemove;
+
+    #[test]
+    fn twins_after_a_failed_cursor_save_are_told_apart_by_their_hashes() {
+        // two files share a subject in the ledger; after a failed cursor
+        // save each replayed event must go to its own file, or the file
+        // that moved on before the next capture gets a wrong event (WP-103)
+        let mut b = support::Bench::new("crash-config-twins");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+
+        // added; Bob's entry is the older one, so its event comes first
+        let before = b.cursors.clone();
+        entry(&bob, "Bob 1", Some("2026-10-01T10:05:00+02:00"));
+        entry(&alice, "Alice 1", Some("2026-10-01T10:07:00+02:00"));
+        assert_eq!(
+            twin_run(&mut b, "10:10"),
+            [(ADD, None, Some("Alice 1")), (ADD, None, Some("Bob 1"))]
+        );
+        b.cursors = before; // the cursor save failed
+        entry(&alice, "Alice 2", None);
+        assert_eq!(
+            twin_run(&mut b, "10:20"),
+            [(CHANGE, Some("Alice 1"), Some("Alice 2"))]
+        );
+        assert_eq!(twin_run(&mut b, "10:30"), []);
+
+        // changed; Alice's entry goes back before the next capture
+        let before = b.cursors.clone();
+        entry(&alice, "Alice 3", None);
+        entry(&bob, "Bob 2", None);
+        assert_eq!(
+            twin_run(&mut b, "10:40"),
+            [
+                (CHANGE, Some("Alice 2"), Some("Alice 3")),
+                (CHANGE, Some("Bob 1"), Some("Bob 2"))
+            ]
+        );
+        b.cursors = before;
+        entry(&alice, "Alice 2", None);
+        assert_eq!(
+            twin_run(&mut b, "10:50"),
+            [(CHANGE, Some("Alice 3"), Some("Alice 2"))]
+        );
+        assert_eq!(twin_run(&mut b, "11:00"), []);
+
+        // removed; Alice's entry comes back before the next capture
+        let before = b.cursors.clone();
+        std::fs::remove_file(&alice).unwrap();
+        std::fs::remove_file(&bob).unwrap();
+        assert_eq!(
+            twin_run(&mut b, "11:10"),
+            [
+                (REMOVE, Some("Alice 2"), None),
+                (REMOVE, Some("Bob 2"), None)
+            ]
+        );
+        b.cursors = before;
+        entry(&alice, "Alice 2", None);
+        assert_eq!(twin_run(&mut b, "11:20"), [(ADD, None, Some("Alice 2"))]);
+        assert_eq!(twin_run(&mut b, "11:30"), []);
+        assert_eq!(b.ledger_events(Source::Config).len(), 9);
+    }
+
+    #[test]
+    fn twins_with_the_same_content_after_a_failed_cursor_save() {
+        // which of several files with the same content an event belongs
+        // to cannot be read from the ledger; the events must still cover
+        // every file once (WP-103)
+        let mut b = support::Bench::new("crash-config-same");
+        let [alice, bob, carol] = twins(&b, ["alice", "bob", "carol"]);
+        for path in [&alice, &bob, &carol] {
+            entry(path, "Same", None);
+        }
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+
+        // two of three change alike: two events alike, and either fits
+        // all three files
+        let before = b.cursors.clone();
+        entry(&bob, "Bob 1", None);
+        entry(&carol, "Bob 1", None);
+        assert_eq!(
+            twin_run(&mut b, "10:10"),
+            [
+                (CHANGE, Some("Same"), Some("Bob 1")),
+                (CHANGE, Some("Same"), Some("Bob 1"))
+            ]
+        );
+        b.cursors = before;
+        assert_eq!(twin_run(&mut b, "10:20"), []);
+
+        // one changes, the save fails, then another changes alike
+        let before = b.cursors.clone();
+        entry(&bob, "Same", None);
+        assert_eq!(
+            twin_run(&mut b, "10:30"),
+            [(CHANGE, Some("Bob 1"), Some("Same"))]
+        );
+        b.cursors = before;
+        entry(&carol, "Same", None);
+        assert_eq!(
+            twin_run(&mut b, "10:40"),
+            [(CHANGE, Some("Bob 1"), Some("Same"))]
+        );
+        assert_eq!(twin_run(&mut b, "10:50"), []);
+        assert_eq!(b.ledger_events(Source::Config).len(), 4);
+    }
+
+    #[test]
+    fn twins_with_the_same_content_removed_one_after_the_other() {
+        // a removal carries the capture time, which is the next capture's
+        // `since`; a ledger dedupe on every capture took the second removal
+        // for the first (WP-103)
+        let mut b = support::Bench::new("config-same-removed");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Same", None);
+        entry(&bob, "Same", None);
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        std::fs::remove_file(&alice).unwrap();
+        assert_eq!(twin_run(&mut b, "10:10"), [(REMOVE, Some("Same"), None)]);
+        std::fs::remove_file(&bob).unwrap();
+        assert_eq!(twin_run(&mut b, "10:20"), [(REMOVE, Some("Same"), None)]);
+        assert_eq!(twin_run(&mut b, "10:30"), []);
+    }
+
+    #[test]
+    fn a_twin_added_and_removed_around_a_failed_cursor_save_is_recorded() {
+        // Bob's entry is in neither the cursor's generation nor the scan;
+        // the generation the failed capture stored names it (WP-103)
+        let mut b = support::Bench::new("crash-config-twin-gone");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Alice 1", None);
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        let before = b.cursors.clone();
+        entry(&bob, "Bob 1", None);
+        assert_eq!(twin_run(&mut b, "10:10"), [(ADD, None, Some("Bob 1"))]);
+        b.cursors = before;
+        std::fs::remove_file(&bob).unwrap();
+        assert_eq!(twin_run(&mut b, "10:20"), [(REMOVE, Some("Bob 1"), None)]);
+        assert_eq!(twin_run(&mut b, "10:30"), []);
+    }
+
+    #[test]
+    fn twins_after_two_failed_cursor_saves() {
+        // the first event fits both files and neither is in the state it
+        // leaves; it waits until the other events have their files (WP-103)
+        let mut b = support::Bench::new("crash-config-twins-twice");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        let before = b.cursors.clone();
+        entry(&bob, "Bob 1", None);
+        assert_eq!(twin_run(&mut b, "10:10"), [(ADD, None, Some("Bob 1"))]);
+        b.cursors = before.clone();
+        entry(&alice, "Alice 1", None);
+        entry(&bob, "Bob 2", None);
+        assert_eq!(
+            twin_run(&mut b, "10:20"),
+            [
+                (ADD, None, Some("Alice 1")),
+                (CHANGE, Some("Bob 1"), Some("Bob 2"))
+            ]
+        );
+        b.cursors = before;
+        assert_eq!(twin_run(&mut b, "10:30"), []);
+        assert_eq!(twin_run(&mut b, "10:40"), []);
+        assert_eq!(b.ledger_events(Source::Config).len(), 3);
+    }
+
+    #[test]
+    fn a_step_taken_again_after_two_failed_cursor_saves_is_recorded() {
+        // A→B and B→A recorded while the cursor stayed on A: the manifest
+        // is back on the cursor's generation, and the next A→B is a new
+        // change, not one the ledger holds (WP-103)
+        let mut b = support::Bench::new("crash-config-again");
+        let path = b.dirs.home.join(".config/hypr/monitors.conf");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let (a, bb) = (
+            "monitor=,preferred,auto,1\n",
+            "monitor=,preferred,auto,1.25\n",
+        );
+        std::fs::write(&path, a).unwrap();
+        let run = |b: &mut support::Bench, at: &str| {
+            b.run(&ConfigFiles, &format!("2026-10-01T{at}:00+02:00"))
+                .events
+                .len()
+        };
+        assert_eq!(run(&mut b, "10:00"), 0);
+        let before = b.cursors.clone();
+        std::fs::write(&path, bb).unwrap();
+        assert_eq!(run(&mut b, "10:10"), 1);
+        b.cursors = before.clone();
+        std::fs::write(&path, a).unwrap();
+        assert_eq!(run(&mut b, "10:20"), 1);
+        b.cursors = before;
+        std::fs::write(&path, bb).unwrap();
+        assert_eq!(run(&mut b, "10:30"), 1);
+        assert_eq!(run(&mut b, "10:40"), 0);
+        assert_eq!(b.ledger_events(Source::Config).len(), 3);
+    }
+
+    #[test]
+    fn a_file_whose_removal_the_ledger_lost_after_a_failed_cursor_save_is_recorded() {
+        // added (cursor save failed), then removed in a capture whose
+        // ledger write failed too: the file is in no generation the next
+        // capture has, and its unredacted subject names it (WP-073, WP-103)
+        let mut b = support::Bench::new("crash-config-lost");
+        let path = b.dirs.home.join(".config/hypr/extra.conf");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let run = |b: &mut support::Bench, at: &str| {
+            b.run(&ConfigFiles, &format!("2026-10-01T{at}:00+02:00"))
+                .events
+        };
+        assert!(run(&mut b, "10:00").is_empty());
+        let before = b.cursors.clone();
+        std::fs::write(&path, "x\n").unwrap();
+        assert_eq!(run(&mut b, "10:10").len(), 1);
+        b.cursors = before.clone();
+        let month = b.ledger.month_file("2026-10");
+        let ledger = std::fs::read(&month).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        // another file, so this generation is not the cursor's again
+        std::fs::write(path.with_file_name("other.conf"), "y\n").unwrap();
+        assert_eq!(run(&mut b, "10:20").len(), 2);
+        std::fs::write(&month, ledger).unwrap(); // the ledger write failed
+        b.cursors = before;
+        let lost: Vec<(Kind, String)> = run(&mut b, "10:30")
+            .into_iter()
+            .map(|e| (e.kind, e.subject))
+            .collect();
+        assert_eq!(
+            lost,
+            [
+                (Kind::ConfigRemove, "~/.config/hypr/extra.conf".into()),
+                (Kind::ConfigAdd, "~/.config/hypr/other.conf".into())
+            ]
+        );
+        assert!(run(&mut b, "10:40").is_empty());
     }
 
     #[test]
