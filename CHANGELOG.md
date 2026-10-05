@@ -118,11 +118,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hides a personal domain (WP-093).
 - Two watched files whose names differ only in a masked part (two
   desktop entries named after addresses) share one subject in the
-  ledger. After a failed cursor save the config collector now tells them
-  apart by their hashes, so it records each change once and none for the
-  wrong file. A file removed after another one with the same masked
-  name and content is no longer taken for that one and is recorded
-  (WP-103).
+  ledger. The config collector now tells them apart by their hashes when
+  it checks the ledger, after a failed cursor save and after a restored
+  older state directory alike, so it records each change once and none
+  for the wrong file. A file removed after another one with the same
+  masked name and content is no longer taken for that one and is
+  recorded, and a restore after two changes of one file no longer adds a
+  change that skips the middle one (WP-103).
 
 ### Plugin
 
