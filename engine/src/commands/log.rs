@@ -6,11 +6,11 @@
 use clap::Args;
 use serde_json::{Value, json};
 
-use super::event::{clip, emit_one, event_json, parse_case_id, parse_person};
+use super::event::{actor_or_env, clip, emit_one, event_json, parse_case_id, parse_person};
 use super::{Context, Output, autocommit, required_text};
 use crate::error::{Error, Result};
 use crate::logbook::{cases, journal};
-use crate::model::event::{Event, Kind, Meta, Source};
+use crate::model::event::{ACTOR_HUMAN, Event, Kind, Meta, Source};
 use crate::redact::Redactor;
 
 /// Subject of a note without a case (`event.schema.json`).
@@ -29,9 +29,9 @@ pub struct LogArgs {
     #[arg(long = "case", value_name = "ID", value_parser = parse_case_id)]
     pub case_id: Option<String>,
 
-    /// Who writes the note: human or agent:NAME
-    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
-    pub actor: String,
+    /// Who writes the note: human or agent:NAME (default: $SELDON_ACTOR, else human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
 
     /// Tag the note (repeatable): `#tag` in the journal, `meta.tags` in the ledger
     #[arg(long = "tag", value_name = "TAG", value_parser = parse_tag)]
@@ -61,8 +61,9 @@ fn has_line_break(text: &str) -> bool {
 
 pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     let text = required_text("the note", &args.text)?;
+    let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     // checked before the logbook is opened: nothing is read or written
-    if args.actor.starts_with("agent:") && has_line_break(&text) {
+    if actor.starts_with("agent:") && has_line_break(&text) {
         return Err(Error::user(
             "a note from an agent must be one line; log each line as its own note",
         ));
@@ -82,7 +83,7 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     // ledger and the journal change (WP-077)
     if let Some(file) = &case_file {
         let id = cases::pending_ids(1).remove(0);
-        file.prepare(&logbook, |f| f.attach(&id, &args.actor))?;
+        file.prepare(&logbook, |f| f.attach(&id, &actor))?;
     }
 
     let mut entry = text.clone();
@@ -94,13 +95,7 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
     // the journal day is read before the ledger is written: a day file
     // the engine cannot read fails the note before anything changes, so
     // no retry leaves a second ledger note (WP-057)
-    let day = journal::prepare(
-        &logbook,
-        &ctx.now,
-        &args.actor,
-        args.case_id.as_deref(),
-        &entry,
-    )?;
+    let day = journal::prepare(&logbook, &ctx.now, &actor, args.case_id.as_deref(), &entry)?;
 
     let mut meta = Meta::default();
     if !tags.is_empty() {
@@ -114,7 +109,7 @@ pub fn run(ctx: &Context, args: LogArgs) -> Result<Output> {
         args.case_id.as_deref().unwrap_or(JOURNAL_SUBJECT),
     )
     .detail(text.clone())
-    .actor(&args.actor)
+    .actor(&actor)
     .case(args.case_id.clone())
     .meta(meta);
     // the ledger first: it assigns the id the case file records

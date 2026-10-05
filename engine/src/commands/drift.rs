@@ -17,13 +17,13 @@ use chrono::Datelike as _;
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
-use super::event::{clip, emit, event_json, parse_case_id, parse_person};
+use super::event::{actor_or_env, clip, emit, event_json, parse_case_id, parse_person};
 use super::plan::case_json;
 use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::{Error, Result};
 use crate::index::{self, Built};
 use crate::logbook::cases::{self, CaseFile};
-use crate::model::event::{Event, Kind, Resolution, Source};
+use crate::model::event::{ACTOR_HUMAN, Event, Kind, Resolution, Source};
 use crate::model::{Case, CaseStatus, Priority, Risk, Zone};
 use crate::reconcile::{self, Resolve, Selection};
 use crate::redact::Redactor;
@@ -69,9 +69,10 @@ pub struct LinkArgs {
     #[arg(long)]
     pub only: bool,
 
-    /// Who resolves it: human or agent:NAME
-    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
-    pub actor: String,
+    /// Who resolves it: human or agent:NAME (default: $SELDON_ACTOR, else
+    /// human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -102,9 +103,10 @@ pub struct ExplainArgs {
     #[arg(long, value_name = "AREA")]
     pub area: Option<String>,
 
-    /// Who resolves it: human or agent:NAME
-    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
-    pub actor: String,
+    /// Who resolves it: human or agent:NAME (default: $SELDON_ACTOR, else
+    /// human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -123,9 +125,10 @@ pub struct DismissArgs {
     #[arg(long)]
     pub only: bool,
 
-    /// Who resolves it: human or agent:NAME
-    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
-    pub actor: String,
+    /// Who resolves it: human or agent:NAME (default: $SELDON_ACTOR, else
+    /// human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
 }
 
 /// clap value parser: an event id (ULID, `event.schema.json#/$defs/ulid`).
@@ -143,7 +146,7 @@ pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
             ctx,
             &a.id,
             a.only,
-            &a.actor,
+            a.actor,
             Action::Link { case: a.case_id },
         ),
         Some(DriftCommand::Explain(a)) => {
@@ -161,11 +164,11 @@ pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
                 risk: a.risk,
                 area: a.area,
             });
-            resolve(ctx, &a.id, a.only, &a.actor, action)
+            resolve(ctx, &a.id, a.only, a.actor, action)
         }
         Some(DriftCommand::Dismiss(a)) => {
             let reason = one_line("the reason", &a.reason)?;
-            resolve(ctx, &a.id, a.only, &a.actor, Action::Dismiss { reason })
+            resolve(ctx, &a.id, a.only, a.actor, Action::Dismiss { reason })
         }
     }
 }
@@ -341,7 +344,14 @@ impl Action {
     }
 }
 
-fn resolve(ctx: &Context, id: &str, only: bool, actor: &str, action: Action) -> Result<Output> {
+fn resolve(
+    ctx: &Context,
+    id: &str,
+    only: bool,
+    actor: Option<String>,
+    action: Action,
+) -> Result<Output> {
+    let actor = &actor_or_env(actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     // the new case and the ledger get the redacted intent or reason
     let action = action.redacted(&Redactor::for_config(&config)?);
