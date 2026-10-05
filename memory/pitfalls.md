@@ -1965,3 +1965,15 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   Freshly written files have a real mtime after the bench's fake `now`
   and are all clamped to it; set the mtime between `since` and `now` to
   put one file's event before another's.
+- **Run the whole suite after changing a collector's window, not only
+  the test binary you worked in** (WP-103 round 2). Reading additions at
+  the cursor's check on every capture passed `idempotency` and failed
+  `own_writes::removing_the_theme_hook_leaves_no_drift` 9 of 10 runs: its
+  real-time captures fall into one second, and the previous capture's
+  own events at the check were replayed. A test that only fails under a
+  mutant *and* with the plain code is a flake caused by the code; run
+  it ten times on the plain code before reading a mutant table.
+- **The ledger cannot tell "the previous capture's event at its check"
+  from "a later event clamped to that check".** Every window rule at the
+  check trades one duplicate for another (same-second captures against
+  older mtimes); the exact fix is a marker of the last written event.
