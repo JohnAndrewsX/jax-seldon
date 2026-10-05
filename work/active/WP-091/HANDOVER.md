@@ -330,3 +330,116 @@ Commits (oldest first), no rebase:
 - **The watch RSS bound in debug builds** has about 150 kB of headroom
   under load. It is worth watching if it fails again.
 - No guard-hook block happened. The real host was not touched.
+
+---
+
+# Round 3 (gate: `watch::with_feature::rss_stays_under_10_mb_on_the_x10_fixture`)
+
+No code change in this round. The test, its bound and the engine are
+unchanged. This section is the measurement the orchestrator asked for,
+and a proposal.
+
+## Method
+
+- **Builds.** One debug `seldon` binary per commit, `--features watch`,
+  the same profile `cargo test` uses:
+  - `886d876` (base; its `engine/` is identical to main's, and `git diff
+    886d876 main -- engine` is empty);
+  - `06d39f3`, `9abf2b9`, `fbc6caf`, `8f44f21`, `bda0177`.
+  
+  Each was built from a `git archive` copy with its sources touched,
+  because `git archive` mtimes otherwise make cargo reuse the previous
+  build. I checked by hash that the six binaries differ.
+- **Harness.** One copy of the test binary measured each `seldon` through
+  `SELDON_WATCH_BIN`. I also added a scratch-only `eprintln!` of
+  `RssAnon`, `RssFile` and `RssShmem` from `/proc/<pid>/status` at idle
+  and after the rebuild. The test's own line still gives idle, rss and
+  peak. `VmRSS = RssAnon + RssFile + RssShmem`.
+- **Runs.** Every run held `flock /tmp/seldon-check.lock`. The binaries
+  were measured interleaved, round by round, so that load drift hits all
+  of them alike. Load was about 3.5.
+- **Growth** is `peak − idle`, as in the test (the bound is 6144 kB).
+
+## Numbers
+
+**Bisect, binaries on disk** (`engine/target`, as in `cargo test`).
+6 interleaved rounds per binary:
+
+| commit | engine change | growth mean (sd) | heap `RssAnon` growth | file pages `RssFile` growth | idle mean |
+|---|---|---|---|---|---|
+| `886d876` (= main) | — | 4320 (180) | 1836 | 2484 | 16391 |
+| `06d39f3` | N2 | 3307 (144) | 1836–1840 | 1471 | 17753 |
+| `9abf2b9` | doctor row | 3310 (220) | 1836–1840 | 1473 | 17915 |
+| `fbc6caf` | snapper note | 3641 (184) | 1836 | 1805 | 17457 |
+| `8f44f21` | **none** (tests only) | 2882 (94) | 1836–1840 | 1045 | 18334 |
+| `bda0177` | 3 strings | 4472 (125) | 1836 (one run 664) | 2668 | 16239 |
+
+**Base against branch, on disk.** 10 more interleaved rounds:
+
+| commit | growth mean | max |
+|---|---|---|
+| `886d876` | 4247 | 4732 |
+| `bda0177` | 4563 | 4884 |
+
+In both, heap growth is 1836 kB in every run but one (`bda0177`, 804 kB),
+and the whole difference is `RssFile`.
+
+**Base against branch, binaries on tmpfs** (there the binary counts as
+shmem). 10 rounds:
+
+| commit | growth | mean | over the bound |
+|---|---|---|---|
+| `886d876` | 5808–6192 | 6000 | 1 run of 10 (6192 kB) |
+| `bda0177` | 5616–6064 | 5853 | none |
+
+Heap growth was 1840 kB for both. An earlier 5-round tmpfs pass over all
+six commits gave means between 5859 (base) and 6026, with the base itself
+at 6128.
+
+## Where the ~0.5 MB comes from
+
+- **Not the heap.** The rebuild allocates the same 1836 kB on main and on
+  every commit of this branch, to the kB. No code in the rebuild path
+  changed. `CollectorState`'s `last_run: Option<String>` has the size of
+  a `String` (niche), the test has no `cursors.json`, and the index's
+  one-line `and_then` allocates nothing new.
+- **It is the mapped binary.** The debug `seldon` is 110 MB, and its file
+  pages are mapped by page faults with fault-around. How many are mapped
+  before the test reads "idle" varies with the file's layout and its
+  page-cache state. The peak is almost constant (idle + growth ≈
+  20.7–21.2 MB in every row above). The variable is the *idle* baseline,
+  and growth = peak − idle inherits it.
+- **The proof is the tests-only commit.** `fbc6caf` and `8f44f21` have
+  no `engine/src` difference, and equal `.text` (14 161 053 B) and
+  `.rodata` (758 632 B). Their binaries differ only in the embedded build
+  path and the build ID. Yet their mean growth differs by 760 kB (3641
+  against 2882), with the idle moving the other way (17457 against
+  18334).
+  
+  That spread is larger than the main-to-branch gap the orchestrator
+  measured. Builds from different worktree paths (main vs `wt/WP-091`)
+  differ the same way. On tmpfs, main itself went over the bound once
+  (6192 kB).
+- **So the growth is bounded and not caused by WP-091.** In the test
+  profile the metric has about ±0.5–0.8 MB of build-dependent noise
+  against about 0.2–0.5 MB of headroom on main. Any engine change can
+  tip it. That fits round 2's run 3 and the gate.
+
+## Proposal (orchestrator's go needed; not done)
+
+The bound stays at 6144 kB. In the debug branch of the test, apply it to
+the growth of `RssAnon` (the heap; deterministic, 1836 kB today) instead
+of `VmHWM − VmRSS(idle)`, which is mostly mapped code. The absolute
+`VmHWM < 10 MB` bound for the optimised binary (`check-watch`'s bench
+run, `SELDON_WATCH_BIN`) is unchanged. That is about 5 lines in
+`tests/watch.rs`, a file outside this WP. It measures what the PLAN bound
+is about (memory the rebuild allocates) and does not loosen it. The
+alternative, run the debug check only as advisory, is weaker.
+
+## Verified by
+
+- The measurements above. Raw data: m1–m4 in my scratchpad `r3/`.
+- No engine or test file changed in this round, so round 2's green
+  `just check` and mutants stand. The gate failure is this test only.
+- No guard block. The host was not touched. The scratch binaries in the
+  gitignored `engine/target/r3` were removed.

@@ -1765,3 +1765,12 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   "<c> degraded or not run since a state reset (…)" (marked ones;
   `waiting()` in `idempotency.rs`). `predicted()` no longer names a
   marked collector.
+- **The watch RSS test's debug growth (`VmHWM − idle VmRSS`) is mostly
+  mapped binary pages, not heap** (WP-091 round 3): the heap growth of a
+  ×10 rebuild is a fixed 1836 kB, while the idle file-backed RSS of the
+  110 MB debug binary moves by ±0.5–0.8 MB between builds with identical
+  code (another build path is enough). A change near the 6144 kB bound
+  is no evidence of a leak; split `RssAnon`/`RssFile` from
+  `/proc/<pid>/status` before bisecting, and measure interleaved under
+  the check lock. `git archive` copies keep old mtimes: touch the
+  sources, or cargo reuses the previous build.
