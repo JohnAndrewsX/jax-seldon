@@ -886,16 +886,33 @@ the first write, so the ledger, the journal, case and decision files,
 and similar options; `--api-key`, `--access-key`, `--secret-key`;
 `token=`; `…SECRET=`, `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`,
 `…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
-assignments (also `?api_key=`); `Authorization:`; headers whose name ends in
+assignments (also `?api_key=`); the non-empty string value of an inline
+JSON key that ends in `password`, `passwd`, `passphrase`, `secret`,
+`token`, `api_key` or `apiKey` (`"password": "…"`, `"client_secret":"…"`,
+`"openaiApiKey": "…"`, also escaped inside a shell string as
+`\"password\":\"…\"`, with white space and newlines around the `:`;
+not `"password_hint"` or `"token_type"`); `Authorization:`; headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
-`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`);
+`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`); a
+`Cookie:` or `Set-Cookie:` value on the same line that starts with a
+cookie pair `name=` (RFC 6265; not `cookie: banner fixed` or
+`Cookie: $COOKIE`);
 `(AKIA|ASIA)[0-9A-Z]{16}`; `gh[pousr]_[A-Za-z0-9]{36,}` and
 `github_pat_…`; `glpat-…`; `xox[abposr]-…`; `sk-`/`sk_` keys
-(`\bsk[-_][A-Za-z0-9_-]{20,}`); anything after `-p ` for
-`mysql|psql|smbclient`; the value after `curl -u`/`--user`; after
+(`(?-u:\b)sk[-_][A-Za-z0-9_-]{20,}`); anything after `-p ` for
+`mysql|psql|smbclient`; the value after `curl -u`/`--user`; proxy
+credentials: the value after `curl -U` (not `useradd -U`),
+`--proxy-user` and wget's `--proxy-password` before a space (its `=`
+form is a `…PASSWORD=` assignment), and a `user:pass` without a scheme before the
+last `@` of the value after `curl -x`, `--proxy` or a `…proxy=`
+assignment (`https_proxy=`, `http.proxy=`; with a scheme it is a URL
+with userinfo); the cookies after `curl -b`/`--cookie` when the value
+holds a `=` (without one curl reads that file); after
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
 login`; and user-supplied patterns in `config.toml [redaction] patterns`.
-Replacement: `‹redacted›`. The hook never records stdin/stdout of
+Replacement: `‹redacted›`; the option, key or header name stays in front
+of it (`--proxy-user ‹redacted›`, `"password": ‹redacted›`,
+`Cookie: ‹redacted›`). The hook never records stdin/stdout of
 commands, only the command line. A name that can only mean a
 credential masks any non-empty value: `--password`, `--token`,
 `--with-token`, `--secret`, `--client-secret`, `--passphrase`
@@ -911,7 +928,12 @@ that mix two of lower case, upper case, digits and other characters
 (WP-004): the `sk` rule also matches `sk_`/`sk-proj-`/`sk_live_` (at a
 word start, so `task-…` is not cut), `token=` and the assignments are
 case-insensitive, quoted values are redacted whole, mysql's attached
-`-pSECRET` and psql's `-p` port are both redacted. URL userinfo that
+`-pSECRET` and psql's `-p` port are both redacted. The proxy, JSON and
+cookie rules (WP-084) check no credential shape, and they take over no
+option or key an older rule covers (the import report counts a line once
+per rule):
+`--proxy http://user:pass@host` stays a URL with userinfo and
+`--proxy-password=` a `…PASSWORD=` assignment. URL userinfo that
 holds a `:` is cut from `://` up to the last `@` before the next white
 space or quote, so a password may contain `/ ? # : @`; userinfo without
 a `:` (a bare token) is cut up to the last `@` before the path. Redacting
@@ -921,7 +943,14 @@ matches across the marker's edge is applied as written). Each built-in
 rule is compiled once per process, and only when the text holds one of
 its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
-case-insensitive matching folds them (`redact::trigger_text`). An invalid user pattern is a user error
+case-insensitive matching folds them (`redact::trigger_text`); a trigger
+may join literals with `+` that must all be present, so a `curl` rule
+needs `curl` and its option (`curl+-x`; WP-084). Word boundaries in the
+rules are ASCII (`(?-u:\b)`): a Unicode `\b` sends a regex to the slow
+matcher on any non-ASCII text, the marker of an earlier rule included
+(WP-084: a 16 KB curl line took 5.4 ms, 0.13 ms with ASCII boundaries).
+The `…=` assignment rules have no boundary, so a name that starts with
+`ſ` or `K` still matches. An invalid user pattern is a user error
 (exit 1): Seldon writes nothing rather than unredacted text. `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
 before a rule existed are not rewritten.

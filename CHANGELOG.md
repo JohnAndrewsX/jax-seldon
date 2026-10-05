@@ -34,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   neutral "Capture warned" notice on every tab: the first line of each
   warning, all of it on hover, such as the state reset and the engine's
   restore hint. A later capture without warnings clears it (WP-085).
+- Redaction covers proxy credentials (`curl -U`, `--proxy-user`, wget's
+  `--proxy-password`, `user:pass@` without a scheme after `curl -x`,
+  `--proxy` or `https_proxy=`), secrets in inline JSON (`"password"`,
+  `"passwd"`, `"…secret"`, `"…token"`, `"…api_key"`, `"…apiKey"` keys;
+  not `"password_hint"`) and cookies (`Cookie:`/`Set-Cookie:` values that
+  start with `name=`, `curl -b`/`--cookie` with `name=value`). The
+  option, key or header name stays visible (WP-084).
+- Redaction stays fast on long lines with non-ASCII text, the
+  `‹redacted›` marker included: the rules use ASCII word boundaries
+  (a 16 KB curl line 0.13 ms instead of 1.2 ms), and a curl line
+  compiles a curl rule only when it holds that rule's option (WP-084).
 
 ## [0.1.2] - 2026-10-04
 

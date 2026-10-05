@@ -1657,3 +1657,17 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   row's State column left "Capture warned" in its Banner column, and the
   States test (it matches the Banner column) still passed; the real
   mutant deletes the row.
+## 2026-10-05 · WP-084 (Engine Dev)
+
+- **A redaction trigger can hide a narrowing mutant.** The `json-secret`
+  triggers are `password"`, `token"`, …; with the key anchor removed
+  (`"password_hint"` would match), the clear row still passed, because
+  `password_hint"` holds no trigger and the rule never ran. A row that
+  proves a key anchor needs a second key that fires the trigger
+  (`{"password_hint": "…", "password": "…"}`).
+- **A new rule that covers an option an older rule already matches
+  counts the line twice** in the import report (see WP-062). The `=` form
+  of `--proxy-password=` is already `secret-assignment` (`\b` before
+  `password=` after the `-`), and `--proxy http://u:p@h` is
+  `url-userinfo`; `redaction::proxy_json_and_cookie_rules_are_disjoint_and_stable`
+  asserts that no WP-084 rule matches a row of an older rule.

@@ -536,11 +536,13 @@ mod claude_code {
     }
 
     /// SPEC-ENGINE §1 and §8 at scale (WP-076): a call the hook does not
-    /// record and a recorded command each take < 5 ms, median wall time of
-    /// 21 calls, process start included (`assert_within_budget`). A
-    /// recorded command syncs its ledger line and case file: on tmpfs, as
-    /// in the default temp dir here; on a disk the sync alone takes longer
-    /// (SPEC §1). Returns the number of commands recorded.
+    /// record, a recorded command and a recorded curl line whose URL leaves
+    /// a marker before the later redaction rules run (WP-084) each take
+    /// < 5 ms, median wall time of 21 calls, process start included
+    /// (`assert_within_budget`). A recorded command syncs its ledger line
+    /// and case file: on tmpfs, as in the default temp dir here; on a disk
+    /// the sync alone takes longer (SPEC §1). Returns the number of
+    /// commands recorded.
     fn hook_budget(h: &Hooks, case: &str, lines: &str) -> usize {
         const BUDGET: std::time::Duration = std::time::Duration::from_millis(5);
         let skipped = payload("claude-code-non-mutating.json", "PreToolUse");
@@ -562,9 +564,30 @@ mod claude_code {
                 h.hook("claude-code", &recorded.to_string());
             },
         );
+        assert_eq!(h.commands().len(), n, "every call recorded");
+
+        // a curl line in which the first rule leaves a marker, so the
+        // later rules run on non-ASCII text (WP-084)
+        recorded["tool_input"]["command"] = json!(concat!(
+            "curl -fsSL https://bob:fakePw1@h.example/zed.pkg.tar.zst ",
+            "-o /tmp/zed.pkg.tar.zst && sudo pacman -U --noconfirm /tmp/zed.pkg.tar.zst"
+        ));
+        common::assert_within_budget(
+            &format!("hook, recorded curl line with a marker (tmpfs), {lines}"),
+            BUDGET,
+            21,
+            || {
+                n += 1;
+                recorded["tool_use_id"] = json!(format!("toolu_perf{n:04}"));
+                h.hook("claude-code", &recorded.to_string());
+            },
+        );
         let commands = h.commands();
         assert_eq!(commands.len(), n, "every call recorded");
         assert!(commands.iter().all(|c| c["case"] == json!(case)));
+        let last = commands.last().unwrap().to_string();
+        assert!(last.contains("‹redacted›"), "{last}");
+        assert!(!last.contains("fakePw"), "recorded: {last}");
         n
     }
 
@@ -588,10 +611,11 @@ mod claude_code {
         common::assert_optimised();
         let h = Hooks::new();
         let case = h.active_case();
-        // room for 2 × (1 + 21) recorded commands (a re-measurement)
-        let fill = seldon::index::FAST_REBUILD_MAX_LINES - 50 - h.ledger().len();
+        // room for 2 × 2 × (1 + 21) recorded commands (two kinds, each
+        // with a re-measurement)
+        let fill = seldon::index::FAST_REBUILD_MAX_LINES - 100 - h.ledger().len();
         common::scale::filler_notes(&h.logbook, fill);
-        let n = hook_budget(&h, &case, "950 lines");
+        let n = hook_budget(&h, &case, "900 lines");
         let ledger = h.ledger();
         assert!(ledger.len() <= seldon::index::FAST_REBUILD_MAX_LINES);
         // the last command's rebuild wrote it into the index

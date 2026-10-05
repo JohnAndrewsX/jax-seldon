@@ -9,9 +9,13 @@
 //! assignments, `Authorization:` and `X-…-Key:`-style headers, AWS access
 //! keys, GitHub, GitLab and Slack tokens, `sk-`/`sk_` keys, anything after
 //! `-p` for `mysql|psql|smbclient`, the credentials after `curl -u`, the
-//! password after `sshpass -p` and `docker|podman … login -p`; plus the
-//! user's regexes from `config.toml [redaction] patterns`, each of which
-//! replaces its whole match. The replacement is always [`REDACTED`].
+//! password after `sshpass -p` and `docker|podman … login -p`, proxy
+//! credentials (`curl -U`, `--proxy-user`, `user:pass@` after `curl -x`,
+//! `--proxy` or `…proxy=`), JSON values of `"…password"`, `"…secret"`,
+//! `"…token"`-style keys, `Cookie:`/`Set-Cookie:` header values and the
+//! cookies after `curl -b`/`--cookie`; plus the user's regexes from
+//! `config.toml [redaction] patterns`, each of which replaces its whole
+//! match. The replacement is always [`REDACTED`].
 //!
 //! Every rule errs towards redacting too much: a value may be quoted, a
 //! key may be `GITHUB_TOKEN=`, and `sk-proj-…` keys contain hyphens.
@@ -26,9 +30,18 @@
 //! redacted by a command and again by the ledger reads the same in both
 //! places.
 //!
+//! Word boundaries are ASCII (`(?-u:\b)`): with a Unicode `\b` a regex
+//! leaves its fast matcher on any non-ASCII text, the marker of an
+//! earlier rule included, and a long line took milliseconds (WP-084). The
+//! `…=` assignment rules need no boundary at all, since a match starts at
+//! the first character of the name anyway, also at a `ſ` or `K` that
+//! case-insensitive matching folds.
+//!
 //! A built-in rule is compiled once per process, and only when a text
 //! holds one of its literal triggers ([`triggers`]); a command line
-//! without `://`, `=`, a token prefix, … compiles none of them.
+//! without `://`, `=`, a token prefix, … compiles none of them, and a
+//! `curl` line compiles a `curl` rule only when it also holds that rule's
+//! option (`-u`, `-x`, `-b`, …).
 
 use std::sync::{LazyLock, OnceLock};
 
@@ -53,7 +66,8 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// template that keeps the non-secret groups (e.g. the option name)
 /// around [`REDACTED`]. With `check`, a match counts only when its group
 /// `v` passes it. The regex is compiled on first use; a text whose ASCII
-/// lower case holds none of `triggers` cannot match (empty: always try).
+/// lower case holds none of `triggers` cannot match (empty: always try;
+/// see [`holds_trigger`] for `+`).
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
@@ -73,7 +87,7 @@ impl Rule {
     /// Whether `lower` (the text through [`trigger_text`]) may hold a
     /// match.
     fn triggered(&self, lower: &str) -> bool {
-        self.triggers.is_empty() || self.triggers.iter().any(|t| lower.contains(t))
+        self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(lower, t))
     }
 
     /// Whether this match is replaced: not inside an existing marker and,
@@ -110,6 +124,17 @@ fn unquoted(value: &str) -> &str {
 /// names no secret).
 pub fn has_value(value: &str) -> bool {
     !unquoted(value).is_empty()
+}
+
+/// Whether a JSON string value (`"…"`, or `\"…\"` inside a shell string)
+/// is not empty.
+fn has_json_value(value: &str) -> bool {
+    let inner = value
+        .strip_prefix("\\\"")
+        .and_then(|v| v.strip_suffix("\\\""))
+        .or_else(|| value.strip_prefix('"').and_then(|v| v.strip_suffix('"')))
+        .unwrap_or(value);
+    !inner.is_empty()
 }
 
 /// `text` as the triggers see it: ASCII letters in lower case, plus the
@@ -158,7 +183,7 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 18] = [
+pub const BUILTIN: [&str; 23] = [
     "url-userinfo",
     "password-option",
     "secret-option",
@@ -166,8 +191,10 @@ pub const BUILTIN: [&str; 18] = [
     "token-assignment",
     "secret-assignment",
     "key-assignment",
+    "json-secret",
     "authorization-header",
     "secret-header",
+    "cookie-header",
     "aws-access-key",
     "github-token",
     "gitlab-token",
@@ -175,6 +202,9 @@ pub const BUILTIN: [&str; 18] = [
     "sk-key",
     "db-client-password",
     "curl-user",
+    "proxy-option",
+    "proxy-userinfo",
+    "cookie-option",
     "sshpass-password",
     "registry-login-password",
 ];
@@ -183,11 +213,18 @@ pub const BUILTIN: [&str; 18] = [
 /// regex is compiled the first time a text triggers its rule.
 static BUILTIN_RULES: LazyLock<Vec<Rule>> = LazyLock::new(builtin_rules);
 
+/// Whether `lower` (the text through [`trigger_text`]) holds `trigger`:
+/// every one of its literals, which a `+` joins (`curl+-x`: both `curl`
+/// and `-x`, anywhere in the text).
+pub fn holds_trigger(lower: &str, trigger: &str) -> bool {
+    trigger.split('+').all(|part| lower.contains(part))
+}
+
 /// Literal text, in lower case, that every match of the built-in rule
-/// `name` contains (any one of them), as [`trigger_text`] spells it. A
-/// rule is tried only when the text holds one; the replacement
-/// `‹redacted›` holds none of them, so the text after an earlier rule
-/// needs no new check.
+/// `name` contains (any one of them, see [`holds_trigger`]), as
+/// [`trigger_text`] spells it. A rule is tried only when the text holds
+/// one; the replacement `‹redacted›` holds no literal of them, so the
+/// text after an earlier rule needs no new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         "url-userinfo" => &["://"],
@@ -205,15 +242,36 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "_pass=",
             "sshpass=",
         ],
+        "json-secret" => &[
+            "password\"",
+            "password\\\"",
+            "passwd\"",
+            "passwd\\\"",
+            "passphrase\"",
+            "passphrase\\\"",
+            "secret\"",
+            "secret\\\"",
+            "token\"",
+            "token\\\"",
+            "api_key\"",
+            "api_key\\\"",
+            "apikey\"",
+            "apikey\\\"",
+        ],
         "authorization-header" => &["authorization:"],
         "secret-header" => &["x-", "api-key", "apikey", "private-token"],
+        "cookie-header" => &["cookie"],
         "aws-access-key" => &["akia", "asia"],
         "github-token" => &["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"],
         "gitlab-token" => &["glpat-"],
         "slack-token" => &["xox"],
         "sk-key" => &["sk-", "sk_"],
         "db-client-password" => &["mysql", "psql", "smbclient"],
-        "curl-user" => &["curl"],
+        // `-U` and `--user` both read `-u` here
+        "curl-user" => &["curl+-u"],
+        "proxy-option" => &["curl+-u", "--proxy-"],
+        "proxy-userinfo" => &["curl+-x", "proxy"],
+        "cookie-option" => &["curl+-b", "curl+--cookie"],
         "sshpass-password" => &["sshpass"],
         "registry-login-password" => &["login"],
         _ => &[],
@@ -248,7 +306,7 @@ fn builtin_rules() -> Vec<Rule> {
         // `@` before the path
         rule(
             "url-userinfo",
-            r#"(?i)(\b[a-z][a-z0-9+.-]*://)(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]+)(@)"#,
+            r#"(?i)((?-u:\b)[a-z][a-z0-9+.-]*://)(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]+)(@)"#,
             "${1}‹redacted›${2}",
         ),
         rule(
@@ -283,7 +341,7 @@ fn builtin_rules() -> Vec<Rule> {
         checked_rule(
             "secret-assignment",
             &format!(
-                r"(?i)(\b[a-z0-9_]*(?:secret|password|passwd|passphrase|_pwd|_pass|sshpass)=)(?P<v>{VALUE})"
+                r"(?i)([a-z0-9_]*(?:secret|password|passwd|passphrase|_pwd|_pass|sshpass)=)(?P<v>{VALUE})"
             ),
             has_value,
         ),
@@ -291,8 +349,18 @@ fn builtin_rules() -> Vec<Rule> {
         // credential, so `hotkey=Super` and `key=value` stay
         checked_rule(
             "key-assignment",
-            &format!(r"(?i)(\b[a-z0-9_]*key=)(?P<v>{VALUE})"),
+            &format!(r"(?i)([a-z0-9_]*key=)(?P<v>{VALUE})"),
             looks_like_credential,
+        ),
+        // `"password": "…"`, `"client_secret":"…"`, `"access_token"`,
+        // `"api_key"`, `"apiKey"`, also with the quotes escaped inside a
+        // shell string (`\"password\":\"…\"`) and with white space,
+        // newlines included, around the `:`: a non-empty string value;
+        // not `"password_hint"` or `"token_type"`
+        checked_rule(
+            "json-secret",
+            r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api_?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
+            has_json_value,
         ),
         // the header value up to a closing quote or the end of the line
         rule(
@@ -305,7 +373,16 @@ fn builtin_rules() -> Vec<Rule> {
         // `X-Author`
         rule(
             "secret-header",
-            r#"(?i)(\b(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
+            r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
+            KEEP_PREFIX,
+        ),
+        // `Cookie: a=b; c=d`, `Set-Cookie: …`: a value that starts with a
+        // cookie pair `name=` (RFC 6265), up to a closing quote or the end
+        // of the line, on the same line; not `cookie: banner fixed`,
+        // `Cookie: $COOKIE` or an empty value
+        rule(
+            "cookie-header",
+            r#"(?i)((?-u:\b)(?:set-)?cookie[ \t]*:[ \t]*)[^'"\s=;]+=[^'"\n]*"#,
             KEEP_PREFIX,
         ),
         rule("aws-access-key", r"(?:AKIA|ASIA)[0-9A-Z]{16}", WHOLE),
@@ -320,23 +397,50 @@ fn builtin_rules() -> Vec<Rule> {
         rule("slack-token", r"xox[abposr]-[A-Za-z0-9-]{10,}", WHOLE),
         // `sk-…`, `sk-proj-…`, `sk_live_…`; at a word start, so a
         // name such as `task-…` is not cut
-        rule("sk-key", r"\bsk[-_][A-Za-z0-9_-]{20,}", WHOLE),
+        rule("sk-key", r"(?-u:\b)sk[-_][A-Za-z0-9_-]{20,}", WHOLE),
         // `mysql … -p secret …`, `-psecret`: everything after -p
         rule(
             "db-client-password",
-            r"(?m)(\b(?:mysql|psql|smbclient)\b[^\n]*?\s-p ?)\S[^\n]*",
+            r"(?m)((?-u:\b)(?:mysql|psql|smbclient)(?-u:\b)[^\n]*?\s-p ?)\S[^\n]*",
             KEEP_PREFIX,
         ),
         // `curl -u user:pass`, `-uuser:pass`, `--user user:pass`,
         // within one command of the line
         rule(
             "curl-user",
-            &format!(r"(\bcurl\b[^\n;&|]*?\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
+            &format!(r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
             KEEP_PREFIX,
+        ),
+        // `curl -U user:pass` (not `useradd -U`), `--proxy-user user:pass`
+        // (curl, wget), wget's `--proxy-password pass` (the `=` form is
+        // `secret-assignment`)
+        rule(
+            "proxy-option",
+            &format!(
+                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))(?:{VALUE})"
+            ),
+            KEEP_PREFIX,
+        ),
+        // `user:pass@host` without a scheme after `curl -x`, `--proxy`,
+        // `https_proxy=`, `http.proxy=`, up to the last `@` as for a URL;
+        // a value with `scheme://` is `url-userinfo`
+        rule(
+            "proxy-userinfo",
+            r#"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-x\s*['"]?|(?i:--proxy(?:=|\s+)|[a-z_.]*proxy=)['"]?)[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*(@)"#,
+            "${1}‹redacted›${2}",
+        ),
+        // `curl -b 'session=…'`, `--cookie "a=b; c=d"`: a value with `=`
+        // (without one, curl reads cookies from that file)
+        checked_rule(
+            "cookie-option",
+            &format!(
+                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-b\s*|--cookie(?:=|\s+)))(?P<v>{VALUE})"
+            ),
+            |v| unquoted(v).contains('='),
         ),
         rule(
             "sshpass-password",
-            &format!(r"(\bsshpass\b[^\n;&|]*?\s-p\s*)(?:{VALUE})"),
+            &format!(r"((?-u:\b)sshpass(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `docker login -u me -p secret`, also podman, buildah,
@@ -344,7 +448,7 @@ fn builtin_rules() -> Vec<Rule> {
         rule(
             "registry-login-password",
             &format!(
-                r"(\b(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login\b[^\n;&|]*?\s-p\s*)(?:{VALUE})"
+                r"((?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"
             ),
             KEEP_PREFIX,
         ),

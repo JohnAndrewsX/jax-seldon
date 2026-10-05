@@ -10,7 +10,7 @@ use seldon::error::Exit;
 use seldon::ledger::Ledger;
 use seldon::logbook::lock;
 use seldon::model::event::{Event, Kind, Meta, Source};
-use seldon::redact::{BUILTIN, REDACTED, Redactor, trigger_text, triggers};
+use seldon::redact::{BUILTIN, REDACTED, Redactor, holds_trigger, trigger_text, triggers};
 use support::{Bench, Scratch, fixture, ts};
 
 /// (rule, input, secret that must disappear, text that must stay)
@@ -377,6 +377,168 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "a b c",
         "export SECRET=‹redacted›",
     ),
+    // proxy credentials (WP-084)
+    (
+        "proxy-option",
+        "curl -U bob:fakeProxyPw1 -x proxy.example:3128 https://h.example",
+        "fakeProxyPw1",
+        "curl -U ‹redacted› -x proxy.example:3128 https://h.example",
+    ),
+    (
+        "proxy-option",
+        "curl -sS -Ubob:fakeProxyPw2 https://h.example",
+        "fakeProxyPw2",
+        "-U‹redacted› https://h.example",
+    ),
+    (
+        "proxy-option",
+        "curl --proxy-user 'bob:fake proxy 3' https://h.example",
+        "fake proxy 3",
+        "curl --proxy-user ‹redacted› https://h.example",
+    ),
+    (
+        "proxy-option",
+        "wget --proxy-user=bob --proxy-password fakeProxyPw4 https://h.example/f",
+        "fakeProxyPw4",
+        "--proxy-user=‹redacted› --proxy-password ‹redacted› https://h.example/f",
+    ),
+    (
+        "proxy-userinfo",
+        "curl -x bob:fakeProxyPw5@proxy.example:3128 https://h.example",
+        "fakeProxyPw5",
+        "curl -x ‹redacted›@proxy.example:3128 https://h.example",
+    ),
+    (
+        "proxy-userinfo",
+        "curl --proxy 'bob:fake@pw6@proxy.example:3128' https://h.example",
+        "fake@pw6",
+        "--proxy '‹redacted›@proxy.example:3128' https://h.example",
+    ),
+    (
+        "proxy-userinfo",
+        "HTTPS_PROXY=bob:fakeProxyPw7@proxy.example:3128 wget https://h.example/f",
+        "fakeProxyPw7",
+        "HTTPS_PROXY=‹redacted›@proxy.example:3128 wget",
+    ),
+    (
+        "proxy-userinfo",
+        "git -c http.proxy=bob:fake/pw8@proxy.example:3128 fetch",
+        "fake/pw8",
+        "http.proxy=‹redacted›@proxy.example:3128 fetch",
+    ),
+    (
+        "secret-assignment",
+        "wget --proxy-password=fakeProxyPw10 https://h.example/f",
+        "fakeProxyPw10",
+        "--proxy-password=‹redacted› https://h.example/f",
+    ),
+    // with a scheme the proxy URL is an ordinary URL with userinfo
+    (
+        "url-userinfo",
+        "curl --proxy http://bob:fakeProxyPw9@proxy.example:3128 https://h.example",
+        "fakeProxyPw9",
+        "--proxy http://‹redacted›@proxy.example:3128 https://h.example",
+    ),
+    // passwords in inline JSON (WP-084)
+    (
+        "json-secret",
+        r#"curl -d '{"user": "bob", "password": "fakeJsonPw1"}' https://h.example"#,
+        "fakeJsonPw1",
+        r#"{"user": "bob", "password": ‹redacted›}' https://h.example"#,
+    ),
+    (
+        "json-secret",
+        r#"curl --data '{"passwd":"fake \"pw\" 2","n":1}' https://h.example"#,
+        "pw\\\" 2",
+        r#"{"passwd":‹redacted›,"n":1}'"#,
+    ),
+    (
+        "json-secret",
+        r#"http POST h.example/login <<< '{"client_secret": "fakeJson3"}'"#,
+        "fakeJson3",
+        r#"{"client_secret": ‹redacted›}'"#,
+    ),
+    (
+        "json-secret",
+        r#"curl -d "{\"access_token\":\"fakeJson4\",\"x\":1}" https://h.example"#,
+        "fakeJson4",
+        r#""{\"access_token\":‹redacted›,\"x\":1}""#,
+    ),
+    // the trigger `password"` holds for the second key only
+    (
+        "json-secret",
+        r#"{"password_hint": "first pet", "password": "fakeJson6"}"#,
+        "fakeJson6",
+        r#"{"password_hint": "first pet", "password": ‹redacted›}"#,
+    ),
+    (
+        "json-secret",
+        r#"{"Token" : "fakeJson5"}"#,
+        "fakeJson5",
+        r#"{"Token" : ‹redacted›}"#,
+    ),
+    // white space and a newline around the `:`; `api_key`, `apiKey`
+    (
+        "json-secret",
+        "{\"password\"\n:\n  \"fakeJson7\"}",
+        "fakeJson7",
+        "{\"password\"\n:\n  ‹redacted›}",
+    ),
+    (
+        "json-secret",
+        r#"curl -d '{"api_key": "fakeJson8"}' https://h.example"#,
+        "fakeJson8",
+        r#"{"api_key": ‹redacted›}'"#,
+    ),
+    (
+        "json-secret",
+        r#"{"openaiApiKey" :"fakeJson9"}"#,
+        "fakeJson9",
+        r#"{"openaiApiKey" :‹redacted›}"#,
+    ),
+    (
+        "json-secret",
+        r#"{"apiKeyHint": "x", "monkey": "y", "apiKey": "fakeJson10"}"#,
+        "fakeJson10",
+        r#"{"apiKeyHint": "x", "monkey": "y", "apiKey": ‹redacted›}"#,
+    ),
+    // cookie headers and options (WP-084)
+    (
+        "cookie-header",
+        "curl -H 'Cookie: session=fakeCookie1; theme=dark' https://h.example",
+        "fakeCookie1",
+        "-H 'Cookie: ‹redacted›' https://h.example",
+    ),
+    (
+        "cookie-header",
+        "wget --header=\"Set-Cookie: id=fakeCookie2; Path=/\" https://h.example",
+        "fakeCookie2",
+        "--header=\"Set-Cookie: ‹redacted›\" https://h.example",
+    ),
+    (
+        "cookie-header",
+        "curl --header 'cookie:sid=fakeCookie3' https://h.example",
+        "fakeCookie3",
+        "--header 'cookie:‹redacted›' https://h.example",
+    ),
+    (
+        "cookie-option",
+        "curl -b 'session=fakeCookie4; theme=dark' https://h.example",
+        "fakeCookie4",
+        "curl -b ‹redacted› https://h.example",
+    ),
+    (
+        "cookie-option",
+        "curl -s --cookie=sid=fakeCookie5 https://h.example",
+        "fakeCookie5",
+        "--cookie=‹redacted› https://h.example",
+    ),
+    (
+        "cookie-option",
+        "curl -bsid=fakeCookie6 https://h.example",
+        "fakeCookie6",
+        "curl -b‹redacted› https://h.example",
+    ),
     // case-insensitive matching folds the Kelvin sign onto `k` and the
     // long s onto `s`; the triggers do the same
     (
@@ -396,6 +558,20 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "PA\u{17F}\u{17F}WORD=pw",
         "=pw",
         "PA\u{17F}\u{17F}WORD=‹redacted›",
+    ),
+    // also at the start of a name: the assignment rules have no word
+    // boundary (an ASCII one would not see one before `ſ` or `K`)
+    (
+        "secret-assignment",
+        "\u{17F}ECRET=pw ./run.sh",
+        "=pw",
+        "\u{17F}ECRET=‹redacted› ./run.sh",
+    ),
+    (
+        "key-assignment",
+        "\u{212A}EY=fakeKey57",
+        "fakeKey57",
+        "\u{212A}EY=‹redacted›",
     ),
 ];
 
@@ -426,6 +602,24 @@ const CLEAR: &[&str] = &[
     "hotkey=Super",
     "tool --api-key=auto",
     "curl -H 'X-Author: me' https://example.com",
+    // close to the WP-084 rules
+    "useradd -U -m bob",
+    "sudo useradd -U bob && curl https://h.example",
+    "curl -x proxy.example:3128 https://h.example",
+    "curl -x me@proxy.example:3128 https://h.example",
+    "git -c http.proxy=http://proxy.example:3128 fetch",
+    r#"curl -d '{"password_hint": "first pet"}' https://h.example"#,
+    r#"curl -d '{"token_type": "bearer", "secrets": 2}' https://h.example"#,
+    r#"curl -d '{"password": ""}' https://h.example"#,
+    r#"curl -d "{\"password\":\"\"}" https://h.example"#,
+    "curl -H 'Cookie: ' https://h.example",
+    "curl -H 'Cookie:' https://h.example",
+    "curl -H 'Cookie:\nsid=fakeCookie7' https://h.example",
+    "cookie: banner fixed",
+    "make cookie: all",
+    "curl -H \"Cookie: $COOKIE\" https://h.example",
+    "curl -b cookies.txt -c cookies.txt https://h.example",
+    "curl --cookie-jar jar.txt https://h.example",
 ];
 
 mod redaction {
@@ -460,14 +654,34 @@ mod redaction {
         for (rule, input, ..) in TABLE {
             let lower = trigger_text(input);
             assert!(
-                triggers(rule).iter().any(|t| lower.contains(t)),
+                triggers(rule).iter().any(|t| holds_trigger(&lower, t)),
                 "{rule}: no trigger in `{input}`"
             );
         }
-        // the marker can never trigger a rule
+        // the marker can never trigger a rule, nor add a part of one
         let marker = trigger_text(REDACTED);
         for rule in BUILTIN {
-            assert!(!triggers(rule).iter().any(|t| marker.contains(t)), "{rule}");
+            assert!(
+                !triggers(rule)
+                    .iter()
+                    .flat_map(|t| t.split('+'))
+                    .any(|part| marker.contains(part)),
+                "{rule}"
+            );
+        }
+        // a curl line without their options compiles none of the curl
+        // rules (WP-084)
+        let plain = trigger_text("curl -fsSL https://h.example/f -o /tmp/f");
+        for rule in [
+            "curl-user",
+            "proxy-option",
+            "proxy-userinfo",
+            "cookie-option",
+        ] {
+            assert!(
+                !triggers(rule).iter().any(|t| holds_trigger(&plain, t)),
+                "{rule}"
+            );
         }
     }
 
@@ -530,6 +744,86 @@ mod redaction {
             r.redact("a red car, token=fakeValue"),
             format!("a {REDACTED} car, token={REDACTED}")
         );
+    }
+
+    /// The WP-084 rules match only their own rows and no row of an older
+    /// rule (the import report counts a line once per rule), and a second
+    /// pass changes nothing.
+    #[test]
+    fn proxy_json_and_cookie_rules_are_disjoint_and_stable() {
+        const NEW: [&str; 5] = [
+            "proxy-option",
+            "proxy-userinfo",
+            "json-secret",
+            "cookie-header",
+            "cookie-option",
+        ];
+        let r = Redactor::builtin();
+        let rows = TABLE
+            .iter()
+            .filter(|(rule, input, ..)| NEW.contains(rule) || input.contains("--proxy http"));
+        for (rule, input, ..) in rows {
+            assert_eq!(r.matching_rules(input), vec![*rule], "`{input}`");
+            let once = r.redact(input);
+            assert_eq!(r.redact(&once), once, "`{input}`");
+        }
+        for (rule, input, ..) in TABLE.iter().filter(|(rule, ..)| !NEW.contains(rule)) {
+            let matched = r.matching_rules(input);
+            assert!(
+                !matched.iter().any(|m| NEW.contains(m)),
+                "{rule}: `{input}` also matches {matched:?}"
+            );
+        }
+        assert_eq!(
+            r.redact(r#"curl -U bob:pw -d '{"token":"t1"}' -b 'a=b' -H 'Cookie: c=d' https://h"#),
+            format!(
+                r#"curl -U {REDACTED} -d '{{"token":{REDACTED}}}' -b {REDACTED} -H 'Cookie: {REDACTED}' https://h"#
+            )
+        );
+    }
+
+    /// A long line in which an early rule leaves a marker, or which holds
+    /// other non-ASCII text, stays on the fast matcher: the word
+    /// boundaries are ASCII (WP-084 round 2). Median of 21, warm rules.
+    #[test]
+    #[ignore = "release timing: cargo test --profile bench --test redaction -- --ignored"]
+    fn long_lines_with_a_marker_stay_fast() {
+        use std::time::Duration;
+        super::common::assert_optimised();
+        let r = Redactor::builtin();
+        let filled = |head: &str, word: &str, size: usize| {
+            let mut line = head.to_string();
+            while line.len() < size {
+                line.push_str(word);
+            }
+            line
+        };
+        for (what, head, word) in [
+            // `-u`, `-x` and `-b` inside words: every curl rule is
+            // triggered, finds no option and scans the whole line
+            (
+                "url line",
+                "curl https://bob:fakePw@h.example/a -o out ",
+                "a-u-x-b ",
+            ),
+            (
+                "german note",
+                "curl -sS https://h.example ",
+                "Schlüssel-u-x-b geändert ",
+            ),
+        ] {
+            for (kb, budget) in [(16, 1), (64, 2)] {
+                let line = filled(head, word, kb * 1024);
+                super::common::assert_within_budget(
+                    &format!("redact, {what}, {kb} KB"),
+                    Duration::from_millis(budget),
+                    21,
+                    || {
+                        std::hint::black_box(r.redact(&line));
+                    },
+                );
+            }
+        }
     }
 
     #[test]
