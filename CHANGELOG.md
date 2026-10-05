@@ -10,12 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Engine
 
 - Seldon updating itself is no drift: a capture explains every new event
-  of its own plugin `jax.seldon` (added, updated, enabled, disabled) and
-  of its own package `jax-seldon` (installed, upgraded, downgraded,
-  reinstalled) with an `explained` resolution (`seldon's own plugin`,
-  `seldon's own package`). The event stays in the Changelog with its
-  actor; removing the plugin or the package stays drift. `capture
-  --json` adds `explainedSelf` (WP-086).
+  of its own plugin `jax.seldon` (updated, enabled, disabled) and of its
+  own package `jax-seldon` (upgraded, reinstalled) with an `explained`
+  resolution (`seldon's own plugin`, `seldon's own package`). The event
+  stays in the Changelog with its actor. Adding the plugin, installing or
+  downgrading the package, and removing either stay drift: only the id
+  is matched, nothing checks where the code came from. `capture --json`
+  adds `explainedSelf` (WP-086).
 
 ## [0.1.2] - 2026-10-04
 
