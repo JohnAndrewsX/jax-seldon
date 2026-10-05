@@ -26,13 +26,14 @@
 //! caught up with. `capture` saves cursors only after the ledger write, so
 //! the file keeps the generation before the newest one too: when a write
 //! fails, the next run diffs against the generation its cursor names and
-//! nothing is lost. When the cursor save fails after the ledger write, the
-//! events the ledger holds since the cursor's check are applied to that
-//! generation first ([`replay`]), so the diff neither repeats them nor
-//! misses a file that went back to its old content. Files whose names
-//! differ only in a part the redaction masks share a subject in the
-//! ledger; the replay tells them apart by their hashes. The first run (no
-//! cursor) is a baseline: no events.
+//! nothing is lost. Every capture with a cursor first applies to that
+//! generation the events the ledger holds since the cursor's check
+//! ([`replay`]), so neither a failed cursor save nor a restored older state
+//! directory (guide 07) repeats them, and a file that went back to its old
+//! content is not missed. Files whose names differ only in a part the
+//! redaction masks share a subject in the ledger; the replay tells them
+//! apart by their hashes. The first run (no cursor) is a baseline: no
+//! events.
 //!
 //! Each generation keeps the scope it was taken with ([`WatchScope`]). A file
 //! that left the scope (a watch path removed, a `skipPaths` pattern added) is
@@ -842,15 +843,17 @@ impl Step<'_> {
 /// its old content before this capture (`A→B` recorded, now `A`: the
 /// ledger gets `B→A`).
 ///
-/// When the cursor is behind (a failed cursor save or ledger write), the
-/// events are those of the captures since, and `seen` is the generation
-/// the last of them stored. When it is not (a restored older state
-/// directory, or nothing to do), `seen` is this capture's scan. Either
-/// way a removal stamped with exactly `since` is the previous capture's
-/// (it carries the capture time) and already in `base`: it is skipped. An
-/// addition or change at `since` is read, as one whose file has an older
-/// mtime (`cp -p`) is clamped to `since`; one the previous capture made
-/// fits no file of `base` but a twin with the same content.
+/// - `behind` (a failed cursor save or ledger write): the events are
+///   those of the captures since, and `seen` is the generation the last
+///   of them stored. The ledger is read from `since` on, as a change whose
+///   file has an older mtime (`cp -p`) is stamped with `since`; a removal
+///   at exactly `since` is the previous capture's (it carries the capture
+///   time) and already in `base`, and is skipped.
+/// - Not behind (a restored older state directory, or nothing to do):
+///   `seen` is this capture's scan, and the ledger is read strictly after
+///   `since`. Events at `since` are the previous capture's, and one of
+///   them can fit `base` again when that capture ran in the same second
+///   as the one before it (added, then removed).
 ///
 /// An event goes to a file whose state in `base` is the one it starts
 /// from (`hashFrom`, or no file for an addition). The ledger holds
@@ -867,6 +870,7 @@ fn replay(
     base: &mut Generation,
     seen: &Generation,
     since: DateTime<FixedOffset>,
+    behind: bool,
 ) -> anyhow::Result<()> {
     let mut recorded: Vec<Event> = ctx
         .ledger
@@ -874,7 +878,7 @@ fn replay(
         .into_iter()
         .filter(|r| {
             r.source == Source::Config
-                && (r.ts > since || r.ts == since && r.kind != Kind::ConfigRemove)
+                && (r.ts > since || behind && r.ts == since && r.kind != Kind::ConfigRemove)
         })
         .collect();
     if recorded.is_empty() {
@@ -1014,7 +1018,8 @@ impl ConfigFiles {
                 // also when not behind: a restored older state directory
                 // (guide 07) finds the events recorded since in the ledger
                 let seen = stored_ahead.unwrap_or(&current);
-                if let Err(e) = replay(ctx, &mut base, seen, prev.checked) {
+                let behind = stored_ahead.is_some();
+                if let Err(e) = replay(ctx, &mut base, seen, prev.checked, behind) {
                     return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
                 }
                 let (left, entered) = rescope(ctx.dirs, &mut base, &scope, &scan);

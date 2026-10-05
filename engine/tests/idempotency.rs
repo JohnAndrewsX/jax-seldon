@@ -803,40 +803,52 @@ mod idempotency {
     }
 
     #[test]
-    fn a_change_clamped_to_the_cursors_check_is_replayed() {
+    fn a_change_clamped_to_the_cursors_check_is_replayed_after_a_failed_save() {
         // a file written with an older mtime (`cp -p`) gets an event at
-        // the cursor's check, the earliest time it can have; a restore and
-        // a failed cursor save must both find it in the ledger (WP-103
-        // round 2)
-        let mut b = support::Bench::new("restore-config-clamped");
+        // the cursor's check, the earliest time it can have; after a
+        // failed cursor save the replay reads from that check on (WP-103
+        // round 2). A restored older state directory reads strictly after
+        // it and records such a change again (a known limit, SPEC §4)
+        let mut b = support::Bench::new("crash-config-clamped");
         let a = hypr(&b, "a.conf", "A\n");
-        let old = |path: &Path| {
-            let at = std::time::UNIX_EPOCH
-                + std::time::Duration::from_secs(
-                    support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64,
-                );
-            let file = std::fs::File::options().write(true).open(path).unwrap();
-            file.set_modified(at).unwrap();
-        };
         assert!(config_run(&mut b, "10:00").is_empty());
-        let saved = backup(&b);
+        let before = b.cursors.clone();
         std::fs::write(&a, "B\n").unwrap();
-        old(&a);
+        let at = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(
+                support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64
+            );
+        let file = std::fs::File::options().write(true).open(&a).unwrap();
+        file.set_modified(at).unwrap();
         let written = config_run(&mut b, "10:10");
         assert_eq!(written.len(), 1);
         assert_eq!(written[0].ts, support::ts("2026-10-01T10:00:00+02:00"));
-
-        restore(&mut b, &saved);
-        let again = config_run(&mut b, "10:20");
-        assert!(again.is_empty(), "restored: {:?}", kinds(&again));
-
-        let before = b.cursors.clone();
-        std::fs::write(&a, "C\n").unwrap();
-        old(&a);
-        assert_eq!(config_run(&mut b, "10:30").len(), 1);
         b.cursors = before; // the cursor save failed
-        let again = config_run(&mut b, "10:40");
-        assert!(again.is_empty(), "behind: {:?}", kinds(&again));
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 1);
+    }
+
+    #[test]
+    fn a_file_added_and_removed_within_one_second_is_removed_once() {
+        // two captures in one second: the first adds the file, stamped
+        // with that second, the second removes it; their events are at the
+        // cursor's check, and the addition fits the generation again. The
+        // next capture reads strictly after the check (WP-103 round 2)
+        let mut b = support::Bench::new("config-same-second");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let x = hypr(&b, "x.conf", "x\n");
+        assert_eq!(
+            kinds(&config_run(&mut b, "10:10")),
+            [(ADD, "~/.config/hypr/x.conf".into())]
+        );
+        std::fs::remove_file(&x).unwrap();
+        assert_eq!(
+            kinds(&config_run(&mut b, "10:10")),
+            [(REMOVE, "~/.config/hypr/x.conf".into())]
+        );
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
         assert_eq!(b.ledger_events(Source::Config).len(), 2);
     }
 
