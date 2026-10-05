@@ -1681,3 +1681,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Clippy `type_complexity` fires on test tables** like
   `[(&str, &[(&str, bool, &str)], &str); 3]`; keep the table to scalars
   and build the nested value inside the loop.
+## 2026-10-05 · WP-088 (Engine Dev)
+
+- **A collector's first baseline without `--since` starts at the
+  logbook's `created`.** In `idempotency.rs` (`Cli`, init at the real
+  time) snapper's first successful run after a degraded start writes 0
+  events unless the capture passes `--since FIXTURE_CREATED`; an
+  "it recorded its first events" assertion needs the flag.
+- **Ledger rows written before the first capture make that capture a
+  state reset** (no `cursors.json`, binding none, the ledger holds events
+  of the source). A test that plants rows with `seldon event` and then
+  captures must take a baseline capture first, or `written` counts the
+  `state-reset` note.
+- **A rule that reads the whole ledger must not depend on file order to
+  stay idempotent.** The index folds a resolution only onto an *earlier*
+  line; a resolution written at capture time for an event dated in a
+  later month lands in an earlier month file. Rule 8's catch-up counts
+  any resolution line that refers to the event, so it never writes a
+  second one.
+- **The degraded-collector mark goes through the same gate as the
+  capture.** Without the ledger rule the mark revives WP-081 F1 (a
+  degraded theme collector plus a hook-written `theme-set` gave a false
+  reset, `a_first_successful_run_after_a_degraded_init_is_no_reset`);
+  without the binding gate a hand-removed entry does.
