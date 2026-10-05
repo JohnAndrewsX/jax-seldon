@@ -13,11 +13,14 @@
 # refused, and so is a host whose /etc/machine-id is this machine's.
 #
 # Main build (CHECK_LOG): refuses unless this checkout is on `main`,
-# clean, HEAD equals origin/main, CHECK_LOG's last line is `exit 0`, and
-# CHECK_LOG is newer than the last commit that touched engine/ or plugin/
-# (a check of an older tree does not count). Then it builds the static
-# engine with SELDON_BUILD=main.<short sha> (version 0.1.3+main.<sha>),
-# and on the host:
+# clean, HEAD equals origin/main, and CHECK_LOG — the orchestrator's main
+# check log — starts with `head <full sha>`, ends in `exit 0`, its sha is
+# HEAD or an ancestor, and nothing under engine/, plugin/ or this script
+# changed between that sha and HEAD (bookkeeping commits after the check
+# pass). Before the first change the host must have the tools the install
+# step uses. Then it builds the static engine as a release does
+# (`--features watch`) with SELDON_BUILD=main.<short sha> (version
+# 0.1.3+main.<sha>), and on the host:
 #   - copies it to ~/.local/bin/seldon, the previous one kept as seldon.prev;
 #   - syncs HEAD's plugin/ into ~/.config/omarchy/plugins/jax.seldon. A
 #     plugin dir that is not a dev copy yet (the release git clone) is moved
@@ -27,11 +30,13 @@
 #   - restarts the shell when the plugin files changed (or a restart is
 #     still pending from an earlier deploy), and only while `omarchy-shell
 #     lock status` reports neither locked nor secure; otherwise it prints
-#     "restart pending" and the next deploy tries again;
+#     "restart pending" and the next deploy tries again (while it is
+#     pending, a restart notice in the smoke is a note, not a failure);
 #   - smoke: `seldon --version`, `seldon doctor --json` (no error),
 #     `seldon capture --json` on the host's configured (test) logbook, and
 #     `jax.seldon.service status`: status ok, engineVersion the new version,
-#     no restart notice;
+#     no restart notice; without a graphical session (the shell does not
+#     answer) the smoke fails and says so;
 #   - appends one JSON line to ~/.local/state/seldon-dev/deploy.jsonl and
 #     prints a summary.
 #
@@ -42,8 +47,9 @@
 # the same restart, smoke and log. State written by a newer build may not
 # load in an older release: move ~/.local/state/seldon aside first.
 #
-# --dry-run: every refusal, one read-only look at the host, then the plan;
-# nothing is built, copied or restarted.
+# --dry-run: every refusal, one read-only look at the host, the hostname
+# `ssh -G` resolves the alias to, then the plan; nothing is built, copied
+# or restarted.
 #
 # Exit codes: 0 deployed (a restart may be pending); 1 refused, nothing
 # changed; 2 build, copy, install or smoke failure.
@@ -128,11 +134,13 @@ if [[ -z $release ]]; then
   [[ -f $check_log && -r $check_log ]] || refuse "check log '$check_log' not found"
   last=$(awk 'NF { l = $0 } END { print l }' "$check_log")
   [[ $last == "exit 0" ]] || refuse "the check log does not end in 'exit 0' (last line: '$last')"
-  built_at=$(git_ log -1 --format=%ct HEAD -- engine plugin)
-  log_at=$(stat -c %Y -- "$check_log")
-  if [[ -z $built_at ]] || ((log_at <= built_at)); then
-    refuse "the check log is older than the last commit to engine/ or plugin/; run the check on this HEAD"
-  fi
+  # the commit the check ran on: the log's first line `head <full sha>`
+  checked=$(sed -n '1s/^head \([0-9a-f]\{40\}\)$/\1/p' "$check_log")
+  [[ -n $checked ]] || refuse "the check log does not start with 'head <full sha>'; which tree it checked is unknown"
+  git_ merge-base --is-ancestor "$checked" HEAD 2>/dev/null \
+    || refuse "the checked commit ${checked:0:12} is not HEAD or an ancestor of it"
+  git_ diff --quiet "$checked" HEAD -- engine plugin scripts/deploy-test-host.sh \
+    || refuse "engine/, plugin/ or the deploy script changed since the checked commit ${checked:0:12}; run the check on this HEAD"
   short=$(git_ rev-parse --short HEAD)
   version="$(awk -F'"' '/^version *=/ { print $2; exit }' "$root/engine/Cargo.toml")+main.$short"
   mode=main
@@ -193,8 +201,16 @@ value() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2)
 
 # ---- look at the host (read-only) ----------------------------------------------
 
-probe=$(rsh '
+if [[ $mode == main ]]; then
+  tools="rsync jq tar mktemp install sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
+else
+  tools="curl git jq sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
+fi
+probe=$(rsh "tools='$tools'"'
 echo "id=$(cat /etc/machine-id 2>/dev/null || hostname)"
+missing=""
+for t in $tools; do command -v "$t" >/dev/null 2>&1 || missing+=" $t"; done
+echo "missing=${missing# }"
 if [[ -L $plugin_dir ]]; then echo plugin=symlink
 elif [[ -f $plugin_dir/$marker ]]; then echo plugin=dev
 elif [[ -d $plugin_dir/.git ]]; then echo plugin=git
@@ -209,6 +225,8 @@ echo "lock=$(lock_free && echo free || echo held)"' </dev/null) \
 local_id=${SELDON_DEPLOY_LOCAL_ID:-$(cat /etc/machine-id 2>/dev/null || hostname)}
 [[ $(value id "$probe") != "$local_id" ]] || refuse "$host is this machine; the test host must be another one"
 [[ $(value plugin "$probe") != symlink ]] || refuse "$host's plugin dir is a symlink (a dev link?); not touching it"
+missing=$(value missing "$probe")
+[[ -z $missing ]] || refuse "$host lacks what the deploy needs: $missing"
 
 # ---- what would change ----------------------------------------------------------
 
@@ -233,11 +251,12 @@ if [[ $mode == release ]]; then
 fi
 
 if [[ $dry == 1 ]]; then
-  say "deploy-test-host (dry run): $host"
+  resolved=$(ssh -G -- "$host" 2>/dev/null | awk '$1 == "hostname" { print $2; exit }' || true)
+  say "deploy-test-host (dry run): $host (ssh resolves it to ${resolved:-?})"
   deployed=$(value deployed "$probe")
   say "  now      engine $(value engine "$probe"), plugin $(value plugin "$probe")${deployed:+ ($deployed)}"
   if [[ $mode == main ]]; then
-    say "  build    SELDON_BUILD=main.$short cargo build --release --target $target  → $version"
+    say "  build    SELDON_BUILD=main.$short cargo build --release --features watch --target $target  → $version"
     say "  engine   copy to ~/.local/bin/seldon (previous → seldon.prev)"
   else
     say "  engine   install.sh --version $release --force (checked against the release's SHA256SUMS)"
@@ -260,7 +279,10 @@ fi
 
 if [[ $mode == main ]]; then
   say "== build $version"
-  SELDON_BUILD=main.$short cargo build --manifest-path "$root/engine/Cargo.toml" --locked --release --target "$target" --quiet \
+  # as release.yml and the PKGBUILD build it; --target-dir so that an
+  # exported CARGO_TARGET_DIR cannot leave an older binary at $bin
+  SELDON_BUILD=main.$short cargo build --manifest-path "$root/engine/Cargo.toml" --locked --release \
+    --features watch --target "$target" --target-dir "$root/engine/target" --quiet \
     || fail "the release build"
   bin=$root/engine/target/$target/release/seldon
   got=$("$bin" --version --json | jq -r .version) || fail "the new binary does not run"
@@ -303,7 +325,7 @@ mv -f .local/bin/seldon.new .local/bin/seldon || { echo "error=swap engine"; exi
 before=$(plugin_hash "$plugin_dir")
 if [[ -e $plugin_dir && ! -f $plugin_dir/$marker ]]; then move_aside || { echo "error=move the plugin dir aside"; exit 2; }; fi
 mkdir -p "$plugin_dir"
-rsync -a --checksum --delete --exclude="/$marker" "$tmp/plugin/" "$plugin_dir/" || { echo "error=sync plugin"; exit 2; }
+rsync -rlp --checksum --delete --exclude="/$marker" "$tmp/plugin/" "$plugin_dir/" || { echo "error=sync plugin"; exit 2; }
 cp "$tmp/build-info" "$plugin_dir/$marker"
 # pending before the validation: a failed one stops this deploy before the
 # restart, and the next deploy that validates restarts
@@ -349,7 +371,8 @@ else echo "pending (omarchy-restart-shell failed)"; fi' </dev/null) || restart="
 # ---- smoke -----------------------------------------------------------------------
 
 say "== smoke on $host"
-smoke_out=$(rsh "want=$(printf '%q' "$version") wait_s=$(printf '%q' "$wait_s")"'
+case $restart in pending*) restart_pending=1 ;; *) restart_pending=0 ;; esac
+smoke_out=$(rsh "want=$(printf '%q' "$version") wait_s=$(printf '%q' "$wait_s") pending=$restart_pending"'
 check() { if [[ $2 == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1: $2 (want $3)"; fi; }
 check "seldon --version --json" "$(seldon --version --json 2>/dev/null | jq -r .version 2>/dev/null)" "$want"
 out=$(seldon doctor --json 2>/dev/null); rc=$?
@@ -357,6 +380,12 @@ check "seldon doctor --json exit" "$rc" 0
 deg=$(jq -r "[.checks[]? | select(.status != \"ok\") | \"\(.name) \(.status)\"] | join(\", \")" <<<"$out" 2>/dev/null)
 [[ -z $deg ]] || echo "note doctor: $deg"
 seldon capture --json >/dev/null 2>&1; check "seldon capture --json exit" "$?" 0
+# no graphical session (logged out): the shell does not answer at all
+deadline=$((SECONDS + (wait_s < 10 ? wait_s : 10)))
+until omarchy-shell shell ping >/dev/null 2>&1; do
+  ((SECONDS < deadline)) || { echo "FAIL service: no graphical session (the shell does not answer ping)"; exit 0; }
+  sleep 0.5
+done
 omarchy-shell jax.seldon.service refresh >/dev/null 2>&1
 deadline=$((SECONDS + wait_s)); snap=""
 while ((SECONDS < deadline)); do
@@ -366,7 +395,10 @@ while ((SECONDS < deadline)); do
 done
 check "service status" "$(jq -r ".status // empty" <<<"$snap" 2>/dev/null)" ok
 check "service engineVersion" "$(jq -r ".engineVersion // empty" <<<"$snap" 2>/dev/null)" "$want"
-check "service restart notice" "$(jq -r ".restartNotice // empty" <<<"$snap" 2>/dev/null)" ""' </dev/null) \
+notice=$(jq -r ".restartNotice // empty" <<<"$snap" 2>/dev/null)
+# a deliberately pending restart is why the old code shows a notice
+if [[ -n $notice && $pending == 1 ]]; then echo "note restart notice while the restart is pending: $notice"
+else check "service restart notice" "$notice" ""; fi' </dev/null) \
   || smoke_out+=$'\nFAIL smoke: no answer from the host'
 say "$smoke_out" | sed 's/^/  /'
 while IFS= read -r line; do
@@ -389,6 +421,13 @@ case $restart in
     say "  restart  restart pending (${reason%)}): the shell keeps the old plugin code until"
     say "           omarchy-restart-shell runs on an unlocked session; the next deploy tries again" ;;
 esac
-say "  smoke    $smoke"
+if [[ $smoke == ok ]]; then
+  say "  smoke    ok"
+elif [[ " ${failures[*]} " == *"no graphical session"* ]]; then
+  say "  smoke    failed: no graphical session on $host (nobody logged in?), so the plugin"
+  say "           was not checked; engine and plugin are installed"
+else
+  say "  smoke    failed: $(IFS=';'; echo "${failures[*]}")"
+fi
 say "  log      ~/.local/state/seldon-dev/deploy.jsonl"
 [[ $smoke == ok ]] || exit 2

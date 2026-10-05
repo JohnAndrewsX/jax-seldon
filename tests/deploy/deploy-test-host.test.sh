@@ -63,7 +63,7 @@ case "\\\$1 \\\${2:-}" in
   "--version --json") echo '{"name":"seldon","version":"\$1"}' ;;
   "--version ") echo "seldon \$1" ;;
   "doctor --json") echo '{"ok":true,"checks":[{"name":"snapper","status":"degraded"}]}'; exit \\\$(cat "$R/doctor_rc" 2>/dev/null || echo 0) ;;
-  "capture --json") echo '{}' ;;
+  "capture --json") echo '{}'; exit \\\$(cat "$R/capture_rc" 2>/dev/null || echo 0) ;;
   *) exit 1 ;;
 esac
 SELDON
@@ -76,9 +76,15 @@ cat >"$L/cargo" <<EOF
 #!/bin/bash
 echo "cargo \$* SELDON_BUILD=\${SELDON_BUILD-unset}" >>"$work/cargo.log"
 [[ ! -f "$work/cargo_fail" ]] || exit 101
-manifest=""
-while [[ \$# -gt 0 ]]; do [[ \$1 == --manifest-path ]] && manifest=\$2; shift; done
-out=\$(dirname "\$manifest")/target/x86_64-unknown-linux-musl/release
+manifest="" dir=""
+while [[ \$# -gt 0 ]]; do
+  [[ \$1 == --manifest-path ]] && manifest=\$2
+  [[ \$1 == --target-dir ]] && dir=\$2
+  shift
+done
+# as cargo: --target-dir, else CARGO_TARGET_DIR, else next to the manifest
+[[ -n \$dir ]] || dir=\${CARGO_TARGET_DIR:-\$(dirname "\$manifest")/target}
+out=\$dir/x86_64-unknown-linux-musl/release
 mkdir -p "\$out"
 v="0.1.3+\$SELDON_BUILD"
 [[ ! -f "$work/cargo_version" ]] || v=\$(cat "$work/cargo_version")
@@ -88,6 +94,8 @@ EOF
 
 cat >"$L/ssh" <<EOF
 #!/bin/bash
+# ssh -G: the resolved config, no connection
+for a; do [[ \$a == -G ]] && { echo "user test"; echo "hostname 192.0.2.7"; exit 0; }; done
 while [[ \$# -gt 0 ]]; do
   case \$1 in -o) shift 2 ;; --) shift; break ;; -*) shift ;; *) break ;; esac
 done
@@ -106,8 +114,8 @@ cat >"$R/omarchy/bin/omarchy-shell" <<EOF
 #!/bin/bash
 echo "omarchy-shell \$*" >>"$R/calls"
 case "\$1 \${2:-}" in
-  "lock status") [[ -f "$R/lock.json" ]] && cat "$R/lock.json" || exit 1 ;;
-  "shell ping") exit 0 ;;
+  "lock status") [[ -f "$R/lock.json" && ! -f "$R/no_session" ]] && cat "$R/lock.json" || exit 1 ;;
+  "shell ping") [[ ! -f "$R/no_session" ]] ;;
   "jax.seldon.service refresh") echo ok ;;
   "jax.seldon.service status")
     v=\$(seldon --version --json | jq -r .version)
@@ -174,7 +182,7 @@ make_release v0.1.2
 # plugin as a release git clone, unlocked.
 reset_remote() {
   rm -rf "$R/home" "$R/calls" "$R/lock.json" "$R/restart_rc" "$R/doctor_rc" "$R/validate_rc" \
-    "$R/service_version" "$R/restart_notice"
+    "$R/service_version" "$R/restart_notice" "$R/capture_rc" "$R/no_session"
   mkdir -p "$R/home/.local/bin" "$R/home/.config/omarchy/plugins/jax.seldon/.git"
   fake_seldon 0.1.3 >"$R/home/.local/bin/seldon"
   chmod 755 "$R/home/.local/bin/seldon"
@@ -212,6 +220,7 @@ git -C "$repo" push -q origin main
 echo '[General]' >"$repo/plugin/.qmlls.ini"
 # commit <path> <text> — a commit to the repo, pushed
 commit() {
+  mkdir -p "$(dirname "$repo/$1")"
   echo "$2" >"$repo/$1"
   git -C "$repo" add -A
   git -C "$repo" commit -q -m "change $1"
@@ -219,7 +228,8 @@ commit() {
   short=$(git -C "$repo" rev-parse --short HEAD)
 }
 log=$work/check.log
-fresh_log() { printf 'check: ok\nexit 0\n' >"$log"; touch "$log"; }
+# fresh_log — the orchestrator's main check log for HEAD
+fresh_log() { printf 'head %s\ncheck: ok\nexit 0\n' "$(git -C "$repo" rev-parse HEAD)" >"$log"; }
 fresh_log
 
 out="" rc=0
@@ -229,7 +239,7 @@ deploy() {
   : >"$R/calls"
   out=$(cd "$repo" && env -u SELDON_BUILD PATH="$L:$PATH" SELDON_TEST_HOST="${TEST_HOST-$host}" \
     GUARD_HOSTS_FILE="${HOSTS_FILE:-$work/hosts}" SELDON_DEPLOY_LOCAL_ID="${LOCAL_ID:-dev-host-id}" \
-    SELDON_DEPLOY_SETTLE=0 SELDON_DEPLOY_WAIT=2 bash scripts/deploy-test-host.sh "$@" 2>&1) || rc=$?
+    SELDON_DEPLOY_SETTLE="${SETTLE:-0}" SELDON_DEPLOY_WAIT=2 bash scripts/deploy-test-host.sh "$@" 2>&1) || rc=$?
 }
 has() { grep -qF -- "$1" <<<"$out"; }
 called() { grep -qF -- "$1" "$R/calls" 2>/dev/null; }
@@ -271,18 +281,48 @@ check "an unlisted host is never contacted" test ! -e "$work/ssh.log"
 # ---- 2. refusals: the tree and the check log ------------------------------------------
 refused "no check log argument" "usage:"
 refused "check log missing" "not found" "$work/missing.log"
-printf 'check: ok\nexit 1\n' >"$log"
+head_line="head $(git -C "$repo" rev-parse HEAD)"
+printf '%s\ncheck: ok\nexit 1\n' "$head_line" >"$log"
 refused "check log says exit 1" "does not end in 'exit 0'" "$log"
-printf 'exit 0\nmore\nexit 2\n' >"$log"
+printf '%s\nexit 0\nmore\nexit 2\n' "$head_line" >"$log"
 refused "exit 0 not on the last line" "does not end in 'exit 0'" "$log"
-printf 'exit 0\n\n\n' >"$log"
-touch "$log"
+printf '%s\nexit 0\n\n\n' "$head_line" >"$log"
 reset_remote
 deploy --dry-run "$log"
 check "trailing blank lines after exit 0 are fine" test "$rc" = 0
+# which tree the log checked: `head <full sha>` on the first line (S3)
+printf 'check: ok\nexit 0\n' >"$log"
+refused "check log without a head line" "does not start with 'head <full sha>'" "$log"
+printf 'cargo fmt\n%s\nexit 0\n' "$head_line" >"$log"
+refused "head line not first" "does not start with 'head <full sha>'" "$log"
+printf 'head %s\nexit 0\n' "$(git -C "$repo" rev-parse --short HEAD)" >"$log"
+refused "a short sha" "does not start with 'head <full sha>'" "$log"
+printf 'head %s\nexit 0\n' "0123456789abcdef0123456789abcdef01234567" >"$log"
+refused "an unknown sha" "not HEAD or an ancestor" "$log"
+git -C "$repo" checkout -q -b elsewhere
+echo 'Item { /* elsewhere */ }' >"$repo/plugin/Elsewhere.qml"
+git -C "$repo" add -A
+git -C "$repo" commit -q -m elsewhere
+printf 'head %s\nexit 0\n' "$(git -C "$repo" rev-parse HEAD)" >"$log"
+git -C "$repo" checkout -q main
+refused "a sha on another branch (another tree's check)" "not HEAD or an ancestor" "$log"
+for path in engine/lib.rs plugin/Service.qml scripts/deploy-test-host.sh; do
+  fresh_log
+  if [[ $path == scripts/* ]]; then
+    cp "$repo/$path" "$work/script.keep"
+    echo '# a change after the check' >>"$work/script.keep"
+    commit "$path" "$(cat "$work/script.keep")"
+  else
+    commit "$path" "changed after the check"
+  fi
+  refused "$path changed after the checked commit" "changed since the checked commit" "$log"
+done
 fresh_log
-touch -d "@$((hour_ago - 60))" "$log"
-refused "check log older than the last engine/plugin commit" "older than the last commit" "$log"
+commit docs/NOTES.md 'bookkeeping after the check'
+reset_remote
+deploy --dry-run "$log"
+check "a docs-only commit after the checked commit passes" test "$rc" = 0
+[[ $rc == 0 ]] || show
 fresh_log
 git -C "$repo" checkout -q -b side
 refused "not on main" "not on main" "$log"
@@ -304,6 +344,17 @@ refused "release without a version" "--release needs" --release
 refused "release, bad version" "wants vX.Y.Z" --release 0.1.2
 refused "release with a check log" "takes no check log" --release v0.1.2 "$log"
 
+# the host lacks a tool the install step needs (N2): refused before any change
+mv "$R/bin/rsync" "$work/rsync.link"
+refused "the host has no rsync" "lacks what the deploy needs: rsync" "$log"
+mv "$work/rsync.link" "$R/bin/rsync"
+mv "$R/omarchy/bin/omarchy" "$work/omarchy.stub"
+refused "the host has no omarchy" "lacks what the deploy needs: omarchy" "$log"
+mv "$R/bin/curl" "$work/curl.stub"
+refused "release: the host has neither curl nor omarchy" "lacks what the deploy needs: curl omarchy" --release v0.1.2
+mv "$work/curl.stub" "$R/bin/curl"
+mv "$work/omarchy.stub" "$R/omarchy/bin/omarchy"
+
 # ---- 3. dry run ----------------------------------------------------------------------
 reset_remote
 before=$(remote_fingerprint)
@@ -315,6 +366,7 @@ check "dry run: no build" test ! -e "$work/cargo.log"
 check "dry run: the host unchanged" test "$(remote_fingerprint)" = "$before"
 check "dry run: no restart" test "$(count restart)" = 0
 check "dry run: names the version" has "0.1.3+main.$short"
+check "dry run: the hostname ssh resolves the alias to" has "(ssh resolves it to 192.0.2.7)"
 check "dry run: the clone would move aside" has "move the git dir aside"
 check "dry run: files change" has "files change: yes"
 check "dry run: restart planned" has "restart  restart the shell"
@@ -327,7 +379,9 @@ deploy "$log"
 [[ -z ${VERBOSE:-} ]] || show
 check "deploy: exit 0" test "$rc" = 0
 [[ $rc == 0 ]] || show
-check "deploy: cargo built with SELDON_BUILD=main.<sha>" grep -q "release --target x86_64-unknown-linux-musl .*SELDON_BUILD=main.$short\$" "$work/cargo.log"
+check "deploy: cargo built with SELDON_BUILD=main.<sha>" grep -q " SELDON_BUILD=main.$short\$" "$work/cargo.log"
+check "deploy: built as a release (--features watch)" grep -q -- "--release --features watch --target x86_64-unknown-linux-musl " "$work/cargo.log"
+check "deploy: into the repo's target dir" grep -q -- "--target-dir $repo/engine/target " "$work/cargo.log"
 check "deploy: the host's seldon is the marked build" \
   grep -q "\"version\":\"0.1.3+main.$short\"" "$R/home/.local/bin/seldon"
 check "deploy: the previous seldon kept as seldon.prev" grep -q '"version":"0.1.3"}' "$R/home/.local/bin/seldon.prev"
@@ -342,6 +396,8 @@ check "deploy: .seldon-dev-build names the commit" grep -qx "commit=$(git -C "$r
 check "deploy: plugin validated on the host" called "omarchy plugin validate .config/omarchy/plugins/jax.seldon"
 check "deploy: the lock was checked" called "omarchy-shell lock status"
 check "deploy: the shell restarted once" test "$(count restart)" = 1
+first_ping=$(grep -n -m1 -x "omarchy-shell shell ping" "$R/calls" | cut -d: -f1)
+check "deploy: the shell answered ping before the restart" test "${first_ping:-999}" -lt "$(grep -n -m1 -x restart "$R/calls" | cut -d: -f1)"
 check "deploy: no restart pending" test ! -e "$R/home/.local/state/seldon-dev/restart-pending"
 check "deploy: smoke ok" has "smoke    ok"
 check "deploy: smoke checked the service" called "omarchy-shell jax.seldon.service status"
@@ -353,10 +409,15 @@ check "deploy: the log line" jqe --arg v "0.1.3+main.$short" \
 check "deploy: summary" has "runs 0.1.3+main.$short"
 
 # ---- 5. engine-only change: no restart; the dev copy stays in place ---------------------
-commit engine/src.rs 'fn main() {}'
+panel_mtime=$(stat -c %Y "$pdir/Panel.qml")
+# a later commit time: git archive stamps every file with it (S1)
+GIT_COMMITTER_DATE="@$((hour_ago + 600)) +0000" commit engine/src.rs 'fn main() {}'
 fresh_log
-deploy "$log"
+# an exported CARGO_TARGET_DIR must not change where the binary is taken from (S2)
+CARGO_TARGET_DIR=$work/other-target deploy "$log"
 check "engine change: exit 0" test "$rc" = 0
+check "engine change: an unchanged plugin file keeps its mtime" test "$(stat -c %Y "$pdir/Panel.qml")" = "$panel_mtime"
+check "engine change: CARGO_TARGET_DIR set, the new build ships" grep -q "\"version\":\"0.1.3+main.$short\"" "$R/home/.local/bin/seldon"
 [[ $rc == 0 ]] || show
 check "engine change: plugin unchanged" has "files changed: no"
 check "engine change: no restart" test "$(count restart)" = 0
@@ -369,7 +430,9 @@ check "engine change: logged as restart none" jqe -s '.[-1].restart == "none" an
 git -C "$repo" rm -q plugin/Old.qml
 commit plugin/New.qml 'Item { /* new */ }'
 fresh_log
-deploy "$log"
+started=$SECONDS
+SETTLE=2 deploy "$log"
+check "the restart waits SELDON_DEPLOY_SETTLE after ping" test $((SECONDS - started)) -ge 2
 check "a file removed from plugin/ is removed on the host" test ! -e "$pdir/Old.qml"
 check "a file added to plugin/ arrives" test -f "$pdir/New.qml"
 check "the restart for it ran" test "$(count restart)" = 1
@@ -388,6 +451,12 @@ for lock in '"locked":true,"sessionLocked":true,"secure":true' '"locked":false,"
   check "locked ($lock): restart pending" has "restart pending"
   check "locked ($lock): pending flag kept" test -e "$R/home/.local/state/seldon-dev/restart-pending"
 done
+echo "Restart the shell" >"$R/restart_notice"
+deploy "$log"
+check "restart notice while the restart is pending: exit 0" test "$rc" = 0
+check "restart notice while pending: a note" has "note restart notice while the restart is pending: Restart the shell"
+check "restart notice while pending: still restart pending" has "restart  restart pending"
+rm "$R/restart_notice"
 rm "$R/lock.json"
 : >"$R/calls"
 deploy "$log"
@@ -418,6 +487,20 @@ check "doctor error: exit 2" test "$rc" = 2
 check "doctor error: named" has "FAIL seldon doctor --json exit: 1 (want 0)"
 check "doctor error: logged as failed" jqe -s '.[-1].smoke == "failed" and (.[-1].failures | length) == 1' "$jsonl"
 rm "$R/doctor_rc"
+
+echo 1 >"$R/capture_rc"
+deploy "$log"
+check "capture error: exit 2" test "$rc" = 2
+check "capture error: named" has "FAIL seldon capture --json exit: 1 (want 0)"
+rm "$R/capture_rc"
+
+touch "$R/no_session"
+deploy "$log"
+check "no graphical session: exit 2" test "$rc" = 2
+check "no graphical session: the smoke names it" has "FAIL service: no graphical session"
+check "no graphical session: the summary names it" has "smoke    failed: no graphical session on $host"
+check "no graphical session: the engine checks still ran" has "ok   seldon capture --json exit"
+rm "$R/no_session"
 
 echo 0.1.2 >"$R/service_version"
 deploy "$log"
@@ -494,6 +577,16 @@ check "release: the dev copy moved aside" test -n "$(find "$R/home/.local/state/
 check "release: restarted" test "$(count restart)" = 1
 check "release: smoke expects 0.1.2" has "ok   service engineVersion"
 check "release: logged" jqe -s '.[-1].mode == "release" and .[-1].version == "0.1.2" and .[-1].smoke == "ok"' "$jsonl"
+
+reset_remote
+deploy "$log" >/dev/null
+echo 1 >"$R/validate_rc"
+deploy --release v0.1.2
+check "release, the clone fails validation: exit 2" test "$rc" = 2
+check "release, the clone fails validation: named" has "install: omarchy plugin validate"
+check "release, the clone fails validation: install.sh not run" test "$(count "install.sh --")" = 0
+check "release, the clone fails validation: the dev copy stays" test -f "$pdir/.seldon-dev-build"
+rm "$R/validate_rc"
 
 reset_remote
 echo "0000  install.sh" >"$R/release/v0.1.2/SHA256SUMS"
