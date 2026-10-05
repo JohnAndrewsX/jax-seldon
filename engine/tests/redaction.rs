@@ -595,6 +595,84 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakePw36",
         "curl's -u ‹redacted› did not work",
     ),
+    // an option given twice in one command is masked both times; the
+    // secret column is the part both values share (WP-087)
+    (
+        "curl-user",
+        "curl -u admin:fakeTwiceA1 https://h.example -u bob:fakeTwiceA2",
+        "fakeTwiceA",
+        "curl -u ‹redacted› https://h.example -u ‹redacted›",
+    ),
+    (
+        "curl-user",
+        "curl --user admin:fakeTwiceB1 'https://h.example/?a&b' -uadmin:fakeTwiceB2 -o f",
+        "fakeTwiceB",
+        "--user ‹redacted› 'https://h.example/?a&b' -u‹redacted› -o f",
+    ),
+    (
+        "proxy-option",
+        "curl -U bob:fakeTwiceC1 -U bob:fakeTwiceC2 https://h.example",
+        "fakeTwiceC",
+        "curl -U ‹redacted› -U ‹redacted› https://h.example",
+    ),
+    (
+        "proxy-option",
+        "curl --proxy-user bob:fakeTwiceD1 -x proxy.example:3128 -U bob:fakeTwiceD2 https://h.example",
+        "fakeTwiceD",
+        "--proxy-user ‹redacted› -x proxy.example:3128 -U ‹redacted› https",
+    ),
+    (
+        "proxy-option",
+        "curl --proxy-user bob:fakeTwiceE1 https://h.example --proxy-user=bob:fakeTwiceE2",
+        "fakeTwiceE",
+        "--proxy-user ‹redacted› https://h.example --proxy-user=‹redacted›",
+    ),
+    // without the command word nothing scans on: wget's `-U` names the
+    // user agent
+    (
+        "proxy-option",
+        "wget --proxy-user=bob -U Wget/1.25 https://h.example",
+        "bob",
+        "wget --proxy-user=‹redacted› -U Wget/1.25 https://h.example",
+    ),
+    (
+        "proxy-userinfo",
+        "curl --proxy bob:fakeTwiceF1@p1.example:3128 -x bob:fakeTwiceF2@p2.example:3128 https://h.example",
+        "fakeTwiceF",
+        "--proxy ‹redacted›@p1.example:3128 -x ‹redacted›@p2.example:3128 https",
+    ),
+    (
+        "proxy-userinfo",
+        "curl -x 'bob:fakeTwiceG1@p1.example:3128' -x \"bob:fakeTwiceG2@p2.example:3128\" https://h.example",
+        "fakeTwiceG",
+        "-x '‹redacted›@p1.example:3128' -x \"‹redacted›@p2.example:3128\" https",
+    ),
+    (
+        "cookie-option",
+        "curl -b 'a=fakeTwiceH1' https://h.example -b 'b=fakeTwiceH2'",
+        "fakeTwiceH",
+        "curl -b ‹redacted› https://h.example -b ‹redacted›",
+    ),
+    // the first `-b` names a cookie file and stays; the second is masked
+    (
+        "cookie-option",
+        "curl -b cookies.txt --cookie 'sid=fakeCookie9' https://h.example",
+        "fakeCookie9",
+        "curl -b cookies.txt --cookie ‹redacted› https://h.example",
+    ),
+    (
+        "registry-login-password",
+        "docker login -p fakeTwiceI1 -u me -p fakeTwiceI2 registry.example",
+        "fakeTwiceI",
+        "login -p ‹redacted› -u me -p ‹redacted› registry.example",
+    ),
+    // a `-p` after the command that sshpass runs is that command's
+    (
+        "sshpass-password",
+        "sshpass -p fakePw37 ssh -p 2222 me@host.example",
+        "fakePw37",
+        "sshpass -p ‹redacted› ssh -p 2222 me@host.example",
+    ),
     // case-insensitive matching folds the Kelvin sign onto `k` and the
     // long s onto `s`; the triggers do the same
     (
