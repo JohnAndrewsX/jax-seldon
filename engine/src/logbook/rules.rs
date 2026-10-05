@@ -437,7 +437,7 @@ mod tests {
             ),
             Block::Damaged("has a marker inside it before its end marker line")
         );
-        for bad in ["v", "vx", "v-1", "v 2", "v99999999999"] {
+        for bad in ["v", "vx", "v-1", "v+2", "v 2", "v99999999999"] {
             let text = format!("<!-- seldon:begin rules {bad} -->\n<!-- seldon:end -->\n");
             assert_eq!(
                 find(&text),
