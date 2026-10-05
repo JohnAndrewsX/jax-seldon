@@ -602,6 +602,14 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakePw36",
         "curl's -u ‹redacted› did not work",
     ),
+    // … also after a quoted separator, where only the quote-aware
+    // reading reaches the option
+    (
+        "curl-user",
+        "curl -H 'X-A: a;b' isn't sent with -u admin:fakePw42",
+        "fakePw42",
+        "isn't sent with -u ‹redacted›",
+    ),
     // quotes pair left to right; where the shell reads them otherwise,
     // the plain reading still reaches the option (WP-087 round 2)
     (
