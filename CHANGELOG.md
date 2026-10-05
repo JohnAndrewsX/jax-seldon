@@ -35,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adding or downgrading Seldon stays drift. Such a resolution is dated at
   the capture or at the event, whichever is later, so an event dated
   after a clock that moved back is no longer left as drift (WP-088).
+- Redaction of command options: the rules for `curl -u`, `-U`, `-x`,
+  `-b` (and `--user`, `--proxy-user`, `--proxy`, `--cookie`),
+  `sshpass -p` and `docker … login -p` treat a `;`, `&` or `|` inside
+  quotes as part of the command, and mask an option given twice in one
+  command each time; an unquoted separator still ends the command
+  (WP-087).
+- Redaction: long lines with many masked values are checked against
+  earlier markers by binary search.
 
 ### Plugin
 
