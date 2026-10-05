@@ -988,6 +988,46 @@ mod redaction {
                 );
             }
         }
+        // many masked values: every match is checked against the markers
+        // of the earlier rules, by binary search (WP-087 round 2); the
+        // budget, where there is one, holds at 128 KB
+        for (what, head, word, budget) in [
+            ("two option kinds", "curl ", "-u a:b -x c:d@e ", Some(20)),
+            (
+                "five option kinds",
+                "curl ",
+                "--proxy-user=a:b -U c:d -x e:f@g -b h=i -u j:k ",
+                None,
+            ),
+            (
+                "password and token",
+                "tool ",
+                "--password x token=y ",
+                Some(10),
+            ),
+        ] {
+            for kb in [16, 64, 128] {
+                let line = filled(head, word, kb * 1024);
+                let what = format!("redact, {what}, {kb} KB");
+                let run = || {
+                    std::hint::black_box(r.redact(&line));
+                };
+                match budget {
+                    Some(ms) if kb == 128 => {
+                        super::common::assert_within_budget(
+                            &what,
+                            Duration::from_millis(ms),
+                            21,
+                            run,
+                        );
+                    }
+                    _ => {
+                        let (median, times) = super::common::median_time(21, run);
+                        eprintln!("{what}: median {median:?} (no budget), all {times:?}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

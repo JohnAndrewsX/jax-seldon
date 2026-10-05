@@ -28,11 +28,14 @@ it needs an optimised build (`--profile bench`, the tests refuse a debug
 build) and a quiet host, since a busy one roughly doubles a timing. It
 runs `cargo bench --bench index` with `SELDON_BENCH_X150=1` (the index
 build ×10 and ×150 < 100 ms; `just bench` in CI asserts ×10 only and
-prints ×150), then the ignored tests of `tests/index.rs` and
-`tests/hooks.rs` one at a time: `status` at 10 011 ledger lines, 304
-cases and 365 journal files < 100 ms, and `hook claude-code` at 10 000
-lines and at 950 lines (with the index rebuild) < 5 ms, for a call it
-does not record and a recorded one, with the temp dir on tmpfs. Every
+prints ×150), then the ignored tests of `tests/index.rs`,
+`tests/hooks.rs` and `tests/redaction.rs` one at a time: `status` at
+10 011 ledger lines, 304 cases and 365 journal files < 100 ms,
+`hook claude-code` at 10 000 lines and at 950 lines (with the index
+rebuild) < 5 ms, for a call it does not record and a recorded one, with
+the temp dir on tmpfs, and the redaction of long lines (16 KB < 1 ms and
+64 KB < 2 ms without a masked value; 128 KB with many masked values
+< 20 ms or < 10 ms, WP-087). Every
 check measures a median over budget once more before it fails. Required
 before the handover of a WP that touches the index build, `status` or
 the hooks), `just build-release` (static musl binary,

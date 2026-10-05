@@ -175,9 +175,11 @@ impl Rule {
     /// for a checked rule, with a value that passes the check.
     fn applies(&self, found: &Found, markers: &[(usize, usize)]) -> bool {
         let (m_start, m_end) = found.range();
-        let inside = markers
-            .iter()
-            .any(|&(start, end)| start <= m_start && m_end <= end);
+        // only the last marker that starts at or before the match can
+        // hold it (see [`markers`]): a binary search, so a long line with
+        // many masked values stays linear
+        let i = markers.partition_point(|&(start, _)| start <= m_start);
+        let inside = i > 0 && m_end <= markers[i - 1].1;
         !inside
             && self
                 .check
@@ -204,11 +206,15 @@ impl Rule {
     }
 }
 
-/// Where [`REDACTED`] already stands in `text`.
+/// Where [`REDACTED`] already stands in `text`: ascending and without
+/// overlap, as `match_indices` finds them ([`Rule::applies`] relies on it).
 fn markers(text: &str) -> Vec<(usize, usize)> {
-    text.match_indices(REDACTED)
+    let markers: Vec<_> = text
+        .match_indices(REDACTED)
         .map(|(start, m)| (start, start + m.len()))
-        .collect()
+        .collect();
+    debug_assert!(markers.windows(2).all(|w| w[0].1 <= w[1].0));
+    markers
 }
 
 /// `value` without its surrounding quotes.
