@@ -484,3 +484,53 @@ the guard.
 - `engine/tests/hooks.rs` (item 5) and guide 06 en/de (item 7), both as
   the brief asks.
 - `memory/pitfalls.md` (append).
+
+## Round 3 (verification: SEND BACK small)
+
+Commits: `d9242d0` (B1, rows), `6c844c4` (N2, SPEC), then this section.
+
+- **B1.** Both unclosed-quote tails of `WORD` are now `['"][^\n]*`
+  (was `[^\n'"]*`), so an unclosed quote takes the rest of its line,
+  the other quote character included. Only `WORD` changed;
+  `COMMAND_REST` is untouched.
+  - TABLE rows: the reviewer's Q1 (`curl -u 'admin:fa"keQ1 rest⏎next`),
+    Q2 (`curl -u "admin:it's fakeQ2⏎next`) and Q3
+    (`curl -u admin:'fake"Q3`). Each is masked to the line end, and the
+    next line stays.
+  - The Q3 text is in `masking_twice_changes_nothing`.
+- **N2.** SPEC §7, 6(b) now reads "on a line that holds, or follows a
+  line ending in, `http`, `https`, `xh` or `xhs` as a word followed by
+  white space (…; the gap after the word may be a line end)".
+- **N1** is accepted by stage 2. No change.
+
+### Verified
+
+- `cargo fmt --check` and `cargo clippy --all-targets --locked -- -D
+  warnings`: clean. `redaction` 24 passed (1 ignored), `hooks` 55 passed
+  (2 ignored). `docs-check`: ok.
+- **`flock /tmp/seldon-check.lock just check` at `6c844c4`: exit 0**
+  (23:17–23:26). Results:
+  - 70 test binaries ok;
+  - service-states 314/0, panel-view 782/0, overlay-view 319/0,
+    bar-view 143/0;
+  - install 209/0, deploy-test-host 190/0, real-home-guard 11/0;
+  - qmllint 29 files, docs-check ok, `check: ok`.
+
+### Mutants (round 3)
+
+Same runner, run on the committed `d9242d0`, baseline green afterwards.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| T1 | both tails back to `[^\n'"]*` (round-2 formula) | `every_builtin_pattern`, `masking_twice…`, `email_…`, `cert_and_httpie_…` |
+| T2 | only the tail after the parts | same four |
+| T3 | only the lone tail | same four |
+| N7 | tails cross a line end | `every_builtin_pattern` |
+
+**Process note.** The first run of these mutants started before the
+fix was committed. The runner restores with `git checkout HEAD`, so it
+reverted the uncommitted fix. Its final source check caught this. I
+re-applied the fix, committed it, and re-ran all four mutants on the
+committed state; the table shows that run. Nothing else was affected.
+
+No guard-hook blocks this round. Touched outside WP scope: none.
