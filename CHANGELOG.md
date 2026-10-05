@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (WP-087).
 - Redaction: long lines with many masked values are checked against
   earlier markers by binary search.
+- The agent hook is faster: a call it does not record takes about half
+  the time, a recorded command near 1000 ledger lines about 0.7 ms less.
+  `skipPaths` and `alwaysRed` globs compile only when a path or package
+  could match them, `seldon hook claude-code` skips the full command-line
+  parser, and the index rebuild allocates less (WP-092).
 
 ### Plugin
 

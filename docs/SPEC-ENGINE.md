@@ -10,7 +10,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 4. Every command has `--json`; human output is for terminals, JSON is for
    agents and the plugin.
 5. Fast: `status` < 100 ms at 10 000 events; `hook` < 5 ms for a call
-   it does not record (about 1 ms). A recorded command returns only
+   it does not record (about 0.6 ms, WP-092). A recorded command returns only
    after its ledger line and the updated case file are synced to disk,
    so the case file survives a crash: about 3 ms on tmpfs and 13 ms on
    a btrfs disk (release build, measured in WP-064).
@@ -1120,7 +1120,9 @@ with the state on tmpfs, for a call it does not record and for a
 recorded command, just below the threshold (with the rebuild) and at
 10 000 lines; `just check-perf` asserts all four (2026-10-04, dev host:
 1.3 ms not recorded, 3.5 ms recorded with the rebuild, 1.8 ms recorded
-above the threshold; WP-076). On a disk the sync of §1 comes on top.
+above the threshold; WP-076; 2026-10-05 after WP-092, load 2 to 3:
+0.6 ms, 2.8 ms and 1.2 ms, and for a curl line whose URL leaves a
+marker 3.9 ms with the rebuild and 2.2 ms above the threshold). On a disk the sync of §1 comes on top.
 WP-062's redaction is not
 slower than before it: measured 2026-10-03 on a loaded dev host (load
 average 3 to 8), release builds interleaved with a build of the code
