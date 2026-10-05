@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-084 | redaction: proxy credentials, JSON passwords, cookie headers | Engine | `engine-084` (opus) | `wt/WP-084` · `wp/084-review` | 2026-10-05 |
 | WP-086 | Seldon's own updates are not drift | Engine | `engine-086` (opus) | `wt/WP-086` · `wp/086-review` | 2026-10-05 |
 
 ## Queued (next up)
@@ -36,6 +35,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-084 redaction covers proxy credentials, inline JSON secrets
+  and api keys, cookie headers (cookie pairs only) and cookie options; ASCII
+  word boundaries and joined triggers make long command lines 40× faster;
+  hook perf case with a recorded curl line; two review rounds; merged.
 - 2026-10-05 WP-085 the panel shows a capture's warnings (the state reset)
   in a neutral notice, full text in a bounded, wrapping tooltip; kept across
   failed or locked captures, cleared by a clean one; two review rounds;
