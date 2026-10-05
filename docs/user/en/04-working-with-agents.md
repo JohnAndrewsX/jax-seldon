@@ -197,7 +197,10 @@ missing, so a note or a case step the agent forgets to sign is recorded
 as the agent, never as you. `event` first takes the agent command it
 finds in the ledger, with that command's case. `SELDON_ATTENDED=1` tells the agent
 that you started it: the logbook's rules (`AGENTS.md`) say what it may
-do then. Seldon itself never reads it.
+do then. Seldon itself never reads it. Both variables reach the agent
+only when the launcher starts the terminal; a terminal server
+(`footclient`, `kitty --single-instance`, a wezterm mux) reuses its own
+environment, and then only `--actor` names the agent.
 
 By default the engine starts Omarchy's default coding agent, through
 `omarchy agent prompt`, in its own terminal window. Which agent that is
