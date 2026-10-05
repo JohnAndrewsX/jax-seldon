@@ -15,7 +15,7 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
-| WP-088 | state reset: pending baseline, own-change catch-up | Engine | `engine-088` (opus) | `wt/WP-088` · `wp/088-reset-followups` | 2026-10-05 |
+| WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
 | WP-090 | plugin: stale code after update, harness record order | Plugin | `plugin-090` (opus) | `wt/WP-090` · `wp/090-stale-plugin` | 2026-10-05 |
 
 ## Queued (next up)
@@ -39,6 +39,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-088 a collector degraded in a state reset keeps a
+  `pendingBaseline` mark (`cursors` or `logbook`) and records its gap on
+  its first successful run; rule 8 catches up Seldon's own changes left
+  open (dismissed rows keep their resolution; dated at max(now, event))
+  so a clock moved back leaves no drift; Opus review, Fable stage 2, one
+  fix round, Sonnet verification; merged.
 - 2026-10-05 WP-089 Omarchy programs run by the engine get
   `OMARCHY_PATH=/usr/share/omarchy` when it is unset or empty (ssh, cron,
   scripts: the plugins collector no longer degrades; checked live on the
