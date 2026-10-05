@@ -35,6 +35,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adding or downgrading Seldon stays drift. Such a resolution is dated at
   the capture or at the event, whichever is later, so an event dated
   after a clock that moved back is no longer left as drift (WP-088).
+- A build with `SELDON_BUILD=main.<sha>` says what it is: `seldon
+  --version`, `--version --json` and the index's `engineVersion` report
+  `0.1.3+main.<sha>`; release builds stay plain, and a value that is not
+  semver build metadata fails the build. The plugin reads the marked
+  form as its version (WP-098).
+
+### Packaging and docs
+
+- `just deploy-test-host <main check log>` (`scripts/deploy-test-host.sh`)
+  puts the main build of engine and plugin on the test host after a
+  green main check: only a host listed in the git-ignored
+  `scripts/guard-hosts.local`, only from a clean, pushed `main` whose
+  check log ends in `exit 0`. It keeps the previous engine as
+  `seldon.prev`, moves the release plugin clone aside once, restarts the
+  shell only when the plugin changed and the session is unlocked
+  ("restart pending" otherwise), runs a smoke check and logs one JSON
+  line on the host; `--dry-run` shows the plan, `--release vX.Y.Z`
+  brings the host back to a release. Productive machines keep running
+  releases only (WP-098).
 
 ## [0.1.3] - 2026-10-05
 

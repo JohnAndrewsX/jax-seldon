@@ -71,6 +71,12 @@ headless plugin harnesses). Without an Omarchy host,
 step, the manual runs in scratch directories, the end-to-end test and
 how the plugin screenshots are made.
 
+The project's test host runs the current `main` build: after each green
+main check the orchestrator runs `just deploy-test-host`, which builds
+the engine with a `+main.<sha>` version marker and puts it and the plugin
+on that host ([`docs/TESTING.md`](TESTING.md#test-host-follows-main)).
+Release builds carry no marker; installed machines run releases only.
+
 ## How the team works
 
 Seldon is built by a small team of AI agents run by an orchestrator,

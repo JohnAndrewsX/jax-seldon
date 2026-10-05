@@ -13,6 +13,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Watch feature | `check-watch` | `cargo clippy --all-targets --features watch -- -D warnings`, `cargo test --features watch` (see "The `watch` feature") | yes |
 | Packaging | `check-packaging` | `bash -n` and (when installed) `shellcheck` on `packaging/PKGBUILD` and its scripts, `packaging/check-srcinfo.sh` (`.SRCINFO` in step with the PKGBUILD), `bash tests/release/release-notes.test.sh` (the release body from `CHANGELOG.md`: the real `0.1.0` section, a middle and a last section, outer blank lines trimmed; missing, empty and prefix-only versions, malformed input exit 1) | yes |
 | Install script | `check-install` | `bash tests/install/install.test.sh`: `install.sh` against a mock of the release layout served as `file://` URLs, scratch `HOME` and prefixes, no network — latest via the API with and without `jq`, a re-run changes nothing (bytes and mtimes), update and downgrade, `--unit` (the unit byte-identical for `~/.local`, `ExecStart` rewritten for other prefixes, never enabled), refusals before the first write (checksum mismatch, no `SHA256SUMS` line, wrong binary version, missing release, bad arguments, a foreign `jax-seldon`), the script piped to `bash` and truncated, `--uninstall` (only matching files; refused while the unit is enabled), the man page and the completions (WP-049: the fake binary answers `completions`/`mangen`; a scratch `/usr/share` via `SELDON_INSTALL_SHARE` has the bash-completion, fish and zsh directories, and fake `fish`/`zsh` in a PATH dir decide which shells exist (the host's zsh and fish are left off PATH): zsh's directory without `zsh` installs nothing, a fake `zsh` adds its completion and the `fpath` hint, `fish` without its directory installs nothing; a release without the commands skips them; a foreign completion is kept unless `--force`; a completion of a shell that is gone stays in the manifest and `--uninstall` removes it), the build-provenance check (WP-080: the host's `gh` is left off PATH; `gh` stubs that verify against the mock releases' attestations, fail on their own, are not logged in, too old or missing an option, or absent, each with and without `--require-verified`, plus `--skip-provenance`; a tampered release, one attested only for a branch, one from a self-hosted runner, one before attestations (v0.1.1), a `GH_HOST` of another server, the exact `gh` argv), no `sudo`/`systemctl` call, the real `~/.local/bin`, `~/.config/systemd/user`, completions and man page untouched; `shellcheck` when installed | yes (`shellcheck` in the release workflow's container) |
+| Deploy script | `check-deploy` | `bash tests/deploy/deploy-test-host.test.sh` (WP-098): `scripts/deploy-test-host.sh` in a scratch git repository with a bare origin, against a fake test host — an `ssh` stub runs the remote scripts here under `env -i` with a scratch `HOME` and a `PATH` of stubs (`omarchy-shell`, `omarchy-restart-shell`, `omarchy`, `curl`, `git clone`) plus single linked tools, so the host's real `omarchy-*`, `quickshell`, `hyprctl` and `systemctl` are out of reach; a `cargo` stub builds a fake engine. Refusals before any build or change (no or unlisted host, a prefix or comment word of a listed one, an ssh option as host, no host list, the host is this machine, not on `main`, a modified or untracked file, HEAD not pushed, a check log missing, not ending in `exit 0`, or older than the last engine/plugin commit, bad arguments, a symlinked plugin dir); dry run (no build, the host unchanged); first deploy (marked build, `seldon.prev`, the release clone moved out of the plugins dir, HEAD's plugin files plus `.seldon-dev-build`, one restart, smoke, log line); an engine-only change (no restart); each locked state and an unreadable lock status (restart pending, caught up by the next deploy on an unlocked session); a failing restart, doctor, service version, restart notice, host-side validation, build, and a build without the marker; `--release` (install.sh with `--force`, the clone at the tag, the dev copy moved aside), a checksum mismatch and a missing release; the real `~/.local/bin/seldon`, plugin dir and `~/.local/state/seldon-dev` untouched; `shellcheck` when installed | yes |
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
@@ -38,7 +39,8 @@ before the handover of a WP that touches the index build, `status` or
 the hooks), `just build-release` (static musl binary,
 `x86_64-unknown-linux-musl`), `just fixtures-refresh` (stub until the engine
 builds an index), `just e2e` (engine ↔ plugin end to end, host only; see
-"Integration").
+"Integration"), `just deploy-test-host` (the main build onto the test
+host; see "Test host follows main").
 
 ## Engine tests
 
@@ -1251,6 +1253,79 @@ run.
 They contain the machine id, which names the host: keep them out of the
 repository. Mismatches go to the WP's `FINDINGS.md`, with the command and
 an index excerpt.
+
+## Test host follows main
+
+The test host runs the current main build, so the operator can follow
+development live (operator decision 2026-10-05, WP-098). Productive
+machines run releases only (`install.sh`, `omarchy plugin update
+jax.seldon`), unchanged. After every green main check and the push, the
+orchestrator runs:
+
+```bash
+SELDON_TEST_HOST=<alias> just deploy-test-host <main check log>
+SELDON_TEST_HOST=<alias> just deploy-test-host --dry-run <main check log>   # the plan, nothing changes
+```
+
+**Refusals** (exit 1, before anything is built or changed):
+- `SELDON_TEST_HOST` unset, not a plain ssh alias, or not listed in the
+  git-ignored `scripts/guard-hosts.local` (the list the guard hook
+  reads; real names stay out of the repository). A productive machine is
+  never listed, so it can never be a target. A host whose
+  `/etc/machine-id` is this machine's is refused too.
+- This checkout is not on `main`, not clean, or HEAD is not
+  `origin/main` (push first).
+- The check log's last line is not `exit 0`, or the log is older than
+  the last commit that touched `engine/` or `plugin/` (the check ran on
+  an older tree). The log names no commit, so its modification time is
+  the evidence; bookkeeping commits after the check do not matter.
+- The host's plugin dir is a symlink.
+
+**What it does** (exit 2 on a failure, after a log line on the host):
+1. Builds the static engine with `SELDON_BUILD=main.<short sha>`; the
+   binary must report `<version>+main.<short sha>`.
+2. Copies it to the host's `~/.local/bin/seldon`; the previous one stays
+   as `seldon.prev`. A later `install.sh` needs `--force` to replace it
+   (it did not install it); `--release` passes it.
+3. Syncs HEAD's `plugin/` (`git archive`, not the working tree) into
+   `~/.config/omarchy/plugins/jax.seldon` with `rsync --checksum
+   --delete`. A plugin dir that is not a dev copy yet — the release git
+   clone, or a plain copy without the marker — is moved once to
+   `~/.local/state/seldon-dev/plugin-<git|copy>-<UTC stamp>`, outside
+   the plugins dir (the shell loads every dir there, and a second
+   `jax.seldon` would clash). Afterwards the dir is a plain copy whose
+   `.seldon-dev-build` names the build and the commit. `omarchy plugin
+   validate` runs on the host copy.
+4. Restarts the shell (`omarchy-restart-shell`) when the plugin files
+   changed — Quickshell keeps the code it compiled until a restart
+   (WP-090) — or a restart is still pending from an earlier deploy. It
+   waits until the shell answers `ping` plus 5 s (the hot-reload storm,
+   WP-013), and restarts only while `omarchy-shell lock status` reports
+   neither `locked`, `sessionLocked` nor `secure`; an unreadable status
+   counts as locked (ORCHESTRATION.md §11). Otherwise it prints "restart
+   pending" and keeps `~/.local/state/seldon-dev/restart-pending`; the
+   next deploy on an unlocked session restarts.
+5. Smoke: `seldon --version --json` is the new version; `seldon doctor
+   --json` exits 0 (degraded rows are listed, not failed); `seldon
+   capture --json` on the host's configured test logbook exits 0;
+   `omarchy-shell jax.seldon.service refresh`, then `jax.seldon.service
+   status` settles within 60 s on `status` `ok` and `engineVersion` the
+   new version, with no `restartNotice` (WP-090).
+6. Appends one JSON line to `~/.local/state/seldon-dev/deploy.jsonl`
+   (`ts`, `mode`, `version`, `commit`, `pluginChanged`, `movedAside`,
+   `restart`, `smoke`, `failures`) and prints a summary.
+
+**Back to a release:** `just deploy-test-host --release vX.Y.Z` (no check
+log, no `main` checks) downloads that release's `install.sh` and
+`SHA256SUMS` on the host, refuses a mismatch, runs `install.sh --version
+vX.Y.Z --force`, clones `jax-seldon-plugin` at the tag (validated, then
+put in place of the dev copy, which is moved aside like above), then the
+same restart, smoke and log. State written by a newer build may not load
+in an older release: move `~/.local/state/seldon` aside on the host
+first; the script warns but does not move it.
+
+`just e2e` on the test host afterwards restores what it found, so the
+deployed build is back after it.
 
 ## Fresh machine smoke list
 
