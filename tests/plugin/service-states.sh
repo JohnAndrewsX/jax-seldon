@@ -278,7 +278,8 @@ clean_log snapper-degraded
 #      manifest it re-read from disk, but runs the code it compiled first.
 #      The repository's manifest is the running code's version: no notice.
 #      Another version: the neutral notice, whose one action runs
-#      omarchy-restart-shell with no arguments.
+#      omarchy-restart-shell with no arguments, once: a second click (a
+#      double click) is refused, as a second restart could kill the new shell.
 manifest=$(jq -c . "$plugin/manifest.json")
 run restart-same 2500 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index.sample.json" \
   HARNESS_MANIFEST="$manifest" HARNESS_FIX=restart:restart HARNESS_RECORD="$work/restart-same.record"
@@ -286,6 +287,7 @@ expect restart-same .manifestVersion "$(jq -r .version <<<"$manifest")"
 expect restart-same .pluginVersion "$(jq -r .version <<<"$manifest")"
 expect restart-same .restartNotice ""
 expect restart-same '.restartActions | length' 0
+expect restart-same .restartStarted false
 if grep -a -q "HARNESS fix restart:restart false" "$work/restart-same.log" && [[ ! -e $work/restart-same.record ]]; then
   pass=$((pass + 1)); echo "ok   restart-same: no notice, the restart action does nothing"
 else
@@ -293,7 +295,7 @@ else
 fi
 clean_log restart-same
 run restart-updated 2500 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index.sample.json" \
-  HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_FIX=restart:copy,restart:restart \
+  HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_FIX=restart:copy,restart:restart,restart:restart \
   HARNESS_RECORD="$work/restart-updated.record"
 expect restart-updated .status ok
 expect restart-updated .manifestVersion 99.0.0
@@ -305,6 +307,13 @@ if grep -a -q "HARNESS fix restart:copy false" "$work/restart-updated.log"; then
 else
   fail=$((fail + 1)); echo "FAIL restart-updated: copy on the restart notice was not refused"
 fi
+if [[ $(sed 's/\x1b\[[0-9;]*m//g' "$work/restart-updated.log" | grep -a -o "HARNESS fix restart:restart [a-z]*" | tr '\n' ',') \
+  == "HARNESS fix restart:restart true,HARNESS fix restart:restart false," ]]; then
+  pass=$((pass + 1)); echo "ok   restart-updated: the restart runs once, a second click is refused"
+else
+  fail=$((fail + 1)); echo "FAIL restart-updated: the second restart was not refused"
+fi
+expect restart-updated .restartStarted true
 record_check restart-updated "$(printf '%s\n' omarchy-restart-shell --)"
 clean_log restart-updated
 

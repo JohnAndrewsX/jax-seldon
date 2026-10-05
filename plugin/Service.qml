@@ -63,6 +63,10 @@ Item {
   readonly property string pluginVersion: Model.PLUGIN_VERSION
   readonly property string manifestVersion: Model.pluginVersionOf(root.manifest)
   readonly property var restartNotice: Model.restartShellNotice(pluginVersion, manifestVersion)
+  // Set by the first restart this service starts. A second one (a double
+  // click) could kill the new shell while it starts, so the action is
+  // one-shot; the next service instance (the new shell's) starts clear.
+  property bool restartStarted: false
 
   // ---- Index file.
   property string fileState: "loading"     // loading | loaded | missing | invalid
@@ -572,10 +576,12 @@ Item {
   // ---- Banner fixes (AGENTS.md §7: every non-ok state has a one-click fix).
   // bannerId picks the banner whose constant command copy/terminal use:
   // "status" (default) or "snapper" (ADR-0026). "restart" is the restart
-  // notice's own action (WP-090): the fixed argv, only while it shows.
+  // notice's own action (WP-090): the fixed argv, only while it shows, and
+  // only once per service (restartStarted).
   function fix(actionId, bannerId) {
     if (bannerId === "restart") {
-      if (actionId !== "restart" || !root.restartNotice) return false
+      if (actionId !== "restart" || !root.restartNotice || root.restartStarted) return false
+      root.restartStarted = true
       Quickshell.execDetached(Model.RESTART_SHELL_ARGV)
       return true
     }
@@ -619,6 +625,7 @@ Item {
       pluginVersion: root.pluginVersion,
       manifestVersion: root.manifestVersion,
       restartNotice: root.restartNotice ? root.restartNotice.title : "",
+      restartStarted: root.restartStarted,
       restartActions: root.restartNotice ? root.restartNotice.actions.map(function(a) { return a.id + ":" + a.label }) : [],
       busyRefusal: root.busyRefusal,
       canWrite: root.canWrite,

@@ -277,7 +277,8 @@ initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
 §3 under the banners, without an action; plugin updated under a running
 shell (§3) → the neutral "Restart the shell to finish the update" above
 the banners, with both versions and one action, *Restart shell*, which
-runs the argv `["omarchy-restart-shell"]` (WP-090); crisis → red strip "N changes
+runs the argv `["omarchy-restart-shell"]` once per service instance
+(a second click could kill the new shell; WP-090); crisis → red strip "N changes
 in the red zone need a reason".
 
 ## 6. Overlay.qml — Prime Radiant

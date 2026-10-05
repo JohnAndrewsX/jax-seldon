@@ -1220,13 +1220,14 @@ clean_log capture-warned
 # 29. A plugin updated under a running shell (WP-090): with the repository's
 #     manifest (the running code's version) no notice; with another version
 #     the neutral notice above the status banner, both versions in its text,
-#     and its one button runs omarchy-restart-shell without arguments.
+#     and its one button runs omarchy-restart-shell without arguments, once
+#     for a double click.
 manifest=$(jq -c . "$plugin/manifest.json")
 run restart-same "$fx/index.sample.json" "view" HARNESS_MANIFEST="$manifest"
 expect restart-same 1 .view.restartNotice ""
 expect restart-same 1 '[.texts[] | select(. == "Restart shell")] | length' 0
 clean_log restart-same
-run restart-updated "$fx/index-variants/not-initialised.json" "view;click:Restart shell" \
+run restart-updated "$fx/index-variants/not-initialised.json" "view;click:Restart shell;click:Restart shell" \
   HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_RECORD="$work/restart-updated.record"
 expect restart-updated 1 .view.restartNotice "Restart the shell to finish the update"
 expect restart-updated 1 .view.banner "Logbook not initialised"
@@ -1238,9 +1239,10 @@ expect restart-updated 1 '(.texts | index("Restart the shell to finish the updat
 want=$(printf '%s\n' omarchy-restart-shell --)
 deadline=$((SECONDS + 15))
 until [[ -s $work/restart-updated.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+sleep 1 # a second launch (the double click's) would land within this
 got=$(cat "$work/restart-updated.record" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
-  pass=$((pass + 1)); echo "ok   restart-updated: Restart shell runs omarchy-restart-shell, no arguments"
+  pass=$((pass + 1)); echo "ok   restart-updated: Restart shell runs omarchy-restart-shell once, no arguments"
 else
   fail=$((fail + 1)); echo "FAIL restart-updated: launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
