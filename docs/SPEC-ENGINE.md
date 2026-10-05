@@ -873,16 +873,19 @@ git itself is killed, with the same bounded pipe wait. Rules:
   first. A subject that no file has names its own path when the
   redaction leaves it as it is; a masked subject does, as it masks to
   itself (a removal the ledger lost is then recorded under it). The
-  replay runs on every capture that has a cursor and its generation, so
-  a restored older state directory records only what changed since
-  (guide 07). It skips removals stamped with exactly the cursor's check:
-  a removal carries the capture time, so they are the previous
-  capture's and already in the generation. An addition or change at
-  that time is read, as a file with an older mtime (`cp -p`) is stamped
-  with it. Known limit: a removal by a capture in the same second as the
-  one before it, whose cursor save then failed, is skipped too; the next
-  capture records it again, or misses the re-addition of a file that is
-  back.
+  replay runs on every capture that has a cursor and its generation.
+  When the cursor is behind, it reads the ledger from the cursor's check
+  on (a change whose file has an older mtime, `cp -p`, is stamped with
+  it) and skips removals stamped with exactly that time (they are the
+  previous capture's, a removal carries the capture time, and already in
+  the generation); when it is not, it reads strictly after it, and the
+  scan stands in for the current generation, so a restored older state
+  directory records only what changed since (guide 07). Known limits: a
+  removal by a capture that ran in the same second as the one before it
+  and then failed its cursor save is skipped too (the next capture
+  records it again, or misses the re-addition of a file that is back);
+  after a restore, a change stamped with the restored cursor's check
+  (an older mtime) is recorded again.
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
