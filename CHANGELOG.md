@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (local time) and the info files (UTC). Such a list time is resolved
   against the snapshot's info file, the cursor, then the number order;
   cursors written by earlier versions move to the info file's date
-  without an event (WP-082).
+  without an event, and the ledger dedupe counts either instant, also
+  after a failed cursor save or a lost state directory (WP-082).
 
 ## [0.1.2] - 2026-10-04
 
