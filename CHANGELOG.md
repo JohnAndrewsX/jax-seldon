@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A collector that degrades in the capture that records a state reset
   (snapper without permission, a failing `omarchy`) no longer looks like
-  "never ran here" afterwards: `cursors.json` marks it `pendingBaseline`,
-  and its first successful run records its own state reset note, once.
+  "never ran here" afterwards: `cursors.json` marks it `pendingBaseline`
+  with what was lost (`cursors`, or `logbook` when the state was another
+  logbook's), and its first successful run records its own state reset
+  note with that kind, once.
   This also holds when it was the only collector that lost its state
   (WP-088).
 - Seldon's own plugin and package changes that an earlier capture left

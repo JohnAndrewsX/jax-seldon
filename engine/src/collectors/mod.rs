@@ -317,10 +317,42 @@ pub struct CollectorState {
     /// The collector degraded in a capture in which its state was lost
     /// (missing, unreadable or another logbook's, while the ledger holds
     /// events of its source), so it took no baseline then; its first
-    /// successful run records the gap as a state reset and clears this
-    /// (WP-088). Not written while false: older files read unchanged.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub pending_baseline: bool,
+    /// successful run records the gap as a state reset with this kind and
+    /// clears it (WP-088). Not written while `None`: older files read
+    /// unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_baseline: Option<PendingBaseline>,
+}
+
+/// What a collector's waiting baseline lost ([`CollectorState::pending_baseline`]),
+/// written as the state reset's `files` word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PendingBaseline {
+    /// [`Lost::Cursor`].
+    Cursors,
+    /// [`Lost::Logbook`].
+    Logbook,
+}
+
+impl PendingBaseline {
+    /// The mark for a lost cursor; `None` for the config collector's files,
+    /// which a degraded run never reports.
+    pub fn of(lost: Lost) -> Option<Self> {
+        match lost {
+            Lost::Cursor => Some(PendingBaseline::Cursors),
+            Lost::Logbook => Some(PendingBaseline::Logbook),
+            Lost::Manifest | Lost::Owned => None,
+        }
+    }
+
+    /// The loss the collector's first successful run records.
+    pub fn lost(self) -> Lost {
+        match self {
+            PendingBaseline::Cursors => Lost::Cursor,
+            PendingBaseline::Logbook => Lost::Logbook,
+        }
+    }
 }
 
 /// `cursors.json` in the state directory.
