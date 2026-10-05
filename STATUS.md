@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-097 | redaction: remaining credential forms on command lines | Engine | `engine-097` (opus) | `wt/WP-097` · `wp/097-redact-forms` | 2026-10-05 |
-| WP-099 | crash-proof seldon notes (state reset, snapper access) | Engine | `engine-099` (opus) | `wt/WP-099` · `wp/099-crash-proof-notes` | 2026-10-05 |
 | WP-103 | config replay with redacted twins; SPEC §7 clause | Engine | `engine-103` (opus) | `wt/WP-103` · `wp/103-replay-twins` | 2026-10-05 |
 
 ## Queued (next up)
@@ -46,6 +45,11 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-099 a crash between the ledger append and the cursor
+  save no longer repeats the state-reset or snapper access note
+  (`pendingNotes` mark saved before the append, dedup by identity);
+  remaining limits stated in SPEC (follow-up WP-104); Opus review,
+  Fable stage 2, one round; merged.
 - 2026-10-05 WP-093 redaction masks e-mail addresses (local part;
   the domain stays so a desktop entry stays recognisable); SSH remotes,
   `user@host`, versions, npm scopes and systemd units stay; non-ASCII
