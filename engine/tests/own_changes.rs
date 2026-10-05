@@ -1,9 +1,10 @@
 //! Seldon updating itself (WP-086, SPEC-ENGINE §5 rule 8): an event of its
-//! own plugin (`jax.seldon` added, updated, enabled, disabled) or of its own
-//! package (`jax-seldon` installed, upgraded, downgraded, reinstalled) is
-//! explained by the capture that writes it, so it is no drift; the event
-//! stays in the ledger with its own actor. Other plugins and packages, and
-//! the removal of Seldon, stay drift.
+//! own plugin (`jax.seldon` updated, enabled, disabled) or of its own
+//! package (`jax-seldon` upgraded, reinstalled) is explained by the capture
+//! that writes it, so it is no drift; the event stays in the ledger with
+//! its own actor. Other plugins and packages, and adding, installing,
+//! downgrading or removing Seldon (review F4: nothing checks provenance),
+//! stay drift.
 //!
 //! Everything runs in a throw-away home (`common::Env`, with
 //! `SELDON_TEST_GUARD`); the collectors' sources point at temp files.
@@ -210,14 +211,24 @@ fn updating_its_own_plugin_is_no_drift_another_plugin_is() {
     assert_eq!(m.ledger().len(), lines);
 }
 
+/// Enabling and disabling Seldon's plugin is no drift; adding it (nothing
+/// checks where the clone came from) and removing it is (review F4).
 #[test]
-fn adding_enabling_disabling_its_plugin_is_no_drift_removing_it_is() {
+fn enabling_disabling_its_plugin_is_no_drift_adding_removing_it_is() {
     let m = Machine::new();
     m.plugins(&[(OTHER, true, "1.0")]);
     m.capture(T0, "plugins"); // baseline
+
+    m.plugins(&[(OWN_PLUGIN, false, "0.1.2"), (OTHER, true, "1.0")]);
+    let added = "2026-10-01T10:10:00+02:00";
+    let c = m.capture(added, "plugins");
+    assert_eq!(c["explainedSelf"], 0, "{c}");
+    let (_, resolutions) = m.event("plugin-add", OWN_PLUGIN);
+    assert!(resolutions.is_empty(), "{resolutions:?}");
+    assert_eq!(m.drift(added), [pair("plugin-add", OWN_PLUGIN)]);
+
     // (capture time, Seldon's plugin enabled, the event it gives)
     let steps = [
-        ("2026-10-01T10:10:00+02:00", false, "plugin-add"),
         ("2026-10-01T10:20:00+02:00", true, "plugin-enable"),
         ("2026-10-01T10:30:00+02:00", false, "plugin-disable"),
     ];
@@ -227,7 +238,7 @@ fn adding_enabling_disabling_its_plugin_is_no_drift_removing_it_is() {
         assert_eq!(c["explainedSelf"], 1, "{kind}: {c}");
         let (event, resolutions) = m.event(kind, OWN_PLUGIN);
         assert_explained_as_own(&event, &resolutions, "seldon's own plugin");
-        assert_eq!(m.drift(now), [], "{kind}");
+        assert_eq!(m.drift(now), [pair("plugin-add", OWN_PLUGIN)], "{kind}");
     }
 
     // removing Seldon's panel is a change to the system like any other
@@ -237,7 +248,14 @@ fn adding_enabling_disabling_its_plugin_is_no_drift_removing_it_is() {
     assert_eq!(c["explainedSelf"], 0, "{c}");
     let (_, resolutions) = m.event("plugin-remove", OWN_PLUGIN);
     assert!(resolutions.is_empty(), "{resolutions:?}");
-    assert_eq!(m.drift(now), [pair("plugin-remove", OWN_PLUGIN)]);
+    // newest first
+    assert_eq!(
+        m.drift(now),
+        [
+            pair("plugin-remove", OWN_PLUGIN),
+            pair("plugin-add", OWN_PLUGIN)
+        ]
+    );
 }
 
 /// An agent's `omarchy plugin update jax.seldon` (no active case): the

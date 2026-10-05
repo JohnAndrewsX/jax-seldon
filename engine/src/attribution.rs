@@ -39,10 +39,10 @@
 //!   other than `system` or a case are left alone.
 //!
 //! Seldon's own changes ([`own_change`], SPEC-ENGINE §5 rule 8): its plugin
-//! [`OWN_PLUGIN`] added, updated, enabled or disabled, its package
-//! [`OWN_PACKAGE`] installed, upgraded, downgraded or reinstalled. The
-//! event keeps the actor this pass gives it; `seldon capture` explains it
-//! after the append, so it is no drift.
+//! [`OWN_PLUGIN`] updated, enabled or disabled, its package
+//! [`OWN_PACKAGE`] upgraded or reinstalled. The event keeps the actor this
+//! pass gives it; `seldon capture` explains it after the append, so it is
+//! no drift.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -64,17 +64,19 @@ pub const OWN_PLUGIN: &str = "jax.seldon";
 pub const OWN_PACKAGE: &str = "jax-seldon";
 
 /// Why `e` is Seldon changing itself (SPEC-ENGINE §5 rule 8), as the
-/// detail of its explanation; `None` for every other event. A removal is
-/// not Seldon updating itself: it stays drift.
+/// detail of its explanation; `None` for every other event. Only the id
+/// is matched, nothing checks where the code came from: an add or install
+/// while a logbook exists is somebody (re)installing Seldon, a downgrade
+/// somebody choosing an older one, a removal somebody taking it off. These
+/// stay drift.
 pub fn own_change(e: &Event) -> Option<&'static str> {
     match (e.source, e.kind) {
-        (
-            Source::Plugins,
-            Kind::PluginAdd | Kind::PluginUpdate | Kind::PluginEnable | Kind::PluginDisable,
-        ) if e.subject == OWN_PLUGIN => Some("seldon's own plugin"),
-        (Source::Pacman, Kind::Install | Kind::Upgrade | Kind::Downgrade | Kind::Reinstall)
-            if e.subject == OWN_PACKAGE =>
+        (Source::Plugins, Kind::PluginUpdate | Kind::PluginEnable | Kind::PluginDisable)
+            if e.subject == OWN_PLUGIN =>
         {
+            Some("seldon's own plugin")
+        }
+        (Source::Pacman, Kind::Upgrade | Kind::Reinstall) if e.subject == OWN_PACKAGE => {
             Some("seldon's own package")
         }
         _ => None,
@@ -404,36 +406,31 @@ mod tests {
     }
 
     #[test]
-    fn own_changes_are_seldons_plugin_and_package_but_no_removal() {
+    fn own_changes_are_seldons_updates_but_no_add_install_downgrade_or_removal() {
         let at = DateTime::parse_from_rfc3339("2026-10-01T10:00:00+02:00").unwrap();
         let own = |source, kind, subject: &str| own_change(&Event::new(at, source, kind, subject));
-        for kind in [
-            Kind::PluginAdd,
-            Kind::PluginUpdate,
-            Kind::PluginEnable,
-            Kind::PluginDisable,
-        ] {
+        for kind in [Kind::PluginUpdate, Kind::PluginEnable, Kind::PluginDisable] {
             assert_eq!(
                 own(Source::Plugins, kind, OWN_PLUGIN),
                 Some("seldon's own plugin"),
                 "{kind:?}"
             );
         }
-        for kind in [
-            Kind::Install,
-            Kind::Upgrade,
-            Kind::Downgrade,
-            Kind::Reinstall,
-        ] {
+        for kind in [Kind::Upgrade, Kind::Reinstall] {
             assert_eq!(
                 own(Source::Pacman, kind, OWN_PACKAGE),
                 Some("seldon's own package"),
                 "{kind:?}"
             );
         }
-        // removing Seldon is somebody's change to the system
-        assert_eq!(own(Source::Plugins, Kind::PluginRemove, OWN_PLUGIN), None);
-        assert_eq!(own(Source::Pacman, Kind::Remove, OWN_PACKAGE), None);
+        // no provenance check: (re)installing, choosing an older one and
+        // removing Seldon are somebody's change to the system
+        for kind in [Kind::PluginAdd, Kind::PluginRemove] {
+            assert_eq!(own(Source::Plugins, kind, OWN_PLUGIN), None, "{kind:?}");
+        }
+        for kind in [Kind::Install, Kind::Downgrade, Kind::Remove] {
+            assert_eq!(own(Source::Pacman, kind, OWN_PACKAGE), None, "{kind:?}");
+        }
         // other plugins and packages, and the names in another source
         for (source, kind, subject) in [
             (
