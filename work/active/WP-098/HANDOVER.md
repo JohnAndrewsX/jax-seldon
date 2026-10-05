@@ -202,3 +202,93 @@ Branch `wp/098-test-host-main`, worktree `wt/WP-098`.
   test; WP-090 edits this file too, in other places),
   `memory/{pitfalls,rust-notes,omarchy-shell}.md`. `main.rs`, redact.rs,
   capture.rs, doctor.rs, plugin/ and scripts/guard.sh unchanged.
+
+## Round 2 (stage 1 SEND BACK, brief WP-098-round-2-brief.md)
+
+### Done
+
+- **B1** `cargo build … --release --features watch` (release.yml:121,
+  PKGBUILD); the test asserts `--release --features watch --target
+  x86_64-unknown-linux-musl` in the cargo stub's log. The dry run's plan
+  line names it too.
+- **S1** `rsync -rlp --checksum --delete --exclude=/.seldon-dev-build`.
+  Test: an engine-only commit with a later commit time (git archive
+  stamps every file with it) leaves an unchanged plugin file's mtime on
+  the host as it was.
+- **S2** `--target-dir "$root/engine/target"`. The cargo stub now
+  honours `--target-dir`, else `CARGO_TARGET_DIR`, like cargo; a deploy
+  with `CARGO_TARGET_DIR` exported ships the new marked build, and the
+  log shows the target dir.
+- **S3** The check log must start with `head <full sha>` (first line,
+  40 hex), end in `exit 0`, the sha must be HEAD or an ancestor (`git
+  merge-base --is-ancestor`), and `git diff --quiet <sha> HEAD --
+  engine plugin scripts/deploy-test-host.sh` must hold. The mtime rule
+  is gone. Tests: no head line, head line not first, a short sha, an
+  unknown sha, a sha on another branch, a change after the sha to
+  `engine/`, `plugin/` and the script (each refused), a docs-only commit
+  after the sha (passes). Checked against the real
+  `gates/main-check-118.log` format (first line `head f07d5d1a…`).
+- **N1** While the restart step reports `pending (…)`, a `restartNotice`
+  in the smoke prints `note restart notice while the restart is pending:
+  …`; the summary still says "restart pending", exit 0. Without a
+  pending restart the notice still fails the smoke (existing case).
+- **N2** The read-only probe runs `command -v` on the tools of the mode
+  (main: rsync jq tar mktemp install sha256sum find xargs omarchy
+  omarchy-shell omarchy-restart-shell; release: curl git jq sha256sum
+  find xargs omarchy omarchy-shell omarchy-restart-shell) and refuses
+  with exit 1 naming the missing ones, before any build or change.
+  Tests: no rsync, no omarchy (main), neither curl nor omarchy
+  (release); host fingerprint unchanged, no build.
+- **N3** o4: the first `shell ping` is before the restart in the call
+  log, and a deploy with `SELDON_DEPLOY_SETTLE=2` takes ≥ 2 s; o5: a
+  failing `capture --json` fails the smoke (exit 2, named); o7: covered
+  by S3's `plugin/` case; o9: `--release` with a clone that fails
+  validation exits 2, install.sh not run, the dev copy stays.
+- **D3** The smoke first waits up to 10 s (or `SELDON_DEPLOY_WAIT`) for
+  `omarchy-shell shell ping`; without an answer it reports `FAIL service:
+  no graphical session (the shell does not answer ping)` and skips the
+  60 s status poll; the summary says "smoke failed: no graphical session
+  on <host> (nobody logged in?), so the plugin was not checked; engine
+  and plugin are installed". Other smoke failures are now listed in the
+  summary line too.
+- **Q3** `--dry-run` prints `(ssh resolves it to <hostname>)` from `ssh
+  -G -- <alias>` (no connection; checked locally with an `.invalid`
+  alias). The ssh stub answers `-G` with `hostname 192.0.2.7`.
+- Docs: TESTING.md section (refusals, build, rsync flags, smoke notes,
+  dry run, absolute log path) and table row; CHANGELOG line.
+
+### Verified by
+
+- `bash tests/deploy/deploy-test-host.test.sh` → 164 passed, 0 failed.
+- Mutants, round 2 — 38 of round 1 (anchors updated where the code
+  moved; the mtime-rule mutant dropped with the rule) plus 20 new, 58 in
+  all, each applied alone, the test run, the original restored — all
+  killed: head line not required · ancestor check dropped · diff
+  ignores `plugin` (o7) · diff ignores `engine` · diff ignores the
+  script · diff over the whole tree (kills the docs-only pass) · no
+  `--features watch` · no `--target-dir` · `rsync -a` again · notice
+  fails although pending · notice never fails · remote tools not
+  checked · rsync not in the tool list · smoke ping check dropped ·
+  summary does not name the session · restart without the ping wait
+  (o4) · restart without the settle sleep (o4) · capture exit not
+  checked (o5) · release skips validating the clone (o9) · dry run
+  without `ssh -G`.
+- `flock /tmp/seldon-check.lock just check` on 63206cf, run 1: `exit 1`
+  — one failure in `service-states` (296/1), "snapper-degraded: fix
+  commands were" with the records `--`, `sudo setfacl …` out of order.
+  That is the record-order flake WP-090(b) fixes on main; this branch
+  does not touch `plugin/`, the harness or `fake-recorder`. Run 2,
+  same commit, nothing changed: `check: ok`, `exit 0` —
+  deploy-test-host.test 164/0, install.test 209/0, model.test.js 88,
+  service-states 297/0, panel-view 771/0, overlay-view 319/0, bar-view
+  143/0, docs-check ok (the existing de/06 warning).
+
+### Decisions
+
+- D2, D4 accepted as written; Q2 (machine-id pinning) not now — nothing
+  changed for them.
+- None new.
+
+### Touched outside WP scope
+
+- None beyond round 1.
