@@ -23,7 +23,10 @@ decisions).
 0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
 advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
 notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
-Then the contract v2 bundle for v0.2.0 (autocommit result in the index,
+After 0.1.4 (operator decision 2026-10-05): WP-094 Seldon agent skill,
+WP-095 task prompts from the panel (ADR first), WP-096 default actor for
+launched agents; no Omarchy upstream contribution before 1.0. Then the
+contract v2 bundle for v0.2.0 (autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
 account: WP-033 (update-impact, option C) and WP-042 (marketplace
 submission). (see `work/queued/`)
