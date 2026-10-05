@@ -290,14 +290,16 @@ impl Default for Config {
     }
 }
 
-/// SPEC-ENGINE §4 (config collector). `~/.config/omarchy/plugins/` is
-/// excluded by the collector; missing paths are skipped.
-pub const DEFAULT_WATCH_PATHS: [&str; 5] = [
+/// SPEC-ENGINE §4 (config collector). `~/.config/omarchy/plugins/` and
+/// the desktop entries' `mimeinfo.cache` are excluded by the collector;
+/// missing paths are skipped.
+pub const DEFAULT_WATCH_PATHS: [&str; 6] = [
     "~/.config/hypr",
     "~/.config/omarchy",
     "~/.config/waybar",
     "~/.bashrc",
     "~/.zshrc",
+    "~/.local/share/applications",
 ];
 
 /// Harnesses the wizard can set up: Claude Code's hooks
