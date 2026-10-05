@@ -208,3 +208,192 @@ Appended to `memory/pitfalls.md`:
   subdirectory of the session scratchpad. The throwaway redaction
   probe test was created and deleted in one command and never
   committed.
+
+## Round 2 (stage 1 SEND BACK B1; stage 2: design (a) with one correction)
+
+Commits:
+
+- `c766e3e`: replay on every capture, tests;
+- `8e85a19`: the CLI test changes its file between the captures;
+- `7d5b0fe`: SPEC §3/§4, rewrap;
+- `9522e87`: the window as the brief says (see "Correction" below);
+- `77a2dc3`: SPEC §4;
+- `79159d2`: pitfalls;
+- this section.
+
+### Done
+
+1. **B1: the replay runs on every capture with a cursor and its
+   generation** (`config.rs` ≈ 1000).
+   - `seen = stored_ahead.unwrap_or(&current)`. When behind, `seen` is
+     the manifest's current generation, as built in round 1. Otherwise
+     it is this capture's scan, so a twin added after the backup is a
+     candidate.
+   - **Window** (`replay(…, behind)`): when behind, from `since` on,
+     skipping `ConfigRemove` at exactly `since`; when not, strictly after
+     `since`. `.min(ctx.now)` stays as the read guard. `read_range` with
+     `from > to` returns an empty list: its filter is
+     `ts >= from && ts <= to`, with no error path. The "strictly after"
+     is a filter on `ts`, not `+ 1 s`, so it does not depend on whole
+     seconds.
+   - **Correction: I first deviated from the brief and then went back
+     to it.** In `c766e3e` I read additions and changes at `since` also
+     when the cursor was not behind. The reason: a file with an older
+     mtime (`cp -p`) is stamped with `since`, and the brief's window
+     records such a change again after a restore.
+     - The full suite then showed the cost:
+       `own_writes::removing_the_theme_hook_leaves_no_drift` failed 9 of
+       10 runs on `8e85a19`. Its real-time captures fall into one
+       second, so the previous capture's own addition at `since` was
+       replayed and the removal written twice. That happens in normal
+       operation, with no failure and no restore.
+     - The brief's window risks a duplicate only after a restore of a
+       file with an older mtime. So `9522e87` follows the brief, and
+       SPEC §4 names both limits.
+     - After `c766e3e` I ran only `idempotency`, not the whole suite.
+       That is noted in pitfalls.
+2. **Tests** (`engine/tests/idempotency.rs`):
+   - `a_restored_older_state_directory_records_only_what_changed_since`:
+     r07. It changes `a.conf` and removes `gone.conf`, then restores.
+     It asserts 0 events, then B→C and not A→C.
+   - `a_restored_state_directory_knows_a_twin_added_after_the_backup`:
+     a redacted twin added after the backup.
+   - `a_backup_restored_after_a_state_reset_records_nothing_twice`: r08.
+     It clears the cursors and `manifest.json`, takes a baseline, then
+     restores.
+   - `a_backup_restored_after_two_steps_writes_no_shortcut`: A→B→C.
+   - `a_state_directory_restored_through_the_cli_records_nothing_twice`:
+     c03, the guide-07 steps through `seldon capture --all --json` with
+     `SELDON_NOW`. The folder is copied with a small `copy_dir` (the test
+     PATH has only stubs), and `Cli::command` was split out of `Cli::run`.
+     The file's mtime is set between the captures. Without that it lies
+     before `SELDON_NOW` and is clamped to the check, the limit above.
+   - `a_removal_at_the_cursors_check_is_not_replayed_onto_a_twin`: r10.
+     Same-content twins: Alice is removed in a good capture, the next
+     save fails, then the recovery.
+   - `a_change_clamped_to_the_cursors_check_is_replayed_after_a_failed_save`:
+     the behind window reads from `since` on.
+   - `a_file_added_and_removed_within_one_second_is_removed_once`: the
+     not-behind window reads strictly after `since`. It is the Bench
+     shape of the theme-hook flake.
+   - `a_redacted_file_whose_removal_the_ledger_lost_is_recorded`: the
+     probe, below.
+3. **N1 (X4): a comment, not a test.** At the `continue`: "a placement
+   late in a pass can make a step the pass already went by strict, while
+   the first step that fits may still be ambiguous". X4 survives (see
+   below).
+4. **SPEC.**
+   - §3: the brief's sentence. Before writing it I checked the other
+     diff collectors: plugins (`unrecorded`, kind, subject, enabled,
+     version) and theme (a `theme-set` to the current slug since the
+     check) still dedupe by exact match. The line after it is rewrapped.
+   - §4: the paragraph is now "Replay (WP-069, WP-073, WP-103)":
+     - the candidates (the cursor's generation and the current one:
+       the manifest's when behind, else the scan);
+     - a masked subject names its own path;
+     - the brief's sentences on the window;
+     - two known limits: a same-second capture with a failed save, and a
+       change at the restored check after a restore. The history
+       sentence is gone.
+   - §7: the long line is rewrapped.
+5. **Module doc** of `config.rs`, the doc of `replay` (both cases), and
+   the **CHANGELOG** entry now cover restores and the A→B→C case.
+6. **Probe.** `redact("~/.local/share/applications/Mail (‹redacted›@example.com).desktop")`
+   returns the same text (throwaway test, deleted): the local part takes
+   no marker quote, and a match inside a marker is left alone. So the
+   fallback (`None if redactor.redact(&r.subject) == r.subject`) also
+   takes a masked subject as a path.
+   - **When no file of that subject is known**, the fallback puts a key
+     with the masked name into the local `base`. Only this capture's diff
+     sees it; the manifest is written from the scan. A removal the ledger
+     lost is then recorded under the subject the ledger holds, which is
+     what the real removal would write.
+     `a_redacted_file_whose_removal_the_ledger_lost_is_recorded` shows it,
+     and M7 now also fails that test.
+   - **When a twin of the subject is known**, the subject names only the
+     twin. The fallback is not reached, and the removal is lost.
+   - **Correction of round 1's "Not done".** "A redacted one names
+     nothing, so the removal is not recorded" was wrong for the first
+     case. It holds only when a twin with that subject is known.
+
+### Pre-fix evidence
+
+- **Against round 1's `config.rs` (`0920e76`).** These six fail:
+  `a_restored_older_…`, `a_restored_state_directory_knows_…`,
+  `a_backup_restored_after_a_state_reset_…`,
+  `a_backup_restored_after_two_steps_…`, `a_removal_at_the_cursors_check_…`
+  and `a_state_directory_restored_through_the_cli_…`. The CLI test fails
+  on `written`: 1, config 1 event, against 0.
+  - These pass there: the clamped behind test (round 1 already read from
+    `since`), the same-second test (round 1 ran no replay without a
+    failure) and the probe test (the fallback was there). `own_writes`
+    and `redaction` are green.
+- **Against stage 1's variant** (`seen` = the manifest's current
+  generation also when not behind; mutant R2):
+  `a_restored_state_directory_knows_a_twin_added_after_the_backup` fails
+  with `[(ConfigAdd, None, Some("Bob 1"))]`, as the brief predicted.
+  - The CLI test failed there as well in its first form, because the
+    file's mtime was clamped to the check. With the mtime set between
+    the captures it passes there and fails on round 1.
+- **Against `8e85a19`** (additions at `since` read when not behind):
+  `a_file_added_and_removed_within_one_second_is_removed_once` fails
+  with a second `(ConfigRemove, "~/.config/hypr/x.conf")`.
+  `removing_the_theme_hook_leaves_no_drift` failed 9 of 10 runs there and
+  passes 10 of 10 on `9522e87`.
+
+### Mutants (round 2; final code `9522e87`; each runs the whole engine suite with `--no-fail-fast`; restored with `git checkout HEAD --` + `touch`; `git status` clean afterwards)
+
+A first run on `8e85a19` was stopped after M5. There, M1–M4 also "failed"
+the theme-hook test, which was the flake above, so those results are
+discarded.
+
+| # | Mutant | Caught by |
+|---|---|---|
+| R1 | replay only when the cursor is behind (round 1) | `a_backup_restored_after_a_state_reset_…`, `a_backup_restored_after_two_steps_…`, `a_restored_older_…`, `a_restored_state_directory_knows_…`, `a_state_directory_restored_through_the_cli_…` |
+| R2 | `seen` = the manifest's current generation when not behind (stage 1's variant) | `a_restored_state_directory_knows_a_twin_added_after_the_backup` |
+| R3 | behind: a removal at `since` is replayed | `a_removal_at_the_cursors_check_is_not_replayed_onto_a_twin` |
+| R4 | not behind: additions and changes at `since` are read too (`c766e3e`) | `a_file_added_and_removed_within_one_second_…`, `removing_the_theme_hook_leaves_no_drift`, `commands::a_desktop_entry_named_after_an_address_is_masked` |
+| R5 | behind: strictly after `since` | `a_change_clamped_to_the_cursors_check_is_replayed_after_a_failed_save` |
+| M1 | one path per subject | `a_restored_state_directory_knows_…`, `twins_after_a_failed_…`, `twins_after_two_…`, `twins_with_the_same_content_after_…` |
+| M2 | no preference by `seen` | `twins_after_a_failed_…`, `twins_after_two_…`, `twins_with_the_same_content_after_…` |
+| M3 | an event that fits several alike is never placed | `twins_with_the_same_content_after_…` |
+| M4 | such an event is placed at once | `twins_after_two_…` |
+| M5 | `seen`'s files are no candidates | `a_restored_state_directory_knows_…`, `a_twin_added_and_removed_…`, `twins_after_a_failed_…`, `twins_after_two_…` |
+| M6 | the old ledger dedupe on every capture | `a_step_taken_again_…`, `twins_with_the_same_content_after_…`, `…removed_one_after_the_other` |
+| M6b | the old dedupe only after a replay (pattern adapted to `behind: bool`; the first try did not compile) | `twins_with_the_same_content_after_…` |
+| M7 | no own path for an unredacted subject | `a_file_whose_removal_the_ledger_lost_…`, `a_redacted_file_whose_removal_the_ledger_lost_is_recorded` |
+| M8 | the guess takes the first fitting file | `twins_with_the_same_content_after_…` |
+| M10 | an addition fits a file that exists | `twins_after_two_…` |
+| M11 | a removal fits any existing file | `a_twin_removed_and_added_again_…` |
+| M9 | a single fitting file is not sure by itself | **survives**, as in round 1 |
+| M12 | no early return on an empty ledger range | **survives** (performance only) |
+| M13 | events in ledger order, not by time | **survives**, as in round 1 |
+| X4 | no restart after a pass that placed something | **survives** (N1: commented, not tested) |
+
+### Verified (round 2)
+
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+  are clean. `cargo test --no-fail-fast` is green on `9522e87`
+  (`idempotency`: 51 passed).
+- `scripts/docs-check.sh`: ok.
+- **`flock /tmp/seldon-check.lock just check` at `79159d2`: exit 0**
+  (22:19–22:28). Results: service-states 314/0, panel-view 782/0,
+  overlay-view 319/0, bar-view 143/0, install 209/0, real-home-guard
+  11/0, qmllint 29 files, docs-check ok, `check: ok`. The commit after
+  `79159d2` adds only this section.
+
+### Decisions (round 2)
+
+- **Restore after an older-mtime change** (SPEC §4 known limit): left as
+  the brief decided. The exact marker in the cursor (queued by the
+  orchestrator) fixes this limit and the same-second one.
+- Decision 3 of round 1: no action, per the brief.
+
+### Touched outside scope (round 2)
+
+- **`engine/tests/idempotency.rs`, `Cli`:** `command()` split out of
+  `run()`; `run` is unchanged for its callers.
+- `memory/pitfalls.md` (append).
+- No guard-hook blocks. Scratch benches only. The mutant script and the
+  probe stayed in the session scratchpad; the probe test was deleted
+  unseen by git.
