@@ -18,7 +18,6 @@ decisions).
 | WP-100 | agent rules v2 (ADR-0027): templates, guide, rules update | Engine + Docs | `engine-100` (opus) | `wt/WP-100` · `wp/100-agent-rules-v2` | 2026-10-05 |
 | WP-092 | hook rebuild cost with margin under 5 ms | Engine | `engine-092` (opus) | `wt/WP-092` · `wp/092-hook-budget` | 2026-10-05 |
 | WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
-| WP-098 | the test host follows main (deploy script, dev version marker) | Engine | `engine-098` (opus) | `wt/WP-098` · `wp/098-test-host-main` | 2026-10-05 |
 
 ## Queued (next up)
 
@@ -48,6 +47,14 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-098 the test host follows main: `just deploy-test-host`
+  builds the static engine with the release's features and a
+  `+main.<sha>` marker, installs engine and plugin on the test host only
+  (host list plus a pinned machine-id, git-ignored), restarts the shell
+  when the plugin changed and the session is unlocked, smoke-tests and
+  logs each deploy; refuses unless the main check log names a commit
+  with no engine/plugin/schema change since; `--release` goes back.
+  Opus review, three fix rounds, Opus verification, Fable look; merged.
 - 2026-10-05 WP-091 snapper changes between degraded and ok are
   recorded as notes (both directions); a collector not run in the
   capture that loses its state records its gap later (bare marked entry,
