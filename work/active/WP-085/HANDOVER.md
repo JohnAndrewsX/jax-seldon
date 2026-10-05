@@ -65,10 +65,11 @@ Branch `wp/085-review`, worktree `wt/WP-085`. Commits on top of `616be66`
 
 ## Not done
 
-- No assertion that the tooltip *popup* opens: the case checks the text
-  bound to it and that the `HoverHandler` sees the pointer. `PanelToolTip`
-  opens after its 400 ms delay, and the harness reports only the panel's
-  item tree, not the popup layer.
+- ~~No assertion that the tooltip *popup* opens … the harness reports
+  only the panel's item tree, not the popup layer.~~ **Wrong** (review
+  B2): the popup's text does appear in `.texts` once its 400 ms delay has
+  passed; I had looked only at the step right after the hover. Asserted
+  in round 2.
 - Captures run outside the plugin (CLI, hooks) are not seen; stated in
   SPEC-PLUGIN §3. The ledger's `state-reset` note still shows on the
   Changelog for those.
@@ -139,3 +140,73 @@ it (`71af003` pitfalls, this handover) touch only `memory/` and `work/`.
   sentence in "A state reset was recorded" (the panel now shows it).
 - Nothing outside the repository; every harness run checks the real home
   (real-home guard ok).
+
+---
+
+# Round 2 (review: SEND BACK, B1, B2, N1)
+
+Commits on top of `9db6de2` (oldest first): `1a8230d` tooltip wraps and
+is bounded (B1, N1), `b7bf87c` panel-view asserts the popup (B2),
+`17752da` `tooltipFits` checks the label actually shown (closes a
+surviving mutant, see R4), plus the commit with this section.
+
+## What changed
+
+- **B1.** `Banner.qml`: the `PanelToolTip` has `width: root.width` (the
+  banner's width, so never wider than the panel) and its own
+  `contentItem`: a plain-text `Text` with `wrapMode: Text.Wrap`, colour
+  `panelForeground` (= `Color.tooltip.text`), `fontSize` (=
+  `Style.font.bodySmall`), the panel font, and the shell's paddings
+  (`Border.*(panelBorderSpec)` + `Style.spacing.controlPaddingX/Y`), as
+  in the shell's own PanelToolTip. No hard-coded colour or size. Banner
+  exposes `tooltipShown` (the popup's `visible`), `tooltipWidth` and
+  `tooltipFits` (the tooltip shows this label, and its `contentWidth`
+  fits inside the label's width minus padding).
+- **B2.** panel-view case 28 steps: `view; hover:Capture warned;
+  wait:captureNotice.tooltipShown=true; view; tab:changelog; click:Capture
+  now; settle; view`. Asserted: step 1 `tooltipShown` false and the full
+  text 0 times in `.texts`; step 4 the full text exactly once in `.texts`,
+  `tooltipShown` true, `hovered` true, `0 < tooltipWidth <= notice width`,
+  `tooltipWidth <= contentWidth` (the panel frame), `tooltipFits` true.
+  The later steps moved by one (5, 8). `view().captureNotice` gains
+  `tooltipShown`, `tooltipWidth`, `tooltipFits`, `width`.
+- **Not done (a)** in round 1 is corrected above (struck through).
+- **N1.** Panel.qml header comment reflowed.
+
+## Verified
+
+- `omarchy plugin validate plugin/`: ok. `just qmllint`: ok (29 files,
+  tokens ok). `node tests/plugin/model.test.js`: 88 passed.
+- `bash tests/plugin/panel-view.sh` once, at `17752da`: **771 passed,
+  0 failed, exit 0**, no transient, no re-run. No full `just check` (per
+  brief).
+- Mutants (same script and method as round 1; model.test + trimmed
+  service-states + trimmed panel-view; restored with `git checkout HEAD
+  --`):
+
+  | Mutant | Result |
+  |---|---|
+  | R1 tooltip `visible: false` | KILLED: #4 full text on screen 0 times, `tooltipShown` false |
+  | R2 tooltip width unbounded (`width` line removed) | KILLED: #4 `tooltipWidth <= notice width`, `<= contentWidth` (the wide popup also covers *Capture now*, so #8 fails too) |
+  | R3 tooltip text `NoWrap` | KILLED: #4 `tooltipFits` |
+  | R4 the shell's text item back (own label not used as `contentItem`) | first **SURVIVED** (`tooltipFits` measured the unused label); fixed in `17752da` (`tooltip.contentItem === tooltipLabel`), then KILLED: #4 `tooltipFits` |
+
+  Round-1 mutants M1–M12 re-run against round 2 at `b7bf87c`: all
+  killed. M7 and M9 also re-run at `17752da`: killed (now also by the
+  popup asserts).
+
+## Note on the idle check
+
+`pgrep -f '[t]ests/plugin/'` also matches shells whose command line merely
+*contains* that text: the orchestrator's waiting shell (it holds this
+brief) and the shell of the waiting loop itself. So the bounded loop ran
+its full 10 minutes and then started panel-view. I checked the process
+list then: the only harness process was my own panel-view; no other
+worktree's harness ran. A pattern that matches only harness processes,
+e.g. `pgrep -f '^bash tests/plugin/[a-z-]+\.sh'`, would avoid this
+(proposal only, not changed anywhere).
+
+## Open
+
+- None. Decisions (lifetime, no action, no overlay, de re-stamp at the
+  merge) taken as given; nothing else touched.
