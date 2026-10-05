@@ -2036,3 +2036,22 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   bare `VALUE` took as a new value on the second pass). It surfaced only
   when another change moved the quote parity of the joined-rows text.
   The bare `VALUE` no longer starts at a marker.
+
+## 2026-10-06 · WP-104 (Engine Dev)
+
+- **A crash mark that names sources must name the logbook too.** The
+  marked `cursors.json` is saved "as loaded", so with a lost state
+  directory it has no `logbook`, and with another logbook's state it
+  names that one. `silentBaselines` is therefore keyed by the canonical
+  logbook path; a flat list would hide a genuine loss in the next
+  capture of another logbook (test `a_silent_mark_counts_for_its_own_logbook_only`).
+- **"Silent" includes the waiting candidates.** A collector the crashed
+  capture did not run (or that degraded) appends nothing, but another
+  writer (the theme hook, `seldon event`) can give its source an event
+  before the next capture; without the mark that event makes a false
+  state reset. Only a test with such a writer tells the two apart.
+- **Carry-over of a mark needs a test with two different selections.**
+  Two `--all` crashes give the same silent set, so "replace" and "union"
+  look the same; `--source pacman` then `--source omarchy`, both with an
+  unreadable cursor and no events of their source, kill the "replace"
+  mutant.
