@@ -13,7 +13,8 @@
 //! credentials (`curl -U`, `--proxy-user`, `user:pass@` after `curl -x`,
 //! `--proxy` or `…proxy=`), JSON values of `"…password"`, `"…secret"`,
 //! `"…token"`-style keys, `Cookie:`/`Set-Cookie:` header values and the
-//! cookies after `curl -b`/`--cookie`; plus the user's regexes from
+//! cookies after `curl -b`/`--cookie`, the local part of an e-mail
+//! address (the domain stays); plus the user's regexes from
 //! `config.toml [redaction] patterns`, each of which replaces its whole
 //! match. The replacement is always [`REDACTED`].
 //!

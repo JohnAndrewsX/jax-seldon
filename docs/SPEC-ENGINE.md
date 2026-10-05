@@ -973,7 +973,9 @@ assignment (`https_proxy=`, `http.proxy=`; with a scheme it is a URL
 with userinfo); the cookies after `curl -b`/`--cookie` when the value
 holds a `=` (without one curl reads that file); after
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
-login`; and user-supplied patterns in `config.toml [redaction] patterns`.
+login`; e-mail addresses (`email`, WP-093: the local part, the domain
+stays: `‹redacted›@example.com`); and user-supplied patterns in
+`config.toml [redaction] patterns`.
 Replacement: `‹redacted›`; the option, key or header name stays in front
 of it (`--proxy-user ‹redacted›`, `"password": ‹redacted›`,
 `Cookie: ‹redacted›`). The hook never records stdin/stdout of
@@ -1023,7 +1025,28 @@ An option given twice in one command is masked
 each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
 from the end of its previous match, without a second command word;
 `sshpass` masks only its first `-p`, as a later one belongs to the
-command it runs (`ssh -p 2222`) (WP-087). Word boundaries in the
+command it runs (`ssh -p 2222`) (WP-087). An e-mail address
+(`email`, WP-093) is a local part (ASCII letters, digits, `._%+-`, and
+any character beyond ASCII but the quotes of `‹redacted›`), `@`, and a
+domain of at least two labels whose last holds letters only
+(`example.de`, `müller.example`). The local part is masked and the
+domain stays, so a desktop entry named after an account
+(`Mail (‹redacted›@example.com).desktop`) can still be found. Not an
+address: `user@host` without a dot; a version (`pkg@1.2.3`,
+`react@18.2.0-rc.1`) or an npm scope (`@scope/pkg`); an `@` up to which
+`url-userinfo` masks (the rule reads a URL's userinfo as that rule does,
+so the import report counts the line once); an address followed by `:`
+and a character other than white space (`git@github.com:owner/repo`,
+`me@host.example:/srv`, a port); a domain whose last label is a systemd
+unit type (`getty@tty1.service`; also `.socket`, `.target`, `.timer`,
+`.mount`, `.automount`, `.path`, `.slice`, `.scope`, `.swap`,
+`.device`). An SSH login with a dotted host (`ssh me@host.example`)
+cannot be told from an address and is masked, as `ssh://me@host`
+already is. The `regex` crate has no look-around, so the pattern
+matches these contexts as groups, and the rule leaves a match in which
+one takes part as it is (`Rule::unless`). The config collector's
+manifest in the state directory keeps the real file names, as it needs
+them to compare files; a file in `skipPaths` is named nowhere. Word boundaries in the
 rules are ASCII (`(?-u:\b)`): a Unicode `\b` sends a regex to the slow
 matcher on any non-ASCII text, the marker of an earlier rule included
 (WP-084: a 16 KB curl line took 5.4 ms, 0.13 ms with ASCII boundaries).
