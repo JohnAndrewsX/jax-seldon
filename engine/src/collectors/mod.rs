@@ -239,8 +239,10 @@ pub enum Tz {
 }
 
 impl Tz {
-    /// `naive` in this zone; the earlier instant of an ambiguous time, `None`
-    /// for a time that does not exist (a DST gap).
+    /// `naive` in this zone; for an ambiguous time chrono's `earliest()`,
+    /// the reading with the smaller offset, which in the repeated hour is
+    /// the later instant (pacman keeps this; snapper resolves such times
+    /// itself, WP-082); `None` for a time that does not exist (a DST gap).
     pub fn localize(self, naive: NaiveDateTime) -> Option<DateTime<FixedOffset>> {
         match self {
             Tz::Local => Local
