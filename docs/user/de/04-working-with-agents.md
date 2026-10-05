@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ a56a288 -->
+<!-- source: en/04-working-with-agents.md @ effa0bc -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -211,7 +211,10 @@ unterschreiben vergisst, verbucht Seldon auf den Agenten, nie auf dich.
 `event` nimmt zuerst den Agentenbefehl, den es im Ledger findet, mit
 dessen Case. `SELDON_ATTENDED=1` sagt dem Agenten, dass du ihn gestartet
 hast; was er dann darf, sagen die Regeln des Logbuchs (`AGENTS.md`).
-Seldon selbst liest die Variable nie.
+Seldon selbst liest die Variable nie. Beide Variablen erreichen den
+Agenten nur, wenn der Launcher das Terminal startet; ein Terminal-Server
+(`footclient`, `kitty --single-instance`, ein wezterm-Mux) nimmt seine
+eigene Umgebung, und dann nennt nur `--actor` den Agenten.
 
 Standardmäßig startet die Engine Omarchys Standard-Agenten über
 `omarchy agent prompt` in einem eigenen Terminalfenster. Welcher Agent
