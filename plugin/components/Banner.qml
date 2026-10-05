@@ -39,6 +39,10 @@ BorderSurface {
   readonly property string pictogram: banner ? Model.statusPictogram(banner.status) : ""
   readonly property string tooltipText: banner && banner.full ? banner.full : ""
   readonly property bool hovered: hover.hovered
+  readonly property bool tooltipShown: tooltip.visible
+  readonly property real tooltipWidth: tooltip.width
+  // Its text fits the tooltip's width (wrapped, not cut off).
+  readonly property bool tooltipFits: tooltipLabel.contentWidth <= tooltipLabel.width - tooltipLabel.leftPadding - tooltipLabel.rightPadding + 0.5
 
   visible: banner !== null
   implicitWidth: Style.space(320)
@@ -52,10 +56,29 @@ BorderSurface {
     id: hover
   }
 
+  // The shell's tooltip, but never wider than the banner: its own text
+  // item neither wraps nor limits its width, so a long warning ran off the
+  // window. Same tokens, plain text, wrapped (WP-085).
   PanelToolTip {
+    id: tooltip
+    width: root.width
     visible: root.tooltipText !== "" && hover.hovered
     text: root.tooltipText
     fontFamily: root.fontFamily
+
+    contentItem: Text {
+      id: tooltipLabel
+      textFormat: Text.PlainText
+      text: tooltip.text
+      wrapMode: Text.Wrap
+      color: tooltip.panelForeground
+      font.family: tooltip.fontFamily
+      font.pixelSize: tooltip.fontSize
+      leftPadding: Border.left(tooltip.panelBorderSpec) + Style.spacing.controlPaddingX
+      rightPadding: Border.right(tooltip.panelBorderSpec) + Style.spacing.controlPaddingX
+      topPadding: Border.top(tooltip.panelBorderSpec) + Style.spacing.controlPaddingY
+      bottomPadding: Border.bottom(tooltip.panelBorderSpec) + Style.spacing.controlPaddingY
+    }
   }
 
   MaskIcon {

@@ -10,7 +10,8 @@ import "Model.js" as Model
 //
 // Top to bottom: title, tab strip, the status banner (WP-010), the
 // snapper-degraded banner (ADR-0026), the capture-warning notice (WP-085),
-// the red crisis strip, then the current tab. The banners and the strip sit above the tabs, so every tab shows them.
+// the red crisis strip, then the current tab. The banners and the strip sit
+// above the tabs, so every tab shows them.
 // Tabs: Today, Changelog, Work, Decisions, System, Memory, in the order of
 // their fixed digits.
 //
@@ -185,6 +186,12 @@ Panel {
         detail: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.detail : "",
         tooltip: captureNotice.visible ? captureNotice.tooltipText : "",
         hovered: captureNotice.hovered,
+        // the popup itself (after the tooltip's delay) and its width, never
+        // wider than the notice
+        tooltipShown: captureNotice.tooltipShown,
+        tooltipWidth: captureNotice.tooltipWidth,
+        tooltipFits: captureNotice.tooltipFits,
+        width: captureNotice.width,
         // drawn in the foreground (the neutral tone), not the accent; tell
         // them apart only in a theme where the two differ
         neutral: Qt.colorEqual(captureNotice.toneColor, root.foreground),
