@@ -443,3 +443,68 @@ alternative, run the debug check only as advisory, is weaker.
   `just check` and mutants stand. The gate failure is this test only.
 - No guard block. The host was not touched. The scratch binaries in the
   gitignored `engine/target/r3` were removed.
+
+---
+
+# Round 4 (orchestrator's go on the round-3 proposal)
+
+Commits (oldest first), no rebase:
+
+- `abbd4be` engine: bound the debug watch test's heap growth, not mapped pages (WP-091)
+- this commit: handover round 4
+
+## What changed
+
+- **`engine/tests/watch.rs`, `rss_stays_under_10_mb_on_the_x10_fixture`.**
+  - The debug branch applies the unchanged `6 * 1024` kB bound to the
+    growth of `RssAnon` (the heap): its value after the change-triggered
+    rebuild minus its value at idle, read while the lock still holds the
+    rebuild at start back.
+  - `VmRSS` and the peak are still read and printed, now with the heap
+    (`… peak N kB; heap (RssAnon) a → b kB`), and `rss <= peak` is still
+    asserted.
+  - The optimised branch (`SELDON_WATCH_BIN`, or `just check-rss` under
+    `--profile bench`) keeps its absolute `VmHWM < 10 MB` assertion
+    unchanged.
+  - New helper `status_kb(pid, name)`; `memory_kb` uses it.
+  - The doc comment has a paragraph on why: the tests-only-commit
+    evidence from round 3 (3641 against 2882 kB, the heap a constant
+    1836 kB). It also says that memory freed before the reading is not in
+    `RssAnon`, which the bench run's peak bound covers.
+- **`docs/TESTING.md`**, the memory-bound paragraph: the debug bound is
+  on the heap growth (`RssAnon`, about 1.8 MB on ×10), and `VmRSS` and the
+  peak are information only, with the reason.
+- **Not changed:** the bound value, the `check-rss` recipe, the engine.
+
+## Verified by
+
+- **The old fluctuation does not fail it.** 5 runs on the branch, each
+  under the check lock (`cargo test --features watch --test watch
+  rss_stays -- --nocapture`): 5 passed. In every run the heap grew 1836
+  kB (1524 → 3360, 1524 → 3360, 1520 → 3356, 1520 → 3356, 1520 → 3356).
+  The old metric (peak − idle VmRSS) was 5716, 5940, 5816, 6060 and 5632
+  kB in the same runs.
+- **The mutant fails it.** A 7 MB allocation kept alive in the rebuild
+  path (`static KEEP: OnceLock<Vec<u8>>`, `get_or_init(|| vec![1u8; 7 <<
+  20])` at the top of `watch::rebuild`) was killed: `heap growth 8636 kB
+  over idle 1892 kB` at `tests/watch.rs:555`. With a 1.8 MB baseline the
+  bound catches anything kept alive above about 4.3 MB. The mutant was
+  reverted with `git checkout` and checked with `git diff --stat`.
+- **`just check-rss`** (bench profile, absolute bound): 1 passed.
+- `cargo fmt --check` and `cargo clippy --all-targets --features watch --
+  -D warnings` are clean. `bash scripts/docs-check.sh` reports ok.
+- **`flock /tmp/seldon-check.lock just check`**: exit 0, run once,
+  ending with `check: ok`. `rss_stays_under_10_mb_on_the_x10_fixture …
+  ok` in `check-watch`. Results:
+
+  | Suite | Passed | Failed |
+  |---|---|---|
+  | bar-view | 143 | 0 |
+  | panel-view | 771 | 0 |
+  | overlay-view | 319 | 0 |
+  | service-states | 297 | 0 |
+  | install.test | 209 | 0 |
+  | real-home-guard | 11 | 0 |
+  | model.test.js | 88 | — |
+
+- No guard block. The host was not touched.
