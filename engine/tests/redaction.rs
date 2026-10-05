@@ -603,7 +603,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "curl's -u ‹redacted› did not work",
     ),
     // an option given twice in one command is masked both times; the
-    // secret column is the part both values share (WP-087)
+    // secret column is the part both values share (WP-087). A quoted
+    // proxy value is matched up to its closing quote, so the scan for
+    // the next `-x` starts outside the quotes
     (
         "curl-user",
         "curl -u admin:fakeTwiceA1 https://h.example -u bob:fakeTwiceA2",
@@ -650,9 +652,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "proxy-userinfo",
-        "curl -x 'bob:fakeTwiceG1@p1.example:3128' -x \"bob:fakeTwiceG2@p2.example:3128\" https://h.example",
+        "curl -x 'bob:fakeTwiceG1@p1.example:3128' -H 'X-A: a;b' -x \"bob:fakeTwiceG2@p2.example:3128\" https://h.example",
         "fakeTwiceG",
-        "-x '‹redacted›@p1.example:3128' -x \"‹redacted›@p2.example:3128\" https",
+        "-x '‹redacted›@p1.example:3128' -H 'X-A: a;b' -x \"‹redacted›@p2.example:3128\" https",
     ),
     (
         "cookie-option",
