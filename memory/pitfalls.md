@@ -1788,3 +1788,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A mutant at a marker's first character needs a pattern that matches
   there.** `partition_point(start < m)` survived the idempotency test
   until its user pattern also matched `‹re`.
+
+## 2026-10-05 · WP-093 (Engine Dev)
+
+- **Look-behind for the `regex` crate: match the context, then keep the
+  match.** An optional leading group (`(?P<url>scheme://userinfo)?`)
+  makes the leftmost match start at the context, so the address inside
+  it is never found on its own; `Rule::unless` then leaves any match in
+  which such a group takes part. The context must read the other rule's
+  grammar exactly: a URL skip that stopped at `/` let `email` count
+  `https://bob:fake/pw1@…` too (the import report counts per rule).
+- **A dotted `user@host` in another rule's row now matches `email`.**
+  `ssh me@host.example` reads as an address; rows that test something
+  else use `me@host` (no dot), or the disjointness test reports them.
+- **A shell chain split after a heredoc does not short-circuit.**
+  `python3 - <<'EOF' … EOF` on its own line, then `cargo fmt && git
+  commit` on the next: the failed edit was followed by a commit of the
+  old state. Put the `&&` on the heredoc line (`<<'EOF' && …`) or check
+  the diff before committing.
