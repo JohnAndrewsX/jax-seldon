@@ -534,6 +534,20 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "=pw",
         "PA\u{17F}\u{17F}WORD=‹redacted›",
     ),
+    // also at the start of a name: the assignment rules have no word
+    // boundary (an ASCII one would not see one before `ſ` or `K`)
+    (
+        "secret-assignment",
+        "\u{17F}ECRET=pw ./run.sh",
+        "=pw",
+        "\u{17F}ECRET=‹redacted› ./run.sh",
+    ),
+    (
+        "key-assignment",
+        "\u{212A}EY=fakeKey57",
+        "fakeKey57",
+        "\u{212A}EY=‹redacted›",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -717,6 +731,48 @@ mod redaction {
                 r#"curl -U {REDACTED} -d '{{"token":{REDACTED}}}' -b {REDACTED} -H 'Cookie: {REDACTED}' https://h"#
             )
         );
+    }
+
+    /// A long line in which an early rule leaves a marker, or which holds
+    /// other non-ASCII text, stays on the fast matcher: the word
+    /// boundaries are ASCII (WP-084 round 2). Median of 21, warm rules.
+    #[test]
+    #[ignore = "release timing: cargo test --profile bench --test redaction -- --ignored"]
+    fn long_lines_with_a_marker_stay_fast() {
+        use std::time::Duration;
+        super::common::assert_optimised();
+        let r = Redactor::builtin();
+        let filled = |head: &str, word: &str, size: usize| {
+            let mut line = head.to_string();
+            while line.len() < size {
+                line.push_str(word);
+            }
+            line
+        };
+        for (what, head, word) in [
+            (
+                "url line",
+                "curl https://bob:fakePw@h.example/a -o out ",
+                "a-word ",
+            ),
+            (
+                "german note",
+                "curl -sS https://h.example ",
+                "Schlüssel geändert ",
+            ),
+        ] {
+            for (kb, budget) in [(16, 1), (64, 2)] {
+                let line = filled(head, word, kb * 1024);
+                super::common::assert_within_budget(
+                    &format!("redact, {what}, {kb} KB"),
+                    Duration::from_millis(budget),
+                    21,
+                    || {
+                        std::hint::black_box(r.redact(&line));
+                    },
+                );
+            }
+        }
     }
 
     #[test]

@@ -30,6 +30,13 @@
 //! redacted by a command and again by the ledger reads the same in both
 //! places.
 //!
+//! Word boundaries are ASCII (`(?-u:\b)`): with a Unicode `\b` a regex
+//! leaves its fast matcher on any non-ASCII text, the marker of an
+//! earlier rule included, and a long line took milliseconds (WP-084). The
+//! `…=` assignment rules need no boundary at all, since a match starts at
+//! the first character of the name anyway, also at a `ſ` or `K` that
+//! case-insensitive matching folds.
+//!
 //! A built-in rule is compiled once per process, and only when a text
 //! holds one of its literal triggers ([`triggers`]); a command line
 //! without `://`, `=`, a token prefix, … compiles none of them.
@@ -284,7 +291,7 @@ fn builtin_rules() -> Vec<Rule> {
         // `@` before the path
         rule(
             "url-userinfo",
-            r#"(?i)(\b[a-z][a-z0-9+.-]*://)(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]+)(@)"#,
+            r#"(?i)((?-u:\b)[a-z][a-z0-9+.-]*://)(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]+)(@)"#,
             "${1}‹redacted›${2}",
         ),
         rule(
@@ -319,7 +326,7 @@ fn builtin_rules() -> Vec<Rule> {
         checked_rule(
             "secret-assignment",
             &format!(
-                r"(?i)(\b[a-z0-9_]*(?:secret|password|passwd|passphrase|_pwd|_pass|sshpass)=)(?P<v>{VALUE})"
+                r"(?i)([a-z0-9_]*(?:secret|password|passwd|passphrase|_pwd|_pass|sshpass)=)(?P<v>{VALUE})"
             ),
             has_value,
         ),
@@ -327,7 +334,7 @@ fn builtin_rules() -> Vec<Rule> {
         // credential, so `hotkey=Super` and `key=value` stay
         checked_rule(
             "key-assignment",
-            &format!(r"(?i)(\b[a-z0-9_]*key=)(?P<v>{VALUE})"),
+            &format!(r"(?i)([a-z0-9_]*key=)(?P<v>{VALUE})"),
             looks_like_credential,
         ),
         // `"password": "…"`, `"client_secret":"…"`, `"access_token"`,
@@ -350,14 +357,14 @@ fn builtin_rules() -> Vec<Rule> {
         // `X-Author`
         rule(
             "secret-header",
-            r#"(?i)(\b(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
+            r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
             KEEP_PREFIX,
         ),
         // `Cookie: a=b; c=d`, `Set-Cookie: …`: the value up to a closing
         // quote or the end of the line; an empty value names no secret
         rule(
             "cookie-header",
-            r#"(?i)(\b(?:set-)?cookie[ \t]*:[ \t]*)[^'"\s][^'"\n]*"#,
+            r#"(?i)((?-u:\b)(?:set-)?cookie[ \t]*:[ \t]*)[^'"\s][^'"\n]*"#,
             KEEP_PREFIX,
         ),
         rule("aws-access-key", r"(?:AKIA|ASIA)[0-9A-Z]{16}", WHOLE),
@@ -372,18 +379,18 @@ fn builtin_rules() -> Vec<Rule> {
         rule("slack-token", r"xox[abposr]-[A-Za-z0-9-]{10,}", WHOLE),
         // `sk-…`, `sk-proj-…`, `sk_live_…`; at a word start, so a
         // name such as `task-…` is not cut
-        rule("sk-key", r"\bsk[-_][A-Za-z0-9_-]{20,}", WHOLE),
+        rule("sk-key", r"(?-u:\b)sk[-_][A-Za-z0-9_-]{20,}", WHOLE),
         // `mysql … -p secret …`, `-psecret`: everything after -p
         rule(
             "db-client-password",
-            r"(?m)(\b(?:mysql|psql|smbclient)\b[^\n]*?\s-p ?)\S[^\n]*",
+            r"(?m)((?-u:\b)(?:mysql|psql|smbclient)(?-u:\b)[^\n]*?\s-p ?)\S[^\n]*",
             KEEP_PREFIX,
         ),
         // `curl -u user:pass`, `-uuser:pass`, `--user user:pass`,
         // within one command of the line
         rule(
             "curl-user",
-            &format!(r"(\bcurl\b[^\n;&|]*?\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
+            &format!(r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `curl -U user:pass` (not `useradd -U`), `--proxy-user user:pass`
@@ -392,7 +399,7 @@ fn builtin_rules() -> Vec<Rule> {
         rule(
             "proxy-option",
             &format!(
-                r"(\bcurl\b[^\n;&|]*?\s-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))(?:{VALUE})"
+                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))(?:{VALUE})"
             ),
             KEEP_PREFIX,
         ),
@@ -401,19 +408,21 @@ fn builtin_rules() -> Vec<Rule> {
         // a value with `scheme://` is `url-userinfo`
         rule(
             "proxy-userinfo",
-            r#"(\bcurl\b[^\n;&|]*?\s-x\s*['"]?|(?i:--proxy(?:=|\s+)|\b[a-z_.]*proxy=)['"]?)[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*(@)"#,
+            r#"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-x\s*['"]?|(?i:--proxy(?:=|\s+)|[a-z_.]*proxy=)['"]?)[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*(@)"#,
             "${1}‹redacted›${2}",
         ),
         // `curl -b 'session=…'`, `--cookie "a=b; c=d"`: a value with `=`
         // (without one, curl reads cookies from that file)
         checked_rule(
             "cookie-option",
-            &format!(r"(\bcurl\b[^\n;&|]*?\s(?:-b\s*|--cookie(?:=|\s+)))(?P<v>{VALUE})"),
+            &format!(
+                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-b\s*|--cookie(?:=|\s+)))(?P<v>{VALUE})"
+            ),
             |v| unquoted(v).contains('='),
         ),
         rule(
             "sshpass-password",
-            &format!(r"(\bsshpass\b[^\n;&|]*?\s-p\s*)(?:{VALUE})"),
+            &format!(r"((?-u:\b)sshpass(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `docker login -u me -p secret`, also podman, buildah,
@@ -421,7 +430,7 @@ fn builtin_rules() -> Vec<Rule> {
         rule(
             "registry-login-password",
             &format!(
-                r"(\b(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login\b[^\n;&|]*?\s-p\s*)(?:{VALUE})"
+                r"((?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"
             ),
             KEEP_PREFIX,
         ),
