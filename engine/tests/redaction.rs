@@ -588,6 +588,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakePw35",
         "-p ‹redacted› quay.example",
     ),
+    // a backslash escape outside quotes is no separator either
+    (
+        "curl-user",
+        r"curl https://h.example/q?a=1\&b=2 -u admin:fakePw38",
+        "fakePw38",
+        r"q?a=1\&b=2 -u ‹redacted›",
+    ),
     // a quote the line never closes is an ordinary character
     (
         "curl-user",
@@ -762,6 +769,7 @@ const CLEAR: &[&str] = &[
     "curl \"https://h.example\" && wget -U 'agent:x@y' https://h.example",
     "Merged the curl changes; useradd -U is the default now",
     "Tried curl & wget; grep -b 'a=b' found nothing",
+    "Fixed curl's output; useradd -U is next",
 ];
 
 mod redaction {
