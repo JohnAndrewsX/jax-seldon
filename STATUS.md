@@ -16,7 +16,6 @@ decisions).
 |---|---|---|---|---|---|
 | WP-096 | default actor and attended marker for launched agents | Engine | `engine-096` (opus) | `wt/WP-096` · `wp/096-default-actor` | 2026-10-05 |
 | WP-100 | agent rules v2 (ADR-0027): templates, guide, rules update | Engine + Docs | `engine-100` (opus) | `wt/WP-100` · `wp/100-agent-rules-v2` | 2026-10-05 |
-| WP-092 | hook rebuild cost with margin under 5 ms | Engine | `engine-092` (opus) | `wt/WP-092` · `wp/092-hook-budget` | 2026-10-05 |
 | WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
 
 ## Queued (next up)
@@ -47,6 +46,15 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-092 the agent hook is faster: globs compile on demand,
+  a plain `hook claude-code` skips the full parser, the rebuild allocates
+  less; the 900-line curl case 4.6 → 3.9 ms (0.9 ms headroom with WP-093);
+  the 2.5 ms target was not met — the remaining lever (rebuild after the
+  hook returns) is a design change, deferred; Opus review (byte-identical
+  goldens, 46 M-pair glob property test); merged.
+- 2026-10-05 first deploy of main to the test host (`just
+  deploy-test-host`): it runs `0.1.3+main.a1e1a94`, smoke ok, panel
+  checked.
 - 2026-10-05 WP-098 the test host follows main: `just deploy-test-host`
   builds the static engine with the release's features and a
   `+main.<sha>` marker, installs engine and plugin on the test host only
