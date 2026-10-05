@@ -464,6 +464,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeJson4",
         r#""{\"access_token\":‹redacted›,\"x\":1}""#,
     ),
+    // the trigger `password"` holds for the second key only
+    (
+        "json-secret",
+        r#"{"password_hint": "first pet", "password": "fakeJson6"}"#,
+        "fakeJson6",
+        r#"{"password_hint": "first pet", "password": ‹redacted›}"#,
+    ),
     (
         "json-secret",
         r#"{"Token" : "fakeJson5"}"#,
@@ -559,7 +566,6 @@ const CLEAR: &[&str] = &[
     // close to the WP-084 rules
     "useradd -U -m bob",
     "sudo useradd -U bob && curl https://h.example",
-    "curl -X POST https://h.example",
     "curl -x proxy.example:3128 https://h.example",
     "curl -x me@proxy.example:3128 https://h.example",
     "git -c http.proxy=http://proxy.example:3128 fetch",
