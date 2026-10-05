@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- `doctor` warns before the capture that would record a state reset:
+  while the cursors in `~/.local/state/seldon` are missing, unreadable
+  or bound to another logbook and the ledger already holds events of
+  those collectors, a degraded `state` row says that the next capture
+  will record a state reset, with the fix to restore the state
+  directory from a backup now or run `seldon capture` to accept the new
+  baseline (for another logbook: nothing to restore). It uses the
+  capture's own rule, so it names what that capture would record, and
+  never shows for a fresh logbook or a collector that never ran here
+  (WP-083).
+
 ## [0.1.2] - 2026-10-04
 
 ### Engine

@@ -23,7 +23,7 @@ It only reads: it changes no file, takes no lock and runs nothing with
 | `ledger` | every line of `ledger/*.jsonl` is an event | `degraded`: lines that are not events (a torn write, a hand edit) are skipped; the row names month, count and lines |
 | `fences` | the generated parts of `STATUS.md` and `DECISIONS.md` have their marker lines | `degraded`: a marker line is missing, so `seldon status` leaves the file alone; or an end marker closes no fence. `error`: the file cannot be read |
 | `collectors` | the last capture of every enabled collector succeeded | `degraded`: the row lists each failing collector with its message and fix |
-| `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable. `degraded`: the last capture recorded a state reset; see [A state reset was recorded](#a-state-reset-was-recorded) |
+| `state` | `cursors.json`, `manifest.json` and `owned.json` in `~/.local/state/seldon` can be read | `error`: the file is corrupt or unreadable; the row says what that breaks; the fix moves a corrupt file away or makes an unreadable one readable. `degraded`: the next capture will record a state reset, see [doctor says the next capture will record a state reset](#doctor-says-the-next-capture-will-record-a-state-reset); or the last capture recorded one, see [A state reset was recorded](#a-state-reset-was-recorded) |
 | `omarchy` | `omarchy-version` answered | the Omarchy collector cannot read the version |
 | `snapper` | snapshots can be listed, or read from `/.snapshots` | `degraded`: your user may neither list snapshots nor read `/.snapshots`; see [Snapshots are not recorded](#snapshots-are-not-recorded). An `ok` row with a fix: your user is still in the old snapper opt-in; see [doctor suggests reverting the snapper opt-in](#doctor-suggests-reverting-the-snapper-opt-in) |
 | `git` | git is there; the logbook is a repository | git is missing, or the logbook is not a repository; autocommit is off then. `degraded`: something keeps every autocommit from committing (a stale `.git/index.lock`, a detached HEAD, …); the fix says what to do |
@@ -172,6 +172,42 @@ in the journal. A wrong explanation misleads you later.
   message says why.
 - If the agent window does not appear, read
   `~/.local/state/seldon/agent-launch.log`.
+
+### doctor says the next capture will record a state reset
+
+`seldon doctor` shows a row like this:
+
+```
+  degraded  state    the next capture will record a state reset for pacman, config: cursors missing in ~/.local/state/seldon, …
+```
+
+The engine's state directory, `~/.local/state/seldon`, has no usable
+cursors for this logbook (it was deleted and not restored yet, or a
+value in `cursors.json` cannot be read) while your ledger already holds
+events of those collectors. Nothing is lost yet: the next capture would
+start those collectors over, as described in
+[A state reset was recorded](#a-state-reset-was-recorded).
+
+- If you have a backup of the state directory, restore it now, before
+  the next capture (see
+  [Back up and restore the state directory](07-the-logbook.md#back-up-and-restore-the-state-directory)).
+  With the agent hooks installed, a capture also runs when an agent
+  session ends, so do it first. Run
+  `seldon doctor` again: the row is gone, and the next capture records
+  what changed since the backup.
+- Without a backup, run `seldon capture` to accept the new baseline.
+  It records the state reset; the row below then takes over until the
+  following capture.
+- When the row says `bound to another logbook`, there is nothing to
+  restore: the state belongs to another logbook path (you moved the
+  logbook, or ran a command with `--logbook` for another one). Run
+  `seldon capture`.
+
+doctor cannot know whether a collector will degrade in that capture
+(snapper without the read grant, for example). Such a collector takes
+no new baseline, so the capture may name fewer collectors than the row.
+A collector you have never captured with here is not named: it has
+nothing to lose.
 
 ### A state reset was recorded
 

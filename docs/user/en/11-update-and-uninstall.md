@@ -152,7 +152,11 @@ step 5.
    directory up first (see
    [Back up and restore the state directory](07-the-logbook.md#back-up-and-restore-the-state-directory))
    and restore it before the first capture. Otherwise that capture starts
-   over and records a state reset in the ledger.
+   over and records a state reset in the ledger. After the reinstall,
+   `seldon doctor` tells you while there is still time: until the state
+   is back, its `state` row says that the next capture will record a
+   state reset (see
+   [doctor says the next capture will record a state reset](10-troubleshooting.md#doctor-says-the-next-capture-will-record-a-state-reset)).
 
 What stays is your logbook, `~/Seldon` unless you chose another place.
 It is plain Markdown in a git repository and stays readable without

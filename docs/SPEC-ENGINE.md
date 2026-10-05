@@ -358,7 +358,29 @@ files from the note's `meta`, and its fix is to restore a backup of the
 state directory and run `seldon capture` (without a backup, the next
 capture clears the row); with `logbook` among the files the fix says that
 nothing can be restored, because the state belonged to another logbook
-path. The `omarchy`
+path. A `state` row, degraded, also appears *before* the capture that
+would record a state reset (WP-083), while a restored backup still
+prevents the gap: doctor applies the capture's own rule to
+`cursors.json` as it is (`capture::pending_reset`). Each collector a
+plain `seldon capture` would run (enabled in `config.toml`) whose cursor
+for this logbook is missing or does not read as its cursor (the
+collector's `cursor_reads`) would take a baseline; that baseline passes
+the same binding gate (no binding: `cursors missing`; another logbook:
+`bound to another logbook`; this logbook: only a cursor that is there
+and does not read, `cursors unreadable`) and the same ledger rule (at
+least one event of its source). Message `the next capture will record a
+state reset for <sources>: cursors missing in <state dir>, so changes
+made since the last capture may not be recorded` (or `cursors unreadable
+in <state dir>`, or `cursors in <state dir> bound to another logbook`);
+fix: restore the state directory from a backup now (user guide), or run
+`seldon capture` to accept the new baseline; for another logbook, that
+there is nothing to restore. No row for a fresh logbook (no event of a
+collector source), for a collector that never ran successfully here, or
+when `cursors.json` cannot be read (its error row). Not predicted: a
+collector that degrades in that capture takes no baseline, so the row can
+name more collectors than the note; `manifest` and `owned` losses show in
+their error rows. After that capture the row is gone and the reset row
+takes over. The `omarchy`
 and `snapper` probes run the programs the collectors run
 (`SELDON_OMARCHY_VERSION`, `SELDON_SNAPPER`).
 
