@@ -1741,3 +1741,13 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   so for an event dated after that clock the line lands before the event
   in the ledger and the index does not fold it; the row stays drift.
   Rule 8 dates its line at `max(now, event ts)` since WP-088 round 2.
+
+## 2026-10-05 · WP-090 (Plugin Dev)
+
+- **Fake recorders must append in one write.** Bash line-buffers stdout,
+  so `printf '%s' "$multi_line" >>file` is one `write(2)` per line; two
+  recorders the service starts together interleaved in 37 of 500 runs
+  (the WP-084 "fix commands were" flake; sorting the records cannot
+  repair it). Stage the record in a private file and `cat` it onto the
+  record (one write); without a record path, stage nothing, or the file
+  lands in the harness's working directory (the checkout).

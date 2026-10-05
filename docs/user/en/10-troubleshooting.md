@@ -43,9 +43,10 @@ button that fixes it.
 | Logbook not initialised | there is no logbook yet | *Run in terminal* runs `seldon init` |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` is missing or broken | *Build index* runs `seldon status` |
 | Index is stale | the index is more than two hours old | *Capture now* |
-| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
+| Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`, then `omarchy-restart-shell`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
 | Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
 | Snapshots not readable | snapper refuses your user and `/.snapshots` is not readable | *Run in terminal* runs the one-time read grant; you type your password there |
+| Restart the shell to finish the update | the plugin was updated, but the shell still runs the code it loaded before (it loads new plugin code only when it restarts) | *Restart shell* runs `omarchy-restart-shell`; the bar and panels come back within seconds. See [Update the plugin](11-update-and-uninstall.md#update-the-plugin) |
 | Capture warned | a capture the plugin ran finished with a warning, such as [a state reset](#a-state-reset-was-recorded); the notice shows the first line of each warning, the pointer over it shows all of it | no button: do what the warning says. The notice goes away after the next capture without warnings |
 
 The plugin looks for the engine when the shell starts and when you press

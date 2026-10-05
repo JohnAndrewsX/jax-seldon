@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ b685610 -->
+<!-- source: en/11-update-and-uninstall.md @ 3f0e416 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -52,7 +52,21 @@ nur aus einer Quelle: Beide legen ein `seldon` in deinen `PATH`.
 
 ```sh
 omarchy plugin update jax.seldon
+omarchy-restart-shell
 ```
+
+Das Update holt die neuen Plugin-Dateien und bittet die Shell, ihre
+Plugins neu zu laden. Die Shell führt aber den Plugin-Code, den sie
+zuerst geladen hat, weiter aus, bis sie neu startet. Starte sie mit
+`omarchy-restart-shell` neu: Leiste, Panels und Overlays sind nach
+wenigen Sekunden wieder da, deine Programme laufen weiter. Bei
+gesperrtem Bildschirm verweigert der Befehl den Neustart.
+
+Merkt das Panel, dass das installierte Plugin nicht das laufende ist,
+zeigt es über den anderen Bannern „Restart the shell to finish the
+update“ mit einem Knopf *Restart shell*, der `omarchy-restart-shell`
+ausführt. Eine Plugin-Version, die diesen Hinweis noch nicht kennt,
+zeigt nichts. Starte die Shell deshalb nach jedem Plugin-Update neu.
 
 Plugin und Engine einigen sich über die Version des Index-Formats. Ist
 eines zu alt, meldet das Panel „Index format mismatch“ und nennt das, was

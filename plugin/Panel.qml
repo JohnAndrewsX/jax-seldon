@@ -8,9 +8,10 @@ import "Model.js" as Model
 // The bar panel (SPEC-PLUGIN §5), opened by a left click on the pill or by
 // the `jax.seldon.panel` IPC target that BarWidget.qml owns.
 //
-// Top to bottom: title, tab strip, the status banner (WP-010), the
-// snapper-degraded banner (ADR-0026), the capture-warning notice (WP-085),
-// the red crisis strip, then the current tab. The banners and the strip sit
+// Top to bottom: title, tab strip, the restart notice after a plugin
+// update (WP-090), the status banner (WP-010), the snapper-degraded banner
+// (ADR-0026), the capture-warning notice (WP-085), the red crisis strip,
+// then the current tab. The banners and the strip sit
 // above the tabs, so every tab shows them.
 // Tabs: Today, Changelog, Work, Decisions, System, Memory, in the order of
 // their fixed digits.
@@ -178,6 +179,7 @@ Panel {
       pill: root.service ? Model.pillText(root.service.counts) : "",
       // The header mark and the pictograms on screen (A5, A11): file names.
       mark: { file: headerMark.file, box: header.mark.box, ready: headerMark.ready },
+      restartNotice: restartNotice.visible && root.service.restartNotice ? root.service.restartNotice.title : "",
       bannerPictogram: statusBanner.visible ? statusBanner.pictogram : "",
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
       snapper: snapperBanner.visible && root.service.snapperBanner ? root.service.snapperBanner.title : "",
@@ -435,6 +437,18 @@ Panel {
           fontFamily: root.fontFamily
           fontSize: Style.font.caption
           onActivated: function(i) { root.selectTab(i) }
+        }
+
+        // The plugin was updated under this shell, which still runs the old
+        // code (WP-090): neutral, one action, the fixed restart argv.
+        Banner {
+          id: restartNotice
+          width: parent.width
+          banner: root.service ? root.service.restartNotice : null
+          foreground: root.foreground
+          urgent: root.urgent
+          fontFamily: root.fontFamily
+          onActionRequested: function(actionId) { if (root.service) root.service.fix(actionId, "restart") }
         }
 
         Banner {

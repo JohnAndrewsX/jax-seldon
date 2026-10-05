@@ -1422,6 +1422,32 @@ test("engineMin (WP-068): a version below the manifest's engineMin gets the upda
   assert.strictEqual(M.engineOutdatedBanner("ok", engine, manifest.seldon.engineMin), null)
 })
 
+test("restart notice (WP-090): the running code's version is the manifest's; another manifest version gets the notice", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "plugin/manifest.json"), "utf8"))
+  // Set by hand with the manifest (docs/VERSIONING.md): they must agree in the repository.
+  assert.strictEqual(M.PLUGIN_VERSION, manifest.version)
+  assert.strictEqual(M.pluginVersionOf(manifest), manifest.version)
+  assert.strictEqual(M.pluginVersionOf(null), "")
+  assert.strictEqual(M.pluginVersionOf({ version: 3 }), "")
+  assert.strictEqual(M.restartShellNotice(M.PLUGIN_VERSION, M.pluginVersionOf(manifest)), null)
+  // Not injected yet: no notice.
+  assert.strictEqual(M.restartShellNotice("0.1.4", ""), null)
+  const n = M.restartShellNotice("0.1.4", "0.1.5")
+  assert.ok(n)
+  assert.strictEqual(n.tone, "neutral")
+  assert.strictEqual(n.title, "Restart the shell to finish the update")
+  assert.ok(n.detail.indexOf("Seldon 0.1.5 is installed") !== -1, n.detail)
+  assert.ok(n.detail.indexOf("still runs 0.1.4") !== -1, n.detail)
+  assert.strictEqual(n.command, "omarchy-restart-shell")
+  same(n.actions, [{ id: "restart", label: "Restart shell" }])
+  // One fixed program, no arguments.
+  same(M.RESTART_SHELL_ARGV, ["omarchy-restart-shell"])
+  // Any difference counts, a downgrade too: the code on disk is not the code running.
+  assert.ok(M.restartShellNotice("0.1.5", "0.1.4"))
+  // No pictogram: the panel shows it without one.
+  assert.strictEqual(M.statusPictogram(n.status), "")
+})
+
 test("callWarning (WP-068): one line with the exit code and the first stderr line", () => {
   assert.strictEqual(M.callWarning(["capture", "--all"], 0, "{}", "noise"), "")
   assert.strictEqual(M.callWarning(["capture", "--all"], 2, "", "seldon: boom\nsecond line"),
