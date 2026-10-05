@@ -1563,6 +1563,16 @@ mod redaction {
             assert_eq!(r.matching_rules(input), vec![rule], "`{input}`");
             assert_eq!(r.redact(&out), out, "`{input}`");
         }
+        // each HTTPie command word with each gap its triggers name
+        // (WP-097 round 2)
+        for word in ["http", "https", "xh", "xhs"] {
+            for gap in [" ", "\t", "\n", "\\\n"] {
+                let input = format!("{word}{gap}-a a:fakeGap2");
+                let out = r.redact(&input);
+                assert_eq!(out, format!("{word}{gap}-a {REDACTED}"), "`{input}`");
+                assert_eq!(r.matching_rules(&input), vec!["httpie-auth"]);
+            }
+        }
     }
 
     /// The WP-097 rules match only their own rows and no row of another
