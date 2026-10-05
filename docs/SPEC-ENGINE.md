@@ -22,7 +22,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 |---|---|
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve, §8; WP-063; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/lock` | flock during writes |
@@ -571,11 +571,22 @@ baseline without a note. Known limitation: after `init --no-capture`
 there is no `cursors.json`, so when the theme hook or an agent writes an
 event of a collector's source before the first capture, that capture
 records a state reset that lost nothing. The next capture continues from
-the new state, so a loss is recorded once. Known limitation: a crash
-between the ledger append and the `cursors.json` save (a few
-milliseconds) repeats the `state-reset` note and the snapper access note
-(§4) on the next capture; collector events are not repeated, because the
-collectors compare with the ledger. A collector that degrades in
+the new state, so a loss is recorded once. A crash between the ledger
+append and the `cursors.json` save repeats neither the collector events
+(the collectors compare with the ledger) nor the `state-reset` note and
+the snapper access note (§4) (WP-099): a capture that appends such a note
+first saves `cursors.json` as it loaded it (the same binding and
+entries, or no logbook and no entries when there was no file) with the
+note's time added to `pendingNotes`, and its save after the append
+writes the new state without `pendingNotes`. The next capture after a
+crash between the two loads that state, so it compares as the crashed
+one did; it does not write a note the ledger holds at a time in
+`pendingNotes` again, known by its identity, not its detail: the
+snapper note by its subject, the state reset by the sources its
+`meta.sources` names (a source no such note names, e.g. one the crashed
+capture did not run, gets a note of its own). It still prints the
+warning, which the crash hid, and keeps the earlier times when it marks
+a note of its own. A collector that degrades in
 a capture in which its state was lost (it would pass the binding gate
 and the ledger rule above) takes no baseline there, so that capture's
 note does not name it, or there is no note when it alone lost its state;
@@ -788,10 +799,9 @@ git itself is killed, with the same bounded pipe wait. Rules:
   state directory or another logbook's state (nothing to compare with),
   for an entry with only the `pendingBaseline` mark (it never ran), or
   in a capture that does not run snapper; the next capture compares with
-  the saved state, so each change is recorded once (except after a crash
-  between the append and the cursor save, §3 state reset, known
-  limitation). The note is no drift
-  and no own change (§5).
+  the saved state, so each change is recorded once, also after a crash
+  between the append and the cursor save (§3 state reset). The note is
+  no drift and no own change (§5).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
   stale); `repoHead` (7-character short hash, like `logbook.git.head`)
@@ -1055,7 +1065,12 @@ into the logbook (`log` with its tags, `plan new` and the `plan` step
 reasons, `decide`, `drift explain|dismiss`) pass that text through the
 same redaction before
 the first write, so the ledger, the journal, case and decision files,
-`STATUS.md` and the index hold the same redacted text (WP-062). The rules
+`STATUS.md` and the index hold the same redacted text (WP-062). The
+`seldon` notes (§3 state reset, §4 snapper) are events and are redacted
+the same way; the snapper note's detail embeds the collector's message,
+which `cursors.json`, `capture --json` and `index.json`
+(`state.collectors`, no event) carry as the collector gave it (WP-099).
+The rules
 (`redact::BUILTIN`, in this order): URLs with userinfo; `--password`;
 `--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`
 and similar options; `--api-key`, `--access-key`, `--secret-key`;
