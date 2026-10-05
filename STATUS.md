@@ -15,6 +15,8 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
+| WP-092 | hook rebuild cost with margin under 5 ms | Engine | `engine-092` (opus) | `wt/WP-092` · `wp/092-hook-budget` | 2026-10-05 |
+| WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
 | WP-098 | the test host follows main (deploy script, dev version marker) | Engine | `engine-098` (opus) | `wt/WP-098` · `wp/098-test-host-main` | 2026-10-05 |
 
 ## Queued (next up)
