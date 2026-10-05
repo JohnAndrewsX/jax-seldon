@@ -1,11 +1,11 @@
 ```
 WP-086 HANDOVER
-Done: SPEC-ENGINE §5 rule 8: a capture explains every new event of Seldon's own plugin (`jax.seldon`: plugin-add|update|enable|disable) and own package (`jax-seldon`: install|upgrade|downgrade|reinstall) without a case with one `explained` resolution (source seldon, actor system, detail "seldon's own plugin" / "seldon's own package"); the event keeps its actor and stays in the Changelog; removals stay drift; `capture --json` adds `explainedSelf`, the human capture prints a note; 6 CLI tests + 2 unit tests; 13 mutants, all killed; SPEC §3 §5, CHANGELOG
+Done: SPEC-ENGINE §5 rule 8: a capture explains every new event of Seldon's own plugin (`jax.seldon`: plugin-update|enable|disable; round 2 dropped plugin-add) and own package (`jax-seldon`: upgrade|reinstall; round 2 dropped install|downgrade) without a case with one `explained` resolution (source seldon, actor system, detail "seldon's own plugin" / "seldon's own package"); the event keeps its actor and stays in the Changelog; removals stay drift; `capture --json` adds `explainedSelf`, the human capture prints a note; 6 CLI tests + 2 unit tests; 13 mutants, all killed; SPEC §3 §5, CHANGELOG
 Not done: no literal `seldon` actor (contract has none, see Decisions); no fixture change (no fixture test needs it)
 Verified by: just check exit 0 (`check: ok`, run once after the bounded wait: no plugin harness running); cargo test --test own_changes (6 passed); cargo test --lib own_change (2 passed); full cargo test 0 failures; fmt + clippy --all-targets -D warnings clean
 Learned: memory/pitfalls.md, section "WP-086"
 Decisions needed: none blocking (actor wording, below)
-Touched outside WP scope: engine/src/reconcile.rs (resolutions next to rule 7's), engine/src/commands/capture.rs (one call after rule 7, `explainedSelf` in the output; WP-083 also edits capture.rs: expect a small conflict near `render`)
+Touched outside WP scope: engine/src/reconcile.rs (resolutions next to rule 7's), engine/src/commands/capture.rs (one call after rule 7, `explainedSelf` in the output; WP-083 also edits capture.rs, but the merge-tree is clean, see round 2 Q4)
 ```
 
 Branch `wp/086-review`, worktree `wt/WP-086`, from `5833c81`. No PR, no
@@ -160,3 +160,92 @@ assertions, not on compile errors.
   so `plugin/` is untouched (WP-085 owns it).
 - CHANGELOG `[Unreleased]` and `memory/pitfalls.md` appends will
   conflict with the sibling WPs, as expected.
+
+## Round 2 (review: APPROVE with F4 decision, F1, F2, Q4)
+
+Commits on the same branch:
+
+- `engine: rule 8 explains only updates, enabling and disabling (WP-086)`
+- `docs: rule 8 narrowed, failed explanation and drift trend sentences (WP-086)`
+- this handover update
+
+What changed:
+
+- **F4 (decision, security).** Rule 8 is now narrower. It matches only
+  the id and has no hash or provenance check, so it explains only
+  changes to a Seldon that is already there.
+  - Explained: `plugin-update`, `plugin-enable` and `plugin-disable` of
+    `jax.seldon`, and pacman `upgrade` and `reinstall` of `jax-seldon`.
+  - Back to drift: `plugin-add`, pacman `install` and `downgrade`. The
+    removals stayed drift all along.
+  - `own_change` and its doc comment say why. The unit test is renamed to
+    `own_changes_are_seldons_updates_but_no_add_install_downgrade_or_removal`
+    and puts add, install, downgrade and the removals in the `None` set.
+  - The CLI test is now
+    `enabling_disabling_its_plugin_is_no_drift_adding_removing_it_is`.
+    `plugin-add` gets no resolution and stays the open drift row while
+    enable and disable are explained. After the removal, the drift rows
+    are `plugin-remove` and `plugin-add`, newest first.
+  - The module doc of `tests/own_changes.rs`, SPEC §5 rule 8 (one
+    sentence on why) and the CHANGELOG line are updated.
+  - Section "What was already covered" above still describes round 1.
+    For the package, read "upgrade/reinstall"; install and downgrade are
+    drift.
+- **F1.** Rule 8 now says: "A failed explanation (the second append
+  fails, or the engine stops between the two appends) leaves ordinary
+  drift; resolve it by hand (Dismiss or Explain)". There is no catch-up
+  pass.
+- **F2.** A paragraph under rule 8 says events explained by rule 7 or 8
+  count in the weekly drift trend like any resolved item.
+  - The field is `series.drift` (the schema name; the brief's
+    "Trends drift weeks" is `drift_weeks` in `index/build.rs`).
+  - Such an event counts as opened in the week of the event and resolved
+    in the week of the capture, mostly the same day. I wrote "the week"
+    rather than "the same day" because a pacman line from Sunday captured
+    on Monday falls into two weeks.
+- **Q4.** The round-1 line predicting a `capture.rs` conflict with
+  WP-083 was wrong (the orchestrator's merge-tree is clean). It is
+  corrected in the summary block above.
+
+Verified:
+
+- cargo fmt --check is clean.
+- cargo clippy --all-targets -D warnings is clean.
+- These suites pass:
+
+  | Suite | Result |
+  |-------|--------|
+  | `cargo test --lib` | 195 passed |
+  | `--test own_changes` | 6 passed |
+  | `--test collectors` | 19 passed |
+  | `--test idempotency` | 20 passed |
+  | `--test index` | 25 passed, 1 ignored |
+  | `--test hooks` | 54 passed, 2 ignored |
+
+- No second `just check`, as the brief asked (the orchestrator's gate
+  runs it).
+
+Mutants (each applied to the committed tree, `cargo test --lib
+own_change` + `--test own_changes`, reverted; the failing tests named):
+
+| # | Mutant | Claim | Killed by |
+|---|--------|-------|-----------|
+| R1 | add `PluginAdd` back | plugin add stays drift | unit + `enabling_disabling_…_adding_removing_it_is` |
+| R2 | add `Install` back | package install stays drift | unit |
+| R3 | add `Downgrade` back | package downgrade stays drift | unit |
+| R4 | drop `PluginEnable` | enabling is explained | unit + CLI |
+| R5 | drop `PluginDisable` | disabling is explained | unit + CLI |
+| R6 | drop `Reinstall` | reinstall is explained | unit |
+| R7 | drop `Upgrade` | upgrade is explained | unit + reconcile unit + `upgrading_its_own_package_…` |
+| M2' | plugin guard `if true` | another plugin stays drift | unit + reconcile unit + `updating_its_own_plugin_…` |
+| M3' | add `PluginRemove` | plugin removal stays drift | unit + CLI |
+| M5' | package guard `if true` | another package stays drift | unit + `upgrading_its_own_package_…` |
+| M6' | add `Remove` | package removal stays drift | unit + `upgrading_its_own_package_…` |
+
+All 11 were killed, every one by test assertions (no compile errors). The
+round-1 mutants M7–M13 touch code that round 2 did not change.
+
+Install, downgrade and reinstall of the package are pinned by the unit
+test only. There is no CLI test with a pacman `installed`, `downgraded`
+or `reinstalled` line for `jax-seldon`. It would add little: the pacman
+path is the same as for the upgrade test.
