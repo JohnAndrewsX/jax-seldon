@@ -953,6 +953,18 @@ mod redaction {
                 "curl -sS https://h.example ",
                 "Schlüssel-u-x-b geändert ",
             ),
+            // quoted separators keep the command open to the line end,
+            // through every quoted string (WP-087)
+            (
+                "quoted line",
+                "curl -sS https://h.example ",
+                "'a;b' \"c|d\" e-u-x-b ",
+            ),
+            (
+                "apostrophes",
+                "curl -sS https://h.example ",
+                "it's a-u-x-b ",
+            ),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
                 let line = filled(head, word, kb * 1024);
