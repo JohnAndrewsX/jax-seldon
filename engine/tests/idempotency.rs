@@ -2721,6 +2721,15 @@ mod crash {
         cli.crash(&at(20), "after-append", &[]);
         let again = cli.capture_at(&at(30), &[]);
         assert_eq!(again["written"], 0, "{again}");
+        // also the crashed capture, which read the ledger with the same
+        // cursor, wrote only the change
+        let config: Vec<Kind> = cli
+            .ledger()
+            .iter()
+            .filter(|e| e.source == Source::Config)
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(config, [Kind::ConfigRemove, Kind::ConfigChange]);
     }
 
     #[test]
