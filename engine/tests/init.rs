@@ -1438,6 +1438,40 @@ mod setup {
     }
 
     #[test]
+    fn every_command_in_agents_md_is_one_this_engine_has() {
+        // WP-100: docs-check covers the guides, nothing else the rules an
+        // agent reads; a rule naming a missing command or option fails here
+        let env = Env::new(Snapper::Allowed);
+        let mut checked = 0;
+        for language in [Language::En, Language::De] {
+            let text = templates::find("AGENTS.md").unwrap().text(language);
+            for span in text.split('`').skip(1).step_by(2) {
+                let Some(rest) = span.strip_prefix("seldon ") else {
+                    continue;
+                };
+                let mut argv: Vec<&str> = rest
+                    .split_whitespace()
+                    .take_while(|w| {
+                        !w.starts_with('-') && w.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+                    })
+                    .collect();
+                argv.push("--help");
+                let out = env.seldon(&argv);
+                assert_eq!(out.status.code(), Some(0), "{language}: `{span}`");
+                let help = stdout(&out);
+                for flag in rest.split_whitespace().filter(|w| w.starts_with("--")) {
+                    if flag == "--" {
+                        continue;
+                    }
+                    assert!(help.contains(flag), "{language}: `{span}`: {flag}");
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 40, "{checked} commands checked");
+    }
+
+    #[test]
     fn agents_md_carries_the_agent_rules_in_both_languages() {
         // WP-047: the short form of docs/AGENT-GUIDE.md; one file, no CLAUDE.md
         fn section<'a>(text: &'a str, heading: &str) -> &'a str {
