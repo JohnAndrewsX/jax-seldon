@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- snapper keeps one date per snapshot: a snapshot made in the repeated
+  hour when summer time ends no longer gets a false `snapshot-delete`
+  plus `snapshot` when the collector switches between `snapper list`
+  (local time) and the info files (UTC). Such a list time is resolved
+  against the snapshot's info file, the cursor, then the number order;
+  cursors written by earlier versions move to the info file's date
+  without an event (WP-082).
+
 ## [0.1.2] - 2026-10-04
 
 ### Engine
