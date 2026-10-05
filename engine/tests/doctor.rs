@@ -1008,9 +1008,13 @@ mod doctor {
             rows[0]["message"],
             "the next capture will record a state reset for config: cursors in ~/.local/state/seldon bound to another logbook, so changes made since the last capture may not be recorded"
         );
+        // review F2: a plain `seldon capture` would capture `other`
         assert_eq!(
             rows[0]["fix"],
-            "nothing to restore: the state belongs to another logbook path; run seldon capture to accept the new baseline (user guide: Moving or copying the logbook)"
+            format!(
+                "nothing to restore: the state belongs to another logbook path; run seldon --logbook {} capture to accept the new baseline (user guide: Moving or copying the logbook)",
+                root.display()
+            )
         );
         assert_eq!(rows[1]["status"], "ok");
     }
@@ -1055,6 +1059,22 @@ mod doctor {
         std::fs::write(&conf, "a = 2\n").unwrap();
         assert_eq!(capture("2026-10-04T10:05:00+02:00")["written"], 1);
         quiet("every cursor here");
+        // review F1: the cursors are bound to the canonical path; a
+        // logbook configured through a symlink is the same logbook
+        let link = env.tmp.path().join("link");
+        std::os::unix::fs::symlink(env.tmp.path().join("logbook"), &link).unwrap();
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        let mut toml: toml::Table = text.parse().unwrap();
+        toml.insert(
+            "logbook".into(),
+            toml::Value::String(link.to_string_lossy().into_owned()),
+        );
+        std::fs::write(&config, toml.to_string()).unwrap();
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(v["logbook"], link.to_string_lossy().as_ref(), "{v}");
+        quiet("logbook configured through a symlink");
+        std::fs::write(&config, &text).unwrap();
         let saved = std::fs::read_to_string(&cursors).unwrap();
 
         // a collector that never ran here (no entry while bound to this
@@ -1097,13 +1117,22 @@ mod doctor {
             rows[0]["fix"],
             "restore ~/.local/state/seldon from a backup now (user guide: Back up and restore the state directory), or run seldon capture to accept the new baseline"
         );
+        // review F2: a logbook from --path is named in the fix
+        let root = env.tmp.path().join("logbook");
+        let (_, v) = doctor(&env, &["--path", root.to_str().unwrap()]);
+        let rows = states(&v);
+        assert_eq!(
+            rows[0]["fix"],
+            format!(
+                "restore ~/.local/state/seldon from a backup now (user guide: Back up and restore the state directory), or run seldon --logbook {} capture to accept the new baseline",
+                root.display()
+            )
+        );
         let human = stdout(&env.seldon(&["doctor"]));
         assert!(
             human.contains(&format!("degraded  state    {PREDICTED}config: ")),
             "{human}"
         );
-        let config = env.config_file();
-        let text = std::fs::read_to_string(&config).unwrap();
         let mut toml: toml::Table = text.parse().unwrap();
         let mut off = toml::Table::new();
         off.insert("config".into(), toml::Value::Boolean(false));

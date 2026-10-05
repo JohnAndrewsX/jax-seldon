@@ -160,7 +160,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_fences(logbook));
             checks.push(check_collectors(ctx, &effective, logbook));
             checks.extend(check_reset(ctx, logbook));
-            checks.extend(check_pending_reset(ctx, &effective, logbook));
+            checks.extend(check_pending_reset(ctx, &effective, logbook, source));
         }
         logbook
     } else {
@@ -592,8 +592,16 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
 /// unreadable or another logbook's. Predicted by the capture's own rule
 /// ([`pending_reset`]), so it shows while a restored backup still prevents
 /// the gap; after the capture, [`check_reset`] takes over. No row when
-/// nothing is lost or `cursors.json` cannot be read (the `state` rows).
-fn check_pending_reset(ctx: &Context, config: &Config, logbook: &Logbook) -> Option<Check> {
+/// nothing is lost, `cursors.json` cannot be read (the `state` rows) or
+/// the ledger cannot be read (the `ledger` row). A logbook from
+/// `--path`/`--logbook` is not the one a plain `seldon capture` captures,
+/// so the fix names it.
+fn check_pending_reset(
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+    source: LogbookSource,
+) -> Option<Check> {
     let cursors = Cursors::load(&cursors_file(&ctx.dirs)).ok()?;
     let canonical = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
     let ledger = Ledger::new(logbook, Redactor::builtin());
@@ -603,15 +611,24 @@ fn check_pending_reset(ctx: &Context, config: &Config, logbook: &Logbook) -> Opt
     }
     let sources: Vec<&str> = lost.iter().map(|(n, _)| *n).collect();
     let state = ctx.dirs.display(&ctx.dirs.state_dir);
+    let capture = match source {
+        LogbookSource::Flag => format!(
+            "seldon --logbook {} capture",
+            ctx.dirs.display(&logbook.root)
+        ),
+        _ => "seldon capture".to_string(),
+    };
     let restore = format!(
-        "restore {state} from a backup now (user guide: Back up and restore the state directory), or run seldon capture to accept the new baseline"
+        "restore {state} from a backup now (user guide: Back up and restore the state directory), or run {capture} to accept the new baseline"
     );
     let (why, fix) = match binding {
         Binding::None => (format!("cursors missing in {state}"), restore),
         Binding::This => (format!("cursors unreadable in {state}"), restore),
         Binding::Other => (
             format!("cursors in {state} bound to another logbook"),
-            "nothing to restore: the state belongs to another logbook path; run seldon capture to accept the new baseline (user guide: Moving or copying the logbook)".to_string(),
+            format!(
+                "nothing to restore: the state belongs to another logbook path; run {capture} to accept the new baseline (user guide: Moving or copying the logbook)"
+            ),
         ),
     };
     Some(
