@@ -1056,8 +1056,10 @@ reasons, `decide`, `drift explain|dismiss`) pass that text through the
 same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The rules
-(`redact::BUILTIN`, in this order): URLs with userinfo; `--password`;
-`--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`
+(`redact::BUILTIN`, in this order): URLs with userinfo; `--password`
+(also wget's `--http-password` and `--ftp-password`);
+`--token`, `--with-token`, `--secret`, `--client-secret`, `--passphrase`,
+curl's `--pass`, `--proxy-pass` and `--oauth2-bearer`, xh's `--bearer`
 and similar options; `--api-key`, `--access-key`, `--secret-key`;
 `token=`; `…SECRET=`, `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`,
 `…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
@@ -1075,14 +1077,21 @@ cookie pair `name=` (RFC 6265; not `cookie: banner fixed` or
 `(AKIA|ASIA)[0-9A-Z]{16}`; `gh[pousr]_[A-Za-z0-9]{36,}` and
 `github_pat_…`; `glpat-…`; `xox[abposr]-…`; `sk-`/`sk_` keys
 (`(?-u:\b)sk[-_][A-Za-z0-9_-]{20,}`); anything after `-p ` for
-`mysql|psql|smbclient`; the value after `curl -u`/`--user`; proxy
+`mysql|psql|smbclient`, up to the end of the command's last continued
+line; the value after `curl -u`/`--user`; proxy
 credentials: the value after `curl -U` (not `useradd -U`),
 `--proxy-user` and wget's `--proxy-password` before a space (its `=`
 form is a `…PASSWORD=` assignment), and a `user:pass` without a scheme before the
 last `@` of the value after `curl -x`, `--proxy` or a `…proxy=`
 assignment (`https_proxy=`, `http.proxy=`; with a scheme it is a URL
 with userinfo); the cookies after `curl -b`/`--cookie` when the value
-holds a `=` (without one curl reads that file); after
+holds a `=` (without one curl reads that file); a client certificate
+with its password, the value with a `:` after `curl -E`, `--cert` or
+`--proxy-cert` (the long forms also without the command word; the file
+name is masked with the password: `cert-password`, WP-097); the value
+after `-a` or `--auth` of `http`, `https`, `xh` or `xhs` (HTTPie and xh;
+any value, a bearer token included; a command word followed by `:`, as
+in `http://`, is none: `httpie-auth`, WP-097); after
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
 login`; e-mail addresses (`email`, WP-093: the local part, the domain
 stays: `‹redacted›@example.com`); and user-supplied patterns in
@@ -1092,8 +1101,8 @@ of it (`--proxy-user ‹redacted›`, `"password": ‹redacted›`,
 `Cookie: ‹redacted›`). The hook never records stdin/stdout of
 commands, only the command line. A name that can only mean a
 credential masks any non-empty value: `--password`, `--token`,
-`--with-token`, `--secret`, `--client-secret`, `--passphrase`
-(`password-option`, `secret-option`) and `token=`, `…SECRET=`,
+`--with-token`, `--secret`, `--client-secret`, `--passphrase`, `--pass`,
+`--oauth2-bearer` (`password-option`, `secret-option`) and `token=`, `…SECRET=`,
 `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`, `…_PASS=`,
 `SSHPASS=` (`token-assignment`, `secret-assignment`). A name that ends
 in `key` (`--api-key`, `--access-key`, `--secret-key`: `key-option`;
@@ -1124,19 +1133,47 @@ case-insensitive matching folds them (`redact::trigger_text`); a trigger
 may join literals with `+` that must all be present, so a `curl` rule
 needs `curl` and its option (`curl+-x`; WP-084). The option rules
 (`curl -u`/`--user`, `-U`/`--proxy-user`, `-x`/`--proxy`,
-`-b`/`--cookie`, `sshpass -p`, `docker … login -p`) look for the option
-within one command: up to the line end or an unquoted `;`, `&` or `|`;
-a quoted string (`'a&b'`, `"x;y"`, `\"` inside double quotes), a
-backslash escape (`\;`) and a quote the line never closes (an apostrophe
-in a note) do not end it. Quotes pair left to right as written; where
-the shell reads them otherwise (`$'…'`, quotes inside `"$(…)"`, an
-escaped space), the plain reading, up to the first `;`, `&` or `|` (quoted
-or not) or the line end, still counts, so the context reaches at least what that plain reading reaches.
+`-b`/`--cookie`, `-E`/`--cert`, `http|xh -a`/`--auth`, `sshpass -p`,
+`docker … login -p`) look for the option within one command: up to an
+unquoted line end or an unquoted `;`, `&` or `|`; a quoted string
+(`'a&b'`, `"x;y"`, `\"` inside double quotes, also over several lines),
+an ANSI-C string (`$'a;b\''`), a backslash escape (`\;`, and a `\`
+before a line end, which continues the command on the next line), a
+redirection (`2>&1`, `>&2`, `<&3`, `&>file`, `>|file`) and a quote the
+text never closes (an apostrophe in a note; after it the command ends at
+the line end) do not end it (WP-097). The hook hands the whole command
+line to redaction, its continued lines included (heredoc bodies are cut
+before, §8). Quotes pair left to right as written; where the shell reads
+them otherwise (quotes inside `"$(…)"`, an escaped space), the plain
+reading, up to the first `;`, `&` or `|` (quoted or not) or the line
+end, still counts, so the context reaches at least what that plain
+reading reaches. White space or a `\` line end may stand between an
+option and its value. The value of an option is one shell word: quoted
+and bare parts joined together (`admin:'p w'`, `"$U":pw`), `$'…'`, `\"`
+inside double quotes and backslash escapes belong to it and are masked
+whole; a double-quoted part that never closes as escapes are read is
+taken up to the next `"` as written. The value after `token=`,
+`…PASSWORD=` and the other assignments is one quoted or bare part, so a
+query `?token=abc` inside a quoted URL stops at the closing quote; a
+double-quoted value may hold `\"` (WP-097).
 An option given twice in one command is masked
 each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
 from the end of its previous match, without a second command word;
 `sshpass` masks only its first `-p`, as a later one belongs to the
-command it runs (`ssh -p 2222`) (WP-087). An e-mail address
+command it runs (`ssh -p 2222`) (WP-087). Not masked (WP-097):
+combined short options (`curl -su a:b`, `-sE c.pem:pw`; a trigger is
+the option as written, `-u`, and one that every curl line holds would
+compile every curl rule for it); abbreviated long options (`--us`); the
+last of several `sshpass -p` (sshpass uses the last); a `.netrc` or curl
+config file (`curl -n`, `-K`) and its contents shown by another command;
+`openssl … -pass pass:…`; an assignment value that joins quoted and bare
+parts (`PASSWORD=a'b'` keeps `'b'`). Masked too much, by design: an
+option word inside a quoted argument that spans lines (`git commit -m
+"…curl…⏎… -U flag"`, as on one line), a stray apostrophe that pairs with
+one on a later line, `x264 --pass 1` (`--pass` names a credential), a
+certificate's file name next to its password, and an option value at
+the end of a quoted string (`bash -c "curl -u a:b" && echo "x"`), which
+joins the next quoted part as adjacent shell parts would. An e-mail address
 (`email`, WP-093) is a local part, `@`, and a domain of at least two
 labels whose last holds letters only (`example.de`, `müller.example`,
 `.испытание`). The local part is ASCII letters, digits and `._%+-`,
