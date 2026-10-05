@@ -339,3 +339,65 @@ Branch `wp/098-test-host-main`, worktree `wt/WP-098`.
 ### Touched outside WP scope
 
 - The merge brings main's changes; nothing else beyond round 1.
+
+## Round 4 (stage 2 APPROVE, with the machine-id pin before the first real deploy)
+
+### Done
+
+- **Pin file** `scripts/deploy-hosts.local` (git-ignored, added to
+  `.gitignore` next to `guard-hosts.local`): one line per host, `<alias>
+  <machine-id>`, `#` comments. Not created — the orchestrator writes it
+  after checking the alias (`ssh -- <alias> cat /etc/machine-id`).
+  `SELDON_DEPLOY_PINS` overrides the path (test hook).
+- **Check** after the probe's machine-id read (and after the "this
+  machine" check): no line for `$host` (or no file) → exit 1 "`$host` has
+  no pinned machine-id in scripts/deploy-hosts.local; pin it once: ssh --
+  `$host` cat /etc/machine-id"; a different id → exit 1 "`$host`'s
+  machine-id does not match the pin; the alias may point elsewhere".
+  Neither id is printed. `--dry-run` without a pin goes on and says `,
+  machine-id not pinned)` in its first line, with a matching pin `,
+  machine-id pinned)`; a mismatch refuses in the dry run too.
+- **Watcher** (my choice: restart, not "pending"): after the install step
+  of either mode, `systemctl --user is-active --quiet
+  seldon-watch.service` → `systemctl --user restart seldon-watch.service`.
+  A failed restart is a failure (exit 2, logged as `watch: "restart
+  failed"`); an inactive or absent unit is left alone. The summary has a
+  `watch` line, the log line a `watch` field.
+- **TESTING.md:** refusals (pin; why not a column of guard-hosts.local),
+  step 2 (watcher), "Back to a release" says `--release` is the only way
+  back because `seldon.prev` holds the previous main build from the
+  second deploy on, and to move `~/.local/state/seldon` aside first; the
+  table row. Script header and CHANGELOG: one clause each.
+
+### Verified by
+
+- `bash tests/deploy/deploy-test-host.test.sh` → 190 passed, 0 failed.
+  New cases: pin matches (every deploy runs with one) → proceeds; a
+  mismatch → exit 1, no build, exactly one ssh call, neither id in the
+  output, also in a dry run; no pin (a commented pin and another host's
+  line do not count) and no pin file → exit 1 with the hint, no id
+  printed; a dry run without a pin → exit 0, "machine-id not pinned";
+  an inactive watcher left alone; an active one restarted once, and on
+  the new binary (the systemctl stub records `seldon --version` at the
+  restart), logged; a failed unit restart → exit 2, named, logged; on
+  `--release` the watcher restarted on the release binary. The
+  systemctl stub answers only these two calls; any other systemctl call
+  goes to the trap log, which must stay empty.
+- Mutants, round 4 (each alone, test run, original restored), all 10
+  killed: pin mismatch accepted · missing pin accepted · dry run refuses
+  without a pin · commented pins count · first pin line wins over the
+  exact alias · the refusal prints both ids · dry run without the pin
+  note · watcher never restarted · watcher restarted although inactive
+  · watcher failure ignored.
+- `flock /tmp/seldon-check.lock just check` on 53831a9: `check: ok`,
+  `exit 0` — deploy-test-host.test 190/0, install.test 209/0,
+  model.test.js 89, service-states 314/0, panel-view 782/0,
+  overlay-view 319/0, bar-view 143/0, real-home-guard.test 11/0,
+  plugin-version.test ok, docs-check ok (422 links).
+- No `scripts/deploy-hosts.local` exists in the worktree or the main
+  checkout.
+
+### Decisions
+
+- None new. For the first real deploy: write the pin first, then
+  `--dry-run` must say "machine-id pinned".
