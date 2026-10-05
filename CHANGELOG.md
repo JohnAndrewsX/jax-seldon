@@ -143,6 +143,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file name included), the value after `http`/`https`/`xh`/`xhs`
   `-a`/`--auth`, and wget's `--http-password`/`--ftp-password` before a
   space (WP-097).
+- Redaction covers openssl's pass phrase options: the value of `-pass`,
+  `-passin`, `-passout` and the other options of that form (`-password`,
+  `-keypass`, easyrsa's `--passin=…`) is masked when it gives the
+  password itself (`pass:…`), so `-passin pass:…` is recorded as
+  `-passin ‹redacted›`. A source such as `env:VAR`, `file:path`, `fd:N`
+  or `stdin` stays as it is (WP-106).
 
 ### Plugin
 
