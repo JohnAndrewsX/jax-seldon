@@ -64,16 +64,21 @@ use crate::error::{Error, Result};
 pub const REDACTED: &str = "‹redacted›";
 
 /// A quoted or bare value after a key (`token=`, `PASSWORD=`); a double
-/// quoted value may hold `\"`.
-const VALUE: &str = r#"(?:"(?:[^"\\]|\\.)*"|"[^"]*"|'[^']*'|[^\s'"&;|]+)"#;
+/// quoted value may hold `\"`. A bare value does not start at a
+/// [`REDACTED`] marker: after `TOKEN="a"bob@example.com` is masked to
+/// `TOKEN=‹redacted›‹redacted›@example.com`, a second pass must not take
+/// the glued markers for a new value.
+const VALUE: &str = r#"(?:"(?:[^"\\]|\\.)*"|"[^"]*"|'[^']*'|[^\s'"&;|‹][^\s'"&;|]*)"#;
 
 /// The value after an option of a command (`--password`, `curl -u`): one
 /// shell word, which may join quoted and bare parts (`admin:'p w'`,
 /// `"$U":pw`) and hold `$'…'`, `\"` inside double quotes and backslash
-/// escapes (`\;`, `\` before a line end). A double-quoted part that never
-/// closes as escapes are read is taken up to the next `"` as written.
-const WORD: &str =
-    r#"(?:"(?:[^"\\]|\\(?s:.))*"|'[^']*'|\$'(?:[^'\\]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"]*")+"#;
+/// escapes (`\;`, `\` before a line end). A quoted part ends at a line end
+/// that no `\` escapes: a double-quoted part that never closes as escapes
+/// are read is taken up to the next `"` on its line as written, and a
+/// quote that the line does not close (`bob's` in a note, `'admin:pw`)
+/// takes the rest of the line, so a later line stays.
+const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")+(?:['"][^\n'"]*)?|['"][^\n'"]*)"#;
 
 /// White space between an option and its value, or a line continuation
 /// (`\` before a line end).
@@ -446,7 +451,26 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "cookie-option" => &["curl+-b", "curl+--cookie"],
         // `-E` reads `-e` here
         "cert-password" => &["curl+-e", "--cert", "--proxy-cert"],
-        "httpie-auth" => &["http+-a", "xh+-a"],
+        // the command word and the white space or `\` after it, as the
+        // rule requires them (ASCII, so a match always holds one)
+        "httpie-auth" => &[
+            "http +-a",
+            "http\t+-a",
+            "http\n+-a",
+            "http\\+-a",
+            "https +-a",
+            "https\t+-a",
+            "https\n+-a",
+            "https\\+-a",
+            "xh +-a",
+            "xh\t+-a",
+            "xh\n+-a",
+            "xh\\+-a",
+            "xhs +-a",
+            "xhs\t+-a",
+            "xhs\n+-a",
+            "xhs\\+-a",
+        ],
         "sshpass-password" => &["sshpass"],
         "registry-login-password" => &["login"],
         "email" => &["@"],
@@ -509,6 +533,14 @@ fn option_rule(
     }
 }
 
+/// The first word of a hyphenated option name, unless it is `no`
+/// (`--no-pass` is a flag, not a credential).
+const NOT_NO: &str = r"(?:[a-mo-z0-9][a-z0-9]*|n(?:[a-np-z0-9][a-z0-9]*)?|no[a-z0-9]+)";
+
+/// The white space after HTTPie's command word: the characters its
+/// triggers name ([`triggers`]), not every `\s`.
+const HTTPIE_GAP: &str = r"(?:[ \t\n]|\\\n)";
+
 /// The command word `curl`.
 const CURL: &str = r"(?-u:\b)curl(?-u:\b)";
 
@@ -532,11 +564,12 @@ fn builtin_rules() -> Vec<Rule> {
         ),
         // `--token X`, `--with-token X`, `--secret X`, `--client-secret X`,
         // `--passphrase X`, curl's `--pass X` and `--oauth2-bearer X`, also
-        // `--proxy-pass X`: any value; not `--token-file X`
+        // `--proxy-pass X`: any value; not `--token-file X`, and not a
+        // negation such as smbclient's `--no-pass`
         checked_rule(
             "secret-option",
             &format!(
-                r"(?i)(--(?:[a-z0-9]+-)*(?:token|secret|passphrase|pass|bearer)(?:=|{GAP}+))(?P<v>{WORD})"
+                r"(?i)(--(?:{NOT_NO}-(?:[a-z0-9]+-)*)?(?:token|secret|passphrase|pass|bearer)(?:=|{GAP}+))(?P<v>{WORD})"
             ),
             has_value,
         ),
@@ -688,11 +721,12 @@ fn builtin_rules() -> Vec<Rule> {
         },
         // `http -a user:pass`, `--auth`, also `https`, `xh` and `xhs`
         // (HTTPie and xh): any value, a bearer token included. The command
-        // word is followed by white space, so `http://` is none
+        // word is followed by a space, tab, line end or `\`+line end
+        // (ASCII, as its triggers spell it), so `http://` is none
         option_rule(
             "httpie-auth",
-            &format!(r"(?P<cmd>(?-u:\b)(?:https?|xhs?))(?:{GAP}{COMMAND_REST})??"),
-            &format!(r"\s(?:-a{GAP}*|--auth(?:=|{GAP}+))"),
+            &format!(r"(?P<cmd>(?-u:\b)(?:https?|xhs?))(?:{HTTPIE_GAP}{COMMAND_REST})??"),
+            &format!(r"{HTTPIE_GAP}(?:-a{GAP}*|--auth(?:=|{GAP}+))"),
             "",
             &format!("(?:{WORD})"),
             KEEP_PREFIX,

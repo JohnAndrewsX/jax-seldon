@@ -985,6 +985,41 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeUnclosed2",
         "DB_PASSWORD=‹redacted›",
     ),
+    // a quoted part of an option value ends at a line end no `\` escapes;
+    // a quote the line does not close takes the rest of that line only
+    // (WP-097 round 2)
+    (
+        "curl-user",
+        "Tried curl -u bob's creds, failed.\nLine two stays.\nLine three isn't related.",
+        "creds",
+        "Tried curl -u ‹redacted›\nLine two stays.\nLine three isn't related.",
+    ),
+    (
+        "registry-login-password",
+        "docker login -p it's\nsecond line\nthird'",
+        "it's",
+        "docker login -p ‹redacted›\nsecond line\nthird'",
+    ),
+    (
+        "curl-user",
+        "curl -u 'admin:fakeUnclosed3 rest of it\nnext line",
+        "fakeUnclosed3",
+        "curl -u ‹redacted›\nnext line",
+    ),
+    // `\` before a line end inside double quotes, in the context and in
+    // the value (WP-097 review, O2 and O1)
+    (
+        "curl-user",
+        "curl -d \"a\\\nb\" -u admin:fakeO2 https://h.example",
+        "fakeO2",
+        "-u ‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        "curl -u \"ad\\\"m\\\nin;x\" https://h.example -u bob:fakeO1",
+        "fakeO1",
+        "curl -u ‹redacted› https://h.example -u ‹redacted›",
+    ),
     // case-insensitive matching folds the Kelvin sign onto `k` and the
     // long s onto `s`; the triggers do the same
     (
@@ -1241,6 +1276,8 @@ const CLEAR: &[&str] = &[
     "wget http://h.example/f -a log.txt",
     "yt-dlp https://h.example/v -a list.txt",
     "app --pass-through on --bypass x --password-stdin",
+    // a negation is no credential name (WP-097 round 2)
+    "smbclient //srv/share --no-pass -c 'ls'",
     // no e-mail address (WP-093): an SSH remote and `host:path`, a host
     // without a dot, versions, npm scopes, systemd units, a scale suffix
     // without a top-level domain, an image digest
@@ -1318,6 +1355,27 @@ mod redaction {
                 "{rule}"
             );
         }
+        // a URL and an `-a…` option do not compile `httpie-auth`: its
+        // triggers are the command word with the white space after it
+        // (WP-097 round 2); the word followed by a space does
+        for line in [
+            "git commit -am \"fix https://h.example redirect\"",
+            "curl -fsSL https://h.example/f -o f && git commit -a -m x && ls -a",
+        ] {
+            let lower = trigger_text(line);
+            assert!(
+                !triggers("httpie-auth")
+                    .iter()
+                    .any(|t| holds_trigger(&lower, t)),
+                "`{line}`"
+            );
+        }
+        let word = trigger_text("git commit -am \"fix https redirect\"");
+        assert!(
+            triggers("httpie-auth")
+                .iter()
+                .any(|t| holds_trigger(&word, t))
+        );
     }
 
     #[test]
@@ -1389,6 +1447,15 @@ mod redaction {
                 .join("\n"),
         );
         texts.push("a red car, token=fakeValue and an act".into());
+        // an address glued to a quoted value after `key=`: the second pass
+        // finds no new value in the two markers (WP-097 round 2)
+        for glued in [
+            "TOKEN=\"a\"bob@example.com",
+            "PASSWORD='x'me@example.org rest",
+            "API_KEY=\"fakeKey12345\"carol@example.com",
+        ] {
+            texts.push(glued.into());
+        }
         for text in &texts {
             let once = r.redact(text);
             assert_eq!(r.redact(&once), once, "`{text}`");
