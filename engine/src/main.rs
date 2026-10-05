@@ -216,18 +216,14 @@ fn main() -> ExitCode {
     let argv: Vec<OsString> = std::env::args_os().collect();
     // `seldon hook claude-code`, the line `hook install` writes, runs
     // before every tool call: it skips building the parser of every
-    // command (about 0.15 ms of the hook's budget, WP-092) and gets what
-    // the parser would give, no global option set
-    if is_plain_claude_code_hook(&argv) {
-        commands::hook::run_agent_hook(
-            || Context::from_env(false, false, false, None, None),
-            commands::hook::HookCommand::ClaudeCode,
-        );
-        return ExitCode::SUCCESS;
-    }
-    let cli = match Cli::try_parse_from(&argv) {
-        Ok(cli) => cli,
-        Err(err) => return parse_error(&err, &argv),
+    // command (about 0.15 ms of the hook's budget, WP-092)
+    let cli = if is_plain_claude_code_hook(&argv) {
+        plain_claude_code_hook()
+    } else {
+        match Cli::try_parse_from(&argv) {
+            Ok(cli) => cli,
+            Err(err) => return parse_error(&err, &argv),
+        }
     };
     // hooks an agent harness calls never block it: errors go to stderr, exit 0
     if let Some(Command::Hook(h)) = &cli.command
@@ -269,6 +265,21 @@ fn main() -> ExitCode {
 /// `seldon hook claude-code` and nothing else.
 fn is_plain_claude_code_hook(argv: &[OsString]) -> bool {
     matches!(argv, [_, hook, harness] if hook == "hook" && harness == "claude-code")
+}
+
+/// What the parser reads from `seldon hook claude-code`.
+fn plain_claude_code_hook() -> Cli {
+    Cli {
+        version: false,
+        json: false,
+        logbook: None,
+        quiet: false,
+        no_commit: false,
+        config: None,
+        command: Some(Command::Hook(commands::hook::HookArgs {
+            command: commands::hook::HookCommand::ClaudeCode,
+        })),
+    }
 }
 
 fn run(cli: Cli) -> Result<Output, Error> {
@@ -495,8 +506,8 @@ fn detail(err: &clap::Error) -> String {
 mod tests {
     use super::*;
 
-    /// WP-092: the fast path of `main` takes exactly the line the parser
-    /// reads as `hook claude-code` with no global option set.
+    /// WP-092: the fast path of `main` takes exactly `hook claude-code`
+    /// and gives what the parser gives for it.
     #[test]
     fn plain_claude_code_hook_is_what_the_parser_reads() {
         let argv = |args: &[&str]| -> Vec<OsString> {
@@ -507,19 +518,10 @@ mod tests {
         };
         let plain = argv(&["hook", "claude-code"]);
         assert!(is_plain_claude_code_hook(&plain));
-        let Cli {
-            version: false,
-            json: false,
-            logbook: None,
-            quiet: false,
-            no_commit: false,
-            config: None,
-            command: Some(Command::Hook(h)),
-        } = Cli::try_parse_from(&plain).unwrap()
-        else {
-            panic!("not a plain `hook claude-code`");
-        };
-        assert!(matches!(h.command, commands::hook::HookCommand::ClaudeCode));
+        assert_eq!(
+            format!("{:?}", plain_claude_code_hook()),
+            format!("{:?}", Cli::try_parse_from(&plain).unwrap())
+        );
         for other in [
             &["hook", "claude-code", "--json"][..],
             &["--quiet", "hook", "claude-code"],
