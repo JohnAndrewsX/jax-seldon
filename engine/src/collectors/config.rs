@@ -1067,6 +1067,10 @@ mod tests {
         assert!(m("/home/user/.config/app/tokens/gh.json"));
         assert!(!m("/home/user/.config/app/tokens/sub/gh.json"));
         assert!(!m("/home/user/.config/app/mytokens/gh.json"));
+        // also without a leading `**/`
+        let rel = skip(&["app/secret.conf"]);
+        assert!(rel.matches(Path::new("/home/user/.config/app/secret.conf")));
+        assert!(!rel.matches(Path::new("/home/user/.config/myapp/secret.conf")));
         // regex characters in a pattern are literal
         assert!(!skip(&["a.b"]).matches(Path::new("/x/aXb")));
         assert!(!skip(&[""]).matches(Path::new("/x/y")));
