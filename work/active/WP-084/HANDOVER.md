@@ -135,3 +135,125 @@ the disjointness note; user guide en/de; CHANGELOG `[Unreleased]`.
 `memory/pitfalls.md` (append), `CHANGELOG.md` (append),
 `docs/user/{en,de}/06-configuration.md` (the user-facing rule list, as
 WP-062 did). Nothing outside the repository; tests use scratch dirs only.
+
+## Round 2 (review: APPROVE with A, B, C, D and the perf gate)
+
+Commits: `f227f27` (A), `dacf792` (B, C, D), `93087d1` + `d44b2a3`
+(hook perf case), `bb2b4e7` (joined curl triggers, see below),
+`ca0c0ae` (timing lines), `767865b` (SPEC-ENGINE §7, user guide en),
+`2437a3f` (CHANGELOG), `a6b068d` (user guide de, re-stamped at
+`767865b`), plus this section.
+
+### What changed
+
+- **A — ASCII word boundaries.** Every `\b` in the rule table is
+  `(?-u:\b)` now (url-userinfo, secret-header, cookie-header, sk-key,
+  db-client-password, the four curl rules, sshpass, registry login).
+  `secret-assignment`, `key-assignment` and the `…proxy=` part of
+  `proxy-userinfo` drop the boundary instead: a match starts at the
+  first character of the name anyway (leftmost match over `[a-z0-9_]*`),
+  and an ASCII boundary would no longer see one before `ſ`/`K` at the
+  start of a name. Two rows pin that (`ſECRET=pw`, `KEY=fakeKey57`
+  with the Kelvin sign). Module docs and SPEC §7 say why.
+- **D — cookie pairs.** `cookie-header` masks a value only when it starts
+  with `name=` (`[^'"\s=;]+=`), so `cookie: banner fixed`,
+  `make cookie: all` and `curl -H "Cookie: $COOKIE"` stay (clear rows).
+- **B — same line.** Clear row `curl -H 'Cookie:\nsid=fakeCookie7' …`.
+- **C — JSON.** `\s*` on both sides of the `:` (newline included); keys
+  ending in `api_key` / `apiKey` (`api_?key` under the rule's `(?i)`, so
+  `API_KEY` and `ApiKey` too). Rows: `{"password"\n:\n  "…"}`,
+  `{"api_key": …}`, `{"openaiApiKey" :…}`, and
+  `{"apiKeyHint": "x", "monkey": "y", "apiKey": …}` (the hint stays; a
+  clear row alone would be hidden by the trigger, see the round-1
+  pitfall). Triggers `api_key"`, `apikey"` and their escaped forms.
+- **Perf case in `just check-perf`.** `hooks::hook_budget` measures a
+  third case: a recorded `curl -fsSL https://bob:…@h.example/… -o … &&
+  sudo pacman -U …` line (the URL rule leaves the marker first), 21
+  calls, budget 5 ms, and asserts that the recorded command holds the
+  marker and not the password. The 900-line test leaves room for
+  2 × 2 × 22 commands (was 2 × 22).
+- **Joined curl triggers (not asked for; separate commit `bb2b4e7`,
+  drop it if unwanted).** A trigger may join literals with `+`
+  (`redact::holds_trigger`): `curl-user` and `proxy-option` need
+  `curl+-u` (`-U` and `--user` read `-u`), `proxy-userinfo` `curl+-x`,
+  `cookie-option` `curl+-b` or `curl+--cookie`; `--proxy-` and `proxy`
+  stay single. Why: with the plain `curl` trigger every curl line
+  compiled all four curl rules; measured before this commit, the curl
+  case at 10 000 lines took 3.30 ms (pacman line 1.93 ms; on `main`
+  2.45 ms), and at 900 lines 4.89 ms (`main` 4.32 ms) under load 6–8.
+  Test: `every_row_holds_a_trigger_of_its_rule` asserts that
+  `curl -fsSL https://h.example/f -o /tmp/f` triggers none of the four.
+
+### Timings
+
+`long_lines_with_a_marker_stay_fast` (ignored; `cargo test --profile
+bench --test redaction -- --ignored`), median of 21, warm rules. The
+lines start with `curl` and the URL (url line) or plain German text
+(note) and are filled with `a-u-x-b` / `Schlüssel-u-x-b geändert`, so
+every curl rule is triggered, finds no option and scans the whole line
+(the worst case; with an early match the literal prefilter skips the
+rest and hides the slow path). Budgets 1 ms (16 KB) and 2 ms (64 KB).
+
+| Line | `main` 616be66 | round 1 4d02fc3 | round 2 |
+|---|---|---|---|
+| url line, 16 KB | 1.19 ms | 5.36 ms | 0.13 ms |
+| url line, 64 KB | 4.66 ms | 21.4 ms | 0.55 ms |
+| German note, 16 KB | 0.99 ms | 4.52 ms | 0.13 ms |
+| German note, 64 KB | 4.19 ms | 17.6 ms | 0.54 ms |
+
+(`main` and round 1 measured with a throwaway copy of the test against
+their `redact.rs`, not committed.)
+
+Hook budget (`just check-perf`, once, after the plugin harness was
+idle, at `a6b068d`, 10:07, load average 4.5): **exit 0**.
+
+| Case | 10 000 lines | 900 lines (rebuild) |
+|---|---|---|
+| hook, not recorded | 1.36 ms | 1.35 ms |
+| hook, recorded (pacman fixture) | 1.86 ms | 3.72 ms |
+| hook, recorded curl line with a marker | 2.84 ms | 4.44 ms |
+
+Index build ×10 4.37 ms, ×150 78.2 ms; `status` at 10 011 lines 46.0 ms.
+The curl line still pays about 1 ms over the pacman line: its
+`pacman -U` reads `-u`, so `curl-user` and `proxy-option` compile with
+`url-userinfo` (three regexes, ~0.1–0.2 ms each, plus the second URL
+work). For comparison, before the joined triggers and under load 6–8:
+3.30 / 4.89 ms, and with `main`'s `redact.rs` 2.45 / 4.32 ms. The
+4.44 ms leaves 0.56 ms of headroom at the rebuild threshold.
+
+### Mutants (round 2)
+
+| Mutant | Caught by |
+|---|---|
+| both assignment rules with `(?-u:\b)` instead of none; `key-assignment` alone too | `every_builtin_pattern` (`ſECRET=`, Kelvin `KEY=` rows) |
+| `cookie-header` without the cookie pair (round-1 form) | `harmless_text_stays` |
+| `cookie-header` `\s*` after the colon | `harmless_text_stays` (newline row) |
+| `json-secret` `[ \t]*` after the colon | `every_builtin_pattern`, `…_disjoint_and_stable` |
+| `json-secret` `[ \t]*` before the colon | `every_builtin_pattern`, `…_disjoint_and_stable` |
+| `json-secret` without `api_?key` | `every_builtin_pattern`, `…_disjoint_and_stable` |
+| `json-secret` `api_key` only (no `apiKey`) | `every_builtin_pattern`, `…_disjoint_and_stable` |
+| `json-secret` key not anchored (with `api_?key`) | `every_builtin_pattern` |
+| curl rules back on the plain `curl` trigger | `every_row_holds_a_trigger_of_its_rule` |
+| `cookie-option` without the `curl+--cookie` trigger | `every_row_holds_a_trigger_of_its_rule` + 2 |
+| `holds_trigger` without the `+` split | `every_row_holds_a_trigger_of_its_rule` + 3 |
+| `cookie-option` back on a Unicode `\b` | `long_lines_with_a_marker_stay_fast` (bench profile) |
+
+The last one survived with the first timing lines (an early match let
+the prefilter skip the slow path; then the joined triggers kept
+`cookie-option` from running at all); the worst-case filler fixed both.
+Source restored after each run (`git diff --exit-code engine/src`).
+
+### Verified (round 2)
+
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` clean;
+suites `redaction` 19 (+1 ignored), `hooks` 54 (+2 ignored),
+`idempotency` 20; the full `cargo test` green; `scripts/docs-check.sh`
+exit 0. No second `just check` (the orchestrator's gate runs it).
+
+### Open (round 2)
+
+- Noted by the reviewer for a follow-up WP, not done here: the curl
+  context stops at `&`/`;` inside quotes (a query string before the
+  option, also `curl-user`), and repeated options.
+- SPEC §7 still spells the sk rule `\bsk[-_]…` in the rule list; the
+  new sentence says all boundaries are ASCII.
