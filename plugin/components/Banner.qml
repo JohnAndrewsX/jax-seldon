@@ -41,8 +41,10 @@ BorderSurface {
   readonly property bool hovered: hover.hovered
   readonly property bool tooltipShown: tooltip.visible
   readonly property real tooltipWidth: tooltip.width
-  // Its text fits the tooltip's width (wrapped, not cut off).
-  readonly property bool tooltipFits: tooltipLabel.contentWidth <= tooltipLabel.width - tooltipLabel.leftPadding - tooltipLabel.rightPadding + 0.5
+  // The tooltip shows its own wrapping label, and the text fits it (not
+  // cut off at the tooltip's edge).
+  readonly property bool tooltipFits: tooltip.contentItem === tooltipLabel
+    && tooltipLabel.contentWidth <= tooltipLabel.width - tooltipLabel.leftPadding - tooltipLabel.rightPadding + 0.5
 
   visible: banner !== null
   implicitWidth: Style.space(320)
