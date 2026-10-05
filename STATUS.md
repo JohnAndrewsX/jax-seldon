@@ -17,7 +17,6 @@ decisions).
 | WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
 | WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
 | WP-098 | the test host follows main (deploy script, dev version marker) | Engine | `engine-098` (opus) | `wt/WP-098` · `wp/098-test-host-main` | 2026-10-05 |
-| WP-090 | plugin: stale code after update, harness record order | Plugin | `plugin-090` (opus) | `wt/WP-090` · `wp/090-stale-plugin` | 2026-10-05 |
 
 ## Queued (next up)
 
@@ -43,6 +42,14 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-090 the panel says "Restart the shell to finish the
+  update" when the shell still runs plugin code from before an update
+  (Quickshell 0.3.1 keeps compiled QML), one-shot *Restart shell* action;
+  the version pair is checked in `just check-packaging` and the release;
+  guide 11 and both READMEs tell users to restart after a plugin update;
+  harness recorder appends in one write; live check on the test host
+  (notice, real click, new shell in 1 s); Opus review, one fix round,
+  Sonnet verification; merged.
 - 2026-10-05 WP-088 a collector degraded in a state reset keeps a
   `pendingBaseline` mark (`cursors` or `logbook`) and records its gap on
   its first successful run; rule 8 catches up Seldon's own changes left
