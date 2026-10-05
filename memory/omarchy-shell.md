@@ -582,11 +582,15 @@ Verified in the shell source and live on the test host.
 - **`omarchy-restart-shell`** kills every quickshell of the config dir
   (`quickshell kill -p … --any-display`), relaunches via `hyprctl dispatch
   exec omarchy-launch-shell` and waits for `ping`. It refuses while a secure
-  lock is up. No first-party QML runs it; the plugin starts it with
-  `Quickshell.execDetached(["omarchy-restart-shell"])` (a detached process,
-  so it outlives the shell it kills) — **not yet verified live**
-  (orchestrator's check on the test host).
-- **Fake recorders must append in one write.** Bash line-buffers stdout,
-  so `printf '%s' "$multi_line" >>file` is one `write(2)` per line; two
-  recorders started together interleaved in 37 of 500 runs. Stage the
-  record in a private file and `cat` it onto the record (one write).
+  lock is up. First-party QML runs it the same way: the Omarchy menu's
+  *Update > Process > Shell* (`default/omarchy/omarchy-menu.jsonc`,
+  `update.process.shell`) goes through `plugins/menu/Menu.qml`
+  `runAction` → `Commons/Util.qml` `execDetached` →
+  `Quickshell.execDetached(["bash", "-lc", command])`. The plugin starts it
+  with `Quickshell.execDetached(["omarchy-restart-shell"])`. **Verified
+  live** on the test host (orchestrator, WP-090 round 1): a click on
+  *Restart shell* gave a new shell within 1 s, one process, the notice
+  gone — the detached process outlives the shell it kills.
+- A second restart started while the first one runs can kill the *new*
+  shell: the plugin's restart action is one-shot per service instance
+  (WP-090 round 2).
