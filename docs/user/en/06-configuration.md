@@ -216,6 +216,8 @@ redacted value reads `‹redacted›`. The built-in rules cover:
   or `--cookie` (not a cookie file name);
 - the certificate and password after `curl -E`/`--cert`, the value
   after `http`/`xh -a`;
+- the `pass:…` value of openssl's `-pass`, `-passin`, `-passout` and
+  similar options; `env:`, `file:`, `fd:` and `stdin` stay as written;
 - proxy credentials: after `curl -U`, `--proxy-user` and
   `--proxy-password`, and `user:pass@` in the proxy after `curl -x`,
   `--proxy` or in `https_proxy=`;
