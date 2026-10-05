@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-084 | redaction: proxy credentials, JSON passwords, cookie headers | Engine | `engine-084` (opus) | `wt/WP-084` · `wp/084-review` | 2026-10-05 |
-| WP-085 | panel shows capture warnings | Plugin | `plugin-085` (opus) | `wt/WP-085` · `wp/085-review` | 2026-10-05 |
 | WP-086 | Seldon's own updates are not drift | Engine | `engine-086` (opus) | `wt/WP-086` · `wp/086-review` | 2026-10-05 |
 
 ## Queued (next up)
@@ -37,6 +36,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-085 the panel shows a capture's warnings (the state reset)
+  in a neutral notice, full text in a bounded, wrapping tooltip; kept across
+  failed or locked captures, cleared by a clean one; two review rounds;
+  merged.
 - 2026-10-05 WP-082 snapper keeps one date per snapshot across `snapper
   list` and the info files, also in the repeated hour and at its ends; the
   ledger dedupe knows both instants; the list shape checked on the dev
