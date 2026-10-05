@@ -413,9 +413,10 @@ mod tests {
         );
         for (id, ts) in [
             (id, ts),
+            // JSON escapes for the first `0` and the `+`
             (
-                r#""01M1MB2M1GWZYF485HTGVZ1KS3""#,
-                r#""2026-09-03T21:14:06+02:00""#,
+                r#""\u00301M1MB2M1GWZYF485HTGVZ1KS3""#,
+                r#""2026-09-03T21:14:06\u002b02:00""#,
             ),
             ("5", ts),
             ("null", ts),
@@ -423,7 +424,7 @@ mod tests {
             (id, "5"),
             (id, "[]"),
             (id, r#""2026-09-03""#),
-            (id, r#""2026-09-03T21:14:06+0200""#),
+            (id, r#""2026-09-03T21:14:06\u002b0200""#),
         ] {
             let line = format!(r#"{{"id":{id},"ts":{ts}}}"#);
             let message = |e: serde_json::Error| {
