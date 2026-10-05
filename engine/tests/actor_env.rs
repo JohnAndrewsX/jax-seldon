@@ -116,6 +116,8 @@ fn a_refused_variable_is_exit_1_and_writes_nothing() {
             &["log", "note"][..],
             &["plan", "new", "--", "Other"],
             &["plan", "start", "C-2026-001"],
+            // refused before the event is looked up
+            &["drift", "dismiss", THEME, "--only", "--", "x"],
         ] {
             refused(&run(&env, T0, Some(bad), args));
         }
