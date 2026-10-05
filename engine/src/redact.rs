@@ -95,7 +95,9 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// [`holds_trigger`] for `+`). A match in which one of the groups in
 /// `unless` takes part is left as it is: such a group stands for context
 /// that the `regex` crate cannot look behind or ahead for, so the pattern
-/// matches it and the rule then keeps the match.
+/// matches it and the rule then keeps the match. A group in
+/// `unless_followed` does so only for what follows the match
+/// ([`Rule::kept`]).
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
@@ -106,6 +108,7 @@ struct Rule {
     replacement: String,
     check: Option<fn(&str) -> bool>,
     unless: &'static [&'static str],
+    unless_followed: &'static [&'static str],
     triggers: &'static [&'static str],
 }
 
@@ -182,10 +185,37 @@ impl Rule {
         self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(lower, t))
     }
 
-    /// Whether this match is replaced: not inside an existing marker,
-    /// without a group of `unless` and, for a checked rule, with a value
-    /// that passes the check.
-    fn applies(&self, found: &Found, markers: &[(usize, usize)]) -> bool {
+    /// Whether a group of `unless` keeps this match as it is. A group of
+    /// `unless_followed` (the `:` after an address) keeps it only when the
+    /// text goes on right after the match with a character other than
+    /// white space that starts no further match (`next`): `host:path`
+    /// does, `a@b.co: hi` and `a@b.co:c@d.example` do not. The group
+    /// holds only that `:`, so the next match may start right after it.
+    fn kept(&self, found: &Found, text: &str, next: Option<&Found>) -> bool {
+        let named = |g: &&str| found.caps.name(g).is_some();
+        if self.unless.iter().any(named) {
+            return true;
+        }
+        let end = found.range().1;
+        self.unless_followed.iter().any(named)
+            && text[end..]
+                .chars()
+                .next()
+                .is_some_and(|c| !c.is_whitespace())
+            && next.is_none_or(|n| n.range().0 != end)
+    }
+
+    /// Whether this match is replaced: not inside an existing marker, not
+    /// kept by its context ([`Rule::kept`]; `next` is the rule's following
+    /// match in `text`) and, for a checked rule, with a value that passes
+    /// the check.
+    fn applies(
+        &self,
+        found: &Found,
+        next: Option<&Found>,
+        text: &str,
+        markers: &[(usize, usize)],
+    ) -> bool {
         let (m_start, m_end) = found.range();
         // only the last marker that starts at or before the match can
         // hold it (see [`markers`]): a binary search, so a long line with
@@ -193,7 +223,7 @@ impl Rule {
         let i = markers.partition_point(|&(start, _)| start <= m_start);
         let inside = i > 0 && m_end <= markers[i - 1].1;
         !inside
-            && !self.unless.iter().any(|g| found.caps.name(g).is_some())
+            && !self.kept(found, text, next)
             && self
                 .check
                 .is_none_or(|check| found.caps.name("v").is_some_and(|v| check(v.as_str())))
@@ -204,10 +234,11 @@ impl Rule {
         let markers = markers(text);
         let mut out = String::with_capacity(text.len());
         let mut last = 0;
-        for found in self.matches(text) {
+        let all = self.matches(text);
+        for (i, found) in all.iter().enumerate() {
             let (start, end) = found.range();
             out.push_str(&text[last..start]);
-            if self.applies(&found, &markers) {
+            if self.applies(found, all.get(i + 1), text, &markers) {
                 found.caps.expand(&self.replacement, &mut out);
             } else {
                 out.push_str(&text[start..end]);
@@ -409,6 +440,7 @@ fn rule(name: &'static str, pattern: &str, replacement: &str) -> Rule {
         replacement: replacement.to_string(),
         check: None,
         unless: &[],
+        unless_followed: &[],
         triggers: triggers(name),
     }
 }
@@ -625,30 +657,41 @@ fn builtin_rules() -> Vec<Rule> {
         // so a file named after an account can still be found. Not an
         // address: `user@host` without a dot, a version (`pkg@1.2.3`),
         // an npm scope (`@scope/pkg`), and, through `unless`, the
-        // userinfo of a URL (`url-userinfo`'s), `host:path` or a port
-        // after the domain (`git@github.com:owner/repo`) and a systemd
-        // unit (`getty@tty1.service`)
+        // userinfo of a URL (`url-userinfo`'s) and a systemd unit
+        // (`getty@tty1.service`), through `unless_followed` `host:path`
+        // or a port after the domain (`git@github.com:owner/repo`)
         Rule {
-            unless: &["url", "port", "unit"],
-            ..rule("email", &email(), "‹redacted›@${domain}")
+            unless: &["url", "unit"],
+            unless_followed: &["port"],
+            ..rule("email", &email(), "‹redacted›@${domain}${port}")
         },
     ]
 }
 
-/// One character of an address beyond ASCII (`jürgen@müller.example`):
-/// anything but the quotes of [`REDACTED`] (U+2039, U+203A), so a marker
-/// is never part of an address.
+/// One character of a domain beyond ASCII (`müller.example`,
+/// `.испытание`): anything but the quotes of [`REDACTED`] (U+2039,
+/// U+203A), so a marker is never part of an address.
 const NON_ASCII: &str = r"\x{80}-\x{2038}\x{203B}-\x{10FFFF}";
+
+/// One character of a local part beyond ASCII (`jürgen@…`): not the
+/// control characters and the no-break space (U+0080–U+00A0), the general
+/// punctuation (U+2000–U+206F: `—`, `„`, the quotes of [`REDACTED`]), CJK
+/// (U+3000–U+9FFF, U+F900–U+FAFF) or the full-width forms
+/// (U+FF00–U+FFEF), so text glued to an address (`連絡先：山田さんme@…`,
+/// `Kontakt—me@…`) stays. A local part in CJK is not matched. Ranges
+/// rather than `\p{L}`, which compiles at twice the cost.
+const LOCAL_NON_ASCII: &str =
+    r"\x{A1}-\x{1FFF}\x{2070}-\x{2FFF}\x{A000}-\x{F8FF}\x{FB00}-\x{FEFF}\x{10000}-\x{10FFFF}";
 
 /// An e-mail address: a local part, `@`, and a domain of at least two
 /// labels whose last one (the top-level domain) holds letters only. The
 /// groups that rule `email` keeps as they are come first and last: `url`
 /// is the start of a URL with userinfo as `url-userinfo` reads it (with a
 /// `:`, a password may hold `/`), so an `@` that rule masks up to is no
-/// address; `unit` and `port` follow the domain.
+/// address; `unit` and `port` (only the `:`) follow the domain.
 fn email() -> String {
     format!(
-        r#"(?P<url>(?-u:\b)[A-Za-z][A-Za-z0-9+.-]*://(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]*))?[A-Za-z0-9._%+\-{NON_ASCII}]+@(?P<domain>(?:[A-Za-z0-9\-{NON_ASCII}]+\.)+(?:(?P<unit>service|socket|target|timer|mount|automount|path|slice|scope|swap|device)(?-u:\b)|[A-Za-z{NON_ASCII}]{{2,}}))(?P<port>:\S)?"#
+        r#"(?P<url>(?-u:\b)[A-Za-z][A-Za-z0-9+.-]*://(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]*))?[A-Za-z0-9._%+\-{LOCAL_NON_ASCII}]+@(?P<domain>(?:[A-Za-z0-9\-{NON_ASCII}]+\.)+(?:(?P<unit>service|socket|target|timer|mount|automount|path|slice|scope|swap|device)(?-u:\b)|[A-Za-z{NON_ASCII}]{{2,}}))(?P<port>:)?"#
     )
 }
 
@@ -682,6 +725,7 @@ impl Redactor {
                 replacement: WHOLE.to_string(),
                 check: None,
                 unless: &[],
+                unless_followed: &[],
                 triggers: &[],
             });
         }
@@ -716,7 +760,11 @@ impl Redactor {
         let lower = trigger_text(text);
         self.rules()
             .filter(|r| {
-                r.triggered(&lower) && r.matches(text).iter().any(|f| r.applies(f, &markers))
+                if !r.triggered(&lower) {
+                    return false;
+                }
+                let all = r.matches(text);
+                (0..all.len()).any(|i| r.applies(&all[i], all.get(i + 1), text, &markers))
             })
             .map(|r| r.name)
             .collect()

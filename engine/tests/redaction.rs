@@ -836,6 +836,59 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "leo@",
         "getty@tty1.service && mail -s done ‹redacted›@example.com",
     ),
+    // text glued to an address stays (WP-093 round 2): CJK, full-width
+    // and general punctuation are no part of a local part
+    (
+        "email",
+        "日本語の長い文章です。改行なしnana@example.com",
+        "nana",
+        "日本語の長い文章です。改行なし‹redacted›@example.com",
+    ),
+    (
+        "email",
+        "連絡先：山田太郎さんoscar@example.com",
+        "oscar",
+        "連絡先：山田太郎さん‹redacted›@example.com",
+    ),
+    (
+        "email",
+        "Kontakt—paul@example.com",
+        "paul",
+        "Kontakt—‹redacted›@example.com",
+    ),
+    (
+        "email",
+        "„quinn@example.com“",
+        "quinn",
+        "„‹redacted›@example.com“",
+    ),
+    // a top-level domain beyond ASCII
+    (
+        "email",
+        "olga@пример.испытание",
+        "olga",
+        "‹redacted›@пример.испытание",
+    ),
+    // a `:` keeps an address only before other text, not before a
+    // further address or at the end; it takes no character of what follows
+    (
+        "email",
+        "a@b.co:c@d.example",
+        "c@d",
+        "‹redacted›@b.co:‹redacted›@d.example",
+    ),
+    (
+        "email",
+        "me@example.org:me2@example.net",
+        "me2",
+        "‹redacted›@example.org:‹redacted›@example.net",
+    ),
+    (
+        "email",
+        "an rita@example.org:",
+        "rita",
+        "an ‹redacted›@example.org:",
+    ),
     // an SSH login with a dot in the host reads as an address: masked
     // too, as `ssh://me@host` is a URL with userinfo
     (
@@ -986,6 +1039,23 @@ mod redaction {
         let r = Redactor::builtin();
         for text in CLEAR {
             assert_eq!(r.redact(text), *text, "{:?}", r.matching_rules(text));
+        }
+        // every systemd unit type (WP-093)
+        for unit in [
+            "service",
+            "socket",
+            "target",
+            "timer",
+            "mount",
+            "automount",
+            "path",
+            "slice",
+            "scope",
+            "swap",
+            "device",
+        ] {
+            let text = format!("systemctl status app@x.{unit}");
+            assert_eq!(r.redact(&text), text);
         }
     }
 
@@ -1223,6 +1293,12 @@ mod redaction {
         assert_eq!(
             r.redact("ssh corp-123456@INTERNAL.example"),
             format!("ssh {REDACTED}@{REDACTED}")
+        );
+        // guide 06: a personal domain is masked by a pattern of its own
+        let r = Redactor::with_patterns(&[r"@smith\.example\b".into()]).unwrap();
+        assert_eq!(
+            r.redact("mail jo@smith.example and ann@example.org"),
+            format!("mail {REDACTED}{REDACTED} and {REDACTED}@example.org")
         );
         let err = Redactor::with_patterns(&["(unclosed".into()]).unwrap_err();
         assert_eq!(err.exit(), Exit::UserError);
