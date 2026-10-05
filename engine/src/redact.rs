@@ -42,6 +42,11 @@
 //! without `://`, `=`, a token prefix, … compiles none of them, and a
 //! `curl` line compiles a `curl` rule only when it also holds that rule's
 //! option (`-u`, `-x`, `-b`, …).
+//!
+//! The rules for an option of a command (`curl -u`, `sshpass -p`,
+//! `docker login -p`) look for it within one command ([`COMMAND_REST`]:
+//! a quoted `;`, `&` or `|` does not end it) and find it again when the
+//! command gives it twice ([`Rule::matches`]).
 
 use std::sync::{LazyLock, OnceLock};
 

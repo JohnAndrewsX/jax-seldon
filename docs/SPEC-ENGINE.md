@@ -974,7 +974,17 @@ its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
 case-insensitive matching folds them (`redact::trigger_text`); a trigger
 may join literals with `+` that must all be present, so a `curl` rule
-needs `curl` and its option (`curl+-x`; WP-084). Word boundaries in the
+needs `curl` and its option (`curl+-x`; WP-084). The option rules
+(`curl -u`/`--user`, `-U`/`--proxy-user`, `-x`/`--proxy`,
+`-b`/`--cookie`, `sshpass -p`, `docker … login -p`) look for the option
+within one command: up to the line end or an unquoted `;`, `&` or `|`;
+a quoted string (`'a&b'`, `"x;y"`, `\"` inside double quotes), a
+backslash escape (`\;`) and a quote the line never closes (an apostrophe
+in a note) do not end it. An option given twice in one command is masked
+each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
+from the end of its previous match, without a second command word;
+`sshpass` masks only its first `-p`, as a later one belongs to the
+command it runs (`ssh -p 2222`) (WP-087). Word boundaries in the
 rules are ASCII (`(?-u:\b)`): a Unicode `\b` sends a regex to the slow
 matcher on any non-ASCII text, the marker of an earlier rule included
 (WP-084: a 16 KB curl line took 5.4 ms, 0.13 ms with ASCII boundaries).
