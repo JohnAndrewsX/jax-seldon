@@ -748,14 +748,16 @@ fn check_files<R: Record>(
     files.len()
 }
 
-/// `omarchy-version` (`omarchy --version` does not exist, memory/host.md).
+/// `omarchy-version` (`omarchy --version` does not exist, memory/host.md),
+/// with `OMARCHY_PATH` defaulted as the collector runs it
+/// ([`sys::omarchy_command`]).
 fn check_omarchy(config: &Config) -> Check {
     if !config.collectors.omarchy {
         return Check::new("omarchy", Status::Ok, "collector disabled in config.toml");
     }
     // the program the collector runs (`SELDON_OMARCHY_VERSION`)
     let program = Sources::from_env().omarchy_version;
-    match sys::run(&program, &[], None, PROBE_TIMEOUT) {
+    match sys::run_command(sys::omarchy_command(&program, &[]), PROBE_TIMEOUT) {
         Run::Exited {
             code: Some(0),
             stdout,
