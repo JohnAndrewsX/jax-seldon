@@ -1698,3 +1698,22 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   copies into place and run the `hooks-…` test binary directly (cargo
   would rebuild). Under load 7 even `main` went over 5 ms at 900 lines;
   compare rounds, not single runs.
+## 2026-10-05 · WP-087 round 2 (Engine Dev)
+
+- **A per-match check over all markers turns quadratic once a rule
+  yields many matches.** `Rule::applies` scanned every marker; harmless
+  while a curl rule matched once per command, 34 ms at 128 KB once the
+  scan-on matched every option. Markers from `match_indices` are sorted
+  and disjoint: `partition_point` finds the only candidate. Time a line
+  with *two* option kinds (the first rule leaves the markers the second
+  checks); one kind alone stayed linear and hid it.
+- **"Linear" needs three sizes, not two.** Two points (16/64 KB) cannot
+  tell ×4 from ×5.6; measure 16/64/128 KB, or up to 512 KB, and state
+  the ratio per doubling.
+- **A union can make a fallback branch redundant for its own row.** With
+  `(?:plain|quote-aware)` the plain branch reached `curl's -u …`, so the
+  unclosed-quote tail's row no longer killed its mutant; the row needs a
+  quoted separator first, which only the quote-aware branch crosses.
+- **A mutant at a marker's first character needs a pattern that matches
+  there.** `partition_point(start < m)` survived the idempotency test
+  until its user pattern also matched `‹re`.
