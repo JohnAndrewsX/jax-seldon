@@ -142,6 +142,14 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fake:pw4",
         "https://‹redacted›@git.example/x.git",
     ),
+    // `/` and `@` in one password: the `@` before the host is no
+    // address (rule `email`, WP-093)
+    (
+        "url-userinfo",
+        "git clone https://bob:fake/pw@5@git.example/x.git",
+        "fake/pw@5",
+        "https://‹redacted›@git.example/x.git",
+    ),
     (
         "url-userinfo",
         "git clone https://faketoken0000@git.example/x.git",
@@ -902,6 +910,7 @@ const CLEAR: &[&str] = &[
     "ssh me@localhost",
     "npm i @scope/pkg @scope/other@1.2.3 left-pad@1.3.0 react@18.2.0-rc.1",
     "pnpm add typescript@latest",
+    "npm i typescript@5.4.10",
     "systemctl enable --now getty@tty1.service wg-quick@wg0.service",
     "systemctl --user start app@x.timer app@y.socket user@1000.slice",
     "monitor = DP-2, 2560x1440@144, 2560x0, 1",
