@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- Redaction covers proxy credentials (`curl -U`, `--proxy-user`, wget's
+  `--proxy-password`, `user:pass@` without a scheme after `curl -x`,
+  `--proxy` or `https_proxy=`), secrets in inline JSON (`"password"`,
+  `"passwd"`, `"…secret"`, `"…token"` keys; not `"password_hint"`) and
+  cookies (`Cookie:`/`Set-Cookie:` header values, `curl -b`/`--cookie`
+  with `name=value`). The option, key or header name stays visible
+  (WP-084).
+
 ## [0.1.2] - 2026-10-04
 
 ### Engine
