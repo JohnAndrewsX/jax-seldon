@@ -137,6 +137,9 @@ through `filesystem` or `omarchy-settings`; in packages, the
 4. Never take an R3 step in an unattended session, and never without a
    snapshot.
 
+An AUR install as such is not R3; an AUR dependency that this read-only
+resolution cannot resolve makes it R3 (ask first).
+
 ## Privileged steps and snapshots
 
 - Run `sudo` yourself, in the terminal; the user types the password when

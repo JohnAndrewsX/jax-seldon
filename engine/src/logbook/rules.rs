@@ -365,8 +365,12 @@ fn is_seldon_block(block: &str) -> bool {
 
 /// The lines of an unfenced `old` that occur in no text Seldon wrote
 /// before the block ([`V1_TEXTS`]), in their order, with `\n` line ends;
-/// blank lines only between kept lines, runs of them as one. Empty when
-/// nothing is the user's.
+/// blank lines only between kept lines, runs of them as one. A run of the
+/// user's lines that follows Seldon's lines gets the last `## ` heading of
+/// Seldon's above it, once, unless that heading already stands over it in
+/// the output or the run starts with a heading of its own: a bullet the
+/// user added under v1's `## Never` stays a "never" (WP-100 round 3).
+/// Empty when nothing is the user's.
 pub fn own_lines(old: &str) -> String {
     let known: std::collections::HashSet<&str> = V1_TEXTS
         .iter()
@@ -375,14 +379,38 @@ pub fn own_lines(old: &str) -> String {
         .collect();
     let mut out = String::new();
     let mut gap = false;
+    // the last `## ` heading of Seldon's lines, and the heading the output
+    // stands under (Seldon's, emitted, or the user's own)
+    let mut seldon_heading: Option<&str> = None;
+    let mut shown_heading: Option<&str> = None;
+    let mut after_known = false;
     for line in old.lines() {
         if line.trim().is_empty() {
             gap = !out.is_empty();
             continue;
         }
         if known.contains(line) {
+            if line.starts_with("## ") {
+                seldon_heading = Some(line);
+            }
+            after_known = true;
             continue;
         }
+        if line.starts_with("## ") {
+            shown_heading = Some(line);
+        } else if after_known
+            && let Some(heading) = seldon_heading
+            && shown_heading != Some(heading)
+        {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(heading);
+            out.push('\n');
+            shown_heading = Some(heading);
+            gap = false;
+        }
+        after_known = false;
         if gap {
             out.push('\n');
             gap = false;
@@ -680,6 +708,46 @@ mod tests {
         let mixed = format!("my own\r\n{}", golden("wp024-de").replace('\n', "\r\n"));
         let u = update(Some(&mixed), &t, false).unwrap();
         assert_eq!(u.text, format!("{t}\n{KEPT_HEADING}\n\nmy own\n"));
+    }
+
+    #[test]
+    fn a_users_lines_keep_the_v1_heading_they_stand_under() {
+        // B1 (round 3): bullets appended to v1's `## Never` stay limits
+        let t = template(Language::En);
+        let old = format!(
+            "{}- Install anything from the AUR.\n- Touch /opt.\n",
+            golden("v0.1.1-en")
+        );
+        assert_eq!(
+            own_lines(&old),
+            "## Never\n- Install anything from the AUR.\n- Touch /opt.\n"
+        );
+        let u = update(Some(&old), &t, false).unwrap();
+        assert!(
+            u.text.ends_with(&format!(
+                "{KEPT_HEADING}\n\n## Never\n- Install anything from the AUR.\n- Touch /opt.\n"
+            )),
+            "{}",
+            &u.text[t.len()..]
+        );
+        // two runs under two v1 headings; a second run under the same
+        // heading gets no second copy of it (the blank line before it is
+        // v1's, before "Area rules:")
+        let v1 = golden("v0.1.1-en");
+        let old = v1
+            .replacen("## Drift\n", "## Drift\n\n- Ask me about drift.\n", 1)
+            .replacen("## Never\n", "## Never\n\n- Touch /opt.\n", 1)
+            + "- Install from the AUR.\n";
+        assert_eq!(
+            own_lines(&old),
+            "## Drift\n- Ask me about drift.\n\n## Never\n- Touch /opt.\n\n- Install from the AUR.\n"
+        );
+        // a run that starts with its own heading gets none of Seldon's
+        let old = format!("{v1}\n## Mine\n- Touch /opt.\n");
+        assert_eq!(own_lines(&old), "## Mine\n- Touch /opt.\n");
+        // own lines before any v1 heading: no heading
+        let old = format!("- First.\n{v1}");
+        assert_eq!(own_lines(&old), "- First.\n");
     }
 
     #[test]

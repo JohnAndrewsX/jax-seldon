@@ -152,6 +152,10 @@ R3-Gegenstände: Kernel, der Bootloader, die Initramfs, `systemd`, `glibc`,
 4. Nie einen R3-Schritt in einer unbetreuten Sitzung, und nie ohne
    Snapshot.
 
+Eine AUR-Installation als solche ist nicht R3; eine AUR-Abhängigkeit,
+die diese nur lesende Auflösung nicht auflösen kann, macht sie zu R3
+(vorher fragen).
+
 ## Privileged steps and snapshots
 
 - Führ `sudo` selbst aus, im Terminal; der Nutzer tippt das Passwort,
