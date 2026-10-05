@@ -555,3 +555,15 @@ Verified in the shell source and live on the test host.
 - Lines are tagged by window pointer, not name: identify a surface as the
   window that starts rendering after the IPC command. A bar with a
   scrolling media title renders at 60 fps in idle.
+
+## WP-098 findings (2026-10-05, Omarchy 4.0.4)
+
+- **Every dir under `~/.config/omarchy/plugins` with a `manifest.json` is
+  a plugin** (`omarchy-plugin-catalog`: `find -L … -mindepth 2 -maxdepth
+  2 -name manifest.json`, dot dirs skipped). A backup of `jax.seldon`
+  next to it would be a second plugin with the same id (`omarchy plugin
+  add` refuses "already used by …"); keep backups outside, e.g.
+  `~/.local/state/seldon-dev/`.
+- **`omarchy plugin update` needs a git checkout** (`fetch origin HEAD`,
+  `merge --ff-only`); a plain copy fails with "not a git checkout". A
+  clone at a tag (detached HEAD) still fast-forwards.

@@ -640,3 +640,11 @@ Append-only. One bullet per finding, newest section last.
 - **The inverse of a merge returns a plan, not a write.**
   `unmerge_claude_hooks` returns `After::{Unchanged, Write(text),
   Delete}`; the caller writes or deletes so that it can record which.
+- **A build-time marker without a build script:** `option_env!` works in
+  a `const`, and cargo records it in the dep-info, so changing
+  `SELDON_BUILD` rebuilds the crate (checked: plain → marked → plain).
+  Concatenating two `&str` consts needs a `const fn` that fills a
+  `[u8; N]` with `N` from another `const fn`, then
+  `std::str::from_utf8` (const since 1.87) in a `match`; an `assert!` in
+  the const fn turns a bad value into a compile error (E0080). `VERSION`
+  in lib.rs (WP-098).
