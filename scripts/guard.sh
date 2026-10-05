@@ -32,6 +32,24 @@ cmd=$(printf '%s\n' "$cmd" | awk '
 
 block() { echo "guard: blocked (AGENTS.md §6 red zone): $1" >&2; exit 2; }
 
+# test hosts: a command that is ONE ssh invocation to a host listed in
+# scripts/guard-hosts.local (git-ignored: real names stay out of the repo;
+# one host per line, `#` comments) runs on that host, which the operator
+# has released to the agents as a test subject (operator decision
+# 2026-10-05). Nothing may follow the ssh call locally: the remote command
+# is one quoted string or plain words without `;`, `&`, `|` outside quotes.
+# `GUARD_HOSTS_FILE` overrides the file (the test table uses it).
+hosts_file=${GUARD_HOSTS_FILE:-$(dirname "$0")/guard-hosts.local}
+if [[ -r $hosts_file ]]; then
+  while IFS= read -r host; do
+    host=${host%%#*}; host=${host//[[:space:]]/}
+    [[ -n $host ]] || continue
+    if printf '%s' "$cmd" | grep -Eq "^[[:space:]]*(timeout[[:space:]]+[0-9]+[[:space:]]+)?ssh([[:space:]]+-[A-Za-z]+([[:space:]]+[^[:space:]]+)?)*[[:space:]]+$host([[:space:]]+('[^']*'|\"[^\"]*\"|[^;&|'\"]*))?[[:space:]]*$"; then
+      exit 0
+    fi
+  done < "$hosts_file"
+fi
+
 # privilege and package management
 # exact whitelist: the two makepkg forms packaging/README.md uses on the test
 # host over ssh (no -s/-i/--syncdeps/--install, no command chaining inside

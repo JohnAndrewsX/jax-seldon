@@ -106,4 +106,19 @@ check A 'herdr agent prompt x "never run systemctl enable on this host"'
 check A 'systemctl --user status seldon-watch'
 check B 'cd /x && systemctl --user enable seldon-watch'
 check B 'env FOO=1 systemctl daemon-reload'
+# test hosts (scripts/guard-hosts.local; the table uses its own file)
+hosts=$(mktemp); printf '# test subjects\ntest-host\n' > "$hosts"
+checkh() { GUARD_HOSTS_FILE=$hosts check "$@"; }
+checkh A 'ssh test-host omarchy plugin update jax.seldon'
+checkh A "ssh test-host 'omarchy plugin add https://x --enable && omarchy-restart-shell'"
+checkh A 'ssh test-host "sudo setfacl -m u:eandres:rx /.snapshots"'
+checkh A 'ssh -o BatchMode=yes -o ConnectTimeout=10 test-host "systemctl --user restart seldon-watch"'
+checkh A 'timeout 60 ssh test-host sudo pacman -Syu'
+checkh B 'ssh test-host "omarchy theme set x" && sudo pacman -Syu'
+checkh B 'ssh test-host x; pacman -Syu'
+checkh B 'ssh other-host omarchy plugin update jax.seldon'
+checkh B 'ssh test-hostx omarchy plugin update jax.seldon'
+checkh B 'sudo ssh test-host ls'
+GUARD_HOSTS_FILE=/nonexistent check B 'ssh test-host omarchy plugin update jax.seldon'
+rm -f "$hosts"
 exit $fail

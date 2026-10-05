@@ -1,5 +1,6 @@
 # local, machine-specific notes (real hostnames, private paths)
 memory/local.md
+scripts/guard-hosts.local
 # git worktrees created by the orchestrator (wt/WP-NNN)
 wt/
 # build output
