@@ -1090,8 +1090,10 @@ with its password, the value with a `:` after `curl -E`, `--cert` or
 `--proxy-cert` (the long forms also without the command word; the file
 name is masked with the password: `cert-password`, WP-097); the value
 after `-a` or `--auth` of `http`, `https`, `xh` or `xhs` (HTTPie and xh;
-any value, a bearer token included; a command word followed by `:`, as
-in `http://`, is none: `httpie-auth`, WP-097); after
+any value, a bearer token included; the command word is followed by a
+space, tab, line end or `\` before a line end, so `http://` is none,
+and its triggers are those words with that character: `httpie-auth`,
+WP-097); after
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
 login`; e-mail addresses (`email`, WP-093: the local part, the domain
 stays: `‹redacted›@example.com`); and user-supplied patterns in
@@ -1102,7 +1104,8 @@ of it (`--proxy-user ‹redacted›`, `"password": ‹redacted›`,
 commands, only the command line. A name that can only mean a
 credential masks any non-empty value: `--password`, `--token`,
 `--with-token`, `--secret`, `--client-secret`, `--passphrase`, `--pass`,
-`--oauth2-bearer` (`password-option`, `secret-option`) and `token=`, `…SECRET=`,
+`--oauth2-bearer`, not a negation such as `--no-pass`
+(`password-option`, `secret-option`) and `token=`, `…SECRET=`,
 `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`, `…_PASS=`,
 `SSHPASS=` (`token-assignment`, `secret-assignment`). A name that ends
 in `key` (`--api-key`, `--access-key`, `--secret-key`: `key-option`;
@@ -1151,8 +1154,11 @@ reading reaches. White space or a `\` line end may stand between an
 option and its value. The value of an option is one shell word: quoted
 and bare parts joined together (`admin:'p w'`, `"$U":pw`), `$'…'`, `\"`
 inside double quotes and backslash escapes belong to it and are masked
-whole; a double-quoted part that never closes as escapes are read is
-taken up to the next `"` as written. The value after `token=`,
+whole. A quoted part ends at a line end that no `\` escapes: a
+double-quoted part that never closes as escapes are read is taken up to
+the next `"` on its line as written, and a quote its line does not close
+(`bob's` in a note, `-u 'admin:pw`) takes the rest of that line only
+(WP-097 round 2). The value after `token=`,
 `…PASSWORD=` and the other assignments is one quoted or bare part, so a
 query `?token=abc` inside a quoted URL stops at the closing quote; a
 double-quoted value may hold `\"` (WP-097).
@@ -1167,13 +1173,20 @@ compile every curl rule for it); abbreviated long options (`--us`); the
 last of several `sshpass -p` (sshpass uses the last); a `.netrc` or curl
 config file (`curl -n`, `-K`) and its contents shown by another command;
 `openssl … -pass pass:…`; an assignment value that joins quoted and bare
-parts (`PASSWORD=a'b'` keeps `'b'`). Masked too much, by design: an
+parts (`PASSWORD=a'b'` keeps `'b'`); `--no-pass` and other negations,
+which are not `--pass`. Masked too much, by design: an
 option word inside a quoted argument that spans lines (`git commit -m
-"…curl…⏎… -U flag"`, as on one line), a stray apostrophe that pairs with
-one on a later line, `x264 --pass 1` (`--pass` names a credential), a
-certificate's file name next to its password, and an option value at
-the end of a quoted string (`bash -c "curl -u a:b" && echo "x"`), which
-joins the next quoted part as adjacent shell parts would. An e-mail address
+"…curl…⏎… -U flag"`, as on one line); a stray apostrophe (in the
+command's context, up to the line end; an option value with an unclosed
+quote ends at the line end); `x264 --pass 1` (`--pass` names a
+credential); a certificate's file name next to its password; an option
+value at the end of a quoted string (`bash -c "curl -u a:b" && echo
+"x"`), which joins the next quoted part as adjacent shell parts would;
+the word after `-a` on a line that holds `http`, `https`, `xh` or `xhs`
+as a word followed by white space (`http redirect … ls -a home`); and a
+`\` at the end of a comment, which continues the command for redaction
+(bash does not). `cert-password` compiles on any curl line holding `-e`
+(`set -e`, `sudo -E`), about 0.3 ms per hook call; accepted. An e-mail address
 (`email`, WP-093) is a local part, `@`, and a domain of at least two
 labels whose last holds letters only (`example.de`, `müller.example`,
 `.испытание`). The local part is ASCII letters, digits and `._%+-`,
