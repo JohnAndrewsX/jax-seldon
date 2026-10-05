@@ -10,7 +10,9 @@
 # update`) and are never a target: the host comes from SELDON_TEST_HOST and
 # must be listed in scripts/guard-hosts.local (git-ignored, one host per
 # line, `#` comments; the same list the guard hook reads). Anything else is
-# refused, and so is a host whose /etc/machine-id is this machine's.
+# refused, and so is a host whose /etc/machine-id is this machine's, or
+# does not match its pin in scripts/deploy-hosts.local (git-ignored, one
+# line per host: `<alias> <machine-id>`), or has no pin there.
 #
 # Main build (CHECK_LOG): refuses unless this checkout is on `main`,
 # clean, HEAD equals origin/main, and CHECK_LOG — the orchestrator's main
@@ -27,6 +29,8 @@
 #     once to ~/.local/state/seldon-dev/plugin-<git|copy>-<UTC stamp>;
 #     afterwards the dir is a plain copy whose .seldon-dev-build names the
 #     build and the commit;
+#   - restarts seldon-watch.service (user unit) when it is active, so the
+#     watcher runs the new binary;
 #   - restarts the shell when the plugin files changed (or a restart is
 #     still pending from an earlier deploy), and only while `omarchy-shell
 #     lock status` reports neither locked nor secure; otherwise it prints
@@ -44,19 +48,25 @@
 # (checked against the release's SHA256SUMS, run with --force because the
 # dev binary was not installed by it) and the plugin as a git clone of
 # jax-seldon-plugin at the tag (the dev copy moved aside like above), then
-# the same restart, smoke and log. State written by a newer build may not
+# the same watch-unit restart, shell restart, smoke and log. This is the
+# only way back: seldon.prev holds the previous main build after the
+# second deploy, not the release. State written by a newer build may not
 # load in an older release: move ~/.local/state/seldon aside first.
 #
 # --dry-run: every refusal, one read-only look at the host, the hostname
 # `ssh -G` resolves the alias to, then the plan; nothing is built, copied
 # or restarted.
 #
+# --dry-run proceeds without a pin and says "machine-id not pinned"; a
+# deploy refuses. Neither id is ever printed.
+#
 # Exit codes: 0 deployed (a restart may be pending); 1 refused, nothing
 # changed; 2 build, copy, install or smoke failure.
 #
 # Test hooks (tests/deploy/deploy-test-host.test.sh): GUARD_HOSTS_FILE
 # replaces scripts/guard-hosts.local (as in guard.sh), SELDON_DEPLOY_LOCAL_ID
-# this machine's id, SELDON_DEPLOY_SETTLE the seconds the shell gets after
+# this machine's id, SELDON_DEPLOY_PINS scripts/deploy-hosts.local,
+# SELDON_DEPLOY_SETTLE the seconds the shell gets after
 # the sync before a restart (default 5), SELDON_DEPLOY_WAIT the seconds the
 # smoke waits for the service (default 60). Stubs first on PATH stand in for
 # cargo and ssh.
@@ -225,7 +235,25 @@ echo "pending=$([[ -f $dev_dir/restart-pending ]] && echo 1 || echo 0)"
 echo "lock=$(lock_free && echo free || echo held)"' </dev/null) \
   || refuse "cannot reach $host over ssh"
 local_id=${SELDON_DEPLOY_LOCAL_ID:-$(cat /etc/machine-id 2>/dev/null || hostname)}
-[[ $(value id "$probe") != "$local_id" ]] || refuse "$host is this machine; the test host must be another one"
+remote_id=$(value id "$probe")
+[[ $remote_id != "$local_id" ]] || refuse "$host is this machine; the test host must be another one"
+# The alias must still lead to the machine the orchestrator pinned: an ssh
+# config change cannot redirect a deploy. Neither id is printed.
+pins_file=${SELDON_DEPLOY_PINS:-$root/scripts/deploy-hosts.local}
+pinned=""
+if [[ -r $pins_file ]]; then
+  while read -r alias id _; do
+    [[ $alias == "$host" ]] && pinned=$id
+  done < <(sed 's/#.*//' "$pins_file")
+fi
+if [[ -z $pinned ]]; then
+  [[ $dry == 1 ]] || refuse "$host has no pinned machine-id in scripts/deploy-hosts.local; pin it once: ssh -- $host cat /etc/machine-id"
+  pin_note="machine-id not pinned"
+elif [[ $pinned != "$remote_id" ]]; then
+  refuse "$host's machine-id does not match the pin; the alias may point elsewhere"
+else
+  pin_note="machine-id pinned"
+fi
 [[ $(value plugin "$probe") != symlink ]] || refuse "$host's plugin dir is a symlink (a dev link?); not touching it"
 missing=$(value missing "$probe")
 [[ -z $missing ]] || refuse "$host lacks what the deploy needs: $missing"
@@ -254,7 +282,7 @@ fi
 
 if [[ $dry == 1 ]]; then
   resolved=$(ssh -G -- "$host" 2>/dev/null | awk '$1 == "hostname" { print $2; exit }' || true)
-  say "deploy-test-host (dry run): $host (ssh resolves it to ${resolved:-?})"
+  say "deploy-test-host (dry run): $host (ssh resolves it to ${resolved:-?}, $pin_note)"
   deployed=$(value deployed "$probe")
   engine_now=$(value engine "$probe")
   say "  now      engine ${engine_now:-not installed or not answering}, plugin dir $(value plugin "$probe")${deployed:+ ($deployed)}"
@@ -272,6 +300,7 @@ if [[ $dry == 1 ]]; then
   else
     say "  plugin   clone jax-seldon-plugin at $release into ~/.config/omarchy/plugins/jax.seldon"
   fi
+  say "  watch    restart seldon-watch.service if it is active"
   say "  restart  $restart_plan"
   say "  smoke    --version, doctor, capture, jax.seldon.service status (expect $version)"
   say "  log      ~/.local/state/seldon-dev/deploy.jsonl"
@@ -296,15 +325,15 @@ fi
 
 # ---- install on the host --------------------------------------------------------
 
-moved="" install_out="" restart="none" smoke="not run" failures=()
+moved="" install_out="" watch="not run" restart="none" smoke="not run" failures=()
 
 # log_line — one JSON line per deploy on the host, whatever the outcome.
 log_line() {
   local line
   line=$(jq -cn --arg ts "$(date -u +%FT%TZ)" --arg mode "$mode" --arg version "$version" \
     --arg commit "$head" --arg change "$plugin_change" --arg moved "$moved" --arg restart "$restart" \
-    --arg smoke "$smoke" --args '{ts: $ts, mode: $mode, version: $version, commit: $commit,
-      pluginChanged: ($change != "no"), movedAside: $moved, restart: $restart, smoke: $smoke,
+    --arg watch "$watch" --arg smoke "$smoke" --args '{ts: $ts, mode: $mode, version: $version, commit: $commit,
+      pluginChanged: ($change != "no"), movedAside: $moved, watch: $watch, restart: $restart, smoke: $smoke,
       failures: $ARGS.positional}' "${failures[@]+"${failures[@]}"}")
   rsh "mkdir -p \"\$dev_dir\" && printf '%s\n' $(printf '%q' "$line") >>\"\$dev_dir/deploy.jsonl\"" </dev/null \
     || warn "could not append to the deploy log on $host"
@@ -357,6 +386,18 @@ if [[ $(plugin_hash "$plugin_dir") != "$before" ]]; then touch "$dev_dir/restart
 fi
 moved=$(value moved "$install_out")
 plugin_change=$(value changed "$install_out")
+
+# ---- the watcher (seldon-watch.service runs ~/.local/bin/seldon watch) --------------
+
+# The swap left an active watcher on the old binary; restart it so it runs
+# the new one. An inactive or absent unit stays as it is.
+watch=$(rsh '
+if systemctl --user is-active --quiet seldon-watch.service 2>/dev/null; then
+  if systemctl --user restart seldon-watch.service >/dev/null 2>&1; then echo restarted; else echo "restart failed"; fi
+else
+  echo inactive
+fi' </dev/null) || watch="no answer"
+[[ $watch == restarted || $watch == inactive ]] || failures+=("seldon-watch.service: $watch")
 
 # ---- restart (only on a free session) ---------------------------------------------
 
@@ -421,6 +462,11 @@ else
   say "  engine   ~/.local/bin/seldon (there was none before)"
 fi
 say "  plugin   files changed: $plugin_change${moved:+; moved aside to ~/$moved}"
+case $watch in
+  restarted) say "  watch    seldon-watch.service restarted on the new binary" ;;
+  inactive) say "  watch    seldon-watch.service not active; left as it is" ;;
+  *) say "  watch    seldon-watch.service $watch" ;;
+esac
 case $restart in
   done) say "  restart  done" ;;
   none) say "  restart  not needed" ;;

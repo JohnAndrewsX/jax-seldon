@@ -52,6 +52,9 @@ R=$work/remote      # the fake host: home, stubs, switches
 repo=$work/repo
 mkdir -p "$L" "$R/omarchy/bin" "$R/bin" "$R/run"
 printf '# test hosts\n%s  # the fake one\nother-host\n' "$host" >"$work/hosts"
+# the fake host's machine-id, as the probe reads it (the stub runs here)
+remote_id=$(cat /etc/machine-id 2>/dev/null || hostname)
+printf '# alias machine-id\n# %s 0000-a-commented-pin\nother-host 1111\n%s %s  # pinned\n' "$host" "$host" "$remote_id" >"$work/pins"
 
 # make-seldon <version> prints a seldon that answers what the smoke asks
 # (the stubs below call it too).
@@ -154,7 +157,19 @@ for a; do [[ \$prev == --branch ]] && tag=\$a; prev=\$a; done
 [[ -d "$R/release/\$tag/plugin" ]] || exit 128
 cp -r "$R/release/\$tag/plugin" "\$dest" && mkdir -p "\$dest/.git"
 EOF
-for t in quickshell hyprctl systemctl wtype; do
+# systemctl: only `--user is-active --quiet` and `--user restart` of the
+# watcher unit; the restart records the engine version it would start
+cat >"$R/bin/systemctl" <<EOF
+#!/bin/bash
+case "\$*" in
+  "--user is-active --quiet seldon-watch.service") [[ -f "$R/watch_active" ]] ;;
+  "--user restart seldon-watch.service")
+    echo "watch restart on \$(seldon --version)" >>"$R/calls"
+    exit \$(cat "$R/watch_restart_rc" 2>/dev/null || echo 0) ;;
+  *) echo "systemctl \$*" >>"$work/trap.log"; exit 1 ;;
+esac
+EOF
+for t in quickshell hyprctl wtype; do
   printf '#!/bin/bash\necho "%s $*" >>"%s/trap.log"\nexit 1\n' "$t" "$work" >"$R/bin/$t"
 done
 chmod 755 "$L"/* "$R/omarchy/bin"/* "$R/bin/curl" "$R/bin/git" "$R/bin/quickshell" "$R/bin/hyprctl" \
@@ -182,7 +197,8 @@ make_release v0.1.2
 # plugin as a release git clone, unlocked.
 reset_remote() {
   rm -rf "$R/home" "$R/calls" "$R/lock.json" "$R/restart_rc" "$R/doctor_rc" "$R/validate_rc" \
-    "$R/service_version" "$R/restart_notice" "$R/capture_rc" "$R/no_session"
+    "$R/service_version" "$R/restart_notice" "$R/capture_rc" "$R/no_session" "$R/watch_active" \
+    "$R/watch_restart_rc"
   mkdir -p "$R/home/.local/bin" "$R/home/.config/omarchy/plugins/jax.seldon/.git"
   fake_seldon 0.1.3 >"$R/home/.local/bin/seldon"
   chmod 755 "$R/home/.local/bin/seldon"
@@ -239,6 +255,7 @@ deploy() {
   : >"$R/calls"
   out=$(cd "$repo" && env -u SELDON_BUILD PATH="$L:$PATH" SELDON_TEST_HOST="${TEST_HOST-$host}" \
     GUARD_HOSTS_FILE="${HOSTS_FILE:-$work/hosts}" SELDON_DEPLOY_LOCAL_ID="${LOCAL_ID:-dev-host-id}" \
+    SELDON_DEPLOY_PINS="${PINS_FILE:-$work/pins}" \
     SELDON_DEPLOY_SETTLE="${SETTLE:-0}" SELDON_DEPLOY_WAIT=2 bash scripts/deploy-test-host.sh "$@" 2>&1) || rc=$?
 }
 has() { grep -qF -- "$1" <<<"$out"; }
@@ -274,6 +291,22 @@ TEST_HOST=the refused "a word of a comment" "is not listed" "$log"
 TEST_HOST=-oProxyCommand=x refused "an ssh option as host" "not a plain ssh alias" "$log"
 HOSTS_FILE=$work/no-such-file refused "no host list" "no test host list" "$log"
 LOCAL_ID=$(cat /etc/machine-id 2>/dev/null || hostname) refused "the host is this machine" "is this machine" "$log"
+# the machine-id pin (scripts/deploy-hosts.local)
+printf '%s 0123456789abcdef0123456789abcdef\n' "$host" >"$work/pins-wrong"
+rm -f "$work/ssh.log"
+PINS_FILE=$work/pins-wrong refused "the host's machine-id does not match the pin" "does not match the pin; the alias may point elsewhere" "$log"
+check "pin mismatch: one ssh call (the probe)" test "$(wc -l <"$work/ssh.log")" = 1
+check "pin mismatch: neither id printed" test -z "$(grep -e "$remote_id" -e 0123456789abcdef <<<"$out")"
+PINS_FILE=$work/pins-wrong refused "pin mismatch, dry run too" "does not match the pin" --dry-run "$log"
+printf 'other-host 1111\n# %s %s\n' "$host" "$remote_id" >"$work/pins-none"
+PINS_FILE=$work/pins-none refused "no pin for the host (a commented one does not count)" \
+  "has no pinned machine-id in scripts/deploy-hosts.local; pin it once: ssh -- $host cat /etc/machine-id" "$log"
+PINS_FILE=$work/no-such-pins refused "no pin file" "has no pinned machine-id" "$log"
+check "no pin: the id not printed" test -z "$(grep -e "$remote_id" <<<"$out")"
+reset_remote
+PINS_FILE=$work/pins-none deploy --dry-run "$log"
+check "dry run without a pin: exit 0" test "$rc" = 0
+check "dry run without a pin: says not pinned" has ", machine-id not pinned)"
 rm -f "$work/ssh.log"
 TEST_HOST=prod-box deploy "$log"
 check "an unlisted host is never contacted" test ! -e "$work/ssh.log"
@@ -368,7 +401,7 @@ check "dry run: no build" test ! -e "$work/cargo.log"
 check "dry run: the host unchanged" test "$(remote_fingerprint)" = "$before"
 check "dry run: no restart" test "$(count restart)" = 0
 check "dry run: names the version" has "0.1.3+main.$short"
-check "dry run: the hostname ssh resolves the alias to" has "(ssh resolves it to 192.0.2.7)"
+check "dry run: the hostname ssh resolves the alias to" has "(ssh resolves it to 192.0.2.7, machine-id pinned)"
 check "dry run: what the host runs now" has "now      engine 0.1.3, plugin dir git"
 check "dry run: the clone would move aside" has "move the git dir aside"
 check "dry run: files change" has "files change: yes"
@@ -419,6 +452,8 @@ check "deploy: one log line" test "$(wc -l <"$jsonl")" = 1
 check "deploy: the log line" jqe --arg v "0.1.3+main.$short" \
   '.mode == "main" and .version == $v and .pluginChanged and .restart == "done" and .smoke == "ok" and (.movedAside | test("plugin-git-")) and .failures == []' "$jsonl"
 check "deploy: summary" has "runs 0.1.3+main.$short"
+check "deploy: an inactive watcher is left alone" has "seldon-watch.service not active; left as it is"
+check "deploy: no watcher restart" test "$(count "watch restart")" = 0
 
 # ---- 5. engine-only change: no restart; the dev copy stays in place ---------------------
 panel_mtime=$(stat -c %Y "$pdir/Panel.qml")
@@ -567,6 +602,21 @@ rm -rf "$pdir/.git"
 deploy "$log"
 check "plain copy: moved to plugin-copy-<stamp>" test -n "$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'plugin-copy-*')"
 
+# the watcher: an active seldon-watch.service is restarted on the new binary
+reset_remote
+touch "$R/watch_active"
+deploy "$log"
+check "watcher active: exit 0" test "$rc" = 0
+check "watcher active: restarted once, on the new binary" test "$(grep -c "^watch restart on seldon 0.1.3+main.$short\$" "$R/calls")" = 1
+check "watcher active: the summary says so" has "seldon-watch.service restarted on the new binary"
+check "watcher active: logged" jqe -s '.[-1].watch == "restarted"' "$jsonl"
+echo 1 >"$R/watch_restart_rc"
+deploy "$log"
+check "watcher restart fails: exit 2" test "$rc" = 2
+check "watcher restart fails: named" has "seldon-watch.service: restart failed"
+check "watcher restart fails: logged" jqe -s '.[-1].watch == "restart failed" and .[-1].smoke == "failed"' "$jsonl"
+rm "$R/watch_restart_rc"
+
 # ---- 8. back to a release -----------------------------------------------------------------
 reset_remote
 deploy "$log" >/dev/null
@@ -589,6 +639,12 @@ check "release: the dev copy moved aside" test -n "$(find "$R/home/.local/state/
 check "release: restarted" test "$(count restart)" = 1
 check "release: smoke expects 0.1.2" has "ok   service engineVersion"
 check "release: logged" jqe -s '.[-1].mode == "release" and .[-1].version == "0.1.2" and .[-1].smoke == "ok"' "$jsonl"
+reset_remote
+deploy "$log" >/dev/null
+touch "$R/watch_active"
+deploy --release v0.1.2
+check "release, watcher active: restarted on the release binary" grep -qx "watch restart on seldon 0.1.2" "$R/calls"
+rm "$R/watch_active"
 
 reset_remote
 deploy "$log" >/dev/null
@@ -616,7 +672,7 @@ check "release that does not exist: exit 2" test "$rc" = 2
 check "release that does not exist: engine unchanged" grep -q '"version":"0.1.3"}' "$R/home/.local/bin/seldon"
 
 # ---- 9. never the real session; the real home untouched -------------------------------------
-check "no quickshell, hyprctl, systemctl or wtype call" test ! -e "$work/trap.log"
+check "no quickshell, hyprctl or wtype call, no other systemctl call" test ! -e "$work/trap.log"
 [[ ! -e $work/trap.log ]] || sed 's/^/     /' "$work/trap.log"
 check "every ssh call went to the test host" test "$(sort -u "$work/ssh.log")" = "$host"
 check "real ~/.local/bin/seldon, plugin dir and seldon-dev untouched" test "$(real_fingerprint)" = "$real_before"
