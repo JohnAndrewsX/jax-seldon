@@ -980,7 +980,11 @@ needs `curl` and its option (`curl+-x`; WP-084). The option rules
 within one command: up to the line end or an unquoted `;`, `&` or `|`;
 a quoted string (`'a&b'`, `"x;y"`, `\"` inside double quotes), a
 backslash escape (`\;`) and a quote the line never closes (an apostrophe
-in a note) do not end it. An option given twice in one command is masked
+in a note) do not end it. Quotes pair left to right as written; where
+the shell reads them otherwise (`$'…'`, quotes inside `"$(…)"`, an
+escaped space), the plain reading up to an unquoted `;`, `&` or `|` still
+counts, so the context reaches at least what that plain reading reaches.
+An option given twice in one command is masked
 each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
 from the end of its previous match, without a second command word;
 `sshpass` masks only its first `-p`, as a later one belongs to the
