@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 921cb03 -->
+<!-- source: en/11-update-and-uninstall.md @ b685610 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -159,7 +159,11 @@ Engine, also führ sie vor Schritt 5 aus.
    behältst, sichere den Zustandsordner vorher (siehe
    [Den Zustandsordner sichern und wiederherstellen](07-the-logbook.md#den-zustandsordner-sichern-und-wiederherstellen))
    und stelle ihn vor dem ersten Capture wieder her. Sonst fängt dieses
-   Capture neu an und hält einen Zustands-Reset im Ledger fest.
+   Capture neu an und hält einen Zustands-Reset im Ledger fest. Nach der
+   Neuinstallation sagt dir `seldon doctor` das, solange noch Zeit ist:
+   Bis der Zustand zurück ist, meldet seine `state`-Zeile, dass das
+   nächste Capture einen Zustands-Reset festhalten wird (siehe
+   [doctor sagt, das nächste Capture hält einen Zustands-Reset fest](10-troubleshooting.md#doctor-sagt-das-nächste-capture-hält-einen-zustands-reset-fest)).
 
 Was bleibt, ist dein Logbuch, `~/Seldon`, wenn du keinen anderen Ort
 gewählt hast. Es ist reines Markdown in einem git-Repository und bleibt
