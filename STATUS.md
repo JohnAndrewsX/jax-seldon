@@ -16,6 +16,7 @@ decisions).
 |---|---|---|---|---|---|
 | WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
 | WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
+| WP-098 | the test host follows main (deploy script, dev version marker) | Engine | `engine-098` (opus) | `wt/WP-098` · `wp/098-test-host-main` | 2026-10-05 |
 | WP-090 | plugin: stale code after update, harness record order | Plugin | `plugin-090` (opus) | `wt/WP-090` · `wp/090-stale-plugin` | 2026-10-05 |
 
 ## Queued (next up)
