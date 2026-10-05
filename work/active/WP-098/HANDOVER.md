@@ -292,3 +292,50 @@ Branch `wp/098-test-host-main`, worktree `wt/WP-098`.
 ### Touched outside WP scope
 
 - None beyond round 1.
+
+## Round 3 (round 2 verification: SEND BACK, two fixes)
+
+### Done
+
+- **F2** `git merge main` (no rebase), merge commit 799871d. Conflicts
+  in CHANGELOG.md, memory/omarchy-shell.md, memory/pitfalls.md resolved
+  keeping both, main first: CHANGELOG Unreleased has main's Engine
+  bullets (WP-087), then the WP-098 marker bullet, main's Plugin section
+  (WP-090), then the WP-098 "Packaging and docs" section (one over-long
+  line rewrapped); the memory files have main's WP-087/090/091 sections
+  before the WP-098 ones. Deploy test after the merge: 164/0.
+- **F1** `schema/` joins the "unchanged since the checked commit" list:
+  `git diff --quiet <sha> HEAD -- engine plugin schema
+  scripts/deploy-test-host.sh` (engine/src/index/check.rs compiles the
+  three schemas in with `include_str!`; the `fixtures/` includes are all
+  inside `#[cfg(test)]`, checked). Refusal case: a commit to
+  `schema/index.schema.json` after the checked sha. Script header,
+  TESTING.md (refusals and table row) and the CHANGELOG line say so.
+- **Nits:** the dry run says `engine not installed or not answering,
+  plugin dir <state>` instead of `engine , plugin absent`; the summary
+  of a deploy onto a host without an engine says "(there was none
+  before)" instead of naming a `seldon.prev` that was not made. A check
+  log with `\r` is refused with "has Windows line endings (CRLF)".
+  Tests: the dry run's "now" line with and without an engine, a first
+  deploy without an engine (exit 0, no `seldon.prev`), a CRLF log.
+
+### Verified by
+
+- `bash tests/deploy/deploy-test-host.test.sh` → 171 passed, 0 failed.
+- Mutants, round 3 (each alone, test run, original restored), all
+  killed: diff ignores `schema` · CRLF check dropped · empty engine
+  version unworded in the dry run · the summary's no-engine branch
+  dropped.
+- `flock /tmp/seldon-check.lock just check` on 0755e1c (main merged):
+  `check: ok`, `exit 0` — deploy-test-host.test 171/0, install.test
+  209/0, model.test.js 89, service-states 314/0, panel-view 782/0,
+  overlay-view 319/0, bar-view 143/0, real-home-guard.test 11/0,
+  plugin-version.test ok, docs-check ok (422 links).
+
+### Decisions
+
+- None new.
+
+### Touched outside WP scope
+
+- The merge brings main's changes; nothing else beyond round 1.
