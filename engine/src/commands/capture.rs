@@ -34,6 +34,10 @@
 //! `pendingBaseline` in `cursors.json` with what it lost (`cursors` or
 //! `logbook`; a collector not run gets an entry with only the mark), and
 //! its first successful run records its gap the same way.
+//! When the snapper collector changes between degraded and ok since its
+//! last run for this logbook (read access granted or removed, ADR-0026),
+//! the capture records a `seldon` `note` with the subject `snapper`
+//! ([`access_change`], WP-091).
 //! A corrupt `owned.json` counts for the config collector; a capture that
 //! runs that collector moves it to `owned.json.bad` after the ledger write,
 //! so the next capture does not report it again.
@@ -164,6 +168,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
     let reset = state_reset(&ledger, &lost, baseline, now)?;
     events.extend(reset.as_ref().map(|r| r.note.clone()));
+    events.extend(access_change(&cursors, &states, now));
 
     let written = ledger.append(&lock, events)?;
     for (name, state) in states.into_iter().chain(bare) {
@@ -366,6 +371,42 @@ fn loss(
         },
         (l, _) => Some(l),
     }
+}
+
+/// The `seldon` note for the snapper collector changing between degraded
+/// and ok since its last run for this logbook (WP-091): the user granted
+/// or removed its read access (ADR-0026), or snapper failed or recovered
+/// otherwise; the detail carries the message. `cursors` as bound for this
+/// capture, so another logbook's state, a lost state directory and an
+/// entry that never ran (only the mark) give no note; nor does a capture
+/// that does not run snapper.
+fn access_change(
+    cursors: &Cursors,
+    states: &[(&'static str, CollectorState)],
+    now: DateTime<FixedOffset>,
+) -> Option<Event> {
+    const NAME: &str = "snapper";
+    let (_, new) = states.iter().find(|(n, _)| *n == NAME)?;
+    let old = cursors.collectors.get(NAME)?;
+    if old.last_run.is_none() || old.ok == new.ok {
+        return None;
+    }
+    let message = |s: &CollectorState| s.message.clone().unwrap_or_else(|| "failed".into());
+    let detail = match (new.ok, &new.message) {
+        (true, None) => format!(
+            "snapper collector ok again; at the last capture it was degraded: {}",
+            message(old)
+        ),
+        (true, Some(current)) => format!(
+            "snapper collector ok again ({current}); at the last capture it was degraded: {}",
+            message(old)
+        ),
+        (false, _) => format!(
+            "snapper collector degraded: {}; at the last capture it was ok",
+            message(new)
+        ),
+    };
+    Some(Event::new(now, Source::Seldon, Kind::Note, NAME).detail(detail))
 }
 
 /// Whether `path` exists and is not a valid `owned.json` (the collector

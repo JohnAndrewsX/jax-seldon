@@ -698,7 +698,22 @@ git itself is killed, with the same bounded pipe wait. Rules:
   recommended next step. snapper is run with `LC_ALL=C` (and without
   `LANGUAGE`), `list` and `get-config` alike; its messages are matched in
   English, whatever the user's locale (`doctor` and `init` use the same
-  argv and locale).
+  argv and locale). When the collector's `ok` differs from its last run
+  for this logbook (its entry in `cursors.json` as bound for the capture,
+  with a `lastRun`), the capture that runs it appends one `note` with
+  `source: seldon`, `actor: system`, subject `snapper`, no case, so that
+  granting or removing the read access (or a `SYNC_ACL` rewrite that
+  removed it) shows in the history (WP-091). Detail: `snapper collector
+  degraded: <message>; at the last capture it was ok`, or `snapper
+  collector ok again (<message>); at the last capture it was degraded:
+  <earlier message>` (without `(<message>)` when the run has none, e.g.
+  through `snapper list`). Any degraded state counts, not only
+  `NO_PERMISSIONS`. No note on the first run for a logbook, after a lost
+  state directory or another logbook's state (nothing to compare with),
+  for an entry with only the `pendingBaseline` mark (it never ran), or
+  in a capture that does not run snapper; the next capture compares with
+  the saved state, so each change is recorded once. The note is no drift
+  and no own change (§5).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
   stale); `repoHead` (7-character short hash, like `logbook.git.head`)

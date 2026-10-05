@@ -910,7 +910,8 @@ mod state_reset {
 
         // the first successful run records the gap and clears the mark
         let out = cli.capture(&[]);
-        assert_eq!(out["written"], 1, "only the note: {out}");
+        assert_eq!(out["written"], 2, "the note and, WP-091, access: {out}");
+        assert_eq!(access(&cli).len(), 1);
         let warnings = out["warnings"].as_array().unwrap();
         assert_eq!(warnings.len(), 1, "{out}");
         assert!(
@@ -953,7 +954,8 @@ mod state_reset {
         assert_eq!(pending(&cli, "snapper").as_deref(), Some("cursors"));
         cli.stub_snapper(&fixture("logs/snapper-before.json"));
         let out = snapper(&cli);
-        assert_eq!(out["written"], 1, "only the note: {out}");
+        assert_eq!(out["written"], 2, "the note and, WP-091, access: {out}");
+        assert_eq!(access(&cli).len(), 1);
         let reset = resets(&cli);
         assert_eq!(reset.len(), 1, "{reset:?}");
         assert_eq!(reset[0].meta.extra["sources"], "snapper");
@@ -1009,7 +1011,8 @@ mod state_reset {
 
         cli.stub_snapper(&fixture("logs/snapper-before.json"));
         let out = cli.capture(&[]);
-        assert_eq!(out["written"], 1, "only the note: {out}");
+        assert_eq!(out["written"], 2, "the note and, WP-091, access: {out}");
+        assert_eq!(access(&cli).len(), 1);
         let notes: Vec<(String, String)> = resets(&cli)
             .iter()
             .map(|r| {
@@ -1070,7 +1073,8 @@ mod state_reset {
         cli.capture(&[]);
         assert_eq!(pending(&cli, "snapper"), None);
         cli.stub_snapper(&fixture("logs/snapper-before.json"));
-        assert_eq!(cli.capture(&[])["written"], 0);
+        assert_eq!(cli.capture(&[])["written"], 1, "WP-091: access");
+        assert_eq!(access(&cli).len(), 1);
         assert!(resets(&cli).is_empty());
     }
 
@@ -1331,6 +1335,155 @@ mod state_reset {
         );
         assert_eq!(capture_config(&cli)["written"], 0);
         assert_eq!(resets(&cli).len(), 1);
+    }
+}
+
+/// WP-091: the details of the `seldon` notes on the snapper collector
+/// changing between degraded and ok.
+fn access(cli: &Cli) -> Vec<String> {
+    cli.ledger()
+        .into_iter()
+        .filter(|e| e.source == Source::Seldon && e.kind == Kind::Note && e.subject == "snapper")
+        .map(|e| e.detail.unwrap_or_default())
+        .collect()
+}
+
+/// WP-091: the snapper collector changing between degraded and ok since
+/// its last run for this logbook (ADR-0026: the read grant given or
+/// taken away) leaves one `seldon` note, and nothing the next time.
+mod snapper_access {
+    use super::*;
+    use seldon::collectors::snapper::NO_PERMISSIONS;
+
+    fn snapshots(cli: &Cli) -> std::path::PathBuf {
+        // `SELDON_TEST_GUARD` points the info files here
+        cli.env.tmp.path().join(".snapshots")
+    }
+
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for e in std::fs::read_dir(from).unwrap() {
+            let e = e.unwrap();
+            if e.file_type().unwrap().is_dir() {
+                copy_dir(&e.path(), &to.join(e.file_name()));
+            } else {
+                std::fs::copy(e.path(), to.join(e.file_name())).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn a_grant_and_its_removal_are_recorded_once_each() {
+        let cli = Cli::new();
+        cli.stub_snapper_no_permissions();
+        let first = cli.capture(&["--since", FIXTURE_CREATED]);
+        assert_eq!(first["ok"], false, "{first}");
+        assert!(access(&cli).is_empty(), "the first run is no change");
+        assert_eq!(cli.capture(&[])["written"], 0, "degraded again");
+
+        // the user runs the read grant: the info files can be read
+        copy_dir(&fixture("logs/snapshots"), &snapshots(&cli));
+        let out = cli.capture(&[]);
+        assert_eq!(out["ok"], true, "{out}");
+        assert_eq!(out["explainedSelf"], 0, "not an own change");
+        let notes = access(&cli);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].starts_with("snapper collector ok again (snapper list is not permitted; ")
+                && notes[0].ends_with(&format!(
+                    "; at the last capture it was degraded: {NO_PERMISSIONS}"
+                )),
+            "{}",
+            notes[0]
+        );
+        let note = cli
+            .ledger()
+            .into_iter()
+            .find(|e| e.subject == "snapper" && e.source == Source::Seldon)
+            .unwrap();
+        assert_eq!((note.kind, note.actor.as_str()), (Kind::Note, "system"));
+        assert_eq!(note.case, None);
+        assert_eq!(cli.capture(&[])["written"], 0, "ok again: nothing");
+
+        // a later `set-config` with SYNC_ACL=yes took the grant away
+        std::fs::remove_dir_all(snapshots(&cli)).unwrap();
+        let out = cli.capture(&[]);
+        assert_eq!(out["ok"], false, "{out}");
+        assert_eq!(out["written"], 1, "{out}");
+        let notes = access(&cli);
+        assert_eq!(
+            notes[1],
+            format!("snapper collector degraded: {NO_PERMISSIONS}; at the last capture it was ok")
+        );
+        assert_eq!(cli.capture(&[])["written"], 0, "degraded again: nothing");
+        assert_eq!(access(&cli).len(), 2);
+        assert!(
+            !cli.ledger().iter().any(|e| e.subject == "state-reset"),
+            "no reset"
+        );
+        cli.ledger().iter().for_each(assert_schema_valid);
+        // the notes are no drift
+        let drift = common::json(&cli.run(&["drift", "--json"]));
+        let items = drift["drift"].as_array().unwrap();
+        assert!(items.iter().all(|i| i["eventId"].is_string()), "{drift}");
+        assert!(!items.is_empty(), "drift is listed: {drift}");
+        let ids: Vec<String> = cli
+            .ledger()
+            .into_iter()
+            .filter(|e| e.subject == "snapper" && e.source == Source::Seldon)
+            .map(|e| e.id.to_string())
+            .collect();
+        assert_eq!(ids.len(), 2);
+        assert!(
+            items
+                .iter()
+                .all(|i| !ids.iter().any(|id| i["eventId"] == **id)),
+            "{drift}"
+        );
+    }
+
+    /// Listing permitted, the other direction: ok by `snapper list`, then
+    /// any failure; a capture that does not run snapper compares nothing.
+    #[test]
+    fn a_failure_and_recovery_of_the_list_are_recorded() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        assert!(access(&cli).is_empty(), "the first run is no change");
+        cli.stub("snapper", "exit 3");
+        let out = cli.run(&["capture", "--source", "pacman", "--json"]);
+        assert_eq!(common::json(&out)["written"], 0, "snapper not run");
+        cli.capture(&[]);
+        assert_eq!(
+            access(&cli),
+            [
+                "snapper collector degraded: snapper failed (exit 3): ; at the last capture it was ok"
+            ]
+        );
+        cli.stub_snapper(&fixture("logs/snapper-before.json"));
+        cli.capture(&[]);
+        assert_eq!(
+            access(&cli)[1],
+            "snapper collector ok again; at the last capture it was degraded: snapper failed (exit 3): "
+        );
+        assert_eq!(cli.capture(&[])["written"], 0);
+    }
+
+    /// No earlier run for this logbook to compare with: a lost state
+    /// directory, and an entry that only waits (WP-091 N2), never ran.
+    #[test]
+    fn no_change_without_an_earlier_run_here() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(cli.env.home.join(".local/state/seldon")).unwrap();
+        cli.stub_snapper_no_permissions();
+        cli.capture(&[]);
+        assert!(access(&cli).is_empty(), "state lost: no earlier run");
+
+        std::fs::remove_dir_all(cli.env.home.join(".local/state/seldon")).unwrap();
+        let out = cli.run(&["capture", "--source", "pacman", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        cli.capture(&[]);
+        assert!(access(&cli).is_empty(), "only the mark: it never ran");
     }
 }
 
