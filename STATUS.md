@@ -9,20 +9,25 @@ Open: WP-042 marketplace submission (after the operator's release setup),
 WP-038 (engine attributes its own installs), WP-033 and WP-043 (operator
 decisions).
 **Contract version:** 1 (draft)
-**Last updated:** 2026-10-05
+**Last updated:** 2026-10-05 (tick 105)
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| — | no active work package | | | | |
+| WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
+| WP-088 | state reset: pending baseline, own-change catch-up | Engine | `engine-088` (opus) | `wt/WP-088` · `wp/088-reset-followups` | 2026-10-05 |
+| WP-089 | OMARCHY_PATH default, desktop entries watched | Engine | `engine-089` (opus) | `wt/WP-089` · `wp/089-environment` | 2026-10-05 |
+| WP-090 | plugin: stale code after update, harness record order | Plugin | `plugin-090` (opus) | `wt/WP-090` · `wp/090-stale-plugin` | 2026-10-05 |
 
 ## Queued (next up)
 
-Review v0.1.1 wave plan (22 WPs, WP-055…076; waves of file-disjoint
-packages, 4 Highs in wave 1): WP-057/058 after WP-055; then waves 2–5 as
-the orchestrator's plan says. WP-052 folded into WP-074 (retired). WP-033 (update-impact, option C, after AUR) · WP-042 (marketplace
-submission, after AUR) · WP-052 (`init --theme-hook` write under the
-lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
+0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
+advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
+notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
+Then the contract v2 bundle for v0.2.0 (autocommit result in the index,
+`meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
+account: WP-033 (update-impact, option C) and WP-042 (marketplace
+submission). (see `work/queued/`)
 
 ## Preparation done (2026-10-01)
 - Kickoff checklist steps 1–3: repo + first commit, WP files, host verified
