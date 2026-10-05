@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-097 | redaction: remaining credential forms on command lines | Engine | `engine-097` (opus) | `wt/WP-097` · `wp/097-redact-forms` | 2026-10-05 |
-| WP-103 | config replay with redacted twins; SPEC §7 clause | Engine | `engine-103` (opus) | `wt/WP-103` · `wp/103-replay-twins` | 2026-10-05 |
 
 ## Queued (next up)
 
@@ -45,6 +44,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-103 the config collector replays its events on every
+  capture (no more normal-path ledger dedupe that dropped real events);
+  twins with a masked name part are told apart; a restored older state
+  directory records only what changed since; three narrow limits named
+  in SPEC §4 (fixed by WP-107); Opus review, Fable stage 2, three
+  rounds, Opus verification; merged.
 - 2026-10-05 WP-099 a crash between the ledger append and the cursor
   save no longer repeats the state-reset or snapper access note
   (`pendingNotes` mark saved before the append, dedup by identity);
