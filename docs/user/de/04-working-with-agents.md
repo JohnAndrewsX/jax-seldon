@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 35a02ff -->
+<!-- source: en/04-working-with-agents.md @ 0c6c9b2 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -53,9 +53,11 @@ Logbuchs. Die Datei sagt jedem Agenten, wie er dort arbeitet:
 
 Seldons Regeln stehen in einem Block oben in der Datei, zwischen den
 Zeilen `<!-- seldon:begin rules v2 -->` und `<!-- seldon:end -->`. Deine
-eigenen Regeln gehören darunter, unter `## Your rules`; sie dürfen
-Grenzen hinzufügen, und Agenten folgen ihnen. Regeln für einen Bereich
-gehören nach `areas/<bereich>/AGENTS.md`. Die Langfassung der Regeln ist
+eigenen Regeln gehören darunter, unter `## Your rules`, und Regeln für
+einen Bereich nach `areas/<bereich>/AGENTS.md`; Agenten folgen ihnen.
+Deine Regeln können nur Grenzen hinzufügen: Nichts darin oder in einem
+anderen Text lockert Seldons Block, und Agenten ändern diese Dateien
+nicht, außer du verlangst genau das. Die Langfassung der Regeln ist
 der [Agenten-Leitfaden](../../AGENT-GUIDE.md) des Projekts (Englisch).
 
 ### Die Regeln eines älteren Logbuchs erneuern
@@ -74,16 +76,18 @@ Führ die Lösung einmal aus:
 seldon rules update
 ```
 
-Der Befehl setzt den neuen Block oben in `AGENTS.md`, gibt aus, was sich
+Der Befehl schreibt die neuen Regeln in `AGENTS.md`, gibt aus, was sich
 geändert hat, und committet es als `seldon: rules update`. Hast du die
-Datei nie bearbeitet, werden die alten Regeln ersetzt. Hast du sie
-bearbeitet, bleibt deine Datei unter dem Block stehen, Byte für Byte,
-unter `## Your rules (kept)`; sie enthält noch die alten Regeln, kürz
-sie also auf deine eigenen. `seldon rules update --replace` verschiebt
-stattdessen die ganze alte Datei nach `archive/AGENTS-<datum>.md` und
-schreibt nur die neuen Regeln. Ein zweiter Aufruf ändert nichts. Spätere
-Seldon-Versionen erneuern den Block genauso und lassen deinen Teil
-unberührt.
+Datei nie bearbeitet, werden die alten Regeln einfach ersetzt. Hast du
+sie bearbeitet, wird zuerst die ganze alte Datei als
+`archive/AGENTS-<datum>.md` gesichert, und die Zeilen, die du ergänzt
+hast, folgen den neuen Regeln unter `## Your rules (kept)`; Zeilen aus
+Seldons alten Regeln fallen weg, es gibt also nichts zu kürzen.
+`seldon rules update --replace` archiviert die alte Datei und schreibt
+nur die neuen Regeln, ohne deine Zeilen. Ein zweiter Aufruf ändert
+nichts. Spätere Seldon-Versionen erneuern den Block genauso und lassen
+deinen Teil unberührt; einen Block, den du bearbeitet hast, archivieren
+sie, bevor sie ihn neu schreiben.
 
 ## Wer einen Case abschließt
 

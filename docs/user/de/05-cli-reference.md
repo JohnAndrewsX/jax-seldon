@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 35a02ff -->
+<!-- source: en/05-cli-reference.md @ 0c6c9b2 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -709,12 +709,13 @@ Options:
 
 Bringt Seldons Block in `AGENTS.md`, zwischen den Zeilen
 `<!-- seldon:begin rules v2 -->` und `<!-- seldon:end -->`, auf die
-Regeln dieser Version und behält den Rest der Datei. Eine Datei aus
-einer früheren Version hat keinen Block: Sie bekommt ihn oben, und dein
-alter Text bleibt darunter stehen, unter `## Your rules (kept)`, außer
-er ist genau die Datei, die jene Version geschrieben hat. `--replace`
-verschiebt die ganze alte Datei nach `archive/AGENTS-<datum>.md` und
-schreibt nur die neuen Regeln. Der Befehl gibt die Änderung als Diff aus
+Regeln dieser Version und behält den Rest der Datei; einen Block, den
+du bearbeitet hast, archiviert er zuerst. Eine Datei aus einer früheren
+Version hat keinen Block: Ist sie nicht genau die Datei, die jene
+Version geschrieben hat, wird sie nach `archive/AGENTS-<datum>.md`
+archiviert, und die neuen Regeln werden geschrieben, darunter nur die
+Zeilen, die du ergänzt hast, unter `## Your rules (kept)`. `--replace`
+archiviert die ganze alte Datei und schreibt nur die neuen Regeln. Der Befehl gibt die Änderung als Diff aus
 und committet sie als `seldon: rules update`; ein zweiter Aufruf ändert
 nichts. Einen beschädigten Block oder einen aus einer neueren
 Seldon-Version weist er ab (Exit 1) und lässt die Datei, wie sie ist.
