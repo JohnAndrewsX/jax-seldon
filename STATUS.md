@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-086 | Seldon's own updates are not drift | Engine | `engine-086` (opus) | `wt/WP-086` · `wp/086-review` | 2026-10-05 |
+| — | no active work package | | | | |
 
 ## Queued (next up)
 
@@ -35,6 +35,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-086 Seldon's own plugin updates (update, enable, disable)
+  and package upgrades are explained by rule 8, not drift; adding,
+  installing, downgrading and removing stay drift (no provenance check);
+  two review rounds; merged.
 - 2026-10-05 WP-084 redaction covers proxy credentials, inline JSON secrets
   and api keys, cookie headers (cookie pairs only) and cookie options; ASCII
   word boundaries and joined triggers make long command lines 40× faster;
