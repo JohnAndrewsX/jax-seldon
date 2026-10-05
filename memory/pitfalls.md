@@ -1943,3 +1943,24 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   commit` on the next: the failed edit was followed by a commit of the
   old state. Put the `&&` on the heredoc line (`<<'EOF' && …`) or check
   the diff before committing.
+
+## 2026-10-05 · WP-099 (Engine Dev)
+
+- **A crash test must not fake the crash by restoring the old
+  `cursors.json`.** Since WP-099 a capture that writes a `seldon` note
+  saves a marked copy (`pendingNotes`) before the append; putting the
+  pre-capture file back drops the mark and "proves" a duplicate that a
+  real crash no longer gives. Stop the capture where a crash would:
+  `SELDON_TEST_CAPTURE_CRASH=before-append|after-append` (debug builds,
+  exit 99; `Cli::crash` in `idempotency.rs`).
+- **An event has no id before `Ledger::append`** (`Event::new` sets
+  `Ulid::nil()`, `append` assigns them). A key that must be saved before
+  the append cannot be the id; the notes use their `ts` (the capture
+  time, whole seconds).
+- **Captures in `idempotency.rs`'s `Cli` run on the real clock,** so two
+  in a row often share a second. A test whose result depends on the
+  capture time (the `pendingNotes` lookup, doctor's "last capture") gives
+  each capture its own `SELDON_NOW` (`Cli::capture_at`, `crash::clock`).
+- **A mutant script that greps `^error:` for build errors** also matches
+  cargo's `error: test failed, to rerun pass …`: every killed mutant looked
+  like a build error. Match `^error[E` and "could not compile" only.

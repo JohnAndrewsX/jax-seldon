@@ -38,6 +38,11 @@
 //! last run for this logbook (read access granted or removed, ADR-0026),
 //! the capture records a `seldon` `note` with the subject `snapper`
 //! ([`access_change`], WP-091).
+//! A capture that appends such a note first saves `cursors.json` as it
+//! loaded it with the note's time in `pendingNotes`; its save after the
+//! append clears it. A crash between the two leaves the mark, and the next
+//! capture, which repeats the same comparison, does not write a note the
+//! ledger holds at that time again ([`pending_notes`], WP-099).
 //! A corrupt `owned.json` counts for the config collector; a capture that
 //! runs that collector moves it to `owned.json.bad` after the ledger write,
 //! so the next capture does not report it again.
@@ -110,6 +115,8 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     );
     let cursors_path = collectors::cursors_file(&ctx.dirs);
     let mut cursors = Cursors::load(&cursors_path)?;
+    // as loaded: what a crash before this capture's save leaves behind
+    let loaded = cursors.clone();
     let binding = Binding::of(&cursors, &logbook.root);
     cursors.bind(&logbook.root);
     // --since only sets the baseline of collectors without a cursor
@@ -166,14 +173,37 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         lost.push(("config", Lost::Owned));
     }
     attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
-    let reset = state_reset(&ledger, &lost, baseline, now)?;
-    events.extend(reset.as_ref().map(|r| r.note.clone()));
-    events.extend(access_change(&cursors, &states, now));
+    let recorded = pending_notes(&ledger, &cursors.pending_notes)?;
+    let reset = state_reset(&ledger, &lost, &recorded, baseline, now)?;
+    let access = access_change(&cursors, &states, now)
+        .filter(|note| !recorded.iter().any(|r| r.subject == note.subject));
+    let notes: Vec<Event> = reset
+        .as_ref()
+        .and_then(|r| r.note.clone())
+        .into_iter()
+        .chain(access)
+        .collect();
+    if !notes.is_empty() {
+        // a crash between the append and the save below must not write
+        // the notes again (WP-099)
+        let mut marked = loaded;
+        let at = format_ts(&now);
+        if !marked.pending_notes.contains(&at) {
+            marked.pending_notes.push(at);
+        }
+        marked.save(&cursors_path)?;
+    }
+    #[cfg(debug_assertions)]
+    crash_point("before-append");
+    events.extend(notes);
 
     let written = ledger.append(&lock, events)?;
+    #[cfg(debug_assertions)]
+    crash_point("after-append");
     for (name, state) in states.into_iter().chain(bare) {
         cursors.collectors.insert(name.to_string(), state);
     }
+    cursors.pending_notes.clear();
     cursors.save(&cursors_path)?;
     let mut warnings = Vec::new();
     if let Some(reset) = &reset {
@@ -409,25 +439,85 @@ fn access_change(
     Some(Event::new(now, Source::Seldon, Kind::Note, NAME).detail(detail))
 }
 
+/// The `seldon` notes the ledger holds at a time in `pending`
+/// ([`Cursors::pending_notes`]): written by a capture that stopped between
+/// its append and its save of `cursors.json`, which this capture repeats
+/// from the same saved state (WP-099). A time that does not read names
+/// nothing.
+fn pending_notes(ledger: &Ledger, pending: &[String]) -> Result<Vec<Event>> {
+    let times: Vec<DateTime<FixedOffset>> = pending
+        .iter()
+        .filter_map(|t| DateTime::parse_from_rfc3339(t).ok())
+        .collect();
+    let mut months: Vec<String> = times
+        .iter()
+        .map(|t| t.format("%Y-%m").to_string())
+        .collect();
+    months.sort();
+    months.dedup();
+    let mut notes = Vec::new();
+    for month in months {
+        notes.extend(ledger.read_month(&month)?.events.into_iter().filter(|e| {
+            e.source == Source::Seldon && e.kind == Kind::Note && times.contains(&e.ts)
+        }));
+    }
+    Ok(notes)
+}
+
+/// The sources (`meta.sources`) the state-reset notes among `recorded`
+/// name. A note is known by its subject and these, not by its detail: the
+/// state reset's carries the capture time, the snapper note's the
+/// collector's message of the run.
+fn noted_sources(recorded: &[Event]) -> Vec<&str> {
+    recorded
+        .iter()
+        .filter(|e| e.subject == STATE_RESET)
+        .filter_map(|e| e.meta.extra.get("sources")?.as_str())
+        .flat_map(|s| s.split(','))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Test builds only: ends the process at `point` of the capture when
+/// [`CRASH_ENV`] names it, as a crash there would (WP-099).
+#[cfg(debug_assertions)]
+fn crash_point(point: &str) {
+    if std::env::var_os(CRASH_ENV).is_some_and(|v| v == point) {
+        std::process::exit(CRASH_EXIT);
+    }
+}
+
+/// `before-append` (after the save that marks the notes) or
+/// `after-append` (before the save of the new state); debug builds only.
+#[cfg(debug_assertions)]
+pub const CRASH_ENV: &str = "SELDON_TEST_CAPTURE_CRASH";
+
+/// The exit code of a [`crash_point`].
+#[cfg(debug_assertions)]
+pub const CRASH_EXIT: i32 = 99;
+
 /// Whether `path` exists and is not a valid `owned.json` (the collector
 /// reads such a file as empty).
 fn is_corrupt(path: &std::path::Path) -> bool {
     std::fs::read(path).is_ok_and(|b| serde_json::from_slice::<OwnWrites>(&b).is_err())
 }
 
-/// A state reset to record: the note, and the losses it names.
+/// A state reset: the losses (for the warning), and the note to append,
+/// `None` when the ledger holds it already ([`pending_notes`]).
 #[derive(Debug, Clone)]
 struct Reset {
-    note: Event,
+    note: Option<Event>,
     lost: Vec<(&'static str, Lost)>,
 }
 
 /// The state reset of the collectors in `lost` whose source the ledger
 /// already holds events of; `None` when there is none (no loss, or the
-/// first capture of a logbook).
+/// first capture of a logbook). Its note names those that no note among
+/// `recorded` names (WP-099): each loss is recorded once.
 fn state_reset(
     ledger: &Ledger,
     lost: &[(&'static str, Lost)],
+    recorded: &[Event],
     baseline: DateTime<FixedOffset>,
     now: DateTime<FixedOffset>,
 ) -> Result<Option<Reset>> {
@@ -435,7 +525,23 @@ fn state_reset(
     if lost.is_empty() {
         return Ok(None);
     }
-    let sources = reset_sources(&lost);
+    let noted = noted_sources(recorded);
+    let unnoted: Vec<(&'static str, Lost)> = lost
+        .iter()
+        .copied()
+        .filter(|(n, _)| !noted.contains(n))
+        .collect();
+    let note = (!unnoted.is_empty()).then(|| reset_note(&unnoted, baseline, now));
+    Ok(Some(Reset { note, lost }))
+}
+
+/// The `state-reset` note for the losses `lost`.
+fn reset_note(
+    lost: &[(&'static str, Lost)],
+    baseline: DateTime<FixedOffset>,
+    now: DateTime<FixedOffset>,
+) -> Event {
+    let sources = reset_sources(lost);
     let named: Vec<String> = sources
         .iter()
         .map(|s| {
@@ -455,15 +561,14 @@ fn state_reset(
     meta.extra
         .insert("sources".into(), json!(sources.join(",")));
     meta.extra.insert("files".into(), json!(files.join(",")));
-    let note = Event::new(now, Source::Seldon, Kind::Note, STATE_RESET)
+    Event::new(now, Source::Seldon, Kind::Note, STATE_RESET)
         .detail(format!(
             "state directory missing, unreadable or bound to another logbook: new baseline for {} at {}, recorded {}; changes made in between may not be recorded",
             named.join(", "),
             format_ts(&baseline),
             format_ts(&now)
         ))
-        .meta(meta);
-    Ok(Some(Reset { note, lost }))
+        .meta(meta)
 }
 
 /// The losses among `lost` whose source the ledger holds at least one event

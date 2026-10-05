@@ -295,6 +295,14 @@ pub struct Cursors {
     pub logbook: Option<PathBuf>,
     #[serde(default)]
     pub collectors: BTreeMap<String, CollectorState>,
+    /// The times (RFC 3339) of the `seldon` notes a capture was about to
+    /// append when it saved this file right before the append, the rest
+    /// unchanged; its save after the append clears them (WP-099). A note
+    /// the ledger holds at such a time was written by a capture that
+    /// stopped before that save, and the next capture does not write it
+    /// again. Not written while empty: older files read unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_notes: Vec<String>,
 }
 
 /// One collector's entry in `cursors.json`. `ok`, `message` and `lastRun`
