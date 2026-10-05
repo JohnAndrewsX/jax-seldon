@@ -140,11 +140,12 @@ Hook budget (`hooks` ignored tests, `just check-perf`'s second half):
   `curl-user` 100 → 140 µs, `proxy-option` 219 → 256 µs (throwaway
   test).
 - **Repeated options on long lines** (throwaway test, not committed).
-  About 285 ns per masked option, linear: a 16 KB line of `-u a:b`
-  takes 0.67 ms, 64 KB takes 2.7 ms. That is the same order as
-  `replace_all` for `token=` (0.47 / 1.9 ms on both versions) and
-  `--password` (0.36 / 1.46 ms). `main` was faster here only because it
-  masked just the first option.
+  About 285 ns per masked option for a single option kind: a 16 KB line
+  of `-u a:b` takes 0.67 ms, 64 KB takes 2.7 ms.
+  - **Corrected in round 2:** the word "linear" was wrong. It held for
+    one option kind only. With two or more kinds, each match was checked
+    against every marker of the earlier rules, which is quadratic (34 ms
+    at 128 KB). See Round 2, F1.
 
 ### Mutants (each run of `--test redaction --no-fail-fast`, source restored with `git checkout HEAD` + `touch`, baseline green afterwards, `git diff` clean)
 
@@ -209,3 +210,157 @@ headroom matters, WP-084's open question 1 (narrower triggers, e.g.
   and binaries stayed in the session scratchpad.
 - During the A/B run, `engine/target/release/seldon` was temporarily
   swapped. The final bench build of this branch is back in place.
+
+## Round 2 (review: stage 1 SEND BACK, stage 2 FIX ROUND)
+
+Commits:
+
+- `ba5740e`: F1, plus three timing rows, `check-perf`, `docs/TESTING.md`
+  and CHANGELOG.
+- `ee0a9fd`: F2 union, the F2 rows and the F3 rows.
+- `53e7fd6`: a row for the unclosed-quote tail.
+- `ef15551`: an idempotency pattern at a marker's first character.
+- `afcfb86`: SPEC-ENGINE §7.
+- `ef1188d`: pitfalls.
+- This section.
+
+### F1: marker check by binary search
+
+`Rule::applies` now uses `markers.partition_point(|&(start, _)| start
+<= m_start)` and checks only the marker before that point. `markers()`
+states the invariant (ascending, no overlap, as `match_indices` finds
+them) and checks it with a `debug_assert!`.
+
+`long_lines_with_a_marker_stay_fast` gains three rows at 16/64/128 KB:
+- two option kinds `-u a:b -x c:d@e `: budget 20 ms at 128 KB;
+- the five-option mix: printed only, no budget;
+- `--password x token=y ` after `tool `: budget 10 ms at 128 KB.
+
+`just check-perf` now also runs `--test redaction`. The justfile
+comment and `docs/TESTING.md` name the budgets. CHANGELOG has the
+requested line.
+
+| Row (bench profile, median of 21) | before ¹ 16 / 64 / 128 KB | after F1 ² | final ³ |
+|---|---|---|---|
+| two option kinds | 1.64 / 11.2 / 34.1 ms | 1.26 / 5.14 / 10.2 ms | 0.99 / 4.00 / 7.97 ms |
+| five option kinds | 2.73 / 15.7 / 44.4 ms | 2.39 / 9.36 / 19.4 ms | 1.60 / 6.43 / 13.1 ms |
+| `--password` / `token=` | 0.65 / 5.20 / 17.6 ms | 0.46 / 1.84 / 4.03 ms | 0.45 / 1.86 / 3.82 ms |
+
+¹ Round-1 head `6ea9d11`, 14:25, load 0.4. The `--password`/`token=`
+loop was already in `main`.
+² `ba5740e`, 14:26, load 0.7.
+³ `ef1188d`, 14:44, load 0.8, including the F2 union.
+
+**Remaining superlinearity: none left in our code.** The five-option mix
+grows exactly ×2.0 per doubling from 32 to 512 KB (4.8 / 9.7 / 19.3 /
+38.3 / 78.4 ms after F1; throwaway test). The ×3.9 from 16 to 64 KB is
+×1.97 per doubling. The reviewer's ×2.3 does not reproduce here.
+
+**The constant is the regex engine.** On a 128 KB mix line, 2789
+chained `curl-user` matches cost 3.35 ms with `captures` and 0.22 ms
+with `find` (throwaway test): about 1.2 µs against 80 ns per match.
+That time goes into resolving the capture groups over the match span.
+`redact.rs` has no further loop over the line per match:
+- `markers()` and the rebuild of the text are linear per rule;
+- a failing scan-on or main search runs to the command end once per
+  anchored match.
+
+### F2: union, kept
+
+`COMMAND_REST` itself is now `(?:[^\n;&|]*?|<quote-aware fragment>)`,
+so `first` and `next` both use it. The three packet lines are TABLE rows
+(`$'a\'"'`, `"$(printf '"')"`, `curl \ -u`). SPEC §7 says that quotes
+pair left to right and that the plain reading still counts.
+
+**Why kept.** Measured as the condition asked:
+- **Rows without an option:** stay at 0.12–0.13 ms (16 KB) and
+  0.49–0.54 ms (64 KB) in both variants, against budgets of 1 and 2 ms.
+- **Hook, curl line with a marker, 900 lines, interleaved A/B:** 7
+  rounds alternating no-union / union (method as in round 1: two bench
+  builds of `seldon` swapped into `target/release/seldon`, then the
+  hooks test binary run directly, all under the lock).
+  - load 12 → 5: 4.71 / 5.06 ms (retry 5.37), 4.61 / 4.79 ms,
+    4.57 / 4.49 ms;
+  - load 4.5 → 3.7: 4.59 / 4.63 ms, 4.89 / 4.90 ms, 4.58 / 4.65 ms,
+    4.79 / 4.46 ms.
+  - Differences: +0.35, +0.17, −0.08, +0.03, +0.01, +0.07 and −0.33 ms.
+    The **median is +0.03 ms**, under the 0.1 ms limit.
+- **Compile plus first match** (throwaway test, median of 101):
+  `curl-user` 139/148 → 150 µs, `proxy-option` 253/257 → 256/267 µs.
+  That is at most about 25 µs for the hook line.
+
+**Side effect.** With the union, the plain branch reaches
+`curl's -u …` itself, so the M6 row no longer killed its mutant. Row
+`53e7fd6` puts a quoted `;` before the apostrophe, which only the
+quote-aware branch crosses (pitfall).
+
+### F3: new rows
+
+- TABLE: `curl -U bob:fakeProxyPw13 https://h.example; useradd -U bob`,
+  where `; useradd -U bob` is kept.
+- CLEAR: `git commit -m "Fix curl 'quote⏎handling' -U flag"`. A quoted
+  string ends at the line end.
+
+### Timings on the final state (`ef1188d`, 14:44, load 0.8)
+
+| Case | round 1 before (`d52e96d`) | final |
+|---|---|---|
+| url / German note, 16 KB | 0.121 / 0.126 ms | 0.128 / 0.127 ms |
+| url / German note, 64 KB | 0.532 / 0.529 ms | 0.526 / 0.510 ms |
+| quoted line, 16 / 64 KB | – | 0.130 / 0.558 ms |
+| apostrophes, 16 / 64 KB | – | 0.128 / 0.516 ms |
+| hook curl line, 10 000 lines | 2.53 ms | 2.86 ms |
+| hook curl line, 900 lines | 4.51 ms | 4.72 ms |
+| hook pacman fixture, 900 lines | 3.79 ms | 4.09 ms |
+
+The single hook run fits the round-1 A/B: about +0.2 ms at 10 000 lines
+and noise at 900 lines. The headroom at 900 lines stays about 0.3–0.5 ms.
+
+### Mutants (round 2; each run of `--test redaction --no-fail-fast`, source restored with `git checkout HEAD` + `touch`, baseline green, `git diff` clean)
+
+M2 to M10 now mutate the quote-aware branch inside the union.
+
+| # | Mutant | Caught by |
+|---|---|---|
+| M1 | context only `[^\n;&|]*?` (no quote-aware branch) | `every_builtin_pattern`, `…_disjoint_and_stable` |
+| M2 | no single-quoted string | same |
+| M3 | no double-quoted string | same |
+| M4 | double quotes without `\"` escapes | `every_builtin_pattern` |
+| M5 | no backslash escape outside quotes | `every_builtin_pattern` |
+| M6 | no unclosed-quote tail | `every_builtin_pattern` (row `53e7fd6`) |
+| M7 | unclosed quote as a loop alternative | `harmless_text_stays` |
+| M8 | separators allowed after an unclosed quote | `harmless_text_stays` |
+| M9 | unquoted `;` does not end the quote-aware branch | `every_builtin_pattern`, `harmless_text_stays` |
+| M10 | unquoted `&`/`|` do not end it | `harmless_text_stays` |
+| M11 | no scan-on (`next: None`) | `every_builtin_pattern`, `masking_twice…`, `…_disjoint_and_stable` |
+| O1 | `next` without `\A` | `every_builtin_pattern` (F3 row), `masking_twice…` |
+| O2 | quoted strings cross the line end | `harmless_text_stays` (F3 CLEAR row) |
+| U1 | no union (quote-aware branch only) | `every_builtin_pattern` (the three F2 rows) |
+| B1 | marker check back to `iter().any` | `long_lines_with_a_marker_stay_fast` in the bench profile: two kinds, 128 KB, 31.0 / 31.3 ms against a 20 ms budget |
+| B2 | binary search off by one (`start < m_start`) | `masking_twice_changes_nothing` (after `ef15551`; it survived before) |
+
+### Verified (round 2)
+
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+  are clean.
+- `redaction`: 19 passed, 1 ignored. The bench run passes all budgets.
+- `scripts/docs-check.sh` exit 0.
+- **`flock /tmp/seldon-check.lock just check` at `ef1188d`: exit 0**
+  (14:45–14:58). Results: service-states 297/0, panel-view 771/0,
+  overlay-view 319/0, bar-view 143/0, install 209/0, real-home-guard
+  11/0, qmllint 29 files, docs-check ok, `check: ok`.
+
+### Not in this round (as instructed)
+
+- F4 over-masking accepted.
+- `sshpass` keeps its first `-p`.
+- The `curl-user` case-sensitive trigger goes to WP-092.
+- The pre-existing leaks go to a follow-up WP: `\⏎` continuation,
+  `--oauth2-bearer`, `--pass`, `-E`/`--cert file:pass`, `http`/`xh -a`
+  and `2>&1`.
+
+### Touched outside scope (round 2)
+
+`justfile` (`check-perf` runs `--test redaction`) and `docs/TESTING.md`
+(its description), as the round asks for budgets in `just check-perf`.
+`memory/pitfalls.md` (append).
