@@ -225,3 +225,70 @@ last mutant, ending with `check: ok`.
   (`git status` clean).
 - SPEC §2 was touched for the `cursors.json` shape (`pendingNotes`),
   besides the §3/§4/§7 sentences the brief names.
+
+---
+
+# Round 2 (stage 1 SEND BACK small; stage 2 APPROVE after this round)
+
+Commits (oldest first), no rebase:
+
+- `0364c20` docs: SPEC-ENGINE crash limitations of the seldon notes (WP-099)
+- `a02043f` engine: crash tests for a new month and a source first recorded, debug only (WP-099)
+- `663639a` docs: testing row for the round-2 crash tests, debug builds only (WP-099)
+- this commit: handover round 2
+
+## What changed
+
+- **B1, SPEC §3.** The text now reads "loads that state (same binding,
+  same entries) and does not write a note …", in the brief's words. The
+  known-limitation sentence (a source the crashed capture baselined
+  without a note gets a reset note that lost nothing; its `recorded` time
+  is the crash time) follows "… when it marks a note of its own."
+- **N1, SPEC §4 snapper.** It now says "so no change is recorded twice,
+  also after a crash …", plus the known-limitation sentence on a flip
+  back before the next completed capture.
+- **N2, tests (`crash::`).**
+  - `a_mark_in_a_new_month_is_found`: a baseline at
+    `2027-02-28T12:00:00+01:00`, a lost state directory, a crash after
+    the append at `2027-03-01T00:00:05+01:00`. The next capture writes
+    0, and the ledger holds one note.
+  - `a_source_first_recorded_by_the_crashed_capture_gets_a_note` (P2,
+    the documented behaviour): `--source pacman --since …`, a lost state
+    directory, a crash after the append of `--all --since …`, then
+    `--all`. The reset notes' sources are `["pacman", "snapper"]`, the
+    warning starts "snapper, pacman", and the next capture writes 0.
+- **N3.**
+  - `#[cfg(debug_assertions)]` is on `mod crash` and on
+    `Cli::crash`, `Cli::capture_at` and `Cli::cursors`, which only that
+    module uses. `cargo check --release --test idempotency` now
+    compiles.
+  - docs/TESTING.md has a line saying the crash tests exist in debug test
+    builds only, and the two new tests are in the row.
+- Not in this round, as the brief says: N4 (doctor's prediction after a
+  crashed reset, the false reset note) and the redaction of collector
+  messages. Both are follow-up WPs.
+
+## Mutants
+
+| # | Mutant | Result | Killed by |
+|---|---|---|---|
+| O2 | `pending_notes` takes the month in UTC | killed | `a_mark_in_a_new_month_is_found` (only that test) |
+| M14 | marked month read as `%Y` (re-run) | killed | all 6 `crash::` |
+
+Same script and method as round 1 (applied to the committed tree,
+restored with `git checkout HEAD --` plus `touch`). The tests below ran
+after the last mutant.
+
+## Verified by
+
+- `cargo test --no-fail-fast --test idempotency --test doctor --test
+  index --lib`: 0 failures (idempotency 41, doctor 31, index 25 with 1
+  ignored, lib 220).
+- `cargo check --release --test idempotency`: ok.
+- `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check`:
+  clean. `bash scripts/docs-check.sh`: ok.
+- `flock /tmp/seldon-check.lock just check`: exit 0, run once, ending
+  with `check: ok`. Results: bar-view 143/0, panel-view 782/0,
+  overlay-view 319/0, service-states 314/0, install.test 209/0,
+  real-home-guard 11/0, model.test.js 89.
+- No guard block. The host was not touched.
