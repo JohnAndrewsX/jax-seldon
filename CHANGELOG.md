@@ -28,6 +28,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   note with that kind, once.
   This also holds when it was the only collector that lost its state
   (WP-088).
+- The same holds for a collector that the capture which loses the state
+  does not run (`capture --source` without it, or disabled): it gets an
+  entry in `cursors.json` with only the mark, which the index shows as a
+  collector that has not run yet, and its first successful run, also
+  after it is enabled again, records its gap (WP-091).
+- `seldon doctor` shows a collector whose baseline waits in its own
+  `state` row: degraded or not run since a state reset, and that its
+  next successful capture records the gap; it says when the state was
+  another logbook's instead of "cursors unreadable", and the fix is a
+  capture of that collector rather than a restore (WP-091).
+- When the snapper collector goes from degraded to ok or back between
+  two captures (you ran the read grant, or a snapper `set-config` with
+  `SYNC_ACL=yes` removed it), the capture records a `seldon` note with
+  the subject `snapper` and the collector's message, once (WP-091).
+- A `cursors.json` that holds an entry with only the `pendingBaseline`
+  mark (a collector not run since a state reset) cannot be read by an
+  engine before 0.1.4; after a downgrade move `cursors.json` aside, which
+  records a state reset (WP-091).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains

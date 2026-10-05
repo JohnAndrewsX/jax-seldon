@@ -22,7 +22,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 |---|---|
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve, §8; WP-063; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun` (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/lock` | flock during writes |
@@ -367,7 +367,8 @@ for this logbook is missing or does not read as its cursor (the
 collector's `cursor_reads`) would take a baseline; that baseline passes
 the same binding gate (no binding: `cursors missing`; another logbook:
 `bound to another logbook`; this logbook: only a cursor that is there
-and does not read, or a `pendingBaseline` mark, `cursors unreadable`)
+and does not read, `cursors unreadable`, or a `pendingBaseline` mark,
+below)
 and the same ledger rule (at
 least one event of its source). Message `the next capture will record a
 state reset for <sources>: cursors missing in <state dir>, so changes
@@ -382,12 +383,20 @@ successfully here, when `cursors.json` cannot be read (its error row), or
 when the ledger cannot be read (the `ledger` row). Not predicted: a
 collector that degrades in that capture takes no baseline (its baseline
 waits, `pendingBaseline`), so the row can name more collectors than the
-note, and it keeps naming one with the mark while that collector
-degrades. With a `logbook` mark the row's fix is right (nothing to
-restore) but its message says `cursors unreadable`, which it is not
-(WP-091 fixes the wording); `manifest` and `owned` losses show in
-their error rows. After that capture the row is gone and the reset row
-takes over. The `omarchy`
+note; `manifest` and `owned` losses show in their error rows. After that
+capture the row is gone and the reset row takes over. A collector whose
+baseline waits (enabled, cursors bound to this logbook, marked
+`pendingBaseline` because it degraded or was not run in the capture that
+lost its state) has its own degraded `state` row instead (WP-091):
+`<collectors> degraded or not run since a state reset (cursors missing or
+unreadable in <state dir>); its next successful capture records the gap,
+so changes made in between may not be recorded`, with `the state in
+<state dir> belonged to another logbook` for a `logbook` mark (each
+collector with its own reason when the marks differ); fix `run seldon
+capture --source <collectors> once it can run (a degraded collector: the
+collectors row's fix first)`. A capture clears it only by running the
+collector successfully; a restore is not offered, as the other
+collectors took their new baseline already. The `omarchy`
 and `snapper` probes run the programs the collectors run
 (`SELDON_OMARCHY_VERSION`, `SELDON_SNAPPER`).
 
@@ -490,7 +499,11 @@ baseline without a note. Known limitation: after `init --no-capture`
 there is no `cursors.json`, so when the theme hook or an agent writes an
 event of a collector's source before the first capture, that capture
 records a state reset that lost nothing. The next capture continues from
-the new state, so a loss is recorded once. A collector that degrades in
+the new state, so a loss is recorded once. Known limitation: a crash
+between the ledger append and the `cursors.json` save (a few
+milliseconds) repeats the `state-reset` note and the snapper access note
+(§4) on the next capture; collector events are not repeated, because the
+collectors compare with the ledger. A collector that degrades in
 a capture in which its state was lost (it would pass the binding gate
 and the ledger rule above) takes no baseline there, so that capture's
 note does not name it, or there is no note when it alone lost its state;
@@ -500,7 +513,16 @@ set, older files read as not waiting) while it degrades or is not run,
 and its first successful run takes the baseline and records it: a
 `state-reset` note naming it, files as recorded in the mark, `cursors` or
 `logbook` (with `logbook` the warning says that nothing can be restored),
-then the mark is cleared (WP-088). A corrupt `owned.json` is moved
+then the mark is cleared (WP-088). The same holds for a collector that
+the capture which loses the state does not run (`--source` without it, or
+disabled in `config.toml`) and that has no entry in `cursors.json` as
+bound for that capture (no file, or `bind` dropped another logbook's): it
+passes the same binding gate and ledger rule, and the capture writes an
+entry with only the mark (`ok: true`, `events: 0`, no `cursor`, no
+`lastRun`); its first successful run, also after it is enabled again,
+records the gap the same way. A collector not run that has an entry
+(bound to this logbook) keeps it as it is: a cursor that does not read is
+recorded by its own next run (WP-091). A corrupt `owned.json` is moved
 to `owned.json.bad` by the capture that runs the config collector
 successfully (a newer one replaces an older `.bad`). The capture warns:
 `warning: state reset recorded: <sources> took a new baseline because
@@ -680,7 +702,24 @@ git itself is killed, with the same bounded pipe wait. Rules:
   recommended next step. snapper is run with `LC_ALL=C` (and without
   `LANGUAGE`), `list` and `get-config` alike; its messages are matched in
   English, whatever the user's locale (`doctor` and `init` use the same
-  argv and locale).
+  argv and locale). When the collector's `ok` differs from its last run
+  for this logbook (its entry in `cursors.json` as bound for the capture,
+  with a `lastRun`), the capture that runs it appends one `note` with
+  `source: seldon`, `actor: system`, subject `snapper`, no case, so that
+  granting or removing the read access (or a `SYNC_ACL` rewrite that
+  removed it) shows in the history (WP-091). Detail: `snapper collector
+  degraded: <message>; at its last run it was ok`, or `snapper
+  collector ok again (<message>); at its last run it was degraded:
+  <earlier message>` (without `(<message>)` when the run has none, e.g.
+  through `snapper list`). Any degraded state counts, not only
+  `NO_PERMISSIONS`. No note on the first run for a logbook, after a lost
+  state directory or another logbook's state (nothing to compare with),
+  for an entry with only the `pendingBaseline` mark (it never ran), or
+  in a capture that does not run snapper; the next capture compares with
+  the saved state, so each change is recorded once (except after a crash
+  between the append and the cursor save, §3 state reset, known
+  limitation). The note is no drift
+  and no own change (§5).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is
   stale); `repoHead` (7-character short hash, like `logbook.git.head`)

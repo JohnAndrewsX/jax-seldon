@@ -29,10 +29,15 @@
 //! [`STATE_RESET`] and prints a warning (WP-081). A collector that never
 //! ran successfully for this logbook loses nothing (`loss`), and the first
 //! capture of a logbook holds no events of its sources: no note.
-//! A collector that degrades in the capture that loses its state takes no
-//! baseline then; it is marked `pendingBaseline` in `cursors.json` with
-//! what it lost (`cursors` or `logbook`), and its first successful run
-//! records its gap the same way (WP-088).
+//! A collector that degrades (WP-088) or is not run (WP-091) in the
+//! capture that loses its state takes no baseline then; it is marked
+//! `pendingBaseline` in `cursors.json` with what it lost (`cursors` or
+//! `logbook`; a collector not run gets an entry with only the mark), and
+//! its first successful run records its gap the same way.
+//! When the snapper collector changes between degraded and ok since its
+//! last run for this logbook (read access granted or removed, ADR-0026),
+//! the capture records a `seldon` `note` with the subject `snapper`
+//! ([`access_change`], WP-091).
 //! A corrupt `owned.json` counts for the config collector; a capture that
 //! runs that collector moves it to `owned.json.bad` after the ledger write,
 //! so the next capture does not report it again.
@@ -136,13 +141,26 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         &selected, &config, ctx, &ledger, &cursors, &logbook, &sources, now, baseline,
     );
     let mut lost = losses(lost, binding, &cursors, &logbook.root);
-    let waiting = waiting_baselines(&ledger, &states, binding, &cursors, &logbook.root)?;
-    for (name, state) in &mut states {
-        state.pending_baseline = waiting
+    let not_run: Vec<&'static str> = selected
+        .iter()
+        .filter(|(_, run)| !run)
+        .map(|(name, _)| *name)
+        .collect();
+    let waiting = waiting_baselines(&ledger, &states, &not_run, binding, &cursors, &logbook.root)?;
+    let mark = |name: &str| {
+        waiting
             .iter()
-            .find(|(n, _)| n == name)
-            .and_then(|(_, l)| PendingBaseline::of(*l));
+            .find(|(n, _)| *n == name)
+            .and_then(|(_, l)| PendingBaseline::of(*l))
+    };
+    for (name, state) in &mut states {
+        state.pending_baseline = mark(name);
     }
+    // not run: an entry with only the mark, which the index reads as none
+    let bare: Vec<(&'static str, CollectorState)> = not_run
+        .iter()
+        .filter_map(|&name| Some((name, CollectorState::waiting(mark(name)?))))
+        .collect();
     owned_corrupt &= reports.iter().any(|r| r.name == "config" && r.ran && r.ok);
     if owned_corrupt {
         lost.push(("config", Lost::Owned));
@@ -150,9 +168,10 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
     let reset = state_reset(&ledger, &lost, baseline, now)?;
     events.extend(reset.as_ref().map(|r| r.note.clone()));
+    events.extend(access_change(&cursors, &states, now));
 
     let written = ledger.append(&lock, events)?;
-    for (name, state) in states {
+    for (name, state) in states.into_iter().chain(bare) {
         cursors.collectors.insert(name.to_string(), state);
     }
     cursors.save(&cursors_path)?;
@@ -266,22 +285,30 @@ fn baselines(
         .collect()
 }
 
-/// The collectors among `states` that degraded although they lost their
-/// state, and what they lost (WP-088): a degraded run takes no baseline,
-/// so the one it would have taken waits, through the capture's gate
-/// ([`losses`]: [`Lost::Cursor`] or [`Lost::Logbook`]) and ledger rule
-/// ([`held_losses`]); a collector already waiting stays so, with its
-/// kind. Its first successful run records the gap as a state reset.
+/// The collectors that lost their state although they took no baseline in
+/// this capture, and what they lost: among `states` those that degraded
+/// (WP-088), and among `not_run` those without an entry in `cursors` (as
+/// bound for this capture), whose state the capture drops (WP-091; one
+/// with an entry keeps it as it is). The baseline each would have taken
+/// waits, through the capture's gate ([`losses`]: [`Lost::Cursor`] or
+/// [`Lost::Logbook`]) and ledger rule ([`held_losses`]); a collector
+/// already waiting stays so, with its kind. Its first successful run
+/// records the gap as a state reset.
 fn waiting_baselines(
     ledger: &Ledger,
     states: &[(&'static str, CollectorState)],
+    not_run: &[&'static str],
     binding: Binding,
     cursors: &Cursors,
     logbook: &Path,
 ) -> Result<Vec<(&'static str, Lost)>> {
     let degraded = states.iter().filter(|(_, s)| !s.ok).map(|(n, _)| *n);
+    let dropped = not_run
+        .iter()
+        .copied()
+        .filter(|n| !cursors.collectors.contains_key(*n));
     let lost = losses(
-        baselines(cursors, logbook, degraded),
+        baselines(cursors, logbook, degraded.chain(dropped)),
         binding,
         cursors,
         logbook,
@@ -344,6 +371,42 @@ fn loss(
         },
         (l, _) => Some(l),
     }
+}
+
+/// The `seldon` note for the snapper collector changing between degraded
+/// and ok since its last run for this logbook (WP-091): the user granted
+/// or removed its read access (ADR-0026), or snapper failed or recovered
+/// otherwise; the detail carries the message. `cursors` as bound for this
+/// capture, so another logbook's state, a lost state directory and an
+/// entry that never ran (only the mark) give no note; nor does a capture
+/// that does not run snapper.
+fn access_change(
+    cursors: &Cursors,
+    states: &[(&'static str, CollectorState)],
+    now: DateTime<FixedOffset>,
+) -> Option<Event> {
+    const NAME: &str = "snapper";
+    let (_, new) = states.iter().find(|(n, _)| *n == NAME)?;
+    let old = cursors.collectors.get(NAME)?;
+    if old.last_run.is_none() || old.ok == new.ok {
+        return None;
+    }
+    let message = |s: &CollectorState| s.message.clone().unwrap_or_else(|| "failed".into());
+    let detail = match (new.ok, &new.message) {
+        (true, None) => format!(
+            "snapper collector ok again; at its last run it was degraded: {}",
+            message(old)
+        ),
+        (true, Some(current)) => format!(
+            "snapper collector ok again ({current}); at its last run it was degraded: {}",
+            message(old)
+        ),
+        (false, _) => format!(
+            "snapper collector degraded: {}; at its last run it was ok",
+            message(new)
+        ),
+    };
+    Some(Event::new(now, Source::Seldon, Kind::Note, NAME).detail(detail))
 }
 
 /// Whether `path` exists and is not a valid `owned.json` (the collector
@@ -563,7 +626,7 @@ fn collect_all(
                 ok: out.ok,
                 message: out.message.clone(),
                 fix: out.fix.clone(),
-                last_run: format_ts(&now),
+                last_run: Some(format_ts(&now)),
                 events: out.events.len(),
                 // set by `run` for a degraded run
                 pending_baseline: None,

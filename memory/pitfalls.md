@@ -1788,3 +1788,36 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A mutant at a marker's first character needs a pattern that matches
   there.** `partition_point(start < m)` survived the idempotency test
   until its user pattern also matched `‹re`.
+
+## 2026-10-05 · WP-091 (Engine Dev)
+
+- **A capture that moves snapper between degraded and ok writes one
+  more line** (the `seldon` note, subject `snapper`). A test that swaps
+  `stub_snapper_no_permissions` for `stub_snapper` (or back) between two
+  captures of the same logbook counts it in `written`; the WP-088 tests
+  now expect 2 there ("the note and access").
+- **`CollectorState.last_run` is an `Option` since WP-091.** An entry
+  with only the `pendingBaseline` mark (a collector not run in the
+  capture that lost the state) has no `lastRun` and no `cursor`; anything
+  that reads `lastRun` (doctor's "last capture", the index) must skip
+  `None`, and "did it ever run here" is `last_run.is_some()`, not "has an
+  entry". An engine before WP-091 cannot load such a `cursors.json`.
+- **`capture --source pacman` in `idempotency.rs` without `--since`
+  writes no pacman events** (its baseline is the logbook's `created`, the
+  real time), and a later `--since` is ignored for it (`sinceIgnored`):
+  a test that needs pacman events in the ledger passes `--since
+  FIXTURE_CREATED` on pacman's first capture.
+- **doctor's `state` rows for a lost state are two since WP-091:** "the
+  next capture will record a state reset for …" (unmarked losses) and
+  "<c> degraded or not run since a state reset (…)" (marked ones;
+  `waiting()` in `idempotency.rs`). `predicted()` no longer names a
+  marked collector.
+- **The watch RSS test's debug growth (`VmHWM − idle VmRSS`) is mostly
+  mapped binary pages, not heap** (WP-091 round 3): the heap growth of a
+  ×10 rebuild is a fixed 1836 kB, while the idle file-backed RSS of the
+  110 MB debug binary moves by ±0.5–0.8 MB between builds with identical
+  code (another build path is enough). A change near the 6144 kB bound
+  is no evidence of a leak; split `RssAnon`/`RssFile` from
+  `/proc/<pid>/status` before bisecting, and measure interleaved under
+  the check lock. `git archive` copies keep old mtimes: touch the
+  sources, or cargo reuses the previous build.

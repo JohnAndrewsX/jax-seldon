@@ -47,6 +47,10 @@ The user guide (`docs/user/`) is in English and German; further
 languages are added when there is demand, as a docs change (patch),
 following the translation policy in [docs/user/README.md](user/README.md).
 
+Downgrading the engine is not supported: the state files in
+`~/.local/state/seldon` may carry fields an older engine refuses; move
+`cursors.json` aside after a downgrade (doctor says so).
+
 ## `contractVersion`
 
 `contractVersion` is one integer kept in four places: the engine
