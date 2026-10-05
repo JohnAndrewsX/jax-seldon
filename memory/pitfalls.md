@@ -1704,3 +1704,8 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   degraded theme collector plus a hook-written `theme-set` gave a false
   reset, `a_first_successful_run_after_a_degraded_init_is_no_reset`);
   without the binding gate a hand-removed entry does.
+- **`drift dismiss` and rule 7 share a clock-back fold gap** (not fixed
+  in WP-088): both write their resolution at the capture or command time,
+  so for an event dated after that clock the line lands before the event
+  in the ledger and the index does not fold it; the row stays drift.
+  Rule 8 dates its line at `max(now, event ts)` since WP-088 round 2.
