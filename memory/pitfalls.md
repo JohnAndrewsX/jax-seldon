@@ -1613,3 +1613,9 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   dedupe.** A test that fakes an older cursor must fake the matching
   ledger line too, or the false pair is dropped as already recorded and
   the mutant survives (WP-082 M1 first survived the older-cursor test).
+- **chrono's fold and gap are closed at the end** (`<=` in
+  `tz_info/rule.rs` and `timezone.rs`): 03:00:00 on the night summer
+  time ends comes back `Ambiguous`, with 03:00+02:00 (01:00 UTC, which is
+  02:00 CET on the wall), and 02:00:00 when it begins comes back
+  `Single(02:00+01:00)` (03:00 CEST on the wall). Keep only the readings
+  whose wall-clock time is the input (WP-082 review F1).
