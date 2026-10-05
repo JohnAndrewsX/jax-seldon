@@ -1681,3 +1681,20 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Clippy `type_complexity` fires on test tables** like
   `[(&str, &[(&str, bool, &str)], &str); 3]`; keep the table to scalars
   and build the nested value inside the loop.
+## 2026-10-05 · WP-087 (Engine Dev)
+
+- **The `regex` crate has no `\G`.** `captures_at(text, pos)` searches
+  from `pos` but treats `\A` as the start of the whole text, so an
+  anchored "go on from here" pattern never matches there. Slice the text
+  at the previous match's end and match `\A…` on the slice, adding the
+  offset back (`redact::Rule::matches`).
+- **A fallback alternative can hide a mutant of the main path.** The
+  unclosed-quote tail of `COMMAND_REST` re-pairs a stray closing quote,
+  so a proxy match that stopped inside its quotes still found the next
+  `-x`; the mutant survived until the row put a quoted `;` between the
+  two options (`-H 'X-A: a;b'`), which only the correct path crosses.
+- **Hook A/B timings without two worktrees:** build the bench profile
+  once per variant, copy `target/release/seldon` aside, then swap the
+  copies into place and run the `hooks-…` test binary directly (cargo
+  would rebuild). Under load 7 even `main` went over 5 ms at 900 lines;
+  compare rounds, not single runs.
