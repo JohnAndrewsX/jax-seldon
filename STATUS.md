@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-082 | snapper: one date per snapshot across list and info files | Engine | `engine-082` (opus) | `wt/WP-082` · `wp/082-review` | 2026-10-05 |
 | WP-084 | redaction: proxy credentials, JSON passwords, cookie headers | Engine | `engine-084` (opus) | `wt/WP-084` · `wp/084-review` | 2026-10-05 |
 | WP-085 | panel shows capture warnings | Plugin | `plugin-085` (opus) | `wt/WP-085` · `wp/085-review` | 2026-10-05 |
 | WP-086 | Seldon's own updates are not drift | Engine | `engine-086` (opus) | `wt/WP-086` · `wp/086-review` | 2026-10-05 |
@@ -38,6 +37,10 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-082 snapper keeps one date per snapshot across `snapper
+  list` and the info files, also in the repeated hour and at its ends; the
+  ledger dedupe knows both instants; the list shape checked on the dev
+  host; two review rounds; merged.
 - 2026-10-05 WP-083 doctor warns before the capture that would record a
   state reset, sharing capture's detection (`Collector::cursor_reads`); the
   fix names a `--path` logbook; two review rounds; merged.
