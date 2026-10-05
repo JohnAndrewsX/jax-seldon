@@ -29,7 +29,7 @@ pub struct RulesArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum RulesCommand {
-    /// Rewrite the rules block of AGENTS.md; text outside it is kept
+    /// Bring the rules block of AGENTS.md up to this release; text outside it is kept
     #[command(after_help = "Examples:
   seldon rules update
   seldon rules update --replace")]
