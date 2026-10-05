@@ -191,9 +191,11 @@ shows its name.
 
 The agent also gets two environment variables. `SELDON_ACTOR` is
 `agent:` and the launcher's name (`agent:default` for the default
-launcher). Every `seldon` command the agent runs without `--actor`
-records that name, so a note or a case step it forgets to sign is
-recorded as the agent, never as you. `SELDON_ATTENDED=1` tells the agent
+launcher). `seldon log`, `plan`, `drift`, `event` and `hook generic`
+record that name when `--actor` (for `hook generic`, `"actor"`) is
+missing, so a note or a case step the agent forgets to sign is recorded
+as the agent, never as you. `event` first takes the agent command it
+finds in the ledger, with that command's case. `SELDON_ATTENDED=1` tells the agent
 that you started it: the logbook's rules (`AGENTS.md`) say what it may
 do then. Seldon itself never reads it.
 

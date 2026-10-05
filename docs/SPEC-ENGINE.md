@@ -1181,7 +1181,7 @@ before it, median of 21 runs each, a recorded command took 19 to 36 %
 less time with an empty ledger, near 1000 lines with the rebuild, above
 1000 lines without it, and for a command with secrets in it. A
 non-mutating command compiles no redaction rule.
-`seldon hook generic` takes `{"command","actor","cwd",
+`seldon hook generic` takes `{"command","actor"?,"cwd","case"?,
 "startedAt"?}` with the same rules. Without `"actor"` it takes
 `$SELDON_ACTOR` (WP-096); with neither, or a value that is not human or
 `agent:<name>`, it records nothing and says so on stderr (exit 0, as
