@@ -4,8 +4,10 @@
 //! `seldon init` writes the template, the block first and a section for
 //! the user's own rules after it. `seldon rules update` brings the block of
 //! an existing file up to this engine's rules and keeps everything outside
-//! it; `seldon doctor` reports the block's [`State`]. Pure functions: the
-//! command does the reading, writing and committing.
+//! it; a file from before the block keeps only the user's own lines (WP-100
+//! round 2). `seldon doctor` reports the block's [`State`]. Pure
+//! functions: the command does the reading, archiving, writing and
+//! committing.
 //!
 //! Marker lines count only as whole lines (`\n` or `\r\n`); the block ends
 //! at the first `<!-- seldon:end -->` line after its begin marker. The
@@ -22,8 +24,8 @@ pub const VERSION: u32 = 2;
 /// The rules file, relative to the logbook root.
 pub const FILE: &str = "AGENTS.md";
 
-/// The heading above the text of an unfenced file that `rules update`
-/// keeps below the new block.
+/// The heading above the user's own lines of an unfenced file that
+/// `rules update` keeps below the template.
 pub const KEPT_HEADING: &str = "## Your rules (kept)";
 
 /// The begin marker up to the version number.
@@ -39,6 +41,30 @@ pub const RELEASED_V1: [&str; 4] = [
     "2241d260418bb1f84b3fc1d570dbb42cfbeac7416a4178609b4b43e3af7dcfa6",
     "6b752670b9be2307354941682c0b803637c5c49a97946a7eb6e3b0cf873ad3be",
 ];
+
+/// Every `AGENTS.md` text Seldon wrote before the rules had a block: the
+/// four released ones of [`RELEASED_V1`] and the pre-release renderings of
+/// WP-003, WP-024 and WP-047 (a dev logbook, and `fixtures/logbook/`, may
+/// carry those). A line of an unfenced file that occurs in none of them is
+/// the user's.
+const V1_TEXTS: [&str; 10] = [
+    include_str!("../../templates/rules-v1/AGENTS-v0.1.0-en.md"),
+    include_str!("../../templates/rules-v1/AGENTS-v0.1.0-de.md"),
+    include_str!("../../templates/rules-v1/AGENTS-v0.1.1-en.md"),
+    include_str!("../../templates/rules-v1/AGENTS-v0.1.1-de.md"),
+    include_str!("../../templates/rules-v1/AGENTS-wp003-en.md"),
+    include_str!("../../templates/rules-v1/AGENTS-wp003-de.md"),
+    include_str!("../../templates/rules-v1/AGENTS-wp024-en.md"),
+    include_str!("../../templates/rules-v1/AGENTS-wp024-de.md"),
+    include_str!("../../templates/rules-v1/AGENTS-wp047-en.md"),
+    include_str!("../../templates/rules-v1/AGENTS-wp047-de.md"),
+];
+
+/// sha256 of every rules block a release wrote (LF line ends), besides
+/// this engine's own: rewriting one of them loses nothing, any other block
+/// was edited and its file is archived first. None yet: v2 is the first
+/// block; a release that changes the block text adds the old one here.
+const RELEASED_BLOCKS: [&str; 0] = [];
 
 /// Where the rules block of a text is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +171,8 @@ pub enum State {
     Newer(u32),
     Damaged(&'static str),
     Missing,
+    /// The file is not UTF-8 text (doctor reads the bytes).
+    NotUtf8,
 }
 
 impl State {
@@ -159,6 +187,7 @@ impl State {
             State::Newer(v) => format!("newer (v{v}) than this seldon's rules (v{VERSION})"),
             State::Damaged(why) => format!("damaged: the rules block {why}"),
             State::Missing => "missing".into(),
+            State::NotUtf8 => "invalid (not UTF-8)".into(),
         }
     }
 }
@@ -198,12 +227,13 @@ pub enum Action {
     Unchanged,
     /// There was no file; the template is written.
     Created,
-    /// The block (or a released v1 file, whole) is replaced by this
-    /// engine's; nothing outside it changes.
+    /// The block is replaced by this engine's and nothing outside it
+    /// changes; or a file from before the block that holds no line of the
+    /// user's is replaced by the template.
     Rewritten,
-    /// An unfenced file the user changed: the block goes on top, the old
-    /// text below [`KEPT_HEADING`], byte for byte.
-    Inserted,
+    /// A file from before the block with lines of the user's: the
+    /// template, then those lines below [`KEPT_HEADING`].
+    Kept,
     /// `--replace`: the old file is archived, the template written.
     Replaced,
 }
@@ -214,7 +244,7 @@ impl Action {
             Action::Unchanged => "unchanged",
             Action::Created => "created",
             Action::Rewritten => "rewritten",
-            Action::Inserted => "inserted",
+            Action::Kept => "kept",
             Action::Replaced => "replaced",
         }
     }
@@ -227,18 +257,26 @@ pub struct Update {
     /// The version the file had: `None` without a file, `1` unfenced.
     pub from: Option<u32>,
     pub text: String,
+    /// The old file goes to `archive/` before the write: it held text of
+    /// the user's that the new file does not keep as it was.
+    pub archive: bool,
 }
 
 /// The new text of the rules file `old` (`None`: no file) with the
-/// rendered `template`. `replace` writes the template whatever the file
-/// holds (the caller archives the old one). `Err` is the user error: a
-/// damaged block or a newer one, where the file stays as it is.
+/// rendered `template`, and whether the caller archives the old file
+/// first. `replace` writes the template whatever the file holds. A fenced
+/// file gets its block rewritten (archived first when the block is no
+/// block Seldon wrote: the user edited it); an unfenced one that is not a
+/// released v1 file is archived and becomes the template plus its own
+/// lines ([`own_lines`]). `Err` is the user error: a damaged block or a
+/// newer one, where the file stays as it is.
 pub fn update(old: Option<&str>, template: &str, replace: bool) -> Result<Update, String> {
     let Some(old) = old else {
         return Ok(Update {
             action: Action::Created,
             from: None,
             text: template.to_string(),
+            archive: false,
         });
     };
     let found = find(old);
@@ -257,6 +295,7 @@ pub fn update(old: Option<&str>, template: &str, replace: bool) -> Result<Update
             action,
             from,
             text: template.to_string(),
+            archive: action == Action::Replaced,
         });
     }
     let new_block = template_block(template);
@@ -281,19 +320,77 @@ pub fn update(old: Option<&str>, template: &str, replace: bool) -> Result<Update
             } else {
                 Action::Rewritten
             };
-            Ok(Update { action, from, text })
+            let archive = action == Action::Rewritten && !is_seldon_block(&old[start..end]);
+            Ok(Update {
+                action,
+                from,
+                text,
+                archive,
+            })
         }
         Block::Unfenced if is_released_v1(old) => Ok(Update {
             action: Action::Rewritten,
             from,
             text: template.to_string(),
+            archive: false,
         }),
-        Block::Unfenced => Ok(Update {
-            action: Action::Inserted,
-            from,
-            text: format!("{new_block}\n{KEPT_HEADING}\n\n{old}"),
-        }),
+        Block::Unfenced => {
+            let own = own_lines(old);
+            let (action, text) = if own.is_empty() {
+                (Action::Rewritten, template.to_string())
+            } else {
+                (Action::Kept, format!("{template}\n{KEPT_HEADING}\n\n{own}"))
+            };
+            Ok(Update {
+                action,
+                from,
+                text,
+                // a blank file holds nothing to keep
+                archive: !old.trim().is_empty(),
+            })
+        }
     }
+}
+
+/// Whether `block` (begin through end marker line) is a block Seldon
+/// wrote: this engine's, in any language, or a released one.
+fn is_seldon_block(block: &str) -> bool {
+    let block = lf(block);
+    let ours = crate::model::Language::ALL.iter().any(|&language| {
+        let t = crate::logbook::templates::find(FILE).expect("a built-in AGENTS.md template");
+        template_block(t.text(language)) == block
+    });
+    ours || RELEASED_BLOCKS.contains(&crate::sys::sha256_hex(block.as_bytes()).as_str())
+}
+
+/// The lines of an unfenced `old` that occur in no text Seldon wrote
+/// before the block ([`V1_TEXTS`]), in their order, with `\n` line ends;
+/// blank lines only between kept lines, runs of them as one. Empty when
+/// nothing is the user's.
+pub fn own_lines(old: &str) -> String {
+    let known: std::collections::HashSet<&str> = V1_TEXTS
+        .iter()
+        .flat_map(|t| t.lines())
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    let mut out = String::new();
+    let mut gap = false;
+    for line in old.lines() {
+        if line.trim().is_empty() {
+            gap = !out.is_empty();
+            continue;
+        }
+        if known.contains(line) {
+            continue;
+        }
+        if gap {
+            out.push('\n');
+            gap = false;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 /// Whether `text` is an `AGENTS.md` exactly as a release wrote it before
@@ -359,7 +456,7 @@ mod tests {
 
     fn golden(name: &str) -> String {
         let path = format!(
-            "{}/tests/golden/rules-v1/AGENTS-{name}.md",
+            "{}/templates/rules-v1/AGENTS-{name}.md",
             env!("CARGO_MANIFEST_DIR")
         );
         std::fs::read_to_string(&path).unwrap()
@@ -450,6 +547,17 @@ mod tests {
             find("<!-- seldon:begin rules v2 --> x\n<!-- seldon:end -->\n"),
             Block::Damaged("has a begin marker without a version")
         );
+        // an end marker with text after it does not end the block (the
+        // text would be swallowed)
+        assert_eq!(
+            find("<!-- seldon:begin rules v2 -->\n<!-- seldon:end --> keep me\n"),
+            Block::Damaged("has a marker inside it before its end marker line")
+        );
+        // a begin marker without its closing ` -->`
+        assert_eq!(
+            find("<!-- seldon:begin rules v2\n<!-- seldon:end -->\n"),
+            Block::Damaged("has a begin marker without a version")
+        );
     }
 
     #[test]
@@ -480,6 +588,11 @@ mod tests {
         for name in ["v0.1.0-en", "v0.1.0-de", "v0.1.1-en", "v0.1.1-de"] {
             assert!(is_released_v1(&golden(name)), "{name}");
         }
+        // the pre-release renderings are known lines, not released files
+        for name in ["wp003-en", "wp024-de", "wp047-en"] {
+            assert!(!is_released_v1(&golden(name)), "{name}");
+            assert_eq!(own_lines(&golden(name)), "", "{name}");
+        }
         let edited = format!("{}\n- my rule\n", golden("v0.1.1-en"));
         assert!(!is_released_v1(&edited));
     }
@@ -492,6 +605,8 @@ mod tests {
         let u = update(Some(old), &t, false).unwrap();
         assert_eq!(u.action, Action::Rewritten);
         assert_eq!(u.from, Some(1));
+        // no Seldon release wrote that block: the user's copy is archived
+        assert!(u.archive);
         assert_eq!(
             u.text,
             format!("# Mine\n\nbefore\n{block}after `<!-- seldon:end -->`\n")
@@ -511,20 +626,104 @@ mod tests {
     }
 
     #[test]
-    fn update_inserts_above_a_changed_v1_file_and_keeps_it_byte_for_byte() {
+    fn a_seldon_block_is_rewritten_without_archive_an_edited_one_with() {
+        for language in Language::ALL {
+            let t = template(language);
+            // this engine's block in the other language: Seldon's text
+            let other = template(match language {
+                Language::En => Language::De,
+                Language::De => Language::En,
+            });
+            let u = update(Some(&other), &t, false).unwrap();
+            assert_eq!(
+                (u.action, u.archive),
+                (Action::Rewritten, false),
+                "{language}"
+            );
+            // a line added inside the block (N1): archived before the rewrite
+            let edited = t.replacen(
+                "## Never\n",
+                "## Never\n\n- MY RULE: never touch /opt.\n",
+                1,
+            );
+            assert_eq!(state(Some(&edited), &t), State::Changed);
+            let u = update(Some(&edited), &t, false).unwrap();
+            assert_eq!(
+                (u.action, u.archive),
+                (Action::Rewritten, true),
+                "{language}"
+            );
+            assert_eq!(u.text, t);
+        }
+    }
+
+    #[test]
+    fn an_edited_v1_file_keeps_only_the_users_lines_and_is_archived() {
         let t = template(Language::En);
-        let old = format!("{}\n- Never touch ~/Music.\n", golden("v0.1.1-en"));
+        let old = format!(
+            "{}\n## Mine\n\n- Never touch ~/Music.\n\n\n\n- Ask before AUR installs.\n",
+            golden("v0.1.1-en")
+        );
         let u = update(Some(&old), &t, false).unwrap();
-        assert_eq!((u.action, u.from), (Action::Inserted, Some(1)));
-        let (top, kept) = u.text.split_once(&format!("\n{KEPT_HEADING}\n\n")).unwrap();
-        assert_eq!(kept, old);
-        assert_eq!(top, template_block(&t));
+        assert_eq!((u.action, u.from, u.archive), (Action::Kept, Some(1), true));
+        assert_eq!(
+            u.text,
+            format!(
+                "{t}\n{KEPT_HEADING}\n\n## Mine\n\n- Never touch ~/Music.\n\n- Ask before AUR installs.\n"
+            )
+        );
         assert_eq!(state(Some(&u.text), &t), State::Current);
         let again = update(Some(&u.text), &t, false).unwrap();
         assert_eq!(again.action, Action::Unchanged);
-        // a file without the old rules, too
-        let u = update(Some("my own\n"), &t, false).unwrap();
-        assert!(u.text.ends_with(&format!("{KEPT_HEADING}\n\nmy own\n")));
+        // lines of any v1 text Seldon wrote count as Seldon's, in either
+        // language and wherever they stand; CRLF does not matter
+        let mixed = format!("my own\r\n{}", golden("wp024-de").replace('\n', "\r\n"));
+        let u = update(Some(&mixed), &t, false).unwrap();
+        assert_eq!(u.text, format!("{t}\n{KEPT_HEADING}\n\nmy own\n"));
+    }
+
+    #[test]
+    fn a_v1_file_without_own_lines_becomes_the_template() {
+        let t = template(Language::De);
+        // an older rendering with blank lines around it:
+        // not a released file, so archived, but nothing of the user's
+        let old = format!("\n\n{}\n\n", golden("wp003-de"));
+        let u = update(Some(&old), &t, false).unwrap();
+        assert_eq!(
+            (u.action, u.archive, u.text.as_str()),
+            (Action::Rewritten, true, t.as_str())
+        );
+        // an empty or blank file: nothing to keep, nothing to archive (N3)
+        for blank in ["", "\n", "  \n\t\n"] {
+            let u = update(Some(blank), &t, false).unwrap();
+            assert_eq!(
+                (u.action, u.archive, u.text.as_str()),
+                (Action::Rewritten, false, t.as_str()),
+                "{blank:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_fixture_logbook_keeps_exactly_its_own_line() {
+        // fixtures/logbook/AGENTS.md is WP-003's rendering plus one line of
+        // its own (WP-100 round 2)
+        let fixture = std::fs::read_to_string(format!(
+            "{}/../fixtures/logbook/AGENTS.md",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        assert!(!is_released_v1(&fixture));
+        let t = template(Language::De);
+        assert_eq!(state(Some(&fixture), &t), State::Outdated(1));
+        let golden = std::fs::read_to_string(format!(
+            "{}/tests/golden/rules-kept-fixture.md",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        assert_eq!(own_lines(&fixture), golden);
+        let u = update(Some(&fixture), &t, false).unwrap();
+        assert_eq!(u.text, format!("{t}\n{KEPT_HEADING}\n\n{golden}"));
     }
 
     #[test]
@@ -535,6 +734,7 @@ mod tests {
                 let old = golden(&format!("{release}-{language}"));
                 let u = update(Some(&old), &t, false).unwrap();
                 assert_eq!((u.action, u.from), (Action::Rewritten, Some(1)));
+                assert!(!u.archive);
                 assert_eq!(u.text, t);
             }
         }
@@ -555,6 +755,7 @@ mod tests {
         for old in [damaged, newer, "mine\n"] {
             let u = update(Some(old), &t, true).unwrap();
             assert_eq!((u.action, u.text.as_str()), (Action::Replaced, t.as_str()));
+            assert!(u.archive);
         }
         assert_eq!(
             update(Some(&t), &t, true).unwrap().action,

@@ -13,8 +13,7 @@ const END: &str = "<!-- seldon:end -->\n";
 
 fn golden_v1(name: &str) -> String {
     read(
-        &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("tests/golden/rules-v1/AGENTS-{name}.md")),
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("templates/rules-v1/AGENTS-{name}.md")),
     )
 }
 
@@ -109,7 +108,9 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["action"], "rewritten");
     assert_eq!(v["from"], "v1");
-    assert_eq!(v["archived"], serde_json::Value::Null);
+    // no release wrote that v1 block: the user's copy is archived first
+    assert_eq!(v["archived"], "archive/AGENTS-2026-10-05.md");
+    assert_eq!(read(&root.join("archive/AGENTS-2026-10-05.md")), old);
     let diff = v["diff"].as_str().unwrap();
     assert!(
         diff.contains("\n-<!-- seldon:begin rules v1 -->\n"),
@@ -151,22 +152,28 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
         row["message"].as_str().unwrap().starts_with("outdated (v2"),
         "{row}"
     );
+    assert_eq!(row["fix"], "seldon rules update (archives your copy)");
     let (code, v) = update(&env, &[]);
     assert_eq!(
         (code, v["action"].as_str(), v["from"].as_str()),
         (0, Some("rewritten"), Some("v2"))
     );
+    assert_eq!(v["archived"], "archive/AGENTS-2026-10-05-2.md");
+    assert!(
+        read(&root.join("archive/AGENTS-2026-10-05-2.md")).contains("Rules for some agents"),
+        "the edited block, archived"
+    );
     assert!(read(&path) == current, "the template block again");
 }
 
 #[test]
-fn an_unfenced_file_keeps_the_users_text_byte_for_byte_below_the_heading() {
+fn an_unfenced_file_is_archived_and_keeps_only_the_users_own_lines() {
     let env = Env::new(Snapper::Allowed);
     let root = logbook(&env, "de");
     let path = root.join("AGENTS.md");
     let current = read(&path);
-    // a v1 file the user changed, with odd bytes kept as they are: no
-    // newline at the end, a tab, a marker quoted in prose
+    // a v1 file the user changed: no newline at the end, a tab, a marker
+    // quoted in prose
     let old = format!(
         "{}\n## Eigene Regeln\n\n-\tNie ~/Musik anfassen.\n- `<!-- seldon:begin rules v2 -->` ist nur Text.",
         golden_v1("v0.1.1-de")
@@ -178,28 +185,57 @@ fn an_unfenced_file_keeps_the_users_text_byte_for_byte_below_the_heading() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let human = stdout(&out);
     assert!(human.contains("under \"## Your rules (kept)\""), "{human}");
-    assert!(human.contains("seldon rules update --replace"), "{human}");
     assert!(
-        human.contains("\n+<!-- seldon:begin rules v2 -->\n"),
+        human.contains("The old file is archived as archive/AGENTS-2026-10-05.md."),
         "{human}"
     );
+    assert!(!human.contains("trim"), "{human}");
 
-    let text = read(&path);
-    let heading = "\n## Your rules (kept)\n\n";
-    let at = text.find(heading).expect("the kept heading");
+    // the whole old file, byte for byte, in the archive
+    assert_eq!(read(&root.join("archive/AGENTS-2026-10-05.md")), old);
+    // the template, then the user's own lines only
     assert_eq!(
-        &text[at + heading.len()..],
-        old,
-        "the user's text, byte for byte"
+        read(&path),
+        format!(
+            "{current}\n## Your rules (kept)\n\n## Eigene Regeln\n\n-\tNie ~/Musik anfassen.\n- `<!-- seldon:begin rules v2 -->` ist nur Text.\n"
+        )
     );
-    assert!(text[..at] == *block(&current), "the v2 block on top");
     assert_eq!(rules_row(&env)["status"], "ok");
     if env.has_git {
         assert_eq!(last_commit(&env, &root), "seldon: rules update");
     }
+    let text = read(&path);
     let (code, v) = update(&env, &[]);
     assert_eq!((code, v["action"].as_str()), (0, Some("unchanged")));
     assert_eq!(read(&path), text);
+}
+
+#[test]
+fn doctor_reads_the_fixture_logbook_as_v1() {
+    // fixtures/logbook/AGENTS.md stays v1 on purpose (WP-100 round 2);
+    // doctor only reads it
+    let env = Env::new(Snapper::Allowed);
+    let fixture = common::fixture_logbook();
+    let out = env.seldon(&["doctor", "--json", "--logbook", fixture.to_str().unwrap()]);
+    let v = json(&out);
+    let row = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "rules")
+        .unwrap_or_else(|| panic!("no rules row: {v}"));
+    assert_eq!(
+        (
+            row["status"].as_str(),
+            row["message"].as_str(),
+            row["fix"].as_str()
+        ),
+        (
+            Some("degraded"),
+            Some("outdated (v1)"),
+            Some("seldon rules update")
+        )
+    );
 }
 
 #[test]
@@ -227,6 +263,19 @@ fn replace_archives_the_old_file_and_writes_the_template() {
     let current = read(&path);
     let mine = b"my own rules\n\xff not UTF-8\n".to_vec();
     std::fs::write(&path, &mine).unwrap();
+    let row = rules_row(&env);
+    assert_eq!(
+        (
+            row["status"].as_str(),
+            row["message"].as_str(),
+            row["fix"].as_str()
+        ),
+        (
+            Some("degraded"),
+            Some("invalid (not UTF-8)"),
+            Some("seldon rules update --replace (archives the file)")
+        )
+    );
     // without --replace a file that is no text is left as it is
     let out = env.at(NOW, &["rules", "update"]);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));

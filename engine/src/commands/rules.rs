@@ -106,8 +106,8 @@ fn update(ctx: &Context, replace: bool) -> Result<Output> {
         ));
     }
 
-    let archived = match (&bytes, plan.action) {
-        (Some(b), Action::Replaced) => Some(archive(&logbook, ctx.now.date_naive(), b)?),
+    let archived = match &bytes {
+        Some(b) if plan.archive => Some(archive(&logbook, ctx.now.date_naive(), b)?),
         _ => None,
     };
     sys::write_atomic(&path, plan.text.as_bytes())?;
@@ -116,24 +116,28 @@ fn update(ctx: &Context, replace: bool) -> Result<Output> {
     drop(lock);
 
     let diff = rules::diff(old.unwrap_or(""), &plan.text, FILE);
+    let unfenced = old.is_some_and(|t| rules::find(t) == rules::Block::Unfenced);
     let mut human = match plan.action {
         Action::Created => format!("{FILE} was missing; wrote the rules (v{VERSION})."),
-        Action::Rewritten if old.is_some_and(rules::is_released_v1) => format!(
-            "{FILE} held the v1 rules as a release wrote them, unchanged; replaced them with the rules (v{VERSION})."
+        Action::Rewritten if unfenced && archived.is_none() => format!(
+            "{FILE} held Seldon's older rules and nothing else; replaced them with the rules (v{VERSION})."
+        ),
+        Action::Rewritten if unfenced => format!(
+            "{FILE} held Seldon's older rules and no line of your own; wrote the rules (v{VERSION})."
         ),
         Action::Rewritten => format!(
             "{FILE}: rewrote the rules block ({} → v{VERSION}); the text outside it is unchanged.",
             from.as_deref().unwrap_or("?")
         ),
-        Action::Inserted => format!(
-            "{FILE}: inserted the rules (v{VERSION}) at the top; your earlier text is kept below, under \"{KEPT_HEADING}\".\nIt still holds the older rules that v{VERSION} replaces (\"propose a case and wait\", \"the user closes\"): trim it to your own rules, or run `seldon rules update --replace` to archive it."
+        Action::Kept => format!(
+            "{FILE}: wrote the rules (v{VERSION}); the lines of your own are kept below them, under \"{KEPT_HEADING}\"."
         ),
-        Action::Replaced => format!(
-            "{FILE}: archived to {} and wrote the rules (v{VERSION}).",
-            archived.as_deref().unwrap_or_default()
-        ),
+        Action::Replaced => format!("{FILE}: wrote the rules (v{VERSION})."),
         Action::Unchanged => unreachable!("returned above"),
     };
+    if let Some(rel) = &archived {
+        human.push_str(&format!(" The old file is archived as {rel}."));
+    }
     if !diff.is_empty() {
         human.push('\n');
         human.push_str(diff.trim_end());

@@ -451,14 +451,17 @@ fn check_fences(logbook: &Logbook) -> Check {
 fn check_rules(ctx: &Context, logbook: &Logbook) -> Check {
     use crate::logbook::rules::{self, State};
     let template = super::rules::template(logbook, ctx.now.date_naive());
-    let text = match super::rules::read(logbook) {
-        Ok(bytes) => bytes.map(|b| String::from_utf8_lossy(&b).into_owned()),
+    let state = match super::rules::read(logbook) {
+        Ok(None) => rules::state(None, &template),
+        Ok(Some(bytes)) => match String::from_utf8(bytes) {
+            Ok(text) => rules::state(Some(&text), &template),
+            Err(_) => State::NotUtf8,
+        },
         Err(e) => {
             return Check::new("rules", Status::Degraded, one_line(&format!("{e}")))
                 .fix("make AGENTS.md readable, then seldon rules update");
         }
     };
-    let state = rules::state(text.as_deref(), &template);
     let label = state.label();
     match state {
         State::Current => Check::new("rules", Status::Ok, label),
@@ -467,7 +470,11 @@ fn check_rules(ctx: &Context, logbook: &Logbook) -> Check {
         State::Damaged(_) => Check::new("rules", Status::Degraded, label).fix(
             "restore the rules block's marker lines in AGENTS.md, or seldon rules update --replace (archives the file)",
         ),
-        State::Outdated(_) | State::Changed | State::Missing => {
+        State::NotUtf8 => Check::new("rules", Status::Degraded, label)
+            .fix("seldon rules update --replace (archives the file)"),
+        State::Changed => Check::new("rules", Status::Degraded, label)
+            .fix("seldon rules update (archives your copy)"),
+        State::Outdated(_) | State::Missing => {
             Check::new("rules", Status::Degraded, label).fix("seldon rules update")
         }
     }
