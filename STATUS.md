@@ -462,14 +462,14 @@ submission). (see `work/queued/`)
 - **ADR-0022** (AUR package builds against glibc; the static musl binary
   is the GitHub release asset) reads AGENTS.md §7 without changing it —
   accepted by the orchestrator, veto possible.
-- **Live sweeps done.** Only the QSG frame-timing profile is left, see
-  the next item; `call view` paint counters (1 per chart, 0–2 ms) are the
+- **Live sweeps done**, the QSG frame-timing profile too (next item); `call view` paint counters (1 per chart, 0–2 ms) are the
   live record.
-- **Live frame profile of the Prime Radiant (WP-031)** needs
-  `QSG_RENDER_TIMING` in Hyprland's environment on the test host
-  (`hyprctl keyword env …`) plus a shell restart — a runtime change on the
-  test host, so your call. The offscreen profile (4–7 ms frames) is the
-  acceptance record; the live check via `call view` needs no env change.
+- **Live frame profile of the Prime Radiant (WP-031): done 2026-10-05**
+  on the test host without changing Hyprland's environment
+  (`work/completed/WP-031/LIVE-PROFILE-2026-10-05.md`): period switches
+  ≤ 2 ms render / ≤ 8 ms polish at every index size; the first frame of
+  a newly opened overlay 23–26 ms, independent of the data (new-surface
+  uploads, not aggregation: 0).
 - **FYI, veto possible:** the Prime Radiant's default period is 90 days
   (30/90/365/All available; resets to 90 d on every open). 365 d would
   leave the drift bars and timeline sparse on every logbook younger than
