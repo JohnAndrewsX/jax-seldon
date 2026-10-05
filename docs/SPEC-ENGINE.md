@@ -592,8 +592,11 @@ git itself is killed, with the same bounded pipe wait. Rules:
   snapshot's date, the deletion first. A cursor entry without a date
   (written before WP-073) gets one without an event. A snapshot has one
   date, an instant: the info files give it in UTC, the list in local
-  time, which in the repeated hour when summer time ends names two
-  instants. For such a list time the first of these decides: the
+  time, which names the instants that show that time on the wall clock:
+  two in the repeated hour when summer time ends (in Central Europe
+  02:00:00 to 02:59:59; 03:00:00 is one instant), none in the hour
+  skipped when it begins (02:00:00 to 02:59:59), else one. For a list
+  time with two the first of these decides: the
   snapshot's info file when it can be read (the canonical date), the
   date the cursor knows for the number when it is one of the two, the
   number order (when the earlier instant lies before the date of the
@@ -602,10 +605,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   the same snapshot and takes the new date without an event, so a switch
   between list and info files never records a `snapshot-delete` plus
   `snapshot` for it, and a cursor entry written before WP-082 (which
-  held the later instant) moves to the info file's date the same way. A
-  list time that does not exist (the hour skipped when summer time
-  begins) names no instant: the snapshot is known without a date and
-  without an event until a later read gives one (WP-082). For a
+  held the later instant) moves to the info file's date the same way.
+  The ledger dedupe counts either instant as recorded, so a cursor save
+  that failed or a lost state directory before such a switch does not
+  record the snapshot twice. A list time with no instant: the snapshot
+  is known without a date and without an event until a later read gives
+  one (WP-082). For a
   user the snapper config does not list, the command fails with a
   permission error; the collector
   then reads the snapshots from the info files
