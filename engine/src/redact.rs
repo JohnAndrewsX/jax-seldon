@@ -4,7 +4,8 @@
 //! `meta` of every event, and by the commands that write free text into
 //! the logbook (`log`, `plan`, `decide`, `drift explain|dismiss`) before
 //! anything is written, through [`Redactor::for_config`]. Built-in rules:
-//! URLs with userinfo, `--password`, `--token`/`--api-key`/`--secret`-style
+//! URLs with userinfo, `--password` (also wget's `--http-password`),
+//! `--token`/`--api-key`/`--secret`/`--pass`/`--oauth2-bearer`-style
 //! options, `token=` and `…KEY=`/`…TOKEN=`/`…SECRET=`/`…PASSWORD=`-style
 //! assignments, `Authorization:` and `X-…-Key:`-style headers, AWS access
 //! keys, GitHub, GitLab and Slack tokens, `sk-`/`sk_` keys, anything after
@@ -13,10 +14,11 @@
 //! credentials (`curl -U`, `--proxy-user`, `user:pass@` after `curl -x`,
 //! `--proxy` or `…proxy=`), JSON values of `"…password"`, `"…secret"`,
 //! `"…token"`-style keys, `Cookie:`/`Set-Cookie:` header values and the
-//! cookies after `curl -b`/`--cookie`, the local part of an e-mail
-//! address (the domain stays); plus the user's regexes from
-//! `config.toml [redaction] patterns`, each of which replaces its whole
-//! match. The replacement is always [`REDACTED`].
+//! cookies after `curl -b`/`--cookie`, a client certificate with its
+//! password after `curl -E`/`--cert`, the value after `http|xh -a`/`--auth`,
+//! the local part of an e-mail address (the domain stays); plus the
+//! user's regexes from `config.toml [redaction] patterns`, each of which
+//! replaces its whole match. The replacement is always [`REDACTED`].
 //!
 //! Every rule errs towards redacting too much: a value may be quoted, a
 //! key may be `GITHUB_TOKEN=`, and `sk-proj-…` keys contain hyphens.
@@ -46,8 +48,10 @@
 //!
 //! The rules for an option of a command (`curl -u`, `sshpass -p`,
 //! `docker login -p`) look for it within one command ([`COMMAND_REST`]:
-//! a quoted `;`, `&` or `|` does not end it) and find it again when the
-//! command gives it twice ([`Rule::matches`]).
+//! a quoted `;`, `&` or `|`, a redirection such as `2>&1` and a line end
+//! after `\` or inside quotes do not end it) and find it again when the
+//! command gives it twice ([`Rule::matches`]). The value of an option is
+//! one shell word ([`WORD`]), so `-u admin:'p w'` is masked whole.
 
 use std::sync::{LazyLock, OnceLock};
 
@@ -59,25 +63,40 @@ use crate::error::{Error, Result};
 /// What a secret is replaced with.
 pub const REDACTED: &str = "‹redacted›";
 
-/// A quoted or bare value after a key.
-const VALUE: &str = r#"(?:"[^"]*"|'[^']*'|[^\s'"&;|]+)"#;
+/// A quoted or bare value after a key (`token=`, `PASSWORD=`); a double
+/// quoted value may hold `\"`.
+const VALUE: &str = r#"(?:"(?:[^"\\]|\\.)*"|"[^"]*"|'[^']*'|[^\s'"&;|]+)"#;
+
+/// The value after an option of a command (`--password`, `curl -u`): one
+/// shell word, which may join quoted and bare parts (`admin:'p w'`,
+/// `"$U":pw`) and hold `$'…'`, `\"` inside double quotes and backslash
+/// escapes (`\;`, `\` before a line end). A double-quoted part that never
+/// closes as escapes are read is taken up to the next `"` as written.
+const WORD: &str =
+    r#"(?:"(?:[^"\\]|\\(?s:.))*"|'[^']*'|\$'(?:[^'\\]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"]*")+"#;
+
+/// White space between an option and its value, or a line continuation
+/// (`\` before a line end).
+const GAP: &str = r"(?:\s|\\\n)";
 
 /// The rest of one command after its command word (`curl`, `sshpass`,
-/// `docker login`), up to an option: anything on the same line but an
+/// `docker login`), up to an option: anything but a line end or an
 /// unquoted `;`, `&` or `|`. A quoted string (`'a&b'`, `"x;y"`, with `\"`
-/// inside double quotes) and a backslash escape outside quotes (`\;`)
-/// belong to the command. A quote that the line never closes (`curl's -u
-/// …` in a note) is an ordinary character, after which no quote or
-/// separator may follow; the quoted strings before it pair up as written,
-/// so an unquoted `;` between two of them still ends the command.
+/// inside double quotes, also over several lines), an ANSI-C string
+/// (`$'a;b\''`), a backslash escape outside quotes (`\;`, and `\` before
+/// a line end, which continues the command on the next line) and a
+/// redirection (`2>&1`, `&>file`, `>|file`) belong to the command. A
+/// quote that the text never closes (`curl's -u …` in a note) is an
+/// ordinary character, after which no quote, separator or line end may
+/// follow; the quoted strings before it pair up as written, so an
+/// unquoted `;` between two of them still ends the command.
 ///
 /// Quotes pair left to right, which is not always the shell's reading
-/// (`$'a\''`, quotes inside `"$(…)"`, an escaped space `\ `). The fragment
-/// is therefore the union with the plain form, any characters but a line
+/// (quotes inside `"$(…)"`, an escaped space `\ `). The fragment is
+/// therefore the union with the plain form, any characters but a line
 /// end, `;`, `&` or `|`: a match needs only one of the two readings, so
 /// every command the plain form reaches is still reached.
-const COMMAND_REST: &str =
-    r#"(?:[^\n;&|]*?|(?:[^\n;&|'"\\]|\\.|'[^'\n]*'|"(?:[^"\\\n]|\\.)*")*?(?:['"][^\n;&|'"]*?)?)"#;
+const COMMAND_REST: &str = r#"(?:[^\n;&|]*?|(?:\$'(?:[^'\\]|\\(?s:.))*'|[^\n;&|'"\\]|\\(?s:.)|[<>]&|&>|>\||'[^']*'|"(?:[^"\\]|\\(?s:.))*")*?(?:['"][^\n;&|'"]*?)?)"#;
 
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).
@@ -333,7 +352,7 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 24] = [
+pub const BUILTIN: [&str; 26] = [
     "url-userinfo",
     "password-option",
     "secret-option",
@@ -355,6 +374,8 @@ pub const BUILTIN: [&str; 24] = [
     "proxy-option",
     "proxy-userinfo",
     "cookie-option",
+    "cert-password",
+    "httpie-auth",
     "sshpass-password",
     "registry-login-password",
     "email",
@@ -379,8 +400,8 @@ pub fn holds_trigger(lower: &str, trigger: &str) -> bool {
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         "url-userinfo" => &["://"],
-        "password-option" => &["--password"],
-        "secret-option" => &["token", "secret", "passphrase"],
+        "password-option" => &["--password", "--http-password", "--ftp-password"],
+        "secret-option" => &["token", "secret", "passphrase", "-pass", "bearer"],
         "key-option" => &["key"],
         "token-assignment" => &["token="],
         "key-assignment" => &["key="],
@@ -423,6 +444,9 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "proxy-option" => &["curl+-u", "--proxy-"],
         "proxy-userinfo" => &["curl+-x", "proxy"],
         "cookie-option" => &["curl+-b", "curl+--cookie"],
+        // `-E` reads `-e` here
+        "cert-password" => &["curl+-e", "--cert", "--proxy-cert"],
+        "httpie-auth" => &["http+-a", "xh+-a"],
         "sshpass-password" => &["sshpass"],
         "registry-login-password" => &["login"],
         "email" => &["@"],
@@ -453,14 +477,20 @@ fn checked_rule(name: &'static str, pattern: &str, check: fn(&str) -> bool) -> R
     }
 }
 
+/// The command word `word` as group `cmd`, then the rest of its command
+/// up to an option ([`COMMAND_REST`]).
+fn command(word: &str) -> String {
+    format!("(?P<cmd>{word}){COMMAND_REST}")
+}
+
 /// A rule for an option of a command (`curl -u`, `docker login -p`):
-/// `command` is the command word, `option` the option with the white
-/// space before it, `value` what follows the option; group 1 holds
-/// everything before the value. `plain`, if not empty, is an option that
-/// counts without the command word (`--proxy-user`, also wget's); the
-/// command's `option` lists it too, or the context would scan past it.
-/// The same option later in the same command is found by `next`
-/// ([`Rule::matches`]).
+/// `command` is the command word and the text up to the option
+/// ([`command`]), `option` the option with the white space before it,
+/// `value` what follows the option; group 1 holds everything before the
+/// value. `plain`, if not empty, is an option that counts without the
+/// command word (`--proxy-user`, also wget's); the command's `option`
+/// lists it too, or the context would scan past it. The same option later
+/// in the same command is found by `next` ([`Rule::matches`]).
 fn option_rule(
     name: &'static str,
     command: &str,
@@ -469,7 +499,7 @@ fn option_rule(
     value: &str,
     replacement: &str,
 ) -> Rule {
-    let mut first = format!("(?P<cmd>{command}){COMMAND_REST}{option}");
+    let mut first = format!("{command}{option}");
     if !plain.is_empty() {
         first = format!("{first}|{plain}");
     }
@@ -483,7 +513,7 @@ fn option_rule(
 const CURL: &str = r"(?-u:\b)curl(?-u:\b)";
 
 fn builtin_rules() -> Vec<Rule> {
-    vec![
+    let rules = vec![
         // scheme://user:pass@host → scheme://‹redacted›@host. With a
         // `:` in the userinfo, everything from `://` up to the last
         // `@` before white space or a quote, so a password may hold
@@ -494,16 +524,20 @@ fn builtin_rules() -> Vec<Rule> {
             r#"(?i)((?-u:\b)[a-z][a-z0-9+.-]*://)(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]+)(@)"#,
             "${1}‹redacted›${2}",
         ),
+        // `--password X`, wget's `--http-password X` and `--ftp-password X`
         rule(
             "password-option",
-            &format!(r"(?i)(--password(?:=|\s+))(?:{VALUE})"),
+            &format!(r"(?i)(--(?:(?:http|ftp)-)?password(?:=|{GAP}+))(?:{WORD})"),
             KEEP_PREFIX,
         ),
         // `--token X`, `--with-token X`, `--secret X`, `--client-secret X`,
-        // `--passphrase X`: any value; not `--token-file X`
+        // `--passphrase X`, curl's `--pass X` and `--oauth2-bearer X`, also
+        // `--proxy-pass X`: any value; not `--token-file X`
         checked_rule(
             "secret-option",
-            &format!(r"(?i)(--(?:[a-z0-9]+-)*(?:token|secret|passphrase)(?:=|\s+))(?P<v>{VALUE})"),
+            &format!(
+                r"(?i)(--(?:[a-z0-9]+-)*(?:token|secret|passphrase|pass|bearer)(?:=|{GAP}+))(?P<v>{WORD})"
+            ),
             has_value,
         ),
         // `--api-key=X`, `--access-key X`, `--secret-key X`: only a value
@@ -511,7 +545,7 @@ fn builtin_rules() -> Vec<Rule> {
         checked_rule(
             "key-option",
             &format!(
-                r"(?i)(--(?:[a-z0-9]+-)*(?:api-?key|access-key|secret-key)(?:=|\s+))(?P<v>{VALUE})"
+                r"(?i)(--(?:[a-z0-9]+-)*(?:api-?key|access-key|secret-key)(?:=|{GAP}+))(?P<v>{WORD})"
             ),
             looks_like_credential,
         ),
@@ -583,20 +617,22 @@ fn builtin_rules() -> Vec<Rule> {
         // `sk-…`, `sk-proj-…`, `sk_live_…`; at a word start, so a
         // name such as `task-…` is not cut
         rule("sk-key", r"(?-u:\b)sk[-_][A-Za-z0-9_-]{20,}", WHOLE),
-        // `mysql … -p secret …`, `-psecret`: everything after -p
+        // `mysql … -p secret …`, `-psecret`: everything after -p, up to
+        // the end of the command's last continued line (`\` before a line
+        // end continues it)
         rule(
             "db-client-password",
-            r"(?m)((?-u:\b)(?:mysql|psql|smbclient)(?-u:\b)[^\n]*?\s-p ?)\S[^\n]*",
+            r"(?m)((?-u:\b)(?:mysql|psql|smbclient)(?-u:\b)(?:\\\n|[^\n])*?\s-p ?)\S(?:\\\n|[^\n])*",
             KEEP_PREFIX,
         ),
         // `curl -u user:pass`, `-uuser:pass`, `--user user:pass`,
-        // within one command of the line, every time it is given
+        // within one command, every time it is given
         option_rule(
             "curl-user",
-            CURL,
-            r"\s(?:-u\s*|--user(?:=|\s+))",
+            &command(CURL),
+            &format!(r"\s(?:-u{GAP}*|--user(?:=|{GAP}+))"),
             "",
-            &format!("(?:{VALUE})"),
+            &format!("(?:{WORD})"),
             KEEP_PREFIX,
         ),
         // `curl -U user:pass` (not `useradd -U`), `--proxy-user user:pass`
@@ -604,10 +640,10 @@ fn builtin_rules() -> Vec<Rule> {
         // `secret-assignment`)
         option_rule(
             "proxy-option",
-            CURL,
-            r"\s(?:-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))",
-            r"(?i:--proxy-user(?:=|\s+)|--proxy-password\s+)",
-            &format!("(?:{VALUE})"),
+            &command(CURL),
+            &format!(r"\s(?:-U{GAP}*|(?i:--proxy-user(?:=|{GAP}+)|--proxy-password{GAP}+))"),
+            &format!(r"(?i:--proxy-user(?:=|{GAP}+)|--proxy-password{GAP}+)"),
+            &format!("(?:{WORD})"),
             KEEP_PREFIX,
         ),
         // `user:pass@host` without a scheme after `curl -x`, `--proxy`,
@@ -617,9 +653,9 @@ fn builtin_rules() -> Vec<Rule> {
         // for a further `-x` starts outside the quotes
         option_rule(
             "proxy-userinfo",
-            CURL,
-            r#"\s(?:-x\s*|(?i:--proxy(?:=|\s+)))['"]?"#,
-            r#"(?i:--proxy(?:=|\s+)|[a-z_.]*proxy=)['"]?"#,
+            &command(CURL),
+            &format!(r#"\s(?:-x{GAP}*|(?i:--proxy(?:=|{GAP}+)))['"]?"#),
+            &format!(r#"(?i:--proxy(?:=|{GAP}+)|[a-z_.]*proxy=)['"]?"#),
             r#"[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*@(?P<host>[^\s'"]*['"]?)"#,
             "${1}‹redacted›@${host}",
         ),
@@ -629,28 +665,53 @@ fn builtin_rules() -> Vec<Rule> {
             check: Some(|v| unquoted(v).contains('=')),
             ..option_rule(
                 "cookie-option",
-                CURL,
-                r"\s(?:-b\s*|--cookie(?:=|\s+))",
+                &command(CURL),
+                &format!(r"\s(?:-b{GAP}*|--cookie(?:=|{GAP}+))"),
                 "",
-                &format!("(?P<v>{VALUE})"),
+                &format!("(?P<v>{WORD})"),
                 KEEP_PREFIX,
             )
         },
+        // `curl -E cert.pem:pass`, `--cert`, `--proxy-cert` (also without
+        // the command word): a value with `:`, the certificate's file name
+        // included (without one, there is no password in it)
+        Rule {
+            check: Some(|v| v.contains(':')),
+            ..option_rule(
+                "cert-password",
+                &command(CURL),
+                &format!(r"\s(?:-E{GAP}*|--(?:proxy-)?cert(?:=|{GAP}+))"),
+                &format!(r"--(?:proxy-)?cert(?:=|{GAP}+)"),
+                &format!("(?P<v>{WORD})"),
+                KEEP_PREFIX,
+            )
+        },
+        // `http -a user:pass`, `--auth`, also `https`, `xh` and `xhs`
+        // (HTTPie and xh): any value, a bearer token included. The command
+        // word is followed by white space, so `http://` is none
+        option_rule(
+            "httpie-auth",
+            &format!(r"(?P<cmd>(?-u:\b)(?:https?|xhs?))(?:{GAP}{COMMAND_REST})??"),
+            &format!(r"\s(?:-a{GAP}*|--auth(?:=|{GAP}+))"),
+            "",
+            &format!("(?:{WORD})"),
+            KEEP_PREFIX,
+        ),
         // only the first `-p`: one after the command that sshpass runs is
         // that command's (`ssh -p 2222`)
         rule(
             "sshpass-password",
-            &format!(r"((?-u:\b)sshpass(?-u:\b){COMMAND_REST}\s-p\s*)(?:{VALUE})"),
+            &format!(r"((?-u:\b)sshpass(?-u:\b){COMMAND_REST}\s-p{GAP}*)(?:{WORD})"),
             KEEP_PREFIX,
         ),
         // `docker login -u me -p secret`, also podman, buildah,
         // nerdctl and `helm registry login`
         option_rule(
             "registry-login-password",
-            r"(?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)",
-            r"\s-p\s*",
+            &command(r"(?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)"),
+            &format!(r"\s-p{GAP}*"),
             "",
-            &format!("(?:{VALUE})"),
+            &format!("(?:{WORD})"),
             KEEP_PREFIX,
         ),
         // `me@example.com` → `‹redacted›@example.com`: the domain stays,
@@ -665,7 +726,12 @@ fn builtin_rules() -> Vec<Rule> {
             unless_followed: &["port"],
             ..rule("email", &email(), "‹redacted›@${domain}${port}")
         },
-    ]
+    ];
+    debug_assert!(
+        rules.iter().map(|r| r.name).eq(BUILTIN),
+        "BUILTIN lists the rules"
+    );
+    rules
 }
 
 /// One character of a domain beyond ASCII (`müller.example`,

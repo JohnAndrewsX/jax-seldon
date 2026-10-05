@@ -725,6 +725,260 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakePw37",
         "sshpass -p ‹redacted› ssh -p 2222 me@host",
     ),
+    // a command continued over lines (`\` before the line end) and a
+    // quoted string over several lines stay one command (WP-097)
+    (
+        "curl-user",
+        "curl -sS \\\n  -H 'Accept: a;b' \\\n  -u admin:fakeCont1 \\\n  https://h.example",
+        "fakeCont1",
+        "-u ‹redacted› \\\n  https://h.example",
+    ),
+    (
+        "proxy-option",
+        "curl -X POST -d '{\n  \"a\": 1\n}' -U bob:fakeCont2 https://h.example",
+        "fakeCont2",
+        "}' -U ‹redacted› https://h.example",
+    ),
+    (
+        "cookie-option",
+        "curl -d \"line 1\nline 2\" -b 'sid=fakeCont3' https://h.example",
+        "fakeCont3",
+        "line 2\" -b ‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        "curl -u admin:fakeCont4a \\\n  -u bob:fakeCont4b https://h.example",
+        "fakeCont4",
+        "-u ‹redacted› \\\n  -u ‹redacted› https://h.example",
+    ),
+    // … also between an option and its value
+    (
+        "curl-user",
+        "curl -sS -u \\\n  admin:fakeCont5 https://h.example",
+        "fakeCont5",
+        "-u \\\n  ‹redacted› https://h.example",
+    ),
+    (
+        "password-option",
+        "tool --password \\\n  fakeCont6 --verbose",
+        "fakeCont6",
+        "--password \\\n  ‹redacted› --verbose",
+    ),
+    // wget's password options before a space (the `=` forms are
+    // `…PASSWORD=` assignments)
+    (
+        "password-option",
+        "wget --http-user=me --http-password fakeHttpPw1 https://h.example",
+        "fakeHttpPw1",
+        "--http-password ‹redacted› https://h.example",
+    ),
+    (
+        "password-option",
+        "wget --ftp-password fakeFtpPw1 ftp://h.example/f",
+        "fakeFtpPw1",
+        "--ftp-password ‹redacted› ftp://h.example/f",
+    ),
+    (
+        "sshpass-password",
+        "sshpass -p \\\n  fakeCont7 ssh me@host",
+        "fakeCont7",
+        "sshpass -p \\\n  ‹redacted› ssh me@host",
+    ),
+    (
+        "db-client-password",
+        "mysql -u root \\\n  -pfakeCont8 shop",
+        "fakeCont8",
+        "mysql -u root \\\n  -p‹redacted›",
+    ),
+    (
+        "db-client-password",
+        "mysql -u root -pfakeCont9a \\\n  shop --init-command=fakeCont9b",
+        "fakeCont9",
+        "mysql -u root -p‹redacted›",
+    ),
+    // curl's key passphrase and bearer token, also for the proxy, and
+    // xh's bearer token (WP-097)
+    (
+        "secret-option",
+        "curl --oauth2-bearer fakeBearer1 https://h.example",
+        "fakeBearer1",
+        "--oauth2-bearer ‹redacted› https://h.example",
+    ),
+    (
+        "secret-option",
+        "curl --cert client.pem --key client.key --pass fakeKeyPass1 https://h.example",
+        "fakeKeyPass1",
+        "--pass ‹redacted› https://h.example",
+    ),
+    (
+        "secret-option",
+        "curl --proxy-pass fakeKeyPass2 -x proxy.example:3128 https://h.example",
+        "fakeKeyPass2",
+        "--proxy-pass ‹redacted› -x proxy.example:3128",
+    ),
+    (
+        "secret-option",
+        "xh --bearer fakeBearer2 h.example/api",
+        "fakeBearer2",
+        "xh --bearer ‹redacted› h.example/api",
+    ),
+    // a client certificate with its password: the value with `:` is
+    // masked whole; without the command word only the long forms count
+    (
+        "cert-password",
+        "curl -E client.pem:fakeCertPw1 https://h.example",
+        "fakeCertPw1",
+        "curl -E ‹redacted› https://h.example",
+    ),
+    (
+        "cert-password",
+        "curl -sS --cert 'client.pem:fake Cert Pw2' https://h.example",
+        "fake Cert Pw2",
+        "--cert ‹redacted› https://h.example",
+    ),
+    (
+        "cert-password",
+        "curl -Eclient.pem:fakeCertPw3 https://h.example",
+        "fakeCertPw3",
+        "curl -E‹redacted› https://h.example",
+    ),
+    (
+        "cert-password",
+        "curl -x proxy.example:3128 --proxy-cert proxy.pem:fakeCertPw4 https://h.example",
+        "fakeCertPw4",
+        "--proxy-cert ‹redacted› https://h.example",
+    ),
+    (
+        "cert-password",
+        "tool --cert=client.pem:fakeCertPw5 --verbose",
+        "fakeCertPw5",
+        "tool --cert=‹redacted› --verbose",
+    ),
+    (
+        "cert-password",
+        "curl -E client.pem -o out https://h.example -E other.pem:fakeCertPw6",
+        "fakeCertPw6",
+        "curl -E client.pem -o out https://h.example -E ‹redacted›",
+    ),
+    // HTTPie and xh: `-a`/`--auth`, any value (WP-097)
+    (
+        "httpie-auth",
+        "http -a admin:fakeHttpie1 GET https://h.example",
+        "fakeHttpie1",
+        "http -a ‹redacted› GET https://h.example",
+    ),
+    (
+        "httpie-auth",
+        "xh --auth=admin:fakeHttpie2 h.example/x",
+        "fakeHttpie2",
+        "xh --auth=‹redacted› h.example/x",
+    ),
+    (
+        "httpie-auth",
+        "https -A bearer -a fakeHttpie3 h.example",
+        "fakeHttpie3",
+        "https -A bearer -a ‹redacted› h.example",
+    ),
+    (
+        "httpie-auth",
+        "xhs -aadmin:fakeHttpie4 h.example",
+        "fakeHttpie4",
+        "xhs -a‹redacted› h.example",
+    ),
+    (
+        "httpie-auth",
+        "http POST h.example/api 'q=a;b' -a admin:fakeHttpie5",
+        "fakeHttpie5",
+        "'q=a;b' -a ‹redacted›",
+    ),
+    (
+        "httpie-auth",
+        "http -a a:fakeHttpie6a h.example -a b:fakeHttpie6b",
+        "fakeHttpie6",
+        "http -a ‹redacted› h.example -a ‹redacted›",
+    ),
+    // a redirection is no separator: `2>&1`, `&>`, `<&`, `>|` (WP-097)
+    (
+        "curl-user",
+        "curl -sS https://h.example 2>&1 -u admin:fakeRedir1",
+        "fakeRedir1",
+        "2>&1 -u ‹redacted›",
+    ),
+    (
+        "proxy-option",
+        "curl -sS https://h.example &>/dev/null -U bob:fakeRedir2",
+        "fakeRedir2",
+        "&>/dev/null -U ‹redacted›",
+    ),
+    (
+        "cookie-option",
+        "curl https://h.example <&3 -b 'sid=fakeRedir3'",
+        "fakeRedir3",
+        "<&3 -b ‹redacted›",
+    ),
+    (
+        "curl-user",
+        "curl https://h.example >|out.txt -u admin:fakeRedir4",
+        "fakeRedir4",
+        ">|out.txt -u ‹redacted›",
+    ),
+    // quotes as the shell reads them: an ANSI-C string before the option
+    // (WP-087 round 2), `\"` inside a quoted value, and a value that joins
+    // quoted and bare parts (WP-097)
+    (
+        "curl-user",
+        r#"curl -H $'a;b\'"' -u admin:fakeAnsi1 -o "x""#,
+        "fakeAnsi1",
+        "-u ‹redacted› -o \"x\"",
+    ),
+    (
+        "password-option",
+        "tool --password $'fake\\'Ansi2' --verbose",
+        "Ansi2",
+        "--password ‹redacted› --verbose",
+    ),
+    (
+        "curl-user",
+        r#"curl -u "a\"b;fakeEsc1" https://h.example -u bob:fakeEsc2"#,
+        "fakeEsc",
+        "-u ‹redacted› https://h.example -u ‹redacted›",
+    ),
+    (
+        "curl-user",
+        "curl -u admin:'fake Concat1' https://h.example",
+        "Concat1",
+        "curl -u ‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        r#"curl -u "$USER":fakeConcat2 https://h.example"#,
+        "fakeConcat2",
+        "curl -u ‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        r"curl -u admin:fake\;Concat3 https://h.example",
+        "Concat3",
+        "curl -u ‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        r#"curl -u "fakeUnclosed1\" https://h.example"#,
+        "fakeUnclosed1",
+        "curl -u ‹redacted› https://h.example",
+    ),
+    (
+        "token-assignment",
+        r#"TOKEN="fake\"Esc3" ./run.sh"#,
+        "Esc3",
+        "TOKEN=‹redacted› ./run.sh",
+    ),
+    (
+        "secret-assignment",
+        r#"DB_PASSWORD="fakeUnclosed2\" ./run.sh"#,
+        "fakeUnclosed2",
+        "DB_PASSWORD=‹redacted›",
+    ),
     // case-insensitive matching folds the Kelvin sign onto `k` and the
     // long s onto `s`; the triggers do the same
     (
@@ -959,8 +1213,28 @@ const CLEAR: &[&str] = &[
     "Merged the curl changes; useradd -U is the default now",
     "Tried curl & wget; grep -b 'a=b' found nothing",
     "Fixed curl's output; useradd -U is next",
-    // a quoted string ends at the line end
-    "git commit -m \"Fix curl 'quote\nhandling' -U flag\"",
+    // a line end ends the command unless a `\` before it or an open
+    // quote continues it; a quote the text never closes does not
+    // (WP-097)
+    "curl https://h.example\nuseradd -U bob",
+    "curl -o 'out' https://h.example\nuseradd -m 'bob' -U bob",
+    "curl -o \"out\" https://h.example \\ \nuseradd -U bob",
+    "Fixed curl's output today.\nsort -u names.txt",
+    // a separator after a redirection still ends it
+    "curl -sS https://h.example 2>&1 && useradd -U bob",
+    "curl -sS https://h.example >&2; useradd -U bob",
+    "curl https://h.example & useradd -U bob",
+    // close to the WP-097 rules: a certificate without a password,
+    // curl's `-e` (referer), `grep -E` after a pipe, HTTPie's `-A`,
+    // `-a` after a URL, options that end in `pass`
+    "curl --cert client.pem --key client.key https://h.example",
+    "curl --cert-type P12 --cert c.p12 https://h.example",
+    "curl -e https://ref.example https://h.example",
+    "curl -s https://h.example | grep -E 'a:b'",
+    "http -A bearer h.example",
+    "wget http://h.example/f -a log.txt",
+    "yt-dlp https://h.example/v -a list.txt",
+    "app --pass-through on --bypass x --password-stdin",
     // no e-mail address (WP-093): an SSH remote and `host:path`, a host
     // without a dot, versions, npm scopes, systemd units, a scale suffix
     // without a top-level domain, an image digest
@@ -1179,6 +1453,29 @@ mod redaction {
             r.redact("curl https://u:fakePw@h.example/x -d to=mike@example.com"),
             format!("curl https://{REDACTED}@h.example/x -d to={REDACTED}@example.com")
         );
+    }
+
+    /// The WP-097 rules match only their own rows and no row of another
+    /// rule (the import report counts a line once per rule), and a second
+    /// pass changes nothing; `secret-option`'s new names (`--pass`,
+    /// `--oauth2-bearer`) take over no row of another rule either.
+    #[test]
+    fn cert_and_httpie_rules_are_disjoint_and_stable() {
+        const NEW: [&str; 2] = ["cert-password", "httpie-auth"];
+        let r = Redactor::builtin();
+        for (rule, input, ..) in TABLE {
+            let matched = r.matching_rules(input);
+            if NEW.contains(rule) || input.contains("--pass ") || input.contains("bearer ") {
+                assert_eq!(matched, vec![*rule], "`{input}`");
+            } else {
+                assert!(
+                    !matched.iter().any(|m| NEW.contains(m)),
+                    "{rule}: `{input}` also matches {matched:?}"
+                );
+            }
+            let once = r.redact(input);
+            assert_eq!(r.redact(&once), once, "`{input}`");
+        }
     }
 
     /// A long line in which an early rule leaves a marker, or which holds
