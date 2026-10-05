@@ -1615,3 +1615,7 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A new `Collector` trait method touches every collector file,**
   `snapper.rs` included, which may be another WP's file in the same
   wave. Put the impl right after `fn name` so the hunk stays apart.
+- **One cursor predicate, written twice per collector:** `collect`'s
+  `typed_cursor::<T>` and `cursor_reads` must use the same type `T`.
+  `every_collector_reads_its_own_cursor` does not catch a `collect` that
+  accepts an older cursor shape `cursor_reads` rejects (or the reverse).

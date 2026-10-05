@@ -153,3 +153,56 @@ Branch `wp/083-review`, worktree `wt/WP-083`. Commits (oldest first):
   saved-cursor direction.
 - `engine/tests/idempotency.rs` (assertions added to WP-081 tests, two
   new tests), `docs/TESTING.md`, `memory/pitfalls.md`.
+
+---
+
+# Round 2 (review APPROVE with F1–F3 and a SPEC nuance)
+
+Commits (oldest first): `45578ee` engine F1 test + F2, `a8da0e4` SPEC
+nuance and the F2 fix wording, then this commit (handover round 2 and
+the F3 pitfalls line). No rebase.
+
+## What changed
+
+- **F1.** `a_state_reset_is_predicted_before_the_capture` now points
+  `config.toml`'s `logbook` at a symlink to the logbook (the cursors are
+  bound to the canonical path), checks that doctor resolves the link
+  (`"logbook"` in the JSON is the link) and expects no prediction row.
+- **F2.** `check_pending_reset` gets the logbook's `LogbookSource`. For
+  `Flag` (`--path` or `--logbook`) both fixes name `seldon --logbook
+  <path> capture` (path shown as the doctor header shows it, like the
+  existing `seldon init --path <path>` fix); otherwise `seldon capture`
+  (the environment's `SELDON_LOGBOOK` is the one a plain capture uses).
+  Tests: the missing-cursors case run with `--path` (restore fix), and
+  the WP-081 R3 tail, which already runs doctor with `--path` while
+  `config.toml` points at the other logbook (no-restore fix).
+- **F3.** `memory/pitfalls.md`: `collect`'s `typed_cursor::<T>` and
+  `cursor_reads` must use the same `T`; `every_collector_reads_its_own_cursor`
+  does not catch a `collect` that accepts an older shape `cursor_reads`
+  rejects.
+- **SPEC nuance.** SPEC-ENGINE §3: no row also when the ledger cannot be
+  read (the `ledger` row covers it); the fix names `seldon --logbook
+  <path> capture` for a `--path`/`--logbook` logbook. The doc comment of
+  `check_pending_reset` says the same. User guide pages unchanged (the
+  row's fix text itself names the command).
+
+## How verified
+
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`: clean.
+- Suites doctor (31), idempotency (22), collectors (19), hooks (54, 2
+  ignored perf): all ok. `bash scripts/docs-check.sh`: ok. No `just
+  check` this round (per brief).
+- Mutants (same script and method):
+
+  | Mutant | Killed by |
+  |---|---|
+  | Q1 `canonicalize` in `check_pending_reset` replaced by `logbook.root.clone()` (the review's surviving mutant) | `a_state_reset_is_predicted_before_the_capture` |
+  | Q2 the fix names the `--path` logbook for `Env` instead of `Flag` | `a_state_reset_is_predicted_before_the_capture`, `a_state_reset_is_shown_until_the_next_capture` |
+  | Q3 the no-restore fix always says `seldon capture` | `a_state_reset_is_shown_until_the_next_capture` |
+
+## Open
+
+- Not in this round (the orchestrator's follow-up): a collector that
+  degrades in the capture that records a reset keeps no cursor, so its
+  later first success is gated as "never ran here" and its gap is never
+  recorded.
