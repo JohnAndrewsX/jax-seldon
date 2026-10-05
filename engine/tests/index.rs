@@ -159,7 +159,8 @@ fn golden_index_equals_the_sample() {
     let (lb, out, index) = golden_run(&env, None, |_| {});
     assert_eq!(out["valid"], json!(true));
     assert_eq!(index["generatedAt"], json!(GENERATED_AT));
-    assert_eq!(index["engineVersion"], json!(env!("CARGO_PKG_VERSION")));
+    // the dev marker too (WP-098)
+    assert_eq!(index["engineVersion"], json!(seldon::VERSION));
     assert_eq!(index["logbook"]["path"], json!(lb.display().to_string()));
     assert!(
         index["logbook"].get("git").is_none(),
