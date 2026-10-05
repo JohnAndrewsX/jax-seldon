@@ -288,3 +288,37 @@ deferred there). `fixtures/logbook/AGENTS.md` unchanged, v1 on purpose;
 ## Touched outside WP scope
 
 None. No guard block this round.
+
+## Round 3
+
+Brief: round-2 verification SEND BACK (`review-0.1.1/handovers/WP-100-review-2.md`).
+
+- **B1** `own_lines` (engine/src/logbook/rules.rs): before a run of the
+  user's lines that follows Seldon's lines, the last `## ` heading of
+  Seldon's lines is emitted once, unless that heading already stands over
+  the output or the run starts with a heading of its own; own lines
+  before any v1 heading get none. Unit case
+  `a_users_lines_keep_the_v1_heading_they_stand_under`: v0.1.1-en plus two
+  bullets appended to `## Never` → kept section `## Never` then the two
+  bullets (also through `update`); runs under `## Drift` and `## Never`;
+  no second copy for a second run under the same heading; a run with its
+  own heading; own lines before any heading. **Fixture golden unchanged —
+  confirmed:** the WP-003 renderings have no `## ` line (grep: 0 in en
+  and de), `the_fixture_logbook_keeps_exactly_its_own_line` passes with
+  the round-2 golden.
+- **N1** AGENT-GUIDE §1: the "limits only" paragraph now stands below the
+  table, which is whole again (five rows).
+- **N2** templates en/de, R3 section after item 4: "An AUR install as such
+  is not R3; an AUR dependency that this read-only resolution cannot
+  resolve makes it R3 (ask first)." The guide's §4 sentence gains the
+  second half.
+
+Verified by: `flock /tmp/seldon-check.lock just check` → `check: ok`,
+exit 0, at `1a0a043` (docs-check ok, 425 links, 504 command lines);
+`cargo test --lib logbook::rules` 13 ok, `--test rules` 9 ok,
+`--test init` 39 ok (template commands still exist); clippy, fmt clean.
+Mutants on the heading carry-over, 4 of 4 killed: H1 no heading carried ·
+H2 heading on every run · H3 the user's own heading not tracked · H4
+heading carried after the user's own lines too.
+
+Touched outside WP scope: none. No guard block this round.
