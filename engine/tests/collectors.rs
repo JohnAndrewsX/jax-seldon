@@ -793,6 +793,303 @@ mod collectors {
         );
     }
 
+    /// Central European Time as a POSIX `TZ` rule (no tzdata needed):
+    /// summer time ends on 2026-10-25 at 03:00 CEST, when the clocks go
+    /// back to 02:00 CET, so 02:00–02:59 comes twice; it begins on
+    /// 2027-03-28 at 02:00 CET, when the clocks jump to 03:00 CEST, so
+    /// 02:00–02:59 does not exist.
+    const CET: &str = "CET-1CEST,M3.5.0,M10.5.0/3";
+
+    /// `seldon capture --source snapper` through the binary in `TZ=CET`.
+    /// The snapper stub prints `list.json`, or answers like snapper
+    /// without permission while `denied` exists; the info files are in
+    /// `<guard>/.snapshots`.
+    struct Zoned {
+        env: common::Env,
+        logbook: std::path::PathBuf,
+    }
+
+    impl Zoned {
+        fn new() -> Self {
+            let env = common::Env::new(common::Snapper::Missing);
+            let logbook = env.init_logbook();
+            let tmp = env.tmp.path();
+            env.stub(
+                "snapper",
+                &format!(
+                    "if [ -e '{}' ]; then echo 'No permissions.' >&2; exit 1; fi\n/bin/cat '{}'",
+                    tmp.join("denied").display(),
+                    tmp.join("list.json").display()
+                ),
+            );
+            let z = Zoned { env, logbook };
+            z.list(&[]);
+            // the first capture: an empty cursor, so what follows is news
+            assert_eq!(z.capture("2026-10-20T12:00:00+02:00"), [""; 0]);
+            z
+        }
+
+        /// The list: `(number, local date)`, all `single` timeline snapshots.
+        fn list(&self, snapshots: &[(u64, &str)]) {
+            let snapshots: Vec<(u64, &str, &str)> = snapshots
+                .iter()
+                .map(|(n, d)| (*n, *d, "timeline"))
+                .collect();
+            std::fs::write(
+                self.env.tmp.path().join("list.json"),
+                snapper_list(&snapshots),
+            )
+            .unwrap();
+        }
+
+        /// The info files, replacing the ones before: `(number, UTC date)`.
+        fn info(&self, snapshots: &[(u64, &str)]) {
+            let dir = self.env.tmp.path().join(".snapshots");
+            let _ = std::fs::remove_dir_all(&dir);
+            for (n, date) in snapshots {
+                std::fs::create_dir_all(dir.join(n.to_string())).unwrap();
+                std::fs::write(
+                    dir.join(n.to_string()).join("info.xml"),
+                    format!(
+                        "<?xml version=\"1.0\"?>\n<snapshot>\n  <type>single</type>\n  \
+                         <num>{n}</num>\n  <date>{date}</date>\n  \
+                         <description>timeline</description>\n  \
+                         <cleanup>timeline</cleanup>\n</snapshot>\n"
+                    ),
+                )
+                .unwrap();
+            }
+        }
+
+        /// Whether snapper refuses to list (the collector reads the info
+        /// files then).
+        fn deny(&self, denied: bool) {
+            let flag = self.env.tmp.path().join("denied");
+            if denied {
+                std::fs::write(flag, "").unwrap();
+            } else {
+                let _ = std::fs::remove_file(flag);
+            }
+        }
+
+        /// Captures at `now`; the events it wrote as `kind subject ts`.
+        fn capture(&self, now: &str) -> Vec<String> {
+            let ids = |ledger: &[serde_json::Value]| -> std::collections::HashSet<String> {
+                ledger.iter().map(|e| e["id"].to_string()).collect()
+            };
+            let before = ids(&common::ledger(&self.logbook));
+            let out = self
+                .env
+                .command(&["capture", "--source", "snapper", "--json"])
+                .env("TZ", CET)
+                .env("SELDON_NOW", now)
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+            let snapper = &common::json(&out)["collectors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["name"] == "snapper")
+                .cloned()
+                .unwrap();
+            assert_eq!(snapper["ok"], true, "{snapper}");
+            common::ledger(&self.logbook)
+                .into_iter()
+                .filter(|e| !before.contains(&e["id"].to_string()))
+                .map(|e| {
+                    format!(
+                        "{} {} {}",
+                        e["kind"].as_str().unwrap(),
+                        e["subject"].as_str().unwrap(),
+                        e["ts"].as_str().unwrap()
+                    )
+                })
+                .collect()
+        }
+
+        fn cursors_file(&self) -> std::path::PathBuf {
+            self.env.home.join(".local/state/seldon/cursors.json")
+        }
+
+        /// The date the cursor keeps for snapshot `n`.
+        fn date(&self, n: u64) -> serde_json::Value {
+            let cursors: serde_json::Value =
+                serde_json::from_str(&common::read(&self.cursors_file())).unwrap();
+            cursors["collectors"]["snapper"]["cursor"]["known"][n.to_string()]["date"].clone()
+        }
+
+        /// Sets the date the cursor keeps for snapshot `n`.
+        fn set_date(&self, n: u64, date: &str) {
+            let mut cursors: serde_json::Value =
+                serde_json::from_str(&common::read(&self.cursors_file())).unwrap();
+            cursors["collectors"]["snapper"]["cursor"]["known"][n.to_string()]["date"] =
+                date.into();
+            std::fs::write(self.cursors_file(), cursors.to_string()).unwrap();
+        }
+    }
+
+    /// A snapshot made in the repeated hour, listed first: the list cannot
+    /// tell which 02:30 it is and takes the earlier. The info files then
+    /// give the instant: the same snapshot, no `snapshot-delete` plus
+    /// `snapshot`, and the cursor keeps the info file's date from then on,
+    /// also when listing again.
+    #[test]
+    fn snapper_keeps_one_date_from_the_list_to_the_info_files() {
+        let z = Zoned::new();
+        // 11 is made at 02:30 after the clocks went back (01:30 UTC)
+        z.list(&[(10, "2026-10-25 01:30:00"), (11, "2026-10-25 02:30:00")]);
+        assert_eq!(
+            z.capture("2026-10-25T04:00:00+01:00"),
+            [
+                "snapshot 10 2026-10-25T01:30:00+02:00",
+                "snapshot 11 2026-10-25T02:30:00+02:00"
+            ],
+            "no info file: the earlier of the two"
+        );
+
+        z.deny(true);
+        z.info(&[(10, "2026-10-24 23:30:00"), (11, "2026-10-25 01:30:00")]);
+        assert_eq!(z.capture("2026-10-25T05:00:00+01:00"), [""; 0]);
+        assert_eq!(z.date(11), "2026-10-25T02:30:00+01:00", "the info file's");
+
+        // listing again, without the info files: the cursor's date
+        z.deny(false);
+        z.info(&[]);
+        assert_eq!(z.capture("2026-10-25T06:00:00+01:00"), [""; 0]);
+        assert_eq!(z.date(11), "2026-10-25T02:30:00+01:00");
+        // and with them
+        z.info(&[(10, "2026-10-24 23:30:00"), (11, "2026-10-25 01:30:00")]);
+        assert_eq!(z.capture("2026-10-25T07:00:00+01:00"), [""; 0]);
+        assert_eq!(z.date(11), "2026-10-25T02:30:00+01:00");
+
+        // a real deletion and a reuse of the number are still seen, also
+        // across the switch: 10 deleted, 11 deleted and made again
+        z.deny(true);
+        z.info(&[(11, "2026-10-25 08:00:00")]);
+        assert_eq!(
+            z.capture("2026-10-25T09:30:00+01:00"),
+            [
+                "snapshot-delete 11 2026-10-25T09:00:00+01:00",
+                "snapshot 11 2026-10-25T09:00:00+01:00",
+                "snapshot-delete 10 2026-10-25T09:30:00+01:00"
+            ]
+        );
+    }
+
+    /// Read first from the info files, then from the list: the list's
+    /// local time is resolved to the instant the info files gave, through
+    /// the info file while it can be read, else through the cursor.
+    #[test]
+    fn snapper_keeps_one_date_from_the_info_files_to_the_list() {
+        let z = Zoned::new();
+        // 11 at 02:30 before the clocks went back, 12 at 02:15 after
+        let info = [
+            (10, "2026-10-24 23:30:00"),
+            (11, "2026-10-25 00:30:00"),
+            (12, "2026-10-25 01:15:00"),
+        ];
+        let list = [
+            (10, "2026-10-25 01:30:00"),
+            (11, "2026-10-25 02:30:00"),
+            (12, "2026-10-25 02:15:00"),
+        ];
+        z.deny(true);
+        z.info(&info);
+        assert_eq!(
+            z.capture("2026-10-25T04:00:00+01:00"),
+            [
+                "snapshot 10 2026-10-25T01:30:00+02:00",
+                "snapshot 11 2026-10-25T02:30:00+02:00",
+                "snapshot 12 2026-10-25T02:15:00+01:00"
+            ]
+        );
+        let dates = |z: &Zoned| [10, 11, 12].map(|n| z.date(n));
+        let want = dates(&z);
+
+        z.deny(false);
+        z.list(&list);
+        assert_eq!(z.capture("2026-10-25T05:00:00+01:00"), [""; 0]);
+        assert_eq!(dates(&z), want);
+        z.info(&[]);
+        assert_eq!(z.capture("2026-10-25T06:00:00+01:00"), [""; 0]);
+        assert_eq!(dates(&z), want);
+    }
+
+    /// A new snapshot in the repeated hour, listed: its info file decides
+    /// when it can be read, else the number order where it can.
+    #[test]
+    fn snapper_dates_a_listed_snapshot_in_the_repeated_hour() {
+        let z = Zoned::new();
+        z.list(&[(10, "2026-10-25 01:30:00"), (11, "2026-10-25 02:30:00")]);
+        z.info(&[(11, "2026-10-25 01:30:00")]); // after the clocks went back
+        assert_eq!(
+            z.capture("2026-10-25T04:00:00+01:00"),
+            [
+                "snapshot 10 2026-10-25T01:30:00+02:00",
+                "snapshot 11 2026-10-25T02:30:00+01:00"
+            ]
+        );
+
+        // no info files: 11 at 02:40 can be either (the earlier); 12 at
+        // 02:20 is made after 11, so after the clocks went back
+        let z = Zoned::new();
+        z.list(&[
+            (10, "2026-10-25 01:30:00"),
+            (11, "2026-10-25 02:40:00"),
+            (12, "2026-10-25 02:20:00"),
+        ]);
+        assert_eq!(
+            z.capture("2026-10-25T04:00:00+01:00"),
+            [
+                "snapshot 10 2026-10-25T01:30:00+02:00",
+                "snapshot 11 2026-10-25T02:40:00+02:00",
+                "snapshot 12 2026-10-25T02:20:00+01:00"
+            ]
+        );
+    }
+
+    /// Before WP-082 the list's 02:30 in the repeated hour was always the
+    /// instant with the smaller offset, the later one (chrono's
+    /// `earliest()`). Such a cursor entry moves to the info file's instant
+    /// without an event.
+    #[test]
+    fn snapper_moves_an_older_cursor_to_the_info_file_date() {
+        let z = Zoned::new();
+        z.list(&[(10, "2026-10-25 01:30:00"), (11, "2026-10-25 02:30:00")]);
+        assert_eq!(z.capture("2026-10-25T04:00:00+01:00").len(), 2);
+        // the ledger and the cursor as a capture before WP-082 wrote them
+        let month = z.logbook.join("ledger/2026-10.jsonl");
+        let ledger = common::read(&month);
+        let (earlier, later) = ("2026-10-25T02:30:00+02:00", "2026-10-25T02:30:00+01:00");
+        assert_eq!(ledger.matches(earlier).count(), 1);
+        std::fs::write(&month, ledger.replace(earlier, later)).unwrap();
+        z.set_date(11, later);
+        z.deny(true);
+        z.info(&[(10, "2026-10-24 23:30:00"), (11, "2026-10-25 00:30:00")]);
+        assert_eq!(z.capture("2026-10-25T05:00:00+01:00"), [""; 0]);
+        assert_eq!(z.date(11), earlier);
+    }
+
+    /// A listed time that does not exist (the hour skipped when summer time
+    /// begins) names no instant: the snapshot is remembered without a date
+    /// and without an event, and gets its date from the info files later,
+    /// again without an event.
+    #[test]
+    fn snapper_remembers_a_listed_time_in_the_dst_gap() {
+        let z = Zoned::new();
+        z.list(&[(20, "2027-03-28 01:30:00"), (21, "2027-03-28 02:30:00")]);
+        assert_eq!(
+            z.capture("2027-03-28T04:00:00+02:00"),
+            ["snapshot 20 2027-03-28T01:30:00+01:00"]
+        );
+        assert_eq!(z.date(21), serde_json::Value::Null, "known, no date");
+        z.deny(true);
+        z.info(&[(20, "2027-03-28 00:30:00"), (21, "2027-03-28 01:30:00")]);
+        assert_eq!(z.capture("2027-03-28T05:00:00+02:00"), [""; 0]);
+        assert_eq!(z.date(21), "2027-03-28T03:30:00+02:00");
+    }
+
     /// `seldon capture` runs on the invocation's clock: `SELDON_NOW` sets
     /// the collectors' `checked` and `lastRun` and the time of a
     /// capture-time event (WP-073).
