@@ -2036,3 +2036,17 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   bare `VALUE` took as a new value on the second pass). It surfaced only
   when another change moved the quote parity of the joined-rows text.
   The bare `VALUE` no longer starts at a marker.
+
+## 2026-10-06 · WP-106 (Engine Dev)
+
+- **A value check after the match is too late when the option name is
+  broad.** With `-…pass…` + `WORD` + a check "starts with `pass:`",
+  `-twopass -passin pass:x` took `-passin` as the flag's value, failed
+  the check and resumed after it: the secret leaked. Put the value's
+  shape into the regex (`PASS_ARG`), so a failed value lets the search
+  start again at the next option.
+- **A forced first part needs its own unclosed-quote fallback, `$`
+  included.** `WORD` reaches an unclosed `$'…` through its bare `$`; a
+  copy whose first part must be `pass:` has no bare `$` before it, so
+  `-passin $'pass:x` (unclosed) matched nothing until the lone tail
+  became `\$?['"]pass:[^\n]*`.
