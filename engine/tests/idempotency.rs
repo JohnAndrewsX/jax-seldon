@@ -681,7 +681,8 @@ mod state_reset {
             .read_all()
             .unwrap()
             .into_iter()
-            .filter(|e| e.subject == "state-reset")
+            // WP-091: and no note on the theme collector's change
+            .filter(|e| e.source == Source::Seldon && e.kind == Kind::Note)
             .collect();
         assert!(notes.is_empty(), "{notes:?}");
         state_ok();
@@ -1036,6 +1037,55 @@ mod state_reset {
         );
         assert_eq!(pending(&cli, "snapper"), None);
         assert_eq!(cli.capture(&[])["written"], 0);
+    }
+
+    /// WP-091: a mark in cursors bound to another logbook is that
+    /// logbook's; doctor on this one names the binding, no waiting row.
+    #[test]
+    fn a_mark_of_another_logbook_is_no_waiting_row_here() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        let other = cli.env.tmp.path().join("other");
+        let out = cli.env.seldon(&[
+            "init",
+            "--non-interactive",
+            "--no-git",
+            "--no-capture",
+            "--path",
+            other.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        let other = other.to_str().unwrap();
+        let out = cli.run(&[
+            "capture",
+            "--all",
+            "--json",
+            "--since",
+            FIXTURE_CREATED,
+            "--logbook",
+            other,
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        cli.stub_snapper_no_permissions();
+        cli.capture(&[]);
+        assert_eq!(pending(&cli, "snapper").as_deref(), Some("logbook"));
+        assert_eq!(waiting(&cli).unwrap().0, "snapper");
+
+        let doctor = common::json(&cli.run(&["doctor", "--json", "--logbook", other]));
+        let rows: Vec<&str> = doctor["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["name"] == "state" && c["status"] == "degraded")
+            .map(|c| c["message"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                "the next capture will record a state reset for snapper, pacman: cursors in ~/.local/state/seldon bound to another logbook, so changes made since the last capture may not be recorded"
+            ],
+            "{doctor}"
+        );
     }
 
     /// WP-088: a degraded collector that lost nothing waits for nothing:
