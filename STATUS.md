@@ -14,7 +14,9 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| — | no active work package | | | | |
+| WP-104 | state reset after a crash: no false note; doctor's prediction | Engine | `engine-104` (opus) | `wt/WP-104` · `wp/104-no-false-reset` | 2026-10-06 |
+| WP-106 | redaction: openssl -pass pass: | Engine | `engine-106` (opus) | `wt/WP-106` · `wp/106-openssl-pass` | 2026-10-06 |
+| WP-107 | config replay with an exact marker | Engine | `engine-107` (opus) | `wt/WP-107` · `wp/107-replay-marker` | 2026-10-06 |
 
 ## Queued (next up)
 
