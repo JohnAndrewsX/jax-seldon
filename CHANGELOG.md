@@ -94,7 +94,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cursors.json` (`silentBaselines`), and the next one does not count
   their new events as lost. `seldon doctor` after a crashed state reset
   no longer says the next capture will record it; it says the next
-  capture will warn of it (WP-104).
+  capture will warn of it. A `--source` capture right after such a crash
+  no longer leaves the collectors it does not run waiting for a baseline
+  the crashed note already recorded, which gave a second reset note
+  later (WP-104).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains

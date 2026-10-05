@@ -598,7 +598,11 @@ snapper note by its subject, the state reset by the sources its
 `meta.sources` names (a source no such note names, e.g. one the crashed
 capture did not run, gets a note of its own). It still prints the
 warning, which the crash hid, and keeps the earlier times when it marks
-a note of its own. The same save, also when there is no note, adds to
+a note of its own. A collector such a note names is not waiting in that
+capture (below): it is not marked `pendingBaseline` when the capture
+does not run it or it degrades, and when it is not run, a mark it had
+before the crash is cleared (an entry with only the mark is dropped), as
+its gap is recorded. The same save, also when there is no note, adds to
 `silentBaselines` under the logbook's canonical path the sources whose
 baseline the capture takes or leaves waiting (below) without a note
 because the ledger holds no event of them, in run order and after the

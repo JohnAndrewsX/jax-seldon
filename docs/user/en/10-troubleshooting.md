@@ -207,7 +207,8 @@ start those collectors over, as described in
 - When the row says `the next capture will warn of the state reset for …`,
   a capture recorded the reset and stopped before it saved its state (a
   crash, a kill). The same steps apply; the next capture does not record
-  the reset a second time, it only prints the warning.
+  the reset a second time, it only prints the warning, and no row stays
+  after it.
 
 doctor cannot know whether a collector will degrade in that capture
 (snapper without the read grant, for example). Such a collector takes
