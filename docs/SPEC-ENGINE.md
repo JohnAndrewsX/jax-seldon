@@ -847,7 +847,11 @@ After every capture:
    append failed, the engine stopped between the two appends, or a
    version before rule 8 wrote them; WP-088): each such event without a
    case that no resolution line refers to gets the same `explained`
-   resolution, and `explainedSelf` counts both. An event that has a
+   resolution, and `explainedSelf` counts both. The resolution is dated
+   at the capture time or the event's time, whichever is later, so the
+   index folds it even when the clock moved back. When the ledger cannot
+   be read after the append, only the capture's own events are explained
+   and a warning says the earlier ones were not checked. An event that has a
    resolution (dismissed, explained, linked) keeps it, the kinds above
    that stay drift stay drift, and no case is created. `install.sh` writes under its prefix
    (`~/.local`: the binary, man page, completions) and, with `--unit`,

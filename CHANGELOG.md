@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains
   new ones; a row you dismissed or resolved keeps its resolution, and
-  adding or downgrading Seldon stays drift (WP-088).
+  adding or downgrading Seldon stays drift. Such a resolution is dated at
+  the capture or at the event, whichever is later, so an event dated
+  after a clock that moved back is no longer left as drift (WP-088).
 
 ## [0.1.3] - 2026-10-05
 

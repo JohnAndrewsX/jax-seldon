@@ -334,7 +334,10 @@ pub fn explain_own_writes(
 /// ([`attribution::own_change`]) and that no resolution line in `events`
 /// refers to (explained, dismissed, linked: it keeps its resolution);
 /// `source: seldon`, actor `system`, no case, the reason as detail, at
-/// `ts`.
+/// `ts` or the event's time, whichever is later: the index folds a
+/// resolution only onto an earlier line, and a month file is chosen by
+/// the line's time, so an event dated after the capture clock (the clock
+/// moved back) still gets a line after it (WP-088 review).
 pub fn own_change_resolutions(events: &[Event], ts: DateTime<FixedOffset>) -> Vec<Event> {
     let resolved: HashSet<Ulid> = events
         .iter()
@@ -346,7 +349,8 @@ pub fn own_change_resolutions(events: &[Event], ts: DateTime<FixedOffset>) -> Ve
         .filter(|e| e.case.is_none() && !resolved.contains(&e.id))
         .filter_map(|e| {
             let why = attribution::own_change(e)?;
-            let mut r = Event::new(ts, Source::Seldon, Kind::Resolution, e.subject.clone())
+            let at = ts.max(e.ts);
+            let mut r = Event::new(at, Source::Seldon, Kind::Resolution, e.subject.clone())
                 .actor(ACTOR_SYSTEM)
                 .detail(why);
             r.refers_to = Some(e.id);
