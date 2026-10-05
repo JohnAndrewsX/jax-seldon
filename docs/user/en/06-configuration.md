@@ -235,6 +235,10 @@ regular expressions; each one replaces its whole match:
 patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 ```
 
+The domain of an address stays visible. If yours names you, add a
+pattern for it: `"@smith\\.example\\b"` turns `jo@smith.example` into
+`‹redacted›‹redacted›`.
+
 An invalid pattern is an error (exit 1): Seldon refuses to write rather
 than leak.
 
