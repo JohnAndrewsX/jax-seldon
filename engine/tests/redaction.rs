@@ -751,7 +751,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeCont4",
         "-u ‹redacted› \\\n  -u ‹redacted› https://h.example",
     ),
-    // … also between an option and its value
+    // … also inside a value and between an option and its value
+    (
+        "curl-user",
+        "curl -u admin:fake\\\nCont10 https://h.example",
+        "Cont10",
+        "curl -u ‹redacted› https://h.example",
+    ),
     (
         "curl-user",
         "curl -sS -u \\\n  admin:fakeCont5 https://h.example",
@@ -1453,6 +1459,42 @@ mod redaction {
             r.redact("curl https://u:fakePw@h.example/x -d to=mike@example.com"),
             format!("curl https://{REDACTED}@h.example/x -d to={REDACTED}@example.com")
         );
+    }
+
+    /// A `\` line end may stand between any option of a command and its
+    /// value, and between the command word and the option (WP-097).
+    #[test]
+    fn an_option_and_its_value_may_stand_on_two_lines() {
+        let r = Redactor::builtin();
+        for (rule, input) in [
+            ("curl-user", "curl -u \\\n  a:fakeGap1"),
+            ("curl-user", "curl --user \\\n  a:fakeGap1"),
+            ("proxy-option", "curl -U \\\n  a:fakeGap1"),
+            ("proxy-option", "wget --proxy-user \\\n  a:fakeGap1"),
+            ("proxy-option", "wget --proxy-password \\\n  fakeGap1"),
+            ("proxy-userinfo", "curl -x \\\n  a:fakeGap1@p.example:3128"),
+            (
+                "proxy-userinfo",
+                "wget --proxy \\\n  a:fakeGap1@p.example:3128",
+            ),
+            ("cookie-option", "curl -b \\\n  sid=fakeGap1"),
+            ("cookie-option", "curl --cookie \\\n  sid=fakeGap1"),
+            ("cert-password", "curl -E \\\n  c.pem:fakeGap1"),
+            ("cert-password", "tool --cert \\\n  c.pem:fakeGap1"),
+            ("httpie-auth", "http -a \\\n  a:fakeGap1"),
+            ("httpie-auth", "xh --auth \\\n  a:fakeGap1"),
+            ("httpie-auth", "http \\\n  -a a:fakeGap1"),
+            ("sshpass-password", "sshpass -p \\\n  fakeGap1 ssh me@host"),
+            ("registry-login-password", "docker login -p \\\n  fakeGap1"),
+            ("password-option", "tool --password \\\n  fakeGap1"),
+            ("secret-option", "tool --token \\\n  fakeGap1"),
+            ("key-option", "tool --api-key \\\n  fakeGap1Key"),
+        ] {
+            let out = r.redact(input);
+            assert!(!out.contains("fakeGap1"), "{rule}: `{input}` → `{out}`");
+            assert_eq!(r.matching_rules(input), vec![rule], "`{input}`");
+            assert_eq!(r.redact(&out), out, "`{input}`");
+        }
     }
 
     /// The WP-097 rules match only their own rows and no row of another
