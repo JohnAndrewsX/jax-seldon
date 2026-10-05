@@ -174,6 +174,9 @@ as two subagents; both are allowed for this bounded fan-out.
   brief; a question that needs a decision goes through §10; a permission
   dialog is left for the operator and noted in the log (the orchestrator
   does not answer permission prompts on the operator's behalf).
+- After each green main check and its push, the orchestrator runs
+  `SELDON_TEST_HOST=<alias> just deploy-test-host <check log>`, so the
+  test host follows main (docs/TESTING.md, "Test host follows main").
 - Every tick ends with `git status` clean on `main`, STATUS.md committed,
   and a one-line entry in `work/ORCHESTRATOR-LOG.md` (date, tick, what
   changed). This file is the operator's way to catch up.

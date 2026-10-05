@@ -138,7 +138,7 @@ fn the_man_page_lists_every_command() {
     assert!(page.starts_with(".ie \\n(.g"), "roff from clap_mangen");
     assert!(page.contains(".TH SELDON 1 "), "{page}");
     assert!(
-        page.contains(&format!("seldon {}", env!("CARGO_PKG_VERSION"))),
+        page.contains(&format!("seldon {}", seldon::VERSION)),
         "the version in the footer"
     );
     for section in [

@@ -16,10 +16,19 @@ fn seldon(args: &[&str]) -> Output {
 fn version_prints_name_and_version() {
     let out = seldon(&["--version"]);
     assert_eq!(out.status.code(), Some(0));
-    assert_eq!(
-        stdout(&out),
-        format!("seldon {}\n", env!("CARGO_PKG_VERSION"))
-    );
+    assert_eq!(stdout(&out), format!("seldon {}\n", seldon::VERSION));
+    assert_version_is_this_build(seldon::VERSION);
+}
+
+/// The crate version, plus `+<SELDON_BUILD>` when the build set it
+/// (WP-098): `SELDON_BUILD=main.1a2b3c4 cargo test` checks the marked form.
+fn assert_version_is_this_build(v: &str) {
+    match option_env!("SELDON_BUILD") {
+        Some(b) if !b.is_empty() => {
+            assert_eq!(v, format!("{}+{b}", env!("CARGO_PKG_VERSION")))
+        }
+        _ => assert_eq!(v, env!("CARGO_PKG_VERSION")),
+    }
 }
 
 #[test]
@@ -28,7 +37,8 @@ fn version_json() {
     assert_eq!(out.status.code(), Some(0));
     let v: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
     assert_eq!(v["name"], "seldon");
-    assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(v["version"], seldon::VERSION);
+    assert_version_is_this_build(v["version"].as_str().unwrap());
 }
 
 #[test]

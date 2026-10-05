@@ -1821,3 +1821,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `/proc/<pid>/status` before bisecting, and measure interleaved under
   the check lock. `git archive` copies keep old mtimes: touch the
   sources, or cargo reuses the previous build.
+
+## 2026-10-05 · WP-098 (test host follows main)
+
+- **A stub first on PATH does not make a fake host safe.** The real
+  `omarchy-shell` and `omarchy-restart-shell` exist in `/usr/bin` as well
+  as in `$OMARCHY_PATH/bin`; a remote script that adds `/usr/bin` to its
+  PATH reaches the dev host's running shell as soon as one stub is
+  missing. `tests/deploy/deploy-test-host.test.sh` runs the remote side
+  under `env -i` with a PATH of stubs plus single tools linked one by
+  one (a whitelist), and trap stubs for `quickshell`, `hyprctl`,
+  `systemctl` and `wtype`.
+- **`just` runs a recipe in the justfile's directory.** A relative path
+  given to `just deploy-test-host <log>` resolves against the repository
+  root, not the caller's cwd; pass the check log as an absolute path.
+- **A plugin file change that fails validation must still leave the
+  restart pending.** The next deploy finds the same files on disk
+  ("unchanged") and would never restart; the deploy marks
+  `restart-pending` before `omarchy plugin validate` and stops before the
+  restart step, so the next deploy that validates restarts.
+- **The guard blocks a read-only grep whose pattern names the package
+  manager with an option** (`grep … 'pacman -S…' .github/…`) as a
+  "privileged or package command" — the known substring false positive;
+  search for something else in the same lines (`shellcheck`).

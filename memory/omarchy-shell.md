@@ -594,3 +594,15 @@ Verified in the shell source and live on the test host.
 - A second restart started while the first one runs can kill the *new*
   shell: the plugin's restart action is one-shot per service instance
   (WP-090 round 2).
+
+## WP-098 findings (2026-10-05, Omarchy 4.0.4)
+
+- **Every dir under `~/.config/omarchy/plugins` with a `manifest.json` is
+  a plugin** (`omarchy-plugin-catalog`: `find -L … -mindepth 2 -maxdepth
+  2 -name manifest.json`, dot dirs skipped). A backup of `jax.seldon`
+  next to it would be a second plugin with the same id (`omarchy plugin
+  add` refuses "already used by …"); keep backups outside, e.g.
+  `~/.local/state/seldon-dev/`.
+- **`omarchy plugin update` needs a git checkout** (`fetch origin HEAD`,
+  `merge --ff-only`); a plain copy fails with "not a git checkout". A
+  clone at a tag (detached HEAD) still fast-forwards.

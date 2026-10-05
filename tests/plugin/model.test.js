@@ -1408,6 +1408,11 @@ test("engineMin (WP-068): a version below the manifest's engineMin gets the upda
   // A dev or pre-release build counts as its version.
   assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.0-dev", "0.2.0"), null)
   assert.ok(M.engineOutdatedBanner("ok", "0.1.0-fake", "0.2.0"))
+  // The test host's builds from main (WP-098): `+main.<sha>` build metadata.
+  same(M.versionCore("0.1.3+main.1a2b3c4"), [0, 1, 3])
+  assert.strictEqual(M.versionBelow("0.1.3+main.1a2b3c4", "0.1.3"), false)
+  assert.strictEqual(M.versionBelow("0.1.3+main.1a2b3c4", "0.1.4"), true)
+  assert.strictEqual(M.engineOutdatedBanner("ok", "0.1.3+main.1a2b3c4", "0.1.3"), null)
   // Unknown on either side: no claim.
   assert.strictEqual(M.engineOutdatedBanner("ok", "", "0.2.0"), null)
   assert.strictEqual(M.engineOutdatedBanner("ok", "0.1.0", ""), null)

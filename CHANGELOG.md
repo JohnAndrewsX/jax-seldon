@@ -61,6 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (WP-087).
 - Redaction: long lines with many masked values are checked against
   earlier markers by binary search.
+- A build with `SELDON_BUILD=main.<sha>` says what it is: `seldon
+  --version`, `--version --json` and the index's `engineVersion` report
+  `0.1.3+main.<sha>`; release builds stay plain, and a value that is not
+  semver build metadata fails the build. The plugin reads the marked
+  form as its version (WP-098).
 
 ### Plugin
 
@@ -71,6 +76,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *Restart shell*, which runs `omarchy-restart-shell` (no arguments).
   Plugins up to 0.1.3 do not show it; the update guide and both READMEs
   say to restart the shell after every plugin update (WP-090).
+
+### Packaging and docs
+
+- `just deploy-test-host <main check log>`
+  (`scripts/deploy-test-host.sh`) puts the main build of engine and
+  plugin on the test host after a green main check: only a host listed
+  in the git-ignored `scripts/guard-hosts.local` whose machine-id
+  matches its pin in the git-ignored `scripts/deploy-hosts.local`, only
+  from a clean, pushed `main` whose check log ends in `exit 0` and names
+  a commit with the same engine, plugin, schemas and script. It builds
+  as a release does (`--features watch`), keeps the previous engine as
+  `seldon.prev`, restarts an active `seldon-watch.service` on the new
+  binary, moves the release plugin clone aside once, restarts the shell
+  only when the plugin changed and the session is unlocked ("restart
+  pending" otherwise), runs a smoke check and logs one JSON line on the
+  host; `--dry-run` shows the plan, `--release vX.Y.Z` brings the host
+  back to a release. Productive machines keep running releases only
+  (WP-098).
 
 ## [0.1.3] - 2026-10-05
 
