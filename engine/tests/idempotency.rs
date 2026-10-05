@@ -1535,6 +1535,23 @@ mod snapper_access {
         assert_eq!(cli.capture(&[])["written"], 0);
     }
 
+    /// WP-099 (SPEC §7): the note is redacted like every event; the
+    /// collector's message embeds what snapper printed.
+    #[test]
+    fn the_note_is_redacted_like_every_event() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        cli.stub("snapper", "echo 'token=fake0123456789' >&2; exit 3");
+        let out = cli.capture(&[]);
+        assert_eq!(out["written"], 1, "{out}");
+        assert_eq!(
+            access(&cli),
+            [
+                "snapper collector degraded: snapper failed (exit 3): token=‹redacted›; at its last run it was ok"
+            ]
+        );
+    }
+
     /// No earlier run for this logbook to compare with: a lost state
     /// directory, and an entry that only waits (WP-091 N2), never ran.
     #[test]
