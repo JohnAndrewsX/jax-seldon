@@ -1264,6 +1264,8 @@ mod collectors {
         let config = &cursors["collectors"]["config"];
         assert_eq!(at(&config["lastRun"]), support::ts(t2));
         assert_eq!(at(&config["cursor"]["checked"]), support::ts(t2));
+        // the marker: the removal is the one config event at the check (WP-107)
+        assert_eq!(config["cursor"]["atCheck"], 1);
     }
 
     #[test]
