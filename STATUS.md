@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-096 | default actor and attended marker for launched agents | Engine | `engine-096` (opus) | `wt/WP-096` · `wp/096-default-actor` | 2026-10-05 |
 | WP-100 | agent rules v2 (ADR-0027): templates, guide, rules update | Engine + Docs | `engine-100` (opus) | `wt/WP-100` · `wp/100-agent-rules-v2` | 2026-10-05 |
 | WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
 
@@ -46,6 +45,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-096 `seldon agent start` gives the launched agent
+  `SELDON_ACTOR=agent:<launcher>` and `SELDON_ATTENDED=1` (checked live
+  through Omarchy's launch chain on the test host and the dev host);
+  `log`, `plan`, `drift`, `event` and `hook generic` take the actor from
+  `SELDON_ACTOR` when `--actor` is missing; an explicit `--actor` wins;
+  Opus review, Fable look, one round; merged (ships with WP-100).
 - 2026-10-05 WP-092 the agent hook is faster: globs compile on demand,
   a plain `hook claude-code` skips the full parser, the rebuild allocates
   less; the 900-line curl case 4.6 → 3.9 ms (0.9 ms headroom with WP-093);
