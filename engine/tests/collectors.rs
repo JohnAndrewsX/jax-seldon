@@ -823,10 +823,22 @@ mod collectors {
                 ),
             );
             let z = Zoned { env, logbook };
+            // created before the snapshots, whatever today is: the baseline
+            // of a capture that lost its state
+            z.created("2026-10-20T11:00:00+02:00");
             z.list(&[]);
             // the first capture: an empty cursor, so what follows is news
             assert_eq!(z.capture("2026-10-20T12:00:00+02:00"), [""; 0]);
             z
+        }
+
+        /// Sets the logbook's `created`.
+        fn created(&self, at: &str) {
+            let meta = self.logbook.join(".seldon/logbook.toml");
+            let text = common::read(&meta);
+            let line = text.lines().find(|l| l.starts_with("created = ")).unwrap();
+            let text = text.replace(line, &format!("created = {at}"));
+            std::fs::write(&meta, text).unwrap();
         }
 
         /// The list: `(number, local date)`, all `single` timeline snapshots.
@@ -872,7 +884,8 @@ mod collectors {
             }
         }
 
-        /// Captures at `now`; the events it wrote as `kind subject ts`.
+        /// Captures at `now`; the snapper events it wrote as `kind subject
+        /// ts`.
         fn capture(&self, now: &str) -> Vec<String> {
             let ids = |ledger: &[serde_json::Value]| -> std::collections::HashSet<String> {
                 ledger.iter().map(|e| e["id"].to_string()).collect()
@@ -896,7 +909,7 @@ mod collectors {
             assert_eq!(snapper["ok"], true, "{snapper}");
             common::ledger(&self.logbook)
                 .into_iter()
-                .filter(|e| !before.contains(&e["id"].to_string()))
+                .filter(|e| e["source"] == "snapper" && !before.contains(&e["id"].to_string()))
                 .map(|e| {
                     format!(
                         "{} {} {}",
@@ -1071,6 +1084,23 @@ mod collectors {
         assert_eq!(z.date(11), earlier);
     }
 
+    /// A snapshot older than the baseline is known without an event, so
+    /// the ledger cannot tell its two instants apart: the cursor rule alone
+    /// keeps the switch to the info files free of a false pair.
+    #[test]
+    fn snapper_keeps_one_date_for_a_snapshot_known_without_an_event() {
+        let z = Zoned::new();
+        std::fs::remove_dir_all(z.env.home.join(".local/state/seldon")).unwrap();
+        z.created("2026-10-26T00:00:00+01:00");
+        z.list(&[(10, "2026-10-25 01:30:00"), (11, "2026-10-25 02:30:00")]);
+        assert_eq!(z.capture("2026-10-26T01:00:00+01:00"), [""; 0], "history");
+        assert_eq!(z.date(11), "2026-10-25T02:30:00+02:00");
+        z.deny(true);
+        z.info(&[(10, "2026-10-24 23:30:00"), (11, "2026-10-25 01:30:00")]);
+        assert_eq!(z.capture("2026-10-26T02:00:00+01:00"), [""; 0]);
+        assert_eq!(z.date(11), "2026-10-25T02:30:00+01:00");
+    }
+
     /// A listed time that does not exist (the hour skipped when summer time
     /// begins) names no instant: the snapshot is remembered without a date
     /// and without an event, and gets its date from the info files later,
@@ -1132,6 +1162,66 @@ mod collectors {
         assert_eq!(z.capture("2026-10-25T05:00:00+01:00"), [""; 0]);
         assert_eq!(z.date(11), "2026-10-25T02:00:00+01:00");
         assert_eq!(z.date(12), "2026-10-25T03:00:00+01:00");
+    }
+
+    /// The ledger dedupe knows both instants of a time in the repeated
+    /// hour: a snapshot the list recorded is not recorded again from the
+    /// info files when the cursor save failed in between, or when the
+    /// state directory was lost (the baseline is then the logbook's
+    /// `created`, before the snapshot).
+    #[test]
+    fn snapper_dedupes_the_other_instant_after_a_lost_cursor() {
+        let z = Zoned::new();
+        let state = z.env.home.join(".local/state/seldon");
+        z.list(&[(10, "2026-10-25 01:30:00")]);
+        assert_eq!(z.capture("2026-10-25T02:00:00+02:00").len(), 1);
+        // 11 at 02:30 after the clocks went back; listed as the earlier
+        z.list(&[(10, "2026-10-25 01:30:00"), (11, "2026-10-25 02:30:00")]);
+        let info = [(10, "2026-10-24 23:30:00"), (11, "2026-10-25 01:30:00")];
+
+        // the cursor save fails: the cursor stays as before the capture, so
+        // 11 alone is new to the next one, an hour from the ledger's 11
+        let cursors = common::read(&z.cursors_file());
+        assert_eq!(z.capture("2026-10-25T04:00:00+01:00").len(), 1);
+        std::fs::write(z.cursors_file(), cursors).unwrap();
+        z.deny(true);
+        z.info(&info);
+        assert_eq!(z.capture("2026-10-25T05:00:00+01:00"), [""; 0]);
+
+        // the state directory lost, then listed again: nothing new
+        std::fs::remove_dir_all(&state).unwrap();
+        z.deny(false);
+        z.info(&[]);
+        assert_eq!(z.capture("2026-10-25T06:00:00+01:00"), [""; 0]);
+        // lost again, then the info files
+        std::fs::remove_dir_all(&state).unwrap();
+        z.deny(true);
+        z.info(&info);
+        assert_eq!(z.capture("2026-10-25T07:00:00+01:00"), [""; 0]);
+        let ledger: Vec<_> = common::ledger(&z.logbook)
+            .into_iter()
+            .filter(|e| e["source"] == "snapper")
+            .collect();
+        assert_eq!(ledger.len(), 2, "10 and 11 once each");
+
+        // a reused number: the deletion and the new snapshot, recorded from
+        // the list, are not recorded again from the info files
+        let z = Zoned::new();
+        z.list(&[(11, "2026-10-24 12:00:00")]);
+        assert_eq!(z.capture("2026-10-24T13:00:00+02:00").len(), 1);
+        let cursors = common::read(&z.cursors_file());
+        z.list(&[(11, "2026-10-25 02:30:00")]);
+        assert_eq!(
+            z.capture("2026-10-25T04:00:00+01:00"),
+            [
+                "snapshot-delete 11 2026-10-25T02:30:00+02:00",
+                "snapshot 11 2026-10-25T02:30:00+02:00"
+            ]
+        );
+        std::fs::write(z.cursors_file(), cursors).unwrap();
+        z.deny(true);
+        z.info(&[(11, "2026-10-25 01:30:00")]);
+        assert_eq!(z.capture("2026-10-25T05:00:00+01:00"), [""; 0]);
     }
 
     /// `seldon capture` runs on the invocation's clock: `SELDON_NOW` sets

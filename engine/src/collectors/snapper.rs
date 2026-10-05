@@ -641,8 +641,10 @@ fn deleted(ts: DateTime<FixedOffset>, number: u64, k: &Known) -> Event {
     e
 }
 
-/// Drops `snapshot` events already in the ledger (same number and time),
-/// e.g. after a crash between the ledger write and the cursor save.
+/// Drops `snapshot` events already in the ledger (same number and time,
+/// or the other instant of the same local time in the repeated hour, which
+/// a switch between list and info files gives), e.g. after a crash between
+/// the ledger write and the cursor save or after a lost state directory.
 ///
 /// Likewise a `snapshot-delete` whose number the ledger already records as
 /// deleted after its last creation: deletions carry capture time, so only
@@ -656,10 +658,12 @@ fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
             .filter(|e| e.kind == Kind::Snapshot)
             .map(|e| e.ts)
     };
+    // the other instant of a time in the repeated hour is an hour away
+    let hour = chrono::Duration::hours(1);
     let seen: HashSet<(String, i64)> = match (created().min(), created().max()) {
         (Some(first), Some(last)) => ctx
             .ledger
-            .read_range(first, last)?
+            .read_range(first - hour, last + hour)?
             .into_iter()
             .filter(|e| e.source == Source::Snapper && e.kind == Kind::Snapshot)
             .map(|e| (e.subject, e.ts.timestamp()))
@@ -687,14 +691,19 @@ fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
         .filter(|e| e.kind == Kind::Snapshot)
         .map(|e| (e.subject.clone(), e.ts.timestamp()))
         .collect();
+    let recorded = |e: &Event| {
+        std::iter::once(e.ts)
+            .chain(fold_twin(ctx.tz, e.ts))
+            .any(|ts| seen.contains(&(e.subject.clone(), ts.timestamp())))
+    };
     Ok(events
         .into_iter()
         .filter(|e| {
             let key = (e.subject.clone(), e.ts.timestamp());
             match e.kind {
-                Kind::Snapshot => !seen.contains(&key),
+                Kind::Snapshot => !recorded(e),
                 Kind::SnapshotDelete if replaced.contains(&key) => {
-                    !seen.contains(&key) && !deleted.contains(&e.subject)
+                    !recorded(e) && !deleted.contains(&e.subject)
                 }
                 Kind::SnapshotDelete => !deleted.contains(&e.subject),
                 _ => true,
