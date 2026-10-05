@@ -181,3 +181,99 @@ CHANGELOG `[Unreleased]` → Plugin.
   (panel case for both states; the WP names service-states.sh and the
   harness).
 - `memory/omarchy-shell.md` (requested by the brief).
+
+## Round 2
+
+Brief: review round 1 SEND BACK (B1, B2, N1–N3) plus D1; live check on
+the test host passed; Decision 1 accepted. Commits on top of `19f9e64`:
+
+- `405e2ea` merge of `main` (B2)
+- `bb6b981` packaging: the plugin's version pair in check-packaging and the release (B1)
+- `868f16c` docs: restart notice in the troubleshooting banners (N1)
+- `73d5e8c` docs(de): source lines of guides 10 and 11 (N1)
+- `fe01adb` memory: restart-shell via the Omarchy menu, live result; recorder pitfall moved (N2)
+- `2506e16` tests: a failing argv compare in panel-view reaches the summary (N3)
+- `67da25b` plugin: the restart action runs once per service (D1)
+- plus the commit with this section
+
+### Done
+
+- **B2.** `git merge main` (no rebase). Conflicts in CHANGELOG.md
+  (`[Unreleased]`: main's `### Engine`, then this WP's `### Plugin`) and
+  memory/omarchy-shell.md (main's "Live frame timing…", then "WP-090
+  findings"): both kept, main first.
+- **B1.** `packaging/plugin-version.sh MANIFEST MODEL_JS [VERSION]` (jq,
+  grep, bash only): exactly one `var PLUGIN_VERSION = "…"` line, equal to
+  the manifest's `version` string, and to VERSION when given. Runs in
+  `just check-packaging` on `plugin/` (not host-gated, so CI runs it; also
+  under `bash -n`/shellcheck there) with
+  `tests/release/plugin-version.test.sh` (12 cases: agree, pipes, either
+  side bumped, release version differs, no/two/single-quoted lines,
+  numeric/missing manifest version). release.yml "Plugin split": one
+  `env: VERSION` and one line, the script on
+  `<(git show "$split:manifest.json") <(git show "$split:Model.js")
+  "$VERSION"` (the job's default shell is bash; the step above already
+  uses process substitution). No new actions, no permission changes.
+  VERSIONING.md step 1 and packaging/README.md (`build` row) say where it
+  runs.
+- **N1.** en/de guide 10: a row "Restart the shell to finish the update";
+  the "Index format mismatch" rows there and in plugin/README.md add the
+  restart after the plugin update. The de source lines of guides 10 and
+  11 now name the en commits (round 1 had left guide 11's stale; the
+  remaining docs-check warning, guide 06, comes from main/WP-089).
+- **N2.** omarchy-shell.md: the Omarchy menu runs `omarchy-restart-shell`
+  through `Quickshell.execDetached(["bash", "-lc", …])` (menu jsonc →
+  Menu.qml `runAction` → Util.qml `execDetached`), plus the live result
+  and the double-click note. The recorder bullet moved to pitfalls.md
+  (new WP-090 section).
+- **N3.** All 13 `diff … | sed` lines in panel-view.sh FAIL branches end
+  in `|| true`; the fail count keeps the exit non-zero.
+- **D1.** Service.qml `restartStarted`: set by the first restart; the
+  action then returns false until the service is recreated (the new
+  shell creates a new one). Snapshot field `restartStarted`. SPEC-PLUGIN
+  §5: "once per service instance". Harness: service-states
+  `restart-updated` fixes `restart:copy,restart:restart,restart:restart`
+  → log `true` then `false`, `restartStarted` true, one launch recorded;
+  panel-view `restart-updated` clicks *Restart shell* twice → one launch
+  (read 1 s after the first lands).
+
+### Verified by
+
+- `flock /tmp/seldon-check.lock just check` once at `67da25b`: exit 0,
+  `check: ok`; check-packaging ok (plugin-version.test ok; shellcheck not
+  installed on this host, `bash -n` only), model.test.js 89,
+  service-states 314/0, panel-view 782/0, overlay-view 319/0, bar-view
+  143/0, qmllint ok (29 files), real-home-guard 11/0, docs-check ok;
+  `git status` clean.
+- `omarchy plugin validate plugin/` exit 0; `just qmllint` ok.
+- Release step simulated on `HEAD:` paths through process substitution:
+  VERSION 0.1.3 → exit 0; 0.1.4 → exit 1 "the plugin is at 0.1.3, the
+  release at 0.1.4".
+- Mutants (harness ones in the scratch copy, under the check lock;
+  copy byte-identical afterwards; baselines service 21/0, panel 12/0):
+
+  | Mutant | Caught by |
+  |---|---|
+  | B1: manifest.json bumped to 0.1.4 in the worktree (restored by `git checkout`) | `just check-packaging` exit 1, "manifest.json says 0.1.4, Model.js PLUGIN_VERSION says 0.1.3" |
+  | B1: the edits in plugin-version.test.sh (each side bumped, release version, line shape, manifest type) | the script exits 1 with the named message in each (12/12 ok) |
+  | D1: latch not checked | service-states: second restart not refused, fix commands (19/2); panel-view: launches differ (11/1) |
+  | D1: latch never set | service-states 3 FAIL incl. `.restartStarted` (18/3) |
+  | N3: panel button unwired (FAIL branch with diff) | panel-view prints "11 passed, 1 failed" and exits 1 (round 1's H9 run stopped at the diff) |
+
+### Not done
+
+- shellcheck of the new script: not installed on this host; CI runs it
+  in `check-packaging`.
+- The release step itself only runs on a tag build or dry run; simulated
+  locally as above.
+
+### Decisions needed
+
+None.
+
+### Touched outside WP scope
+
+- `justfile` (check-packaging), `.github/workflows/release.yml` (Plugin
+  split), `packaging/plugin-version.sh`, `tests/release/plugin-version.test.sh`,
+  `packaging/README.md` — all per the round-2 brief (B1).
+- `docs/user/{en,de}/10-troubleshooting.md` (N1), `memory/pitfalls.md` (N2).
