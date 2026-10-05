@@ -277,26 +277,28 @@ fn fold(events: &[Event]) -> Vec<IndexEvent> {
         }
         seen.insert(e.id);
     }
-    let mut folded: Vec<IndexEvent> = events
-        .iter()
-        .filter(|e| e.kind != Kind::Resolution)
-        .map(|e| {
-            let mut event = e.clone();
-            let mut resolution_detail = None;
-            if let Some(r) = resolutions.get(&e.id) {
-                event.resolution = r.resolution;
-                resolution_detail = r.detail.clone();
-                // ADR-0021: any resolution that carries a case folds it
-                if r.case.is_some() {
-                    event.case = r.case.clone();
+    let mut folded: Vec<IndexEvent> = Vec::with_capacity(events.len());
+    folded.extend(
+        events
+            .iter()
+            .filter(|e| e.kind != Kind::Resolution)
+            .map(|e| {
+                let mut event = e.clone();
+                let mut resolution_detail = None;
+                if let Some(r) = resolutions.get(&e.id) {
+                    event.resolution = r.resolution;
+                    resolution_detail = r.detail.clone();
+                    // ADR-0021: any resolution that carries a case folds it
+                    if r.case.is_some() {
+                        event.case = r.case.clone();
+                    }
                 }
-            }
-            IndexEvent {
-                event,
-                resolution_detail,
-            }
-        })
-        .collect();
+                IndexEvent {
+                    event,
+                    resolution_detail,
+                }
+            }),
+    );
     folded.sort_by(|a, b| newest_first(&a.event, &b.event));
     folded
 }

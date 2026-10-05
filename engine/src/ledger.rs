@@ -113,7 +113,12 @@ impl Ledger {
                 );
             }
         };
-        let mut file = MonthFile::default();
+        // an event takes about 460 bytes: growing the list by doubling
+        // copies it and maps fresh pages each time (WP-092)
+        let mut file = MonthFile {
+            events: Vec::with_capacity(bytes.iter().filter(|&&b| b == b'\n').count() + 1),
+            ..MonthFile::default()
+        };
         for (n, raw) in bytes.split(|&b| b == b'\n').enumerate() {
             let raw = raw.strip_suffix(b"\r").unwrap_or(raw);
             if raw.trim_ascii().is_empty() {
