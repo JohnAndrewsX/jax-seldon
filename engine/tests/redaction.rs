@@ -2131,4 +2131,54 @@ mod commands {
         assert!(skip.matches(&alice) && skip.matches(&bob));
         assert!(!skip.matches(&dir.join("Zoom.desktop")));
     }
+
+    /// The hook hands the whole command to the redaction, its continued
+    /// lines and a quoted string over several lines included (only a
+    /// heredoc body is cut), so a curl option on a later line of the same
+    /// command is masked in the recorded line (WP-097).
+    #[test]
+    fn the_hook_masks_a_command_continued_over_lines() {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        let env = Env::new(Snapper::NoPermissions);
+        let logbook = env.init_logbook();
+        let command = "curl -sS \\\n  -H 'Accept: a;b' \\\n  -u admin:fakeHookPw1 \\\n  \
+                       -d '{\n  \"a\": 1\n}' -U bob:fakeHookPw2 \\\n  \
+                       https://h.example/x -o /tmp/x && yay -S --noconfirm zed";
+        let payload = serde_json::json!({
+            "command": command,
+            "actor": "agent:codex",
+            "cwd": logbook,
+        });
+        let mut child = env
+            .command(&["hook", "generic"])
+            .env("SELDON_NOW", T0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.to_string().as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(stderr(&out), "");
+
+        let line = last_ledger_line(&logbook);
+        assert_eq!(line["source"], "agent", "{line}");
+        assert_eq!(
+            line["meta"]["command"],
+            format!(
+                "curl -sS \\\n  -H 'Accept: a;b' \\\n  -u {REDACTED} \\\n  \
+                 -d '{{\n  \"a\": 1\n}}' -U {REDACTED} \\\n  \
+                 https://h.example/x -o /tmp/x && yay -S --noconfirm zed"
+            )
+        );
+        assert_nowhere(&env, &logbook, &["fakeHookPw"]);
+    }
 }
