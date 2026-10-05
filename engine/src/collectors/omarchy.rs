@@ -39,6 +39,10 @@ impl Collector for Omarchy {
         "omarchy"
     }
 
+    fn cursor_reads(&self, cursor: &Value) -> bool {
+        typed_cursor::<OmarchyCursor>(Some(cursor)).is_some()
+    }
+
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
         let Some(version) = current_version(ctx.sources) else {
             return Outcome::degraded(

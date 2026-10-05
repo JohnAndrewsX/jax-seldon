@@ -30,8 +30,11 @@
 //! A corrupt `owned.json` counts for the config collector; a capture that
 //! runs that collector moves it to `owned.json.bad` after the ledger write,
 //! so the next capture does not report it again.
+//! `doctor` predicts the reset before the capture with the same gate and
+//! ledger rule ([`pending_reset`], WP-083), while a restore prevents it.
 
 use std::fmt::Write as _;
+use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, Timelike as _};
 use serde_json::json;
@@ -96,11 +99,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     );
     let cursors_path = collectors::cursors_file(&ctx.dirs);
     let mut cursors = Cursors::load(&cursors_path)?;
-    let binding = match &cursors.logbook {
-        None => Binding::None,
-        Some(bound) if *bound == logbook.root => Binding::This,
-        Some(_) => Binding::Other,
-    };
+    let binding = Binding::of(&cursors, &logbook.root);
     cursors.bind(&logbook.root);
     // --since only sets the baseline of collectors without a cursor
     let since_ignored: Vec<&str> = match since {
@@ -130,13 +129,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     } = collect_all(
         &selected, &config, ctx, &ledger, &cursors, &logbook, &sources, now, baseline,
     );
-    let mut lost: Vec<(&'static str, Lost)> = lost
-        .into_iter()
-        .filter_map(|(name, l)| {
-            let had_cursor = cursors.cursor(&logbook.root, name).is_some();
-            Some((name, loss(l, binding, had_cursor)?))
-        })
-        .collect();
+    let mut lost = losses(lost, binding, &cursors, &logbook.root);
     owned_corrupt &= reports.iter().any(|r| r.name == "config" && r.ran && r.ok);
     if owned_corrupt {
         lost.push(("config", Lost::Owned));
@@ -190,11 +183,68 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
 /// What `cursors.json` was bound to before this capture bound it to the
 /// logbook.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Binding {
+pub(crate) enum Binding {
     /// No file, or no logbook in it: a new or lost state directory.
     None,
     This,
     Other,
+}
+
+impl Binding {
+    /// The binding of `cursors` as loaded, before [`Cursors::bind`].
+    pub(crate) fn of(cursors: &Cursors, logbook: &Path) -> Binding {
+        match &cursors.logbook {
+            None => Binding::None,
+            Some(bound) if bound == logbook => Binding::This,
+            Some(_) => Binding::Other,
+        }
+    }
+}
+
+/// The baselines among `lost` that are a loss ([`loss`]).
+fn losses(
+    lost: Vec<(&'static str, Lost)>,
+    binding: Binding,
+    cursors: &Cursors,
+    logbook: &Path,
+) -> Vec<(&'static str, Lost)> {
+    lost.into_iter()
+        .filter_map(|(name, l)| {
+            let had_cursor = cursors.cursor(logbook, name).is_some();
+            Some((name, loss(l, binding, had_cursor)?))
+        })
+        .collect()
+}
+
+/// The state reset the next `seldon capture` would record, predicted from
+/// `cursors` before it runs (WP-083, `doctor`): each enabled collector
+/// whose cursor for `logbook` is missing or does not read
+/// ([`collectors::Collector::cursor_reads`]) takes a baseline, and that
+/// baseline goes through the capture's own gate ([`loss`]) and ledger rule
+/// ([`held_losses`]). Not predicted: a collector that degrades in that
+/// capture (it takes no baseline), and the config collector's
+/// `manifest.json` and `owned.json` losses (doctor's `state` rows check
+/// those files). Also returns the binding, which names the cause.
+pub(crate) fn pending_reset(
+    ledger: &Ledger,
+    config: &Config,
+    cursors: &Cursors,
+    logbook: &Path,
+) -> Result<(Binding, Vec<(&'static str, Lost)>)> {
+    let binding = Binding::of(cursors, logbook);
+    let baselines = select(config, &CaptureArgs::default())?
+        .into_iter()
+        .filter(|&(_, run)| run)
+        .filter_map(|(name, _)| {
+            let collector = collectors::find(name)?;
+            let reads = cursors
+                .cursor(logbook, name)
+                .is_some_and(|c| collector.cursor_reads(c));
+            (!reads).then_some((name, Lost::Cursor))
+        })
+        .collect();
+    let lost = losses(baselines, binding, cursors, logbook);
+    Ok((binding, held_losses(ledger, &lost)?))
 }
 
 /// Whether a collector's baseline for want of `lost` is a loss. Bound to
@@ -234,18 +284,7 @@ fn state_reset(
     baseline: DateTime<FixedOffset>,
     now: DateTime<FixedOffset>,
 ) -> Result<Option<Reset>> {
-    let mut wanted: Vec<Source> = lost.iter().filter_map(|(n, _)| n.parse().ok()).collect();
-    wanted.sort_by_key(|s| s.as_str());
-    wanted.dedup();
-    if wanted.is_empty() {
-        return Ok(None);
-    }
-    let held = recorded_sources(ledger, &wanted)?;
-    let lost: Vec<(&'static str, Lost)> = lost
-        .iter()
-        .copied()
-        .filter(|(n, _)| held.iter().any(|s| s.as_str() == *n))
-        .collect();
+    let lost = held_losses(ledger, lost)?;
     if lost.is_empty() {
         return Ok(None);
     }
@@ -278,6 +317,26 @@ fn state_reset(
         ))
         .meta(meta);
     Ok(Some(Reset { note, lost }))
+}
+
+/// The losses among `lost` whose source the ledger holds at least one event
+/// of (the WP-081 rule: the first capture of a logbook loses nothing).
+fn held_losses(
+    ledger: &Ledger,
+    lost: &[(&'static str, Lost)],
+) -> Result<Vec<(&'static str, Lost)>> {
+    let mut wanted: Vec<Source> = lost.iter().filter_map(|(n, _)| n.parse().ok()).collect();
+    wanted.sort_by_key(|s| s.as_str());
+    wanted.dedup();
+    if wanted.is_empty() {
+        return Ok(Vec::new());
+    }
+    let held = recorded_sources(ledger, &wanted)?;
+    Ok(lost
+        .iter()
+        .copied()
+        .filter(|(n, _)| held.iter().any(|s| s.as_str() == *n))
+        .collect())
 }
 
 /// The collector names of `lost`, each once, in run order.
