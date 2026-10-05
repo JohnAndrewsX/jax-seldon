@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
 | WP-092 | hook rebuild cost with margin under 5 ms | Engine | `engine-092` (opus) | `wt/WP-092` · `wp/092-hook-budget` | 2026-10-05 |
 | WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
 | WP-098 | the test host follows main (deploy script, dev version marker) | Engine | `engine-098` (opus) | `wt/WP-098` · `wp/098-test-host-main` | 2026-10-05 |
@@ -47,6 +46,14 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-091 snapper changes between degraded and ok are
+  recorded as notes (both directions); a collector not run in the
+  capture that loses its state records its gap later (bare marked entry,
+  read as no entry everywhere); doctor names a waiting baseline by its
+  reason; the debug watch test bounds heap growth instead of mapped
+  pages (the gate's RSS failure was debug-binary page noise, measured);
+  downgrade note in VERSIONING; Opus review, Fable stage 2, two fix
+  rounds, Sonnet verification; merged.
 - 2026-10-05 WP-087 redaction: one quote-aware command context for the
   six option rules (never less than the plain reading), options given
   twice are masked each time, marker checks by binary search (long lines
