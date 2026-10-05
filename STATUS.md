@@ -14,7 +14,9 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| — | no active work package | | | | |
+| WP-097 | redaction: remaining credential forms on command lines | Engine | `engine-097` (opus) | `wt/WP-097` · `wp/097-redact-forms` | 2026-10-05 |
+| WP-099 | crash-proof seldon notes (state reset, snapper access) | Engine | `engine-099` (opus) | `wt/WP-099` · `wp/099-crash-proof-notes` | 2026-10-05 |
+| WP-103 | config replay with redacted twins; SPEC §7 clause | Engine | `engine-103` (opus) | `wt/WP-103` · `wp/103-replay-twins` | 2026-10-05 |
 
 ## Queued (next up)
 
