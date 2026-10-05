@@ -19,7 +19,8 @@
 //! attribute their own events. After the append, a run of the config
 //! collector explains the files the engine wrote itself (`init
 //! --theme-hook`, `hook install`; SPEC-ENGINE §5 rule 7), and every
-//! capture explains Seldon's own plugin and package changes (rule 8).
+//! capture explains Seldon's own plugin and package changes (rule 8),
+//! also those an earlier capture left open (WP-088).
 //!
 //! A collector that took a new baseline because its state was missing,
 //! unreadable or another logbook's ([`collectors::Lost`]) although the
@@ -28,6 +29,10 @@
 //! [`STATE_RESET`] and prints a warning (WP-081). A collector that never
 //! ran successfully for this logbook loses nothing (`loss`), and the first
 //! capture of a logbook holds no events of its sources: no note.
+//! A collector that degrades in the capture that loses its state takes no
+//! baseline then; it is marked `pendingBaseline` in `cursors.json` with
+//! what it lost (`cursors` or `logbook`), and its first successful run
+//! records its gap the same way (WP-088).
 //! A corrupt `owned.json` counts for the config collector; a capture that
 //! runs that collector moves it to `owned.json.bad` after the ledger write,
 //! so the next capture does not report it again.
@@ -44,7 +49,7 @@ use super::{Context, Output};
 use crate::attribution::{self, Stamps};
 use crate::collectors::config::OwnWrites;
 use crate::collectors::{
-    self, CollectorState, Ctx, Cursors, Lost, REGISTRY, STATE_RESET, Sources, Tz,
+    self, CollectorState, Ctx, Cursors, Lost, PendingBaseline, REGISTRY, STATE_RESET, Sources, Tz,
 };
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -124,13 +129,20 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     let Collected {
         mut events,
         reports,
-        states,
+        mut states,
         stamps,
         lost,
     } = collect_all(
         &selected, &config, ctx, &ledger, &cursors, &logbook, &sources, now, baseline,
     );
     let mut lost = losses(lost, binding, &cursors, &logbook.root);
+    let waiting = waiting_baselines(&ledger, &states, binding, &cursors, &logbook.root)?;
+    for (name, state) in &mut states {
+        state.pending_baseline = waiting
+            .iter()
+            .find(|(n, _)| n == name)
+            .and_then(|(_, l)| PendingBaseline::of(*l));
+    }
     owned_corrupt &= reports.iter().any(|r| r.name == "config" && r.ran && r.ok);
     if owned_corrupt {
         lost.push(("config", Lost::Owned));
@@ -168,10 +180,11 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
             eprintln!("seldon: warning: {w}");
         }
     }
-    // rule 8: Seldon updating itself is no drift
-    let (explained_self, warning) =
+    // rule 8: Seldon updating itself is no drift, also what an earlier
+    // capture left open
+    let (explained_self, own_warnings) =
         crate::reconcile::explain_own_changes(&lock, &ledger, &written, now);
-    if let Some(w) = warning {
+    for w in own_warnings {
         eprintln!("seldon: warning: {w}");
     }
     crate::index::rebuild_if_initialised(ctx);
@@ -208,7 +221,8 @@ impl Binding {
     }
 }
 
-/// The baselines among `lost` that are a loss ([`loss`]).
+/// The baselines among `lost` that are a loss ([`loss`]), with the
+/// [`pending_baseline`] of each.
 fn losses(
     lost: Vec<(&'static str, Lost)>,
     binding: Binding,
@@ -218,9 +232,61 @@ fn losses(
     lost.into_iter()
         .filter_map(|(name, l)| {
             let had_cursor = cursors.cursor(logbook, name).is_some();
-            Some((name, loss(l, binding, had_cursor)?))
+            let pending = pending_baseline(cursors, name);
+            Some((name, loss(l, binding, had_cursor, pending)?))
         })
         .collect()
+}
+
+/// The baseline `name` waits for in `cursors` since it degraded in the
+/// capture that lost its state ([`CollectorState::pending_baseline`],
+/// WP-088). Only asked for cursors bound to this logbook: [`loss`]
+/// decides the others by the binding.
+fn pending_baseline(cursors: &Cursors, name: &str) -> Option<PendingBaseline> {
+    cursors.collectors.get(name)?.pending_baseline
+}
+
+/// The baselines `names` take from `cursors`: each whose cursor for
+/// `logbook` is missing or does not read
+/// ([`collectors::Collector::cursor_reads`]), as [`Lost::Cursor`].
+fn baselines(
+    cursors: &Cursors,
+    logbook: &Path,
+    names: impl IntoIterator<Item = &'static str>,
+) -> Vec<(&'static str, Lost)> {
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let collector = collectors::find(name)?;
+            let reads = cursors
+                .cursor(logbook, name)
+                .is_some_and(|c| collector.cursor_reads(c));
+            (!reads).then_some((name, Lost::Cursor))
+        })
+        .collect()
+}
+
+/// The collectors among `states` that degraded although they lost their
+/// state, and what they lost (WP-088): a degraded run takes no baseline,
+/// so the one it would have taken waits, through the capture's gate
+/// ([`losses`]: [`Lost::Cursor`] or [`Lost::Logbook`]) and ledger rule
+/// ([`held_losses`]); a collector already waiting stays so, with its
+/// kind. Its first successful run records the gap as a state reset.
+fn waiting_baselines(
+    ledger: &Ledger,
+    states: &[(&'static str, CollectorState)],
+    binding: Binding,
+    cursors: &Cursors,
+    logbook: &Path,
+) -> Result<Vec<(&'static str, Lost)>> {
+    let degraded = states.iter().filter(|(_, s)| !s.ok).map(|(n, _)| *n);
+    let lost = losses(
+        baselines(cursors, logbook, degraded),
+        binding,
+        cursors,
+        logbook,
+    );
+    held_losses(ledger, &lost)
 }
 
 /// The state reset the next `seldon capture` would record, predicted from
@@ -228,10 +294,13 @@ fn losses(
 /// whose cursor for `logbook` is missing or does not read
 /// ([`collectors::Collector::cursor_reads`]) takes a baseline, and that
 /// baseline goes through the capture's own gate ([`loss`]) and ledger rule
-/// ([`held_losses`]). Not predicted: a collector that degrades in that
-/// capture (it takes no baseline), and the config collector's
-/// `manifest.json` and `owned.json` losses (doctor's `state` rows check
-/// those files). Also returns the binding, which names the cause.
+/// ([`held_losses`]); a collector whose baseline waits since it degraded
+/// in an earlier capture ([`pending_baseline`]) counts as the loss it
+/// recorded (`cursors`, or `logbook`). Not predicted: whether a collector degrades in that
+/// capture (it then takes no baseline, and its baseline waits), and the
+/// config collector's `manifest.json` and `owned.json` losses (doctor's
+/// `state` rows check those files). Also returns the binding, which names
+/// the cause.
 pub(crate) fn pending_reset(
     ledger: &Ledger,
     config: &Config,
@@ -239,18 +308,16 @@ pub(crate) fn pending_reset(
     logbook: &Path,
 ) -> Result<(Binding, Vec<(&'static str, Lost)>)> {
     let binding = Binding::of(cursors, logbook);
-    let baselines = select(config, &CaptureArgs::default())?
+    let enabled = select(config, &CaptureArgs::default())?
         .into_iter()
         .filter(|&(_, run)| run)
-        .filter_map(|(name, _)| {
-            let collector = collectors::find(name)?;
-            let reads = cursors
-                .cursor(logbook, name)
-                .is_some_and(|c| collector.cursor_reads(c));
-            (!reads).then_some((name, Lost::Cursor))
-        })
-        .collect();
-    let lost = losses(baselines, binding, cursors, logbook);
+        .map(|(name, _)| name);
+    let lost = losses(
+        baselines(cursors, logbook, enabled),
+        binding,
+        cursors,
+        logbook,
+    );
     Ok((binding, held_losses(ledger, &lost)?))
 }
 
@@ -260,11 +327,21 @@ pub(crate) fn pending_reset(
 /// (degraded so far, disabled, or new): its first baseline loses nothing,
 /// even when the ledger holds events of its source that something else
 /// wrote (the theme hook, an agent); only a cursor that is there and does
-/// not read is lost.
-fn loss(lost: Lost, binding: Binding, had_cursor: bool) -> Option<Lost> {
+/// not read is lost, or a baseline that waits since the collector
+/// degraded in the capture that lost its state (`pending`, WP-088): that
+/// one is the loss it recorded then, also `logbook`.
+fn loss(
+    lost: Lost,
+    binding: Binding,
+    had_cursor: bool,
+    pending: Option<PendingBaseline>,
+) -> Option<Lost> {
     match (lost, binding) {
         (Lost::Cursor, Binding::Other) => Some(Lost::Logbook),
-        (Lost::Cursor, Binding::This) => had_cursor.then_some(Lost::Cursor),
+        (Lost::Cursor, Binding::This) => match pending {
+            Some(p) => Some(p.lost()),
+            None => had_cursor.then_some(Lost::Cursor),
+        },
         (l, _) => Some(l),
     }
 }
@@ -488,6 +565,8 @@ fn collect_all(
                 fix: out.fix.clone(),
                 last_run: format_ts(&now),
                 events: out.events.len(),
+                // set by `run` for a degraded run
+                pending_baseline: None,
             },
         ));
         reports.push(CollectorReport {

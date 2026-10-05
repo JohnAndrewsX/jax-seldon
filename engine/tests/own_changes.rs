@@ -4,7 +4,8 @@
 //! that writes it, so it is no drift; the event stays in the ledger with
 //! its own actor. Other plugins and packages, and adding, installing,
 //! downgrading or removing Seldon (review F4: nothing checks provenance),
-//! stay drift.
+//! stay drift. Own changes an earlier capture left without a resolution
+//! are explained by the next capture (WP-088).
 //!
 //! Everything runs in a throw-away home (`common::Env`, with
 //! `SELDON_TEST_GUARD`); the collectors' sources point at temp files.
@@ -337,6 +338,207 @@ fn upgrading_its_own_package_is_no_drift_another_package_is() {
         m.drift(now),
         [pair("remove", OWN_PACKAGE), pair("upgrade", "zed")]
     );
+}
+
+/// WP-088: own changes left open (an engine stop between the two appends,
+/// rows from before rule 8; here written with `seldon event`) are
+/// explained by the next capture, whatever it collects; a row that has a
+/// resolution keeps it, adding Seldon or choosing an older one stays
+/// drift, and nothing creates a case.
+#[test]
+fn own_changes_left_open_are_explained_by_the_next_capture() {
+    let m = Machine::new();
+    m.plugins(&[]);
+    m.capture(T0, "plugins"); // baseline
+    let event = |now, source, kind, subject| own_event(&m, now, source, kind, subject);
+    let update = event(T0, "plugins", "plugin-update", OWN_PLUGIN);
+    let upgrade = event(
+        "2026-10-01T10:01:00+02:00",
+        "pacman",
+        "upgrade",
+        OWN_PACKAGE,
+    );
+    let dismissed = event(
+        "2026-10-01T10:02:00+02:00",
+        "plugins",
+        "plugin-enable",
+        OWN_PLUGIN,
+    );
+    event(
+        "2026-10-01T10:03:00+02:00",
+        "plugins",
+        "plugin-add",
+        OWN_PLUGIN,
+    );
+    event(
+        "2026-10-01T10:04:00+02:00",
+        "pacman",
+        "downgrade",
+        OWN_PACKAGE,
+    );
+    event(
+        "2026-10-01T10:05:00+02:00",
+        "plugins",
+        "plugin-update",
+        OTHER,
+    );
+    m.run(
+        "2026-10-01T10:06:00+02:00",
+        &["drift", "dismiss", &dismissed, "--", "tried it"],
+    );
+    let cases = |m: &Machine| {
+        std::fs::read_dir(m.logbook.join("work/active"))
+            .unwrap()
+            .count()
+    };
+    let active = cases(&m);
+    let lines = m.ledger().len();
+
+    // a capture that collects nothing of its own explains them
+    let now = "2026-10-01T10:20:00+02:00";
+    let c = m.capture(now, "plugins");
+    assert_eq!(c["written"], 0, "{c}");
+    assert_eq!(c["explainedSelf"], 2, "{c}");
+    assert_eq!(m.ledger().len(), lines + 2);
+    let resolutions = |id: &str| -> Vec<Value> {
+        m.ledger()
+            .into_iter()
+            .filter(|e| e["kind"] == "resolution" && e["refersTo"] == id)
+            .collect()
+    };
+    let (own, _) = m.event("plugin-update", OWN_PLUGIN);
+    assert_eq!(own["id"], update);
+    assert_explained_as_own(&own, &resolutions(&update), "seldon's own plugin");
+    let (own, _) = m.event("upgrade", OWN_PACKAGE);
+    assert_explained_as_own(&own, &resolutions(&upgrade), "seldon's own package");
+    let kept = resolutions(&dismissed);
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert_eq!(kept[0]["resolution"], "dismissed", "{kept:?}");
+    assert_eq!(
+        m.drift(now),
+        [
+            pair("plugin-update", OTHER),
+            pair("downgrade", OWN_PACKAGE),
+            pair("plugin-add", OWN_PLUGIN),
+        ]
+    );
+    assert_eq!(cases(&m), active, "no case");
+    assert_valid_index(&m.index());
+
+    // idempotent
+    let again = m.capture("2026-10-01T10:40:00+02:00", "plugins");
+    assert_eq!(again["explainedSelf"], 0, "{again}");
+    assert_eq!(m.ledger().len(), lines + 2);
+}
+
+/// `seldon event <source> <kind> --subject <subject>` at `now`; the id.
+fn own_event(m: &Machine, now: &str, source: &str, kind: &str, subject: &str) -> String {
+    let out = m.run(
+        now,
+        &["event", source, kind, "--subject", subject, "--json"],
+    );
+    json(&out)["event"]["id"].as_str().unwrap().to_string()
+}
+
+/// WP-088 review N1: when the ledger cannot be read after the append,
+/// the capture still explains what it wrote and says that it did not
+/// check the earlier rows; the next readable capture catches up.
+#[test]
+fn an_unreadable_ledger_explains_the_new_changes_and_catches_up_later() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let m = Machine::new();
+    m.plugins(&[(OWN_PLUGIN, true, "0.1.0")]);
+    m.capture(T0, "plugins"); // baseline
+    own_event(
+        &m,
+        "2026-07-15T10:00:00+02:00",
+        "plugins",
+        "plugin-enable",
+        OWN_PLUGIN,
+    );
+    let july = m.logbook.join("ledger/2026-07.jsonl");
+    let mode =
+        |m: u32| std::fs::set_permissions(&july, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o000);
+    if std::fs::read(&july).is_ok() {
+        mode(0o644);
+        eprintln!("skipped: mode 000 does not keep this user (root) out");
+        return;
+    }
+    m.plugins(&[(OWN_PLUGIN, true, "0.1.2")]);
+    let out = m.run(
+        "2026-10-01T10:20:00+02:00",
+        &["capture", "--source", "plugins", "--json"],
+    );
+    mode(0o644);
+    let c = json(&out);
+    assert_eq!(
+        (c["written"].clone(), c["explainedSelf"].clone()),
+        (1.into(), 1.into()),
+        "{c}"
+    );
+    let err = stderr(&out);
+    assert!(
+        err.contains("seldon: warning: seldon's earlier own changes not checked: ")
+            && err.contains("Permission denied"),
+        "{err}"
+    );
+    let (update, resolutions) = m.event("plugin-update", OWN_PLUGIN);
+    assert_explained_as_own(&update, &resolutions, "seldon's own plugin");
+
+    let c = m.capture("2026-10-01T10:40:00+02:00", "plugins");
+    assert_eq!(c["explainedSelf"], 1, "the July row: {c}");
+    let (enable, resolutions) = m.event("plugin-enable", OWN_PLUGIN);
+    assert_explained_as_own(&enable, &resolutions, "seldon's own plugin");
+}
+
+/// WP-088 review I1: an own change dated after the capture clock (the
+/// clock moved back) gets its resolution at the event's time, so the
+/// index folds it; a row resolved by a line that comes before it in the
+/// ledger (a dismissal at the earlier clock) keeps that resolution.
+#[test]
+fn an_own_change_dated_after_the_capture_clock_is_explained_once() {
+    let m = Machine::new();
+    m.plugins(&[]);
+    m.capture(T0, "plugins"); // baseline
+    let later = "2026-11-05T10:00:00+01:00";
+    let update = own_event(&m, later, "plugins", "plugin-update", OWN_PLUGIN);
+    let dismissed = own_event(&m, later, "plugins", "plugin-enable", OWN_PLUGIN);
+    m.run(
+        "2026-10-01T10:10:00+02:00",
+        &["drift", "dismiss", &dismissed, "--", "tried it"],
+    );
+
+    let now = "2026-10-01T10:20:00+02:00";
+    let c = m.capture(now, "plugins");
+    assert_eq!(c["explainedSelf"], 1, "{c}");
+    let (own, resolutions) = m.event("plugin-update", OWN_PLUGIN);
+    assert_eq!(own["id"], update);
+    assert_explained_as_own(&own, &resolutions, "seldon's own plugin");
+    assert_eq!(resolutions[0]["ts"], own["ts"], "{resolutions:?}");
+    let (_, kept) = m.event("plugin-enable", OWN_PLUGIN);
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert_eq!(kept[0]["resolution"], "dismissed", "{kept:?}");
+
+    // the index folds it: no drift, the Changelog row explained
+    assert!(
+        !m.drift(now).contains(&pair("plugin-update", OWN_PLUGIN)),
+        "{:?}",
+        m.drift(now)
+    );
+    let ix = m.index();
+    let row = ix["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == update)
+        .expect("the update is in the index");
+    assert_eq!(row["resolution"], "explained", "{row}");
+
+    let lines = m.ledger().len();
+    let again = m.capture("2026-10-01T10:40:00+02:00", "plugins");
+    assert_eq!(again["explainedSelf"], 0, "{again}");
+    assert_eq!(m.ledger().len(), lines);
 }
 
 #[test]
