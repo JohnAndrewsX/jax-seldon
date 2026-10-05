@@ -158,6 +158,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_cases(&cases));
             checks.push(check_ledger(logbook));
             checks.push(check_fences(logbook));
+            checks.push(check_rules(ctx, logbook));
             checks.push(check_collectors(ctx, &effective, logbook));
             checks.extend(check_reset(ctx, logbook));
             checks.extend(check_pending_reset(ctx, &effective, logbook, source));
@@ -442,6 +443,41 @@ fn check_fences(logbook: &Logbook) -> Check {
         Status::Ok,
         "STATUS.md and DECISIONS.md: every generated fence has its end marker",
     )
+}
+
+/// The rules block of `AGENTS.md` against this engine's (ADR-0027,
+/// WP-100): ok when current, else degraded with the fix the panel and the
+/// user run (`seldon rules update`, or `--replace` for a damaged block).
+fn check_rules(ctx: &Context, logbook: &Logbook) -> Check {
+    use crate::logbook::rules::{self, State};
+    let template = super::rules::template(logbook, ctx.now.date_naive());
+    let state = match super::rules::read(logbook) {
+        Ok(None) => rules::state(None, &template),
+        Ok(Some(bytes)) => match String::from_utf8(bytes) {
+            Ok(text) => rules::state(Some(&text), &template),
+            Err(_) => State::NotUtf8,
+        },
+        Err(e) => {
+            return Check::new("rules", Status::Degraded, one_line(&format!("{e}")))
+                .fix("make AGENTS.md readable, then seldon rules update");
+        }
+    };
+    let label = state.label();
+    match state {
+        State::Current => Check::new("rules", Status::Ok, label),
+        State::Newer(_) => Check::new("rules", Status::Degraded, label)
+            .fix("update seldon (the rules come with it)"),
+        State::Damaged(_) => Check::new("rules", Status::Degraded, label).fix(
+            "restore the rules block's marker lines in AGENTS.md, or seldon rules update --replace (archives the file)",
+        ),
+        State::NotUtf8 => Check::new("rules", Status::Degraded, label)
+            .fix("seldon rules update --replace (archives the file)"),
+        State::Changed => Check::new("rules", Status::Degraded, label)
+            .fix("seldon rules update (archives your copy)"),
+        State::Outdated(_) | State::Missing => {
+            Check::new("rules", Status::Degraded, label).fix("seldon rules update")
+        }
+    }
 }
 
 /// 1-based line numbers of end markers that close no fence: one before

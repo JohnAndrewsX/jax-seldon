@@ -6,6 +6,7 @@ pub mod git;
 pub mod journal;
 pub mod layout;
 pub mod lock;
+pub mod rules;
 pub mod templates;
 
 use std::path::{Path, PathBuf};

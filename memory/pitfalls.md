@@ -1902,3 +1902,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A mutant script that parses failing test names must keep names with
   `::`** (`generic::…`, `commands::agent::tests::…`); dropping them made
   six killed mutants look "killed by nothing".
+
+## 2026-10-05 · WP-100 (agent rules v2)
+
+- **A fenced template must not quote its own marker text.** The v1 rules
+  named the fences as `<!-- seldon:begin … -->` / `<!-- seldon:end -->`;
+  inside the new `rules v2` block that prose line would end the block.
+  The v2 text says "the `seldon:begin` and `seldon:end` marker lines"
+  instead, and `logbook::rules` has a test that the block body holds no
+  `<!-- seldon:` text. Any future fenced template needs the same.
+- **`"+2".parse::<u32>()` is `Ok(2)`.** A digit check before `parse` is
+  load-bearing: the mutant that dropped it survived until the test had a
+  `v+2` marker. Test the sign, not only letters and overflow.
+- **The guard blocks a read-only `grep` whose pattern names Omarchy's
+  package-add subcommand** ("omarchy command that changes the system").
+  Search for other words, or ask; do not rephrase to get the same search
+  through (ORCHESTRATION.md §11).
+- **A rules text must name only commands the engine it ships with has.**
+  `scripts/docs-check.sh` checks every `seldon …` in the guides against
+  `--help`; for the logbook's `AGENTS.md` templates the init test
+  `every_command_in_agents_md_is_one_this_engine_has` does the same
+  (subcommand words and every `--flag` of each code span). So the v2
+  rules use `plan start --snapshot` and a *Log* line where ADR-0027 names
+  `plan snapshot` and `plan set`, which come with WP-101.

@@ -107,9 +107,13 @@ no snapshot · `R1` reversible by hand in minutes with a known command,
 the Plan names the rollback step · `R2` rollback needs the plan and a
 snapshot or backup (`plan start --snapshot`), verify before closing ·
 `R3` can break boot, login or the shell, snapshot mandatory, the human's
-explicit go per step, never unattended. Who closes: an agent moves a
-case to `verification`; `plan done` is the human's call unless the Plan
-pre-authorises it (ADR-0023).
+explicit go per step, never unattended. Who closes (ADR-0027 §5,
+superseding ADR-0023 §1): the agent that worked the case verifies and
+closes it when the Plan's verification passes — *Result* filled with the
+evidence, then `plan verify` and `plan done` with `--actor agent:<name>`;
+nothing is required of the user afterwards, and the ledger names the
+actor of every step. A person may close any case. The engine-side close
+conditions and the `closed-by-agent` tag are WP-101's.
 
 Status transitions (engine enforced): `queued → active → verification →
 completed`, `* → dropped`. Moving between folders is done by the engine

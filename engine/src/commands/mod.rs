@@ -17,6 +17,7 @@ pub mod manual;
 pub mod open;
 pub mod plan;
 pub mod rebuild;
+pub mod rules;
 pub mod setup;
 pub mod status;
 pub mod watch;
