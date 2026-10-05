@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 493d0a9 -->
+<!-- source: en/05-cli-reference.md @ 35a02ff -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -45,6 +45,7 @@ Commands:
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
   import            Import an earlier logbook (dry run unless --apply)
+  rules             The agent rules in the logbook's AGENTS.md: update
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
   help              Print this message or the help of the given subcommand(s)
@@ -683,6 +684,56 @@ Arguments:
 
 Options:
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+### seldon rules
+
+Die Agentenregeln in der `AGENTS.md` des Logbuchs.
+
+<!-- help: seldon rules -->
+```text
+The agent rules in the logbook's AGENTS.md: update
+
+Usage: seldon rules [OPTIONS] <COMMAND>
+
+Commands:
+  update  Bring the rules block of AGENTS.md up to this release; text outside it is kept
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+```
+<!-- /help -->
+
+### seldon rules update
+
+Bringt Seldons Block in `AGENTS.md`, zwischen den Zeilen
+`<!-- seldon:begin rules v2 -->` und `<!-- seldon:end -->`, auf die
+Regeln dieser Version und behält den Rest der Datei. Eine Datei aus
+einer früheren Version hat keinen Block: Sie bekommt ihn oben, und dein
+alter Text bleibt darunter stehen, unter `## Your rules (kept)`, außer
+er ist genau die Datei, die jene Version geschrieben hat. `--replace`
+verschiebt die ganze alte Datei nach `archive/AGENTS-<datum>.md` und
+schreibt nur die neuen Regeln. Der Befehl gibt die Änderung als Diff aus
+und committet sie als `seldon: rules update`; ein zweiter Aufruf ändert
+nichts. Einen beschädigten Block oder einen aus einer neueren
+Seldon-Version weist er ab (Exit 1) und lässt die Datei, wie sie ist.
+`seldon doctor` nennt diesen Befehl, wenn die Regeln nicht aktuell sind;
+siehe
+[Mit Agenten arbeiten](04-working-with-agents.md#die-regeln-eines-älteren-logbuchs-erneuern).
+
+<!-- help: seldon rules update -->
+```text
+Bring the rules block of AGENTS.md up to this release; text outside it is kept
+
+Usage: seldon rules update [OPTIONS]
+
+Options:
+      --replace        Archive the whole file to archive/AGENTS-<date>.md and write the template
+
+Examples:
+  seldon rules update
+  seldon rules update --replace
 ```
 <!-- /help -->
 
