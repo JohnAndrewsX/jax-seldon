@@ -214,6 +214,17 @@ struct InitCmd {
 
 fn main() -> ExitCode {
     let argv: Vec<OsString> = std::env::args_os().collect();
+    // `seldon hook claude-code`, the line `hook install` writes, runs
+    // before every tool call: it skips building the parser of every
+    // command (about 0.15 ms of the hook's budget, WP-092) and gets what
+    // the parser would give, no global option set
+    if is_plain_claude_code_hook(&argv) {
+        commands::hook::run_agent_hook(
+            || Context::from_env(false, false, false, None, None),
+            commands::hook::HookCommand::ClaudeCode,
+        );
+        return ExitCode::SUCCESS;
+    }
     let cli = match Cli::try_parse_from(&argv) {
         Ok(cli) => cli,
         Err(err) => return parse_error(&err, &argv),
@@ -253,6 +264,11 @@ fn main() -> ExitCode {
         }
         Err(err) => fail(json, err.exit(), &err.to_string()),
     }
+}
+
+/// `seldon hook claude-code` and nothing else.
+fn is_plain_claude_code_hook(argv: &[OsString]) -> bool {
+    matches!(argv, [_, hook, harness] if hook == "hook" && harness == "claude-code")
 }
 
 fn run(cli: Cli) -> Result<Output, Error> {
@@ -478,6 +494,43 @@ fn detail(err: &clap::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-092: the fast path of `main` takes exactly the line the parser
+    /// reads as `hook claude-code` with no global option set.
+    #[test]
+    fn plain_claude_code_hook_is_what_the_parser_reads() {
+        let argv = |args: &[&str]| -> Vec<OsString> {
+            std::iter::once("seldon")
+                .chain(args.iter().copied())
+                .map(OsString::from)
+                .collect()
+        };
+        let plain = argv(&["hook", "claude-code"]);
+        assert!(is_plain_claude_code_hook(&plain));
+        let Cli {
+            version: false,
+            json: false,
+            logbook: None,
+            quiet: false,
+            no_commit: false,
+            config: None,
+            command: Some(Command::Hook(h)),
+        } = Cli::try_parse_from(&plain).unwrap()
+        else {
+            panic!("not a plain `hook claude-code`");
+        };
+        assert!(matches!(h.command, commands::hook::HookCommand::ClaudeCode));
+        for other in [
+            &["hook", "claude-code", "--json"][..],
+            &["--quiet", "hook", "claude-code"],
+            &["hook", "generic"],
+            &["log", "claude-code"],
+            &["hook"],
+            &["hook", "claude-code", "x"],
+        ] {
+            assert!(!is_plain_claude_code_hook(&argv(other)), "{other:?}");
+        }
+    }
 
     fn wants(args: &[&str]) -> bool {
         let argv: Vec<OsString> = std::iter::once("seldon")
