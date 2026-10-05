@@ -210,8 +210,12 @@ pub const OMARCHY_PATH_DEFAULT: &str = "/usr/share/omarchy";
 
 /// `$OMARCHY_PATH`, or [`OMARCHY_PATH_DEFAULT`] when it is unset or empty.
 pub fn omarchy_path() -> PathBuf {
-    let value = std::env::var_os("OMARCHY_PATH");
-    match omarchy_path_to_set(value.as_deref()) {
+    omarchy_path_from(std::env::var_os("OMARCHY_PATH").as_deref())
+}
+
+/// [`omarchy_path`] for the engine's own `value`.
+fn omarchy_path_from(value: Option<&std::ffi::OsStr>) -> PathBuf {
+    match omarchy_path_to_set(value) {
         Some(default) => default.into(),
         None => value.unwrap_or_default().into(),
     }
@@ -586,6 +590,13 @@ mod tests {
             Some("/usr/share/omarchy")
         );
         assert_eq!(omarchy_path_to_set(Some(OsStr::new("/opt/omarchy"))), None);
+        for unset in [None, Some(OsStr::new(""))] {
+            assert_eq!(omarchy_path_from(unset), Path::new("/usr/share/omarchy"));
+        }
+        assert_eq!(
+            omarchy_path_from(Some(OsStr::new("/opt/omarchy"))),
+            Path::new("/opt/omarchy")
+        );
     }
 
     #[test]
