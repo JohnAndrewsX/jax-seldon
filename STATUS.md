@@ -16,7 +16,6 @@ decisions).
 |---|---|---|---|---|---|
 | WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
 | WP-088 | state reset: pending baseline, own-change catch-up | Engine | `engine-088` (opus) | `wt/WP-088` · `wp/088-reset-followups` | 2026-10-05 |
-| WP-089 | OMARCHY_PATH default, desktop entries watched | Engine | `engine-089` (opus) | `wt/WP-089` · `wp/089-environment` | 2026-10-05 |
 | WP-090 | plugin: stale code after update, harness record order | Plugin | `plugin-090` (opus) | `wt/WP-090` · `wp/090-stale-plugin` | 2026-10-05 |
 
 ## Queued (next up)
@@ -40,6 +39,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-089 Omarchy programs run by the engine get
+  `OMARCHY_PATH=/usr/share/omarchy` when it is unset or empty (ssh, cron,
+  scripts: the plugins collector no longer degrades; checked live on the
+  test host, over ssh and with `env -i`); `~/.local/share/applications`
+  is a default watch path with `mimeinfo.cache` excluded; guide 06 gives
+  the line for existing configs; one review round; merged. E-mail
+  redaction for desktop entry names follows as WP-093 in the same release.
 - 2026-10-05 WP-086 Seldon's own plugin updates (update, enable, disable)
   and package upgrades are explained by rule 8, not drift; adding,
   installing, downgrading and removing stay drift (no provenance check);
