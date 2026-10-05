@@ -773,9 +773,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "email",
-        "Mail an dave-o@example.org geschickt.",
+        "Mail an dave-o@example.de geschickt.",
         "dave-o",
-        "Mail an ‹redacted›@example.org geschickt.",
+        "Mail an ‹redacted›@example.de geschickt.",
     ),
     (
         "email",
