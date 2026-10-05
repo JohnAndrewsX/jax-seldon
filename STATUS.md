@@ -376,12 +376,16 @@ lock, small engine follow-up from the WP-049 review). (see `work/queued/`)
   state-loss event kind are bundled into one contract v2 ADR for v0.2.0.
 - Global hook installs serve only sessions inside the logbook by default
   (`[hooks] scope = "logbook"`): confirmed.
-- v0.1.2 released 2026-10-04 (tag on the operator's go, run 37236761814:
+- v0.1.3 released 2026-10-05 (0.1.3 wave, run 37289208720); v0.1.2 released 2026-10-04 (tag on the operator's go, run 37236761814:
   build, release, aur (no-op), bump, plugin all green; tarball and install.sh
   attestations verified with `gh attestation verify`; plugin repository
   tagged). Next: the contract v2 bundle (v0.2.0) and the 0.1.3 follow-ups.
 
 ## Open questions for the operator
+- **Release v0.1.3 published 2026-10-05** (run 37289208720: build,
+  release, aur (no-op), bump, plugin all green; tarball and install.sh
+  attestations verified; plugin repository at `v0.1.3`). Update your
+  machines with the installer one-liner and the plugin update command.
 - **Release v0.1.2 published 2026-10-04:** GitHub release with install.sh,
   the musl tarball, the source tarball and SHA256SUMS, all attested;
   PKGBUILD/.SRCINFO bumped on main (395ad08); plugin repository at
