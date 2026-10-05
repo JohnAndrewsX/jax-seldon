@@ -848,13 +848,16 @@ and similar options; `--api-key`, `--access-key`, `--secret-key`;
 `token=`; `…SECRET=`, `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`,
 `…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
 assignments (also `?api_key=`); the non-empty string value of an inline
-JSON key that ends in `password`, `passwd`, `passphrase`, `secret` or
-`token` (`"password": "…"`, `"client_secret":"…"`, also escaped inside a
-shell string as `\"password\":\"…\"`; not `"password_hint"` or
-`"token_type"`); `Authorization:`; headers whose name ends in
+JSON key that ends in `password`, `passwd`, `passphrase`, `secret`,
+`token`, `api_key` or `apiKey` (`"password": "…"`, `"client_secret":"…"`,
+`"openaiApiKey": "…"`, also escaped inside a shell string as
+`\"password\":\"…\"`, with white space and newlines around the `:`;
+not `"password_hint"` or `"token_type"`); `Authorization:`; headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
-`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`); a non-empty
-`Cookie:` or `Set-Cookie:` value;
+`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`); a
+`Cookie:` or `Set-Cookie:` value on the same line that starts with a
+cookie pair `name=` (RFC 6265; not `cookie: banner fixed` or
+`Cookie: $COOKIE`);
 `(AKIA|ASIA)[0-9A-Z]{16}`; `gh[pousr]_[A-Za-z0-9]{36,}` and
 `github_pat_…`; `glpat-…`; `xox[abposr]-…`; `sk-`/`sk_` keys
 (`\bsk[-_][A-Za-z0-9_-]{20,}`); anything after `-p ` for
@@ -901,7 +904,14 @@ matches across the marker's edge is applied as written). Each built-in
 rule is compiled once per process, and only when the text holds one of
 its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
-case-insensitive matching folds them (`redact::trigger_text`). An invalid user pattern is a user error
+case-insensitive matching folds them (`redact::trigger_text`); a trigger
+may join literals with `+` that must all be present, so a `curl` rule
+needs `curl` and its option (`curl+-x`; WP-084). Word boundaries in the
+rules are ASCII (`(?-u:\b)`): a Unicode `\b` sends a regex to the slow
+matcher on any non-ASCII text, the marker of an earlier rule included
+(WP-084: a 16 KB curl line took 5.4 ms, 0.13 ms with ASCII boundaries).
+The `…=` assignment rules have no boundary, so a name that starts with
+`ſ` or `K` still matches. An invalid user pattern is a user error
 (exit 1): Seldon writes nothing rather than unredacted text. `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
 before a rule existed are not rewritten.
