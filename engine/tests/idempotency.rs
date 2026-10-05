@@ -551,6 +551,28 @@ mod idempotency {
     }
 
     #[test]
+    fn a_twin_removed_and_added_again_across_two_failed_cursor_saves() {
+        // Bob's removal starts from Bob's hash: it cannot go to Alice's
+        // entry, although both exist in the cursor's generation and
+        // neither is missing in the generation stored last (WP-103)
+        let mut b = support::Bench::new("crash-config-twin-back");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Alice 1", None);
+        entry(&bob, "Bob 1", None);
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        let before = b.cursors.clone();
+        std::fs::remove_file(&bob).unwrap();
+        assert_eq!(twin_run(&mut b, "10:10"), [(REMOVE, Some("Bob 1"), None)]);
+        b.cursors = before.clone();
+        entry(&bob, "Bob 2", None);
+        assert_eq!(twin_run(&mut b, "10:20"), [(ADD, None, Some("Bob 2"))]);
+        b.cursors = before;
+        assert_eq!(twin_run(&mut b, "10:30"), []);
+        assert_eq!(twin_run(&mut b, "10:40"), []);
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
     fn a_step_taken_again_after_two_failed_cursor_saves_is_recorded() {
         // A→B and B→A recorded while the cursor stayed on A: the manifest
         // is back on the cursor's generation, and the next A→B is a new
