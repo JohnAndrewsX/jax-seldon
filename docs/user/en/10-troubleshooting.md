@@ -46,6 +46,7 @@ button that fixes it.
 | Index format mismatch | the plugin and the engine speak different versions of the index | update the older one. Plugin: `omarchy plugin update jax.seldon`. Engine: *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)) |
 | Engine too old | the engine is older than this plugin needs (the `engineMin` in its manifest) | *Update in terminal* runs the installer again (until the AUR package exists; see [Update and uninstall](11-update-and-uninstall.md)), then *Check again* |
 | Snapshots not readable | snapper refuses your user and `/.snapshots` is not readable | *Run in terminal* runs the one-time read grant; you type your password there |
+| Capture warned | a capture the plugin ran finished with a warning, such as [a state reset](#a-state-reset-was-recorded); the notice shows the first line of each warning, the pointer over it shows all of it | no button: do what the warning says. The notice goes away after the next capture without warnings |
 
 The plugin looks for the engine when the shell starts and when you press
 *Check again*. After you installed the engine, press *Check again*, or
@@ -190,7 +191,9 @@ and miss little, the other collectors miss every change made in between.
 
 The capture wrote a note with the subject `state-reset` to the ledger,
 so the gap stays visible, and `seldon doctor` shows a `degraded` `state`
-row until the next capture.
+row until the next capture. When the plugin ran that capture, the panel
+shows the warning as a "Capture warned" notice until a capture without
+warnings.
 
 If you have a backup of the state directory, restore it and run a
 capture; that capture records what changed since the backup (see

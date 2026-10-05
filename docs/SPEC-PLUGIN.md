@@ -85,6 +85,16 @@ plugin/
   before. An explicit *Capture now* replaces a pending retry (WP-068):
   the Changelog button (a click while it reads *Capturing*, WP-078), the
   bar's right click, the `c` key and IPC `capture` alike.
+- Capture warnings (WP-085): the `warnings` of a capture the plugin ran
+  that exited 0 (`capture --json`, SPEC-ENGINE §3; today the state reset
+  of WP-081 with its restore hint) are kept as the engine wrote them in
+  `captureWarnings` and become a neutral notice under the status and
+  snapper banners on every tab: "Capture warned", the first line of each
+  warning, all of each on hover. It has no action (no page of the user
+  guide ships with the plugin; the warning names its section) and is set
+  as plain text, never part of a command. It stays until a capture the
+  plugin runs exits 0 without warnings; a failed or locked capture leaves
+  it. Captures run outside the plugin (the CLI, hooks) are not seen.
 - One call at a time per family (plan and agent, drift, decide): a call
   refused because one of its family is pending returns false and sets
   `busyRefusal` to `{ family, action, caseId, eventId, text }` with the
@@ -255,7 +265,9 @@ collector state this banner reads (reloading the index would not); after
 Check again" under its buttons until the index next changes; not
 initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
 *Check again*; index stale →
-*Capture now*; crisis → red strip "N changes in the red zone need a reason".
+*Capture now*; capture warnings → the neutral "Capture warned" notice of
+§3 under the banners, without an action; crisis → red strip "N changes
+in the red zone need a reason".
 
 ## 6. Overlay.qml — Prime Radiant
 
