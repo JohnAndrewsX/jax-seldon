@@ -1514,7 +1514,13 @@ mod setup {
             ),
             (
                 "## Attended or not",
-                &["SELDON_ATTENDED=1", "seldon agent start", "sudo"],
+                &[
+                    "SELDON_ATTENDED=1",
+                    "seldon agent start",
+                    "sudo",
+                    "SELDON_ACTOR",
+                    "agent:<name>",
+                ],
             ),
             ("## Instructions and data", &["*Intent*", "READMEs"]),
             (
@@ -1537,7 +1543,15 @@ mod setup {
             ),
             (
                 "## R3: the one stop",
-                &["[drift] alwaysRed", "-Sp --print-format %n", "makedepends"],
+                &[
+                    "[drift] alwaysRed",
+                    "-Sp --print-format %n",
+                    "makedepends",
+                    "`-Sy`, `-Syy`",
+                    "-Syu",
+                    "omarchy update",
+                    "checkupdates",
+                ],
             ),
             (
                 "## Privileged steps and snapshots",
@@ -1545,7 +1559,7 @@ mod setup {
                     "sudo",
                     "snapper --csvout list-configs",
                     "sudo snapper -c <config> create -c number -p -d \"<ID>\"",
-                    "seldon plan start <ID> --snapshot <N>",
+                    "snapshot <N> (<config>) before <step>",
                     "omarchy-snapshot create",
                 ],
             ),
@@ -1557,6 +1571,7 @@ mod setup {
                     "omarchy pkg aur add",
                     "makepkg -si",
                     "~/.local",
+                    "curl … | sh",
                 ],
             ),
             (
@@ -1599,7 +1614,10 @@ mod setup {
                     "xargs",
                 ],
             ),
-            ("## Never", &["SELDON_LOGBOOK", "git push --force"]),
+            (
+                "## Never",
+                &["SELDON_LOGBOOK", "git push --force", "areas/*/AGENTS.md"],
+            ),
         ];
         // the v1 rules ADR-0027 drops, in either language
         const DROPPED: [&str; 8] = [
