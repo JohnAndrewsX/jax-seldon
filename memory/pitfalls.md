@@ -1597,3 +1597,19 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   note's detail therefore says "may not be recorded", and the WP rule
   (no note while the ledger holds no event of the source) keeps the first
   capture of a logbook quiet.
+## 2026-10-05 · WP-082 (Engine Dev)
+
+- **chrono's `earliest()` in the repeated hour is the *later* instant.**
+  chrono 0.4.45 orders `LocalResult::Ambiguous(a, b)` by offset, the
+  smaller first (`(std, dst)` for a POSIX rule, by `ut_offset` for a
+  TZif file), and `earliest()` returns `a`. `Tz::localize` (pacman and,
+  before WP-082, snapper) therefore takes 02:30+01:00, not +02:00. Sort
+  the two instants when the order matters.
+- **A real DST zone in a test needs no tzdata:** chrono reads a POSIX
+  rule from `TZ` (`CET-1CEST,M3.5.0,M10.5.0/3`). `Tz` has no zone
+  variant, so the fold tests run the binary through `common::Env` with
+  `.env("TZ", …)`; never `set_var` in the test process.
+- **A mutant that only changes the cursor can hide behind the ledger
+  dedupe.** A test that fakes an older cursor must fake the matching
+  ledger line too, or the false pair is dropped as already recorded and
+  the mutant survives (WP-082 M1 first survived the older-cursor test).
