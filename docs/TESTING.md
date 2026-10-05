@@ -309,7 +309,11 @@ rebuild at start and one change-triggered rebuild run (500 events in the
 index) and reads `VmRSS` and `VmHWM` (peak) from
 `/proc/<pid>/status`. The bound is about the shipped, optimised binary; a
 debug binary carries ~6 MB more code, so under the test profile only the
-growth over the idle watcher is bounded (< 6 MB). `just check-rss` runs
+growth of the heap (`RssAnon`) over the idle watcher is bounded (< 6 MB;
+~1.8 MB on the ×10 fixture). `VmRSS` and the peak are printed there for
+information only: most of them are the debug binary's file-mapped pages,
+whose idle share moves by up to ~0.8 MB between builds of the same code
+(WP-091 round 3). `just check-rss` runs
 the test under `--profile bench`, where the peak must stay under 10 MB.
 It is not part of `just check` and CI does not run it; run it before the
 handover of any WP that touches `engine/src/index/` or
