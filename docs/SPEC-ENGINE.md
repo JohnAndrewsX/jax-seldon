@@ -373,10 +373,12 @@ state reset for <sources>: cursors missing in <state dir>, so changes
 made since the last capture may not be recorded` (or `cursors unreadable
 in <state dir>`, or `cursors in <state dir> bound to another logbook`);
 fix: restore the state directory from a backup now (user guide), or run
-`seldon capture` to accept the new baseline; for another logbook, that
-there is nothing to restore. No row for a fresh logbook (no event of a
-collector source), for a collector that never ran successfully here, or
-when `cursors.json` cannot be read (its error row). Not predicted: a
+`seldon capture` to accept the new baseline (`seldon --logbook <path>
+capture` when doctor's logbook came from `--path` or `--logbook`); for
+another logbook, that there is nothing to restore. No row for a fresh
+logbook (no event of a collector source), for a collector that never ran
+successfully here, when `cursors.json` cannot be read (its error row), or
+when the ledger cannot be read (the `ledger` row). Not predicted: a
 collector that degrades in that capture takes no baseline, so the row can
 name more collectors than the note; `manifest` and `owned` losses show in
 their error rows. After that capture the row is gone and the reset row
