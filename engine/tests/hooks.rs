@@ -538,10 +538,11 @@ mod claude_code {
     /// SPEC-ENGINE §1 and §8 at scale (WP-076): a call the hook does not
     /// record, a recorded command and a recorded curl line whose URL leaves
     /// a marker before the later redaction rules run (WP-084) each take
-    /// < 5 ms, median wall time of 21 calls, process start included (`assert_within_budget`). A
-    /// recorded command syncs its ledger line and case file: on tmpfs, as
-    /// in the default temp dir here; on a disk the sync alone takes longer
-    /// (SPEC §1). Returns the number of commands recorded.
+    /// < 5 ms, median wall time of 21 calls, process start included
+    /// (`assert_within_budget`). A recorded command syncs its ledger line
+    /// and case file: on tmpfs, as in the default temp dir here; on a disk
+    /// the sync alone takes longer (SPEC §1). Returns the number of
+    /// commands recorded.
     fn hook_budget(h: &Hooks, case: &str, lines: &str) -> usize {
         const BUDGET: std::time::Duration = std::time::Duration::from_millis(5);
         let skipped = payload("claude-code-non-mutating.json", "PreToolUse");
