@@ -91,7 +91,10 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// finds the option again in the same command ([`Rule::matches`]). The
 /// regexes are compiled on first use; a text whose ASCII lower case holds
 /// none of `triggers` cannot match (empty: always try; see
-/// [`holds_trigger`] for `+`).
+/// [`holds_trigger`] for `+`). A match in which one of the groups in
+/// `unless` takes part is left as it is: such a group stands for context
+/// that the `regex` crate cannot look behind or ahead for, so the pattern
+/// matches it and the rule then keeps the match.
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
@@ -101,6 +104,7 @@ struct Rule {
     next_re: OnceLock<Regex>,
     replacement: String,
     check: Option<fn(&str) -> bool>,
+    unless: &'static [&'static str],
     triggers: &'static [&'static str],
 }
 
@@ -177,8 +181,9 @@ impl Rule {
         self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(lower, t))
     }
 
-    /// Whether this match is replaced: not inside an existing marker and,
-    /// for a checked rule, with a value that passes the check.
+    /// Whether this match is replaced: not inside an existing marker,
+    /// without a group of `unless` and, for a checked rule, with a value
+    /// that passes the check.
     fn applies(&self, found: &Found, markers: &[(usize, usize)]) -> bool {
         let (m_start, m_end) = found.range();
         // only the last marker that starts at or before the match can
@@ -187,6 +192,7 @@ impl Rule {
         let i = markers.partition_point(|&(start, _)| start <= m_start);
         let inside = i > 0 && m_end <= markers[i - 1].1;
         !inside
+            && !self.unless.iter().any(|g| found.caps.name(g).is_some())
             && self
                 .check
                 .is_none_or(|check| found.caps.name("v").is_some_and(|v| check(v.as_str())))
@@ -295,7 +301,7 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 23] = [
+pub const BUILTIN: [&str; 24] = [
     "url-userinfo",
     "password-option",
     "secret-option",
@@ -319,6 +325,7 @@ pub const BUILTIN: [&str; 23] = [
     "cookie-option",
     "sshpass-password",
     "registry-login-password",
+    "email",
 ];
 
 /// The built-in rules, shared by every [`Redactor`] of the process; each
@@ -386,6 +393,7 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "cookie-option" => &["curl+-b", "curl+--cookie"],
         "sshpass-password" => &["sshpass"],
         "registry-login-password" => &["login"],
+        "email" => &["@"],
         _ => &[],
     }
 }
@@ -399,6 +407,7 @@ fn rule(name: &'static str, pattern: &str, replacement: &str) -> Rule {
         next_re: OnceLock::new(),
         replacement: replacement.to_string(),
         check: None,
+        unless: &[],
         triggers: triggers(name),
     }
 }
@@ -611,7 +620,35 @@ fn builtin_rules() -> Vec<Rule> {
             &format!("(?:{VALUE})"),
             KEEP_PREFIX,
         ),
+        // `me@example.com` → `‹redacted›@example.com`: the domain stays,
+        // so a file named after an account can still be found. Not an
+        // address: `user@host` without a dot, a version (`pkg@1.2.3`),
+        // an npm scope (`@scope/pkg`), and, through `unless`, the
+        // userinfo of a URL (`url-userinfo`'s), `host:path` or a port
+        // after the domain (`git@github.com:owner/repo`) and a systemd
+        // unit (`getty@tty1.service`)
+        Rule {
+            unless: &["url", "port", "unit"],
+            ..rule("email", &email(), "‹redacted›@${domain}")
+        },
     ]
+}
+
+/// One character of an address beyond ASCII (`jürgen@müller.example`):
+/// anything but the quotes of [`REDACTED`] (U+2039, U+203A), so a marker
+/// is never part of an address.
+const NON_ASCII: &str = r"\x{80}-\x{2038}\x{203B}-\x{10FFFF}";
+
+/// An e-mail address: a local part, `@`, and a domain of at least two
+/// labels whose last one (the top-level domain) holds letters only. The
+/// groups that rule `email` keeps as they are come first and last: `url`
+/// is the start of a URL with userinfo as `url-userinfo` reads it (with a
+/// `:`, a password may hold `/`), so an `@` that rule masks up to is no
+/// address; `unit` and `port` follow the domain.
+fn email() -> String {
+    format!(
+        r#"(?P<url>(?-u:\b)[A-Za-z][A-Za-z0-9+.-]*://(?:[^/\s'"@:]*:[^\s'"]*|[^/\s'"]*))?[A-Za-z0-9._%+\-{NON_ASCII}]+@(?P<domain>(?:[A-Za-z0-9\-{NON_ASCII}]+\.)+(?:(?P<unit>service|socket|target|timer|mount|automount|path|slice|scope|swap|device)(?-u:\b)|[A-Za-z{NON_ASCII}]{{2,}}))(?P<port>:\S)?"#
+    )
 }
 
 impl Redactor {
@@ -643,6 +680,7 @@ impl Redactor {
                 next_re: OnceLock::new(),
                 replacement: WHOLE.to_string(),
                 check: None,
+                unless: &[],
                 triggers: &[],
             });
         }

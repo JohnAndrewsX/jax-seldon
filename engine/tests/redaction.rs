@@ -281,9 +281,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sshpass-password",
-        "sshpass -p fakePw15 ssh me@host.example",
+        "sshpass -p fakePw15 ssh me@host",
         "fakePw15",
-        "sshpass -p ‹redacted› ssh me@host.example",
+        "sshpass -p ‹redacted› ssh me@host",
     ),
     (
         "registry-login-password",
@@ -578,9 +578,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sshpass-password",
-        "sshpass -P 'pass;word:' -p fakePw34 ssh me@host.example",
+        "sshpass -P 'pass;word:' -p fakePw34 ssh me@host",
         "fakePw34",
-        "-p ‹redacted› ssh me@host.example",
+        "-p ‹redacted› ssh me@host",
     ),
     (
         "registry-login-password",
@@ -713,9 +713,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     // a `-p` after the command that sshpass runs is that command's
     (
         "sshpass-password",
-        "sshpass -p fakePw37 ssh -p 2222 me@host.example",
+        "sshpass -p fakePw37 ssh -p 2222 me@host",
         "fakePw37",
-        "sshpass -p ‹redacted› ssh -p 2222 me@host.example",
+        "sshpass -p ‹redacted› ssh -p 2222 me@host",
     ),
     // case-insensitive matching folds the Kelvin sign onto `k` and the
     // long s onto `s`; the triggers do the same
@@ -751,6 +751,91 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeKey57",
         "\u{212A}EY=‹redacted›",
     ),
+    // an address keeps its domain (WP-093); a desktop entry's name is a
+    // config event's subject
+    (
+        "email",
+        "~/.local/share/applications/Mail (alice@example.com).desktop",
+        "alice",
+        "~/.local/share/applications/Mail (‹redacted›@example.com).desktop",
+    ),
+    (
+        "email",
+        "~/.local/share/applications/bob.smith+web@example.org.desktop",
+        "bob.smith",
+        "~/.local/share/applications/‹redacted›@example.org.desktop",
+    ),
+    (
+        "email",
+        "git config --global user.email \"carol_99@mail.example.com\"",
+        "carol_99",
+        "user.email \"‹redacted›@mail.example.com\"",
+    ),
+    (
+        "email",
+        "Mail an dave-o@example.org geschickt.",
+        "dave-o",
+        "Mail an ‹redacted›@example.org geschickt.",
+    ),
+    (
+        "email",
+        "mailto:erin@example.com",
+        "erin",
+        "mailto:‹redacted›@example.com",
+    ),
+    (
+        "email",
+        "To: frank@example.com,grace@example.org",
+        "grace",
+        "To: ‹redacted›@example.com,‹redacted›@example.org",
+    ),
+    (
+        "email",
+        "Kontakt (jürgen@müller.example)",
+        "jürgen",
+        "Kontakt (‹redacted›@müller.example)",
+    ),
+    (
+        "email",
+        "curl 'https://h.example/a?to=heidi@example.com'",
+        "heidi",
+        "https://h.example/a?to=‹redacted›@example.com'",
+    ),
+    // a colon after the address with white space after it is no
+    // `host:path`; `.services` is a top-level domain, no unit
+    (
+        "email",
+        "Reply to ivan@example.com: thanks",
+        "ivan",
+        "Reply to ‹redacted›@example.com: thanks",
+    ),
+    (
+        "email",
+        "judy@example.services",
+        "judy",
+        "‹redacted›@example.services",
+    ),
+    // after the SSH remote and the unit the line stays
+    (
+        "email",
+        "git remote add origin git@github.com:example/x.git # by kate@example.com",
+        "kate",
+        "git@github.com:example/x.git # by ‹redacted›@example.com",
+    ),
+    (
+        "email",
+        "systemctl restart getty@tty1.service && mail -s done leo@example.com",
+        "leo@",
+        "getty@tty1.service && mail -s done ‹redacted›@example.com",
+    ),
+    // an SSH login with a dot in the host reads as an address: masked
+    // too, as `ssh://me@host` is a URL with userinfo
+    (
+        "email",
+        "ssh -p 2222 me@host.example",
+        "me@",
+        "ssh -p 2222 ‹redacted›@host.example",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -764,7 +849,7 @@ const CLEAR: &[&str] = &[
     "Logbuch angelegt. Theme osaka-jade, 39 Plugins.",
     "yay -S python-task-manager-application-git",
     "docker run -p 8080:80 nginx",
-    "ssh -p 2222 me@host.example",
+    "ssh -p 2222 me@host",
     "sort -u names.txt",
     "curl --user-agent seldon https://example.com",
     "curl https://example.com:8443/path?q=1#top",
@@ -809,6 +894,19 @@ const CLEAR: &[&str] = &[
     "Fixed curl's output; useradd -U is next",
     // a quoted string ends at the line end
     "git commit -m \"Fix curl 'quote\nhandling' -U flag\"",
+    // no e-mail address (WP-093): an SSH remote and `host:path`, a host
+    // without a dot, versions, npm scopes, systemd units, a scale suffix
+    // without a top-level domain, an image digest
+    "git clone git@github.com:example/x.git",
+    "rsync -a ./ me@host.example:/srv/www",
+    "ssh me@localhost",
+    "npm i @scope/pkg @scope/other@1.2.3 left-pad@1.3.0 react@18.2.0-rc.1",
+    "pnpm add typescript@latest",
+    "systemctl enable --now getty@tty1.service wg-quick@wg0.service",
+    "systemctl --user start app@x.timer app@y.socket user@1000.slice",
+    "monitor = DP-2, 2560x1440@144, 2560x0, 1",
+    "docker pull alpine@sha256:abc123",
+    "Bild icon@2x",
 ];
 
 mod redaction {
@@ -969,6 +1067,32 @@ mod redaction {
             format!(
                 r#"curl -U {REDACTED} -d '{{"token":{REDACTED}}}' -b {REDACTED} -H 'Cookie: {REDACTED}' https://h"#
             )
+        );
+    }
+
+    /// Rule `email` matches only its own rows and no row of another rule:
+    /// a URL with userinfo is `url-userinfo`'s and a proxy's `user:pass@`
+    /// is `proxy-userinfo`'s (the import report counts a line once per
+    /// rule). A masked address is no address, and a second pass changes
+    /// nothing (WP-093).
+    #[test]
+    fn email_rule_is_disjoint_and_stable() {
+        let r = Redactor::builtin();
+        for (rule, input, ..) in TABLE {
+            let matched = r.matching_rules(input);
+            if *rule == "email" {
+                assert_eq!(matched, vec!["email"], "`{input}`");
+            } else {
+                assert!(!matched.contains(&"email"), "{rule}: `{input}`");
+            }
+            let once = r.redact(input);
+            assert!(!r.matching_rules(&once).contains(&"email"), "`{once}`");
+            assert_eq!(r.redact(&once), once, "`{input}`");
+        }
+        // an address on a line with a URL with userinfo is masked too
+        assert_eq!(
+            r.redact("curl https://u:fakePw@h.example/x -d to=mike@example.com"),
+            format!("curl https://{REDACTED}@h.example/x -d to={REDACTED}@example.com")
         );
     }
 
@@ -1222,7 +1346,9 @@ mod commands {
     use serde_json::Value;
 
     use super::REDACTED;
-    use super::common::{Env, Snapper, copy_dir, find_file, fixture_logbook, json, read, stderr};
+    use super::common::{
+        Env, Snapper, copy_dir, find_file, fixture_logbook, json, read, stderr, stdout,
+    };
 
     const T0: &str = "2026-10-03T10:00:00+02:00";
 
@@ -1491,5 +1617,75 @@ mod commands {
                 "fakeVersionValue",
             ],
         );
+    }
+
+    /// A desktop entry named after an account (WP-093): the config
+    /// events, the index and every file of the logbook hold the name with
+    /// the local part masked; a change and a removal still find the file,
+    /// also next to an entry whose masked name is the same, and a second
+    /// capture writes nothing. The manifest in the state directory keeps
+    /// the real names, as it must to compare the files.
+    #[test]
+    fn a_desktop_entry_named_after_an_address_is_masked() {
+        let env = Env::new(Snapper::NoPermissions);
+        let root = env.init_logbook();
+        let dir = env.home.join(".local/share/applications");
+        std::fs::create_dir_all(&dir).unwrap();
+        let alice = dir.join("Mail (alice.webapp@example.com).desktop");
+        let bob = dir.join("Mail (bob.webapp@example.com).desktop");
+        let capture = || {
+            let out = env
+                .command(&["capture", "--source", "config", "--json"])
+                .output()
+                .unwrap();
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{}{}",
+                stdout(&out),
+                stderr(&out)
+            );
+            json(&out)["written"].as_u64().unwrap()
+        };
+        std::fs::write(&alice, "[Desktop Entry]\nName=Mail\n").unwrap();
+        assert_eq!(capture(), 0, "baseline");
+        std::fs::write(&bob, "[Desktop Entry]\nName=Mail\n").unwrap();
+        assert_eq!(capture(), 1);
+        std::fs::write(&alice, "[Desktop Entry]\nName=Mail 2\n").unwrap();
+        assert_eq!(capture(), 1);
+        assert_eq!(capture(), 0, "a second capture writes nothing");
+        std::fs::remove_file(&bob).unwrap();
+        assert_eq!(capture(), 1);
+        assert_eq!(capture(), 0);
+
+        let subject = format!("~/.local/share/applications/Mail ({REDACTED}@example.com).desktop");
+        let events: Vec<(String, String)> = super::common::ledger(&root)
+            .into_iter()
+            .filter(|e| e["source"] == "config")
+            .map(|e| {
+                (
+                    e["kind"].as_str().unwrap().to_string(),
+                    e["subject"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, String)> = ["config-add", "config-change", "config-remove"]
+            .iter()
+            .map(|k| (k.to_string(), subject.clone()))
+            .collect();
+        assert_eq!(events, expected);
+
+        run(&env, &["status"]);
+        let mut all = Vec::new();
+        files(&root, &mut all);
+        all.push(env.home.join(".local/state/seldon/index.json"));
+        for path in &all {
+            let text = String::from_utf8_lossy(&std::fs::read(path).unwrap()).into_owned();
+            for local in ["alice.webapp", "bob.webapp"] {
+                assert!(!text.contains(local), "{local} in {}", path.display());
+            }
+        }
+        let manifest = read(&env.home.join(".local/state/seldon/manifest.json"));
+        assert!(manifest.contains("alice.webapp@example.com"), "{manifest}");
     }
 }
