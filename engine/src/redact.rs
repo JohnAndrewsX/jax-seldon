@@ -39,7 +39,9 @@
 //!
 //! A built-in rule is compiled once per process, and only when a text
 //! holds one of its literal triggers ([`triggers`]); a command line
-//! without `://`, `=`, a token prefix, … compiles none of them.
+//! without `://`, `=`, a token prefix, … compiles none of them, and a
+//! `curl` line compiles a `curl` rule only when it also holds that rule's
+//! option (`-u`, `-x`, `-b`, …).
 
 use std::sync::{LazyLock, OnceLock};
 
@@ -64,7 +66,8 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// template that keeps the non-secret groups (e.g. the option name)
 /// around [`REDACTED`]. With `check`, a match counts only when its group
 /// `v` passes it. The regex is compiled on first use; a text whose ASCII
-/// lower case holds none of `triggers` cannot match (empty: always try).
+/// lower case holds none of `triggers` cannot match (empty: always try;
+/// see [`holds_trigger`] for `+`).
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
@@ -84,7 +87,7 @@ impl Rule {
     /// Whether `lower` (the text through [`trigger_text`]) may hold a
     /// match.
     fn triggered(&self, lower: &str) -> bool {
-        self.triggers.is_empty() || self.triggers.iter().any(|t| lower.contains(t))
+        self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(lower, t))
     }
 
     /// Whether this match is replaced: not inside an existing marker and,
@@ -210,11 +213,18 @@ pub const BUILTIN: [&str; 23] = [
 /// regex is compiled the first time a text triggers its rule.
 static BUILTIN_RULES: LazyLock<Vec<Rule>> = LazyLock::new(builtin_rules);
 
+/// Whether `lower` (the text through [`trigger_text`]) holds `trigger`:
+/// every one of its literals, which a `+` joins (`curl+-x`: both `curl`
+/// and `-x`, anywhere in the text).
+pub fn holds_trigger(lower: &str, trigger: &str) -> bool {
+    trigger.split('+').all(|part| lower.contains(part))
+}
+
 /// Literal text, in lower case, that every match of the built-in rule
-/// `name` contains (any one of them), as [`trigger_text`] spells it. A
-/// rule is tried only when the text holds one; the replacement
-/// `‹redacted›` holds none of them, so the text after an earlier rule
-/// needs no new check.
+/// `name` contains (any one of them, see [`holds_trigger`]), as
+/// [`trigger_text`] spells it. A rule is tried only when the text holds
+/// one; the replacement `‹redacted›` holds no literal of them, so the
+/// text after an earlier rule needs no new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         "url-userinfo" => &["://"],
@@ -257,10 +267,11 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "slack-token" => &["xox"],
         "sk-key" => &["sk-", "sk_"],
         "db-client-password" => &["mysql", "psql", "smbclient"],
-        "curl-user" => &["curl"],
-        "proxy-option" => &["curl", "--proxy-"],
-        "proxy-userinfo" => &["curl", "proxy"],
-        "cookie-option" => &["curl"],
+        // `-U` and `--user` both read `-u` here
+        "curl-user" => &["curl+-u"],
+        "proxy-option" => &["curl+-u", "--proxy-"],
+        "proxy-userinfo" => &["curl+-x", "proxy"],
+        "cookie-option" => &["curl+-b", "curl+--cookie"],
         "sshpass-password" => &["sshpass"],
         "registry-login-password" => &["login"],
         _ => &[],

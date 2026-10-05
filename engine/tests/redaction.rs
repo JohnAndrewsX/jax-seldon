@@ -10,7 +10,7 @@ use seldon::error::Exit;
 use seldon::ledger::Ledger;
 use seldon::logbook::lock;
 use seldon::model::event::{Event, Kind, Meta, Source};
-use seldon::redact::{BUILTIN, REDACTED, Redactor, trigger_text, triggers};
+use seldon::redact::{BUILTIN, REDACTED, Redactor, holds_trigger, trigger_text, triggers};
 use support::{Bench, Scratch, fixture, ts};
 
 /// (rule, input, secret that must disappear, text that must stay)
@@ -654,14 +654,34 @@ mod redaction {
         for (rule, input, ..) in TABLE {
             let lower = trigger_text(input);
             assert!(
-                triggers(rule).iter().any(|t| lower.contains(t)),
+                triggers(rule).iter().any(|t| holds_trigger(&lower, t)),
                 "{rule}: no trigger in `{input}`"
             );
         }
-        // the marker can never trigger a rule
+        // the marker can never trigger a rule, nor add a part of one
         let marker = trigger_text(REDACTED);
         for rule in BUILTIN {
-            assert!(!triggers(rule).iter().any(|t| marker.contains(t)), "{rule}");
+            assert!(
+                !triggers(rule)
+                    .iter()
+                    .flat_map(|t| t.split('+'))
+                    .any(|part| marker.contains(part)),
+                "{rule}"
+            );
+        }
+        // a curl line without their options compiles none of the curl
+        // rules (WP-084)
+        let plain = trigger_text("curl -fsSL https://h.example/f -o /tmp/f");
+        for rule in [
+            "curl-user",
+            "proxy-option",
+            "proxy-userinfo",
+            "cookie-option",
+        ] {
+            assert!(
+                !triggers(rule).iter().any(|t| holds_trigger(&plain, t)),
+                "{rule}"
+            );
         }
     }
 
