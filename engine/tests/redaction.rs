@@ -1267,6 +1267,14 @@ mod redaction {
                 "pkg@1.2.3 @scope/x getty@tty1.service git@h.example:o/r a-u-x-b ",
                 Some(20),
             ),
+            // addresses joined by `:`: each match looks at the text after
+            // it and at the next match (WP-093 round 2)
+            (
+                "address colons",
+                "mail ",
+                "a@b.example:c@d.example:e@f.example: ",
+                Some(20),
+            ),
         ] {
             for kb in [16, 64, 128] {
                 let line = filled(head, word, kb * 1024);
