@@ -1020,6 +1020,26 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeUnclosed3",
         "curl -u ‹redacted›\nnext line",
     ),
+    // … also when the other quote character follows on that line
+    // (WP-097 round 3)
+    (
+        "curl-user",
+        "curl -u 'admin:fa\"keQ1 rest\nnext",
+        "keQ1",
+        "curl -u ‹redacted›\nnext",
+    ),
+    (
+        "curl-user",
+        "curl -u \"admin:it's fakeQ2\nnext",
+        "fakeQ2",
+        "curl -u ‹redacted›\nnext",
+    ),
+    (
+        "curl-user",
+        "curl -u admin:'fake\"Q3",
+        "Q3",
+        "curl -u ‹redacted›",
+    ),
     (
         "curl-user",
         "curl -u \"admin:fakeUnclosed4 rest\nLine two \"stays\".",
@@ -1482,6 +1502,9 @@ mod redaction {
             "TOKEN=\"a\"bob@example.com",
             "PASSWORD='x'me@example.org rest",
             "API_KEY=\"fakeKey12345\"carol@example.com",
+            // an unclosed quote in an option value runs to the line end,
+            // past the other quote character (WP-097 round 3)
+            "curl -u admin:'fake\"Q3",
         ] {
             texts.push(glued.into());
         }

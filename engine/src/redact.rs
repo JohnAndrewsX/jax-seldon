@@ -78,7 +78,7 @@ const VALUE: &str = r#"(?:"(?:[^"\\]|\\.)*"|"[^"]*"|'[^']*'|[^\s'"&;|‹][^\s'"&
 /// are read is taken up to the next `"` on its line as written, and a
 /// quote that the line does not close (`bob's` in a note, `'admin:pw`)
 /// takes the rest of the line, so a later line stays.
-const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")+(?:['"][^\n'"]*)?|['"][^\n'"]*)"#;
+const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")+(?:['"][^\n]*)?|['"][^\n]*)"#;
 
 /// White space between an option and its value, or a line continuation
 /// (`\` before a line end).
