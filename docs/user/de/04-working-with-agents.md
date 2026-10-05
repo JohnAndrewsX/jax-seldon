@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ e3483a4 -->
+<!-- source: en/04-working-with-agents.md @ a56a288 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -204,10 +204,12 @@ Namen.
 
 Der Agent bekommt außerdem zwei Umgebungsvariablen. `SELDON_ACTOR` ist
 `agent:` und der Name des Launchers (`agent:default` für den
-Standard-Launcher). Jeder `seldon`-Befehl, den der Agent ohne `--actor`
-ausführt, zeichnet diesen Namen auf: Eine Notiz oder einen Case-Schritt,
-den er zu unterschreiben vergisst, verbucht Seldon auf den Agenten, nie
-auf dich. `SELDON_ATTENDED=1` sagt dem Agenten, dass du ihn gestartet
+Standard-Launcher). `seldon log`, `plan`, `drift`, `event` und `hook
+generic` zeichnen diesen Namen auf, wenn `--actor` (bei `hook generic`
+`"actor"`) fehlt: Eine Notiz oder einen Case-Schritt, den der Agent zu
+unterschreiben vergisst, verbucht Seldon auf den Agenten, nie auf dich.
+`event` nimmt zuerst den Agentenbefehl, den es im Ledger findet, mit
+dessen Case. `SELDON_ATTENDED=1` sagt dem Agenten, dass du ihn gestartet
 hast; was er dann darf, sagen die Regeln des Logbuchs (`AGENTS.md`).
 Seldon selbst liest die Variable nie.
 
