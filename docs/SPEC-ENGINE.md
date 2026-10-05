@@ -245,7 +245,7 @@ seldon hook uninstall claude-code [--settings FILE]
                                                # WP-049: the inverse of install (§8); `generic` has
                                                # nothing installed, so nothing to uninstall
 seldon hook claude-code                        # stdin: Claude Code hook JSON
-seldon hook generic                            # stdin: {"command":"…","actor":"…","cwd":"…"}
+seldon hook generic                            # stdin: {"command":"…","actor":"…"?,"cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub
 seldon watch [--interval SECS] [--json]        # feature "watch" (off by default, ADR-0005; without it: exit 1
                                                # "built without the watch feature"). Watches ledger/ work/ journal/
@@ -419,7 +419,16 @@ strings, empty unless `plan start` warned; WP-050); `decide --json` returns
 "warnings"}` (`warnings`: the `decisions.index` fill, WP-050)
 (no ledger event). `plan new` defaults:
 `--zone yellow --risk R1 --priority normal`; `--actor` is accepted on every
-plan step so agents identify themselves; `log --tag T` stores `meta.tags`
+plan step so agents identify themselves; without `--actor`, `plan`, `log`,
+`drift` and `event` take `$SELDON_ACTOR` (WP-096, ADR-0027 §5; `seldon agent
+start` sets it), checked like the flag (`plan`, `log`, `drift`: human or
+`agent:<name>`; `event` also `system`) before anything is read or written: a
+value it refuses is exit 1 naming the variable and the allowed form, an empty
+value counts as unset, and with `--actor` the variable is not read. `event`
+takes the variable after the ledger attribution of a hook-recorded change
+(the agent command found names actor and case, as before) and only while the
+actor is still `system`; `log`'s one-line rule holds for an agent from the
+variable too; `log --tag T` stores `meta.tags`
 (comma-joined) and a `#tag` line in the journal; `open` also takes
 `logbook`, a case id or an ADR id; `seldon log --case` does not add a Log
 line to the case (the fixture agrees). `seldon log` with `--actor agent:…` refuses
@@ -441,7 +450,7 @@ seldon init --json   → {logbook, config, machineId, language, files, obsidian,
                         themeHook:{requested, installed, already?, script?, hook?, error?, fix?,
                                    ownWrites?: ["~/path"] | {error}}, nextSteps}
 seldon agent start <caseId> --json → {launched, launcher, program, argv (with the "{prompt}" placeholder,
-                        never the prompt), case, cwd, previousActiveCase}; exit 1 for a case that is not
+                        never the prompt), actor, case, cwd, previousActiveCase}; exit 1 for a case that is not
                         active (queued → hint `seldon plan start`), an unknown launcher, or a launcher
                         that fails within 200 ms; 3 not initialised; 4 lock held. The launcher argv
                         comes from config.toml `[agent] launcher` / `[agent.launchers] NAME`, default
@@ -458,7 +467,12 @@ seldon agent start <caseId> --json → {launched, launcher, program, argv (with 
                         `seldon plan show <id>` (WP-058). As an argument it is visible in the process list
                         (`ps`) and in a session journal that logs the launch; stderr goes to
                         `$XDG_STATE_HOME/seldon/agent-launch.log`; `.seldon/active-case` is set and
-                        restored on failure; no ledger event (WP-022).
+                        restored on failure; no ledger event (WP-022). The launcher runs with
+                        SELDON_LOGBOOK, SELDON_ACTOR=agent:<launcher name> (`actor`; the name
+                        lowercased, every run of characters other than a-z and 0-9 one `-`, none at
+                        either end, so `default` → agent:default, `Claude Code` → agent:claude-code;
+                        a name with nothing left is exit 1 before anything changes) and
+                        SELDON_ATTENDED=1, replacing the caller's values (WP-096, §8).
 ```
 
 `capture` selection: no flag or `--all` = every collector enabled in
@@ -1168,7 +1182,22 @@ less time with an empty ledger, near 1000 lines with the rebuild, above
 1000 lines without it, and for a command with secrets in it. A
 non-mutating command compiles no redaction rule.
 `seldon hook generic` takes `{"command","actor","cwd",
-"startedAt"?}` with the same rules.
+"startedAt"?}` with the same rules. Without `"actor"` it takes
+`$SELDON_ACTOR` (WP-096); with neither, or a value that is not human or
+`agent:<name>`, it records nothing and says so on stderr (exit 0, as
+every agent hook). `hook claude-code` and `hook session-stop` do not read
+the variable: their actor is the harness's (`agent:claude-code`, or
+session-stop's `--actor`).
+
+Attended sessions (ADR-0027 §2d, WP-096): a session is attended by
+provenance, not by a probe. `seldon agent start` sets `SELDON_ATTENDED=1`
+in the launched agent's environment (with `SELDON_ACTOR`, §3); a session
+whose task came from a human message in that session is attended too.
+Any other session (a timer, a hook, another agent, another launcher) is
+unattended and records and reports only. The variable is the agent's
+signal, defined by the logbook's `AGENTS.md` and the skill; nothing in
+the engine reads it, and a sudo credential cache or a NOPASSWD rule never
+makes a session attended.
 
 Session scope (WP-063): the hooks serve the sessions inside the logbook.
 A session's directory is `CLAUDE_PROJECT_DIR` when that is set in the

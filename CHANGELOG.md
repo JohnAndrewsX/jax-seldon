@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
+  and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,
+  `log`, `drift` and `event` record `SELDON_ACTOR` when `--actor` is not
+  given, and `hook generic` when its JSON has no `"actor"`, so a write
+  by a launched agent is recorded as the agent even when it forgets
+  `--actor`. An explicit `--actor` wins; a value the command does not
+  accept is exit 1 and names the variable. `event` still takes the agent
+  command found in the ledger first. `SELDON_ATTENDED` is for the
+  agent's rules; the engine never reads it (WP-096).
 - A capture over ssh, from cron or from a systemd unit no longer
   degrades the plugins collector with "OMARCHY_PATH is not set": when
   the variable is unset or empty, Omarchy's programs (`omarchy plugin
