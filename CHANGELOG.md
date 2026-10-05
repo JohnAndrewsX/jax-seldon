@@ -131,6 +131,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masked name and content is no longer taken for that one and is
   recorded, and a restore after two changes of one file no longer adds a
   change that skips the middle one (WP-103).
+- Redaction covers more forms of credentials on command lines: a
+  command continued over lines with `\`, or with a quoted string that
+  spans lines, is read as one command, also between an option and its
+  value; redirections such as `2>&1` and `&>file`, and ANSI-C strings
+  (`$'…'`), no longer end it. An option's value is read as one shell
+  word, so `-u admin:'p w'`, `-u "a\"b"` and `--password $'…'` are
+  masked whole. New: curl's `--pass`, `--proxy-pass` and
+  `--oauth2-bearer` (and xh's `--bearer`), a client certificate with its
+  password after `curl -E`/`--cert`/`--proxy-cert` (the value with `:`,
+  file name included), the value after `http`/`https`/`xh`/`xhs`
+  `-a`/`--auth`, and wget's `--http-password`/`--ftp-password` before a
+  space (WP-097).
 
 ### Plugin
 

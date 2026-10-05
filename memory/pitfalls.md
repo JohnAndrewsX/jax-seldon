@@ -1998,3 +1998,41 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   from "a later event clamped to that check".** Every window rule at the
   check trades one duplicate for another (same-second captures against
   older mtimes); the exact fix is a marker of the last written event.
+
+## 2026-10-05 · WP-097 (Engine Dev)
+
+- **Leftmost-first picks the higher-priority reading, not the shorter
+  match.** An optional lead `(?:\s REST)?` before an option is greedy:
+  the reading that takes the group wins even when it ends at a later
+  option, so `http -a a:b … -a c:d` masked only the second value. Make
+  such a group lazy (`??`); the empty reading then gets the first try.
+- **A row for a line continuation must not hold plain white space where
+  the continuation stands.** `http \⏎ -a` passed with the gap mutated
+  to `\s`, because the space before the `\` satisfied it; the row that
+  kills the mutant is `http\⏎  -a` (the shell joins it to `http -a`).
+- **A shell-word value is wrong after `key=`.** Joining quoted parts to
+  a value is right for a command option (`-u admin:'p w'`), but a
+  `token=` inside a quoted URL (`"https://h/?token=abc" -H "X: y"`)
+  then joins the closing quote with the next quoted string and masks
+  half the command. Option rules use `WORD`, assignments keep `VALUE`.
+- **Combined short options defeat the literal triggers.** `curl -su a:b`
+  holds no `-u`; a trigger every curl line holds would compile every
+  curl rule for every curl line (hook budget). Left as a limit.
+
+## 2026-10-05 · WP-097 round 2 (Engine Dev)
+
+- **A trigger made of a word plus its gap is only sound if the regex
+  reads exactly that gap.** `httpie-auth` triggers on `http `, `http\t`,
+  `http\n`, `http\` (+ `-a`); with `\s` after the word in the rule, a
+  match after a vertical tab or NBSP holds no trigger. Spell the gap in
+  ASCII in the pattern too (lead and option side), and give every
+  trigger literal a row, or dropping one survives.
+- **A narrower trigger can silence a CLEAR row.** `wget http://… -a log`
+  pinned "no `http:`" while the trigger was `http+-a`; with `http +-a`
+  the rule never compiles on that line, so the mutant that drops the gap
+  survived until a row also held `http ` as a word.
+- **An address glued to a masked `key=` value broke idempotency since
+  WP-093** (`TOKEN="a"bob@example.com` → two glued markers, which the
+  bare `VALUE` took as a new value on the second pass). It surfaced only
+  when another change moved the quote parity of the joined-rows text.
+  The bare `VALUE` no longer starts at a marker.

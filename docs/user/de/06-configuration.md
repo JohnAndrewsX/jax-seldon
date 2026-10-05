@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 61ffa4e -->
+<!-- source: en/06-configuration.md @ 4d51f6b -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -233,6 +233,8 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   `sshpass -p` und nach `docker login -p` (auch `podman`);
 - Benutzer und Passwort nach `curl -u`, die Cookies nach `curl -b`
   oder `--cookie` (kein Name einer Cookie-Datei);
+- das Zertifikat und Passwort nach `curl -E`/`--cert`, der Wert nach
+  `http`/`xh -a`;
 - Proxy-Zugangsdaten: nach `curl -U`, `--proxy-user` und
   `--proxy-password` sowie `user:pass@` im Proxy nach `curl -x`,
   `--proxy` oder in `https_proxy=`;
