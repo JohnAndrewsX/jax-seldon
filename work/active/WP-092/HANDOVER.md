@@ -51,7 +51,7 @@ processes; 16:08–16:11, load 7–13; never committed):
 | ledger parse (900 lines) | 724 µs | 603 µs |
 | rest of load (case, journal, memory …) | 122 µs | 110 µs |
 | fold (clones every event) | 230 µs | 203 µs |
-| drift + cases (`AlwaysRed::new` compiles 18 globs) | 275 µs | 7 µs |
+| drift + cases (`AlwaysRed::new` compiles 20 patterns as regexes: 18 literals, 2 globs) | 275 µs | 7 µs |
 | series / clip 500 / size check / to_text / write | 64 / 50 / 90 / 134 / 51 µs | 59 / 94 / 85 / 153 / 46 µs |
 | freeing the built index | 144 µs | 137 µs |
 | **rebuild total** | **≈ 2.1 ms** | **≈ 1.65 ms** |
@@ -272,3 +272,34 @@ Appended to `memory/pitfalls.md` (WP-092 section):
   bench binaries).
 - During the A/B runs `engine/target/release/seldon` was swapped. The
   branch build is back in place (checked with `cmp`).
+
+## Round 2 (review: APPROVE; F1 and F2 before the merge)
+
+Decisions taken by the orchestrator: about 3.9 ms is accepted as the
+margin (a detached rebuild would need its own ADR); the allocation
+commits stay.
+
+- **F1** (`engine/src/model/event.rs`): the "escaped" row of
+  `id_and_ts_read_as_through_a_string` was a copy of row 1. The cause was
+  my edit script: Python read `\u0033` in the replacement text as its own
+  escape and wrote the plain character, which is how the `\u002b` of the
+  last row was lost too. Row 2 now holds
+  `"\u00301M1MB2M1GWZYF485HTGVZ1KS3"` and
+  `"2026-09-03T21:14:06\u002b02:00"` (JSON escapes for the first `0` and
+  the `+`), and the last row `"2026-09-03T21:14:06\u002b0200"` again.
+  - Branch: `model::event` 6 passed.
+  - Mutant R6 (`visit_borrowed_str` parses, `visit_str` returns an
+    error, so every escaped value is refused): `id_and_ts_read_as_through_a_string`
+    FAILED, so it is killed now. Source restored, diff only the fix.
+- **F2**: `AlwaysRed`'s default list has 20 patterns, 18 literals and 2
+  globs (`limine*`, `mkinitcpio*`), all compiled as regexes before; not
+  "18 globs". The profile row above and the WP-092 pitfall are corrected
+  (the pitfall is this WP's own, not merged yet). The pitfall also said
+  `AlwaysRed` compiled "in every hook call"; it compiled in every index
+  build.
+- Learned: the Edit tool also turns `\u…` in its input into the
+  character. Write JSON escapes with a script that doubles the
+  backslash, and check the bytes with `cat -A`. Appended to the pitfalls.
+- Checks: `cargo fmt --check`, `cargo clippy --all-targets -- -D
+  warnings` clean; `cargo test --lib model::event index::drift
+  collectors::config` green. No full `just check` (as asked).
