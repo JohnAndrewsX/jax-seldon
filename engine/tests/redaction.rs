@@ -985,6 +985,20 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeUnclosed2",
         "DB_PASSWORD=‹redacted›",
     ),
+    // a name that only starts with `no` is no negation; HTTPie's command
+    // word needs an ASCII gap, as its triggers spell it (WP-097 round 2)
+    (
+        "secret-option",
+        "tool --node-token fakeNode1 --verbose",
+        "fakeNode1",
+        "--node-token ‹redacted› --verbose",
+    ),
+    (
+        "httpie-auth",
+        "http -a a:fakeHttpie7 h.example\nhttp\u{a0}-a keep",
+        "fakeHttpie7",
+        "http -a ‹redacted› h.example\nhttp\u{a0}-a keep",
+    ),
     // a quoted part of an option value ends at a line end no `\` escapes;
     // a quote the line does not close takes the rest of that line only
     // (WP-097 round 2)
@@ -1288,6 +1302,9 @@ const CLEAR: &[&str] = &[
     "wget http://h.example/f -a log.txt",
     "yt-dlp https://h.example/v -a list.txt",
     "app --pass-through on --bypass x --password-stdin",
+    // `http` as a word, then a URL whose `http` is followed by `:`
+    // (WP-097 round 2)
+    "echo http done; wget http://h.example/f -a log.txt",
     // a negation is no credential name (WP-097 round 2)
     "smbclient //srv/share --no-pass -c 'ls'",
     // no e-mail address (WP-093): an SSH remote and `host:path`, a host
