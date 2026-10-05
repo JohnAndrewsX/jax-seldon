@@ -1711,5 +1711,9 @@ mod commands {
         }
         let manifest = read(&env.home.join(".local/state/seldon/manifest.json"));
         assert!(manifest.contains("alice.webapp@example.com"), "{manifest}");
+        // guide 06's pattern keeps such a file out altogether
+        let skip = seldon::collectors::config::SkipPaths::new(&env.home, &["*@*.desktop".into()]);
+        assert!(skip.matches(&alice) && skip.matches(&bob));
+        assert!(!skip.matches(&dir.join("Zoom.desktop")));
     }
 }
