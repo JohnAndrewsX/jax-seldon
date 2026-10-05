@@ -2662,6 +2662,34 @@ mod crash {
         assert_eq!(reset_sources(&cli), ["snapper,pacman"]);
     }
 
+    /// The same for a collector that degrades in the capture after a
+    /// crashed reset: its gap is recorded, so it is not marked waiting, and
+    /// its next successful run records no second reset.
+    #[test]
+    fn a_collector_degraded_after_a_crashed_reset_does_not_wait() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.capture_at(&at(0), &["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        cli.crash(&at(1), "after-append", &[]);
+        assert_eq!(reset_sources(&cli), ["snapper,pacman"]);
+        cli.stub("snapper", "exit 3");
+        let out = cli.capture_at(&at(2), &[]);
+        assert_eq!(out["ok"], false, "{out}");
+        let snapper = &cli.cursors()["collectors"]["snapper"];
+        assert_eq!(snapper.get("pendingBaseline"), None, "{snapper}");
+        assert!(
+            !rows_all(&cli)
+                .iter()
+                .any(|r| r.contains("degraded or not run")),
+            "{:?}",
+            rows_all(&cli)
+        );
+        cli.stub_snapper(&fixture("logs/snapper-before.json"));
+        cli.capture_at(&at(3), &[]);
+        assert_eq!(reset_sources(&cli), ["snapper,pacman"]);
+    }
+
     /// The same for a collector that waited already before the crash (an
     /// entry with only the mark, WP-091): the crashed capture's first run
     /// of it recorded its gap, so the next capture that does not run it
