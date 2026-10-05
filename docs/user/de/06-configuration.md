@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 4b5a87b -->
+<!-- source: en/06-configuration.md @ d9ea49f -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -253,6 +253,10 @@ du als reguläre Ausdrücke ein; jeder ersetzt seinen ganzen Treffer:
 [redaction]
 patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 ```
+
+Die Domain einer Adresse bleibt sichtbar. Nennt deine dich, trag ein
+Muster für sie ein: `"@smith\\.example\\b"` macht aus
+`jo@smith.example` den Text `‹redacted›‹redacted›`.
 
 Ein ungültiges Muster ist ein Fehler (Exit 1): Seldon schreibt lieber gar
 nicht, als etwas preiszugeben.
