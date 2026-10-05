@@ -184,6 +184,10 @@ impl Collector for Snapper {
         "snapper"
     }
 
+    fn cursor_reads(&self, cursor: &Value) -> bool {
+        typed_cursor::<SnapperCursor>(Some(cursor)).is_some()
+    }
+
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
         let stdout = match run_list(&ctx.sources.snapper, RUN_TIMEOUT) {
             Run::Exited {

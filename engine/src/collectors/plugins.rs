@@ -440,6 +440,10 @@ impl Collector for Plugins {
         "plugins"
     }
 
+    fn cursor_reads(&self, cursor: &Value) -> bool {
+        typed_cursor::<PluginsCursor>(Some(cursor)).is_some()
+    }
+
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
         self.collect_from(
             ctx,

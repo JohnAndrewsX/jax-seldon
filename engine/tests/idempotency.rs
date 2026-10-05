@@ -458,6 +458,24 @@ mod state_reset {
         cli.env.home.join(".local/state/seldon")
     }
 
+    /// WP-083: the sources (comma list) of doctor's "the next capture will
+    /// record a state reset" row, `None` without one. Asked before a
+    /// capture, it must name what that capture's note names.
+    fn predicted(cli: &Cli) -> Option<String> {
+        const ROW: &str = "the next capture will record a state reset for ";
+        let doctor = common::json(&cli.run(&["doctor", "--json"]));
+        let rows: Vec<&str> = doctor["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["name"] == "state")
+            .filter_map(|c| c["message"].as_str()?.strip_prefix(ROW))
+            .collect();
+        assert!(rows.len() <= 1, "{doctor}");
+        let sources = rows.first()?.split(':').next().unwrap();
+        Some(sources.replace(", ", ","))
+    }
+
     /// `capture --source config --json`.
     fn capture_config(cli: &Cli) -> serde_json::Value {
         let out = cli.run(&["capture", "--source", "config", "--json"]);
@@ -478,12 +496,15 @@ mod state_reset {
     #[test]
     fn a_lost_state_directory_is_recorded_once() {
         let cli = Cli::new();
+        assert_eq!(predicted(&cli), None, "a fresh logbook");
         let first = cli.capture(&["--since", FIXTURE_CREATED]);
         assert!(first["written"].as_u64().unwrap() > 0, "{first}");
         assert!(resets(&cli).is_empty(), "the first capture is no reset");
         assert_eq!(first["warnings"], serde_json::json!([]));
 
+        assert_eq!(predicted(&cli), None, "cursors of every collector here");
         std::fs::remove_dir_all(state(&cli)).unwrap();
+        assert_eq!(predicted(&cli).as_deref(), Some("snapper,pacman"));
         let out = cli.run(&["capture", "--all", "--since", "2026-09-15T00:00:00+02:00"]);
         assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
         let human = common::stdout(&out);
@@ -512,6 +533,7 @@ mod state_reset {
             "{detail}"
         );
         cli.ledger().iter().for_each(assert_schema_valid);
+        assert_eq!(predicted(&cli), None, "the WP-081 row took over");
 
         let again = cli.capture(&[]);
         assert_eq!(again["written"], 0, "{again}");
@@ -533,6 +555,7 @@ mod state_reset {
             cursors["collectors"][name]["cursor"] = serde_json::json!(7);
         }
         std::fs::write(&file, cursors.to_string()).unwrap();
+        assert_eq!(predicted(&cli), None);
         let out = cli.capture(&[]);
         assert_eq!(out["written"], 0, "{out}");
         assert!(resets(&cli).is_empty());
@@ -557,6 +580,7 @@ mod state_reset {
         };
         assert!(ran("theme").as_u64().unwrap() > 0, "{changed}");
         assert!(ran("plugins").as_u64().unwrap() > 0, "{changed}");
+        assert_eq!(predicted(&cli), None, "their cursors read");
         let file = state(&cli).join("cursors.json");
         let mut cursors: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
@@ -566,10 +590,12 @@ mod state_reset {
             cursors["collectors"][name]["cursor"] = serde_json::json!(7);
         }
         std::fs::write(&file, cursors.to_string()).unwrap();
+        assert_eq!(predicted(&cli).as_deref(), Some("plugins,theme"));
         assert_eq!(cli.capture(&[])["written"], 1);
         let reset = resets(&cli);
         assert_eq!(reset.len(), 1);
         assert_eq!(reset[0].meta.extra["sources"], "plugins,theme");
+        assert_eq!(predicted(&cli), None);
         assert_eq!(cli.capture(&[])["written"], 0);
     }
 
@@ -618,6 +644,17 @@ mod state_reset {
         let file = env.home.join(".local/state/omarchy/current/theme.name");
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, "tokyo-night\n").unwrap();
+        let state_ok = || {
+            let doctor = common::json(&run(&["doctor", "--json"]));
+            let rows = doctor["checks"].as_array().unwrap();
+            assert!(
+                rows.iter()
+                    .all(|c| c["name"] != "state" || c["status"] == "ok"),
+                "{doctor}"
+            );
+        };
+        // WP-083: no prediction either
+        state_ok();
         let out = common::json(&run(&["capture", "--json"]));
         assert_eq!(out["warnings"], serde_json::json!([]), "{out}");
         let ledger = seldon::ledger::Ledger::at(root.join("ledger"), Default::default());
@@ -628,13 +665,7 @@ mod state_reset {
             .filter(|e| e.subject == "state-reset")
             .collect();
         assert!(notes.is_empty(), "{notes:?}");
-        let doctor = common::json(&run(&["doctor", "--json"]));
-        let rows = doctor["checks"].as_array().unwrap();
-        assert!(
-            rows.iter()
-                .all(|c| c["name"] != "state" || c["status"] == "ok"),
-            "{doctor}"
-        );
+        state_ok();
     }
 
     /// Review F1: a collector disabled since the first capture and enabled
@@ -653,6 +684,7 @@ mod state_reset {
         assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
         toml.remove("collectors");
         std::fs::write(&config, toml.to_string()).unwrap();
+        assert_eq!(predicted(&cli), None);
         let out = cli.capture(&[]);
         assert_eq!(out["written"], 0, "{out}");
         assert!(resets(&cli).is_empty());
@@ -688,8 +720,32 @@ mod state_reset {
             "no events there"
         );
 
+        assert_eq!(predicted(&cli).as_deref(), Some("snapper,pacman"));
+        let doctor = common::json(&cli.run(&["doctor", "--json"]));
+        let row = doctor["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "state" && c["status"] == "degraded")
+            .unwrap_or_else(|| panic!("{doctor}"))
+            .clone();
+        assert!(
+            row["message"].as_str().unwrap().ends_with(
+                ": cursors in ~/.local/state/seldon bound to another logbook, so changes made since the last capture may not be recorded"
+            ),
+            "{row}"
+        );
+        assert!(
+            row["fix"]
+                .as_str()
+                .unwrap()
+                .starts_with("nothing to restore: "),
+            "{row}"
+        );
+
         let back = cli.capture(&[]);
         assert_eq!(back["written"], 1, "{back}");
+        assert_eq!(predicted(&cli), None);
         let reset = resets(&cli);
         assert_eq!(reset.len(), 1);
         assert_eq!(reset[0].meta.extra["files"], "logbook");
@@ -730,6 +786,41 @@ mod state_reset {
         );
     }
 
+    /// WP-083: doctor's prediction asks each collector whether its saved
+    /// cursor reads: every collector's own cursor does, a stray value not.
+    #[test]
+    fn every_collector_reads_its_own_cursor() {
+        let cli = Cli::new();
+        let out = cli.capture(&["--since", FIXTURE_CREATED]);
+        let file = state(&cli).join("cursors.json");
+        let cursors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        for c in REGISTRY {
+            let saved = &cursors["collectors"][c.name()]["cursor"];
+            assert!(!saved.is_null(), "{}: {out}", c.name());
+            assert!(c.cursor_reads(saved), "{}: {saved}", c.name());
+            for stray in [serde_json::json!("not a cursor"), serde_json::json!(7)] {
+                assert!(!c.cursor_reads(&stray), "{}: {stray}", c.name());
+            }
+        }
+    }
+
+    /// WP-083: doctor warns while a restore still prevents the gap; after
+    /// the restore there is nothing to warn about and nothing to record.
+    #[test]
+    fn a_restore_before_the_capture_prevents_the_reset() {
+        let cli = Cli::new();
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        let backup = cli.env.tmp.path().join("state-backup");
+        std::fs::rename(state(&cli), &backup).unwrap();
+        assert_eq!(predicted(&cli).as_deref(), Some("snapper,pacman"));
+        std::fs::rename(&backup, state(&cli)).unwrap();
+        assert_eq!(predicted(&cli), None);
+        let out = cli.capture(&[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert!(resets(&cli).is_empty());
+    }
+
     /// Review F3 (R1): only a run of the config collector reads and moves
     /// a corrupt `owned.json`.
     #[test]
@@ -754,6 +845,7 @@ mod state_reset {
             serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         cursors["collectors"]["pacman"]["cursor"] = serde_json::json!("not a cursor");
         std::fs::write(&file, cursors.to_string()).unwrap();
+        assert_eq!(predicted(&cli).as_deref(), Some("pacman"));
         let out = cli.capture(&[]);
         assert_eq!(out["written"], 1, "only the note: {out}");
         let reset = resets(&cli);

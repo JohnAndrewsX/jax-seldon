@@ -14,6 +14,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::json;
 
+use super::capture::{Binding, pending_reset};
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
@@ -159,6 +160,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_fences(logbook));
             checks.push(check_collectors(ctx, &effective, logbook));
             checks.extend(check_reset(ctx, logbook));
+            checks.extend(check_pending_reset(ctx, &effective, logbook, source));
         }
         logbook
     } else {
@@ -579,6 +581,63 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
                 "the last capture recorded a state reset: {} took a new baseline ({}), so changes made in between may be missing",
                 meta("sources").join(", "),
                 why.join("; ")
+            ),
+        )
+        .fix(fix),
+    )
+}
+
+/// A state reset the next capture will record (WP-083): the cursors of
+/// collectors whose source the ledger holds events of are missing,
+/// unreadable or another logbook's. Predicted by the capture's own rule
+/// ([`pending_reset`]), so it shows while a restored backup still prevents
+/// the gap; after the capture, [`check_reset`] takes over. No row when
+/// nothing is lost, `cursors.json` cannot be read (the `state` rows) or
+/// the ledger cannot be read (the `ledger` row). A logbook from
+/// `--path`/`--logbook` is not the one a plain `seldon capture` captures,
+/// so the fix names it.
+fn check_pending_reset(
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+    source: LogbookSource,
+) -> Option<Check> {
+    let cursors = Cursors::load(&cursors_file(&ctx.dirs)).ok()?;
+    let canonical = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
+    let ledger = Ledger::new(logbook, Redactor::builtin());
+    let (binding, lost) = pending_reset(&ledger, config, &cursors, &canonical).ok()?;
+    if lost.is_empty() {
+        return None;
+    }
+    let sources: Vec<&str> = lost.iter().map(|(n, _)| *n).collect();
+    let state = ctx.dirs.display(&ctx.dirs.state_dir);
+    let capture = match source {
+        LogbookSource::Flag => format!(
+            "seldon --logbook {} capture",
+            ctx.dirs.display(&logbook.root)
+        ),
+        _ => "seldon capture".to_string(),
+    };
+    let restore = format!(
+        "restore {state} from a backup now (user guide: Back up and restore the state directory), or run {capture} to accept the new baseline"
+    );
+    let (why, fix) = match binding {
+        Binding::None => (format!("cursors missing in {state}"), restore),
+        Binding::This => (format!("cursors unreadable in {state}"), restore),
+        Binding::Other => (
+            format!("cursors in {state} bound to another logbook"),
+            format!(
+                "nothing to restore: the state belongs to another logbook path; run {capture} to accept the new baseline (user guide: Moving or copying the logbook)"
+            ),
+        ),
+    };
+    Some(
+        Check::new(
+            "state",
+            Status::Degraded,
+            format!(
+                "the next capture will record a state reset for {}: {why}, so changes made since the last capture may not be recorded",
+                sources.join(", ")
             ),
         )
         .fix(fix),

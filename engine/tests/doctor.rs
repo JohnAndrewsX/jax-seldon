@@ -995,8 +995,173 @@ mod doctor {
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         let (_, v) = doctor(&env, &["--path", root.to_str().unwrap()]);
         let rows = states(&v);
-        assert_eq!(rows.len(), 1, "{v}");
-        assert_eq!(rows[0]["status"], "ok");
+        assert!(
+            rows.iter().all(|r| !r["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("the last capture recorded")),
+            "{v}"
+        );
+        // WP-083: the next capture here will take a new baseline
+        assert_eq!(rows.len(), 2, "{v}");
+        assert_eq!(
+            rows[0]["message"],
+            "the next capture will record a state reset for config: cursors in ~/.local/state/seldon bound to another logbook, so changes made since the last capture may not be recorded"
+        );
+        // review F2: a plain `seldon capture` would capture `other`
+        assert_eq!(
+            rows[0]["fix"],
+            format!(
+                "nothing to restore: the state belongs to another logbook path; run seldon --logbook {} capture to accept the new baseline (user guide: Moving or copying the logbook)",
+                root.display()
+            )
+        );
+        assert_eq!(rows[1]["status"], "ok");
+    }
+
+    /// WP-083: before the capture that would record a state reset, doctor
+    /// says so while a restore still prevents it; never for a fresh logbook
+    /// or a collector that never ran here; after the capture the WP-081
+    /// row takes over.
+    #[test]
+    fn a_state_reset_is_predicted_before_the_capture() {
+        const PREDICTED: &str = "the next capture will record a state reset for ";
+        let env = Env::new(Snapper::Missing);
+        init(&env);
+        let capture = |now: &str| {
+            let out = env.at(now, &["capture", "--source", "config", "--json"]);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            json(&out)
+        };
+        let states = |v: &serde_json::Value| -> Vec<serde_json::Value> {
+            let checks = v["checks"].as_array().unwrap();
+            checks
+                .iter()
+                .filter(|c| c["name"] == "state")
+                .cloned()
+                .collect()
+        };
+        let quiet = |why: &str| {
+            let (_, v) = doctor(&env, &[]);
+            let rows = states(&v);
+            assert_eq!(rows.len(), 1, "{why}: {v}");
+            assert_eq!(rows[0]["status"], "ok", "{why}: {v}");
+        };
+        quiet("a fresh logbook");
+        let cursors = env.home.join(".local/state/seldon/cursors.json");
+        std::fs::remove_file(&cursors).ok();
+        quiet("a fresh logbook without cursors.json");
+
+        let conf = env.home.join(".config/hypr/hyprland.conf");
+        std::fs::create_dir_all(conf.parent().unwrap()).unwrap();
+        std::fs::write(&conf, "a = 1\n").unwrap();
+        capture("2026-10-04T10:00:00+02:00");
+        std::fs::write(&conf, "a = 2\n").unwrap();
+        assert_eq!(capture("2026-10-04T10:05:00+02:00")["written"], 1);
+        quiet("every cursor here");
+        // review F1: the cursors are bound to the canonical path; a
+        // logbook configured through a symlink is the same logbook
+        let link = env.tmp.path().join("link");
+        std::os::unix::fs::symlink(env.tmp.path().join("logbook"), &link).unwrap();
+        let config = env.config_file();
+        let text = std::fs::read_to_string(&config).unwrap();
+        let mut toml: toml::Table = text.parse().unwrap();
+        toml.insert(
+            "logbook".into(),
+            toml::Value::String(link.to_string_lossy().into_owned()),
+        );
+        std::fs::write(&config, toml.to_string()).unwrap();
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(v["logbook"], link.to_string_lossy().as_ref(), "{v}");
+        quiet("logbook configured through a symlink");
+        std::fs::write(&config, &text).unwrap();
+        let saved = std::fs::read_to_string(&cursors).unwrap();
+
+        // a collector that never ran here (no entry while bound to this
+        // logbook) takes its first baseline without a loss
+        let mut v: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        v["collectors"].as_object_mut().unwrap().remove("config");
+        std::fs::write(&cursors, v.to_string()).unwrap();
+        quiet("config never ran here");
+
+        // unreadable
+        let mut v: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        v["collectors"]["config"]["cursor"] = serde_json::json!("not a cursor");
+        std::fs::write(&cursors, v.to_string()).unwrap();
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(0), "degraded is no error: {v}");
+        let rows = states(&v);
+        assert_eq!(rows.len(), 2, "{v}");
+        assert_eq!(rows[0]["status"], "degraded");
+        assert_eq!(
+            rows[0]["message"],
+            format!(
+                "{PREDICTED}config: cursors unreadable in ~/.local/state/seldon, so changes made since the last capture may not be recorded"
+            )
+        );
+
+        // missing; a disabled collector would not run
+        std::fs::remove_file(&cursors).unwrap();
+        let (code, v) = doctor(&env, &[]);
+        assert_eq!(code, Some(0), "{v}");
+        let rows = states(&v);
+        assert_eq!(rows.len(), 2, "{v}");
+        assert_eq!(rows[0]["status"], "degraded");
+        assert_eq!(
+            rows[0]["message"],
+            format!(
+                "{PREDICTED}config: cursors missing in ~/.local/state/seldon, so changes made since the last capture may not be recorded"
+            )
+        );
+        assert_eq!(
+            rows[0]["fix"],
+            "restore ~/.local/state/seldon from a backup now (user guide: Back up and restore the state directory), or run seldon capture to accept the new baseline"
+        );
+        // review F2: a logbook from --path is named in the fix
+        let root = env.tmp.path().join("logbook");
+        let (_, v) = doctor(&env, &["--path", root.to_str().unwrap()]);
+        let rows = states(&v);
+        assert_eq!(
+            rows[0]["fix"],
+            format!(
+                "restore ~/.local/state/seldon from a backup now (user guide: Back up and restore the state directory), or run seldon --logbook {} capture to accept the new baseline",
+                root.display()
+            )
+        );
+        let human = stdout(&env.seldon(&["doctor"]));
+        assert!(
+            human.contains(&format!("degraded  state    {PREDICTED}config: ")),
+            "{human}"
+        );
+        let mut toml: toml::Table = text.parse().unwrap();
+        let mut off = toml::Table::new();
+        off.insert("config".into(), toml::Value::Boolean(false));
+        toml.insert("collectors".into(), toml::Value::Table(off));
+        std::fs::write(&config, toml.to_string()).unwrap();
+        quiet("config disabled");
+        let (_, v) = doctor(&env, &[]);
+        assert_eq!(check(&v, "config")["status"], "ok", "{v}");
+        std::fs::write(&config, &text).unwrap();
+
+        // the restore prevents it
+        std::fs::write(&cursors, &saved).unwrap();
+        quiet("restored");
+        std::fs::remove_file(&cursors).unwrap();
+
+        // the capture records it; the WP-081 row takes over
+        let out = capture("2026-10-04T10:10:00+02:00");
+        assert_eq!(out["written"], 1, "the note: {out}");
+        let (_, v) = doctor(&env, &[]);
+        let rows = states(&v);
+        assert_eq!(rows.len(), 2, "{v}");
+        let message = rows[0]["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("the last capture recorded a state reset: config "),
+            "{message}"
+        );
+        assert_eq!(rows[1]["status"], "ok");
+        capture("2026-10-04T10:15:00+02:00");
+        quiet("after the next capture");
     }
 
     /// Review N4: an unreadable state file's row says what reading it

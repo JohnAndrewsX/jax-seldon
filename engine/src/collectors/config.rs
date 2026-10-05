@@ -966,6 +966,10 @@ impl Collector for ConfigFiles {
         "config"
     }
 
+    fn cursor_reads(&self, cursor: &Value) -> bool {
+        typed_cursor::<ConfigCursor>(Some(cursor)).is_some()
+    }
+
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
         let roots: Vec<PathBuf> = ctx
             .config

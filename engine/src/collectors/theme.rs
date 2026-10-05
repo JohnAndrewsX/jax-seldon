@@ -111,6 +111,10 @@ impl Collector for Theme {
         "theme"
     }
 
+    fn cursor_reads(&self, cursor: &Value) -> bool {
+        typed_cursor::<ThemeCursor>(Some(cursor)).is_some()
+    }
+
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
         self.collect_from(ctx, cursor, &Theme::file(ctx.sources, &ctx.dirs.home))
     }

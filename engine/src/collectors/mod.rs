@@ -19,7 +19,9 @@
 //! It says so in [`Outcome::baseline`], naming the state file that was
 //! missing or unreadable ([`Lost`]); when the ledger already holds events of
 //! that source, `capture` records the gap as a state reset
-//! ([`STATE_RESET`]) instead of starting over silently.
+//! ([`STATE_RESET`]) instead of starting over silently. `doctor` predicts
+//! that reset before the capture from the cursors alone
+//! ([`Collector::cursor_reads`]), while a restore still prevents it.
 //!
 //! Read-only on the host: collectors read files and run fixed programs with
 //! fixed argv through [`crate::sys::run`] (snapper through
@@ -56,6 +58,12 @@ pub trait Collector {
 
     /// Collects new events since `cursor` (`None`: take a baseline).
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome;
+
+    /// Whether `cursor` reads as this collector's cursor ([`typed_cursor`]
+    /// of its type). One that does not counts as none: [`Collector::collect`]
+    /// takes a baseline and reports [`Lost::Cursor`]. `doctor` asks this
+    /// before the capture (WP-083).
+    fn cursor_reads(&self, cursor: &Value) -> bool;
 }
 
 /// What one collector run produced.

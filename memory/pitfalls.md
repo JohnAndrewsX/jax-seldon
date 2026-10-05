@@ -1597,3 +1597,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   note's detail therefore says "may not be recorded", and the WP rule
   (no note while the ledger holds no event of the source) keeps the first
   capture of a logbook quiet.
+
+## 2026-10-05 · WP-083 (Engine Dev)
+
+- **doctor on a logbook without its state now shows a degraded `state`
+  row** ("the next capture will record a state reset …") whenever the
+  ledger holds collector events: also the fixture logbook in a scratch
+  home and a logbook reached through `--path` while `cursors.json` is
+  bound to another one. Tests that count `state` rows or expect only
+  `ok` rows must allow it (`a_state_reset_is_shown_until_the_next_capture`
+  now expects two rows at its R3 tail).
+- **Appending a `[collectors]` table to the test `config.toml` with
+  `format!` can make it invalid TOML** (if one exists), and then the
+  logbook block is "not checked": a "no row" assertion passes for the
+  wrong reason. Edit it as a `toml::Table` and assert the `config` row
+  is `ok`.
+- **A new `Collector` trait method touches every collector file,**
+  `snapper.rs` included, which may be another WP's file in the same
+  wave. Put the impl right after `fn name` so the hunk stays apart.
+- **One cursor predicate, written twice per collector:** `collect`'s
+  `typed_cursor::<T>` and `cursor_reads` must use the same type `T`.
+  `every_collector_reads_its_own_cursor` does not catch a `collect` that
+  accepts an older cursor shape `cursor_reads` rejects (or the reverse).

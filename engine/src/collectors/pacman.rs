@@ -77,6 +77,10 @@ impl Collector for Pacman {
         "pacman"
     }
 
+    fn cursor_reads(&self, cursor: &Value) -> bool {
+        typed_cursor::<PacmanCursor>(Some(cursor)).is_some()
+    }
+
     fn collect(&self, ctx: &Ctx, cursor: Option<&Value>) -> Outcome {
         let cursor: Option<PacmanCursor> = typed_cursor(cursor);
         let lost = cursor.is_none().then_some(Lost::Cursor);
