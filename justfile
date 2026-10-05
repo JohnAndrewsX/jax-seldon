@@ -60,20 +60,23 @@ check-perf:
 # The release body from CHANGELOG.md (WP-048): tests/release/.
 # Pinned workflow actions and images, the cargo audit release gate and
 # its list of accepted advisories (WP-072): tests/release/.
+# The plugin's manifest version equals Model.js PLUGIN_VERSION (WP-090).
 check-packaging:
     #!/usr/bin/env bash
     set -euo pipefail
     bash -n packaging/PKGBUILD packaging/set-version.sh packaging/check-srcinfo.sh \
       packaging/release-notes.sh tests/release/release-notes.test.sh \
       packaging/audit-ignore.sh tests/release/audit-ignore.test.sh \
-      tests/release/workflow-pins.test.sh
+      tests/release/workflow-pins.test.sh \
+      packaging/plugin-version.sh tests/release/plugin-version.test.sh
     if command -v shellcheck >/dev/null; then
       # PKGBUILD variables are read by makepkg, $srcdir/$pkgdir set by it
       shellcheck -s bash -e SC2034,SC2154,SC2164 packaging/PKGBUILD
       shellcheck packaging/set-version.sh packaging/check-srcinfo.sh \
         packaging/release-notes.sh tests/release/release-notes.test.sh \
         packaging/audit-ignore.sh tests/release/audit-ignore.test.sh \
-        tests/release/workflow-pins.test.sh
+        tests/release/workflow-pins.test.sh \
+        packaging/plugin-version.sh tests/release/plugin-version.test.sh
     else
       echo "check-packaging: shellcheck not installed; bash -n only"
     fi
@@ -81,6 +84,8 @@ check-packaging:
     bash tests/release/release-notes.test.sh
     bash tests/release/audit-ignore.test.sh
     bash tests/release/workflow-pins.test.sh
+    bash packaging/plugin-version.sh plugin/manifest.json plugin/Model.js
+    bash tests/release/plugin-version.test.sh
     echo "check-packaging: ok"
 
 # install.sh (WP-044) against a local mock of the release layout (file://

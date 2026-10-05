@@ -104,8 +104,11 @@ All on `main`, after every work package of the release is merged:
 1. Set the version in `engine/Cargo.toml` (cargo updates
    `engine/Cargo.lock`), in `plugin/manifest.json` and in
    `PLUGIN_VERSION` in `plugin/Model.js` (the running code's version, which
-   the restart notice compares with the manifest; `just check` fails when
-   the two differ); raise `engineMin` if needed.
+   the restart notice compares with the manifest); raise `engineMin` if
+   needed. `packaging/plugin-version.sh` fails when the two differ: in
+   `just check-packaging`, so also in CI, which skips the host checks, and
+   in the release workflow's plugin split, where both must also equal the
+   tag's version.
 2. Move the `[Unreleased]` lines under `## [X.Y.Z] - YYYY-MM-DD`; update
    the link references; run `bash packaging/release-notes.sh X.Y.Z`.
 3. `just check` green; commit (`release: X.Y.Z`); push.
