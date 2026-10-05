@@ -538,11 +538,14 @@ seldon agent start <caseId> --json → {launched, launcher, program, argv (with 
 Baseline: a collector without a cursor emits only events at or after the
 logbook's `created` (or `--since TS`); diff collectors record their first
 state silently. `--since` has no effect on a collector that already has a
-cursor (one notice line in human output). Dedupe against the ledger runs on
-every capture, not only after a rotation, so a lost `cursors.json` never
-duplicates events. `capture` runs the shared attribution pass before the
-append (ADR-0017), then rebuilds the index (CONTRACT rule 2); the commit
-helper and reconciliation (WP-008) follow.
+cursor (one notice line in human output). Diff collectors check the
+ledger on every capture (the config collector by replaying its config
+events onto the cursor's generation, §4), so a restored older state
+directory or a failed cursor save never duplicates events; a lost
+`cursors.json` is a baseline (state reset, below). `capture` runs the
+shared attribution pass before the append (ADR-0017), then rebuilds the
+index (CONTRACT rule 2); the commit helper and reconciliation (WP-008)
+follow.
 
 State reset (WP-081). A collector that takes a baseline because its state
 was missing or unreadable says which state file it missed: `cursors` (no
@@ -871,15 +874,40 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `scope` is known, takes every scanned file its scope did not reach as
   it is now: a narrowed scope writes no `config-remove`, a widened one no
   `config-add`, and the message says `watch scope changed: N file(s)
-  left it, M entered it; no events for them`. **Dedupe (WP-069):** events
-  the ledger already holds since the cursor's last check (same kind,
-  redacted subject, `hashFrom`, `hashTo`) are dropped, so a capture
-  whose cursor save failed after its ledger write repeats nothing. When
-  the cursor names an older generation than the manifest's current one
-  (that save failed), the config events the ledger holds since the
-  cursor's check are first applied to it, each when its `hashFrom` (or,
-  for an addition, no file) matches: a file that went back to its old
-  content before the next capture gets its `B→A` (WP-073).
+  left it, M entered it; no events for them`. **Replay
+  (WP-069, WP-073, WP-103):** the config events the ledger holds since
+  the cursor's check are first applied to the cursor's generation, each
+  to a file whose state is its `hashFrom` (for an addition, no file), so
+  the capture repeats nothing and a file that went back to its old
+  content before it gets its `B→A`. The ledger holds subjects redacted,
+  so files whose names differ only in a masked part share one: an event
+  can go to each such file of the cursor's generation and of the
+  current one (the manifest's when the cursor is behind it, that is,
+  the last capture's cursor save or ledger write failed; else the
+  scan). Of several that fit, it goes to the one the current generation
+  has in the state the event leaves; one that fits several alike (same
+  content) waits until no other event can be placed, then takes the
+  first. A subject that no file has names its own path when the
+  redaction leaves it as it is; a masked subject does, as it masks to
+  itself (a removal the ledger lost is then recorded under it). The
+  replay runs on every capture that has a cursor and its generation.
+  When the cursor is behind, it reads the ledger from the cursor's check
+  on (a change whose file has an older mtime, `cp -p`, is stamped with
+  it) and skips removals stamped with exactly that time (they are the
+  previous capture's, a removal carries the capture time, and already in
+  the generation); when it is not, it reads strictly after it, and the
+  scan stands in for the current generation, so a restored older state
+  directory records only what changed since (guide 07). Known limits: a
+  removal by a capture that ran in the same second as the one before it
+  and then failed its cursor save is skipped too (the next capture
+  records it again, or misses the re-addition of a file that is back);
+  after a restore, a change stamped with the restored cursor's check
+  (an older mtime, or one in the same second as that check) is recorded
+  again; after a failed cursor save, a change the previous capture made
+  at its check time is read again and can go to a twin with the same
+  content (a false `config-change` for that twin). A marker of
+  the last event a capture wrote, kept in the cursor, removes all three
+  (a follow-up WP).
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
@@ -1173,8 +1201,9 @@ address: `user@host` without a dot; a version (`pkg@1.2.3`,
 `react@18.2.0-rc.1`) or an npm scope (`@scope/pkg`); an `@` up to which
 `url-userinfo` masks (the rule reads a URL's userinfo as that rule does,
 so the import report counts the line once); an address followed by `:`
-and then by a character other than white space that starts no further
-address (`git@github.com:owner/repo`, `me@host.example:/srv`, a port;
+and then by a character other than white space (also a marker another
+rule left there) that starts no further address
+(`git@github.com:owner/repo`, `me@host.example:/srv`, a port;
 both in `a@b.co:c@d.example` are addresses, as is one before `: text`
 or at the end, and the `:` takes no character of what follows); a domain
 whose last label is a systemd

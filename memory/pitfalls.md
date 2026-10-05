@@ -1964,3 +1964,37 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A mutant script that greps `^error:` for build errors** also matches
   cargo's `error: test failed, to rerun pass …`: every killed mutant looked
   like a build error. Match `^error[E` and "could not compile" only.
+
+## 2026-10-05 · WP-103 (Engine Dev)
+
+- **A key built from a redacted subject is not a key.** Two files whose
+  names differ only in a masked part share one ledger subject; a
+  `BTreeMap<redacted subject, path>` keeps one of them, and a dedupe by
+  (kind, redacted subject, hashes) takes one twin's event for the
+  other's. Map a subject to every path with that redaction and choose by
+  the hashes (`config::replay`).
+- **A config removal carries the capture time, which is the next
+  capture's `since`.** A ledger read over `[since, now]` therefore always
+  sees the previous capture's removals; anything that treats those
+  events as "not yet applied" must expect them.
+- **"Cursor behind" is a hash comparison and can miss a failed save.**
+  A→B and B→A recorded while the cursor stayed on A leave the manifest's
+  current generation with the cursor's hash: the next capture is not
+  behind. A test that needs a replay after two failed saves must change
+  one more file so the hashes differ.
+- **Order events by time in a config test with `File::set_modified`.**
+  Freshly written files have a real mtime after the bench's fake `now`
+  and are all clamped to it; set the mtime between `since` and `now` to
+  put one file's event before another's.
+- **Run the whole suite after changing a collector's window, not only
+  the test binary you worked in** (WP-103 round 2). Reading additions at
+  the cursor's check on every capture passed `idempotency` and failed
+  `own_writes::removing_the_theme_hook_leaves_no_drift` 9 of 10 runs: its
+  real-time captures fall into one second, and the previous capture's
+  own events at the check were replayed. A test that only fails under a
+  mutant *and* with the plain code is a flake caused by the code; run
+  it ten times on the plain code before reading a mutant table.
+- **The ledger cannot tell "the previous capture's event at its check"
+  from "a later event clamped to that check".** Every window rule at the
+  check trades one duplicate for another (same-second captures against
+  older mtimes); the exact fix is a marker of the last written event.
