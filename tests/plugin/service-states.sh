@@ -204,7 +204,7 @@ expect init-later .pill "2 · 4"
 
 # 14. Banner fixes run fixed argument lists with constant commands only.
 mkdir -p "$work/bin-tools"
-for tool in wl-copy omarchy-launch-floating-terminal-with-presentation; do
+for tool in wl-copy omarchy-launch-floating-terminal-with-presentation omarchy-restart-shell; do
   install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin-tools/$tool"
 done
 # One line per recorded invocation, sorted: detached launches have no order.
@@ -273,6 +273,40 @@ snapper_fix='sudo setfacl -m u:$USER:rx /.snapshots'
 record_check snapper-degraded "$(printf '%s\n' wl-copy -- "$snapper_fix" -- \
   omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
 clean_log snapper-degraded
+
+# 14g. A plugin updated under a running shell (WP-090): the shell injects the
+#      manifest it re-read from disk, but runs the code it compiled first.
+#      The repository's manifest is the running code's version: no notice.
+#      Another version: the neutral notice, whose one action runs
+#      omarchy-restart-shell with no arguments.
+manifest=$(jq -c . "$plugin/manifest.json")
+run restart-same 2500 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index.sample.json" \
+  HARNESS_MANIFEST="$manifest" HARNESS_FIX=restart:restart HARNESS_RECORD="$work/restart-same.record"
+expect restart-same .manifestVersion "$(jq -r .version <<<"$manifest")"
+expect restart-same .pluginVersion "$(jq -r .version <<<"$manifest")"
+expect restart-same .restartNotice ""
+expect restart-same '.restartActions | length' 0
+if grep -a -q "HARNESS fix restart:restart false" "$work/restart-same.log" && [[ ! -e $work/restart-same.record ]]; then
+  pass=$((pass + 1)); echo "ok   restart-same: no notice, the restart action does nothing"
+else
+  fail=$((fail + 1)); echo "FAIL restart-same: the restart action ran without the notice"
+fi
+clean_log restart-same
+run restart-updated 2500 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index.sample.json" \
+  HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_FIX=restart:copy,restart:restart \
+  HARNESS_RECORD="$work/restart-updated.record"
+expect restart-updated .status ok
+expect restart-updated .manifestVersion 99.0.0
+expect restart-updated .restartNotice "Restart the shell to finish the update"
+expect restart-updated '.restartActions | join(",")' "restart:Restart shell"
+expect restart-updated .banner ""
+if grep -a -q "HARNESS fix restart:copy false" "$work/restart-updated.log"; then
+  pass=$((pass + 1)); echo "ok   restart-updated: the notice has no copy action"
+else
+  fail=$((fail + 1)); echo "FAIL restart-updated: copy on the restart notice was not refused"
+fi
+record_check restart-updated "$(printf '%s\n' omarchy-restart-shell --)"
+clean_log restart-updated
 
 # 14f. Issue #2, live: the engine reports snapper failing until the user's
 #      fix. Run in terminal shows the hint (no engine call); Check again runs

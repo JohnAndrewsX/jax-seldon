@@ -56,6 +56,14 @@ Item {
   // docs/VERSIONING.md); "" until the shell has injected the manifest.
   readonly property string engineMin: Model.engineMinOf(root.manifest)
 
+  // ---- Plugin code (WP-090): the version this code is, and the one the
+  // manifest on disk names (the shell re-reads it on every rescan, "" until
+  // injected). When they differ, the plugin was updated under a running
+  // shell, which keeps the old code until it restarts.
+  readonly property string pluginVersion: Model.PLUGIN_VERSION
+  readonly property string manifestVersion: Model.pluginVersionOf(root.manifest)
+  readonly property var restartNotice: Model.restartShellNotice(pluginVersion, manifestVersion)
+
   // ---- Index file.
   property string fileState: "loading"     // loading | loaded | missing | invalid
   property var parsed: null
@@ -563,8 +571,14 @@ Item {
 
   // ---- Banner fixes (AGENTS.md §7: every non-ok state has a one-click fix).
   // bannerId picks the banner whose constant command copy/terminal use:
-  // "status" (default) or "snapper" (ADR-0026).
+  // "status" (default) or "snapper" (ADR-0026). "restart" is the restart
+  // notice's own action (WP-090): the fixed argv, only while it shows.
   function fix(actionId, bannerId) {
+    if (bannerId === "restart") {
+      if (actionId !== "restart" || !root.restartNotice) return false
+      Quickshell.execDetached(Model.RESTART_SHELL_ARGV)
+      return true
+    }
     var source = bannerId === "snapper" ? root.snapperBanner : root.banner
     var command = source ? source.command : ""
     if (actionId === "copy" && command !== "") {
@@ -602,6 +616,10 @@ Item {
       capturing: root.capturing,
       lockRetries: root.lockRetries,
       engineMin: root.engineMin,
+      pluginVersion: root.pluginVersion,
+      manifestVersion: root.manifestVersion,
+      restartNotice: root.restartNotice ? root.restartNotice.title : "",
+      restartActions: root.restartNotice ? root.restartNotice.actions.map(function(a) { return a.id + ":" + a.label }) : [],
       busyRefusal: root.busyRefusal,
       canWrite: root.canWrite,
       lastError: root.lastError,
