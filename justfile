@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test check-watch check-packaging check-install schema-validate docs-check plugin-validate qmllint plugin-test
+check: fmt-check clippy test check-watch check-packaging check-install check-deploy schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -87,6 +87,13 @@ check-packaging:
 # URLs, scratch HOME and prefixes, no network); shellcheck when installed.
 check-install:
     bash tests/install/install.test.sh
+
+# An ssh stub runs the remote side here with a scratch HOME and stubbed
+# omarchy commands, a cargo stub builds a fake engine; no network, the real
+# session and home untouched; shellcheck when installed.
+# scripts/deploy-test-host.sh (WP-098) against a fake test host.
+check-deploy:
+    bash tests/deploy/deploy-test-host.test.sh
 
 # Validate fixtures against schema/ (script owned by WP-002).
 schema-validate:
@@ -198,6 +205,16 @@ build-release:
 # Regenerate fixtures from the engine (stub until the engine can build an index).
 fixtures-refresh:
     @echo "fixtures-refresh: not implemented yet (needs \`seldon index\`; see SPEC-ENGINE §10)"
+
+# Run by the orchestrator after a green main check and the push. Host from
+# SELDON_TEST_HOST, listed in scripts/guard-hosts.local. See docs/TESTING.md,
+# "Test host follows main".
+#   just deploy-test-host <main check log>       deploy main
+#   just deploy-test-host --dry-run <log>        show what it would do
+#   just deploy-test-host --release vX.Y.Z       back to a release
+# Put the main build of engine and plugin on the test host (WP-098).
+deploy-test-host *args:
+    bash scripts/deploy-test-host.sh {{ args }}
 
 # Engine ↔ plugin end-to-end test (host only; not part of `check`).
 # `just e2e` runs on the test host over ssh (SELDON_TEST_HOST, default `test`)
