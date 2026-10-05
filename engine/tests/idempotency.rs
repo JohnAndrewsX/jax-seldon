@@ -921,14 +921,19 @@ mod idempotency {
     /// Two captures in the second 10:10: the first changes `a.conf` and
     /// saves its cursor, the second removes `x.conf` and its cursor save
     /// fails. With `back`, `x.conf` is there again before the next capture.
-    /// Returns that capture's events.
+    /// Returns that capture's events. The removal of `y.conf` at 10:00, the
+    /// first capture's `since`, is not at its check and not in its marker.
     fn removed_in_the_same_second_as_the_check(tag: &str, back: bool) -> Vec<Event> {
         let mut b = support::Bench::new(tag);
         let a = hypr(&b, "a.conf", "A\n");
         let x = hypr(&b, "x.conf", "x\n");
-        assert!(config_run(&mut b, "10:00").is_empty());
+        let y = hypr(&b, "y.conf", "y\n");
+        assert!(config_run(&mut b, "09:50").is_empty());
+        std::fs::remove_file(&y).unwrap();
+        assert_eq!(config_run(&mut b, "10:00").len(), 1);
         std::fs::write(&a, "B\n").unwrap();
         assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        assert_eq!(b.cursors["config"]["atCheck"], 1);
         let before = b.cursors.clone();
         std::fs::remove_file(&x).unwrap();
         assert_eq!(
@@ -1025,11 +1030,23 @@ mod idempotency {
         // a cursor saved before WP-107 has no marker; the replay then reads
         // as WP-103 did: strictly after the check when the cursor is not
         // behind, and from it on without its removals when it is
+
+        // not behind: neither the removal nor the addition at the check
         let mut b = same_content_removed_with_an_old_cursor("config-old-cursor");
         let again = config_run(&mut b, "10:20");
         assert!(again.is_empty(), "{:?}", kinds(&again));
         assert!(b.cursors["config"]["atCheck"].is_number(), "saved anew");
+        let mut b = support::Bench::new("config-old-cursor-same-second");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let x = hypr(&b, "x.conf", "x\n");
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        std::fs::remove_file(&x).unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        without_marker(&mut b);
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
 
+        // behind: not the removal at the check, but a change clamped to it
         let mut b = same_content_removed_with_an_old_cursor("crash-config-old-cursor");
         let before = b.cursors.clone();
         hypr(&b, "other.conf", "y\n");
@@ -1038,6 +1055,53 @@ mod idempotency {
         let again = config_run(&mut b, "10:30");
         assert!(again.is_empty(), "{:?}", kinds(&again));
         assert_eq!(b.ledger_events(Source::Config).len(), 2);
+        let mut b = support::Bench::new("crash-config-old-cursor-clamped");
+        let a = hypr(&b, "a.conf", "A\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        without_marker(&mut b);
+        let before = b.cursors.clone();
+        std::fs::write(&a, "B\n").unwrap();
+        let at = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(
+                support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64
+            );
+        let file = std::fs::File::options().write(true).open(&a).unwrap();
+        file.set_modified(at).unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+    }
+
+    #[test]
+    fn a_ledger_that_cannot_be_read_gives_no_marker() {
+        // a baseline does not need the ledger and saves a cursor without
+        // the marker; a capture with a cursor degrades (WP-107)
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut b = support::Bench::new("config-unreadable-ledger");
+        hypr(&b, "a.conf", "A\n");
+        let dir = b.ledger.dir().to_path_buf();
+        std::fs::create_dir_all(&dir).unwrap();
+        let mode = |m: u32| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(m));
+        mode(0o000).unwrap();
+        if std::fs::read_dir(&dir).is_ok() {
+            mode(0o700).unwrap();
+            eprintln!("skipped: permissions do not apply to this user");
+            return;
+        }
+        let baseline = b.run(&ConfigFiles, "2026-10-01T10:00:00+02:00");
+        assert!(baseline.ok, "{:?}", baseline.message);
+        assert!(
+            b.cursors["config"].get("atCheck").is_none(),
+            "{}",
+            b.cursors["config"]
+        );
+        assert!(b.cursors["config"]["checked"].is_string());
+        let degraded = b.run(&ConfigFiles, "2026-10-01T10:10:00+02:00");
+        mode(0o700).unwrap();
+        assert!(!degraded.ok);
+        let message = degraded.message.unwrap_or_default();
+        assert!(message.starts_with("cannot read the ledger"), "{message}");
     }
 
     /// The steps of guide 07 through `seldon capture --all`: back the state
