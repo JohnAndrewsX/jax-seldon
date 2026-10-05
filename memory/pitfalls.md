@@ -1671,3 +1671,13 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `password=` after the `-`), and `--proxy http://u:p@h` is
   `url-userinfo`; `redaction::proxy_json_and_cookie_rules_are_disjoint_and_stable`
   asserts that no WP-084 rule matches a row of an older rule.
+## 2026-10-05 · WP-086 (Engine Dev)
+
+- **The contract has no `seldon` actor** (`human|system|agent:<slug>`).
+  "Seldon did it" is a `source: seldon` `explained` resolution after the
+  append (WP-038 rule 7, WP-086 rule 8); the event keeps its actor.
+- **`drift --json` lists newest first.** A test that compares the drift
+  rows as a list must expect the latest event at index 0.
+- **Clippy `type_complexity` fires on test tables** like
+  `[(&str, &[(&str, bool, &str)], &str); 3]`; keep the table to scalars
+  and build the nested value inside the loop.

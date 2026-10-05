@@ -18,7 +18,8 @@
 //! caused them (`attribution.rs`). The pacman and omarchy collectors
 //! attribute their own events. After the append, a run of the config
 //! collector explains the files the engine wrote itself (`init
-//! --theme-hook`, `hook install`; SPEC-ENGINE §5 rule 7).
+//! --theme-hook`, `hook install`; SPEC-ENGINE §5 rule 7), and every
+//! capture explains Seldon's own plugin and package changes (rule 8).
 //!
 //! A collector that took a new baseline because its state was missing,
 //! unreadable or another logbook's ([`collectors::Lost`]) although the
@@ -167,6 +168,12 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
             eprintln!("seldon: warning: {w}");
         }
     }
+    // rule 8: Seldon updating itself is no drift
+    let (explained_self, warning) =
+        crate::reconcile::explain_own_changes(&lock, &ledger, &written, now);
+    if let Some(w) = warning {
+        eprintln!("seldon: warning: {w}");
+    }
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
 
@@ -175,7 +182,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         &written,
         &reports,
         &since_ignored,
-        explained,
+        (explained, explained_self),
         &warnings,
     ))
 }
@@ -526,7 +533,7 @@ fn render(
     written: &[Event],
     reports: &[CollectorReport],
     since_ignored: &[&str],
-    explained: usize,
+    (explained, explained_self): (usize, usize),
     warnings: &[String],
 ) -> Output {
     let ok = reports.iter().all(|r| r.ok);
@@ -558,6 +565,7 @@ fn render(
         "collectors": collectors,
         "sinceIgnored": since_ignored,
         "explainedOwn": explained,
+        "explainedSelf": explained_self,
         "warnings": warnings,
     });
 
@@ -578,6 +586,12 @@ fn render(
         let _ = write!(
             human,
             "\nnote: {explained} config event(s) explained as written by seldon itself"
+        );
+    }
+    if explained_self > 0 {
+        let _ = write!(
+            human,
+            "\nnote: {explained_self} event(s) explained as seldon updating itself"
         );
     }
     if !since_ignored.is_empty() {

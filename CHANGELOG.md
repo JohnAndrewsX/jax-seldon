@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `‹redacted›` marker included: the rules use ASCII word boundaries
   (a 16 KB curl line 0.13 ms instead of 1.2 ms), and a curl line
   compiles a curl rule only when it holds that rule's option (WP-084).
+- Seldon updating itself is no drift: a capture explains every new event
+  of its own plugin `jax.seldon` (updated, enabled, disabled) and of its
+  own package `jax-seldon` (upgraded, reinstalled) with an `explained`
+  resolution (`seldon's own plugin`, `seldon's own package`). The event
+  stays in the Changelog with its actor. Adding the plugin, installing or
+  downgrading the package, and removing either stay drift: only the id
+  is matched, nothing checks where the code came from. `capture --json`
+  adds `explainedSelf` (WP-086).
 
 ## [0.1.2] - 2026-10-04
 
