@@ -669,9 +669,9 @@ fn builtin_rules() -> Vec<Rule> {
 }
 
 /// One character of a domain beyond ASCII (`müller.example`,
-/// `.испытание`): anything but the quotes of [`REDACTED`] (U+2039,
-/// U+203A), so a marker is never part of an address.
-const NON_ASCII: &str = r"\x{80}-\x{2038}\x{203B}-\x{10FFFF}";
+/// `.испытание`): any. The domain is kept as it stands, so text glued to
+/// it stays too.
+const NON_ASCII: &str = r"\x{80}-\x{10FFFF}";
 
 /// One character of a local part beyond ASCII (`jürgen@…`): not the
 /// control characters and the no-break space (U+0080–U+00A0), the general

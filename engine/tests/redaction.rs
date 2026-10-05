@@ -846,9 +846,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "email",
-        "連絡先：山田太郎さんoscar@example.com",
+        "山田太郎さん（連絡先：oscar@example.com）",
         "oscar",
-        "連絡先：山田太郎さん‹redacted›@example.com",
+        "山田太郎さん（連絡先：‹redacted›@example.com）",
     ),
     (
         "email",
