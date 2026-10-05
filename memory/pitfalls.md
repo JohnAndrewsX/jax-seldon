@@ -1821,3 +1821,26 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `/proc/<pid>/status` before bisecting, and measure interleaved under
   the check lock. `git archive` copies keep old mtimes: touch the
   sources, or cargo reuses the previous build.
+
+## 2026-10-05 · WP-096 (Engine Dev)
+
+- **An environment variable set for an agent reaches every program the
+  agent starts, the Omarchy hooks included.** `omarchy theme set` run by
+  the agent runs `seldon-theme-set.sh`, which calls `seldon event theme
+  theme-set` without `--actor`; with `SELDON_ACTOR` read first, that
+  event lost the ledger attribution (actor and case of the agent's
+  command). `event` therefore applies the variable after the attribution
+  and only while the actor is still `system`. A new env default must be
+  checked against every caller that leaves the flag out on purpose.
+- **With `--json`, an error is `{"error": {"code", "message"}}` on
+  stdout, not text on stderr.** A test that runs with `--json` and
+  asserts `stderr(&out).contains(…)` sees an empty string.
+- **A launched child cannot take the state lock while `agent start`
+  holds it** (`lock::acquire` does not wait). An end-to-end stub that
+  calls `seldon` must run in the background and wait until the test
+  creates a marker file after `agent start` returned; the test PATH has
+  only stubs, so the wait uses shell builtins (`[ -e ]`, a counter), not
+  `sleep`.
+- **A mutant script that parses failing test names must keep names with
+  `::`** (`generic::…`, `commands::agent::tests::…`); dropping them made
+  six killed mutants look "killed by nothing".
