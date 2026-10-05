@@ -27,6 +27,9 @@ import qs.Commons
 //                                          visible item whose text is <text>
 //                                          (a Button, or a label over a
 //                                          MouseArea such as the red strip)
+//                       hover:<text>       move the pointer to the centre of
+//                                          the first visible item whose text
+//                                          is <text> (a banner's tooltip)
 //                       shot:<name>        save the window as
 //                                          $HARNESS_SHOTS/<name>.png
 //                       view               no action, just report
@@ -151,6 +154,10 @@ ShellRoot {
       var target = root.findText(win.contentItem, arg)
       if (target) driver.mouseClick(target)
       else console.log("HARNESS nothing to click: " + arg)
+    } else if (verb === "hover") {
+      var over = root.findText(win.contentItem, arg)
+      if (over) driver.mouseMove(over)
+      else console.log("HARNESS nothing to hover: " + arg)
     } else if (verb === "shot") {
       var dir = Quickshell.env("HARNESS_SHOTS") || ""
       if (dir !== "") win.contentItem.grabToImage(function(result) { result.saveToFile(dir + "/" + arg + ".png") })

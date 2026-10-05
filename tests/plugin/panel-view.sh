@@ -1149,6 +1149,47 @@ for counter in locked-captures:1 captures:1; do
 done
 clean_log capture-click "jax\.seldon: seldon capture exit 4: another seldon process holds the lock "
 
+# 28. Capture warnings (WP-085): the start-up capture warns (the state
+#     reset, and a second warning of two lines). Every tab shows the
+#     neutral notice "Capture warned" with the first line of each warning
+#     and no button; the hover shows both in full. *Capture now* on the
+#     Changelog runs a capture without warnings, and the notice is gone.
+reset_warning="state reset recorded: pacman took a new baseline because ~/.local/state/seldon was missing, unreadable or bound to another logbook, so changes made in between may be missing. If you have a backup of it, restore it and run \`seldon capture\` again (user guide: Back up and restore the state directory)"
+move_warning=$'cannot move ~/.local/state/seldon/owned.json aside: permission denied\ncaused by: EACCES'
+mkdir -p "$work/home-capture-warned"
+run capture-warned "" "view;hover:Capture warned;view;tab:changelog;click:Capture now;settle;view" \
+  HOME="$work/home-capture-warned" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_CAPTURE_WARNED=1 \
+  FAKE_SELDON_CAPTURE_WARNINGS="$(jq -cn --arg a "$reset_warning" --arg b "$move_warning" '[$a, $b]')"
+notice_detail="$reset_warning"$'\n'"cannot move ~/.local/state/seldon/owned.json aside: permission denied"
+expect capture-warned 1 .view.status ok
+expect capture-warned 1 .view.banner ""
+expect capture-warned 1 .view.captureNotice.title "Capture warned"
+expect capture-warned 1 .view.captureNotice.detail "$notice_detail"
+expect capture-warned 1 .view.captureNotice.neutral true
+expect capture-warned 1 .view.captureNotice.hovered false
+expect capture-warned 1 .view.captureNotice.tooltip "$reset_warning"$'\n\n'"$move_warning"
+shows capture-warned 1 "Capture warned"
+if [[ $(sed -n 1p "$work/capture-warned.steps" | jq -r --arg d "$notice_detail" '[.texts[] | select(. == $d)] | length') == 1 ]]; then
+  pass=$((pass + 1)); echo "ok   capture-warned #1: the notice shows the first line of each warning"
+else
+  fail=$((fail + 1)); echo "FAIL capture-warned #1: the notice's detail is not on screen"
+fi
+expect capture-warned 1 .view.captureResult "nothing new"
+expect capture-warned 3 .view.captureNotice.hovered true
+expect capture-warned 4 .view.tab changelog
+shows capture-warned 4 "Capture warned"
+expect capture-warned 7 .view.captureResult "nothing new"
+expect capture-warned 7 .view.captureNotice.title ""
+expect capture-warned 7 '[.texts[] | select(. == "Capture warned")] | length' 0
+got=$(cat "$work/home-capture-warned/captures" 2>/dev/null || echo 0)
+if [[ $got == 2 ]]; then
+  pass=$((pass + 1)); echo "ok   capture-warned: captures = 2"
+else
+  fail=$((fail + 1)); echo "FAIL capture-warned: captures = $got (want 2)"
+fi
+expect capture-warned 1 '.overflow | length' 0
+clean_log capture-warned
+
 real_home_check panel-view
 
 echo "panel-view: $pass passed, $fail failed"
