@@ -476,6 +476,25 @@ mod state_reset {
         Some(sources.replace(", ", ","))
     }
 
+    /// WP-091: doctor's row for collectors whose baseline waits
+    /// (`pendingBaseline`): their names (comma list) and the row, `None`
+    /// without one. Its names are what their next successful run records.
+    fn waiting(cli: &Cli) -> Option<(String, serde_json::Value)> {
+        const ROW: &str = " degraded or not run since a state reset (";
+        let doctor = common::json(&cli.run(&["doctor", "--json"]));
+        let rows: Vec<&serde_json::Value> = doctor["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["name"] == "state" && c["message"].as_str().unwrap().contains(ROW))
+            .collect();
+        assert!(rows.len() <= 1, "{doctor}");
+        let row = rows.first()?;
+        assert_eq!(row["status"], "degraded", "{row}");
+        let names = row["message"].as_str().unwrap().split(ROW).next().unwrap();
+        Some((names.replace(", ", ","), (*row).clone()))
+    }
+
     /// `capture --source config --json`.
     fn capture_config(cli: &Cli) -> serde_json::Value {
         let out = cli.run(&["capture", "--source", "config", "--json"]);
@@ -871,7 +890,17 @@ mod state_reset {
         assert_eq!(pending(&cli, "pacman"), None, "it took its baseline");
 
         // degraded again, or not run: it keeps waiting, nothing recorded
-        assert_eq!(predicted(&cli).as_deref(), Some("snapper"));
+        assert_eq!(predicted(&cli), None);
+        let (names, row) = waiting(&cli).unwrap();
+        assert_eq!(names, "snapper");
+        assert_eq!(
+            row["message"],
+            "snapper degraded or not run since a state reset (cursors missing or unreadable in ~/.local/state/seldon); its next successful capture records the gap, so changes made in between may not be recorded"
+        );
+        assert_eq!(
+            row["fix"],
+            "run seldon capture --source snapper once it can run (a degraded collector: the collectors row's fix first)"
+        );
         assert_eq!(cli.capture(&[])["written"], 0);
         assert_eq!(pending(&cli, "snapper").as_deref(), Some("cursors"));
         cli.stub_snapper(&fixture("logs/snapper-before.json"));
@@ -897,6 +926,7 @@ mod state_reset {
         assert_eq!(reset[1].meta.extra["files"], "cursors");
         assert_eq!(pending(&cli, "snapper"), None);
         assert_eq!(predicted(&cli), None);
+        assert_eq!(waiting(&cli), None);
 
         let again = cli.capture(&[]);
         assert_eq!(again["written"], 0, "{again}");
@@ -965,6 +995,16 @@ mod state_reset {
             pending(&cli, "snapper").as_deref(),
             Some("logbook"),
             "degraded again"
+        );
+        // WP-091: doctor says why, not "cursors unreadable"
+        assert_eq!(predicted(&cli), None);
+        let (names, row) = waiting(&cli).unwrap();
+        assert_eq!(names, "snapper");
+        assert!(
+            row["message"].as_str().unwrap().starts_with(
+                "snapper degraded or not run since a state reset (the state in ~/.local/state/seldon belonged to another logbook); its next successful capture records the gap"
+            ),
+            "{row}"
         );
 
         cli.stub_snapper(&fixture("logs/snapper-before.json"));
@@ -1120,28 +1160,39 @@ mod state_reset {
         let mut bare = index_row(&cli, "snapper");
         bare["name"] = none["name"].clone();
         assert_eq!(bare, none);
-        assert_eq!(predicted(&cli).as_deref(), Some("snapper"));
+        assert_eq!(predicted(&cli), None);
+        assert_eq!(waiting(&cli).unwrap().0, "snapper");
 
         // not run again: the entry stays as it is
         assert_eq!(pacman(&cli)["written"], 0);
         assert_eq!(pending(&cli, "snapper").as_deref(), Some("cursors"));
 
+        // an unreadable cursor besides: each in its own row, one note
+        let file = state(&cli).join("cursors.json");
+        let mut cursors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        cursors["collectors"]["pacman"]["cursor"] = serde_json::json!("not a cursor");
+        std::fs::write(&file, cursors.to_string()).unwrap();
+        assert_eq!(predicted(&cli).as_deref(), Some("pacman"));
+        assert_eq!(waiting(&cli).unwrap().0, "snapper");
+
         let out = cli.capture(&[]);
         assert_eq!(out["written"], 1, "only the note: {out}");
         let reset = resets(&cli);
         assert_eq!(reset.len(), 2, "{reset:?}");
-        assert_eq!(reset[1].meta.extra["sources"], "snapper");
+        assert_eq!(reset[1].meta.extra["sources"], "snapper,pacman");
         assert_eq!(reset[1].meta.extra["files"], "cursors");
         assert!(
             out["warnings"][0]
                 .as_str()
                 .unwrap()
-                .starts_with("state reset recorded: snapper took a new baseline"),
+                .starts_with("state reset recorded: snapper, pacman took a new baseline"),
             "{out}"
         );
         assert_eq!(pending(&cli, "snapper"), None);
         assert!(entry(&cli, "snapper")["lastRun"].is_string());
         assert_eq!(predicted(&cli), None);
+        assert_eq!(waiting(&cli), None);
         assert_eq!(cli.capture(&[])["written"], 0);
         assert_eq!(resets(&cli).len(), 2);
     }
@@ -1219,6 +1270,7 @@ mod state_reset {
         assert_eq!(common::json(&out)["written"], 0);
         assert_eq!(entry(&cli, "snapper"), before);
         assert_eq!(predicted(&cli).as_deref(), Some("snapper"));
+        assert_eq!(waiting(&cli), None, "unreadable, not waiting");
         let out = cli.capture(&[]);
         assert_eq!(out["written"], 1, "only the note: {out}");
         assert_eq!(resets(&cli)[0].meta.extra["files"], "cursors");

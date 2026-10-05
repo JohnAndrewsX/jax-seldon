@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entry in `cursors.json` with only the mark, which the index shows as a
   collector that has not run yet, and its first successful run, also
   after it is enabled again, records its gap (WP-091).
+- `seldon doctor` shows a collector whose baseline waits in its own
+  `state` row: degraded or not run since a state reset, and that its
+  next successful capture records the gap; it says when the state was
+  another logbook's instead of "cursors unreadable", and the fix is a
+  capture of that collector rather than a restore (WP-091).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains

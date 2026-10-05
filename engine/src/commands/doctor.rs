@@ -18,7 +18,7 @@ use super::capture::{Binding, pending_reset};
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
-use crate::collectors::{Cursors, STATE_RESET, Sources, cursors_file, snapper};
+use crate::collectors::{Cursors, Lost, STATE_RESET, Sources, cursors_file, snapper};
 use crate::config::{Config, LogbookSource};
 use crate::error::{Error, Exit, Result};
 use crate::index::load::{FENCE_BEGIN, FENCE_END, bad_lines_warning};
@@ -595,21 +595,32 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
 /// nothing is lost, `cursors.json` cannot be read (the `state` rows) or
 /// the ledger cannot be read (the `ledger` row). A logbook from
 /// `--path`/`--logbook` is not the one a plain `seldon capture` captures,
-/// so the fix names it.
+/// so the fix names it. A collector whose baseline waits since it
+/// degraded or was not run when the state was lost (`pendingBaseline`,
+/// WP-088/WP-091) has its own row ([`waiting_row`]).
 fn check_pending_reset(
     ctx: &Context,
     config: &Config,
     logbook: &Logbook,
     source: LogbookSource,
-) -> Option<Check> {
-    let cursors = Cursors::load(&cursors_file(&ctx.dirs)).ok()?;
+) -> Vec<Check> {
+    let Ok(cursors) = Cursors::load(&cursors_file(&ctx.dirs)) else {
+        return Vec::new();
+    };
     let canonical = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
     let ledger = Ledger::new(logbook, Redactor::builtin());
-    let (binding, lost) = pending_reset(&ledger, config, &cursors, &canonical).ok()?;
-    if lost.is_empty() {
-        return None;
-    }
-    let sources: Vec<&str> = lost.iter().map(|(n, _)| *n).collect();
+    let Ok((binding, lost)) = pending_reset(&ledger, config, &cursors, &canonical) else {
+        return Vec::new();
+    };
+    // a mark counts only in cursors bound here (`loss`)
+    let mark = |name: &str| {
+        let state = cursors
+            .collectors
+            .get(name)
+            .filter(|_| binding == Binding::This);
+        state.and_then(|s| s.pending_baseline)
+    };
+    let (waiting, lost): (Vec<_>, Vec<_>) = lost.into_iter().partition(|(n, _)| mark(n).is_some());
     let state = ctx.dirs.display(&ctx.dirs.state_dir);
     let capture = match source {
         LogbookSource::Flag => format!(
@@ -618,30 +629,77 @@ fn check_pending_reset(
         ),
         _ => "seldon capture".to_string(),
     };
-    let restore = format!(
-        "restore {state} from a backup now (user guide: Back up and restore the state directory), or run {capture} to accept the new baseline"
-    );
-    let (why, fix) = match binding {
-        Binding::None => (format!("cursors missing in {state}"), restore),
-        Binding::This => (format!("cursors unreadable in {state}"), restore),
-        Binding::Other => (
-            format!("cursors in {state} bound to another logbook"),
-            format!(
-                "nothing to restore: the state belongs to another logbook path; run {capture} to accept the new baseline (user guide: Moving or copying the logbook)"
+    let mut checks = Vec::new();
+    if !lost.is_empty() {
+        let sources: Vec<&str> = lost.iter().map(|(n, _)| *n).collect();
+        let restore = format!(
+            "restore {state} from a backup now (user guide: Back up and restore the state directory), or run {capture} to accept the new baseline"
+        );
+        let (why, fix) = match binding {
+            Binding::None => (format!("cursors missing in {state}"), restore),
+            Binding::This => (format!("cursors unreadable in {state}"), restore),
+            Binding::Other => (
+                format!("cursors in {state} bound to another logbook"),
+                format!(
+                    "nothing to restore: the state belongs to another logbook path; run {capture} to accept the new baseline (user guide: Moving or copying the logbook)"
+                ),
             ),
-        ),
+        };
+        checks.push(
+            Check::new(
+                "state",
+                Status::Degraded,
+                format!(
+                    "the next capture will record a state reset for {}: {why}, so changes made since the last capture may not be recorded",
+                    sources.join(", ")
+                ),
+            )
+            .fix(fix),
+        );
+    }
+    if !waiting.is_empty() {
+        checks.push(waiting_row(&waiting, &state, &capture));
+    }
+    checks
+}
+
+/// The row for collectors whose baseline waits (WP-091): each degraded or
+/// was not run in the capture that lost its state, and what the mark says
+/// was lost (`waiting`, from [`pending_reset`]): `cursors`, or `logbook`
+/// when the state was another logbook's. A capture clears the row only by
+/// running them successfully, so the fix names that capture.
+fn waiting_row(waiting: &[(&'static str, Lost)], state: &str, capture: &str) -> Check {
+    let why = |l: Lost| match l {
+        Lost::Logbook => format!("the state in {state} belonged to another logbook"),
+        _ => format!("cursors missing or unreadable in {state}"),
     };
-    Some(
-        Check::new(
-            "state",
-            Status::Degraded,
-            format!(
-                "the next capture will record a state reset for {}: {why}, so changes made since the last capture may not be recorded",
-                sources.join(", ")
-            ),
-        )
-        .fix(fix),
+    let names: Vec<&str> = waiting.iter().map(|(n, _)| *n).collect();
+    let why = if waiting.iter().all(|(_, l)| *l == waiting[0].1) {
+        why(waiting[0].1)
+    } else {
+        let each: Vec<String> = waiting
+            .iter()
+            .map(|(n, l)| format!("{n}: {}", why(*l)))
+            .collect();
+        each.join("; ")
+    };
+    let (whose, it) = if names.len() == 1 {
+        ("its", "it")
+    } else {
+        ("each one's", "they")
+    };
+    Check::new(
+        "state",
+        Status::Degraded,
+        format!(
+            "{} degraded or not run since a state reset ({why}); {whose} next successful capture records the gap, so changes made in between may not be recorded",
+            names.join(", ")
+        ),
     )
+    .fix(format!(
+        "run {capture} --source {} once {it} can run (a degraded collector: the collectors row's fix first)",
+        names.join(",")
+    ))
 }
 
 /// The collector state files, loaded as strictly as `capture` loads
@@ -1042,5 +1100,53 @@ fn describe(run: &Run) -> String {
         Run::NotFound => "not found".into(),
         Run::TimedOut => format!("no answer within {}s", PROBE_TIMEOUT.as_secs()),
         Run::Failed(e) => e.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WP-091: one reason for all, or each collector with its own; the
+    /// fix names every collector for `--source`.
+    #[test]
+    fn a_waiting_row_names_each_reason() {
+        let state = "~/.local/state/seldon";
+        let both = waiting_row(
+            &[("snapper", Lost::Cursor), ("theme", Lost::Cursor)],
+            state,
+            "seldon capture",
+        );
+        assert_eq!(
+            both.message,
+            "snapper, theme degraded or not run since a state reset (cursors missing or unreadable in ~/.local/state/seldon); each one's next successful capture records the gap, so changes made in between may not be recorded"
+        );
+        assert_eq!(
+            both.fix.as_deref(),
+            Some(
+                "run seldon capture --source snapper,theme once they can run (a degraded collector: the collectors row's fix first)"
+            )
+        );
+        let mixed = waiting_row(
+            &[("snapper", Lost::Logbook), ("theme", Lost::Cursor)],
+            state,
+            "seldon --logbook ~/lb capture",
+        );
+        assert!(
+            mixed.message.starts_with(
+                "snapper, theme degraded or not run since a state reset (snapper: the state in ~/.local/state/seldon belonged to another logbook; theme: cursors missing or unreadable in ~/.local/state/seldon); "
+            ),
+            "{}",
+            mixed.message
+        );
+        assert!(
+            mixed
+                .fix
+                .as_deref()
+                .unwrap()
+                .starts_with("run seldon --logbook ~/lb capture --source snapper,theme once"),
+            "{:?}",
+            mixed.fix
+        );
     }
 }

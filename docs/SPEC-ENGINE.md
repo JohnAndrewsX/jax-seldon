@@ -367,7 +367,8 @@ for this logbook is missing or does not read as its cursor (the
 collector's `cursor_reads`) would take a baseline; that baseline passes
 the same binding gate (no binding: `cursors missing`; another logbook:
 `bound to another logbook`; this logbook: only a cursor that is there
-and does not read, or a `pendingBaseline` mark, `cursors unreadable`)
+and does not read, `cursors unreadable`, or a `pendingBaseline` mark,
+below)
 and the same ledger rule (at
 least one event of its source). Message `the next capture will record a
 state reset for <sources>: cursors missing in <state dir>, so changes
@@ -382,12 +383,20 @@ successfully here, when `cursors.json` cannot be read (its error row), or
 when the ledger cannot be read (the `ledger` row). Not predicted: a
 collector that degrades in that capture takes no baseline (its baseline
 waits, `pendingBaseline`), so the row can name more collectors than the
-note, and it keeps naming one with the mark while that collector
-degrades. With a `logbook` mark the row's fix is right (nothing to
-restore) but its message says `cursors unreadable`, which it is not
-(WP-091 fixes the wording); `manifest` and `owned` losses show in
-their error rows. After that capture the row is gone and the reset row
-takes over. The `omarchy`
+note; `manifest` and `owned` losses show in their error rows. After that
+capture the row is gone and the reset row takes over. A collector whose
+baseline waits (enabled, cursors bound to this logbook, marked
+`pendingBaseline` because it degraded or was not run in the capture that
+lost its state) has its own degraded `state` row instead (WP-091):
+`<collectors> degraded or not run since a state reset (cursors missing or
+unreadable in <state dir>); its next successful capture records the gap,
+so changes made in between may not be recorded`, with `the state in
+<state dir> belonged to another logbook` for a `logbook` mark (each
+collector with its own reason when the marks differ); fix `run seldon
+capture --source <collectors> once it can run (a degraded collector: the
+collectors row's fix first)`. A capture clears it only by running the
+collector successfully; a restore is not offered, as the other
+collectors took their new baseline already. The `omarchy`
 and `snapper` probes run the programs the collectors run
 (`SELDON_OMARCHY_VERSION`, `SELDON_SNAPPER`).
 
