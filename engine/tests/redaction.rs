@@ -1006,6 +1006,18 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeUnclosed3",
         "curl -u ‹redacted›\nnext line",
     ),
+    (
+        "curl-user",
+        "curl -u \"admin:fakeUnclosed4 rest\nLine two \"stays\".",
+        "fakeUnclosed4",
+        "curl -u ‹redacted›\nLine two \"stays\".",
+    ),
+    (
+        "curl-user",
+        "curl -u $'admin:fakeUnclosed5 rest\nLine two 'stays'.",
+        "fakeUnclosed5",
+        "curl -u ‹redacted›\nLine two 'stays'.",
+    ),
     // `\` before a line end inside double quotes, in the context and in
     // the value (WP-097 review, O2 and O1)
     (
