@@ -2,6 +2,8 @@
 //! (ADR-0015 §4), the `[drift] alwaysRed` globs and the routine class of a
 //! pacman group member (ADR-0013 §3).
 
+use std::sync::OnceLock;
+
 use regex::Regex;
 
 use crate::model::event::{Event, Kind};
@@ -42,16 +44,49 @@ pub fn names_token(text: &str, subject: &str) -> bool {
 
 /// `config.toml [drift] alwaysRed`, compiled: fnmatch-style globs (`*`,
 /// `?`, `[…]`), case-sensitive, matched against the whole subject.
+///
+/// A glob is compiled on its first use, and only for a subject that starts
+/// with the glob's literal head (the part before its first `*`, `?` or
+/// `[`), which every subject it matches does: an index build compiles
+/// nothing when no routine pacman group needs the check (WP-092; the
+/// defaults cost about 0.25 ms to compile). A pattern without those
+/// characters is compared as a string.
 #[derive(Debug, Clone)]
-pub struct AlwaysRed(Vec<Regex>);
+pub struct AlwaysRed(Vec<RedGlob>);
+
+#[derive(Debug, Clone)]
+struct RedGlob {
+    pattern: String,
+    /// The literal head; the whole pattern when it holds no glob character.
+    head: usize,
+    regex: OnceLock<Option<Regex>>,
+}
 
 impl AlwaysRed {
     pub fn new(patterns: &[String]) -> Self {
-        AlwaysRed(patterns.iter().filter_map(|p| glob(p)).collect())
+        AlwaysRed(
+            patterns
+                .iter()
+                .map(|p| RedGlob {
+                    head: p.find(['*', '?', '[']).unwrap_or(p.len()),
+                    pattern: p.clone(),
+                    regex: OnceLock::new(),
+                })
+                .collect(),
+        )
     }
 
     pub fn matches(&self, subject: &str) -> bool {
-        self.0.iter().any(|r| r.is_match(subject))
+        self.0.iter().any(|g| {
+            if g.head == g.pattern.len() {
+                return subject == g.pattern;
+            }
+            subject.starts_with(&g.pattern[..g.head])
+                && g.regex
+                    .get_or_init(|| glob(&g.pattern))
+                    .as_ref()
+                    .is_some_and(|r| r.is_match(subject))
+        })
     }
 }
 
@@ -205,5 +240,23 @@ mod tests {
         assert!(!odd.matches("x"));
         assert!(odd.matches("ya"));
         assert!(!odd.matches("y1"));
+    }
+
+    /// WP-092: a glob compiles only for a subject that starts with its
+    /// literal head; literal patterns never compile.
+    #[test]
+    fn always_red_compiles_on_demand() {
+        let red = AlwaysRed::new(&DriftConfig::default().always_red);
+        let compiled = |red: &AlwaysRed| -> Vec<String> {
+            red.0
+                .iter()
+                .filter(|g| g.regex.get().is_some())
+                .map(|g| g.pattern.clone())
+                .collect()
+        };
+        assert!(red.matches("linux") && !red.matches("firefox") && !red.matches("lim"));
+        assert!(compiled(&red).is_empty(), "{:?}", compiled(&red));
+        assert!(red.matches("limine-snapper-sync"));
+        assert_eq!(compiled(&red), ["limine*"]);
     }
 }

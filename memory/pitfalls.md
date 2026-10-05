@@ -1844,3 +1844,38 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   manager with an option** (`grep … 'pacman -S…' .github/…`) as a
   "privileged or package command" — the known substring false positive;
   search for something else in the same lines (`shellcheck`).
+
+## 2026-10-05 · WP-092 (Engine Dev)
+
+- **Profile the hook as a process, not as a warm loop.** The index build
+  in a loop took 1.1 to 1.5 ms; inside a fresh `seldon hook` process the
+  same rebuild took 2.1 ms. An `Event` is about 460 bytes, and growing or
+  copying a 900-event list maps fresh pages each time in a short-lived
+  process. Throwaway probes: an `eprintln!` of the elapsed time behind an
+  env var, kept as a patch in the scratchpad (`git diff > prof.patch`),
+  applied for a run and removed before every commit. `git apply --3way`
+  stages the files it touches, so `git reset` before you commit.
+- **A constructor on the hook path must not compile regexes it may never
+  use.** `SkipPaths::new` (five default globs, 0.45 ms) compiled eagerly
+  in every hook call, `AlwaysRed::new` (20 default patterns, 18 literals
+  and 2 globs, each a regex, 0.25 ms) in every index build. A literal is
+  a string comparison; for a glob, a literal head (the text before the
+  first glob character) plus a `OnceLock` keeps the result identical and
+  compiles only for a candidate. Look for `Regex::new` in `new()` before you tune anything else.
+- **clap derive costs about 0.15 to 0.2 ms per process** to build the
+  parser of every command. The plain `seldon hook claude-code` line now
+  builds the `Cli` value itself; a test compares it with the parser's
+  result via `Debug`, so a new global field is not missed.
+- **A serde visitor's error has a different column than a `String`
+  first.** `deserialize_str` with a visitor reports a parse error one
+  column earlier than `String::deserialize` + `map_err`. Compare messages
+  without the ` at line … column …` suffix, and check who shows them.
+- **Perf-only mutants survive functional tests by design.** List them
+  and time each one against the branch (bench build swapped into
+  `target/release/seldon`), instead of claiming they are covered.
+- **`\u` escapes do not survive an edit unchanged.** A Python heredoc
+  string and the Edit tool both turned `\u0033` into `3`, so a test row
+  meant to hold JSON escapes held plain text and proved nothing (WP-092
+  round 2). Write such rows with a doubled backslash in a script and check
+  the bytes with `cat -A`; a mutant that rejects the escaped path shows
+  whether the row works.

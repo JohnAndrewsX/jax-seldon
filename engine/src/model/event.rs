@@ -171,6 +171,7 @@ impl Meta {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Event {
+    #[serde(deserialize_with = "de_id")]
     pub id: Ulid,
     #[serde(serialize_with = "ser_ts", deserialize_with = "de_ts")]
     pub ts: DateTime<FixedOffset>,
@@ -352,13 +353,96 @@ fn ser_ts<S: Serializer>(ts: &DateTime<FixedOffset>, s: S) -> Result<S::Ok, S::E
 }
 
 fn de_ts<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<FixedOffset>, D::Error> {
-    let s = String::deserialize(d)?;
-    DateTime::parse_from_rfc3339(&s).map_err(serde::de::Error::custom)
+    d.deserialize_str(ParsedStr(DateTime::parse_from_rfc3339))
+}
+
+fn de_id<'de, D: Deserializer<'de>>(d: D) -> Result<Ulid, D::Error> {
+    d.deserialize_str(ParsedStr(Ulid::from_string))
+}
+
+/// A string field parsed from the borrowed text: no `String` per field
+/// and ledger line (WP-092). Errors read as those of `String` plus the
+/// parser's.
+struct ParsedStr<F>(F);
+
+impl<T, E: fmt::Display, F: FnOnce(&str) -> Result<T, E>> serde::de::Visitor<'_> for ParsedStr<F> {
+    type Value = T;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a string")
+    }
+
+    fn visit_str<Er: serde::de::Error>(self, v: &str) -> Result<T, Er> {
+        (self.0)(v).map_err(Er::custom)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-092: `id` and `ts` read from the borrowed text give the values
+    /// and the errors that reading a `String` first gave, escapes included.
+    /// Only the error's column may differ (raised before the closing quote
+    /// is consumed); the one reader, `Ledger::read_month`, drops the error.
+    #[test]
+    fn id_and_ts_read_as_through_a_string() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Borrowed {
+            #[serde(deserialize_with = "de_id")]
+            id: Ulid,
+            #[serde(deserialize_with = "de_ts")]
+            ts: DateTime<FixedOffset>,
+        }
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Owned {
+            #[serde(deserialize_with = "owned_id")]
+            id: Ulid,
+            #[serde(deserialize_with = "owned_ts")]
+            ts: DateTime<FixedOffset>,
+        }
+        fn owned_id<'de, D: Deserializer<'de>>(d: D) -> Result<Ulid, D::Error> {
+            Ulid::from_string(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+        }
+        fn owned_ts<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<FixedOffset>, D::Error> {
+            DateTime::parse_from_rfc3339(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+        }
+        let (id, ts) = (
+            r#""01M1MB2M1GWZYF485HTGVZ1KS3""#,
+            r#""2026-09-03T21:14:06+02:00""#,
+        );
+        for (id, ts) in [
+            (id, ts),
+            // JSON escapes for the first `0` and the `+`
+            (
+                r#""\u00301M1MB2M1GWZYF485HTGVZ1KS3""#,
+                r#""2026-09-03T21:14:06\u002b02:00""#,
+            ),
+            ("5", ts),
+            ("null", ts),
+            (r#""01M1""#, ts),
+            (id, "5"),
+            (id, "[]"),
+            (id, r#""2026-09-03""#),
+            (id, r#""2026-09-03T21:14:06\u002b0200""#),
+        ] {
+            let line = format!(r#"{{"id":{id},"ts":{ts}}}"#);
+            let message = |e: serde_json::Error| {
+                let text = e.to_string();
+                text.rsplit_once(" at line ")
+                    .map_or(text.clone(), |(m, _)| m.to_string())
+            };
+            let borrowed = serde_json::from_str::<Borrowed>(&line).map_err(message);
+            let owned = serde_json::from_str::<Owned>(&line).map_err(message);
+            assert_eq!(
+                format!("{borrowed:?}"),
+                format!("{owned:?}").replace("Owned", "Borrowed"),
+                "{line}"
+            );
+        }
+        let ok: Borrowed = serde_json::from_str(&format!(r#"{{"id":{id},"ts":{ts}}}"#)).unwrap();
+        assert_eq!(ok.id.to_string(), "01M1MB2M1GWZYF485HTGVZ1KS3");
+    }
 
     /// An actor or case it refuses is named escaped (WP-077).
     #[test]

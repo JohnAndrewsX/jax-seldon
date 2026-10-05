@@ -53,6 +53,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read as _;
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, FixedOffset, Local, Timelike as _, Utc};
@@ -472,10 +473,49 @@ struct ConfigCursor {
 /// directory boundary. A pattern without a `/` matches a file or directory
 /// name. `*` and `?` match within one path component, `**` across them. A
 /// match on a directory covers everything below it.
+///
+/// A pattern is compiled on its first use, and only for a path (or name)
+/// that starts with the pattern's literal head, which every path it
+/// matches does; a pattern that may match at any directory boundary has
+/// no head. A hook whose command names no path below a skipped folder
+/// compiles nothing (WP-092; the defaults cost about 0.45 ms to compile).
 #[derive(Debug, Clone, Default)]
 pub struct SkipPaths {
-    paths: Vec<Regex>,
-    names: Vec<Regex>,
+    paths: Vec<LazyGlob>,
+    names: Vec<LazyGlob>,
+}
+
+/// An anchored glob regex, compiled when [`LazyGlob::is_match`] first gets
+/// past the literal head.
+#[derive(Debug, Clone)]
+struct LazyGlob {
+    /// What every match starts with.
+    head: String,
+    source: String,
+    regex: OnceLock<Regex>,
+}
+
+impl LazyGlob {
+    /// `pattern` as [`glob`] reads it; only a `^` prefix gives it a head.
+    fn new(pattern: &str, prefix: &str, suffix: &str) -> Self {
+        let head = match prefix {
+            "^" => &pattern[..pattern.find(['*', '?']).unwrap_or(pattern.len())],
+            _ => "",
+        };
+        LazyGlob {
+            head: head.to_string(),
+            source: glob(pattern, prefix, suffix),
+            regex: OnceLock::new(),
+        }
+    }
+
+    fn is_match(&self, text: &str) -> bool {
+        text.starts_with(&self.head)
+            && self
+                .regex
+                .get_or_init(|| Regex::new(&self.source).expect("an escaped glob is a valid regex"))
+                .is_match(text)
+    }
 }
 
 impl SkipPaths {
@@ -485,7 +525,7 @@ impl SkipPaths {
         for p in patterns.iter().map(|p| p.trim()).filter(|p| !p.is_empty()) {
             let p = p.trim_end_matches('/');
             if !p.contains('/') && p != "~" {
-                skip.names.push(glob(p, "^", "$"));
+                skip.names.push(LazyGlob::new(p, "^", "$"));
                 continue;
             }
             let expanded = match p.strip_prefix('~') {
@@ -497,7 +537,8 @@ impl SkipPaths {
             } else {
                 "(?:^|/)"
             };
-            skip.paths.push(glob(&expanded, prefix, "(?:/.*)?$"));
+            skip.paths
+                .push(LazyGlob::new(&expanded, prefix, "(?:/.*)?$"));
         }
         skip
     }
@@ -516,8 +557,8 @@ impl SkipPaths {
     }
 }
 
-/// A glob as an anchored regex.
-fn glob(pattern: &str, prefix: &str, suffix: &str) -> Regex {
+/// A glob as the source of an anchored regex.
+fn glob(pattern: &str, prefix: &str, suffix: &str) -> String {
     let mut re = String::from(prefix);
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
@@ -532,7 +573,7 @@ fn glob(pattern: &str, prefix: &str, suffix: &str) -> Regex {
         }
     }
     re.push_str(suffix);
-    Regex::new(&re).expect("an escaped glob is a valid regex")
+    re
 }
 
 /// What one walk of the watch paths found.
@@ -1026,9 +1067,46 @@ mod tests {
         assert!(m("/home/user/.config/app/tokens/gh.json"));
         assert!(!m("/home/user/.config/app/tokens/sub/gh.json"));
         assert!(!m("/home/user/.config/app/mytokens/gh.json"));
+        // also without a leading `**/`
+        let rel = skip(&["app/secret.conf"]);
+        assert!(rel.matches(Path::new("/home/user/.config/app/secret.conf")));
+        assert!(!rel.matches(Path::new("/home/user/.config/myapp/secret.conf")));
         // regex characters in a pattern are literal
         assert!(!skip(&["a.b"]).matches(Path::new("/x/aXb")));
         assert!(!skip(&[""]).matches(Path::new("/x/y")));
+    }
+
+    /// WP-092: a pattern compiles only for a path or name that starts with
+    /// its literal head; one without a head compiles on its first use.
+    #[test]
+    fn skip_paths_compile_on_demand() {
+        let s = skip(&[
+            "~/.config/omarchy/**/state.json",
+            "id_?sa",
+            "**/tokens/*.json",
+        ]);
+        let compiled = |s: &SkipPaths| -> Vec<bool> {
+            s.paths
+                .iter()
+                .chain(&s.names)
+                .map(|g| g.regex.get().is_some())
+                .collect()
+        };
+        let mut paths = SkipPaths {
+            paths: s.paths[..1].to_vec(),
+            names: s.names.clone(),
+        };
+        assert!(!paths.matches(Path::new("/tmp/zed.pkg.tar.zst")));
+        assert!(!paths.matches(Path::new("/home/user/.config/omarchy")));
+        assert_eq!(compiled(&paths), [false, false]);
+        assert!(paths.matches(Path::new("/home/user/.ssh/id_rsa")));
+        assert_eq!(compiled(&paths), [false, true]);
+        assert!(paths.matches(Path::new("/home/user/.config/omarchy/a/state.json")));
+        assert_eq!(compiled(&paths), [true, true]);
+        // no head: compiled on the first path
+        paths.paths = s.paths[1..].to_vec();
+        assert!(!paths.matches(Path::new("/tmp/x")));
+        assert!(compiled(&paths)[0]);
     }
 
     #[test]

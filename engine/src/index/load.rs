@@ -85,7 +85,12 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
         if let Some(w) = bad_lines_warning(&month, &file.bad_lines) {
             out.warnings.push(w);
         }
-        out.events.extend(file.events);
+        if out.events.is_empty() {
+            // the first month's list moves instead of being copied (WP-092)
+            out.events = file.events;
+        } else {
+            out.events.extend(file.events);
+        }
     }
 
     for path in logbook.case_files()? {
