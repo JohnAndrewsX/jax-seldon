@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 3d7a1d1 -->
+<!-- source: en/10-troubleshooting.md @ 8fcc111 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -25,7 +25,7 @@ führt nichts mit `sudo` aus.
 | `ledger` | jede Zeile in `ledger/*.jsonl` ist ein Ereignis | `degraded`: Zeilen, die keine Ereignisse sind (ein abgerissener Schreibvorgang, eine Handänderung), werden übersprungen; die Zeile nennt Monat, Anzahl und Zeilen |
 | `fences` | die generierten Teile von `STATUS.md` und `DECISIONS.md` haben ihre Markerzeilen | `degraded`: eine Markerzeile fehlt, also lässt `seldon status` die Datei in Ruhe; oder ein End-Marker schließt keinen Abschnitt. `error`: die Datei ist nicht lesbar |
 | `collectors` | der letzte Capture jedes eingeschalteten Collectors ist gelungen | `degraded`: die Zeile nennt jeden fehlgeschlagenen Collector mit Meldung und Abhilfe |
-| `state` | `cursors.json`, `manifest.json` und `owned.json` in `~/.local/state/seldon` sind lesbar | `error`: die Datei ist beschädigt oder nicht lesbar; die Zeile sagt, was das kaputt macht; die Abhilfe verschiebt eine beschädigte Datei oder macht eine unlesbare lesbar. `degraded`: das nächste Capture wird einen Zustands-Reset festhalten, siehe [doctor sagt, das nächste Capture hält einen Zustands-Reset fest](#doctor-sagt-das-nächste-capture-hält-einen-zustands-reset-fest); oder das letzte Capture hat einen festgehalten, siehe [Ein Zustands-Reset wurde festgehalten](#ein-zustands-reset-wurde-festgehalten) |
+| `state` | `cursors.json`, `manifest.json` und `owned.json` in `~/.local/state/seldon` sind lesbar | `error`: die Datei ist beschädigt oder nicht lesbar; die Zeile sagt, was das kaputt macht; die Abhilfe verschiebt eine beschädigte Datei oder macht eine unlesbare lesbar. `degraded`: das nächste Capture wird einen Zustands-Reset festhalten, siehe [doctor sagt, das nächste Capture hält einen Zustands-Reset fest](#doctor-sagt-das-nächste-capture-hält-einen-zustands-reset-fest); oder das letzte Capture hat einen festgehalten, siehe [Ein Zustands-Reset wurde festgehalten](#ein-zustands-reset-wurde-festgehalten); oder ein Collector wartet seit einem Zustands-Reset auf seine Baseline (degraded oder nicht gelaufen): `seldon capture --source <name>` ausführen, sobald er laufen kann |
 | `omarchy` | `omarchy-version` hat geantwortet | der Omarchy-Collector kann die Version nicht lesen |
 | `snapper` | Snapshots lassen sich auflisten oder aus `/.snapshots` lesen | `degraded`: dein Benutzer darf weder Snapshots auflisten noch `/.snapshots` lesen; siehe [Snapshots werden nicht aufgezeichnet](#snapshots-werden-nicht-aufgezeichnet). Eine `ok`-Zeile mit Abhilfe: dein Benutzer steht noch im alten Snapper-Opt-in; siehe [doctor rät, das Snapper-Opt-in zurückzunehmen](#doctor-rät-das-snapper-opt-in-zurückzunehmen) |
 | `git` | git ist da; das Logbuch ist ein Repository | git fehlt, oder das Logbuch ist kein Repository; dann ist Autocommit aus. `degraded`: etwas hindert jeden Autocommit (ein liegengebliebenes `.git/index.lock`, ein losgelöster HEAD, …); die Abhilfe sagt, was zu tun ist |
