@@ -24,9 +24,13 @@ decisions).
 0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
 advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
 notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
-After 0.1.4 (operator decision 2026-10-05): WP-094 Seldon agent skill,
-WP-095 task prompts from the panel (ADR first), WP-096 default actor for
-launched agents; no Omarchy upstream contribution before 1.0. Then the
+After 0.1.4: ADR-0027 (operator decision 2026-10-05: a case the user
+started authorises the agent; the agent verifies and closes; only steps
+that can make the machine unbootable need the user's go) → WP-100 (agent
+rules v2 + migration) first, WP-096 (default actor, attended marker),
+WP-101 (one-click start, snapshot and close path, reopen), WP-094 (skill),
+WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
+Omarchy upstream contribution before 1.0. Then the
 contract v2 bundle for v0.2.0 (autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
 account: WP-033 (update-impact, option C) and WP-042 (marketplace
@@ -397,6 +401,17 @@ submission). (see `work/queued/`)
   `jax-seldon-plugin` via subtree split → ADR-0009.
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
+
+## Decided 2026-10-05
+- ADR-0027 (act, then account): a case the user started authorises the
+  agent to act; privileged commands in an attended session; the agent
+  takes its own snapshot; install route as the software documents it; the
+  agent verifies and closes (spot checks are optional, reopen in one
+  click); manual cases and hand-off stay first-class; steps that can make
+  the machine unbootable (R3, alwaysRed hits) need the user's explicit go.
+  Supersedes ADR-0023 §1 in part.
+- The test host follows main (WP-098); productive machines get releases only.
+- No Omarchy upstream contribution before 1.0.
 
 ## Decided 2026-10-04 (review follow-ups)
 - Snapper access by a read grant (`setfacl … rx /.snapshots`) instead of

@@ -1,7 +1,9 @@
 # ADR-0023 — An agent moves a case to verification; the human closes it. Risk levels are a normative scale, enforced only by advice
 
-**Status:** accepted
+**Status:** accepted; §1 superseded in part by ADR-0027
 **Date:** 2026-10-02
+
+> Superseded in part by [ADR-0027](ADR-0027-act-then-account.md) (2026-10-05): a case the user started authorises the agent to act; the agent verifies and closes it. Only steps that can make the machine unbootable (R3) still need the user's explicit go.
 
 ## Context
 The agent-facing texts (WP-047: `llms.txt`, `docs/AGENT-GUIDE.md`, the
