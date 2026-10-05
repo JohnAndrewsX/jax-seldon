@@ -116,6 +116,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masked like an address. Guide 06 says how `skipPaths` keeps a file
   name out of the logbook altogether, and how a pattern of your own
   hides a personal domain (WP-093).
+- Redaction covers more forms of credentials on command lines: a
+  command continued over lines with `\`, or with a quoted string that
+  spans lines, is read as one command, also between an option and its
+  value; redirections such as `2>&1` and `&>file`, and ANSI-C strings
+  (`$'…'`), no longer end it. An option's value is read as one shell
+  word, so `-u admin:'p w'`, `-u "a\"b"` and `--password $'…'` are
+  masked whole. New: curl's `--pass`, `--proxy-pass` and
+  `--oauth2-bearer` (and xh's `--bearer`), a client certificate with its
+  password after `curl -E`/`--cert`/`--proxy-cert` (the value with `:`,
+  file name included), the value after `http`/`https`/`xh`/`xhs`
+  `-a`/`--auth`, and wget's `--http-password`/`--ftp-password` before a
+  space (WP-097).
 
 ### Plugin
 
