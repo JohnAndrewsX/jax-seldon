@@ -309,3 +309,178 @@ None blocking. Three for the orchestrator:
   scratchpad. `capture.rs` and `collectors/config.rs` are untouched.
 - `target/release/seldon` was swapped temporarily during the A/B. A
   fresh head bench build is in place.
+
+## Round 2 (review: stage 1 SEND BACK, stage 2 fix round)
+
+Commits:
+- `e8414b3`: items 1–3 and the item 4 rows, plus the `VALUE` fix below;
+- `98d22ae`: item 5;
+- `b67744c`, `0a7828b`, `72ed1de`: rows that killed surviving mutants;
+- `cf2065a`: item 6;
+- `4d51f6b` and `0139497`: item 7 (en, then de with its source line);
+- then pitfalls and this section.
+
+### Items
+
+1. **`httpie-auth` triggers.** There are now 16 literals: `http`,
+   `https`, `xh` and `xhs`, each followed by a space, `\t`, `\n` or `\`,
+   each `+-a`. The lead gap is `HTTPIE_GAP` = `(?:[ \t\n]|\\\n)`.
+   - **Also the option's leading white space** (`\s` before `-a`/`--auth`)
+     is `HTTPIE_GAP`. The brief named only the lead. But when the lazy
+     lead group is empty, the white space right after the word is the
+     option's. With `\s` there, `http<VT>-a x` would match while it holds
+     no trigger. The gap after `-a` stays `{GAP}`, as the brief says.
+   - **Trigger-negative assertion: deviation from the brief, please
+     check.** The brief's line `git commit -am "fix https redirect"`
+     holds `https ` and `-a`, so with the 16 literals it does compile
+     `httpie-auth` by construction. That is the case SPEC item 6(b)
+     documents. `every_row_holds_a_trigger_of_its_rule` therefore asserts:
+     - no `httpie-auth` trigger for the B1 shape:
+       `git commit -am "fix https://h.example redirect"` and
+       `curl -fsSL https://h.example/f -o f && git commit -a -m x && ls -a`;
+     - a trigger **does** hold for the brief's line.
+   - A loop pins every word × gap pair, so dropping any single literal
+     is killed.
+2. **`WORD`.** A quoted part no longer crosses a line end that no `\`
+   escapes:
+   - `"(?:[^"\\\n]|\\(?s:.))*"`, `'[^'\n]*'`, `\$'(?:[^'\\\n]|\\(?s:.))*'`,
+     fallback `"[^"\n]*"`;
+   - an unclosed-quote tail `(?:['"][^\n'"]*)?` after the parts, or that
+     tail alone, so `-u 'admin:x` is masked to the line end.
+
+   TABLE rows:
+   - the two N2 texts (with their third line, which is what makes them
+     bite);
+   - `curl -u 'admin:fakeUnclosed3 …⏎next line`;
+   - the same for an unclosed `"` and an unclosed `$'` (they killed N2,
+     N3 and N4).
+
+   The O1/O2 rows are kept (item 4).
+3. **`secret-option`** no longer reads a first name word `no`
+   (`NOT_NO`). The CLEAR row is `smbclient //srv/share --no-pass -c 'ls'`.
+   A TABLE row `--node-token` keeps a word that only starts with `no`.
+4. **N5:** two TABLE rows, `curl -d "a\⏎b" -u admin:fakeO2 …` and
+   `curl -u "ad\"m\⏎in;x" … -u bob:fakeO1`. Mutants N8 (O1) and N9 (O2)
+   are killed.
+5. **`hooks.rs`.** `hook_budget` gets a third timed line:
+   `set -e; curl -fsSL -u bob:fakePw2 https://h.example/install.sh |
+   sudo -E bash && git commit -am zed`.
+   - It runs in both families. That is the shared function; the 900-line
+     test is the binding one.
+   - The 900-line test now leaves room for 150 recorded commands instead
+     of 100 (3 kinds × 2 attempts × 22).
+6. **SPEC-ENGINE §7.**
+   - (a) to (d) as worded in the brief, plus `--no-pass` in the
+     not-masked list.
+   - The `httpie-auth` and value paragraphs say that the gap is ASCII and
+     that values are read per line.
+7. **Guide 06 en/de.** One bullet each. The de source line now points at
+   `4d51f6b`. Correction to round 1: guide 06 did list individual
+   options (N6).
+
+**Also fixed (found by this round's tests): `VALUE` idempotency.** The
+WORD change shifted the quote parity of the joined-rows text in
+`masking_twice_changes_nothing`, and it failed. The cause is pre-existing
+since WP-093; it also happens on base `1b23cf4`.
+- An address glued to a quoted `key=` value
+  (`TOKEN="a"bob@example.com`) became two glued markers. The bare
+  `VALUE` read them as a new value on the second pass.
+- Fix: the bare `VALUE` does not start at `‹`.
+- The three probe lines are now in `masking_twice_changes_nothing`, and
+  mutant N19 is killed.
+
+### Verified
+
+- `cargo fmt --check` and `cargo clippy --all-targets --locked -- -D
+  warnings`: clean. `redaction` 24 passed (1 ignored), `hooks` 55 passed
+  (2 ignored). `docs-check`: ok.
+- **`flock /tmp/seldon-check.lock just check` at `72ed1de`: exit 0**
+  (22:32–22:41). Results:
+  - 70 test binaries ok;
+  - service-states 314/0, panel-view 782/0, overlay-view 319/0,
+    bar-view 143/0;
+  - install 209/0, deploy-test-host 190/0, real-home-guard 11/0;
+  - qmllint 29 files, docs-check ok, `check: ok`.
+- `just check-perf` was not run again: the brief asks for `just check`
+  once. The hook timings below come from the A/B.
+- Probes confirm the new SPEC sentences:
+  - `Fixed http redirect, checked with ls -a home` → `-a ‹redacted›`;
+  - a comment `\` continues the command;
+  - `--no-pass` stays;
+  - the N2 note keeps lines two and three.
+
+### Hook timings (A/B/C)
+
+Method: bench builds of `seldon` from base `1b23cf4`, round 1
+`847b808` and head (`redact.rs` swapped), placed in
+`target/release/seldon`. The hooks test binary is head's and runs
+directly. Four interleaved rounds under the lock, load 7.5 → 1.9.
+
+| Line, ledger size | base | round 1 | head |
+|---|---|---|---|
+| new `-e`/`-am` line, 900 | 4.19 / 5.07¹ / 4.15 / 4.23 ms | 4.89 / 4.85 / 4.93 / 4.99 ms | 4.68 / 4.68 / 4.71 / 4.67 ms |
+| new `-e`/`-am` line, 10 000 | 2.58 / 2.72 / 2.59 / 2.55 ms | 3.32 / 3.26 / 3.28 / 3.31 ms | 3.05 / 3.09 / 3.06 / 3.13 ms |
+| curl line with a marker, 900 | 3.92 / 4.21 / 3.98 / 3.99 ms | 4.03 / 4.06 / 4.04 / 4.09 ms | 4.14 / 4.06 / 4.13 / 4.31 ms |
+| curl line with a marker, 10 000 | 2.38 / 2.72 / 2.43 / 2.40 ms | 2.54 / 2.65 / 2.57 / 2.54 ms | 2.54 / 2.58 / 2.57 / 2.61 ms |
+
+¹ In round 2 (load 4.4), base itself went over the budget on the new
+line (5.07, then 5.34 ms on the retry).
+
+- **Head against round 1, new line: −0.2 ms.** This is the narrower
+  HTTPie trigger.
+- **Head against base, new line: about +0.5 ms.** This is `cert-password`
+  (SPEC 6(d), accepted) plus the larger curl-user context.
+- **Headroom on the new line at 900 lines: about 0.3 ms.** That is
+  under the 5 ms bound, but tight; base itself shows 4.2–5.1 ms there.
+
+### Mutants (round 2)
+
+Same runner and restore as round 1. 23 mutants: N1–N19 new, R8, R9, C1
+and C9 re-run because the lead and the context changed.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| N1 / N2 / N3 / N4 | WORD's `'…'` / `"…"` / `$'…'` / fallback cross lines | `every_builtin_pattern` (N2–N4 after `0a7828b`; N3 also `masking_twice…`) |
+| N5 | no tail after the parts | `every_builtin_pattern` |
+| N6 | no lone unclosed quote | `every_builtin_pattern` |
+| N7 | tails cross lines | `every_builtin_pattern`, `masking_twice…`, `email_…`, `cert_and_httpie_…` |
+| N8 (O1) | WORD `"…"` without `\⏎` | `every_builtin_pattern` |
+| N9 (O2) | context `"…"` without `\⏎` | `every_builtin_pattern` |
+| N10 | `secret-option` without `NOT_NO` | `harmless_text_stays` |
+| N11 | `NOT_NO` admits `no` | `harmless_text_stays` |
+| N12 | `NOT_NO` without `no…` words | `every_builtin_pattern` (after `72ed1de`) |
+| N13 | `NOT_NO` without a–m/o–z words | `every_builtin_pattern`, `cert_and_httpie_…` |
+| N14 | `HTTPIE_GAP` = `\s` | `every_builtin_pattern` (after `72ed1de`, NBSP row) |
+| N15 | `HTTPIE_GAP` without `\⏎` | `an_option_…_two_lines` |
+| N16 / N17 / N18 | one trigger literal dropped (`xh\`, `https `, `xhs\t`) | `an_option_…_two_lines` (N17 also 3 more) |
+| N19 | bare `VALUE` may start at `‹` | `masking_twice_changes_nothing` |
+| R8 | lead without its gap | `harmless_text_stays` (after `72ed1de`; the old `wget http://…` row no longer holds a trigger) |
+| R9 | lead greedy | `every_builtin_pattern` |
+| C1 / C9 | as round 1 | as round 1 |
+
+Result: 23 of 23 killed. Six survived first (N2, N3, N4, N12, N14,
+R8); each was killed by the row named in the table.
+
+### Guard-hook block (reported, not routed around)
+
+One Bash call was blocked as a "privileged or package command": a
+`printf` that wrote probe text (holding `sudo -E bash` and a
+`useradd` line) to a scratchpad file. The command itself did nothing
+privileged. As `memory/pitfalls.md` prescribes for file content, I wrote
+the same probe text with the Write tool and re-ran only the commit that
+had been part of the blocked call. No command was reworded to get past
+the guard.
+
+### Decisions needed
+
+- The trigger-negative assertion deviates from the brief (item 1 above).
+  Please confirm.
+- Headroom of the new hook line at 900 lines is about 0.3 ms (base: 4.2
+  to 5.1 ms). Accepted per SPEC 6(d), or narrow `cert-password`'s
+  `curl+-e`?
+
+### Touched outside WP scope
+
+- `engine/tests/hooks.rs` (item 5) and guide 06 en/de (item 7), both as
+  the brief asks.
+- `memory/pitfalls.md` (append).
