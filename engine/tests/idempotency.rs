@@ -2258,6 +2258,21 @@ mod crash {
             .collect()
     }
 
+    /// `capture --source <name> --json` at `now`.
+    fn capture_source(cli: &Cli, now: &str, name: &str) -> serde_json::Value {
+        let out = cli.run_env(
+            &["capture", "--source", name, "--json"],
+            &[("SELDON_NOW", now)],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        common::json(&out)
+    }
+
+    /// Every doctor `state` row's message.
+    fn rows_all(cli: &Cli) -> Vec<String> {
+        rows(cli, "")
+    }
+
     /// The sources each reset note names, oldest first.
     fn reset_sources(cli: &Cli) -> Vec<String> {
         resets(cli)
@@ -2585,6 +2600,94 @@ mod crash {
         assert!(resets(&cli).is_empty(), "{:?}", resets(&cli));
     }
 
+    /// Review round 2, B1: the silent marks also govern the waiting
+    /// marks. The crashed capture ran pacman alone on a fresh logbook; the
+    /// theme hook writes an event; the next capture again runs pacman
+    /// alone, so theme is a waiting candidate there, not a baseline. It is
+    /// not marked, doctor shows no waiting row, and `--all` records nothing.
+    #[test]
+    fn a_collector_not_run_twice_after_a_silent_crash_does_not_wait() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.crash(
+            &at(0),
+            "after-append",
+            &["--source", "pacman", "--since", FIXTURE_CREATED],
+        );
+        let out = cli.run(&["event", "theme", "theme-set", "--subject", "tokyo-night"]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        let out = capture_source(&cli, &at(1), "pacman");
+        assert_eq!(out["warnings"], json!([]), "{out}");
+        let theme = &cli.cursors()["collectors"]["theme"];
+        assert_eq!(theme.get("pendingBaseline"), None, "{theme}");
+        assert!(
+            !rows_all(&cli)
+                .iter()
+                .any(|r| r.contains("degraded or not run")),
+            "{:?}",
+            rows_all(&cli)
+        );
+        let out = cli.capture_at(&at(2), &[]);
+        assert_eq!(out["warnings"], json!([]), "{out}");
+        assert!(resets(&cli).is_empty(), "{:?}", reset_sources(&cli));
+    }
+
+    /// Review round 2, N1: after a crashed reset, a capture that does not
+    /// run pacman would mark it waiting, although the crashed note names
+    /// it already; the next `--all` would record pacman's gap again.
+    #[test]
+    fn a_collector_not_run_after_a_crashed_reset_does_not_wait() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.capture_at(&at(0), &["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        cli.crash(&at(1), "after-append", &[]);
+        assert_eq!(reset_sources(&cli), ["snapper,pacman"]);
+        let out = capture_source(&cli, &at(2), "snapper");
+        assert!(
+            warning(&out).starts_with("state reset recorded: snapper took a new baseline"),
+            "{out}"
+        );
+        let pacman = &cli.cursors()["collectors"]["pacman"];
+        assert!(pacman.is_null(), "no entry, no mark: {pacman}");
+        assert!(
+            !rows_all(&cli)
+                .iter()
+                .any(|r| r.contains("degraded or not run")),
+            "{:?}",
+            rows_all(&cli)
+        );
+        let out = cli.capture_at(&at(3), &[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert_eq!(reset_sources(&cli), ["snapper,pacman"]);
+    }
+
+    /// The same for a collector that waited already before the crash (an
+    /// entry with only the mark, WP-091): the crashed capture's first run
+    /// of it recorded its gap, so the next capture that does not run it
+    /// drops the mark.
+    #[test]
+    fn a_waiting_collector_recorded_by_the_crashed_capture_stops_waiting() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.capture_at(&at(0), &["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        capture_source(&cli, &at(1), "pacman");
+        assert_eq!(
+            cli.cursors()["collectors"]["snapper"]["pendingBaseline"],
+            "cursors"
+        );
+        assert_eq!(reset_sources(&cli), ["pacman"]);
+        cli.crash(&at(2), "after-append", &[]);
+        assert_eq!(reset_sources(&cli), ["pacman", "snapper"]);
+        capture_source(&cli, &at(3), "pacman");
+        let snapper = &cli.cursors()["collectors"]["snapper"];
+        assert!(snapper.is_null(), "no entry, no mark: {snapper}");
+        let out = cli.capture_at(&at(4), &[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert_eq!(reset_sources(&cli), ["pacman", "snapper"]);
+    }
+
     /// The marks count for the logbook whose capture saved them only: a
     /// capture of another logbook crashes with its baselines marked, and
     /// the next capture here records the loss of an unreadable cursor.
@@ -2624,6 +2727,8 @@ mod crash {
         let out = cli.capture_at(&at(2), &[]);
         assert_eq!(out["written"], 1, "{out}");
         assert_eq!(reset_sources(&cli), ["pacman"]);
+        // a completed save drops every logbook's marks (review round 2, B2)
+        assert_eq!(cli.cursors().get("silentBaselines"), None);
     }
 
     /// WP-104: `silentBaselines` is new; a `cursors.json` without it reads

@@ -170,7 +170,13 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         .unwrap_or_default();
     let candidates = waiting_candidates(&states, &not_run, binding, &cursors, &logbook.root);
     let held = held_sources(&ledger, lost.iter().chain(&candidates), &unheld)?;
-    let waiting = only_held(&candidates, &held);
+    let recorded = pending_notes(&ledger, &cursors.pending_notes)?;
+    // a loss the crashed capture's note names is recorded: it does not wait
+    let noted = noted_sources(&recorded);
+    let waiting: Vec<(&'static str, Lost)> = only_held(&candidates, &held)
+        .into_iter()
+        .filter(|(n, _)| !noted.contains(n))
+        .collect();
     let mark = |name: &str| {
         waiting
             .iter()
@@ -186,7 +192,6 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         .filter_map(|&name| Some((name, CollectorState::waiting(mark(name)?))))
         .collect();
     attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
-    let recorded = pending_notes(&ledger, &cursors.pending_notes)?;
     let reset = state_reset(only_held(&lost, &held), &recorded, baseline, now);
     let access = access_change(&cursors, &states, now)
         .filter(|note| !recorded.iter().any(|r| r.subject == note.subject));
@@ -230,6 +235,16 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     crash_point("after-append");
     for (name, state) in states.into_iter().chain(bare) {
         cursors.collectors.insert(name.to_string(), state);
+    }
+    // not run, and waiting since before the crashed capture whose note
+    // recorded its gap: no longer waiting (an entry with only the mark goes)
+    for name in not_run.iter().filter(|n| noted.contains(n)) {
+        if let Some(entry) = cursors.collectors.get_mut(*name) {
+            entry.pending_baseline = None;
+            if entry.last_run.is_none() && entry.cursor.is_none() {
+                cursors.collectors.remove(*name);
+            }
+        }
     }
     cursors.pending_notes.clear();
     cursors.silent_baselines.clear();
