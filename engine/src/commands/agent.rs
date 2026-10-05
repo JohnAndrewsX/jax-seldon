@@ -16,7 +16,11 @@
 //! program name, not a sandbox).
 //!
 //! The launcher starts detached in the logbook directory, with
-//! `SELDON_LOGBOOK` set to it ([`launch_detached`], as `open --editor`).
+//! `SELDON_LOGBOOK` set to it ([`launch_detached`], as `open --editor`),
+//! `SELDON_ACTOR=agent:<launcher name>` ([`Launcher::actor`]; the actor of
+//! the agent's `seldon` calls that give no `--actor`) and
+//! `SELDON_ATTENDED=1` (ADR-0027 §2d: the session has a user; the agent's
+//! rules read it, the engine never does) (WP-096).
 //! Its stderr goes to `<state>/agent-launch.log`, so a launcher that fails
 //! at once is reported with its message. On a failure the previous active
 //! case is restored.
@@ -27,7 +31,7 @@ use std::process::{Command, Stdio};
 use clap::{Args, Subcommand};
 use serde_json::json;
 
-use super::event::parse_case_id;
+use super::event::{ACTOR_ENV, parse_case_id};
 use super::open::launch_detached;
 use super::{CONFIG_ENV, Context, Output};
 use crate::config::{AgentConfig, DEFAULT_AGENT_LAUNCHER, LOGBOOK_ENV};
@@ -45,6 +49,10 @@ pub const DEFAULT_NAME: &str = "default";
 /// The name of the built-in launcher, [`DEFAULT_AGENT_LAUNCHER`], which
 /// `--launcher omarchy` reaches even when `[agent] launcher` is changed.
 pub const OMARCHY_NAME: &str = "omarchy";
+
+/// Set to `1` for the launched agent: a session `seldon agent start`
+/// launched is attended (ADR-0027 §2d). Nothing in the engine reads it.
+pub const ATTENDED_ENV: &str = "SELDON_ATTENDED";
 
 /// Where the launcher's stderr goes, in the state directory.
 pub const LAUNCH_LOG: &str = "agent-launch.log";
@@ -294,6 +302,31 @@ impl Launcher {
         Ok(())
     }
 
+    /// The actor of the launched agent: `agent:` and the launcher's name,
+    /// lowercased, every run of characters other than `a-z` and `0-9`
+    /// one `-`, none at either end (`Claude Code` is `agent:claude-code`,
+    /// the built-in names `agent:default` and `agent:omarchy`). A name
+    /// with no letter or digit `a-z`/`0-9` is refused.
+    pub fn actor(&self) -> Result<String> {
+        let mut slug = String::new();
+        for c in self.name.chars().map(|c| c.to_ascii_lowercase()) {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() {
+                slug.push(c);
+            } else if !slug.is_empty() && !slug.ends_with('-') {
+                slug.push('-');
+            }
+        }
+        let slug = slug.trim_end_matches('-');
+        if slug.is_empty() {
+            return Err(Error::user(format!(
+                "launcher `{}` in config.toml: its name gives no actor (agent:<name>, \
+                 a name with a-z or 0-9); rename it in `[agent.launchers]`",
+                self.name.escape_debug()
+            )));
+        }
+        Ok(format!("agent:{slug}"))
+    }
+
     /// The program's arguments, the prompt in place of `{prompt}`.
     pub fn args<'a>(&'a self, prompt: &'a str) -> impl Iterator<Item = &'a str> {
         self.argv[1..]
@@ -306,6 +339,7 @@ fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     // the launcher is checked before anything is written
     let launcher = Launcher::resolve(&config.agent, name)?;
+    let actor = launcher.actor()?;
     let lock = ctx.lock()?;
     let file = cases::find(&logbook, id)?;
     match file.case.status {
@@ -324,7 +358,7 @@ fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
 
     let previous = cases::active_case(&logbook);
     cases::set_active_case(&logbook, id)?;
-    let launched = launch(ctx, &logbook, &launcher, &prompt(id, &logbook.root));
+    let launched = launch(ctx, &logbook, &launcher, &actor, &prompt(id, &logbook.root));
     if let Err(e) = launched.map_err(Error::User) {
         restore(&logbook, id, previous.as_deref());
         return Err(e);
@@ -334,7 +368,7 @@ fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
     let program = &launcher.argv[0];
     Ok(Output::ok(
         format!(
-            "Agent started on {id} with launcher `{}` ({program}) in {}",
+            "Agent started on {id} with launcher `{}` ({program}) in {}, as {actor}",
             launcher.name,
             ctx.dirs.display(&logbook.root)
         ),
@@ -343,6 +377,7 @@ fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
             "launcher": launcher.name,
             "program": program,
             "argv": launcher.argv,
+            "actor": actor,
             "case": id,
             "cwd": logbook.root,
             "previousActiveCase": previous,
@@ -379,13 +414,16 @@ fn launch(
     ctx: &Context,
     logbook: &Logbook,
     launcher: &Launcher,
+    actor: &str,
     prompt: &str,
 ) -> Result<(), String> {
     let program = &launcher.argv[0];
     let mut cmd = Command::new(program);
     cmd.args(launcher.args(prompt))
         .current_dir(&logbook.root)
-        .env(LOGBOOK_ENV, &logbook.root);
+        .env(LOGBOOK_ENV, &logbook.root)
+        .env(ACTOR_ENV, actor)
+        .env(ATTENDED_ENV, "1");
     // the agent's own `seldon` calls read the config this one read
     if ctx.config_file != ctx.dirs.config_file() {
         cmd.env(CONFIG_ENV, &ctx.config_file);
@@ -619,6 +657,41 @@ mod tests {
             &["claude", "-s", "{prompt}"],
         ] {
             assert!(Launcher::resolve(&agent(ok), None).is_ok(), "{ok:?}");
+        }
+    }
+
+    #[test]
+    fn the_actor_is_the_launcher_name_as_a_slug() {
+        let actor = |name: &str| {
+            Launcher {
+                name: name.into(),
+                argv: vec!["agent".into(), PROMPT.into()],
+            }
+            .actor()
+        };
+        for (name, want) in [
+            ("default", "agent:default"),
+            ("omarchy", "agent:omarchy"),
+            ("claude", "agent:claude"),
+            ("claude-code", "agent:claude-code"),
+            ("Claude Code", "agent:claude-code"),
+            ("  Codex_CLI 2 ", "agent:codex-cli-2"),
+            ("-x--y-", "agent:x-y"),
+            ("gpt5", "agent:gpt5"),
+            ("Agent/Ünï", "agent:agent-n"),
+        ] {
+            let got = actor(name).unwrap();
+            assert_eq!(got, want, "{name:?}");
+            assert!(crate::model::event::is_actor(&got), "{got}");
+        }
+        for name in ["", "-", "___", "ÄÖÜ", " \n"] {
+            let e = actor(name).unwrap_err();
+            assert!(matches!(e.exit(), crate::error::Exit::UserError));
+            let e = e.to_string();
+            assert!(
+                e.contains("its name gives no actor (agent:<name>"),
+                "{name:?}: {e}"
+            );
         }
     }
 
