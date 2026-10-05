@@ -1017,8 +1017,8 @@ a quoted string (`'a&b'`, `"x;y"`, `\"` inside double quotes), a
 backslash escape (`\;`) and a quote the line never closes (an apostrophe
 in a note) do not end it. Quotes pair left to right as written; where
 the shell reads them otherwise (`$'…'`, quotes inside `"$(…)"`, an
-escaped space), the plain reading up to an unquoted `;`, `&` or `|` still
-counts, so the context reaches at least what that plain reading reaches.
+escaped space), the plain reading, up to the first `;`, `&` or `|` (quoted
+or not) or the line end, still counts, so the context reaches at least what that plain reading reaches.
 An option given twice in one command is masked
 each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
 from the end of its previous match, without a second command word;

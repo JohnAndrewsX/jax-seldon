@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
 | WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
 | WP-098 | the test host follows main (deploy script, dev version marker) | Engine | `engine-098` (opus) | `wt/WP-098` · `wp/098-test-host-main` | 2026-10-05 |
 
@@ -42,6 +41,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-087 redaction: one quote-aware command context for the
+  six option rules (never less than the plain reading), options given
+  twice are masked each time, marker checks by binary search (long lines
+  linear; 128 KB budgets in `just check-perf`); Opus review, Fable
+  stage 2, one fix round, Opus verification, Fable look; merged.
+  Remaining credential forms: WP-097.
 - 2026-10-05 WP-090 the panel says "Restart the shell to finish the
   update" when the shell still runs plugin code from before an update
   (Quickshell 0.3.1 keeps compiled QML), one-shot *Restart shell* action;
