@@ -1208,6 +1208,25 @@ mod state_reset {
         for name in ["omarchy", "plugins", "theme", "config"] {
             assert_eq!(entry(&cli, name), serde_json::Value::Null, "{name}");
         }
+        // review F2: doctor's "last capture" skips the bare entry's
+        // missing `lastRun`, so the reset row still shows
+        let doctor = common::json(&cli.run(&["doctor", "--json"]));
+        let recorded: Vec<&str> = doctor["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["name"] == "state")
+            .filter_map(|c| {
+                c["message"]
+                    .as_str()?
+                    .strip_prefix("the last capture recorded a state reset: ")
+            })
+            .collect();
+        assert_eq!(recorded.len(), 1, "{doctor}");
+        assert!(
+            recorded[0].starts_with("pacman took a new baseline ("),
+            "{doctor}"
+        );
         // the index row of a bare entry is the row of no entry
         let none = index_row(&cli, "theme");
         assert_eq!(none["lastRun"], serde_json::Value::Null, "{none}");
@@ -1441,7 +1460,7 @@ mod snapper_access {
         assert!(
             notes[0].starts_with("snapper collector ok again (snapper list is not permitted; ")
                 && notes[0].ends_with(&format!(
-                    "; at the last capture it was degraded: {NO_PERMISSIONS}"
+                    "; at its last run it was degraded: {NO_PERMISSIONS}"
                 )),
             "{}",
             notes[0]
@@ -1463,7 +1482,7 @@ mod snapper_access {
         let notes = access(&cli);
         assert_eq!(
             notes[1],
-            format!("snapper collector degraded: {NO_PERMISSIONS}; at the last capture it was ok")
+            format!("snapper collector degraded: {NO_PERMISSIONS}; at its last run it was ok")
         );
         assert_eq!(cli.capture(&[])["written"], 0, "degraded again: nothing");
         assert_eq!(access(&cli).len(), 2);
@@ -1505,15 +1524,13 @@ mod snapper_access {
         cli.capture(&[]);
         assert_eq!(
             access(&cli),
-            [
-                "snapper collector degraded: snapper failed (exit 3): ; at the last capture it was ok"
-            ]
+            ["snapper collector degraded: snapper failed (exit 3): ; at its last run it was ok"]
         );
         cli.stub_snapper(&fixture("logs/snapper-before.json"));
         cli.capture(&[]);
         assert_eq!(
             access(&cli)[1],
-            "snapper collector ok again; at the last capture it was degraded: snapper failed (exit 3): "
+            "snapper collector ok again; at its last run it was degraded: snapper failed (exit 3): "
         );
         assert_eq!(cli.capture(&[])["written"], 0);
     }

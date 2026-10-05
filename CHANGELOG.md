@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two captures (you ran the read grant, or a snapper `set-config` with
   `SYNC_ACL=yes` removed it), the capture records a `seldon` note with
   the subject `snapper` and the collector's message, once (WP-091).
+- A `cursors.json` that holds an entry with only the `pendingBaseline`
+  mark (a collector not run since a state reset) cannot be read by an
+  engine before 0.1.4; after a downgrade move `cursors.json` aside, which
+  records a state reset (WP-091).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains

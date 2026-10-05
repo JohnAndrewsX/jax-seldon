@@ -499,7 +499,11 @@ baseline without a note. Known limitation: after `init --no-capture`
 there is no `cursors.json`, so when the theme hook or an agent writes an
 event of a collector's source before the first capture, that capture
 records a state reset that lost nothing. The next capture continues from
-the new state, so a loss is recorded once. A collector that degrades in
+the new state, so a loss is recorded once. Known limitation: a crash
+between the ledger append and the `cursors.json` save (a few
+milliseconds) repeats the `state-reset` note and the snapper access note
+(§4) on the next capture; collector events are not repeated, because the
+collectors compare with the ledger. A collector that degrades in
 a capture in which its state was lost (it would pass the binding gate
 and the ledger rule above) takes no baseline there, so that capture's
 note does not name it, or there is no note when it alone lost its state;
@@ -704,15 +708,17 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `source: seldon`, `actor: system`, subject `snapper`, no case, so that
   granting or removing the read access (or a `SYNC_ACL` rewrite that
   removed it) shows in the history (WP-091). Detail: `snapper collector
-  degraded: <message>; at the last capture it was ok`, or `snapper
-  collector ok again (<message>); at the last capture it was degraded:
+  degraded: <message>; at its last run it was ok`, or `snapper
+  collector ok again (<message>); at its last run it was degraded:
   <earlier message>` (without `(<message>)` when the run has none, e.g.
   through `snapper list`). Any degraded state counts, not only
   `NO_PERMISSIONS`. No note on the first run for a logbook, after a lost
   state directory or another logbook's state (nothing to compare with),
   for an entry with only the `pendingBaseline` mark (it never ran), or
   in a capture that does not run snapper; the next capture compares with
-  the saved state, so each change is recorded once. The note is no drift
+  the saved state, so each change is recorded once (except after a crash
+  between the append and the cursor save, §3 state reset, known
+  limitation). The note is no drift
   and no own change (§5).
 - **omarchy** — version from `omarchy-version` (prints e.g. `4.0.4-1`;
   `omarchy --version` does not exist and `$OMARCHY_PATH/version` is

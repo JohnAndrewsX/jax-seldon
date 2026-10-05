@@ -394,15 +394,15 @@ fn access_change(
     let message = |s: &CollectorState| s.message.clone().unwrap_or_else(|| "failed".into());
     let detail = match (new.ok, &new.message) {
         (true, None) => format!(
-            "snapper collector ok again; at the last capture it was degraded: {}",
+            "snapper collector ok again; at its last run it was degraded: {}",
             message(old)
         ),
         (true, Some(current)) => format!(
-            "snapper collector ok again ({current}); at the last capture it was degraded: {}",
+            "snapper collector ok again ({current}); at its last run it was degraded: {}",
             message(old)
         ),
         (false, _) => format!(
-            "snapper collector degraded: {}; at the last capture it was ok",
+            "snapper collector degraded: {}; at its last run it was ok",
             message(new)
         ),
     };
