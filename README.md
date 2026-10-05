@@ -199,7 +199,12 @@ Options (with the one-liner: `| bash -s -- --unit`):
 
 - **Update:** run `install.sh` again, either form. It replaces `seldon`
   when the release is newer; with the same version it changes nothing.
-  Update the plugin with `omarchy plugin update jax.seldon`.
+  Update the plugin with `omarchy plugin update jax.seldon`, then restart
+  the shell with `omarchy-restart-shell`: until it restarts, the shell
+  keeps running the old plugin code. The panel then shows "Restart the
+  shell to finish the update" with a *Restart shell* button; a plugin
+  version without this notice shows nothing, so restart after every
+  update.
 - **Remove:** `bash install.sh --uninstall`, or with the one-liner
   `… | bash -s -- --uninstall`. It removes exactly the files it
   installed (a file you changed since is kept, and it says so). Your

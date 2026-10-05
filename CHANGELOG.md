@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Plugin
+
+- After `omarchy plugin update jax.seldon` the shell keeps running the
+  old plugin code until it restarts. The panel now notices this: when
+  the installed manifest names another version than the code running,
+  it shows "Restart the shell to finish the update" with one button,
+  *Restart shell*, which runs `omarchy-restart-shell` (no arguments).
+  Plugins up to 0.1.3 do not show it; the update guide and both READMEs
+  say to restart the shell after every plugin update (WP-090).
+
 ## [0.1.3] - 2026-10-05
 
 ### Engine

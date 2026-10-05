@@ -14,6 +14,7 @@ The engine and the plugin are released **together, from one tag
 |---|---|---|
 | `engine/Cargo.toml` | `version` (and `engine/Cargo.lock`) | hand; the release workflow fails when the tag differs |
 | `plugin/manifest.json` | `version` | hand, same value |
+| `plugin/Model.js` | `PLUGIN_VERSION` | hand, same value as the manifest |
 | `plugin/manifest.json` | `seldon.engineMin` | hand: the lowest engine the plugin works with |
 | `packaging/PKGBUILD` | `pkgver`, `pkgrel` | the release workflow (`bump` job) |
 
@@ -101,8 +102,10 @@ extraction on the real `CHANGELOG.md` and on edge cases.
 All on `main`, after every work package of the release is merged:
 
 1. Set the version in `engine/Cargo.toml` (cargo updates
-   `engine/Cargo.lock`) and in `plugin/manifest.json`; raise `engineMin`
-   if needed.
+   `engine/Cargo.lock`), in `plugin/manifest.json` and in
+   `PLUGIN_VERSION` in `plugin/Model.js` (the running code's version, which
+   the restart notice compares with the manifest; `just check` fails when
+   the two differ); raise `engineMin` if needed.
 2. Move the `[Unreleased]` lines under `## [X.Y.Z] - YYYY-MM-DD`; update
    the link references; run `bash packaging/release-notes.sh X.Y.Z`.
 3. `just check` green; commit (`release: X.Y.Z`); push.

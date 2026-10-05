@@ -321,6 +321,7 @@ When something is wrong the panel shows one banner with a one-click fix:
 | Index format mismatch | Index format mismatch, with both contract versions | *Update in terminal* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older, the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
 | Engine too old (older than the plugin's `engineMin`) | Engine too old, with the version the plugin needs and the one `seldon` reports | *Update in terminal* runs the GitHub one-liner from *Engine missing* (until the AUR package is live, ADR-0024); *Copy*; *Check again* looks for the engine again |
 | Snapshots not readable | Snapshots not readable, with the engine's message and what the fix grants: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Run in terminal* / *Copy*: `sudo setfacl -m u:$USER:rx /.snapshots` (once; Seldon never runs it on its own); then *Check again* runs a capture, like *Capture now*, which clears the banner once snapshots are readable. After *Run in terminal* the banner says "When the command has finished, press Check again" |
+| Plugin updated, shell not restarted (the installed manifest names another version than the code running) | Restart the shell to finish the update, in the neutral tone above the other banners, with both versions | *Restart shell* runs `omarchy-restart-shell`, no arguments; the shell then loads the installed plugin |
 | Capture warned (a capture the plugin ran exited 0 with warnings) | Capture warned, in the neutral tone under the other banners: the first line of each warning as the engine wrote it (today the state reset and its restore hint, WP-081); the full text on hover | None: the warning names the user guide section to read. The notice stays until a capture the plugin runs (*Capture now*, *Check again*, the `c` key, the bar's right click, the timer) finishes without warnings; a failed or locked capture leaves it |
 
 The engine is looked for when the shell starts and again on the status
@@ -430,6 +431,10 @@ shell plugin. This is everything it does outside its own window:
   `sudo setfacl -m u:$USER:rx /.snapshots`.
   Omarchy's launcher runs it in a terminal window you see
   (`sudo` asks for your password there).
+- **One more, only on *Restart shell*:** `omarchy-restart-shell`, with no
+  arguments, from the notice that shows after a plugin update while the
+  shell still runs the old code. It reads the plugin's own `manifest.json`
+  as the shell hands it over (its `version`), nothing else.
 - **Never shell strings:** every program is started with an argument list,
   without a shell. Nothing from the index or the logbook ever becomes part
   of a command line other than as one validated argument.
@@ -458,11 +463,26 @@ shell plugin. This is everything it does outside its own window:
 | A banner instead of data | its button is the fix; see [States](#states) |
 | A key or `shell toggle jax.seldon` opens the overlay, not the panel | by design; the panel is `omarchy-shell jax.seldon.panel toggle` |
 | An action says the index is behind your logbook | you changed the logbook elsewhere (a terminal); *Capture now* or `seldon status`, then try again |
-| Changes to plugin files do not show | `omarchy-restart-shell` (the shell caches plugin components) |
+| Changes to plugin files do not show, or an update does not | `omarchy-restart-shell` (the shell caches plugin components; see [Update](#update)) |
 | What does the plugin see? | `omarchy-shell jax.seldon.service status` and `omarchy-shell jax.seldon.panel view` print it as JSON |
 | The engine refuses something | run the same command with `seldon … --json` in a terminal for the full message; the engine's own docs are in the project repository |
 
 Plugin warnings go to the shell's log: `journalctl --user -t omarchy-shell`.
+
+## Update
+
+```sh
+omarchy plugin update jax.seldon
+omarchy-restart-shell
+```
+
+The update fetches the new plugin files and asks the shell to reload its
+plugins, but the shell keeps running the plugin code it loaded first
+until it restarts. `omarchy-restart-shell` restarts the bar, panels and
+overlays; your applications keep running. It refuses while the screen
+is locked. When the panel sees that the installed plugin is not the one
+running, it says so (see [States](#states)); a plugin version that does
+not know this notice yet shows nothing, so restart after every update.
 
 ## Remove
 

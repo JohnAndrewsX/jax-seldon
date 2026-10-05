@@ -50,7 +50,20 @@ only: both put a `seldon` on your `PATH`.
 
 ```sh
 omarchy plugin update jax.seldon
+omarchy-restart-shell
 ```
+
+The update fetches the new plugin files and asks the shell to reload its
+plugins, but the shell keeps running the plugin code it loaded first
+until it restarts. Restart it with `omarchy-restart-shell`: the bar,
+panels and overlays come back within seconds, your applications keep
+running. It refuses while the screen is locked.
+
+When the panel sees that the installed plugin is not the one running, it
+shows "Restart the shell to finish the update" above the other banners,
+with a *Restart shell* button that runs `omarchy-restart-shell`. A plugin
+version that does not know this notice yet shows nothing, so restart the
+shell after every plugin update.
 
 The plugin and the engine agree on the index format by its version. If
 one is too old, the panel says "Index format mismatch" and names the one

@@ -538,3 +538,38 @@ Verified in the shell source and live on the test host.
 - **`Flow` wraps when `x + child.width > width`**, so cells whose widths
   are rounded down and sum exactly to the width stay on one line; give
   the rounding rest to the last cell.
+
+## WP-090 findings (2026-10-05, Omarchy shell tree at `$OMARCHY_PATH` 4.0.0.alpha `version` file, quickshell 0.3.1)
+
+- **`omarchy plugin update` is meant to reload, and does not load new
+  code.** `bin/omarchy-plugin-update` pulls each git checkout and, if any
+  changed, runs `omarchy-shell shell rescanPlugins` → `shell.reloadPlugins()`
+  (also what the `inotifywait` watch on `~/.config/omarchy/plugins` triggers
+  for any file change outside `.git`): it destroys panels, non-`keepLoaded`
+  services and widget registrations, then `finishPluginReload()` calls
+  `Qt.clearComponentCache()` **only if it is a function**, and rescans.
+  In quickshell 0.3.1 `typeof Qt.clearComponentCache` and
+  `typeof Qt.trimComponentCache` are both `"undefined"`, so
+  `Qt.createComponent(url)` returns the cached compiled type: **old QML and
+  old JS imports** (`Model.js`). Reproduced offscreen: a QML file and its JS
+  import edited on disk, `createComponent` again → both still old. Only
+  `omarchy-restart-shell` loads the new code.
+- **The manifest, unlike the code, is fresh after a rescan.** The registry's
+  scan `cat`s every `manifest.json`; a new service instance gets
+  `inst.manifest = publicPluginManifest(m)` (a third party's copy without
+  `__sourceDir`), and a kept instance is handed the fresh manifest too
+  (`_syncServices`). So `manifest.version` ≠ a version constant compiled
+  into the code ⇔ the plugin was updated under a running shell. The plugin
+  cannot learn its own folder from the manifest (`__sourceDir` is
+  stripped); the injected manifest is the way to read it.
+- **`omarchy-restart-shell`** kills every quickshell of the config dir
+  (`quickshell kill -p … --any-display`), relaunches via `hyprctl dispatch
+  exec omarchy-launch-shell` and waits for `ping`. It refuses while a secure
+  lock is up. No first-party QML runs it; the plugin starts it with
+  `Quickshell.execDetached(["omarchy-restart-shell"])` (a detached process,
+  so it outlives the shell it kills) — **not yet verified live**
+  (orchestrator's check on the test host).
+- **Fake recorders must append in one write.** Bash line-buffers stdout,
+  so `printf '%s' "$multi_line" >>file` is one `write(2)` per line; two
+  recorders started together interleaved in 37 of 500 runs. Stage the
+  record in a private file and `cat` it onto the record (one write).

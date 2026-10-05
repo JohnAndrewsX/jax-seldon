@@ -107,6 +107,14 @@ plugin/
   shell) is compared with the probed version (`major.minor.patch`; a
   pre-release suffix counts as its version). An older engine gets the
   "Engine too old" banner (§5) and one warning line (WP-068).
+- Running code vs installed plugin (WP-090): `Model.PLUGIN_VERSION`, set
+  by hand with the manifest's `version` (docs/VERSIONING.md), is compared
+  with the `version` of the manifest the shell injects; the shell re-reads
+  it from disk on every rescan but keeps the plugin code it compiled first
+  (Quickshell 0.3.1 has no `Qt.clearComponentCache`). When they differ the
+  service publishes `restartNotice` (§5). Reading the plugin's own
+  manifest is not Seldon data: CONTRACT.md and AGENTS.md §3 cover the
+  logbook and the index.
 
 ## 4. BarWidget.qml
 
@@ -266,7 +274,10 @@ Check again" under its buttons until the index next changes; not
 initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
 *Check again*; index stale →
 *Capture now*; capture warnings → the neutral "Capture warned" notice of
-§3 under the banners, without an action; crisis → red strip "N changes
+§3 under the banners, without an action; plugin updated under a running
+shell (§3) → the neutral "Restart the shell to finish the update" above
+the banners, with both versions and one action, *Restart shell*, which
+runs the argv `["omarchy-restart-shell"]` (WP-090); crisis → red strip "N changes
 in the red zone need a reason".
 
 ## 6. Overlay.qml — Prime Radiant
@@ -412,6 +423,8 @@ and its own images under `plugin/assets/` (SVG and PNG artwork, no
 scripts; WP-051).
 Runs the `seldon` engine with fixed arguments (the forms in CONTRACT.md).
 Besides the engine it starts only `wl-copy` and Omarchy's floating-terminal
-launcher, each with one constant command, only on a banner click. Never a
+launcher, each with one constant command, only on a banner click, and
+`omarchy-restart-shell` without arguments on the restart notice's click
+(WP-090). Never a
 shell string built from logbook content. Documented in README under
 "Security, privacy, privileges" (WP-041).
