@@ -220,6 +220,11 @@ beschrieben.
   wiederherzustellen: Der Zustand gehört zu einem anderen Logbuch-Pfad
   (du hast das Logbuch verschoben oder einen Befehl mit `--logbook` für
   ein anderes ausgeführt). Führe `seldon capture` aus.
+- Sagt die Zeile `the next capture will warn of the state reset for …`,
+  hat ein Capture den Reset festgehalten und ist stehen geblieben, bevor
+  es seinen Zustand gespeichert hat (ein Absturz, ein Kill). Es gelten
+  dieselben Schritte; das nächste Capture hält den Reset kein zweites
+  Mal fest, es gibt nur die Warnung aus.
 
 doctor kann nicht wissen, ob ein Collector in diesem Capture degraded
 läuft (snapper ohne die Lesefreigabe zum Beispiel). So ein Collector
