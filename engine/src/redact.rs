@@ -69,8 +69,14 @@ const VALUE: &str = r#"(?:"[^"]*"|'[^']*'|[^\s'"&;|]+)"#;
 /// …` in a note) is an ordinary character, after which no quote or
 /// separator may follow; the quoted strings before it pair up as written,
 /// so an unquoted `;` between two of them still ends the command.
+///
+/// Quotes pair left to right, which is not always the shell's reading
+/// (`$'a\''`, quotes inside `"$(…)"`, an escaped space `\ `). The fragment
+/// is therefore the union with the plain form, any characters but a line
+/// end, `;`, `&` or `|`: a match needs only one of the two readings, so
+/// every command the plain form reaches is still reached.
 const COMMAND_REST: &str =
-    r#"(?:[^\n;&|'"\\]|\\.|'[^'\n]*'|"(?:[^"\\\n]|\\.)*")*?(?:['"][^\n;&|'"]*?)?"#;
+    r#"(?:[^\n;&|]*?|(?:[^\n;&|'"\\]|\\.|'[^'\n]*'|"(?:[^"\\\n]|\\.)*")*?(?:['"][^\n;&|'"]*?)?)"#;
 
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).

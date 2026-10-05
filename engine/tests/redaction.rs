@@ -602,6 +602,33 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakePw36",
         "curl's -u ‹redacted› did not work",
     ),
+    // quotes pair left to right; where the shell reads them otherwise,
+    // the plain reading still reaches the option (WP-087 round 2)
+    (
+        "curl-user",
+        r#"curl -H $'a\'"' -u admin:fakePw39 -o "out""#,
+        "fakePw39",
+        "-u ‹redacted› -o \"out\"",
+    ),
+    (
+        "curl-user",
+        r#"curl -H "$(printf '"')" -u admin:fakePw40 -H "x" https://h.example"#,
+        "fakePw40",
+        "-u ‹redacted› -H \"x\" https://h.example",
+    ),
+    (
+        "curl-user",
+        r"curl \ -u admin:fakePw41 https://h.example",
+        "fakePw41",
+        "-u ‹redacted› https://h.example",
+    ),
+    // an unquoted `;` ends the scan-on too
+    (
+        "proxy-option",
+        "curl -U bob:fakeProxyPw13 https://h.example; useradd -U bob",
+        "fakeProxyPw13",
+        "-U ‹redacted› https://h.example; useradd -U bob",
+    ),
     // an option given twice in one command is masked both times; the
     // secret column is the part both values share (WP-087). A quoted
     // proxy value is matched up to its closing quote, so the scan for
@@ -772,6 +799,8 @@ const CLEAR: &[&str] = &[
     "Merged the curl changes; useradd -U is the default now",
     "Tried curl & wget; grep -b 'a=b' found nothing",
     "Fixed curl's output; useradd -U is next",
+    // a quoted string ends at the line end
+    "git commit -m \"Fix curl 'quote\nhandling' -U flag\"",
 ];
 
 mod redaction {
