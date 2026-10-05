@@ -255,3 +255,209 @@ Appended to `memory/pitfalls.md`:
   the bench build of this branch is back in place.
 - Two throwaway test files, created and deleted in the same command,
   never committed.
+
+## Round 2 (review: stage 1 SEND BACK)
+
+Commits:
+
+- `74a0a96`: B1, B2, the N1 rows and the personal-domain pattern test.
+- `7744683`: the domain class and a full-width colon row.
+- `fea31a4`: a row for an address before `host:path`.
+- `22dd08f`: a timing row.
+- `5ae9b90`: SPEC-ENGINE §7.
+- `d9ea49f` / `967eaf5`: guide 06 en/de.
+- `f58247b`: CHANGELOG.
+- This section.
+
+### B1: text glued to an address stays
+
+- **Local part (`LOCAL_NON_ASCII`).** It is ASCII letters, digits and
+  `._%+-`, plus `\x{A1}-\x{1FFF}\x{2070}-\x{2FFF}\x{A000}-\x{F8FF}
+  \x{FB00}-\x{FEFF}\x{10000}-\x{10FFFF}`, the reviewer's ranges. Left
+  out are C1 and NBSP, general punctuation (U+2000–U+206F, the marker
+  quotes included), CJK (U+3000–U+9FFF, U+F900–U+FAFF) and full-width
+  forms (U+FF00–U+FFEF).
+  - Rows: a Japanese sentence glued to an address, `（連絡先：` with a
+    full-width colon right before the address, `—` and `„…“`. In each,
+    only the address is masked.
+  - `jürgen@` keeps working.
+  - A local part written in CJK is not matched any more (SPEC lists it
+    under "not recognised").
+- **Domain (`NON_ASCII`).** It is now any character beyond ASCII,
+  `\x{80}-\x{10FFFF}`. The marker-quote exclusion in the domain was dead
+  code: the domain is copied unchanged, and the round-2 mutant E9 that
+  allowed the quotes survived every test. Allowing them only adds
+  matches; for example `me@‹redacted›.example` now masks `me`.
+  - IDN top-level domains (`.испытание`, `.テスト`) stay matched.
+  - A domain followed by CJK text keeps that text inside the kept
+    domain. It is not masked.
+- My round-1 "Not done" note ("a non-ASCII punctuation mark glued to
+  the local part") understated this: a whole CJK sentence was lost.
+  That is fixed now.
+
+### B2: the `:` takes nothing from what follows
+
+- **The group holds only the `:`.** `port` is now `(?P<port>:)?` and
+  moved from `unless` to a new field, `unless_followed`.
+- **`Rule::kept` decides from what follows the match.** The `:` keeps
+  the match only when two things hold:
+  - the next character is not white space and not the end of the text;
+  - the rule's next match does not start right there. The list from
+    `Rule::matches` already has it, so no second regex and no extra
+    search are needed.
+- **Callers.** `applies` gets the text and the next match.
+  `replace` and `matching_rules` pass them.
+- **The `:` is restored.** The replacement is now
+  `‹redacted›@${domain}${port}`, so a masked address keeps its `:`.
+- **How I read "both addresses masked fully".** In
+  `a@b.co:c@d.example` and `me@example.org:me2@example.net` *both*
+  addresses are masked:
+  - `‹redacted›@b.co:‹redacted›@d.example`;
+  - `‹redacted›@example.org:‹redacted›@example.net`.
+  The two fixes the packet suggests would have kept the first address
+  of each line, since a non-space follows it. Masking both covers either
+  reading, and a `host:path` never starts with an address.
+- **Rows:**
+  - both lines above;
+  - `an rita@example.org:` (a `:` at the end is masked);
+  - `a@b.co:git@h.example:o/r`: the first address is masked and the
+    `host:path` after it stays. This row kills K6.
+  - The old rows `Reply to ivan@example.com: thanks` and
+    `git@github.com:…` / `rsync … :/srv` are unchanged.
+
+### N1, N2, guide
+
+- **N1.**
+  - TABLE row `olga@пример.испытание` (kills R2).
+  - `harmless_text_stays` loops over all 11 unit types,
+    `systemctl status app@x.<unit>` (kills R3).
+- **N2.**
+  - SPEC §7 gains a "not recognised" line: `me%40example.org`,
+    `"me"@example.org`, a CJK local part.
+  - SPEC §7 also describes the new local-part ranges and the `:` rule.
+  - CHANGELOG: "in the logbook and the index".
+- **Guide 06 en/de.** One sentence on a personal domain:
+  `"@smith\\.example\\b"` turns `jo@smith.example` into
+  `‹redacted›‹redacted›`. `user_patterns` asserts exactly that, next to
+  an `@example.org` address that keeps its domain.
+- **Decisions from the brief.** Taken as given, nothing to change:
+  - the domain stays;
+  - a Mastodon handle stays masked;
+  - the replay collision becomes a follow-up WP;
+  - old subjects are documented only;
+  - merge after WP-092.
+
+### Mutants (round 2; each run of `--test redaction --no-fail-fast`, the whole list at `7744683`, K1, K6 and K7 again at `fea31a4` after the row that killed K6; source restored with `git checkout HEAD` + `touch`; baseline green afterwards, 21 passed; `git status` clean)
+
+Round-1 mutants are adapted to the new code (E9 is gone with the dead
+exclusion):
+
+| # | Mutant | Caught by |
+|---|---|---|
+| E1 | `unless` without `url` | `email_rule_is_disjoint_and_stable` |
+| E2 | no `:` context (`unless_followed` empty) | `email_rule_…`, `every_builtin_pattern`, `harmless_text_stays`, `proxy_json_…` |
+| E3 | `unless` without `unit` | `every_builtin_pattern`, `harmless_text_stays` |
+| E4 | `applies` ignores `kept()` | `email_rule_…`, `every_builtin_pattern`, `harmless_text_stays`, `proxy_json_…` |
+| E5 | domain needs no dot | same four |
+| E6 | top-level domain may hold digits | `harmless_text_stays` |
+| E7 | local part ASCII only | `every_builtin_pattern` |
+| E8 | domain labels ASCII only | `email_rule_…`, `every_builtin_pattern` |
+| E10 | domain masked too | `a_desktop_entry_…`, `email_rule_…`, `every_builtin_pattern`, `user_patterns` |
+| E11 | trigger `mailto` | `a_desktop_entry_…`, `email_rule_…`, `every_builtin_pattern`, `every_row_holds_a_trigger_…`, `user_patterns` |
+| E12 | URL skip without the `user:password` branch | `email_rule_…` |
+| E13 | URL skip: password without `@` | `email_rule_…` |
+| E15 | unit without its word end | `email_rule_…`, `every_builtin_pattern` |
+| E19 / E20 | local part without `+` / `.` | `every_builtin_pattern` (E20 also `a_desktop_entry_…`) |
+| E21 | top-level domain of 3 or more | `email_rule_…`, `every_builtin_pattern` |
+| E14 | URL skip without `(?-u:\b)` | **survives**, as in round 1 (equivalent except after `_`) |
+
+The reviewer's mutants and the new ones:
+
+| # | Mutant | Caught by |
+|---|---|---|
+| R1 | `port` = `:\S+` | `email_rule_…`, `every_builtin_pattern`, `harmless_text_stays`, `masking_twice…`, `proxy_json_…` |
+| R1b | `port` = `:\S` (round 1) | `email_rule_…`, `every_builtin_pattern` |
+| R2 | top-level domain ASCII only | `email_rule_…`, `every_builtin_pattern` (`.испытание`) |
+| R3 | unit list without `device` | `harmless_text_stays` (unit loop) |
+| B1 | local part takes all non-ASCII (round 1) | `email_rule_…`, `every_builtin_pattern` |
+| B1b | local part takes general punctuation | `every_builtin_pattern` (`—`, `„`) |
+| B1c | local part takes CJK | `every_builtin_pattern` |
+| B1d | local part takes full-width forms | `every_builtin_pattern` (`：`, row `7744683`; it survived the first row, in which hiragana stood before the address) |
+| K1 | a following match does not end the `:` context | `email_rule_…`, `every_builtin_pattern` |
+| K2 | white space after the `:` keeps it too | `email_rule_…`, `every_builtin_pattern` |
+| K3 | the end of the text keeps it | `email_rule_…`, `every_builtin_pattern` |
+| K4 | the replacement drops the `:` | `every_builtin_pattern` |
+| K5 | `port` back in `unless` (kept whatever follows) | `email_rule_…`, `every_builtin_pattern` |
+| K6 | `matching_rules` without the next match | `email_rule_…`, `every_builtin_pattern` (row `fea31a4`; it survived before) |
+| K7 | `replace` without the next match | `email_rule_…`, `every_builtin_pattern` |
+
+**Pre-fix run.** The new rows against round 1's `redact.rs` make
+`every_builtin_pattern` and `email_rule_is_disjoint_and_stable` fail.
+The first was the CJK row: `…改行なしnana@example.com` →
+`‹redacted›@example.com`.
+
+### Timings (round 2; bench profile, median of 21)
+
+**Method.** As in round 1: interleaved A/B of `main`'s `redact.rs`
+(unchanged since the base) against `22dd08f`. Each run was under the
+check lock, 3 rounds, in the order main·wp | wp·main | main·wp.
+Between runs the lock passed to other sessions' checks. Round 1's
+`main` started at load 14, every other run at 0.3–0.7. No run failed
+and no budget needed a retry.
+
+| Row (budget) | main r1 / r2 / r3 | WP-093 r1 / r2 / r3 |
+|---|---|---|
+| url line, 16 KB (1 ms; holds an `@`) | 0.133 / 0.129 / 0.132 ms | 0.150 / 0.149 / 0.141 ms |
+| url line, 64 KB (2 ms) | 0.580 / 0.561 / 0.584 ms | 0.638 / 0.627 / 0.615 ms |
+| german note, 64 KB (2 ms) | 0.563 / 0.509 / 0.568 ms | 0.562 / 0.524 / 0.536 ms |
+| quoted line, 64 KB (2 ms) | 0.531 / 0.530 / 0.551 ms | 0.564 / 0.531 / 0.517 ms |
+| two option kinds, 128 KB (20 ms) | 7.68 / 7.93 / 8.35 ms | 8.62 / 8.20 / 7.98 ms |
+| password and token, 128 KB (10 ms) | 3.71 / 3.76 / 3.77 ms | 3.93 / 3.80 / 3.78 ms |
+| addresses, 16 / 64 / 128 KB (20 ms at 128) | 0.05 / 0.21 / 0.43 ms ¹ | 0.60 / 2.44 / 4.93; 4.69, 4.77 ms |
+| at signs, 16 / 64 / 128 KB (20 ms at 128) | 0.13 / 0.52 / 1.06 ms ¹ | 0.38 / 1.50 / 2.99; 3.07, 2.92 ms |
+| address colons, 16 / 64 / 128 KB (20 ms at 128, new) | 0.05 / 0.20 / 0.42 ms ¹ | 0.66 / 2.63 / 5.45; 5.45, 5.51 ms |
+| hook, recorded, 10 000 lines (5 ms) | 1.83 / 1.82 / 1.77 ms | 1.83 / 1.84 / 1.75 ms |
+| hook, curl line with a marker, 10 000 lines (5 ms) | 2.78 / 2.83 / 2.69 ms | 2.91 / 3.01 / 2.85 ms |
+| hook, recorded, 900 lines (5 ms) | 3.69 / 3.78 / 3.57 ms | 3.63 / 3.73 / 3.51 ms |
+| hook, curl line with a marker, 900 lines (5 ms) | 4.65 / 4.86 / 4.54 ms | 4.85 / 4.96 / 4.77 ms |
+
+¹ `main` has no `email` rule, so these rows mask nothing there.
+
+**Reading.**
+- **Lines without an `@`:** unchanged, within noise.
+- **The hook's curl line** holds an `@` and pays the compile once:
+  - +0.12 to +0.18 ms at 10 000 lines;
+  - +0.10 to +0.23 ms at 900 lines;
+  - headroom to 5 ms is 0.04–0.23 ms. That matches round 1 and the
+    reviewer's N3. B1 and B2 did not change the cost; the reviewer
+    measured the class itself at the same compile cost.
+- **"address colons"** is linear: ×2.0 per doubling from 64 to 128 KB.
+  Per address it costs what the "addresses" row costs, about 0.51 µs:
+  - about 10 600 addresses at 128 KB in 5.45 ms;
+  - against about 9 400 in 4.69–4.93 ms.
+  So the `:` check (one look at the next character and at the next
+  match) adds nothing measurable.
+- **WP-092 order.** The orchestrator's decision stands: WP-093 merges
+  after WP-092.
+
+### Verified (round 2)
+
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+  are clean.
+- `redaction`: 21 passed, 1 ignored. The bench run passes every budget.
+- `scripts/docs-check.sh`: ok. The German source line points to
+  `d9ea49f`.
+- **`flock /tmp/seldon-check.lock just check` at `22dd08f`: exit 0**
+  (19:45–19:53). Results: service-states 314/0, panel-view 782/0,
+  overlay-view 319/0, bar-view 143/0, install 209/0, real-home-guard
+  11/0, qmllint 29 files, docs-check ok, `check: ok`. The commit after
+  `22dd08f` adds only this section.
+
+### Touched outside scope (round 2)
+
+- None. No guard-hook blocks.
+- Scratch scripts, binaries and the two throwaway timing tests of
+  round 1 stayed in the session scratchpad or were deleted unseen by
+  git.
+- `engine/target/release/seldon` was swapped during the A/B run; the
+  branch's bench build is back in place.
