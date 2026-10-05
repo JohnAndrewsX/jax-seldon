@@ -192,9 +192,13 @@ jobs:
           cp "$pkg" package/
 
       - name: Plugin split
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           split=$(git subtree split --prefix=plugin)
           git show "$split:manifest.json" | jq -e '.id == "jax.seldon"'
+          # the manifest and Model.js PLUGIN_VERSION at the release's version (WP-090)
+          bash packaging/plugin-version.sh <(git show "$split:manifest.json") <(git show "$split:Model.js") "$VERSION"
           echo "plugin split: $split"
 
       # Build provenance (SLSA v1, signed with the job's identity) for each

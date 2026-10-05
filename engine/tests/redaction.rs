@@ -539,6 +539,184 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeCookie6",
         "curl -b‹redacted› https://h.example",
     ),
+    // a `&`, `;` or `|` inside quotes does not end the command (WP-087)
+    (
+        "curl-user",
+        "curl 'https://h.example/q?a=1&b=2' -u admin:fakePw31",
+        "fakePw31",
+        "'https://h.example/q?a=1&b=2' -u ‹redacted›",
+    ),
+    (
+        "curl-user",
+        "curl -H \"X-Note: a;b|c\" --user admin:fakePw32 https://h.example",
+        "fakePw32",
+        "--user ‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        r#"curl -d "{\"q\":\"x;y\"}" -u admin:fakePw33 https://h.example"#,
+        "fakePw33",
+        "-u ‹redacted› https://h.example",
+    ),
+    (
+        "proxy-option",
+        "curl -d 'a=1&b=2' -U bob:fakeProxyPw11 https://h.example",
+        "fakeProxyPw11",
+        "-d 'a=1&b=2' -U ‹redacted› https://h.example",
+    ),
+    (
+        "proxy-userinfo",
+        "curl \"https://h.example/?a=1&b=2\" -x bob:fakeProxyPw12@proxy.example:3128",
+        "fakeProxyPw12",
+        "-x ‹redacted›@proxy.example:3128",
+    ),
+    (
+        "cookie-option",
+        "curl -H 'X-A: x;y' -b 'sid=fakeCookie8' https://h.example",
+        "fakeCookie8",
+        "-b ‹redacted› https://h.example",
+    ),
+    (
+        "sshpass-password",
+        "sshpass -P 'pass;word:' -p fakePw34 ssh me@host.example",
+        "fakePw34",
+        "-p ‹redacted› ssh me@host.example",
+    ),
+    (
+        "registry-login-password",
+        "podman login --authfile 'a&b.json' -p fakePw35 quay.example",
+        "fakePw35",
+        "-p ‹redacted› quay.example",
+    ),
+    // a backslash escape outside quotes is no separator either
+    (
+        "curl-user",
+        r"curl https://h.example/q?a=1\&b=2 -u admin:fakePw38",
+        "fakePw38",
+        r"q?a=1\&b=2 -u ‹redacted›",
+    ),
+    // a quote the line never closes is an ordinary character
+    (
+        "curl-user",
+        "curl's -u admin:fakePw36 did not work",
+        "fakePw36",
+        "curl's -u ‹redacted› did not work",
+    ),
+    // … also after a quoted separator, where only the quote-aware
+    // reading reaches the option
+    (
+        "curl-user",
+        "curl -H 'X-A: a;b' isn't sent with -u admin:fakePw42",
+        "fakePw42",
+        "isn't sent with -u ‹redacted›",
+    ),
+    // quotes pair left to right; where the shell reads them otherwise,
+    // the plain reading still reaches the option (WP-087 round 2)
+    (
+        "curl-user",
+        r#"curl -H $'a\'"' -u admin:fakePw39 -o "out""#,
+        "fakePw39",
+        "-u ‹redacted› -o \"out\"",
+    ),
+    (
+        "curl-user",
+        r#"curl -H "$(printf '"')" -u admin:fakePw40 -H "x" https://h.example"#,
+        "fakePw40",
+        "-u ‹redacted› -H \"x\" https://h.example",
+    ),
+    (
+        "curl-user",
+        r"curl \ -u admin:fakePw41 https://h.example",
+        "fakePw41",
+        "-u ‹redacted› https://h.example",
+    ),
+    // an unquoted `;` ends the scan-on too
+    (
+        "proxy-option",
+        "curl -U bob:fakeProxyPw13 https://h.example; useradd -U bob",
+        "fakeProxyPw13",
+        "-U ‹redacted› https://h.example; useradd -U bob",
+    ),
+    // an option given twice in one command is masked both times; the
+    // secret column is the part both values share (WP-087). A quoted
+    // proxy value is matched up to its closing quote, so the scan for
+    // the next `-x` starts outside the quotes
+    (
+        "curl-user",
+        "curl -u admin:fakeTwiceA1 https://h.example -u bob:fakeTwiceA2",
+        "fakeTwiceA",
+        "curl -u ‹redacted› https://h.example -u ‹redacted›",
+    ),
+    (
+        "curl-user",
+        "curl --user admin:fakeTwiceB1 'https://h.example/?a&b' -uadmin:fakeTwiceB2 -o f",
+        "fakeTwiceB",
+        "--user ‹redacted› 'https://h.example/?a&b' -u‹redacted› -o f",
+    ),
+    (
+        "proxy-option",
+        "curl -U bob:fakeTwiceC1 -U bob:fakeTwiceC2 https://h.example",
+        "fakeTwiceC",
+        "curl -U ‹redacted› -U ‹redacted› https://h.example",
+    ),
+    (
+        "proxy-option",
+        "curl --proxy-user bob:fakeTwiceD1 -x proxy.example:3128 -U bob:fakeTwiceD2 https://h.example",
+        "fakeTwiceD",
+        "--proxy-user ‹redacted› -x proxy.example:3128 -U ‹redacted› https",
+    ),
+    (
+        "proxy-option",
+        "curl --proxy-user bob:fakeTwiceE1 https://h.example --proxy-user=bob:fakeTwiceE2",
+        "fakeTwiceE",
+        "--proxy-user ‹redacted› https://h.example --proxy-user=‹redacted›",
+    ),
+    // without the command word nothing scans on: wget's `-U` names the
+    // user agent
+    (
+        "proxy-option",
+        "wget --proxy-user=bob -U Wget/1.25 https://h.example",
+        "bob",
+        "wget --proxy-user=‹redacted› -U Wget/1.25 https://h.example",
+    ),
+    (
+        "proxy-userinfo",
+        "curl --proxy bob:fakeTwiceF1@p1.example:3128 -x bob:fakeTwiceF2@p2.example:3128 https://h.example",
+        "fakeTwiceF",
+        "--proxy ‹redacted›@p1.example:3128 -x ‹redacted›@p2.example:3128 https",
+    ),
+    (
+        "proxy-userinfo",
+        "curl -x 'bob:fakeTwiceG1@p1.example:3128' -H 'X-A: a;b' -x \"bob:fakeTwiceG2@p2.example:3128\" https://h.example",
+        "fakeTwiceG",
+        "-x '‹redacted›@p1.example:3128' -H 'X-A: a;b' -x \"‹redacted›@p2.example:3128\" https",
+    ),
+    (
+        "cookie-option",
+        "curl -b 'a=fakeTwiceH1' https://h.example -b 'b=fakeTwiceH2'",
+        "fakeTwiceH",
+        "curl -b ‹redacted› https://h.example -b ‹redacted›",
+    ),
+    // the first `-b` names a cookie file and stays; the second is masked
+    (
+        "cookie-option",
+        "curl -b cookies.txt --cookie 'sid=fakeCookie9' https://h.example",
+        "fakeCookie9",
+        "curl -b cookies.txt --cookie ‹redacted› https://h.example",
+    ),
+    (
+        "registry-login-password",
+        "docker login -p fakeTwiceI1 -u me -p fakeTwiceI2 registry.example",
+        "fakeTwiceI",
+        "login -p ‹redacted› -u me -p ‹redacted› registry.example",
+    ),
+    // a `-p` after the command that sshpass runs is that command's
+    (
+        "sshpass-password",
+        "sshpass -p fakePw37 ssh -p 2222 me@host.example",
+        "fakePw37",
+        "sshpass -p ‹redacted› ssh -p 2222 me@host.example",
+    ),
     // case-insensitive matching folds the Kelvin sign onto `k` and the
     // long s onto `s`; the triggers do the same
     (
@@ -620,6 +798,17 @@ const CLEAR: &[&str] = &[
     "curl -H \"Cookie: $COOKIE\" https://h.example",
     "curl -b cookies.txt -c cookies.txt https://h.example",
     "curl --cookie-jar jar.txt https://h.example",
+    // an unquoted `;`, `&` or `|` ends the command, also after quoted
+    // strings (WP-087)
+    "curl https://h.example; useradd -U bob",
+    "curl -o 'out' https://h.example; useradd -m 'bob' -U bob",
+    "curl -s 'https://h.example/?a=1&b=2' | grep -b 'k=v'",
+    "curl \"https://h.example\" && wget -U 'agent:x@y' https://h.example",
+    "Merged the curl changes; useradd -U is the default now",
+    "Tried curl & wget; grep -b 'a=b' found nothing",
+    "Fixed curl's output; useradd -U is next",
+    // a quoted string ends at the line end
+    "git commit -m \"Fix curl 'quote\nhandling' -U flag\"",
 ];
 
 mod redaction {
@@ -715,8 +904,9 @@ mod redaction {
 
     #[test]
     fn masking_twice_changes_nothing() {
-        // a user pattern that also matches inside the marker itself
-        let r = Redactor::with_patterns(&["red|act".into()]).unwrap();
+        // a user pattern that also matches inside the marker itself, also
+        // at its first character
+        let r = Redactor::with_patterns(&["‹re|red|act".into()]).unwrap();
         let mut texts: Vec<String> = TABLE
             .iter()
             .map(|(_, input, ..)| input.to_string())
@@ -811,6 +1001,18 @@ mod redaction {
                 "curl -sS https://h.example ",
                 "Schlüssel-u-x-b geändert ",
             ),
+            // quoted separators keep the command open to the line end,
+            // through every quoted string (WP-087)
+            (
+                "quoted line",
+                "curl -sS https://h.example ",
+                "'a;b' \"c|d\" e-u-x-b ",
+            ),
+            (
+                "apostrophes",
+                "curl -sS https://h.example ",
+                "it's a-u-x-b ",
+            ),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
                 let line = filled(head, word, kb * 1024);
@@ -822,6 +1024,46 @@ mod redaction {
                         std::hint::black_box(r.redact(&line));
                     },
                 );
+            }
+        }
+        // many masked values: every match is checked against the markers
+        // of the earlier rules, by binary search (WP-087 round 2); the
+        // budget, where there is one, holds at 128 KB
+        for (what, head, word, budget) in [
+            ("two option kinds", "curl ", "-u a:b -x c:d@e ", Some(20)),
+            (
+                "five option kinds",
+                "curl ",
+                "--proxy-user=a:b -U c:d -x e:f@g -b h=i -u j:k ",
+                None,
+            ),
+            (
+                "password and token",
+                "tool ",
+                "--password x token=y ",
+                Some(10),
+            ),
+        ] {
+            for kb in [16, 64, 128] {
+                let line = filled(head, word, kb * 1024);
+                let what = format!("redact, {what}, {kb} KB");
+                let run = || {
+                    std::hint::black_box(r.redact(&line));
+                };
+                match budget {
+                    Some(ms) if kb == 128 => {
+                        super::common::assert_within_budget(
+                            &what,
+                            Duration::from_millis(ms),
+                            21,
+                            run,
+                        );
+                    }
+                    _ => {
+                        let (median, times) = super::common::median_time(21, run);
+                        eprintln!("{what}: median {median:?} (no budget), all {times:?}");
+                    }
+                }
             }
         }
     }

@@ -40,6 +40,8 @@ import qs.Commons
 //                                          wait:changelog.rows=59
 //   SELDON_INDEX        empty for a live run: the service then reads the
 //                       state index the fake engine writes and runs actions
+//   HARNESS_MANIFEST    a manifest as JSON text, assigned to the service's
+//                       `manifest` after creation, as the shell injects it
 //   HARNESS_BAR         if set, give the panel a stand-in bar whose
 //                       switchPanelFrom() records its direction; each report
 //                       then carries `switches` (Tab hands over to the bar)
@@ -227,6 +229,8 @@ ShellRoot {
 
   Component.onCompleted: {
     root.service = root.load("Service.qml", null, {})
+    var manifestJson = Quickshell.env("HARNESS_MANIFEST") || ""
+    if (root.service && manifestJson !== "") root.service.manifest = JSON.parse(manifestJson)
     var props = { service: root.service }
     if (Quickshell.env("HARNESS_BAR")) props.bar = fakeBar
     root.panel = root.load("Panel.qml", win.contentItem, props)

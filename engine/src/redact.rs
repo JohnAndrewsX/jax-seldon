@@ -42,6 +42,11 @@
 //! without `://`, `=`, a token prefix, … compiles none of them, and a
 //! `curl` line compiles a `curl` rule only when it also holds that rule's
 //! option (`-u`, `-x`, `-b`, …).
+//!
+//! The rules for an option of a command (`curl -u`, `sshpass -p`,
+//! `docker login -p`) look for it within one command ([`COMMAND_REST`]:
+//! a quoted `;`, `&` or `|` does not end it) and find it again when the
+//! command gives it twice ([`Rule::matches`]).
 
 use std::sync::{LazyLock, OnceLock};
 
@@ -56,6 +61,23 @@ pub const REDACTED: &str = "‹redacted›";
 /// A quoted or bare value after a key.
 const VALUE: &str = r#"(?:"[^"]*"|'[^']*'|[^\s'"&;|]+)"#;
 
+/// The rest of one command after its command word (`curl`, `sshpass`,
+/// `docker login`), up to an option: anything on the same line but an
+/// unquoted `;`, `&` or `|`. A quoted string (`'a&b'`, `"x;y"`, with `\"`
+/// inside double quotes) and a backslash escape outside quotes (`\;`)
+/// belong to the command. A quote that the line never closes (`curl's -u
+/// …` in a note) is an ordinary character, after which no quote or
+/// separator may follow; the quoted strings before it pair up as written,
+/// so an unquoted `;` between two of them still ends the command.
+///
+/// Quotes pair left to right, which is not always the shell's reading
+/// (`$'a\''`, quotes inside `"$(…)"`, an escaped space `\ `). The fragment
+/// is therefore the union with the plain form, any characters but a line
+/// end, `;`, `&` or `|`: a match needs only one of the two readings, so
+/// every command the plain form reaches is still reached.
+const COMMAND_REST: &str =
+    r#"(?:[^\n;&|]*?|(?:[^\n;&|'"\\]|\\.|'[^'\n]*'|"(?:[^"\\\n]|\\.)*")*?(?:['"][^\n;&|'"]*?)?)"#;
+
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).
 pub const CREDENTIAL_MIN: usize = 8;
@@ -65,23 +87,88 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// One rule: matches of `pattern` are replaced by `replacement`, a
 /// template that keeps the non-secret groups (e.g. the option name)
 /// around [`REDACTED`]. With `check`, a match counts only when its group
-/// `v` passes it. The regex is compiled on first use; a text whose ASCII
-/// lower case holds none of `triggers` cannot match (empty: always try;
-/// see [`holds_trigger`] for `+`).
+/// `v` passes it. With `next`, the rule is an option of a command and
+/// finds the option again in the same command ([`Rule::matches`]). The
+/// regexes are compiled on first use; a text whose ASCII lower case holds
+/// none of `triggers` cannot match (empty: always try; see
+/// [`holds_trigger`] for `+`).
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
     pattern: String,
     re: OnceLock<Regex>,
+    next: Option<String>,
+    next_re: OnceLock<Regex>,
     replacement: String,
     check: Option<fn(&str) -> bool>,
     triggers: &'static [&'static str],
+}
+
+/// One match of a rule: its groups, whose positions count from `offset`
+/// in the text (a match of [`Rule::next`] is searched for in the rest of
+/// the text after the previous match).
+struct Found<'t> {
+    offset: usize,
+    caps: Captures<'t>,
+}
+
+impl Found<'_> {
+    /// Where the match stands in the whole text.
+    fn range(&self) -> (usize, usize) {
+        let m = self.caps.get(0).expect("group 0 is the match");
+        (self.offset + m.start(), self.offset + m.end())
+    }
 }
 
 impl Rule {
     fn regex(&self) -> &Regex {
         self.re
             .get_or_init(|| Regex::new(&self.pattern).expect("built-in redaction pattern compiles"))
+    }
+
+    fn next_regex(&self) -> Option<&Regex> {
+        self.next.as_ref().map(|next| {
+            self.next_re
+                .get_or_init(|| Regex::new(next).expect("built-in redaction pattern compiles"))
+        })
+    }
+
+    /// The matches of this rule in `text`, left to right.
+    ///
+    /// A rule for an option of a command (`curl -u`) scans on from each
+    /// match that starts at the command word (group `cmd`): its `next`
+    /// pattern is anchored at the end of the previous match, as `\G`
+    /// would anchor it in other regex dialects (the `regex` crate has
+    /// none), and matches the rest of the same command up to the option
+    /// once more. It repeats until the command holds no further option,
+    /// so `curl -u a:b … -u c:d` yields both without a second command
+    /// word, and the scan never leaves the command. The search for the
+    /// next command word goes on after the last of them.
+    fn matches<'t>(&self, text: &'t str) -> Vec<Found<'t>> {
+        let Some(next) = self.next_regex() else {
+            return self
+                .regex()
+                .captures_iter(text)
+                .map(|caps| Found { offset: 0, caps })
+                .collect();
+        };
+        let mut found = Vec::new();
+        let mut pos = 0;
+        while let Some(caps) = self.regex().captures_at(text, pos) {
+            let first = Found { offset: 0, caps };
+            let (start, mut end) = first.range();
+            let in_command = first.caps.name("cmd").is_some();
+            found.push(first);
+            while in_command && let Some(caps) = next.captures(&text[end..]) {
+                let again = Found { offset: end, caps };
+                end = again.range().1;
+                found.push(again);
+            }
+            // the option and its value are never empty
+            debug_assert!(end > start, "{}: empty match", self.name);
+            pos = end;
+        }
+        found
     }
 
     /// Whether `lower` (the text through [`trigger_text`]) may hold a
@@ -92,23 +179,48 @@ impl Rule {
 
     /// Whether this match is replaced: not inside an existing marker and,
     /// for a checked rule, with a value that passes the check.
-    fn applies(&self, caps: &Captures, markers: &[(usize, usize)]) -> bool {
-        let m = caps.get(0).expect("group 0 is the match");
-        let inside = markers
-            .iter()
-            .any(|&(start, end)| start <= m.start() && m.end() <= end);
+    fn applies(&self, found: &Found, markers: &[(usize, usize)]) -> bool {
+        let (m_start, m_end) = found.range();
+        // only the last marker that starts at or before the match can
+        // hold it (see [`markers`]): a binary search, so a long line with
+        // many masked values stays linear
+        let i = markers.partition_point(|&(start, _)| start <= m_start);
+        let inside = i > 0 && m_end <= markers[i - 1].1;
         !inside
             && self
                 .check
-                .is_none_or(|check| caps.name("v").is_some_and(|v| check(v.as_str())))
+                .is_none_or(|check| found.caps.name("v").is_some_and(|v| check(v.as_str())))
+    }
+
+    /// `text` with every match this rule applies to replaced.
+    fn replace(&self, text: &str) -> String {
+        let markers = markers(text);
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        for found in self.matches(text) {
+            let (start, end) = found.range();
+            out.push_str(&text[last..start]);
+            if self.applies(&found, &markers) {
+                found.caps.expand(&self.replacement, &mut out);
+            } else {
+                out.push_str(&text[start..end]);
+            }
+            last = end;
+        }
+        out.push_str(&text[last..]);
+        out
     }
 }
 
-/// Where [`REDACTED`] already stands in `text`.
+/// Where [`REDACTED`] already stands in `text`: ascending and without
+/// overlap, as `match_indices` finds them ([`Rule::applies`] relies on it).
 fn markers(text: &str) -> Vec<(usize, usize)> {
-    text.match_indices(REDACTED)
+    let markers: Vec<_> = text
+        .match_indices(REDACTED)
         .map(|(start, m)| (start, start + m.len()))
-        .collect()
+        .collect();
+    debug_assert!(markers.windows(2).all(|w| w[0].1 <= w[1].0));
+    markers
 }
 
 /// `value` without its surrounding quotes.
@@ -283,6 +395,8 @@ fn rule(name: &'static str, pattern: &str, replacement: &str) -> Rule {
         name,
         pattern: pattern.to_string(),
         re: OnceLock::new(),
+        next: None,
+        next_re: OnceLock::new(),
         replacement: replacement.to_string(),
         check: None,
         triggers: triggers(name),
@@ -296,6 +410,35 @@ fn checked_rule(name: &'static str, pattern: &str, check: fn(&str) -> bool) -> R
         ..rule(name, pattern, KEEP_PREFIX)
     }
 }
+
+/// A rule for an option of a command (`curl -u`, `docker login -p`):
+/// `command` is the command word, `option` the option with the white
+/// space before it, `value` what follows the option; group 1 holds
+/// everything before the value. `plain`, if not empty, is an option that
+/// counts without the command word (`--proxy-user`, also wget's); the
+/// command's `option` lists it too, or the context would scan past it.
+/// The same option later in the same command is found by `next`
+/// ([`Rule::matches`]).
+fn option_rule(
+    name: &'static str,
+    command: &str,
+    option: &str,
+    plain: &str,
+    value: &str,
+    replacement: &str,
+) -> Rule {
+    let mut first = format!("(?P<cmd>{command}){COMMAND_REST}{option}");
+    if !plain.is_empty() {
+        first = format!("{first}|{plain}");
+    }
+    Rule {
+        next: Some(format!(r"\A({COMMAND_REST}{option}){value}")),
+        ..rule(name, &format!("({first}){value}"), replacement)
+    }
+}
+
+/// The command word `curl`.
+const CURL: &str = r"(?-u:\b)curl(?-u:\b)";
 
 fn builtin_rules() -> Vec<Rule> {
     vec![
@@ -405,51 +548,67 @@ fn builtin_rules() -> Vec<Rule> {
             KEEP_PREFIX,
         ),
         // `curl -u user:pass`, `-uuser:pass`, `--user user:pass`,
-        // within one command of the line
-        rule(
+        // within one command of the line, every time it is given
+        option_rule(
             "curl-user",
-            &format!(r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
+            CURL,
+            r"\s(?:-u\s*|--user(?:=|\s+))",
+            "",
+            &format!("(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `curl -U user:pass` (not `useradd -U`), `--proxy-user user:pass`
         // (curl, wget), wget's `--proxy-password pass` (the `=` form is
         // `secret-assignment`)
-        rule(
+        option_rule(
             "proxy-option",
-            &format!(
-                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))(?:{VALUE})"
-            ),
+            CURL,
+            r"\s(?:-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))",
+            r"(?i:--proxy-user(?:=|\s+)|--proxy-password\s+)",
+            &format!("(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `user:pass@host` without a scheme after `curl -x`, `--proxy`,
         // `https_proxy=`, `http.proxy=`, up to the last `@` as for a URL;
-        // a value with `scheme://` is `url-userinfo`
-        rule(
+        // a value with `scheme://` is `url-userinfo`. The match goes on to
+        // the end of the value (`host`, with a closing quote), so the scan
+        // for a further `-x` starts outside the quotes
+        option_rule(
             "proxy-userinfo",
-            r#"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-x\s*['"]?|(?i:--proxy(?:=|\s+)|[a-z_.]*proxy=)['"]?)[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*(@)"#,
-            "${1}‹redacted›${2}",
+            CURL,
+            r#"\s(?:-x\s*|(?i:--proxy(?:=|\s+)))['"]?"#,
+            r#"(?i:--proxy(?:=|\s+)|[a-z_.]*proxy=)['"]?"#,
+            r#"[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*@(?P<host>[^\s'"]*['"]?)"#,
+            "${1}‹redacted›@${host}",
         ),
         // `curl -b 'session=…'`, `--cookie "a=b; c=d"`: a value with `=`
         // (without one, curl reads cookies from that file)
-        checked_rule(
-            "cookie-option",
-            &format!(
-                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-b\s*|--cookie(?:=|\s+)))(?P<v>{VALUE})"
-            ),
-            |v| unquoted(v).contains('='),
-        ),
+        Rule {
+            check: Some(|v| unquoted(v).contains('=')),
+            ..option_rule(
+                "cookie-option",
+                CURL,
+                r"\s(?:-b\s*|--cookie(?:=|\s+))",
+                "",
+                &format!("(?P<v>{VALUE})"),
+                KEEP_PREFIX,
+            )
+        },
+        // only the first `-p`: one after the command that sshpass runs is
+        // that command's (`ssh -p 2222`)
         rule(
             "sshpass-password",
-            &format!(r"((?-u:\b)sshpass(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"),
+            &format!(r"((?-u:\b)sshpass(?-u:\b){COMMAND_REST}\s-p\s*)(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `docker login -u me -p secret`, also podman, buildah,
         // nerdctl and `helm registry login`
-        rule(
+        option_rule(
             "registry-login-password",
-            &format!(
-                r"((?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"
-            ),
+            r"(?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)",
+            r"\s-p\s*",
+            "",
+            &format!("(?:{VALUE})"),
             KEEP_PREFIX,
         ),
     ]
@@ -480,6 +639,8 @@ impl Redactor {
                 name: "user-pattern",
                 pattern: p.clone(),
                 re: OnceLock::from(re),
+                next: None,
+                next_re: OnceLock::new(),
                 replacement: WHOLE.to_string(),
                 check: None,
                 triggers: &[],
@@ -504,18 +665,7 @@ impl Redactor {
             if !rule.triggered(&lower) || !rule.regex().is_match(&out) {
                 continue;
             }
-            let markers = markers(&out);
-            out = rule
-                .regex()
-                .replace_all(&out, |caps: &Captures| {
-                    if !rule.applies(caps, &markers) {
-                        return caps[0].to_string();
-                    }
-                    let mut replaced = String::new();
-                    caps.expand(&rule.replacement, &mut replaced);
-                    replaced
-                })
-                .into_owned();
+            out = rule.replace(&out);
         }
         out
     }
@@ -527,10 +677,7 @@ impl Redactor {
         let lower = trigger_text(text);
         self.rules()
             .filter(|r| {
-                r.triggered(&lower)
-                    && r.regex()
-                        .captures_iter(text)
-                        .any(|c| r.applies(&c, &markers))
+                r.triggered(&lower) && r.matches(text).iter().any(|f| r.applies(f, &markers))
             })
             .map(|r| r.name)
             .collect()

@@ -28,6 +28,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   note with that kind, once.
   This also holds when it was the only collector that lost its state
   (WP-088).
+- The same holds for a collector that the capture which loses the state
+  does not run (`capture --source` without it, or disabled): it gets an
+  entry in `cursors.json` with only the mark, which the index shows as a
+  collector that has not run yet, and its first successful run, also
+  after it is enabled again, records its gap (WP-091).
+- `seldon doctor` shows a collector whose baseline waits in its own
+  `state` row: degraded or not run since a state reset, and that its
+  next successful capture records the gap; it says when the state was
+  another logbook's instead of "cursors unreadable", and the fix is a
+  capture of that collector rather than a restore (WP-091).
+- When the snapper collector goes from degraded to ok or back between
+  two captures (you ran the read grant, or a snapper `set-config` with
+  `SYNC_ACL=yes` removed it), the capture records a `seldon` note with
+  the subject `snapper` and the collector's message, once (WP-091).
+- A `cursors.json` that holds an entry with only the `pendingBaseline`
+  mark (a collector not run since a state reset) cannot be read by an
+  engine before 0.1.4; after a downgrade move `cursors.json` aside, which
+  records a state reset (WP-091).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains
@@ -35,11 +53,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adding or downgrading Seldon stays drift. Such a resolution is dated at
   the capture or at the event, whichever is later, so an event dated
   after a clock that moved back is no longer left as drift (WP-088).
+- Redaction of command options: the rules for `curl -u`, `-U`, `-x`,
+  `-b` (and `--user`, `--proxy-user`, `--proxy`, `--cookie`),
+  `sshpass -p` and `docker … login -p` treat a `;`, `&` or `|` inside
+  quotes as part of the command, and mask an option given twice in one
+  command each time; an unquoted separator still ends the command
+  (WP-087).
+- Redaction: long lines with many masked values are checked against
+  earlier markers by binary search.
 - A build with `SELDON_BUILD=main.<sha>` says what it is: `seldon
   --version`, `--version --json` and the index's `engineVersion` report
   `0.1.3+main.<sha>`; release builds stay plain, and a value that is not
   semver build metadata fails the build. The plugin reads the marked
   form as its version (WP-098).
+
+### Plugin
+
+- After `omarchy plugin update jax.seldon` the shell keeps running the
+  old plugin code until it restarts. The panel now notices this: when
+  the installed manifest names another version than the code running,
+  it shows "Restart the shell to finish the update" with one button,
+  *Restart shell*, which runs `omarchy-restart-shell` (no arguments).
+  Plugins up to 0.1.3 do not show it; the update guide and both READMEs
+  say to restart the shell after every plugin update (WP-090).
 
 ### Packaging and docs
 
@@ -52,9 +88,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeps the previous engine as `seldon.prev`, moves the release plugin
   clone aside once, restarts the shell only when the plugin changed and
   the session is unlocked ("restart pending" otherwise), runs a smoke
-  check and logs one JSON line on the host; `--dry-run` shows the plan, `--release vX.Y.Z`
-  brings the host back to a release. Productive machines keep running
-  releases only (WP-098).
+  check and logs one JSON line on the host; `--dry-run` shows the plan,
+  `--release vX.Y.Z` brings the host back to a release. Productive
+  machines keep running releases only (WP-098).
 
 ## [0.1.3] - 2026-10-05
 

@@ -298,7 +298,9 @@ pub struct Cursors {
 }
 
 /// One collector's entry in `cursors.json`. `ok`, `message` and `lastRun`
-/// feed `index.state.collectors` (WP-007).
+/// feed `index.state.collectors` (WP-007). An entry without `lastRun` is a
+/// collector that was not run in the capture that lost its state and only
+/// carries the mark ([`CollectorState::waiting`], WP-091).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectorState {
@@ -309,19 +311,39 @@ pub struct CollectorState {
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fix: Option<String>,
-    /// RFC 3339.
-    pub last_run: String,
+    /// RFC 3339; `None` for a [`CollectorState::waiting`] entry, which never
+    /// ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run: Option<String>,
     /// Events written by the last run.
     #[serde(default)]
     pub events: usize,
-    /// The collector degraded in a capture in which its state was lost
-    /// (missing, unreadable or another logbook's, while the ledger holds
-    /// events of its source), so it took no baseline then; its first
-    /// successful run records the gap as a state reset with this kind and
-    /// clears it (WP-088). Not written while `None`: older files read
-    /// unchanged.
+    /// The collector degraded (WP-088) or was not run (WP-091) in a capture
+    /// in which its state was lost (missing, unreadable or another
+    /// logbook's, while the ledger holds events of its source), so it took
+    /// no baseline then; its first successful run records the gap as a
+    /// state reset with this kind and clears it. Not written while `None`:
+    /// older files read unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_baseline: Option<PendingBaseline>,
+}
+
+impl CollectorState {
+    /// The entry of a collector that was not run (`--source`, or disabled)
+    /// in a capture that dropped its state, which it would have lost
+    /// (WP-091): only the mark, no cursor and no run. `index.state.collectors`
+    /// reads it as it reads no entry: `ok`, no message, no `lastRun`.
+    pub fn waiting(mark: PendingBaseline) -> Self {
+        CollectorState {
+            cursor: None,
+            ok: true,
+            message: None,
+            fix: None,
+            last_run: None,
+            events: 0,
+            pending_baseline: Some(mark),
+        }
+    }
 }
 
 /// What a collector's waiting baseline lost ([`CollectorState::pending_baseline`]),

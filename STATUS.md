@@ -14,19 +14,24 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
-| WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
+| WP-096 | default actor and attended marker for launched agents | Engine | `engine-096` (opus) | `wt/WP-096` · `wp/096-default-actor` | 2026-10-05 |
+| WP-100 | agent rules v2 (ADR-0027): templates, guide, rules update | Engine + Docs | `engine-100` (opus) | `wt/WP-100` · `wp/100-agent-rules-v2` | 2026-10-05 |
+| WP-092 | hook rebuild cost with margin under 5 ms | Engine | `engine-092` (opus) | `wt/WP-092` · `wp/092-hook-budget` | 2026-10-05 |
+| WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
 | WP-098 | the test host follows main (deploy script, dev version marker) | Engine | `engine-098` (opus) | `wt/WP-098` · `wp/098-test-host-main` | 2026-10-05 |
-| WP-090 | plugin: stale code after update, harness record order | Plugin | `plugin-090` (opus) | `wt/WP-090` · `wp/090-stale-plugin` | 2026-10-05 |
 
 ## Queued (next up)
 
 0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
 advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
 notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
-After 0.1.4 (operator decision 2026-10-05): WP-094 Seldon agent skill,
-WP-095 task prompts from the panel (ADR first), WP-096 default actor for
-launched agents; no Omarchy upstream contribution before 1.0. Then the
+After 0.1.4: ADR-0027 (operator decision 2026-10-05: a case the user
+started authorises the agent; the agent verifies and closes; only steps
+that can make the machine unbootable need the user's go) → WP-100 (agent
+rules v2 + migration) first, WP-096 (default actor, attended marker),
+WP-101 (one-click start, snapshot and close path, reopen), WP-094 (skill),
+WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
+Omarchy upstream contribution before 1.0. Then the
 contract v2 bundle for v0.2.0 (autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
 account: WP-033 (update-impact, option C) and WP-042 (marketplace
@@ -43,6 +48,28 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-091 snapper changes between degraded and ok are
+  recorded as notes (both directions); a collector not run in the
+  capture that loses its state records its gap later (bare marked entry,
+  read as no entry everywhere); doctor names a waiting baseline by its
+  reason; the debug watch test bounds heap growth instead of mapped
+  pages (the gate's RSS failure was debug-binary page noise, measured);
+  downgrade note in VERSIONING; Opus review, Fable stage 2, two fix
+  rounds, Sonnet verification; merged.
+- 2026-10-05 WP-087 redaction: one quote-aware command context for the
+  six option rules (never less than the plain reading), options given
+  twice are masked each time, marker checks by binary search (long lines
+  linear; 128 KB budgets in `just check-perf`); Opus review, Fable
+  stage 2, one fix round, Opus verification, Fable look; merged.
+  Remaining credential forms: WP-097.
+- 2026-10-05 WP-090 the panel says "Restart the shell to finish the
+  update" when the shell still runs plugin code from before an update
+  (Quickshell 0.3.1 keeps compiled QML), one-shot *Restart shell* action;
+  the version pair is checked in `just check-packaging` and the release;
+  guide 11 and both READMEs tell users to restart after a plugin update;
+  harness recorder appends in one write; live check on the test host
+  (notice, real click, new shell in 1 s); Opus review, one fix round,
+  Sonnet verification; merged.
 - 2026-10-05 WP-088 a collector degraded in a state reset keeps a
   `pendingBaseline` mark (`cursors` or `logbook`) and records its gap on
   its first successful run; rule 8 catches up Seldon's own changes left
@@ -383,6 +410,17 @@ submission). (see `work/queued/`)
   `jax-seldon-plugin` via subtree split → ADR-0009.
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
+
+## Decided 2026-10-05
+- ADR-0027 (act, then account): a case the user started authorises the
+  agent to act; privileged commands in an attended session; the agent
+  takes its own snapshot; install route as the software documents it; the
+  agent verifies and closes (spot checks are optional, reopen in one
+  click); manual cases and hand-off stay first-class; steps that can make
+  the machine unbootable (R3, alwaysRed hits) need the user's explicit go.
+  Supersedes ADR-0023 §1 in part.
+- The test host follows main (WP-098); productive machines get releases only.
+- No Omarchy upstream contribution before 1.0.
 
 ## Decided 2026-10-04 (review follow-ups)
 - Snapper access by a read grant (`setfacl … rx /.snapshots`) instead of

@@ -466,26 +466,40 @@ mod with_feature {
         assert_eq!(out.status.code(), Some(1), "{}", common::stderr(&out));
     }
 
+    /// `name` (`VmRSS:`, …) of `pid` from `/proc/<pid>/status`, in kB.
+    fn status_kb(pid: u32, name: &str) -> u64 {
+        let status = read(Path::new(&format!("/proc/{pid}/status")));
+        status
+            .lines()
+            .find_map(|l| l.strip_prefix(name))
+            .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
+            .unwrap_or_else(|| panic!("{name} in /proc/{pid}/status"))
+    }
+
     /// `VmRSS` and `VmHWM` of `pid`, in kB.
     fn memory_kb(pid: u32) -> (u64, u64) {
-        let status = read(Path::new(&format!("/proc/{pid}/status")));
-        let field = |name: &str| {
-            status
-                .lines()
-                .find_map(|l| l.strip_prefix(name))
-                .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
-                .unwrap_or_else(|| panic!("{name} in /proc/{pid}/status"))
-        };
-        (field("VmRSS:"), field("VmHWM:"))
+        (status_kb(pid, "VmRSS:"), status_kb(pid, "VmHWM:"))
     }
 
     /// The PLAN.md bound (RSS < 10 MB) is about the shipped, optimised
     /// binary: the peak (VmHWM, never below VmRSS) must stay under it. The
     /// test profile's binary carries ~6 MB more unoptimised code, so there
-    /// only the growth over the idle watcher is bounded; `just check-watch`
-    /// runs this test again under the `bench` profile for the absolute
-    /// bound. `SELDON_WATCH_BIN=<path>` measures another binary (the musl
-    /// release build, docs/TESTING.md).
+    /// only the growth of the heap (`RssAnon`) over the idle watcher is
+    /// bounded; `just check-rss` runs this test again under the `bench`
+    /// profile for the absolute bound. `SELDON_WATCH_BIN=<path>` measures
+    /// another binary (the musl release build, docs/TESTING.md).
+    ///
+    /// Why the heap and not `VmHWM` minus the idle `VmRSS` in the debug
+    /// run (WP-091 round 3): most of `VmRSS` there is the 110 MB debug
+    /// binary's file-mapped pages, and how many of them are mapped before
+    /// the idle reading depends on the build and the page cache, not on
+    /// the rebuild. Two builds without any `engine/src` difference (same
+    /// `.text` and `.rodata` size, only the build path and build id
+    /// differ) measured 3641 and 2882 kB mean growth, 760 kB apart, while
+    /// the heap grew by the same 1836 kB in every build. The heap growth is
+    /// what the rebuild allocates; memory it frees before the reading
+    /// (large blocks are unmapped at once) is not in it, which the bench
+    /// run's peak bound covers.
     #[test]
     fn rss_stays_under_10_mb_on_the_x10_fixture() {
         const LIMIT_KB: u64 = 10 * 1024;
@@ -515,6 +529,7 @@ mod with_feature {
         };
         let optimised = other.is_some() || !cfg!(debug_assertions);
         let (idle, _) = memory_kb(w.pid());
+        let idle_heap = status_kb(w.pid(), "RssAnon:");
         drop(lock);
         let line = w.rebuilt(SLACK);
         assert_eq!(line["trigger"], json!("start"), "{line}");
@@ -524,8 +539,9 @@ mod with_feature {
         let line = w.rebuilt(INTERVAL + SLACK);
         assert_eq!(line["trigger"], json!("changes"), "{line}");
         let (rss, peak) = memory_kb(w.pid());
+        let heap = status_kb(w.pid(), "RssAnon:");
         eprintln!(
-            "watch on ×10 ({}): idle {idle} kB, after rebuild {rss} kB, peak {peak} kB",
+            "watch on ×10 ({}): idle {idle} kB, after rebuild {rss} kB, peak {peak} kB; heap (RssAnon) {idle_heap} → {heap} kB",
             other
                 .as_ref()
                 .map_or(if optimised { "optimised" } else { "debug" }.into(), |b| b
@@ -534,9 +550,12 @@ mod with_feature {
         if optimised {
             assert!(peak < LIMIT_KB, "peak {peak} kB ≥ {LIMIT_KB} kB");
         } else {
-            // optimised: ~3 MB on the ×10 fixture
-            let growth = peak - idle;
-            assert!(growth < 6 * 1024, "growth {growth} kB over idle {idle} kB");
+            // ~1.8 MB on the ×10 fixture (WP-091 round 3)
+            let growth = heap.saturating_sub(idle_heap);
+            assert!(
+                growth < 6 * 1024,
+                "heap growth {growth} kB over idle {idle_heap} kB"
+            );
         }
         assert!(rss <= peak);
     }

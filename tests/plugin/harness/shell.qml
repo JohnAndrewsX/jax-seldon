@@ -23,6 +23,9 @@ import Quickshell
 //                       ready; an id may name its banner: "snapper:copy"
 //   HARNESS_UNTIL       "field=value": also wait until the snapshot's field
 //                       has that value (e.g. "status=ok")
+//   HARNESS_MANIFEST    a manifest as JSON text, assigned to the service's
+//                       `manifest` after creation, as the shell injects it
+//                       (default: none, as before the shell's injection)
 //   HARNESS_ACTIONS     a JSON array of panel actions, run in order once the
 //                       start-up engine calls are done:
 //                       ["log", text, caseId] → Service.log(text, caseId)
@@ -50,6 +53,7 @@ ShellRoot {
   readonly property int recheckMs: Number(Quickshell.env("HARNESS_RECHECK_MS") || 0)
   readonly property string fixes: Quickshell.env("HARNESS_FIX") || ""
   readonly property string until: Quickshell.env("HARNESS_UNTIL") || ""
+  readonly property string manifestJson: Quickshell.env("HARNESS_MANIFEST") || ""
   readonly property var actions: JSON.parse(Quickshell.env("HARNESS_ACTIONS") || "[]")
   readonly property int graceMs: 15000
 
@@ -85,6 +89,7 @@ ShellRoot {
       return
     }
     root.service = component.createObject(null)
+    if (root.manifestJson !== "") root.service.manifest = JSON.parse(root.manifestJson)
     root.service.statusChanged.connect(function() { root.emit("change") })
     root.service.readyChanged.connect(function() { root.emit("ready") })
   }

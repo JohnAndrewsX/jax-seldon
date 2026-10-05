@@ -1742,6 +1742,86 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   in the ledger and the index does not fold it; the row stays drift.
   Rule 8 dates its line at `max(now, event ts)` since WP-088 round 2.
 
+## 2026-10-05 · WP-090 (Plugin Dev)
+
+- **Fake recorders must append in one write.** Bash line-buffers stdout,
+  so `printf '%s' "$multi_line" >>file` is one `write(2)` per line; two
+  recorders the service starts together interleaved in 37 of 500 runs
+  (the WP-084 "fix commands were" flake; sorting the records cannot
+  repair it). Stage the record in a private file and `cat` it onto the
+  record (one write); without a record path, stage nothing, or the file
+  lands in the harness's working directory (the checkout).
+
+## 2026-10-05 · WP-087 (Engine Dev)
+
+- **The `regex` crate has no `\G`.** `captures_at(text, pos)` searches
+  from `pos` but treats `\A` as the start of the whole text, so an
+  anchored "go on from here" pattern never matches there. Slice the text
+  at the previous match's end and match `\A…` on the slice, adding the
+  offset back (`redact::Rule::matches`).
+- **A fallback alternative can hide a mutant of the main path.** The
+  unclosed-quote tail of `COMMAND_REST` re-pairs a stray closing quote,
+  so a proxy match that stopped inside its quotes still found the next
+  `-x`; the mutant survived until the row put a quoted `;` between the
+  two options (`-H 'X-A: a;b'`), which only the correct path crosses.
+- **Hook A/B timings without two worktrees:** build the bench profile
+  once per variant, copy `target/release/seldon` aside, then swap the
+  copies into place and run the `hooks-…` test binary directly (cargo
+  would rebuild). Under load 7 even `main` went over 5 ms at 900 lines;
+  compare rounds, not single runs.
+## 2026-10-05 · WP-087 round 2 (Engine Dev)
+
+- **A per-match check over all markers turns quadratic once a rule
+  yields many matches.** `Rule::applies` scanned every marker; harmless
+  while a curl rule matched once per command, 34 ms at 128 KB once the
+  scan-on matched every option. Markers from `match_indices` are sorted
+  and disjoint: `partition_point` finds the only candidate. Time a line
+  with *two* option kinds (the first rule leaves the markers the second
+  checks); one kind alone stayed linear and hid it.
+- **"Linear" needs three sizes, not two.** Two points (16/64 KB) cannot
+  tell ×4 from ×5.6; measure 16/64/128 KB, or up to 512 KB, and state
+  the ratio per doubling.
+- **A union can make a fallback branch redundant for its own row.** With
+  `(?:plain|quote-aware)` the plain branch reached `curl's -u …`, so the
+  unclosed-quote tail's row no longer killed its mutant; the row needs a
+  quoted separator first, which only the quote-aware branch crosses.
+- **A mutant at a marker's first character needs a pattern that matches
+  there.** `partition_point(start < m)` survived the idempotency test
+  until its user pattern also matched `‹re`.
+
+## 2026-10-05 · WP-091 (Engine Dev)
+
+- **A capture that moves snapper between degraded and ok writes one
+  more line** (the `seldon` note, subject `snapper`). A test that swaps
+  `stub_snapper_no_permissions` for `stub_snapper` (or back) between two
+  captures of the same logbook counts it in `written`; the WP-088 tests
+  now expect 2 there ("the note and access").
+- **`CollectorState.last_run` is an `Option` since WP-091.** An entry
+  with only the `pendingBaseline` mark (a collector not run in the
+  capture that lost the state) has no `lastRun` and no `cursor`; anything
+  that reads `lastRun` (doctor's "last capture", the index) must skip
+  `None`, and "did it ever run here" is `last_run.is_some()`, not "has an
+  entry". An engine before WP-091 cannot load such a `cursors.json`.
+- **`capture --source pacman` in `idempotency.rs` without `--since`
+  writes no pacman events** (its baseline is the logbook's `created`, the
+  real time), and a later `--since` is ignored for it (`sinceIgnored`):
+  a test that needs pacman events in the ledger passes `--since
+  FIXTURE_CREATED` on pacman's first capture.
+- **doctor's `state` rows for a lost state are two since WP-091:** "the
+  next capture will record a state reset for …" (unmarked losses) and
+  "<c> degraded or not run since a state reset (…)" (marked ones;
+  `waiting()` in `idempotency.rs`). `predicted()` no longer names a
+  marked collector.
+- **The watch RSS test's debug growth (`VmHWM − idle VmRSS`) is mostly
+  mapped binary pages, not heap** (WP-091 round 3): the heap growth of a
+  ×10 rebuild is a fixed 1836 kB, while the idle file-backed RSS of the
+  110 MB debug binary moves by ±0.5–0.8 MB between builds with identical
+  code (another build path is enough). A change near the 6144 kB bound
+  is no evidence of a leak; split `RssAnon`/`RssFile` from
+  `/proc/<pid>/status` before bisecting, and measure interleaved under
+  the check lock. `git archive` copies keep old mtimes: touch the
+  sources, or cargo reuses the previous build.
+
 ## 2026-10-05 · WP-098 (test host follows main)
 
 - **A stub first on PATH does not make a fake host safe.** The real

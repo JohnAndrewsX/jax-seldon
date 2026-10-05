@@ -42,6 +42,8 @@ install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin/seldon"
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-launch-editor"
 # So does the floating-terminal launcher behind a banner's Run in terminal.
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-launch-floating-terminal-with-presentation"
+# And the shell restart behind the restart notice's button (WP-090).
+install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-restart-shell"
 # The shell's Style.qml asks Hyprland and fontconfig for gaps, rounding and
 # the font; outside Hyprland it keeps its defaults when they fail.
 printf '#!/bin/sh\nexit 1\n' >"$work/bin/hyprctl"
@@ -314,7 +316,7 @@ got=$(cat "$work/home-live/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   live: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 want=$(printf '%s\n' omarchy-launch-editor "$work/home-live/Seldon/journal/2026/2026-10-01.md" -- \
   omarchy-launch-editor "$work/home-live/Seldon/ledger/2026-10.jsonl" -- \
@@ -323,7 +325,7 @@ got=$(cat "$work/live.record" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   live: editor paths"
 else
-  fail=$((fail + 1)); echo "FAIL live: editor launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL live: editor launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log live
 
@@ -478,7 +480,7 @@ got=$(cat "$work/home-work/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   work-live: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL work-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL work-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log work-live
 
@@ -523,7 +525,7 @@ got=$(cat "$work/home-agent/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   work-agent: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL work-agent: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL work-agent: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log work-agent
 
@@ -680,7 +682,7 @@ got=$(cat "$work/home-drift/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-live: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL drift-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL drift-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log drift-live
 
@@ -719,7 +721,7 @@ got=$(cat "$work/home-drift-only/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-only: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL drift-only: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL drift-only: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log drift-only
 
@@ -774,7 +776,7 @@ got=$(cat "$work/home-drift-show/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-show: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL drift-show: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL drift-show: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log drift-show
 
@@ -799,7 +801,7 @@ got=$(cat "$work/home-drift-show-member/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-show-member: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL drift-show-member: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL drift-show-member: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log drift-show-member
 
@@ -896,7 +898,7 @@ got=$(cat "$work/home-decisions-live/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   decisions-live: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL decisions-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL decisions-live: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 d="$work/home-decisions-live/Seldon"
 want=$(printf '%s\n' omarchy-launch-editor "$d/decisions/ADR-0005-help-q.md" -- \
@@ -907,7 +909,7 @@ got=$(cat "$work/decisions-live.record" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   decisions-live: editor paths"
 else
-  fail=$((fail + 1)); echo "FAIL decisions-live: editor launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL decisions-live: editor launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log decisions-live
 
@@ -940,7 +942,7 @@ got=$(cat "$work/home-decisions-locked/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   decisions-locked: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL decisions-locked: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL decisions-locked: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log decisions-locked
 
@@ -1092,7 +1094,7 @@ got=$(cat "$work/home-tab-focus/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   tab-focus: engine argv"
 else
-  fail=$((fail + 1)); echo "FAIL tab-focus: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /'
+  fail=$((fail + 1)); echo "FAIL tab-focus: engine argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log tab-focus
 
@@ -1214,6 +1216,37 @@ else
 fi
 expect capture-warned 1 '.overflow | length' 0
 clean_log capture-warned
+
+# 29. A plugin updated under a running shell (WP-090): with the repository's
+#     manifest (the running code's version) no notice; with another version
+#     the neutral notice above the status banner, both versions in its text,
+#     and its one button runs omarchy-restart-shell without arguments, once
+#     for a double click.
+manifest=$(jq -c . "$plugin/manifest.json")
+run restart-same "$fx/index.sample.json" "view" HARNESS_MANIFEST="$manifest"
+expect restart-same 1 .view.restartNotice ""
+expect restart-same 1 '[.texts[] | select(. == "Restart shell")] | length' 0
+clean_log restart-same
+run restart-updated "$fx/index-variants/not-initialised.json" "view;click:Restart shell;click:Restart shell" \
+  HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_RECORD="$work/restart-updated.record"
+expect restart-updated 1 .view.restartNotice "Restart the shell to finish the update"
+expect restart-updated 1 .view.banner "Logbook not initialised"
+shows restart-updated 1 "Seldon 99.0.0 is installed, but the shell still runs $(jq -r .version <<<"$manifest"). The shell loads new plugin code only when it restarts."
+shows restart-updated 1 "omarchy-restart-shell"
+shows restart-updated 1 "Restart shell"
+# above the status banner: its title comes first on screen
+expect restart-updated 1 '(.texts | index("Restart the shell to finish the update")) < (.texts | index("Logbook not initialised"))' true
+want=$(printf '%s\n' omarchy-restart-shell --)
+deadline=$((SECONDS + 15))
+until [[ -s $work/restart-updated.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+sleep 1 # a second launch (the double click's) would land within this
+got=$(cat "$work/restart-updated.record" 2>/dev/null || true)
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   restart-updated: Restart shell runs omarchy-restart-shell once, no arguments"
+else
+  fail=$((fail + 1)); echo "FAIL restart-updated: launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
+fi
+clean_log restart-updated
 
 real_home_check panel-view
 

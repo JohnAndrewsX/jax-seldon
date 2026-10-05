@@ -8,6 +8,14 @@
 
 var CONTRACT_VERSION = 1
 
+// The version of the code that is running: always equal to `version` in
+// plugin/manifest.json, set by hand with it (docs/VERSIONING.md, tag flow;
+// model.test.js and the harness fail when they differ). The shell reads the
+// manifest from disk on every rescan but keeps running the plugin code it
+// compiled first (WP-090), so a manifest that says otherwise means the
+// plugin was updated under a running shell (restartShellNotice).
+var PLUGIN_VERSION = "0.1.3"
+
 // SPEC-PLUGIN §3: an index older than two hours is stale.
 var STALE_AFTER_MS = 2 * 60 * 60 * 1000
 
@@ -2775,6 +2783,39 @@ function engineOutdatedBanner(status, engineVersion, engineMin) {
       { id: "copy", label: "Copy" },
       { id: "recheck", label: "Check again" }
     ]
+  }
+}
+
+// ---- Plugin updated under a running shell (WP-090) --------------------------
+
+// Quickshell 0.3.1 has no Qt.clearComponentCache, so the shell's plugin
+// reload after `omarchy plugin update` re-creates the plugin from the code
+// it compiled first; only a restart loads the new code
+// (memory/omarchy-shell.md). The notice's one action runs this argument
+// list, no arguments, no shell string.
+var RESTART_SHELL_ARGV = ["omarchy-restart-shell"]
+
+// `version` of the manifest the shell injects; "" without one.
+function pluginVersionOf(manifest) {
+  return isObject(manifest) && typeof manifest.version === "string" ? manifest.version : ""
+}
+
+// The neutral notice when the manifest on disk names another version than
+// the running code (PLUGIN_VERSION): the plugin was updated, the shell
+// still runs the old code. null when they agree or the manifest is not
+// known yet. Its one action, "restart", is dispatched by
+// Service.fix("restart", "restart") and runs RESTART_SHELL_ARGV.
+function restartShellNotice(runningVersion, manifestVersion) {
+  if (manifestVersion === "" || manifestVersion === runningVersion) return null
+  return {
+    status: "restartShell",
+    tone: "neutral",
+    title: "Restart the shell to finish the update",
+    detail: "Seldon " + manifestVersion + " is installed, but the shell still runs " + runningVersion
+      + ". The shell loads new plugin code only when it restarts.",
+    command: RESTART_SHELL_ARGV.join(" "),
+    actions: [{ id: "restart", label: "Restart shell" }],
+    hint: ""
   }
 }
 

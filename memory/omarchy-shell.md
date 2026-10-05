@@ -556,6 +556,45 @@ Verified in the shell source and live on the test host.
   window that starts rendering after the IPC command. A bar with a
   scrolling media title renders at 60 fps in idle.
 
+## WP-090 findings (2026-10-05, Omarchy shell tree at `$OMARCHY_PATH` 4.0.0.alpha `version` file, quickshell 0.3.1)
+
+- **`omarchy plugin update` is meant to reload, and does not load new
+  code.** `bin/omarchy-plugin-update` pulls each git checkout and, if any
+  changed, runs `omarchy-shell shell rescanPlugins` → `shell.reloadPlugins()`
+  (also what the `inotifywait` watch on `~/.config/omarchy/plugins` triggers
+  for any file change outside `.git`): it destroys panels, non-`keepLoaded`
+  services and widget registrations, then `finishPluginReload()` calls
+  `Qt.clearComponentCache()` **only if it is a function**, and rescans.
+  In quickshell 0.3.1 `typeof Qt.clearComponentCache` and
+  `typeof Qt.trimComponentCache` are both `"undefined"`, so
+  `Qt.createComponent(url)` returns the cached compiled type: **old QML and
+  old JS imports** (`Model.js`). Reproduced offscreen: a QML file and its JS
+  import edited on disk, `createComponent` again → both still old. Only
+  `omarchy-restart-shell` loads the new code.
+- **The manifest, unlike the code, is fresh after a rescan.** The registry's
+  scan `cat`s every `manifest.json`; a new service instance gets
+  `inst.manifest = publicPluginManifest(m)` (a third party's copy without
+  `__sourceDir`), and a kept instance is handed the fresh manifest too
+  (`_syncServices`). So `manifest.version` ≠ a version constant compiled
+  into the code ⇔ the plugin was updated under a running shell. The plugin
+  cannot learn its own folder from the manifest (`__sourceDir` is
+  stripped); the injected manifest is the way to read it.
+- **`omarchy-restart-shell`** kills every quickshell of the config dir
+  (`quickshell kill -p … --any-display`), relaunches via `hyprctl dispatch
+  exec omarchy-launch-shell` and waits for `ping`. It refuses while a secure
+  lock is up. First-party QML runs it the same way: the Omarchy menu's
+  *Update > Process > Shell* (`default/omarchy/omarchy-menu.jsonc`,
+  `update.process.shell`) goes through `plugins/menu/Menu.qml`
+  `runAction` → `Commons/Util.qml` `execDetached` →
+  `Quickshell.execDetached(["bash", "-lc", command])`. The plugin starts it
+  with `Quickshell.execDetached(["omarchy-restart-shell"])`. **Verified
+  live** on the test host (orchestrator, WP-090 round 1): a click on
+  *Restart shell* gave a new shell within 1 s, one process, the notice
+  gone — the detached process outlives the shell it kills.
+- A second restart started while the first one runs can kill the *new*
+  shell: the plugin's restart action is one-shot per service instance
+  (WP-090 round 2).
+
 ## WP-098 findings (2026-10-05, Omarchy 4.0.4)
 
 - **Every dir under `~/.config/omarchy/plugins` with a `manifest.json` is

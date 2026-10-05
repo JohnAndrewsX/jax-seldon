@@ -14,6 +14,7 @@ The engine and the plugin are released **together, from one tag
 |---|---|---|
 | `engine/Cargo.toml` | `version` (and `engine/Cargo.lock`) | hand; the release workflow fails when the tag differs |
 | `plugin/manifest.json` | `version` | hand, same value |
+| `plugin/Model.js` | `PLUGIN_VERSION` | hand, same value as the manifest |
 | `plugin/manifest.json` | `seldon.engineMin` | hand: the lowest engine the plugin works with |
 | `packaging/PKGBUILD` | `pkgver`, `pkgrel` | the release workflow (`bump` job) |
 
@@ -45,6 +46,10 @@ may break `0.1.x`, and the CHANGELOG then says so under **Breaking**.
 The user guide (`docs/user/`) is in English and German; further
 languages are added when there is demand, as a docs change (patch),
 following the translation policy in [docs/user/README.md](user/README.md).
+
+Downgrading the engine is not supported: the state files in
+`~/.local/state/seldon` may carry fields an older engine refuses; move
+`cursors.json` aside after a downgrade (doctor says so).
 
 ## `contractVersion`
 
@@ -101,8 +106,13 @@ extraction on the real `CHANGELOG.md` and on edge cases.
 All on `main`, after every work package of the release is merged:
 
 1. Set the version in `engine/Cargo.toml` (cargo updates
-   `engine/Cargo.lock`) and in `plugin/manifest.json`; raise `engineMin`
-   if needed.
+   `engine/Cargo.lock`), in `plugin/manifest.json` and in
+   `PLUGIN_VERSION` in `plugin/Model.js` (the running code's version, which
+   the restart notice compares with the manifest); raise `engineMin` if
+   needed. `packaging/plugin-version.sh` fails when the two differ: in
+   `just check-packaging`, so also in CI, which skips the host checks, and
+   in the release workflow's plugin split, where both must also equal the
+   tag's version.
 2. Move the `[Unreleased]` lines under `## [X.Y.Z] - YYYY-MM-DD`; update
    the link references; run `bash packaging/release-notes.sh X.Y.Z`.
 3. `just check` green; commit (`release: X.Y.Z`); push.
