@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/JohnAndrewsX/jax-seldon/schema/external/snapper-list.schema.json",
   "title": "Output of `snapper --jsonout list` (snapper 0.13)",
-  "description": "Third-party input format, not part of the contract. Keyed by config name. Not verified on the dev host (needs ALLOW_USERS, ADR-0011); shape from snapper upstream. `date` is local time without offset; snapshot 0 is 'current' with an empty date.",
+  "description": "Third-party input format, not part of the contract. Keyed by config name. Shape from snapper upstream, checked against snapper 0.13.1 on the dev host (WP-082). `date` is local time without offset; snapshot 0 is 'current' with an empty date.",
   "type": "object",
   "additionalProperties": {
     "type": "array",

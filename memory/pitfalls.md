@@ -1619,3 +1619,25 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `typed_cursor::<T>` and `cursor_reads` must use the same type `T`.
   `every_collector_reads_its_own_cursor` does not catch a `collect` that
   accepts an older cursor shape `cursor_reads` rejects (or the reverse).
+## 2026-10-05 · WP-082 (Engine Dev)
+
+- **chrono's `earliest()` in the repeated hour is the *later* instant.**
+  chrono 0.4.45 orders `LocalResult::Ambiguous(a, b)` by offset, the
+  smaller first (`(std, dst)` for a POSIX rule, by `ut_offset` for a
+  TZif file), and `earliest()` returns `a`. `Tz::localize` (pacman and,
+  before WP-082, snapper) therefore takes 02:30+01:00, not +02:00. Sort
+  the two instants when the order matters.
+- **A real DST zone in a test needs no tzdata:** chrono reads a POSIX
+  rule from `TZ` (`CET-1CEST,M3.5.0,M10.5.0/3`). `Tz` has no zone
+  variant, so the fold tests run the binary through `common::Env` with
+  `.env("TZ", …)`; never `set_var` in the test process.
+- **A mutant that only changes the cursor can hide behind the ledger
+  dedupe.** A test that fakes an older cursor must fake the matching
+  ledger line too, or the false pair is dropped as already recorded and
+  the mutant survives (WP-082 M1 first survived the older-cursor test).
+- **chrono's fold and gap are closed at the end** (`<=` in
+  `tz_info/rule.rs` and `timezone.rs`): 03:00:00 on the night summer
+  time ends comes back `Ambiguous`, with 03:00+02:00 (01:00 UTC, which is
+  02:00 CET on the wall), and 02:00:00 when it begins comes back
+  `Single(02:00+01:00)` (03:00 CEST on the wall). Keep only the readings
+  whose wall-clock time is the input (WP-082 review F1).

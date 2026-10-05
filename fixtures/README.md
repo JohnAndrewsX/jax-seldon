@@ -202,7 +202,7 @@ Markdown table):
   `type` and `pre-number` and ignores `userdata`). Diff: +111, −108,
   −109, +112, +113, +114, +115 — the snapper events of the ledger. `date` is
   local time without offset; snapshot 0 is `current`.
-  Shape from snapper upstream; **not verified on the dev host** (ADR-0011).
+  Shape from snapper upstream, checked against snapper 0.13.1 on the dev host (WP-082).
 - `snapper-no-permissions.stderr` — what snapper prints unprivileged: exit code 1,
   this on stderr, nothing on stdout, also with `--jsonout`.
 - `plugin-list-before.json` / `plugin-list-after.json` — real field set and

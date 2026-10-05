@@ -26,7 +26,18 @@
 //! info files instead (`<snapshots>/<number>/info.xml`, [`read_info_files`]),
 //! which needs only read access to the snapshot directory: the read grant
 //! of ADR-0026. The events and the cursor are the same as from the list, so
-//! switching between the two ways adds no events. When the info files cannot
+//! switching between the two ways adds no events.
+//!
+//! A snapshot has one date, an instant (`snapshot_dates`). The info files
+//! give it in UTC; the list gives local time, which names two instants in
+//! the repeated hour when summer time ends. There the snapshot's info file
+//! decides when it can be read, then the date the cursor knows, then the
+//! number order, then the earlier instant. A known number whose date is
+//! the other instant of the same local time is the same snapshot: it gets
+//! the new date without an event, so a cursor written from the list (also
+//! by an earlier version, which always took the instant with the smaller
+//! offset, the later one) moves to the info file's date when the info
+//! files are read. When the info files cannot
 //! be read either, or none is found, the collector degrades: `ok: false`, a
 //! message, and the one-line read grant, which is printed and never run.
 //! Nothing is invented and the cursor stays. The same goes for a
@@ -41,7 +52,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use chrono::{DateTime, FixedOffset, Local, NaiveDateTime};
+use chrono::{DateTime, FixedOffset, Local, LocalResult, NaiveDateTime, TimeZone as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -395,21 +406,127 @@ fn unescape(s: &str) -> String {
     out
 }
 
-/// A snapshot's `date` as an instant: local time from the list, UTC from
-/// the info files. `None` for an empty or unparsable date, or a local time
-/// in a DST gap.
-fn snapshot_ts(tz: Tz, date: &str, origin: Origin) -> Option<DateTime<FixedOffset>> {
-    let naive = NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S").ok()?;
-    match origin {
-        Origin::List => tz.localize(naive),
-        Origin::InfoFiles => {
-            let utc = naive.and_utc();
-            Some(match tz {
-                Tz::Local => utc.with_timezone(&Local).fixed_offset(),
-                Tz::Fixed(off) => utc.with_timezone(&off),
-            })
-        }
+/// The instants a list `date` (local time) can name: none for an empty or
+/// unparsable date or a time in a DST gap, two (earlier first) for a time
+/// in the repeated hour when summer time ends, else one.
+fn readings(tz: Tz, date: &str) -> Vec<DateTime<FixedOffset>> {
+    match NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S") {
+        Ok(naive) => instants(tz, naive),
+        Err(_) => Vec::new(),
     }
+}
+
+/// The instants whose wall-clock time in `tz` is `naive`, earlier first.
+fn instants(tz: Tz, naive: NaiveDateTime) -> Vec<DateTime<FixedOffset>> {
+    let mut found: Vec<DateTime<FixedOffset>> = match tz {
+        // chrono orders the two of an ambiguous time by offset, the smaller
+        // (the later instant) first, and counts the end of the repeated
+        // hour and the start of the skipped one in (03:00 on the night
+        // summer time ends, 02:00 when it begins), where one of its
+        // instants shows another wall-clock time
+        Tz::Local => match Local.from_local_datetime(&naive) {
+            LocalResult::Single(t) => vec![t.fixed_offset()],
+            LocalResult::Ambiguous(a, b) => vec![a.fixed_offset(), b.fixed_offset()],
+            LocalResult::None => Vec::new(),
+        },
+        Tz::Fixed(off) => off
+            .from_local_datetime(&naive)
+            .single()
+            .into_iter()
+            .collect(),
+    };
+    found.retain(|t| wall(tz, *t) == naive);
+    found.sort();
+    found
+}
+
+/// `t` as a wall-clock time in `tz`.
+fn wall(tz: Tz, t: DateTime<FixedOffset>) -> NaiveDateTime {
+    match tz {
+        Tz::Local => t.with_timezone(&Local).naive_local(),
+        Tz::Fixed(off) => t.with_timezone(&off).naive_local(),
+    }
+}
+
+/// An info file's `date` (UTC) as an instant in `tz`.
+fn utc_ts(tz: Tz, date: &str) -> Option<DateTime<FixedOffset>> {
+    let utc = NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S")
+        .ok()?
+        .and_utc();
+    Some(match tz {
+        Tz::Local => utc.with_timezone(&Local).fixed_offset(),
+        Tz::Fixed(off) => utc.with_timezone(&off),
+    })
+}
+
+/// The other instant of `t`'s wall-clock time when that time lies in the
+/// repeated hour: the list cannot tell the two apart.
+fn fold_twin(tz: Tz, t: DateTime<FixedOffset>) -> Option<DateTime<FixedOffset>> {
+    instants(tz, wall(tz, t)).into_iter().find(|i| *i != t)
+}
+
+/// Each snapshot's date as one instant (`None`: no usable date), in the
+/// order of `list`. The info files give the instant (UTC). A list time
+/// names one instant, except in the repeated hour when summer time ends;
+/// there the first that decides wins:
+///
+/// 1. the snapshot's info file, when it can be read (the canonical date);
+/// 2. the date the cursor knows for the number, when it is one of the two;
+/// 3. the number order: when the earlier is before the date of the
+///    snapshot numbered before it, the later (snapper numbers snapshots in
+///    the order it makes them);
+/// 4. the earlier of the two.
+///
+/// A list time in a DST gap names no instant.
+fn snapshot_dates(
+    ctx: &Ctx,
+    list: &[Snapshot],
+    origin: Origin,
+    known: &BTreeMap<u64, Known>,
+) -> Vec<Option<DateTime<FixedOffset>>> {
+    if origin == Origin::InfoFiles {
+        return list.iter().map(|s| utc_ts(ctx.tz, &s.date)).collect();
+    }
+    let readings: Vec<Vec<DateTime<FixedOffset>>> =
+        list.iter().map(|s| readings(ctx.tz, &s.date)).collect();
+    let mut order: Vec<usize> = (0..list.len()).collect();
+    order.sort_by_key(|&i| list[i].number);
+    let mut dates = vec![None; list.len()];
+    let mut before = None;
+    for i in order {
+        let date = match readings[i].as_slice() {
+            [] => None,
+            [one] => Some(*one),
+            pair @ [earlier, later, ..] => {
+                let of = |d: Option<DateTime<FixedOffset>>| {
+                    d.and_then(|d| pair.iter().find(|r| **r == d).copied())
+                };
+                Some(
+                    of(info_file_date(ctx, list[i].number))
+                        .or_else(|| of(known.get(&list[i].number).and_then(|k| k.date)))
+                        .unwrap_or(if before.is_some_and(|b| *earlier < b) {
+                            *later
+                        } else {
+                            *earlier
+                        }),
+                )
+            }
+        };
+        before = date.or(before);
+        dates[i] = date;
+    }
+    dates
+}
+
+/// The date in the info file of snapshot `number`, when it can be read.
+fn info_file_date(ctx: &Ctx, number: u64) -> Option<DateTime<FixedOffset>> {
+    let file = ctx
+        .sources
+        .snapshots
+        .join(number.to_string())
+        .join("info.xml");
+    let text = std::fs::read_to_string(file).ok()?;
+    utc_ts(ctx.tz, &parse_info(&text, number).ok()?.date)
 }
 
 fn first_line(s: &str) -> &str {
@@ -443,17 +560,20 @@ fn diff(
 ) -> anyhow::Result<(Vec<Event>, SnapperCursor)> {
     let first_run = cursor.is_none();
     let known = cursor.unwrap_or_default().known;
+    let dates = snapshot_dates(ctx, list, origin, &known);
     let mut events = Vec::new();
-    for s in list {
-        let Some(ts) = snapshot_ts(ctx.tz, &s.date, origin) else {
+    for (s, date) in list.iter().zip(&dates) {
+        let Some(ts) = *date else {
             continue; // no usable date: remembered, not reported
         };
         if let Some(k) = known.get(&s.number) {
             // a known number with another date: deleted and created again
             // (snapper reuses the number after the highest one). An entry
-            // without a date (an older cursor) only gets one.
+            // without a date (an older cursor) only gets one, and so does
+            // an entry with the other reading of the same local time in the
+            // repeated hour (the list's guess, corrected by the info file).
             match k.date {
-                Some(date) if date != ts => {
+                Some(date) if date != ts && fold_twin(ctx.tz, ts) != Some(date) => {
                     // the deletion goes before the creation it made room for
                     events.push(deleted(ts, s.number, k));
                 }
@@ -486,13 +606,14 @@ fn diff(
     let next = SnapperCursor {
         known: list
             .iter()
-            .map(|s| {
+            .zip(dates)
+            .map(|(s, date)| {
                 (
                     s.number,
                     Known {
                         snapshot_type: s.snapshot_type.clone(),
                         description: s.description.clone(),
-                        date: snapshot_ts(ctx.tz, &s.date, origin),
+                        date,
                     },
                 )
             })
@@ -524,8 +645,10 @@ fn deleted(ts: DateTime<FixedOffset>, number: u64, k: &Known) -> Event {
     e
 }
 
-/// Drops `snapshot` events already in the ledger (same number and time),
-/// e.g. after a crash between the ledger write and the cursor save.
+/// Drops `snapshot` events already in the ledger (same number and time,
+/// or the other instant of the same local time in the repeated hour, which
+/// a switch between list and info files gives), e.g. after a crash between
+/// the ledger write and the cursor save or after a lost state directory.
 ///
 /// Likewise a `snapshot-delete` whose number the ledger already records as
 /// deleted after its last creation: deletions carry capture time, so only
@@ -539,10 +662,12 @@ fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
             .filter(|e| e.kind == Kind::Snapshot)
             .map(|e| e.ts)
     };
+    // the other instant of a time in the repeated hour is an hour away
+    let hour = chrono::Duration::hours(1);
     let seen: HashSet<(String, i64)> = match (created().min(), created().max()) {
         (Some(first), Some(last)) => ctx
             .ledger
-            .read_range(first, last)?
+            .read_range(first - hour, last + hour)?
             .into_iter()
             .filter(|e| e.source == Source::Snapper && e.kind == Kind::Snapshot)
             .map(|e| (e.subject, e.ts.timestamp()))
@@ -570,14 +695,19 @@ fn dedupe(ctx: &Ctx, events: Vec<Event>) -> anyhow::Result<Vec<Event>> {
         .filter(|e| e.kind == Kind::Snapshot)
         .map(|e| (e.subject.clone(), e.ts.timestamp()))
         .collect();
+    let recorded = |e: &Event| {
+        std::iter::once(e.ts)
+            .chain(fold_twin(ctx.tz, e.ts))
+            .any(|ts| seen.contains(&(e.subject.clone(), ts.timestamp())))
+    };
     Ok(events
         .into_iter()
         .filter(|e| {
             let key = (e.subject.clone(), e.ts.timestamp());
             match e.kind {
-                Kind::Snapshot => !seen.contains(&key),
+                Kind::Snapshot => !recorded(e),
                 Kind::SnapshotDelete if replaced.contains(&key) => {
-                    !seen.contains(&key) && !deleted.contains(&e.subject)
+                    !recorded(e) && !deleted.contains(&e.subject)
                 }
                 Kind::SnapshotDelete => !deleted.contains(&e.subject),
                 _ => true,
