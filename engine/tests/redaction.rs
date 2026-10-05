@@ -889,6 +889,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "rita",
         "an ‹redacted›@example.org:",
     ),
+    (
+        "email",
+        "a@b.co:git@h.example:o/r",
+        "a@b",
+        "‹redacted›@b.co:git@h.example:o/r",
+    ),
     // an SSH login with a dot in the host reads as an address: masked
     // too, as `ssh://me@host` is a URL with userinfo
     (
