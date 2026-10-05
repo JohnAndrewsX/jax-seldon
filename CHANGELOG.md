@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- A capture over ssh, from cron or from a systemd unit no longer
+  degrades the plugins collector with "OMARCHY_PATH is not set": when
+  the variable is unset or empty, Omarchy's programs (`omarchy plugin
+  list|catalog`, `omarchy-version`, also in `doctor` and `dossier`) get
+  `OMARCHY_PATH=/usr/share/omarchy`; a set value is passed on unchanged
+  (WP-089).
+- The desktop entries in `~/.local/share/applications` are watched by
+  default; `mimeinfo.cache` there is excluded, as it is rebuilt on many
+  package updates. A `config.toml` the wizard wrote keeps its own
+  `watchPaths`; guide 06 gives the line to add. Files already present
+  when the path enters the list record no addition (WP-089).
+
 ## [0.1.3] - 2026-10-05
 
 ### Engine
