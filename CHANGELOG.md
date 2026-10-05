@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   note with that kind, once.
   This also holds when it was the only collector that lost its state
   (WP-088).
+- The same holds for a collector that the capture which loses the state
+  does not run (`capture --source` without it, or disabled): it gets an
+  entry in `cursors.json` with only the mark, which the index shows as a
+  collector that has not run yet, and its first successful run, also
+  after it is enabled again, records its gap (WP-091).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains

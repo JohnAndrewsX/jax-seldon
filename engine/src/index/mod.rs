@@ -102,7 +102,7 @@ pub fn collector_state(
         .into_iter()
         .map(|name| {
             let state = mine.then(|| cursors.collectors.get(name)).flatten();
-            let last_run = state.map(|s| s.last_run.clone());
+            let last_run = state.and_then(|s| s.last_run.clone());
             if let Some(t) = last_run
                 .as_deref()
                 .and_then(|t| DateTime::parse_from_rfc3339(t).ok())

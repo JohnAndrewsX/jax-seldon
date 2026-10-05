@@ -529,7 +529,7 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
     let last = cursors
         .collectors
         .values()
-        .filter_map(|s| chrono::DateTime::parse_from_rfc3339(&s.last_run).ok())
+        .filter_map(|s| chrono::DateTime::parse_from_rfc3339(s.last_run.as_deref()?).ok())
         .max()?;
     let ledger = Ledger::new(logbook, Redactor::builtin());
     let reset = ledger.months().ok()?.iter().rev().find_map(|m| {
