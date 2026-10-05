@@ -365,7 +365,9 @@ and `snapper` probes run the programs the collectors run
 ```
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
-                          "sinceIgnored":[…],"explainedOwn":N,"warnings":[…]}   # explainedOwn: §5 rule 7;
+                          "sinceIgnored":[…],"explainedOwn":N,"explainedSelf":N,"warnings":[…]}
+                                                                    # explainedOwn: §5 rule 7;
+                                                                    # explainedSelf: §5 rule 8;
                                                                     # warnings: the state reset (WP-081)
                          exit 0 also when a collector is degraded (ok:false + fix, ADR-0026);
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
@@ -770,6 +772,24 @@ After every capture:
    capture without the config collector keeps the records. Files the
    wizard writes before its first capture (the harnesses inside the
    logbook) are part of that capture's config baseline and need no record.
+8. **Seldon updating itself (WP-086).** Seldon's own components are no
+   drift: an event of its plugin `jax.seldon` (`plugin-add`,
+   `plugin-update`, `plugin-enable`, `plugin-disable`) or of its package
+   `jax-seldon` (pacman `install`, `upgrade`, `downgrade`, `reinstall`)
+   without a case gets, from the capture that writes it, right after the
+   append and under the same lock, one `explained` resolution: `source:
+   seldon`, actor `system`, no case, detail `seldon's own plugin` or
+   `seldon's own package` (the ids are `attribution::OWN_PLUGIN` and
+   `OWN_PACKAGE`, the plugin manifest's `id` and the PKGBUILD's
+   `pkgname`). The event keeps the actor the collector or attribution
+   gave it and stays in the Changelog; the index folds the resolution
+   (ADR-0021: no case) and a pacman group loses that member only. A
+   removal (`plugin-remove`, `remove`) is not Seldon updating itself and
+   stays drift. `install.sh` writes under its prefix (`~/.local`: the
+   binary, man page, completions) and, with `--unit`, into
+   `~/.config/systemd/user/`, all outside the default `watchPaths`, so it
+   leaves no event; a path a user adds to `watchPaths` is ordinary config
+   drift.
 
 Resolution events (`kind: resolution`, `refersTo`) are applied when the
 index is built; an event with a resolution is not drift. `seldon drift
