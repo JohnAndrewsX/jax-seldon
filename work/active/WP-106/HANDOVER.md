@@ -225,3 +225,70 @@ None blocking. Three for the orchestrator:
 - No guard-hook blocks. Nothing outside the repository and the session
   scratchpad. The made-up `openssl genpkey` probes on the dev host wrote
   to stdout only.
+
+## Round 2 (review: stage 1 SEND BACK small, stage 2 fix round)
+
+Commits: `0eda94c` (items 1 and 2: rows and test), `da8e980` (items 1
+and 4: SPEC), `6758653` and `47ead04` (item 3: guide 06 en, then de),
+plus this section.
+
+### Items
+
+1. **B1 (a).**
+   - **SPEC:** the "Masked too much" paragraph replaces the two-name
+     sentence with the brief's sentence, word for word.
+   - **Test:** the second loop of `openssl_pass_is_disjoint_and_stable`
+     now holds the brief's four rows:
+     - `--pass` gives `[secret-option, openssl-pass]`;
+     - `--password` gives `[password-option, openssl-pass]`;
+     - `--secret-key` gives `[openssl-pass, key-option]`;
+     - `--password=` gives
+       `[password-option, openssl-pass, secret-assignment]`.
+
+     For each row the test asserts the full vector, that `fakeOs30` is
+     gone, and that the output holds exactly one marker.
+2. **N1.**
+   - CLEAR row `notes about the compass pass: north`.
+   - TABLE row `openssl rsa -passin pass:fakeOs31&&echo done`, which
+     must give `-passin ‹redacted›&&echo done`.
+3. **N2.** Guide 06 gets one bullet in each language, worded as in the
+   brief, after the `curl -E` bullet. The de source line is re-stamped
+   to `6758653`.
+4. **N3.** SPEC gets two additions, as worded in the brief:
+   - the "Not masked (WP-106)" list gains "the glued `-passpass:…`,
+     which openssl rejects";
+   - the `openssl-pass` cost sentence follows the `cert-password` one.
+5. **`openssl enc -k`** stays a documented limit. It was already listed
+   under "Not masked (WP-106)"; no change.
+
+### Verified
+
+- `cargo fmt --check` and
+  `cargo clippy --all-targets --locked -- -D warnings`: clean.
+- `redaction`: 25 passed, 1 ignored. `docs-check`: ok.
+- **`flock /tmp/seldon-check.lock just check` at `47ead04`: exit 0**
+  (01:49–01:58). Results:
+  - 70 test binaries ok;
+  - service-states 314/0, panel-view 782/0, overlay-view 319/0,
+    bar-view 143/0;
+  - install 209/0, deploy-test-host 190/0, real-home-guard 11/0;
+  - qmllint 29 files, docs-check ok, `check: ok`.
+
+### Mutants (round 2)
+
+Same runner and restore as round 1. Run on the committed `0eda94c`
+source; the tree was clean and the baseline green afterwards.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| O1 | the leading `-` optional (`(-?[a-z0-9_-]*…`) | `harmless_text_stays` (compass row) |
+| O2 | `&` allowed in `PASS_ARG`'s bare characters | `every_builtin_pattern` (`&&` row) |
+| R13 | rule order before `secret-option` (re-run) | `openssl_pass_is_disjoint_and_stable` |
+
+Result: 3 of 3 killed. Both of the reviewer's survivors are now killed.
+
+No guard-hook blocks this round.
+
+### Touched outside WP scope
+
+- Guide 06 en/de (item 3), as the brief asks.
