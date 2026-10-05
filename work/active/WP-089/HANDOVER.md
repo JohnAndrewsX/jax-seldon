@@ -83,11 +83,10 @@ Docs
   needs the running Omarchy shell)". `HOME` in a scratch dir means
   `~/.config/omarchy/plugins` is empty there. That is fine for this check,
   which is about the list call, not about versions.
-- Cron without `XDG_RUNTIME_DIR`: `omarchy-shell` also needs it to reach
-  the shell (`qs ipc`). An ssh login gets it from pam_systemd; a cron
-  job may not. In that case `plugin list` still degrades, now with a
-  different message. The WP only asks for OMARCHY_PATH; I did not default
-  `XDG_RUNTIME_DIR`.
+- ~~Cron without `XDG_RUNTIME_DIR` still degrades~~ (wrong, corrected in
+  round 2): `omarchy-shell` falls back to `/run/user/$UID` and finds the
+  compositor socket itself; the reviewer's `env -i` capture is `ok:
+  true` with this build. Nothing is left open for cron.
 - `$OMARCHY_PATH/bin` is not added to PATH. Not needed on a package
   install: `/usr/bin/omarchy*` exist, and the `omarchy` dispatcher execs
   its own bin dir.
@@ -172,3 +171,31 @@ Recorded in memory/pitfalls.md (§ WP-089):
 - `memory/pitfalls.md` (Learned).
 - No other files. capture.rs, reconcile.rs, collectors/mod.rs and
   redact.rs are untouched. The guard hook blocked nothing.
+
+## Round 2
+
+Review round 1: APPROVE with N1–N4. Decision on the open question
+(desktop entry names stay subjects; e-mail redaction follows as WP-093):
+taken note, nothing to do here.
+
+- N1: `sys.rs` splits out the pure `omarchy_path_from(Option<&OsStr>)`;
+  `omarchy_path()` calls it. `sys::tests::omarchy_path_is_set_only_when_unset_or_empty`
+  now asserts unset and empty → `/usr/share/omarchy` and a set value
+  unchanged. Mutants:
+  - U1 `Some(_) => PathBuf::new()` → killed (sys.rs:594, the unset/empty
+    loop);
+  - U2 `None => PathBuf::new()` (a set value dropped) → killed
+    (sys.rs:596).
+  File restored and touched, then baseline run: green.
+- N2: the cron claim was wrong. Corrected in "Not done" above and in
+  memory/pitfalls.md (omarchy-shell falls back to `/run/user/$UID`).
+- N3: pitfalls bullet 1 now says "every Omarchy program … that reads
+  `OMARCHY_PATH`". It names the call sites that are not routed (setup.rs
+  `omarchy hook install`, agent launcher, `omarchy-launch-editor`).
+  setup.rs is not routed (optional, not needed).
+- N4: blank line before the WP-089 heading in pitfalls.md.
+
+Verified by: `cargo test --lib omarchy_path`, `cargo test --test
+environment` (9/9), `cargo test --lib` (all), `cargo clippy --all-targets
+-- -D warnings`, `cargo fmt --check`. No full `just check` this round
+(as briefed).
