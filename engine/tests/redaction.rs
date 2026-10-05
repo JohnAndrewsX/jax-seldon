@@ -1484,6 +1484,7 @@ mod redaction {
             ("httpie-auth", "http -a \\\n  a:fakeGap1"),
             ("httpie-auth", "xh --auth \\\n  a:fakeGap1"),
             ("httpie-auth", "http \\\n  -a a:fakeGap1"),
+            ("httpie-auth", "http\\\n  -a a:fakeGap1"),
             ("sshpass-password", "sshpass -p \\\n  fakeGap1 ssh me@host"),
             ("registry-login-password", "docker login -p \\\n  fakeGap1"),
             ("password-option", "tool --password \\\n  fakeGap1"),
