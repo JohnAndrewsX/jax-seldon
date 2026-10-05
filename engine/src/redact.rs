@@ -9,9 +9,13 @@
 //! assignments, `Authorization:` and `X-…-Key:`-style headers, AWS access
 //! keys, GitHub, GitLab and Slack tokens, `sk-`/`sk_` keys, anything after
 //! `-p` for `mysql|psql|smbclient`, the credentials after `curl -u`, the
-//! password after `sshpass -p` and `docker|podman … login -p`; plus the
-//! user's regexes from `config.toml [redaction] patterns`, each of which
-//! replaces its whole match. The replacement is always [`REDACTED`].
+//! password after `sshpass -p` and `docker|podman … login -p`, proxy
+//! credentials (`curl -U`, `--proxy-user`, `user:pass@` after `curl -x`,
+//! `--proxy` or `…proxy=`), JSON values of `"…password"`, `"…secret"`,
+//! `"…token"`-style keys, `Cookie:`/`Set-Cookie:` header values and the
+//! cookies after `curl -b`/`--cookie`; plus the user's regexes from
+//! `config.toml [redaction] patterns`, each of which replaces its whole
+//! match. The replacement is always [`REDACTED`].
 //!
 //! Every rule errs towards redacting too much: a value may be quoted, a
 //! key may be `GITHUB_TOKEN=`, and `sk-proj-…` keys contain hyphens.
@@ -112,6 +116,17 @@ pub fn has_value(value: &str) -> bool {
     !unquoted(value).is_empty()
 }
 
+/// Whether a JSON string value (`"…"`, or `\"…\"` inside a shell string)
+/// is not empty.
+fn has_json_value(value: &str) -> bool {
+    let inner = value
+        .strip_prefix("\\\"")
+        .and_then(|v| v.strip_suffix("\\\""))
+        .or_else(|| value.strip_prefix('"').and_then(|v| v.strip_suffix('"')))
+        .unwrap_or(value);
+    !inner.is_empty()
+}
+
 /// `text` as the triggers see it: ASCII letters in lower case, plus the
 /// two other characters that case-insensitive matching folds onto an
 /// ASCII letter, the Kelvin sign (U+212A → `k`) and the long s
@@ -158,7 +173,7 @@ pub struct Redactor {
 }
 
 /// Names of the built-in rules, in the order they run (for tests and docs).
-pub const BUILTIN: [&str; 18] = [
+pub const BUILTIN: [&str; 23] = [
     "url-userinfo",
     "password-option",
     "secret-option",
@@ -166,8 +181,10 @@ pub const BUILTIN: [&str; 18] = [
     "token-assignment",
     "secret-assignment",
     "key-assignment",
+    "json-secret",
     "authorization-header",
     "secret-header",
+    "cookie-header",
     "aws-access-key",
     "github-token",
     "gitlab-token",
@@ -175,6 +192,9 @@ pub const BUILTIN: [&str; 18] = [
     "sk-key",
     "db-client-password",
     "curl-user",
+    "proxy-option",
+    "proxy-userinfo",
+    "cookie-option",
     "sshpass-password",
     "registry-login-password",
 ];
@@ -205,8 +225,21 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "_pass=",
             "sshpass=",
         ],
+        "json-secret" => &[
+            "password\"",
+            "password\\\"",
+            "passwd\"",
+            "passwd\\\"",
+            "passphrase\"",
+            "passphrase\\\"",
+            "secret\"",
+            "secret\\\"",
+            "token\"",
+            "token\\\"",
+        ],
         "authorization-header" => &["authorization:"],
         "secret-header" => &["x-", "api-key", "apikey", "private-token"],
+        "cookie-header" => &["cookie"],
         "aws-access-key" => &["akia", "asia"],
         "github-token" => &["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"],
         "gitlab-token" => &["glpat-"],
@@ -214,6 +247,9 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "sk-key" => &["sk-", "sk_"],
         "db-client-password" => &["mysql", "psql", "smbclient"],
         "curl-user" => &["curl"],
+        "proxy-option" => &["curl", "--proxy-"],
+        "proxy-userinfo" => &["curl", "proxy"],
+        "cookie-option" => &["curl"],
         "sshpass-password" => &["sshpass"],
         "registry-login-password" => &["login"],
         _ => &[],
@@ -294,6 +330,15 @@ fn builtin_rules() -> Vec<Rule> {
             &format!(r"(?i)(\b[a-z0-9_]*key=)(?P<v>{VALUE})"),
             looks_like_credential,
         ),
+        // `"password": "…"`, `"client_secret":"…"`, `"access_token"`,
+        // also with the quotes escaped inside a shell string
+        // (`\"password\":\"…\"`): a non-empty string value; not
+        // `"password_hint"` or `"token_type"`
+        checked_rule(
+            "json-secret",
+            r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token)\\?"[ \t]*:[ \t]*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
+            has_json_value,
+        ),
         // the header value up to a closing quote or the end of the line
         rule(
             "authorization-header",
@@ -306,6 +351,13 @@ fn builtin_rules() -> Vec<Rule> {
         rule(
             "secret-header",
             r#"(?i)(\b(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
+            KEEP_PREFIX,
+        ),
+        // `Cookie: a=b; c=d`, `Set-Cookie: …`: the value up to a closing
+        // quote or the end of the line; an empty value names no secret
+        rule(
+            "cookie-header",
+            r#"(?i)(\b(?:set-)?cookie[ \t]*:[ \t]*)[^'"\s][^'"\n]*"#,
             KEEP_PREFIX,
         ),
         rule("aws-access-key", r"(?:AKIA|ASIA)[0-9A-Z]{16}", WHOLE),
@@ -333,6 +385,31 @@ fn builtin_rules() -> Vec<Rule> {
             "curl-user",
             &format!(r"(\bcurl\b[^\n;&|]*?\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
             KEEP_PREFIX,
+        ),
+        // `curl -U user:pass` (not `useradd -U`), `--proxy-user user:pass`
+        // (curl, wget), wget's `--proxy-password pass` (the `=` form is
+        // `secret-assignment`)
+        rule(
+            "proxy-option",
+            &format!(
+                r"(\bcurl\b[^\n;&|]*?\s-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))(?:{VALUE})"
+            ),
+            KEEP_PREFIX,
+        ),
+        // `user:pass@host` without a scheme after `curl -x`, `--proxy`,
+        // `https_proxy=`, `http.proxy=`, up to the last `@` as for a URL;
+        // a value with `scheme://` is `url-userinfo`
+        rule(
+            "proxy-userinfo",
+            r#"(\bcurl\b[^\n;&|]*?\s-x\s*['"]?|(?i:--proxy(?:=|\s+)|\b[a-z_.]*proxy=)['"]?)[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*(@)"#,
+            "${1}‹redacted›${2}",
+        ),
+        // `curl -b 'session=…'`, `--cookie "a=b; c=d"`: a value with `=`
+        // (without one, curl reads cookies from that file)
+        checked_rule(
+            "cookie-option",
+            &format!(r"(\bcurl\b[^\n;&|]*?\s(?:-b\s*|--cookie(?:=|\s+)))(?P<v>{VALUE})"),
+            |v| unquoted(v).contains('='),
         ),
         rule(
             "sshpass-password",
