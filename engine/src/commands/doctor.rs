@@ -14,7 +14,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::json;
 
-use super::capture::{Binding, pending_reset};
+use super::capture::{Binding, PendingReset, pending_reset};
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
@@ -633,7 +633,9 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
 /// `--path`/`--logbook` is not the one a plain `seldon capture` captures,
 /// so the fix names it. A collector whose baseline waits since it
 /// degraded or was not run when the state was lost (`pendingBaseline`,
-/// WP-088/WP-091) has its own row ([`waiting_row`]).
+/// WP-088/WP-091) has its own row ([`waiting_row`]). So has a loss whose
+/// note a capture that stopped before saving its state already wrote
+/// (`recorded`, WP-104): the next capture only warns of it.
 fn check_pending_reset(
     ctx: &Context,
     config: &Config,
@@ -645,7 +647,12 @@ fn check_pending_reset(
     };
     let canonical = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
     let ledger = Ledger::new(logbook, Redactor::builtin());
-    let Ok((binding, lost)) = pending_reset(&ledger, config, &cursors, &canonical) else {
+    let Ok(PendingReset {
+        binding,
+        lost,
+        recorded,
+    }) = pending_reset(&ledger, config, &cursors, &canonical)
+    else {
         return Vec::new();
     };
     // a mark counts only in cursors bound here (`loss`)
@@ -665,29 +672,42 @@ fn check_pending_reset(
         ),
         _ => "seldon capture".to_string(),
     };
+    let restore = format!(
+        "restore {state} from a backup now (user guide: Back up and restore the state directory), or run {capture} to accept the new baseline"
+    );
+    let (why, fix) = match binding {
+        Binding::None => (format!("cursors missing in {state}"), restore),
+        Binding::This => (format!("cursors unreadable in {state}"), restore),
+        Binding::Other => (
+            format!("cursors in {state} bound to another logbook"),
+            format!(
+                "nothing to restore: the state belongs to another logbook path; run {capture} to accept the new baseline (user guide: Moving or copying the logbook)"
+            ),
+        ),
+    };
+    let names = |l: &[(&str, Lost)]| l.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ");
     let mut checks = Vec::new();
     if !lost.is_empty() {
-        let sources: Vec<&str> = lost.iter().map(|(n, _)| *n).collect();
-        let restore = format!(
-            "restore {state} from a backup now (user guide: Back up and restore the state directory), or run {capture} to accept the new baseline"
-        );
-        let (why, fix) = match binding {
-            Binding::None => (format!("cursors missing in {state}"), restore),
-            Binding::This => (format!("cursors unreadable in {state}"), restore),
-            Binding::Other => (
-                format!("cursors in {state} bound to another logbook"),
-                format!(
-                    "nothing to restore: the state belongs to another logbook path; run {capture} to accept the new baseline (user guide: Moving or copying the logbook)"
-                ),
-            ),
-        };
         checks.push(
             Check::new(
                 "state",
                 Status::Degraded,
                 format!(
                     "the next capture will record a state reset for {}: {why}, so changes made since the last capture may not be recorded",
-                    sources.join(", ")
+                    names(&lost)
+                ),
+            )
+            .fix(fix.clone()),
+        );
+    }
+    if !recorded.is_empty() {
+        checks.push(
+            Check::new(
+                "state",
+                Status::Degraded,
+                format!(
+                    "the next capture will warn of the state reset for {} that a capture recorded before it stopped without saving its state: {why}, so changes made since the last completed capture may not be recorded",
+                    names(&recorded)
                 ),
             )
             .fix(fix),

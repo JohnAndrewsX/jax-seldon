@@ -2234,6 +2234,38 @@ mod crash {
         out["warnings"][0].as_str().unwrap_or_default()
     }
 
+    /// The logbook's key in `silentBaselines`: its canonical path.
+    fn root(cli: &Cli) -> String {
+        let root = std::fs::canonicalize(&cli.logbook).unwrap();
+        root.to_str().unwrap().to_string()
+    }
+
+    /// doctor's "will record" row (WP-083).
+    const RECORD: &str = "the next capture will record a state reset for ";
+    /// doctor's row for a reset a crashed capture recorded (WP-104).
+    const WARN: &str = "the next capture will warn of the state reset for ";
+
+    /// The rest of each doctor `state` row that starts with `prefix`.
+    fn rows(cli: &Cli, prefix: &str) -> Vec<String> {
+        let doctor = common::json(&cli.run(&["doctor", "--json"]));
+        doctor["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["name"] == "state")
+            .filter_map(|c| c["message"].as_str()?.strip_prefix(prefix))
+            .map(String::from)
+            .collect()
+    }
+
+    /// The sources each reset note names, oldest first.
+    fn reset_sources(cli: &Cli) -> Vec<String> {
+        resets(cli)
+            .iter()
+            .map(|r| r.meta.extra["sources"].as_str().unwrap().to_string())
+            .collect()
+    }
+
     #[test]
     fn the_state_reset_note_is_written_once() {
         let cli = Cli::new();
@@ -2244,12 +2276,25 @@ mod crash {
         let reset = resets(&cli);
         assert_eq!(reset.len(), 1, "{reset:?}");
         assert_eq!(reset[0].meta.extra["sources"], "snapper,pacman");
-        // as loaded (no file: no logbook, no entries), and marked
+        // as loaded (no file: no logbook, no entries), and marked; the
+        // collectors without events took their baselines silently (WP-104)
         assert_eq!(
             cli.cursors(),
-            json!({"collectors": {}, "pendingNotes": [reset[0].ts.to_rfc3339()]})
+            json!({
+                "collectors": {},
+                "pendingNotes": [reset[0].ts.to_rfc3339()],
+                "silentBaselines": {root(&cli): ["omarchy", "plugins", "theme", "config"]},
+            })
         );
         let lines = cli.ledger().len();
+        // WP-104: doctor says the next capture warns, it records nothing
+        assert_eq!(rows(&cli, RECORD), Vec::<String>::new());
+        assert_eq!(
+            rows(&cli, WARN),
+            [
+                "snapper, pacman that a capture recorded before it stopped without saving its state: cursors missing in ~/.local/state/seldon, so changes made since the last completed capture may not be recorded"
+            ]
+        );
 
         let out = cli.capture_at(&at(2), &[]);
         assert_eq!(resets(&cli).len(), 1, "the note is not written again");
@@ -2262,6 +2307,7 @@ mod crash {
         );
         let saved = cli.cursors();
         assert_eq!(saved.get("pendingNotes"), None, "{saved}");
+        assert_eq!(saved.get("silentBaselines"), None, "{saved}");
         assert!(saved["logbook"].is_string(), "{saved}");
         assert!(
             !saved["collectors"]["pacman"]["cursor"].is_null(),
@@ -2316,6 +2362,19 @@ mod crash {
         let reset = resets(&cli);
         assert_eq!(reset.len(), 1, "{reset:?}");
         assert_eq!(reset[0].meta.extra["sources"], "pacman");
+        // WP-104: doctor splits what is recorded from what will be
+        let record = rows(&cli, RECORD);
+        assert_eq!(record.len(), 1, "{record:?}");
+        assert!(
+            record[0].starts_with("snapper: cursors missing"),
+            "{record:?}"
+        );
+        let warn = rows(&cli, WARN);
+        assert_eq!(warn.len(), 1, "{warn:?}");
+        assert!(
+            warn[0].starts_with("pacman that a capture recorded"),
+            "{warn:?}"
+        );
 
         let out = cli.capture_at(&at(2), &[]);
         assert_eq!(out["written"], 1, "{out}");
@@ -2354,12 +2413,12 @@ mod crash {
         assert_eq!(resets(&cli).len(), 1, "the note is not written again");
     }
 
-    /// SPEC §3 known limitation (stage-1 review P2): snapper had no event
-    /// before the crashed capture baselined it without a note; that
-    /// capture appended its first events, so the next capture records a
-    /// state reset for snapper that lost nothing. pacman's is not repeated.
+    /// Stage-1 review P2 (WP-104): snapper had no event before the crashed
+    /// capture baselined it without a note and appended its first events;
+    /// the next capture records no state reset for snapper, which lost
+    /// nothing, and does not repeat pacman's.
     #[test]
-    fn a_source_first_recorded_by_the_crashed_capture_gets_a_note() {
+    fn a_source_first_recorded_by_the_crashed_capture_gets_no_note() {
         let cli = Cli::new();
         let at = clock();
         let out = cli.run_env(
@@ -2373,17 +2432,189 @@ mod crash {
             "after-append",
             &["--all", "--since", FIXTURE_CREATED],
         );
-        let out = cli.capture_at(&at(2), &[]);
-        let sources: Vec<String> = resets(&cli)
-            .iter()
-            .map(|r| r.meta.extra["sources"].as_str().unwrap().to_string())
-            .collect();
-        assert_eq!(sources, ["pacman", "snapper"]);
+        assert_eq!(reset_sources(&cli), ["pacman"]);
         assert!(
-            warning(&out).starts_with("state reset recorded: snapper, pacman took a new baseline"),
+            cli.ledger().iter().any(|e| e.source == Source::Snapper),
+            "the crash appended snapper's first events"
+        );
+        assert_eq!(
+            cli.cursors()["silentBaselines"][root(&cli)],
+            json!(["snapper", "omarchy", "plugins", "theme", "config"])
+        );
+        assert_eq!(rows(&cli, RECORD), Vec::<String>::new());
+        assert_eq!(rows(&cli, WARN).len(), 1);
+
+        let out = cli.capture_at(&at(2), &[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert_eq!(reset_sources(&cli), ["pacman"]);
+        assert!(
+            warning(&out).starts_with("state reset recorded: pacman took a new baseline"),
             "{out}"
         );
-        assert_eq!(cli.capture_at(&at(3), &[])["written"], 0);
+        assert_eq!(cli.cursors().get("silentBaselines"), None);
+        let again = cli.capture_at(&at(3), &[]);
+        assert_eq!(again["written"], 0, "{again}");
+        assert_eq!(again["warnings"], json!([]));
+
+        // a genuine loss of snapper's state is still recorded
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        let out = cli.capture_at(&at(4), &[]);
+        assert_eq!(out["written"], 1, "{out}");
+        assert_eq!(reset_sources(&cli), ["pacman", "snapper,pacman"]);
+    }
+
+    /// Stage-1 review P1 (WP-104): the first capture of a logbook crashes
+    /// after its append. It wrote no note, and the next capture writes none.
+    #[test]
+    fn a_crashed_first_capture_gives_no_note() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.crash(
+            &at(0),
+            "after-append",
+            &["--all", "--since", FIXTURE_CREATED],
+        );
+        let lines = cli.ledger().len();
+        assert!(
+            cli.ledger().iter().any(|e| e.source == Source::Pacman),
+            "the crash appended the first events"
+        );
+        assert_eq!(
+            cli.cursors(),
+            json!({
+                "collectors": {},
+                "silentBaselines": {root(&cli): ["snapper", "pacman", "omarchy", "plugins", "theme", "config"]},
+            })
+        );
+        assert_eq!(rows(&cli, RECORD), Vec::<String>::new());
+        assert_eq!(rows(&cli, WARN), Vec::<String>::new());
+
+        let out = cli.capture_at(&at(1), &[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert_eq!(out["warnings"], json!([]));
+        assert_eq!(cli.ledger().len(), lines);
+        let saved = cli.cursors();
+        assert_eq!(saved.get("silentBaselines"), None, "{saved}");
+        assert!(saved["logbook"].is_string(), "{saved}");
+
+        // a genuine loss is still recorded
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        let out = cli.capture_at(&at(2), &[]);
+        assert_eq!(out["written"], 1, "{out}");
+        assert_eq!(reset_sources(&cli), ["snapper,pacman"]);
+        cli.ledger().iter().for_each(assert_schema_valid);
+    }
+
+    /// A crash before the append marks the silent baselines too; the next
+    /// capture takes them, and the sources it then appends first events
+    /// of lose nothing.
+    #[test]
+    fn a_crash_before_the_append_marks_the_silent_baselines() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.crash(
+            &at(0),
+            "before-append",
+            &["--all", "--since", FIXTURE_CREATED],
+        );
+        assert!(cli.ledger().iter().all(|e| e.source == Source::Agent));
+        assert_eq!(cli.cursors()["silentBaselines"][root(&cli)][1], "pacman");
+        let out = cli.capture_at(&at(1), &["--since", FIXTURE_CREATED]);
+        assert_eq!(out["warnings"], json!([]));
+        assert!(resets(&cli).is_empty());
+        assert_eq!(cli.cursors().get("silentBaselines"), None);
+    }
+
+    /// A collector the crashed capture did not run (`--source pacman`)
+    /// would have been baselined silently too; an event the theme hook
+    /// writes before the next capture is no loss of its state (WP-104).
+    #[test]
+    fn a_collector_not_run_by_the_crashed_capture_is_marked_too() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.crash(
+            &at(0),
+            "after-append",
+            &["--source", "pacman", "--since", FIXTURE_CREATED],
+        );
+        assert_eq!(
+            cli.cursors()["silentBaselines"][root(&cli)],
+            json!(["pacman", "snapper", "omarchy", "plugins", "theme", "config"])
+        );
+        let out = cli.run(&["event", "theme", "theme-set", "--subject", "tokyo-night"]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        assert_eq!(rows(&cli, RECORD), Vec::<String>::new());
+
+        let out = cli.capture_at(&at(1), &[]);
+        assert_eq!(out["warnings"], json!([]), "{out}");
+        assert!(resets(&cli).is_empty(), "{:?}", resets(&cli));
+    }
+
+    /// The marks count for the logbook whose capture saved them only: a
+    /// capture of another logbook crashes with its baselines marked, and
+    /// the next capture here records the loss of an unreadable cursor.
+    #[test]
+    fn a_silent_mark_counts_for_its_own_logbook_only() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.capture_at(&at(0), &["--since", FIXTURE_CREATED]);
+        let file = state(&cli).join("cursors.json");
+        let mut cursors = cli.cursors();
+        cursors["collectors"]["pacman"]["cursor"] = json!("not a cursor");
+        std::fs::write(&file, cursors.to_string()).unwrap();
+        let other = cli.env.tmp.path().join("other");
+        let out = cli.env.seldon(&[
+            "init",
+            "--non-interactive",
+            "--no-git",
+            "--no-capture",
+            "--path",
+            other.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        cli.crash(
+            &at(1),
+            "after-append",
+            &["--all", "--logbook", other.to_str().unwrap()],
+        );
+        let marked = cli.cursors();
+        let other = std::fs::canonicalize(&other).unwrap();
+        assert_eq!(
+            marked["silentBaselines"][other.to_str().unwrap()][1],
+            "pacman",
+            "{marked}"
+        );
+        assert_eq!(marked["logbook"], cursors["logbook"], "as loaded");
+
+        let out = cli.capture_at(&at(2), &[]);
+        assert_eq!(out["written"], 1, "{out}");
+        assert_eq!(reset_sources(&cli), ["pacman"]);
+    }
+
+    /// WP-104: `silentBaselines` is new; a `cursors.json` without it reads
+    /// unchanged, and it is written only while set.
+    #[test]
+    fn a_cursors_file_without_silent_baselines_reads_unchanged() {
+        use seldon::collectors::Cursors;
+        let old =
+            r#"{"logbook":"/l","collectors":{},"pendingNotes":["2026-10-01T10:00:00+02:00"]}"#;
+        let cursors: Cursors = serde_json::from_str(old).unwrap();
+        assert!(cursors.silent_baselines.is_empty());
+        assert_eq!(serde_json::to_string(&cursors).unwrap(), old);
+        let mut marked = cursors.clone();
+        marked
+            .silent_baselines
+            .insert("/l".into(), vec!["pacman".into()]);
+        let text = serde_json::to_string(&marked).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                r#"{},"silentBaselines":{{"/l":["pacman"]}}}}"#,
+                &old[..old.len() - 1]
+            )
+        );
+        let back: Cursors = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, marked);
     }
 
     /// Two crashes in a row: the second capture keeps the first one's
