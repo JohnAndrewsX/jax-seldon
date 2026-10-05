@@ -2036,3 +2036,29 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   bare `VALUE` took as a new value on the second pass). It surfaced only
   when another change moved the quote parity of the joined-rows text.
   The bare `VALUE` no longer starts at a marker.
+
+## 2026-10-06 · WP-107 (Engine Dev)
+
+- **A marker a collector saves before the append cannot be an event id,
+  but it can be a count.** `Ledger::append` assigns the ids, and
+  `capture` saves the cursor the collector returned. The config cursor
+  therefore stores `atCheck`: how many config events stamped with its
+  check the ledger holds, in ledger order, once the capture's own are
+  written (the ledger's events at `now` plus the capture's). It is exact
+  because `capture` holds the state lock from the collector's ledger
+  read to its append; ids would also depend on the system clock across
+  processes (a fresh ULID generator per append).
+- **Ledger order is not time order across captures.** A capture after a
+  failed cursor save writes a change clamped to the old check behind
+  events stamped later by the captures before it. So the marker counts
+  only the events stamped with the check (they are in write order), not
+  a position in the file; every event stamped later is read anyway.
+- **A real-time test kills a mutant only by timing.** The c03 shape on
+  the real clock passes on the fixed code every time, but fails on the
+  old one only when the steps stay within one second. Pair it with a
+  pinned twin (`SELDON_NOW`, and the file's mtime set into the second of
+  the check).
+- **A ledger read error is testable with `chmod 000` on the bench's
+  ledger folder** (`read_dir` fails with EACCES); skip the test when
+  `read_dir` still works (root ignores the mode), and put the mode back
+  before asserting, or the scratch folder cannot be removed.
