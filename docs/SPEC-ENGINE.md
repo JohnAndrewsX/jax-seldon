@@ -847,16 +847,30 @@ the first write, so the ledger, the journal, case and decision files,
 and similar options; `--api-key`, `--access-key`, `--secret-key`;
 `token=`; `…SECRET=`, `…PASSWORD=`, `…PASSWD=`, `…PASSPHRASE=`, `…_PWD=`,
 `…_PASS=`, `SSHPASS=` assignments (also `PGPASSWORD=`); `…KEY=`
-assignments (also `?api_key=`); `Authorization:`; headers whose name ends in
+assignments (also `?api_key=`); the non-empty string value of an inline
+JSON key that ends in `password`, `passwd`, `passphrase`, `secret` or
+`token` (`"password": "…"`, `"client_secret":"…"`, also escaped inside a
+shell string as `\"password\":\"…\"`; not `"password_hint"` or
+`"token_type"`); `Authorization:`; headers whose name ends in
 a credential word (`X-…-Key:`, `X-…-Token:`, `X-…-Secret:`, `X-Auth:`,
-`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`);
+`X-…-Auth:`, `Api-Key:`, `Private-Token:`; not `X-Author:`); a non-empty
+`Cookie:` or `Set-Cookie:` value;
 `(AKIA|ASIA)[0-9A-Z]{16}`; `gh[pousr]_[A-Za-z0-9]{36,}` and
 `github_pat_…`; `glpat-…`; `xox[abposr]-…`; `sk-`/`sk_` keys
 (`\bsk[-_][A-Za-z0-9_-]{20,}`); anything after `-p ` for
-`mysql|psql|smbclient`; the value after `curl -u`/`--user`; after
+`mysql|psql|smbclient`; the value after `curl -u`/`--user`; proxy
+credentials: the value after `curl -U` (not `useradd -U`),
+`--proxy-user` and wget's `--proxy-password` before a space (its `=`
+form is a `…PASSWORD=` assignment), and a `user:pass` without a scheme before the
+last `@` of the value after `curl -x`, `--proxy` or a `…proxy=`
+assignment (`https_proxy=`, `http.proxy=`; with a scheme it is a URL
+with userinfo); the cookies after `curl -b`/`--cookie` when the value
+holds a `=` (without one curl reads that file); after
 `sshpass -p`; after `-p` of `docker|podman|buildah|nerdctl|helm registry
 login`; and user-supplied patterns in `config.toml [redaction] patterns`.
-Replacement: `‹redacted›`. The hook never records stdin/stdout of
+Replacement: `‹redacted›`; the option, key or header name stays in front
+of it (`--proxy-user ‹redacted›`, `"password": ‹redacted›`,
+`Cookie: ‹redacted›`). The hook never records stdin/stdout of
 commands, only the command line. A name that can only mean a
 credential masks any non-empty value: `--password`, `--token`,
 `--with-token`, `--secret`, `--client-secret`, `--passphrase`
@@ -872,7 +886,12 @@ that mix two of lower case, upper case, digits and other characters
 (WP-004): the `sk` rule also matches `sk_`/`sk-proj-`/`sk_live_` (at a
 word start, so `task-…` is not cut), `token=` and the assignments are
 case-insensitive, quoted values are redacted whole, mysql's attached
-`-pSECRET` and psql's `-p` port are both redacted. URL userinfo that
+`-pSECRET` and psql's `-p` port are both redacted. The proxy, JSON and
+cookie rules (WP-084) check no credential shape, and they take over no
+option or key an older rule covers (the import report counts a line once
+per rule):
+`--proxy http://user:pass@host` stays a URL with userinfo and
+`--proxy-password=` a `…PASSWORD=` assignment. URL userinfo that
 holds a `:` is cut from `://` up to the last `@` before the next white
 space or quote, so a password may contain `/ ? # : @`; userinfo without
 a `:` (a bare token) is cut up to the last `@` before the path. Redacting
