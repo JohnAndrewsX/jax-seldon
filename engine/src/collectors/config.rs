@@ -837,12 +837,20 @@ impl Step<'_> {
 }
 
 /// Applies to `base`, the generation the cursor names, the config events
-/// the ledger holds since `since`, until none applies. After a failed
-/// cursor save they are the events of the captures since, and `seen` is
-/// the generation the last of them stored; with them applied the diff
-/// neither repeats them nor misses a file that went back to its old
-/// content before this capture (`A→B` recorded, now `A`: the ledger gets
-/// `B→A`).
+/// the ledger holds since the cursor's check `since`, until none applies,
+/// so the diff neither repeats them nor misses a file that went back to
+/// its old content before this capture (`A→B` recorded, now `A`: the
+/// ledger gets `B→A`).
+///
+/// When the cursor is behind (a failed cursor save or ledger write), the
+/// events are those of the captures since, and `seen` is the generation
+/// the last of them stored. When it is not (a restored older state
+/// directory, or nothing to do), `seen` is this capture's scan. Either
+/// way a removal stamped with exactly `since` is the previous capture's
+/// (it carries the capture time) and already in `base`: it is skipped. An
+/// addition or change at `since` is read, as one whose file has an older
+/// mtime (`cp -p`) is clamped to `since`; one the previous capture made
+/// fits no file of `base` but a twin with the same content.
 ///
 /// An event goes to a file whose state in `base` is the one it starts
 /// from (`hashFrom`, or no file for an addition). The ledger holds
@@ -864,7 +872,10 @@ fn replay(
         .ledger
         .read_range(since.min(ctx.now), ctx.now)?
         .into_iter()
-        .filter(|r| r.source == Source::Config)
+        .filter(|r| {
+            r.source == Source::Config
+                && (r.ts > since || r.ts == since && r.kind != Kind::ConfigRemove)
+        })
         .collect();
     if recorded.is_empty() {
         return Ok(());
@@ -908,6 +919,8 @@ fn replay(
             }
             _ => true, // not (yet) placed
         });
+        // a placement late in a pass can make a step the pass already went
+        // by strict, while the first step that fits may still be ambiguous
         if steps.len() < before {
             continue;
         }
@@ -987,7 +1000,7 @@ impl ConfigFiles {
         let since = prev.as_ref().map(|p| p.checked);
         // the generation the last capture stored, when the cursor names an
         // older one: that capture's cursor save (or its ledger write) failed
-        let behind = stored
+        let stored_ahead = stored
             .as_ref()
             .map(|m| &m.current)
             .filter(|g| prev.as_ref().is_some_and(|c| g.hash != c.hash));
@@ -998,9 +1011,10 @@ impl ConfigFiles {
         };
         let events = match (prev, base) {
             (Some(prev), Some(mut base)) => {
-                if let Some(seen) = behind
-                    && let Err(e) = replay(ctx, &mut base, seen, prev.checked)
-                {
+                // also when not behind: a restored older state directory
+                // (guide 07) finds the events recorded since in the ledger
+                let seen = stored_ahead.unwrap_or(&current);
+                if let Err(e) = replay(ctx, &mut base, seen, prev.checked) {
                     return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
                 }
                 let (left, entered) = rescope(ctx.dirs, &mut base, &scope, &scan);

@@ -643,6 +643,289 @@ mod idempotency {
         assert!(run(&mut b, "10:40").is_empty());
     }
 
+    /// The bench's state directory as far as the config collector keeps
+    /// it: the cursors and `manifest.json`.
+    type Backup = (
+        std::collections::BTreeMap<&'static str, serde_json::Value>,
+        Vec<u8>,
+    );
+
+    fn backup(b: &support::Bench) -> Backup {
+        let manifest = seldon::collectors::config::Manifest::file(&b.dirs);
+        (b.cursors.clone(), std::fs::read(manifest).unwrap())
+    }
+
+    /// Puts `backup` back, as guide 07 restores the state directory.
+    fn restore(b: &mut support::Bench, backup: &Backup) {
+        let manifest = seldon::collectors::config::Manifest::file(&b.dirs);
+        b.cursors = backup.0.clone();
+        std::fs::write(manifest, &backup.1).unwrap();
+    }
+
+    /// A file under `~/.config/hypr` with `text`, its parent created.
+    fn hypr(b: &support::Bench, name: &str, text: &str) -> std::path::PathBuf {
+        let path = b.dirs.home.join(".config/hypr").join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    /// (kind, subject) of each event.
+    fn kinds(events: &[Event]) -> Vec<(Kind, String)> {
+        events.iter().map(|e| (e.kind, e.subject.clone())).collect()
+    }
+
+    fn config_run(b: &mut support::Bench, at: &str) -> Vec<Event> {
+        let out = b.run(&ConfigFiles, &format!("2026-10-01T{at}:00+02:00"));
+        assert!(out.ok, "{:?}", out.message);
+        out.events
+    }
+
+    #[test]
+    fn a_restored_older_state_directory_records_only_what_changed_since() {
+        // guide 07: "an older backup is better than none; the next capture
+        // records what changed since". The cursor and the manifest agree,
+        // so the cursor is not behind, and the ledger already holds the
+        // changes made after the backup (WP-103 round 2)
+        let mut b = support::Bench::new("restore-config");
+        let a = hypr(&b, "a.conf", "A\n");
+        let gone = hypr(&b, "gone.conf", "x\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let saved = backup(&b);
+
+        std::fs::write(&a, "B\n").unwrap();
+        std::fs::remove_file(&gone).unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 2);
+
+        restore(&mut b, &saved);
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        std::fs::write(&a, "C\n").unwrap();
+        let next = config_run(&mut b, "10:30");
+        assert_eq!(kinds(&next), [(CHANGE, "~/.config/hypr/a.conf".into())]);
+        assert_eq!(
+            next[0].meta.hash_from.as_deref(),
+            Some(seldon::sys::sha256_hex(b"B\n").as_str()),
+            "B→C, not A→C"
+        );
+        assert_eq!(b.ledger_events(Source::Config).len(), 3);
+    }
+
+    #[test]
+    fn a_restored_state_directory_knows_a_twin_added_after_the_backup() {
+        // Bob's entry is in no generation of the backup; the scan names it,
+        // so its recorded addition is not written again (WP-103 round 2)
+        let mut b = support::Bench::new("restore-config-twin");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Alice 1", None);
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        let saved = backup(&b);
+
+        entry(&bob, "Bob 1", None);
+        entry(&alice, "Alice 2", None);
+        assert_eq!(
+            twin_run(&mut b, "10:10"),
+            [
+                (CHANGE, Some("Alice 1"), Some("Alice 2")),
+                (ADD, None, Some("Bob 1"))
+            ]
+        );
+        restore(&mut b, &saved);
+        assert_eq!(twin_run(&mut b, "10:20"), []);
+        assert_eq!(twin_run(&mut b, "10:30"), []);
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
+    fn a_backup_restored_after_a_state_reset_records_nothing_twice() {
+        // the state was lost and the next capture took a new baseline;
+        // then the older backup comes back (guide 07, WP-081, WP-103)
+        let mut b = support::Bench::new("restore-config-reset");
+        let a = hypr(&b, "a.conf", "A\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let saved = backup(&b);
+        std::fs::write(&a, "B\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+
+        b.cursors.clear();
+        std::fs::remove_file(seldon::collectors::config::Manifest::file(&b.dirs)).unwrap();
+        assert!(config_run(&mut b, "10:20").is_empty(), "a baseline");
+
+        restore(&mut b, &saved);
+        let again = config_run(&mut b, "10:30");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        std::fs::write(&a, "C\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:40").len(), 1);
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
+    fn a_backup_restored_after_two_steps_writes_no_shortcut() {
+        // A→B and B→C recorded after the backup: the restored generation
+        // has A, the file has C; neither A→C nor anything else is new
+        let mut b = support::Bench::new("restore-config-abc");
+        let a = hypr(&b, "a.conf", "A\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let saved = backup(&b);
+        std::fs::write(&a, "B\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        std::fs::write(&a, "C\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:20").len(), 1);
+        restore(&mut b, &saved);
+        let again = config_run(&mut b, "10:30");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
+    fn a_removal_at_the_cursors_check_is_not_replayed_onto_a_twin() {
+        // Alice's removal carries the capture time, the cursor's check;
+        // after the next capture's failed save the replay reads from that
+        // check, and the removal fits Bob's entry with the same content.
+        // It is the previous capture's and already in the cursor's
+        // generation (WP-103 round 2)
+        let mut b = support::Bench::new("crash-config-same-since");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Same", None);
+        entry(&bob, "Same", None);
+        let other = hypr(&b, "other.conf", "x\n");
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        std::fs::remove_file(&alice).unwrap();
+        assert_eq!(twin_run(&mut b, "10:10"), [(REMOVE, Some("Same"), None)]);
+
+        let before = b.cursors.clone();
+        std::fs::write(&other, "y\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:20").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:30");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
+    fn a_change_clamped_to_the_cursors_check_is_replayed() {
+        // a file written with an older mtime (`cp -p`) gets an event at
+        // the cursor's check, the earliest time it can have; a restore and
+        // a failed cursor save must both find it in the ledger (WP-103
+        // round 2)
+        let mut b = support::Bench::new("restore-config-clamped");
+        let a = hypr(&b, "a.conf", "A\n");
+        let old = |path: &Path| {
+            let at = std::time::UNIX_EPOCH
+                + std::time::Duration::from_secs(
+                    support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64,
+                );
+            let file = std::fs::File::options().write(true).open(path).unwrap();
+            file.set_modified(at).unwrap();
+        };
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let saved = backup(&b);
+        std::fs::write(&a, "B\n").unwrap();
+        old(&a);
+        let written = config_run(&mut b, "10:10");
+        assert_eq!(written.len(), 1);
+        assert_eq!(written[0].ts, support::ts("2026-10-01T10:00:00+02:00"));
+
+        restore(&mut b, &saved);
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "restored: {:?}", kinds(&again));
+
+        let before = b.cursors.clone();
+        std::fs::write(&a, "C\n").unwrap();
+        old(&a);
+        assert_eq!(config_run(&mut b, "10:30").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:40");
+        assert!(again.is_empty(), "behind: {:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
+    fn a_redacted_file_whose_removal_the_ledger_lost_is_recorded() {
+        // Bob's entry was added (cursor save failed), then removed in a
+        // capture whose ledger write failed too: no generation the next
+        // capture has names it. Its subject redacts to itself, so it names
+        // its own masked path, and the removal is recorded under the
+        // subject the ledger holds (WP-103 round 2, probe). With a twin of
+        // the same subject known, the subject names only the twin and the
+        // removal is lost (a known limit)
+        let mut b = support::Bench::new("crash-config-masked-lost");
+        let [bob] = twins(&b, ["bob"]);
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let before = b.cursors.clone();
+        entry(&bob, "Bob 1", None);
+        assert_eq!(twin_run(&mut b, "10:10"), [(ADD, None, Some("Bob 1"))]);
+        b.cursors = before.clone();
+        let month = b.ledger.month_file("2026-10");
+        let ledger = std::fs::read(&month).unwrap();
+        std::fs::remove_file(&bob).unwrap();
+        // another file, so this generation is not the cursor's again
+        hypr(&b, "other.conf", "y\n");
+        assert_eq!(config_run(&mut b, "10:20").len(), 2);
+        std::fs::write(&month, ledger).unwrap(); // the ledger write failed
+        b.cursors = before;
+        let lost = config_run(&mut b, "10:30");
+        assert_eq!(
+            kinds(&lost),
+            [(ADD, "~/.config/hypr/other.conf".into()), (REMOVE, twin())]
+        );
+        assert_eq!(steps(&lost[1..]), [(REMOVE, Some("Bob 1"), None)]);
+        assert!(config_run(&mut b, "10:40").is_empty());
+    }
+
+    #[test]
+    fn a_state_directory_restored_through_the_cli_records_nothing_twice() {
+        // the steps of guide 07: back the folder up, change a file,
+        // capture, put the folder back, capture (WP-103 round 2)
+        let cli = Cli::new();
+        let file = cli.env.home.join(".config/hypr/monitors.conf");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "monitor=,preferred,auto,1\n").unwrap();
+        let capture = |now: &str| {
+            let out = cli
+                .command(&["capture", "--all", "--json"])
+                .env("SELDON_NOW", now)
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+            common::json(&out)
+        };
+        let config = || {
+            cli.ledger()
+                .into_iter()
+                .filter(|e| e.source == Source::Config)
+                .count()
+        };
+        capture("2030-01-01T10:00:00+01:00");
+        let state = cli.env.home.join(".local/state/seldon");
+        let saved = cli.env.tmp.path().join("state-backup");
+        copy_dir(&state, &saved);
+
+        std::fs::write(&file, "monitor=,preferred,auto,1.25\n").unwrap();
+        assert_eq!(capture("2030-01-01T10:10:00+01:00")["written"], 1);
+        assert_eq!(config(), 1);
+
+        std::fs::remove_dir_all(&state).unwrap();
+        copy_dir(&saved, &state);
+        let again = capture("2030-01-01T10:20:00+01:00");
+        assert_eq!(again["written"], 0, "{again}");
+        assert_eq!(config(), 1);
+    }
+
+    /// `cp -a` without the program: the test PATH has only stubs.
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_dir(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+
     #[test]
     fn capture_writes_the_ledger_once() {
         let cli = Cli::new();
@@ -1953,9 +2236,13 @@ impl Cli {
     }
 
     fn run(&self, args: &[&str]) -> Output {
+        self.command(args).output().expect("run seldon")
+    }
+
+    fn command(&self, args: &[&str]) -> std::process::Command {
         let stub = |n: &str| self.env.tmp.path().join(format!("stub-{n}"));
-        self.env
-            .command(args)
+        let mut command = self.env.command(args);
+        command
             .env("SELDON_LOGBOOK", &self.logbook)
             .env("SELDON_PACMAN_LOG", &self.log)
             .env(
@@ -1971,9 +2258,8 @@ impl Cli {
                 self.env.tmp.path().join("plugins"),
             )
             .env("SELDON_THEME_FILE", self.env.tmp.path().join("theme.name"))
-            .env("TZ", "Europe/Berlin")
-            .output()
-            .expect("run seldon")
+            .env("TZ", "Europe/Berlin");
+        command
     }
 
     fn capture(&self, extra: &[&str]) -> serde_json::Value {
