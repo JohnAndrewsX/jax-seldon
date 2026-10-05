@@ -263,8 +263,27 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # limit) → exit 2; a failing re-watch later is an error line. RSS
                                                # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
-seldon doctor                                  # engine, config, logbook, cases, ledger, fences, collectors,
-                                               # state, omarchy, snapper, git checks (read-only)
+seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
+                                               # collectors, state, omarchy, snapper, git checks (read-only)
+seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules block of the logbook's AGENTS.md
+                                               # (`<!-- seldon:begin rules vN -->` … `<!-- seldon:end -->`,
+                                               # marker lines as whole lines) becomes this engine's v2 block.
+                                               # Fenced file: the block is rewritten, every byte outside it
+                                               # kept (a CRLF block keeps CRLF). Unfenced file (v1): the block
+                                               # goes on top, the old text below `## Your rules (kept)` byte
+                                               # for byte; a file exactly as a release wrote it (sha256 of the
+                                               # v0.1.0 and v0.1.1–v0.1.3 templates, en and de) holds nothing
+                                               # of the user's and is replaced whole. No file: the template.
+                                               # --replace: the old file's bytes go to archive/AGENTS-<date>.md
+                                               # (`-2`, `-3`, … when taken; never overwritten), then the
+                                               # template. Refused, file untouched (exit 1): a damaged block
+                                               # (no end marker line, a marker inside it, a begin marker
+                                               # without a version), a block newer than v2, a file that is not
+                                               # UTF-8 (all three: --replace takes them). Prints a `-U0` diff;
+                                               # autocommit `seldon: rules update`; a current file is "nothing
+                                               # changed" (exit 0, no write, no commit). Never runs on its own.
+                                               # --json → {file, action: unchanged|created|rewritten|inserted|
+                                               # replaced, from: "vN"|null, version, archived, diff, git}
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
 # prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
 # path as one argument; without a terminal (the plugin) it launches
@@ -332,7 +351,14 @@ invalid" (or "cannot be read"), `"logbook"` is `null`, and doctor exits
 fix starts "after fixing config.toml:"). With an open logbook: `cases`, a
 case id in two files (error, the `index --check` rule); `ledger`, lines
 that are not events, per month with the count and the first line
-numbers (degraded: every reader skips them); `fences`, the generated
+numbers (degraded: every reader skips them); `rules` (WP-100), the
+rules block of `AGENTS.md` against this engine's in the logbook's
+language: `current (v2)` ok; `outdated (v1)` (no block, a file from
+before ADR-0027), `outdated (vN)`, `outdated (v2, its text differs …)`
+and `missing`, degraded with the fix `seldon rules update`; a damaged
+block degraded with the fix to restore the marker lines or run
+`seldon rules update --replace`; a newer block degraded, fix: update
+seldon; `fences`, the generated
 fence of `STATUS.md` or `DECISIONS.md` that `status` leaves alone (no end
 marker of its own, or `STATUS.md` with the header but without the
 fence; degraded, the fix names the marker lines), an end marker
@@ -1333,9 +1359,15 @@ keys preserved. Empty layout directories get a `.gitkeep`.
 
 The wizard writes templates from `engine/templates/{en,de}/` into the
 logbook: `AGENTS.md` (the rules for agents, the short form of
-`docs/AGENT-GUIDE.md`: session start, engine is the only writer, cases,
-zones, commands, journal and memory, drift, hooks, ending a session,
-never; no `CLAUDE.md`, WP-047), `PROJECT.md`, `STATUS.md`,
+`docs/AGENT-GUIDE.md`, ADR-0027 v2: session start, attended or not,
+instructions and data, engine is the only writer, work in cases, when to
+ask first, R3, privileged steps and snapshots, zones and risk,
+installing software, closing, commands, journal and memory, drift,
+hooks, ending a session, never; all inside the block
+`<!-- seldon:begin rules v2 -->` … `<!-- seldon:end -->`, which holds no
+marker text of its own, then `## Your rules` for the user; no
+`CLAUDE.md`, WP-047, WP-100; an existing logbook gets the block with
+`seldon rules update`, §3), `PROJECT.md`, `STATUS.md`,
 `DECISIONS.md`, `areas/*/README.md` for the default areas (`hyprland`,
 `themes`, `packages`, `dev-env`, `plugins`, `shell`), `memory/lessons.md`,
 `system/*.md` skeletons and `.seldon/templates/{case,decision}.md`.

@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **New agent rules (ADR-0027).** A logbook's `AGENTS.md` now tells an
+  agent to do the work instead of handing steps back: a case the user
+  started, or work the user asked for in the session, is the agent's
+  authorisation; the plan is a running note, not a gate; the agent runs
+  `sudo` itself, takes the snapper snapshot of an R2 or R3 case itself
+  (without Omarchy's cleanup pass) and records its number, installs the
+  way the software documents (`omarchy pkg add` is a recommendation, no
+  longer the only route), and verifies and closes the case. It asks
+  first only outside the case's Intent, for a destructive step without
+  rollback, and for an R3 step (boot, login, shell: the `alwaysRed`
+  list, checked before every package transaction), one go per step. An
+  unattended session records and reports only. The rules sit in a block
+  `<!-- seldon:begin rules v2 -->` … `<!-- seldon:end -->`; the user's
+  own rules follow it (WP-100).
+- `seldon rules update` brings an existing logbook's `AGENTS.md` to the
+  new rules: it rewrites the block and nothing else; a file from an
+  earlier release gets the block on top and keeps its old text below
+  `## Your rules (kept)`, byte for byte (a file nobody edited is
+  replaced whole); `--replace` archives the old file to
+  `archive/AGENTS-<date>.md`. It prints the diff, commits
+  `seldon: rules update`, and changes nothing on a second run.
+  `seldon doctor` has a `rules` row (`current`, `outdated (v1)`,
+  `missing`, …) whose fix is that command (WP-100).
+
 - A capture over ssh, from cron or from a systemd unit no longer
   degrades the plugins collector with "OMARCHY_PATH is not set": when
   the variable is unset or empty, Omarchy's programs (`omarchy plugin
