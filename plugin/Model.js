@@ -648,9 +648,11 @@ function openResult(exitCode, stdoutText, stderrText) {
   return { ok: true, path: path, text: path !== "" ? "Opened " + path + " in " + program : "Opened in " + program }
 }
 
-// `seldon capture --json` → {"written": N, "collectors": [{"name", "ok", …}]}.
+// `seldon capture --json` → {"written": N, "collectors": [{"name", "ok", …}],
+// "warnings": ["…"]}. `warnings` keeps the engine's warnings as it wrote
+// them (WP-085; captureWarnings); [] for a failed capture.
 function captureResult(exitCode, stdoutText, stderrText) {
-  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), warnings: [] }
   var data = parseJson(stdoutText)
   var written = data ? count(data.written) : 0
   var failing = []
@@ -659,7 +661,7 @@ function captureResult(exitCode, stdoutText, stderrText) {
     if (isObject(list[i]) && list[i].ok === false && typeof list[i].name === "string") failing.push(list[i].name)
   var text = written === 0 ? "nothing new" : plural(written, "new event", "new events")
   if (failing.length > 0) text += " · failing: " + failing.join(", ")
-  return { ok: true, text: text }
+  return { ok: true, text: text, warnings: captureWarnings(data) }
 }
 
 // ---- Panel: strips and banners under the status banner ----------------------
@@ -2801,4 +2803,44 @@ function pickDrawnWidget(items, leaving) {
     if (!placeholder) placeholder = item
   }
   return placeholder
+}
+
+// ---- Capture warnings (WP-085) ----------------------------------------------
+
+// The `warnings` of a `capture --json` answer: its strings that are not
+// blank, unchanged (the engine's text, its restore hint included). [] when
+// there are none or the answer has no such list (an engine before 0.1.2).
+function captureWarnings(data) {
+  var list = isObject(data) && Array.isArray(data.warnings) ? data.warnings : []
+  var out = []
+  for (var i = 0; i < list.length; i++)
+    if (typeof list[i] === "string" && list[i].trim() !== "") out.push(list[i])
+  return out
+}
+
+// The neutral notice under the status banners for the warnings of the last
+// capture the plugin ran that exited 0 (Service.captureWarnings), or null
+// when it had none. `detail` is the first line of each warning, one per
+// line; `full` is every warning in full, for the hover, and "" when the
+// detail already shows all of it. No action: no fixed page of the user
+// guide ships with the plugin, and the engine's text names the guide's
+// section. Banner.qml renders it like a status banner, in the neutral tone.
+var CAPTURE_WARNED_TITLE = "Capture warned"
+
+function captureWarningNotice(warnings) {
+  var list = Array.isArray(warnings) ? warnings : []
+  if (list.length === 0) return null
+  var firsts = list.map(firstLine)
+  var detail = firsts.join("\n")
+  var full = list.map(function(w) { return String(w).trim() }).join("\n\n")
+  return {
+    status: "captureWarned",
+    tone: "neutral",
+    title: CAPTURE_WARNED_TITLE,
+    detail: detail,
+    full: full === firsts.join("\n\n") ? "" : full,
+    command: "",
+    actions: [],
+    hint: ""
+  }
 }

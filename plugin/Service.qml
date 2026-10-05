@@ -149,6 +149,12 @@ Item {
   property var logResult: null
   property var openResult: null
   property var captureResult: null
+  // The warnings of the last capture the plugin ran that exited 0 (the
+  // engine's text, Model.captureWarnings), and the panel's notice for them.
+  // A failed or locked capture leaves them: only a capture that finished
+  // can say a warning no longer holds (WP-085).
+  property var captureWarnings: []
+  readonly property var captureNotice: Model.captureWarningNotice(root.captureWarnings)
   property var planResult: null
   property var driftResult: null
   property var decideResult: null
@@ -454,6 +460,7 @@ Item {
       result.pending = false
       root.setResult(args, result)
     }
+    if (args[0] === "capture" && exitCode === 0) root.captureWarnings = result.warnings
     if (exitCode === 0) {
       root.lastError = ""
       root.engineNotInitialised = false
@@ -601,6 +608,8 @@ Item {
       logResult: root.logResult,
       openResult: root.openResult,
       captureResult: root.captureResult,
+      captureWarnings: root.captureWarnings,
+      captureNotice: root.captureNotice ? root.captureNotice.detail : "",
       planResult: root.planResult,
       driftResult: root.driftResult,
       driftShown: root.driftShown,

@@ -16,6 +16,9 @@ import "../Model.js" as Model
 // Left of the text, the status's state pictogram (A11, Model.statusPictogram)
 // in the banner's tone, `pictogramSize` square: 48 in the panel, 96 in the
 // Prime Radiant; none for a status without one (contract mismatch).
+// Tones: "urgent", "neutral" (the foreground: the capture-warning notice,
+// WP-085), else the accent. A banner with `full` shows it in a tooltip
+// while the pointer is over the banner.
 BorderSurface {
   id: root
 
@@ -28,10 +31,14 @@ BorderSurface {
 
   signal actionRequested(string actionId)
 
-  readonly property color toneColor: banner && banner.tone === "urgent" ? urgent : accent
+  readonly property color toneColor: banner && banner.tone === "urgent" ? urgent
+    : banner && banner.tone === "neutral" ? foreground
+    : accent
   readonly property string command: banner && banner.command ? banner.command : ""
   readonly property string hint: banner && banner.hint ? banner.hint : ""
   readonly property string pictogram: banner ? Model.statusPictogram(banner.status) : ""
+  readonly property string tooltipText: banner && banner.full ? banner.full : ""
+  readonly property bool hovered: hover.hovered
 
   visible: banner !== null
   implicitWidth: Style.space(320)
@@ -40,6 +47,16 @@ BorderSurface {
   color: Style.selectedFillFor(toneColor, toneColor)
   borderSpec: Border.controlSpec("normal", toneColor, toneColor)
   padding: Style.spacing.xl
+
+  HoverHandler {
+    id: hover
+  }
+
+  PanelToolTip {
+    visible: root.tooltipText !== "" && hover.hovered
+    text: root.tooltipText
+    fontFamily: root.fontFamily
+  }
 
   MaskIcon {
     id: pictogramIcon

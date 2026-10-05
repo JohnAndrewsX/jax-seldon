@@ -9,8 +9,8 @@ import "Model.js" as Model
 // the `jax.seldon.panel` IPC target that BarWidget.qml owns.
 //
 // Top to bottom: title, tab strip, the status banner (WP-010), the
-// snapper-degraded banner (ADR-0026), the red crisis strip, then the current
-// tab. The banners and the strip sit above the tabs, so every tab shows them.
+// snapper-degraded banner (ADR-0026), the capture-warning notice (WP-085),
+// the red crisis strip, then the current tab. The banners and the strip sit above the tabs, so every tab shows them.
 // Tabs: Today, Changelog, Work, Decisions, System, Memory, in the order of
 // their fixed digits.
 //
@@ -180,6 +180,14 @@ Panel {
       bannerPictogram: statusBanner.visible ? statusBanner.pictogram : "",
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
       snapper: snapperBanner.visible && root.service.snapperBanner ? root.service.snapperBanner.title : "",
+      captureNotice: {
+        title: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.title : "",
+        detail: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.detail : "",
+        tooltip: captureNotice.visible ? captureNotice.tooltipText : "",
+        hovered: captureNotice.hovered,
+        // drawn in the foreground (the neutral tone), not the accent
+        neutral: Qt.colorEqual(captureNotice.toneColor, root.foreground)
+      },
       crisis: crisisStrip.visible ? crisisLabel.text : "",
       today: {
         state: todayTab.dayState ? todayTab.dayState.id : "",
@@ -438,6 +446,17 @@ Panel {
           urgent: root.urgent
           fontFamily: root.fontFamily
           onActionRequested: function(actionId) { if (root.service) root.service.fix(actionId, "snapper") }
+        }
+
+        // The last capture's warnings (WP-085): neutral, no action, until a
+        // capture finishes without them.
+        Banner {
+          id: captureNotice
+          width: parent.width
+          banner: root.service ? root.service.captureNotice : null
+          foreground: root.foreground
+          urgent: root.urgent
+          fontFamily: root.fontFamily
         }
 
         // The red strip (SPEC-PLUGIN §5); a click opens the drift sheet for
