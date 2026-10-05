@@ -131,6 +131,9 @@ enum Command {
     /// Import an earlier logbook (dry run unless --apply)
     Import(commands::import::ImportArgs),
 
+    /// The agent rules in the logbook's AGENTS.md: update
+    Rules(commands::rules::RulesArgs),
+
     /// Print a shell completion script for bash, zsh or fish
     #[command(after_help = "Examples:
   seldon completions bash > ~/.local/share/bash-completion/completions/seldon
@@ -337,6 +340,7 @@ fn run(cli: Cli) -> Result<Output, Error> {
         Command::Watch(a) => commands::watch::run(&ctx, a),
         Command::Dossier(a) => commands::dossier::run(&ctx, a),
         Command::Import(a) => commands::import::run(&ctx, a),
+        Command::Rules(a) => commands::rules::run(&ctx, a),
     }
 }
 
