@@ -83,12 +83,13 @@ const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\
 
 /// The value of an openssl pass phrase option that gives the secret
 /// itself: a [`WORD`] whose first part starts with `pass:`, bare or inside
-/// `'…'`, `"…"` or `$'…'` (`pass:p`, `'pass:p w'`, `pass:'p w'`). The
-/// sources `env:`, `file:`, `fd:` and `stdin` name where the secret is
-/// and are no match; nor is a flag (`-twopass`) before the option, since
-/// the value must hold `pass:` (a check on a [`WORD`] would take the
+/// `'…'`, `"…"` or `$'…'` (`pass:p`, `'pass:p w'`, `pass:'p w'`); a quote
+/// its line does not close, `$"…"` included, takes the rest of the line.
+/// The sources `env:`, `file:`, `fd:` and `stdin` name where the secret
+/// is and are no match; nor is a flag (`-twopass`) before the option,
+/// since the value must hold `pass:` (a check on a [`WORD`] would take the
 /// next option as the flag's value and miss its `pass:`).
-const PASS_ARG: &str = r#"(?:(?:"pass:(?:[^"\\\n]|\\(?s:.))*"|'pass:[^'\n]*'|\$'pass:(?:[^'\\\n]|\\(?s:.))*'|pass:|"pass:[^"\n]*")(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")*(?:['"][^\n]*)?|['"]pass:[^\n]*)"#;
+const PASS_ARG: &str = r#"(?:(?:"pass:(?:[^"\\\n]|\\(?s:.))*"|'pass:[^'\n]*'|\$'pass:(?:[^'\\\n]|\\(?s:.))*'|pass:|"pass:[^"\n]*")(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")*(?:['"][^\n]*)?|\$?['"]pass:[^\n]*)"#;
 
 /// White space between an option and its value, or a line continuation
 /// (`\` before a line end).

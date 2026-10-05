@@ -1294,7 +1294,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     // parts joined to one word: quoted, escaped, continued
     (
         "openssl-pass",
-        "openssl rsa -passin pass:'fa ke'Os10\"x y\"$'z' -in k.pem",
+        "openssl rsa -passin pass:'fa ke'Os10\"x\\\" y\"$'z\\'w' -in k.pem",
         "Os10",
         "-passin ‹redacted› -in k.pem",
     ),
@@ -1313,15 +1313,53 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     // an unclosed quote takes the rest of its line, not the next one
     (
         "openssl-pass",
-        "openssl rsa -passin 'pass:fakeOs13 -in k.pem\nnext 'line'",
+        "openssl rsa -passin 'pass:fakeOs13 \"a -in k.pem\nnext 'line'",
         "fakeOs13",
         "-passin ‹redacted›\nnext 'line'",
     ),
     (
         "openssl-pass",
-        "openssl rsa -passin pass:fake'Os14 -in k.pem\nnext 'line'",
+        "openssl rsa -passin pass:fake'Os14 \"a -in k.pem\nnext 'line'",
         "Os14",
         "-passin ‹redacted›\nnext 'line'",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin \"pass:fakeOs24 -in k.pem\nnext \"line\"",
+        "fakeOs24",
+        "-passin ‹redacted›\nnext \"line\"",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin $'pass:fakeOs25 -in k.pem\nnext 'line'",
+        "fakeOs25",
+        "-passin ‹redacted›\nnext 'line'",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:fake\"Os26 -in k.pem\nnext \"line\"",
+        "Os26",
+        "-passin ‹redacted›\nnext \"line\"",
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:fake$'Os27 -in k.pem\nnext 'line'",
+        "Os27",
+        "-passin ‹redacted›\nnext 'line'",
+    ),
+    // `$"…"` reads as an unclosed quote: the rest of its line goes
+    (
+        "openssl-pass",
+        "openssl rsa -passin $\"pass:fakeOs28\" -in k.pem\nnext",
+        "fakeOs28",
+        "-passin ‹redacted›\nnext",
+    ),
+    // a glued double-quoted part that never closes as escapes are read
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:fake\"Os23\\\" -in k.pem",
+        "Os23",
+        "-passin ‹redacted› -in k.pem",
     ),
     // easyrsa's `--passin=pass:…`
     (
