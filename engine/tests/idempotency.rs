@@ -1787,6 +1787,12 @@ mod crash {
         cli.stub("snapper", "exit 3");
         cli.crash(&at(5), "before-append", &[]);
         assert_eq!(access(&cli).len(), 2, "nothing appended");
+        // a note by hand at the marked time is not Seldon's
+        let out = cli.run_env(
+            &["event", "manual", "note", "--subject", "snapper"],
+            &[("SELDON_NOW", &at(5))],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
         assert_eq!(cli.capture_at(&at(6), &[])["written"], 1);
         assert_eq!(access(&cli)[2], DEGRADED);
         assert_eq!(cli.capture_at(&at(7), &[])["written"], 0);
