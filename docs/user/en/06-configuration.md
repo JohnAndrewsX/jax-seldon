@@ -31,7 +31,7 @@ holds your own path.
 harnesses = ["claude-code"]
 language = "en"
 logbook = "/home/you/Seldon"
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
 
 [collectors]
 config = true
@@ -116,7 +116,10 @@ on, and `seldon doctor` names the fix. Two cases are normal:
   else: your user cannot create, change or delete snapshots with it. Files
   inside a snapshot keep their own permissions.
 - `plugins` asks the running Omarchy shell. When you capture from a TTY
-  without a desktop session, it is degraded for that capture.
+  without a desktop session, it is degraded for that capture. Over ssh or
+  from cron it works while the shell runs on that machine: when
+  `OMARCHY_PATH` is not set there, Seldon gives the Omarchy commands
+  `/usr/share/omarchy`; a value you set is used as it is.
 
 ## Watched paths
 
@@ -125,17 +128,32 @@ file below them at each capture and records what was added, changed or
 removed. It records the path and two short hashes, never the content.
 
 Defaults: `~/.config/hypr`, `~/.config/omarchy`, `~/.config/waybar`,
-`~/.bashrc`, `~/.zshrc`. Missing paths are skipped. A relative path such
-as `.config/nvim` means `~/.config/nvim`; the wizard stores the paths you
-type in that form. Add your own, for example:
+`~/.bashrc`, `~/.zshrc`, `~/.local/share/applications` (the desktop
+entries of your web apps and TUIs). Missing paths are skipped. A relative
+path such as `.config/nvim` means `~/.config/nvim`; the wizard stores the
+paths you type in that form. Add your own, for example:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.config/nvim", "~/.config/systemd/user"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/nvim", "~/.config/systemd/user"]
 ```
+
+The wizard writes the list into `config.toml`, so a file it wrote before
+0.1.4 keeps its own list and does not watch the desktop entries. To
+watch them, add the path to your `watchPaths`:
+
+```toml
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
+```
+
+The files already there when the path enters the list are taken as they
+are: the next capture records no addition for them, and says
+`watch scope changed: 0 file(s) left it, N entered it`.
 
 Always left out:
 
 - `~/.config/omarchy/plugins/` (the plugins collector covers it);
+- `~/.local/share/applications/mimeinfo.cache`: a cache built from the
+  desktop entries, rewritten on many package updates;
 - `.git` folders, and folders reached through a symlink;
 - binary files and files over 1 MiB (listed as skipped, without a hash);
 - files whose name holds a control character, or whose path is longer

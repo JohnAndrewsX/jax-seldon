@@ -7,7 +7,10 @@
 //! hashed, never read beyond the first bytes:
 //!
 //! - Omarchy's plugin directory `~/.config/omarchy/plugins/` (the `plugins`
-//!   collector covers it) and every `.git` directory;
+//!   collector covers it), the desktop entries' MIME cache
+//!   [`MIME_CACHE`] (`update-desktop-database` rewrites it on many package
+//!   transactions; the `.desktop` files it is built from are watched) and
+//!   every `.git` directory;
 //! - files and directories matching `config.toml [redaction] skipPaths`
 //!   ([`SkipPaths`]); they do not appear in the manifest at all;
 //! - binary files (a NUL byte in the first 8000 bytes, as git decides) and
@@ -69,6 +72,10 @@ pub const MANIFEST_FILE: &str = "manifest.json";
 
 /// Files larger than this are not hashed (SPEC-ENGINE §4: "> 1 MB").
 pub const MAX_FILE_SIZE: u64 = 1024 * 1024;
+
+/// The desktop entries' MIME cache relative to `$HOME`, excluded like the
+/// plugin directory: generated from the `.desktop` files next to it.
+pub const MIME_CACHE: &str = ".local/share/applications/mimeinfo.cache";
 
 /// Bytes probed for a NUL to call a file binary (git's heuristic).
 const BINARY_PROBE: usize = 8000;
@@ -977,7 +984,10 @@ impl Collector for ConfigFiles {
             .iter()
             .filter_map(|p| ctx.dirs.expand_config(p))
             .collect();
-        let excluded = [Plugins::dir(ctx.sources, &ctx.dirs.home)];
+        let excluded = [
+            Plugins::dir(ctx.sources, &ctx.dirs.home),
+            ctx.dirs.home.join(MIME_CACHE),
+        ];
         self.collect_from(ctx, cursor, &roots, &excluded, &Manifest::file(ctx.dirs))
     }
 }

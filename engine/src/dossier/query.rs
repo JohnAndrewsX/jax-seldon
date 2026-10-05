@@ -33,8 +33,8 @@ pub struct Hosts {
     /// below it.
     pub hardware_root: PathBuf,
     /// `SELDON_OMARCHY_PACKAGES`, default `$OMARCHY_PATH/install` (and
-    /// `/usr/share/omarchy/install` without `OMARCHY_PATH`): the directory
-    /// of Omarchy's package lists.
+    /// `/usr/share/omarchy/install` without `OMARCHY_PATH`,
+    /// [`sys::omarchy_path`]): the directory of Omarchy's package lists.
     pub omarchy_packages: PathBuf,
 }
 
@@ -45,13 +45,8 @@ impl Hosts {
             sources: Sources::from_env(),
             systemctl: var("SELDON_SYSTEMCTL").unwrap_or_else(|| "systemctl".into()),
             hardware_root: var("SELDON_HARDWARE_ROOT").map_or_else(|| "/".into(), PathBuf::from),
-            omarchy_packages: var("SELDON_OMARCHY_PACKAGES").map_or_else(
-                || {
-                    Path::new(&var("OMARCHY_PATH").unwrap_or_else(|| "/usr/share/omarchy".into()))
-                        .join("install")
-                },
-                PathBuf::from,
-            ),
+            omarchy_packages: var("SELDON_OMARCHY_PACKAGES")
+                .map_or_else(|| sys::omarchy_path().join("install"), PathBuf::from),
         }
     }
 }

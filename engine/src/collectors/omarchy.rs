@@ -95,10 +95,10 @@ fn already_recorded(ctx: &Ctx, from: &str, to: &str) -> anyhow::Result<bool> {
         .is_some_and(|e| e.meta.from.as_deref() == Some(from) && e.meta.to.as_deref() == Some(to)))
 }
 
-/// `omarchy-version`, else the version column of the package query (also
-/// read by `seldon dossier`).
+/// `omarchy-version` (with `OMARCHY_PATH` defaulted,
+/// [`sys::omarchy_command`]), else the version column of the package query
+/// (also read by `seldon dossier`).
 pub fn current_version(sources: &Sources) -> Option<String> {
-    let run = |program: &str, args: &[&str]| sys::run(program, args, None, RUN_TIMEOUT);
     let ok = |run: Run| match run {
         Run::Exited {
             code: Some(0),
@@ -108,13 +108,19 @@ pub fn current_version(sources: &Sources) -> Option<String> {
         _ => None,
     };
     let valid = |v: &str| !v.is_empty() && !v.contains(char::is_whitespace);
-    if let Some(out) = ok(run(&sources.omarchy_version, &[])) {
+    let omarchy_version = sys::omarchy_command(&sources.omarchy_version, &[]);
+    if let Some(out) = ok(sys::run_command(omarchy_version, RUN_TIMEOUT)) {
         let v = out.trim();
         if valid(v) {
             return Some(v.to_string());
         }
     }
-    let out = ok(run(&sources.pacman, &["-Q", "omarchy"]))?;
+    let out = ok(sys::run(
+        &sources.pacman,
+        &["-Q", "omarchy"],
+        None,
+        RUN_TIMEOUT,
+    ))?;
     let mut words = out.split_whitespace();
     match (words.next(), words.next()) {
         (Some("omarchy"), Some(v)) if valid(v) => Some(v.to_string()),

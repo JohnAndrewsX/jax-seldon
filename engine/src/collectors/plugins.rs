@@ -147,7 +147,7 @@ impl Plugins {
             return Outcome::degraded("omarchy plugin list --json returned no plugins", None);
         }
 
-        let manifests = catalog(ctx, omarchy);
+        let manifests = catalog(omarchy);
         let mut snapshot = BTreeMap::new();
         let mut seen = BTreeMap::new();
         for p in listed {
@@ -254,10 +254,12 @@ fn unrecorded(
 }
 
 /// `omarchy plugin list --json`, or the message to degrade with (also
-/// read by `seldon dossier`).
+/// read by `seldon dossier`). `OMARCHY_PATH` defaults as
+/// [`sys::omarchy_command`] says: `omarchy-shell` refuses to run without it.
 pub fn list(omarchy: &str) -> Result<Vec<Listed>, String> {
     const WHAT: &str = "omarchy plugin list --json";
-    match sys::run(omarchy, &["plugin", "list", "--json"], None, RUN_TIMEOUT) {
+    let cmd = sys::omarchy_command(omarchy, &["plugin", "list", "--json"]);
+    match sys::run_command(cmd, RUN_TIMEOUT) {
         Run::Exited {
             code: Some(0),
             stdout,
@@ -287,14 +289,18 @@ pub fn list(omarchy: &str) -> Result<Vec<Listed>, String> {
     }
 }
 
-/// id → manifest path from `omarchy plugin catalog`; empty if it fails (the
-/// manifest fallback and the remembered versions cover that).
-fn catalog(ctx: &Ctx, omarchy: &str) -> BTreeMap<String, PathBuf> {
+/// id → manifest path from `omarchy plugin catalog` (it walks
+/// `$OMARCHY_PATH/shell/plugins`); empty if it fails (the manifest
+/// fallback and the remembered versions cover that).
+fn catalog(omarchy: &str) -> BTreeMap<String, PathBuf> {
     let Run::Exited {
         code: Some(0),
         stdout,
         ..
-    } = ctx.run(omarchy, &["plugin", "catalog"])
+    } = sys::run_command(
+        sys::omarchy_command(omarchy, &["plugin", "catalog"]),
+        RUN_TIMEOUT,
+    )
     else {
         return BTreeMap::new();
     };

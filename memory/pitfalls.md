@@ -1681,3 +1681,34 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **Clippy `type_complexity` fires on test tables** like
   `[(&str, &[(&str, bool, &str)], &str); 3]`; keep the table to scalars
   and build the nested value inside the loop.
+
+## 2026-10-05 · WP-089 (Engine Dev)
+
+- **`omarchy plugin catalog` needs `OMARCHY_PATH` too** (it walks
+  `$OMARCHY_PATH/shell/plugins`), not only `plugin list` (whose
+  `omarchy-shell` fails with "OMARCHY_PATH is not set"). `omarchy-version`
+  defaults the variable itself, but prints `dev` for any value other than
+  `/usr/share/omarchy`. Every Omarchy program the engine runs that reads
+  `OMARCHY_PATH` (the `omarchy-shell` IPC behind `plugin list`, `plugin
+  catalog`, `omarchy-version`) goes through `sys::omarchy_command`; a new
+  call site of such a program must too. `omarchy hook install`
+  (setup.rs), the agent launcher and `omarchy-launch-editor` do not read
+  it and are not routed.
+- **`omarchy-shell` needs no `XDG_RUNTIME_DIR` or `WAYLAND_DISPLAY`:** it
+  falls back to `/run/user/$UID` and finds the compositor socket itself.
+  With `env -i` (only PATH, HOME, the XDG dirs) the plugins capture is
+  `ok: true` while the shell runs (WP-089 review; my first note claimed
+  the opposite without trying it).
+- **`manifest.json` is flat:** `Manifest.current` is
+  `#[serde(flatten)]`, so `manifest["current"]` is `null` in a test.
+  Deserialise into `seldon::collectors::config::Manifest`.
+- **`seldon dossier --section` takes group names** (`packages`,
+  `plugins`, …), not fence names (`packages.summary`): exit 1.
+- **A new exclusion changes every manifest's `scope.exclude`**, so the
+  first capture after the upgrade runs `rescope` once; it prints no
+  notice while no file lies under the new exclusion.
+- **Desktop entry names are user-chosen.** A web app's name can hold
+  personal data (an address in the name); with
+  `~/.local/share/applications` watched, the name is an event subject,
+  and the redaction rules have no address rule (SPEC-ENGINE §7).
+  `skipPaths` keeps such a file out.
