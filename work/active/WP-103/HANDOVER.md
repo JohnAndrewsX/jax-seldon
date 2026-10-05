@@ -397,3 +397,29 @@ discarded.
 - No guard-hook blocks. Scratch benches only. The mutant script and the
   probe stayed in the session scratchpad; the probe test was deleted
   unseen by git.
+
+## Round 3 (round-2 verification: APPROVE; two SPEC clauses)
+
+Commits: `591f3a9` (SPEC-ENGINE §4), this section. Docs only; no code
+or test changed.
+
+- **N1.** The second known limit now reads "a change stamped with the
+  restored cursor's check (an older mtime, or one in the same second as
+  that check) is recorded again". This is the reviewer's real-time c03.
+  My CLI test pins `SELDON_NOW` and sets the mtime between the captures,
+  so it does not show this limit.
+- **N2.** A third known limit, the change-side twin of r10. After a
+  failed cursor save, a change the previous capture made at its check
+  time is read again and can go to a twin with the same content (a false
+  `config-change` for that twin).
+  - I named only the change, not an addition. A reflected addition at
+    the check fits only a twin that `base` lacks. If that twin was added
+    by the failed capture, its own addition is then left over and the
+    end state is the same; I found no input where it writes a false line.
+- **Follow-up.** The paragraph ends: "A marker of the last event a
+  capture wrote, kept in the cursor, removes all three (a follow-up
+  WP)".
+- **Checks.** `scripts/docs-check.sh`: ok. No touched line is over 80
+  characters. The full check was not rerun (doc-only, per the round
+  brief).
+- No guard-hook blocks; nothing outside the repository.
