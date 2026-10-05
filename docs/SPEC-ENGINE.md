@@ -1182,8 +1182,9 @@ quote ends at the line end); `x264 --pass 1` (`--pass` names a
 credential); a certificate's file name next to its password; an option
 value at the end of a quoted string (`bash -c "curl -u a:b" && echo
 "x"`), which joins the next quoted part as adjacent shell parts would;
-the word after `-a` on a line that holds `http`, `https`, `xh` or `xhs`
-as a word followed by white space (`http redirect … ls -a home`); and a
+the word after `-a` on a line that holds, or follows a line ending in,
+`http`, `https`, `xh` or `xhs` as a word followed by white space (`http
+redirect … ls -a home`; the gap after the word may be a line end); and a
 `\` at the end of a comment, which continues the command for redaction
 (bash does not). `cert-password` compiles on any curl line holding `-e`
 (`set -e`, `sudo -E`), about 0.3 ms per hook call; accepted. An e-mail address
