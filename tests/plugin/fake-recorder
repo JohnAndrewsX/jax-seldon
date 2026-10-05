@@ -2,8 +2,15 @@
 # Stand-in for wl-copy and the Omarchy terminal launcher in
 # tests/plugin/service-states.sh: records its name and argv, one per line,
 # then "--", to $HARNESS_RECORD. The service starts these detached and
-# concurrently, so the whole record goes out in one append (one write(2)).
+# concurrently, so the whole record must go out in one append (one
+# write(2)). Bash's printf does not do that: bash line-buffers stdout, so
+# two recorders interleave line by line (WP-090). The record is staged in a
+# private file next to the record and appended by cat, which copies a file
+# this small with one read and one write. The staging file stays; it lives
+# in the harness's temp dir.
 record="$(basename "$0")"$'\n'
 for arg in "$@"; do record+="$arg"$'\n'; done
 record+=$'--\n'
-printf '%s' "$record" >>"$HARNESS_RECORD"
+part="$HARNESS_RECORD.$$"
+printf '%s' "$record" >"$part"
+cat "$part" >>"$HARNESS_RECORD"
