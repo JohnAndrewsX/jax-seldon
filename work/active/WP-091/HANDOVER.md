@@ -239,3 +239,94 @@ and S8 first did not compile and were rewritten).
 - A crash between the ledger append and the cursor save repeats the
   access note on the next capture, as it repeats a state-reset note;
   same accepted limitation.
+
+---
+
+# Round 2 (stage 1 APPROVE with fixes, stage 2 APPROVE after this round)
+
+Commits (oldest first), no rebase:
+
+- `8fcc111` engine: round 2 wording, crash limitation, reset-row test (WP-091)
+- `592f833` docs: guide 10 (de) names the waiting row (WP-091)
+- this commit: handover round 2
+
+## What changed
+
+- **F1 (SPEC only).** SPEC §3, after "a loss is recorded once": the
+  known limitation, in the brief's words. A crash between the ledger
+  append and the `cursors.json` save repeats the `state-reset` note and
+  the snapper access note. Collector events are not repeated. §4's
+  snapper paragraph now says "each change is recorded once (except after
+  a crash …, §3 state reset, known limitation)". There is no ledger
+  dedup (WP-099).
+- **F2.** `a_collector_not_run_in_the_reset_records_its_gap_when_it_runs`
+  now asserts, right after the bare entry is written, that doctor has
+  exactly one "the last capture recorded a state reset: " row and that
+  it starts with `pacman took a new baseline (`. Mutant **R2** (a missing
+  `lastRun` read as `2999-01-01T00:00:00+00:00` in `check_reset`) is
+  **killed**. It fails at that assertion (`idempotency.rs:1225`, `left:
+  0`): the row is gone, and only the waiting row is left. lib, doctor and
+  the other idempotency tests stay green under R2.
+- **F3.** The note now says "at its last run" instead of "at the last
+  capture". The change is in `capture.rs` (3 strings), SPEC §4 and the 4
+  quoting assertions in `idempotency.rs`. TESTING.md does not quote the
+  detail.
+- **Decision 2.** There is a CHANGELOG line under Unreleased → Engine,
+  and `docs/VERSIONING.md` has a "Downgrading the engine is not
+  supported" paragraph at the end of "What the numbers promise". Both use
+  the brief's text.
+- **Decision 3.** In guide 10, the `state` row's degraded clause names
+  the waiting row: en with the brief's text, de with the brief's
+  translation. The de source line is now `en/10-troubleshooting.md @
+  8fcc111`, the commit that holds the en change. docs-check reports no
+  translation warning for page 10.
+- D1 and D4 are as decided; there is no code change.
+
+## Verified by
+
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+  are clean. Full `cargo test --no-fail-fast` has 0 failures
+  (idempotency 34). `bash scripts/docs-check.sh` reports ok. Its only
+  warning is the existing `de/06-configuration.md` one.
+- `flock /tmp/seldon-check.lock just check`: **exit 0 on the 4th run**,
+  ending with `check: ok`. Results: bar-view 143/0, panel-view 771/0,
+  overlay-view 319/0, service-states 297/0, install.test 209/0,
+  real-home-guard 11/0, model.test.js 88.
+- The first three runs failed for reasons outside this WP. Nothing was
+  changed between the runs.
+  - **Runs 1 and 2:** `service-states` FAILED in the real-home guard with
+    "`~/.local/state/seldon/agent-launch.log` changed".
+    - Cause: the operator's installed plugin launched real agents during
+      the runs. At 15:10:21, `ps` shows `foot
+      --app-id=org.omarchy.agent -e claude … case C-2026-011 … at
+      ~/Seldon`. The run-1 launch at 14:47:47 lies in the same kind of
+      window. `seldon agent` writes the launcher's stderr there (foot's
+      `xdg-toplevel-icon` warnings).
+    - The guard allows `index.json`, `lock`, `cursors.json` and
+      `manifest.json` from the operator's live engine, but not
+      `agent-launch.log`. So a real agent launch during a check fails
+      it.
+    - `plugin-test` stops there, so bar, panel and overlay did not run
+      in those two.
+    - I did not touch the operator's agent.
+  - **Run 3:** `check-watch` FAILED in
+    `watch::with_feature::rss_stays_under_10_mb_on_the_x10_fixture`
+    (debug build): growth 6296 kB against the 6144 kB bound, at load
+    average 6.
+    - The same test passed in runs 1 and 2 and in round 1, and 3 times
+      alone afterwards.
+    - This WP's only index change is round 1's one-line `and_then`,
+      which was also in all those green runs.
+
+## Notes for the orchestrator
+
+- **Real-home guard gap (not fixed, not in scope):**
+  `tests/plugin/real-home-guard.sh` `real_engine_files` lacks
+  `agent-launch.log`. On a dev host whose operator launches agents from
+  the plugin, the check fails whenever a launch falls into a
+  `service-states` run.
+  - Proposal for a small follow-up: allow `agent-launch.log` to grow
+    (size only up, same path), like the other engine files.
+- **The watch RSS bound in debug builds** has about 150 kB of headroom
+  under load. It is worth watching if it fails again.
+- No guard-hook block happened. The real host was not touched.
