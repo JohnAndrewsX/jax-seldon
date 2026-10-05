@@ -21,12 +21,16 @@
 //! - **The engine's own writes** (rule 7): [`explain_own_writes`] explains
 //!   each new config event that reports a file `init` or `hook install`
 //!   wrote, with one `explained` resolution right after the append.
+//! - **Seldon updating itself** (rule 8): [`explain_own_changes`] explains
+//!   each new event of its own plugin or package
+//!   ([`attribution::own_change`]) the same way.
 
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
+use crate::attribution;
 use crate::collectors::config::OwnWrites;
 use crate::error::{Error, Result};
 use crate::index::Built;
@@ -324,6 +328,46 @@ pub fn explain_own_writes(
     (explained, warnings)
 }
 
+/// The `explained` resolutions rule 8 writes: one per written event
+/// without a case that is Seldon changing itself
+/// ([`attribution::own_change`]); `source: seldon`, actor `system`, no
+/// case, the reason as detail, at `ts`.
+pub fn own_change_resolutions(written: &[Event], ts: DateTime<FixedOffset>) -> Vec<Event> {
+    written
+        .iter()
+        .filter(|e| e.case.is_none())
+        .filter_map(|e| {
+            let why = attribution::own_change(e)?;
+            let mut r = Event::new(ts, Source::Seldon, Kind::Resolution, e.subject.clone())
+                .actor(ACTOR_SYSTEM)
+                .detail(why);
+            r.refers_to = Some(e.id);
+            r.resolution = Some(Resolution::Explained);
+            Some(r)
+        })
+        .collect()
+}
+
+/// After every capture (SPEC-ENGINE §5 rule 8): appends the
+/// [`own_change_resolutions`] of `written`. Returns how many events were
+/// explained, and a warning: the append already happened, so nothing here
+/// fails the capture.
+pub fn explain_own_changes(
+    lock: &Lock,
+    ledger: &Ledger,
+    written: &[Event],
+    ts: DateTime<FixedOffset>,
+) -> (usize, Option<String>) {
+    let lines = own_change_resolutions(written, ts);
+    if lines.is_empty() {
+        return (0, None);
+    }
+    match ledger.append(lock, lines) {
+        Ok(lines) => (lines.len(), None),
+        Err(e) => (0, Some(format!("seldon's own changes not explained: {e}"))),
+    }
+}
+
 /// `body` with `text` as the last line of its `## <name>` section (after
 /// the template's comment); unchanged when there is no such section.
 pub fn append_to_section(body: &str, name: &str, text: &str) -> String {
@@ -414,6 +458,64 @@ mod tests {
         let mut file = case_file(&[&c]);
         attach(&mut file, &[&a], |_| None);
         assert_eq!(file.case.events, [c.id.to_string(), a.id.to_string()]);
+    }
+
+    #[test]
+    fn seldons_own_changes_without_a_case_are_explained() {
+        let at = "2026-10-01T10:00:00+02:00";
+        let own = |n, source, kind, subject: &str| {
+            let mut e = event(n, at, source);
+            e.kind = kind;
+            e.subject = subject.into();
+            e
+        };
+        let plugin =
+            own(1, Source::Plugins, Kind::PluginUpdate, "jax.seldon").actor("agent:claude-code");
+        let package = own(2, Source::Pacman, Kind::Upgrade, "jax-seldon");
+        let cased = own(3, Source::Plugins, Kind::PluginEnable, "jax.seldon")
+            .case(Some("C-2026-001".into()));
+        let other = own(
+            4,
+            Source::Plugins,
+            Kind::PluginUpdate,
+            "io.github.example.tyme",
+        );
+        let now = ts("2026-10-01T10:20:00+02:00");
+        let lines = own_change_resolutions(&[plugin.clone(), package.clone(), cased, other], now);
+        let got: Vec<_> = lines
+            .iter()
+            .map(|r| {
+                (
+                    r.refers_to,
+                    r.subject.clone(),
+                    r.detail.clone(),
+                    r.source,
+                    r.actor.clone(),
+                    r.resolution,
+                    r.case.is_none(),
+                    r.ts,
+                )
+            })
+            .collect();
+        let line = |e: &Event, detail: &str| {
+            (
+                Some(e.id),
+                e.subject.clone(),
+                Some(detail.to_string()),
+                Source::Seldon,
+                ACTOR_SYSTEM.to_string(),
+                Some(Resolution::Explained),
+                true,
+                now,
+            )
+        };
+        assert_eq!(
+            got,
+            [
+                line(&plugin, "seldon's own plugin"),
+                line(&package, "seldon's own package")
+            ]
+        );
     }
 
     #[test]

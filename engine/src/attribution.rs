@@ -37,6 +37,12 @@
 //!
 //!   The latest proving command wins. Events that already carry an actor
 //!   other than `system` or a case are left alone.
+//!
+//! Seldon's own changes ([`own_change`], SPEC-ENGINE §5 rule 8): its plugin
+//! [`OWN_PLUGIN`] added, updated, enabled or disabled, its package
+//! [`OWN_PACKAGE`] installed, upgraded, downgraded or reinstalled. The
+//! event keeps the actor this pass gives it; `seldon capture` explains it
+//! after the append, so it is no drift.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -50,6 +56,30 @@ use crate::redact::Redactor;
 /// How long before a collector event (a pacman transaction's start) an
 /// agent command still counts as its cause (ADR-0014 §1, ADR-0017 §2).
 pub const ATTRIBUTION_WINDOW: Duration = Duration::minutes(10);
+
+/// The plugin's own id (`plugin/manifest.json`).
+pub const OWN_PLUGIN: &str = "jax.seldon";
+
+/// The engine's own package (`packaging/PKGBUILD`, `pkgname`).
+pub const OWN_PACKAGE: &str = "jax-seldon";
+
+/// Why `e` is Seldon changing itself (SPEC-ENGINE §5 rule 8), as the
+/// detail of its explanation; `None` for every other event. A removal is
+/// not Seldon updating itself: it stays drift.
+pub fn own_change(e: &Event) -> Option<&'static str> {
+    match (e.source, e.kind) {
+        (
+            Source::Plugins,
+            Kind::PluginAdd | Kind::PluginUpdate | Kind::PluginEnable | Kind::PluginDisable,
+        ) if e.subject == OWN_PLUGIN => Some("seldon's own plugin"),
+        (Source::Pacman, Kind::Install | Kind::Upgrade | Kind::Downgrade | Kind::Reinstall)
+            if e.subject == OWN_PACKAGE =>
+        {
+            Some("seldon's own package")
+        }
+        _ => None,
+    }
+}
 
 /// A hook command that can cause collector events.
 #[derive(Debug, Clone)]
@@ -371,6 +401,55 @@ mod tests {
         assert_eq!(theme_slug("Tokyo Night"), "tokyo-night");
         assert_eq!(theme_slug("<i>Kanagawa</i>"), "kanagawa");
         assert_eq!(theme_slug("tokyo-night"), "tokyo-night");
+    }
+
+    #[test]
+    fn own_changes_are_seldons_plugin_and_package_but_no_removal() {
+        let at = DateTime::parse_from_rfc3339("2026-10-01T10:00:00+02:00").unwrap();
+        let own = |source, kind, subject: &str| own_change(&Event::new(at, source, kind, subject));
+        for kind in [
+            Kind::PluginAdd,
+            Kind::PluginUpdate,
+            Kind::PluginEnable,
+            Kind::PluginDisable,
+        ] {
+            assert_eq!(
+                own(Source::Plugins, kind, OWN_PLUGIN),
+                Some("seldon's own plugin"),
+                "{kind:?}"
+            );
+        }
+        for kind in [
+            Kind::Install,
+            Kind::Upgrade,
+            Kind::Downgrade,
+            Kind::Reinstall,
+        ] {
+            assert_eq!(
+                own(Source::Pacman, kind, OWN_PACKAGE),
+                Some("seldon's own package"),
+                "{kind:?}"
+            );
+        }
+        // removing Seldon is somebody's change to the system
+        assert_eq!(own(Source::Plugins, Kind::PluginRemove, OWN_PLUGIN), None);
+        assert_eq!(own(Source::Pacman, Kind::Remove, OWN_PACKAGE), None);
+        // other plugins and packages, and the names in another source
+        for (source, kind, subject) in [
+            (
+                Source::Plugins,
+                Kind::PluginUpdate,
+                "io.github.example.tyme",
+            ),
+            (Source::Plugins, Kind::PluginUpdate, "jax.seldon-extra"),
+            (Source::Plugins, Kind::PluginUpdate, OWN_PACKAGE),
+            (Source::Pacman, Kind::Upgrade, "jax-seldon-git"),
+            (Source::Pacman, Kind::Upgrade, OWN_PLUGIN),
+            (Source::Config, Kind::ConfigChange, OWN_PLUGIN),
+            (Source::Omarchy, Kind::Upgrade, OWN_PACKAGE),
+        ] {
+            assert_eq!(own(source, kind, subject), None, "{source:?} {subject}");
+        }
     }
 
     #[test]
