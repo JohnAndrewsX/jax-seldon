@@ -219,6 +219,11 @@ redacted value reads `‹redacted›`. The built-in rules cover:
   `--proxy` or in `https_proxy=`;
 - the user and password in a URL (`https://user:secret@host`), also
   when the password contains `/`, `?`, `#` or `:`.
+- the part before the `@` of an e-mail address: `me@example.com` reads
+  `‹redacted›@example.com`. An SSH remote (`git@github.com:owner/repo`),
+  `user@host` without a dot, package versions (`pkg@1.2.3`) and systemd
+  units (`getty@tty1.service`) stay; `ssh me@host.example` looks like an
+  address and is masked too.
 
 Text written before a rule existed stays as it is.
 
@@ -229,6 +234,10 @@ regular expressions; each one replaces its whole match:
 [redaction]
 patterns = ["MYAPP_SESSION=\\S+", "acme_[0-9A-Za-z]{24}"]
 ```
+
+The domain of an address stays visible. If yours names you, add a
+pattern for it: `"@smith\\.example\\b"` turns `jo@smith.example` into
+`‹redacted›‹redacted›`.
 
 An invalid pattern is an error (exit 1): Seldon refuses to write rather
 than leak.
@@ -244,6 +253,14 @@ above into your list if you want to keep them.
 [redaction]
 skipPaths = ["~/.config/hypr/secrets.lua", "*.key", "**/tokens/**"]
 ```
+
+The name of a file under a watched path is the subject of its events.
+A desktop entry you named after an account, such as a web app
+`Mail (me@example.com).desktop`, therefore reaches the logbook as
+`Mail (‹redacted›@example.com).desktop`. To keep such a file out
+altogether, add its name to `skipPaths`, for example `"*@*.desktop"`
+for every desktop entry with an `@` in its name; events written before
+keep the name they were written with.
 
 | Pattern | Matches |
 |---|---|
