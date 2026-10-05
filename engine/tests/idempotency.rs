@@ -2676,6 +2676,54 @@ mod crash {
     }
 
     #[test]
+    fn the_marker_counts_config_events_only() {
+        // the theme collector's event at the check stands before the
+        // config removal in the ledger; the cursor's marker counts config
+        // events, or the removal is read again after a crash before the
+        // cursor save and goes to the twin with the same content (WP-107)
+        let cli = Cli::new();
+        let at = clock();
+        let apps = cli.env.home.join(".local/share/applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        let entry = |name: &str| apps.join(format!("Mail ({name}.webapp@example.com).desktop"));
+        for name in ["alice", "bob"] {
+            std::fs::write(entry(name), "[Desktop Entry]\nName=Same\n").unwrap();
+        }
+        let other = cli.env.home.join(".config/hypr/other.conf");
+        std::fs::create_dir_all(other.parent().unwrap()).unwrap();
+        std::fs::write(&other, "x\n").unwrap();
+        cli.capture_at(&at(0), &[]);
+
+        let theme = cli.env.tmp.path().join("theme.name");
+        std::fs::write(&theme, "kanagawa\n").unwrap();
+        let mtime = chrono::DateTime::parse_from_rfc3339(&at(10)).unwrap();
+        let mtime =
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(mtime.timestamp() as u64);
+        let file = std::fs::File::options().write(true).open(&theme).unwrap();
+        file.set_modified(mtime).unwrap();
+        std::fs::remove_file(entry("alice")).unwrap();
+        assert_eq!(cli.capture_at(&at(10), &[])["written"], 2);
+        let order: Vec<Source> = cli
+            .ledger()
+            .iter()
+            .rev()
+            .take(2)
+            .rev()
+            .map(|e| e.source)
+            .collect();
+        assert_eq!(order, [Source::Theme, Source::Config], "both at the check");
+        assert_eq!(
+            cli.cursors()["collectors"]["config"]["cursor"]["atCheck"],
+            1
+        );
+
+        std::fs::write(&other, "y\n").unwrap();
+        cli.crash(&at(20), "after-append", &[]);
+        let again = cli.capture_at(&at(30), &[]);
+        assert_eq!(again["written"], 0, "{again}");
+    }
+
+    #[test]
     fn the_snapper_note_is_written_once() {
         let cli = Cli::new();
         let at = clock();
