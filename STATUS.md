@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-097 | redaction: remaining credential forms on command lines | Engine | `engine-097` (opus) | `wt/WP-097` · `wp/097-redact-forms` | 2026-10-05 |
+| — | no active work package | | | | |
 
 ## Queued (next up)
 
@@ -44,6 +44,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-097 redaction covers the remaining command-line forms:
+  continued lines, quoted strings across lines, redirections inside a
+  command, curl `--pass`/`--proxy-pass`/`--oauth2-bearer`, `-E`/`--cert`
+  passwords, `http`/`xh -a`, wget `--http-password`; values read as one
+  shell word; triggers narrowed so common lines pay nothing (hook 900
+  lines ≈ 4.6 ms); Opus review, Fable stage 2, three rounds; merged.
 - 2026-10-05 WP-103 the config collector replays its events on every
   capture (no more normal-path ledger dedupe that dropped real events);
   twins with a masked name part are told apart; a restored older state
