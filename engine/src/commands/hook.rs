@@ -21,9 +21,10 @@
 //!   other change (a file written outside `watchPaths` and the logbook, a
 //!   foreign package manager's install, `git` outside `~/.config`) is green
 //!   and recorded only while a case is set (ADR-0019).
-//! - `hook generic` reads `{"command","actor","cwd","startedAt"?,"case"?}`
-//!   (`--case` wins over the field, either over `.seldon/active-case`):
-//!   the same classification for any agent, called before the command runs.
+//! - `hook generic` reads `{"command","actor"?,"cwd","startedAt"?,"case"?}`
+//!   (`--case` wins over the field, either over `.seldon/active-case`;
+//!   without `actor`, `$SELDON_ACTOR`): the same classification for any
+//!   agent, called before the command runs.
 //! - Not read yet (a follow-up): commands run by `xargs`, `find -exec` or
 //!   an interpreter (`python -c`, `node -e`).
 //! - `hook session-start` prints the context block an agent starts with.
@@ -52,7 +53,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::capture::{self, CaptureArgs};
-use super::event::{clip, parse_case_id, parse_person};
+use super::event::{ACTOR_ENV, clip, env_actor, parse_case_id, parse_person};
 use super::{Context, Output, autocommit};
 use crate::attribution::{home_path, normalise};
 use crate::collectors::config::{OwnOp, SkipPaths};
@@ -111,7 +112,8 @@ pub enum HookCommand {
     },
     /// Record a Claude Code tool call (hook payload on stdin; silent, exit 0)
     ClaudeCode,
-    /// Record any agent's command ({"command","actor","cwd","startedAt"?,"case"?} on stdin)
+    /// Record any agent's command ({"command","actor"?,"cwd","startedAt"?,"case"?} on
+    /// stdin; without "actor", $SELDON_ACTOR)
     Generic {
         /// The case the command belongs to (default: `.seldon/active-case`)
         #[arg(long = "case", value_name = "ID", value_parser = parse_case_id)]
@@ -596,7 +598,9 @@ struct ToolPayload {
 #[serde(rename_all = "camelCase")]
 struct GenericPayload {
     command: String,
-    actor: String,
+    /// Default `$SELDON_ACTOR` (WP-096); one of the two is needed.
+    #[serde(default)]
+    actor: Option<String>,
     #[serde(default)]
     cwd: Option<String>,
     #[serde(default)]
@@ -754,10 +758,17 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
 fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> {
     let payload: GenericPayload = serde_json::from_str(stdin).map_err(|e| {
         Error::user(format!(
-            "stdin is not {{\"command\",\"actor\",\"cwd\",\"startedAt\"?,\"case\"?}}: {e}"
+            "stdin is not {{\"command\",\"actor\"?,\"cwd\",\"startedAt\"?,\"case\"?}}: {e}"
         ))
     })?;
-    let actor = parse_person(&payload.actor).map_err(Error::user)?;
+    let actor = match &payload.actor {
+        Some(actor) => parse_person(actor).map_err(Error::user)?,
+        None => env_actor(parse_person)?.ok_or_else(|| {
+            Error::user(format!(
+                "stdin has no \"actor\" and {ACTOR_ENV} is not set; name human or agent:<name>"
+            ))
+        })?,
+    };
     let case = match case_flag.or(payload.case) {
         Some(id) => Some(parse_case_id(&id).map_err(Error::user)?),
         None => None,

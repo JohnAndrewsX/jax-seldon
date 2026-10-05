@@ -189,6 +189,19 @@ prompt is a command-line argument, so it is visible in the process list
 launches keeps it. Once the agent's first command is recorded, the card
 shows its name.
 
+The agent also gets two environment variables. `SELDON_ACTOR` is
+`agent:` and the launcher's name (`agent:default` for the default
+launcher). `seldon log`, `plan`, `drift`, `event` and `hook generic`
+record that name when `--actor` (for `hook generic`, `"actor"`) is
+missing, so a note or a case step the agent forgets to sign is recorded
+as the agent, never as you. `event` first takes the agent command it
+finds in the ledger, with that command's case. `SELDON_ATTENDED=1` tells the agent
+that you started it: the logbook's rules (`AGENTS.md`) say what it may
+do then. Seldon itself never reads it. Both variables reach the agent
+only when the launcher starts the terminal; a terminal server
+(`footclient`, `kitty --single-instance`, a wezterm mux) reuses its own
+environment, and then only `--actor` names the agent.
+
 By default the engine starts Omarchy's default coding agent, through
 `omarchy agent prompt`, in its own terminal window. Which agent that is
 depends on your Omarchy setup. If it is Claude Code, the hooks from the
@@ -239,6 +252,7 @@ seldon hook session-stop --actor agent:codex
 
 The JSON may also carry `"startedAt"` (a timestamp) and `"case"` (a case
 id instead of the active case). The actor is always `agent:` and a name.
+Without `"actor"`, `seldon hook generic` takes `SELDON_ACTOR`.
 `seldon hook generic` is silent and always exits 0, so it never breaks
 the agent.
 

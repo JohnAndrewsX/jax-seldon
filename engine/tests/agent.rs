@@ -422,3 +422,128 @@ fn needs_a_logbook() {
     let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(3));
 }
+
+/// A stub `name` that writes `SELDON_ACTOR|SELDON_ATTENDED` as it got them
+/// to `<tmp>/<name>.vars`.
+fn vars_stub(env: &Env, name: &str) -> PathBuf {
+    let vars = env.tmp.path().join(name).with_extension("vars");
+    env.stub(
+        name,
+        &format!(
+            "printf '%s|%s\\n' \"${{SELDON_ACTOR-unset}}\" \"${{SELDON_ATTENDED-unset}}\" > '{}'",
+            vars.display()
+        ),
+    );
+    vars
+}
+
+/// WP-096: the launched agent gets `SELDON_ACTOR=agent:<launcher name>`
+/// and `SELDON_ATTENDED=1`, whatever the caller had set.
+#[test]
+fn the_launched_agent_gets_its_actor_and_the_attended_marker() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    let default = vars_stub(&env, "omarchy");
+    let named = vars_stub(&env, "claude-stub");
+    add_config(
+        &env,
+        "[agent.launchers]\n\"Claude Code\" = [\"claude-stub\", \"{prompt}\"]\n\
+         \"___\" = [\"claude-stub\", \"{prompt}\"]",
+    );
+    let start = |args: &[&str], inherited: bool| {
+        let mut cmd = env.command(&[&["agent", "start"], args, &["--json"]].concat());
+        cmd.env("SELDON_NOW", T0);
+        if inherited {
+            cmd.env("SELDON_ACTOR", "agent:caller")
+                .env("SELDON_ATTENDED", "0");
+        }
+        cmd.output().unwrap()
+    };
+
+    let out = start(&["C-2026-001"], false);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(read(&default), "agent:default|1\n");
+    assert_eq!(json(&out)["actor"], "agent:default");
+
+    let out = start(&["C-2026-003", "--launcher", "Claude Code"], true);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(read(&named), "agent:claude-code|1\n", "not the caller's");
+    assert_eq!(json(&out)["actor"], "agent:claude-code");
+    let out = env.at(
+        T0,
+        &["agent", "start", "C-2026-001", "--launcher", "omarchy"],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .contains(", as agent:omarchy"),
+    );
+    assert_eq!(read(&default), "agent:omarchy|1\n");
+
+    // a name that gives no actor: refused before anything changes
+    std::fs::remove_file(&named).unwrap();
+    let out = start(&["C-2026-003", "--launcher", "___"], false);
+    assert_eq!(out.status.code(), Some(1));
+    let message = json(&out)["error"]["message"].as_str().unwrap().to_string();
+    assert!(message.contains("its name gives no actor"), "{message}");
+    assert!(!named.exists(), "nothing launched");
+    assert_eq!(active_case(&root).as_deref(), Some("C-2026-001"));
+}
+
+/// WP-096 end to end: the launched agent's own `seldon` call without
+/// `--actor` is recorded as the agent, not as human.
+#[test]
+fn the_launched_agents_writes_are_recorded_as_the_agent() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    let tmp = env.tmp.path();
+    let (go, done) = (tmp.join("go"), tmp.join("done"));
+    // waits (shell builtins only) until `agent start` returned and dropped
+    // the lock, then logs a note and closes the case without --actor
+    env.stub(
+        "omarchy",
+        &format!(
+            "(i=0; while [ ! -e '{go}' ] && [ $i -lt 2000000 ]; do i=$((i+1)); done; \
+             '{bin}' log --case C-2026-001 'from the agent' && \
+             '{bin}' plan verify C-2026-001 && '{bin}' plan done C-2026-001; \
+             echo $? > '{done}') >/dev/null 2>&1 &",
+            go = go.display(),
+            done = done.display(),
+            bin = env!("CARGO_BIN_EXE_seldon"),
+        ),
+    );
+    let out = env.at(T0, &["agent", "start", "C-2026-001"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    std::fs::write(&go, "").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !done.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(read(&done).trim(), "0");
+
+    let ledger = common::ledger(&root);
+    let mine: Vec<(String, String)> = ledger
+        .iter()
+        .filter(|e| e["case"] == "C-2026-001" || e["subject"] == "from the agent")
+        .map(|e| {
+            (
+                e["kind"].as_str().unwrap().to_string(),
+                e["actor"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    let tail: Vec<(&str, &str)> = mine[mine.len() - 3..]
+        .iter()
+        .map(|(k, a)| (k.as_str(), a.as_str()))
+        .collect();
+    assert_eq!(
+        tail,
+        [
+            ("note", "agent:default"),
+            ("case-verified", "agent:default"),
+            ("case-completed", "agent:default"),
+        ],
+        "{mine:?}"
+    );
+}

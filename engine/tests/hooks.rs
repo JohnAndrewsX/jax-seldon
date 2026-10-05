@@ -29,6 +29,8 @@ struct Hooks {
     logbook: PathBuf,
     /// Claude Code's `CLAUDE_PROJECT_DIR` for the hook processes, if set.
     project_dir: std::cell::RefCell<Option<String>>,
+    /// `SELDON_ACTOR` for the hook processes, if set (WP-096).
+    actor_env: std::cell::RefCell<Option<String>>,
 }
 
 impl Hooks {
@@ -40,6 +42,7 @@ impl Hooks {
             env,
             logbook,
             project_dir: std::cell::RefCell::new(None),
+            actor_env: std::cell::RefCell::new(None),
         }
     }
 
@@ -57,6 +60,9 @@ impl Hooks {
         }
         if let Some(dir) = self.project_dir.borrow().as_deref() {
             cmd.env("CLAUDE_PROJECT_DIR", dir);
+        }
+        if let Some(actor) = self.actor_env.borrow().as_deref() {
+            cmd.env("SELDON_ACTOR", actor);
         }
         cmd
     }
@@ -823,6 +829,46 @@ mod generic {
             assert!(err.contains("\\u{1b}[31mX"), "{key}: {err:?}");
         }
         assert!(h.ledger().is_empty());
+    }
+
+    /// Without "actor", `$SELDON_ACTOR` (WP-096); the payload's own wins;
+    /// a variable the hook refuses is reported and nothing is recorded.
+    #[test]
+    fn the_actor_defaults_to_seldon_actor() {
+        let h = Hooks::new();
+        let hook = |payload: Value, actor: Option<&str>| {
+            *h.actor_env.borrow_mut() = actor.map(String::from);
+            h.piped(&["hook", "generic"], &payload.to_string(), Some(NOW))
+        };
+        let bare = json!({"command": "pacman -S --noconfirm zed", "cwd": FIXTURE_CWD});
+
+        for (actor, why) in [
+            (None, "not set"),
+            (Some(""), "empty"),
+            (Some("Agent:X"), "not an actor"),
+            (Some("system"), "not a person or agent"),
+        ] {
+            let out = hook(bare.clone(), actor);
+            assert_eq!(out.status.code(), Some(0), "{why}");
+            let err = stderr(&out);
+            assert!(err.contains("SELDON_ACTOR"), "{why}: {err}");
+        }
+        assert!(h.ledger().is_empty());
+        let err = stderr(&hook(bare.clone(), None));
+        assert!(
+            err.contains("stdin has no \"actor\" and SELDON_ACTOR is not set"),
+            "{err}"
+        );
+
+        let out = hook(bare.clone(), Some("agent:codex"));
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let mut named = bare.clone();
+        named["actor"] = json!("agent:claude-code");
+        h.hook("generic", &named.to_string());
+        // the variable is still set for that call: the payload wins
+        assert_eq!(h.actor_env.borrow().as_deref(), Some("agent:codex"));
+        let actors: Vec<Value> = h.commands().iter().map(|e| e["actor"].clone()).collect();
+        assert_eq!(actors, [json!("agent:codex"), json!("agent:claude-code")]);
     }
 }
 

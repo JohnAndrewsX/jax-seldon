@@ -94,6 +94,48 @@ pub fn parse_person(s: &str) -> Result<String, String> {
     }
 }
 
+/// The actor of a command run without `--actor` (WP-096): `seldon agent
+/// start` sets it for the agent it launches, so a write by that agent is
+/// recorded as the agent even when it forgets `--actor` (ADR-0027 §5).
+pub const ACTOR_ENV: &str = "SELDON_ACTOR";
+
+/// `--actor` when given (clap checked it; `$SELDON_ACTOR` is then not
+/// read), else `$SELDON_ACTOR` checked with `parse`, else `default`.
+pub fn actor_or_env(
+    flag: Option<String>,
+    parse: fn(&str) -> Result<String, String>,
+    default: &str,
+) -> Result<String> {
+    match flag {
+        Some(actor) => Ok(actor),
+        None => Ok(env_actor(parse)?.unwrap_or_else(|| default.to_string())),
+    }
+}
+
+/// `$SELDON_ACTOR` checked with `parse`; `None` when it is unset or empty.
+/// A value `parse` refuses is a user error (exit 1) that names the
+/// variable and the allowed form.
+pub fn env_actor(parse: fn(&str) -> Result<String, String>) -> Result<Option<String>> {
+    checked_env_actor(std::env::var_os(ACTOR_ENV), parse)
+}
+
+fn checked_env_actor(
+    value: Option<std::ffi::OsString>,
+    parse: fn(&str) -> Result<String, String>,
+) -> Result<Option<String>> {
+    let Some(value) = value.filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let value = value.to_str().ok_or_else(|| {
+        Error::user(format!(
+            "{ACTOR_ENV} is not UTF-8; set it to human or agent:<name>, or pass --actor"
+        ))
+    })?;
+    parse(value)
+        .map(Some)
+        .map_err(|e| Error::user(format!("{ACTOR_ENV} (the actor when none is named): {e}")))
+}
+
 /// clap value parser: `C-YYYY-NNN`.
 pub fn parse_case_id(s: &str) -> Result<String, String> {
     if is_case_id(s) {
@@ -131,9 +173,11 @@ pub struct EventArgs {
     pub case_id: Option<String>,
 
     /// Who did it: system (like a collector), human or agent:NAME; hooks
-    /// and scripts name the one they act for
-    #[arg(long, value_name = "ACTOR", default_value = "system", value_parser = parse_actor)]
-    pub actor: String,
+    /// and scripts name the one they act for (default: the agent command
+    /// that caused a config, theme or plugins change, else $SELDON_ACTOR,
+    /// else system)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_actor)]
+    pub actor: Option<String>,
 
     /// Extra key=value (repeatable), e.g. `--meta enabled=true`; `enabled` takes true or false
     #[arg(long = "meta", value_name = "KEY=VALUE")]
@@ -163,6 +207,11 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
     }
     let mut meta = parse_meta(&args.meta)?;
     let mut detail = args.detail.filter(|d| !d.trim().is_empty());
+    // read without `--actor` only, and checked before anything is opened
+    let env_actor = match &args.actor {
+        Some(_) => None,
+        None => env_actor(parse_actor)?,
+    };
 
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
@@ -181,7 +230,7 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
         .transpose()?;
 
     let mut event = Event::new(ctx.now, args.source, args.kind, subject)
-        .actor(&args.actor)
+        .actor(args.actor.as_deref().unwrap_or(ACTOR_SYSTEM))
         .case(args.case_id.clone())
         .meta(meta);
     if let Some(d) = detail {
@@ -196,6 +245,12 @@ pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
             std::slice::from_mut(&mut event),
             &ctx.dirs.home,
         )?;
+    }
+    // `$SELDON_ACTOR` after that: the command found there also names its case
+    if let Some(actor) = env_actor
+        && event.actor == ACTOR_SYSTEM
+    {
+        event.actor = actor;
     }
     // a save the case would refuse fails before the ledger changes (WP-077)
     if let Some(file) = &case_file {
@@ -368,6 +423,45 @@ mod tests {
         assert!(parse_person("system").is_err());
         assert!(parse_actor("agent:Claude").is_err());
         assert!(parse_actor("root").is_err());
+    }
+
+    #[test]
+    fn the_actor_variable() {
+        let var = |s: &str| Some(std::ffi::OsString::from(s));
+        let get = |v, p| checked_env_actor(v, p);
+        assert_eq!(get(None, parse_person).unwrap(), None);
+        assert_eq!(get(var(""), parse_person).unwrap(), None);
+        assert_eq!(
+            get(var("agent:codex"), parse_person).unwrap().as_deref(),
+            Some("agent:codex")
+        );
+        assert_eq!(
+            get(var("system"), parse_actor).unwrap().as_deref(),
+            Some("system")
+        );
+        for (bad, parse) in [
+            (
+                "agent:Codex",
+                parse_person as fn(&str) -> Result<String, String>,
+            ),
+            ("system", parse_person),
+            ("root", parse_actor),
+            ("agent:", parse_actor),
+        ] {
+            let e = get(var(bad), parse).unwrap_err();
+            assert!(matches!(e.exit(), crate::error::Exit::UserError), "{bad}");
+            let e = e.to_string();
+            assert!(
+                e.starts_with("SELDON_ACTOR (the actor when none is named): ")
+                    && e.contains("agent:<name>"),
+                "{bad}: {e}"
+            );
+        }
+        use std::os::unix::ffi::OsStringExt as _;
+        let e = get(Some(std::ffi::OsString::from_vec(vec![0xff])), parse_person)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("SELDON_ACTOR is not UTF-8"), "{e}");
     }
 
     #[test]

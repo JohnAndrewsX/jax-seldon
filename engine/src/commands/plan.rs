@@ -9,12 +9,12 @@ use chrono::Datelike as _;
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
-use super::event::{clip, emit_one, event_json, parse_case_id, parse_person};
+use super::event::{actor_or_env, clip, emit_one, event_json, parse_case_id, parse_person};
 use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::{Error, Result};
 use crate::logbook::cases::{self, CaseFile, Transition};
 use crate::logbook::{Logbook, journal};
-use crate::model::event::{Event, Kind, Source};
+use crate::model::event::{ACTOR_HUMAN, Event, Kind, Source};
 use crate::model::{Case, CaseStatus, Language, Priority, Risk, Zone};
 use crate::redact::Redactor;
 
@@ -68,9 +68,10 @@ pub struct NewArgs {
     #[arg(long, value_name = "PRIORITY", default_value = "normal")]
     pub priority: Priority,
 
-    /// Who creates the case: human or agent:NAME
-    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
-    pub actor: String,
+    /// Who creates the case: human or agent:NAME (default: $SELDON_ACTOR,
+    /// else human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
 }
 
 /// `plan start`: a step that can name the snapshot taken before the work.
@@ -95,9 +96,10 @@ pub struct StepArgs {
     #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
     pub reason: Option<String>,
 
-    /// Who takes the step: human or agent:NAME
-    #[arg(long, value_name = "ACTOR", default_value = "human", value_parser = parse_person)]
-    pub actor: String,
+    /// Who takes the step: human or agent:NAME (default: $SELDON_ACTOR,
+    /// else human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -125,6 +127,7 @@ pub fn run(ctx: &Context, args: PlanArgs) -> Result<Output> {
 
 fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
     let title = one_line("the title", &args.title)?;
+    let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     // the case file, its name, STATUS.md and the ledger get the redacted title
     let title = Redactor::for_config(&config)?.redact(&title);
@@ -168,11 +171,11 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
             body,
         },
     };
-    file.add_agent(&args.actor);
+    file.add_agent(&actor);
     file.log(
         &ctx.now,
         &format!("created (zone {}, risk {})", args.zone, args.risk),
-        &args.actor,
+        &actor,
     );
     let text = crate::model::render_new(&file.case, &file.doc.body);
     if file.path.exists() {
@@ -185,7 +188,7 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
     // the ledger first: if it cannot be written, nothing else is
     let event = Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
         .detail(title.clone())
-        .actor(&args.actor)
+        .actor(&actor)
         .case(Some(id.clone()));
     let event = emit_one(&lock, &config, &logbook, event)?;
     let area_created = args
@@ -228,6 +231,7 @@ fn step(
         .as_deref()
         .map(|r| one_line("--reason", r))
         .transpose()?;
+    let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
     let reason = reason.map(|r| redactor.redact(&r));
@@ -250,7 +254,7 @@ fn step(
         Transition::Done | Transition::Drop => file.case.closed = Some(today),
         Transition::Verify => {}
     }
-    file.add_agent(&args.actor);
+    file.add_agent(&actor);
     let mut line = transition.log_word().to_string();
     if let Some(n) = snapshot {
         line.push_str(&format!(" (snapshot {n})"));
@@ -259,7 +263,7 @@ fn step(
         line.push_str(": ");
         line.push_str(r);
     }
-    file.log(&ctx.now, &line, &args.actor);
+    file.log(&ctx.now, &line, &actor);
     let stub = (transition == Transition::Done).then(|| {
         redactor.redact(&match logbook.meta.language {
             Language::En => format!("Case completed: {}", file.case.title),
@@ -272,13 +276,13 @@ fn step(
     // (WP-057)
     let journal_entry = stub
         .as_deref()
-        .map(|text| journal::prepare(&logbook, &ctx.now, &args.actor, Some(&args.id), text))
+        .map(|text| journal::prepare(&logbook, &ctx.now, &actor, Some(&args.id), text))
         .transpose()?;
 
     // the ledger first: if it cannot be written, the case is not moved,
     // the marker and the journal stay as they are
     let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
-        .actor(&args.actor)
+        .actor(&actor)
         .case(Some(args.id.clone()));
     event.detail = reason.clone();
     let event = emit_one(&lock, &config, &logbook, event)?;

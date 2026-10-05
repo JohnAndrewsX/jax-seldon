@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 493d0a9 -->
+<!-- source: en/05-cli-reference.md @ e3483a4 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -88,6 +88,8 @@ Options:
 | `SELDON_LOGBOOK` | der Ordner des Logbuchs, wenn `--logbook` fehlt |
 | `SELDON_CONFIG` | die Konfigurationsdatei statt `~/.config/seldon/config.toml`, wenn `--config` fehlt |
 | `VISUAL`, `EDITOR` | der Editor, den `seldon open --editor` und `seldon decide` im Terminal starten |
+| `SELDON_ACTOR` | wen `log`, `event`, `plan` und `drift` aufzeichnen, wenn `--actor` fehlt, und `hook generic`, wenn sein JSON kein `"actor"` hat. `seldon agent start` setzt sie für den Agenten (`agent:` und der Name des Launchers). Ein Wert, den der Befehl nicht annimmt, ist ein Bedienfehler (1); leer zählt als nicht gesetzt |
+| `SELDON_ATTENDED` | `1` für einen Agenten, den `seldon agent start` gestartet hat: Die Sitzung hat der Benutzer begonnen. Gesetzt für die Regeln des Agenten; die Engine liest sie nie |
 | `SELDON_NOW` | eine feste Uhrzeit (RFC 3339), für Vorführungen und Tests |
 | `SELDON_TEST_GUARD` | ein Ordner; die Engine verweigert den Start (Exit 2), wenn ihr Home-, Konfigurations- oder Zustandsordner außerhalb davon liegt. Nimm sie, wenn du Seldon in einem Wegwerf-Home ausprobierst |
 | `SELDON_OMARCHY_AGENT_KIT` | wo `init --harness omarchy-agent` das Kit findet, statt `~/.local/share/seldon/harness/omarchy-agent/` |
@@ -219,7 +221,7 @@ Arguments:
 
 Options:
       --case <ID>      The case the note belongs to
-      --actor <ACTOR>  Who writes the note: human or agent:NAME [default: human]
+      --actor <ACTOR>  Who writes the note: human or agent:NAME (default: $SELDON_ACTOR, else human)
       --tag <TAG>      Tag the note (repeatable): `#tag` in the journal, `meta.tags` in the ledger
 
 Examples:
@@ -249,7 +251,7 @@ Options:
       --subject <SUBJECT>  What it is about: package, ~-relative path, theme, plugin id, …
       --detail <TEXT>      Human-readable detail
       --case <ID>          Attribute the event to this case
-      --actor <ACTOR>      Who did it: system (like a collector), human or agent:NAME; hooks and scripts name the one they act for [default: system]
+      --actor <ACTOR>      Who did it: system (like a collector), human or agent:NAME; hooks and scripts name the one they act for (default: the agent command that caused a config, theme or plugins change, else $SELDON_ACTOR, else system)
       --meta <KEY=VALUE>   Extra key=value (repeatable), e.g. `--meta enabled=true`; `enabled` takes true or false
 ```
 <!-- /help -->
@@ -356,7 +358,7 @@ Options:
       --risk <RISK>          R0 to R3 [default: R1]
       --area <AREA>          Area slug; created under areas/ on first use
       --priority <PRIORITY>  high, normal or low [default: normal]
-      --actor <ACTOR>        Who creates the case: human or agent:NAME [default: human]
+      --actor <ACTOR>        Who creates the case: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 
@@ -377,7 +379,7 @@ Arguments:
 
 Options:
       --reason <TEXT>      Why, in one line; goes into the Log line and the event detail
-      --actor <ACTOR>      Who takes the step: human or agent:NAME [default: human]
+      --actor <ACTOR>      Who takes the step: human or agent:NAME (default: $SELDON_ACTOR, else human)
       --snapshot <NUMBER>  Snapper snapshot number taken before the work, e.g. 42 (an R2 or R3 case started without one gets a warning, ADR-0023)
 ```
 <!-- /help -->
@@ -398,7 +400,7 @@ Arguments:
 
 Options:
       --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
-      --actor <ACTOR>  Who takes the step: human or agent:NAME [default: human]
+      --actor <ACTOR>  Who takes the step: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 
@@ -418,7 +420,7 @@ Arguments:
 
 Options:
       --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
-      --actor <ACTOR>  Who takes the step: human or agent:NAME [default: human]
+      --actor <ACTOR>  Who takes the step: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 
@@ -438,7 +440,7 @@ Arguments:
 
 Options:
       --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
-      --actor <ACTOR>  Who takes the step: human or agent:NAME [default: human]
+      --actor <ACTOR>  Who takes the step: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 
@@ -567,7 +569,7 @@ Arguments:
 
 Options:
       --only           Resolve the named event only, not the rest of its group
-      --actor <ACTOR>  Who resolves it: human or agent:NAME [default: human]
+      --actor <ACTOR>  Who resolves it: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 
@@ -592,7 +594,7 @@ Options:
       --zone <ZONE>    Zone of the new case (default: the drift item's zone)
       --risk <RISK>    Risk of the new case [default: R1]
       --area <AREA>    Area slug of the new case; created under areas/ on first use
-      --actor <ACTOR>  Who resolves it: human or agent:NAME [default: human]
+      --actor <ACTOR>  Who resolves it: human or agent:NAME (default: $SELDON_ACTOR, else human)
 
 Example:
   seldon drift explain <EVENT> --area hardware -- "Driver for the new GPU"
@@ -616,7 +618,7 @@ Arguments:
 
 Options:
       --only           Resolve the named event only, not the rest of its group
-      --actor <ACTOR>  Who resolves it: human or agent:NAME [default: human]
+      --actor <ACTOR>  Who resolves it: human or agent:NAME (default: $SELDON_ACTOR, else human)
 
 Example:
   seldon drift dismiss <EVENT> -- "Tried a theme, reverted it"
@@ -670,7 +672,10 @@ Logbuchs. Der erste Prompt nennt den Case und das Logbuch und sagt dem
 Agenten, `seldon hook session-start` und `seldon plan show <ID>`
 auszuführen; er enthält keinen Text aus dem Logbuch. Der Case muss
 aktiv sein. Der Launcher kommt aus `config.toml`; siehe
-[Konfiguration](06-configuration.md#agent-launcher).
+[Konfiguration](06-configuration.md#agent-launcher). Der Agent läuft mit
+`SELDON_ACTOR=agent:<Name des Launchers>` und `SELDON_ATTENDED=1`
+([Umgebungsvariablen](#umgebungsvariablen)); ein Launcher-Name ohne
+ASCII-Buchstaben oder -Ziffer wird abgelehnt.
 
 <!-- help: seldon agent start -->
 ```text
@@ -703,7 +708,7 @@ Commands:
   install        Merge Seldon's hooks into an agent harness's settings
   uninstall      Remove Seldon's hooks from an agent harness's settings, keeping the rest
   claude-code    Record a Claude Code tool call (hook payload on stdin; silent, exit 0)
-  generic        Record any agent's command ({"command","actor","cwd","startedAt"?,"case"?} on stdin)
+  generic        Record any agent's command ({"command","actor"?,"cwd","startedAt"?,"case"?} on stdin; without "actor", $SELDON_ACTOR)
   session-start  Print the context block an agent session starts with
   session-stop   End a session: journal stub, capture, commit (silent, exit 0)
   help           Print this message or the help of the given subcommand(s)
@@ -778,7 +783,7 @@ Standardeingabe. Siehe
 
 <!-- help: seldon hook generic -->
 ```text
-Record any agent's command ({"command","actor","cwd","startedAt"?,"case"?} on stdin)
+Record any agent's command ({"command","actor"?,"cwd","startedAt"?,"case"?} on stdin; without "actor", $SELDON_ACTOR)
 
 Usage: seldon hook generic [OPTIONS]
 
