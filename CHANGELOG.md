@@ -19,16 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer the only route), and verifies and closes the case. It asks
   first only outside the case's Intent, for a destructive step without
   rollback, and for an R3 step (boot, login, shell: the `alwaysRed`
-  list, checked before every package transaction), one go per step. An
-  unattended session records and reports only. The rules sit in a block
+  list, checked against the whole resolved transaction without
+  refreshing the sync database; a system upgrade is R3 as such), one go
+  per step. An unattended session records and reports only. The user's
+  and area rules can only add limits. The rules sit in a block
   `<!-- seldon:begin rules v2 -->` … `<!-- seldon:end -->`; the user's
   own rules follow it (WP-100).
 - `seldon rules update` brings an existing logbook's `AGENTS.md` to the
-  new rules: it rewrites the block and nothing else; a file from an
-  earlier release gets the block on top and keeps its old text below
-  `## Your rules (kept)`, byte for byte (a file nobody edited is
-  replaced whole); `--replace` archives the old file to
-  `archive/AGENTS-<date>.md`. It prints the diff, commits
+  new rules: it rewrites the block and nothing else (an edited block is
+  archived first); a file from an earlier release that someone edited
+  is archived to `archive/AGENTS-<date>.md`, and only the lines that
+  were not Seldon's follow the new rules under `## Your rules (kept)`
+  (a file nobody edited is replaced whole); `--replace` archives the
+  old file and writes the new rules alone. It prints the diff, commits
   `seldon: rules update`, and changes nothing on a second run.
   `seldon doctor` has a `rules` row (`current`, `outdated (v1)`,
   `missing`, …) whose fix is that command (WP-100).

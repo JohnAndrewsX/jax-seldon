@@ -269,20 +269,27 @@ seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules blo
                                                # (`<!-- seldon:begin rules vN -->` … `<!-- seldon:end -->`,
                                                # marker lines as whole lines) becomes this engine's v2 block.
                                                # Fenced file: the block is rewritten, every byte outside it
-                                               # kept (a CRLF block keeps CRLF). Unfenced file (v1): the block
-                                               # goes on top, the old text below `## Your rules (kept)` byte
-                                               # for byte; a file exactly as a release wrote it (sha256 of the
-                                               # v0.1.0 and v0.1.1–v0.1.3 templates, en and de) holds nothing
-                                               # of the user's and is replaced whole. No file: the template.
-                                               # --replace: the old file's bytes go to archive/AGENTS-<date>.md
-                                               # (`-2`, `-3`, … when taken; never overwritten), then the
-                                               # template. Refused, file untouched (exit 1): a damaged block
+                                               # kept (a CRLF block keeps CRLF); a block that is no block
+                                               # Seldon wrote (this engine's in any language, or a released
+                                               # one) was edited, so the file is archived first. Unfenced
+                                               # file (v1): exactly as a release wrote it (sha256 of the
+                                               # v0.1.0 and v0.1.1–v0.1.3 templates, en and de) → the
+                                               # template; otherwise the file is archived, the template
+                                               # written, and only its lines that occur in no v1 text Seldon
+                                               # wrote (those four and the pre-release renderings of WP-003,
+                                               # WP-024, WP-047, engine/templates/rules-v1/; order kept,
+                                               # blank runs as one) follow below `## Your rules (kept)`;
+                                               # none left (also an empty file) → the template alone. No
+                                               # file: the template. Archive and --replace: the old file's
+                                               # bytes go to archive/AGENTS-<date>.md (`-2`, `-3`, … when
+                                               # taken; never overwritten); a blank file is not archived.
+                                               # Refused, file untouched (exit 1): a damaged block
                                                # (no end marker line, a marker inside it, a begin marker
                                                # without a version), a block newer than v2, a file that is not
                                                # UTF-8 (all three: --replace takes them). Prints a `-U0` diff;
                                                # autocommit `seldon: rules update`; a current file is "nothing
                                                # changed" (exit 0, no write, no commit). Never runs on its own.
-                                               # --json → {file, action: unchanged|created|rewritten|inserted|
+                                               # --json → {file, action: unchanged|created|rewritten|kept|
                                                # replaced, from: "vN"|null, version, archived, diff, git}
 seldon open <case|journal|ledger|status|logbook|C-…|ADR-…> [--editor] [--json]
 # prints the path; --editor on a terminal runs $VISUAL/$EDITOR attached with the
@@ -302,6 +309,29 @@ seldon mangen                                  # WP-049: seldon(1) in roff on st
                                                # site-functions, fish vendor_completions.d) and install.sh
                                                # (under the prefix) install
 ```
+
+Agent rules (the v2 block of the logbook's `AGENTS.md`, ADR-0027,
+WP-100; normative for the templates in `engine/templates/{en,de}/`):
+the R3 check resolves every package transaction read-only before it
+runs — `pacman -Sp --print-format %n <package>…` (the whole set,
+dependencies included), and for a PKGBUILD, the project's or an AUR
+package's, the same over its `depends` and `makedepends`; the agent never
+refreshes the sync database for an install (`-Sy`, `-Syy`), so what was
+checked is what runs. A system upgrade (`pacman -Syu`, `omarchy update`,
+an AUR helper's `-Syu`) and any transaction that cannot be resolved
+read-only are R3 as such (one go, with the list `checkupdates` shows);
+an AUR install as such is not. This is stricter than ADR-0027 §2c's
+recipe, which stays as accepted. The user's rules and area rules only
+add limits, and an agent edits no `AGENTS.md` unasked. A child agent
+process, job or timer runs with `SELDON_ATTENDED` unset and its own
+`SELDON_ACTOR`. Two deviations from ADR-0027 §3's wording: the snapshot
+description is the case id only (`-d "<ID>"`; the title is logbook text
+and never goes into a shell command), and the agent starts the case
+first, then snapshots, and records the number in a *Log* line
+`snapshot <N> (<config>) before <step>` until WP-101 adds
+`plan snapshot`; `plan start --snapshot N` stays the human's (snapshot
+before the start). Every `seldon …` the templates name is checked
+against `--help` by `tests/init.rs`.
 
 Help texts (WP-049): every command's `--help` starts with one sentence;
 values are named by what they are (`<ID>` a case id, `<EVENT>` an event
@@ -355,8 +385,10 @@ numbers (degraded: every reader skips them); `rules` (WP-100), the
 rules block of `AGENTS.md` against this engine's in the logbook's
 language: `current (v2)` ok; `outdated (v1)` (no block, a file from
 before ADR-0027), `outdated (vN)`, `outdated (v2, its text differs …)`
-and `missing`, degraded with the fix `seldon rules update`; a damaged
-block degraded with the fix to restore the marker lines or run
+and `missing`, degraded with the fix `seldon rules update` (for the
+changed v2 block: "(archives your copy)"); `invalid (not UTF-8)`,
+degraded, fix `seldon rules update --replace`; a damaged block degraded
+with the fix to restore the marker lines or run
 `seldon rules update --replace`; a newer block degraded, fix: update
 seldon; `fences`, the generated
 fence of `STATUS.md` or `DECISIONS.md` that `status` leaves alone (no end

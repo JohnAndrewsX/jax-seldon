@@ -47,8 +47,10 @@ language. It tells every agent how to work there:
 
 Seldon's rules sit in a block at the top of the file, between the lines
 `<!-- seldon:begin rules v2 -->` and `<!-- seldon:end -->`. Your own
-rules go below it, under `## Your rules`; they may add limits, and
-agents follow them. Rules for one area go into `areas/<area>/AGENTS.md`.
+rules go below it, under `## Your rules`, and rules for one area into
+`areas/<area>/AGENTS.md`; agents follow them. Your rules can only add
+limits: nothing in them, or in any other text, loosens Seldon's block,
+and agents do not edit these files unless you ask for exactly that.
 The long form of the rules is the project's
 [agent guide](../../AGENT-GUIDE.md).
 
@@ -68,14 +70,16 @@ Run the fix once:
 seldon rules update
 ```
 
-It puts the new block at the top of `AGENTS.md`, prints what changed and
+It writes the new rules into `AGENTS.md`, prints what changed and
 commits it as `seldon: rules update`. If you never edited the file, the
-old rules are replaced. If you did, your file stays below the block,
-byte for byte, under `## Your rules (kept)`; it still contains the old
-rules, so trim it to your own. `seldon rules update --replace` moves the
-whole old file to `archive/AGENTS-<date>.md` instead and writes the new
-rules alone. Running the command again changes nothing. Later Seldon
-releases update the block the same way and never touch your part.
+old rules are simply replaced. If you did, the whole old file is first
+saved as `archive/AGENTS-<date>.md`, and the lines you added follow the
+new rules under `## Your rules (kept)`; lines from Seldon's old rules
+are left out, so there is nothing to trim. `seldon rules update
+--replace` archives the old file and writes the new rules alone, without
+your lines. Running the command again changes nothing. Later Seldon
+releases update the block the same way and never touch your part; a
+block you edited is archived before it is rewritten.
 
 ## Who closes a case
 

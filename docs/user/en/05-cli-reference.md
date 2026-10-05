@@ -695,11 +695,12 @@ Options:
 
 Brings Seldon's block in `AGENTS.md`, between the lines
 `<!-- seldon:begin rules v2 -->` and `<!-- seldon:end -->`, up to the
-rules of this release and keeps the rest of the file. A file from an
-earlier release has no block: it gets one at the top, and your old text
-stays below it under `## Your rules (kept)`, unless it is exactly the
-file that release wrote. `--replace` moves the whole old file to
-`archive/AGENTS-<date>.md` and writes the new rules alone. The command
+rules of this release and keeps the rest of the file; a block you
+edited is archived first. A file from an earlier release has no block:
+unless it is exactly the file that release wrote, it is archived to
+`archive/AGENTS-<date>.md`, and the new rules are written with only the
+lines you added below them, under `## Your rules (kept)`. `--replace`
+archives the whole old file and writes the new rules alone. The command
 prints the change as a diff and commits it as `seldon: rules update`; a
 second run changes nothing. A damaged block, or one from a newer Seldon,
 is refused (exit 1) and the file left as it is. `seldon doctor` names
