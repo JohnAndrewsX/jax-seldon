@@ -1176,6 +1176,21 @@ mod redaction {
                 "--password x token=y ",
                 Some(10),
             ),
+            // addresses, and `@` in forms that are none, with every curl
+            // rule triggered: `email` matches each and keeps the latter
+            // (WP-093)
+            (
+                "addresses",
+                "mail ",
+                "a.b@example.com x@y.example ",
+                Some(20),
+            ),
+            (
+                "at signs",
+                "curl -sS https://bob:fakePw@h.example ",
+                "pkg@1.2.3 @scope/x getty@tty1.service git@h.example:o/r a-u-x-b ",
+                Some(20),
+            ),
         ] {
             for kb in [16, 64, 128] {
                 let line = filled(head, word, kb * 1024);
