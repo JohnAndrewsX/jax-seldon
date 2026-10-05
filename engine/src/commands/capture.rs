@@ -19,7 +19,8 @@
 //! attribute their own events. After the append, a run of the config
 //! collector explains the files the engine wrote itself (`init
 //! --theme-hook`, `hook install`; SPEC-ENGINE §5 rule 7), and every
-//! capture explains Seldon's own plugin and package changes (rule 8).
+//! capture explains Seldon's own plugin and package changes (rule 8),
+//! also those an earlier capture left open (WP-088).
 //!
 //! A collector that took a new baseline because its state was missing,
 //! unreadable or another logbook's ([`collectors::Lost`]) although the
@@ -175,10 +176,11 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
             eprintln!("seldon: warning: {w}");
         }
     }
-    // rule 8: Seldon updating itself is no drift
-    let (explained_self, warning) =
+    // rule 8: Seldon updating itself is no drift, also what an earlier
+    // capture left open
+    let (explained_self, own_warnings) =
         crate::reconcile::explain_own_changes(&lock, &ledger, &written, now);
-    if let Some(w) = warning {
+    for w in own_warnings {
         eprintln!("seldon: warning: {w}");
     }
     crate::index::rebuild_if_initialised(ctx);

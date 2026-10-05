@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and its first successful run records its own state reset note, once.
   This also holds when it was the only collector that lost its state
   (WP-088).
+- Seldon's own plugin and package changes that an earlier capture left
+  open (the engine stopped between the two writes, or 0.1.2 and before
+  recorded them) are explained by the next capture, as rule 8 explains
+  new ones; a row you dismissed or resolved keeps its resolution, and
+  adding or downgrading Seldon stays drift (WP-088).
 
 ## [0.1.3] - 2026-10-05
 

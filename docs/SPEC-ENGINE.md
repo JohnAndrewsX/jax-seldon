@@ -838,9 +838,14 @@ After every capture:
    there are explained: `plugin-add` and pacman `install` (somebody
    (re)installing Seldon while a logbook exists), `downgrade` (somebody
    choosing an older one) and the removals (`plugin-remove`, `remove`)
-   stay drift. A failed explanation (the second append fails, or the
-   engine stops between the two appends) leaves ordinary drift; resolve
-   it by hand (Dismiss or Explain). `install.sh` writes under its prefix
+   stay drift. The rule reads the whole ledger, so every capture also
+   catches up on own changes an earlier capture left open (the second
+   append failed, the engine stopped between the two appends, or a
+   version before rule 8 wrote them; WP-088): each such event without a
+   case that no resolution line refers to gets the same `explained`
+   resolution, and `explainedSelf` counts both. An event that has a
+   resolution (dismissed, explained, linked) keeps it, the kinds above
+   that stay drift stay drift, and no case is created. `install.sh` writes under its prefix
    (`~/.local`: the binary, man page, completions) and, with `--unit`,
    into `~/.config/systemd/user/`, all outside the default `watchPaths`,
    so it leaves no event; a path a user adds to `watchPaths` is ordinary
