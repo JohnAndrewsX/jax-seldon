@@ -201,12 +201,15 @@ cp "$root/scripts/deploy-test-host.sh" "$repo/scripts/"
 printf '[package]\nname = "seldon"\nversion = "0.1.3"\nedition = "2024"\n' >"$repo/engine/Cargo.toml"
 echo '{"id":"jax.seldon","version":"0.1.3"}' >"$repo/plugin/manifest.json"
 echo 'Item { /* main */ }' >"$repo/plugin/Panel.qml"
-printf 'target/\n' >"$repo/.gitignore"
+echo 'Item { /* goes away */ }' >"$repo/plugin/Old.qml"
+printf 'target/\n.qmlls.ini\n' >"$repo/.gitignore"
 git -C "$repo" add -A
 git -C "$repo" commit -q -m init
 git init -q --bare "$work/origin.git"
 git -C "$repo" remote add origin "$work/origin.git"
 git -C "$repo" push -q origin main
+# an ignored file in plugin/: the tree is clean, but it must not go out
+echo '[General]' >"$repo/plugin/.qmlls.ini"
 # commit <path> <text> — a commit to the repo, pushed
 commit() {
   echo "$2" >"$repo/$1"
@@ -332,7 +335,8 @@ backup=$(find "$R/home/.local/state/seldon-dev" -maxdepth 1 -name 'plugin-git-*'
 check "deploy: the release clone moved to seldon-dev/plugin-git-<stamp>" test -d "$backup/.git"
 check "deploy: the backup is outside the plugins dir" test "$(find "$R/home/.config/omarchy/plugins" -mindepth 1 -maxdepth 1 | wc -l)" = 1
 check "deploy: the plugin dir is a plain copy" test ! -e "$pdir/.git"
-check "deploy: the plugin dir has HEAD's files" diff -r -x .seldon-dev-build "$repo/plugin" "$pdir"
+check "deploy: the plugin dir has HEAD's files" diff -r -x .seldon-dev-build -x .qmlls.ini "$repo/plugin" "$pdir"
+check "deploy: an ignored file in plugin/ does not go out" test ! -e "$pdir/.qmlls.ini"
 check "deploy: .seldon-dev-build names the build" grep -qx "build=main.$short" "$pdir/.seldon-dev-build"
 check "deploy: .seldon-dev-build names the commit" grep -qx "commit=$(git -C "$repo" rev-parse HEAD)" "$pdir/.seldon-dev-build"
 check "deploy: plugin validated on the host" called "omarchy plugin validate .config/omarchy/plugins/jax.seldon"
@@ -361,6 +365,14 @@ check "engine change: no second backup" test "$(find "$R/home/.local/state/seldo
 check "engine change: the marker follows the commit" grep -qx "build=main.$short" "$pdir/.seldon-dev-build"
 check "engine change: two log lines" test "$(wc -l <"$jsonl")" = 2
 check "engine change: logged as restart none" jqe -s '.[-1].restart == "none" and (.[-1].pluginChanged | not)' "$jsonl"
+
+git -C "$repo" rm -q plugin/Old.qml
+commit plugin/New.qml 'Item { /* new */ }'
+fresh_log
+deploy "$log"
+check "a file removed from plugin/ is removed on the host" test ! -e "$pdir/Old.qml"
+check "a file added to plugin/ arrives" test -f "$pdir/New.qml"
+check "the restart for it ran" test "$(count restart)" = 1
 
 # ---- 6. plugin change on a locked session: restart pending, then caught up --------------
 commit plugin/Panel.qml 'Item { /* main 2 */ }'
