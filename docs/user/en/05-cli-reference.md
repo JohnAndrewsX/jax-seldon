@@ -43,6 +43,7 @@ Commands:
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
   import            Import an earlier logbook (dry run unless --apply)
+  rules             The agent rules in the logbook's AGENTS.md: update
   completions       Print a shell completion script for bash, zsh or fish
   mangen            Print the man page seldon(1), generated from this help
   help              Print this message or the help of the given subcommand(s)
@@ -669,6 +670,54 @@ Arguments:
 
 Options:
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+### seldon rules
+
+The agent rules in the logbook's `AGENTS.md`.
+
+<!-- help: seldon rules -->
+```text
+The agent rules in the logbook's AGENTS.md: update
+
+Usage: seldon rules [OPTIONS] <COMMAND>
+
+Commands:
+  update  Bring the rules block of AGENTS.md up to this release; text outside it is kept
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+```
+<!-- /help -->
+
+### seldon rules update
+
+Brings Seldon's block in `AGENTS.md`, between the lines
+`<!-- seldon:begin rules v2 -->` and `<!-- seldon:end -->`, up to the
+rules of this release and keeps the rest of the file. A file from an
+earlier release has no block: it gets one at the top, and your old text
+stays below it under `## Your rules (kept)`, unless it is exactly the
+file that release wrote. `--replace` moves the whole old file to
+`archive/AGENTS-<date>.md` and writes the new rules alone. The command
+prints the change as a diff and commits it as `seldon: rules update`; a
+second run changes nothing. A damaged block, or one from a newer Seldon,
+is refused (exit 1) and the file left as it is. `seldon doctor` names
+this command when the rules are not current; see
+[Working with agents](04-working-with-agents.md#update-the-rules-of-an-older-logbook).
+
+<!-- help: seldon rules update -->
+```text
+Bring the rules block of AGENTS.md up to this release; text outside it is kept
+
+Usage: seldon rules update [OPTIONS]
+
+Options:
+      --replace        Archive the whole file to archive/AGENTS-<date>.md and write the template
+
+Examples:
+  seldon rules update
+  seldon rules update --replace
 ```
 <!-- /help -->
 
