@@ -44,13 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redaction: long lines with many masked values are checked against
   earlier markers by binary search.
 - Redaction masks e-mail addresses: `me@example.com` becomes
-  `‹redacted›@example.com` in every text the engine writes, so a desktop
+  `‹redacted›@example.com` in the logbook and the index, so a desktop
   entry named after an account stays recognisable by its domain. An SSH
   remote (`git@github.com:owner/repo`), `user@host` without a dot,
   package versions (`pkg@1.2.3`), npm scopes and systemd units
   (`getty@tty1.service`) stay as they are; `ssh me@host.example` is
   masked like an address. Guide 06 says how `skipPaths` keeps a file
-  name out of the logbook altogether (WP-093).
+  name out of the logbook altogether, and how a pattern of your own
+  hides a personal domain (WP-093).
 
 ### Plugin
 
