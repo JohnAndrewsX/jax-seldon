@@ -1575,7 +1575,9 @@ mod snapper_access {
 /// `cursors.json` (`SELDON_TEST_CAPTURE_CRASH`, debug builds) leaves the
 /// `seldon` notes in the ledger and `cursors.json` as the capture loaded
 /// it, with the notes' time in `pendingNotes`. The next capture repeats
-/// the comparison from that state and writes neither note again.
+/// the comparison from that state and writes neither note again. The
+/// crash point exists in debug builds only, and so do these tests.
+#[cfg(debug_assertions)]
 mod crash {
     use super::*;
     use chrono::Timelike as _;
@@ -1701,6 +1703,53 @@ mod crash {
             "{:?}",
             reset[1].detail
         );
+        assert!(
+            warning(&out).starts_with("state reset recorded: snapper, pacman took a new baseline"),
+            "{out}"
+        );
+        assert_eq!(cli.capture_at(&at(3), &[])["written"], 0);
+    }
+
+    /// The marked time is looked up in the note's own month file, which
+    /// the time's offset names: just after midnight on 1 March local
+    /// time, still February in UTC (stage-1 review N2).
+    #[test]
+    fn a_mark_in_a_new_month_is_found() {
+        let cli = Cli::new();
+        cli.capture_at("2027-02-28T12:00:00+01:00", &["--since", FIXTURE_CREATED]);
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        cli.crash("2027-03-01T00:00:05+01:00", "after-append", &[]);
+        assert_eq!(resets(&cli).len(), 1);
+        let out = cli.capture_at("2027-03-01T00:10:00+01:00", &[]);
+        assert_eq!(out["written"], 0, "{out}");
+        assert_eq!(resets(&cli).len(), 1, "the note is not written again");
+    }
+
+    /// SPEC §3 known limitation (stage-1 review P2): snapper had no event
+    /// before the crashed capture baselined it without a note; that
+    /// capture appended its first events, so the next capture records a
+    /// state reset for snapper that lost nothing. pacman's is not repeated.
+    #[test]
+    fn a_source_first_recorded_by_the_crashed_capture_gets_a_note() {
+        let cli = Cli::new();
+        let at = clock();
+        let out = cli.run_env(
+            &["capture", "--source", "pacman", "--since", FIXTURE_CREATED],
+            &[("SELDON_NOW", &at(0))],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+        std::fs::remove_dir_all(state(&cli)).unwrap();
+        cli.crash(
+            &at(1),
+            "after-append",
+            &["--all", "--since", FIXTURE_CREATED],
+        );
+        let out = cli.capture_at(&at(2), &[]);
+        let sources: Vec<String> = resets(&cli)
+            .iter()
+            .map(|r| r.meta.extra["sources"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(sources, ["pacman", "snapper"]);
         assert!(
             warning(&out).starts_with("state reset recorded: snapper, pacman took a new baseline"),
             "{out}"
@@ -1910,6 +1959,7 @@ impl Cli {
     }
 
     /// [`Cli::capture`] with the clock at `now` (`SELDON_NOW`).
+    #[cfg(debug_assertions)]
     fn capture_at(&self, now: &str, extra: &[&str]) -> serde_json::Value {
         let mut args = vec!["capture", "--all", "--json"];
         args.extend(extra);
@@ -1920,6 +1970,7 @@ impl Cli {
 
     /// WP-099: `capture --all` (or `extra`) at `now` that stops at `point`
     /// (`before-append` or `after-append`) as a crash there would.
+    #[cfg(debug_assertions)]
     fn crash(&self, now: &str, point: &str, extra: &[&str]) {
         use seldon::commands::capture::{CRASH_ENV, CRASH_EXIT};
         let mut args = vec!["capture", "--json"];
@@ -1934,6 +1985,7 @@ impl Cli {
     }
 
     /// `cursors.json` as written.
+    #[cfg(debug_assertions)]
     fn cursors(&self) -> serde_json::Value {
         let file = self.env.home.join(".local/state/seldon/cursors.json");
         serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
