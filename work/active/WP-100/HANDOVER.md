@@ -179,3 +179,112 @@ Guard: one read-only `grep` over the docs whose pattern contained
 Omarchy's package-add subcommand was blocked ("omarchy command that
 changes the system"); not rerouted, the search was dropped (a false
 positive for `scripts/guard.sh`, WP-098's area).
+
+# Round 2
+
+Brief: `review-0.1.1/handovers/WP-100-round-2-brief.md` (stage 1 SEND
+BACK, stage 2 fixed the round). Every item done; one extension and one
+wording choice are marked **(note)**.
+
+## Done
+
+1. **B1 R3 recipe** — templates en/de §"R3: the one stop" and
+   AGENT-GUIDE §4: item 1 replaced (whole set via `-Sp --print-format %n`,
+   PKGBUILD of the project or an AUR package over `depends`/`makedepends`,
+   never `-Sy`/`-Syy` for an install, a moved mirror means an upgrade
+   first), new item 2 (system upgrade — `pacman -Syu`, `omarchy update`,
+   an AUR helper's `-Syu` — and any unresolvable transaction are R3 as
+   such; `checkupdates` gives the list); old 2/3 renumbered. The guide
+   adds "an AUR install as such is not R3". SPEC-ENGINE §3 has a new
+   "Agent rules" paragraph with the stricter recipe (ADR-0027 unchanged).
+2. **B2 limits only** — intro sentence, "Instructions and data" first
+   sentence and the Never line (en/de, wording as given); guide §1 (new
+   paragraph under the table, table row), §2 and §10.
+3. **Child agents** — last sentences of "Attended or not" (en/de, guide
+   §2): unset `SELDON_ATTENDED`, set `SELDON_ACTOR`; a sub-agent shares
+   attendance, privileged steps stay in the terminal.
+4. **READMEs** — "Installing software" after the first sentence (en/de,
+   guide §4).
+5. **Snapshot order** — "Start the case first; then …", number recorded
+   in a *Log* line; `plan start --snapshot` gone from the agent text
+   (templates, guide §3.2, §4, §9 example: `plan start` now follows
+   `plan new`, the two snapshot numbers go into *Log* lines;
+   `case-started` no longer claims "snapshot 118"). **(note)** The
+   brief's "(WP-101 adds `seldon plan snapshot <ID> <N>`)" is not in the
+   template: a WP number does not belong in a user's logbook, and the
+   template-command test (round 1) fails on a `seldon` command the
+   engine lacks. The note is in SPEC-ENGINE §3 instead; WP-101 puts the
+   command into the template when it exists.
+6. **D5** — `rules.rs` `update`, Unfenced arm: a released v1 file →
+   template, no archive (unchanged); any other unfenced file → archived
+   (`archive/AGENTS-<date>.md`, `-2` …), template written, and only its
+   lines that occur in no v1 text follow under `## Your rules (kept)`
+   (`own_lines`: line set, order kept, blank runs as one, leading and
+   trailing blanks dropped, CRLF folded); nothing left → template whole,
+   action `rewritten`. A blank or empty file is not archived (nothing in
+   it). New action `kept` replaces `inserted` (JSON and SPEC). The "It
+   still holds … trim it" message and the "(kept) … this block wins"
+   template paragraph are gone. N2: doctor `invalid (not UTF-8)`, fix
+   `seldon rules update --replace (archives the file)`.
+   **(note) Line source extended.** The brief's precondition check
+   ("its differing lines are the fixture's own, not an accidental older
+   rendering") came out **no**: `fixtures/logbook/AGENTS.md` is the
+   pre-release WP-003 template (`e6b513c`, de) byte for byte except its
+   last line ("… (hyprland, themes)."). With only the four released
+   files as line source, `update` would have kept all its old rules
+   ("nicht loslegen", "nicht mit pacman direkt") as the user's. So
+   `V1_TEXTS` holds the four released files **and** the pre-release
+   renderings of WP-003, WP-024 and WP-047 (en/de; 10 files under
+   `engine/templates/rules-v1/`, embedded with `include_str!`; the four
+   goldens moved there from `tests/golden/`). Only the four released
+   hashes count as "unchanged release" (no archive); the pre-release
+   texts are line sources only. The fixture now keeps exactly its own
+   line (golden `engine/tests/golden/rules-kept-fixture.md`).
+7. **N1** — Fenced arm: a block that is neither this engine's (either
+   language) nor in `RELEASED_BLOCKS` (empty: v2 is the first block; a
+   later wording change adds the old hash there) is archived before the
+   rewrite. doctor's fix for the changed block: "seldon rules update
+   (archives your copy)".
+8. **N4** — both unit cases added in `markers_count_as_whole_lines_only`.
+
+Decisions applied: panel fix for `rules: outdated` → WP-101 (the
+orchestrator adds it to WP-101's inputs; ADR-0027's banner sentence is
+deferred there). `fixtures/logbook/AGENTS.md` unchanged, v1 on purpose;
+`doctor_reads_the_fixture_logbook_as_v1` (integration, read-only) and
+`the_fixture_logbook_keeps_exactly_its_own_line` (unit, golden) pin it.
+
+## Verified by
+
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at `701877f` (docs-check: ok (425 links, 14 translated pages, 42 commands, 504 command lines))
+- `cargo test --lib logbook::rules` 12 ok, `--test rules` 9 ok,
+  `--test init` 39 ok (needles: `SELDON_ACTOR`, `agent:<name>`,
+  `` `-Sy`, `-Syy` ``, `-Syu`, `omarchy update`, `checkupdates`,
+  `snapshot <N> (<config>) before <step>`, `curl … | sh`,
+  `areas/*/AGENTS.md`; skeleton golden unchanged; every `seldon …` of
+  both templates still exists), clippy and fmt clean, docs-check ok
+  (425 links, 504 command lines).
+- **Mutants round 2** (helper in a private scratch subdirectory; each
+  alone, unit + integration rules tests, restored; all compiled; 13 of
+  13 killed): N1 `own_lines` knows no v1 line · N2 blank runs not
+  collapsed · N3 only the released v1 texts are line sources (fixture
+  test) · N4 unfenced file never archived · N5 blank file archived · N6
+  edited block not archived · N7 Seldon block of the other language
+  archived · N8 nothing left still writes the kept heading · N9 end
+  marker line may carry text (stage-1 R2) · N10 begin marker without
+  ` -->` accepted (stage-1 R5) · N11 command ignores the archive flag ·
+  N12 doctor reads non-UTF-8 as text · N13 changed-block fix without the
+  archive note.
+
+## Open
+
+- `main` moved (WP-098 merged, WP-096 started). A merge of this branch
+  conflicts only in `memory/pitfalls.md` (both sides appended at the
+  end: keep both); `CHANGELOG.md` auto-merges. Not merged here
+  (merges are serialised by the orchestrator).
+- WP-101: put `seldon plan snapshot <ID> <N>` (and `plan set --risk R3`)
+  into the templates' snapshot and R3 lines once they exist; the
+  template-command test enforces the order.
+
+## Touched outside WP scope
+
+None. No guard block this round.
