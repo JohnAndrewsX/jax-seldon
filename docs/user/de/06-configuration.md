@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 767865b -->
+<!-- source: en/06-configuration.md @ 4b5a87b -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -238,6 +238,11 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   `--proxy` oder in `https_proxy=`;
 - Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
   wenn das Passwort `/`, `?`, `#` oder `:` enthält.
+- der Teil vor dem `@` einer E-Mail-Adresse: `me@example.com` lautet
+  `‹redacted›@example.com`. Ein SSH-Remote (`git@github.com:owner/repo`),
+  `user@host` ohne Punkt, Paketversionen (`pkg@1.2.3`) und
+  systemd-Units (`getty@tty1.service`) bleiben; `ssh me@host.example`
+  sieht wie eine Adresse aus und wird ebenfalls geschwärzt.
 
 Text, der geschrieben wurde, bevor es eine Regel gab, bleibt, wie er ist.
 
@@ -264,6 +269,15 @@ wenn du sie behalten willst.
 [redaction]
 skipPaths = ["~/.config/hypr/secrets.lua", "*.key", "**/tokens/**"]
 ```
+
+Der Name einer Datei unter einem beobachteten Pfad ist das Subjekt
+ihrer Ereignisse. Ein Desktop-Eintrag, den du nach einem Konto benannt
+hast, etwa eine Web-App `Mail (me@example.com).desktop`, kommt deshalb
+als `Mail (‹redacted›@example.com).desktop` ins Logbuch. Soll so eine
+Datei gar nicht hinein, trag ihren Namen in `skipPaths` ein, zum
+Beispiel `"*@*.desktop"` für jeden Desktop-Eintrag mit einem `@` im
+Namen; schon geschriebene Ereignisse behalten den Namen, mit dem sie
+geschrieben wurden.
 
 | Muster | Trifft |
 |---|---|
