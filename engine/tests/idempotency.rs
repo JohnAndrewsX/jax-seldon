@@ -2550,6 +2550,41 @@ mod crash {
         assert!(resets(&cli).is_empty(), "{:?}", resets(&cli));
     }
 
+    /// Two crashes in a row (WP-104): the second capture keeps the first
+    /// one's silent baselines besides its own. pacman's cursor is there
+    /// but does not read, and the ledger holds no pacman event (the first
+    /// capture's `--since` lies after the log), so the first crash takes
+    /// pacman's baseline silently and appends its first events; the second
+    /// runs omarchy alone. The third records no state reset for pacman.
+    #[test]
+    fn a_second_crash_keeps_the_first_silent_baselines() {
+        let cli = Cli::new();
+        let at = clock();
+        cli.capture_at(&at(0), &["--since", &at(0)]);
+        assert!(!cli.ledger().iter().any(|e| e.source == Source::Pacman));
+        let file = state(&cli).join("cursors.json");
+        let mut cursors = cli.cursors();
+        for name in ["pacman", "omarchy"] {
+            cursors["collectors"][name]["cursor"] = json!("not a cursor");
+        }
+        std::fs::write(&file, cursors.to_string()).unwrap();
+        cli.crash(
+            &at(1),
+            "after-append",
+            &["--source", "pacman", "--since", FIXTURE_CREATED],
+        );
+        assert!(cli.ledger().iter().any(|e| e.source == Source::Pacman));
+        cli.crash(&at(2), "after-append", &["--source", "omarchy"]);
+        assert_eq!(
+            cli.cursors()["silentBaselines"][root(&cli)],
+            json!(["pacman", "omarchy"])
+        );
+
+        let out = cli.capture_at(&at(3), &[]);
+        assert_eq!(out["warnings"], json!([]), "{out}");
+        assert!(resets(&cli).is_empty(), "{:?}", resets(&cli));
+    }
+
     /// The marks count for the logbook whose capture saved them only: a
     /// capture of another logbook crashes with its baselines marked, and
     /// the next capture here records the loss of an unreadable cursor.
