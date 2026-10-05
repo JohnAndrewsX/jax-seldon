@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Engine
+
+- A capture over ssh, from cron or from a systemd unit no longer
+  degrades the plugins collector with "OMARCHY_PATH is not set": when
+  the variable is unset or empty, Omarchy's programs (`omarchy plugin
+  list|catalog`, `omarchy-version`, also in `doctor` and `dossier`) get
+  `OMARCHY_PATH=/usr/share/omarchy`; a set value is passed on unchanged
+  (WP-089).
+- The desktop entries in `~/.local/share/applications` are watched by
+  default; `mimeinfo.cache` there is excluded, as it is rebuilt on many
+  package updates. A `config.toml` the wizard wrote keeps its own
+  `watchPaths`; guide 06 gives the line to add. Files already present
+  when the path enters the list record no addition (WP-089).
+- A collector that degrades in the capture that records a state reset
+  (snapper without permission, a failing `omarchy`) no longer looks like
+  "never ran here" afterwards: `cursors.json` marks it `pendingBaseline`
+  with what was lost (`cursors`, or `logbook` when the state was another
+  logbook's), and its first successful run records its own state reset
+  note with that kind, once.
+  This also holds when it was the only collector that lost its state
+  (WP-088).
+- Seldon's own plugin and package changes that an earlier capture left
+  open (the engine stopped between the two writes, or 0.1.2 and before
+  recorded them) are explained by the next capture, as rule 8 explains
+  new ones; a row you dismissed or resolved keeps its resolution, and
+  adding or downgrading Seldon stays drift. Such a resolution is dated at
+  the capture or at the event, whichever is later, so an event dated
+  after a clock that moved back is no longer left as drift (WP-088).
+
 ### Plugin
 
 - After `omarchy plugin update jax.seldon` the shell keeps running the

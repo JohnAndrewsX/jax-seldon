@@ -22,10 +22,11 @@
 //!   each new config event that reports a file `init` or `hook install`
 //!   wrote, with one `explained` resolution right after the append.
 //! - **Seldon updating itself** (rule 8): [`explain_own_changes`] explains
-//!   each new event of its own plugin or package
-//!   ([`attribution::own_change`]) the same way.
+//!   each event of its own plugin or package
+//!   ([`attribution::own_change`]) the same way: the new ones, and those
+//!   an earlier capture left without a resolution (WP-088).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
@@ -328,17 +329,28 @@ pub fn explain_own_writes(
     (explained, warnings)
 }
 
-/// The `explained` resolutions rule 8 writes: one per written event
+/// The `explained` resolutions rule 8 writes: one per event of `events`
 /// without a case that is Seldon changing itself
-/// ([`attribution::own_change`]); `source: seldon`, actor `system`, no
-/// case, the reason as detail, at `ts`.
-pub fn own_change_resolutions(written: &[Event], ts: DateTime<FixedOffset>) -> Vec<Event> {
-    written
+/// ([`attribution::own_change`]) and that no resolution line in `events`
+/// refers to (explained, dismissed, linked: it keeps its resolution);
+/// `source: seldon`, actor `system`, no case, the reason as detail, at
+/// `ts` or the event's time, whichever is later: the index folds a
+/// resolution only onto an earlier line, and a month file is chosen by
+/// the line's time, so an event dated after the capture clock (the clock
+/// moved back) still gets a line after it (WP-088 review).
+pub fn own_change_resolutions(events: &[Event], ts: DateTime<FixedOffset>) -> Vec<Event> {
+    let resolved: HashSet<Ulid> = events
         .iter()
-        .filter(|e| e.case.is_none())
+        .filter(|e| e.kind == Kind::Resolution)
+        .filter_map(|e| e.refers_to)
+        .collect();
+    events
+        .iter()
+        .filter(|e| e.case.is_none() && !resolved.contains(&e.id))
         .filter_map(|e| {
             let why = attribution::own_change(e)?;
-            let mut r = Event::new(ts, Source::Seldon, Kind::Resolution, e.subject.clone())
+            let at = ts.max(e.ts);
+            let mut r = Event::new(at, Source::Seldon, Kind::Resolution, e.subject.clone())
                 .actor(ACTOR_SYSTEM)
                 .detail(why);
             r.refers_to = Some(e.id);
@@ -349,22 +361,36 @@ pub fn own_change_resolutions(written: &[Event], ts: DateTime<FixedOffset>) -> V
 }
 
 /// After every capture (SPEC-ENGINE §5 rule 8): appends the
-/// [`own_change_resolutions`] of `written`. Returns how many events were
-/// explained, and a warning: the append already happened, so nothing here
+/// [`own_change_resolutions`] of the whole ledger, `written` included.
+/// That also catches up on own changes an earlier capture left open (the
+/// engine stopped or the append failed between the two appends, or a
+/// version before rule 8 wrote them, WP-088). When the ledger cannot be
+/// read, only `written` is explained. Returns how many events were
+/// explained, and warnings: the append already happened, so nothing here
 /// fails the capture.
 pub fn explain_own_changes(
     lock: &Lock,
     ledger: &Ledger,
     written: &[Event],
     ts: DateTime<FixedOffset>,
-) -> (usize, Option<String>) {
-    let lines = own_change_resolutions(written, ts);
+) -> (usize, Vec<String>) {
+    let mut warnings = Vec::new();
+    let lines = match ledger.read_all() {
+        Ok(events) => own_change_resolutions(&events, ts),
+        Err(e) => {
+            warnings.push(format!("seldon's earlier own changes not checked: {e:#}"));
+            own_change_resolutions(written, ts)
+        }
+    };
     if lines.is_empty() {
-        return (0, None);
+        return (0, warnings);
     }
     match ledger.append(lock, lines) {
-        Ok(lines) => (lines.len(), None),
-        Err(e) => (0, Some(format!("seldon's own changes not explained: {e}"))),
+        Ok(lines) => (lines.len(), warnings),
+        Err(e) => {
+            warnings.push(format!("seldon's own changes not explained: {e}"));
+            (0, warnings)
+        }
     }
 }
 
@@ -516,6 +542,45 @@ mod tests {
                 line(&package, "seldon's own package")
             ]
         );
+    }
+
+    /// WP-088: the catch-up reads the whole ledger; an own change that
+    /// has any resolution keeps it, one without is explained once.
+    #[test]
+    fn own_changes_with_a_resolution_keep_it() {
+        let own = |n, kind| {
+            let mut e = event(n, "2026-10-01T10:00:00+02:00", Source::Plugins);
+            e.kind = kind;
+            e.subject = attribution::OWN_PLUGIN.into();
+            e
+        };
+        let resolution = |n, of: &Event, r| {
+            let mut e = event(n, "2026-10-01T10:10:00+02:00", Source::Seldon);
+            e.kind = Kind::Resolution;
+            e.refers_to = Some(of.id);
+            e.resolution = Some(r);
+            e
+        };
+        let open = own(1, Kind::PluginUpdate);
+        let dismissed = own(2, Kind::PluginUpdate);
+        let explained = own(3, Kind::PluginEnable);
+        let linked = own(4, Kind::PluginDisable);
+        let ledger = [
+            open.clone(),
+            dismissed.clone(),
+            explained.clone(),
+            linked.clone(),
+            resolution(5, &dismissed, Resolution::Dismissed),
+            resolution(6, &explained, Resolution::Explained),
+            resolution(7, &linked, Resolution::Linked),
+        ];
+        let now = ts("2026-10-01T10:20:00+02:00");
+        let lines = own_change_resolutions(&ledger, now);
+        let refers: Vec<_> = lines.iter().map(|r| r.refers_to).collect();
+        assert_eq!(refers, [Some(open.id)]);
+        let mut caught_up = ledger.to_vec();
+        caught_up.extend(lines);
+        assert!(own_change_resolutions(&caught_up, now).is_empty());
     }
 
     #[test]

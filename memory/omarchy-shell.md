@@ -539,6 +539,23 @@ Verified in the shell source and live on the test host.
   are rounded down and sum exactly to the width stay on one line; give
   the rounding rest to the last cell.
 
+## Live frame timing without touching Hyprland's environment (2026-10-05)
+
+- Omarchy 4's Hyprland takes Lua dispatchers: `hyprctl dispatch
+  'hl.dsp.exec_cmd("…")'` (what `omarchy-restart-shell` uses). Stop the
+  shell with `quickshell kill -p "$OMARCHY_PATH/shell" --any-display` (loop
+  until it fails), then `hl.dsp.exec_cmd("env QSG_RENDER_TIMING=1
+  QT_LOGGING_RULES=qt.scenegraph.time.renderloop=true omarchy-launch-shell")`:
+  the variables reach only that shell process (`/proc/<pid>/environ`), the
+  frame log goes to `journalctl --user -t omarchy-shell` (threaded loop:
+  per-window "frame rendered in N ms, sync, render, swap" and "Frame
+  prepared, polish …, blockedForSync …"). A plain `omarchy-restart-shell`
+  afterwards drops them. Over ssh export `HYPRLAND_INSTANCE_SIGNATURE`
+  (newest dir under `$XDG_RUNTIME_DIR/hypr`) or `hyprctl` prints nothing.
+- Lines are tagged by window pointer, not name: identify a surface as the
+  window that starts rendering after the IPC command. A bar with a
+  scrolling media title renders at 60 fps in idle.
+
 ## WP-090 findings (2026-10-05, Omarchy shell tree at `$OMARCHY_PATH` 4.0.0.alpha `version` file, quickshell 0.3.1)
 
 - **`omarchy plugin update` is meant to reload, and does not load new

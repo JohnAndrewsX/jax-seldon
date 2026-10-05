@@ -35,7 +35,7 @@ den Schlüssel siehst. In deiner Zeile `logbook` steht dein eigener Pfad.
 harnesses = ["claude-code"]
 language = "de"
 logbook = "/home/you/Seldon"
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
 
 [collectors]
 config = true
@@ -124,7 +124,11 @@ sind normal:
   sonst nichts: Snapshots anlegen, ändern oder löschen kann dein Benutzer
   damit nicht. Dateien in einem Snapshot behalten ihre eigenen Rechte.
 - `plugins` fragt die laufende Omarchy-Shell. Erfasst du von einem TTY
-  ohne Desktop-Sitzung, ist er für diese Erfassung `degraded`.
+  ohne Desktop-Sitzung, ist er für diese Erfassung `degraded`. Über ssh
+  oder aus cron klappt es, solange die Shell auf dem Rechner läuft: Ist
+  dort `OMARCHY_PATH` nicht gesetzt, gibt Seldon den Omarchy-Befehlen
+  `/usr/share/omarchy` mit; einen Wert, den du setzt, nimmt es, wie er
+  ist.
 
 ## Beobachtete Pfade
 
@@ -134,18 +138,36 @@ hinzugekommen, geändert oder entfernt ist. Er zeichnet den Pfad und zwei
 kurze Hashes auf, nie den Inhalt.
 
 Vorgaben: `~/.config/hypr`, `~/.config/omarchy`, `~/.config/waybar`,
-`~/.bashrc`, `~/.zshrc`. Fehlende Pfade überspringt der Collector. Ein
-relativer Pfad wie `.config/nvim` bedeutet `~/.config/nvim`; der
-Assistent speichert getippte Pfade in dieser Form. Ergänze eigene, zum
-Beispiel:
+`~/.bashrc`, `~/.zshrc`, `~/.local/share/applications` (die
+Desktop-Einträge deiner Web-Apps und TUIs). Fehlende Pfade überspringt
+der Collector. Ein relativer Pfad wie `.config/nvim` bedeutet
+`~/.config/nvim`; der Assistent speichert getippte Pfade in dieser Form.
+Ergänze eigene, zum Beispiel:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.config/nvim", "~/.config/systemd/user"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/nvim", "~/.config/systemd/user"]
 ```
+
+Der Assistent schreibt die Liste in die `config.toml`. Eine Datei, die er
+vor 0.1.4 geschrieben hat, behält deshalb ihre Liste und beobachtet die
+Desktop-Einträge nicht. Willst du sie beobachten, ergänze den Pfad in
+deinen `watchPaths`:
+
+```toml
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
+```
+
+Die Dateien, die schon dort liegen, wenn der Pfad in die Liste kommt,
+nimmt der Collector, wie sie sind: Die nächste Erfassung zeichnet für
+sie nichts als hinzugefügt auf und meldet `watch scope changed: 0 file(s)
+left it, N entered it`.
 
 Immer ausgenommen:
 
 - `~/.config/omarchy/plugins/` (das deckt der Plugins-Collector ab);
+- `~/.local/share/applications/mimeinfo.cache`: ein Cache, der aus den
+  Desktop-Einträgen gebaut und bei vielen Paket-Updates neu geschrieben
+  wird;
 - `.git`-Ordner und Ordner, die über einen Symlink erreicht werden;
 - Binärdateien und Dateien über 1 MiB (als übersprungen gelistet, ohne
   Hash);

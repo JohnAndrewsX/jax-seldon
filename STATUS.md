@@ -15,8 +15,7 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-087 | redaction: quote-aware curl context, repeated options | Engine | `engine-087` (opus) | `wt/WP-087` · `wp/087-redact-curl` | 2026-10-05 |
-| WP-088 | state reset: pending baseline, own-change catch-up | Engine | `engine-088` (opus) | `wt/WP-088` · `wp/088-reset-followups` | 2026-10-05 |
-| WP-089 | OMARCHY_PATH default, desktop entries watched | Engine | `engine-089` (opus) | `wt/WP-089` · `wp/089-environment` | 2026-10-05 |
+| WP-091 | snapper access notes, not-run collector gap, doctor wording | Engine | `engine-091` (opus) | `wt/WP-091` · `wp/091-reset-notes` | 2026-10-05 |
 | WP-090 | plugin: stale code after update, harness record order | Plugin | `plugin-090` (opus) | `wt/WP-090` · `wp/090-stale-plugin` | 2026-10-05 |
 
 ## Queued (next up)
@@ -24,7 +23,10 @@ decisions).
 0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
 advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
 notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
-Then the contract v2 bundle for v0.2.0 (autocommit result in the index,
+After 0.1.4 (operator decision 2026-10-05): WP-094 Seldon agent skill,
+WP-095 task prompts from the panel (ADR first), WP-096 default actor for
+launched agents; no Omarchy upstream contribution before 1.0. Then the
+contract v2 bundle for v0.2.0 (autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
 account: WP-033 (update-impact, option C) and WP-042 (marketplace
 submission). (see `work/queued/`)
@@ -40,6 +42,19 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-088 a collector degraded in a state reset keeps a
+  `pendingBaseline` mark (`cursors` or `logbook`) and records its gap on
+  its first successful run; rule 8 catches up Seldon's own changes left
+  open (dismissed rows keep their resolution; dated at max(now, event))
+  so a clock moved back leaves no drift; Opus review, Fable stage 2, one
+  fix round, Sonnet verification; merged.
+- 2026-10-05 WP-089 Omarchy programs run by the engine get
+  `OMARCHY_PATH=/usr/share/omarchy` when it is unset or empty (ssh, cron,
+  scripts: the plugins collector no longer degrades; checked live on the
+  test host, over ssh and with `env -i`); `~/.local/share/applications`
+  is a default watch path with `mimeinfo.cache` excluded; guide 06 gives
+  the line for existing configs; one review round; merged. E-mail
+  redaction for desktop entry names follows as WP-093 in the same release.
 - 2026-10-05 WP-086 Seldon's own plugin updates (update, enable, disable)
   and package upgrades are explained by rule 8, not drift; adding,
   installing, downgrading and removing stay drift (no provenance check);
@@ -462,14 +477,14 @@ submission). (see `work/queued/`)
 - **ADR-0022** (AUR package builds against glibc; the static musl binary
   is the GitHub release asset) reads AGENTS.md §7 without changing it —
   accepted by the orchestrator, veto possible.
-- **Live sweeps done.** Only the QSG frame-timing profile is left, see
-  the next item; `call view` paint counters (1 per chart, 0–2 ms) are the
+- **Live sweeps done**, the QSG frame-timing profile too (next item); `call view` paint counters (1 per chart, 0–2 ms) are the
   live record.
-- **Live frame profile of the Prime Radiant (WP-031)** needs
-  `QSG_RENDER_TIMING` in Hyprland's environment on the test host
-  (`hyprctl keyword env …`) plus a shell restart — a runtime change on the
-  test host, so your call. The offscreen profile (4–7 ms frames) is the
-  acceptance record; the live check via `call view` needs no env change.
+- **Live frame profile of the Prime Radiant (WP-031): done 2026-10-05**
+  on the test host without changing Hyprland's environment
+  (`work/completed/WP-031/LIVE-PROFILE-2026-10-05.md`): period switches
+  ≤ 2 ms render / ≤ 8 ms polish at every index size; the first frame of
+  a newly opened overlay 23–26 ms, independent of the data (new-surface
+  uploads, not aggregation: 0).
 - **FYI, veto possible:** the Prime Radiant's default period is 90 days
   (30/90/365/All available; resets to 90 d on every open). 365 d would
   leave the drift bars and timeline sparse on every logbook younger than

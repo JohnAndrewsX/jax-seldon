@@ -201,6 +201,48 @@ pub fn run_in_engine_group(
     run_with(command(program, args, cwd), timeout, Group::Engine)
 }
 
+/// Omarchy's install root when `OMARCHY_PATH` is unset or empty: the
+/// package install (memory/host.md). A desktop session exports the
+/// variable; ssh, cron and systemd units do not, and `omarchy-shell`
+/// (behind `omarchy plugin list`) then fails with "OMARCHY_PATH is not
+/// set".
+pub const OMARCHY_PATH_DEFAULT: &str = "/usr/share/omarchy";
+
+/// `$OMARCHY_PATH`, or [`OMARCHY_PATH_DEFAULT`] when it is unset or empty.
+pub fn omarchy_path() -> PathBuf {
+    omarchy_path_from(std::env::var_os("OMARCHY_PATH").as_deref())
+}
+
+/// [`omarchy_path`] for the engine's own `value`.
+fn omarchy_path_from(value: Option<&std::ffi::OsStr>) -> PathBuf {
+    match omarchy_path_to_set(value) {
+        Some(default) => default.into(),
+        None => value.unwrap_or_default().into(),
+    }
+}
+
+/// The `OMARCHY_PATH` an Omarchy command must be given for the engine's
+/// own `value`: [`OMARCHY_PATH_DEFAULT`] when it is unset or empty, else
+/// none (a set value is trusted, as `PATH` is).
+fn omarchy_path_to_set(value: Option<&std::ffi::OsStr>) -> Option<&'static str> {
+    value
+        .is_none_or(|v| v.is_empty())
+        .then_some(OMARCHY_PATH_DEFAULT)
+}
+
+/// `program args…` for a program of Omarchy's (`omarchy`,
+/// `omarchy-version`), for [`run_command`]: the child gets `OMARCHY_PATH`
+/// through [`Command::env`] when the engine's own is unset or empty. The
+/// engine's environment is never changed (`set_var` races with the
+/// threads [`run_command`] reads the output pipes with).
+pub fn omarchy_command(program: &str, args: &[&str]) -> Command {
+    let mut cmd = command(program, args, None);
+    if let Some(value) = omarchy_path_to_set(std::env::var_os("OMARCHY_PATH").as_deref()) {
+        cmd.env("OMARCHY_PATH", value);
+    }
+    cmd
+}
+
 fn command(program: &str, args: &[&str], cwd: Option<&Path>) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(args);
@@ -536,6 +578,24 @@ mod tests {
         assert_eq!(
             run("sleep", &["5"], None, Duration::from_millis(100)),
             Run::TimedOut
+        );
+    }
+
+    #[test]
+    fn omarchy_path_is_set_only_when_unset_or_empty() {
+        use std::ffi::OsStr;
+        assert_eq!(omarchy_path_to_set(None), Some("/usr/share/omarchy"));
+        assert_eq!(
+            omarchy_path_to_set(Some(OsStr::new(""))),
+            Some("/usr/share/omarchy")
+        );
+        assert_eq!(omarchy_path_to_set(Some(OsStr::new("/opt/omarchy"))), None);
+        for unset in [None, Some(OsStr::new(""))] {
+            assert_eq!(omarchy_path_from(unset), Path::new("/usr/share/omarchy"));
+        }
+        assert_eq!(
+            omarchy_path_from(Some(OsStr::new("/opt/omarchy"))),
+            Path::new("/opt/omarchy")
         );
     }
 
