@@ -85,7 +85,7 @@ Branch `wp/100-agent-rules-v2`, worktree `wt/WP-100`. Based on `71affbd`
 
 ## Verified by
 
-- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at `7c35591` (fmt, clippy, tests, watch feature, packaging, install, schema, docs-check "ok (425 links, 14 translated pages, 42 commands, 505 command lines)", plugin validate, qmllint, plugin tests); an earlier run at `823b405`… before the template-command test was also exit 0
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at `7c35591` (fmt, clippy, tests, watch feature, packaging, install, schema, docs-check "ok (425 links, 14 translated pages, 42 commands, 505 command lines)", plugin validate, qmllint, plugin tests); the first run, at `26f91da` before the template-command test, was exit 0 too
 - `cargo test --lib logbook::rules` (9 tests) and `cargo test --test rules`
   (8 tests): fenced rewrite with user text above and below (a quoted end
   marker below), unfenced edited v1 kept byte for byte below the heading
