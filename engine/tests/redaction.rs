@@ -539,6 +539,62 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeCookie6",
         "curl -b‹redacted› https://h.example",
     ),
+    // a `&`, `;` or `|` inside quotes does not end the command (WP-087)
+    (
+        "curl-user",
+        "curl 'https://h.example/q?a=1&b=2' -u admin:fakePw31",
+        "fakePw31",
+        "'https://h.example/q?a=1&b=2' -u ‹redacted›",
+    ),
+    (
+        "curl-user",
+        "curl -H \"X-Note: a;b|c\" --user admin:fakePw32 https://h.example",
+        "fakePw32",
+        "--user ‹redacted› https://h.example",
+    ),
+    (
+        "curl-user",
+        r#"curl -d "{\"q\":\"x;y\"}" -u admin:fakePw33 https://h.example"#,
+        "fakePw33",
+        "-u ‹redacted› https://h.example",
+    ),
+    (
+        "proxy-option",
+        "curl -d 'a=1&b=2' -U bob:fakeProxyPw11 https://h.example",
+        "fakeProxyPw11",
+        "-d 'a=1&b=2' -U ‹redacted› https://h.example",
+    ),
+    (
+        "proxy-userinfo",
+        "curl \"https://h.example/?a=1&b=2\" -x bob:fakeProxyPw12@proxy.example:3128",
+        "fakeProxyPw12",
+        "-x ‹redacted›@proxy.example:3128",
+    ),
+    (
+        "cookie-option",
+        "curl -H 'X-A: x;y' -b 'sid=fakeCookie8' https://h.example",
+        "fakeCookie8",
+        "-b ‹redacted› https://h.example",
+    ),
+    (
+        "sshpass-password",
+        "sshpass -P 'pass;word:' -p fakePw34 ssh me@host.example",
+        "fakePw34",
+        "-p ‹redacted› ssh me@host.example",
+    ),
+    (
+        "registry-login-password",
+        "podman login --authfile 'a&b.json' -p fakePw35 quay.example",
+        "fakePw35",
+        "-p ‹redacted› quay.example",
+    ),
+    // a quote the line never closes is an ordinary character
+    (
+        "curl-user",
+        "curl's -u admin:fakePw36 did not work",
+        "fakePw36",
+        "curl's -u ‹redacted› did not work",
+    ),
     // case-insensitive matching folds the Kelvin sign onto `k` and the
     // long s onto `s`; the triggers do the same
     (
@@ -620,6 +676,14 @@ const CLEAR: &[&str] = &[
     "curl -H \"Cookie: $COOKIE\" https://h.example",
     "curl -b cookies.txt -c cookies.txt https://h.example",
     "curl --cookie-jar jar.txt https://h.example",
+    // an unquoted `;`, `&` or `|` ends the command, also after quoted
+    // strings (WP-087)
+    "curl https://h.example; useradd -U bob",
+    "curl -o 'out' https://h.example; useradd -m 'bob' -U bob",
+    "curl -s 'https://h.example/?a=1&b=2' | grep -b 'k=v'",
+    "curl \"https://h.example\" && wget -U 'agent:x@y' https://h.example",
+    "Merged the curl changes; useradd -U is the default now",
+    "Tried curl & wget; grep -b 'a=b' found nothing",
 ];
 
 mod redaction {

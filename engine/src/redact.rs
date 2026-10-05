@@ -56,6 +56,17 @@ pub const REDACTED: &str = "‹redacted›";
 /// A quoted or bare value after a key.
 const VALUE: &str = r#"(?:"[^"]*"|'[^']*'|[^\s'"&;|]+)"#;
 
+/// The rest of one command after its command word (`curl`, `sshpass`,
+/// `docker login`), up to an option: anything on the same line but an
+/// unquoted `;`, `&` or `|`. A quoted string (`'a&b'`, `"x;y"`, with `\"`
+/// inside double quotes) and a backslash escape outside quotes (`\;`)
+/// belong to the command. A quote that the line never closes (`curl's -u
+/// …` in a note) is an ordinary character, after which no quote or
+/// separator may follow; the quoted strings before it pair up as written,
+/// so an unquoted `;` between two of them still ends the command.
+const COMMAND_REST: &str =
+    r#"(?:[^\n;&|'"\\]|\\.|'[^'\n]*'|"(?:[^"\\\n]|\\.)*")*?(?:['"][^\n;&|'"]*?)?"#;
+
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).
 pub const CREDENTIAL_MIN: usize = 8;
@@ -408,7 +419,7 @@ fn builtin_rules() -> Vec<Rule> {
         // within one command of the line
         rule(
             "curl-user",
-            &format!(r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
+            &format!(r"((?-u:\b)curl(?-u:\b){COMMAND_REST}\s(?:-u\s*|--user(?:=|\s+)))(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `curl -U user:pass` (not `useradd -U`), `--proxy-user user:pass`
@@ -417,7 +428,7 @@ fn builtin_rules() -> Vec<Rule> {
         rule(
             "proxy-option",
             &format!(
-                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))(?:{VALUE})"
+                r"((?-u:\b)curl(?-u:\b){COMMAND_REST}\s-U\s*|(?i:--proxy-user(?:=|\s+)|--proxy-password\s+))(?:{VALUE})"
             ),
             KEEP_PREFIX,
         ),
@@ -426,7 +437,9 @@ fn builtin_rules() -> Vec<Rule> {
         // a value with `scheme://` is `url-userinfo`
         rule(
             "proxy-userinfo",
-            r#"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s-x\s*['"]?|(?i:--proxy(?:=|\s+)|[a-z_.]*proxy=)['"]?)[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*(@)"#,
+            &format!(
+                r#"((?-u:\b)curl(?-u:\b){COMMAND_REST}\s-x\s*['"]?|(?i:--proxy(?:=|\s+)|[a-z_.]*proxy=)['"]?)[^\s'"@/:]+:(?:[^/\s'"]|/[^/\s'"])[^\s'"]*(@)"#
+            ),
             "${1}‹redacted›${2}",
         ),
         // `curl -b 'session=…'`, `--cookie "a=b; c=d"`: a value with `=`
@@ -434,13 +447,13 @@ fn builtin_rules() -> Vec<Rule> {
         checked_rule(
             "cookie-option",
             &format!(
-                r"((?-u:\b)curl(?-u:\b)[^\n;&|]*?\s(?:-b\s*|--cookie(?:=|\s+)))(?P<v>{VALUE})"
+                r"((?-u:\b)curl(?-u:\b){COMMAND_REST}\s(?:-b\s*|--cookie(?:=|\s+)))(?P<v>{VALUE})"
             ),
             |v| unquoted(v).contains('='),
         ),
         rule(
             "sshpass-password",
-            &format!(r"((?-u:\b)sshpass(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"),
+            &format!(r"((?-u:\b)sshpass(?-u:\b){COMMAND_REST}\s-p\s*)(?:{VALUE})"),
             KEEP_PREFIX,
         ),
         // `docker login -u me -p secret`, also podman, buildah,
@@ -448,7 +461,7 @@ fn builtin_rules() -> Vec<Rule> {
         rule(
             "registry-login-password",
             &format!(
-                r"((?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b)[^\n;&|]*?\s-p\s*)(?:{VALUE})"
+                r"((?-u:\b)(?:docker|podman|buildah|nerdctl|helm\s+registry)\s+login(?-u:\b){COMMAND_REST}\s-p\s*)(?:{VALUE})"
             ),
             KEEP_PREFIX,
         ),
