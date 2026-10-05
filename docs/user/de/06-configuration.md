@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ fbc65b0 -->
+<!-- source: en/06-configuration.md @ d5ddb85 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -197,13 +197,21 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   Kleinbuchstaben, Großbuchstaben, Ziffern und anderen Zeichen mischen
   (`sort --key=2` und `hotkey=Super` bleiben also, wie sie sind);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
-  deren Name auf Key, Token, Secret oder Auth endet;
+  deren Name auf Key, Token, Secret oder Auth endet, sowie der Wert von
+  `Cookie:` und `Set-Cookie:`;
+- der Wert eines JSON-Schlüssels wie `"password"`, `"passwd"`,
+  `"client_secret"` oder `"access_token"` in eingebettetem JSON
+  (`curl -d '{"password": "…"}'`); `"password_hint"` bleibt;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
   `gho_…`, `github_pat_…` und die übrigen `gh…_`-Formen), GitLab-Tokens
   (`glpat-…`), Slack-Tokens (`xoxb-…`), API-Schlüssel (`sk-…`, `sk_…`);
 - das Passwort nach `-p` bei `mysql`, `psql` und `smbclient`, nach
   `sshpass -p` und nach `docker login -p` (auch `podman`);
-- Benutzer und Passwort nach `curl -u`;
+- Benutzer und Passwort nach `curl -u`, die Cookies nach `curl -b`
+  oder `--cookie` (kein Name einer Cookie-Datei);
+- Proxy-Zugangsdaten: nach `curl -U`, `--proxy-user` und
+  `--proxy-password` sowie `user:pass@` im Proxy nach `curl -x`,
+  `--proxy` oder in `https_proxy=`;
 - Benutzer und Passwort in einer URL (`https://user:secret@host`), auch
   wenn das Passwort `/`, `?`, `#` oder `:` enthält.
 
