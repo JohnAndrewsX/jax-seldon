@@ -902,6 +902,14 @@ mod idempotency {
         copy_dir(&state, &saved);
 
         std::fs::write(&file, "monitor=,preferred,auto,1.25\n").unwrap();
+        // changed between the two captures (an older mtime is clamped to
+        // the first one: `a_change_clamped_to_the_cursors_check_is_replayed`)
+        let at = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(
+                support::ts("2030-01-01T10:05:00+01:00").timestamp() as u64
+            );
+        let handle = std::fs::File::options().write(true).open(&file).unwrap();
+        handle.set_modified(at).unwrap();
         assert_eq!(capture("2030-01-01T10:10:00+01:00")["written"], 1);
         assert_eq!(config(), 1);
 
