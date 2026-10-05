@@ -426,6 +426,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fake/pw8",
         "http.proxy=‹redacted›@proxy.example:3128 fetch",
     ),
+    (
+        "secret-assignment",
+        "wget --proxy-password=fakeProxyPw10 https://h.example/f",
+        "fakeProxyPw10",
+        "--proxy-password=‹redacted› https://h.example/f",
+    ),
     // with a scheme the proxy URL is an ordinary URL with userinfo
     (
         "url-userinfo",
@@ -671,8 +677,9 @@ mod redaction {
         );
     }
 
-    /// The WP-084 rules match only their own rows (the import report
-    /// counts a line once per rule), and a second pass changes nothing.
+    /// The WP-084 rules match only their own rows and no row of an older
+    /// rule (the import report counts a line once per rule), and a second
+    /// pass changes nothing.
     #[test]
     fn proxy_json_and_cookie_rules_are_disjoint_and_stable() {
         const NEW: [&str; 5] = [
@@ -690,6 +697,13 @@ mod redaction {
             assert_eq!(r.matching_rules(input), vec![*rule], "`{input}`");
             let once = r.redact(input);
             assert_eq!(r.redact(&once), once, "`{input}`");
+        }
+        for (rule, input, ..) in TABLE.iter().filter(|(rule, ..)| !NEW.contains(rule)) {
+            let matched = r.matching_rules(input);
+            assert!(
+                !matched.iter().any(|m| NEW.contains(m)),
+                "{rule}: `{input}` also matches {matched:?}"
+            );
         }
         assert_eq!(
             r.redact(r#"curl -U bob:pw -d '{"token":"t1"}' -b 'a=b' -H 'Cookie: c=d' https://h"#),
