@@ -14,7 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
+| — | no active work package | | | | |
 
 ## Queued (next up)
 
@@ -44,6 +44,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-093 redaction masks e-mail addresses (local part;
+  the domain stays so a desktop entry stays recognisable); SSH remotes,
+  `user@host`, versions, npm scopes and systemd units stay; non-ASCII
+  text before an address and an address after `addr:` are handled;
+  hook 4.1 ms (curl) / 3.6 ms (address) at 900 lines; Opus review, one
+  round, Fable look; merged. **0.1.4 wave complete on main** (WP-087…093,
+  WP-096, WP-098, WP-100).
 - 2026-10-05 WP-100 agent rules v2 (ADR-0027) in the logbook templates
   en/de: act inside the Intent, preview line, attended by provenance,
   ask first only outside the Intent, for a destructive step without
