@@ -799,15 +799,17 @@ mod redaction {
             line
         };
         for (what, head, word) in [
+            // `-u`, `-x` and `-b` inside words: every curl rule is
+            // triggered, finds no option and scans the whole line
             (
                 "url line",
                 "curl https://bob:fakePw@h.example/a -o out ",
-                "a-word ",
+                "a-u-x-b ",
             ),
             (
                 "german note",
                 "curl -sS https://h.example ",
-                "Schlüssel geändert ",
+                "Schlüssel-u-x-b geändert ",
             ),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
