@@ -7,7 +7,10 @@
 # two recorders interleave line by line (WP-090). The record is staged in a
 # private file next to the record and appended by cat, which copies a file
 # this small with one read and one write. The staging file stays; it lives
-# in the harness's temp dir.
+# in the harness's temp dir. Without HARNESS_RECORD (a case that does not
+# check the launches) nothing is recorded and the exit is 1, as when the
+# append to "" failed.
+[[ -n ${HARNESS_RECORD:-} ]] || exit 1
 record="$(basename "$0")"$'\n'
 for arg in "$@"; do record+="$arg"$'\n'; done
 record+=$'--\n'
