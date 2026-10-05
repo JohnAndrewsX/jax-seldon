@@ -243,6 +243,10 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
             "secret\\\"",
             "token\"",
             "token\\\"",
+            "api_key\"",
+            "api_key\\\"",
+            "apikey\"",
+            "apikey\\\"",
         ],
         "authorization-header" => &["authorization:"],
         "secret-header" => &["x-", "api-key", "apikey", "private-token"],
@@ -338,12 +342,13 @@ fn builtin_rules() -> Vec<Rule> {
             looks_like_credential,
         ),
         // `"password": "…"`, `"client_secret":"…"`, `"access_token"`,
-        // also with the quotes escaped inside a shell string
-        // (`\"password\":\"…\"`): a non-empty string value; not
-        // `"password_hint"` or `"token_type"`
+        // `"api_key"`, `"apiKey"`, also with the quotes escaped inside a
+        // shell string (`\"password\":\"…\"`) and with white space,
+        // newlines included, around the `:`: a non-empty string value;
+        // not `"password_hint"` or `"token_type"`
         checked_rule(
             "json-secret",
-            r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token)\\?"[ \t]*:[ \t]*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
+            r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api_?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
             has_json_value,
         ),
         // the header value up to a closing quote or the end of the line
@@ -360,11 +365,13 @@ fn builtin_rules() -> Vec<Rule> {
             r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
             KEEP_PREFIX,
         ),
-        // `Cookie: a=b; c=d`, `Set-Cookie: …`: the value up to a closing
-        // quote or the end of the line; an empty value names no secret
+        // `Cookie: a=b; c=d`, `Set-Cookie: …`: a value that starts with a
+        // cookie pair `name=` (RFC 6265), up to a closing quote or the end
+        // of the line, on the same line; not `cookie: banner fixed`,
+        // `Cookie: $COOKIE` or an empty value
         rule(
             "cookie-header",
-            r#"(?i)((?-u:\b)(?:set-)?cookie[ \t]*:[ \t]*)[^'"\s][^'"\n]*"#,
+            r#"(?i)((?-u:\b)(?:set-)?cookie[ \t]*:[ \t]*)[^'"\s=;]+=[^'"\n]*"#,
             KEEP_PREFIX,
         ),
         rule("aws-access-key", r"(?:AKIA|ASIA)[0-9A-Z]{16}", WHOLE),

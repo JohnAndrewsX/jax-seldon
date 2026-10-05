@@ -477,6 +477,31 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeJson5",
         r#"{"Token" : ‹redacted›}"#,
     ),
+    // white space and a newline around the `:`; `api_key`, `apiKey`
+    (
+        "json-secret",
+        "{\"password\"\n:\n  \"fakeJson7\"}",
+        "fakeJson7",
+        "{\"password\"\n:\n  ‹redacted›}",
+    ),
+    (
+        "json-secret",
+        r#"curl -d '{"api_key": "fakeJson8"}' https://h.example"#,
+        "fakeJson8",
+        r#"{"api_key": ‹redacted›}'"#,
+    ),
+    (
+        "json-secret",
+        r#"{"openaiApiKey" :"fakeJson9"}"#,
+        "fakeJson9",
+        r#"{"openaiApiKey" :‹redacted›}"#,
+    ),
+    (
+        "json-secret",
+        r#"{"apiKeyHint": "x", "monkey": "y", "apiKey": "fakeJson10"}"#,
+        "fakeJson10",
+        r#"{"apiKeyHint": "x", "monkey": "y", "apiKey": ‹redacted›}"#,
+    ),
     // cookie headers and options (WP-084)
     (
         "cookie-header",
@@ -589,6 +614,10 @@ const CLEAR: &[&str] = &[
     r#"curl -d "{\"password\":\"\"}" https://h.example"#,
     "curl -H 'Cookie: ' https://h.example",
     "curl -H 'Cookie:' https://h.example",
+    "curl -H 'Cookie:\nsid=fakeCookie7' https://h.example",
+    "cookie: banner fixed",
+    "make cookie: all",
+    "curl -H \"Cookie: $COOKIE\" https://h.example",
     "curl -b cookies.txt -c cookies.txt https://h.example",
     "curl --cookie-jar jar.txt https://h.example",
 ];
