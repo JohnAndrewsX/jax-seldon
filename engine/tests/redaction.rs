@@ -1386,6 +1386,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeOs",
         "-proxy_pass ‹redacted› -dpass ‹redacted›|cat",
     ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:fakeOs31&&echo done",
+        "fakeOs31",
+        "-passin ‹redacted›&&echo done",
+    ),
 ];
 
 /// Text that looks close to a rule and must come out unchanged.
@@ -1476,6 +1482,7 @@ const CLEAR: &[&str] = &[
     "openssl rsa -passin passfile -in k.pem",
     "git commit -m pass:fixed",
     "the pass: column stays",
+    "notes about the compass pass: north",
     // no e-mail address (WP-093): an SSH remote and `host:path`, a host
     // without a dot, versions, npm scopes, systemd units, a scale suffix
     // without a top-level domain, an image digest
@@ -1818,16 +1825,30 @@ mod redaction {
             let once = r.redact(input);
             assert_eq!(r.redact(&once), once, "`{input}`");
         }
-        for (input, earlier) in [
-            ("tool --pass pass:fakeOs30 -v", "secret-option"),
-            ("tool --password pass:fakeOs30 -v", "password-option"),
+        // an option another rule also masks is counted under both; the
+        // earlier rule masks it, and the output holds one marker
+        for (input, rules) in [
+            (
+                "tool --pass pass:fakeOs30 -v",
+                &["secret-option", "openssl-pass"][..],
+            ),
+            (
+                "tool --password pass:fakeOs30 -v",
+                &["password-option", "openssl-pass"],
+            ),
+            (
+                "tool --secret-key pass:fakeOs30 -v",
+                &["openssl-pass", "key-option"],
+            ),
+            (
+                "tool --password=pass:fakeOs30 -v",
+                &["password-option", "openssl-pass", "secret-assignment"],
+            ),
         ] {
-            assert_eq!(
-                r.matching_rules(input),
-                vec![earlier, "openssl-pass"],
-                "`{input}`"
-            );
-            assert!(r.redact(input).ends_with(&format!(" {REDACTED} -v")));
+            assert_eq!(r.matching_rules(input), rules, "`{input}`");
+            let out = r.redact(input);
+            assert!(!out.contains("fakeOs30"), "`{input}` → `{out}`");
+            assert_eq!(out.matches(REDACTED).count(), 1, "`{input}` → `{out}`");
         }
     }
 
