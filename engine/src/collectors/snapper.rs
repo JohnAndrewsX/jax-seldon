@@ -406,19 +406,23 @@ fn unescape(s: &str) -> String {
 /// unparsable date or a time in a DST gap, two (earlier first) for a time
 /// in the repeated hour when summer time ends, else one.
 fn readings(tz: Tz, date: &str) -> Vec<DateTime<FixedOffset>> {
-    let Ok(naive) = NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S") else {
-        return Vec::new();
-    };
-    match tz {
+    match NaiveDateTime::parse_from_str(date, "%Y-%m-%d %H:%M:%S") {
+        Ok(naive) => instants(tz, naive),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The instants whose wall-clock time in `tz` is `naive`, earlier first.
+fn instants(tz: Tz, naive: NaiveDateTime) -> Vec<DateTime<FixedOffset>> {
+    let mut found: Vec<DateTime<FixedOffset>> = match tz {
+        // chrono orders the two of an ambiguous time by offset, the smaller
+        // (the later instant) first, and counts the end of the repeated
+        // hour and the start of the skipped one in (03:00 on the night
+        // summer time ends, 02:00 when it begins), where one of its
+        // instants shows another wall-clock time
         Tz::Local => match Local.from_local_datetime(&naive) {
             LocalResult::Single(t) => vec![t.fixed_offset()],
-            // chrono orders the two by offset, the smaller (the later
-            // instant) first; `earliest()` is that one
-            LocalResult::Ambiguous(a, b) => {
-                let mut pair = vec![a.fixed_offset(), b.fixed_offset()];
-                pair.sort();
-                pair
-            }
+            LocalResult::Ambiguous(a, b) => vec![a.fixed_offset(), b.fixed_offset()],
             LocalResult::None => Vec::new(),
         },
         Tz::Fixed(off) => off
@@ -426,6 +430,17 @@ fn readings(tz: Tz, date: &str) -> Vec<DateTime<FixedOffset>> {
             .single()
             .into_iter()
             .collect(),
+    };
+    found.retain(|t| wall(tz, *t) == naive);
+    found.sort();
+    found
+}
+
+/// `t` as a wall-clock time in `tz`.
+fn wall(tz: Tz, t: DateTime<FixedOffset>) -> NaiveDateTime {
+    match tz {
+        Tz::Local => t.with_timezone(&Local).naive_local(),
+        Tz::Fixed(off) => t.with_timezone(&off).naive_local(),
     }
 }
 
@@ -440,14 +455,10 @@ fn utc_ts(tz: Tz, date: &str) -> Option<DateTime<FixedOffset>> {
     })
 }
 
-/// Whether `a` and `b` are the two readings of one local time in the
-/// repeated hour: the list cannot tell them apart.
-fn fold_twins(tz: Tz, a: DateTime<FixedOffset>, b: DateTime<FixedOffset>) -> bool {
-    let wall = |t: DateTime<FixedOffset>| match tz {
-        Tz::Local => t.with_timezone(&Local).naive_local(),
-        Tz::Fixed(off) => t.with_timezone(&off).naive_local(),
-    };
-    a != b && wall(a) == wall(b)
+/// The other instant of `t`'s wall-clock time when that time lies in the
+/// repeated hour: the list cannot tell the two apart.
+fn fold_twin(tz: Tz, t: DateTime<FixedOffset>) -> Option<DateTime<FixedOffset>> {
+    instants(tz, wall(tz, t)).into_iter().find(|i| *i != t)
 }
 
 /// Each snapshot's date as one instant (`None`: no usable date), in the
@@ -558,7 +569,7 @@ fn diff(
             // an entry with the other reading of the same local time in the
             // repeated hour (the list's guess, corrected by the info file).
             match k.date {
-                Some(date) if date != ts && !fold_twins(ctx.tz, date, ts) => {
+                Some(date) if date != ts && fold_twin(ctx.tz, ts) != Some(date) => {
                     // the deletion goes before the creation it made room for
                     events.push(deleted(ts, s.number, k));
                 }

@@ -1078,16 +1078,60 @@ mod collectors {
     #[test]
     fn snapper_remembers_a_listed_time_in_the_dst_gap() {
         let z = Zoned::new();
-        z.list(&[(20, "2027-03-28 01:30:00"), (21, "2027-03-28 02:30:00")]);
+        // 22 at 02:00:00, the start of the skipped hour (chrono reads it as
+        // 01:00 UTC, which is 03:00 on the wall)
+        z.list(&[
+            (20, "2027-03-28 01:30:00"),
+            (21, "2027-03-28 02:30:00"),
+            (22, "2027-03-28 02:00:00"),
+        ]);
         assert_eq!(
             z.capture("2027-03-28T04:00:00+02:00"),
             ["snapshot 20 2027-03-28T01:30:00+01:00"]
         );
         assert_eq!(z.date(21), serde_json::Value::Null, "known, no date");
+        assert_eq!(z.date(22), serde_json::Value::Null, "known, no date");
         z.deny(true);
-        z.info(&[(20, "2027-03-28 00:30:00"), (21, "2027-03-28 01:30:00")]);
+        z.info(&[
+            (20, "2027-03-28 00:30:00"),
+            (21, "2027-03-28 01:30:00"),
+            (22, "2027-03-28 01:45:00"),
+        ]);
         assert_eq!(z.capture("2027-03-28T05:00:00+02:00"), [""; 0]);
         assert_eq!(z.date(21), "2027-03-28T03:30:00+02:00");
+        assert_eq!(z.date(22), "2027-03-28T03:45:00+02:00");
+    }
+
+    /// The ends of the repeated hour: 02:00:00 is two instants, 03:00:00
+    /// only one (chrono also offers 03:00+02:00, which is 02:00 CET on the
+    /// wall). Neither gives a false pair when the info files follow.
+    #[test]
+    fn snapper_keeps_one_date_at_the_ends_of_the_repeated_hour() {
+        let z = Zoned::new();
+        // 11 at 02:00:00 after the clocks went back, 12 at 03:00:00
+        z.list(&[
+            (10, "2026-10-25 01:30:00"),
+            (11, "2026-10-25 02:00:00"),
+            (12, "2026-10-25 03:00:00"),
+        ]);
+        assert_eq!(
+            z.capture("2026-10-25T04:00:00+01:00"),
+            [
+                "snapshot 10 2026-10-25T01:30:00+02:00",
+                "snapshot 11 2026-10-25T02:00:00+02:00",
+                "snapshot 12 2026-10-25T03:00:00+01:00"
+            ],
+            "11 can be either (the earlier), 12 only one"
+        );
+        z.deny(true);
+        z.info(&[
+            (10, "2026-10-24 23:30:00"),
+            (11, "2026-10-25 01:00:00"),
+            (12, "2026-10-25 02:00:00"),
+        ]);
+        assert_eq!(z.capture("2026-10-25T05:00:00+01:00"), [""; 0]);
+        assert_eq!(z.date(11), "2026-10-25T02:00:00+01:00");
+        assert_eq!(z.date(12), "2026-10-25T03:00:00+01:00");
     }
 
     /// `seldon capture` runs on the invocation's clock: `SELDON_NOW` sets
