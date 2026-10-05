@@ -1026,25 +1026,35 @@ each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
 from the end of its previous match, without a second command word;
 `sshpass` masks only its first `-p`, as a later one belongs to the
 command it runs (`ssh -p 2222`) (WP-087). An e-mail address
-(`email`, WP-093) is a local part (ASCII letters, digits, `._%+-`, and
-any character beyond ASCII but the quotes of `‹redacted›`), `@`, and a
-domain of at least two labels whose last holds letters only
-(`example.de`, `müller.example`). The local part is masked and the
+(`email`, WP-093) is a local part, `@`, and a domain of at least two
+labels whose last holds letters only (`example.de`, `müller.example`,
+`.испытание`). The local part is ASCII letters, digits and `._%+-`,
+plus characters beyond ASCII other than the no-break space, general
+punctuation (U+2000–U+206F: `—`, `„`, the quotes of `‹redacted›`), CJK
+(U+3000–U+9FFF, U+F900–U+FAFF) and full-width forms (U+FF00–U+FFEF),
+so text glued to an address (`山田さん（連絡先：me@…`, `Kontakt—me@…`)
+stays and only the address is masked. The local part is masked and the
 domain stays, so a desktop entry named after an account
 (`Mail (‹redacted›@example.com).desktop`) can still be found. Not an
 address: `user@host` without a dot; a version (`pkg@1.2.3`,
 `react@18.2.0-rc.1`) or an npm scope (`@scope/pkg`); an `@` up to which
 `url-userinfo` masks (the rule reads a URL's userinfo as that rule does,
 so the import report counts the line once); an address followed by `:`
-and a character other than white space (`git@github.com:owner/repo`,
-`me@host.example:/srv`, a port); a domain whose last label is a systemd
+and then by a character other than white space that starts no further
+address (`git@github.com:owner/repo`, `me@host.example:/srv`, a port;
+both in `a@b.co:c@d.example` are addresses, as is one before `: text`
+or at the end, and the `:` takes no character of what follows); a domain
+whose last label is a systemd
 unit type (`getty@tty1.service`; also `.socket`, `.target`, `.timer`,
 `.mount`, `.automount`, `.path`, `.slice`, `.scope`, `.swap`,
-`.device`). An SSH login with a dotted host (`ssh me@host.example`)
+`.device`); and, not recognised: an address encoded in a URL
+(`me%40example.org`), a quoted local part (`"me"@example.org`) and a
+local part in CJK. An SSH login with a dotted host (`ssh me@host.example`)
 cannot be told from an address and is masked, as `ssh://me@host`
 already is. The `regex` crate has no look-around, so the pattern
 matches these contexts as groups, and the rule leaves a match in which
-one takes part as it is (`Rule::unless`). The config collector's
+one takes part as it is (`Rule::unless`; for the `:`,
+`Rule::unless_followed` looks at the text after the match). The config collector's
 manifest in the state directory keeps the real file names, as it needs
 them to compare files; a file in `skipPaths` is named nowhere. Word boundaries in the
 rules are ASCII (`(?-u:\b)`): a Unicode `\b` sends a regex to the slow
