@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-100 | agent rules v2 (ADR-0027): templates, guide, rules update | Engine + Docs | `engine-100` (opus) | `wt/WP-100` · `wp/100-agent-rules-v2` | 2026-10-05 |
 | WP-093 | redaction: e-mail addresses | Engine | `engine-093` (opus) | `wt/WP-093` · `wp/093-redact-email` | 2026-10-05 |
 
 ## Queued (next up)
@@ -45,6 +44,16 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-05 WP-100 agent rules v2 (ADR-0027) in the logbook templates
+  en/de: act inside the Intent, preview line, attended by provenance,
+  ask first only outside the Intent, for a destructive step without
+  rollback, and for R3 (the whole resolved transaction against alwaysRed,
+  never refreshing the sync db; a system upgrade is R3); own snapshot
+  after case start; verify and close; user and area rules only add
+  limits; child agents get their own actor. `seldon rules update`
+  migrates (edited files archived, only the user's own lines kept under
+  their heading); doctor `rules` row. Opus review, Fable stage 2, three
+  rounds, Opus verification; merged.
 - 2026-10-05 WP-096 `seldon agent start` gives the launched agent
   `SELDON_ACTOR=agent:<launcher>` and `SELDON_ATTENDED=1` (checked live
   through Omarchy's launch chain on the test host and the dev host);
