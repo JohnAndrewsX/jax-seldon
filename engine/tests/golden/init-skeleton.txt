@@ -1,15 +1,24 @@
 == AGENTS.md
+fence rules v2
 # AGENTS.md
 ## Session start
+## Attended or not
+## Instructions and data
 ## The engine is the only writer
 ## Work in cases
-## Zones
+## When to ask first
+## R3: the one stop
+## Privileged steps and snapshots
+## Zones and risk
+## Installing software
+## Closing
 ## Commands
 ## Journal and memory
 ## Drift
 ## Hooks
 ## Ending a session
 ## Never
+## Your rules
 == PROJECT.md
 key language
 key machineId

@@ -1445,19 +1445,29 @@ mod setup {
             let rest = &text[start..];
             &rest[..rest.find("\n## ").unwrap_or(rest.len())]
         }
-        const SECTIONS: [&str; 10] = [
+        // WP-100: the ADR-0027 rules (v2), Seldon's block first, then the
+        // user's part
+        const SECTIONS: [&str; 18] = [
             "## Session start",
+            "## Attended or not",
+            "## Instructions and data",
             "## The engine is the only writer",
             "## Work in cases",
-            "## Zones",
+            "## When to ask first",
+            "## R3: the one stop",
+            "## Privileged steps and snapshots",
+            "## Zones and risk",
+            "## Installing software",
+            "## Closing",
             "## Commands",
             "## Journal and memory",
             "## Drift",
             "## Hooks",
             "## Ending a session",
             "## Never",
+            "## Your rules",
         ];
-        let rules: [(&str, &[&str]); 8] = [
+        let rules: [(&str, &[&str]); 15] = [
             (
                 "## Session start",
                 &[
@@ -1469,6 +1479,11 @@ mod setup {
                 ],
             ),
             (
+                "## Attended or not",
+                &["SELDON_ATTENDED=1", "seldon agent start", "sudo"],
+            ),
+            ("## Instructions and data", &["*Intent*", "READMEs"]),
+            (
                 "## The engine is the only writer",
                 &["ledger/*.jsonl", "STATUS.md", ".seldon/", "seldon:begin"],
             ),
@@ -1476,11 +1491,47 @@ mod setup {
                 "## Work in cases",
                 &[
                     "seldon plan new",
-                    "seldon plan start <ID>",
-                    "seldon plan verify <ID>",
-                    "seldon plan done <ID>",
-                    "seldon plan drop <ID>",
+                    "seldon plan start <ID> --actor agent:<name>",
+                    "*Intent*",
+                    "About to: install X (+deps a, b); snapshot first; rollback:",
                     "--actor agent:<name>",
+                ],
+            ),
+            (
+                "## When to ask first",
+                &["PKGBUILD", "curl … | sh", "**R3**"],
+            ),
+            (
+                "## R3: the one stop",
+                &["[drift] alwaysRed", "-Sp --print-format %n", "makedepends"],
+            ),
+            (
+                "## Privileged steps and snapshots",
+                &[
+                    "sudo",
+                    "snapper --csvout list-configs",
+                    "sudo snapper -c <config> create -c number -p -d \"<ID>\"",
+                    "seldon plan start <ID> --snapshot <N>",
+                    "omarchy-snapshot create",
+                ],
+            ),
+            ("## Zones and risk", &["**red**", "`R3`"]),
+            (
+                "## Installing software",
+                &[
+                    "omarchy pkg add",
+                    "omarchy pkg aur add",
+                    "makepkg -si",
+                    "~/.local",
+                ],
+            ),
+            (
+                "## Closing",
+                &[
+                    "seldon plan verify <ID> --actor agent:<name>",
+                    "seldon plan done <ID> --actor agent:<name>",
+                    "seldon plan drop <ID>",
+                    "systemctl is-active",
                 ],
             ),
             (
@@ -1493,6 +1544,7 @@ mod setup {
                     "seldon capture --all",
                     "seldon init",
                     "seldon import … --apply",
+                    "seldon rules update",
                     "--json",
                 ],
             ),
@@ -1513,15 +1565,18 @@ mod setup {
                     "xargs",
                 ],
             ),
-            (
-                "## Ending a session",
-                &[
-                    "seldon plan verify <ID>",
-                    "memory/lessons.md",
-                    "seldon hook session-stop",
-                ],
-            ),
             ("## Never", &["SELDON_LOGBOOK", "git push --force"]),
+        ];
+        // the v1 rules ADR-0027 drops, in either language
+        const DROPPED: [&str; 8] = [
+            "Propose one to the user",
+            "the user agrees",
+            "not with the package manager",
+            "before you change anything",
+            "Schlag dem Nutzer einen vor",
+            "der Nutzer zustimmt",
+            "nicht direkt mit dem",
+            "bevor du etwas änderst",
         ];
         for language in [Language::En, Language::De] {
             let (_env, root, _) = logbook_in(language.as_str());
@@ -1536,6 +1591,13 @@ mod setup {
                     );
                 }
             }
+            for dropped in DROPPED {
+                assert!(!agents.contains(dropped), "{language}: {dropped}");
+            }
+            assert!(
+                agents.starts_with("<!-- seldon:begin rules v2 -->\n"),
+                "{language}"
+            );
             assert!(agents.contains("docs/AGENT-GUIDE.md"), "{language}");
             assert!(!root.join("CLAUDE.md").exists(), "{language}");
         }
