@@ -885,7 +885,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   and then failed its cursor save is skipped too (the next capture
   records it again, or misses the re-addition of a file that is back);
   after a restore, a change stamped with the restored cursor's check
-  (an older mtime) is recorded again.
+  (an older mtime, or one in the same second as that check) is recorded
+  again; after a failed cursor save, a change the previous capture made
+  at its check time is read again and can go to a twin with the same
+  content (a false `config-change` for that twin). A marker of
+  the last event a capture wrote, kept in the cursor, removes all three
+  (a follow-up WP).
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
