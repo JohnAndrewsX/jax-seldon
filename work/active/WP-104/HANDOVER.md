@@ -216,3 +216,90 @@ Why W10 and W12 are equivalent:
 | deploy-test-host.test | 190 | 0 |
 | real-home-guard | 11 | 0 |
 | model.test.js | 89 | — |
+
+---
+
+# Round 2 (stage 1 SEND BACK small)
+
+Commits (oldest first), no rebase:
+
+- `894db5d` engine: a collector a crashed reset note names does not wait; tests for silent waiting marks and other logbooks' marks (WP-104)
+- `64d5f55` docs: SPEC-ENGINE no waiting after a crashed reset, guide half-sentence, changelog, testing (WP-104)
+- `f37137e` docs: German troubleshooting source line after WP-104 round 2
+- `58b501c` engine: test that a collector degraded after a crashed reset does not wait (WP-104)
+- `cb7d746` docs: testing row for the degraded collector after a crashed reset (WP-104)
+- this commit: handover round 2
+
+## What changed
+
+- **B1**: new test `a_collector_not_run_twice_after_a_silent_crash_does_not_wait`
+  (the reviewer's `r104_not_run_twice_after_silent_crash`). Steps: crash
+  after the append of `--source pacman` on a fresh logbook,
+  `event theme theme-set`, `capture --source pacman`, then `--all`.
+  Expected: theme has no `pendingBaseline`, doctor has no waiting row,
+  and there is no reset. It kills O2 (R2 below).
+- **B2**: `a_silent_mark_counts_for_its_own_logbook_only` now ends with
+  `assert_eq!(cli.cursors().get("silentBaselines"), None)`. It kills O1
+  (R1).
+- **N1 (pre-existing, fixed here).** In `capture::run`, the losses a
+  crashed reset note names (`noted_sources(recorded)`, now computed
+  before the waiting marks) are left out of `waiting`. The same probe
+  showed a second form of the duplicate:
+  - A collector that was **already waiting before the crash** keeps its
+    `cursors.json` entry with the mark. The crashed capture's first run
+    of it had recorded the gap, so a next capture that does not run it
+    kept the mark, and a later run wrote the reset again. This was
+    verified as failing before the fix (`{"events":0,"ok":true,"pendingBaseline":"cursors"}`).
+  - So, after the new collector states are inserted, a collector that
+    is not run and that the crashed note names loses its mark. An entry
+    with only the mark (no `lastRun`, no cursor) is dropped, which is
+    what a completed crashed capture would have left.
+  - Three tests:
+    - `a_collector_not_run_after_a_crashed_reset_does_not_wait` (the
+      reviewer's `r104_waiting_after_crashed_reset`: one reset only, no
+      pacman entry, no waiting row, next `--all` writes 0)
+    - `a_collector_degraded_after_a_crashed_reset_does_not_wait`
+      (snapper degrades in the next capture: no mark, no row, and its
+      successful run later writes no second reset)
+    - `a_waiting_collector_recorded_by_the_crashed_capture_stops_waiting`
+  - SPEC §3 has one sentence on it. CHANGELOG and TESTING are updated.
+- **N2**: guide 10 en/de now ends the new bullet with "…it only prints
+  the warning, and no row stays after it." (de: "…und danach bleibt
+  keine Zeile stehen."). The de page is re-stamped to `64d5f55`, and
+  docs-check gives no warning.
+
+## Mutants (same script and method as round 1)
+
+| # | Mutant | Result | Killed by |
+|---|---|---|---|
+| R1 (O1) | completed save drops only this logbook's marks (`.remove(&logbook.root)`) | killed | `a_silent_mark_counts_for_its_own_logbook_only` |
+| R2 (O2) | waiting marks ignore `silentBaselines` (`held_sources(&ledger, &candidates, &[])`) | killed | `a_collector_not_run_twice_after_a_silent_crash_does_not_wait` |
+| R3 | `waiting` keeps the noted sources (N1 filter removed) | survived the first suite, then **killed** | `a_collector_degraded_after_a_crashed_reset_does_not_wait` |
+| R4 | a not-run noted collector keeps its mark | killed | `a_waiting_collector_recorded_by_the_crashed_capture_stops_waiting` |
+| R5 | an entry with only the mark stays, mark cleared | killed | same |
+
+Why R3 survived at first: for a collector that is not run, the R4 code
+clears the mark that the unfiltered `waiting` would set. So the filter
+is needed only for a collector that degrades. The new test covers that
+case.
+
+## Verified by
+
+- `cargo test --no-fail-fast` (whole engine): 788 passed, 0 failed.
+- `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check`:
+  clean. `bash scripts/docs-check.sh`: ok, no warning.
+- `flock /tmp/seldon-check.lock just check`: exit 0, run once after the
+  last mutant on `cb7d746`, ending with `check: ok`. All cargo
+  `test result` lines report 0 failed. Results: bar-view 143/0,
+  panel-view 782/0, overlay-view 319/0, service-states 314/0,
+  install.test 209/0, deploy-test-host.test 190/0, real-home-guard
+  11/0, model.test.js 89.
+- No guard block. The host was not touched. `redact.rs` and
+  `collectors/config.rs` were not touched.
+
+## Decisions needed
+
+None. One note: the N1 fix goes one step past the brief. It also clears
+the mark of a collector that was already waiting, the same duplicate in
+the same code, shown by a test that failed before the fix. Please say if
+you want that split out.
