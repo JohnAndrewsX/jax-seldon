@@ -84,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   green main check: only a host listed in the git-ignored
   `scripts/guard-hosts.local`, only from a clean, pushed `main` whose
   check log ends in `exit 0` and names a commit with the same engine,
-  plugin and script. It builds as a release does (`--features watch`),
+  plugin, schemas and script. It builds as a release does (`--features watch`),
   keeps the previous engine as `seldon.prev`, moves the release plugin
   clone aside once, restarts the shell only when the plugin changed and
   the session is unlocked ("restart pending" otherwise), runs a smoke

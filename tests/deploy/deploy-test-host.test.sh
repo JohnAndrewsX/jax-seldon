@@ -290,6 +290,8 @@ printf '%s\nexit 0\n\n\n' "$head_line" >"$log"
 reset_remote
 deploy --dry-run "$log"
 check "trailing blank lines after exit 0 are fine" test "$rc" = 0
+printf '%s\r\ncheck: ok\r\nexit 0\r\n' "$head_line" >"$log"
+refused "a log with Windows line endings" "has Windows line endings (CRLF)" "$log"
 # which tree the log checked: `head <full sha>` on the first line (S3)
 printf 'check: ok\nexit 0\n' >"$log"
 refused "check log without a head line" "does not start with 'head <full sha>'" "$log"
@@ -306,7 +308,7 @@ git -C "$repo" commit -q -m elsewhere
 printf 'head %s\nexit 0\n' "$(git -C "$repo" rev-parse HEAD)" >"$log"
 git -C "$repo" checkout -q main
 refused "a sha on another branch (another tree's check)" "not HEAD or an ancestor" "$log"
-for path in engine/lib.rs plugin/Service.qml scripts/deploy-test-host.sh; do
+for path in engine/lib.rs plugin/Service.qml schema/index.schema.json scripts/deploy-test-host.sh; do
   fresh_log
   if [[ $path == scripts/* ]]; then
     cp "$repo/$path" "$work/script.keep"
@@ -367,10 +369,20 @@ check "dry run: the host unchanged" test "$(remote_fingerprint)" = "$before"
 check "dry run: no restart" test "$(count restart)" = 0
 check "dry run: names the version" has "0.1.3+main.$short"
 check "dry run: the hostname ssh resolves the alias to" has "(ssh resolves it to 192.0.2.7)"
+check "dry run: what the host runs now" has "now      engine 0.1.3, plugin dir git"
 check "dry run: the clone would move aside" has "move the git dir aside"
 check "dry run: files change" has "files change: yes"
 check "dry run: restart planned" has "restart  restart the shell"
 [[ $rc == 0 ]] || show
+
+reset_remote
+rm "$R/home/.local/bin/seldon"
+deploy --dry-run "$log"
+check "dry run, no engine on the host: said so" has "now      engine not installed or not answering, plugin dir git"
+deploy "$log"
+check "first deploy without an engine: exit 0" test "$rc" = 0
+check "first deploy without an engine: the summary says there was none" has "(there was none before)"
+check "first deploy without an engine: no seldon.prev" test ! -e "$R/home/.local/bin/seldon.prev"
 
 # ---- 4. first deploy: the release clone moves aside --------------------------------------
 reset_remote

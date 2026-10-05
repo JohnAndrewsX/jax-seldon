@@ -15,9 +15,9 @@
 # Main build (CHECK_LOG): refuses unless this checkout is on `main`,
 # clean, HEAD equals origin/main, and CHECK_LOG — the orchestrator's main
 # check log — starts with `head <full sha>`, ends in `exit 0`, its sha is
-# HEAD or an ancestor, and nothing under engine/, plugin/ or this script
-# changed between that sha and HEAD (bookkeeping commits after the check
-# pass). Before the first change the host must have the tools the install
+# HEAD or an ancestor, and nothing under engine/, plugin/, schema/ (the
+# engine compiles the schemas in) or this script changed between that sha
+# and HEAD (bookkeeping commits after the check pass). Before the first change the host must have the tools the install
 # step uses. Then it builds the static engine as a release does
 # (`--features watch`) with SELDON_BUILD=main.<short sha> (version
 # 0.1.3+main.<sha>), and on the host:
@@ -132,6 +132,7 @@ if [[ -z $release ]]; then
   upstream=$(git_ rev-parse --verify --quiet origin/main) || refuse "no origin/main"
   [[ $head == "$upstream" ]] || refuse "HEAD ${head:0:12} is not origin/main ${upstream:0:12}; push first"
   [[ -f $check_log && -r $check_log ]] || refuse "check log '$check_log' not found"
+  ! grep -q $'\r' "$check_log" || refuse "the check log has Windows line endings (CRLF); use the log the check wrote"
   last=$(awk 'NF { l = $0 } END { print l }' "$check_log")
   [[ $last == "exit 0" ]] || refuse "the check log does not end in 'exit 0' (last line: '$last')"
   # the commit the check ran on: the log's first line `head <full sha>`
@@ -139,8 +140,9 @@ if [[ -z $release ]]; then
   [[ -n $checked ]] || refuse "the check log does not start with 'head <full sha>'; which tree it checked is unknown"
   git_ merge-base --is-ancestor "$checked" HEAD 2>/dev/null \
     || refuse "the checked commit ${checked:0:12} is not HEAD or an ancestor of it"
-  git_ diff --quiet "$checked" HEAD -- engine plugin scripts/deploy-test-host.sh \
-    || refuse "engine/, plugin/ or the deploy script changed since the checked commit ${checked:0:12}; run the check on this HEAD"
+  # schema/: engine/src/index/check.rs compiles the schemas in (include_str!)
+  git_ diff --quiet "$checked" HEAD -- engine plugin schema scripts/deploy-test-host.sh \
+    || refuse "engine/, plugin/, schema/ or the deploy script changed since the checked commit ${checked:0:12}; run the check on this HEAD"
   short=$(git_ rev-parse --short HEAD)
   version="$(awk -F'"' '/^version *=/ { print $2; exit }' "$root/engine/Cargo.toml")+main.$short"
   mode=main
@@ -254,7 +256,8 @@ if [[ $dry == 1 ]]; then
   resolved=$(ssh -G -- "$host" 2>/dev/null | awk '$1 == "hostname" { print $2; exit }' || true)
   say "deploy-test-host (dry run): $host (ssh resolves it to ${resolved:-?})"
   deployed=$(value deployed "$probe")
-  say "  now      engine $(value engine "$probe"), plugin $(value plugin "$probe")${deployed:+ ($deployed)}"
+  engine_now=$(value engine "$probe")
+  say "  now      engine ${engine_now:-not installed or not answering}, plugin dir $(value plugin "$probe")${deployed:+ ($deployed)}"
   if [[ $mode == main ]]; then
     say "  build    SELDON_BUILD=main.$short cargo build --release --features watch --target $target  → $version"
     say "  engine   copy to ~/.local/bin/seldon (previous → seldon.prev)"
@@ -411,7 +414,12 @@ log_line
 
 say ""
 say "deploy-test-host: $host runs $version${head:+ (commit ${head:0:12})}"
-say "  engine   ~/.local/bin/seldon (previous kept as seldon.prev; was $(value engine "$probe"))"
+engine_was=$(value engine "$probe")
+if [[ -n $engine_was ]]; then
+  say "  engine   ~/.local/bin/seldon (previous kept as seldon.prev; was $engine_was)"
+else
+  say "  engine   ~/.local/bin/seldon (there was none before)"
+fi
 say "  plugin   files changed: $plugin_change${moved:+; moved aside to ~/$moved}"
 case $restart in
   done) say "  restart  done" ;;
