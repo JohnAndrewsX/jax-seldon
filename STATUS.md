@@ -18,6 +18,7 @@ decisions).
 | WP-083 | doctor warns before the capture that would record a state reset | Engine | `engine-083` (opus) | `wt/WP-083` · `wp/083-review` | 2026-10-05 |
 | WP-084 | redaction: proxy credentials, JSON passwords, cookie headers | Engine | `engine-084` (opus) | `wt/WP-084` · `wp/084-review` | 2026-10-05 |
 | WP-085 | panel shows capture warnings | Plugin | `plugin-085` (opus) | `wt/WP-085` · `wp/085-review` | 2026-10-05 |
+| WP-086 | Seldon's own updates are not drift | Engine | `engine-086` (opus) | `wt/WP-086` · `wp/086-review` | 2026-10-05 |
 
 ## Queued (next up)
 
