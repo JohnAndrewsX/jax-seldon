@@ -904,8 +904,9 @@ mod redaction {
 
     #[test]
     fn masking_twice_changes_nothing() {
-        // a user pattern that also matches inside the marker itself
-        let r = Redactor::with_patterns(&["red|act".into()]).unwrap();
+        // a user pattern that also matches inside the marker itself, also
+        // at its first character
+        let r = Redactor::with_patterns(&["‹re|red|act".into()]).unwrap();
         let mut texts: Vec<String> = TABLE
             .iter()
             .map(|(_, input, ..)| input.to_string())
