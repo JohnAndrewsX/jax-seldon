@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ d5ddb85 -->
+<!-- source: en/06-configuration.md @ 767865b -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -197,11 +197,13 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   Kleinbuchstaben, Großbuchstaben, Ziffern und anderen Zeichen mischen
   (`sort --key=2` und `hotkey=Super` bleiben also, wie sie sind);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` und andere Header,
-  deren Name auf Key, Token, Secret oder Auth endet, sowie der Wert von
-  `Cookie:` und `Set-Cookie:`;
+  deren Name auf Key, Token, Secret oder Auth endet, sowie die Cookies
+  nach `Cookie:` und `Set-Cookie:` (ein `name=value`; `cookie: banner
+  fixed` bleibt);
 - der Wert eines JSON-Schlüssels wie `"password"`, `"passwd"`,
-  `"client_secret"` oder `"access_token"` in eingebettetem JSON
-  (`curl -d '{"password": "…"}'`); `"password_hint"` bleibt;
+  `"client_secret"`, `"access_token"`, `"api_key"` oder `"apiKey"` in
+  eingebettetem JSON (`curl -d '{"password": "…"}'`); `"password_hint"`
+  bleibt;
 - AWS-Zugangsschlüssel (`AKIA…`, `ASIA…`), GitHub-Tokens (`ghp_…`,
   `gho_…`, `github_pat_…` und die übrigen `gh…_`-Formen), GitLab-Tokens
   (`glpat-…`), Slack-Tokens (`xoxb-…`), API-Schlüssel (`sk-…`, `sk_…`);
