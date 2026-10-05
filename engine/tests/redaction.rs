@@ -1519,6 +1519,20 @@ mod redaction {
                 "curl -sS https://h.example ",
                 "it's a-u-x-b ",
             ),
+            // one command over many lines, continued by `\` or by quotes
+            // around each line end, with every curl and HTTPie rule
+            // triggered (WP-097)
+            (
+                "continued lines",
+                "curl -sS https://h.example \\\n",
+                "  -H 'a;b' a-u-x-b-E-a 2>&1 \\\n",
+            ),
+            (
+                "quoted line ends",
+                "curl -sS https://h.example '\n'",
+                "a-u-x-b-E-a $'c;d' '\n'",
+            ),
+            ("httpie line", "http -v h.example ", "'a;b' a-a-u 2>&1 "),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
                 let line = filled(head, word, kb * 1024);
@@ -1570,6 +1584,20 @@ mod redaction {
                 "address colons",
                 "mail ",
                 "a@b.example:c@d.example:e@f.example: ",
+                Some(20),
+            ),
+            // options on continued lines, values joined from quoted parts
+            // (WP-097)
+            (
+                "continued options",
+                "curl ",
+                "-u a:'b' \\\n -E c.pem:d \\\n ",
+                Some(20),
+            ),
+            (
+                "httpie options",
+                "http ",
+                "-a a:\"b\" --auth=c:d 2>&1 ",
                 Some(20),
             ),
         ] {
