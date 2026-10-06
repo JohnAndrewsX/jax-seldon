@@ -369,6 +369,15 @@ is left for the user afterwards:
 2. `seldon plan verify <ID> --actor agent:<name>`, then
    `seldon plan done <ID> --actor agent:<name>`, in one go.
 
+Both steps run a `seldon capture` first (ADR-0029 §2; `--no-capture`
+skips it). A step you handed to the user — `sudo pacman -S <package>` in
+their own terminal, which no hook of yours sees — is therefore recorded
+before the case changes state, and the engine links it to the case when
+the case's *Plan* names it and no other open case does (SPEC-ENGINE §5
+rule 9). Name in the *Plan* what you plan to install or change: that is
+what the engine links by. A step that the capture or the link missed
+still links after the close, at the next capture.
+
 The engine refuses an agent's `plan done` while *Result* is empty or the
 *Plan*'s `Verification:` has no text (also without `--actor`, through
 `SELDON_ACTOR`). The ledger names you as the one who closed the case,

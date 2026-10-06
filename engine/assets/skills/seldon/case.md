@@ -82,6 +82,9 @@ When the *Plan*'s verification passes:
    The engine refuses an agent's `plan done` while *Result* or the *Plan*'s
    `Verification:` is empty: fill them, then run it again.
 
+   `plan verify` captures first; a step you handed to the user is recorded
+   and linked when you verify.
+
 Nothing is left for the user. The record names you as the one who closed it,
 the case gets the tag `closed-by-agent`, and the user can reopen it in one
 click (`seldon plan reopen <ID>`, a new case).

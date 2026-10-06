@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **A change the one open case planned is that case's (ADR-0029,
+  WP-115).** When you install a package (or add a plugin, change a
+  watched file) by hand while exactly one case is open and its *Plan*
+  names it, the next capture links it to that case — whoever typed the
+  command — instead of leaving it as drift. The ledger gets one `linked`
+  line by `system` (`planned by <ID>; active at the time`), the case
+  lists the event and its *Log* says `linked after the fact: …`. A
+  package's dependencies come along; an `alwaysRed` package (kernel,
+  bootloader, …) links only to an R3 case; two cases that both planned
+  it link nothing and each says so in its *Log*. Changes recorded before
+  this release are linked by the first capture after the upgrade. A link
+  the engine made yields to anyone's later `seldon drift link|explain|
+  dismiss` (`seldon capture --json` counts `linkedPlanned`).
+- `seldon plan verify` and `seldon plan done` run a capture first, so a
+  step done by hand inside the case is recorded and linked before the
+  case changes state; a failed capture is a warning, `--no-capture`
+  skips it, and the panel's *Done* takes a moment longer (WP-115).
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
   and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,
   `log`, `drift` and `event` record `SELDON_ACTOR` when `--actor` is not
