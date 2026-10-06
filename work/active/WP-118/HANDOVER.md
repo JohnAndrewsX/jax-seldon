@@ -154,3 +154,68 @@ exit 0, `check: ok` (fmt, clippy, tests, watch, packaging, install
 226/0, deploy, schema, docs-check, plugin-validate, qmllint 29 files,
 plugin-test). shellcheck was not installed here, so check-packaging and
 check-install ran `bash -n` only; CI runs shellcheck.
+
+## Round 2
+
+Stage-1 review 1: SEND BACK (B1 SC2088, B2 a prompt drawn twice at 70
+columns) plus N1–N7. main (WP-117 merged, 103b75b) merged in first,
+cleanly; guide 10 matches main's banner titles and buttons.
+
+**Corrections to round 1.** The round-1 claim "70-column pty … drawn
+once" was wrong: the test measured the bare text (`PROMPT_WIDTH = 60`),
+dialoguer adds its marks, and my `script` run stripped the escape codes,
+so the redraw did not show. The doc comment's "876 px, about 70 columns"
+was wrong too (the presentation terminal is about 120 columns).
+
+- **B1** `install.sh` `shown()`: `printf '%s/%s\n' '~' …` and
+  `printf '%s\n' '~'`; no single-quoted word starts with `~/` in
+  install.sh or install.test.sh. shellcheck itself is still not installed
+  here (pulling a container image would change the host); CI judges.
+- **B2** `rendered_width(PromptKind, prompt)` counts the line as
+  dialoguer 0.12's `ColorfulTheme` draws it: confirm `? p (y/n) › yes`,
+  input `? p › ` plus an answer (a date for the backfill, 20 columns
+  otherwise), list `? p ›`; items `⬚ item`. The test requires every
+  question, agent item, collector name and default watch path, and every
+  note line, to stay under `WIZARD_COLUMNS = 70`. Texts: "Record theme
+  switches instantly?" (the hook is named in the note above), "Keep the
+  logbook in git, with a first commit?", "Backfill since (YYYY-MM-DD;
+  empty for none)", "Seldon agent skill (into existing skill folders)";
+  the theme-hook, backfill and baseline notes rewrapped. Driven in tmux
+  (`capture-pane`, scratch HOME/XDG, `SELDON_TEST_GUARD`, stubbed
+  omarchy, the kit present): at 70 and at 60 columns no `?`, `❯` or `⬚`
+  line is left on screen. The old binary, same script, showed the
+  reviewer's double theme-hook line at 70. No minimum width is needed in
+  guide 01. The result rows still wrap below about 100 columns; they are
+  printed once, so nothing is drawn twice. SPEC-ENGINE §9 says 70.
+- **N1/N2/N3** tests: `init_runs_the_first_capture` pins `seldon dossier
+  # the first run had N warning(s)` in `nextSteps`;
+  `backfill_opens_drift_and_the_baseline_dismisses_it` pins the human
+  History row ("N event(s) since 2026-08-01" … "; M drift item(s) marked
+  as the pre-Seldon baseline"); install.test.sh 8b has a relative
+  `XDG_CONFIG_HOME` both ways (`~/.config` counts; a config under the
+  relative path in the working directory does not).
+- **N4** guide 01 en/de: "1500 event(s) … 40 drift item(s)", "for
+  example (your numbers differ)"; the unit test's 82 is 40 too.
+- **N5** guide 11 en/de: the next steps leave out what you have; "nothing
+  else to do" only when nothing is left; with zsh the `fpath` line shows
+  on every run, for the completions, and needs nothing once in `~/.zshrc`.
+- **N6** CHANGELOG: blank lines before `### Plugin` and `## [0.1.3]`; the
+  installer "starts with two lines"; the Engine entry has the new texts.
+- **N7** plugin/README §Troubleshooting: the plugin 0.1.0 row (its button
+  points to an AUR package that does not exist yet; update the plugin
+  first, answer yes, restart the shell).
+
+Open from the review, for the orchestrator: Q2 (skipPaths hint stays in
+the Config row for 0.1.4; WP-119 may move it to doctor) and Q4 (a
+context-aware zsh `fpath` step, e.g. skip it when `~/.zshrc` names the
+directory) are follow-ups, not done here.
+
+Mutants (scratchpad `mutants.sh`, one at a time, file restored after
+each): E3 `warnings > 0` → `> 1000` killed; E7 the dossier step's text
+killed; E6 `if b.items > 0` → `if false` killed; I6 `== /*` → `-n`
+killed. Engine `cargo test --test init` 40/0; install.test 228/0.
+
+Gate: `flock /tmp/seldon-check.lock just check` on 13cbc77 → exit 0,
+`check: ok` (Rust 1952 passed / 0 failed incl. watch; install.test 228/0;
+docs-check ok; qmllint 29 files; plugin-test ok). shellcheck not
+installed here: check-packaging and check-install ran `bash -n` only.
