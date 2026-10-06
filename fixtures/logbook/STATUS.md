@@ -6,8 +6,8 @@ Stand: 2026-10-01 · letztes Ereignis 17:00 · Omarchy 4.0.7-1 · Theme tokyo-ni
 
 ## Overview
 - Aktive Cases: 2 · in Prüfung: 1 · geplant: 3
-- Offene Drift: 4, davon Krise: 2
-- Ereignisse heute: 30 · letzte 7 Tage: 41
+- Offene Drift: 6, davon Krise: 2
+- Ereignisse heute: 38 · letzte 7 Tage: 51
 
 ## Active cases
 - [[C-2026-003]] Omarchy auf 4.0.7 aktualisieren — red/R2 — 4/5 Schritte — agent:claude-code
@@ -22,8 +22,10 @@ Stand: 2026-10-01 · letztes Ereignis 17:00 · Omarchy 4.0.7-1 · Theme tokyo-ni
 - [[C-2026-007]] Herdr-Orchestrator als Default-Agent registrieren — yellow/R1 — 0/5 Schritte
 
 ## Open drift
+- **Krise** 16:45 config · config-add `~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh`
 - 15:30 theme · theme-set `tokyo-night` kanagawa → tokyo-night · human · Vorschlag [[C-2026-005]]
 - **Krise** 14:03 config · config-add `~/.config/systemd/user/ollama.service` · agent:codex
-- **Krise** 14:02 pacman · install `ollama` 0.6.1-1 · agent:codex
-- 2026-09-30 21:41 pacman · upgrade `firefox` 143.0.1-1 → 143.0.2-1 · 3 Ereignisse in dieser Transaktion
+- 14:02 pacman · install `ollama` 0.6.1-1 · agent:codex
+- 13:20 config · config-remove `~/.config/hypr/monitors.conf`
+- 12:30 pacman · downgrade `mesa` 1:26.2.0-2 → 1:26.1.0-1 · 3 Ereignisse in dieser Transaktion
 <!-- seldon:end -->

@@ -792,12 +792,13 @@ mod capture_time {
         }
 
         /// Asserts that the last `kind` event of `subject` is `system`'s,
-        /// without a case, and open drift.
+        /// without a case, and unclaimed: open drift, or routine (a plugin
+        /// toggle, ADR-0028), which `drift --all` lists.
         fn assert_drift(&self, now: &str, kind: &str, subject: &str) {
             let e = self.last(kind, subject);
             assert_eq!(e["actor"], ACTOR_SYSTEM, "{e}");
             assert!(e.get("case").is_none(), "{e}");
-            let drift = common::json(&self.run(now, &["drift", "--json"]));
+            let drift = common::json(&self.run(now, &["drift", "--all", "--json"]));
             let open: Vec<&str> = drift["drift"]
                 .as_array()
                 .unwrap()

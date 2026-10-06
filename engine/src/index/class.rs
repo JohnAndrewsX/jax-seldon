@@ -396,9 +396,11 @@ impl<'a> Classifier<'a> {
     /// highest class wins; of several members with it, the rule is the
     /// lead's, else the lowest id's.
     pub fn group(&self, members: &[&Event], lead: &Event) -> Verdict {
-        let cmd = (lead.source == Source::Pacman)
-            .then(|| lead.meta.command.as_deref())
-            .flatten()
+        let cmd = lead
+            .meta
+            .command
+            .as_deref()
+            .filter(|_| lead.source == Source::Pacman)
             .and_then(|c| parse_command(&split_logged(c)));
         let mut followed: Option<Verdict> = None;
         let mut best: Option<(Class, bool, Reverse<Ulid>, Verdict)> = None;
