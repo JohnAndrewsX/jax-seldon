@@ -132,10 +132,11 @@ ipc() { rsh "omarchy-shell $(printf '%q ' "$@")"; }
 
 # The pill text SPEC-PLUGIN §4 derives from an index: the counts after the
 # bar glyph (an image since WP-051), `A · D`, zero parts hidden: "", `2`,
-# `· 3`, `2 · 3` (Model.pillText).
+# `· 3`, `2 · 3` (Model.pillText). D is the crisis count, the default of the
+# `driftInBar` setting (ADR-0028, WP-110); the run sets no other value.
 pill_of() {
   jq -r '[(if .summary.activeCases > 0 then "\(.summary.activeCases)" else empty end),
-          (if .summary.openDrift > 0 then "· \(.summary.openDrift)" else empty end)] | join(" ")'
+          (if .summary.crisis > 0 then "· \(.summary.crisis)" else empty end)] | join(" ")'
 }
 
 # ---- test host: baseline, backup, restore ------------------------------------
