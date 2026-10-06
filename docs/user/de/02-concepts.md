@@ -1,6 +1,6 @@
 # Konzepte
 
-<!-- source: en/02-concepts.md @ 4ce0827 -->
+<!-- source: en/02-concepts.md @ 1bae1cd -->
 
 Diese Seite erklärt die Ideen hinter Seldon: das Logbuch, Cases, Zonen,
 Risiko, Drift, die Baseline, Krisen, Entscheidungen und Memory. Lies sie
@@ -23,8 +23,9 @@ Seldon hält beides fest und vergleicht es:
   Agent ausführt.
 - Es hält fest, was du ändern willst. Du schreibst Cases: eine
   Markdown-Datei pro geplanter Änderung.
-- Es zeigt den Unterschied. Eine Änderung, die kein Case abdeckt, ist
-  Drift. Du entscheidest, was sie war.
+- Es zeigt den Unterschied. Eine Änderung, die kein Case abdeckt und die
+  einen Blick wert ist, ist Drift. Du darfst sagen, was sie war; du musst
+  es nie.
 
 Seldon ist ein Rekorder. Es ändert nie dein System, startet nie einen
 Paketmanager oder `sudo`, hält nie einen Befehl an und schickt nie etwas
@@ -151,10 +152,11 @@ neuer Case beginnt mit gelb und `R1`, wenn du nichts anderes angibst.
 
 ## Drift
 
-Drift ist ein Ereignis, das das System ändert, keinen Case hat und noch
-nicht aufgelöst ist. Nur Änderungen können Drift sein: Pakete, Omarchy,
-Plugins, Theme und Konfiguration. Snapshots, Notizen und Case-Schritte
-sind es nie.
+Jede Änderung wird aufgezeichnet. Drift ist eine aufgezeichnete
+Änderung, die keinen Case hat, noch nicht aufgelöst ist und einen Blick
+wert ist. Nur Änderungen können Drift sein: Pakete, Omarchy, Plugins,
+Theme und Konfiguration. Snapshots, Notizen und Case-Schritte sind es
+nie.
 
 Die meisten Änderungen landen von selbst bei einem Case:
 
@@ -163,15 +165,23 @@ Die meisten Änderungen landen von selbst bei einem Case:
 - Ein Paket, das als Abhängigkeit eines Pakets aus einem Case
   mitgekommen ist, gehört zu diesem Case.
 
-Alles andere ist Drift. Dazu gehören alle deine eigenen Änderungen, im
-Terminal oder anderswo: Ein Collector sieht, dass sich das Theme
-geändert hat, aber nicht, dass du es für einen Case gemeint hast. Nur
-der Befehl eines Agenten, aufgezeichnet von einem Hook, trägt den
-aktiven Case. Nennt ein offener Case das geänderte Paket, den Pfad oder
-das Theme in seinem *Plan*, schlägt Seldon diesen Case vor (der
-*vorgeschlagene Case*), und das Panel wählt ihn vor.
+Eine Änderung ohne Case wird danach eingeordnet, was eine falsche kosten
+würde, nicht danach, wer sie gemacht hat:
 
-Du löst Drift auf eine von drei Arten auf:
+| Klasse | Beispiele | Was passiert |
+|---|---|---|
+| Routine | ein Theme-Wechsel, ein Plugin-Schalter, ein einfaches System-Upgrade (`pacman -Syu`, `omarchy update`, Kernel eingeschlossen), Omarchys eigene Kopie einer Datei, `shell.json` | Geschichte im Changelog, keine Drift; niemand wird gefragt |
+| zur Kenntnis | ein Paket, mit Namen installiert oder entfernt, ein Plugin eines Dritten, hinzugefügt oder aktualisiert, eine Überschreibung unter einem beobachteten Pfad, eine entfernte Datei | offene Drift, leise: das Panel listet sie, die Pill zählt sie nicht |
+| Krise | ein Paket aus `alwaysRed`, mit Namen installiert oder entfernt, eine neue Datei in einem Persistenzpfad wie `~/.config/systemd/user` oder Omarchys Hooks | siehe [Krise](#krise) |
+
+Deine eigenen Änderungen im Terminal werden aufgezeichnet wie alle
+anderen: Ein Collector sieht, dass ein Paket dazugekommen ist, aber
+nicht, dass du es für einen Case gemeint hast. Nennt ein offener Case das
+geänderte Paket, den Pfad oder das Theme in seinem *Plan*, schlägt Seldon
+diesen Case vor (der *vorgeschlagene Case*), und das Panel wählt ihn vor,
+auch für eine Routine-Änderung.
+
+Du darfst Drift auflösen, du musst es nie. Es gibt drei Arten:
 
 | Aktion | Befehl | Nimm sie, wenn |
 |---|---|---|
@@ -181,30 +191,47 @@ Du löst Drift auf eine von drei Arten auf:
 
 Das Ereignis bleibt in jedem Fall im Ledger. Die Auflösung ist ein neues
 Ereignis, das darauf verweist. Pakete aus einer Transaktion bilden einen
-Drift-Eintrag, eine *Transaktionsgruppe*: Ein Routine-Upgrade von vierzig Paketen ist ein Eintrag,
-und ein Befehl löst alle auf. Mit `--only` löst du nur dieses eine
-Ereignis auf.
+Drift-Eintrag, eine *Transaktionsgruppe*: Die Installation eines Pakets
+mit zehn Abhängigkeiten ist ein Eintrag, und ein Befehl löst alle auf.
+Mit `--only` löst du nur dieses eine Ereignis auf.
+
+Auch Agenten sehen die offenen Punkte. Der Kontext, mit dem jede
+Agentensitzung beginnt, nennt die Krisen und die Punkte zur Kenntnis der
+letzten sieben Tage. Ein Agent erklärt oder verknüpft einen Punkt nur,
+wenn sein eigenes *Log*, ein Hook-Ereignis oder deine Worte belegen,
+warum es passiert ist; sonst lässt er den Punkt offen.
 
 ## Krise
 
-Eine Krise ist Drift in der roten Zone. Sie hat dieselben drei Aktionen.
-Pill und Panel zeigen Krisen zuerst, in der Fehlerfarbe deines Themes,
-mit der Zeile „N changes in the red zone need a reason“.
+Eine Krise ist eine Änderung, die Boot, Anmeldung, die Shell oder die
+Sicherheit brechen kann und um die niemand in einem Case gebeten hat. Sie
+ist die eine Änderung, die Seldon laut macht: Die Pill zählt sie in der
+Fehlerfarbe deines Themes, und das Panel zeigt die Zeile „N changes that
+can affect boot, login or the shell have no case“. Du wirst einmal
+informiert. Mehr wird von dir nicht verlangt.
 
-Routine-Upgrades sind keine Krisen. Eine Transaktion, die bei einem
-vollständigen System-Upgrade nur Pakete aktualisiert, ist gelbe Drift.
-Sie wird rot, wenn sie ein Paket installiert oder entfernt oder ein
-Paket von der Immer-rot-Liste berührt (standardmäßig `linux*`,
+Sie hat dieselben drei Aktionen. Ein Agent darf eine Krise nicht
+erklären oder verwerfen; er darf sie nur mit seinem eigenen aktiven Case
+verknüpfen und sagt dir sonst in einer Zeile Bescheid.
+
+Routine-Upgrades sind keine Krisen, auch wenn sie einen neuen Kernel
+bringen. Ein Paket von der Immer-rot-Liste (standardmäßig `linux*`,
 `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell`; siehe
-[Konfiguration](06-configuration.md#drift)).
+[Konfiguration](06-configuration.md#drift)) ist nur dann eine Krise, wenn
+es außerhalb eines Case mit Namen installiert oder entfernt wird. Eine
+neue Datei in einem Persistenzpfad ist eine Krise, egal wer sie
+geschrieben hat: Units in `~/.config/systemd/user`, Omarchys Hooks in
+`~/.config/omarchy/hooks`, `~/.config/autostart`,
+`~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
+`~/.bash_profile`. Diese Dateien laufen bei der Anmeldung oder bei
+Ereignissen, ohne deine gewöhnliche Konfiguration zu sein.
 
 ## Baseline
 
 Ein neues Logbuch zeichnet ab dem Moment auf, in dem du es anlegst. Der
 Assistent kann auch *nacherfassen*: Änderungen seit einem früheren Datum
 aufzeichnen, aus dem Paketlog und von Snapper. Keine dieser älteren
-Änderungen gehört zu einem Case, also öffnet jede als Drift, die meisten
-als Krise.
+Änderungen gehört zu einem Case, also öffnen viele davon als Drift.
 
 Die Baseline räumt das auf. Nach einer Nacherfassung fragt der
 Assistent, ob er alles Gefundene als Baseline vor Seldon markieren soll.

@@ -1,6 +1,6 @@
 # FAQ
 
-<!-- source: en/12-faq.md @ a670433 -->
+<!-- source: en/12-faq.md @ 1bae1cd -->
 
 Kurze Antworten auf die Fragen, die zuerst kommen. Jede Antwort verweist
 auf die Seite mit den Einzelheiten.
@@ -53,19 +53,23 @@ das erledigen.
 
 ## Warum ist meine eigene Änderung Drift? Ich hatte einen Case offen.
 
-Ein Collector sieht, dass sich etwas geändert hat, aber nicht, wer es
-war oder warum. Nur der Befehl eines Agenten, aufgezeichnet von einem
-Hook, trägt den aktiven Case. Deine eigene Änderung verknüpfst du mit
+Die meisten deiner eigenen Änderungen sind Routine und nie Drift: ein
+Theme-Wechsel, ein Schalter, ein System-Upgrade. Bei den anderen sieht
+ein Collector, dass sich etwas geändert hat, aber nicht, wer es war oder
+warum. Nur der Befehl eines Agenten, aufgezeichnet von einem Hook, trägt
+den aktiven Case. Deine eigene Änderung verknüpfst du mit
 `seldon drift link <EVENT> <CASE>` oder mit *Link* im Drift-Dialog. Siehe
 [Konzepte](02-concepts.md#drift).
 
 ## Ist jedes Paket-Upgrade eine Krise?
 
-Nein. Ein Routine-Upgrade des ganzen Systems ist gelbe Drift, ein
-Eintrag pro Transaktion, aufgelöst mit einem Befehl. Es wird rot, also
-eine Krise, wenn es ein Paket installiert oder entfernt oder ein Paket
-von der Immer-rot-Liste berührt (Kernel, systemd, glibc, Hyprland,
-Omarchy, Quickshell).
+Nein. Ein Upgrade des ganzen Systems ist Routine: Geschichte im
+Changelog, keine Drift, auch wenn es einen neuen Kernel bringt. Ein
+Paket, das du ohne Case mit Namen installierst oder entfernst, ist
+Drift, leise: Das Panel listet es, die Pill zählt es nicht. Nur ein
+Paket von der Immer-rot-Liste (Kernel, systemd, glibc, Hyprland,
+Omarchy, Quickshell), das außerhalb eines Case mit Namen installiert
+oder entfernt wird, ist eine Krise.
 
 ## Darf ich die Dateien von Hand bearbeiten?
 
