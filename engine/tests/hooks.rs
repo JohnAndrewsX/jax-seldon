@@ -2447,6 +2447,29 @@ mod post_tool_use {
         assert_eq!(h.commands().len(), 2);
     }
 
+    /// The check looks one day back: an event with the same id from
+    /// before that is another tool call.
+    #[test]
+    fn an_old_event_with_the_id_does_not_count() {
+        let h = Hooks::new();
+        let pre = payload("claude-code-mutating.json", "PreToolUse");
+        let id = serde_json::from_str::<Value>(&pre).unwrap()["tool_use_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let old = chrono::DateTime::parse_from_rfc3339("2026-09-29T10:00:00+02:00").unwrap();
+        let ulid = ulid::Ulid::from_parts(old.timestamp_millis() as u64, 1);
+        let line = format!(
+            r#"{{"id":"{ulid}","ts":"2026-09-29T10:00:00+02:00","source":"agent","kind":"command","subject":"yay","actor":"agent:claude-code","meta":{{"command":"yay -S zed","toolUseId":"{id}"}}}}"#
+        );
+        std::fs::write(h.logbook.join("ledger/2026-09.jsonl"), format!("{line}\n")).unwrap();
+        assert_eq!(h.commands().len(), 1);
+        h.hook("claude-code", &pre);
+        assert_eq!(h.commands().len(), 2, "{:?}", h.commands());
+        h.hook("claude-code", &pre);
+        assert_eq!(h.commands().len(), 2, "then it counts");
+    }
+
     #[test]
     fn a_lock_held_too_long_is_reported() {
         let h = Hooks::new();
