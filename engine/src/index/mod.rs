@@ -22,12 +22,11 @@ use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
 
-use crate::collectors::{self, Cursors};
+use crate::collectors::{self, Cursors, ShownMessages};
 use crate::commands::Context;
 use crate::config::{Config, Dirs};
 use crate::error::Result;
 use crate::logbook::{Logbook, git};
-use crate::redact::Redactor;
 use crate::sys::{self, Run};
 
 pub use build::{Built, Input};
@@ -85,8 +84,10 @@ pub fn write(path: &Path, index: &Index) -> anyhow::Result<()> {
 /// second value is the load warning.
 ///
 /// A message goes through the logbook's redaction (SPEC-ENGINE §7) once
-/// more: a capture saves it redacted since WP-105, an older engine did
-/// not. An invalid `[redaction] patterns` entry leaves the built-in rules.
+/// more ([`ShownMessages`]): a capture saves it redacted since WP-105, an
+/// older engine did not. The index is rebuilt from `cursors.json` each
+/// time, so the extra pass does not accumulate. An invalid `[redaction]
+/// patterns` entry withholds every message ([`collectors::MESSAGE_WITHHELD`]).
 pub fn collector_state(
     dirs: &Dirs,
     config: &Config,
@@ -103,8 +104,7 @@ pub fn collector_state(
     let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let mine = cursors.logbook.as_deref() == Some(canonical.as_path());
     let mut last_capture: Option<DateTime<FixedOffset>> = None;
-    // built for the first message only: most states hold none
-    let mut redactor: Option<Redactor> = None;
+    let shown = ShownMessages::new(Some(config));
     let rows = ["pacman", "snapper", "omarchy", "plugins", "theme", "config"]
         .into_iter()
         .map(|name| {
@@ -131,11 +131,9 @@ pub fn collector_state(
                 name,
                 enabled,
                 ok: state.is_none_or(|s| s.ok),
-                message: state.and_then(|s| s.message.as_deref()).map(|m| {
-                    redactor
-                        .get_or_insert_with(|| Redactor::for_config(config).unwrap_or_default())
-                        .redact(m)
-                }),
+                message: state
+                    .and_then(|s| s.message.as_deref())
+                    .map(|m| shown.show(m)),
                 last_run,
             }
         })

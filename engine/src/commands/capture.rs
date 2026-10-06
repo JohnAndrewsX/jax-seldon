@@ -74,7 +74,7 @@ use crate::error::{Error, Result};
 use crate::ledger::Ledger;
 use crate::logbook::{Logbook, lock};
 use crate::model::event::{Event, Kind, Meta, Source, format_ts};
-use crate::redact::Redactor;
+use crate::redact::{REDACTED, Redactor};
 
 #[derive(Debug, Clone, Default)]
 pub struct CaptureArgs {
@@ -879,10 +879,14 @@ fn collect_all(
 
 /// Every collector message in `cursors` through `redactor`, so the file
 /// holds no message as an engine before WP-105 saved it, also of a
-/// collector this capture does not run.
+/// collector this capture does not run. A message that holds the marker
+/// was redacted when it was saved and is left as it is: a user pattern
+/// that matches across the marker would grow it on every capture.
 fn redact_messages(cursors: &mut Cursors, redactor: &Redactor) {
     for state in cursors.collectors.values_mut() {
-        if let Some(m) = &mut state.message {
+        if let Some(m) = &mut state.message
+            && !m.contains(REDACTED)
+        {
             *m = redactor.redact(m);
         }
     }

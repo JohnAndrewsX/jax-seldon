@@ -18,7 +18,9 @@ use super::capture::{Binding, PendingReset, pending_reset};
 use super::index::duplicate_cases;
 use super::{Context, Output};
 use crate::collectors::config::{Manifest, OwnWrites};
-use crate::collectors::{Cursors, Lost, STATE_RESET, Sources, cursors_file, snapper};
+use crate::collectors::{
+    Cursors, Lost, STATE_RESET, ShownMessages, Sources, cursors_file, snapper,
+};
 use crate::config::{Config, LogbookSource};
 use crate::error::{Error, Exit, Result};
 use crate::index::load::{FENCE_BEGIN, FENCE_END, bad_lines_warning};
@@ -134,6 +136,9 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
         }
     };
     let effective = config.clone().unwrap_or_default();
+    // collector messages and probe output, redacted (SPEC-ENGINE §7); with
+    // config.toml unusable its patterns are unknown: withheld
+    let shown = ShownMessages::new(config_invalid.is_none().then_some(&effective));
 
     // F-540: without a readable config.toml the default path is a guess
     // (every other command stops at the config error); a path from
@@ -159,7 +164,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_ledger(logbook));
             checks.push(check_fences(logbook));
             checks.push(check_rules(ctx, logbook));
-            checks.push(check_collectors(ctx, &effective, logbook));
+            checks.push(check_collectors(ctx, &effective, logbook, &shown));
             checks.extend(check_reset(ctx, logbook));
             checks.extend(check_pending_reset(ctx, &effective, logbook, source));
         }
@@ -174,8 +179,8 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
         None
     };
     checks.extend(check_state(ctx));
-    checks.push(check_omarchy(&effective));
-    checks.push(check_snapper(&effective));
+    checks.push(check_omarchy(&effective, &shown));
+    checks.push(check_snapper(&effective, &shown));
     checks.push(check_git(&effective, logbook.as_ref()));
 
     let ok = checks.iter().all(|c| c.status != Status::Error);
@@ -509,7 +514,12 @@ fn stray_end_markers(text: &str) -> Vec<usize> {
 /// degraded, with the fixes the collectors gave. Only cursors of this
 /// logbook count (another logbook's are not this one's state). A file
 /// that cannot be read is the `state` row's error.
-fn check_collectors(ctx: &Context, config: &Config, logbook: &Logbook) -> Check {
+fn check_collectors(
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+    shown: &ShownMessages,
+) -> Check {
     let Ok(cursors) = Cursors::load(&cursors_file(&ctx.dirs)) else {
         return Check::new(
             "collectors",
@@ -527,8 +537,12 @@ fn check_collectors(ctx: &Context, config: &Config, logbook: &Logbook) -> Check 
         if state.ok || !config.collectors.get(name).unwrap_or(true) {
             continue;
         }
-        let message = state.message.as_deref().unwrap_or("failed");
-        failing.push(format!("{name}: {}", one_line(message)));
+        // an older engine saved it unredacted (WP-105)
+        let message = state.message.as_deref().map(|m| shown.show(m));
+        failing.push(format!(
+            "{name}: {}",
+            one_line(message.as_deref().unwrap_or("failed"))
+        ));
         if let Some(fix) = &state.fix {
             fixes.push(fix.clone());
         }
@@ -865,7 +879,7 @@ fn check_files<R: Record>(
 /// `omarchy-version` (`omarchy --version` does not exist, memory/host.md),
 /// with `OMARCHY_PATH` defaulted as the collector runs it
 /// ([`sys::omarchy_command`]).
-fn check_omarchy(config: &Config) -> Check {
+fn check_omarchy(config: &Config, shown: &ShownMessages) -> Check {
     if !config.collectors.omarchy {
         return Check::new("omarchy", Status::Ok, "collector disabled in config.toml");
     }
@@ -889,7 +903,7 @@ fn check_omarchy(config: &Config) -> Check {
         other => Check::new(
             "omarchy",
             Status::Degraded,
-            format!("{program} failed: {}", describe(&other)),
+            format!("{program} failed: {}", shown.show(&describe(&other))),
         ),
     }
 }
@@ -900,8 +914,9 @@ fn check_omarchy(config: &Config) -> Check {
 /// instead ([`snapper::readable_info_files`]), and when they are not
 /// readable either, that is degraded with the read grant, never sudo
 /// (ADR-0026). When listing works and the root config still lists this
-/// user (the old opt-in of ADR-0011), the fix reverts that first.
-pub fn check_snapper(config: &Config) -> Check {
+/// user (the old opt-in of ADR-0011), the fix reverts that first. What
+/// snapper printed on a failure is shown through `shown` (WP-105).
+pub fn check_snapper(config: &Config, shown: &ShownMessages) -> Check {
     if !config.collectors.snapper {
         return Check::new("snapper", Status::Ok, "collector disabled in config.toml");
     }
@@ -974,7 +989,7 @@ pub fn check_snapper(config: &Config) -> Check {
         other => Check::new(
             "snapper",
             Status::Degraded,
-            format!("snapper failed: {}", describe(other)),
+            format!("snapper failed: {}", shown.show(&describe(other))),
         ),
     }
 }
