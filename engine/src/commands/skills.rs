@@ -229,10 +229,17 @@ fn shipped(name: &str) -> Option<&'static str> {
     FILES.iter().find(|(n, _)| *n == name).map(|(_, t)| *t)
 }
 
+/// A real, empty folder (what an install stopped right after creating it
+/// leaves): writing into it overwrites nothing.
+fn is_empty_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir())
+        && std::fs::read_dir(path).is_ok_and(|mut d| d.next().is_none())
+}
+
 /// The state of `<folder>/seldon/` (read-only).
 pub fn state(folder: &Path) -> State {
     let target = folder.join(SKILL_NAME);
-    if std::fs::symlink_metadata(&target).is_err() {
+    if std::fs::symlink_metadata(&target).is_err() || is_empty_dir(&target) {
         return State::Missing;
     }
     let Some(manifest) = read_manifest(&target) else {
@@ -353,8 +360,11 @@ fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> R
         }
         State::Missing => {
             // the skill's own folder, never the agent's: `folder` exists
-            std::fs::create_dir(&target)
-                .map_err(|e| anyhow::anyhow!("cannot create {}: {e}", ctx.dirs.display(&target)))?;
+            if !target.exists() {
+                std::fs::create_dir(&target).map_err(|e| {
+                    anyhow::anyhow!("cannot create {}: {e}", ctx.dirs.display(&target))
+                })?;
+            }
             report.action = "installed";
         }
         State::Outdated => report.action = "updated",
@@ -363,11 +373,23 @@ fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> R
     let manifest = Manifest::shipped();
     let mut written = Vec::new();
     let manifest_path = target.join(MANIFEST);
-    if read_manifest(&target).as_ref().map(|m| &m.files) != Some(&manifest.files) {
+    let write_manifest = |written: &mut Vec<PathBuf>| -> Result<()> {
+        if old.files == manifest.files && plain_file(&manifest_path) == Some(true) {
+            return Ok(());
+        }
         let mut text = serde_json::to_string_pretty(&manifest).map_err(anyhow::Error::from)?;
         text.push('\n');
         sys::write_atomic(&manifest_path, text.as_bytes())?;
-        written.push(manifest_path);
+        written.push(manifest_path.clone());
+        Ok(())
+    };
+    // A new folder gets the manifest first: an install that stops half way
+    // leaves a folder that is still Seldon's. An update writes it last: a
+    // file still as the old manifest names it is not mistaken for one
+    // changed by hand.
+    let fresh = before == State::Missing;
+    if fresh {
+        write_manifest(&mut written)?;
     }
     for (name, text) in FILES {
         let path = target.join(name);
@@ -378,8 +400,8 @@ fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> R
         report.written.push(name.to_string());
         written.push(path);
     }
-    own_record(lock, ctx, config, &written, &mut report);
-    // files an older skill had and this one does not, if still as written
+    // files an older skill had and this one does not, if still as written,
+    // before the new manifest forgets them
     for name in names(&old).into_iter().filter(|n| shipped(n).is_none()) {
         let path = target.join(&name);
         if file_state(&path, None, old.files.get(&name)) == FileState::Written {
@@ -387,6 +409,10 @@ fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> R
             report.removed.push(name);
         }
     }
+    if !fresh {
+        write_manifest(&mut written)?;
+    }
+    own_record(lock, ctx, config, &written, &mut report);
     Ok(report)
 }
 

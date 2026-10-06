@@ -453,6 +453,37 @@ fn an_interrupted_install_is_completed_by_the_next() {
 }
 
 #[test]
+fn an_empty_seldon_folder_is_used_and_files_as_shipped_are_not_rewritten() {
+    // what an install that stopped right after creating the folder leaves
+    let env = Env::new(Snapper::Missing);
+    let claude = mkdir(&env, ".claude/skills");
+    std::fs::create_dir(claude.join("seldon")).unwrap();
+    assert_eq!(
+        skills_row(&env)["message"],
+        "seldon agent skill: not installed in ~/.claude/skills"
+    );
+    let v = install(&env);
+    assert_eq!(dir_report(&v, "~/.claude/skills")["action"], "installed");
+    assert_installed(&claude);
+    // an update that stopped after the files, before the manifest: the
+    // files are as shipped, the manifest is older; only the manifest is
+    // written, nothing counts as changed by hand
+    let target = claude.join("seldon");
+    let mut manifest: Value = serde_json::from_str(&read(&target.join(MANIFEST))).unwrap();
+    manifest["files"]["case.md"] = json!(sha256_hex(b"# Cases (old)\n"));
+    std::fs::write(target.join(MANIFEST), manifest.to_string()).unwrap();
+    let v = install(&env);
+    let d = dir_report(&v, "~/.claude/skills");
+    assert_eq!(
+        (d["state"].as_str(), d["action"].as_str()),
+        (Some("outdated"), Some("updated"))
+    );
+    assert_eq!(d["written"], json!([]));
+    assert_installed(&claude);
+    assert_eq!(skills_row(&env)["status"], "ok");
+}
+
+#[test]
 fn uninstall_leaves_a_file_the_user_added() {
     let env = Env::new(Snapper::Missing);
     let claude = mkdir(&env, ".claude/skills");
