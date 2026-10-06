@@ -7,6 +7,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | Path | What | Schema |
 |---|---|---|
 | `index.sample.json` | canonical index; the plugin develops against it | `schema/index.schema.json` |
+| `index.attention-all.json` | the same logbook indexed with `[drift] attention = "all"` (ADR-0028 §5: the rollback, the drift rules before ADR-0028); derived by the script's legacy path, held to `seldon index` by the engine's golden test | `schema/index.schema.json` |
 | `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0026), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
@@ -31,18 +32,24 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-20/21 | theme `kanagawa` tried → *dismissed* | `dismissed` |
 | 09-24 | plugin update → *explained* | plugin-update |
 | 09-26…30 | cases 003–006 created; snapshot 111; snapshots 108/109 deleted | snapshot-delete |
-| 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays open (WP-014) | **one yellow drift group** (`members: 3`, `txId`), ADR-0013 |
-| 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (**two crises**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
+| 09-25 | theme `catppuccin` tried and back to `kanagawa` | two **routine** theme switches (ADR-0028): history, no drift |
+| 09-27 | human downgrades `mesa`, `vulkan-radeon`, `lib32-mesa` from the cache (`pacman -U …`) | **one attention group** (`members: 3`, `txId`): a named downgrade |
+| 09-28 | `~/.config/hypr/monitors.conf` removed (the move to Lua) | `config-remove`: attention |
+| 09-29 | plugin `weather-plus` disabled and enabled again; the shell rewrites `shell.json`; a hook `post-update.d/backup-dotfiles.sh` appears (no case, `system`) | toggles and `shell.json` **routine**; the hook a **crisis** in the yellow zone (ADR-0028 §2) |
+| 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays without a resolution (WP-014) | a plain full upgrade: **routine** history since ADR-0028 (with `attention = "all"`: one yellow drift group, ADR-0013) |
+| 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (the install quiet **attention**, the unit a **crisis**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
 
-Result: 71 ledger lines (9 resolutions), 62 index events (7 with
+Result: 81 ledger lines (9 resolutions), 72 index events (7 with
 `resolutionDetail`; 1 with `zone: green`), 6 snapshots in `system.snapshots`
-(1 pre/post pair), 4 open drift items — 3 single (2 crises) and 1 yellow group
-of 3 —, 8 cases (3 queued, 2 active, 1 verification, 2 completed), 4 decisions
-(1 proposed).
+(1 pre/post pair), 6 open drift items — 5 single (2 crises: the user unit
+and the hook) and 1 attention group of 3 (the mesa downgrade) —, 6 routine
+items (`drift --all`: the `-Syu` group, the two theme switches, the two
+toggles, `shell.json`), 8 cases (3 queued, 2 active, 1 verification, 2
+completed), 4 decisions (1 proposed).
 
 ## How the index derives from the logbook
 
-Normative rules: ADR-0012 and ADR-0013. `scripts/validate-fixtures.py`
+Normative rules: ADR-0012, ADR-0013 and ADR-0028 (classes). `scripts/validate-fixtures.py`
 implements them for the fixture check; `--write-index` regenerates the
 logbook-derived parts of `index.sample.json` and every `index-variants/` file
 after a logbook edit (the WP-007 golden test replaces it with real engine
@@ -66,7 +73,13 @@ Rules the fixture check implements beyond the plain field copies:
   `detail`, `actor` and `proposedCase` are the leader's (lowest-id explicit
   member, else lowest-id member); `txId` and `members` are present only when the
   item has two or more members. Other sources are never grouped.
-- **Zone of a pacman item** is computed: yellow iff every member is *routine* —
+- **Class** (ADR-0028 §2; `Classifier` in the script, `engine/src/index/class.rs`
+  in the engine): every linkable event is routine, attention or crisis; a
+  group takes the highest class of its members; routine items are not drift
+  unless an open case's Plan names them (then attention with `proposedCase`);
+  `crisis` iff the class is crisis; `zone` is the leader's ledger zone.
+- **Under `attention = "all"`** (`index.attention-all.json`) the zone of a
+  pacman item is computed: yellow iff every member is *routine* —
   kind `upgrade` or `reinstall`, `explicit: false`, `meta.command` split on
   whitespace (as pacman logs it, unquoted) is `pacman` with the sync operation
   (`-S`/`--sync`), `-u`/`--sysupgrade` and no package word, and the subject
@@ -80,15 +93,21 @@ Rules the fixture check implements beyond the plain field copies:
   package and the item turns red. Other sources copy the event's zone.
 - **`series.drift`** counts items, not lines (ADR-0013 §4): a caseless pacman
   transaction opens one item (week of its earliest line); the resolution lines
-  of one group write (same `meta.txId`, `ts`, `actor`) count as one.
-- **Self-checks.** Every run also derives the index from 18 in-memory mutations
-  of the 09-30 group (a member explicit, `linux`/`linux-firmware`/`quickshell`
-  as subject, an `install` member, commands naming a package or lacking `-u`,
-  `--overwrite`/`-r` arguments, an unknown option, `yay`, a `--only`
-  resolution, a fan-out resolution) and fails if the zone, crisis or member
-  count is not what ADR-0013 says. Three more add an open caseless `zed`
-  upgrade, replace every open case's Plan, and check the token rule end to
-  end: `Install zed.` and `` `extra/zed` `` propose, `Edit zed.conf` does not.
+  of one group write (same `meta.txId`, `ts`, `actor`) count as one. ADR-0028
+  §5: a routine group opens nothing, and a resolution counts only when its
+  target opened an item.
+- **Self-checks.** Every run also derives the index from 20 in-memory mutations
+  of the 09-30 group under `attention = "all"` (a member explicit,
+  `linux`/`linux-firmware`/`quickshell` as subject, an `install` member,
+  commands naming a package or lacking `-u`, `--overwrite`/`-r` arguments, an
+  unknown option, `yay`, a `--only` resolution, a fan-out resolution) and
+  fails if the zone, crisis or member count is not what ADR-0013 says, and
+  from 15 more under the default rules (`-Syyuu`, `-Su`, bare `yay`, Omarchy's
+  update line, a kernel in the upgrade, `:: Replace`, downgrades, a named
+  upgrade, a named kernel install, the keyring) against ADR-0028 §2. Three
+  more add an open caseless `zed` install, replace every open case's Plan,
+  and check the token rule end to end: `Install zed.` and `` `extra/zed` ``
+  propose, `Edit zed.conf` does not.
 - **Case lifecycle** (SPEC-LOGBOOK §3, the engine's `Transition::target`):
   every case's Log lines are walked through `created` → queued, `started`
   (queued → active), `verification` (active → verification), `completed`
@@ -117,8 +136,8 @@ add a banner state, add an overlay and run `--write-index`.
 | `plugins-degraded` | collector `plugins`: `ok: false`, `message` `omarchy plugin list --json: timed out` (the engine's text for a shell IPC timeout) | a failing non-snapper collector |
 | `omarchy-git-checkout` | `system.omarchy.repoHead: 3f9c2e1` (short hash, like `logbook.git.head`) | Omarchy run from a git checkout of `$OMARCHY_PATH` (SPEC-ENGINE §4) |
 | `drift-explained-case` | btop's event (`01M1MB2M…`, `resolution: explained`) gets `case: C-2026-002`; jq: `.events \|= map(if .id == "01M1MB2M1GWZYF485HTGVZ1KS3" then .case = "C-2026-002" else . end)`. Index only: the logbook's explained lines stay caseless and C-2026-002's `events:` does not list btop | ADR-0021: the row reads `explained · C-2026-002: Kleines Monitoring-Tool, bewusst ohne Case.` and names the case |
-| `drift-capped` | `summary.openDrift: 250`, `drift` unchanged (4 items); jq: `.summary.openDrift = 250` | ADR-0020: "+246 more open drift items not listed here" under the drift rows; pill `2 · 250` |
-| `drift-members-capped` | noto-fonts (`01M3SXBRV0E7…`) removed from `events`; the firefox group keeps `members: 3`; jq: `.events \|= map(select(.id != "01M3SXBRV0E702XKBM22HEV1B8"))` | CONTRACT.md rule 4: the drift sheet lists firefox and libinput plus "… and 1 more", then asks `seldon drift show <firefox> --json` for all three (the fallback) |
+| `drift-capped` | `summary.openDrift: 250`, `drift` unchanged (6 items); jq: `.summary.openDrift = 250` | ADR-0020: "+244 more open drift items not listed here" under the drift rows; pill `2 · 250` |
+| `drift-members-capped` | lib32-mesa (`01M3H6M8184N…`) removed from `events`; the mesa group keeps `members: 3`; jq: `.events \|= map(select(.id != "01M3H6M8184NVTFDTEGPD71P5H"))` | CONTRACT.md rule 4: the drift sheet lists mesa and vulkan-radeon plus "… and 1 more", then asks `seldon drift show <mesa> --json` for all three (the fallback) |
 
 Not derivable from the logbook and therefore not checked beyond the index
 times above: `generatedAt`, `engineVersion`, `logbook.path`, `logbook.git`,
@@ -187,15 +206,17 @@ Markdown table):
   **unterminated last line** (an interrupted write; the cursor must stop before it).
   - Baseline cursor of `seldon init`: byte offset **6129** (first line after it is
     the 09-03 btop transaction). From there the parser must produce exactly the
-    pacman events of `logbook/ledger/*.jsonl` (12 lines; ids and attribution aside) and
-    nothing for the malformed lines. Complete lines end at byte 11159.
+    pacman events of `logbook/ledger/*.jsonl` (15 lines; ids and attribution aside) and
+    nothing for the malformed lines. Complete lines end at byte 11832.
   - The 09-30 `pacman -Syu` block (WP-014) is a plain full upgrade: three
-    `upgraded` lines, `explicit: false`, `meta.command` `pacman -Syu`. It is the
-    input of the ADR-0013 routine class (one yellow group).
+    `upgraded` lines, `explicit: false`, `meta.command` `pacman -Syu`: routine
+    `sysupgrade` (ADR-0028; under `attention = "all"` the ADR-0013 yellow
+    group). The 09-27 `pacman -U` block downgrades three packages from the
+    cache, each named (`explicit: true`): one attention group.
 - `pacman-rotation/` — `pacman.log.1` (old inode, ends after the 09-15
   transaction, 7359 bytes; cursor at its end) and the new `pacman.log`, which
   starts by **repeating the 09-15 transaction** (copytruncate race) and continues
-  with the 09-30 `-Syu` to 10-01. Expected: restart from 0 on the inode change, dedupe by
+  with the 09-27 downgrade and the 09-30 `-Syu` to 10-01. Expected: restart from 0 on the inode change, dedupe by
   `(ts, kind, subject, version)`, so the 09-15 upgrade is not emitted twice.
 - `snapper-before.json` (2026-09-30 18:00, has pre/post 108/109) and `snapper.json`
   (2026-10-01 17:05, has pre/post 114/115; the collector links them through

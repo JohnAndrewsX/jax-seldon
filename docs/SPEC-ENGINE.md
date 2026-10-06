@@ -20,7 +20,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve, §8; WP-063; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve, §8; WP-063; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
@@ -60,8 +60,13 @@ seldon plan list [--status S] [--area A]          # a case file that does not lo
                                                  # --json `warnings`), the others are listed, exit 0 (WP-077)
 seldon plan show <ID>                            # the case file's path and text as quoted lines (`> `, as
                                                  # hook session-start, §8), under one note line; --json unquoted
-seldon drift [--crisis-only] [--json]            # read-only: index items, crises first; totals count all
-seldon drift show <EVENT> --json                 # {event, open, item, txId, members} — full member list of a group
+seldon drift [--crisis-only] [--all] [--json]    # read-only: index items, crises first; totals count all; --all:
+                                                 # every item that can still be resolved, routine ones too,
+                                                 # uncapped (ADR-0028 §4c). Each item adds `class`
+                                                 # (routine|attention|crisis) and `rule` (§5) to the index's
+                                                 # fields; --json → {drift, openDrift, crisis, routine}
+seldon drift show <EVENT> --json                 # {event, open, class, rule, item, txId, members} — the item's
+                                                 # members that can still be resolved (open or routine)
 seldon drift link <EVENT> <CASE> [--only] [--actor A]
 seldon drift explain <EVENT> [--only] [--zone Z] [--risk R] [--area A] [--actor A] -- <intent>
 seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
@@ -71,7 +76,12 @@ seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
 # index rebuilt; a re-run writes nothing (exit 0, resolved 0); ids and the case
 # are checked before any write (exit 1). `explain` creates a completed
 # retroactive case (ADR-0021). --json → {eventId, resolution, only, txId,
-# resolved, events, case, areaCreated, git}
+# resolved, events, case, areaCreated, git}. ADR-0028 §3: `link` also takes a
+# routine event (its whole transaction, or one event with --only);
+# `explain|dismiss` of a routine event exit 1 ("routine", the rule, `drift
+# link` named). An agent actor (--actor or SELDON_ACTOR) may not explain or
+# dismiss a crisis and may link one only to an active case whose `agents`
+# lists it (exit 1, before any write); a human is never refused
 seldon decide "<title>" [--case ID] [--no-edit] # creates ADR, opens $EDITOR unless --no-edit
 seldon status                                  # regenerates STATUS.md + index
 # decide and status (WP-050) fill the `decisions.index` fence of the logbook's
@@ -264,7 +274,8 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
-                                               # collectors, state, omarchy, snapper, git checks (read-only)
+                                               # collectors, state, omarchy, snapper, git, watch, drift
+                                               # checks (read-only)
 seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules block of the logbook's AGENTS.md
                                                # (`<!-- seldon:begin rules vN -->` … `<!-- seldon:end -->`,
                                                # marker lines as whole lines) becomes this engine's v2 block.
@@ -357,7 +368,9 @@ seldon --version --json          → {"name":"seldon","version":"0.1.0"}
 seldon contract-version --json   → {"contractVersion":1}
 any user error with --json       → {"error":{"code":1,"message":"<detail>"}}  (exit 1)
 seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
-                                     "checks":[{"name","status":"ok|degraded|error","message","fix"?}]}
+                                     "checks":[{"name","status":"ok|degraded|error","message","fix"?}],
+                                     "drift":{"attention","routine","routinePaths","routinePackages",
+                                              "alwaysRedPaths","alwaysRed","nonDefault"}}
                                     exit 0 (no error), 1 (a check is error), 3 (not initialised)
 ```
 
@@ -467,11 +480,27 @@ collectors took their new baseline already. The `omarchy`
 and `snapper` probes run the programs the collectors run
 (`SELDON_OMARCHY_VERSION`, `SELDON_SNAPPER`).
 
+doctor's `watch` and `drift` rows (ADR-0028 §4c, §4d, §6; WP-109; last,
+so the earlier rows keep their places, and only with a readable
+`config.toml`): `watch` is `ok` when `watchPaths` holds every default
+path, `ok` with "the next capture adds …" when it is an earlier engine's
+default list, and `degraded` for a list of the user's own that lacks
+default paths, naming them, with the fix `add to watchPaths in
+config.toml: "…", …`. `drift` prints the effective `[drift]` set
+(`attention`, the `routine` rule ids, the counts of `routinePaths`,
+`routinePackages`, `alwaysRedPaths` and `alwaysRed`) and ends in `all
+defaults` or `non-default: <keys>`: the config can silence rules, so the
+change is shown, never refused; an unknown routine rule id is
+`degraded` with the list of valid ids. `--json` carries the full set as
+`drift`.
+
 ```
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
-                          "sinceIgnored":[…],"explainedOwn":N,"explainedSelf":N,"warnings":[…]}
+                          "sinceIgnored":[…],"explainedOwn":N,"explainedSelf":N,
+                          "watchPathsAdded":[…],"warnings":[…]}
                                                                     # explainedOwn: §5 rule 7;
+                                                                    # watchPathsAdded: §4 config;
                                                                     # explainedSelf: §5 rule 8;
                                                                     # warnings: the state reset (WP-081)
                          exit 0 also when a collector is degraded (ok:false + fix, ADR-0026);
@@ -870,7 +899,32 @@ git itself is killed, with the same bounded pipe wait. Rules:
   waybar` if present, `~/.bashrc`, `~/.zshrc`, `~/.local/share/
   applications` excluding `mimeinfo.cache` (WP-089: `update-desktop-database`
   rewrites it on many package transactions; the `.desktop` files it is
-  built from are watched), user list). Changed/added/
+  built from are watched), and the persistence paths of ADR-0028 §4d
+  `~/.config/systemd/user`, `~/.config/autostart`,
+  `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
+  `~/.bash_profile` (WP-109; `init` writes all twelve into a new config;
+  user list). **Upgrade (ADR-0028 §4d):** a `config.toml` whose
+  `watchPaths` equals the default list of an earlier engine, in any order
+  (0.1.0–0.1.3: the first five; WP-089: the first six), gains the current
+  defaults it lacks at the next `capture`, which saves the file under the
+  lock and says so once (`note: config.toml now also watches …`,
+  `watchPathsAdded`); the files already there enter the scope without
+  events (scope changes below). A list the user wrote is never widened:
+  `doctor`'s `watch` row names the default paths it lacks, with the line
+  to add. **Evidence marks (ADR-0028 §5):** a new `config-add` or
+  `config-change` carries `meta.matches` when, at capture, the file is a
+  symlink whose target lies under `/usr/` (`system-link`), its new hash
+  equals Omarchy's shipped copy (`omarchy-default`: `$OMARCHY_PATH/config/
+  <rel>` for `~/.config/<rel>`; for `~/.local/share/applications/<name>`
+  `$OMARCHY_PATH/applications/<name>`, and for `Alacritty.desktop`
+  `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`), or it lies in a
+  theme directory `~/.config/omarchy/themes/<slug>/` that has a `.git`
+  (`theme-repo`: `omarchy theme install` clones there and strips a
+  theme's code). Only the fact is recorded, never the link target or the
+  content; old events have no mark and classify by path. `OMARCHY_PATH`
+  defaults to `/usr/share/omarchy` (under `SELDON_TEST_GUARD` without
+  the variable: `<guard>/omarchy`); the files there are only read and
+  hashed. Changed/added/
   removed → `config-add|config-change|config-remove` with the path written
   with `~` and both hashes (`detail` `sha256 <8> → <8>`). Binary files (a
   NUL in the first 8000 bytes) and files over 1 MiB are listed as
@@ -974,19 +1028,62 @@ After every capture:
    subject as a whole-word token in its `## Plan` section, propose (not
    link) — stored as `proposedCase` in the index for one-click
    confirmation; the lowest case id wins (ADR-0012 §7, §13).
-4. Otherwise it is drift, if the event is drift-eligible: only `pacman`,
-   `omarchy`, `plugins`, `theme` and `config` events can be drift;
-   snapshots, notes, hook `command` events and case events never are
-   (ADR-0012 §6).
-5. **Grouping (ADR-0013).** Open drift `pacman` events that share a `txId`
-   form one drift item keyed by the leader's event id (lowest-id explicit
+4. Otherwise, if the event is drift-eligible (only `pacman`, `omarchy`,
+   `plugins`, `theme` and `config` events can be; snapshots, notes, hook
+   `command` events and case events never are, ADR-0012 §6), it is
+   *linkable* (no case, no resolution) and gets a **class** at index time
+   (ADR-0028 §2, normative; computed from the event, the ledger around it
+   and `[drift]`, never written to the ledger): *routine* — history in
+   the Changelog, not drift, no reason ever asked; *attention* — open
+   drift, quiet; *crisis* — open drift and the bar's signal. The rule
+   ids (`drift show`): pacman in a plain full upgrade (argv `-S` with
+   `-u` naming no package, pacman, yay or paru: `-Syu`, `-Syyuu`, `-Su`,
+   bare `yay`, Omarchy's `pacman -Syu --noconfirm --overwrite …`) —
+   `upgrade`, `reinstall`, `install` and a removal (`:: Replace`) are
+   `sysupgrade`, `alwaysRed` subjects included; a downgrade or removal of
+   an `alwaysRed` member is attention `sysupgrade-red`, another downgrade
+   attention `downgrade`. Named (explicit: on the command line, or
+   `-U <file>` from the cache): `upgrade`/`reinstall` routine `upgrade`
+   (`alwaysRed`: attention `upgrade-red`); `install`/`remove`/`downgrade`
+   attention `package` (`alwaysRed`: **crisis** `always-red`). A
+   transaction naming only `routinePackages` is routine `keyring`. A
+   dependency follows the highest class of its transaction's explicit
+   members (also when they are resolved); a transaction without a command
+   line is attention `other`. Omarchy `update`: routine `omarchy-update`
+   when both versions are package-shaped (`N…-N`) and a plain full
+   upgrade moved `omarchy` or `omarchy-dev` (install or upgrade) to the
+   new version at most 31 days before; else attention `omarchy-other`
+   (a bare `dev`, a downgrade, unattributed). Plugins: `plugin-enable`/
+   `-disable` routine `plugin-toggle`; `-add`/`-remove`/`-update`
+   attention `plugin`. `theme-set` routine `theme`. Config, in this order:
+   `meta.matches` `omarchy-default`/`system-link` routine (not for a
+   removal); `routinePaths` routine `routine-paths`; any other
+   `config-remove` attention `config-remove`; `alwaysRedPaths` **crisis**
+   `always-red-paths` (a `*.sample` file under `~/.config/omarchy/hooks/`
+   is not: `omarchy-hook` never runs it); in a theme directory
+   `~/.config/omarchy/themes/<slug>/`, `meta.matches = theme-repo`
+   routine `theme-repo`, a file that is not code (`*.lua`,
+   `alacritty.toml`, `foot.ini`, `ghostty.conf`, `kitty.conf`,
+   `vscode.json`) routine `theme-assets`; `~/.config/omarchy/backgrounds/
+   **` routine `theme-assets`; everything else (Hyprland Lua, waybar,
+   `~/.config/omarchy/**`, `themed/*.tpl`, the menu extensions, shell rc,
+   desktop entries) attention `config`. Any other event: attention
+   `other`. Rules 1–3 come first: a linked event is no drift, and a
+   routine event an open case's Plan names (rule 3) is shown as
+   attention with its `proposedCase`.
+5. **Grouping (ADR-0013).** Linkable `pacman` events that share a `txId`
+   form one item keyed by the leader's event id (lowest-id explicit
    member, else lowest-id member); the index row carries `txId` and
-   `members`. The item's zone is yellow iff every member is *routine*
-   (kind `upgrade`/`reinstall`, not explicit, transaction command is `-S`
-   with `-u`/`--sysupgrade` naming no package, subject not matching
-   `config.toml [drift] alwaysRed` — default in §2), else red. Other
-   sources are never grouped.
-6. Red zone → `crisis: true`.
+   `members`. The item's class is the highest class of its members, its
+   rule the leader's (else the lowest id's with that class). Other
+   sources are never grouped. `drift[].zone` is the leader's **ledger
+   zone** (pacman items are red, ADR-0014; ADR-0028 §7).
+6. `crisis: true` iff the item's class is crisis (the harm test,
+   ADR-0028 §1); open drift (`index.drift`, `summary.openDrift`) is every
+   item that is not routine. `[drift] attention = "all"` restores the
+   rules before ADR-0028 (every linkable item open, pacman zone yellow
+   iff every member is routine in the ADR-0013 §3 sense, `crisis` iff
+   red).
 7. **The engine's own writes (WP-038).** A file the engine writes itself
    under a watched path — the theme hook script that `init --theme-hook`
    has `omarchy hook install` copy to
@@ -1019,6 +1116,19 @@ After every capture:
    capture without the config collector keeps the records. Files the
    wizard writes before its first capture (the harnesses inside the
    logbook) are part of that capture's config baseline and need no record.
+   **Built-in templates (ADR-0028 §2, WP-109):** without a record, a new
+   `config-add|config-change` is also explained when its new content is
+   one of the engine's compiled-in templates: a file named
+   `seldon-theme-set.sh` whose hash is the theme hook's (detail
+   `installed by seldon init --theme-hook (built-in template)`), and a
+   file named `seldon-watch.service` whose content (read again and
+   checked against the event's hash) is `engine/systemd/
+   seldon-watch.service` with any `ExecStart=<prefix>/seldon watch` line,
+   the prefix without whitespace (detail `installed by install.sh --unit
+   (built-in template)`); so a lost state directory, `install.sh --unit`
+   and its `systemctl --user enable` link are no crisis. A unit that
+   differs in any other line is not explained. An unreadable `owned.json`
+   is kept and only the templates explain.
 8. **Seldon updating itself (WP-086).** Seldon's own components are no
    drift: an event of its plugin `jax.seldon` (`plugin-update`,
    `plugin-enable`, `plugin-disable`) or of its package `jax-seldon`
@@ -1047,19 +1157,21 @@ After every capture:
    and a warning says the earlier ones were not checked. An event that has a
    resolution (dismissed, explained, linked) keeps it, the kinds above
    that stay drift stay drift, and no case is created. `install.sh` writes under its prefix
-   (`~/.local`: the binary, man page, completions) and, with `--unit`,
-   into `~/.config/systemd/user/`, all outside the default `watchPaths`,
-   so it leaves no event; a path a user adds to `watchPaths` is ordinary
-   config drift.
+   (`~/.local`: the binary, man page, completions), outside the default
+   `watchPaths`, and, with `--unit`, into `~/.config/systemd/user/`, a
+   default watch path since ADR-0028 §4d: rule 7's built-in template
+   explains that unit.
 
    Events explained by rule 7 or 8 count in the weekly drift trend
-   (`series.drift`, §6) like any resolved item: opened in the week of
-   the event, resolved in the week of the capture, mostly the same day.
+   (`series.drift`, §6) like any resolved item whose event opened one:
+   opened in the week of the event, resolved in the week of the capture,
+   mostly the same day.
 
 Resolution events (`kind: resolution`, `refersTo`) are applied when the
-index is built; an event with a resolution is not drift. `seldon drift
-link|explain|dismiss <id>` on a group member resolves every member that is
-open at that moment, one resolution line per member in one write with
+index is built; an event with a resolution is not drift and keeps it,
+whatever its class. `seldon drift link|explain|dismiss <id>` on a group
+member resolves every member that is linkable at that moment (`link`;
+`explain|dismiss` refuse a routine item, §3), one resolution line per member in one write with
 `meta.txId`; `--only` resolves the named event alone (ADR-0013 §4) and
 does not fan out to the explicit event's dependencies (rule 2 is
 satisfied at capture and by the fan-out without `--only`). A resolved
@@ -1092,6 +1204,21 @@ zero-width space (U+200B) after `<!--`, so a title, subject or message
 can neither end nor open a fence (WP-065). The dossier fences of
 `system/*.md` get the same, the rows kept from the old body included
 (WP-075).
+
+Drift classes (ADR-0028 §5; WP-109): the class of every linkable event
+(§5 rules 4–6) is computed on each build from the ledger and
+`config.toml [drift]`; nothing is written to the ledger, and two builds
+from the same ledger and config give byte-identical indexes. Routine
+items leave `index.drift`; `drift[].zone` is the leader's ledger zone;
+`crisis` is the harm test; `summary.openDrift` counts the items that are
+not routine, `summary.crisis` the crises. The timeline's `crisis` rows
+follow. `series.drift` counts a group as opened in the week of its
+earliest line only when its class is not routine (a proposal does not
+count here: it depends on today's open cases), and a resolution write as
+resolved only when the event it resolves opened an item, so the curve
+cannot go negative (an old dismissal of a theme switch counts on neither
+side). `[drift] attention = "all"` reproduces the index of the rules
+before ADR-0028 (`fixtures/index.attention-all.json`).
 
 Size budget (CONTRACT.md rule 5, < 1 MB; WP-076): in `index.events` and
 `index.drift`, a `detail`, `resolutionDetail` or string value of `meta`
