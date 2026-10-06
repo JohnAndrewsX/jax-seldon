@@ -576,7 +576,7 @@ fn an_agent_never_whitewashes_a_crisis() {
     let env = Env::new(Snapper::Missing);
     let lb = fixture_copy(&env);
     let before = common::ledger(&lb);
-    let refused: [(&[&str], &str); 4] = [
+    let refused: [(&[&str], &str); 5] = [
         (
             &[
                 "drift",
@@ -611,6 +611,18 @@ fn an_agent_never_whitewashes_a_crisis() {
                 "agent:codex",
             ],
             "only to an active case that lists agent:codex",
+        ),
+        (
+            // C-2026-002 lists the agent, but it is completed
+            &[
+                "drift",
+                "link",
+                UNIT,
+                "C-2026-002",
+                "--actor",
+                "agent:claude-code",
+            ],
+            "only to an active case",
         ),
         (
             // C-2026-008 lists no agent and is in verification

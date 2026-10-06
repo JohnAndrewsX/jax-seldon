@@ -154,6 +154,12 @@ fn capture_marks_the_evidence_and_the_class_follows_it() {
         std::fs::create_dir_all(link.parent().unwrap()).unwrap();
         std::os::unix::fs::symlink(usr, &link).unwrap();
     }
+    // a link that does not point into /usr is no evidence
+    let own = home.join("units/miner.service");
+    write(&own, "[Service]\nExecStart=/home/user/miner\n");
+    let own_link = home.join(".config/systemd/user/miner.service");
+    std::fs::create_dir_all(own_link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&own, &own_link).unwrap();
     // persistence nobody asked for
     write(
         &home.join(".config/omarchy/hooks/post-update.d/backup.sh"),
@@ -195,6 +201,7 @@ fn capture_marks_the_evidence_and_the_class_follows_it() {
         mark("~/.config/omarchy/hooks/post-update.d/backup.sh"),
         Value::Null
     );
+    assert_eq!(mark("~/.config/systemd/user/miner.service"), Value::Null);
     if usr.is_file() {
         assert_eq!(
             mark("~/.config/systemd/user/default.target.wants/packaged.service"),
@@ -202,19 +209,26 @@ fn capture_marks_the_evidence_and_the_class_follows_it() {
         );
     }
 
-    let open = items(&env, false);
+    let mut open = items(&env, false);
+    open.sort();
+    let item = |s: &str, c: &str, r: &str| (s.to_string(), c.to_string(), r.to_string());
     assert_eq!(
         open,
         [
-            (
-                "~/.config/omarchy/themes/mine/hyprland.lua".to_string(),
-                "attention".to_string(),
-                "config".to_string()
+            item(
+                "~/.config/omarchy/hooks/post-update.d/backup.sh",
+                "crisis",
+                "always-red-paths"
             ),
-            (
-                "~/.config/omarchy/hooks/post-update.d/backup.sh".to_string(),
-                "crisis".to_string(),
-                "always-red-paths".to_string()
+            item(
+                "~/.config/omarchy/themes/mine/hyprland.lua",
+                "attention",
+                "config"
+            ),
+            item(
+                "~/.config/systemd/user/miner.service",
+                "crisis",
+                "always-red-paths"
             ),
         ],
         "everything else is routine"
