@@ -390,6 +390,8 @@ fn an_older_skill_is_updated_and_a_dropped_file_removed() {
     let mut manifest: Value = serde_json::from_str(&read(&target.join(MANIFEST))).unwrap();
     manifest["files"]["case.md"] = json!(sha256_hex(old_case.as_bytes()));
     manifest["files"]["old.md"] = json!(sha256_hex(old_extra.as_bytes()));
+    // a dropped file that is already gone
+    manifest["files"]["gone.md"] = json!(sha256_hex(b"gone"));
     // a manifest name that leaves the folder is never followed
     let outside = env.home.join(".claude/escape.md");
     std::fs::write(&outside, old_extra).unwrap();
@@ -430,10 +432,13 @@ fn an_interrupted_install_is_completed_by_the_next() {
     let claude = mkdir(&env, ".claude/skills");
     install(&env);
     std::fs::remove_file(claude.join("seldon/drift.md")).unwrap();
-    let skill_mtime = std::fs::metadata(claude.join("seldon/SKILL.md"))
-        .unwrap()
-        .modified()
-        .unwrap();
+    let mtime = |name: &str| {
+        std::fs::metadata(claude.join("seldon").join(name))
+            .unwrap()
+            .modified()
+            .unwrap()
+    };
+    let (skill_mtime, manifest_mtime) = (mtime("SKILL.md"), mtime(MANIFEST));
     let v = install(&env);
     let d = dir_report(&v, "~/.claude/skills");
     assert_eq!(
@@ -449,6 +454,11 @@ fn an_interrupted_install_is_completed_by_the_next() {
             .unwrap(),
         skill_mtime,
         "an unchanged file was rewritten"
+    );
+    assert_eq!(
+        mtime(MANIFEST),
+        manifest_mtime,
+        "an unchanged manifest was rewritten"
     );
 }
 
@@ -481,6 +491,70 @@ fn an_empty_seldon_folder_is_used_and_files_as_shipped_are_not_rewritten() {
     assert_eq!(d["written"], json!([]));
     assert_installed(&claude);
     assert_eq!(skills_row(&env)["status"], "ok");
+}
+
+#[test]
+fn a_link_inside_seldon_s_folder_is_never_written_through() {
+    let env = Env::new(Snapper::Missing);
+    let claude = mkdir(&env, ".claude/skills");
+    install(&env);
+    let target = claude.join("seldon");
+    let outside = env.tmp.path().join("outside.md");
+    std::fs::write(&outside, "outside\n").unwrap();
+    // SKILL.md replaced by a link
+    std::fs::remove_file(target.join("SKILL.md")).unwrap();
+    std::os::unix::fs::symlink(&outside, target.join("SKILL.md")).unwrap();
+    let v = install(&env);
+    let d = dir_report(&v, "~/.claude/skills");
+    assert_eq!(d["state"], "changed", "{v}");
+    assert_eq!(d["kept"], json!(["SKILL.md"]));
+    let v = uninstall(&env);
+    assert_eq!(
+        dir_report(&v, "~/.claude/skills")["kept"],
+        json!(["SKILL.md"])
+    );
+    assert!(
+        std::fs::symlink_metadata(target.join("SKILL.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(read(&outside), "outside\n");
+
+    // the manifest replaced by a link: the folder is not Seldon's
+    let agents = mkdir(&env, ".agents/skills");
+    std::fs::create_dir(agents.join("seldon")).unwrap();
+    let manifest = env.tmp.path().join("manifest.json");
+    std::fs::write(&manifest, "{\"files\":{}}").unwrap();
+    std::os::unix::fs::symlink(&manifest, agents.join("seldon").join(MANIFEST)).unwrap();
+    let v = install(&env);
+    assert_eq!(
+        dir_report(&v, "~/.agents/skills")["state"],
+        "foreign",
+        "{v}"
+    );
+    assert_eq!(read(&manifest), "{\"files\":{}}");
+    assert_eq!(std::fs::read_dir(agents.join("seldon")).unwrap().count(), 1);
+}
+
+#[test]
+fn uninstall_removes_an_older_skill_too() {
+    let env = Env::new(Snapper::Missing);
+    let claude = mkdir(&env, ".claude/skills");
+    install(&env);
+    let target = claude.join("seldon");
+    let old_case = "# Cases (old)\n";
+    std::fs::write(target.join("case.md"), old_case).unwrap();
+    let mut manifest: Value = serde_json::from_str(&read(&target.join(MANIFEST))).unwrap();
+    manifest["files"]["case.md"] = json!(sha256_hex(old_case.as_bytes()));
+    std::fs::write(target.join(MANIFEST), manifest.to_string()).unwrap();
+    let v = uninstall(&env);
+    assert_eq!(
+        dir_report(&v, "~/.claude/skills")["action"],
+        "removed",
+        "{v}"
+    );
+    assert!(!target.exists());
 }
 
 #[test]
@@ -605,6 +679,21 @@ fn own_writes_under_a_watched_path_leave_no_drift() {
     assert_eq!(c["explainedOwn"], 6, "{c}");
     let d = ok(&env, &["drift"]);
     assert_eq!(d["openDrift"], 0, "{d}");
+    let details: Vec<String> = common::ledger(&root)
+        .iter()
+        .filter(|e| e["kind"] == "resolution")
+        .map(|e| e["detail"].as_str().unwrap_or_default().to_string())
+        .collect();
+    for (by, n) in [
+        ("installed by seldon hook install skills", 6),
+        ("removed by seldon hook uninstall skills", 6),
+    ] {
+        assert_eq!(
+            details.iter().filter(|d| *d == by).count(),
+            n,
+            "{details:?}"
+        );
+    }
 }
 
 #[test]
