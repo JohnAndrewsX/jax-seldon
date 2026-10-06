@@ -14,6 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-116 | the Seldon agent starts like the Omarchy agent; rules v4 (ADR-0030, ADR-0031) | Engine + Docs | `engine-116` (opus) | `wt/WP-116` · `wp/116-start-like-omarchy` | 2026-10-06 |
 | WP-115 | link a change to the one case that planned it; capture before close (ADR-0029) | Engine | `engine-115` (opus) | `wt/WP-115` · `wp/115-planned-link` | 2026-10-06 |
 
 ## Queued (next up)
