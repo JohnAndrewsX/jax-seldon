@@ -827,7 +827,7 @@ Options:
 ### seldon rules update
 
 Brings Seldon's block in `AGENTS.md`, between the lines
-`<!-- seldon:begin rules v2 -->` and `<!-- seldon:end -->`, up to the
+`<!-- seldon:begin rules v3 -->` and `<!-- seldon:end -->`, up to the
 rules of this release and keeps the rest of the file; a block you
 edited is archived first. A file from an earlier release has no block:
 unless it is exactly the file that release wrote, it is archived to
@@ -836,8 +836,9 @@ lines you added below them, under `## Your rules (kept)`. `--replace`
 archives the whole old file and writes the new rules alone. The command
 prints the change as a diff and commits it as `seldon: rules update`; a
 second run changes nothing. A damaged block, or one from a newer Seldon,
-is refused (exit 1) and the file left as it is. `seldon doctor` names
-this command when the rules are not current; see
+is refused (exit 1) and the file left as it is. A block nobody edited
+needs no command: every capture brings it up to date. `seldon doctor`
+names this command when the rules are not current; see
 [Working with agents](04-working-with-agents.md#update-the-rules-of-an-older-logbook).
 
 <!-- help: seldon rules update -->
@@ -893,7 +894,10 @@ skill folder that exists: `~/.agents/skills`, `~/.claude/skills`,
 `~/.hermes/profiles/*/skills`, the folders Omarchy links its own skills
 into. It creates none of them. The skill lands in `<folder>/seldon/`; a
 `seldon` there that Seldon did not write, or a file in it you changed, is
-left as it is and named in the report. An older skill is updated.
+left as it is and named in the report. An older skill is updated (a
+capture does that on its own where you changed nothing). `--replace`
+also replaces a skill you changed: your changed files are copied to the
+logbook's `archive/skill-<date>/` first.
 A folder it cannot write fails alone: the others are still installed, the
 report names the failed one, and the command exits 1. Running it again
 changes nothing. See

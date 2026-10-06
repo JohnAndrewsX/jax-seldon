@@ -179,8 +179,8 @@ harness's job). Not cloud. Not an Obsidian plugin. Not a general PKM tool.
 | Journal | written daily notes |
 | Case | a planned unit of change, `C-YYYY-NNN`, lives in `work/` |
 | Plan | all open cases (Foundation flavour, used in the UI) |
-| Drift | an event with no case and no resolution |
-| Crisis | drift in the red zone |
+| Drift | an event with no case and no resolution that is worth a look (ADR-0028: attention or crisis; routine is history) |
+| Crisis | a change without a case that can break boot, login, the shell or security (ADR-0028) |
 | Trace | the ordered events and sessions linked to a case |
 | Dossier | `system/` — documented actual state |
 | Memory | `memory/` — what agents learned about this machine |

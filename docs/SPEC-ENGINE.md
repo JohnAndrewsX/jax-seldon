@@ -2013,12 +2013,12 @@ keys preserved. Empty layout directories get a `.gitkeep`.
 
 The wizard writes templates from `engine/templates/{en,de}/` into the
 logbook: `AGENTS.md` (the rules for agents, the short form of
-`docs/AGENT-GUIDE.md`, ADR-0027 v2: session start, attended or not,
+`docs/AGENT-GUIDE.md`, ADR-0027 v3: session start, attended or not,
 instructions and data, engine is the only writer, work in cases, when to
 ask first, R3, privileged steps and snapshots, zones and risk,
-installing software, closing, commands, journal and memory, drift,
-hooks, ending a session, never; all inside the block
-`<!-- seldon:begin rules v2 -->` … `<!-- seldon:end -->`, which holds no
+installing software, Omarchy first, closing, commands, journal and
+memory, drift, hooks, ending a session, never; all inside the block
+`<!-- seldon:begin rules v3 -->` … `<!-- seldon:end -->`, which holds no
 marker text of its own, then `## Your rules` for the user; no
 `CLAUDE.md`, WP-047, WP-100; an existing logbook gets the block with
 `seldon rules update`, §3), `PROJECT.md`, `STATUS.md`,
