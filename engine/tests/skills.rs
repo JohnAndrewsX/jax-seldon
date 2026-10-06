@@ -393,7 +393,8 @@ fn an_older_skill_is_updated_and_a_dropped_file_removed() {
     // a dropped file that is already gone
     manifest["files"]["gone.md"] = json!(sha256_hex(b"gone"));
     // a manifest name that leaves the folder is never followed
-    let outside = env.home.join(".claude/escape.md");
+    // `<folder>/seldon/../escape.md` is `<folder>/escape.md`
+    let outside = claude.join("escape.md");
     std::fs::write(&outside, old_extra).unwrap();
     manifest["files"]["../escape.md"] = json!(sha256_hex(old_extra.as_bytes()));
     std::fs::write(target.join(MANIFEST), manifest.to_string()).unwrap();
@@ -520,6 +521,17 @@ fn a_link_inside_seldon_s_folder_is_never_written_through() {
             .is_symlink()
     );
     assert_eq!(read(&outside), "outside\n");
+
+    // a link to a file with the shipped content is not Seldon's file either
+    let copy = env.tmp.path().join("copy.md");
+    std::fs::write(&copy, asset("case.md")).unwrap();
+    // (uninstall above took the real case.md out)
+    std::os::unix::fs::symlink(&copy, target.join("case.md")).unwrap();
+    let v = install(&env);
+    assert_eq!(
+        dir_report(&v, "~/.claude/skills")["kept"],
+        json!(["SKILL.md", "case.md"])
+    );
 
     // the manifest replaced by a link: the folder is not Seldon's
     let agents = mkdir(&env, ".agents/skills");

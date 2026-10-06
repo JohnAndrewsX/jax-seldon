@@ -489,14 +489,10 @@ pub fn doctor_row(dirs: &Dirs) -> (super::doctor::Status, String, Option<String>
         );
     }
     let mut by: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
-    let mut changed = Vec::new();
     for folder in &present {
-        let shown = dirs.display(folder);
-        let s = state(folder);
-        if let State::Changed(files) = &s {
-            changed.push(format!("{shown}/{SKILL_NAME}/{}", files.join(", ")));
-        }
-        by.entry(s.as_str()).or_default().push(shown);
+        by.entry(state(folder).as_str())
+            .or_default()
+            .push(dirs.display(folder));
     }
     let label = |key: &str, word: &str| by.get(key).map(|v| format!("{word} in {}", v.join(", ")));
     let message = [
@@ -518,7 +514,7 @@ pub fn doctor_row(dirs: &Dirs) -> (super::doctor::Status, String, Option<String>
     } else {
         Status::Ok
     };
-    let fix = if !changed.is_empty() || by.contains_key("foreign") {
+    let fix = if by.contains_key("changed") || by.contains_key("foreign") {
         Some(format!(
             "move the folder named seldon away where it is changed or not seldon's, then {INSTALL_BY}"
         ))
