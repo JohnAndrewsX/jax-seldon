@@ -230,5 +230,9 @@ Separately, the Claude Code removal check refused an inline
 `bash -c … rm` probe. I ran the probe again from a runner file in the
 scratchpad with `: >` instead of `rm`.
 
-Checks: `omarchy plugin validate plugin/` ok, qmllint ok (29 files),
-docs-check ok, model.test.js 101, terminal-scripts 65/0.
+Checks: `flock /tmp/seldon-check.lock just check` at e2ed67b → `check:
+ok`, exit 0 (model.test.js 101, terminal-scripts 65/0, service-states
+330, panel-view 923, overlay-view 326, bar-view 194, plugin-validate ok,
+qmllint ok (29 files), docs-check ok, install.test 209,
+deploy-test-host 190). `omarchy plugin validate plugin/` and qmllint
+also before each commit.
