@@ -183,8 +183,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *Result* is empty or its *Plan* has no `Verification:` text; an
   agent's close tags the case `closed-by-agent`. `seldon plan reopen
   <ID>` makes a new active case "Reopen: <title>" with the same *Intent*
-  and the tag `reopens:<ID>`; the completed case stays as it is
-  (WP-101).
+  and the tag `reopens:<ID>`; the completed case stays as it is, and
+  the active-case marker stays on an open case an agent may be working.
+  `--actor human` in an agent's session cannot close a case, and an
+  agent's `drift explain` tags its case `closed-by-agent` (WP-101).
 - `seldon plan set <ID> --zone|--risk|--area` changes an open case (one
   *Log* line), e.g. to R3 before a step that can break boot.
   `seldon plan snapshot <ID> <N>` records the rollback snapshot and
@@ -192,7 +194,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with warnings only; `plan start --snapshot` gets the red-change check.
   A forgotten number is filled by the next capture from a snapshot whose
   description is the case id, or from the agent's recorded
-  `snapper … create` (the hook now records it, with a case). A deleted
+  `snapper … create` (the hook now records it, with a case) in the
+  snapshot's window; when two agents' commands share that window, both
+  cases are told how to record it instead. A deleted
   rollback snapshot writes `rollback for <ID> pruned (snapshot N)` into
   the case and shows in `seldon doctor` (row `rollbacks`). A red change of
   an `alwaysRed` package in an open case below R3 gets an `advisory:`

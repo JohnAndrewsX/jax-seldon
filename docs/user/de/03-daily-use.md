@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ 2ca5b94 -->
+<!-- source: en/03-daily-use.md @ e852f0c -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
@@ -140,7 +140,9 @@ sein Status erlaubt:
 *Reopen* (ein Klick oder `r`) lässt den abgeschlossenen Case unberührt:
 Es legt einen neuen aktiven Case „Reopen: <Titel>“ mit demselben
 *Intent* an, und der Cursor springt dorthin. Seine Karte nennt den Case,
-den er wieder öffnet.
+den er wieder öffnet. Ist ein anderer offener Case der aktive Case,
+bleibt er es, damit ein Agent, der daran arbeitet, weiter dort
+aufgezeichnet wird; die Zeile unter dem Feld sagt das.
 
 *New case* (oder `+` aus jedem Tab) fragt nach Titel, Zone, Risiko,
 Priorität und einem optionalen Bereich. Es beginnt mit gelb, R1, normal.

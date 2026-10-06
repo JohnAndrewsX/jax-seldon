@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 2ca5b94 -->
+<!-- source: en/05-cli-reference.md @ e852f0c -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -415,7 +415,10 @@ leert den aktiven Case, wenn er diesen Case nannte. Der Abschluss eines
 Agenten (`--actor agent:…` oder ohne die Option `SELDON_ACTOR`) wird
 abgelehnt, solange *Result* des Case leer ist oder sein *Plan* keinen
 Text unter `Verification:` hat; die Meldung sagt, was fehlt. Ein Case,
-den ein Agent abgeschlossen hat, bekommt den Tag `closed-by-agent`.
+den ein Agent abgeschlossen hat, bekommt den Tag `closed-by-agent`. In
+der Sitzung eines Agenten (`SELDON_ACTOR=agent:…`) wird `--actor human`
+abgelehnt: Der Abschluss eines Agenten wird nie als der einer Person
+aufgezeichnet.
 
 <!-- help: seldon plan done -->
 ```text
@@ -508,7 +511,9 @@ Options:
 „Reopen: <Titel>“ mit derselben Zone, demselben Risiko, Bereich und
 *Intent*, mit dem Tag `reopens:<ID>`. Der abgeschlossene Case bleibt
 abgeschlossen und bekommt eine *Log*-Zeile. Jeder Aufruf legt einen
-neuen Case an.
+neuen Case an. Der neue Case wird nur dann der aktive Case, wenn kein
+offener Case es ist; ein Agent, der an einem anderen Case arbeitet,
+zeichnet weiter auf diesem auf.
 
 <!-- help: seldon plan reopen -->
 ```text
