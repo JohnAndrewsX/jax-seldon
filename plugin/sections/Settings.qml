@@ -13,8 +13,11 @@ import "../Model.js" as Model
 // — and the sidebar, open or collapsed. Dragging previews the width on
 // the desk itself; the release (or a preset or sidebar click) writes the
 // setting through the shell facade, once (Desk.writeSetting): every
-// write is a config event, so nothing writes while dragging. When the
-// shell refuses, the stored value stays and the page says where to set it.
+// write is a config event, so nothing writes while dragging. The mouse
+// wheel or a touchpad over the slider only previews; one write follows a
+// pause (Desk.previewWheel). When the shell refuses, the stored value
+// stays and the page says where to set it; when the plugin is not in the
+// bar, the change holds for this shell and the page says how to keep it.
 //
 // Capture, Agents, Quiet (read-only): the values in force and where each
 // is set — Omarchy's bar settings for the widget's keys, Seldon's
@@ -156,9 +159,19 @@ Section {
           fillColor: Color.accent
           knobColor: Color.accent
           tickColor: Color.popups.background
-          onMoved: function(v) { if (root.desk) root.desk.previewWidth = Model.DESK_WIDTH_MIN + 10 * Math.round(v) }
-          onReleased: function(v) {
+          // PanelSlider turns every wheel event into moved + released
+          // without a press; a drag's moves come while `dragging`.
+          property bool fromWheel: false
+
+          onMoved: function(v) {
             if (!root.desk) return
+            var pct = Model.DESK_WIDTH_MIN + 10 * Math.round(v)
+            slider.fromWheel = !slider.dragging
+            if (slider.fromWheel) root.desk.previewWheel(pct)
+            else root.desk.previewWidth = pct
+          }
+          onReleased: function(v) {
+            if (!root.desk || slider.fromWheel) return
             root.desk.previewWidth = -1
             root.desk.writeSetting("deskWidth", Model.DESK_WIDTH_MIN + 10 * Math.round(v))
           }
@@ -241,10 +254,11 @@ Section {
 
       Text {
         id: refusedNote
-        visible: !!root.desk && root.desk.settingsRefused
+        visible: !!root.desk && (root.desk.settingsRefused || root.desk.settingsNoEntry)
         width: parent.width
         textFormat: Text.PlainText
-        text: "The shell did not take the change. " + Model.DESK_REFUSED_TEXT
+        text: root.desk && root.desk.settingsNoEntry ? Model.DESK_NO_ENTRY_TEXT
+          : "The shell did not take the change. " + Model.DESK_REFUSED_TEXT
         color: Color.popups.text
         wrapMode: Text.Wrap
         font.family: Style.font.family

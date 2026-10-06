@@ -17,8 +17,9 @@ import qs.Ui
 // overlay loader: summon creates Desk.qml bare (no properties), injects
 // shell, manifest and service, then calls open(payload); hide calls close()
 // and drops the item; toggle is hide when open, else summon. Its
-// updateEntryInline records every settings write and, unless
-// HARNESS_REFUSE is set, hands the new entry back to the pill as the
+// updateEntryInline records every settings write and, as shell.qml's
+// does, returns false when the entry would not change; otherwise, unless
+// HARNESS_REFUSE is set, it hands the new entry back to the pill as the
 // shell's reload of shell.json does (the pill pushes it to the service).
 // Then it runs HARNESS_STEPS and prints after each: Desk.view() (or
 // {"opened":false} while unloaded), the facade's calls, the writes, the
@@ -32,6 +33,8 @@ import qs.Ui
 //   HARNESS_MANIFEST    a manifest as JSON text, assigned to the service's
 //                       `manifest` (the restart notice compares versions)
 //   HARNESS_REFUSE      if set, updateEntryInline returns false
+//   HARNESS_NO_PILL     if set, no pill: the plugin is enabled but not in
+//                       the bar, so nothing pushes an entry to the service
 //   HARNESS_STEPS       ";"-separated steps, each optionally "*N" repeated:
 //                       summon[:<json>]  `shell summon jax.seldon <json>`
 //                       hide             `shell hide jax.seldon`
@@ -58,6 +61,10 @@ import qs.Ui
 //                                        steps (a report per move is not
 //                                        made), report, then release
 //                       release          release the drag's mouse button
+//                       wheel:<objectName>:<delta>  one mouse wheel event
+//                                        over the item's centre (-120 is one
+//                                        notch down)
+//                       pause:<ms>       wait that long, then report
 //                       hover:<text>     move the pointer onto that text
 //                       settle           wait (up to 15 s) until no engine
 //                                        call is queued or running
@@ -76,6 +83,7 @@ ShellRoot {
   readonly property string pluginDir: Quickshell.env("HARNESS_PLUGIN_DIR") || ""
   readonly property var steps: (Quickshell.env("HARNESS_STEPS") || "view").split(";").filter(function(s) { return s !== "" })
   readonly property bool refuse: (Quickshell.env("HARNESS_REFUSE") || "") !== ""
+  readonly property bool noPill: (Quickshell.env("HARNESS_NO_PILL") || "") !== ""
   property int step: 0
   property string lastCall: ""
   // The last creation of the desk saw no service (as the shell's loader).
@@ -127,6 +135,8 @@ ShellRoot {
       if (root.refuse) return false
       var next = ({})
       for (var k in settings) next[k] = settings[k]
+      // shell.qml updateEntryInline: nothing changed, nothing persisted, false.
+      if (root.sameEntry(root.entry, next)) return false
       reload.next = next
       reload.restart()
       return true
@@ -140,6 +150,17 @@ ShellRoot {
     property var next: null
     interval: 30
     onTriggered: root.setEntry(reload.next)
+  }
+
+  // The same keys with the same values, the id left out.
+  function sameEntry(a, b) {
+    var keys = function(o) { return Object.keys(o || {}).filter(function(k) { return k !== "id" }).sort() }
+    var ka = keys(a)
+    var kb = keys(b)
+    if (ka.join(",") !== kb.join(",")) return false
+    for (var i = 0; i < ka.length; i++)
+      if (JSON.stringify(a[ka[i]]) !== JSON.stringify(b[ka[i]])) return false
+    return true
   }
 
   function setEntry(next) {
@@ -333,6 +354,11 @@ ShellRoot {
         root.dragX = (f[0] + (f[1] - f[0]) * s / 4) * item.width
         driver.mouseMove(item, root.dragX, root.dragY)
       }
+    } else if (verb === "wheel") {
+      var wp = arg.split(":")
+      var wi = root.findName(wp[0])
+      if (wi) driver.mouseWheel(wi, wi.width / 2, wi.height / 2, 0, Number(wp[1]))
+      else console.log("HARNESS nothing to wheel: " + wp[0])
     } else if (verb === "release") {
       if (root.dragItem) driver.mouseRelease(root.dragItem, root.dragX, root.dragY)
       root.dragItem = null
@@ -399,6 +425,7 @@ ShellRoot {
     if (manifestJson !== "") root.service.manifest = JSON.parse(manifestJson)
     var settingsJson = Quickshell.env("HARNESS_SETTINGS") || ""
     root.entry = settingsJson !== "" ? JSON.parse(settingsJson) : ({})
+    if (root.noPill) return
     root.widget = root.load("BarWidget.qml", strip, { bar: api, moduleName: "jax.seldon", settings: root.entry })
     if (root.widget) root.widget.anchors.fill = strip
   }
@@ -419,7 +446,7 @@ ShellRoot {
     onTriggered: {
       var s = root.service
       var waited = Date.now() - root.startMs
-      if (root.step === 0 && waited < 15000 && (waited < 1000 || !s || !s.ready || s.probing || !root.widget || !root.widget.service)) {
+      if (root.step === 0 && waited < 15000 && (waited < 1000 || !s || !s.ready || s.probing || (!root.noPill && (!root.widget || !root.widget.service)))) {
         stepper.restart()
         return
       }
@@ -427,6 +454,7 @@ ShellRoot {
         var timedOut = Date.now() - root.waitSince > 15000
         var done = false
         if (root.waitFor === "settle") done = root.engineIdle()
+        else if (root.waitFor.indexOf("pause:") === 0) done = Date.now() - root.waitSince >= Number(root.waitFor.slice(6))
         else {
           var eq = root.waitFor.indexOf("=")
           var prefix = eq > 0 && root.waitFor[eq - 1] === "^"
@@ -453,8 +481,8 @@ ShellRoot {
         return
       }
       var spec = root.steps[root.step]
-      if (spec === "settle" || spec.indexOf("wait:") === 0) {
-        root.waitFor = spec === "settle" ? "settle" : spec.slice(5)
+      if (spec === "settle" || spec.indexOf("wait:") === 0 || spec.indexOf("pause:") === 0) {
+        root.waitFor = spec === "settle" || spec.indexOf("pause:") === 0 ? spec : spec.slice(5)
         root.waitSince = Date.now()
         stepper.interval = 100
         stepper.restart()

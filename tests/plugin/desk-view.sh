@@ -123,7 +123,7 @@ expected_warnings='jax\.seldon: seldon (rules exit 1: AGENTS\.md is not UTF-8 te
 # (also allow the warnings the regex matches).
 clean_log() {
   local bad
-  bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop|HARNESS error|nothing to (click|drag|hover)|wait timed out" \
+  bad=$(sed 's/\x1b\[[0-9;]*m//g' "$work/$1.log" | grep -a -E "ERROR|WARN|TypeError|ReferenceError|Binding loop|HARNESS error|nothing to (click|drag|hover|wheel)|wait timed out" \
     | grep -a -v -E "WAYLAND_DISPLAY is present|QT_QPA_PLATFORM|--- WARNING ---|most functionality will be broken" \
     | grep -a -v -E "$expected_warnings" | grep -a -v -E "${2:-^$}" || true)
   if [[ -z $bad ]]; then
@@ -242,7 +242,8 @@ clean_log keys
 #    release writes once, through the facade's updateEntryInline, with every
 #    key of the entry (an unknown one too) and the new width; the shell's
 #    reload brings it back as the stored value. A preset click writes once;
-#    the same preset again writes nothing (the value is stored). The
+#    a second click on the selected preset sends nothing (ButtonGroup
+#    emits only a change; the stored-value guard is case settings-stored). The
 #    sidebar switch and the sidebar's fold button write deskSidebar, the
 #    width kept. Omarchy's bar settings changing the key move the desk too.
 entry='{"captureIntervalMin":30,"wipLimit":4,"driftInBar":"all","futureKey":"kept"}'
@@ -297,6 +298,54 @@ expect settings-refused 4 '.writes | length' 2
 expect settings-refused 4 .view.layout.sidebar open
 clean_log settings-refused
 
+# The rule "never write a stored value" (Desk.writeSetting; its twin is
+# Model.deskSettingsWrite, unit-tested): a click on the slider at the
+# value in force writes nothing — the default 100 with no deskWidth in the
+# entry (a write would add the default to shell.json), and 50 once the key
+# is there (the shell would answer "nothing changed" with false, which the
+# desk must not show as a refusal; the stand-in answers so, as shell.qml).
+run settings-stored "$sample" 1920x1080 \
+  "summon;text:,;drag:deskWidthSlider:0.98,0.98;release;width:50;drag:deskWidthSlider:0.02,0.02;release;view" \
+  HARNESS_SETTINGS='{"captureIntervalMin":30}'
+expect settings-stored 3 .view.settings.preview 100
+expect settings-stored 4 '[(.writes | length), .view.settings.refused, .view.widthPct] | map(tostring) | join(",")' "0,false,100"
+expect settings-stored 5 .view.widthPct 50
+expect settings-stored 7 '[(.writes | length), .view.settings.refused, .view.widthPct] | map(tostring) | join(",")' "0,false,50"
+expect settings-stored 8 '.entry | has("deskWidth")' true
+shows settings-stored 8 "50 %"
+clean_log settings-stored
+
+# The mouse wheel (and a touchpad) over the slider previews and writes
+# once after a 600 ms pause, never per notch: three notches down from Full
+# give one write of 70; a notch then a preset click before the pause give
+# the preset's write alone, and nothing follows; a notch then Esc writes
+# the notch's value as the desk closes.
+run settings-wheel "$sample" 1920x1080 \
+  "summon;text:,;wheel:deskWidthSlider:-120*3;wait:settings.writes=1;wheel:deskWidthSlider:120;click:67 %;pause:900;wheel:deskWidthSlider:-120;key:Escape"
+expect settings-wheel 3 '[(.writes | length), .view.settings.preview, .view.widthPct, .view.settings.wheelPending] | map(tostring) | join(",")' "0,70,70,true"
+expect settings-wheel 3 .view.desk.w "$(deskw 1920 70)"
+expect settings-wheel 4 '[(.writes | length), .view.settings.preview, .view.settings.wheelPending] | map(tostring) | join(",")' "1,-1,false"
+expect settings-wheel 4 '.writes[0].settings.deskWidth' 70
+expect settings-wheel 5 '[(.writes | length), .view.settings.preview] | map(tostring) | join(",")' "1,80"
+expect settings-wheel 6 '[(.writes | length), .view.settings.wheelPending, .view.widthPct] | map(tostring) | join(",")' "2,false,67"
+expect settings-wheel 6 '.writes[1].settings.deskWidth' 67
+expect settings-wheel 7 '.writes | length' 2
+expect settings-wheel 8 '[(.writes | length), .view.settings.preview] | map(tostring) | join(",")' "2,60"
+expect settings-wheel 9 '[(.writes | length), .view.opened] | map(tostring) | join(",")' "3,false"
+expect settings-wheel 9 '.writes[2].settings.deskWidth' 60
+clean_log settings-wheel
+
+# The plugin enabled but not in the bar (no pill, so no entry pushed):
+# the desk writes nothing, keeps a change for this shell (across a hide)
+# and says how to keep it — no refusal.
+run settings-no-pill "$sample" 1920x1080 "summon;text:,;click:75 %;clickName:deskFold;hide;summon;view" HARNESS_NO_PILL=1
+expect settings-no-pill 3 '[(.writes | length), .view.widthPct, .view.settings.noEntry, .view.settings.refused] | map(tostring) | join(",")' "0,75,true,false"
+shows settings-no-pill 3 "Add Seldon to the bar to keep this setting; until then it holds until the shell restarts."
+expect settings-no-pill 3 '[.texts[] | select(startswith("The shell did not take"))] | length' 0
+expect settings-no-pill 4 '[(.writes | length), .view.layout.sidebar] | map(tostring) | join(",")' "0,icons"
+expect settings-no-pill 7 '[(.writes | length), .view.widthPct, .view.settings.sidebar, .view.section] | map(tostring) | join(",")' "0,75,collapsed,settings"
+clean_log settings-no-pill
+
 # ---------------------------------------------------------------------------
 # 5. Open and close the way the shell and the pill do (ADR-0034 §4, §7):
 #    toggle twice closes; the pill's left click toggles, its middle click
@@ -324,6 +373,10 @@ expect ipc 10 .view.opened false
 expect ipc 11 .call '{"opened":false}'
 expect ipc 12 '[.view.opened, .view.section] | map(tostring) | join(",")' "true,work"
 expect ipc 13 '[.call, .view.section] | join(",")' "ok,changelog"
+# A summon of the open desk re-targets it to the focused monitor again
+# (SPEC-PLUGIN §5.1); a fresh desk starts at its first.
+expect ipc 12 .view.screen harness-1
+expect ipc 13 .view.screen harness-2
 expect ipc 14 '[.call, .view.section] | join(",")' "ok,changelog"
 expect ipc 15 .call "unknown source"
 expect ipc 16 .view.opened false

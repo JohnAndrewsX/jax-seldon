@@ -132,6 +132,12 @@ Item {
   property int deskWidth: Model.DESK_WIDTH_DEFAULT
   property string deskSidebar: Model.DESK_SIDEBAR_DEFAULT
   property var entrySettings: ({})
+  // The widget has pushed an entry: the plugin is in the bar, so the shell
+  // has a place to keep the desk's settings. Without it (the plugin listed
+  // only under plugins[]) the desk keeps a change here, for this shell's
+  // lifetime (localEntry), and writes nothing.
+  property bool entryKnown: false
+  property var localEntry: null
   // The loaded desk (Desk.qml registers itself), for the pill's
   // `jax.seldon.panel` shim; null while the shell has it unloaded.
   property var desk: null
@@ -217,6 +223,7 @@ Item {
     if (entry && typeof entry === "object")
       for (var k in entry) copy[k] = entry[k]
     root.entrySettings = copy
+    root.entryKnown = true
     root.deskWidth = Model.clampDeskWidth(copy.deskWidth)
     root.deskSidebar = Model.deskSidebarMode(copy.deskSidebar)
   }

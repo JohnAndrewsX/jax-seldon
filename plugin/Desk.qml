@@ -66,11 +66,14 @@ Item {
   property string searchText: ""
   property bool noticesFolded: false
 
-  // ---- Settings: the live preview while the slider is dragged (-1 none),
-  // and what was written until the shell's reload brings it back.
+  // ---- Settings: the live preview while the slider is dragged or
+  // scrolled (-1 none), and what was written until the shell's reload
+  // brings it back.
   property int previewWidth: -1
   property var pendingEntry: null
   property bool settingsRefused: false
+  // A change made while the plugin is not in the bar (no entry to write).
+  property bool settingsNoEntry: false
   // Every facade write: { key, value, settings, ok }.
   property var writes: []
 
@@ -79,7 +82,11 @@ Item {
   readonly property string pluginId: root.manifest && root.manifest.id ? String(root.manifest.id) : "jax.seldon"
   // The index only when its contents mean something in this status.
   readonly property var indexData: root.service && root.service.indexShown ? root.service.index : null
-  readonly property var entry: root.pendingEntry !== null ? root.pendingEntry : (root.service ? root.service.entrySettings : ({}))
+  readonly property bool entryKnown: !!root.service && root.service.entryKnown
+  readonly property var entry: root.pendingEntry !== null ? root.pendingEntry
+    : !root.service ? ({})
+    : !root.service.entryKnown && root.service.localEntry ? root.service.localEntry
+    : root.service.entrySettings
   readonly property int storedWidth: Model.clampDeskWidth(root.entry.deskWidth)
   readonly property int widthPct: root.previewWidth >= 0 ? root.previewWidth : root.storedWidth
   readonly property string sidebarPref: Model.deskSidebarMode(root.entry.deskSidebar)
@@ -100,7 +107,9 @@ Item {
 
   function open(payloadJson) {
     var p = Model.deskPayload(payloadJson)
-    if (!root.opened) window.retarget()
+    // Every open, also of an open desk (a summon, the pill of another
+    // monitor): to the monitor Hyprland has focused.
+    window.retarget()
     if (p.section !== "") root.section(p.section)
     root.visit(root.sectionId)
     if (root.currentSection) root.currentSection.applyPayload(p)
@@ -117,6 +126,7 @@ Item {
 
   function close() {
     root.arm.disarm()
+    root.flushWheel()
     root.previewWidth = -1
     root.remember()
     root.opened = false
@@ -298,13 +308,42 @@ Item {
 
   // ---- Settings
 
+  // The mouse wheel or a touchpad over the width slider: a preview only.
+  // One write follows 600 ms after the last notch (wheelTimer), or the next
+  // release or preset click takes its place, or closing the desk flushes
+  // it — never a write per notch (every write is a config event).
+  function previewWheel(value) {
+    root.previewWidth = value
+    wheelTimer.restart()
+  }
+
+  function flushWheel() {
+    if (!wheelTimer.running) return
+    wheelTimer.stop()
+    var value = root.previewWidth
+    root.previewWidth = -1
+    if (value >= 0) root.writeSetting("deskWidth", value)
+  }
+
   // Write one setting through the facade: "written", "unchanged" (the
-  // value is already stored: no call, no config event) or "refused".
+  // value is already stored: no call, no config event), "refused", or
+  // "session" (the plugin is not in the bar: kept in the service, not
+  // written).
   function writeSetting(key, value) {
+    if (key === "deskWidth" && wheelTimer.running) {
+      wheelTimer.stop()
+      root.previewWidth = -1
+    }
     var stored = key === "deskWidth" ? root.storedWidth : key === "deskSidebar" ? root.sidebarPref : root.entry[key]
     if (stored === value) return "unchanged"
     var next = Model.deskSettingsWrite(root.entry, key, value)
     if (next === null) return "unchanged"
+    if (!root.entryKnown) {
+      if (root.service) root.service.localEntry = next
+      root.settingsNoEntry = true
+      root.settingsRefused = false
+      return "session"
+    }
     var ok = false
     if (root.shell && typeof root.shell.updateEntryInline === "function") {
       try {
@@ -356,6 +395,8 @@ Item {
         preview: root.previewWidth,
         pending: root.pendingEntry !== null,
         refused: root.settingsRefused,
+        noEntry: root.settingsNoEntry,
+        wheelPending: wheelTimer.running,
         writes: root.writes.length,
         last: last
       },
@@ -394,6 +435,16 @@ Item {
     id: pendingTimer
     interval: 5000
     onTriggered: root.pendingEntry = null
+  }
+
+  Timer {
+    id: wheelTimer
+    interval: 600
+    onTriggered: {
+      var value = root.previewWidth
+      root.previewWidth = -1
+      if (value >= 0) root.writeSetting("deskWidth", value)
+    }
   }
 
   Component { id: todayComponent; Today {} }

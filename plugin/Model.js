@@ -3127,6 +3127,9 @@ var DESK_SIDEBAR_DEFAULT = "open"
 var DESK_MIN_WIDTH = 960
 var DESK_STACK_WIDTH = 760
 var DESK_REFUSED_TEXT = "Change it in Omarchy's bar settings (Seldon widget)."
+// The plugin is enabled but not in the bar: the shell has no entry to keep
+// the desk's settings in (Service.entryKnown).
+var DESK_NO_ENTRY_TEXT = "Add Seldon to the bar to keep this setting; until then it holds until the shell restarts."
 
 function deskSection(id) {
   for (var i = 0; i < DESK_SECTIONS.length; i++)
