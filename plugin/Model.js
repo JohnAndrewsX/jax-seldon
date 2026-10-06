@@ -82,52 +82,76 @@ var ENGINE_MISSING_DETAIL = "Downloads seldon from the Seldon release on GitHub 
 // A banner's *Install*, *Create*, *Grant* or *Update* opens Omarchy's
 // presentation terminal (logo, the script, "Done!"; it exports the theme's
 // gum colours) with one of the scripts below, never with anything else
-// (Service.fix checks isTerminalScript). Omarchy's own pattern
-// (omarchy-system-factory-reset, omarchy-update-confirm, omarchy-snapshot):
-// a bold line says what happens, one plain paragraph why and whether a
-// password is asked, the command is shown, then run, then one line says
-// what changed, in the terminal palette's green (2) or red (1).
+// (terminalArgv). Omarchy's own pattern (omarchy-system-factory-reset,
+// omarchy-update-confirm, omarchy-snapshot): a bold line says what
+// happens, one plain paragraph why and whether a password is asked, the
+// command is shown, then run, then one line says what changed, in the
+// terminal palette's green (2) or red (1). A result line never claims
+// more than happened (WP-117 round 2).
 //
 // Every script is built once, here, from the string literals below: nothing
 // from the index, the logbook or the environment goes in (AGENTS.md §8).
 // The texts are single-quoted, so `$USER` in the shown command stays as
-// the user would copy it; the command itself runs unquoted, so its `$USER`
-// and pipe work. It runs with pipefail in a subshell: a failed download in
-// `curl … | bash` is a failure, not bash's exit 0 on empty input. The
-// script ends with a gum line (exit 0), so the wrapper always prints
-// "Done!" and the user closes the window.
+// the user would copy it; the run line (`run`, else the command) is
+// unquoted, so its `$USER` and pipe work. It runs with pipefail in a
+// subshell: a failed download in `curl … | bash` is a failure, not bash's
+// exit 0 on empty input.
+//
+// Ctrl+C (or TERM) is trapped: the trap only notes it, the script skips a
+// command that has not started, prints the `cancelled` line (palette 3)
+// and ends with 130, Omarchy's "cancelled" status, on which the wrapper
+// closes the window without "Done!". Every other ending is status 0 after
+// the result line, so "Done!" follows and the user closes the window.
+//
+// `after` runs only on success. With `partial`, its exit status picks the
+// line: `ok` when it succeeded, `partial` when not; without, it is a
+// best-effort step and `ok` follows either way.
 function shellQuoted(text) {
   return "'" + String(text).split("'").join("'\\''") + "'"
 }
 
 function terminalScript(s) {
+  var line = function(colour, text) {
+    return "gum style --padding '1 0 0 0' --foreground " + colour + " " + shellQuoted(text)
+  }
+  var success = !s.after ? line(2, s.ok)
+    : s.partial ? "if " + s.after + "; then " + line(2, s.ok) + "; else " + line(2, s.partial) + "; fi"
+    : s.after + "; " + line(2, s.ok)
   return [
+    "seldon_cancelled=",
+    "trap 'seldon_cancelled=1' INT TERM",
     "gum style --bold " + shellQuoted(s.title),
     "gum style --width 72 " + shellQuoted(s.what),
     "gum style --padding '1 0 1 2' " + shellQuoted(s.command),
-    "if (set -o pipefail; " + s.command + "); then "
-      + (s.after ? s.after + "; " : "")
-      + "gum style --padding '1 0 0 0' --foreground 2 " + shellQuoted(s.ok)
-      + "; else gum style --padding '1 0 0 0' --foreground 1 " + shellQuoted(s.failed) + "; fi"
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; " + (s.run || s.command) + "); then "
+      + success + "; trap - INT TERM"
+      + "; elif [ -n \"$seldon_cancelled\" ]; then " + line(3, s.cancelled) + "; trap - INT TERM; (exit 130)"
+      + "; else " + line(1, s.failed) + "; trap - INT TERM; fi"
   ].join("; ")
 }
 
+// install.sh can stop after it replaced the binary (unit, completions,
+// manifest), so a failure does not claim that nothing changed.
 var INSTALL_ENGINE_SCRIPT = terminalScript({
   title: "Seldon: install the engine",
   what: "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.",
   command: INSTALL_ENGINE_COMMAND,
   ok: "The engine is installed. In the Seldon panel, press Check again.",
-  failed: "Nothing changed. The engine is not installed."
+  failed: "The install did not finish. Run it again; your logbook is untouched.",
+  cancelled: "Cancelled. The install did not finish. Run it again; your logbook is untouched."
 })
 // After the update the new engine rewrites the index once, so an index in
-// an old contract version goes without waiting for the next capture.
+// an old contract version goes without waiting for the next capture; if
+// that fails, the next capture does it, and the line asks for Check again
+// anyway.
 var UPDATE_ENGINE_SCRIPT = terminalScript({
   title: "Seldon: update the engine",
   what: "Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.",
   command: UPDATE_ENGINE_COMMAND,
   after: "seldon status >/dev/null 2>&1 || true",
   ok: "The engine is updated. In the Seldon panel, press Check again.",
-  failed: "Nothing changed. The engine stays at its version."
+  failed: "The update did not finish. Run it again; your logbook is untouched.",
+  cancelled: "Cancelled. The update did not finish. Run it again; your logbook is untouched."
 })
 // Omarchy's update shows the diff and asks before it changes anything; a
 // "no" also exits 0, so the line does not claim an update.
@@ -136,7 +160,8 @@ var UPDATE_PLUGIN_SCRIPT = terminalScript({
   what: "Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.",
   command: UPDATE_PLUGIN_COMMAND,
   ok: "If the plugin was updated, the Seldon panel offers Restart shell to load it.",
-  failed: "Nothing changed. The plugin stays at its version."
+  failed: "Nothing changed. The plugin stays at its version.",
+  cancelled: "Cancelled. The plugin update did not finish."
 })
 // `seldon init` writes the index; the service's FileView picks it up and
 // the banner goes (Service.ingest).
@@ -145,27 +170,42 @@ var INIT_SCRIPT = terminalScript({
   what: "Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.",
   command: INIT_COMMAND,
   ok: "Your logbook is ready. The panel updates by itself.",
-  failed: "No logbook was created; the message above says why. Press Create in the panel to try again."
+  failed: "No logbook was created; the message above says why. Press Create in the panel to try again.",
+  cancelled: "Cancelled. Press Create in the panel to start again."
 })
 // After the grant a capture records the snapshots and rewrites the index,
 // so the banner goes without a click. Exit 4 (the plugin's own timed
-// capture holds the lock) gets one more try; if that also fails, the next
-// timed capture does it (ADR-0026: the engine never runs the grant itself;
-// the user's click runs it, in the user's terminal).
+// capture holds the lock) gets one more try; only a capture that succeeded
+// says the snapshots are recorded, else the next timed capture does it.
+// The run line has `${USER:?}`: with an empty USER it stops before sudo
+// instead of granting `u::rx` (the owner bits); the shown command stays the
+// one Copy copies (ADR-0026: the engine never runs the grant itself; the
+// user's click runs it, in the user's terminal).
 var SNAPPER_FIX_SCRIPT = terminalScript({
   title: "Seldon: let your user read the snapshot list",
   what: "Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.",
   command: SNAPPER_FIX_COMMAND,
-  after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; } || true",
+  run: "sudo setfacl -m u:${USER:?}:rx /.snapshots",
+  after: "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }",
   ok: "Snapshots are now recorded. The panel updates by itself.",
-  failed: "Nothing changed. Snapshots stay off; Seldon works without them."
+  partial: "Read access granted. Seldon records snapshots at its next capture.",
+  failed: "Nothing changed. Snapshots stay off; Seldon works without them.",
+  cancelled: "Cancelled. Nothing changed."
 })
 
 var TERMINAL_SCRIPTS = [INSTALL_ENGINE_SCRIPT, UPDATE_ENGINE_SCRIPT, UPDATE_PLUGIN_SCRIPT, INIT_SCRIPT, SNAPPER_FIX_SCRIPT]
 
-// The only strings Service.fix hands to the terminal launcher.
 function isTerminalScript(script) {
   return typeof script === "string" && TERMINAL_SCRIPTS.indexOf(script) !== -1
+}
+
+// The argv Service.fix starts for a banner's terminal action: the launcher
+// with the banner's script, only when that is one of TERMINAL_SCRIPTS;
+// null for anything else, so a banner object can never hand the launcher
+// another string.
+function terminalArgv(banner) {
+  var script = isObject(banner) ? banner.script : undefined
+  return isTerminalScript(script) ? ["omarchy-launch-floating-terminal-with-presentation", script] : null
 }
 
 function isObject(value) {

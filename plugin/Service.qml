@@ -641,7 +641,7 @@ Item {
   // bannerId picks the banner whose constants copy and terminal use:
   // "status" (default) or "snapper" (ADR-0026). Copy puts the plain command
   // on the clipboard; terminal opens the banner's terminal script (WP-117),
-  // and only one of Model.TERMINAL_SCRIPTS. "restart" is the restart
+  // only one of Model.TERMINAL_SCRIPTS (Model.terminalArgv). "restart" is the restart
   // notice's own action (WP-090): the fixed argv, only while it shows, and
   // only once per service (restartStarted).
   function fix(actionId, bannerId) {
@@ -660,12 +660,12 @@ Item {
     }
     var source = bannerId === "snapper" ? root.snapperBanner : root.banner
     var command = source ? source.command : ""
-    var script = source && source.script ? source.script : ""
+    var terminal = Model.terminalArgv(source)
     if (actionId === "copy" && command !== "") {
       Quickshell.execDetached(["wl-copy", "--", command])
-    } else if (actionId === "terminal" && Model.isTerminalScript(script)) {
-      // Opens on the explicit click only (ADR-0004); `script` is a constant.
-      Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", script])
+    } else if (actionId === "terminal" && terminal) {
+      // Opens on the explicit click only (ADR-0004); the script is a constant.
+      Quickshell.execDetached(terminal)
     } else if (actionId === "recheck") {
       root.probeEngine()
       root.reloadIndex()

@@ -244,38 +244,48 @@ test("bannerFor contractMismatch names the side to update", () => {
 // floating terminal and what bash runs. A text change here is a review
 // item (AGENTS.md §8).
 const SCRIPTS = {
-  INSTALL_ENGINE_SCRIPT: "gum style --bold 'Seldon: install the engine'; " +
+  INSTALL_ENGINE_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: install the engine'; " +
     "gum style --width 72 'Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.'; " +
     "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
-    "if (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then " +
-    "gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. In the Seldon panel, press Check again.'; " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The engine is not installed.'; fi",
-  UPDATE_ENGINE_SCRIPT: "gum style --bold 'Seldon: update the engine'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. In the Seldon panel, press Check again.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The install did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'The install did not finish. Run it again; your logbook is untouched.'; " +
+    "trap - INT TERM; fi",
+  UPDATE_ENGINE_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: update the engine'; " +
     "gum style --width 72 'Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.'; " +
     "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
-    "if (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then " +
-    "seldon status >/dev/null 2>&1 || true; " +
-    "gum style --padding '1 0 0 0' --foreground 2 'The engine is updated. In the Seldon panel, press Check again.'; " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The engine stays at its version.'; fi",
-  UPDATE_PLUGIN_SCRIPT: "gum style --bold 'Seldon: update the plugin'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then seldon status >/dev/null 2>&1 || true; " +
+    "gum style --padding '1 0 0 0' --foreground 2 'The engine is updated. In the Seldon panel, press Check again.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The update did not finish. Run it again; your logbook is untouched.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'The update did not finish. Run it again; your logbook is untouched.'; " +
+    "trap - INT TERM; fi",
+  UPDATE_PLUGIN_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: update the plugin'; " +
     "gum style --width 72 'Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.'; " +
     "gum style --padding '1 0 1 2' 'omarchy plugin update jax.seldon'; " +
-    "if (set -o pipefail; omarchy plugin update jax.seldon); then " +
-    "gum style --padding '1 0 0 0' --foreground 2 'If the plugin was updated, the Seldon panel offers Restart shell to load it.'; " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The plugin stays at its version.'; fi",
-  INIT_SCRIPT: "gum style --bold 'Seldon: create your logbook'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; omarchy plugin update jax.seldon); then gum style --padding '1 0 0 0' --foreground 2 'If the plugin was updated, the Seldon panel offers Restart shell to load it.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. The plugin update did not finish.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The plugin stays at its version.'; " +
+    "trap - INT TERM; fi",
+  INIT_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: create your logbook'; " +
     "gum style --width 72 'Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.'; " +
     "gum style --padding '1 0 1 2' 'seldon init'; " +
-    "if (set -o pipefail; seldon init); then " +
-    "gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Create in the panel to try again.'; fi",
-  SNAPPER_FIX_SCRIPT: "gum style --bold 'Seldon: let your user read the snapshot list'; " +
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; seldon init); then gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Press Create in the panel to start again.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Create in the panel to try again.'; " +
+    "trap - INT TERM; fi",
+  SNAPPER_FIX_SCRIPT: "seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; " +
+    "gum style --bold 'Seldon: let your user read the snapshot list'; " +
     "gum style --width 72 'Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.'; " +
     "gum style --padding '1 0 1 2' 'sudo setfacl -m u:$USER:rx /.snapshots'; " +
-    "if (set -o pipefail; sudo setfacl -m u:$USER:rx /.snapshots); then " +
-    "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; } || true; " +
-    "gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded. The panel updates by itself.'; " +
-    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; fi"
+    "if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; sudo setfacl -m u:${USER:?}:rx /.snapshots); then if seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }; then gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded. The panel updates by itself.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 2 'Read access granted. Seldon records snapshots at its next capture.'; fi; trap - INT TERM; " +
+    "elif [ -n \"$seldon_cancelled\" ]; then gum style --padding '1 0 0 0' --foreground 3 'Cancelled. Nothing changed.'; trap - INT TERM; (exit 130); " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; " +
+    "trap - INT TERM; fi"
 }
 
 test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117, AGENTS.md §8)", () => {
@@ -285,19 +295,36 @@ test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117
     INSTALL_ENGINE_SCRIPT: M.INSTALL_ENGINE_COMMAND, UPDATE_ENGINE_SCRIPT: M.UPDATE_ENGINE_COMMAND,
     UPDATE_PLUGIN_SCRIPT: M.UPDATE_PLUGIN_COMMAND, INIT_SCRIPT: M.INIT_COMMAND, SNAPPER_FIX_SCRIPT: M.SNAPPER_FIX_COMMAND
   }
+  // The grant's run line stops on an empty USER instead of granting
+  // `u::rx` (round 2, N5); the shown command is the one Copy copies.
+  const runOf = { SNAPPER_FIX_SCRIPT: "sudo setfacl -m u:${USER:?}:rx /.snapshots" }
+  assert.strictEqual(runOf.SNAPPER_FIX_SCRIPT.replace("${USER:?}", "$USER"), M.SNAPPER_FIX_COMMAND)
   for (const name of Object.keys(commandOf)) {
     const script = M[name]
     const command = commandOf[name]
-    // shown, single-quoted, as Copy puts it on the clipboard; then run
+    const run = runOf[name] || command
+    // shown, single-quoted, as Copy puts it on the clipboard; then run,
+    // unless ^C came first
     assert.ok(script.indexOf("gum style --padding '1 0 1 2' '" + command + "'; ") !== -1, name + " shows " + command)
-    assert.ok(script.indexOf("if (set -o pipefail; " + command + "); then ") !== -1, name + " runs " + command)
-    // one line before (bold), one after in green or red
-    assert.strictEqual(script.indexOf("gum style --bold 'Seldon: "), 0, name)
+    assert.ok(script.indexOf("if [ -z \"$seldon_cancelled\" ] && (set -o pipefail; " + run + "); then ") !== -1, name + " runs " + run)
+    assert.strictEqual(script.split(run).length - 1, run === command ? 2 : 1, name + ": the run line once, shown once")
+    // ^C and TERM are noted, never fatal, and reset before the end
+    assert.strictEqual(script.indexOf("seldon_cancelled=; trap 'seldon_cancelled=1' INT TERM; gum style --bold 'Seldon: "), 0, name)
+    // green, red, and the cancelled line (palette 3) ending in 130, the
+    // wrapper's "cancelled": no Done, the window closes
     assert.ok(script.indexOf("--foreground 2 '") !== -1 && script.indexOf("--foreground 1 '") !== -1, name)
-    // it ends on a gum line, exit 0, so the wrapper prints Done
-    assert.ok(/'; fi$/.test(script), name)
+    assert.ok(/--foreground 3 'Cancelled\. [^']*'; trap - INT TERM; \(exit 130\); else /.test(script), name)
+    assert.ok(/'; trap - INT TERM; fi$/.test(script), name)
     assert.ok(M.isTerminalScript(script), name)
   }
+  // no result line claims that nothing changed after install.sh may have
+  // replaced the binary (round 2, N4)
+  for (const name of ["INSTALL_ENGINE_SCRIPT", "UPDATE_ENGINE_SCRIPT"])
+    assert.strictEqual(M[name].indexOf("Nothing changed"), -1, name)
+  // the grant says "recorded" only after a capture that succeeded (N3)
+  assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then if seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; }; " +
+    "then gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded.") !== -1)
+  assert.strictEqual(M.SNAPPER_FIX_SCRIPT.indexOf("|| true"), -1)
   // the commands contain no quote that could end the shown text early
   for (const c of Object.values(commandOf)) assert.strictEqual(c.indexOf("'"), -1, c)
   assert.strictEqual(M.isTerminalScript(M.SNAPPER_FIX_COMMAND), false)
@@ -305,6 +332,15 @@ test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117
   assert.strictEqual(M.isTerminalScript(""), false)
   assert.strictEqual(M.isTerminalScript(undefined), false)
   assert.strictEqual(M.isTerminalScript([M.INIT_SCRIPT]), false)
+  // terminalArgv decides what Service.fix launches (round 2, N1): the
+  // launcher with a known script, nothing for a forged banner.
+  const launcher = "omarchy-launch-floating-terminal-with-presentation"
+  for (const script of M.TERMINAL_SCRIPTS) same(M.terminalArgv({ script: script }), [launcher, script])
+  same(M.terminalArgv(M.bannerFor("notInitialised", {})), [launcher, M.INIT_SCRIPT])
+  for (const forged of [{ script: "id" }, { script: M.INIT_COMMAND, command: M.INIT_COMMAND }, { script: M.INIT_SCRIPT + "; id" },
+    { script: "" }, { script: [M.INIT_SCRIPT] }, { command: M.INIT_COMMAND }, {}, null, undefined, M.INIT_SCRIPT,
+    M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00+02:00", nowMs: 0 })])
+    assert.strictEqual(M.terminalArgv(forged), null, JSON.stringify(forged))
   assert.strictEqual(M.shellQuoted("it's"), "'it'\\''s'")
 })
 
@@ -477,7 +513,7 @@ test("snapperBanner: Grant runs the script, Check again is a capture, no hint (W
   // no "press Check again" hint (WP-117 removed SNAPPER_HINT).
   assert.strictEqual(M.SNAPPER_HINT, undefined)
   assert.strictEqual(b.hint, undefined)
-  assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then seldon capture ") !== -1)
+  assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then if seldon capture ") !== -1)
 })
 
 test("changelogRows: 73 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
