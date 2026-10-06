@@ -1648,6 +1648,7 @@ mod redaction {
             ("-E a:b curl", "curl>-E>:", false),
             ("-E a:b; curl -E c:d", "curl>-E>:", true),
             ("curl -E a -E b:c", "curl>-E>:", true),
+            ("curl -E a:b curl", "curl>-E>:", true),
             (":curl", "curl>:", false),
             ("curl:", "curl>:", true),
             ("curl", "cur>rl", false),
