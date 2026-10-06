@@ -248,3 +248,97 @@ exactly that; equivalent); `clearRulesResult` (covered by panel-view
    rules block). Fine to change before release if the operator prefers
    another word; it appears in the de template only in the Drift
    section.
+
+## Round 2
+
+Brief: `review-0.1.1/handovers/WP-111-round-2-brief.md` (private), after
+stage 1 APPROVE (`WP-111-review-1.md`).
+
+Commits: `c20060b` (engine: N1, N2, N5, N6, N7), `9c3a7c4` (N8 rules,
+skill, docs; N4/N6/N7 in SPEC, CHANGELOG, guide 04 en), `f0fd410` (guide
+04 de), `0f09a3e` (`--noconfirm`; skill tests follow the wording),
+`070ff1f` (code spans kept on one line), `bb568e9` (rustfmt), this commit.
+
+- **N1** `replace_archives_a_changed_skill_and_installs_it` asserts
+  `git.committed`, the commit subject `seldon: hook install skills
+  --replace` and a clean `git status` (when git is present).
+- **N2** `a_capture_records_the_skill_update_as_seldons_own` now builds a
+  change the collector sees (the baseline takes the older files while the
+  manifest still names the shipped ones, then the manifest names them) and
+  asserts `explainedOwn == 2` and two resolutions "installed by seldon
+  capture".
+- **N5** `is_released_v1` hashes the text with LF line ends: a CRLF copy
+  of a released v1 file is `Unedited(1)` and is replaced whole by the
+  capture (unit test).
+- **N6** `sys::runner()` → `User | Root | Unknown(why)`; the capture
+  upgrades only for `User`. `Unknown` (the probe cannot be read) skips
+  both upgrades with one `warnings` line; root skips silently. Debug
+  builds read the probe path from `SELDON_TEST_ROOT_PROBE`
+  (`a_capture_that_cannot_tell_the_user_changes_nothing`: missing probe →
+  nothing written, warning; a probe this user owns → upgrade runs).
+- **N7** `--replace` acts only where Seldon's skill is today; a folder
+  without it gets `action: "absent"` and stays so (test: a removed skill
+  stays removed). Doctor's fix reads `seldon hook install skills
+  --replace (archives your copy; a folder without the skill stays
+  without it)`; the foreign fix no longer repeats the install command.
+  Guide 04 en/de, SPEC §3, CHANGELOG say so.
+- **N8** Around Omarchy's verbatim quote, the rules (en, de), the skill
+  (SKILL.md, snapshot.md, update.md), the agent guide and guide 04 lead
+  with the agent's case: a command run through the agent's tool has no
+  terminal the user sees, so `pkexec`; `sudo` only where the prompt shows
+  in the user's own terminal. Snapshot: `pkexec snapper …`. Packages:
+  `pkexec pacman -S --needed --noconfirm <package>…` through the tool
+  (`--noconfirm`: no stdin to confirm), `omarchy pkg add` where the
+  user's terminal shows the prompt; AUR and PKGBUILD: `makepkg`, then
+  `pkexec pacman -U --noconfirm <file>` (deps with `--asdeps` first);
+  never wrap a self-elevating command (`omarchy pkg add`, `omarchy
+  snapshot`, an AUR helper, `makepkg -si`), which asks with `sudo` and
+  needs the user's terminal (checked: `omarchy-pkg-add` calls `sudo`).
+  `tests/init.rs` pins the order (`pkexec` before `sudo` outside the
+  quote; `pkexec pacman -S` before `omarchy pkg add`); the skill tests
+  pin the shared wording.
+- **N4** one sentence each in SPEC §3 and the CHANGELOG (an unedited block
+  in the other language becomes the logbook's language). **N3** not
+  touched (later hygiene WP). **D7** unchanged.
+
+### Round 2 mutants
+
+| # | Mutant | Caught by |
+|---|---|---|
+| R1 | v1 hash without `lf()` | `released_v1_files_are_known_by_their_hash` |
+| R2 | `Unknown` treated as a user | `a_capture_that_cannot_tell_the_user_changes_nothing` |
+| R3 | probe error reads as `User` | same |
+| R4 | `--replace` installs where the skill is missing | `replace_archives_a_changed_skill_and_installs_it` |
+| R5 | `--replace` never commits (stage-1 MR14) | same |
+| R6 | capture recorded as `hook install skills` (stage-1 MR16) | `a_capture_records_the_skill_update_as_seldons_own` |
+| R7 | doctor fix repeats the install command | `replace_archives_…` |
+| R8 | en snapshot example `sudo` first | `agents_md_carries_the_agent_rules_in_both_languages` |
+| R9 | de install route `omarchy pkg add` first | same |
+
+9/9 killed (runner in the session scratchpad; source restored after
+each; `git status` clean). The first R4–R7 run also failed two skill
+wording tests: my N8 text had broken them (fixed in `0f09a3e`); the
+re-run shows only the intended tests.
+
+### For stage 2 (Fable)
+
+- **Password prompts.** On this host `org.freedesktop.policykit.exec` is
+  `auth_admin` (no kept grant), so through the agent's tool every `pkexec`
+  asks: the worked example in the agent guide now says "here four". The
+  rules' and the skill's aim line still says "at most one password
+  prompt" (ADR-0027 §1's metric). The round changed order and examples
+  only, as the brief says; whether the aim line, ADR-0027's metric or a
+  single privileged step (e.g. one `pkexec` for snapshot and install) should
+  change is a decision above this WP.
+- "privileged steps stay in your terminal" (the sub-agent sentence in
+  *Attended or not*) means "in your session, not the sub-agent's"; it
+  could read as "use `sudo`". Left as is (not in the brief).
+
+### Checks (round 2)
+
+`flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, on
+`bb568e9` (this handover commit changes only `work/`). A first run on
+`070ff1f` stopped at `fmt-check` (rustfmt in `tests/init.rs`), fixed in
+`bb568e9`. Counts: model.test.js 97, service-states 316, panel-view 908,
+overlay-view 326, bar-view 194, 0 failed; docs-check ok (14 translated
+pages; de/04 stamped `9c3a7c4`).
