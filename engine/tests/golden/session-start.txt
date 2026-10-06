@@ -16,6 +16,16 @@ C-2026-004 (active, red/R2, 2/4 steps); title and plan steps:
 > - [ ] Theme-Sync mit Omarchy (Tokyo Night)
 > - [ ] Eine Woche parallel zu Neovim nutzen
 
+## Drift (last 7 days)
+2 crises, 4 for attention:
+> CRISIS 01M3VNJ9JGZ9169T01XCW16FT0 config/config-add ~/.config/systemd/user/ollama.service
+> CRISIS 01M3Q7R0Z08ZD5R76DQA3PHQ1G config/config-add ~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh
+> attention 01M3VTGNY0NZG4AY80814WSKGR theme/theme-set tokyo-night
+> attention 01M3VNFTF8EVHWFFZ687N14Q0C pacman/install ollama
+> attention 01M3KVWFR06078ZQTPRZCFYHK0 config/config-remove ~/.config/hypr/monitors.conf
+> attention 01M3H6M720FC6BAG7ETNQTXW9K pacman/downgrade mesa (+2 more)
+Explain or link only what your own Log, a hook event or the user's words prove; otherwise leave it. A crisis is the user's: tell them in one line. Details: `seldon drift show <EVENT> --json`.
+
 ## Journal (journal/2026/2026-10-01.md, last 5 lines)
 > Zed installiert, Keybindings nach Omarchy-Defaults gesetzt. Gelernt: `omarchy pkg add` statt yay, dann landet es sauber im Ledger.
 > ## 14:40 · human

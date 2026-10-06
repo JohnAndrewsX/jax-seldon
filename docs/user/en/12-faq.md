@@ -46,17 +46,21 @@ run `seldon capture` yourself, or let an agent's session end do it.
 
 ## Why is my own change drift? I had a case open.
 
-A collector sees that something changed, but not who did it or why. Only
-an agent's command, recorded by a hook, carries the active case. Link your
+Most of your own changes are routine and never drift: a theme switch, a
+toggle, a system upgrade. For the others, a collector sees that something
+changed, but not who did it or why. Only an agent's command, recorded by
+a hook, carries the active case. Link your
 own change with `seldon drift link <EVENT> <CASE>`, or with *Link* in the
 drift sheet. See [Concepts](02-concepts.md#drift).
 
 ## Is every package upgrade a crisis?
 
-No. A routine full upgrade is yellow drift, one item per transaction,
-resolved with one command. It turns red, a crisis, when it installs or
-removes a package or touches a package on the always-red list (kernel,
-systemd, glibc, Hyprland, Omarchy, Quickshell).
+No. A full system upgrade is routine: history in the Changelog, not
+drift, even when it brings a new kernel. A package you install or remove
+by name without a case is drift, quietly: the panel lists it, the bar
+does not count it. Only a package on the always-red list (kernel,
+systemd, glibc, Hyprland, Omarchy, Quickshell) installed or removed by
+name outside a case is a crisis.
 
 ## Can I edit the files by hand?
 

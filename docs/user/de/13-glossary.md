@@ -1,6 +1,6 @@
 # Glossar
 
-<!-- source: en/13-glossary.md @ 5b712f1 -->
+<!-- source: en/13-glossary.md @ 1bae1cd -->
 
 Jeder Begriff von Seldon in einer Tabelle, mit dem englischen Wort, das
 die Oberfläche und die englische Anleitung verwenden. Befehle,
@@ -11,17 +11,18 @@ Dateinamen und Werte im Code bleiben in beiden Sprachen englisch.
 | active case | aktiver Case | der zuletzt gestartete Case; Agenten-Hooks versehen ihre Befehle mit ihm (`.seldon/active-case`) |
 | area | Bereich | ein langlebiges Thema der Maschine, `areas/<area>/` (`hyprland`, `themes`, …) |
 | arm, disarm | scharf schalten, entschärfen | das erste Enter einer schreibenden Aktion im Panel schaltet sie scharf, das zweite sendet sie; jede andere Taste entschärft sie |
+| attention | zur Kenntnis | Drift, die leise aufgelistet wird: ein Paket, mit Namen installiert, ein Plugin eines Dritten, eine Überschreibung; niemand muss sie erklären |
 | backfill | Nacherfassung | Änderungen von vor dem Logbuch aufzeichnen, mit `seldon init --since` |
 | baseline | Baseline | das Verwerfen aller Drift, die eine Nacherfassung gefunden hat, mit dem Grund „pre-Seldon baseline“ |
 | capture | Erfassung | ein Lauf der Collectors; `seldon capture` |
 | case | Case | eine geplante Änderung, `C-YYYY-NNN`, eine Datei in `work/` |
 | collector | Collector | ein Teil der Engine, der eine Quelle liest: `snapper`, `pacman`, `omarchy`, `plugins`, `theme`, `config` |
-| crisis | Krise | Drift in der roten Zone |
+| crisis | Krise | eine Änderung ohne Case, die Boot, Anmeldung, die Shell oder die Sicherheit brechen kann; die einzige Drift, die die Pill zählt |
 | decision | Entscheidung | ein ADR in `decisions/`, angelegt mit `seldon decide` |
 | deviation | Abweichung | eine Datei, die du gegenüber Omarchys Vorgabe geändert hast, gelistet in `system/deviations.md` |
 | dismiss | verwerfen | Drift als nicht case-würdig auflösen, mit einem Grund |
 | dossier | Dossier | `system/`, die Maschine, wie sie jetzt ist |
-| drift | Drift | eine Änderung ohne Case und ohne Auflösung |
+| drift | Drift | eine Änderung ohne Case und ohne Auflösung, die einen Blick wert ist: zur Kenntnis oder Krise |
 | drift sheet | Drift-Dialog | das Formular des Panels, um einen Drift-Eintrag zu verknüpfen, zu erklären oder zu verwerfen |
 | engine | Engine | das Programm `seldon`, das als einziges ins Logbuch schreibt |
 | event | Ereignis | eine Zeile im Ledger |
@@ -41,6 +42,7 @@ Dateinamen und Werte im Code bleiben in beiden Sprachen englisch.
 | proposed case | vorgeschlagener Case | der offene Case, dessen *Plan* Paket, Pfad oder Theme eines Drift-Ereignisses nennt; im Drift-Dialog vorgewählt |
 | redaction | Schwärzung | Geheimnisse entfernen, bevor ein Ereignis geschrieben wird |
 | risk | Risiko | wie schwer eine Änderung rückgängig zu machen ist, `R0` bis `R3` |
+| routine | Routine | eine Änderung ohne Case, die Geschichte ist, keine Drift: ein Theme-Wechsel, ein Schalter, ein einfaches System-Upgrade |
 | snapshot | Snapshot | ein Snapper-Snapshot des Dateisystems |
 | trace | Spur | die Ereignisse eines Case, in ihrer Reihenfolge |
 | transaction group | Transaktionsgruppe | die Pakete einer Paket-Transaktion, als ein Drift-Eintrag gezeigt und aufgelöst |

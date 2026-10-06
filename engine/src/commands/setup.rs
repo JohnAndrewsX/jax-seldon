@@ -172,7 +172,7 @@ fn claude_code(dirs: &Dirs, root: &Path) -> HarnessReport {
 }
 
 fn skills(ctx: &Context, lock: &Lock, config: &Config) -> HarnessReport {
-    match super::skills::install_under(lock, ctx, config) {
+    match super::skills::install_under(lock, ctx, config, None) {
         Ok(installed) => HarnessReport {
             name: "skills".into(),
             human: installed.summary(&ctx.dirs),

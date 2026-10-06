@@ -7,13 +7,16 @@ the keyboard.
 
 ## A day with Seldon
 
-- In the morning, glance at the pill. The mark, then `2 · 3`, means two
-  active cases and three unexplained changes.
+- In the morning, glance at the pill. The mark, then `2 · 1`, means two
+  active cases and one crisis. Without a crisis the second number is
+  gone.
 - Before a change, create a case (`+` in the panel) and start it.
 - While you work, write a note when you learn something (`n` in the
   panel).
-- When the pill shows drift, open the Changelog and resolve it: link,
-  explain or dismiss.
+- When the pill turns to your theme's error colour, open the panel and
+  read the red line. That is the one thing Seldon asks you to look at.
+  Other changes without a case wait quietly in the Changelog; resolve
+  them when you like, or let an agent do it.
 - At the end of a case, verify it and close it on the Work tab.
 - Once a week, open the Prime Radiant and look at the picture.
 
@@ -22,13 +25,16 @@ the keyboard.
 The pill sits on the right of the bar.
 
 - The Seldon mark, then `A · D`: A is the number of active cases, D the
-  number of open drift items. Parts that are zero are hidden: the mark
-  alone, `2`, `· 3`. The mark takes the pill's colour.
+  number of crises. Parts that are zero are hidden: the mark alone, `2`,
+  `· 1`. The mark takes the pill's colour. Changes without a case that are
+  no crisis are not counted here; the setting `driftInBar` changes that
+  (see [Configuration](06-configuration.md#drift)).
 - It uses your theme's accent colour while cases are active, the theme's
   urgent colour when there is a crisis, and dims while something needs
   fixing.
-- The tooltip says what the numbers mean and when the engine last
-  captured.
+- The tooltip says what the numbers mean, how many changes have no case,
+  and when the engine last captured: "Seldon — 2 active cases, 1 crisis,
+  7 changes without a case, last capture 4 min ago".
 
 | Click | Does |
 |---|---|
@@ -41,8 +47,9 @@ The pill sits on the right of the bar.
 The panel opens under the pill. It has six tabs, each with a fixed
 number key. Above every tab you may see a banner (something needs fixing,
 see [Troubleshooting](10-troubleshooting.md#banners-in-the-panel)) and a
-red line "N changes in the red zone need a reason". Click the red line to
-resolve the first crisis.
+red line "N changes that can affect boot, login or the shell have no
+case", only while there is a crisis. Click the red line to look at the
+first one.
 
 The pictures on this page are renders of the sample logbook in the
 Tokyo Night theme. Your panel uses your theme and shows your data.
@@ -54,7 +61,7 @@ Tokyo Night theme. Your panel uses your theme and shows your data.
 *Sample data.*
 
 Today shows the date and today's counts: events today and in seven days,
-active and queued cases, open drift. Below is the note field: type a
+active and queued cases, changes without a case. Below is the note field: type a
 note, press Enter, and it goes into today's journal through `seldon log`.
 Pick an open case under the field to file the note under it. The field
 empties only once the note is saved. Today's journal entries follow;
@@ -69,16 +76,19 @@ file.
 
 The Changelog lists every event, newest first, grouped by day. The chips
 at the top filter by source; each shows its count. Snapshot rows are
-highlighted. Drift rows are marked in their zone's colour and carry a
-*Resolve…* button.
+highlighted. A quiet line under the header says "N changes without a
+case". Their rows read "No case", a crisis reads "Crisis · no case" in
+your theme's urgent colour; both carry a *Resolve…* button. Routine
+changes (a theme switch, a toggle, a plain upgrade) are ordinary rows:
+history, nothing to resolve.
 
 *Capture now* runs a capture; the line below says what it found. *Ledger*
 opens this month's ledger view in your editor.
 
 To resolve drift, press Enter on a drift row, click *Resolve…*, or click
-the red line. The drift sheet shows what changed, who did it, when, its
-zone, the proposed case and every package of a transaction. Pick one
-action:
+the red line. You may; you never have to. The drift sheet shows what
+changed, who did it, when, its zone, the proposed case and every package
+of a transaction. Pick one action:
 
 | Action | Runs | The row then says |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 6758653 -->
+<!-- source: en/06-configuration.md @ 1bae1cd -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -35,7 +35,7 @@ den Schlüssel siehst. In deiner Zeile `logbook` steht dein eigener Pfad.
 harnesses = ["claude-code"]
 language = "de"
 logbook = "/home/you/Seldon"
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
 
 [collectors]
 config = true
@@ -71,7 +71,10 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 | `[git] autocommit` | `true` | das Logbuch nach jedem schreibenden Befehl committen; `seldon init --no-git` schreibt `false` |
 | `[redaction] patterns` | `[]` | deine eigenen Muster für Geheimnisse, siehe [Schwärzung](#schwärzung) |
 | `[redaction] skipPaths` | Zustandsdateien von Plugins | Dateien, die die Engine nie öffnet oder nennt, siehe [Schwärzung](#schwärzung) |
-| `[drift] alwaysRed` | sechs Namen | Pakete, deren Upgrade immer eine Krise ist, siehe [Drift](#drift) |
+| `[drift] alwaysRed` | sechs Namen | Pakete, die Boot, Anmeldung oder die Shell brechen können, siehe [Drift](#drift) |
+| `[drift] attention` | `"normal"` | `"all"` macht jede Änderung ohne Case wieder zu Drift, siehe [Drift](#drift) |
+| `[drift] routine` | jede Regel | die Routine-Regeln, die gelten, siehe [Drift](#drift) |
+| `[drift] routinePaths`, `routinePackages`, `alwaysRedPaths` | siehe [Drift](#drift) | Pfade und Pakete, die Routine sind, und die Persistenzpfade |
 | `[agent] launcher` | `omarchy agent prompt` | was `seldon agent start` startet, siehe [Agent-Launcher](#agent-launcher) |
 | `[agent.launchers]` | keine | weitere Launcher mit Namen |
 
@@ -139,22 +142,28 @@ kurze Hashes auf, nie den Inhalt.
 
 Vorgaben: `~/.config/hypr`, `~/.config/omarchy`, `~/.config/waybar`,
 `~/.bashrc`, `~/.zshrc`, `~/.local/share/applications` (die
-Desktop-Einträge deiner Web-Apps und TUIs). Fehlende Pfade überspringt
-der Collector. Ein relativer Pfad wie `.config/nvim` bedeutet
+Desktop-Einträge deiner Web-Apps und TUIs) und die Persistenzpfade
+`~/.config/systemd/user`, `~/.config/autostart`,
+`~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
+`~/.bash_profile` (Dateien, die bei der Anmeldung laufen; eine neue dort
+ist eine Krise, siehe [Drift](#drift)). Fehlende Pfade überspringt der
+Collector. Ein relativer Pfad wie `.config/nvim` bedeutet
 `~/.config/nvim`; der Assistent speichert getippte Pfade in dieser Form.
 Ergänze eigene, zum Beispiel:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/nvim", "~/.config/systemd/user"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.config/nvim"]
 ```
 
-Der Assistent schreibt die Liste in die `config.toml`. Eine Datei, die er
-vor 0.1.4 geschrieben hat, behält deshalb ihre Liste und beobachtet die
-Desktop-Einträge nicht. Willst du sie beobachten, ergänze den Pfad in
-deinen `watchPaths`:
+Der Assistent schreibt die Liste in die `config.toml`. Eine Liste, die
+noch die Vorgabe eines früheren Release ist, bekommt die neuen Vorgaben
+bei der nächsten Erfassung, die das einmal in einer `note:`-Zeile sagt;
+nur die Zeile `watchPaths` der Datei ändert sich. Eine Liste, die du
+selbst geändert hast, bleibt, wie sie ist: `seldon doctor` nennt die
+Pfade, die ihr fehlen, und du ergänzt sie genauso:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
 ```
 
 Die Dateien, die schon dort liegen, wenn der Pfad in die Liste kommt,
@@ -186,7 +195,8 @@ noch einmal. Die ctime erkennt eine Änderung, deren Änderungszeit
 zurückgesetzt wurde (`touch -r`).
 
 Unit-Dateien unter `~/.config/systemd/` gehören zur roten Zone. Alles
-andere hier ist gelb.
+andere hier ist gelb. Die Zone sagt, wo eine Änderung wirkt; ob eine
+Änderung ohne Case eine Krise ist, entscheidet [Drift](#drift).
 
 Was beobachtet wird zu ändern, ist keine Änderung an Dateien. Fügst du
 einen Pfad hinzu oder nimmst ein Muster aus `skipPaths` heraus, nimmt
@@ -304,19 +314,48 @@ es vermeiden kannst.
 
 ## Drift
 
-`[drift] alwaysRed` listet Paketnamen, deren Routine-Upgrade trotzdem
-eine Krise ist. Ein Routine-Upgrade ist eine Transaktion, die bei einem
-vollständigen System-Upgrade nur Pakete aktualisiert (`omarchy update`
-macht eins). Es öffnet gelbe Drift und löst darum keinen Alarm aus. Ein
-Paket auf dieser Liste macht die ganze Transaktion rot.
+Jede Änderung wird aufgezeichnet. `[drift]` entscheidet, welche
+Änderungen ohne Case Drift sind und welche davon eine Krise (siehe
+[Konzepte](02-concepts.md#drift)). Die Vorgaben sind leise:
+Routine-Änderungen sind Geschichte, Pakete und Überschreibungen werden
+ohne Aufforderung aufgelistet, und nur, was Boot, Anmeldung oder die
+Shell brechen kann, ist eine Krise.
+
+| Schlüssel | Vorgabe | Bedeutung |
+|---|---|---|
+| `alwaysRed` | `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell` | Pakete, die Boot, Anmeldung oder die Shell brechen können: außerhalb eines Case mit Namen installiert oder entfernt eine Krise; mit dem System aktualisiert Routine |
+| `attention` | `"normal"` | `"all"`: jede Änderung ohne Case ist Drift, eine Krise, wenn ihre Zone rot ist (das Verhalten bis 0.1.3) |
+| `routine` | alle Regeln | die Routine-Regeln, die gelten: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo` |
+| `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | Konfigurationsdateien, deren Änderungen Routine sind |
+| `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | Pakete, deren eigene Transaktionen Routine sind |
+| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile` | Persistenzpfade: eine Änderung dort ohne Case ist eine Krise |
+
+Willst du mehr? Ein paar Beispiele:
 
 ```toml
 [drift]
+# theme switches are drift again
+routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+# a kernel from NVIDIA counts too
 alwaysRed = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell", "nvidia*"]
 ```
 
-`*` passt auf jedes Ende. Behalte die Vorgaben: Diese Pakete können
-Boot, Login oder die Shell kaputtmachen.
+```toml
+[drift]
+# everything without a case is drift, as up to 0.1.3
+attention = "all"
+```
+
+`*` passt auf jedes Ende. Behalte die Vorgaben von `alwaysRed`: Diese
+Pakete können Boot, Anmeldung oder die Shell kaputtmachen. Die Engine
+schreibt diese Schlüssel nur in die Datei, wenn du sie änderst, und
+`seldon doctor` gibt die geltenden Regeln aus und markiert, was nicht
+der Vorgabe entspricht. `seldon drift --all` listet auch die
+Routine-Änderungen.
+
+Die Pill zählt nur Krisen. Soll sie jede Änderung ohne Case zählen oder
+gar nichts, setz die Plugin-Einstellung `driftInBar` (siehe
+[Einstellungen des Plugins](#einstellungen-des-plugins)).
 
 ## Agent-Launcher
 
@@ -394,6 +433,7 @@ mit `omarchy bar set`:
 |---|---|---|
 | `captureIntervalMin` | `15` | Minuten zwischen zwei Erfassungen, solange die Shell läuft (5 bis 120) |
 | `wipLimit` | `3` | aktive Cases, mit denen der Tab Work vergleicht (1 bis 20); es warnt, blockiert nie |
+| `driftInBar` | `crisis` | was die zweite Zahl der Pill zählt: `crisis`, `all` (jede Änderung ohne Case, wie bis 0.1.3) oder `none`; bei einer Krise nimmt die Pill in jedem Modus die Fehlerfarbe an |
 
 ```sh
 omarchy bar set jax.seldon captureIntervalMin 30 --json

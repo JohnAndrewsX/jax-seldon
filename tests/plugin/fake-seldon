@@ -44,7 +44,9 @@
 #                        nothing created) (WP-101)
 #   FAKE_SELDON_RULES    the rules row `doctor --json` reports: current
 #                        (default) | outdated | damaged; $HOME/rules overrides
-#                        it, and `rules update` writes "current" there (WP-101)
+#                        it, and `rules update` writes "current" there (WP-101);
+#                        $HOME/rules-fail makes `rules update` refuse with its
+#                        text (WP-111)
 #
 # `plan` treats the index the fake last wrote (the state index) as its
 # logbook: a case's status is the one the index lists, unless $HOME/cases
@@ -101,9 +103,9 @@ if [[ $cmd == doctor ]]; then
   rules=${FAKE_SELDON_RULES:-current}
   [[ -f $HOME/rules ]] && rules=$(<"$HOME/rules")
   case $rules in
-    outdated) row='{"name":"rules","status":"degraded","message":"outdated (v1)","fix":"seldon rules update"}' ;;
+    outdated) row='{"name":"rules","status":"degraded","message":"outdated (v1)","fix":"seldon rules update (archives your copy)"}' ;;
     damaged) row='{"name":"rules","status":"error","message":"damaged (the block has no end marker)","fix":"seldon rules update --replace (archives the file)"}' ;;
-    *) row='{"name":"rules","status":"ok","message":"current (v2)"}' ;;
+    *) row='{"name":"rules","status":"ok","message":"current (v3)"}' ;;
   esac
   echo "{\"checks\":[{\"name\":\"engine\",\"status\":\"ok\",\"message\":\"seldon 0.1.0-fake\"},$row]}"
   [[ $rules == damaged ]] && exit 1
@@ -638,8 +640,10 @@ case "$cmd" in
     sleep 0.2
     [[ $mode == uninit ]] && uninit
     [[ ${2:-} == update ]] || user_error "unrecognized subcommand '${2:-}'"
+    # $HOME/rules-fail: the update refuses with that text (WP-111)
+    [[ -f $HOME/rules-fail ]] && user_error "$(<"$HOME/rules-fail")"
     echo current >"$HOME/rules"
-    echo '{"file":"AGENTS.md","action":"rewritten","from":1,"version":2,"archived":null,"diff":"","git":{"committed":true}}'
+    echo '{"file":"AGENTS.md","action":"rewritten","from":"v2","version":3,"archived":"archive/AGENTS-2026-10-06.md","diff":"","git":{"committed":true}}'
     ;;
   *)
     user_error "unrecognized subcommand"

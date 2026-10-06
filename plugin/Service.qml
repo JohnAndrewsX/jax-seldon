@@ -179,6 +179,8 @@ Item {
   property double rulesCheckedAtMs: 0
   property var rulesResult: null
   readonly property var rulesBanner: Model.rulesBannerWith(Model.rulesBanner(root.doctorText), root.rulesResult)
+  // WP-111: one line for a finished *Update rules* click.
+  readonly property var rulesNotice: Model.rulesNotice(root.rulesResult)
   property var driftResult: null
   property var decideResult: null
   // The drift sheet's `seldon drift show` answer: { eventId, pending, ok,
@@ -391,6 +393,11 @@ Item {
     root.rulesCheckedAtMs = Date.now()
     doctorCall.launch(["seldon"].concat(args))
     return true
+  }
+
+  // The panel opened again: the last *Update rules* answer has been seen.
+  function clearRulesResult() {
+    if (root.rulesResult && !root.rulesResult.pending) root.rulesResult = null
   }
 
   // doctor exits 1 when a row is an error; its JSON is the answer either way.
@@ -718,7 +725,8 @@ Item {
       snapperActions: root.snapperBanner ? root.snapperBanner.actions.map(function(a) { return a.id + ":" + a.label }) : [],
       snapperHint: root.snapperBanner ? root.snapperBanner.hint : "",
       rules: root.rulesBanner ? root.rulesBanner.title : "",
-      rulesResult: root.rulesResult
+      rulesResult: root.rulesResult,
+      rulesNotice: root.rulesNotice ? root.rulesNotice.title : ""
     }
   }
 

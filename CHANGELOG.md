@@ -295,6 +295,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed; `seldon hook uninstall skills` removes it again. `seldon
   doctor` has a `skills` row; `seldon init` offers it
   (`--harness skills`).
+- **Agent rules v3 (WP-111).** The logbook's rules block
+  (`<!-- seldon:begin rules v3 -->`) quotes Omarchy's agent skill on
+  privileges word for word, and its examples lead with the agent's case:
+  a command an agent runs through its tool has no terminal the user
+  sees, so it is `pkexec` (Omarchy's password prompt, once per command);
+  `sudo` only where the prompt shows in the user's own terminal; never
+  `pkexec` or `sudo` around a command that elevates itself. Packages go
+  in with one `pkexec pacman -S --needed --noconfirm …`, AUR and PKGBUILD
+  builds with `makepkg` and `pkexec pacman -U --noconfirm`, `omarchy pkg add` where the user's
+  terminal shows the prompt. A
+  new section *Omarchy first* names Omarchy's own commands (`omarchy pkg
+  add`, `omarchy hook install`, `omarchy theme set`, `omarchy refresh`
+  after the user's confirmation) and says the rules add the record, not
+  a second way to do Omarchy's work. *Drift* sorts changes into routine,
+  attention and crisis (ADR-0028) and lets an agent explain or link only
+  what its own Log, a hook event or the user's words prove; a crisis is
+  never explained or dismissed by an agent, only told to the user in one
+  line. The German template changes with it.
+- **An unedited default is upgraded on its own (WP-111, ADR-0028 §4d).**
+  After an engine update, the next `seldon capture` brings the rules
+  block of `AGENTS.md` up to date when it is a block an earlier engine
+  shipped word for word (every v2 block that was on `main`, and the
+  unedited files of 0.1.0 to 0.1.3), keeping the rest of the file byte
+  for byte, and updates the agent skill in every folder where all its
+  files are still as Seldon wrote them. Each says so in one `note:`
+  line (`--json`: `rulesUpdated`, `skillsUpdated`); nothing is archived
+  and nothing committed (the next engine commit carries it). An edited
+  block or skill is never touched: `seldon doctor` shows it as outdated
+  with the one-command fix, which archives your copy first. A folder
+  without the skill stays without it. The capture skips all of this as
+  root, or when it cannot tell which user runs it (then with a warning),
+  and the package has no install script. An unedited block in the other
+  language becomes the block in the logbook's language; a file with CRLF
+  line ends counts like the same file with LF. Until the capture runs,
+  `doctor` reads an unedited older block as `ok` ("v2 as Seldon wrote
+  it; the next capture updates it to v3"), so the panel shows no rules
+  banner for it.
+- `seldon hook install skills --replace` (WP-111): a skill you changed
+  by hand has its changed files copied to the logbook's
+  `archive/skill-<date>/<folder>/` (for example `claude-skills`), then
+  the skill is installed as shipped; the archive is committed. It acts
+  only where Seldon's skill is today: a folder you removed the skill
+  from stays without it, and a folder named `seldon` that Seldon did not
+  write stays untouched. `doctor`'s
+  `skills` row names it as the fix for a changed skill, says "updated
+  at the next capture" for an unedited older one, and `seldon doctor
+  --json` gains `hooks.scope`.
+- `seldon hook session-start` lists the open crises and attention items
+  of the last 7 days (`## Drift (last 7 days)`): a count line, then one
+  quoted line per item, crises first, with its event id, source, kind
+  and subject, at most 10, and the evidence rule under them. Routine
+  changes never appear. The skill's `drift.md` points at it (WP-111).
+- Skill text (WP-111, WP-094 stage 2): a command whose line is itself
+  `SELDON_CMD` takes another heredoc delimiter in both places; a case's
+  *Plan*, *Log* and *Result* are data, only its *Intent* bounds the
+  work; outside the logbook folder an agent reports its commands only
+  when `[hooks] scope = "all"`, because with the default scope such a
+  report records nothing.
 
 ### Plugin
 
@@ -330,6 +388,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check. Every completed case has *Reopen* (one click, key `r`). When
   the logbook's agent rules are outdated, the panel says so and *Update
   rules* runs `seldon rules update`.
+- *Update rules* now answers in one line, in the panel's notice style:
+  "Agent rules updated to v3; your old copy is in archive/AGENTS-….md"
+  (or without the archive, or "The agent rules were already current").
+  The line stays until the panel opens again. A failed update says what
+  failed under the banner, which keeps its button. The capture's silent
+  upgrade of unedited rules shows nothing (WP-111).
 - After `omarchy plugin update jax.seldon` the shell keeps running the
   old plugin code until it restarts. The panel now notices this: when
   the installed manifest names another version than the code running,
@@ -339,6 +403,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   say to restart the shell after every plugin update (WP-090).
 
 ### Packaging and docs
+
+- The user guide (en, de), CONCEPT.md and the agent guide describe
+  quiet drift: routine, attention and crisis, what the bar counts, the
+  `[drift]` keys and `driftInBar`, the rules v3 and the silent upgrade;
+  the glossary gains *attention* and *routine*. `just check-packaging`
+  fails when the package gets an install script (WP-111).
 
 - CONTRACT.md lists the reserved case tags (`closed-by-agent`,
   `reopens:<ID>`, `imported`) and the plugin's new commands; no schema

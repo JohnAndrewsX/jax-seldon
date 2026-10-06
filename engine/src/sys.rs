@@ -22,6 +22,37 @@ pub const NEW_DIR_MODE: u32 = 0o700;
 /// Symbolic links followed at most, as the kernel's `MAXSYMLINKS`.
 const MAX_LINKS: usize = 40;
 
+/// Who runs this process, as far as the upgrades a capture makes in the
+/// user's files need to know (the rules block, the agent skill; WP-111).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Runner {
+    /// A user other than root.
+    User,
+    /// Root: its home is not the user's, and a package hook runs as root.
+    Root,
+    /// It cannot be told (the probe cannot be read); why.
+    Unknown(String),
+}
+
+/// [`Runner`] from the effective user id, the owner of `/proc/self`.
+/// Callers treat anything but [`Runner::User`] as "do not touch the
+/// user's files" (fail closed, WP-111 round 2). Debug builds only:
+/// `SELDON_TEST_ROOT_PROBE` names another path to read the owner of.
+pub fn runner() -> Runner {
+    use std::os::unix::fs::MetadataExt as _;
+    #[cfg(debug_assertions)]
+    let probe = std::env::var_os("SELDON_TEST_ROOT_PROBE")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| "/proc/self".into());
+    #[cfg(not(debug_assertions))]
+    let probe = std::path::PathBuf::from("/proc/self");
+    match std::fs::metadata(&probe) {
+        Ok(m) if m.uid() == 0 => Runner::Root,
+        Ok(_) => Runner::User,
+        Err(e) => Runner::Unknown(format!("{}: {e}", probe.display())),
+    }
+}
+
 /// Creates `dir` and its missing parents with [`NEW_DIR_MODE`]; existing
 /// directories keep their mode.
 pub fn create_dir_private(dir: &Path) -> std::io::Result<()> {
