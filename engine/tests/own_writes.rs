@@ -421,8 +421,23 @@ fn hook_install_under_a_watched_path_leaves_no_drift() {
     );
     assert_eq!(drift(&env).0, 0);
 
-    // the logbook's own settings file is not watched: nothing recorded
+    // the default is the same user-wide file (ADR-0030): nothing to add
     let v = ok(&env, &["hook", "install", "claude-code"]);
+    assert!(v["added"].as_array().unwrap().is_empty(), "{v}");
+    assert_eq!(v["ownWrites"], Value::Null);
+
+    // the logbook's own settings file is not watched: nothing recorded
+    let local = logbook(&env).join(".claude/settings.json");
+    let v = ok(
+        &env,
+        &[
+            "hook",
+            "install",
+            "claude-code",
+            "--settings",
+            local.to_str().unwrap(),
+        ],
+    );
     assert_eq!(v["added"].as_array().unwrap().len(), 3, "{v}");
     assert_eq!(v["ownWrites"], serde_json::json!([]));
     assert!(!owned_file(&env).exists());

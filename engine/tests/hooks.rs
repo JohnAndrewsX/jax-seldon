@@ -31,6 +31,8 @@ struct Hooks {
     project_dir: std::cell::RefCell<Option<String>>,
     /// `SELDON_ACTOR` for the hook processes, if set (WP-096).
     actor_env: std::cell::RefCell<Option<String>>,
+    /// `SELDON_CASE` for the hook processes, if set (ADR-0030).
+    case_env: std::cell::RefCell<Option<String>>,
 }
 
 impl Hooks {
@@ -43,6 +45,7 @@ impl Hooks {
             logbook,
             project_dir: std::cell::RefCell::new(None),
             actor_env: std::cell::RefCell::new(None),
+            case_env: std::cell::RefCell::new(None),
         }
     }
 
@@ -63,6 +66,9 @@ impl Hooks {
         }
         if let Some(actor) = self.actor_env.borrow().as_deref() {
             cmd.env("SELDON_ACTOR", actor);
+        }
+        if let Some(case) = self.case_env.borrow().as_deref() {
+            cmd.env("SELDON_CASE", case);
         }
         cmd
     }
@@ -1187,22 +1193,125 @@ mod install {
         assert_eq!(read(&path), text, "byte for byte");
     }
 
+    /// A user-wide settings file as the operator's: a foreign
+    /// `SessionStart` hook, `model` and `theme` keys.
+    const USER_WIDE: &str = r#"{
+  "theme": "dark",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "~/.local/bin/greet" }] }
+    ]
+  },
+  "model": "opus"
+}
+"#;
+
+    fn head(h: &Hooks) -> String {
+        let log = h.env.git(&h.logbook, &["rev-parse", "HEAD"]);
+        String::from_utf8_lossy(&log.stdout).trim().to_string()
+    }
+
+    /// ADR-0030 §1, acceptance 4: without `--settings` the hooks go into
+    /// the user-wide `~/.claude/settings.json` (a scratch home here), the
+    /// foreign entries stay, a second run writes nothing, the logbook gets
+    /// no commit; `uninstall` leaves the foreign entries.
     #[test]
-    fn default_path_is_the_logbook() {
+    fn default_path_is_user_wide() {
         let h = Hooks::new();
+        let path = h.home().join(".claude/settings.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, USER_WIDE).unwrap();
+        let before_head = h.env.has_git.then(|| head(&h));
+
         let out = h.run(&["hook", "install", "claude-code", "--json"]);
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        let path = h.logbook.join(".claude/settings.json");
-        let settings: Value = serde_json::from_str(&read(&path)).unwrap();
-        assert_eq!(json(&out)["added"].as_array().unwrap().len(), 3);
-        assert_eq!(settings["hooks"].as_object().unwrap().len(), 3);
-        if h.env.has_git {
-            let log = h.env.git(&h.logbook, &["log", "-1", "--format=%s"]);
-            assert_eq!(
-                String::from_utf8_lossy(&log.stdout).trim(),
-                "seldon: hook install claude-code"
-            );
+        let v = json(&out);
+        assert_eq!(v["settings"], path.to_str().unwrap());
+        assert_eq!(v["added"].as_array().unwrap().len(), 3);
+        assert_eq!(v["git"], Value::Null, "nothing in the logbook changed");
+        assert_eq!(v["warnings"], json!([]));
+        let scope = v["scope"].as_str().unwrap();
+        assert!(
+            scope.contains("SELDON_CASE") && scope.contains("inside the logbook"),
+            "{scope}"
+        );
+        assert!(!h.logbook.join(".claude/settings.json").exists());
+        let after: Value = serde_json::from_str(&read(&path)).unwrap();
+        let before: Value = serde_json::from_str(USER_WIDE).unwrap();
+        assert_eq!(after["theme"], before["theme"]);
+        assert_eq!(after["model"], before["model"]);
+        assert_eq!(
+            after["hooks"]["SessionStart"][0], before["hooks"]["SessionStart"][0],
+            "the foreign group first, as it was"
+        );
+        assert_eq!(ours(&after, "PreToolUse").len(), 1);
+        assert_eq!(ours(&after, "SessionStart").len(), 1);
+        assert_eq!(ours(&after, "SessionEnd").len(), 1);
+        if let Some(b) = &before_head {
+            assert_eq!(&head(&h), b, "no commit in the logbook");
         }
+
+        // again: nothing written
+        let text = read(&path);
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let out = h.run(&["hook", "install", "claude-code", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(json(&out)["added"], json!([]));
+        assert_eq!(read(&path), text);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            modified
+        );
+
+        // uninstall: back to the foreign entries alone
+        let out = h.run(&["hook", "uninstall", "claude-code", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(json(&out)["removed"].as_array().unwrap().len(), 3);
+        let left: Value = serde_json::from_str(&read(&path)).unwrap();
+        assert_eq!(left, before);
+        if let Some(b) = &before_head {
+            assert_eq!(&head(&h), b, "no commit in the logbook");
+        }
+    }
+
+    /// `CLAUDE_CONFIG_DIR` moves Claude Code's settings, and the hooks with
+    /// them; no logbook is needed to install them.
+    #[test]
+    fn claude_config_dir_is_honoured() {
+        let h = Hooks::new();
+        let dir = h.env.tmp.path().join("claude-config");
+        let run = |args: &[&str]| {
+            h.command(args, Some(NOW))
+                .env("CLAUDE_CONFIG_DIR", &dir)
+                .output()
+                .unwrap()
+        };
+        let out = run(&["hook", "install", "claude-code", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(
+            json(&out)["settings"],
+            dir.join("settings.json").to_str().unwrap()
+        );
+        assert!(dir.join("settings.json").exists());
+        assert!(!h.home().join(".claude/settings.json").exists());
+        let out = run(&["hook", "uninstall", "claude-code", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(json(&out)["deleted"], true);
+
+        // an empty value is no value
+        let out = h
+            .command(&["hook", "install", "claude-code", "--json"], Some(NOW))
+            .env("CLAUDE_CONFIG_DIR", "")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(h.home().join(".claude/settings.json").exists());
+
+        // without a logbook
+        let env = Env::new(Snapper::Missing);
+        let out = env.seldon(&["hook", "install", "claude-code", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(env.home.join(".claude/settings.json").exists());
     }
 
     #[test]
@@ -1334,12 +1443,30 @@ mod uninstall {
         assert!(!path.exists());
     }
 
+    /// The tidy-up `doctor` offers (ADR-0030 §5): the logbook's own file,
+    /// named with `--settings`, goes, in a commit of the logbook.
     #[test]
-    fn default_path_is_the_logbook_and_commits() {
+    fn the_logbook_file_commits() {
         let h = Hooks::new();
-        let out = h.run(&["hook", "install", "claude-code"]);
+        let local = h.logbook.join(".claude/settings.json");
+        let local = local.to_str().unwrap();
+        let out = h.run(&["hook", "install", "claude-code", "--settings", local]);
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-        let out = h.run(&["hook", "uninstall", "claude-code", "--json"]);
+        if h.env.has_git {
+            let log = h.env.git(&h.logbook, &["log", "-1", "--format=%s"]);
+            assert_eq!(
+                String::from_utf8_lossy(&log.stdout).trim(),
+                "seldon: hook install claude-code"
+            );
+        }
+        let out = h.run(&[
+            "hook",
+            "uninstall",
+            "claude-code",
+            "--settings",
+            local,
+            "--json",
+        ]);
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         let v = json(&out);
         assert_eq!(v["deleted"], true, "{v}");
@@ -1426,8 +1553,16 @@ mod uninstall {
         // a harness never calls it: errors keep their exit code instead of
         // the agent hooks' silent 0
         let env = Env::new(Snapper::Missing);
-        let out = env.seldon(&["hook", "uninstall", "claude-code"]);
-        assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+        let broken = env.tmp.path().join("settings.json");
+        std::fs::write(&broken, "{ not json").unwrap();
+        let out = env.seldon(&[
+            "hook",
+            "uninstall",
+            "claude-code",
+            "--settings",
+            broken.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
         let out = env.seldon(&["hook", "uninstall", "generic"]);
         assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     }
@@ -2072,8 +2207,10 @@ mod session_scope {
         assert!(journal.contains("session ended; "), "{journal}");
     }
 
+    /// The install says which sessions the hooks serve; only `scope =
+    /// "all"` makes that a warning (ADR-0030 §5).
     #[test]
-    fn install_warns_about_a_settings_file_outside_the_logbook() {
+    fn install_says_which_sessions_are_served() {
         let h = Hooks::new();
         let install = |settings: Option<&str>| {
             let mut args = vec!["hook", "install", "claude-code", "--json"];
@@ -2082,39 +2219,139 @@ mod session_scope {
             }
             let out = h.run(&args);
             assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-            json(&out)["warnings"].clone()
+            json(&out)
         };
-        let warnings = install(Some("~/.claude/settings.json"));
-        let text = warnings[0].as_str().unwrap();
-        assert_eq!(warnings.as_array().unwrap().len(), 1, "{warnings}");
-        assert!(text.contains("outside the logbook"), "{text}");
-        assert!(text.contains("every session"), "{text}");
-        assert!(text.contains(r#"[hooks] scope = "logbook""#), "{text}");
-        // the human report says it too, also when nothing was added
-        let out = h.run(&[
-            "hook",
-            "install",
-            "claude-code",
-            "--settings",
-            "~/.claude/settings.json",
-        ]);
-        assert!(
-            stdout(&out).contains("\nwarning: this settings file is outside the logbook"),
-            "{}",
-            stdout(&out)
-        );
-
-        // inside the logbook: no warning
         let inside = h.logbook.join("areas/x/.claude/settings.json");
-        assert_eq!(install(Some(inside.to_str().unwrap())), json!([]));
-        assert_eq!(install(None), json!([]));
+        for settings in [None, Some("~/.claude/settings.json"), inside.to_str()] {
+            let v = install(settings);
+            assert_eq!(v["warnings"], json!([]), "{settings:?}");
+            let text = v["scope"].as_str().unwrap();
+            assert!(text.contains("every session that reads"), "{text}");
+            assert!(text.contains("inside the logbook"), "{text}");
+            assert!(
+                text.contains("`seldon agent start` launched (SELDON_CASE)"),
+                "{text}"
+            );
+            assert!(text.contains(r#"[hooks] scope = "logbook""#), "{text}");
+        }
+        // the human report says it too, also when nothing was added
+        let out = h.run(&["hook", "install", "claude-code"]);
+        let text = stdout(&out);
+        assert!(
+            text.contains("\nClaude Code runs these hooks in every session"),
+            "{text}"
+        );
+        assert!(!text.contains("warning:"), "{text}");
 
         h.configure(|c| c.hooks.scope = seldon::config::HookScope::All);
-        let warnings = install(Some("~/.claude/settings.json"));
-        let text = warnings[0].as_str().unwrap();
+        let v = install(None);
+        let text = v["warnings"][0].as_str().unwrap();
         assert!(text.contains(r#"[hooks] scope = "all""#), "{text}");
         assert!(
             text.contains("records the commands of each of them"),
+            "{text}"
+        );
+        let out = h.run(&["hook", "install", "claude-code"]);
+        assert!(
+            stdout(&out).contains("\nwarning: Claude Code runs"),
+            "{}",
+            stdout(&out)
+        );
+    }
+
+    /// ADR-0030 §1, acceptance 2: a session `seldon agent start` launched
+    /// (`SELDON_CASE` holds a case id) is served wherever it works: its
+    /// commands are recorded with the active case, its context opens with
+    /// the launch line, its end is journalled and committed.
+    #[test]
+    fn a_session_seldon_launched_is_served_anywhere() {
+        let h = Hooks::new();
+        let id = h.active_case();
+        *h.case_env.borrow_mut() = Some(id.clone());
+        *h.project_dir.borrow_mut() = Some(OTHER.to_string());
+        calls_from(&h, OTHER, 0);
+        let commands = h.commands();
+        assert_eq!(commands.len(), 4, "{commands:?}");
+        assert!(
+            commands.iter().all(|c| c["case"] == json!(id)),
+            "{commands:?}"
+        );
+
+        let text = stdout(&session_start(&h, Some(OTHER)));
+        // the test logbook lies outside the home: shown as it is
+        let shown = h.logbook.display();
+        assert!(
+            text.starts_with(&format!(
+                "# Seldon logbook context\n\nLaunched by seldon agent start on {id}; logbook \
+                 {shown}; this session is recorded.\n\nLines that start with `>`"
+            )),
+            "{text}"
+        );
+
+        session_stop(&h, OTHER);
+        let journal = read(&h.logbook.join("journal/2026/2026-10-01.md"));
+        assert!(journal.contains("session ended; "), "{journal}");
+        if h.env.has_git {
+            let log = h.env.git(&h.logbook, &["log", "-1", "--format=%s"]);
+            assert_eq!(
+                String::from_utf8_lossy(&log.stdout).trim(),
+                "seldon: session ended (agent:claude-code)"
+            );
+        }
+
+        // the marker names the launch, not the case: an event still goes to
+        // the active case
+        let other = h.active_case();
+        calls_from(&h, OTHER, 1);
+        let commands = h.commands();
+        assert_eq!(commands.len(), 8);
+        assert!(commands[4..].iter().all(|c| c["case"] == json!(other)));
+    }
+
+    /// A marker that is empty or not a case id is no marker: WP-063's
+    /// outside forms record nothing with it; inside the logbook a session
+    /// without the marker is served as before, without the launch line.
+    #[test]
+    fn a_marker_that_is_no_case_id_serves_nothing() {
+        let h = Hooks::new();
+        h.active_case();
+        let logbook = h.logbook.to_str().unwrap().to_string();
+        let outside = [
+            OTHER.to_string(),
+            h.env.tmp.path().to_str().unwrap().to_string(),
+            format!("{logbook}-other"),
+            format!("{logbook}/../made-up"),
+            "made-up/relative".to_string(),
+            String::new(),
+        ];
+        let mut n = 0;
+        for marker in ["", "not-a-case", " C-2026-001", "C-2026-1", "c-2026-001"] {
+            *h.case_env.borrow_mut() = Some(marker.to_string());
+            for cwd in &outside {
+                n += 1;
+                calls_from(&h, cwd, n);
+                let out = session_start(&h, Some(cwd));
+                assert_eq!(stdout(&out), "", "{marker:?} {cwd}: no context");
+                session_stop(&h, cwd);
+            }
+        }
+        assert!(h.commands().is_empty(), "{:?}", h.commands());
+        assert!(!h.logbook.join("journal/2026/2026-10-01.md").exists());
+
+        // inside the logbook: served, no launch line
+        *h.case_env.borrow_mut() = None;
+        let text = stdout(&session_start(&h, Some(&logbook)));
+        assert!(
+            text.starts_with("# Seldon logbook context\n\nLines that start with"),
+            "{text}"
+        );
+        assert!(!text.contains("Launched by"), "{text}");
+        // with `scope = "all"` and a marker, the line is there too
+        h.configure(|c| c.hooks.scope = seldon::config::HookScope::All);
+        *h.case_env.borrow_mut() = Some("C-2026-001".to_string());
+        let text = stdout(&session_start(&h, Some(OTHER)));
+        assert!(
+            text.contains("\nLaunched by seldon agent start on C-2026-001; "),
             "{text}"
         );
     }
@@ -2141,6 +2378,39 @@ mod post_tool_use {
             assert_eq!(stderr(&out), "");
         }
         assert_eq!(h.commands().len(), 1, "{:?}", h.commands());
+    }
+
+    /// ADR-0030 §5, acceptance 3: the hooks in two settings files run
+    /// twice per tool call; the second PreToolUse records nothing, also
+    /// when both wait for the lock together.
+    #[test]
+    fn two_pre_tool_use_calls_for_one_tool_call_write_one_event() {
+        let h = Hooks::new();
+        let pre = payload("claude-code-mutating.json", "PreToolUse");
+        h.hook("claude-code", &pre);
+        h.hook("claude-code", &pre);
+        assert_eq!(h.commands().len(), 1, "{:?}", h.commands());
+
+        let mut other: Value = serde_json::from_str(&pre).unwrap();
+        other["tool_use_id"] = json!("toolu_other");
+        let other = other.to_string();
+        let held = lock::acquire(&h.env.lock_file()).unwrap();
+        let first = h.spawn_hook("claude-code", &other);
+        let second = h.spawn_hook("claude-code", &other);
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        drop(held);
+        for child in [first, second] {
+            let out = child.wait_with_output().unwrap();
+            assert_eq!(out.status.code(), Some(0));
+            assert_eq!(stderr(&out), "");
+        }
+        assert_eq!(h.commands().len(), 2, "{:?}", h.commands());
+        // a call without an id cannot be matched: each is recorded
+        let mut bare: Value = serde_json::from_str(&pre).unwrap();
+        bare.as_object_mut().unwrap().remove("tool_use_id");
+        h.hook("claude-code", &bare.to_string());
+        h.hook("claude-code", &bare.to_string());
+        assert_eq!(h.commands().len(), 4);
     }
 
     #[test]

@@ -270,14 +270,16 @@ mod init {
         // installed by the wizard (WP-024), no longer a next step
         let text = stdout(&out);
         assert!(
-            text.contains("Harness claude-code: .claude/settings.json: 3 hook(s) added"),
+            text.contains("Harness claude-code: ~/.claude/settings.json: 3 hook(s) added"),
             "{text}"
         );
         assert!(
             !text.contains("  seldon hook install claude-code"),
             "{text}"
         );
-        assert!(root.join(".claude/settings.json").is_file());
+        // user-wide (ADR-0030 §1), not in the logbook
+        assert!(env.home.join(".claude/settings.json").is_file());
+        assert!(!root.join(".claude/settings.json").exists());
     }
 
     #[test]
@@ -1052,7 +1054,10 @@ mod setup {
         let setup = &v["harnessSetup"]["claude-code"];
         assert_eq!(setup["added"].as_array().unwrap().len(), 3, "{setup}");
         let root = env.tmp.path().join("logbook");
-        let settings = root.join(".claude/settings.json");
+        // user-wide (ADR-0030 §1), as `hook install claude-code` writes it
+        let settings = env.home.join(".claude/settings.json");
+        assert_eq!(setup["settings"], settings.to_str().unwrap());
+        assert!(!root.join(".claude/settings.json").exists());
         let text = std::fs::read_to_string(&settings).unwrap();
         let s: serde_json::Value = serde_json::from_str(&text).unwrap();
         for (event, command) in [
@@ -1078,14 +1083,12 @@ mod setup {
         assert_eq!(a["present"].as_array().unwrap().len(), 3);
         assert_eq!(std::fs::read_to_string(&settings).unwrap(), text);
 
-        // the settings are part of the first commit
+        // outside the logbook: in no commit of it
         if env.has_git {
             assert_eq!(
-                stdout(&env.git(
-                    &root,
-                    &["log", "--format=%s", "--", ".claude/settings.json"]
-                )),
-                "seldon: init logbook\n"
+                stdout(&env.git(&root, &["status", "--porcelain"])),
+                "",
+                "nothing left over"
             );
         }
     }
@@ -1112,7 +1115,7 @@ mod setup {
     }
 
     #[test]
-    fn omarchy_agent_kit_is_copied_and_claude_code_merged_into_it() {
+    fn omarchy_agent_kit_is_copied_and_claude_code_goes_user_wide() {
         let env = Env::new(Snapper::Allowed);
         let kit = kit(&env);
         let out = init_with(
@@ -1151,20 +1154,25 @@ mod setup {
             0o111
         );
         assert!(root.join(".claude/skills/zones/SKILL.md").is_file());
-        // the kit's guard and Seldon's hooks side by side
-        let s: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(root.join(".claude/settings.json")).unwrap(),
-        )
-        .unwrap();
-        let pre: Vec<&str> = s["hooks"]["PreToolUse"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|g| g["hooks"][0]["command"].as_str().unwrap())
-            .collect();
+        // the kit's guard stays in the logbook's settings; Seldon's hooks
+        // go into the user-wide ones (ADR-0030 §1)
+        let pre = |path: &std::path::Path| -> Vec<String> {
+            let s: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            s["hooks"]["PreToolUse"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|g| g["hooks"][0]["command"].as_str().unwrap().to_string())
+                .collect()
+        };
         assert_eq!(
-            pre,
-            ["python3 .claude/hooks/guard.py", "seldon hook claude-code"]
+            pre(&root.join(".claude/settings.json")),
+            ["python3 .claude/hooks/guard.py"]
+        );
+        assert_eq!(
+            pre(&env.home.join(".claude/settings.json")),
+            ["seldon hook claude-code"]
         );
         let config: toml::Table = std::fs::read_to_string(env.config_file())
             .unwrap()
@@ -1559,6 +1567,7 @@ command changes system state.";
                     "SELDON_ATTENDED=1",
                     "seldon agent start",
                     "sudo",
+                    "SELDON_CASE",
                     "SELDON_ACTOR",
                     "agent:<name>",
                 ],
@@ -1602,8 +1611,9 @@ command changes system state.";
                     "*Privilege Escalation*",
                     "> Do not wrap commands that already manage privilege elevation themselves.",
                     "omarchy pkg add",
+                    "`pkexec sh -c`",
                     "snapper --csvout list-configs",
-                    "pkexec snapper -c <config> create -c number -p -d \"<ID>\"",
+                    "pkexec snapper -c root create -c number -p -d \"<ID>\"",
                     "snapshot <N> (<config>) before <step>",
                     "omarchy-snapshot create",
                 ],
@@ -1671,7 +1681,10 @@ command changes system state.";
                 "## Hooks",
                 &[
                     "seldon hook install claude-code",
-                    "seldon hook generic",
+                    "~/.claude/settings.json",
+                    "SELDON_CASE",
+                    "[hooks] scope = \"all\"",
+                    "seldon hook generic --case <ID>",
                     "seldon hook session-stop --actor agent:<name>",
                     "xargs",
                 ],
@@ -1709,7 +1722,7 @@ command changes system state.";
                 assert!(!agents.contains(dropped), "{language}: {dropped}");
             }
             assert!(
-                agents.starts_with("<!-- seldon:begin rules v3 -->\n"),
+                agents.starts_with("<!-- seldon:begin rules v4 -->\n"),
                 "{language}"
             );
             // Omarchy's privilege wording, word for word (WP-111)
