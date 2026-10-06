@@ -1519,3 +1519,18 @@ fn only_rules_starts_no_program() {
     ]);
     assert_eq!(out.status.code(), Some(3));
 }
+
+/// The skill asks for a command report from outside the logbook only when
+/// the hooks record there (WP-111): doctor names the scope.
+#[test]
+fn doctor_names_the_hook_scope() {
+    let env = Env::new(Snapper::Allowed);
+    env.init_logbook();
+    let v = json(&env.seldon(&["doctor", "--json"]));
+    assert_eq!(v["hooks"], serde_json::json!({ "scope": "logbook" }));
+    let config = env.config_file();
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, format!("{text}\n[hooks]\nscope = \"all\"\n")).unwrap();
+    let v = json(&env.seldon(&["doctor", "--json"]));
+    assert_eq!(v["hooks"], serde_json::json!({ "scope": "all" }));
+}

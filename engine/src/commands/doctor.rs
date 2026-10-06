@@ -288,6 +288,10 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             "logbook": known.then_some(root),
             "checks": checks,
             "drift": drift_json(&effective),
+            // which sessions the hooks record (`[hooks] scope`): the agent
+            // skill reports commands from outside the logbook only with
+            // `all` (WP-111)
+            "hooks": { "scope": effective.hooks.scope },
         }),
         exit,
     })

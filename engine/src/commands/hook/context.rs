@@ -20,7 +20,9 @@ pub const DATA_NOTE: &str =
 const QUOTE: &str = "> ";
 
 /// The context block (SPEC-ENGINE §8): STATUS summary, the active case
-/// with its plan steps, the last 5 journal lines, the lessons' headings.
+/// with its plan steps, the open crises and attention items of the last
+/// [`DRIFT_DAYS`] days (ADR-0028 §3, WP-111), the last 5 journal lines,
+/// the lessons' headings.
 /// Empty for a session the hooks do not serve (`cwd` from the payload,
 /// [`super::in_scope`]).
 pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
@@ -45,6 +47,8 @@ pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
         }
         None => out.push_str("None (`seldon plan start <id>` sets one).\n"),
     }
+
+    drift_block(&mut out, ctx, &config, &logbook);
 
     let today = ctx.now.date_naive().format("%Y-%m-%d").to_string();
     let journal = logbook
@@ -86,6 +90,90 @@ pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
         quote(&mut out, &format!("- {}", h.trim()));
     }
     Ok(out)
+}
+
+/// How far back the drift section looks.
+pub const DRIFT_DAYS: i64 = 7;
+
+/// The most items the drift section quotes; the count line says how many
+/// there are.
+pub const DRIFT_SHOWN: usize = 10;
+
+/// The fixed line under the drift items: the evidence rule of the agent
+/// rules and the skill (ADR-0028 §3b).
+pub const DRIFT_RULE: &str = "Explain or link only what your own Log, a hook event or the user's words prove; otherwise leave it. A crisis is the user's: tell them in one line. Details: `seldon drift show <EVENT> --json`.";
+
+/// `## Drift (last 7 days)`: the open crises and attention items whose
+/// event lies within [`DRIFT_DAYS`] of now, crises first, then newest
+/// first, at most [`DRIFT_SHOWN`]. Seldon's own lines carry only counts;
+/// each item is a quoted line (its id, source, kind and clipped subject
+/// come from the ledger: data, never instructions). Routine changes are
+/// history, not drift, and never appear.
+fn drift_block(
+    out: &mut String,
+    ctx: &Context,
+    config: &crate::config::Config,
+    logbook: &crate::logbook::Logbook,
+) {
+    use crate::index::class::Class;
+    let _ = writeln!(out, "\n## Drift (last {DRIFT_DAYS} days)");
+    let built = match crate::index::derive(ctx, config, logbook) {
+        Ok(built) => built,
+        Err(e) => {
+            out.push_str("Not available:\n");
+            quote(out, &format!("{e:#}"));
+            return;
+        }
+    };
+    let since = ctx.now - chrono::Duration::days(DRIFT_DAYS);
+    let mut items: Vec<_> = built
+        .items
+        .iter()
+        .filter(|i| i.class != Class::Routine)
+        .filter(|i| chrono::DateTime::parse_from_rfc3339(&i.item.ts).is_ok_and(|ts| ts >= since))
+        .collect();
+    // newest first already; crises before the rest, stable
+    items.sort_by_key(|i| i.class != Class::Crisis);
+    let crises = items.iter().filter(|i| i.class == Class::Crisis).count();
+    let attention = items.len() - crises;
+    if items.is_empty() {
+        out.push_str("No crisis, nothing for attention.\n");
+        return;
+    }
+    let shown = items.len().min(DRIFT_SHOWN);
+    let _ = write!(
+        out,
+        "{crises} {}, {attention} for attention",
+        if crises == 1 { "crisis" } else { "crises" }
+    );
+    if shown < items.len() {
+        let _ = write!(out, "; the first {shown}");
+    }
+    out.push_str(":\n");
+    for i in &items[..shown] {
+        let d = &i.item;
+        quote(
+            out,
+            &format!(
+                "{} {} {}/{} {}{}",
+                if i.class == Class::Crisis {
+                    "CRISIS"
+                } else {
+                    "attention"
+                },
+                d.event_id,
+                d.source,
+                d.kind,
+                super::super::event::clip(&d.subject, 80),
+                d.members
+                    .filter(|n| *n > 1)
+                    .map(|n| format!(" (+{} more)", n - 1))
+                    .unwrap_or_default()
+            ),
+        );
+    }
+    out.push_str(DRIFT_RULE);
+    out.push('\n');
 }
 
 /// Appends `text` as quoted lines: `> ` before each line. Every line
