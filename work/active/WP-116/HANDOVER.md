@@ -258,3 +258,84 @@ hook tests set `TZ=Europe/Berlin`):
    both settings files present.
 4. **D1** (launch line also when clause (a) applies) — confirm or narrow
    to clause (b) only.
+
+## Round 1b
+
+Brief: `review-0.1.1/handovers/WP-116-round-1b-brief.md` (private),
+orchestrator decisions on the four open questions; stage 1 reviews
+`a0f4f57` in parallel.
+
+```
+WP-116 ROUND 1b
+Done: (1) a capture carries logbook-only Claude Code hooks user-wide, once (as the user, never as root), with a marker so removed hooks stay removed; (3) the skill's *Privileged Commands* gains "One program per `pkexec`; never bundle privileged commands in `pkexec sh -c`."; SPEC-ENGINE §3/§8, guide 04 en/de, CHANGELOG
+Not done: (2) panel banner — not needed per the brief; (4) noted for the live check; (5) D1 confirmed, nothing to change
+Verified by: flock /tmp/seldon-check.lock just check → exit 0 (`check: ok`) on ebedad1; 5/5 new manual mutants killed
+Guard: one read-only `grep` whose pattern held a package command was blocked by scripts/guard.sh (false positive, nothing ran); not repeated in another wording — the skill edit was made with the Read/Edit tools on the file's content
+```
+
+### Commits
+
+- `9f95860` engine: a capture carries logbook-only Claude Code hooks user-wide, once
+- `927090b` docs: the capture's one-time carry of the hooks user-wide
+- `ebedad1` docs: German guide 04 follows
+- (this section)
+
+### The migration (ADR-0030 §5 made true for the new folder rule)
+
+`hook::migrate_to_user_wide`, called by `capture`'s `upgrade_defaults`
+after the rules and skill upgrades, so under the capture's lock and
+after the WP-111 runner check (root and "cannot tell" skip it; the
+latter with the existing warning).
+
+- Marker `$XDG_STATE_HOME/seldon/hooks-user-wide` present → nothing.
+- The logbook's `.claude/settings.json` holds none of Seldon's hooks
+  (or no file, or not JSON) → nothing, no marker (doctor names the fix).
+- The user-wide file (`hook install`'s default, `CLAUDE_CONFIG_DIR`
+  honoured) holds at least one of Seldon's hooks → nothing added, marker
+  written (doctor reports an incomplete set).
+- It holds none → `merge_claude_hooks` (foreign hooks and keys kept, as
+  `hook install`), own write recorded (`by: seldon capture`,
+  `op: install`), marker written, one `note:` line, `--json`
+  `hooksUserWide` (`~`-path).
+- The user-wide file is not JSON → left alone, a `warnings` line, no
+  marker (the next capture tries again after a fix).
+- The logbook's own file is never touched; while both hold the hooks the
+  dedup records a tool call once, and doctor offers the optional tidy-up.
+
+Decisions (brief silent):
+
+- **R1b-D1** The marker is per state directory (one per user), not per
+  logbook: the user-wide file is per user too.
+- **R1b-D2** "Present user-wide" means any one of the three hooks, so a
+  user who kept only part of them is not overridden; doctor's
+  "incomplete" row covers that case.
+- **R1b-D3** The marker is also written when the hooks are found already
+  user-wide (a fresh 0.1.4 install, or a manual `hook install`), so a
+  later removal is respected in that case as well.
+
+### Tests (scratch HOME; `tests/hooks.rs` `migration::*`)
+
+- `once_with_the_foreign_entries_kept`: migration, the human note line,
+  foreign `SessionStart` group and `theme`/`model` keys equal, the
+  logbook's file byte-for-byte unchanged, marker; a second capture
+  writes nothing (bytes equal); after `hook uninstall claude-code` a
+  capture does not re-install.
+- `json_names_the_file`: `hooksUserWide`, and `CLAUDE_CONFIG_DIR`.
+- `never_as_root`: `SELDON_TEST_ROOT_PROBE=/` → nothing, no marker, the
+  user file byte-for-byte; the next capture as the user migrates.
+- `nothing_without_hooks_in_the_logbook_or_with_them_user_wide`: no
+  hooks anywhere → no file, no marker; one hook already user-wide →
+  file bytes unchanged, marker; user file not JSON → unchanged, warning,
+  no marker.
+- `tests/skills.rs`: the new *Privileged Commands* sentence is pinned in
+  rules and skill.
+
+### Mutants
+
+| # | Mutant | Caught by |
+|---|---|---|
+| M22 | marker ignored | `once_with_the_foreign_entries_kept` |
+| M23 | merged although user-wide hooks exist | `nothing_without_hooks_…` |
+| M24 | no marker after migrating | `once_with_the_foreign_entries_kept` |
+| M25 | migrates without hooks in the logbook | `nothing_without_hooks_…` |
+| M26 | migration not called | all three other `migration::*` tests |
