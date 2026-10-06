@@ -138,8 +138,9 @@ for, store or pass a password.
 
 Each privileged command may ask for the password again (`pkexec` asks every
 time). Take privileged steps in as few commands as the documented route
-allows — one `pkexec pacman -S` for all packages, not one per package. Never
-wrap a command that elevates itself (`omarchy pkg add`, `omarchy snapshot`,
+allows — one `pkexec pacman -S` for all packages, not one per package. One
+program per `pkexec`; never bundle privileged commands in `pkexec sh -c`.
+Never wrap a command that elevates itself (`omarchy pkg add`, `omarchy snapshot`,
 an AUR helper, `makepkg -si`) in `pkexec` or `sudo`: it asks with `sudo` on
 its own, so it needs the user's terminal ([`update.md`](update.md)).
 

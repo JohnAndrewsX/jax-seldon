@@ -1925,6 +1925,95 @@ fn settings_file(
     Ok((path, logbook))
 }
 
+/// The marker in the state directory that the hooks of a logbook's own
+/// settings were carried to the user-wide ones, or found there
+/// ([`migrate_to_user_wide`]): after it, a capture never adds them again.
+pub const MIGRATED_MARKER: &str = "hooks-user-wide";
+
+/// What [`migrate_to_user_wide`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Migration {
+    /// The user-wide settings file the hooks were added to.
+    pub added_to: Option<PathBuf>,
+    pub warnings: Vec<String>,
+}
+
+/// ADR-0030 §5, WP-116 round 1b: an install from before 0.1.4 has Seldon's
+/// hooks in the logbook's own `.claude/settings.json` only, which Claude
+/// Code does not read in `~/Work`, where `agent start` now starts the
+/// agent. Once, the hooks go into the user-wide settings with the merge of
+/// `hook install` (foreign hooks and keys kept), recorded as Seldon's own
+/// write under a watched path. Then, or when the user-wide file already
+/// holds one of Seldon's hooks, [`MIGRATED_MARKER`] is written: a user who
+/// takes the user-wide hooks out later keeps it so. Nothing without hooks
+/// in the logbook's file (`doctor` names the fix). The caller holds the
+/// state lock and runs as the user, never as root.
+pub fn migrate_to_user_wide(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+) -> Migration {
+    let mut out = Migration::default();
+    let marker = ctx.dirs.state_dir.join(MIGRATED_MARKER);
+    if marker.exists() {
+        return out;
+    }
+    let local = logbook.path(LOGBOOK_SETTINGS);
+    if !claude_hooks_in(&local).is_ok_and(|n| n > 0) {
+        return out;
+    }
+    let user = user_settings_file(&ctx.dirs);
+    let shown = ctx.dirs.display(&user);
+    match claude_hooks_in(&user) {
+        Ok(0) => {}
+        Ok(_) => {
+            write_marker(&marker, &mut out);
+            return out;
+        }
+        Err(why) => {
+            out.warnings.push(format!(
+                "Claude Code's hooks were not added to {shown}: it {why}; fix it, then seldon hook install claude-code"
+            ));
+            return out;
+        }
+    }
+    match merge_claude_hooks(&user, &shown) {
+        Ok(merged) => {
+            if !merged.added.is_empty()
+                && let Err(e) = super::setup::record_own_writes_under(
+                    lock,
+                    ctx,
+                    config,
+                    std::slice::from_ref(&user),
+                    "seldon capture",
+                    OwnOp::Install,
+                )
+            {
+                out.warnings
+                    .push(format!("{shown}: {}", super::setup::own_writes_warning(&e)));
+            }
+            out.added_to = Some(user);
+            write_marker(&marker, &mut out);
+        }
+        Err(e) => out.warnings.push(format!(
+            "Claude Code's hooks were not added to {shown}: {e}"
+        )),
+    }
+    out
+}
+
+fn write_marker(marker: &Path, out: &mut Migration) {
+    let text =
+        "Seldon's Claude Code hooks are user-wide (WP-116); a capture does not add them again.\n";
+    if let Err(e) = crate::sys::create_dir_private(marker.parent().unwrap_or(marker))
+        .and_then(|()| std::fs::write(marker, text))
+    {
+        out.warnings
+            .push(format!("cannot write {}: {e}", marker.display()));
+    }
+}
+
 /// Claude Code's configuration folder, when not `~/.claude`.
 pub const CLAUDE_CONFIG_ENV: &str = "CLAUDE_CONFIG_DIR";
 

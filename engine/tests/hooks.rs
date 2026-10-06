@@ -1195,7 +1195,7 @@ mod install {
 
     /// A user-wide settings file as the operator's: a foreign
     /// `SessionStart` hook, `model` and `theme` keys.
-    const USER_WIDE: &str = r#"{
+    pub(super) const USER_WIDE: &str = r#"{
   "theme": "dark",
   "hooks": {
     "SessionStart": [
@@ -2538,5 +2538,178 @@ mod plan_show {
             body.contains("## Made-up heading\nline one\u{2028}"),
             "{body}"
         );
+    }
+}
+
+/// WP-116 round 1b (ADR-0030 §5): a capture carries hooks found only in
+/// the logbook's own settings to the user-wide ones, once.
+mod migration {
+    use super::*;
+
+    fn capture(h: &Hooks, vars: &[(&str, &str)]) -> Value {
+        let mut cmd = h.command(&["--json", "capture", "--all"], Some(NOW));
+        for (k, v) in vars {
+            cmd.env(k, v);
+        }
+        let out = cmd.output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        json(&out)
+    }
+
+    fn marker(h: &Hooks) -> PathBuf {
+        h.home().join(".local/state/seldon/hooks-user-wide")
+    }
+
+    /// An install from before 0.1.4: the hooks in the logbook's file, a
+    /// user-wide file with the user's own entries.
+    fn old_install(h: &Hooks) -> (PathBuf, PathBuf) {
+        let local = h.logbook.join(".claude/settings.json");
+        let out = h.run(&[
+            "hook",
+            "install",
+            "claude-code",
+            "--settings",
+            local.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let user = h.home().join(".claude/settings.json");
+        std::fs::create_dir_all(user.parent().unwrap()).unwrap();
+        std::fs::write(&user, super::install::USER_WIDE).unwrap();
+        (local, user)
+    }
+
+    fn seldon_commands(path: &Path) -> Vec<String> {
+        let v: Value = serde_json::from_str(&read(path)).unwrap();
+        let mut found = Vec::new();
+        for (_, groups) in v["hooks"].as_object().unwrap() {
+            for g in groups.as_array().unwrap() {
+                for hook in g["hooks"].as_array().unwrap() {
+                    let c = hook["command"].as_str().unwrap();
+                    if c.starts_with("seldon hook") {
+                        found.push(c.to_string());
+                    }
+                }
+            }
+        }
+        found.sort();
+        found
+    }
+
+    #[test]
+    fn once_with_the_foreign_entries_kept() {
+        let h = Hooks::new();
+        let (local, user) = old_install(&h);
+        let local_text = read(&local);
+
+        let out = h
+            .command(&["capture", "--all"], Some(NOW))
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(
+            stdout(&out).contains(
+                "\nnote: Claude Code's Seldon hooks added to ~/.claude/settings.json (they were in the logbook's .claude/settings.json only)"
+            ),
+            "{}",
+            stdout(&out)
+        );
+        assert_eq!(
+            seldon_commands(&user),
+            [
+                "seldon hook claude-code",
+                "seldon hook session-start",
+                "seldon hook session-stop"
+            ]
+        );
+        let after: Value = serde_json::from_str(&read(&user)).unwrap();
+        let before: Value = serde_json::from_str(super::install::USER_WIDE).unwrap();
+        assert_eq!(after["theme"], before["theme"]);
+        assert_eq!(after["model"], before["model"]);
+        assert_eq!(
+            after["hooks"]["SessionStart"][0],
+            before["hooks"]["SessionStart"][0]
+        );
+        assert_eq!(
+            read(&local),
+            local_text,
+            "the logbook's file is left as it is"
+        );
+        assert!(marker(&h).exists());
+
+        // idempotent: nothing more, the file as it is
+        let text = read(&user);
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], Value::Null, "{v}");
+        assert_eq!(read(&user), text);
+
+        // the user takes them out again: not re-installed
+        let out = h.run(&["hook", "uninstall", "claude-code"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], Value::Null, "{v}");
+        assert!(seldon_commands(&user).is_empty());
+    }
+
+    #[test]
+    fn json_names_the_file() {
+        let h = Hooks::new();
+        old_install(&h);
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], "~/.claude/settings.json", "{v}");
+        // CLAUDE_CONFIG_DIR is honoured, as by hook install
+        let h = Hooks::new();
+        old_install(&h);
+        let dir = h.env.tmp.path().join("claude-config");
+        let v = capture(&h, &[("CLAUDE_CONFIG_DIR", dir.to_str().unwrap())]);
+        assert_eq!(
+            v["hooksUserWide"],
+            dir.join("settings.json").to_str().unwrap()
+        );
+        assert_eq!(seldon_commands(&dir.join("settings.json")).len(), 3);
+    }
+
+    #[test]
+    fn never_as_root() {
+        let h = Hooks::new();
+        let (_, user) = old_install(&h);
+        // a probe root owns: the capture runs as root
+        let v = capture(&h, &[("SELDON_TEST_ROOT_PROBE", "/")]);
+        assert_eq!(v["hooksUserWide"], Value::Null, "{v}");
+        assert_eq!(read(&user), super::install::USER_WIDE);
+        assert!(!marker(&h).exists());
+        // as the user, later: migrated
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], "~/.claude/settings.json", "{v}");
+    }
+
+    #[test]
+    fn nothing_without_hooks_in_the_logbook_or_with_them_user_wide() {
+        // no hooks anywhere: nothing, no marker (doctor names the fix)
+        let h = Hooks::new();
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], Value::Null, "{v}");
+        assert!(!h.home().join(".claude/settings.json").exists());
+        assert!(!marker(&h).exists());
+
+        // user-wide already (one of three is enough): nothing added, but
+        // done for good
+        let h = Hooks::new();
+        let (_, user) = old_install(&h);
+        let one = r#"{"hooks":{"SessionEnd":[{"hooks":[{"type":"command","command":"seldon hook session-stop"}]}]}}"#;
+        std::fs::write(&user, one).unwrap();
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], Value::Null, "{v}");
+        assert_eq!(read(&user), one);
+        assert!(marker(&h).exists());
+
+        // a user-wide file that is not JSON: left alone, a warning, no marker
+        let h = Hooks::new();
+        let (_, user) = old_install(&h);
+        std::fs::write(&user, "{ not json").unwrap();
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], Value::Null, "{v}");
+        assert!(v["warnings"].to_string().contains("were not added"), "{v}");
+        assert_eq!(read(&user), "{ not json");
+        assert!(!marker(&h).exists());
     }
 }

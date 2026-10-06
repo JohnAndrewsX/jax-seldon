@@ -1212,6 +1212,7 @@ fn the_skill_says_the_rules_in_the_rules_words() {
         "A sub-agent inside your own session shares your attendance and acts as you; privileged steps stay in your session.",
         // ADR-0031: the aim
         "as few password prompts as the route allows",
+        "One program per `pkexec`; never bundle privileged commands in `pkexec sh -c`.",
         "Only when the user asks for exactly that: `seldon init`, `seldon hook install`, `seldon import … --apply`, `seldon agent start`, `seldon rules update`.",
     ] {
         let line = flat(line);

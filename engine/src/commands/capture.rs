@@ -64,7 +64,9 @@
 //! this engine's files in every agent skill folder where it is outdated
 //! and nobody touched it ([`super::skills::upgrade_unedited_under`]). One
 //! note line each; an edited block or skill is left to `doctor` and its
-//! fix, a missing one stays missing. Never as root. Each is on record
+//! fix, a missing one stays missing. Claude Code's hooks found only in the
+//! logbook's own settings go user-wide once
+//! ([`super::hook::migrate_to_user_wide`], WP-116 round 1b). Never as root. Each is on record
 //! (WP-116): the rules file in a commit of its own, `seldon: rules update
 //! (unedited, vN → vM)`, the skill (outside the logbook) as a `seldon`
 //! note in the ledger.
@@ -372,6 +374,9 @@ struct Upgraded {
     rules_commit: Option<super::Commit>,
     /// The agent skill folders whose unedited skill was updated.
     skills: Vec<String>,
+    /// The user-wide Claude Code settings the logbook's hooks were added
+    /// to (WP-116 round 1b), `~`-shortened.
+    hooks_to: Option<String>,
     warnings: Vec<String>,
 }
 
@@ -448,6 +453,9 @@ fn upgrade_defaults(
     let skills = super::skills::upgrade_unedited_under(lock, ctx, config);
     out.skills = skills.updated;
     out.warnings.extend(skills.warnings);
+    let hooks = super::hook::migrate_to_user_wide(lock, ctx, config, logbook);
+    out.hooks_to = hooks.added_to.map(|p| ctx.dirs.display(&p));
+    out.warnings.extend(hooks.warnings);
     out
 }
 
@@ -1099,6 +1107,7 @@ fn render(
             "git": upgraded.rules_commit.as_ref().map_or(serde_json::Value::Null, |c| c.json()),
         })),
         "skillsUpdated": upgraded.skills,
+        "hooksUserWide": upgraded.hooks_to,
         "warnings": warnings,
     });
 
@@ -1150,6 +1159,12 @@ fn render(
             human,
             "\nnote: the Seldon agent skill updated in {} (it was unedited)",
             upgraded.skills.join(", ")
+        );
+    }
+    if let Some(to) = &upgraded.hooks_to {
+        let _ = write!(
+            human,
+            "\nnote: Claude Code's Seldon hooks added to {to} (they were in the logbook's .claude/settings.json only), so the sessions Seldon starts in ~/Work are recorded; your other sessions are not"
         );
     }
     if !since_ignored.is_empty() {
