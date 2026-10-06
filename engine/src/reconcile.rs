@@ -34,7 +34,8 @@ use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
 use crate::attribution;
-use crate::collectors::config::OwnWrites;
+use crate::collectors::config::{self, OwnWrites};
+use crate::config::Dirs;
 use crate::error::{Error, Result};
 use crate::index::Built;
 use crate::index::build::ClassifiedItem;
@@ -314,13 +315,15 @@ pub fn record_cases(logbook: &Logbook, ledger: &Ledger, written: &[Event]) -> Ve
 /// The `explained` resolutions rule 7 writes: one per written config
 /// event without a case that an own write in `own` explains
 /// ([`OwnWrites::explaining`]: an add or change with the hash written, a
-/// removal of the content deleted); `source: seldon`, actor `system`, no
-/// case, detail `installed by <command>` (`removed by <command>` for a
-/// removal command), at `ts`.
+/// removal of the content deleted), detail `installed by <command>`
+/// (`removed by <command>` for a removal command), or whose new content is
+/// a built-in template (`template`, ADR-0028 §2: the detail it returns);
+/// `source: seldon`, actor `system`, no case, at `ts`.
 pub fn own_write_resolutions(
     written: &[Event],
     own: &OwnWrites,
     ts: DateTime<FixedOffset>,
+    template: impl Fn(&Event) -> Option<&'static str>,
 ) -> Vec<Event> {
     written
         .iter()
@@ -332,10 +335,13 @@ pub fn own_write_resolutions(
             )
         })
         .filter_map(|e| {
-            let w = own.explaining(e)?;
+            let detail = match own.explaining(e) {
+                Some(w) => format!("{} by {}", w.op.verb(), w.by),
+                None => template(e)?.to_string(),
+            };
             let mut r = Event::new(ts, Source::Seldon, Kind::Resolution, e.subject.clone())
                 .actor(ACTOR_SYSTEM)
-                .detail(format!("{} by {}", w.op.verb(), w.by));
+                .detail(detail);
             r.refers_to = Some(e.id);
             r.resolution = Some(Resolution::Explained);
             Some(r)
@@ -344,33 +350,45 @@ pub fn own_write_resolutions(
 }
 
 /// After a capture that ran the config collector (SPEC-ENGINE §5 rule 7):
-/// appends the [`own_write_resolutions`] of `written` and forgets every
+/// appends the [`own_write_resolutions`] of `written` (own writes and the
+/// built-in templates, [`config::builtin_template`]) and forgets every
 /// recorded own write, explained or not (the collector has now seen each
-/// file: as an event, in its baseline, or changed by someone else).
+/// file: as an event, in its baseline, or changed by someone else). An
+/// unreadable `owned.json` is kept and only the templates explain.
 /// Returns how many events were explained, and warnings: the append
 /// already happened, so nothing here fails the capture.
 pub fn explain_own_writes(
     lock: &Lock,
     ledger: &Ledger,
+    dirs: &Dirs,
     file: &std::path::Path,
     written: &[Event],
     ts: DateTime<FixedOffset>,
 ) -> (usize, Vec<String>) {
-    let own = match OwnWrites::load(file) {
-        Ok(own) if own.0.is_empty() => return (0, Vec::new()),
-        Ok(own) => own,
-        Err(e) => return (0, vec![format!("own writes not read: {e}")]),
-    };
     let mut warnings = Vec::new();
-    let lines = own_write_resolutions(written, &own, ts);
-    let explained = match ledger.append(lock, lines) {
-        Ok(lines) => lines.len(),
+    let (own, loaded) = match OwnWrites::load(file) {
+        Ok(own) => (own, true),
         Err(e) => {
-            warnings.push(format!("own writes not explained: {e}"));
-            0
+            warnings.push(format!("own writes not read: {e}"));
+            (OwnWrites::default(), false)
         }
     };
-    if let Err(e) = OwnWrites::default().save(file) {
+    let lines = own_write_resolutions(written, &own, ts, |e| config::builtin_template(dirs, e));
+    let explained = if lines.is_empty() {
+        0
+    } else {
+        match ledger.append(lock, lines) {
+            Ok(lines) => lines.len(),
+            Err(e) => {
+                warnings.push(format!("own writes not explained: {e}"));
+                0
+            }
+        }
+    };
+    if loaded
+        && !own.0.is_empty()
+        && let Err(e) = OwnWrites::default().save(file)
+    {
         warnings.push(format!("{e:#}"));
     }
     (explained, warnings)

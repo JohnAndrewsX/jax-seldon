@@ -335,15 +335,7 @@ impl Config {
     /// list, appends the current defaults it lacks and returns them; a
     /// list the user changed is never widened (empty result).
     pub fn upgrade_watch_paths(&mut self) -> Vec<String> {
-        let mut have: Vec<&str> = self.watch_paths.iter().map(String::as_str).collect();
-        have.sort_unstable();
-        have.dedup();
-        let earlier = EARLIER_DEFAULT_WATCH_PATHS.iter().any(|list| {
-            let mut list = list.to_vec();
-            list.sort_unstable();
-            list == have
-        });
-        if !earlier {
+        if !self.has_earlier_default_watch_paths() {
             return Vec::new();
         }
         let added: Vec<String> = DEFAULT_WATCH_PATHS
@@ -353,6 +345,19 @@ impl Config {
             .collect();
         self.watch_paths.extend(added.iter().cloned());
         added
+    }
+
+    /// Whether `watchPaths` equals an earlier engine's default list, in
+    /// any order ([`EARLIER_DEFAULT_WATCH_PATHS`]).
+    pub fn has_earlier_default_watch_paths(&self) -> bool {
+        let mut have: Vec<&str> = self.watch_paths.iter().map(String::as_str).collect();
+        have.sort_unstable();
+        have.dedup();
+        EARLIER_DEFAULT_WATCH_PATHS.iter().any(|list| {
+            let mut list = list.to_vec();
+            list.sort_unstable();
+            list == have
+        })
     }
 
     /// The current default `watchPaths` a user-changed list lacks (for
@@ -582,6 +587,43 @@ fn is_default_routine_packages(v: &Vec<String>) -> bool {
 
 fn is_default_always_red_paths(v: &Vec<String>) -> bool {
     *v == strings(&DEFAULT_ALWAYS_RED_PATHS)
+}
+
+impl DriftConfig {
+    /// The keys whose value differs from the default (`doctor`, ADR-0028
+    /// §6: the config can silence rules, so the change is shown).
+    pub fn non_default(&self) -> Vec<&'static str> {
+        let d = DriftConfig::default();
+        let mut keys = Vec::new();
+        if self.always_red != d.always_red {
+            keys.push("alwaysRed");
+        }
+        if self.attention != d.attention {
+            keys.push("attention");
+        }
+        if self.routine != d.routine {
+            keys.push("routine");
+        }
+        if self.routine_paths != d.routine_paths {
+            keys.push("routinePaths");
+        }
+        if self.routine_packages != d.routine_packages {
+            keys.push("routinePackages");
+        }
+        if self.always_red_paths != d.always_red_paths {
+            keys.push("alwaysRedPaths");
+        }
+        keys
+    }
+
+    /// Entries of `routine` that name no rule ([`ROUTINE_RULES`]).
+    pub fn unknown_routine(&self) -> Vec<&str> {
+        self.routine
+            .iter()
+            .map(String::as_str)
+            .filter(|r| !ROUTINE_RULES.contains(r))
+            .collect()
+    }
 }
 
 impl Default for DriftConfig {

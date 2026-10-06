@@ -70,6 +70,9 @@ use serde_json::Value;
 use super::plugins::Plugins;
 use super::{Collector, Ctx, Lost, Outcome, Tz, to_cursor, typed_cursor};
 use crate::config::{Config, Dirs};
+use crate::index::class::{
+    MATCHES_KEY, MATCHES_OMARCHY_DEFAULT, MATCHES_SYSTEM_LINK, MATCHES_THEME_REPO,
+};
 use crate::logbook::lock::Lock;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys;
@@ -774,6 +777,143 @@ fn diff(ctx: &Ctx, base: &Generation, scan: &Scan, since: DateTime<FixedOffset>)
     events
 }
 
+/// ADR-0028 §5: the capture-time evidence of a new `config-add` or
+/// `config-change`, as `meta.matches` (the boolean fact, never the target
+/// or the content): `system-link` for a symlink whose target lies under
+/// `/usr/` (`systemctl --user enable`, Omarchy's migrations),
+/// `omarchy-default` for content equal to Omarchy's shipped copy (its
+/// hash), `theme-repo` for a file of a theme directory with a `.git`
+/// directory (`omarchy theme install`, which strips a theme's code).
+fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
+    for e in events
+        .iter_mut()
+        .filter(|e| matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange))
+    {
+        let mark = evidence(
+            ctx.dirs,
+            &ctx.sources.omarchy_path,
+            &e.subject,
+            e.meta.hash_to.as_deref(),
+        );
+        if let Some(mark) = mark {
+            e.meta
+                .extra
+                .insert(MATCHES_KEY.to_string(), Value::String(mark.to_string()));
+        }
+    }
+}
+
+/// The evidence mark of the file `key` whose content hashes to `hash`
+/// ([`mark_evidence`]).
+pub fn evidence(
+    dirs: &Dirs,
+    omarchy: &Path,
+    key: &str,
+    hash: Option<&str>,
+) -> Option<&'static str> {
+    let path = key_path(dirs, key);
+    let is_link = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
+    if is_link && std::fs::canonicalize(&path).is_ok_and(|t| t.starts_with("/usr/")) {
+        return Some(MATCHES_SYSTEM_LINK);
+    }
+    if let Some(hash) = hash
+        && omarchy_copies(dirs, omarchy, &path).iter().any(|copy| {
+            std::fs::metadata(copy)
+                .ok()
+                .filter(|m| m.is_file())
+                .and_then(|m| hash_file(copy, m.len()))
+                .is_some_and(|h| h == hash)
+        })
+    {
+        return Some(MATCHES_OMARCHY_DEFAULT);
+    }
+    let themes = dirs.home.join(".config/omarchy/themes");
+    if let Ok(rest) = path.strip_prefix(&themes)
+        && let Some(slug) = rest.components().next()
+        && rest.components().count() > 1
+        && themes.join(slug).join(".git").exists()
+    {
+        return Some(MATCHES_THEME_REPO);
+    }
+    None
+}
+
+/// Omarchy's shipped copies of `path`: `$OMARCHY_PATH/config/<rel>` for
+/// `~/.config/<rel>` (`omarchy refresh config`, migrations), and for a
+/// desktop entry `~/.local/share/applications/<name>` the file of that
+/// name under `$OMARCHY_PATH/applications/`, or for `Alacritty.desktop`
+/// `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`
+/// (`omarchy-refresh-applications`).
+fn omarchy_copies(dirs: &Dirs, omarchy: &Path, path: &Path) -> Vec<PathBuf> {
+    if let Ok(rel) = path.strip_prefix(dirs.home.join(".config")) {
+        return vec![omarchy.join("config").join(rel)];
+    }
+    if let Ok(rel) = path.strip_prefix(dirs.home.join(".local/share/applications")) {
+        let mut copies = vec![omarchy.join("applications").join(rel)];
+        if rel == Path::new("Alacritty.desktop") {
+            copies.push(omarchy.join("default/alacritty/Alacritty.desktop"));
+        }
+        return copies;
+    }
+    Vec::new()
+}
+
+/// `engine/systemd/seldon-watch.service`, compiled in: the watcher unit
+/// `install.sh --unit` writes (with its own `ExecStart`).
+pub const WATCH_UNIT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/systemd/seldon-watch.service"
+));
+
+/// Rule 7 evidence beyond `owned.json` (ADR-0028 §2): a written config
+/// event whose new content is one of the engine's built-in templates, so
+/// a lost state directory or `install.sh --unit` is no drift. The theme
+/// hook by its file name and hash; the watcher unit by its file name and
+/// content, read once more and
+/// checked against the event's hash, with any `ExecStart=<prefix> watch`
+/// line. Returns the resolution's detail.
+pub fn builtin_template(dirs: &Dirs, e: &Event) -> Option<&'static str> {
+    if !matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange) {
+        return None;
+    }
+    let hash = e.meta.hash_to.as_deref()?;
+    let hook = crate::commands::setup::THEME_HOOK_NAME;
+    if e.subject.rsplit('/').next() == Some(hook)
+        && hash == sys::sha256_hex(crate::commands::setup::THEME_HOOK_SCRIPT.as_bytes())
+    {
+        return Some("installed by seldon init --theme-hook (built-in template)");
+    }
+    if !e.subject.ends_with("/seldon-watch.service") {
+        return None;
+    }
+    let path = key_path(dirs, &e.subject);
+    let meta = std::fs::metadata(&path).ok().filter(|m| m.is_file())?;
+    if meta.len() > MAX_FILE_SIZE {
+        return None;
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    (sys::sha256_hex(text.as_bytes()) == hash && is_watch_unit(&text))
+        .then_some("installed by install.sh --unit (built-in template)")
+}
+
+/// Whether `text` is [`WATCH_UNIT`] with any `ExecStart` that runs a
+/// `seldon` binary's `watch` (no whitespace in the path).
+fn is_watch_unit(text: &str) -> bool {
+    let exec = |l: &str| {
+        l.strip_prefix("ExecStart=")
+            .and_then(|rest| rest.strip_suffix("/seldon watch"))
+            .is_some_and(|prefix| !prefix.is_empty() && !prefix.contains(char::is_whitespace))
+    };
+    let (mut ours, mut theirs) = (WATCH_UNIT.lines(), text.lines());
+    loop {
+        match (ours.next(), theirs.next()) {
+            (None, None) => return true,
+            (Some(a), Some(b)) if a == b || (exec(a) && exec(b)) => {}
+            _ => return false,
+        }
+    }
+}
+
 /// Fits `base`, taken in its own scope, to `scope`: drops the files the
 /// scope no longer reaches, and adds the files of `scan` it did not reach
 /// before (when its scope is known) as they are now. A scope change is no
@@ -1073,7 +1213,9 @@ impl ConfigFiles {
                         "watch scope changed: {left} file(s) left it, {entered} entered it; no events for them"
                     ));
                 }
-                diff(ctx, &base, &scan, prev.checked)
+                let mut events = diff(ctx, &base, &scan, prev.checked);
+                mark_evidence(ctx, &mut events);
+                events
             }
             (Some(_), None) => {
                 notes.push(format!(

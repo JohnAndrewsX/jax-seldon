@@ -99,7 +99,16 @@ pub struct CollectorReport {
 
 /// `seldon capture`.
 pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
-    let config = ctx.load_config()?.unwrap_or_default();
+    let loaded = ctx.load_config()?;
+    let has_file = loaded.is_some();
+    let mut config = loaded.unwrap_or_default();
+    // ADR-0028 §4d: a list that still equals an earlier engine's default
+    // gains the new default paths, once (saved below, under the lock)
+    let watch_added = if has_file {
+        config.upgrade_watch_paths()
+    } else {
+        Vec::new()
+    };
     let (root, _) = ctx.resolve_logbook(None, Some(&config));
     let mut logbook = Logbook::open(&root)?;
     // one logbook, one key in cursors.json, however its path was spelled
@@ -117,6 +126,13 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     let selected = select(&config, &args)?;
 
     let lock = lock::acquire(&ctx.dirs.lock_file())?;
+    let mut warnings = Vec::new();
+    if !watch_added.is_empty()
+        && let Err(e) = config.save(&ctx.config_file)
+    {
+        // this capture still watches them; the next one tries again
+        warnings.push(format!("the new default watch paths were not saved: {e:#}"));
+    }
     let ledger = Ledger::new(
         &logbook,
         Redactor::with_patterns(&config.redaction.patterns)?,
@@ -254,7 +270,6 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     cursors.pending_notes.clear();
     cursors.silent_baselines.clear();
     cursors.save(&cursors_path)?;
-    let mut warnings = Vec::new();
     if let Some(reset) = &reset {
         warnings.push(reset_warning(ctx, reset));
     }
@@ -271,8 +286,14 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     // rule 7: only a run of the config collector has seen the own writes
     let mut explained = 0;
     if reports.iter().any(|r| r.name == "config" && r.ran && r.ok) {
-        let (n, warnings) =
-            crate::reconcile::explain_own_writes(&lock, &ledger, &owned_file, &written, now);
+        let (n, warnings) = crate::reconcile::explain_own_writes(
+            &lock,
+            &ledger,
+            &ctx.dirs,
+            &owned_file,
+            &written,
+            now,
+        );
         explained = n;
         for w in warnings {
             eprintln!("seldon: warning: {w}");
@@ -294,6 +315,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         &reports,
         &since_ignored,
         (explained, explained_self),
+        &watch_added,
         &warnings,
     ))
 }
@@ -906,6 +928,7 @@ fn render(
     reports: &[CollectorReport],
     since_ignored: &[&str],
     (explained, explained_self): (usize, usize),
+    watch_added: &[String],
     warnings: &[String],
 ) -> Output {
     let ok = reports.iter().all(|r| r.ok);
@@ -938,6 +961,7 @@ fn render(
         "sinceIgnored": since_ignored,
         "explainedOwn": explained,
         "explainedSelf": explained_self,
+        "watchPathsAdded": watch_added,
         "warnings": warnings,
     });
 
@@ -964,6 +988,13 @@ fn render(
         let _ = write!(
             human,
             "\nnote: {explained_self} event(s) explained as seldon updating itself"
+        );
+    }
+    if !watch_added.is_empty() {
+        let _ = write!(
+            human,
+            "\nnote: config.toml now also watches {} (new defaults of this engine; files already there record nothing)",
+            watch_added.join(", ")
         );
     }
     if !since_ignored.is_empty() {
