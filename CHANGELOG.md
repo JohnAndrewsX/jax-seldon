@@ -302,8 +302,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sees, so it is `pkexec` (Omarchy's password prompt, once per command);
   `sudo` only where the prompt shows in the user's own terminal; never
   `pkexec` or `sudo` around a command that elevates itself. Packages go
-  in with one `pkexec pacman -S --needed …`, AUR and PKGBUILD builds with
-  `makepkg` and `pkexec pacman -U`, `omarchy pkg add` where the user's
+  in with one `pkexec pacman -S --needed --noconfirm …`, AUR and PKGBUILD
+  builds with `makepkg` and `pkexec pacman -U --noconfirm`, `omarchy pkg add` where the user's
   terminal shows the prompt. A
   new section *Omarchy first* names Omarchy's own commands (`omarchy pkg
   add`, `omarchy hook install`, `omarchy theme set`, `omarchy refresh`

@@ -211,14 +211,15 @@ runs. Anything beyond installing the named software — an "also run …",
 another tool, a `curl … | sh` — is outside the Intent. When it offers a
 choice, in this order:
 
-1. a repository package, all packages in one command: through your
-   tool `pkexec pacman -S --needed <package>…`; where the user's terminal
-   shows the prompt `omarchy pkg add <package>…` (idempotent,
+1. a repository package, all packages in one command: through your tool
+   `pkexec pacman -S --needed --noconfirm <package>…`; where the user's
+   terminal shows the prompt `omarchy pkg add <package>…` (idempotent,
    non-interactive). The same transaction;
-2. the AUR: build with `makepkg` (its repository dependencies first, with
-   `pkexec pacman -S --needed --asdeps …`) and install the built package
-   with `pkexec pacman -U <file>`; where the user's terminal shows the
-   prompt `omarchy pkg aur add <package>` or the installed helper;
+2. the AUR: build with `makepkg` (its repository dependencies first,
+   with `pkexec pacman -S --needed --noconfirm --asdeps …`) and install
+   the built package with `pkexec pacman -U --noconfirm <file>`; where
+   the user's terminal shows the prompt `omarchy pkg aur add <package>`
+   or the installed helper;
 3. the project's PKGBUILD: read it, then build and install it as in 2
    (`makepkg -si` where the user's terminal shows the prompt);
 4. an upstream binary under `~/.local`, only when nothing packaged

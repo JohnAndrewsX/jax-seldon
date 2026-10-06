@@ -279,16 +279,18 @@ another tool, a `curl … | sh` — is outside the Intent. When it offers a
 choice, in this order:
 
 1. a repository package, all packages in one command: through your tool
-   `pkexec pacman -S --needed <package>…`; where the user's terminal
-   shows the prompt `omarchy pkg add <package>…` (idempotent,
+   `pkexec pacman -S --needed --noconfirm <package>…`; where the user's
+   terminal shows the prompt `omarchy pkg add <package>…` (idempotent,
    non-interactive) — the same transaction;
-2. the AUR: build with `makepkg` (its repository dependencies first, with
-   `pkexec pacman -S --needed --asdeps …`) and install the built package
-   with `pkexec pacman -U <file>`; where the user's terminal shows the
-   prompt `omarchy pkg aur add <package>` or the installed helper;
+2. the AUR: build with `makepkg` (its repository dependencies first,
+   with `pkexec pacman -S --needed --noconfirm --asdeps …`) and install
+   the built package with `pkexec pacman -U --noconfirm <file>`; where
+   the user's terminal shows the prompt `omarchy pkg aur add <package>`
+   or the installed helper;
 3. the project's PKGBUILD: read it, then build and install it as in 2
    (`makepkg -si` where the user's terminal shows the prompt);
-4. an upstream binary under `~/.local`, only when nothing packaged exists.
+4. an upstream binary under `~/.local`, only when nothing packaged
+   exists.
 
 Packaged routes are recorded by the package-log collector whoever ran
 them; an unpackaged route leaves only your hook events and the *Log*, so
@@ -503,9 +505,9 @@ About to: build scanmark from its PKGBUILD (+deps tesseract, leptonica; build de
 ```
 
 ```sh
-pkexec pacman -S --needed --asdeps tesseract rust
+pkexec pacman -S --needed --noconfirm --asdeps tesseract rust
 makepkg
-pkexec pacman -U scanmark-*.pkg.tar.zst
+pkexec pacman -U --noconfirm scanmark-*.pkg.tar.zst
 ```
 
 Then it verifies with a check that is not its own artefact, fills

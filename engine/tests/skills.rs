@@ -1180,7 +1180,7 @@ fn the_skill_says_the_rules_in_the_rules_words() {
     let (rules, skill) = (flat(&rules), flat(&skill));
     for line in [
         "`About to: install X (+deps a, b); snapshot first; rollback: pacman -Rns X`",
-        "`sudo snapper -c <config> create -c number -p -d \"<ID>\"`",
+        "`pkexec snapper -c <config> create -c number -p -d \"<ID>\"`",
         "`snapper --csvout list-configs`",
         "`seldon plan snapshot <ID> <N> --actor agent:<name>`",
         "`seldon plan new --zone <green|yellow|red> --risk <R0..R3> --area <area> --actor agent:<name> -- \"<title>\"`",
@@ -1191,7 +1191,11 @@ fn the_skill_says_the_rules_in_the_rules_words() {
         "`seldon plan done <ID> --actor agent:<name>`",
         "`seldon plan reopen <ID>`",
         "`pacman -Sp --print-format %n <package>…`",
-        "`omarchy pkg add <package>`",
+        "`omarchy pkg add <package>…`",
+        "`pkexec pacman -S --needed --noconfirm <package>…`",
+        "`pkexec pacman -S --needed --noconfirm --asdeps …`",
+        "`pkexec pacman -U --noconfirm <file>`",
+        "`makepkg -si`",
         "`checkupdates`",
         "`SELDON_ATTENDED=1`",
         "A cached `sudo` or a passwordless rule never makes a session attended.",
@@ -1261,7 +1265,9 @@ fn the_skill_has_omarchy_s_shape_and_the_adr_0028_drift_rule() {
         "<<'SELDON_CMD' | seldon hook generic --case <ID>",
         // N5/N6: password prompts
         "Each privileged command may ask for the password again (`pkexec` asks every time).",
-        "Never wrap a command that elevates itself (`omarchy pkg add`, `omarchy snapshot`) in `sudo` or `pkexec`.",
+        "Never wrap a command that elevates itself (`omarchy pkg add`, `omarchy snapshot`, an AUR helper, `makepkg -si`) in `pkexec` or `sudo`",
+        // round 2, N8: the agent's case first
+        "A command you run through your tool has no terminal the user sees, so it is `pkexec`",
     ] {
         assert!(flat_skill.contains(needle), "SKILL.md: {needle}");
     }
