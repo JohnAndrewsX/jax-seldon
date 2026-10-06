@@ -33,5 +33,6 @@
 | ADR-0029 | A change made while exactly one case planned it is that case's; a case captures before it closes | accepted |
 | ADR-0030 | The Seldon agent starts like the Omarchy agent: from the caller's folder, hooks user-wide, served by a launch marker | accepted |
 | ADR-0031 | Password prompts follow Omarchy: as few as the route allows; snapshot `root` only | accepted |
+| ADR-0033 | A new logbook looks back 90 days and marks that history "before Seldon", without asking | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

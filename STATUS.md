@@ -14,6 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
 | WP-116 | the Seldon agent starts like the Omarchy agent; rules v4 (ADR-0030, ADR-0031) | Engine + Docs | `engine-116` (opus) | `wt/WP-116` · `wp/116-start-like-omarchy` | 2026-10-06 |
 
 ## Queued (next up)
@@ -552,6 +553,16 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- First setup of the release on a productive laptop (operator, 2026-10-06):
+  works end to end but does not feel like Omarchy; UX review taken. In
+  0.1.4: WP-117 (plugin texts; every terminal the panel opens says what,
+  shows the command, says what changed) and WP-118 (wizard, installer,
+  docs texts; after WP-116). In 0.1.5: WP-119 (one guided setup card,
+  zero-question `init --defaults`). ADR-0033 accepted: 90-day backfill
+  dismissed as "before Seldon", no question (lands with WP-119).
+- ADR-0032 accepted (the launch marker serves only an open case); the
+  hook migration to the user-wide settings runs once automatically,
+  except with `[agent] workdir = "logbook"` (amends ADR-0030 §5).
 - ADR-0031 accepted: password prompts follow Omarchy (sudo in the user's
   terminal, pkexec otherwise, one program per pkexec); the target is "as
   few as the route allows" (replaces ADR-0027's "at most one"); the
