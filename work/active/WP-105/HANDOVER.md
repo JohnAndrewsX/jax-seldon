@@ -152,3 +152,177 @@ The plugin harness passes unchanged (no plugin change).
   hook's) builds a `Redactor` once (compiles the user's patterns, if any)
   and runs it over that short message; the built-in rules compile only
   when the message holds their trigger.
+
+---
+
+# Round 2 (stage 1 SEND BACK small: B1, N1, N2, N3)
+
+Commits (oldest first), no rebase:
+
+- `17ea1e3` engine: doctor and init show collector messages and probe output redacted; withheld with an invalid pattern; no growth on load (WP-105)
+- `46cf160` engine: tests for doctor, init, a pattern across the marker and an invalid pattern (WP-105)
+- `5f2b1d0` docs: SPEC-ENGINE §7, doctor and init redact, no growth on load, withheld with an invalid pattern (WP-105)
+- `a900bb1` memory: pitfalls from WP-105 round 2
+- this commit: handover round 2
+
+## What changed
+
+- **One helper for what is shown:** `collectors::ShownMessages`
+  (collectors/mod.rs). It wraps `Redactor::for_config`, built on the
+  first message only. When the redactor cannot be built (an invalid
+  pattern) or `config.toml` cannot be parsed (`ShownMessages::new(None)`),
+  every message becomes the constant `collectors::MESSAGE_WITHHELD` =
+  `‹redacted› (withheld: config.toml or one of its [redaction] patterns
+  cannot be used)`. The index (`collector_state`) and doctor both use it.
+- **B1, doctor and init.**
+  - The `collectors` row redacts each message read from `cursors.json`.
+  - The `snapper` probe (`check_snapper`, whose row `init` also prints,
+    as text and in `--json`) redacts `describe(run)`.
+  - The `omarchy` probe (`check_omarchy`) does the same; it was found in
+    the sweep below.
+  - `check_snapper` takes `&ShownMessages` now. `init` passes its own
+    config.
+  - doctor passes `None` while `config.toml` is invalid or unreadable.
+    The patterns are unknown then, so the probe rows show the withheld
+    text.
+- **N1, growth.** The capture's load pass (`redact_messages`) skips a
+  message that already holds `‹redacted›`. A message from an older
+  engine holds none, unless the program itself printed the marker. In
+  that case the file keeps it, and every display still redacts it.
+  The index and doctor redact from the stored text each time, so they
+  cannot accumulate; a comment says so (`ShownMessages`,
+  `collector_state`).
+  - Probe with patterns `fake-host-[a-z]+` and `›.`: stored
+    `snapper failed (exit 3): token=‹redacted‹redacted›at ‹redacted›`,
+    the same bytes after 3 more captures.
+  - The index shows one pass more, the same every time:
+    `…token=‹redacted‹redacted‹redacted›t ‹redacted›`.
+  - I kept "the display always redacts", even though the index then
+    differs from `cursors.json` for such a pattern. The display never
+    trusts the file.
+- **N2, fail closed.** With an invalid pattern, `seldon index` exits 0.
+  The row shows `MESSAGE_WITHHELD`, and so do doctor's `collectors` row
+  and its `snapper` probe. The capture still refuses with exit 1. SPEC
+  §7 says this in the WP-105 sentence and at the general "invalid user
+  pattern" sentence.
+- **N3:** below, under "Checks".
+
+## Sweep: places that print or save a collector message or program output
+
+`grep` for `.message`, `stderr`, `first_line` and `describe(` in
+`engine/src`:
+
+| Place | What | Status |
+|---|---|---|
+| capture.rs `collect_all` | collector message → state, report, snapper note | redacted at the source (round 1) |
+| capture.rs `render` (text, `--json`) | report messages | from the redacted report |
+| capture.rs `redact_messages` | messages loaded from `cursors.json` | redacted on load, marker skip (N1) |
+| hook.rs session end, init.rs first capture | through `capture::run` | covered |
+| index/mod.rs `collector_state` → views.rs `STATUS.md`, status.rs | `state.collectors.message` | `ShownMessages` |
+| doctor.rs `check_collectors` | messages from `cursors.json` | `ShownMessages` (B1) |
+| doctor.rs `check_snapper` → init.rs | snapper's first stderr line | `ShownMessages` (B1) |
+| doctor.rs `check_omarchy` | `omarchy-version`'s first stderr line | `ShownMessages` (found in the sweep) |
+| snapper.rs:218 `first_line` | builds the collector message | goes through the capture's pass |
+| plugins.rs, omarchy.rs, theme.rs, pacman.rs, config.rs `degraded(…)` | collector messages | through the capture's pass |
+| open.rs:190 (editor launcher), setup.rs:554 (`omarchy hook install`), logbook/git.rs:115/351 (git), dossier/query.rs | stderr of programs that are not collectors | not touched, out of scope; printed to the user only, not saved |
+| `fix` strings | constants in the collectors | nothing to redact |
+
+## Tests (`messages::`, now 8)
+
+New in this round:
+
+- `doctor_masks_the_saved_message`: raw message planted (as an older
+  engine saved it), user pattern. doctor exits 0. The `collectors` row
+  reads `last capture failed: snapper: <masked>` as text and in
+  `--json`; neither output holds a raw part.
+- `the_snapper_probe_masks_what_snapper_printed`: the stub snapper
+  prints the token on stderr. doctor's `snapper` row is
+  `snapper failed: exit 3: token=‹redacted› at ‹redacted›` (text and
+  `--json`). `init` on a second path prints `Snapper: degraded — <same>`,
+  and `--json init` has the same `snapper.message`; no raw part.
+- `the_omarchy_probe_masks_what_it_printed`: the same for the stub
+  `omarchy-version`.
+- `a_pattern_across_the_marker_does_not_grow_the_message` (N1):
+  patterns `fake-host-[a-z]+` and `›.`. The saved message holds the
+  marker. Three `capture --source pacman` runs leave it byte-identical,
+  and the index row stays the same.
+- `an_invalid_pattern_withholds_the_message` (N2): replaces round 1's
+  `an_invalid_pattern_leaves_the_built_in_rules_to_the_index`.
+  - Pattern `(`: `seldon index` exits 0; the index row, doctor's
+    `collectors` row and its `snapper` row show `MESSAGE_WITHHELD`.
+  - Then a `config.toml` that does not parse: doctor exits 1 and the
+    `snapper` row is withheld.
+
+## Mutants (round 2)
+
+Same method as round 1 (`wp105-private/mutants2.py`).
+
+| # | Mutant | Result | Killed by |
+|---|---|---|---|
+| R1 | load pass without the marker skip | killed | `a_pattern_across_the_marker…` |
+| R2 | invalid pattern → built-in rules (the round-1 behaviour) | killed | `an_invalid_pattern_withholds…` |
+| R3 | unparsable config → default patterns in doctor | killed | `an_invalid_pattern_withholds…` |
+| R4 | doctor `collectors` row unredacted | killed | `doctor_masks…`, `an_invalid_pattern…` |
+| R5 | omarchy probe unredacted | killed | `the_omarchy_probe…` |
+| R6 | snapper probe unredacted | killed | `the_snapper_probe…`, `an_invalid_pattern…` |
+| R7 | init: the default config's redactor (no user patterns) | killed | `the_snapper_probe…` |
+| R8 | index: always withheld | killed | 2 `messages::` + 2 index variant tests |
+| R9 | index: no redaction | killed | `a_message_an_older…`, `an_invalid_pattern…` |
+
+## Checks
+
+All under `flock /tmp/seldon-check.lock`, with the worktree's default
+`target/`:
+
+- **`just check-rss`:** exit 0
+  (`rss_stays_under_10_mb_on_the_x10_fixture` ok).
+- **`just check-perf`, first run:** exit 101. One case was over budget:
+  `fast_enough_just_below_the_rebuild_threshold`, "recorded curl line
+  with -e and -am, 900 lines", medians 5.11 and 5.26 ms against 5 ms.
+  The load average was 4–7 at the time, from parallel workers.
+- **A/B against the base:** I built two bench binaries of `seldon`, base
+  `ac2c4ee` and HEAD, swapped each into `target/release/seldon`, and ran
+  the same hooks test binary under the lock, alternating 4 rounds each.
+  - Base: medians 4.68 / 4.82 / 4.82 / 4.68 ms.
+  - HEAD: 4.70 / 4.72 / 4.73 / 4.75 ms.
+  - The other three cases also match within noise.
+  - So this change costs nothing measurable here. That case already has
+    only about 5 % headroom on main, so it can fail under load whatever
+    the change.
+- **`just check-perf`, second run:** exit 0. Key medians:
+  - index build ×10: 3.97 ms; ×150: 80.3 ms (budget 100 ms)
+  - `status` at 10 000 lines: 44.5 ms (budget 100 ms)
+  - hook at 10 000 lines: 0.74 / 1.32 / 2.68 / 3.17 ms
+  - hook at 900 lines: 0.69 / 2.84 / 4.15 / 4.77 ms (budget 5 ms each)
+  - redaction of long lines: all within budget (128 KB, two option
+    kinds: 8.9 ms of 20 ms)
+- **`flock /tmp/seldon-check.lock just check`:** exit 0, ending with
+  `check: ok`, on `5f2b1d0` (code, tests and docs of this round; the
+  pitfalls commit came after it).
+
+| Suite | Passed | Failed |
+|---|---|---|
+| cargo test (engine, 70 binaries) | 1602 | 0 |
+| bar-view | 143 | 0 |
+| panel-view | 782 | 0 |
+| overlay-view | 319 | 0 |
+| service-states | 314 | 0 |
+| install.test | 209 | 0 |
+| deploy-test-host.test | 190 | 0 |
+| real-home-guard | 11 | 0 |
+| model.test.js | 89 | — |
+
+The plugin harness passes unchanged.
+
+Also: `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check`
+are clean, and `bash scripts/docs-check.sh` is ok.
+
+## Notes
+
+- **Merge with current main:** `git merge-tree main HEAD` gives one
+  conflict, in `memory/pitfalls.md`. Both sides appended a section at the
+  end (main: WP-106/WP-107). Resolve by keeping both. `CHANGELOG.md`,
+  `docs/SPEC-ENGINE.md` and `engine/tests/idempotency.rs` merge cleanly.
+- No guard-hook block. The host was not touched; the secrets are made up.
+- `redact.rs` and `collectors/config.rs` were not touched. The default
+  `target/` of the worktree was used (no `CARGO_TARGET_DIR` under /tmp).
