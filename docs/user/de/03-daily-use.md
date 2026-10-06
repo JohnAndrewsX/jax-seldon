@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ 5b712f1 -->
+<!-- source: en/03-daily-use.md @ 2ca5b94 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
@@ -106,13 +106,25 @@ schreibt nichts.
 
 *Beispieldaten.*
 
+Das Feld oben startet einen Case mit einem Satz: Schreib, was erledigt
+werden soll („Installiere Tool X, es bringt ein PKGBUILD mit“), und drück
+Enter oder *Run*. Seldon macht aus dem Satz einen Case, startet ihn und
+startet deinen Agenten darauf; der Agent macht den Rest und schließt den
+Case selbst ab (siehe
+[Mit Agenten arbeiten](04-working-with-agents.md#einen-agenten-aus-dem-panel-starten)).
+Solange das läuft, steht auf dem Knopf *Running*, danach steht der Cursor
+auf dem neuen Case. Kann kein Agent starten, sagt die Zeile unter dem
+Feld, warum und wie du es behebst, und dein Satz bleibt im Feld.
+
 Work zeigt deine Cases in drei Spalten: Queued (geplant), Active (Cases
 in Prüfung eingeschlossen) und Completed (die letzten 50; aufgegebene
 Cases durchgestrichen). „2 / 3 active“ vergleicht deine aktiven Cases mit
 deinem Limit. Das Limit warnt; es blockiert nie. Eine Kachel zeigt die
 ID, erledigte von allen Schritten, den Titel und die Zone als Farbe des
 Streifens. „N proposed“ heißt, Seldon hält offene Drift für einen Teil
-dieses Case.
+dieses Case. „by agent“ markiert einen Case, den ein Agent abgeschlossen
+hat; *By agent* zeigt unter Completed nur diese, für eine Stichprobe,
+wenn dir danach ist (fällig ist sie nie).
 
 Die Karte darunter zeigt den Case unter dem Cursor und die Aktionen, die
 sein Status erlaubt:
@@ -122,11 +134,18 @@ sein Status erlaubt:
 | queued | *Start*, *Open* |
 | active | *Verify*, *Start agent*, *Drop*, *Open* |
 | verification | *Done*, *Drop*, *Open* |
-| completed, dropped | *Open* |
+| completed | *Open*, *Reopen* |
+| dropped | *Open* |
+
+*Reopen* (ein Klick oder `r`) lässt den abgeschlossenen Case unberührt:
+Es legt einen neuen aktiven Case „Reopen: <Titel>“ mit demselben
+*Intent* an, und der Cursor springt dorthin. Seine Karte nennt den Case,
+den er wieder öffnet.
 
 *New case* (oder `+` aus jedem Tab) fragt nach Titel, Zone, Risiko,
 Priorität und einem optionalen Bereich. Es beginnt mit gelb, R1, normal.
-*Start agent* schickt einen Agenten an den Case; siehe
+Nimm es, wenn du einen Case selbst planen oder später einem Agenten
+übergeben willst. *Start agent* schickt einen Agenten an den Case; siehe
 [Mit Agenten arbeiten](04-working-with-agents.md#einen-agenten-aus-dem-panel-starten).
 
 ### Decisions (4)
@@ -175,6 +194,8 @@ Die Tasten des Panels gelten, solange das Panel offen ist.
 | Enter, Leertaste | die Zeile öffnen; auf einer Drift-Zeile den Drift-Dialog; in Work die erste Aktion der Karte |
 | `x` | Work: den Case unter dem Cursor aufgeben (zweimal drücken) |
 | `a` | Work: einen Agenten auf den aktiven Case unter dem Cursor starten (zweimal drücken) |
+| `r` | Work: den abgeschlossenen Case unter dem Cursor wieder öffnen |
+| `i` | Work: das Feld für den einen Satz (Enter startet, Esc gibt die Tasten zurück) |
 | `f` / `F` | Changelog: nächster / vorheriger Quellen-Filter |
 | `c` | jetzt erfassen |
 | `n` | eine Notiz schreiben (aus jedem Tab) |
@@ -188,9 +209,10 @@ Aktionen, die schreiben, brauchen auf der Tastatur zwei Tastendrücke:
 Drift-Dialog und eine neue Entscheidung. Das erste Enter schaltet die
 Aktion scharf, und die Karte sagt „Press Enter again: Start C-2026-005“. Der
 zweite Druck sendet sie. Jede andere Taste in einer Liste entschärft sie.
-Eine Notiz und ein neuer Case gehen mit einem Enter raus. Mit der Maus
-sendet ein Klick, außer bei *Drop* und *Start agent*, die einen zweiten
-Klick verlangen.
+Eine Notiz und ein neuer Case gehen mit einem Enter raus, ein Satz für
+*Run* auch. *Reopen* braucht einen Druck oder Klick: Es fügt nur einen
+Case hinzu. Mit der Maus sendet ein Klick, außer bei *Drop* und *Start
+agent*, die einen zweiten Klick verlangen.
 
 Hat ein Textfeld oder ein Dialog den Fokus, geht jede Taste dorthin. Tab
 und Shift-Tab wandern durch die Felder. Esc gibt die Tasten ans Panel
@@ -253,8 +275,11 @@ Befehle aus, das Ergebnis ist also dasselbe:
 |---|---|
 | Notizfeld | `seldon log -- "Text"` |
 | *Capture now* | `seldon capture` |
+| *Run* | `seldon agent start --new -- "Was zu tun ist"` |
 | *New case* | `seldon plan new -- "Titel"` |
 | *Start*, *Verify*, *Done*, *Drop* | `seldon plan start <ID>` und so weiter |
+| *Reopen* | `seldon plan reopen <ID>` |
+| *Update rules* | `seldon rules update` |
 | Drift-Dialog | `seldon drift link`, `explain`, `dismiss` |
 | *New decision* | `seldon decide -- "Titel"` |
 | *Open in editor* | `seldon open journal --editor` |
