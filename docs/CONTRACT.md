@@ -44,7 +44,8 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    plugin may read meaning into them (no schema change, `contractVersion`
    stays 1):
    - `closed-by-agent` — an agent actor ran `seldon plan done` (the engine
-     refuses that close without a *Result* and a *Plan › Verification*).
+     refuses that close without a *Result* and a *Plan › Verification*),
+     or an agent's `drift explain` made the completed case.
      The panel marks the case and filters the Completed column by it.
    - `reopens:<caseId>` — `seldon plan reopen <caseId>` made this case.
    - `imported` — `seldon import task` made this case (WP-102).

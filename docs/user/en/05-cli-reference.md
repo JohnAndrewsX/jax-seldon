@@ -403,7 +403,9 @@ Closes a case in verification. It writes a journal line and clears the
 active case if it named this case. An agent's close (`--actor agent:…`,
 or `SELDON_ACTOR` without the flag) is refused while the case's *Result*
 is empty or its *Plan* has no `Verification:` text; the message says
-which. A case an agent closed gets the tag `closed-by-agent`.
+which. A case an agent closed gets the tag `closed-by-agent`. In an
+agent's session (`SELDON_ACTOR=agent:…`), `--actor human` is refused:
+an agent's close is never recorded as a person's.
 
 <!-- help: seldon plan done -->
 ```text
@@ -492,6 +494,8 @@ Options:
 Reopens a completed case: a new active case "Reopen: <title>" with the
 same zone, risk, area and *Intent*, tagged `reopens:<ID>`. The completed
 case stays completed and gets a *Log* line. Each run makes a new case.
+The new case becomes the active case only when no open case is; an
+agent working another case keeps recording on that case.
 
 <!-- help: seldon plan reopen -->
 ```text

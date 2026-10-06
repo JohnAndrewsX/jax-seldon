@@ -191,8 +191,10 @@ the header narrows the Completed column to those cases (its header then
 reads "COMPLETED n / total"), a spot check that is never due. Every
 completed card offers *Reopen* beside *Open*: one click or key `r`, no
 arming (it creates a case and destroys nothing) → `seldon plan reopen
-<id> --json`; the result line names the new case and earlier reopens, the
-cursor goes to the new case, whose meta line reads "reopens <id>". While a text
+<id> --json`; the result line names the new case, earlier reopens and,
+when the engine left `.seldon/active-case` on an open case an agent may be
+working, "the active case stays <id>"; the cursor goes to the new case,
+whose meta line reads "reopens <id>". While a text
 field or the sheet has focus the panel blocks the key catcher; `Esc`
 hands the keys back and keeps the draft. So does every tab change (keys,
 a click on the tab strip, IPC `tab`), because a hidden field would keep

@@ -128,7 +128,9 @@ status allows:
 
 *Reopen* (one click, or `r`) does not touch the completed case: it makes
 a new active case "Reopen: <title>" with the same *Intent*, and the
-cursor moves to it. Its card says which case it reopens.
+cursor moves to it. Its card says which case it reopens. If another
+case is open as the active case, it stays the active case, so an agent
+working on it keeps recording there; the line under the field says so.
 
 *New case* (or `+` from any tab) asks for a title, zone, risk, priority
 and an optional area. It starts at yellow, R1, normal. Use it when you

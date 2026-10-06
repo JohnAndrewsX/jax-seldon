@@ -117,7 +117,9 @@ agent's `plan done` while *Result* is empty or the Plan's `Verification:`
 item has no text (exit 1, the reason named; HTML comments do not count),
 and gives an agent's close the tag `closed-by-agent` (WP-101). Reserved
 tags (CONTRACT.md rule 8): `closed-by-agent`, `reopens:<ID>` (the case
-`seldon plan reopen <ID>` made; the reopened case stays completed),
+`seldon plan reopen <ID>` made; the reopened case stays completed, and
+`.seldon/active-case` moves to the new case only when it names no open
+case),
 `imported` (`seldon import task`, WP-102). The engine's Log line words of
 ADR-0027: `set …` (`plan set`), `snapshot N` (`plan snapshot`, or `snapshot
 N (its description names the case)` / `(from the recorded snapshot

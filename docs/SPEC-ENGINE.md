@@ -45,8 +45,11 @@ seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case o
 seldon agent start --new [--zone Z] [--risk R] [--area A] [--launcher NAME] [--json] -- "<intent>"
                                                # WP-101 (ADR-0027 §6): one sentence. Title = the first
                                                # sentence (up to the first line break, or `.`/`!`/`?` before
-                                               # white space or the end; a final `.` dropped), at most 72
-                                               # characters, cut at a word with `…`; Intent = the whole
+                                               # white space or the end; a final `.` dropped; control
+                                               # characters such as a lone `\r` are spaces, white space runs
+                                               # one), at most 72 characters, cut at a word with `…`; a
+                                               # sentence without a letter or digit is refused (exit 1,
+                                               # nothing written); Intent = the whole
                                                # text, redacted, every line that starts (after blanks) with
                                                # `#`, three backticks or `~~~` prefixed with `\`, so it can
                                                # neither end the section nor open a fence. Created and started
@@ -55,8 +58,9 @@ seldon agent start --new [--zone Z] [--risk R] [--area A] [--launcher NAME] [--j
                                                # the active case set, one commit `<ID> created and started`),
                                                # then launched as `agent start <ID>`. The built-in launcher
                                                # (`omarchy agent prompt`) without an Omarchy default agent
-                                               # (`~/.config/omarchy/defaults/agent` missing or empty, read
-                                               # only) is refused before anything is written: exit 1, "no
+                                               # (`~/.config/omarchy/defaults/agent` missing or its first line
+                                               # empty, as Omarchy reads it; read only) is refused before
+                                               # anything is written: exit 1, "no
                                                # default agent … nothing was created. Fix: `omarchy default
                                                # agent <name>` …". A launcher that fails after the case exists
                                                # leaves the case active: exit 1 with the launcher's message,
@@ -80,8 +84,14 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # exit 1 and nothing written, while the case's *Result* has no text (HTML
 # comments do not count) or its *Plan* has no filled `Verification:` item (text
 # after the colon or on the lines indented below it; case-insensitive, a list
-# item or a plain line); the message names what is missing (ADR-0027 §5). A
-# human close is never refused. An agent's close adds the tag `closed-by-agent`.
+# item or a plain line, the label bold or not); the message names what is
+# missing (ADR-0027 §5). Text means a line that is no heading and holds a
+# letter or digit (zero-width characters and punctuation alone do not count)
+# — a guard against forgetting, not a check of the evidence. A human close
+# is never refused, but `--actor human` in an agent's session
+# (`SELDON_ACTOR=agent:…`) is: exit 1 naming the conflict (an agent close is
+# never recorded as human). An agent's close adds the tag `closed-by-agent`;
+# so does an agent's `drift explain` to the completed case it makes.
 seldon plan set <ID> (--zone Z | --risk R | --area A)… [--actor A]
 # WP-101 (ADR-0027 §2c): an open case's zone, risk or area (at least one; a new
 # area gets its README); one Log line `set risk R1 → R3, zone yellow → red`; no
@@ -110,10 +120,13 @@ seldon plan reopen <ID> [--actor A]
 # and started at once (case-created + case-started in one ledger write, Log
 # lines `created (zone …, risk …): reopens <ID>` and `started`), zone, risk,
 # area and priority copied, *Intent* copied, tag `reopens:<ID>`; it becomes
-# the active case; the old case gets the Log line `reopened as <NEW>`. Every
+# `.seldon/active-case` only when that names no open case (the marker routes
+# a running agent's recorded commands: an open case keeps it, and the output
+# says so, "The active case stays <ID> …"; WP-101 round 2); the old case gets
+# the Log line `reopened as <NEW>`. Every
 # reopen makes a new case; the output names the earlier ones ("Reopened
 # before as …; this is a new case"). --json → {case, reopens, earlier,
-# events, activeCase: {set}, git}
+# events, activeCase: {set} | {kept}, git}
 seldon plan list [--status S] [--area A]          # a case file that does not load is a warning line
                                                  # (`<path>: invalid case: …; skipped`, as the index's;
                                                  # --json `warnings`), the others are listed, exit 0 (WP-077)
@@ -1152,15 +1165,26 @@ the line gets none), actor `system` unless named; a failure is a warning,
 never a failed capture:
 
 - *The rollback the agent forgot.* A new `snapshot` (not a `post`) fills
-  an open case's empty `snapshotBefore` — the case whose id is the
-  snapshot's description (the rules have the agent write `-d "<ID>"`),
-  else the case of the last recorded snapshot command in the
-  `ATTRIBUTION_WINDOW` before the snapshot's date (up to 2 min after it):
-  `hook` records `snapper … create`, `omarchy-snapshot create` and
-  `omarchy snapshot create` as a green `command` with subject `snapper`,
-  only with a case (§8). Log line `snapshot N (its description names the
-  case)` or `snapshot N (from the recorded snapshot command)` by the
-  command's actor. A recorded number is never replaced.
+  an open case's empty `snapshotBefore`. Owner: the case whose id is the
+  snapshot's description (the rules have the agent write `-d "<ID>"`);
+  else the recorded snapshot commands in the snapshot's window,
+  `[date − ATTRIBUTION_WINDOW, date + 5 s]` (snapper cuts its date to the
+  second, the hook stamps a command just before it runs): when they are
+  one case's, the latest owns it. Snapshots are taken oldest first, and a
+  command owns one snapshot only (a snapshot named by its case uses that
+  case's latest command in its window), so two agents that snapshot a
+  minute apart get their own. When the unused commands in the window
+  belong to two or more cases, nothing is filled and each of those cases
+  (open, field empty) gets the Log line `snapshot N was taken while the
+  agents of <IDs> ran a snapshot command; if it is this case's rollback,
+  record it: `seldon plan snapshot <ID> N``. `hook` records `snapper …
+  create`, `omarchy-snapshot create` and `omarchy snapshot create` as a
+  green `command` with subject `snapper`, only with a case (§8). Log line
+  `snapshot N (its description names the case)` or `snapshot N (from the
+  recorded snapshot command)` by the command's actor, then `plan
+  snapshot`'s warnings (§3), each a Log line by `system` (a snapshot after
+  the case's first red change still fills). A recorded number is never
+  replaced.
 - *A pruned rollback.* A `snapshot-delete` of N on or after the creation
   day of a case (not dropped) whose `snapshotBefore` is N: `rollback for
   <ID> pruned (snapshot N)`; `doctor` reports it (`rollbacks`, §3).
@@ -1169,7 +1193,12 @@ never a failed capture:
   line `advisory: <ID> is R<n>, but its red change `<subject>` is R3 …`;
   the index build warns with the same words (§6), once per case and
   subject, while the case is open and below R3. The engine never refuses
-  the step.
+  the step. **Deviation from ADR-0027 §2c** (orchestrator decision,
+  WP-101 round 2): the ADR asks for a panel warning too; `index.json` has
+  no field for it and a reserved tag would be derived state in the
+  user's frontmatter, so 0.1.4 keeps the Log line and the build warning,
+  and the panel shows it from contract v2 (ADR-0028 points the same
+  way).
 
 ## 6. Index build
 
