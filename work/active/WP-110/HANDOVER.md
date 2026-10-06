@@ -194,3 +194,73 @@ on disk). No host change, no real `~/Seldon`, `~/.local/state/seldon` or
    the shell's own mechanism, per "Omarchy first".
 3. Version bump to 0.1.4 (manifest + `PLUGIN_VERSION`) is left to the
    release WP; this WP stays at 0.1.3.
+
+## Round 2
+
+Brief: `review-0.1.1/handovers/WP-110-round-2-brief.md` (stage 1 APPROVE
+with nits N1–N6, orchestrator decisions on OQ1 and Q2). Commits:
+
+- `60d5a05` plugin: quiet ordinary rows, Today 'without a case', read-out pins for the quiet line and the Ask slot (WP-110 round 2)
+- `14dc3e5` docs: SPEC-PLUGIN, TESTING and CHANGELOG for WP-110 round 2
+- this commit: handover
+
+**Done**
+
+1. **N1 / OQ1.** Today's last count is "without a case" with the
+   attention value `max(0, openDrift − crisis)` (`Model.todayView`), the
+   same number as the tooltip and the Changelog line; no separate crisis
+   stat. Tests: `todayView` labels and values (sample → 2), never
+   negative; panel-view sample #1 shows "without a case" and no "open
+   drift". README row 1.
+2. **Q2.** Rows that are not open drift (resolved, linked, with a case,
+   routine, never drift) take the muted stripe whatever their zone, and
+   no stripe when the event has no zone (as before for zone-less rows);
+   `zoneTone(e.zone)` is gone from `changelogRows` (it stays for case
+   cards, which are not Changelog rows). Open crisis urgent, open
+   attention accent, unchanged. Tests: red-zone non-drift rows with a case
+   (`hyprland`, `zed`), red-zone resolved rows (`btop` explained,
+   `tailscale` linked), a yellow resolved row (`tyme`) → `muted`; every
+   non-drift row is `muted` or `""`, and `""` only without a zone.
+   SPEC-PLUGIN §5, README, EventRow comment, CHANGELOG.
+3. **N2.** Changelog read-out `changelog.attentionDim` (the line's colour
+   equals the dim foreground), expected `true` in 13b and 13c. Compared
+   as `#AARRGGBB` strings: `Text` keeps its colour at 8 bits per channel,
+   so `Qt.colorEqual` with the 16-bit `dim` (alpha 0.65) is false even for
+   the right colour (first try failed that way).
+4. **N3.** Drift-sheet read-out `askSlotVisible` / `askSlotHeight`,
+   expected `false` / `0` in 13b (crisis) and 13b's attention sheet.
+5. **N4.** `pillTone({active: 0, drift: 4, crisis: 0})` → `default` in
+   model.test.js (with and without `attention`).
+6. **N5.** README keys table: "on a Changelog row without a case".
+7. **N6.** "+N more changes without a case not listed here" (singular "+1
+   more change …"); model test, panel-view drift-capped, SPEC-PLUGIN §5,
+   TESTING.
+
+Not changed, as decided: `driftInBar` only in Omarchy's settings; the
+version bump stays with the release WP.
+
+**Mutants (round 2; unmutated baselines passed in node and panel)**
+
+| Mutant | Suite | Result |
+|---|---|---|
+| H2 quiet line in `root.urgent` | panel-view | KILLED (13b #2, 13c #2 `attentionDim`) |
+| H7 empty Ask slot `visible: true; implicitHeight: 40` | panel-view | KILLED (13b #3/#5 `askSlotVisible`, `askSlotHeight`) |
+| M10 attention alone tones the pill accent | model.test.js | KILLED (pillTone) |
+| `zoneTone(e.zone)` back for ordinary rows | model.test.js | KILLED (changelogRows) |
+| ordinary rows without any stripe | model.test.js | KILLED (changelogRows) |
+| Today counts all open drift | model.test.js | KILLED (todayView) |
+| Today stat unclamped | model.test.js | KILLED (todayView, crisis 9) |
+| Today label back to "open drift" | panel-view | KILLED (sample #1) |
+| "+N more" old wording | model.test.js | KILLED (folded resolutions / +N more) |
+
+**Checks.** `omarchy plugin validate plugin/` and qmllint (29 files,
+tokens ok) before each commit. `flock /tmp/seldon-check.lock just check`
+on `14dc3e5`: **exit 0, `check: ok`**. cargo tests 1622 passed, 0
+failed, in total (default and `--features watch`); install.test 209;
+deploy-test-host.test 190; docs-check ok; plugin-validate ok; qmllint ok;
+model.test.js 92, real-home-guard 11, service-states 316, panel-view
+835, overlay-view 319, bar-view 194, all 0 failed.
+
+**Open for stage 2.** Decision 1 (open attention rows accent whatever
+their zone) together with Q2 (every other row muted) is the full colour
+rule now. Stage 1 flagged it for confirmation.
