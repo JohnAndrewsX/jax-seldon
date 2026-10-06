@@ -1793,8 +1793,17 @@ def self_checks(today):
         ("a persistence path below R3 is not linked", add_unit, plan_unit,
          lambda lines, logs: (["01M2CZW4J034FDMVAAEWT2G7X8"] == [e["id"] for e, _, _ in lines]
                               and any("alwaysRedPaths" in t for t in logs.get("C-2026-002", [])))),
-        ("an unreadable case blocks its window", drop_engine_link, without_002,
+        ("an unreadable case blocks its window (another case planned it too)",
+         lambda ledger: (drop_engine_link(ledger), second_window(ledger)),
+         lambda cases: plan_it(without_002(cases)),
          lambda lines, logs: lines == []),
+        ("a persistence path links to a case raised to R3 before it", add_unit,
+         lambda cases: [(f, fm, body.replace("· started (snapshot 108) · human\n",
+                                             "· started (snapshot 108) · human\n"
+                                             "- 2026-09-12 09:40 · set risk R1 → R3 · human\n", 1)
+                         if fm["id"] == "C-2026-002" else body) for f, fm, body in plan_unit(cases)],
+         lambda lines, logs: sorted(e["id"] for e, _, _ in lines)
+         == ["01M2CZW4J034FDMVAAEWT2G7X8", "01M2CZW4J034FDMVAAEWT2G7X9"]),
         ("a Plan comment is no plan", drop_engine_link, commented,
          lambda lines, logs: lines == []),
     ]
