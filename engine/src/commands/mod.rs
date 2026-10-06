@@ -213,6 +213,36 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     }
 }
 
+/// [`autocommit`] of `paths` alone (relative to the logbook): a commit of
+/// its own that leaves the user's other changes out ([`git::commit_paths`]).
+pub fn autocommit_paths(
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+    paths: &[&str],
+    summary: &str,
+) -> Commit {
+    if ctx.no_commit {
+        return Commit::Skipped("--no-commit");
+    }
+    if !config.git.autocommit {
+        return Commit::Skipped("git.autocommit = false");
+    }
+    if !git::is_repo(&logbook.root) {
+        return Commit::Skipped("the logbook is not a git repository");
+    }
+    match git::commit_paths(&logbook.root, paths, summary) {
+        Ok(()) => Commit::Committed(format!("seldon: {summary}")),
+        Err(e) => {
+            let _ = writeln!(
+                std::io::stderr(),
+                "seldon: warning: git: not committed: {e}"
+            );
+            Commit::Warned(e)
+        }
+    }
+}
+
 /// The text of a free-text argument, or a user error when it is blank.
 pub(crate) fn required_text(what: &str, text: &str) -> Result<String> {
     let text = text.trim();

@@ -64,8 +64,10 @@
 //! this engine's files in every agent skill folder where it is outdated
 //! and nobody touched it ([`super::skills::upgrade_unedited_under`]). One
 //! note line each; an edited block or skill is left to `doctor` and its
-//! fix, a missing one stays missing. Never as root. Not committed: the
-//! next engine commit carries the file.
+//! fix, a missing one stays missing. Never as root. Each is on record
+//! (WP-116): the rules file in a commit of its own, `seldon: rules update
+//! (unedited, vN → vM)`, the skill (outside the logbook) as a `seldon`
+//! note in the ledger.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -254,6 +256,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         .and_then(|r| r.note.clone())
         .into_iter()
         .chain(access)
+        .chain(skill_note(&upgraded.skills, now))
         .collect();
     // a crash between the append and the save below must not write the
     // notes again (WP-099), nor count the first events this append writes
@@ -365,9 +368,27 @@ struct Upgraded {
     /// The rules version `AGENTS.md` had before its unedited block was
     /// replaced (`1`: a released file from before the block).
     rules_from: Option<u32>,
+    /// The commit of the updated rules file alone.
+    rules_commit: Option<super::Commit>,
     /// The agent skill folders whose unedited skill was updated.
     skills: Vec<String>,
     warnings: Vec<String>,
+}
+
+/// The subject of the ledger note of an agent skill update.
+pub const SKILL_NOTE: &str = "skill";
+
+/// The `seldon` note of a capture that updated the unedited agent skill in
+/// `folders` (WP-116): the files are outside the logbook, so the ledger
+/// keeps the record.
+fn skill_note(folders: &[String], now: DateTime<FixedOffset>) -> Option<Event> {
+    (!folders.is_empty()).then(|| {
+        Event::new(now, Source::Seldon, Kind::Note, SKILL_NOTE).detail(format!(
+            "Seldon agent skill updated to seldon {} in {} (it was unedited)",
+            crate::VERSION,
+            folders.join(", ")
+        ))
+    })
 }
 
 /// ADR-0028 §4d, WP-111: an unchanged default is upgraded, the user's own
@@ -403,7 +424,21 @@ fn upgrade_defaults(
         let template = super::rules::template(logbook, ctx.now.date_naive());
         if let Some(plan) = crate::logbook::rules::silent_upgrade(&old, &template) {
             match crate::sys::write_atomic(&logbook.path(rules), plan.text.as_bytes()) {
-                Ok(()) => out.rules_from = plan.from,
+                Ok(()) => {
+                    out.rules_from = plan.from;
+                    // its own commit, the user's other changes left out
+                    let from = plan.from.map_or("v?".to_string(), |v| format!("v{v}"));
+                    out.rules_commit = Some(super::autocommit_paths(
+                        ctx,
+                        config,
+                        logbook,
+                        &[rules],
+                        &format!(
+                            "rules update (unedited, {from} → v{})",
+                            crate::logbook::rules::VERSION
+                        ),
+                    ));
+                }
                 Err(e) => out.warnings.push(format!(
                     "{rules}: Seldon's agent rules were not updated: {e:#}"
                 )),
@@ -1061,6 +1096,7 @@ fn render(
         "rulesUpdated": upgraded.rules_from.map(|from| json!({
             "from": format!("v{from}"),
             "version": crate::logbook::rules::VERSION,
+            "git": upgraded.rules_commit.as_ref().map_or(serde_json::Value::Null, |c| c.json()),
         })),
         "skillsUpdated": upgraded.skills,
         "warnings": warnings,
@@ -1105,6 +1141,9 @@ fn render(
             crate::logbook::rules::FILE,
             crate::logbook::rules::VERSION
         );
+        if let Some(c) = &upgraded.rules_commit {
+            human.push_str(&c.human());
+        }
     }
     if !upgraded.skills.is_empty() {
         let _ = write!(

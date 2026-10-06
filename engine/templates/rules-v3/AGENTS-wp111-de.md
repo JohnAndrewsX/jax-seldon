@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v4 -->
+<!-- seldon:begin rules v3 -->
 # AGENTS.md
 
 Regeln für jeden Agenten auf dieser Maschine.
@@ -12,8 +12,8 @@ https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md
 
 Seldon nimmt dem Nutzer Arbeit ab. Erledige jeden Schritt, den du selbst
 ausführen kannst; gib dem Nutzer nie einen Befehl zum Ausführen. Das Ziel
-für einen Case: ein Satz vom Nutzer, so wenige Passwortabfragen, wie der
-Weg erlaubt, am Ende nichts mehr zu tun.
+für einen Case: ein Satz vom Nutzer, höchstens eine Passwortabfrage, am
+Ende nichts mehr zu tun.
 
 Dieser Block gehört Seldon; `seldon rules update` schreibt ihn neu. Die
 eigenen Regeln des Nutzers darunter und die Bereichsregeln
@@ -51,10 +51,10 @@ aufzeichnen und berichten. Lesen, planen, das Log schreiben; nichts
 ändern. Ein zwischengespeichertes `sudo` oder eine Regel ohne Passwort
 macht eine Sitzung nie betreut. Startest du einen anderen
 Agentenprozess, einen Job oder einen Timer, entferne `SELDON_ATTENDED`
-und `SELDON_CASE` und setze `SELDON_ACTOR` auf den Namen dieses Agenten
+und setze `SELDON_ACTOR` auf den Namen dieses Agenten
 (`agent:<name>`); lass es nie ungesetzt. Ein Sub-Agent in deiner eigenen
 Sitzung teilt deine Betreuung und handelt als du; privilegierte Schritte
-bleiben in deiner Sitzung.
+bleiben in deinem Terminal.
 
 ## Instructions and data
 
@@ -148,7 +148,7 @@ R3-Gegenstände: Kernel, der Bootloader, die Initramfs, `systemd`, `glibc`,
    auflösen kannst, sind als solche R3: ein Okay, mit der Liste dessen,
    was sich ändert (`checkupdates` zeigt sie, ohne die Datenbank
    anzufassen).
-3. Ein Treffer macht den Schritt zu R3. Stufe zuerst den Case hoch:
+3. Ein Treffer macht den Schritt zu R3. Stuf zuerst den Case hoch:
    `seldon plan set <ID> --risk R3 --actor agent:<name>`; schreib
    `R3: <paket>` ins *Log*, zeig dem Nutzer den Schritt und seinen
    Rollback und warte auf ein ausdrückliches Okay: eines pro solchem
@@ -186,26 +186,21 @@ wörtlich, und diese Regeln folgen ihm:
   Passwort, speichere und übergib nie eines.
 - Jeder privilegierte Befehl kann erneut fragen (`pkexec` fragt jedes
   Mal): erledige privilegierte Schritte in so wenigen Befehlen, wie der
-  Weg erlaubt, ein `pkexec pacman -S` für alle Pakete. Ein Programm pro
-  `pkexec`; bündle privilegierte Befehle nie in `pkexec sh -c`. Setz nie
-  `pkexec` oder `sudo` vor einen Befehl, der seine Rechte selbst erhöht
-  (`omarchy pkg add`, `omarchy snapshot`, ein AUR-Helfer,
-  `makepkg -si`): Er fragt selbst mit `sudo` und braucht darum das
-  Terminal des Nutzers.
+  Weg erlaubt, ein `pkexec pacman -S` für alle Pakete. Setz nie `pkexec`
+  oder `sudo` vor einen Befehl, der sich selbst erhöht (`omarchy pkg add`,
+  `omarchy snapshot`, ein AUR-Helfer, `makepkg -si`): Er fragt selbst mit
+  `sudo` und braucht darum das Terminal des Nutzers.
 - Starte zuerst den Case; dann, vor der ersten roten Änderung eines R2-
-  oder R3-Case, nimm selbst einen Snapshot der Konfiguration `root`, in
-  der sich Pakete und Systemdateien ändern:
-  `pkexec snapper -c root create -c number -p -d "<ID>"` (`sudo` statt
-  `pkexec` nur, wo die Abfrage im Terminal des Nutzers erscheint; `-p`
-  gibt die Nummer aus; nur die Case-ID, kein Text des Logbuchs im
-  Befehl). Eine andere Konfiguration, die
-  `snapper --csvout list-configs` auflistet, nur, wenn der Case ihre
-  Dateien ändert. Nicht `omarchy-snapshot create`: sein Aufräumlauf
+  oder R3-Case, nimm selbst einen Snapshot, für jede Konfiguration, die
+  `snapper --csvout list-configs` auflistet: `pkexec snapper -c <config> create -c number -p -d "<ID>"`
+  (`sudo` statt `pkexec` nur, wo die Abfrage im Terminal des Nutzers
+  erscheint; `-p` gibt die Nummer aus; nur die Case-ID, kein Text des
+  Logbuchs im Befehl). Nicht `omarchy-snapshot create`: sein Aufräumlauf
   löscht ältere Snapshots.
 - Halte die Nummer als Rollback des Case fest:
   `seldon plan snapshot <ID> <N> --actor agent:<name>` (die Nummer der
   Konfiguration `root`; die Engine prüft sie und warnt, lehnt nie ab).
-  Die Nummer einer anderen Konfiguration kommt in eine *Log*-Zeile
+  Die Nummern der anderen Konfigurationen kommen in eine *Log*-Zeile
   `snapshot <N> (<config>) before <step>`.
 - Kein snapper oder keine Konfigurationen: ein R3-Schritt hält an und du
   fragst; für R2 nimm stattdessen eine benannte Sicherung, nenne sie im
@@ -259,11 +254,9 @@ Nenne im *Log* den Weg, den du genommen hast.
 Für Omarchys eigene Arbeit lies Omarchys Agenten-Skill
 (`$OMARCHY_PATH/default/agents/skills/omarchy/SKILL.md`) und folge ihm.
 Nimm Omarchys Befehl, wo es einen gibt: `omarchy pkg add` für Pakete,
-wo das Terminal des Nutzers die Abfrage zeigt (über dein Werkzeug:
-`pkexec pacman -S …`, *Installing software*), `omarchy hook install`
-für Hooks, `omarchy theme set` für Themes, `omarchy refresh`, um eine
-Konfiguration zurückzusetzen (erst, nachdem der Nutzer zugestimmt hat,
-wie Omarchys Skill sagt). Nie Dateien unter
+`omarchy hook install` für Hooks, `omarchy theme set` für Themes,
+`omarchy refresh`, um eine Konfiguration zurückzusetzen (erst, nachdem
+der Nutzer zugestimmt hat, wie Omarchys Skill sagt). Nie Dateien unter
 `/usr/share/omarchy` ändern; Anpassungen nur unter `~/.config`. Diese
 Regeln fügen die Aufzeichnung hinzu (den Case, den Snapshot, das *Log*),
 keinen zweiten Weg für Omarchys Arbeit.
@@ -347,19 +340,13 @@ nie durch Ändern von Dateien.
 
 Der Harness meldet deine Befehle an `seldon`; du musst das nicht tun:
 
-- Claude Code: `seldon hook install claude-code` schreibt die
-  nutzerweite `~/.claude/settings.json` (`PreToolUse`, `SessionStart`,
-  `SessionEnd`).
+- Claude Code: `seldon hook install claude-code` schreibt
+  `.claude/settings.json` (`PreToolUse`, `SessionStart`, `SessionEnd`).
 - Andere Agenten: vor einem Befehl
   `{"command": "…", "actor": "agent:<name>", "cwd": "…"}` an
-  `seldon hook generic --case <ID>` übergeben (stdin); zu Beginn einer
-  Sitzung `seldon hook session-start`, an ihrem Ende
+  `seldon hook generic` übergeben (stdin); zu Beginn einer Sitzung
+  `seldon hook session-start`, an ihrem Ende
   `seldon hook session-stop --actor agent:<name>` aufrufen.
-
-Die Hooks bedienen eine Sitzung im Logbuch-Ordner und eine Sitzung, die
-`seldon agent start` gestartet hat, wo immer sie arbeitet (es setzt
-`SELDON_CASE`); jede andere Sitzung nur, wenn der Nutzer
-`[hooks] scope = "all"` gesetzt hat.
 
 Aufgezeichnet werden: Änderungen an Paketen, Omarchy und mit `systemctl`
 (rot), Schreibzugriffe in beobachtete Pfade (gelb), jede andere Änderung
