@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-115 | link a change to the one case that planned it; capture before close (ADR-0029) | Engine | `engine-115` (opus) | `wt/WP-115` · `wp/115-planned-link` | 2026-10-06 |
-| WP-111 | agent texts and docs for quiet drift; rules v3; silent upgrades (ADR-0028) | Engine + Docs | `engine-111` (opus) | `wt/WP-111` · `wp/111-agent-texts` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -27,7 +26,7 @@ machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
 done (it quotes `plan snapshot` and the agent-close refusal).
 ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
 classification) and WP-110 (plugin quiet surfaces) done, WP-111 (agent
-texts, docs, live check) active. Then the 0.1.4 release preparation
+texts, docs) done. Then the 0.1.4 release preparation
 (tag on the operator's go). Later from ADR-0028: WP-112 (measured routine
 paths after a real update), WP-113 (plugin trees, toggles, opt-in
 authorized_keys; each item approved separately), WP-114 (pacman.conf;
@@ -50,6 +49,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-111 agents explain drift only with evidence and never a
+  crisis; the session-start context lists open crises and items "zur
+  Kenntnis" as quoted data; rules v3 quote Omarchy's privilege wording; an
+  unedited rules block or installed skill is upgraded silently (shipped-
+  hash list, never a user's words, never as root); the panel's Update
+  rules click gives one line of feedback; docs en/de; Opus review, one
+  round, Fable stage 2; merged (wording follow-ups ride on WP-116's v4).
 - 2026-10-06 WP-094 the Seldon agent skill ships with the engine
   (`seldon hook install skills`): every agent Omarchy supports finds or
   opens its case, acts inside the Intent, snapshots and closes itself,
