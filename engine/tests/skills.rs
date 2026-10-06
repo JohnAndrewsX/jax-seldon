@@ -709,6 +709,35 @@ fn own_writes_under_a_watched_path_leave_no_drift() {
 }
 
 #[test]
+fn what_a_stopped_install_wrote_is_still_recorded() {
+    let env = Env::new(Snapper::Missing);
+    let config = env.config_file();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "watchPaths = [\"~/.claude/skills\"]\n").unwrap();
+    mkdir(&env, ".claude/skills");
+    let v = install_stopped_after(&env, 2);
+    assert_eq!(
+        dir_report(&v, "~/.claude/skills")["action"],
+        "failed",
+        "{v}"
+    );
+    let mut own: Vec<&str> = v["ownWrites"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{v}"))
+        .iter()
+        .map(|s| s.as_str().unwrap())
+        .collect();
+    own.sort();
+    assert_eq!(
+        own,
+        [
+            "~/.claude/skills/seldon/.seldon-skill.json",
+            "~/.claude/skills/seldon/SKILL.md"
+        ]
+    );
+}
+
+#[test]
 fn init_offers_the_skill_as_a_harness() {
     let env = Env::new(Snapper::Missing);
     let claude = mkdir(&env, ".claude/skills");
