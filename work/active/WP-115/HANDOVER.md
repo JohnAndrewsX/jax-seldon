@@ -326,3 +326,53 @@ follows):
   event lies in any window; every such capture reads the case files. The
   item-10 measurement should use a logbook with open attention items.
 - ADR-0029 §1(d) note (see Decisions) — orchestrator.
+
+## Round 3
+
+Stage 2 (Fable): APPROVE 3f0ebab with a short round 3 before the merge.
+
+### Done
+
+1. **Guard wording** (`reconcile::guard_advisory`): one line for
+   packages and paths, always the risk *at the time* — `advisory: not
+   linked: <event> is `alwaysRed` | can affect boot, login or the shell
+   (`[drift] alwaysRedPaths`), which only an R3 case takes, and <ID> was
+   R<n> at the time | the record of <ID> does not tell its risk at the
+   time (ADR-0027 §2c); if this case made it: `seldon drift link <EVENT>
+   <ID>``. The reused `<ID> is R1, but its red change …` (present tense,
+   the case notes' wording) is gone from rule 9; the case notes keep
+   theirs for an open case's own red change. Tests:
+   `the_harm_guard_wants_r3` (exact line, "was R2 at the time"), the
+   e2e harm and raise tests; validator port and SPEC §5 rule 9 follow.
+2. **Fail-safe** (`PlanningCase::of`): a Log risk timeline whose last
+   risk is not the frontmatter's `risk` is inconsistent → `risks: None`
+   → a guarded change does not link. Test:
+   `an_inconsistent_risk_record_tells_nothing` (frontmatter R3, Log R1 →
+   None; consistent → read). Validator: same rule, one more self-check
+   ("an inconsistent risk record tells nothing"); its "raised to R3"
+   self-check now raises the frontmatter too (51 self-checks). SPEC §5
+   rule 9 names it.
+3. **Merged main** (80e3e98: PR #5's `tests/common` root probe, WP-111,
+   WP-116 and later) in a77ce69. Conflicts: `capture.rs` `render()`
+   takes both `linkedPlanned` and WP-111's upgrade report; SPEC §3
+   capture JSON lists both; the German CLI reference kept main's source
+   line, then moved to the merge commit in 51ec528 (the English page
+   differs from 83651b1 only by this WP's generated help blocks, which
+   the German page carries). CHANGELOG: main's Engine entries first,
+   WP-115's two after them. `memory/pitfalls.md`: main's, untouched by
+   this branch.
+
+### Tests re-run after the merge
+
+- Engine suite in the local zone and with `TZ=UTC` (as CI): 944 passed,
+  0 failed each.
+- Root: not runnable here (no `sudo` on the dev host, red zone); PR #5's
+  root probe in `tests/common` ran as the user and passed.
+
+### Checks (round 3)
+
+`flock /tmp/seldon-check.lock just check` at 51ec528 (`CARGO_TARGET_DIR`
+on disk): **exit 0**, `check: ok`. Rust 1898 passed, 0 failed, 8 ignored;
+`validate-fixtures: ok` (83 events, 51 self-checks); `docs-check: ok`
+(no warning); `qmllint: ok`; plugin harness model 97, panel 908,
+overlay 326, bar 194, service-states 316, real-home-guard 11.
