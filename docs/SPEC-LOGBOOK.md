@@ -81,7 +81,7 @@ area: dev-env             # must exist under areas/ (engine creates on first use
 created: 2026-10-01
 started: 2026-10-01
 closed:
-snapshotBefore: 112       # snapper number, set by `seldon plan start`
+snapshotBefore: 112       # snapper number: `seldon plan snapshot` or `plan start --snapshot`
 agents: [agent:claude-code]
 events: [01J9…, 01J9…]    # ledger event ids, maintained by engine
 tags: []
@@ -112,8 +112,20 @@ superseding ADR-0023 §1): the agent that worked the case verifies and
 closes it when the Plan's verification passes — *Result* filled with the
 evidence, then `plan verify` and `plan done` with `--actor agent:<name>`;
 nothing is required of the user afterwards, and the ledger names the
-actor of every step. A person may close any case. The engine-side close
-conditions and the `closed-by-agent` tag are WP-101's.
+actor of every step. A person may close any case. The engine refuses an
+agent's `plan done` while *Result* is empty or the Plan's `Verification:`
+item has no text (exit 1, the reason named; HTML comments do not count),
+and gives an agent's close the tag `closed-by-agent` (WP-101). Reserved
+tags (CONTRACT.md rule 8): `closed-by-agent`, `reopens:<ID>` (the case
+`seldon plan reopen <ID>` made; the reopened case stays completed),
+`imported` (`seldon import task`, WP-102). The engine's Log line words of
+ADR-0027: `set …` (`plan set`), `snapshot N` (`plan snapshot`, or `snapshot
+N (its description names the case)` / `(from the recorded snapshot
+command)` when a capture fills it), `rollback for <ID> pruned (snapshot
+N)`, `advisory: …` (an R3 subject in a case below R3), `created (…):
+reopens <ID>` and `reopened as <ID>`; `imported from <path>` comes with
+WP-102. `seldon agent start --new -- "<sentence>"` writes the sentence
+into *Intent* (title: its first sentence, at most 72 characters).
 
 Status transitions (engine enforced): `queued → active → verification →
 completed`, `* → dropped`. Moving between folders is done by the engine

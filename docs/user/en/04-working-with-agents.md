@@ -64,7 +64,9 @@ without the block. `seldon doctor` shows it:
                      fix: seldon rules update
 ```
 
-Run the fix once:
+The panel checks this when you open it and shows "The logbook's agent
+rules are outdated (v1)" with *Update rules*; one click runs the fix.
+In a terminal, run it once:
 
 ```sh
 seldon rules update
@@ -89,8 +91,17 @@ The agent does. When the checks in the case's *Plan* pass, it fills
 names the agent as the one who closed the case. You can read any case
 later (see [Review what the agent did](#review-what-the-agent-did)).
 If the agent cannot verify the result, it leaves the case open and says
-what is missing. You can still close any case yourself: *Done* on the
-Work tab, or `seldon plan done`.
+what is missing. The engine holds it to that: an agent's `plan done` is
+refused while the case's *Result* is empty or the *Plan* has no
+`Verification:` text, also when the agent leaves out `--actor`. You can
+still close any case yourself: *Done* on the Work tab, or
+`seldon plan done`.
+
+A case an agent closed gets the tag `closed-by-agent`. The Work tab
+marks it "by agent", and *By agent* lists just those cases, for a spot
+check whenever you like. If something is wrong, *Reopen* on its card (or
+`seldon plan reopen <ID>`) starts a new case with the same *Intent*,
+which an agent can take on as before; the old case stays as it was.
 
 ## Claude Code
 
@@ -223,8 +234,25 @@ Tell your agent to run changes as plain commands.
 
 ## Start an agent from the panel
 
-*Start agent* on an active case's card (or `a` twice on the Work tab)
-runs:
+The quickest way is one sentence. Type what you want done into the field
+at the top of the Work tab and press Enter or *Run*. The panel runs:
+
+```sh
+seldon agent start --new -- "Install tool X, it ships a PKGBUILD"
+```
+
+The engine makes a case from your sentence: the title is its first
+sentence (at most 72 characters), the *Intent* is all of it. It starts
+the case (yellow, R1; the agent raises zone and risk when the work needs
+it) and starts the agent on it, exactly as below. That is one click and
+one sentence; the agent asks you only for a password, an R3 step or
+something outside your sentence. If Omarchy has no default agent yet,
+nothing is created and the panel says: run
+`omarchy default agent <name>` (for example `claude`), or name a
+launcher in the config.
+
+For a case you made yourself, *Start agent* on an active case's card (or
+`a` twice on the Work tab) runs:
 
 ```sh
 seldon agent start C-2026-003

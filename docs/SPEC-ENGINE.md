@@ -42,6 +42,25 @@ seldon init --remove-theme-hook                # WP-049: undoes --theme-hook (§
                                                # every other init flag, needs no logbook
 seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case only; the prompt
                                                          # names the case, no logbook text (WP-058)
+seldon agent start --new [--zone Z] [--risk R] [--area A] [--launcher NAME] [--json] -- "<intent>"
+                                               # WP-101 (ADR-0027 §6): one sentence. Title = the first
+                                               # sentence (up to the first line break, or `.`/`!`/`?` before
+                                               # white space or the end; a final `.` dropped), at most 72
+                                               # characters, cut at a word with `…`; Intent = the whole
+                                               # text, redacted, every line that starts (after blanks) with
+                                               # `#`, three backticks or `~~~` prefixed with `\`, so it can
+                                               # neither end the section nor open a fence. Created and started
+                                               # under one lock hold (case-created + case-started, defaults
+                                               # yellow/R1/normal, the creator from $SELDON_ACTOR else human,
+                                               # the active case set, one commit `<ID> created and started`),
+                                               # then launched as `agent start <ID>`. The built-in launcher
+                                               # (`omarchy agent prompt`) without an Omarchy default agent
+                                               # (`~/.config/omarchy/defaults/agent` missing or empty, read
+                                               # only) is refused before anything is written: exit 1, "no
+                                               # default agent … nothing was created. Fix: `omarchy default
+                                               # agent <name>` …". A launcher that fails after the case exists
+                                               # leaves the case active: exit 1 with the launcher's message,
+                                               # the case id and the retry `seldon agent start <ID>`.
 seldon capture [--source pacman,snapper,omarchy,plugins,theme,config | --all] [--since TS]
 seldon log "<text>" [--case ID] [--actor human|agent:NAME] [--tag T]
 seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [--meta k=v]
@@ -54,7 +73,47 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # --snapshot: `plan start` only (WP-049: the other steps do not offer it; clap
 # refuses it, exit 1). Starting an R2 or R3 case with no snapshot
 # (no --snapshot, no snapshotBefore) prints a warning and never refuses
-# (ADR-0023); R3's also asks for the human's explicit go per step (WP-050)
+# (ADR-0023); R3's also asks for the human's explicit go per step (WP-050).
+# WP-101: `--snapshot N` is checked as `plan snapshot` is, except "after the
+# start" (warnings only). `plan done` by an agent actor — `--actor agent:…` or,
+# without the flag, `$SELDON_ACTOR` (the resolved actor counts) — is refused,
+# exit 1 and nothing written, while the case's *Result* has no text (HTML
+# comments do not count) or its *Plan* has no filled `Verification:` item (text
+# after the colon or on the lines indented below it; case-insensitive, a list
+# item or a plain line); the message names what is missing (ADR-0027 §5). A
+# human close is never refused. An agent's close adds the tag `closed-by-agent`.
+seldon plan set <ID> (--zone Z | --risk R | --area A)… [--actor A]
+# WP-101 (ADR-0027 §2c): an open case's zone, risk or area (at least one; a new
+# area gets its README); one Log line `set risk R1 → R3, zone yellow → red`; no
+# ledger event (no kind fits, a new kind would be a contract change: the Log
+# line and the commit `<ID> set …` are the record); a value equal to the
+# current one is no change, and with nothing changed nothing is written
+# (exit 0, `changed: []`). A completed or dropped case: exit 1 (a completed
+# one names `plan reopen`). R2/R3 without `snapshotBefore` gets a warning
+# naming `plan snapshot`. --json → {case, changed: [{key, from, to}],
+# areaCreated, git, warnings}
+seldon plan snapshot <ID> <N> [--actor A]
+# WP-101 (ADR-0027 §3): records snapper snapshot N (1 or more) as the open
+# case's rollback, `snapshotBefore`, when it is empty; Log line `snapshot N`;
+# no ledger event. The same number again: exit 0, `recorded: false`, nothing
+# written; another number there: exit 1 naming it. Checks, warnings only,
+# never a refusal: the snapshot exists — its info file
+# `<snapshots>/<N>/info.xml` (the ADR-0026 read grant) decides when the
+# directory lists snapshots, else the ledger's last `snapshot`/`snapshot-delete`
+# of N; neither tells → one warning with the read grant — and its instant is
+# not before the case's last `case-started` event and not after the case's
+# first red event (a non-`seldon` event of the case with zone red; the warning
+# names it). --json → {case, recorded, snapshot, git, warnings}
+seldon plan reopen <ID> [--actor A]
+# WP-101 (ADR-0027 §5): a completed case only (exit 1 otherwise; `completed`
+# stays terminal, ADR-0003). A new case `Reopen: <title>` (redacted), created
+# and started at once (case-created + case-started in one ledger write, Log
+# lines `created (zone …, risk …): reopens <ID>` and `started`), zone, risk,
+# area and priority copied, *Intent* copied, tag `reopens:<ID>`; it becomes
+# the active case; the old case gets the Log line `reopened as <NEW>`. Every
+# reopen makes a new case; the output names the earlier ones ("Reopened
+# before as …; this is a new case"). --json → {case, reopens, earlier,
+# events, activeCase: {set}, git}
 seldon plan list [--status S] [--area A]          # a case file that does not load is a warning line
                                                  # (`<path>: invalid case: …; skipped`, as the index's;
                                                  # --json `warnings`), the others are listed, exit 0 (WP-077)
@@ -264,7 +323,8 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
-                                               # collectors, state, omarchy, snapper, git checks (read-only)
+                                               # rollbacks, collectors, state, omarchy, snapper, git checks
+                                               # (read-only)
 seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules block of the logbook's AGENTS.md
                                                # (`<!-- seldon:begin rules vN -->` … `<!-- seldon:end -->`,
                                                # marker lines as whole lines) becomes this engine's v2 block.
@@ -327,11 +387,15 @@ process, job or timer runs with `SELDON_ATTENDED` unset and its own
 `SELDON_ACTOR`. Two deviations from ADR-0027 §3's wording: the snapshot
 description is the case id only (`-d "<ID>"`; the title is logbook text
 and never goes into a shell command), and the agent starts the case
-first, then snapshots, and records the number in a *Log* line
-`snapshot <N> (<config>) before <step>` until WP-101 adds
-`plan snapshot`; `plan start --snapshot N` stays the human's (snapshot
-before the start). Every `seldon …` the templates name is checked
-against `--help` by `tests/init.rs`.
+first, then snapshots, and records the `root` config's number with
+`seldon plan snapshot <ID> <N>` (WP-101; other configs' numbers in a *Log*
+line `snapshot <N> (<config>) before <step>`); `plan start --snapshot N`
+stays the human's (snapshot before the start). The agent raises a case
+with `seldon plan set <ID> --risk R3` before an R3 step. Every `seldon …`
+the templates name is checked against `--help` by `tests/init.rs`. A
+change of the block's text keeps the old block's hash in `RELEASED_BLOCKS`
+(`engine/templates/rules-v2/` holds WP-100's), so `rules update` rewrites
+such a block without an archive.
 
 Help texts (WP-049): every command's `--help` starts with one sentence;
 values are named by what they are (`<ID>` a case id, `<EVENT>` an event
@@ -362,9 +426,19 @@ seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
 ```
 
 `doctor --path DIR` is an alias of the global `--logbook DIR`. The doctor
-shape is not part of `schema/`, and the plugin does not run `doctor`: its
-banners come from `index.json`, its `seldon --version --json` probe and the
-results of its engine calls.
+shape is not part of `schema/`. The plugin runs `doctor --json` for one
+row only, `rules` (WP-101, SPEC-PLUGIN §3: on panel open, read-only, its
+own process); every other banner comes from `index.json`, its `seldon
+--version --json` probe and the results of its engine calls.
+
+`rollbacks` (WP-101, ADR-0027 §3): a case (not dropped) whose
+`snapshotBefore` N the snapper collector saw deleted — a `snapshot-delete`
+of subject N on or after the case's creation day — has lost its rollback:
+`degraded` for an open case ("C-…: snapshot N pruned", fix: take a new
+snapshot before the case's next red change and write it into its Log),
+`ok` with the same words and "(completed: …)" for a completed one; `ok`
+"no case has a rollback snapshot" or "N case(s) with a rollback snapshot,
+none pruned" otherwise.
 
 doctor's checks (WP-070), each `error` or `degraded` with a `fix` line
 where one exists (an `ok` row has a fix only for the old snapper opt-in,
@@ -540,6 +614,8 @@ seldon agent start <caseId> --json → {launched, launcher, program, argv (with 
                         either end, so `default` → agent:default, `Claude Code` → agent:claude-code;
                         a name with nothing left is exit 1 before anything changes) and
                         SELDON_ATTENDED=1, replacing the caller's values (WP-096, §8).
+seldon agent start --new … --json -- "<intent>" → the same, plus created: {case, events (case-created,
+                        case-started), areaCreated, git} (WP-101)
 ```
 
 `capture` selection: no flag or `--all` = every collector enabled in
@@ -1069,6 +1145,32 @@ is a new item with its own leader and the old id resolves nothing (exit
 target (retro-links). `drift explain` creates a completed retroactive
 case and the index folds its `case` onto the explained event (ADR-0021).
 
+**Case notes after a capture (WP-101, ADR-0027 §2c, §3).** After the
+append and the case `events:` bookkeeping, the capture tells the cases
+three things, each a Log line written once (a case whose Log already has
+the line gets none), actor `system` unless named; a failure is a warning,
+never a failed capture:
+
+- *The rollback the agent forgot.* A new `snapshot` (not a `post`) fills
+  an open case's empty `snapshotBefore` — the case whose id is the
+  snapshot's description (the rules have the agent write `-d "<ID>"`),
+  else the case of the last recorded snapshot command in the
+  `ATTRIBUTION_WINDOW` before the snapshot's date (up to 2 min after it):
+  `hook` records `snapper … create`, `omarchy-snapshot create` and
+  `omarchy snapshot create` as a green `command` with subject `snapper`,
+  only with a case (§8). Log line `snapshot N (its description names the
+  case)` or `snapshot N (from the recorded snapshot command)` by the
+  command's actor. A recorded number is never replaced.
+- *A pruned rollback.* A `snapshot-delete` of N on or after the creation
+  day of a case (not dropped) whose `snapshotBefore` is N: `rollback for
+  <ID> pruned (snapshot N)`; `doctor` reports it (`rollbacks`, §3).
+- *R3 after the fact.* A red, non-`seldon` event whose subject `[drift]
+  alwaysRed` matches, in an active or verification case below R3: the Log
+  line `advisory: <ID> is R<n>, but its red change `<subject>` is R3 …`;
+  the index build warns with the same words (§6), once per case and
+  subject, while the case is open and below R3. The engine never refuses
+  the step.
+
 ## 6. Index build
 
 `seldon index` reads: all `ledger/*.jsonl`, all case files, journal file
@@ -1106,7 +1208,11 @@ to about 520 KB. No field marks the cut (`meta.truncated` stays reserved,
 ADR-0020, ADR-0025). Open cases, decisions and
 memory topics are not capped: an index of 1 000 000 bytes or more makes
 `index` and `status` warn (`warnings`, stderr) and name the largest
-section.
+section. The R3 advisory (WP-101, §5) is a build warning too, in the same
+channel: every command that rebuilds the index prints it (`seldon:
+warning: …` on stderr; `index`, `status` and `dossier` also in their
+`warnings`), once per open case below R3 and red `alwaysRed` subject, no
+index field (no contract change).
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
@@ -1355,8 +1461,11 @@ and the `omarchy-*` scripts, `systemctl (enable|disable|start|stop|mask|
 unmask)`, `cp|mv|install|ln|tee|sed -i|rm|rmdir|unlink|truncate` and
 redirections whose target — or `mv` source — lies in a watched path
 (`watchPaths` plus `~/.config/systemd`, always), `git` changing
-sub-commands inside the XDG config home or the logbook; the string of
-`bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
+sub-commands inside the XDG config home or the logbook, a snapshot command
+(`snapper [-c CONFIG] … create`, `omarchy-snapshot create`, `omarchy
+snapshot create`: green, subject `snapper`, recorded only with a case;
+the capture after it fills the case's `snapshotBefore` when it is empty,
+§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
 commands inside `$(…)`, backticks and `<(…)` are not classified (their
 words count only for `skipPaths`); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like

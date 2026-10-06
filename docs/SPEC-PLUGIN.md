@@ -95,6 +95,14 @@ plugin/
   as plain text, never part of a command. It stays until a capture the
   plugin runs exits 0 without warnings; a failed or locked capture leaves
   it. Captures run outside the plugin (the CLI, hooks) are not seen.
+- The rules check (WP-101): `["seldon", "doctor", "--json"]` in its own
+  `Process`, read-only and beside the queue (it takes no lock), when the
+  panel opens or the engine turns up while it is open, at most every
+  10 minutes; never in dev mode or without an engine. Only its `rules` row
+  is read (`rulesBanner`, §5). Doctor's exit 1 (an error row) still
+  carries the JSON; only exits above 1 log a warning line. The banner's
+  click queues `["seldon", "rules", "update", "--json"]` like any write,
+  then forces a new check.
 - One call at a time per family (plan and agent, drift, decide): a call
   refused because one of its family is pending returns false and sets
   `busyRefusal` to `{ family, action, caseId, eventId, text }` with the
@@ -168,7 +176,23 @@ cases against the bar-widget setting `wipLimit` (default 3; warns, never
 blocks). Completed shows the index's last 50 (scrollable). *Start agent*
 (WP-022) on an active case's card: key `a` twice or click + Confirm →
 `seldon agent start <id> --json`; the card shows "agent: <name>" from the
-case's `agents`; refused on queued/verification/closed cases. While a text
+case's `agents`; refused on queued/verification/closed cases. One-sentence
+start (WP-101, ADR-0027 §6): above the WIP line an intent field and *Run*
+send `seldon agent start --new --json -- <intent>` (the text one argument
+after `--`, exactly as typed; Enter in the field or the button; key `i`
+takes the field from the Work tab); *Run* reads "Running" with a spinner
+while the engine works, the engine's refusal (no default agent, with its
+fix) is the result line, the field keeps its text until the engine has
+made the case, then empties, and the cursor goes to the new case. The
+manual path stays: *New case* opens the sheet. A completed case whose
+`tags` hold `closed-by-agent` (CONTRACT.md rule 8) reads "by agent" on
+its tile and "completed by agent" on its card; the *By agent* toggle in
+the header narrows the Completed column to those cases (its header then
+reads "COMPLETED n / total"), a spot check that is never due. Every
+completed card offers *Reopen* beside *Open*: one click or key `r`, no
+arming (it creates a case and destroys nothing) → `seldon plan reopen
+<id> --json`; the result line names the new case and earlier reopens, the
+cursor goes to the new case, whose meta line reads "reopens <id>". While a text
 field or the sheet has focus the panel blocks the key catcher; `Esc`
 hands the keys back and keeps the draft. So does every tab change (keys,
 a click on the tab strip, IPC `tab`), because a hidden field would keep
@@ -219,7 +243,7 @@ one source; once resolved, by the event's own zone.
 |---|---|---|
 | Today | today's journal entries, yesterday collapsed | QuickEntry (`seldon log`), "Open in editor" |
 | Changelog | ledger rows newest first, source filter chips, snapshot rows highlighted, drift rows marked | row → link/explain/dismiss sheet; "Capture now" |
-| Work | three columns queued/active/completed (last 50, scrollable) | "New case" (title + zone + risk + optional area/priority), start/verify/done/drop with two-press arming, Open in editor on every card; "Start agent" (runs `omarchy agent prompt` or the configured launcher with a prompt that names the case and the logbook) is WP-022 |
+| Work | intent field + *Run* (WP-101); three columns queued/active/completed (last 50, scrollable), "by agent" marker and filter | *Run* (one sentence → a started case with an agent, WP-101), "New case" (title + zone + risk + optional area/priority), start/verify/done/drop with two-press arming, Open in editor on every card, *Reopen* on completed cards (WP-101); "Start agent" (runs `omarchy agent prompt` or the configured launcher with a prompt that names the case and the logbook) is WP-022 |
 | Decisions | ADR list with status | "New decision" |
 | System | omarchy version, package counts, deviations, snapshots, plugins, theme | "Open in editor" (rebuild/update-impact actions are Phase 3 engine commands, allowed by CONTRACT.md, not wired in v1) |
 | Memory | lessons headings, memory topics | "Open" |
@@ -273,7 +297,15 @@ collector state this banner reads (reloading the index would not); after
 Check again" under its buttons until the index next changes; not
 initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
 *Check again*; index stale →
-*Capture now*; capture warnings → the neutral "Capture warned" notice of
+*Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
+logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
+doctor --json`, which the service runs when the panel opens (and when the
+engine turns up while it is open), at most every 10 minutes, in its own
+read-only process beside the queue, never in dev mode; *Update rules* runs
+`seldon rules update --json` (it rewrites only the engine's block and
+archives an edited one, so nothing is lost), then doctor again; a damaged
+or newer block shows the engine's fix as text, without a click (the
+`--replace` archive is the user's decision); capture warnings → the neutral "Capture warned" notice of
 §3 under the banners, without an action; plugin updated under a running
 shell (§3) → the neutral "Restart the shell to finish the update" above
 the banners, with both versions and one action, *Restart shell*, which
