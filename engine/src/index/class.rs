@@ -433,6 +433,671 @@ impl<'a> Classifier<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::event::Meta;
+
+    const AT: &str = "2026-10-01T12:00:00+02:00";
+
+    fn at(ts: &str) -> DateTime<FixedOffset> {
+        DateTime::parse_from_rfc3339(ts).unwrap()
+    }
+
+    fn ev(source: Source, kind: Kind, subject: &str) -> Event {
+        Event::new(at(AT), source, kind, subject)
+    }
+
+    /// A pacman event of a transaction whose logged command is `cmd`.
+    fn pac(kind: Kind, subject: &str, explicit: Option<bool>, cmd: &str) -> Event {
+        let mut e = ev(Source::Pacman, kind, subject);
+        e.explicit = explicit;
+        e.tx_id = Some(format!("tx-{cmd}"));
+        e.meta.command = Some(cmd.into());
+        e
+    }
+
+    fn config(kind: Kind, subject: &str, mark: Option<&str>) -> Event {
+        let mut e = ev(Source::Config, kind, subject);
+        if let Some(m) = mark {
+            e.meta.extra.insert(MATCHES_KEY.into(), m.into());
+        }
+        e
+    }
+
+    fn update(from: &str, to: &str) -> Event {
+        let mut e = ev(Source::Omarchy, Kind::Update, "omarchy");
+        e.meta = Meta {
+            from: Some(from.into()),
+            to: Some(to.into()),
+            ..Meta::default()
+        };
+        e
+    }
+
+    /// The verdict of `members` (the first is the lead) among `ledger`.
+    fn verdict(config: &DriftConfig, ledger: &[Event], members: &[usize]) -> (Class, &'static str) {
+        let rules = Rules::new(config);
+        let c = Classifier::new(&rules, ledger);
+        let m: Vec<&Event> = members.iter().map(|&i| &ledger[i]).collect();
+        let v = c.group(&m, m[0]);
+        (v.class, v.rule)
+    }
+
+    use Class::{Attention as A, Crisis as C, Routine as R};
+
+    /// ADR-0028 §2, every row: single events.
+    #[test]
+    fn every_row_of_the_table() {
+        let omarchy_line = "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*";
+        let cache = "pacman -U /var/cache/pacman/pkg/firefox-143.0.2-1-x86_64.pkg.tar.zst";
+        let rows: Vec<(&str, Event, (Class, &str))> = vec![
+            // plain full upgrade: every member, alwaysRed included
+            (
+                "-Syu upgrade",
+                pac(Kind::Upgrade, "firefox", Some(false), "pacman -Syu"),
+                (R, "sysupgrade"),
+            ),
+            (
+                "-Syu kernel upgrade",
+                pac(Kind::Upgrade, "linux", Some(false), "pacman -Syu"),
+                (R, "sysupgrade"),
+            ),
+            (
+                "-Syu reinstall",
+                pac(Kind::Reinstall, "glibc", Some(false), "pacman -Syu"),
+                (R, "sysupgrade"),
+            ),
+            (
+                "-Syu install",
+                pac(
+                    Kind::Install,
+                    "linux-firmware-amdgpu",
+                    Some(false),
+                    "pacman -Syu",
+                ),
+                (R, "sysupgrade"),
+            ),
+            (
+                "-Syu :: Replace removal",
+                pac(Kind::Remove, "old-pkg", Some(false), "pacman -Syu"),
+                (R, "sysupgrade"),
+            ),
+            (
+                "-Syyuu",
+                pac(Kind::Upgrade, "systemd", Some(false), "pacman -Syyuu"),
+                (R, "sysupgrade"),
+            ),
+            (
+                "-Su",
+                pac(Kind::Upgrade, "firefox", Some(false), "pacman -Su"),
+                (R, "sysupgrade"),
+            ),
+            (
+                "bare yay",
+                pac(Kind::Upgrade, "firefox", Some(false), "yay"),
+                (R, "sysupgrade"),
+            ),
+            (
+                "Omarchy's update line",
+                pac(Kind::Upgrade, "omarchy", Some(false), omarchy_line),
+                (R, "sysupgrade"),
+            ),
+            (
+                "-Syu kernel removal",
+                pac(Kind::Remove, "linux-lts", Some(false), "pacman -Syu"),
+                (A, "sysupgrade-red"),
+            ),
+            (
+                "-Syu kernel downgrade",
+                pac(Kind::Downgrade, "linux", Some(false), "pacman -Syyuu"),
+                (A, "sysupgrade-red"),
+            ),
+            (
+                "-Syu downgrade",
+                pac(Kind::Downgrade, "firefox", Some(false), "pacman -Syyuu"),
+                (A, "downgrade"),
+            ),
+            // named on the command line or from the cache
+            (
+                "named upgrade",
+                pac(Kind::Upgrade, "firefox", Some(true), "pacman -S firefox"),
+                (R, "upgrade"),
+            ),
+            (
+                "named reinstall",
+                pac(Kind::Reinstall, "firefox", Some(true), "pacman -S firefox"),
+                (R, "upgrade"),
+            ),
+            (
+                "-U from the cache (yay -Sua)",
+                pac(Kind::Upgrade, "firefox", Some(true), cache),
+                (R, "upgrade"),
+            ),
+            (
+                "named kernel upgrade",
+                pac(Kind::Upgrade, "linux", Some(true), "pacman -S linux"),
+                (A, "upgrade-red"),
+            ),
+            (
+                "named install",
+                pac(Kind::Install, "htop", Some(true), "pacman -S htop"),
+                (A, "package"),
+            ),
+            (
+                "named removal",
+                pac(Kind::Remove, "htop", Some(true), "pacman -Rns htop"),
+                (A, "package"),
+            ),
+            (
+                "named downgrade",
+                pac(
+                    Kind::Downgrade,
+                    "mesa",
+                    Some(true),
+                    "pacman -U /c/mesa-1:26.1.0-1-x86_64.pkg.tar.zst",
+                ),
+                (A, "package"),
+            ),
+            (
+                "named kernel install",
+                pac(
+                    Kind::Install,
+                    "linux-zen",
+                    Some(true),
+                    "pacman -S linux-zen",
+                ),
+                (C, "always-red"),
+            ),
+            (
+                "named systemd removal",
+                pac(Kind::Remove, "systemd", Some(true), "pacman -R systemd"),
+                (C, "always-red"),
+            ),
+            (
+                "named boot loader downgrade",
+                pac(
+                    Kind::Downgrade,
+                    "limine",
+                    Some(true),
+                    "pacman -U /c/limine-9.0-1-x86_64.pkg.tar.zst",
+                ),
+                (C, "always-red"),
+            ),
+            (
+                "a full upgrade naming a package",
+                pac(Kind::Install, "htop", Some(true), "pacman -Syu htop"),
+                (A, "package"),
+            ),
+            (
+                "keyring",
+                pac(
+                    Kind::Install,
+                    "archlinux-keyring",
+                    Some(true),
+                    "pacman -Sy --noconfirm archlinux-keyring",
+                ),
+                (R, "keyring"),
+            ),
+            (
+                "no command line",
+                {
+                    let mut e = pac(Kind::Upgrade, "firefox", None, "x");
+                    e.meta.command = None;
+                    e
+                },
+                (A, "other"),
+            ),
+            // omarchy update (the attributed one: `omarchy_update_rows`)
+            ("bare dev", update("4.0.6-1", "dev"), (A, "omarchy-other")),
+            (
+                "unattributed",
+                update("4.0.6-1", "4.0.7-1"),
+                (A, "omarchy-other"),
+            ),
+            // plugins and theme
+            (
+                "plugin-add",
+                ev(Source::Plugins, Kind::PluginAdd, "io.github.example.x"),
+                (A, "plugin"),
+            ),
+            (
+                "plugin-remove",
+                ev(Source::Plugins, Kind::PluginRemove, "io.github.example.x"),
+                (A, "plugin"),
+            ),
+            (
+                "plugin-update",
+                ev(Source::Plugins, Kind::PluginUpdate, "io.github.example.x"),
+                (A, "plugin"),
+            ),
+            (
+                "plugin-enable",
+                ev(Source::Plugins, Kind::PluginEnable, "io.github.example.x"),
+                (R, "plugin-toggle"),
+            ),
+            (
+                "plugin-disable",
+                ev(Source::Plugins, Kind::PluginDisable, "io.github.example.x"),
+                (R, "plugin-toggle"),
+            ),
+            (
+                "theme-set",
+                ev(Source::Theme, Kind::ThemeSet, "tokyo-night"),
+                (R, "theme"),
+            ),
+            // config: evidence marks, routine paths, persistence paths, overrides
+            (
+                "Omarchy's copy",
+                config(
+                    Kind::ConfigChange,
+                    "~/.config/hypr/hyprland.lua",
+                    Some(MATCHES_OMARCHY_DEFAULT),
+                ),
+                (R, "omarchy-default"),
+            ),
+            (
+                "a shipped sample hook",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/hooks/post-update.d/x.sample",
+                    Some(MATCHES_OMARCHY_DEFAULT),
+                ),
+                (R, "omarchy-default"),
+            ),
+            (
+                "Omarchy's desktop entry",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.local/share/applications/HEY.desktop",
+                    Some(MATCHES_OMARCHY_DEFAULT),
+                ),
+                (R, "omarchy-default"),
+            ),
+            (
+                "a link into /usr",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/systemd/user/graphical-session.target.wants/x.service",
+                    Some(MATCHES_SYSTEM_LINK),
+                ),
+                (R, "system-link"),
+            ),
+            (
+                "shell.json",
+                config(Kind::ConfigChange, "~/.config/omarchy/shell.json", None),
+                (R, "routine-paths"),
+            ),
+            (
+                "refresh backup",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/hypr/hyprland.lua.bak.1786539345",
+                    None,
+                ),
+                (R, "routine-paths"),
+            ),
+            (
+                "removed shell.json",
+                config(Kind::ConfigRemove, "~/.config/omarchy/shell.json", None),
+                (R, "routine-paths"),
+            ),
+            (
+                "user unit",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/systemd/user/miner.service",
+                    None,
+                ),
+                (C, "always-red-paths"),
+            ),
+            (
+                "hook in a .d",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/hooks/post-update.d/x.sh",
+                    None,
+                ),
+                (C, "always-red-paths"),
+            ),
+            (
+                "flat hook",
+                config(Kind::ConfigAdd, "~/.config/omarchy/hooks/post-boot", None),
+                (C, "always-red-paths"),
+            ),
+            (
+                "autostart",
+                config(Kind::ConfigAdd, "~/.config/autostart/x.desktop", None),
+                (C, "always-red-paths"),
+            ),
+            (
+                "environment.d",
+                config(Kind::ConfigChange, "~/.config/environment.d/x.conf", None),
+                (C, "always-red-paths"),
+            ),
+            (
+                "uwsm",
+                config(Kind::ConfigChange, "~/.config/uwsm/env", None),
+                (C, "always-red-paths"),
+            ),
+            (
+                "~/.profile",
+                config(Kind::ConfigChange, "~/.profile", None),
+                (C, "always-red-paths"),
+            ),
+            (
+                "~/.bash_profile",
+                config(Kind::ConfigAdd, "~/.bash_profile", None),
+                (C, "always-red-paths"),
+            ),
+            (
+                "an edited sample hook (never runs)",
+                config(
+                    Kind::ConfigChange,
+                    "~/.config/omarchy/hooks/theme-set.d/x.sample",
+                    None,
+                ),
+                (A, "config"),
+            ),
+            (
+                "hyprland lua",
+                config(Kind::ConfigChange, "~/.config/hypr/autostart.lua", None),
+                (A, "config"),
+            ),
+            (
+                "waybar",
+                config(Kind::ConfigChange, "~/.config/waybar/config.jsonc", None),
+                (A, "config"),
+            ),
+            (
+                "menu extension",
+                config(
+                    Kind::ConfigChange,
+                    "~/.config/omarchy/extensions/omarchy-menu.jsonc",
+                    None,
+                ),
+                (A, "config"),
+            ),
+            (
+                "themed template",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/themed/btop.theme.tpl",
+                    None,
+                ),
+                (A, "config"),
+            ),
+            (
+                ".bashrc",
+                config(Kind::ConfigChange, "~/.bashrc", None),
+                (A, "config"),
+            ),
+            (
+                ".zshrc",
+                config(Kind::ConfigChange, "~/.zshrc", None),
+                (A, "config"),
+            ),
+            (
+                "own desktop entry",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.local/share/applications/x.desktop",
+                    None,
+                ),
+                (A, "config"),
+            ),
+            (
+                "theme colours",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/themes/mine/colors.toml",
+                    None,
+                ),
+                (R, "theme-assets"),
+            ),
+            (
+                "theme shell.toml",
+                config(
+                    Kind::ConfigChange,
+                    "~/.config/omarchy/themes/mine/shell.toml",
+                    None,
+                ),
+                (R, "theme-assets"),
+            ),
+            (
+                "background",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/backgrounds/mine/1.svg",
+                    None,
+                ),
+                (R, "theme-assets"),
+            ),
+            (
+                "theme lua",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/themes/mine/hyprland.lua",
+                    None,
+                ),
+                (A, "config"),
+            ),
+            (
+                "theme terminal config",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/themes/mine/kitty.conf",
+                    None,
+                ),
+                (A, "config"),
+            ),
+            (
+                "theme vscode",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/themes/mine/vscode.json",
+                    None,
+                ),
+                (A, "config"),
+            ),
+            (
+                "cloned theme lua",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/themes/repo/hyprland.lua",
+                    Some(MATCHES_THEME_REPO),
+                ),
+                (R, "theme-repo"),
+            ),
+            (
+                "removed hook",
+                config(
+                    Kind::ConfigRemove,
+                    "~/.config/omarchy/hooks/post-update.d/x.sh",
+                    None,
+                ),
+                (A, "config-remove"),
+            ),
+            (
+                "removed lua",
+                config(Kind::ConfigRemove, "~/.config/hypr/monitors.lua", None),
+                (A, "config-remove"),
+            ),
+            (
+                "a mark on a removal counts nothing",
+                config(
+                    Kind::ConfigRemove,
+                    "~/.config/hypr/x.lua",
+                    Some(MATCHES_OMARCHY_DEFAULT),
+                ),
+                (A, "config-remove"),
+            ),
+            // the total row
+            (
+                "anything else",
+                ev(Source::Theme, Kind::ConfigChange, "x"),
+                (A, "other"),
+            ),
+        ];
+        let defaults = DriftConfig::default();
+        let mut failed = Vec::new();
+        for (label, e, want) in rows {
+            let got = verdict(&defaults, std::slice::from_ref(&e), &[0]);
+            if got != want {
+                failed.push(format!("{label}: got {got:?}, want {want:?}"));
+            }
+        }
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
+    }
+
+    /// The omarchy `update` row: routine only with package-shaped versions
+    /// and Omarchy's package moved to the new version by a plain full
+    /// upgrade at most 31 days before.
+    #[test]
+    fn omarchy_update_rows() {
+        let line = "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*";
+        let mut moved = pac(Kind::Upgrade, "omarchy", Some(false), line);
+        moved.meta.to = Some("4.0.7-1".into());
+        moved.ts = at("2026-10-01T11:58:00+02:00");
+        let d = DriftConfig::default();
+        let ledger = [update("4.0.6-1", "4.0.7-1"), moved.clone()];
+        assert_eq!(verdict(&d, &ledger, &[0]), (R, "omarchy-update"));
+        let mut dev = moved.clone();
+        dev.subject = "omarchy-dev".into();
+        assert_eq!(
+            verdict(&d, &[update("4.0.6-1", "4.0.7-1"), dev], &[0]),
+            (R, "omarchy-update")
+        );
+        // another version, a named transaction, a downgrade, too old, later
+        let mut other = moved.clone();
+        other.meta.to = Some("4.0.8-1".into());
+        let mut named = moved.clone();
+        named.meta.command = Some("pacman -S omarchy".into());
+        let mut down = moved.clone();
+        down.kind = Kind::Downgrade;
+        let mut old = moved.clone();
+        old.ts = at("2026-08-01T12:00:00+02:00");
+        let mut later = moved.clone();
+        later.ts = at("2026-10-01T12:00:01+02:00");
+        for (label, p) in [
+            ("other", other),
+            ("named", named),
+            ("down", down),
+            ("old", old),
+            ("later", later),
+        ] {
+            let got = verdict(&d, &[update("4.0.6-1", "4.0.7-1"), p], &[0]);
+            assert_eq!(got, (A, "omarchy-other"), "{label}");
+        }
+        assert_eq!(
+            verdict(&d, &[update("dev", "4.0.7-1"), moved.clone()], &[0]),
+            (A, "omarchy-other")
+        );
+    }
+
+    /// A group's class is the highest of its members; a dependency of a
+    /// named transaction follows its explicit members, also when they are
+    /// no longer in the item (resolved with `--only`).
+    #[test]
+    fn groups_and_dependencies() {
+        let d = DriftConfig::default();
+        let syu = |kind, subject: &str| pac(kind, subject, Some(false), "pacman -Syu");
+        let ledger = [
+            syu(Kind::Upgrade, "firefox"),
+            syu(Kind::Downgrade, "systemd"),
+            syu(Kind::Upgrade, "linux"),
+        ];
+        assert_eq!(verdict(&d, &ledger, &[0, 2]), (R, "sysupgrade"));
+        assert_eq!(
+            verdict(&d, &ledger, &[0, 1, 2]),
+            (A, "sysupgrade-red"),
+            "max"
+        );
+        let named =
+            |kind, subject: &str, explicit| pac(kind, subject, Some(explicit), "pacman -S linux");
+        let ledger = [
+            named(Kind::Install, "linux", true),
+            named(Kind::Install, "kmod", false),
+        ];
+        assert_eq!(verdict(&d, &ledger, &[0, 1]), (C, "always-red"));
+        assert_eq!(
+            verdict(&d, &ledger, &[1]),
+            (C, "always-red"),
+            "the dependency alone"
+        );
+        let named =
+            |kind, subject: &str, explicit| pac(kind, subject, Some(explicit), "pacman -S htop");
+        let ledger = [
+            named(Kind::Install, "htop", true),
+            named(Kind::Install, "libnl", false),
+        ];
+        assert_eq!(verdict(&d, &ledger, &[1, 0]), (A, "package"));
+        // a dependency whose transaction has no explicit member
+        let lone = [pac(
+            Kind::Install,
+            "libnl",
+            Some(false),
+            "pacman -S --asdeps x",
+        )];
+        assert_eq!(verdict(&d, &lone, &[0]), (A, "other"));
+    }
+
+    /// `[drift]`: a routine rule left out of `routine` does not apply (the
+    /// event falls to the next row); the path and package lists are the
+    /// user's.
+    #[test]
+    fn the_config_changes_the_rules() {
+        let without = |rule: &str| DriftConfig {
+            routine: DriftConfig::default()
+                .routine
+                .into_iter()
+                .filter(|r| r != rule)
+                .collect(),
+            ..DriftConfig::default()
+        };
+        let theme = [ev(Source::Theme, Kind::ThemeSet, "x")];
+        assert_eq!(verdict(&without("theme"), &theme, &[0]), (A, "other"));
+        let link = [config(
+            Kind::ConfigAdd,
+            "~/.config/systemd/user/x.service",
+            Some(MATCHES_SYSTEM_LINK),
+        )];
+        assert_eq!(
+            verdict(&without("system-link"), &link, &[0]),
+            (C, "always-red-paths")
+        );
+        let syu = [pac(Kind::Upgrade, "linux", Some(false), "pacman -Syu")];
+        assert_eq!(verdict(&without("sysupgrade"), &syu, &[0]), (A, "other"));
+        let up = [pac(
+            Kind::Upgrade,
+            "firefox",
+            Some(true),
+            "pacman -S firefox",
+        )];
+        assert_eq!(verdict(&without("upgrade"), &up, &[0]), (A, "upgrade"));
+        let mut d = DriftConfig::default();
+        d.always_red_paths.push("~/.ssh/authorized_keys".into());
+        d.routine_paths.push("~/.config/hypr/monitors.lua".into());
+        d.routine_packages = vec!["htop".into()];
+        let keys = [config(Kind::ConfigChange, "~/.ssh/authorized_keys", None)];
+        assert_eq!(verdict(&d, &keys, &[0]), (C, "always-red-paths"));
+        let mon = [config(
+            Kind::ConfigChange,
+            "~/.config/hypr/monitors.lua",
+            None,
+        )];
+        assert_eq!(verdict(&d, &mon, &[0]), (R, "routine-paths"));
+        let htop = [pac(Kind::Install, "htop", Some(true), "pacman -S htop")];
+        assert_eq!(verdict(&d, &htop, &[0]), (R, "keyring"));
+        let kr = [pac(
+            Kind::Install,
+            "archlinux-keyring",
+            Some(true),
+            "pacman -S archlinux-keyring",
+        )];
+        assert_eq!(
+            verdict(&d, &kr, &[0]),
+            (A, "package"),
+            "the list is the user's"
+        );
+    }
 
     #[test]
     fn package_shaped_versions() {

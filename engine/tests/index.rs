@@ -690,6 +690,136 @@ fn drift_group_classes() {
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
+/// ADR-0028 §5, the migration: a ledger written before ADR-0028 with
+/// open theme, toggle, `omarchy update`, `-Syu` and `shell.json` drift,
+/// and an old resolution of a theme switch. Under the default rules the
+/// routine rows leave `drift` (nothing is written: the build is a pure
+/// function of ledger and config), the old resolutions still fold, and
+/// `series.drift` never goes negative; `attention = "all"` brings the
+/// rows back (the rollback).
+#[test]
+fn migration_routine_rows_leave_drift() {
+    let line = |v: Value| -> Event { serde_json::from_value(v).unwrap() };
+    let syu = "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*";
+    let lines = vec![
+        // August: a theme tried and dismissed, in a week of its own
+        line(
+            json!({"id": "01M20000000000000000000A01", "ts": "2026-08-10T10:00:00+02:00",
+            "source": "theme", "kind": "theme-set", "subject": "nord", "actor": "human", "zone": "yellow"}),
+        ),
+        line(
+            json!({"id": "01M20000000000000000000A02", "ts": "2026-08-11T10:00:00+02:00",
+            "source": "seldon", "kind": "resolution", "subject": "nord", "actor": "human",
+            "refersTo": "01M20000000000000000000A01", "resolution": "dismissed", "detail": "tried"}),
+        ),
+        // 10-01 evening, all open: an `omarchy update` with a kernel in it
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM01", "ts": "2026-10-01T16:40:00+02:00",
+            "source": "pacman", "kind": "upgrade", "subject": "omarchy", "detail": "4.0.7-1 → 4.0.8-1",
+            "actor": "system", "zone": "red", "explicit": false, "txId": "tx-20261001T164000",
+            "meta": {"command": syu, "from": "4.0.7-1", "to": "4.0.8-1"}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM02", "ts": "2026-10-01T16:40:01+02:00",
+            "source": "pacman", "kind": "upgrade", "subject": "linux", "detail": "6.17.1-1 → 6.17.2-1",
+            "actor": "system", "zone": "red", "explicit": false, "txId": "tx-20261001T164000",
+            "meta": {"command": syu, "from": "6.17.1-1", "to": "6.17.2-1"}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM03", "ts": "2026-10-01T16:42:00+02:00",
+            "source": "omarchy", "kind": "update", "subject": "omarchy", "detail": "4.0.7-1 → 4.0.8-1",
+            "actor": "system", "zone": "red", "meta": {"from": "4.0.7-1", "to": "4.0.8-1"}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM04", "ts": "2026-10-01T16:50:00+02:00",
+            "source": "theme", "kind": "theme-set", "subject": "nord", "actor": "human", "zone": "yellow"}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM05", "ts": "2026-10-01T16:51:00+02:00",
+            "source": "plugins", "kind": "plugin-disable", "subject": "io.github.example.weather-plus",
+            "actor": "system", "zone": "yellow", "meta": {"enabled": false}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM06", "ts": "2026-10-01T16:51:01+02:00",
+            "source": "config", "kind": "config-change", "subject": "~/.config/omarchy/shell.json",
+            "actor": "system", "zone": "yellow", "meta": {"hashFrom": "a", "hashTo": "b"}}),
+        ),
+        // an Omarchy-default copy from before the marks: classified by path
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM07", "ts": "2026-10-01T16:52:00+02:00",
+            "source": "config", "kind": "config-change", "subject": "~/.config/hypr/looknfeel.lua",
+            "actor": "system", "zone": "yellow", "meta": {"hashFrom": "c", "hashTo": "d"}}),
+        ),
+    ];
+    // only these lines, and no Plan that names them (a proposal would show
+    // a routine row as attention, ADR-0028 §3)
+    let with = |l: &mut load::Loaded| {
+        l.events = lines.clone();
+        for c in &mut l.cases {
+            c.plan = "- [ ] nothing to see\n".into();
+        }
+    };
+    let new = derive(with);
+    let old = derive_all(with);
+    let ids = |ix: &model::Index| -> Vec<String> {
+        ix.drift.iter().map(|d| d.event_id.clone()).collect()
+    };
+    assert_eq!(
+        ids(&new),
+        ["7ZZZZZZZZZZZZZZZZZZZZZZM07"],
+        "every routine row left; an old copy without its mark is an override (by path)"
+    );
+    assert_eq!((new.summary.open_drift, new.summary.crisis), (1, 0));
+    for id in ["M01", "M03", "M04", "M05", "M06"] {
+        let id = format!("7ZZZZZZZZZZZZZZZZZZZZZZ{id}");
+        assert!(
+            ids(&old).contains(&id),
+            "{id} is open under attention = all"
+        );
+    }
+    assert_eq!(
+        old.summary.crisis, 2,
+        "the -Syu with a kernel and the update were red"
+    );
+    // the update stays a release marker
+    let timeline = new.series.timeline.as_ref().unwrap();
+    assert!(
+        timeline
+            .iter()
+            .any(|t| t.kind == "release" && t.reference == "4.0.8-1")
+    );
+    // old resolutions still fold
+    let folded = new
+        .events
+        .iter()
+        .find(|e| e.event.id.to_string() == "01M20000000000000000000A01")
+        .unwrap();
+    assert_eq!(folded.event.resolution, Some(Resolution::Dismissed));
+    // never negative: the open count after each week
+    for (name, ix) in [("default", &new), ("all", &old)] {
+        let mut open = 0i64;
+        for w in &ix.series.drift {
+            open += w.opened as i64 - w.resolved as i64;
+            assert!(open >= 0, "{name}: {} goes to {open}", w.week);
+        }
+    }
+    let aug = |ix: &model::Index| -> (usize, usize) {
+        let w = ix
+            .series
+            .drift
+            .iter()
+            .find(|w| w.week == "2026-W33")
+            .unwrap();
+        (w.opened, w.resolved)
+    };
+    assert_eq!(
+        aug(&new),
+        (0, 0),
+        "a routine switch opens nothing, its dismissal counts nothing"
+    );
+    assert_eq!(aug(&old), (1, 1));
+}
+
 /// The system upgrade of `omarchy update` as pacman logs it (quotes gone),
 /// from `$OMARCHY_PATH/bin/omarchy-update-system-pkgs`.
 const OMARCHY_UPDATE_LINE: &str = "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*";
