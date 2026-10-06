@@ -1,7 +1,9 @@
 # ADR-0014 — Event attribution, zones, plugin version source, agent file edits
 
-**Status:** accepted
+**Status:** accepted; §2 superseded in part by ADR-0028
 **Date:** 2026-10-01
+
+> Superseded in part by [ADR-0028](ADR-0028-attention-by-consequence.md) (2026-10-06): `crisis` no longer derives from the zone; the zone stays the ledger field (where a change acts) and crisis follows the harm test.
 
 ## Context
 WP-002 built the fixture logbook and found four producer rules that no spec
