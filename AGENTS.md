@@ -13,6 +13,12 @@ anything. It is changed only on the operator's explicit instruction.
   shell process, plugin system). Reference: the installed tree at
   `$OMARCHY_PATH` (`/usr/share/omarchy`; `shell/README.md`, `shell/plugins/`) — *code is
   truth*; then https://plugins.omarchy.org/develop.html; then the Arch Wiki.
+- **Omarchy first:** Omarchy's own agent skill
+  (`$OMARCHY_PATH/default/agents/skills/omarchy/`, also `/omarchy`) and
+  `omarchy commands --json` are inputs to every WP that touches Omarchy
+  integration. Prefer Omarchy's mechanism (plugin settings, `omarchy hook
+  install`, `omarchy pkg add`, Omarchy's privilege wording) over a
+  Seldon-private one; Seldon must work on a freshly installed Omarchy.
 
 ## 2. Language policy
 
@@ -86,7 +92,9 @@ dev agents in parallel on independent WPs.
 - **Red — the host system.** No `pacman`, no `sudo`, no edits under
   `~/.config` outside `~/.config/omarchy/plugins/jax.seldon` (the dev
   install of the plugin), no systemd changes. Collectors only *read*
-  `/var/log/pacman.log`, snapper, `omarchy` CLI output.
+  `/var/log/pacman.log`, snapper, `omarchy` CLI output, and (hashes only,
+  operator decision 2026-10-06, WP-114) `/etc/pacman.conf` and
+  `/etc/pacman.d/*.conf`.
 
 ## 7. Engineering rules
 

@@ -514,6 +514,21 @@ and the package does not exist yet. Update the plugin first:
   *Restart shell*, which runs `omarchy-restart-shell` (no arguments).
   Plugins up to 0.1.3 do not show it; the update guide and both READMEs
   say to restart the shell after every plugin update (WP-090).
+- **Setup texts (WP-117).** Every terminal the panel opens now says what
+  it is about to do, shows the command, runs it and says what changed,
+  like Omarchy's own scripts. *Grant* (the snapshot read grant) says
+  that it grants read access to `/.snapshots` only and asks for your
+  password once; afterwards it records the snapshots, and the banner
+  disappears without *Check again* ("Snapshots are now recorded. The
+  panel updates by itself." or "Nothing changed. Snapshots stay off;
+  Seldon works without them."). A result line never claims more than
+  happened; Ctrl+C says "Cancelled" and closes the window. *Copy* still
+  copies the plain command.
+  Banners say one sentence each; the buttons are *Install*, *Create*,
+  *Grant* and *Update*; the setup banners read "Install the engine",
+  "Create your logbook" and "Read snapshots (optional)", the engine one
+  in the accent colour unless an engine that was there is gone. Today
+  says "1 event today".
 
 ### Packaging and docs
 

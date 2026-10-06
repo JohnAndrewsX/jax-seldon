@@ -40,7 +40,8 @@ done
 install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin/seldon"
 # The editor launcher the engine calls without a terminal records its argv.
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-launch-editor"
-# So does the floating-terminal launcher behind a banner's Run in terminal.
+# So does the floating-terminal launcher behind a banner's Install, Create,
+# Grant and Update.
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-launch-floating-terminal-with-presentation"
 # And the shell restart behind the restart notice's button (WP-090).
 install -m 755 "$root/tests/plugin/fake-recorder" "$work/bin/omarchy-restart-shell"
@@ -129,6 +130,7 @@ shows sample 1 "2 changes that can affect boot, login or the shell have no case"
 expect sample 1 .view.today.entries 4
 # ADR-0028 §4b: the counts row's last stat is the attention count
 shows sample 1 "without a case"
+shows sample 1 "events today"
 expect sample 1 '[.texts[] | select(. == "open drift")] | length' 0
 expect sample 1 .view.today.yesterday 1
 shows sample 1 "Thursday, 1 Oct 2026"
@@ -214,26 +216,59 @@ shows yesterday 5 "Snapshots aufgeräumt, 108 und 109 gelöscht."
 clean_log yesterday
 
 # 4. Snapper without permissions (ADR-0026): its banner on every tab, with
-#    Check again (WP-054); after Run in terminal, the hint under the buttons.
-run snapper "$fx/index-variants/snapper-degraded.json" "view;tab:changelog;tab:system;click:Run in terminal" \
+#    Grant, Copy and Check again (WP-054, WP-117): one sentence, the plain
+#    command; the engine's message and what the grant gives on hover. Grant
+#    opens the terminal script and adds no hint.
+run snapper "$fx/index-variants/snapper-degraded.json" \
+  "view;tab:changelog;tab:system;click:Grant;hover:Read snapshots (optional);wait:snapperTip.shown=true;view" \
   HARNESS_RECORD="$work/snapper.record"
-for step in 1 2 3 4; do
-  expect snapper $step .view.snapper "Snapshots not readable"
+for step in 1 2 3 4 6; do
+  expect snapper $step .view.snapper "Read snapshots (optional)"
 done
 shows snapper 1 'sudo setfacl -m u:$USER:rx /.snapshots'
-shows snapper 1 "Run in terminal"
+shows snapper 1 "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it."
+shows snapper 1 "Grant"
+shows snapper 1 "Copy"
 shows snapper 1 "Check again"
-# the detail: the engine's message, then what the fix grants
+expect snapper 1 '[.texts[] | select(. == "Run in terminal")] | length' 0
 snapper_grants="The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
-expect snapper 1 "[.texts[] | select(endswith(\"\\n$snapper_grants\"))] | length > 0" true
-expect snapper 3 '[.texts[] | select(. == "When the command has finished, press Check again")] | length' 0
-shows snapper 4 "When the command has finished, press Check again"
+snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
+expect snapper 1 '[.texts[] | select(contains("snapshot directory listing"))] | length' 0
+expect snapper 1 .view.snapperTip.shown false
+expect snapper 6 .view.snapperTip.text "$snapper_message"$'\n'"$snapper_grants"
+expect snapper 6 .view.snapperTip.shown true
+expect snapper 6 .view.snapperTip.fits true
+expect snapper 4 '[.texts[] | select(startswith("When the command has finished"))] | length' 0
+# the launcher's argv is the grant script, verbatim (model.test.js pins its text)
+script=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}
+  vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+  process.stdout.write(M.SNAPPER_FIX_SCRIPT)' "$plugin/Model.js")
+want=$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$script" --)
+deadline=$((SECONDS + 15))
+until [[ -s $work/snapper.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+if [[ $(cat "$work/snapper.record" 2>/dev/null) == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   snapper: Grant opened the terminal with the grant script"
+else
+  fail=$((fail + 1)); echo "FAIL snapper: the launcher got:"; sed 's/^/     /' "$work/snapper.record" 2>/dev/null || true
+fi
 shows snapper 3 "failing · snapper: No permissions. This user can neither list the snapshots nor read the snapshot directory; \`seldon doctor\` prints the read grant."
 clean_log snapper
 
+# 4b. One event today: the singular (WP-117).
+jq '.summary.eventsToday = 1' "$fx/index.sample.json" >"$work/one-event.json"
+run one-event "$work/one-event.json" "view"
+shows one-event 1 "event today"
+expect one-event 1 '[.texts[] | select(. == "events today")] | length' 0
+clean_log one-event
+
 # 5. Not initialised: the banner, no strip, empty tabs.
 run uninit "$fx/index-variants/not-initialised.json" "view;tab:changelog;tab:system;tab:work;text:+;tab:decisions;text:d;tab:memory"
-expect uninit 1 .view.banner "Logbook not initialised"
+expect uninit 1 .view.banner "Create your logbook"
+shows uninit 1 "Sets up your logbook and starts recording; the terminal asks a few questions, no password."
+shows uninit 1 "seldon init"
+shows uninit 1 "Create"
 expect uninit 1 .view.bannerPictogram logbook-not-initialised
 expect uninit 1 .view.crisis ""
 shows uninit 1 "No index to show"
@@ -1321,12 +1356,12 @@ clean_log restart-same
 run restart-updated "$fx/index-variants/not-initialised.json" "view;click:Restart shell;click:Restart shell" \
   HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_RECORD="$work/restart-updated.record"
 expect restart-updated 1 .view.restartNotice "Restart the shell to finish the update"
-expect restart-updated 1 .view.banner "Logbook not initialised"
+expect restart-updated 1 .view.banner "Create your logbook"
 shows restart-updated 1 "Seldon 99.0.0 is installed, but the shell still runs $(jq -r .version <<<"$manifest"). The shell loads new plugin code only when it restarts."
 shows restart-updated 1 "omarchy-restart-shell"
 shows restart-updated 1 "Restart shell"
 # above the status banner: its title comes first on screen
-expect restart-updated 1 '(.texts | index("Restart the shell to finish the update")) < (.texts | index("Logbook not initialised"))' true
+expect restart-updated 1 '(.texts | index("Restart the shell to finish the update")) < (.texts | index("Create your logbook"))' true
 want=$(printf '%s\n' omarchy-restart-shell --)
 deadline=$((SECONDS + 15))
 until [[ -s $work/restart-updated.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done

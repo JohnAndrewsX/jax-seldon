@@ -321,13 +321,13 @@ When something is wrong the panel shows one banner with a one-click fix:
 
 | State | Banner | One-click fix |
 |---|---|---|
-| Engine missing | Seldon engine not installed | *Install in terminal* runs the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash` in a floating terminal (the script verifies the download against `SHA256SUMS`; see [Install](#install)); *Copy* puts it on the clipboard; *Check again* looks for the engine again |
-| Logbook not initialised | Logbook not initialised | *Run in terminal* runs `seldon init` (it asks where to put the logbook); *Copy*; *Check again* |
+| Engine missing | Install the engine, in the accent tone (a setup step); Seldon engine missing, in the urgent tone, when an index shows the engine was there before | *Install* opens a floating terminal that says what it does, shows the GitHub one-liner `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh \| bash`, runs it (the script verifies the download against `SHA256SUMS`; see [Install](#install)) and says whether the engine is installed; *Copy* puts the one-liner on the clipboard; *Check again* looks for the engine again |
+| Logbook not initialised | Create your logbook | *Create* opens a terminal that says what happens, shows and runs `seldon init` (it asks where to put the logbook), then says whether the logbook was created; the panel then updates by itself; *Copy*; *Check again* |
 | Index missing | No index yet / Index unreadable | *Build index* runs `seldon status`, which writes it |
 | Index stale (older than 2 h) | Index is stale | *Capture now* |
-| Index format mismatch | Index format mismatch, with both contract versions | *Update in terminal* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older (then restart the shell, see [Update](#update)), the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
-| Engine too old (older than the plugin's `engineMin`) | Engine too old, with the version the plugin needs and the one `seldon` reports | *Update in terminal* runs the GitHub one-liner from *Engine missing* (until the AUR package is live, ADR-0024); *Copy*; *Check again* looks for the engine again |
-| Snapshots not readable | Snapshots not readable, with the engine's message and what the fix grants: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Run in terminal* / *Copy*: `sudo setfacl -m u:$USER:rx /.snapshots` (once; Seldon never runs it on its own); then *Check again* runs a capture, like *Capture now*, which clears the banner once snapshots are readable. After *Run in terminal* the banner says "When the command has finished, press Check again" |
+| Index format mismatch | Index format mismatch, with both contract versions | *Update* / *Copy*: `omarchy plugin update jax.seldon` when the plugin is older (then restart the shell, see [Update](#update)), the GitHub one-liner from *Engine missing* again when the engine is older (until the AUR package is live, ADR-0024) |
+| Engine too old (older than the plugin's `engineMin`) | Engine too old, with the version the plugin needs and the one `seldon` reports | *Update* runs the GitHub one-liner from *Engine missing* in a terminal (until the AUR package is live, ADR-0024); *Copy*; *Check again* looks for the engine again |
+| Snapshots not readable | Read snapshots (optional): one sentence on the one-time grant; on hover the engine's message and what the grant gives: read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), no snapshot creation, change or deletion (ADR-0026) | *Grant* opens a terminal that says what the grant does and that it asks for your password once, shows and runs `sudo setfacl -m u:$USER:rx /.snapshots`, then runs `seldon capture` and says "Snapshots are now recorded" (or, if that capture did not run, that the next capture records them); the banner goes by itself (Seldon never runs the grant on its own). *Copy* copies the command; *Check again* runs a capture, like *Capture now*, for a grant you ran yourself |
 | Plugin updated, shell not restarted (the installed manifest names another version than the code running) | Restart the shell to finish the update, in the neutral tone above the other banners, with both versions | *Restart shell* runs `omarchy-restart-shell`, no arguments; the shell then loads the installed plugin |
 | Capture warned (a capture the plugin ran exited 0 with warnings) | Capture warned, in the neutral tone under the other banners: the first line of each warning as the engine wrote it (today the state reset and its restore hint, WP-081); the full text on hover | None: the warning names the user guide section to read. The notice stays until a capture the plugin runs (*Capture now*, *Check again*, the `c` key, the bar's right click, the timer) finishes without warnings; a failed or locked capture leaves it |
 
@@ -429,17 +429,23 @@ shell plugin. This is everything it does outside its own window:
   your configuration.
 - **Two other programs, only when you click a banner button:**
   `wl-copy -- <command>` (*Copy*) and
-  `omarchy-launch-floating-terminal-with-presentation <command>`
-  (*Install in terminal*, *Run in terminal*, *Update in terminal*).
-  `<command>` is always one of five constants in the plugin:
+  `omarchy-launch-floating-terminal-with-presentation <script>`
+  (*Install*, *Create*, *Grant*, *Update*). `<script>` is one of five
+  constant scripts in the plugin, one per command: a `gum style` line that
+  says what happens, the command shown, the command run, and a line that
+  says what changed (or, on Ctrl+C, "Cancelled", and the window closes);
+  nothing from the index or the logbook is in them.
+  `<command>` is always one of these constants:
   `curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash`
   (the engine install while the AUR package does not exist; it fetches
   the script over TLS from this project's release and the script checks
   the engine against `SHA256SUMS`), `seldon init`,
-  `omarchy plugin update jax.seldon`, `yay -S jax-seldon`,
+  `omarchy plugin update jax.seldon`,
   `sudo setfacl -m u:$USER:rx /.snapshots`.
-  Omarchy's launcher runs it in a terminal window you see
-  (`sudo` asks for your password there).
+  Omarchy's launcher runs the script in a terminal window you see
+  (`sudo` asks for your password there). After the snapshot grant the
+  script runs `seldon capture`, after the engine update `seldon status`,
+  so the index shows the change.
 - **One more, only on *Restart shell*:** `omarchy-restart-shell`, with no
   arguments, from the notice that shows after a plugin update while the
   shell still runs the old code. It reads the plugin's own `manifest.json`
@@ -450,7 +456,7 @@ shell plugin. This is everything it does outside its own window:
 - **Writes nothing itself.** Notes, cases, drift resolutions and decisions
   are written by the engine, into your logbook, on your Enter or click.
 - **No network.** No sockets, no downloads, no update checks. The one
-  exception is yours to click: *Install in terminal* on the
+  exception is yours to click: *Install* on the
   engine-missing banner runs the `curl … | bash` install in a terminal
   you see.
 - **No units, binaries or installers.** The plugin folder holds QML,

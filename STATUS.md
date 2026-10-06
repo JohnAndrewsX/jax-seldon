@@ -14,8 +14,8 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-130 | guard: stop false positives on text, keep every real block | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
 | WP-118 | wizard, installer and docs texts (UX review) | Engine + Docs | `engine-118` (opus) | `wt/WP-118` · `wp/118-setup-texts` | 2026-10-06 |
-| WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -32,7 +32,7 @@ texts, docs) done. Then the 0.1.4 release preparation
 paths after a real update), WP-113 (plugin trees, toggles, opt-in
 authorized_keys; each item approved separately), WP-114 (pacman.conf;
 needs an AGENTS.md §6 amendment).
-Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
+0.2.0 (ADR-0034 desk, on the integration branch `next` until 0.1.4 is tagged): wave 1 WP-120 (contract v2, ADR-0035), WP-121 (desk shell), WP-113, WP-102a; wave 2 WP-122, WP-123, WP-124a (triage, supersedes WP-095), WP-114; wave 3 WP-125 (graph), WP-124b, WP-119, WP-102b; wave 4 WP-126. WP-130 (guard) on main; no
 Omarchy upstream contribution before 1.0. Then the
 contract v2 bundle for v0.2.0 (a case's risk in the ledger — `meta.risk` on
 case-created/started and a ledger line for `plan set --risk`, so ADR-0029's
@@ -52,6 +52,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-07 WP-117 every terminal the panel opens (engine install and
+  update, logbook setup, snapshot grant, plugin update) says what it will
+  do, shows the command and reports only what happened (failures, a
+  cancelled password prompt and a partial grant included); banners one
+  sentence with step titles; Opus review, one round, Fable stage 2;
+  merged.
 - 2026-10-06 WP-116 the Seldon agent starts like Omarchy's agent (the
   caller's folder, `~/Work` from home; `[agent] workdir`); Seldon's Claude
   Code hooks live in the user-wide settings and serve only sessions Seldon
@@ -563,6 +569,21 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- Operator, 2026-10-06 night ("all as recommended"): (1) v0.1.4 may be
+  tagged by the orchestrator once WP-117 and WP-118 are merged, the main
+  check and CI are green, the release dry run is green and the live test
+  on the freshly installed test host is green — otherwise no tag and a
+  report; (2) no separate 0.1.5: WP-119, WP-095 (incl. bulk triage) and
+  WP-102 are built in the 0.2.0 desk; (3) the contract v2 bundle ships in
+  0.2.0 (ADR first); (4) AGENTS.md §1 names Omarchy's agent skill
+  ("Omarchy first"); (5) the orchestrator may improve `scripts/guard.sh`
+  as WP-130 (text arguments and read-only queries stop blocking; real
+  commands stay blocked; every rule a row in the test table, shown before
+  the merge); (6) WP-113: plugin trees and the toggles dir approved,
+  `authorized_keys` opt-in; (7) WP-114 approved for 0.2.0, AGENTS.md §6
+  amended (pacman.conf hashes); (10) dependabot for the pinned actions;
+  (11) plugin-repo README pushed with the 0.1.4 release. Still the
+  operator's: the `v*` tag ruleset, the AUR account.
 - First setup of the release on a productive laptop (operator, 2026-10-06):
   works end to end but does not feel like Omarchy; UX review taken. In
   0.1.4: WP-117 (plugin texts; every terminal the panel opens says what,
