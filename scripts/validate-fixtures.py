@@ -246,12 +246,16 @@ def parse_pacman(command):
             return parts[0] if len(parts) == 4 else f
         return re.split(r"[<>=]", w.rsplit("/", 1)[-1])[0]
     targets = [n for n in (name(w) for w in words if w != "-") if n]
+    cache = lambda w: (".pkg.tar" in w and "/../" not in w and (w.startswith("/var/cache/pacman/pkg/")
+                       or "/.cache/yay/" in w or "/.cache/paru/" in w))
     return {"program": prog, "op": op, "sysupgrade": sysupgrade and op == "S" and not prints_only,
-            "targets": targets}
+            "targets": targets, "stdin": "-" in words,
+            "from_cache": op == "U" and bool(words) and all(cache(w) for w in words)}
 
 
 def plain_full_upgrade(cmd):
-    return cmd is not None and cmd["op"] == "S" and cmd["sysupgrade"] and not cmd["targets"]
+    """No target, none from stdin either (`-`, WP-109 round 2)."""
+    return cmd is not None and cmd["op"] == "S" and cmd["sysupgrade"] and not cmd["targets"] and not cmd["stdin"]
 
 
 def package_shaped(v):
@@ -269,6 +273,7 @@ class Classifier:
     def __init__(self, events):
         self.routine_paths = path_globs(ROUTINE_PATHS)
         self.red_paths = path_globs(ALWAYS_RED_PATHS)
+        self.events = events
         self.explicit = {}
         self.omarchy = []
         for e in events:
@@ -293,13 +298,19 @@ class Classifier:
                 if red and kind in ("downgrade", "remove"):
                     return ("attention", "sysupgrade-red")
                 return ("attention", "downgrade") if kind == "downgrade" else ("attention", "other")
-            if cmd and cmd["targets"] and all(t in ROUTINE_PACKAGES for t in cmd["targets"]):
+            if (cmd and cmd["op"] in ("S", "U") and not cmd["stdin"] and cmd["targets"]
+                    and all(t in ROUTINE_PACKAGES for t in cmd["targets"])):
                 return ("routine", "keyring")
             if e.get("explicit") is False:
                 return None
             if e.get("explicit") is True:
                 if kind in ("upgrade", "reinstall"):
-                    return ("attention", "upgrade-red") if red else ("routine", "upgrade")
+                    if red:
+                        return ("attention", "upgrade-red")
+                    # `-U` is an upgrade of what is installed only from a package cache (N1)
+                    if cmd and cmd["op"] == "U" and not cmd["from_cache"]:
+                        return ("attention", "package")
+                    return ("routine", "upgrade")
                 if kind in ("install", "remove", "downgrade"):
                     return ("crisis", "always-red") if red else ("attention", "package")
             return ("attention", "other")
@@ -318,13 +329,16 @@ class Classifier:
             removed = kind == "config-remove"
             if not removed and mark in ("omarchy-default", "system-link"):
                 return ("routine", mark)
+            # the persistence paths right after the evidence rows; a backup there needs evidence
+            inert = subject.startswith("~/.config/omarchy/hooks/") and subject.endswith(".sample")
+            if not removed and path_match(self.red_paths, subject) and not inert:
+                if path_match(self.routine_paths, subject) and self.holds_base_content(e):
+                    return ("routine", "routine-paths")
+                return ("crisis", "always-red-paths")
             if path_match(self.routine_paths, subject):
                 return ("routine", "routine-paths")
             if removed:
                 return ("attention", "config-remove")
-            inert = subject.startswith("~/.config/omarchy/hooks/") and subject.endswith(".sample")
-            if path_match(self.red_paths, subject) and not inert:
-                return ("crisis", "always-red-paths")
             theme = "~/.config/omarchy/themes/"
             if subject.startswith(theme) and "/" in subject[len(theme):]:
                 if mark == "theme-repo":
@@ -336,6 +350,22 @@ class Classifier:
                 return ("routine", "theme-assets")
             return ("attention", "config")
         return ("attention", "other")
+
+    def holds_base_content(self, e):
+        """engine: class.rs History::holds_base_content."""
+        h = e.get("meta", {}).get("hashTo")
+        at = e["subject"].rfind(".bak.")
+        if not h or at < 0:
+            return False
+        base = e["subject"][:at]
+        if not base or base.endswith("/") or at + 5 == len(e["subject"]):
+            return False
+        t = instant(e["ts"])
+        xs = [x for x in self.events if x["source"] == "config" and x["subject"] == base]
+        before = max((x for x in xs if instant(x["ts"]) < t), key=lambda x: (instant(x["ts"]), x["id"]), default=None)
+        after = min((x for x in xs if instant(x["ts"]) >= t), key=lambda x: (instant(x["ts"]), x["id"]), default=None)
+        return bool((before and before.get("meta", {}).get("hashTo") == h)
+                    or (after and after.get("meta", {}).get("hashFrom") == h))
 
     def follow(self, dep, cmd):
         vs = [v for v in (self.event(x, cmd) for x in self.explicit.get(dep.get("txId"), [])) if v]
@@ -1432,6 +1462,12 @@ def self_checks(today):
         ("a keyring transaction is routine", both(set_command("pacman -Sy --noconfirm archlinux-keyring"),
                                                   set_on_first(explicit=True), set_on_first(kind="install"),
                                                   set_on_first(subject="archlinux-keyring")), gone),
+        ("targets from stdin are no plain upgrade (B4)", set_command("pacman -Syu -"), zone("red", False)),
+        ("-U outside a cache is no upgrade (N1)", both(set_command("pacman -U /tmp/x/firefox-1-1-x86_64.pkg.tar.zst"),
+                                                        set_on_first(explicit=True)), zone("red", False)),
+        ("a keyring removal is no keyring (N2)", both(set_command("pacman -Rdd archlinux-keyring"),
+                                                      set_on_first(explicit=True), set_on_first(kind="remove"),
+                                                      set_on_first(subject="archlinux-keyring")), zone("red", False)),
     ]]
     out = []
     for label, mutate, expect, legacy in cases:

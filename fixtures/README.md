@@ -103,9 +103,10 @@ Rules the fixture check implements beyond the plain field copies:
   commands naming a package or lacking `-u`, `--overwrite`/`-r` arguments, an
   unknown option, `yay`, a `--only` resolution, a fan-out resolution) and
   fails if the zone, crisis or member count is not what ADR-0013 says, and
-  from 15 more under the default rules (`-Syyuu`, `-Su`, bare `yay`, Omarchy's
+  from 18 more under the default rules (`-Syyuu`, `-Su`, bare `yay`, Omarchy's
   update line, a kernel in the upgrade, `:: Replace`, downgrades, a named
-  upgrade, a named kernel install, the keyring) against ADR-0028 §2. Three
+  upgrade, a named kernel install, the keyring, targets from stdin, `-U`
+  outside a cache, a keyring removal) against ADR-0028 §2. Three
   more add an open caseless `zed` install, replace every open case's Plan,
   and check the token rule end to end: `Install zed.` and `` `extra/zed` ``
   propose, `Edit zed.conf` does not.

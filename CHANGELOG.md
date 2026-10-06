@@ -252,12 +252,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also takes a routine event; `drift explain|dismiss` of one exits 1.
   An agent may no longer explain or dismiss a crisis, and may link one
   only to an active case that lists it in `agents`; a human is never
-  refused (WP-109).
+  refused, but `--actor human` in an agent's session is (WP-109).
 - Six new default `watchPaths`: `~/.config/systemd/user`,
   `~/.config/autostart`, `~/.config/environment.d`, `~/.config/uwsm`,
   `~/.profile`, `~/.bash_profile`. A `config.toml` whose list is still the
   default of an earlier engine gains them at the next capture, which says
-  so once; files already there record nothing. A list you wrote yourself
+  so once and changes only that list in the file (comments stay); files
+  already there record nothing. A list you wrote yourself
   is kept, and `seldon doctor` names the paths it lacks with the line to
   add (WP-109).
 - New config events carry capture-time evidence in `meta.matches`
@@ -267,7 +268,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lost state directory or `install.sh --unit` no longer leaves a crisis.
   Omarchy's own copies count only from a root-owned `$OMARCHY_PATH` that
   is neither group- nor world-writable; `seldon doctor` says when they
-  do not (WP-109).
+  do not. A file in a persistence path is a crisis whatever its name: a
+  `*.bak.*` there is routine only when it holds what the file had before
+  (the backup `omarchy refresh` makes). The watcher unit counts as
+  Seldon's own only when it starts this engine; a theme counts as cloned
+  only with a real `.git` directory; `pacman -Syu -` (targets from stdin)
+  is no plain upgrade; `-U` is an upgrade only from a package cache
+  (WP-109).
 - `series.drift` changes for the past too: a routine change opens
   nothing, and a resolution counts only when the event it resolves
   opened an item, so the curve can no longer go negative. Old charts

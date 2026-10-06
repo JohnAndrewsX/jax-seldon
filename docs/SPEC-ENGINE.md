@@ -156,7 +156,10 @@ seldon drift dismiss <EVENT> [--only] [--actor A] -- <reason>
 # `explain|dismiss` of a routine event exit 1 ("routine", the rule, `drift
 # link` named). An agent actor (--actor or SELDON_ACTOR) may not explain or
 # dismiss a crisis and may link one only to an active case whose `agents`
-# lists it (exit 1, before any write); a human is never refused
+# lists it (exit 1, before any write); a human is never refused. In an
+# agent's session (SELDON_ACTOR=agent:…) `--actor human` is refused for
+# link, explain and dismiss (exit 1 naming the conflict; WP-109 round 2,
+# as WP-101 for `plan done`)
 seldon decide "<title>" [--case ID] [--no-edit] # creates ADR, opens $EDITOR unless --no-edit
 seldon status                                  # regenerates STATUS.md + index
 # decide and status (WP-050) fill the `decisions.index` fence of the logbook's
@@ -1006,7 +1009,13 @@ git itself is killed, with the same bounded pipe wait. Rules:
   (0.1.0–0.1.3: the first five; WP-089: the first six), gains the current
   defaults it lacks at the next `capture`, which saves the file under the
   lock and says so once (`note: config.toml now also watches …`,
-  `watchPathsAdded`); the files already there enter the scope without
+  `watchPathsAdded`). Only the `watchPaths` array is edited: the paths
+  are appended after its last string, every other byte (comments, order)
+  stays, and the result must read back as the same file with exactly
+  those paths added; a file that cannot be edited so (no single
+  top-level `watchPaths = [ … ]` key) is left as it is, the capture
+  warns and watches its old list, and doctor's `watch` row names the
+  paths (WP-109 round 2); the files already there enter the scope without
   events (scope changes below). A list the user wrote is never widened:
   `doctor`'s `watch` row names the default paths it lacks, with the line
   to add. **Evidence marks (ADR-0028 §5):** a new `config-add` or
@@ -1016,9 +1025,10 @@ git itself is killed, with the same bounded pipe wait. Rules:
   <rel>` for `~/.config/<rel>`; for `~/.local/share/applications/<name>`
   `$OMARCHY_PATH/applications/<name>`, and for `Alacritty.desktop`
   `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`), or it lies in a
-  theme directory `~/.config/omarchy/themes/<slug>/` that has a `.git`
-  (`theme-repo`: `omarchy theme install` clones there and strips a
-  theme's code). Only the fact is recorded, never the link target or the
+  theme directory `~/.config/omarchy/themes/<slug>/` that is no link and
+  holds a real `.git` directory, not a file and not a link (`theme-repo`:
+  `omarchy theme install` clones there and strips a theme's code;
+  Omarchy's own test, WP-109 round 2). Only the fact is recorded, never the link target or the
   content; old events have no mark and classify by path. `OMARCHY_PATH`
   defaults to `/usr/share/omarchy` (under `SELDON_TEST_GUARD` without
   the variable: `<guard>/omarchy`); the files there are only read and
@@ -1142,16 +1152,20 @@ After every capture:
    the Changelog, not drift, no reason ever asked; *attention* — open
    drift, quiet; *crisis* — open drift and the bar's signal. The rule
    ids (`drift show`): pacman in a plain full upgrade (argv `-S` with
-   `-u` naming no package, pacman, yay or paru: `-Syu`, `-Syyuu`, `-Su`,
+   `-u` naming no package and no `-` that reads targets from stdin,
+   pacman, yay or paru: `-Syu`, `-Syyuu`, `-Su`,
    bare `yay`, Omarchy's `pacman -Syu --noconfirm --overwrite …`) —
    `upgrade`, `reinstall`, `install` and a removal (`:: Replace`) are
    `sysupgrade`, `alwaysRed` subjects included; a downgrade or removal of
    an `alwaysRed` member is attention `sysupgrade-red`, another downgrade
    attention `downgrade`. Named (explicit: on the command line, or
-   `-U <file>` from the cache): `upgrade`/`reinstall` routine `upgrade`
+   `-U <file>`): `upgrade`/`reinstall` routine `upgrade` — with `-U` only
+   when every file lies in a package cache (`/var/cache/pacman/pkg/`,
+   `~/.cache/yay/`, `~/.cache/paru/`), else attention `package` —
    (`alwaysRed`: attention `upgrade-red`); `install`/`remove`/`downgrade`
-   attention `package` (`alwaysRed`: **crisis** `always-red`). A
-   transaction naming only `routinePackages` is routine `keyring`. A
+   attention `package` (`alwaysRed`: **crisis** `always-red`). A `-S` or
+   `-U` transaction naming only `routinePackages` (none from stdin) is
+   routine `keyring`; removing one is attention `package`. A
    dependency follows the highest class of its transaction's explicit
    members (also when they are resolved); a transaction without a command
    line is attention `other`. Omarchy `update`: routine `omarchy-update`
@@ -1160,12 +1174,19 @@ After every capture:
    new version at most 31 days before; else attention `omarchy-other`
    (a bare `dev`, a downgrade, unattributed). Plugins: `plugin-enable`/
    `-disable` routine `plugin-toggle`; `-add`/`-remove`/`-update`
-   attention `plugin`. `theme-set` routine `theme`. Config, in this order:
-   `meta.matches` `omarchy-default`/`system-link` routine (not for a
-   removal); `routinePaths` routine `routine-paths`; any other
-   `config-remove` attention `config-remove`; `alwaysRedPaths` **crisis**
-   `always-red-paths` (a `*.sample` file under `~/.config/omarchy/hooks/`
-   is not: `omarchy-hook` never runs it); in a theme directory
+   attention `plugin`. `theme-set` routine `theme`. Config, in this order
+   (ADR-0028 §2; WP-109 round 2): `meta.matches` `omarchy-default`/
+   `system-link` routine (not for a removal); then, for an addition or
+   change, `alwaysRedPaths` **crisis** `always-red-paths` (a `*.sample`
+   file under `~/.config/omarchy/hooks/` is not: `omarchy-hook` never
+   runs it) — a file there that also matches `routinePaths` (a
+   `<base>.bak.<epoch>` backup) is routine `routine-paths` only when it
+   holds the content the ledger last recorded for `<base>` (the `hashTo`
+   of the latest event of `<base>` before it, or the `hashFrom` of the
+   first at or after it: the copy `omarchy refresh` makes before it
+   restores the default), else a crisis, whatever its name; then
+   `routinePaths` routine `routine-paths`; any other `config-remove`
+   attention `config-remove`; in a theme directory
    `~/.config/omarchy/themes/<slug>/`, `meta.matches = theme-repo`
    routine `theme-repo`, a file that is not code (`*.lua`,
    `alacritty.toml`, `foot.ini`, `ghostty.conf`, `kitty.conf`,
@@ -1228,9 +1249,12 @@ After every capture:
    `installed by seldon init --theme-hook (built-in template)`), and a
    file named `seldon-watch.service` whose content (read again and
    checked against the event's hash) is `engine/systemd/
-   seldon-watch.service` with any `ExecStart=<prefix>/seldon watch` line,
-   the prefix without whitespace (detail `installed by install.sh --unit
-   (built-in template)`); so a lost state directory, `install.sh --unit`
+   seldon-watch.service` with an `ExecStart=<prefix>/seldon watch` line,
+   the prefix without whitespace, whose program (`%h` expanded) is this
+   engine: the running executable's canonical path, or a file of the
+   same size and SHA-256 (WP-109 round 2: the template proves the unit's
+   text, not the binary it starts) (detail `installed by install.sh
+   --unit (built-in template)`); so a lost state directory, `install.sh --unit`
    and its `systemctl --user enable` link are no crisis. A unit that
    differs in any other line is not explained. An unreadable `owned.json`
    is kept and only the templates explain.
