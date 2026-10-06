@@ -1588,6 +1588,20 @@ mod redaction {
                 .iter()
                 .any(|t| holds_trigger(line, &word, t))
         );
+        // `curl -u` and `--user` do not compile `proxy-option`: its
+        // triggers are `curl` and `-U` as written (WP-108)
+        for line in [
+            "curl -u bob:x https://h.example/",
+            "curl --user bob:x h.example",
+        ] {
+            let lower = trigger_text(line);
+            assert!(
+                !triggers("proxy-option")
+                    .iter()
+                    .any(|t| holds_trigger(line, &lower, t)),
+                "`{line}`"
+            );
+        }
         // a URL without an `@` after its scheme does not compile
         // `url-userinfo` (WP-108)
         for line in [

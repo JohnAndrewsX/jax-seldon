@@ -480,9 +480,10 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "slack-token" => &["xox"],
         "sk-key" => &["sk-", "sk_"],
         "db-client-password" => &["mysql", "psql", "smbclient"],
-        // `-U` and `--user` both read `-u` here
+        // `--user` holds `-u`
         "curl-user" => &["curl+-u"],
-        "proxy-option" => &["curl+-u", "--proxy-"],
+        // `curl` and `-U` as written: `curl -u` holds no trigger
+        "proxy-option" => &["curl+-U", "--proxy-"],
         "proxy-userinfo" => &["curl+-x", "proxy"],
         "cookie-option" => &["curl+-b", "curl+--cookie"],
         // `curl` and `-E` as written, and the `:` of the value after
