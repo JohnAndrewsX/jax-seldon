@@ -2458,6 +2458,27 @@ mod narrow_marker {
         assert_eq!(journal(&h), "");
     }
 
+    /// The case's own status decides, not only its folder: a file in
+    /// `work/active/` whose status says completed (moved back by hand)
+    /// serves nothing.
+    #[test]
+    fn a_closed_status_in_the_active_folder_serves_nothing() {
+        let h = Hooks::new();
+        let id = h.active_case();
+        let path = common::find_file(&h.logbook.join("work/active"), &id);
+        let text = read(&path);
+        assert!(text.contains("\nstatus: active\n"), "{text}");
+        std::fs::write(
+            &path,
+            text.replace("\nstatus: active\n", "\nstatus: completed\n"),
+        )
+        .unwrap();
+        *h.case_env.borrow_mut() = Some(id);
+        bash(&h, "toolu_1");
+        assert!(h.commands().is_empty(), "{:?}", h.commands());
+        assert_eq!(session_start(&h), "");
+    }
+
     /// A case in verification still serves; a dropped or completed one
     /// no longer — but the session that ran it still ends with its
     /// journal line, because the ledger holds its events.
