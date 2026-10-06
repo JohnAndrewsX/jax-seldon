@@ -622,7 +622,7 @@ expect_index() { # expect_index <jq filter> <value> — the fake engine's index 
     fail=$((fail + 1)); echo "FAIL drift index: $1 = $got (want $2)"
   fi
 }
-expect_index '[.drift[].subject]' '["~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh","ollama","~/.config/hypr/monitors.conf"]'
+expect_index '[.drift[].subject]' '["ollama","~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh","~/.config/hypr/monitors.conf"]'
 expect_index '[.summary.openDrift, .summary.crisis]' '[3,1]'
 expect_index '[.cases.completed[] | [.id, .zone, .risk, (.area // "")]] | .[0:2]' '[["C-2026-010","red","R3","gpu"],["C-2026-009","red","R1",""]]'
 expect_index '.cases.queued[0].proposedEvents' 'null'

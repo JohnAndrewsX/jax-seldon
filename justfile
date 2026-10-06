@@ -46,7 +46,7 @@ check-rss:
 # before the handover of a WP that touches the index build, `status` or the
 # hooks. SPEC-ENGINE §1 budgets at the stated scale, bench profile (WP-076):
 # the index build bench with SELDON_BENCH_X150=1 (x10 and x150 < 100 ms),
-# `status` at 10 011 ledger lines / 304 cases / 365 journal files < 100 ms,
+# `status` at 10 044 ledger lines / 304 cases / 365 journal files < 100 ms,
 # `hook claude-code` at 10 000 lines and just below the 1000-line rebuild
 # threshold < 5 ms (not recorded and recorded; the temp dir on tmpfs);
 # redaction of long lines (WP-084, WP-087): 16 KB < 1 ms, 64 KB < 2 ms
