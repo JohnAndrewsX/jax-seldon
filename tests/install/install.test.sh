@@ -289,9 +289,16 @@ check "latest: says it checked the attestation" \
 check "latest: gh got the repo, the release workflow and the tag's ref" grep -qE \
   "^gh attestation verify /.*/seldon-9\.9\.9-$target\.tar\.gz --hostname github\.com --repo JohnAndrewsX/jax-seldon --signer-workflow JohnAndrewsX/jax-seldon/\.github/workflows/release\.yml --source-ref refs/tags/v9\.9\.9 --deny-self-hosted-runners$" \
   "$work/gh.log"
-check "latest: says first what it installs, where and how it checks" test "$(head -n 2 <<<"$out")" = \
+# CI runs as root: then main()'s root warning (stderr) comes first, and
+# the announce follows it; for a normal user the announce is line one
+announce=$(grep -v '^install.sh: running as root: ' <<<"$out" | head -n 2)
+check "latest: says first what it installs, where and how it checks" test "$announce" = \
   "Installing the Seldon engine into $p/bin as your user, no password;
 the download is checked against the release checksums before anything is written."
+if [[ $(id -u) -ne 0 ]]; then
+  check "latest: as a normal user the announce is the first line" \
+    test "$(head -n 1 <<<"$out")" = "Installing the Seldon engine into $p/bin as your user, no password;"
+fi
 check "latest: next steps on a fresh home: init and the plugin" has "
 Next steps:
   seldon init        create your logbook
