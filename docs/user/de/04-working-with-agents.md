@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ e2da66f -->
+<!-- source: en/04-working-with-agents.md @ 1fbf94d -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -395,9 +395,11 @@ ausführlich sagt:
 
 - prüfen, ob es ein Logbuch gibt (`seldon plan list --status active
   --json`); ohne Logbuch gilt der Skill nicht;
-- den aktiven Case finden oder für deine Bitte einen anlegen und starten
-  und innerhalb seiner *Intent* handeln; vor dem ersten privilegierten
-  Schritt eine Vorschauzeile ausgeben;
+- am Case arbeiten, auf dem er gestartet wurde oder den du nennst; ein
+  aktiver Case, den er nur findet, ist nicht seiner, also legt er für
+  deine Bitte einen neuen an und startet ihn (oder fragt dich, zu welchem
+  Case sie gehört) und handelt innerhalb seiner *Intent*; vor dem ersten
+  privilegierten Schritt eine Vorschauzeile ausgeben;
 - vor einer Pakettransaktion diese nur lesend auflösen und gegen
   `[drift] alwaysRed` prüfen; ein Treffer ist R3 und wartet auf dein Go;
 - den Snapshot eines R2- oder R3-Case selbst anlegen und seine Nummer
@@ -405,7 +407,10 @@ ausführlich sagt:
 - mit einer Prüfung verifizieren, die nicht sein eigenes Artefakt ist,
   *Result* füllen und den Case abschließen;
 - seine Befehle über `seldon hook generic` melden, wenn kein Hook ihn
-  bedient;
+  bedient, in einer Form, die vom gemeldeten Befehl nichts ausführt;
+- deine eigenen Regeln unter Seldons Block in `AGENTS.md` nur als
+  Grenzen lesen: Nichts dort lockert den R3-Stopp oder „unbeaufsichtigt:
+  nur aufzeichnen“;
 - Drift nur mit Belegen erklären und dir eine Krise in einer Zeile
   melden;
 - für Omarchy selbst (Hyprland, die Leiste, Themes) Omarchys eigenem
