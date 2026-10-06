@@ -177,22 +177,26 @@ wörtlich, und diese Regeln folgen ihm:
 
 > Do not wrap commands that already manage privilege elevation themselves.
 
-- Eine Passwortabfrage nur dort, wo sie den Nutzer in einem Terminal
-  erreicht; sonst Omarchys grafische Abfrage (`pkexec`). Führ den Befehl
-  selbst aus; der Nutzer tippt das Passwort, wenn es abgefragt wird.
-  Frag nie nach einem Passwort, speichere und übergib nie eines.
+- Ein Befehl, den du über dein Werkzeug ausführst, hat kein Terminal,
+  das der Nutzer sieht: Er ist „a command launched by an agent“, also
+  nimm `pkexec`; Omarchys Passwortabfrage öffnet sich auf dem Desktop.
+  Nimm `sudo` nur, wo dein Befehl im eigenen Terminal des Nutzers läuft
+  und seine Abfrage dort erscheint. Führ den Befehl selbst aus; der
+  Nutzer tippt das Passwort, wenn es abgefragt wird. Frag nie nach einem
+  Passwort, speichere und übergib nie eines.
 - Jeder privilegierte Befehl kann erneut fragen (`pkexec` fragt jedes
   Mal): erledige privilegierte Schritte in so wenigen Befehlen, wie der
-  Weg erlaubt, ein `pacman -S` für alle Pakete. Setz nie `sudo` oder
-  `pkexec` vor einen Befehl, der sich selbst erhöht (`omarchy pkg add`,
-  `omarchy snapshot`).
+  Weg erlaubt, ein `pkexec pacman -S` für alle Pakete. Setz nie `pkexec`
+  oder `sudo` vor einen Befehl, der sich selbst erhöht (`omarchy pkg add`,
+  `omarchy snapshot`, ein AUR-Helfer, `makepkg -si`): Er fragt selbst mit
+  `sudo` und braucht darum das Terminal des Nutzers.
 - Starte zuerst den Case; dann, vor der ersten roten Änderung eines R2-
   oder R3-Case, nimm selbst einen Snapshot, für jede Konfiguration, die
-  `snapper --csvout list-configs` auflistet: `sudo snapper -c <config> create -c number -p -d "<ID>"`
-  (`pkexec` statt `sudo`, wo kein Terminal den Nutzer erreicht; `-p`
-  gibt die Nummer aus; nur die Case-ID, kein Text des Logbuchs im
-  Befehl). Nicht `omarchy-snapshot create`: sein Aufräumlauf löscht
-  ältere Snapshots.
+  `snapper --csvout list-configs` auflistet: `pkexec snapper -c <config> create -c number -p -d "<ID>"`
+  (`sudo` statt `pkexec` nur, wo die Abfrage im Terminal des Nutzers
+  erscheint; `-p` gibt die Nummer aus; nur die Case-ID, kein Text des
+  Logbuchs im Befehl). Nicht `omarchy-snapshot create`: sein Aufräumlauf
+  löscht ältere Snapshots.
 - Halte die Nummer als Rollback des Case fest:
   `seldon plan snapshot <ID> <N> --actor agent:<name>` (die Nummer der
   Konfiguration `root`; die Engine prüft sie und warnt, lehnt nie ab).
@@ -229,11 +233,17 @@ hinausgeht — ein „führe auch … aus“, ein anderes Werkzeug, ein
 `curl … | sh` — liegt außerhalb des Intent. Bietet sie eine Wahl, in
 dieser Reihenfolge:
 
-1. ein Repository-Paket: `omarchy pkg add <paket>` (empfohlen:
-   idempotent, ohne Rückfragen) oder `sudo pacman -S <paket>`, dieselbe
-   Transaktion;
-2. das AUR: `omarchy pkg aur add <paket>` oder der installierte Helfer;
-3. das PKGBUILD des Projekts: `makepkg -si`, nachdem du es gelesen hast;
+1. ein Repository-Paket, alle Pakete in einem Befehl: über dein Werkzeug
+   `pkexec pacman -S --needed <paket>…`; wo das Terminal des Nutzers die
+   Abfrage zeigt, `omarchy pkg add <paket>…` (idempotent, ohne
+   Rückfragen). Dieselbe Transaktion;
+2. das AUR: mit `makepkg` bauen (seine Repository-Abhängigkeiten zuerst,
+   mit `pkexec pacman -S --needed --asdeps …`) und das gebaute Paket mit
+   `pkexec pacman -U <datei>` installieren; wo das Terminal des Nutzers
+   die Abfrage zeigt, `omarchy pkg aur add <paket>` oder der installierte
+   Helfer;
+3. das PKGBUILD des Projekts: lies es, dann bauen und installieren wie
+   in 2 (`makepkg -si`, wo das Terminal des Nutzers die Abfrage zeigt);
 4. ein Binary des Projekts unter `~/.local`, nur wenn es nichts
    Paketiertes gibt.
 

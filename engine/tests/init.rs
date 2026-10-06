@@ -1603,7 +1603,7 @@ command changes system state.";
                     "> Do not wrap commands that already manage privilege elevation themselves.",
                     "omarchy pkg add",
                     "snapper --csvout list-configs",
-                    "sudo snapper -c <config> create -c number -p -d \"<ID>\"",
+                    "pkexec snapper -c <config> create -c number -p -d \"<ID>\"",
                     "snapshot <N> (<config>) before <step>",
                     "omarchy-snapshot create",
                 ],
@@ -1615,6 +1615,8 @@ command changes system state.";
                     "omarchy pkg add",
                     "omarchy pkg aur add",
                     "makepkg -si",
+                    "pkexec pacman -S --needed <",
+                    "pkexec pacman -U <",
                     "~/.local",
                     "curl … | sh",
                 ],
@@ -1719,6 +1721,20 @@ command changes system state.";
             assert_eq!(
                 quoted,
                 format!("{OMARCHY_PRIVILEGE}\n{OMARCHY_NO_WRAP}"),
+                "{language}"
+            );
+            // round 2, N8: around the quote, the agent's case first:
+            // `pkexec` before `sudo` in the rules' own lines and examples
+            let own: String = section(&agents, "## Privileged steps and snapshots")
+                .lines()
+                .filter(|l| !l.starts_with('>'))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let first = |word: &str| own.find(word).unwrap_or(usize::MAX);
+            assert!(first("`pkexec") < first("`sudo"), "{language}: {own}");
+            let install = section(&agents, "## Installing software");
+            assert!(
+                install.find("pkexec pacman -S").unwrap() < install.find("omarchy pkg add").unwrap(),
                 "{language}"
             );
             assert!(agents.contains("docs/AGENT-GUIDE.md"), "{language}");

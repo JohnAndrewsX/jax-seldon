@@ -354,7 +354,8 @@ seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8: the Seldo
                                                # [-N]/<folder>/ (folder: its path below ~, leading dots
                                                # dropped, `/` → `-`, e.g. claude-skills), then the skill
                                                # is installed as shipped (action "replaced"); foreign
-                                               # stays; needs the logbook (exit 3 without); autocommit
+                                               # stays; a folder without the skill stays so (action
+                                               # "absent", round 2); needs the logbook (exit 3); autocommit
                                                # `seldon: hook install skills --replace` when it copied
                                                # anything. --replace with claude-code: exit 1.
                                                # Every capture updates an outdated skill whose manifest
@@ -486,8 +487,12 @@ is archived, nothing is committed (the next engine commit carries it);
 outdated and every file its manifest names is there as written or as
 shipped. Nothing else: an edited block or skill keeps its files (doctor
 and its fix), a missing `AGENTS.md` or a folder without the skill stays
-so, a damaged or newer block is left. Skipped when the process runs as
-root (the owner of `/proc/self` is 0); the package has no install
+so, a damaged or newer block is left. A released block in the other
+language becomes this engine's block in the logbook's language (the
+logbook's language is the user's choice). A CRLF copy of a released v1
+file counts as that file. Skipped when the process runs as root (the
+owner of `/proc/self` is 0), and, failing closed, when that owner cannot
+be read (one `warnings` line); the package has no install
 script (`just check-packaging` pins it), so no package hook runs it. One
 `note:` line each in the human output; `--json` `rulesUpdated` and
 `skillsUpdated`. A failure is a `warnings` line, never the capture's.

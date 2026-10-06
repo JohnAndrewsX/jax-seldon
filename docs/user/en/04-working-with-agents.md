@@ -19,9 +19,10 @@ afterwards what the agent did, in which case and why.
 
 Seldon is there to take work off you. You give the agent one sentence;
 the agent does the work, takes the snapshot, verifies and closes the
-case; Seldon keeps the record. You type your password when `sudo` asks
-in the terminal, or in Omarchy's password dialog, and you look at the
-result whenever you like. You never have to.
+case; Seldon keeps the record. You type your password when Omarchy's
+password dialog asks (or `sudo`, when the agent works in your own
+terminal), and you look at the result whenever you like. You never have
+to.
 
 ## The rules agents read
 
@@ -35,9 +36,10 @@ language. It tells every agent how to work there:
   step without rollback, and a step that can break boot, login or the
   shell (R3); each R3 step needs your explicit go;
 - it runs privileged commands itself, the way Omarchy's own agent skill
-  says, word for word: `sudo` where the password prompt reaches you in a
-  terminal, otherwise `pkexec`, which opens Omarchy's password dialog;
-  it never asks for your password in any other way;
+  says, word for word: a command an agent runs has no terminal of yours,
+  so it uses `pkexec`, which opens Omarchy's password dialog (once per
+  command); `sudo` only where the prompt shows in your own terminal; it
+  never asks for your password in any other way;
 - before a risky red change it takes a snapper snapshot itself and
   records the number in the case;
 - it installs the way the software documents, packaged routes first,
@@ -421,8 +423,9 @@ seldon hook install skills --replace
 It copies your changed files into the logbook's
 `archive/skill-<date>/<folder>/` (for example
 `archive/skill-2026-10-06/claude-skills/case.md`), installs the skill as
-shipped and commits the archive. A folder named `seldon` that Seldon did
-not write is left alone. `seldon hook uninstall skills` removes what
+shipped and commits the archive. It acts only where Seldon's skill is
+today: a folder you removed the skill from stays without it, and a
+folder named `seldon` that Seldon did not write is left alone. `seldon hook uninstall skills` removes what
 Seldon wrote and keeps what you changed or added.
 
 ## The Omarchy-Agent kit

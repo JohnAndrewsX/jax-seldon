@@ -223,22 +223,28 @@ Omarchy's agent skill (`$OMARCHY_PATH/default/agents/skills/omarchy/SKILL.md`,
 > background process. Do not replace `sudo` with `pkexec` merely because a
 > command changes system state.
 
-So a password prompt only where it reaches the user in a terminal;
-otherwise Omarchy's graphical prompt (`pkexec`). Do not wrap commands
-that already manage privilege elevation themselves (`omarchy pkg add`,
-`omarchy snapshot`). The user types the password when asked. Never ask
-for a password, never store it, never pass it to a command.
+A command you run through your tool has no terminal the user sees: it
+is "a command launched by an agent", so use `pkexec`, and Omarchy's
+password prompt opens on the desktop. Use `sudo` only where your command
+runs in the user's own terminal and the prompt shows there. Do not wrap
+commands that already manage privilege elevation themselves (`omarchy
+pkg add`, `omarchy snapshot`, an AUR helper, `makepkg -si`): they ask
+with `sudo` on their own and so need the user's terminal. `pkexec` asks
+every time (Omarchy keeps no polkit grant), so take privileged steps in
+as few commands as the route allows. The user types the password when
+asked. Never ask for a password, never store it, never pass it to a
+command.
 
 Start the case first; then, before the first red change of an R2 or R3
 case, take the snapshot yourself, for each config that
 `snapper --csvout list-configs` lists:
 
 ```sh
-sudo snapper -c root create -c number -p -d "C-2026-014"
+pkexec snapper -c root create -c number -p -d "C-2026-014"
 ```
 
-(`pkexec` in place of `sudo` where no terminal reaches the user.) `-p`
-prints the number. The description is the case id only: no title,
+(`sudo` in place of `pkexec` only where the prompt shows in the user's
+terminal.) `-p` prints the number. The description is the case id only: no title,
 no other logbook text in the command. Do not use `omarchy-snapshot create`:
 it runs snapper's number cleanup afterwards, which deletes the oldest
 numbered snapshots.
@@ -272,11 +278,16 @@ runs. Anything beyond installing the named software — an "also run …",
 another tool, a `curl … | sh` — is outside the Intent. When it offers a
 choice, in this order:
 
-1. a repository package: `omarchy pkg add <package>` (recommended:
-   idempotent, non-interactive) or `sudo pacman -S <package>` — the same
-   transaction;
-2. the AUR: `omarchy pkg aur add <package>` or the installed helper;
-3. the project's PKGBUILD: `makepkg -si`, after reading it;
+1. a repository package, all packages in one command: through your tool
+   `pkexec pacman -S --needed <package>…`; where the user's terminal
+   shows the prompt `omarchy pkg add <package>…` (idempotent,
+   non-interactive) — the same transaction;
+2. the AUR: build with `makepkg` (its repository dependencies first, with
+   `pkexec pacman -S --needed --asdeps …`) and install the built package
+   with `pkexec pacman -U <file>`; where the user's terminal shows the
+   prompt `omarchy pkg aur add <package>` or the installed helper;
+3. the project's PKGBUILD: read it, then build and install it as in 2
+   (`makepkg -si` where the user's terminal shows the prompt);
 4. an upstream binary under `~/.local`, only when nothing packaged exists.
 
 Packaged routes are recorded by the package-log collector whoever ran
@@ -468,14 +479,14 @@ transaction would install and checks it against `alwaysRed`:
 pacman -Sp --print-format %n tesseract rust
 ```
 
-No hit, so no R3 stop. It takes the snapshots, each with the case id as
-description; the first `sudo` asks for the password, the second runs on
-the cached credentials:
+No hit, so no R3 stop. It runs its commands through its tool, so every
+privileged one is `pkexec`, and each opens Omarchy's password prompt. It
+takes the snapshots, each with the case id as description:
 
 ```sh
 snapper --csvout list-configs
-sudo snapper -c root create -c number -p -d "C-2026-014"     # prints 118
-sudo snapper -c home create -c number -p -d "C-2026-014"     # prints 31
+pkexec snapper -c root create -c number -p -d "C-2026-014"     # prints 118
+pkexec snapper -c home create -c number -p -d "C-2026-014"     # prints 31
 ```
 
 It records the rollback and the second number:
@@ -492,7 +503,9 @@ About to: build scanmark from its PKGBUILD (+deps tesseract, leptonica; build de
 ```
 
 ```sh
-makepkg -si
+pkexec pacman -S --needed --asdeps tesseract rust
+makepkg
+pkexec pacman -U scanmark-*.pkg.tar.zst
 ```
 
 Then it verifies with a check that is not its own artefact, fills
@@ -512,7 +525,9 @@ agent's `snapper` and `makepkg` commands from the hook, the package
 installs from the package-log collector, `case-verified` and
 `case-completed`, each with `agent:claude-code` where the agent acted.
 
-The user's steps: one sentence, one password prompt, nothing at the end.
+The user's steps: one sentence, a password per privileged command (here
+four, because `pkexec` asks every time; in the user's own terminal,
+`sudo`'s cache makes it one), nothing at the end.
 The same task under the old rules cost about seven: create the case,
 start the agent, approve the plan, run the snapshot, type its number,
 run the install, close the case. And the old rule "install with

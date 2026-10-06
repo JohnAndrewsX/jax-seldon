@@ -297,9 +297,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`--harness skills`).
 - **Agent rules v3 (WP-111).** The logbook's rules block
   (`<!-- seldon:begin rules v3 -->`) quotes Omarchy's agent skill on
-  privileges word for word: a password prompt only where it reaches the
-  user in a terminal (`sudo`), otherwise Omarchy's graphical prompt
-  (`pkexec`), and never `sudo` around a command that elevates itself. A
+  privileges word for word, and its examples lead with the agent's case:
+  a command an agent runs through its tool has no terminal the user
+  sees, so it is `pkexec` (Omarchy's password prompt, once per command);
+  `sudo` only where the prompt shows in the user's own terminal; never
+  `pkexec` or `sudo` around a command that elevates itself. Packages go
+  in with one `pkexec pacman -S --needed …`, AUR and PKGBUILD builds with
+  `makepkg` and `pkexec pacman -U`, `omarchy pkg add` where the user's
+  terminal shows the prompt. A
   new section *Omarchy first* names Omarchy's own commands (`omarchy pkg
   add`, `omarchy hook install`, `omarchy theme set`, `omarchy refresh`
   after the user's confirmation) and says the rules add the record, not
@@ -320,15 +325,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block or skill is never touched: `seldon doctor` shows it as outdated
   with the one-command fix, which archives your copy first. A folder
   without the skill stays without it. The capture skips all of this as
-  root, and the package has no install script. Until the capture runs,
+  root, or when it cannot tell which user runs it (then with a warning),
+  and the package has no install script. An unedited block in the other
+  language becomes the block in the logbook's language; a file with CRLF
+  line ends counts like the same file with LF. Until the capture runs,
   `doctor` reads an unedited older block as `ok` ("v2 as Seldon wrote
   it; the next capture updates it to v3"), so the panel shows no rules
   banner for it.
 - `seldon hook install skills --replace` (WP-111): a skill you changed
   by hand has its changed files copied to the logbook's
   `archive/skill-<date>/<folder>/` (for example `claude-skills`), then
-  the skill is installed as shipped; the archive is committed. A folder
-  named `seldon` that Seldon did not write stays untouched. `doctor`'s
+  the skill is installed as shipped; the archive is committed. It acts
+  only where Seldon's skill is today: a folder you removed the skill
+  from stays without it, and a folder named `seldon` that Seldon did not
+  write stays untouched. `doctor`'s
   `skills` row names it as the fix for a changed skill, says "updated
   at the next capture" for an unedited older one, and `seldon doctor
   --json` gains `hooks.scope`.

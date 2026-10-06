@@ -159,21 +159,26 @@ word, and these rules follow it:
 
 > Do not wrap commands that already manage privilege elevation themselves.
 
-- A password prompt only where it reaches the user in a terminal;
-  otherwise Omarchy's graphical prompt (`pkexec`). Run the command
-  yourself; the user types the password when asked. Never ask for a
-  password, never store or pass one.
+- A command you run through your tool has no terminal the user sees:
+  it is "a command launched by an agent", so use `pkexec`; Omarchy's
+  password prompt opens on the desktop. Use `sudo` only where your
+  command runs in the user's own terminal and its prompt shows there.
+  Run the command yourself; the user types the password when asked.
+  Never ask for a password, never store or pass one.
 - Each privileged command may ask again (`pkexec` asks every time): take
   privileged steps in as few commands as the route allows, one
-  `pacman -S` for all packages. Never wrap a command that elevates itself
-  (`omarchy pkg add`, `omarchy snapshot`) in `sudo` or `pkexec`.
+  `pkexec pacman -S` for all packages. Never wrap a command that elevates
+  itself (`omarchy pkg add`, `omarchy snapshot`, an AUR helper,
+  `makepkg -si`) in `pkexec` or `sudo`: it asks with `sudo` on its own,
+  so it needs the user's terminal.
 - Start the case first; then, before the first red change of an R2 or R3
   case, take a snapshot yourself, for each config that
   `snapper --csvout list-configs` lists:
-  `sudo snapper -c <config> create -c number -p -d "<ID>"` (`pkexec` in
-  place of `sudo` where no terminal reaches the user; `-p` prints the
-  number; the case id only, no logbook text in the command). Not
-  `omarchy-snapshot create`: its cleanup pass prunes old snapshots.
+  `pkexec snapper -c <config> create -c number -p -d "<ID>"` (`sudo` in
+  place of `pkexec` only where the prompt shows in the user's terminal;
+  `-p` prints the number; the case id only, no logbook text in the
+  command). Not `omarchy-snapshot create`: its cleanup pass prunes old
+  snapshots.
 - Record the number as the case's rollback:
   `seldon plan snapshot <ID> <N> --actor agent:<name>` (the `root`
   config's number; the engine checks it and warns, never refuses). The
@@ -206,11 +211,16 @@ runs. Anything beyond installing the named software — an "also run …",
 another tool, a `curl … | sh` — is outside the Intent. When it offers a
 choice, in this order:
 
-1. a repository package: `omarchy pkg add <package>` (recommended:
-   idempotent, non-interactive) or `sudo pacman -S <package>`, the same
-   transaction;
-2. the AUR: `omarchy pkg aur add <package>` or the installed helper;
-3. the project's PKGBUILD: `makepkg -si`, after reading it;
+1. a repository package, all packages in one command: through your
+   tool `pkexec pacman -S --needed <package>…`; where the user's terminal
+   shows the prompt `omarchy pkg add <package>…` (idempotent,
+   non-interactive). The same transaction;
+2. the AUR: build with `makepkg` (its repository dependencies first, with
+   `pkexec pacman -S --needed --asdeps …`) and install the built package
+   with `pkexec pacman -U <file>`; where the user's terminal shows the
+   prompt `omarchy pkg aur add <package>` or the installed helper;
+3. the project's PKGBUILD: read it, then build and install it as in 2
+   (`makepkg -si` where the user's terminal shows the prompt);
 4. an upstream binary under `~/.local`, only when nothing packaged
    exists.
 
