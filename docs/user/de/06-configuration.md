@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 4d51f6b -->
+<!-- source: en/06-configuration.md @ 6758653 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -235,6 +235,8 @@ denselben Text wie das Ledger. Ein geschwärzter Wert lautet
   oder `--cookie` (kein Name einer Cookie-Datei);
 - das Zertifikat und Passwort nach `curl -E`/`--cert`, der Wert nach
   `http`/`xh -a`;
+- der `pass:…`-Wert von openssls `-pass`, `-passin`, `-passout` und
+  ähnlichen Optionen; `env:`, `file:`, `fd:` und `stdin` bleiben stehen;
 - Proxy-Zugangsdaten: nach `curl -U`, `--proxy-user` und
   `--proxy-password` sowie `user:pass@` im Proxy nach `curl -x`,
   `--proxy` oder in `https_proxy=`;
