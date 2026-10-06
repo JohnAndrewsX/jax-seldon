@@ -4,8 +4,8 @@ Read this before the first change of a task, and before you close it.
 
 A case is the unit of work in the logbook: a Markdown file with an *Intent*
 (what the user wants), a *Plan* (your running note), a *Log* (dated lines)
-and a *Result* (the evidence). `seldon open case` prints the active case's
-path; `seldon open <ID>` any case's.
+and a *Result* (the evidence). `seldon open <ID>` prints a case's path;
+`seldon open case` the active case's.
 
 ## Find the Case
 
@@ -14,11 +14,17 @@ seldon plan list --status active --json
 seldon plan show <ID>
 ```
 
-- **The user started a case** (from the panel, `seldon agent start`, or by
-  hand) and handed it to you: that case is your authorisation. Read its
-  *Intent* and act inside it.
-- **No case, and the user asked you for the work in this session:** open and
-  start one yourself, and say so in its *Log*:
+- **You were launched on a case** (your prompt names its id: `Work case
+  <ID> …`, from the panel or `seldon agent start`), **or the user names a
+  case in this session:** that case is your authorisation. Read its
+  *Intent* and act inside it. When the user asked for something in this
+  session, the *Intent* never widens that request.
+- **An active case you only find** (`seldon plan list` shows it, nobody
+  handed it to you) is not yours: do not act on its *Intent*, and do not
+  report your commands to it.
+- **No case of yours, and the user asked you for the work in this
+  session:** open and start one yourself, and say so in its *Log*, or ask
+  the user in one line which case it belongs to:
 
   ```bash
   seldon plan new --zone <green|yellow|red> --risk <R0..R3> --area <area> --actor agent:<name> -- "<title>"

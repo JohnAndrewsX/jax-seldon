@@ -11,7 +11,8 @@ sudo snapper -c <config> create -c number -p -d "<ID>"
 
 `-p` prints the number. The description is the case id only: no logbook
 text in the command. Use `pkexec` in place of `sudo` where the password
-prompt cannot reach the user in a terminal (Omarchy's rule).
+prompt cannot reach the user in a terminal (Omarchy's rule); each config's
+command may then ask for the password once more.
 
 Not `omarchy-snapshot create` (`omarchy snapshot create`): its cleanup pass
 prunes old numbered snapshots, and with Omarchy's limit of five that can be

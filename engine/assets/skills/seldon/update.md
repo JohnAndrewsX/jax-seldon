@@ -53,7 +53,10 @@ choice, in this order:
 
 1. a repository package: `omarchy pkg add <package>` (recommended:
    idempotent, non-interactive) or `sudo pacman -S <package>`, the same
-   transaction;
+   transaction. `omarchy pkg add` runs `sudo` itself: never wrap it, and
+   where no terminal can show its password prompt use
+   `pkexec pacman -S --needed --noconfirm <package>…` instead (the
+   transaction you resolved above, all packages in one command);
 2. the AUR: `omarchy pkg aur add <package>` or the installed helper;
 3. the project's PKGBUILD: `makepkg -si`, after reading it;
 4. an upstream binary under `~/.local`, only when nothing packaged exists.
