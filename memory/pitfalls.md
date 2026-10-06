@@ -2075,3 +2075,17 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **A user pattern in a test is the only way to tell "the logbook's
   redactor" from `Redactor::builtin()`.** Give every redaction test a
   `[redaction] patterns` entry that matches part of the planted text.
+- **Redacting twice is idempotent only for the built-in rules.** A user
+  pattern that matches across the marker (`›.`) changes already
+  redacted text again, so a pass that writes its result back (the
+  capture's load pass) grows the text on every run (WP-105 review N1).
+  Skip text that holds `‹redacted›` in such a pass; a pass that starts
+  from the stored text each time (the index, doctor) cannot grow.
+- **doctor prints program output too.** Its `omarchy` and `snapper`
+  probes show the first line of stderr, and `init` prints the snapper
+  probe; `doctor --json` is what an agent reads to diagnose a failure.
+  Grep for `describe(` and `stderr` when a WP says "everywhere".
+- **Fail closed means withheld, not "built-in rules only".** With an
+  invalid user pattern the built-in rules still leave what the pattern
+  was for; SPEC §7 says nothing unredacted is written. Show a fixed text
+  (`collectors::MESSAGE_WITHHELD`).
