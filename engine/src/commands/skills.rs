@@ -86,6 +86,9 @@ pub const SKILL_DIRS: [&str; 5] = [
 /// The command `hook install skills` records its writes with.
 pub const INSTALL_BY: &str = "seldon hook install skills";
 
+/// What a capture's update of an unedited skill is recorded as (WP-111).
+pub const CAPTURE_BY: &str = "seldon capture";
+
 /// The command `hook uninstall skills` records its deletions with.
 pub const UNINSTALL_BY: &str = "seldon hook uninstall skills";
 
@@ -316,6 +319,9 @@ struct DirReport {
     archived_files: Vec<String>,
     /// Why this folder failed (`action: failed`); the other folders go on.
     error: Option<String>,
+    /// The command the own writes are recorded with ([`INSTALL_BY`],
+    /// [`CAPTURE_BY`], [`UNINSTALL_BY`]).
+    by: &'static str,
 }
 
 impl DirReport {
@@ -345,14 +351,8 @@ fn own_record(
     if paths.is_empty() {
         return;
     }
-    match super::setup::record_own_writes_under(
-        lock,
-        ctx,
-        config,
-        paths,
-        INSTALL_BY,
-        OwnOp::Install,
-    ) {
+    match super::setup::record_own_writes_under(lock, ctx, config, paths, report.by, OwnOp::Install)
+    {
         Ok(p) => report.own.extend(p),
         Err(e) => report.own_errors.push(e),
     }
@@ -496,11 +496,13 @@ fn install_into(
     config: &Config,
     folder: &Path,
     archive: Option<&mut Archive>,
+    by: &'static str,
 ) -> DirReport {
     let before = state(folder);
     let mut report = DirReport {
         folder: folder.to_path_buf(),
         before: before.as_str(),
+        by,
         ..DirReport::default()
     };
     let mut written = Vec::new();
@@ -607,7 +609,8 @@ fn install_steps(
         if file_state(&path, None, old.files.get(&name)) == FileState::Written
             || archived.contains(&name)
         {
-            delete_own(lock, ctx, config, &path, INSTALL_BY, report)?;
+            let by = report.by;
+            delete_own(lock, ctx, config, &path, by, report)?;
             report.removed.push(name);
         }
     }
@@ -624,6 +627,7 @@ fn uninstall_from(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) ->
     let mut report = DirReport {
         folder: folder.to_path_buf(),
         before: before.as_str(),
+        by: UNINSTALL_BY,
         ..DirReport::default()
     };
     if let Err(e) = uninstall_steps(lock, ctx, config, before, &mut report) {
@@ -827,7 +831,16 @@ pub fn install_under(
     let (present, absent) = skill_dirs(&ctx.dirs.home);
     let reports = present
         .iter()
-        .map(|folder| install_into(lock, ctx, config, folder, archive.as_deref_mut()))
+        .map(|folder| {
+            install_into(
+                lock,
+                ctx,
+                config,
+                folder,
+                archive.as_deref_mut(),
+                INSTALL_BY,
+            )
+        })
         .collect();
     Ok(Installed { reports, absent })
 }
@@ -854,7 +867,7 @@ pub fn upgrade_unedited_under(lock: &Lock, ctx: &Context, config: &Config) -> Up
     }
     let (present, _) = skill_dirs(&ctx.dirs.home);
     for folder in present.iter().filter(|f| unedited(f)) {
-        let report = install_into(lock, ctx, config, folder, None);
+        let report = install_into(lock, ctx, config, folder, None, CAPTURE_BY);
         let shown = ctx.dirs.display(&folder.join(SKILL_NAME));
         match report.action {
             "updated" => out.updated.push(ctx.dirs.display(folder)),
