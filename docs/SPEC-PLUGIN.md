@@ -192,7 +192,7 @@ actions Link (open cases, the proposed case preselected), Explain (intent
 Dismiss (reason); groups offer *All N* / *Only <package>* (`--only`);
 writes use two-press arming where any change to the form disarms; the
 draft is kept per event; a no-op shows "Already resolved: …"; above the
-list "+N more open drift items not listed here" when `summary.openDrift`
+list "+N more changes without a case not listed here" when `summary.openDrift`
 exceeds `drift.length` (ADR-0020). Folded rows read `linked to C-…`,
 `explained · C-…: <intent>` (ADR-0021), `dismissed: <reason>`. Decisions tab (WP-023, digit 4): newest first by
 id; Enter, `e`, double click or *Open* run `open ADR-NNNN --editor --json`
@@ -224,7 +224,10 @@ one chip per schema source (all nine, including `manual`, `agent`,
 item's class (ADR-0028 §4b): a crisis (`crisis: true`) in the urgent
 colour whatever its zone, attention in the accent whatever its zone (a
 pacman item is red in the ledger and still quiet) — stripe, glyph, status
-and badge from one source; once resolved, by the event's own zone. The
+and badge from one source. Every other row (resolved, linked, with a case,
+routine, never drift) is an ordinary Changelog row and quiet whatever its
+zone: the muted stripe when the event has a zone, none when it has not
+(ADR-0028 §4b; the zone stays text where it is shown, e.g. the sheet). The
 open row's note states, never asks: "Crisis · no case" or "No case"
 (" · proposed for C-…" when the engine proposes a case). Under the
 Changelog header a quiet line "N changes without a case" (attention,
@@ -265,7 +268,9 @@ tone — engine missing → `engine-missing`, not initialised →
 `logbook-not-initialised`, index missing (or unreadable) →
 `index-missing`, index stale → `index-stale`; the contract mismatch and
 the snapper banner have none. The Today tab shows the day's state left of
-the date and the counts, `Style.space(48)`: crisis (urgent) when any
+the date and the counts (events today, in 7 days, active, queued, and
+"without a case", the attention count `openDrift − crisis`, the number the
+tooltip and the Changelog line show), `Style.space(48)`: crisis (urgent) when any
 crisis, else case active (accent) when active cases, else all clear
 (foreground); none without an index. Attention alone changes nothing
 (ADR-0028 §4b), so the drift-open pictogram is not shown.

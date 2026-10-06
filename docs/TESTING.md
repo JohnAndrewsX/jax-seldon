@@ -697,7 +697,7 @@ with the item's zone for the two crises and the group, the group's three
 members and "All 3 / Only firefox", a member row naming its own package,
 and a click on the red strip opening the first crisis with the cursor on
 its row; nothing can be sent. Capped: `summary.openDrift` 250 shows "+246
-more open drift items not listed here", the pill `2 · 250` with
+more changes without a case not listed here", the pill `2 · 250` with
 `driftInBar` `all` (`HARNESS_SETTINGS`) and the quiet line "248 changes
 without a case". Quiet surfaces (ADR-0028 §4b, WP-110): a crisis in the
 yellow zone on a hook path with attention only around it shows one crisis
@@ -705,7 +705,8 @@ in the strip, the urgent Today pictogram, pill `2 · 1`, "3 changes without
 a case" on the Changelog, rows toned by class (crisis urgent, the red
 ollama install accent), the sheet's "RESOLVE A CRISIS" and "yellow ·
 crisis" with Explain pre-filled yellow, "RESOLVE DRIFT" and no word
-"crisis" for the attention item, the *Ask agent* slot first, and a click
+"crisis" for the attention item, the *Ask agent* slot first, hidden and
+0 high, the quiet line in the dim foreground, and a click
 on the strip opening the yellow crisis; attention alone shows no strip,
 the all-clear pictogram (the case-active one with active cases), no D in
 the pill and no word "crisis" anywhere. Live, with real keys: Enter,

@@ -194,7 +194,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have no case". The Changelog shows a quiet "N changes without a case"
   line under its header; open rows say "Crisis · no case" or "No case"
   instead of "Needs a reason" / "Unexplained", and are coloured by
-  whether they are a crisis (urgent) or not (accent), no longer by zone.
+  whether they are a crisis (urgent) or not (accent), no longer by zone;
+  every other row (resolved, with a case, routine) has a muted stripe
+  whatever its zone. The Today counts and the Changelog's "+N more …"
+  line say "without a case" instead of "open drift"; Today counts the
+  changes without a case that are no crisis.
   The drift sheet says "RESOLVE A CRISIS" and "<zone> · crisis" for a
   crisis in any zone and keeps a slot for *Ask agent* above Link /
   Explain / Dismiss. The Today pictogram no longer changes for changes
