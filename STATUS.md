@@ -16,18 +16,20 @@ decisions).
 |---|---|---|---|---|---|
 | WP-105 | redact collector messages before cursors.json, capture --json and the index | Engine | `engine-105` (opus) | `wt/WP-105` · `wp/105-redact-messages` | 2026-10-06 |
 | WP-108 | hook headroom on curl lines with -e | Engine | `engine-108` (opus) | `wt/WP-108` · `wp/108-hook-headroom` | 2026-10-06 |
+| WP-101 | one-click start, agent snapshot and close path, closed-by-agent marker, reopen | Engine + Plugin | `engine-101` (opus) | `wt/WP-101` · `wp/101-one-click-close` | 2026-10-06 |
 
 ## Queued (next up)
 
 0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
 advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
 notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
-After 0.1.4: ADR-0027 (operator decision 2026-10-05: a case the user
-started authorises the agent; the agent verifies and closes; only steps
-that can make the machine unbootable need the user's go) → WP-100 (agent
-rules v2 + migration) first, WP-096 (default actor, attended marker),
-WP-101 (one-click start, snapshot and close path, reopen), WP-094 (skill),
-WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
+In 0.1.4 (operator decision 2026-10-06: keep building 0.1.4 before a
+release): the rest of ADR-0027 (a case the user started authorises the
+agent; the agent verifies and closes; only steps that can make the
+machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
+(one-click start, snapshot and close path, reopen) active, WP-094 (skill)
+after WP-101 (it quotes `plan snapshot` and the agent-close refusal).
+Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
 Omarchy upstream contribution before 1.0. Then the
 contract v2 bundle for v0.2.0 (autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
