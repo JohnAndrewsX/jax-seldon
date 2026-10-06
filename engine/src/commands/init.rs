@@ -34,7 +34,7 @@ use super::doctor::{self, Status};
 use super::dossier::{self, DossierArgs};
 use super::setup::{self, BASELINE_REASON, ThemeHook};
 use super::{Commit, Context, Output, autocommit};
-use crate::collectors::Sources;
+use crate::collectors::{ShownMessages, Sources};
 use crate::config::{Collectors, Config, HARNESSES};
 use crate::error::{Error, Result};
 use crate::logbook::layout::{self, NewLogbook};
@@ -216,7 +216,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     // inside the first commit: the harness files are part of the logbook
     let harnesses = setup::harnesses(&ctx.dirs, &root, &choices.harnesses);
     let git = setup_git(&root, choices.git, !ctx.no_commit);
-    let snapper = doctor::check_snapper(&config);
+    let snapper = doctor::check_snapper(&config, &ShownMessages::new(Some(&config)));
     // the capture and the baseline take the lock themselves
     drop(lock);
 

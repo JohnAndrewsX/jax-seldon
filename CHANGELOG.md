@@ -98,6 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer leaves the collectors it does not run waiting for a baseline
   the crashed note already recorded, which gave a second reset note
   later (WP-104).
+- A collector's message (snapper's error output, for example) now goes
+  through redaction before `capture` saves it in `cursors.json` or prints
+  it, as the ledger's copy already did; `index.json` (`state.collectors`)
+  and `STATUS.md` show it redacted too, and so do `seldon doctor` and
+  the snapper line of `seldon init`. Messages an earlier release saved
+  in `cursors.json` are redacted by the next capture, and by the index
+  build and `doctor` until then. While a `[redaction] patterns` entry is
+  invalid, the index and `doctor` show a fixed text in place of each
+  collector message (WP-105).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains

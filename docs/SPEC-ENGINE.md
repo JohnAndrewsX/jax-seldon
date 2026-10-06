@@ -1128,9 +1128,20 @@ same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The
 `seldon` notes (§3 state reset, §4 snapper) are events and are redacted
-the same way; the snapper note's detail embeds the collector's message,
-which `cursors.json`, `capture --json` and `index.json`
-(`state.collectors`, no event) carry as the collector gave it (WP-099).
+the same way (WP-099). A collector's message (snapper's stderr, for
+example) goes through the same redaction once, before the capture saves
+it in `cursors.json`, prints it (`capture` and `capture --json`) or
+embeds it in the snapper note. A capture also redacts the messages an
+older engine saved in `cursors.json` when it loads the file (a message
+that already holds `‹redacted›` is left as it is, so a user pattern that
+matches across the marker does not grow it on every capture). The index
+build and `doctor` (its `collectors` row) redact each message they read
+from there again, so `index.json` (`state.collectors`), `STATUS.md` and
+`doctor` show none unredacted; `doctor`'s `omarchy` and `snapper` probes,
+whose rows `init` prints too, redact what the program printed the same
+way. While `config.toml` cannot be parsed or a `[redaction] patterns`
+entry is invalid, these show `collectors::MESSAGE_WITHHELD` in place of
+the message instead (WP-105).
 The rules
 (`redact::BUILTIN`, in this order): URLs with userinfo; `--password`
 (also wget's `--http-password` and `--ftp-password`);
@@ -1319,7 +1330,9 @@ matcher on any non-ASCII text, the marker of an earlier rule included
 (WP-084: a 16 KB curl line took 5.4 ms, 0.13 ms with ASCII boundaries).
 The `…=` assignment rules have no boundary, so a name that starts with
 `ſ` or `K` still matches. An invalid user pattern is a user error
-(exit 1): Seldon writes nothing rather than unredacted text. `subject` is
+(exit 1): Seldon writes nothing rather than unredacted text; the index
+build and `doctor` still run and withhold every collector message
+(above). `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
 before a rule existed are not rewritten.
 

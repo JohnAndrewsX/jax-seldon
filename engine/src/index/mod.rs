@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
 
-use crate::collectors::{self, Cursors};
+use crate::collectors::{self, Cursors, ShownMessages};
 use crate::commands::Context;
 use crate::config::{Config, Dirs};
 use crate::error::Result;
@@ -82,6 +82,12 @@ pub fn write(path: &Path, index: &Index) -> anyhow::Result<()> {
 /// A `cursors.json` that cannot be read makes every capture fail (F-133):
 /// every enabled collector is then `ok: false` with that message, and the
 /// second value is the load warning.
+///
+/// A message goes through the logbook's redaction (SPEC-ENGINE §7) once
+/// more ([`ShownMessages`]): a capture saves it redacted since WP-105, an
+/// older engine did not. The index is rebuilt from `cursors.json` each
+/// time, so the extra pass does not accumulate. An invalid `[redaction]
+/// patterns` entry withholds every message ([`collectors::MESSAGE_WITHHELD`]).
 pub fn collector_state(
     dirs: &Dirs,
     config: &Config,
@@ -98,6 +104,7 @@ pub fn collector_state(
     let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let mine = cursors.logbook.as_deref() == Some(canonical.as_path());
     let mut last_capture: Option<DateTime<FixedOffset>> = None;
+    let shown = ShownMessages::new(Some(config));
     let rows = ["pacman", "snapper", "omarchy", "plugins", "theme", "config"]
         .into_iter()
         .map(|name| {
@@ -124,7 +131,9 @@ pub fn collector_state(
                 name,
                 enabled,
                 ok: state.is_none_or(|s| s.ok),
-                message: state.and_then(|s| s.message.clone()),
+                message: state
+                    .and_then(|s| s.message.as_deref())
+                    .map(|m| shown.show(m)),
                 last_run,
             }
         })
