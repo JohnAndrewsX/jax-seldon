@@ -263,6 +263,12 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     // WP-008: reconciliation, the attributed collector event ids into
     // their case files (ADR-0012 §10); warnings only, the append is done
     crate::reconcile::after_capture(&logbook, &ledger, &written);
+    // WP-101: the rollback the agent forgot, a pruned rollback, R3 after
+    // the fact (ADR-0027 §2c, §3); warnings only
+    let always_red = crate::index::drift::AlwaysRed::new(&config.drift.always_red);
+    for w in crate::case_notes::after_capture(&logbook, &ledger, &written, &always_red, &now) {
+        eprintln!("seldon: warning: {w}");
+    }
     // rule 7: only a run of the config collector has seen the own writes
     let mut explained = 0;
     if reports.iter().any(|r| r.name == "config" && r.ran && r.ok) {

@@ -13,7 +13,7 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::model::event::{Event, Kind, Source, format_ts};
-use crate::model::{CaseStatus, Decision, Journal};
+use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
 
 /// Most events the index lists (CONTRACT.md rule 4).
 pub const MAX_EVENTS: usize = 500;
@@ -81,7 +81,9 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
     } = loaded;
 
     let folded = fold(&events);
-    let (drift, open_drift) = drift_items(&folded, &cases, &AlwaysRed::new(&input.always_red));
+    let always_red = AlwaysRed::new(&input.always_red);
+    warnings.extend(r3_advisories(&events, &cases, &always_red));
+    let (drift, open_drift) = drift_items(&folded, &cases, &always_red);
     let (drift_total, crisis_total) = (drift.len(), drift.iter().filter(|d| d.crisis).count());
     let drift = cap_drift(drift);
     let groups = case_groups(&cases, &drift);
@@ -232,6 +234,52 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         open_drift,
         warnings,
     }
+}
+
+/// The advisory after the fact (ADR-0027 §2c, WP-101): a red change whose
+/// subject is in `[drift] alwaysRed` inside an open case (active or in
+/// verification) of a risk below R3. One warning per case and subject,
+/// in ledger order; the engine never refuses the step, it says so.
+pub fn r3_advisories(
+    events: &[Event],
+    cases: &[LoadedCase],
+    always_red: &AlwaysRed,
+) -> Vec<String> {
+    let below: HashMap<&str, &Case> = cases
+        .iter()
+        .map(|c| &c.case)
+        .filter(|c| matches!(c.status, CaseStatus::Active | CaseStatus::Verification))
+        .filter(|c| c.risk != Risk::R3)
+        .map(|c| (c.id.as_str(), c))
+        .collect();
+    if below.is_empty() {
+        return Vec::new();
+    }
+    let mut seen: HashSet<(&str, &str)> = HashSet::new();
+    let mut out = Vec::new();
+    for e in events {
+        let Some(case) = e.case.as_deref().and_then(|id| below.get(id)) else {
+            continue;
+        };
+        if e.source == Source::Seldon || e.zone != Some(Zone::Red) {
+            continue;
+        }
+        if !seen.contains(&(case.id.as_str(), e.subject.as_str())) && always_red.matches(&e.subject)
+        {
+            seen.insert((case.id.as_str(), e.subject.as_str()));
+            out.push(r3_advisory(&case.id, case.risk, &e.subject));
+        }
+    }
+    out
+}
+
+/// The words of one advisory (index warning and the case's Log line).
+pub fn r3_advisory(id: &str, risk: Risk, subject: &str) -> String {
+    format!(
+        "{id} is {risk}, but its red change `{subject}` is R3 (`[drift] alwaysRed`): an R3 \
+         step needs the user's explicit go and a snapshot; raise it with \
+         `seldon plan set {id} --risk R3` (ADR-0027 §2c)"
+    )
 }
 
 /// The `decisions` rows of the index, newest id first (also the rows of
