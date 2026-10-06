@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 1a11d7b -->
+<!-- source: en/05-cli-reference.md @ 4e35b1d -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -917,7 +917,9 @@ Omarchy seine eigenen Skills verlinkt. Es legt keinen davon an. Der Skill
 kommt nach `<Ordner>/seldon/`; ein `seldon` dort, das Seldon nicht
 geschrieben hat, oder eine Datei darin, die du geändert hast, bleibt, wie
 es ist, und der Bericht nennt es. Ein älterer Skill wird aktualisiert.
-Ein zweiter Aufruf ändert nichts. Siehe
+Ein Ordner, in den es nicht schreiben kann, scheitert allein: Die anderen
+werden trotzdem installiert, der Bericht nennt den gescheiterten, und der
+Befehl endet mit 1. Ein zweiter Aufruf ändert nichts. Siehe
 [Mit Agenten arbeiten](04-working-with-agents.md#der-agentenskill).
 
 <!-- help: seldon hook install -->
