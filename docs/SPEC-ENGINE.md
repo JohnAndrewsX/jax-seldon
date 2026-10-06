@@ -79,8 +79,10 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # held lock up to 8 s, as a hook does), released, then the step under its own
 # lock — so what the user did by hand inside the case is recorded, and linked
 # by §5 rule 9, while the case is still open. Only a step the case allows
-# captures. A failed capture or a degraded collector is a warning in the
-# step's `warnings` (`capture before the step: …`), never a refusal;
+# captures. A capture that fails (an error, or the lock still held after the
+# wait) is a warning in the step's `warnings` (`the capture before the step
+# did not run: …`), never a refusal; a degraded collector is no warning here
+# (`seldon doctor` reports it; orchestrator ruling, WP-115 round 2);
 # `--no-capture` skips it (`verify` and `done` only); `plan drop` and `plan
 # start` never capture. `--json` adds `capture`: `{ok, written,
 # linkedPlanned}` of that capture, `null` when skipped or failed. Cost: one
@@ -500,6 +502,14 @@ shape is not part of `schema/`. The plugin runs `doctor --only rules
 --json` (WP-101, SPEC-PLUGIN §3: on panel open, read-only, its own
 process, no probes); every other banner comes from `index.json`, its `seldon
 --version --json` probe and the results of its engine calls.
+
+`planned` (WP-115 round 2, §5 rule 9), only when it applies: changes
+without a case whose time lies in the window of a case whose file does not
+parse (or lies outside the status folders) are never linked by rule 9,
+because the engine cannot read that case's Plan: `degraded`, "N change(s)
+not linked to the case that planned them, because a case file does not
+load: K in the window of C-…", fix: repair the case file (the `logbook`
+row names it) or put it back in `work/`; the next capture links.
 
 `rollbacks` (WP-101, ADR-0027 §3): a case (not dropped) whose
 `snapshotBefore` N the snapper collector saw deleted — a `snapshot-delete`
@@ -1179,7 +1189,9 @@ After every capture:
 3. If an **open** case (queued, active, verification) lists the event's
    subject as a whole-word token in its `## Plan` section, propose (not
    link) — stored as `proposedCase` in the index for one-click
-   confirmation; the lowest case id wins (ADR-0012 §7, §13). An event
+   confirmation; the lowest case id wins (ADR-0012 §7, §13). HTML
+   comments in the Plan do not count (a template placeholder is no plan;
+   WP-115 round 2). An event
    rule 9 (below) links is no longer proposed: rule 9 acts after rule 2
    and before this one in effect, at capture time.
 4. Otherwise, if the event is drift-eligible (only `pacman`, `omarchy`,
@@ -1342,12 +1354,29 @@ After every capture:
    that instant), read from the ledger's case events only, never from the
    case file's status or dates nor from `.seldon/active-case`, which keeps
    no history; a queued case has no window; (b) `C`'s `## Plan`, as it is
-   when the rule runs, names the event's subject as a whole-word token
-   (rule 3's test); (c) `C` is the **only** case for which (a) and (b)
-   hold; (d) **harm guard:** a subject `[drift] alwaysRed` matches links
-   only when `C` is R3 (its `risk` now); below R3, `C` gets the R3
-   advisory Log line of the case notes below instead, also when closed,
-   and the event stays drift. With two or more such cases nothing is
+   when the rule runs and without its HTML comments, names the event's
+   subject as a whole-word token (rule 3's test); (c) `C` is the **only**
+   case for which (a) and (b) hold — and since the engine cannot read the
+   Plan of a case whose file does not load (or lies outside the status
+   folders), an event in such a case's window is not linked at all: the
+   capture warns and `doctor` names it (`planned`, §3); (d) **harm guard
+   (ADR-0028 §1 test 1, orchestrator decision WP-115 round 2):** a
+   subject `[drift] alwaysRed` matches, or an event the classifier makes a
+   crisis (a persistence path under `[drift] alwaysRedPaths`, rule
+   `always-red-paths`), links only when `C` was **R3 at the event's
+   time** — read from the case's own record: the risk of its `created`
+   Log line, then each `set … risk A → B` line, to the minute in the local
+   time the Log is written in; a change in the event's own minute, or a
+   Log without a `created` line naming a risk, cannot tell it and counts
+   as below R3. Below R3 the event stays drift (a crisis stays a crisis)
+   and `C` gets one advisory Log line, also when closed: for an `alwaysRed`
+   package with a known risk the R3 advisory of the case notes below,
+   otherwise `advisory: not linked: <source> <kind> <subject> at HH:MM:SS
+   is `alwaysRed` | can affect boot, login or the shell (`[drift]
+   alwaysRedPaths`), which only an R3 case takes, and <ID> was R<n> at the
+   time | the record of <ID> does not tell its risk at the time (ADR-0027
+   §2c); if this case made it: `seldon drift link <EVENT> <ID>``. A later
+   `plan set --risk R3` does not link an earlier change. With two or more such cases nothing is
    linked: each gets the Log line `not linked: <source> <kind> <subject>
    at HH:MM:SS is planned here and in <IDs>, both|all active at the time;
    `seldon drift link <EVENT> <CASE>` links it`, and rule 3 proposes as
