@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-105 | redact collector messages before cursors.json, capture --json and the index | Engine | `engine-105` (opus) | `wt/WP-105` · `wp/105-redact-messages` | 2026-10-06 |
 | WP-108 | hook headroom on curl lines with -e | Engine | `engine-108` (opus) | `wt/WP-108` · `wp/108-hook-headroom` | 2026-10-06 |
 | WP-101 | one-click start, agent snapshot and close path, closed-by-agent marker, reopen | Engine + Plugin | `engine-101` (opus) | `wt/WP-101` · `wp/101-one-click-close` | 2026-10-06 |
 
@@ -47,6 +46,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-105 collector messages (a program's stderr in a
+  degraded note) are redacted before they reach `cursors.json`, capture
+  output and `--json`, doctor, init, `index.json` and `STATUS.md`; a
+  message an older engine saved is redacted on load and on every display;
+  with an invalid `[redaction] patterns` entry the index and doctor
+  withhold the message instead of falling back to the built-in rules;
+  Opus review, one round, Fable stage 2; merged.
 - 2026-10-06 WP-107 the config cursor carries an exact marker
   (`atCheck`: the count of config events at its check time), so the
   replay reads past the previous capture's own events instead of a
