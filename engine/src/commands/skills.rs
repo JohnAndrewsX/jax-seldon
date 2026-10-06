@@ -273,13 +273,16 @@ pub fn state(folder: &Path) -> State {
 struct DirReport {
     folder: PathBuf,
     before: &'static str,
-    /// `installed`, `updated`, `unchanged`, `kept`, `removed`, `absent`.
+    /// `installed`, `updated`, `unchanged`, `kept`, `removed`, `absent`,
+    /// `failed`.
     action: &'static str,
     written: Vec<String>,
     removed: Vec<String>,
     kept: Vec<String>,
     own: Vec<String>,
     own_errors: Vec<String>,
+    /// Why this folder failed (`action: failed`); the other folders go on.
+    error: Option<String>,
 }
 
 impl DirReport {
@@ -292,6 +295,7 @@ impl DirReport {
             "written": self.written,
             "removed": self.removed,
             "kept": self.kept,
+            "error": self.error,
         })
     }
 }
@@ -334,29 +338,72 @@ fn delete_own(
     Ok(())
 }
 
+/// Debug builds only: `SELDON_TEST_SKILL_STOP_AFTER=N` stops an install
+/// in a folder with an error after its N-th write, as a crash would (the
+/// tests' interrupted install).
+fn stop_after() -> Option<usize> {
+    #[cfg(debug_assertions)]
+    if let Some(n) = std::env::var("SELDON_TEST_SKILL_STOP_AFTER")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        return Some(n);
+    }
+    None
+}
+
+/// Writes `bytes` to `path` and notes it in `written`, unless
+/// [`stop_after`] says the install stops first.
+fn write_step(path: &Path, bytes: &[u8], written: &mut Vec<PathBuf>) -> Result<()> {
+    if stop_after() == Some(written.len()) {
+        return Err(anyhow::anyhow!("stopped after {} write(s) (test)", written.len()).into());
+    }
+    sys::write_atomic(path, bytes)?;
+    written.push(path.to_path_buf());
+    Ok(())
+}
+
 /// Installs or updates the skill in `folder` (which exists), under the
-/// caller's state lock.
-fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> Result<DirReport> {
-    let target = folder.join(SKILL_NAME);
+/// caller's state lock. A failure is this folder's result (`failed`, with
+/// the error); what was written before it is recorded all the same.
+fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> DirReport {
     let before = state(folder);
     let mut report = DirReport {
         folder: folder.to_path_buf(),
         before: before.as_str(),
         ..DirReport::default()
     };
-    match &before {
+    let mut written = Vec::new();
+    if let Err(e) = install_steps(lock, ctx, config, &before, &mut report, &mut written) {
+        report.action = "failed";
+        report.error = Some(e.to_string());
+    }
+    own_record(lock, ctx, config, &written, &mut report);
+    report
+}
+
+fn install_steps(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    before: &State,
+    report: &mut DirReport,
+    written: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let target = report.folder.join(SKILL_NAME);
+    match before {
         State::Current => {
             report.action = "unchanged";
-            return Ok(report);
+            return Ok(());
         }
         State::Foreign => {
             report.action = "kept";
-            return Ok(report);
+            return Ok(());
         }
         State::Changed(files) => {
             report.action = "kept";
             report.kept = files.clone();
-            return Ok(report);
+            return Ok(());
         }
         State::Missing => {
             // the skill's own folder, never the agent's: `folder` exists
@@ -371,7 +418,6 @@ fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> R
     }
     let old = read_manifest(&target).unwrap_or_default();
     let manifest = Manifest::shipped();
-    let mut written = Vec::new();
     let manifest_path = target.join(MANIFEST);
     let write_manifest = |written: &mut Vec<PathBuf>| -> Result<()> {
         if old.files == manifest.files && plain_file(&manifest_path) == Some(true) {
@@ -379,60 +425,71 @@ fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> R
         }
         let mut text = serde_json::to_string_pretty(&manifest).map_err(anyhow::Error::from)?;
         text.push('\n');
-        sys::write_atomic(&manifest_path, text.as_bytes())?;
-        written.push(manifest_path.clone());
-        Ok(())
+        write_step(&manifest_path, text.as_bytes(), written)
     };
     // A new folder gets the manifest first: an install that stops half way
     // leaves a folder that is still Seldon's. An update writes it last: a
     // file still as the old manifest names it is not mistaken for one
     // changed by hand.
-    let fresh = before == State::Missing;
+    let fresh = *before == State::Missing;
     if fresh {
-        write_manifest(&mut written)?;
+        write_manifest(written)?;
     }
     for (name, text) in FILES {
         let path = target.join(name);
         if file_state(&path, Some(text), old.files.get(name)) == FileState::Shipped {
             continue;
         }
-        sys::write_atomic(&path, text.as_bytes())?;
+        write_step(&path, text.as_bytes(), written)?;
         report.written.push(name.to_string());
-        written.push(path);
     }
     // files an older skill had and this one does not, if still as written,
     // before the new manifest forgets them
     for name in names(&old).into_iter().filter(|n| shipped(n).is_none()) {
         let path = target.join(&name);
         if file_state(&path, None, old.files.get(&name)) == FileState::Written {
-            delete_own(lock, ctx, config, &path, INSTALL_BY, &mut report)?;
+            delete_own(lock, ctx, config, &path, INSTALL_BY, report)?;
             report.removed.push(name);
         }
     }
     if !fresh {
-        write_manifest(&mut written)?;
+        write_manifest(written)?;
     }
-    own_record(lock, ctx, config, &written, &mut report);
-    Ok(report)
+    Ok(())
 }
 
-/// Removes Seldon's files from `folder`, under the caller's state lock.
-fn uninstall_from(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> Result<DirReport> {
-    let target = folder.join(SKILL_NAME);
+/// Removes Seldon's files from `folder`, under the caller's state lock. A
+/// failure is this folder's result (`failed`, with the error).
+fn uninstall_from(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> DirReport {
     let before = state(folder);
     let mut report = DirReport {
         folder: folder.to_path_buf(),
         before: before.as_str(),
         ..DirReport::default()
     };
+    if let Err(e) = uninstall_steps(lock, ctx, config, before, &mut report) {
+        report.action = "failed";
+        report.error = Some(e.to_string());
+    }
+    report
+}
+
+fn uninstall_steps(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    before: State,
+    report: &mut DirReport,
+) -> Result<()> {
+    let target = report.folder.join(SKILL_NAME);
     let manifest = match before {
         State::Missing => {
             report.action = "absent";
-            return Ok(report);
+            return Ok(());
         }
         State::Foreign => {
             report.action = "kept";
-            return Ok(report);
+            return Ok(());
         }
         _ => read_manifest(&target).unwrap_or_default(),
     };
@@ -441,7 +498,7 @@ fn uninstall_from(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) ->
         match file_state(&path, shipped(&name), manifest.files.get(&name)) {
             FileState::Absent => {}
             FileState::Shipped | FileState::Written => {
-                delete_own(lock, ctx, config, &path, UNINSTALL_BY, &mut report)?;
+                delete_own(lock, ctx, config, &path, UNINSTALL_BY, report)?;
                 report.removed.push(name);
             }
             FileState::Edited => report.kept.push(name),
@@ -456,7 +513,7 @@ fn uninstall_from(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) ->
             config,
             &target.join(MANIFEST),
             UNINSTALL_BY,
-            &mut report,
+            report,
         )?;
         // only when empty: a file the user put there stays
         if std::fs::remove_dir(&target).is_ok() {
@@ -467,7 +524,7 @@ fn uninstall_from(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) ->
     } else {
         report.action = "kept";
     }
-    Ok(report)
+    Ok(())
 }
 
 /// The `skills` row of `seldon doctor` (read-only): the state of the
@@ -588,10 +645,10 @@ fn own_json(reports: &[DirReport]) -> Value {
 /// caller's state lock.
 pub fn install_under(lock: &Lock, ctx: &Context, config: &Config) -> Result<Installed> {
     let (present, absent) = skill_dirs(&ctx.dirs.home);
-    let mut reports = Vec::new();
-    for folder in &present {
-        reports.push(install_into(lock, ctx, config, folder)?);
-    }
+    let reports = present
+        .iter()
+        .map(|folder| install_into(lock, ctx, config, folder))
+        .collect();
     Ok(Installed { reports, absent })
 }
 
@@ -632,6 +689,13 @@ pub fn install(ctx: &Context) -> Result<Output> {
             "kept" => {
                 let _ = write!(human, "\n  kept       {}", kept_fix(dirs, r));
             }
+            "failed" => {
+                let _ = write!(
+                    human,
+                    "\n  failed     {path}: {}",
+                    r.error.as_deref().unwrap_or_default()
+                );
+            }
             action => {
                 let _ = write!(human, "\n  {action:<10} {path}");
             }
@@ -647,7 +711,11 @@ pub fn install(ctx: &Context) -> Result<Output> {
     for e in installed.reports.iter().flat_map(|r| &r.own_errors) {
         let _ = write!(human, "\n{}", super::setup::own_writes_warning(e));
     }
-    Ok(Output::ok(human, installed.json(dirs)))
+    Ok(with_failures(
+        human,
+        installed.json(dirs),
+        &installed.reports,
+    ))
 }
 
 /// `seldon hook uninstall skills`.
@@ -655,10 +723,10 @@ pub fn uninstall(ctx: &Context) -> Result<Output> {
     let config = config_of(ctx);
     let (present, absent) = skill_dirs(&ctx.dirs.home);
     let lock = ctx.lock()?;
-    let mut reports = Vec::new();
-    for folder in &present {
-        reports.push(uninstall_from(&lock, ctx, &config, folder)?);
-    }
+    let reports: Vec<DirReport> = present
+        .iter()
+        .map(|folder| uninstall_from(&lock, ctx, &config, folder))
+        .collect();
     drop(lock);
     let dirs = &ctx.dirs;
     let mut human = if reports.iter().all(|r| r.action == "absent") {
@@ -670,6 +738,11 @@ pub fn uninstall(ctx: &Context) -> Result<Output> {
         let path = dirs.display(&r.folder.join(SKILL_NAME));
         let _ = match (r.action, r.before) {
             ("removed", _) => write!(human, "\n  removed    {path}"),
+            ("failed", _) => write!(
+                human,
+                "\n  failed     {path}: {}",
+                r.error.as_deref().unwrap_or_default()
+            ),
             (_, "foreign") => write!(
                 human,
                 "\n  kept       {path} was not written by seldon; left alone"
@@ -688,15 +761,32 @@ pub fn uninstall(ctx: &Context) -> Result<Output> {
     for e in reports.iter().flat_map(|r| &r.own_errors) {
         let _ = write!(human, "\n{}", super::setup::own_writes_warning(e));
     }
-    Ok(Output::ok(
+    let json = json!({
+        "skill": SKILL_NAME,
+        "dirs": reports.iter().map(|r| r.json(dirs)).collect::<Vec<_>>(),
+        "absent": absent.iter().map(|p| dirs.display(p)).collect::<Vec<_>>(),
+        "ownWrites": own_json(&reports),
+    });
+    Ok(with_failures(human, json, &reports))
+}
+
+/// The output of install or uninstall: exit 1 when a folder failed (the
+/// report lists what was done in the others), else 0.
+fn with_failures(mut human: String, json: Value, reports: &[DirReport]) -> Output {
+    let failed = reports.iter().filter(|r| r.action == "failed").count();
+    if failed == 0 {
+        return Output::ok(human, json);
+    }
+    let _ = write!(
         human,
-        json!({
-            "skill": SKILL_NAME,
-            "dirs": reports.iter().map(|r| r.json(dirs)).collect::<Vec<_>>(),
-            "absent": absent.iter().map(|p| dirs.display(p)).collect::<Vec<_>>(),
-            "ownWrites": own_json(&reports),
-        }),
-    ))
+        "\n{failed} folder(s) failed; the others are as listed. Fix the folder's \
+         permissions, then run the command again."
+    );
+    Output {
+        human,
+        json,
+        exit: crate::error::Exit::UserError,
+    }
 }
 
 #[cfg(test)]
