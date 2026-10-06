@@ -114,7 +114,7 @@ clean_log() {
 
 # 1. The sample: every tab renders its data; the strip is on every tab.
 run sample "$fx/index.sample.json" \
-  "view;tab:changelog;filter:pacman;text:f;filter:all;key:Down;key:Down*47;key:Return;tab:system;key:Down*40"
+  "view;tab:changelog;filter:pacman;text:f;filter:all;key:Down;key:Down*49;key:Return;tab:system;key:Down*40"
 expect sample 1 .view.status ok
 expect sample 1 .view.tab today
 expect sample 1 .view.banner ""
@@ -135,14 +135,14 @@ shows sample 1 "Thursday, 1 Oct 2026"
 shows sample 1 "09:25 · claude-code · C-2026-003"
 shows sample 1 "▸ Yesterday · 1 entry"
 expect sample 2 .view.tab changelog
-expect sample 2 .view.changelog.rows 73
+expect sample 2 .view.changelog.rows 75
 expect sample 2 '.view.changelog.badges | join(",")' "mesa +2"
 expect sample 2 .view.changelog.folded 8
 expect sample 2 .view.changelog.snapshots 8
 expect sample 2 '.view.changelog.driftTones | join(",")' \
   "tokyo-night accent,~/.config/systemd/user/ollama.service urgent,ollama accent,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh urgent,~/.config/hypr/monitors.conf accent,vulkan-radeon accent,lib32-mesa accent,mesa accent"
 shows sample 2 "2 changes that can affect boot, login or the shell have no case"
-shows sample 2 "73 events · newest first"
+shows sample 2 "75 events · newest first"
 shows sample 2 "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar."
 shows sample 2 "No case · proposed for C-2026-005"
 expect sample 3 .view.changelog.filter pacman
@@ -150,9 +150,9 @@ expect sample 3 .view.changelog.rows 15
 shows sample 3 "15 events from pacman · newest first"
 expect sample 4 .view.changelog.filter snapper
 expect sample 4 .view.changelog.rows 10
-expect sample 5 .view.changelog.rows 73
+expect sample 5 .view.changelog.rows 75
 expect sample 6 .view.cursorActive true
-expect sample 7 .view.cursor 47
+expect sample 7 .view.cursor 49
 shows sample 7 "mesa"
 shows sample 7 "+2"
 shows sample 7 "No case"
@@ -275,7 +275,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$fx/index.sample.json" >"$work/after.json"
 mkdir -p "$work/home-live"
 run live "" \
-  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=74;tab:system;text:e;settle" \
+  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=76;tab:system;text:e;settle" \
   HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/live.record"
 expect live 1 .view.status ok
@@ -303,7 +303,7 @@ expect live 19 .view.tab today
 expect live 20 .view.tab changelog
 expect live 22 .view.capturing true
 shows live 22 "Capturing"
-expect live 24 .view.changelog.rows 74
+expect live 24 .view.changelog.rows 76
 shows live 24 "Written by the harness after Capture now · human"
 expect live 24 .view.captureResult "1 new event"
 shows live 24 "Last capture: 1 new event"
@@ -713,7 +713,7 @@ clean_log quiet-active
 #     the strip follow every index.
 mkdir -p "$work/home-drift"
 run drift-live "" \
-  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;click:2 changes that can affect boot, login or the shell have no case;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:drift.isOpen=false;key:Return;settle;key:Escape;text:3;text:2;key:Down*40;key:Return;key:Backtab;key:Backtab;key:Right;key:Return;key:Tab;key:Tab;type:routine update;key:Return;key:Return;wait:drift.isOpen=false;key:Escape" \
+  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;click:2 changes that can affect boot, login or the shell have no case;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:drift.isOpen=false;key:Return;settle;key:Escape;text:3;text:2;key:Down*42;key:Return;key:Backtab;key:Backtab;key:Right;key:Return;key:Tab;key:Tab;type:routine update;key:Return;key:Return;wait:drift.isOpen=false;key:Escape" \
   HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECORD="$work/drift-live.record"
 expect drift-live 4 .view.drift.caseId C-2026-005
 expect drift-live 4 .view.drift.editing true
@@ -751,7 +751,7 @@ expect drift-live 23 .view.drift.open false
 expect drift-live 24 .view.tab work
 expect drift-live 24 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
 expect drift-live 24 '.view.work.ids[2]' "C-2026-009,C-2026-002,C-2026-001"
-expect drift-live 26 .view.cursor 47
+expect drift-live 26 .view.cursor 49
 expect drift-live 27 .view.drift.subject mesa
 expect drift-live 31 .view.drift.action dismiss
 expect drift-live 34 .view.drift.reason "routine update"
@@ -785,9 +785,9 @@ clean_log drift-live
 #     whose sheet lists two members.
 mkdir -p "$work/home-drift-only"
 run drift-only "" \
-  "tab:changelog;key:Down;key:Down*47;key:Return;key:Backtab;key:Backtab;key:Left;key:Return;key:Tab;key:Tab;key:Tab;key:Return;key:Backtab;key:Backtab;key:Return;key:Down;key:Down;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;key:Up;key:Return" \
+  "tab:changelog;key:Down;key:Down*49;key:Return;key:Backtab;key:Backtab;key:Left;key:Return;key:Tab;key:Tab;key:Tab;key:Return;key:Backtab;key:Backtab;key:Return;key:Down;key:Down;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;key:Up;key:Return" \
   HOME="$work/home-drift-only" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
-expect drift-only 3 .view.cursor 47
+expect drift-only 3 .view.cursor 49
 expect drift-only 8 .view.drift.action link
 expect drift-only 8 .view.drift.caseId ""
 expect drift-only 12 .view.drift.result "Pick a case first"
@@ -802,7 +802,7 @@ expect drift-only 25 .view.drift.result "Linked 1 event to C-2026-004"
 expect drift-only 25 .view.drift.resolution "linked to C-2026-004"
 expect drift-only 25 '.view.changelog.badges | join(",")' "lib32-mesa +1"
 expect drift-only 25 .view.pill "2 · 2"
-expect drift-only 27 .view.cursor 46
+expect drift-only 27 .view.cursor 48
 expect drift-only 28 .view.drift.eventId $LIB32
 expect drift-only 28 .view.drift.badge +1
 expect drift-only 28 '.view.drift.members | length' 2
@@ -878,9 +878,9 @@ clean_log drift-show
 mkdir -p "$work/home-drift-show-member"
 cp "$work/home-drift-show/extra-events.json" "$work/home-drift-show-member/"
 run drift-show-member "" \
-  "tab:changelog;key:Down;key:Down*45;key:Return;wait:drift.members.1=· downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1" \
+  "tab:changelog;key:Down;key:Down*47;key:Return;wait:drift.members.1=· downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1" \
   HOME="$work/home-drift-show-member" FAKE_SELDON_FIXTURE="$work/members-capped.json"
-expect drift-show-member 3 .view.cursor 45
+expect drift-show-member 3 .view.cursor 47
 expect drift-show-member 4 .view.drift.eventId $VULKAN
 expect drift-show-member 4 .view.drift.subject mesa
 shows drift-show-member 4 "Only vulkan-radeon"
@@ -1089,7 +1089,7 @@ fit_expect() {
   local w1 w3
   w1=$(sed -n 1p "$work/$name.steps" | jq -r .view.tabStrip.widths)
   expect "$name" 3 .view.tabStrip.widths "$w1"
-  shows "$name" 4 "18 events from seldon · newest first"
+  shows "$name" 4 "20 events from seldon · newest first"
   local i
   for ((i = 1; i <= n; i++)); do
     expect "$name" "$i" '[.overflow[] | select(startswith("elided:") | not)] | join(" | ")' ""
@@ -1201,11 +1201,11 @@ jq '.events = [
      subject: "journal", detail: "First event above the cursor", zone: "green", actor: "human", case: null}
   ] + .events' "$fx/index.sample.json" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
-run cursor-follow "" "tab:changelog;key:Down;key:Down*4;text:c;wait:changelog.rows=75;key:Return;key:Escape;text:f" \
+run cursor-follow "" "tab:changelog;key:Down;key:Down*4;text:c;wait:changelog.rows=77;key:Return;key:Escape;text:f" \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 3 .view.cursor 4
 expect cursor-follow 3 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
-expect cursor-follow 5 .view.changelog.rows 75
+expect cursor-follow 5 .view.changelog.rows 77
 expect cursor-follow 5 .view.cursor 6
 expect cursor-follow 5 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
 expect cursor-follow 6 .view.drift.open true
