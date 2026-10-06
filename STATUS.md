@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-108 | hook headroom on curl lines with -e | Engine | `engine-108` (opus) | `wt/WP-108` · `wp/108-hook-headroom` | 2026-10-06 |
 | WP-101 | one-click start, agent snapshot and close path, closed-by-agent marker, reopen | Engine + Plugin | `engine-101` (opus) | `wt/WP-101` · `wp/101-one-click-close` | 2026-10-06 |
 | WP-109 | engine: drift classification by consequence (ADR-0028) | Engine | `engine-109` (opus) | `wt/WP-109` · `wp/109-drift-classes` | 2026-10-06 |
 | WP-110 | plugin: quiet surfaces (ADR-0028) | Plugin | `plugin-110` (opus) | `wt/WP-110` · `wp/110-quiet-surfaces` | 2026-10-06 |
@@ -52,6 +51,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-108 the agent hook is faster on curl lines that hold
+  `-e`/`-E` elsewhere in the line: redaction triggers are literal text
+  every match holds, now also in order (`>`) and as written for a
+  capital; four rules compile less often; the 900-line row went from 4.8
+  to 3.9 ms (bound 5 ms unchanged); an old/new differential over 2 × 1 M
+  lines showed no masking change; Opus review, one round, Fable stage 2;
+  merged.
 - 2026-10-06 WP-105 collector messages (a program's stderr in a
   degraded note) are redacted before they reach `cursors.json`, capture
   output and `--json`, doctor, init, `index.json` and `STATUS.md`; a
