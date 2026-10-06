@@ -18,7 +18,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`, not in CI, required before the handover
@@ -410,8 +410,18 @@ command forms of CONTRACT.md (free text one non-empty argument after `--`,
 `drift show <id> --json`, `[--only]`), the `XDG_STATE_HOME` index path, and
 the tab helpers against the fixture: 62 Changelog rows, one "+2" group (3 members), 7
 folded resolution details, 6 snapshot rows, the source filter, the crisis
-strip text, the snapper banner, the Today view and the System sections with
-every field optional. For the panel actions (WP-012): the case picker lists
+strip text, the snapper banner, the Today view ("1 event today") and the
+System sections with every field optional. The banners' terminal scripts
+(WP-117) are pinned verbatim; each shows its command as Copy copies it and
+runs it, bash parses each, and a hostile index (quotes, `$(…)`, `rm -rf`
+in the snapper message and the contract version) changes none of them.
+`bash tests/plugin/terminal-scripts.sh` runs every script inside the
+presentation launcher's own `omarchy-show-logo; …; omarchy-show-done` line
+with stub `sudo`, `curl`, `seldon`, `omarchy` and `gum` (and once the real
+gum, for its flags), scratch HOME: the green line and the follow-up
+`seldon capture` or `seldon status` only on success, the red line on a
+refused password, a failed download (pipefail) or a failed installer, one
+more capture when the lock is held, and "Done" in every case. For the panel actions (WP-012): the case picker lists
 the open cases only, active first, with ids checked; `logArgs` keeps the
 note one argument after `--` (`--help`, quotes, a newline, `$(…)`) and
 refuses blank text and a malformed case id; `openArgs` takes journal,
@@ -505,14 +515,17 @@ replace (temp file + rename), an engine installed while running ("Check
 again"), the live loop without the dev override (capture, then status
 writes the index; calls never overlap), engine exit 3, the exact argv of
 the banner fixes (fake `wl-copy` and terminal launcher record it), the
-crisis strip text, `index-variants/snapper-degraded.json` with the argv of
-its *Copy* and *Run in terminal*, its three actions and the hint after
-*Run in terminal*, which a reload of the unchanged index keeps (WP-054);
-live, the hint after *Run in terminal*, then *Check again* running the
+crisis strip text, the engine-missing banner urgent with an index and
+accent without one (WP-117), `index-variants/snapper-degraded.json` with
+the argv of its *Copy* (the plain grant) and *Grant* (the grant script),
+its three actions and its one-sentence detail with the engine's message on
+hover; the index replaced after *Grant*, as the script's capture does, and
+the banner gone without a click; live, *Grant* changing nothing in the
+panel, then *Check again* running the
 same `capture` and `status` as *Capture now* (`["fix", action, banner]`
 and `["snapshot"]` in `HARNESS_ACTIONS`): with snapper fixed the banner
-is gone, still failing it stays with the new message and without the
-hint; `XDG_STATE_HOME` (absolute and the
+is gone, still failing it stays with the new message on hover;
+`XDG_STATE_HOME` (absolute and the
 ignored relative form), and dev mode never running the engine.
 `tests/plugin/fake-seldon` stands in for the engine.
 

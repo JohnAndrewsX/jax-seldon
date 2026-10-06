@@ -165,6 +165,15 @@ test("relativeAge", () => {
   assert.strictEqual(M.relativeAge(NaN, 0), "unknown")
 })
 
+// Which script goes with which command; UPDATE_ENGINE_COMMAND is the
+// install line while the AUR package does not exist, so the update banners
+// are checked by name below.
+const TERMINAL_SCRIPT_OF = {}
+TERMINAL_SCRIPT_OF[M.INIT_COMMAND] = M.INIT_SCRIPT
+TERMINAL_SCRIPT_OF[M.SNAPPER_FIX_COMMAND] = M.SNAPPER_FIX_SCRIPT
+TERMINAL_SCRIPT_OF[M.UPDATE_PLUGIN_COMMAND] = M.UPDATE_PLUGIN_SCRIPT
+TERMINAL_SCRIPT_OF[M.INSTALL_ENGINE_COMMAND] = M.INSTALL_ENGINE_SCRIPT
+
 test("bannerFor: one banner per non-ok status, each with a fix", () => {
   assert.strictEqual(M.bannerFor("ok", {}), null)
   const constants = ["", M.INSTALL_ENGINE_COMMAND, M.INIT_COMMAND, M.UPDATE_ENGINE_COMMAND, M.UPDATE_PLUGIN_COMMAND]
@@ -176,23 +185,152 @@ test("bannerFor: one banner per non-ok status, each with a fix", () => {
     assert.ok(constants.indexOf(b.command) !== -1, s + " command is a constant")
     for (const a of b.actions) assert.ok(["copy", "terminal", "recheck", "build", "capture"].indexOf(a.id) !== -1, a.id)
     if (b.actions.some((a) => a.id === "copy" || a.id === "terminal")) assert.notStrictEqual(b.command, "", s)
+    // The terminal runs the script that goes with the shown command (WP-117).
+    if (b.actions.some((a) => a.id === "terminal")) {
+      assert.ok(M.isTerminalScript(b.script), s + " script is a terminal script")
+      assert.strictEqual(b.script, TERMINAL_SCRIPT_OF[b.command], s + " script matches its command")
+    } else {
+      assert.ok(!b.script, s + " has no script")
+    }
   }
 })
 
-test("bannerFor engineMissing: the GitHub one-liner while the AUR package does not exist (ADR-0024)", () => {
+test("bannerFor engineMissing: a setup step without an index, urgent when the engine is gone (WP-117)", () => {
   const b = M.bannerFor("engineMissing", {})
   assert.strictEqual(b.command, M.INSTALL_ENGINE_COMMAND)
   assert.strictEqual(M.INSTALL_ENGINE_COMMAND,
     "curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash")
+  assert.strictEqual(b.script, M.INSTALL_ENGINE_SCRIPT)
+  assert.strictEqual(b.tone, "accent")
+  assert.strictEqual(b.title, "Install the engine")
   assert.strictEqual(b.detail, M.ENGINE_MISSING_DETAIL)
-  assert.ok(b.detail.indexOf("AUR package: coming soon") !== -1)
-  assert.ok(b.detail.indexOf("SHA256SUMS") !== -1)
+  assert.strictEqual(M.ENGINE_MISSING_DETAIL,
+    "Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it; runs as your user, no password.")
+  same(b.actions, [{ id: "terminal", label: "Install" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
+  assert.strictEqual(M.bannerFor("engineMissing", { indexExists: false }).tone, "accent")
+  // only `true` counts
+  assert.strictEqual(M.bannerFor("engineMissing", { indexExists: "yes" }).tone, "accent")
+  const gone = M.bannerFor("engineMissing", { indexExists: true })
+  assert.strictEqual(gone.tone, "urgent")
+  assert.strictEqual(gone.title, "Seldon engine missing")
+  assert.strictEqual(gone.detail, b.detail)
+  same(gone.actions, b.actions)
+  assert.strictEqual(gone.script, b.script)
+})
+
+test("bannerFor notInitialised: Create runs seldon init in the terminal (WP-117)", () => {
+  const b = M.bannerFor("notInitialised", { indexExists: true })
+  assert.strictEqual(b.tone, "accent")
+  assert.strictEqual(b.title, "Create your logbook")
+  assert.strictEqual(b.detail, "Sets up your logbook and starts recording; the terminal asks a few questions, no password.")
+  assert.strictEqual(b.command, "seldon init")
+  assert.strictEqual(b.script, M.INIT_SCRIPT)
+  same(b.actions, [{ id: "terminal", label: "Create" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
 })
 
 test("bannerFor contractMismatch names the side to update", () => {
-  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 2 }).command, M.UPDATE_PLUGIN_COMMAND)
-  assert.strictEqual(M.bannerFor("contractMismatch", { indexContractVersion: 0 }).command, M.UPDATE_ENGINE_COMMAND)
-  assert.ok(M.bannerFor("contractMismatch", { indexContractVersion: 2 }).detail.indexOf("v2") !== -1)
+  const plugin = M.bannerFor("contractMismatch", { indexContractVersion: 2 })
+  const engine = M.bannerFor("contractMismatch", { indexContractVersion: 0 })
+  assert.strictEqual(plugin.command, M.UPDATE_PLUGIN_COMMAND)
+  assert.strictEqual(plugin.script, M.UPDATE_PLUGIN_SCRIPT)
+  assert.strictEqual(engine.command, M.UPDATE_ENGINE_COMMAND)
+  assert.strictEqual(engine.script, M.UPDATE_ENGINE_SCRIPT)
+  assert.strictEqual(plugin.detail, "The index uses contract v2 and this plugin reads v1: update the plugin.")
+  assert.strictEqual(engine.detail, "The index uses contract v0 and this plugin reads v1: update the engine.")
+  same(plugin.actions, [{ id: "terminal", label: "Update" }, { id: "copy", label: "Copy" }])
+})
+
+// The terminal scripts (WP-117), verbatim: what the user reads in the
+// floating terminal and what bash runs. A text change here is a review
+// item (AGENTS.md §8).
+const SCRIPTS = {
+  INSTALL_ENGINE_SCRIPT: "gum style --bold 'Seldon: install the engine'; " +
+    "gum style --width 72 'Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password.'; " +
+    "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
+    "if (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then " +
+    "gum style --padding '1 0 0 0' --foreground 2 'The engine is installed. In the Seldon panel, press Check again.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The engine is not installed.'; fi",
+  UPDATE_ENGINE_SCRIPT: "gum style --bold 'Seldon: update the engine'; " +
+    "gum style --width 72 'Downloads the latest seldon from the Seldon release on GitHub into ~/.local/bin and checks it against the release checksums. Runs as your user, no password; your logbook stays as it is.'; " +
+    "gum style --padding '1 0 1 2' 'curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash'; " +
+    "if (set -o pipefail; curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash); then " +
+    "seldon status >/dev/null 2>&1 || true; " +
+    "gum style --padding '1 0 0 0' --foreground 2 'The engine is updated. In the Seldon panel, press Check again.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The engine stays at its version.'; fi",
+  UPDATE_PLUGIN_SCRIPT: "gum style --bold 'Seldon: update the plugin'; " +
+    "gum style --width 72 'Omarchy fetches the new jax.seldon, shows what changes and asks before it updates. No password.'; " +
+    "gum style --padding '1 0 1 2' 'omarchy plugin update jax.seldon'; " +
+    "if (set -o pipefail; omarchy plugin update jax.seldon); then " +
+    "gum style --padding '1 0 0 0' --foreground 2 'If the plugin was updated, the Seldon panel offers Restart shell to load it.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. The plugin stays at its version.'; fi",
+  INIT_SCRIPT: "gum style --bold 'Seldon: create your logbook'; " +
+    "gum style --width 72 'Sets up the logbook folder and starts recording. Asks a few questions; Enter takes the suggested answer. No password.'; " +
+    "gum style --padding '1 0 1 2' 'seldon init'; " +
+    "if (set -o pipefail; seldon init); then " +
+    "gum style --padding '1 0 0 0' --foreground 2 'Your logbook is ready. The panel updates by itself.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'No logbook was created; the message above says why. Press Create in the panel to try again.'; fi",
+  SNAPPER_FIX_SCRIPT: "gum style --bold 'Seldon: let your user read the snapshot list'; " +
+    "gum style --width 72 'Grants read access to /.snapshots: the listing and the snapshot info files, nothing else. No snapshot is created, changed or deleted. Asks for your password once.'; " +
+    "gum style --padding '1 0 1 2' 'sudo setfacl -m u:$USER:rx /.snapshots'; " +
+    "if (set -o pipefail; sudo setfacl -m u:$USER:rx /.snapshots); then " +
+    "seldon capture >/dev/null 2>&1 || { sleep 3; seldon capture >/dev/null 2>&1; } || true; " +
+    "gum style --padding '1 0 0 0' --foreground 2 'Snapshots are now recorded. The panel updates by itself.'; " +
+    "else gum style --padding '1 0 0 0' --foreground 1 'Nothing changed. Snapshots stay off; Seldon works without them.'; fi"
+}
+
+test("terminal scripts: verbatim, fixed, each shows and runs its command (WP-117, AGENTS.md §8)", () => {
+  for (const name of Object.keys(SCRIPTS)) assert.strictEqual(M[name], SCRIPTS[name], name)
+  same(M.TERMINAL_SCRIPTS, Object.keys(SCRIPTS).map((n) => SCRIPTS[n]))
+  const commandOf = {
+    INSTALL_ENGINE_SCRIPT: M.INSTALL_ENGINE_COMMAND, UPDATE_ENGINE_SCRIPT: M.UPDATE_ENGINE_COMMAND,
+    UPDATE_PLUGIN_SCRIPT: M.UPDATE_PLUGIN_COMMAND, INIT_SCRIPT: M.INIT_COMMAND, SNAPPER_FIX_SCRIPT: M.SNAPPER_FIX_COMMAND
+  }
+  for (const name of Object.keys(commandOf)) {
+    const script = M[name]
+    const command = commandOf[name]
+    // shown, single-quoted, as Copy puts it on the clipboard; then run
+    assert.ok(script.indexOf("gum style --padding '1 0 1 2' '" + command + "'; ") !== -1, name + " shows " + command)
+    assert.ok(script.indexOf("if (set -o pipefail; " + command + "); then ") !== -1, name + " runs " + command)
+    // one line before (bold), one after in green or red
+    assert.strictEqual(script.indexOf("gum style --bold 'Seldon: "), 0, name)
+    assert.ok(script.indexOf("--foreground 2 '") !== -1 && script.indexOf("--foreground 1 '") !== -1, name)
+    // it ends on a gum line, exit 0, so the wrapper prints Done
+    assert.ok(/'; fi$/.test(script), name)
+    assert.ok(M.isTerminalScript(script), name)
+  }
+  // the commands contain no quote that could end the shown text early
+  for (const c of Object.values(commandOf)) assert.strictEqual(c.indexOf("'"), -1, c)
+  assert.strictEqual(M.isTerminalScript(M.SNAPPER_FIX_COMMAND), false)
+  assert.strictEqual(M.isTerminalScript(M.SNAPPER_FIX_SCRIPT + " "), false)
+  assert.strictEqual(M.isTerminalScript(""), false)
+  assert.strictEqual(M.isTerminalScript(undefined), false)
+  assert.strictEqual(M.isTerminalScript([M.INIT_SCRIPT]), false)
+  assert.strictEqual(M.shellQuoted("it's"), "'it'\\''s'")
+})
+
+test("terminal scripts: nothing from the index reaches them (AGENTS.md §8)", () => {
+  const evil = "'; rm -rf ~; echo '$(reboot)`id`"
+  const x = JSON.parse(fs.readFileSync(path.join(root, "fixtures/index-variants/snapper-degraded.json"), "utf8"))
+  x.state.collectors.forEach((c) => { if (c.name === "snapper") c.message = evil })
+  x.generatedAt = evil
+  const banners = [
+    M.snapperBanner(x), M.bannerFor("engineMissing", { indexExists: true, generatedAt: evil }),
+    M.bannerFor("notInitialised", { generatedAt: evil }),
+    M.bannerFor("contractMismatch", { indexContractVersion: evil }), M.bannerFor("contractMismatch", { indexContractVersion: 2 }),
+    M.engineOutdatedBanner("ok", "0.0.1-" + evil, "9.0.0")
+  ]
+  for (const b of banners) {
+    assert.ok(b && M.isTerminalScript(b.script), b && b.title)
+    assert.strictEqual(b.script.indexOf("rm -rf"), -1, b.title)
+    assert.strictEqual(b.command.indexOf("rm -rf"), -1, b.title)
+  }
+  // the engine's message is the hover text, as plain text, never the script
+  assert.ok(banners[0].full.indexOf(evil) === 0)
+})
+
+test("terminal scripts: bash parses each one", () => {
+  const { execFileSync } = require("child_process")
+  for (const script of M.TERMINAL_SCRIPTS) execFileSync("bash", ["-n", "-c", script])
 })
 
 test("bannerFor indexStale shows the age", () => {
@@ -303,42 +441,43 @@ test("snapperBanner: only for an enabled snapper collector that fails (ADR-0026)
   assert.strictEqual(M.snapperBanner(sampleIndex), null)
   assert.strictEqual(M.snapperBanner(null), null)
   const b = M.snapperBanner(degraded)
-  assert.strictEqual(b.title, "Snapshots not readable")
+  assert.strictEqual(b.title, "Read snapshots (optional)")
+  assert.strictEqual(b.tone, "accent")
   assert.strictEqual(b.command, M.SNAPPER_FIX_COMMAND)
   assert.strictEqual(b.command, "sudo setfacl -m u:$USER:rx /.snapshots")
+  assert.strictEqual(b.script, M.SNAPPER_FIX_SCRIPT)
+  // one sentence; the engine's message, then what the fix grants, on hover (WP-117)
+  assert.strictEqual(b.detail, "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it.")
   const message = degraded.state.collectors.find((c) => c.name === "snapper").message
-  // the engine's message, then what the fix grants
-  assert.strictEqual(b.detail, message + "\n" + M.SNAPPER_FIX_GRANTS)
+  assert.strictEqual(b.full, message + "\n" + M.SNAPPER_FIX_GRANTS)
   assert.strictEqual(M.SNAPPER_FIX_GRANTS, "The command below grants your user read access to the snapshot directory " +
     "listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: " +
     "no snapshot creation, change or deletion.")
   same(b.actions.map((a) => a.id), ["terminal", "copy", "capture"])
-  assert.strictEqual(b.hint, "")
+  assert.strictEqual(b.hint, undefined)
   const off = JSON.parse(JSON.stringify(degraded))
   off.state.collectors.forEach((c) => { if (c.name === "snapper") c.enabled = false })
   assert.strictEqual(M.snapperBanner(off), null)
   const bare = JSON.parse(JSON.stringify(degraded))
   bare.state.collectors.forEach((c) => { delete c.message })
-  assert.strictEqual(M.snapperBanner(bare).detail,
+  assert.strictEqual(M.snapperBanner(bare).full,
     "The snapper collector has no permission to list snapshots.\n" + M.SNAPPER_FIX_GRANTS)
 })
 
-test("snapperBanner: Check again is a capture, the hint follows Run in terminal (WP-054, #2)", () => {
+test("snapperBanner: Grant runs the script, Check again is a capture, no hint (WP-054, WP-117)", () => {
   const b = M.snapperBanner(degraded)
-  same(b.actions.map((a) => a.label), ["Run in terminal", "Copy", "Check again"])
+  same(b.actions.map((a) => a.label), ["Grant", "Copy", "Check again"])
   // The same action id as the stale banner's Capture now: Service.fix
   // dispatches both to captureNow(), not to the index-only recheck.
   const capture = M.bannerFor("indexStale", { generatedAt: sampleIndex.generatedAt, nowMs: Date.now() }).actions[0]
   same(capture, { id: "capture", label: "Capture now" })
   assert.strictEqual(b.actions[2].id, capture.id)
   assert.ok(b.actions.every((a) => a.id !== "recheck"))
-  assert.strictEqual(M.SNAPPER_HINT, "When the command has finished, press Check again")
-  assert.strictEqual(M.snapperBanner(degraded, true).hint, M.SNAPPER_HINT)
-  assert.strictEqual(M.snapperBanner(degraded, false).hint, "")
-  assert.strictEqual(M.snapperBanner(degraded, "yes").hint, "")
-  same(M.snapperBanner(degraded, true).actions, b.actions)
-  assert.strictEqual(M.snapperBanner(sampleIndex, true), null)
-  assert.strictEqual(M.snapperBanner(null, true), null)
+  // The script captures after the grant, so the banner goes by itself:
+  // no "press Check again" hint (WP-117 removed SNAPPER_HINT).
+  assert.strictEqual(M.SNAPPER_HINT, undefined)
+  assert.strictEqual(b.hint, undefined)
+  assert.ok(M.SNAPPER_FIX_SCRIPT.indexOf("then seldon capture ") !== -1)
 })
 
 test("changelogRows: 73 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
@@ -469,6 +608,12 @@ test("todayView: today's and yesterday's journal and the summary counts", () => 
   // "without a case" is the attention count: 6 open drift − 2 crises
   same(t.stats.map((s) => s.label), ["events today", "in 7 days", "active", "queued", "without a case"])
   same(t.stats.map((s) => s.value), [30, 51, 2, 3, 4])
+  // "1 event today", not "1 events today" (WP-117)
+  for (const [n, label] of [[0, "events today"], [1, "event today"], [2, "events today"]]) {
+    const one = JSON.parse(sample)
+    one.summary.eventsToday = n
+    same(M.todayView(one).stats[0], { label: label, value: n })
+  }
   const over = JSON.parse(sample)
   over.summary.crisis = 9
   assert.strictEqual(M.todayView(over).stats[4].value, 0, "never negative")
@@ -1529,9 +1674,9 @@ test("engineMin (WP-068): a version below the manifest's engineMin gets the upda
   assert.strictEqual(b.title, "Engine too old")
   assert.strictEqual(b.tone, "urgent")
   assert.strictEqual(b.command, M.UPDATE_ENGINE_COMMAND)
-  assert.ok(b.detail.indexOf("Update the engine to at least 0.2.0") !== -1, b.detail)
-  assert.ok(b.detail.indexOf("0.1.9") !== -1, b.detail)
-  same(b.actions.map((a) => a.id), ["terminal", "copy", "recheck"])
+  assert.strictEqual(b.detail, "This plugin needs engine 0.2.0 or newer and seldon reports 0.1.9.")
+  assert.strictEqual(b.script, M.UPDATE_ENGINE_SCRIPT)
+  same(b.actions, [{ id: "terminal", label: "Update" }, { id: "copy", label: "Copy" }, { id: "recheck", label: "Check again" }])
   assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.0", "0.2.0"), null)
   assert.strictEqual(M.engineOutdatedBanner("ok", "0.2.1", "0.2.0"), null)
   assert.strictEqual(M.engineOutdatedBanner("ok", "1.0.0", "0.2.0"), null)
@@ -1610,7 +1755,7 @@ test("plugin/README.md States lists every banner with its fixes (WP-078)", () =>
   const table = readme.slice(readme.indexOf("### States"), readme.indexOf("\n## ", readme.indexOf("### States")))
   const rows = table.split("\n").filter((l) => l.startsWith("| ") && !l.startsWith("| State "))
   const banners = [
-    M.bannerFor("engineMissing"), M.bannerFor("notInitialised"),
+    M.bannerFor("engineMissing"), M.bannerFor("engineMissing", { indexExists: true }), M.bannerFor("notInitialised"),
     M.bannerFor("indexMissing", { parseError: "empty" }), M.bannerFor("indexMissing", { parseError: "bad json" }),
     M.bannerFor("indexStale", { generatedAt: "2026-10-01T10:00:00+02:00", nowMs: Date.parse("2026-10-01T14:00:00+02:00") }),
     M.bannerFor("contractMismatch", { indexContractVersion: 2 }), M.bannerFor("contractMismatch", { indexContractVersion: 0 }),

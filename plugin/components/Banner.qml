@@ -7,11 +7,10 @@ import "../Model.js" as Model
 
 // The banner for a non-ok service status (SPEC-PLUGIN §5, AGENTS.md §7).
 //
-// Renders one Model.bannerFor() object: title, the detail (wrapped; the
-// engine-missing one runs to a few lines), the fix command when there is
-// one (wrapped anywhere: the install one-liner is a long URL), one
-// button per fix action, and under them the banner's `hint` when it has one
-// (the snapper banner after Run in terminal, WP-054). It only reports
+// Renders one Model.bannerFor() object: title, the detail (one sentence,
+// wrapped), the fix command when there is one (wrapped anywhere: the
+// install one-liner is a long URL), one button per fix action, and under
+// them the banner's `hint` when it has one (the rules banner). It only reports
 // clicks; Service.fix() carries them out. Every string is set as plain text.
 // Left of the text, the status's state pictogram (A11, Model.statusPictogram)
 // in the banner's tone, `pictogramSize` square: 48 in the panel, 96 in the
