@@ -9,13 +9,17 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
   "schemaVersion": 1,
   "id": "jax.seldon",
   "name": "JAX Seldon",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "author": "JohnAndrewsX",
   "license": "MIT",
-  "description": "Flight recorder and planning desk for your Omarchy system: ledger, journal, cases, drift, and the Prime Radiant overlay.",
+  "description": "The memory of your Omarchy machine, for you and your agents: ledger, journal, cases, drift and the Prime Radiant in one desk.",
   "kinds": ["service", "bar-widget", "overlay"],
-  "entryPoints": { "service": "Service.qml", "barWidget": "BarWidget.qml", "overlay": "Overlay.qml" },
-  "barWidget": { "displayName": "Seldon", "category": "System", "allowMultiple": false, "defaultSection": "right" },
+  "entryPoints": { "service": "Service.qml", "barWidget": "BarWidget.qml", "overlay": "Desk.qml" },
+  "barWidget": {
+    "displayName": "Seldon", "category": "System", "allowMultiple": false, "defaultSection": "right",
+    "defaults": { "captureIntervalMin": 15, "wipLimit": 3, "driftInBar": "crisis", "deskWidth": 100, "deskSidebar": "open" },
+    "schema": [ "… one entry per key of defaults (plugin/manifest.json)" ]
+  },
   "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }
 }
 ```
@@ -24,8 +28,16 @@ Verify the exact manifest keys against `$OMARCHY_PATH/shell/README.md`
 (`/usr/share/omarchy` on a package install) before committing (WP-010 does
 this); the shell is the source of truth. Do **not** add `panel` to `kinds`:
 the shell's panel loader picks one UI kind per plugin id (`panel` before
-`overlay` before `menu`), so `panel` would take `summon`/`toggle` away from
-the Prime Radiant (see memory/omarchy-shell.md, WP-001 findings).
+`overlay` before `menu`), and `overlay` is what makes `omarchy-shell shell
+toggle jax.seldon` open the desk (§5, §8; ADR-0034 §1).
+
+The settings live inline on the plugin's `shell.json` entry (the shell's
+storage rule 3) and appear in Omarchy's bar settings from `barWidget.schema`:
+`captureIntervalMin` (§3), `wipLimit` (§5.7), `driftInBar` (§4),
+`deskWidth` (integer 50–100, step 1, default 100: the desk's width in per
+cent of the screen, §5.1) and `deskSidebar` (`open` | `collapsed`, default
+`open`, §5.2). The pill pushes the whole entry to the service (§4); a key a
+user never set takes its default.
 
 ## 2. Files
 
@@ -33,15 +45,22 @@ the Prime Radiant (see memory/omarchy-shell.md, WP-001 findings).
 plugin/
 ├── manifest.json
 ├── Service.qml         data: watches index.json, runs capture timer, exposes model
-├── BarWidget.qml       pill; loads Panel.qml
-├── Panel.qml           tabbed panel
-├── Overlay.qml         Prime Radiant
-├── Model.js            pure functions: formatting, colour mapping, aggregation for charts
+├── BarWidget.qml       the pill; the jax.seldon.panel shim (§8)
+├── Desk.qml            the desk (§5): window, header, notices, sidebar, sections, keys
+├── Model.js            pure functions: formatting, colour mapping, aggregation, desk geometry
 ├── components/
-│   ├── Tabs.qml  EventRow.qml  CaseCard.qml  Kanban.qml  Banner.qml
-│   ├── Heatmap.qml  Series.qml  DriftBars.qml  RiskDonut.qml  Timeline.qml
-│   └── QuickEntry.qml
-├── README.md  LICENSE  preview.png
+│   ├── desk/           DeskWindow (layer shell), Header, KpiStrip, Notices, Sidebar,
+│   │                   NavIcon, Search, Section (the section base), ListColumn, ListRow,
+│   │                   DetailPane, ActionBar, KeyValues, Arm (arm twice)
+│   ├── overlay/        the Prime Radiant's charts (§6): Heatmap, Series, DriftBars,
+│   │                   RiskDonut, Timeline, ThePlan, OverlaySlot, ChartCanvas
+│   ├── Banner.qml  MaskIcon.qml
+│   └── the 0.1 panel's tab components (TodayTab, ChangelogTab, WorkTab, DecisionsTab,
+│       SystemTab, MemoryTab, EventRow, CaseCard, QuickEntry, NewCaseSheet, DriftSheet,
+│       NewDecisionSheet): unreferenced since WP-121; WP-122 and WP-123 port and delete them
+├── sections/           Today, Changelog, Work, Decisions, System, Memory, Radiant, Graph,
+│                       Settings (+ SectionStub for the sections not built yet)
+├── README.md  LICENSE  SECURITY.md  preview.png  assets/
 └── fixtures -> ../fixtures (NOT a symlink in the plugin folder; copied in CI for dev builds)
 ```
 
@@ -98,9 +117,9 @@ plugin/
 - The rules check (WP-101): `["seldon", "doctor", "--only", "rules",
   "--json"]` in its own `Process`, read-only and beside the queue (it
   takes no lock and starts no omarchy, snapper or git probe), when the
-  panel opens or the engine turns up while it is open, at most every
+  desk opens or the engine turns up while it is open, at most every
   10 minutes; never in dev mode or without an engine. Only its `rules` row
-  is read (`rulesBanner`, §5). Doctor's exit 1 (an error row) still
+  is read (`rulesBanner`, §5.6). Doctor's exit 1 (an error row) still
   carries the JSON; only exits above 1 log a warning line. The banner's
   click queues `["seldon", "rules", "update", "--json"]` like any write,
   then forces a new check.
@@ -142,8 +161,13 @@ crisis, 7 changes without a case, last capture 4 min ago" (the crisis
 part only while there is one; "changes without a case" counts attention,
 `openDrift − crisis`). The widget pushes the mode to the service
 (`setDriftInBar`), whose IPC read-out reports the same pill.
-Left click toggles Panel; middle click opens Prime Radiant; right click
-runs capture.
+Left click toggles the desk (§5; `toggle jax.seldon` through the plugin's
+scoped facade, `bar.shell`); middle click opens the desk at the Prime
+Radiant (`summon` with `{"section":"radiant"}`); right click runs capture.
+The widget has no popup of its own (ADR-0034 §7): it offers the bar no
+`open`/`close`, so Tab between bar panels passes it by. It pushes its
+whole `shell.json` entry to the service with the other settings
+(`setDeskSettings`), which the desk reads and writes back (§5.5).
 
 Glyph (WP-051, `assets/DELIVERY.md` §5): the glyph box is the shell's icon
 canvas, `Style.bar.iconCanvas` (16 px at scale 1.0, 20 px at 1.25), placed
@@ -167,7 +191,256 @@ The shell's own monochrome icons (tray) use `MultiEffect` colorization,
 which the headless harness's software renderer does not paint; the root
 colour gives the same result in both.
 
-## 5. Panel.qml
+## 5. Desk.qml — the desk
+
+ADR-0034. One surface for everything the plugin shows: the manifest's
+`overlay` entry point, opened by the pill, by `omarchy-shell shell
+toggle|summon jax.seldon [payload]` and by the `jax.seldon.panel` shim
+(§8). It replaced the 0.1 bar popup (`Panel.qml`) and the fullscreen
+Prime Radiant overlay (`Overlay.qml`) in WP-121.
+
+### 5.1 Window and width
+
+The shell's overlay loader creates `Desk.qml` without properties, then
+injects `shell` (the plugin's scoped facade, `PluginShellApi`), `manifest`
+and `service`; every binding tolerates `service === null`. `summon` calls
+`open(payload)`, `hide` calls `close()` and unloads the item, `toggle`
+reads `opened`. What the desk keeps between opens (the section, each
+section's selection) lives in the service (`deskMemory`).
+
+The window, `components/desk/DeskWindow.qml`, is one layer-shell
+`PanelWindow` on the overlay layer with exclusive keyboard focus while
+shown, anchored on all four edges and transparent, the pattern of the
+shell's own menu (`plugins/menu/Menu.qml`): the desk is a card inside it,
+and the rest of the surface is a transparent click-catcher that closes
+the desk (no dimming: the desk reads as an application). It keeps out of
+other surfaces' exclusive zones (`ExclusionMode.Normal`, no zone of its
+own), so the bar stays visible above it and the pill stays clickable. On
+every open from closed it moves to the monitor Hyprland has focused
+(`Hyprland.focusedMonitor.name` against `Quickshell.screens`, as
+`Bar.qml focusedScreenName`; the first screen when none matches); one
+window, never one per screen.
+
+Width (`Model.deskGeometry`): with the window's width `W` (the screen's
+usable width) and `gap = Style.gapsOut`, `avail = W − 2·gap` and
+
+```
+width = clamp(round(avail × deskWidth / 100), min(960, avail), avail)
+```
+
+centred (`x = gap + ⌊(avail − width) / 2⌋`), from `gap` below the bar to
+`gap` above the screen's bottom. At 100 % it fills the row. ADR-0034 §1
+assumed an unanchored layer-shell axis for the centring; the desk
+computes it instead (WP-121 verified the menu pattern on the dev and the
+test host: the surface sits below the bar, the card centred to the pixel).
+
+### 5.2 Layout
+
+Top to bottom (prototype `prototype-desk-v6`):
+
+- **Header** (`Header.qml`): the A5 mark in the accent and "SELDON"
+  (heading font, bold, letter-spaced) over "machine · Omarchy version ·
+  captured N ago" (`Model.deskSubline`); the **status chip** when a notice
+  is up — the first notice's title and "+N" for more, in the notice's
+  tone, "N notices" where the title does not fit; a click folds the
+  notices; the **KPI strip** (`Model.deskKpis`): active (accent while > 0)
+  · verification · queued · crises (urgent while > 0) · attention
+  (`openDrift − crisis`), each a click to its section (Work; Changelog
+  with the crisis or open filter); Settings (`,`) and *Esc*.
+- **Notices** (§5.6) under the header, full width, foldable by the chip.
+- **Sidebar** (`Sidebar.qml`): "SECTIONS", the nine targets with icon,
+  label and count (`Model.deskCounts`: Today the events today, Changelog
+  the open changes (urgent with a crisis), Work active · verification ·
+  queued, Decisions "N new" (proposed), Memory lessons + topics), the
+  search field and the fold button at the bottom. Icons are the
+  prototype's 24-unit paths drawn with `QtQuick.Shapes` in the theme
+  colour (`Model.DESK_SECTIONS[].icon`, `NavIcon.qml`).
+- **The section**: a list column (`ListColumn.qml`; title, the section's
+  head — chips, a field —, a `ListView` of `ListRow`s: stripe crisis /
+  attention, title, meta, an age or date at the right) and a detail pane
+  (`DetailPane.qml`: the sticky `ActionBar` — actions, id and risk at the
+  right, the arm hint — outside the scrolling content, so it stays while
+  the detail scrolls). Solo sections (7 Prime Radiant, 8 Graph) have no
+  list column.
+- **Footer**: the service's last error (urgent), else "Dev mode,
+  read-only: <index path>" in dev mode; at the right the key hint.
+
+Columns (`Model.deskLayout`): sidebar `Style.space(210)` open,
+`Style.space(56)` icons only; list `clamp(round(0.3 × rest),
+Style.space(260), Style.space(360))`; the detail takes the rest. A desk
+narrower than 960 px (only on a screen that narrow) shows the sidebar's
+icons whatever `deskSidebar` says; narrower than 760 px the list and the
+detail **stack**: the list, Enter or a click shows the detail with a "‹
+Back to the list" row. Otherwise `deskSidebar` decides (`collapsed`:
+icons only; the search is then reached by widening it).
+
+### 5.3 Keys
+
+| Key | Does |
+|---|---|
+| `1`–`8` | Today, Changelog, Work, Decisions, System, Memory, Prime Radiant, Graph |
+| `,` | Settings |
+| `Alt+↓` / `Alt+↑` | the next / previous of the nine, wrapping |
+| `/` | the sidebar search (filters the current section's list); Enter leaves it and keeps the filter, Esc clears it and leaves |
+| `↑`/`↓`, `k`/`j` | move in the list |
+| `Enter`, `Space` | select the cursor's row (in the stacked layout: show its detail) |
+| `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
+| `c` | capture now |
+| `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
+| other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them, built in WP-122/123) |
+
+Every character goes to the current section first (`Section.textKey`);
+the desk takes `c`, `n`, `+` only when the section did not. A focused
+field keeps every key; Esc in it is the field's. Tab and Shift-Tab do
+nothing (the desk is not a bar popup). A section change closes the search
+filter and gives the keys back to the desk. Writing actions arm on the
+first press (`components/desk/Arm.qml`: `press(id)` arms, the same id
+again returns true and disarms); every key that did not press disarms,
+and the sticky action bar shows the hint while armed (the two-press rule
+of §5.7, shared by the sections).
+
+### 5.4 Sections
+
+`sections/*.qml` extend `components/desk/Section.qml`. A section is made
+on its first visit and kept while the desk is loaded; only the current
+one is visible. It reads from the desk: `service`, `index` (null while
+its contents mean nothing in the status, as before), `layout`,
+`searchText`, `arm`, `detailShown`; it sets `editing` while a field of
+its own has the keys and `selectedId` (kept between opens). The desk
+calls `move(dy)`, `activate()`, `textKey(t)`, `select(id)`, `back()` and
+`applyPayload({ select, filter, period })`, each returning true when used,
+and `view()` for the read-out. Sections never aggregate on paint: what
+they render is prepared by the service when the index changes and looked
+up (ADR-0034 §3); lists are `ListView`s.
+
+| # | Section | Built in |
+|---|---|---|
+| 1–3 | Today, Changelog, Work | WP-122 (§5.7 is their behaviour until then) |
+| 4–6 | Decisions, System, Memory | WP-123 (§5.7) |
+| 7 | Prime Radiant | WP-123 (§6) |
+| 8 | Graph | WP-125 (ADR-0034 §5) |
+| `,` | Settings | WP-121 (§5.5) |
+
+Until a section is built it is a stub (`SectionStub.qml`): its title and
+"Coming in WP-12x." in the list and the detail.
+
+### 5.5 Settings
+
+Four groups in the list; Appearance is selected first.
+
+- **Appearance** (live): "Desk width" — a slider from 50 to 100 % in
+  steps of 10 (`PanelSlider`, six notches), the value as "N %", the
+  presets 50 % / 67 % / 75 % / Full, the line "N px on this screen" and a
+  small picture of the screen with the desk on it; "Sidebar" — Open /
+  Collapsed. Dragging previews the width on the desk itself and writes
+  nothing; the release, a preset or a sidebar click (and the sidebar's
+  fold button) **writes once** through the facade's
+  `updateEntryInline("jax.seldon", settings)` — the only place the plugin
+  writes `shell.json`, its own entry only. `settings` is every key of the
+  current entry (unknown ones too) plus the changed one, because the
+  shell replaces the entry with `{ id } + settings`
+  (`Model.deskSettingsWrite`); defaults the user never set are not
+  written. A value that is already stored is not written (the facade
+  would answer "nothing changed" as `false`, and every write is a
+  `config-change` event, ADR-0028). Until the shell's reload brings the
+  entry back through the pill, the desk shows the written value (5 s at
+  most). A refused write (`false`, or no such method) leaves the stored
+  value and the page says "The shell did not take the change. Change it
+  in Omarchy's bar settings (Seldon widget)." — no error state. Omarchy's
+  bar settings show the same keys; both paths are valid.
+- **Capture**, **Agents**, **Quiet** (read-only): the values in force and
+  where each is set — the capture interval, the active cases limit and
+  "changes counted in the bar" in Omarchy's bar settings; the collectors,
+  the launcher, the start folder and what may be loud in
+  `~/.config/seldon/config.toml` (SPEC-ENGINE §2). The desk never edits
+  `config.toml`.
+
+### 5.6 Notices, header mark, pictograms
+
+The notices under the header are the 0.1 panel's banners with their
+one-click fixes, in this order: the restart notice after a plugin update,
+the status banner, snapshots not readable, the outdated agent rules,
+what their update did, the capture warnings. Each is `Banner.qml` on the
+service's object; a fix goes to `Service.fix(action, banner)`. Their
+texts and fixes:
+
+Banner states (under the header): engine missing → "Install the engine:"
+the GitHub one-liner while the AUR package does not exist (§3,
+ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
+`omarchy pkg add` reaches the official repositories only), with *Install in
+terminal*, *Copy* and *Check again*; contract
+mismatch → `omarchy plugin update jax.seldon` when the plugin is older
+than the index, the GitHub installer one-liner when the engine is older (until the
+AUR package is live, ADR-0024); engine older than the manifest's
+`engineMin` (§3; in place of every status banner but engine missing and
+contract mismatch) → "Engine too old", "Update the engine to at least
+X", the same installer one-liner with *Update in terminal*, *Copy* and
+*Check again* (WP-068); snapshots
+not readable (ADR-0026) → the one-line read grant
+`sudo setfacl -m u:$USER:rx /.snapshots` with *Run in terminal*, *Copy*
+and *Check again*; the detail is the engine's message, then on its own
+line what the fix grants (read access to the snapshot directory listing
+and the snapshot info files, no snapshot creation, change or deletion)
+(WP-054, issue #2); *Check again*
+runs a capture, the same call as *Capture now* (`capture --all --json
+--quiet`, then `status --json`), because only a capture rewrites the
+collector state this banner reads (reloading the index would not); after
+*Run in terminal* the banner shows "When the command has finished, press
+Check again" under its buttons until the index next changes; not
+initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
+*Check again*; index stale →
+*Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
+logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
+doctor --only rules --json`, which the service runs when the desk opens (and when the
+engine turns up while it is open), at most every 10 minutes, in its own
+read-only process beside the queue, never in dev mode; *Update rules* runs
+`seldon rules update --json` (it rewrites only the engine's block and
+archives an edited one, so nothing is lost), then doctor again; a damaged
+or newer block shows the engine's fix as text, without a click (the
+`--replace` archive is the user's decision); capture warnings → the neutral "Capture warned" notice of
+§3 under the banners, without an action; plugin updated under a running
+shell (§3) → the neutral "Restart the shell to finish the update" above
+the banners, with both versions and one action, *Restart shell*, which
+runs the argv `["omarchy-restart-shell"]` once per service instance
+(a second click could kill the new shell; WP-090). The 0.1 panel's red
+crisis strip ("N changes that can affect boot, login or the shell have no
+case", ADR-0028 §4b) has no successor in the desk: the header's crises
+figure (urgent while `summary.crisis` > 0) and Today's "Needs you"
+(WP-122) carry it.
+
+Header mark (WP-051): the A5 lockup — the mark, then "SELDON" in the heading
+font (`Style.font.heading`, bold), baseline-aligned. Metrics from
+`assets/DELIVERY.md` §5, derived from the heading's cap height (the tight
+height of "H"): box = 2 × cap rounded to an even pixel count, the
+wordmark `round(cap / 2)` after the box, its baseline `box / 2 + cap / 2`
+below the box top (the mark's centre on the cap-height centre). At the
+default font that is box 24, gap 6, baseline 18, the delivered numbers.
+File by the box in device pixels: 24 → `a5-panel-mark-24.svg`, 32 →
+`a5-panel-mark-32.svg`, anything else → `a1-icon-mask.svg` (e.g. 30 at
+font scale 1.25). Colour: the accent (ADR-0034, prototype).
+
+State pictograms (A11, 48 and 96 grids, never drawn below 48 px; by the
+size in logical pixels — the vector scales with the DPR — the 48 grid up
+to 72 px, the 96 grid above): the status banner shows its status's
+pictogram, `Style.space(48)` square, left of its text, in the banner's
+tone — engine missing → `engine-missing`, not initialised →
+`logbook-not-initialised`, index missing (or unreadable) →
+`index-missing`, index stale → `index-stale`; the contract mismatch and
+the snapper banner have none. The Today tab shows the day's state left of
+the date and the counts (events today, in 7 days, active, queued, and
+"without a case", the attention count `openDrift − crisis`, the number the
+tooltip and the Changelog line show), `Style.space(48)`: crisis (urgent) when any
+crisis, else case active (accent) when active cases, else all clear
+(foreground); none without an index. Attention alone changes nothing
+(ADR-0028 §4b), so the drift-open pictogram is not shown.
+
+### 5.7 Behaviour carried over from the 0.1 panel
+
+Normative for sections 1–6 until WP-122 and WP-123 rewrite it into the
+section's own paragraph. Superseded by §5.1–§5.4 already: the
+`KeyboardPanel` popup and its width, the tab strip and its cells, Tab /
+Shift-Tab handing over to the bar, ←/→ between tabs, the red strip. The
+text as the 0.1 panel had it:
 
 `KeyboardPanel` anchored to the pill. Digits select tabs by fixed id
 (Today 1, Changelog 2, Work 3, Decisions 4, System 5, Memory 6; a digit
@@ -276,87 +549,19 @@ takes no space until WP-095 puts its button there.
 | System | omarchy version, package counts, deviations, snapshots, plugins, theme | "Open in editor" (rebuild/update-impact actions are Phase 3 engine commands, allowed by CONTRACT.md, not wired in v1) |
 | Memory | lessons headings, memory topics | "Open" |
 
-Header (WP-051): the A5 lockup — the mark, then "Seldon" in the heading
-font (`Style.font.heading`, bold), baseline-aligned. Metrics from
-`assets/DELIVERY.md` §5, derived from the heading's cap height (the tight
-height of "H"): box = 2 × cap rounded to an even pixel count, the
-wordmark `round(cap / 2)` after the box, its baseline `box / 2 + cap / 2`
-below the box top (the mark's centre on the cap-height centre). At the
-default font that is box 24, gap 6, baseline 18, the delivered numbers.
-File by the box in device pixels: 24 → `a5-panel-mark-24.svg`, 32 →
-`a5-panel-mark-32.svg`, anything else → `a1-icon-mask.svg` (e.g. 30 at
-font scale 1.25). Colour: the panel foreground.
+## 6. Prime Radiant — desk section 7
 
-State pictograms (A11, 48 and 96 grids, never drawn below 48 px; by the
-size in logical pixels — the vector scales with the DPR — the 48 grid up
-to 72 px, the 96 grid above): the status banner shows its status's
-pictogram, `Style.space(48)` square, left of its text, in the banner's
-tone — engine missing → `engine-missing`, not initialised →
-`logbook-not-initialised`, index missing (or unreadable) →
-`index-missing`, index stale → `index-stale`; the contract mismatch and
-the snapper banner have none. The Today tab shows the day's state left of
-the date and the counts (events today, in 7 days, active, queued, and
-"without a case", the attention count `openDrift − crisis`, the number the
-tooltip and the Changelog line show), `Style.space(48)`: crisis (urgent) when any
-crisis, else case active (accent) when active cases, else all clear
-(foreground); none without an index. Attention alone changes nothing
-(ADR-0028 §4b), so the drift-open pictogram is not shown.
+Section 7 of the desk (§5; ADR-0034 §4), solo (no list column): `7`, the
+pill's middle click, or a payload `{"section":"radiant"}` — and the 0.1
+overlay's `{"period":"30"}`, which implies the section, so an existing
+binding still lands on the charts. The fullscreen overlay window, its
+header and its own banner are gone (WP-121): the desk's header and
+notices cover them. WP-123 builds the section from the charts below,
+reused as they are; until then it is a stub. The chart semantics below
+stay normative. Layout: 12-column grid, `Style.space` gutters.
 
-Banner states (top of every tab): engine missing → "Install the engine:"
-the GitHub one-liner while the AUR package does not exist (§3,
-ADR-0024), afterwards `omarchy pkg aur add jax-seldon` (ADR-0016;
-`omarchy pkg add` reaches the official repositories only), with *Install in
-terminal*, *Copy* and *Check again*; contract
-mismatch → `omarchy plugin update jax.seldon` when the plugin is older
-than the index, the GitHub installer one-liner when the engine is older (until the
-AUR package is live, ADR-0024); engine older than the manifest's
-`engineMin` (§3; in place of every status banner but engine missing and
-contract mismatch) → "Engine too old", "Update the engine to at least
-X", the same installer one-liner with *Update in terminal*, *Copy* and
-*Check again* (WP-068); snapshots
-not readable (ADR-0026) → the one-line read grant
-`sudo setfacl -m u:$USER:rx /.snapshots` with *Run in terminal*, *Copy*
-and *Check again*; the detail is the engine's message, then on its own
-line what the fix grants (read access to the snapshot directory listing
-and the snapshot info files, no snapshot creation, change or deletion)
-(WP-054, issue #2); *Check again*
-runs a capture, the same call as *Capture now* (`capture --all --json
---quiet`, then `status --json`), because only a capture rewrites the
-collector state this banner reads (reloading the index would not); after
-*Run in terminal* the banner shows "When the command has finished, press
-Check again" under its buttons until the index next changes; not
-initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
-*Check again*; index stale →
-*Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
-logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
-doctor --only rules --json`, which the service runs when the panel opens (and when the
-engine turns up while it is open), at most every 10 minutes, in its own
-read-only process beside the queue, never in dev mode; *Update rules* runs
-`seldon rules update --json` (it rewrites only the engine's block and
-archives an edited one, so nothing is lost), then doctor again; a damaged
-or newer block shows the engine's fix as text, without a click (the
-`--replace` archive is the user's decision); capture warnings → the neutral "Capture warned" notice of
-§3 under the banners, without an action; plugin updated under a running
-shell (§3) → the neutral "Restart the shell to finish the update" above
-the banners, with both versions and one action, *Restart shell*, which
-runs the argv `["omarchy-restart-shell"]` once per service instance
-(a second click could kill the new shell; WP-090); crisis → red strip "N changes
-that can affect boot, login or the shell have no case" ("1 change … has
-no case"), only while `summary.crisis` > 0 (ADR-0028 §4b); a click opens
-the first crisis.
-
-## 6. Overlay.qml — Prime Radiant
-
-Fullscreen `Overlay`, opened by `omarchy-shell shell toggle jax.seldon`
-(overlay route; check README for the exact route) or middle click.
-Layout: 12-column grid, `Style.space` gutters.
-
-- Row 1: title "Prime Radiant", machine name, Omarchy version, period
-  selector (30 / 90 / 365 days / All; default 90 d, resets on every open;
-  WP-030), close hint. While the service is not ok, the status banner
-  sits under it with its *Copy* fix only and the hint "Fix it from the
-  Seldon panel (click the Seldon mark in the bar)."; its state pictogram
-  (§5) is `Style.space(96)` here, the 96 grid.
+- Row 1: the period selector (30 / 90 / 365 days / All; default 90 d,
+  reset on every entry of the section; WP-030).
 - Row 2 (full width): **Heatmap** — events per day of the period as ISO
   weeks × 7 days (53 × 7 at 365 d and All), five steps of the theme
   accent; hover shows the date and counts by source.
@@ -390,12 +595,12 @@ chart the caption shows the hovered item. A chart without data in the
 period says "no data in this period". Chart data is prepared by the
 service (`Model.periodTable`) when the index changes; the overlay only
 draws (one paint per chart per data or size change; no aggregation on
-the first frame after open — the harness asserts it). The shell creates
-the overlay item first and injects `service` afterwards (its Loader's
-`onLoaded`: `if ("service" in item) item.service = …`), so every binding
-first runs with `service === null` and must tolerate that without work
-(`Model.periodView` then returns a kept empty view, no aggregation pass);
-the harness creates the overlay in the same order.
+the first frame after entering the section — the harness asserts it).
+The shell creates the desk first and injects `service` afterwards (its
+Loader's `onLoaded`: `if ("service" in item) item.service = …`), so every
+binding first runs with `service === null` and must tolerate that
+without work (`Model.periodView` then returns a kept empty view, no
+aggregation pass); the harness creates the desk in the same order.
 
 The Heatmap is a square grid bound by the slot's height, left-aligned
 with its legend beside it; at 30 d and 90 d it fills only the left part
@@ -419,45 +624,53 @@ at least three Omarchy themes incl. a light one.
 Suggested user binding (documented, not installed): `o.bind("SUPER + SHIFT
 + S", "Seldon", "omarchy-shell shell toggle jax.seldon")`.
 
-How the shell routes (verified against `shell.qml`, Omarchy 4.0.4; see
+How the shell routes (verified against `shell.qml`, Omarchy 4.0.x; see
 memory/omarchy-shell.md): because `kinds` includes `overlay`, the plugin is
 *not* a bar-widget-panel plugin. `shell summon|hide|toggle jax.seldon`
-therefore reaches **Overlay.qml** (the Prime Radiant), never the bar
-widget; `shell call jax.seldon <method>` reaches only the loaded overlay
-item and only while it is loaded. Routes the plugin must honour:
+therefore reaches **Desk.qml**, never the bar widget; `shell call
+jax.seldon <method>` reaches only the loaded desk and only while it is
+loaded. Routes the plugin honours:
 
-- Overlay entry point: `open(payloadJson)`, `close()`, `opened` — this is
-  what the keybinding above hits. While loaded, `shell call jax.seldon
-  view ""` reads the slots (aggregation counters, each chart's summary and
-  hover), `setPeriod <30|90|365|all>` switches the period, and
-  `hover "<slot> <fx>,<fy>"` (fractions in [0, 1]; `""` clears; anything
-  else returns `{ error }` and changes nothing) drives the hover read-out
-  for tests (WP-030/031).
-- Bar panel: `IpcHandler` target **`jax.seldon.panel`** owned by the bar
-  widget (`open`, `close`, `show`, `hide`, `toggle`, `pill`, and the
-  read-out/navigation methods `view`, `tab <today|changelog|work|decisions|system|memory>`, `filter <source>`,
-  `resolve crisis|<eventId>` (opens the drift sheet, WP-021) — none runs
-  the engine; WP-011), following the
-  first-party `Panel { ipcTarget }` pattern, so `qs ipc` can open, close
-  and toggle the panel independently of the overlay (WP-010). The bar
-  builds the widget once per monitor (plus a zero-size, hidden placeholder
-  in the bar's centre section: once a centre anchor is set, the default,
-  the shell mounts the whole centre list a second time, hidden), and a
-  target takes one handler: only the first drawn instance the bar lists
-  (`bar.moduleWidgets`; visible
-  and not zero-size, as the shell's `pickDrawnSlot` routes a panel
-  hotkey) enables its handler, a placeholder only when no instance is
-  drawn (WP-078). When an instance comes, goes, or is drawn or hidden,
-  every instance looks again, the owner first, so the next one takes the
-  target over with one handler at a time (WP-067); IPC calls act on that
-  instance's panel.
+- The desk (overlay entry point): `open(payloadJson)`, `close()`,
+  `opened`. Payload (`Model.deskPayload`): `{"section": <id>, "select":
+  <id>, "filter": <source>, "period": <30|90|365|all>}`, every key
+  optional; section ids `today`, `changelog`, `work`, `decisions`,
+  `system`, `memory`, `radiant`, `graph`, `settings`; a `period` alone
+  means `radiant`; unknown values are ignored. While loaded, `shell call
+  jax.seldon view ""` returns the desk as JSON (opened, section,
+  selection, screen, window and desk geometry, width per cent, layout,
+  keys, search, status, KPIs, counts, notices, chip, settings writes, arm,
+  the section's own `view()`), `section <id>` shows a section ("ok" /
+  "unknown section"), `select <id>` selects in the current section ("ok"
+  / "not found"). WP-123 adds `setPeriod` and `hover` (the 0.1 overlay's
+  names, acting on section 7); WP-125 the graph's read-outs.
+- The shim: `IpcHandler` target **`jax.seldon.panel`**, owned by the bar
+  widget, kept for one minor release (removed in 0.3.0, announced in the
+  CHANGELOG; ADR-0034 §7). It forwards through the plugin's facade:
+  `open`, `show` → `summon jax.seldon {}`; `close`, `hide` → `hide`;
+  `toggle` → `toggle`; `tab <today|changelog|work|decisions|system|memory>`
+  → summon at that section ("ok" / "unknown tab"); `resolve crisis` → the
+  Changelog with the crisis filter, `resolve <eventId>` → the Changelog
+  with that event selected ("unknown target" for anything else); `filter
+  <source>` → the Changelog with that filter ("unknown source"); `view`
+  → the desk's `view` while it is loaded, else `{"opened":false}`; `pill`
+  → what the pill shows. None runs the engine. The bar builds the widget
+  once per monitor (plus a zero-size, hidden placeholder in the bar's
+  centre section: once a centre anchor is set, the default, the shell
+  mounts the whole centre list a second time, hidden), and a target takes
+  one handler: only the first drawn instance the bar lists
+  (`bar.moduleWidgets`; visible and not zero-size, as the shell's
+  `pickDrawnSlot` routes a panel hotkey) enables its handler, a
+  placeholder only when no instance is drawn (WP-078). When an instance
+  comes, goes, or is drawn or hidden, every instance looks again, the
+  owner first, so the next one takes the target over with one handler at
+  a time (WP-067).
 - Service: `IpcHandler` target **`jax.seldon.service`** (`status`,
   `refresh`, `capture`) — read-only state and the two actions any local
   process could trigger anyway; it is how the test host reads plugin state
   headlessly.
-- Quirk: `shell togglePanelAt <section> <n>` on the Seldon pill opens the
-  overlay, not the panel, because the shell routes by plugin id. Use the
-  panel target above.
+- `shell togglePanelAt <section> <n>` on the Seldon pill toggles the
+  desk, as the pill's left click does.
 
 ## 9. Validation
 
@@ -471,8 +684,8 @@ either: `missing-property` (nested `Style`/`Color` tokens) and
 in token names, so the runtime smoke test below is a **hard acceptance
 test** of every plugin WP, not an option. The smoke test launches the shell
 with the fixture index (`SELDON_INDEX` env override is honoured by
-Service.qml for development only) and checks that each tab and the overlay
-render without QML errors (`qs log --tail`). With `SELDON_INDEX` set the
+Service.qml for development only) and checks that each desk section
+renders without QML errors (`qs log --tail`). With `SELDON_INDEX` set the
 plugin is in read-only dev mode (CONTRACT.md rule 1): it never runs a
 writing engine command, and `SELDON_NOW` pins its clock. The headless
 harness under `tests/plugin/` (`just plugin-test`) runs Service.qml in an
@@ -491,5 +704,8 @@ Besides the engine it starts only `wl-copy` and Omarchy's floating-terminal
 launcher, each with one constant command, only on a banner click, and
 `omarchy-restart-shell` without arguments on the restart notice's click
 (WP-090). Never a
-shell string built from logbook content. Documented in README under
+shell string built from logbook content. Writes no file itself; the one
+change it asks for is its own settings entry in `shell.json`, through
+the shell's facade (`updateEntryInline` with the plugin's own id, which
+the facade enforces), on an explicit click or slider release (§5.5). Documented in README under
 "Security, privacy, privileges" (WP-041).

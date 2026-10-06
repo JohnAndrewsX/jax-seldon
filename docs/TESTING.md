@@ -18,7 +18,7 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/panel-view.sh`, `bash tests/plugin/overlay-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`, not in CI, required before the handover
@@ -627,231 +627,55 @@ likely because the binary could not be found` — expected, and the only log
 line the plugin may cause. The service probes for the engine once at start
 and again only on *Check again*, so it appears once per shell start.
 
-### 3. `Panel.qml` in a private headless Quickshell
+### 3. The desk (`Desk.qml`) in a private headless Quickshell
 
-`bash tests/plugin/panel-view.sh` runs the real panel against the real shell
-components. Quickshell serves `qs.*` from the config root of the instance,
-so the script builds a temp root with copies of `$OMARCHY_PATH/shell/Commons`
-and `shell/Ui`, replaces only `Ui/KeyboardPanel.qml` (a layer-shell window,
-which an offscreen instance cannot create) with
-`tests/plugin/harness/KeyboardPanel.qml`, and starts
-`tests/plugin/harness/panel.qml` as its `shell.qml`. That harness loads
-Service.qml (dev mode, a fixture), puts Panel.qml in an offscreen window,
-opens it and runs `HARNESS_STEPS`: real key presses through the shell's own
-`PanelKeyCatcher` (QtTest `keyClick`), tab and filter selection. After each
-step it prints `Panel.view()` and every visible text.
+`bash tests/plugin/desk-view.sh` runs the real desk against the real shell
+components (ADR-0034; it replaced `panel-view.sh` and `overlay-view.sh` in
+WP-121 — every scenario of those two and its successor are listed in
+`tests/plugin/COVERAGE.md`). Quickshell serves `qs.*` from the config root
+of the instance, so the script builds a temp root with copies of
+`$OMARCHY_PATH/shell/Commons` and `shell/Ui` and starts
+`tests/plugin/harness/desk.qml` as its `shell.qml`, against a copy of
+`plugin/` whose `components/desk/DeskWindow.qml` (a layer-shell window,
+which an offscreen instance cannot create) is replaced by
+`tests/plugin/harness/DeskWindow.qml`, an Item filling the harness window.
 
-Checks: with the sample every tab renders (Today: 4 entries, yesterday
-collapsed and opened with Enter; Changelog: 62 rows, Enter on the "+2"
-group opens its drift sheet with the three members, 7 folded resolution details, 6 highlighted snapshot rows,
-the pacman filter narrows to 12, `f` cycles; System: seven sections), the
-strip "2 changes that can affect boot, login or the shell have no case" on every tab, the keys
-(Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs and wrap over all six, digits fixed per tab id 1–6, ↑/↓, Enter, Esc), the snapper banner on every
-tab, the not-initialised variant, an empty and a sparse `system`, and a log
-free of warnings, `TypeError`s and binding loops. The shell's `Style.qml`
-asks `hyprctl` and `fc-match` for gaps and the font; the script gives it
-stubs that fail, and Style keeps its defaults.
+The harness loads Service.qml and the pill as the shell does, with one
+stand-in of the plugin's scoped facade that behaves like the shell's
+overlay loader: `summon` creates Desk.qml bare and injects `shell`,
+`manifest`, `service` before `open(payload)`; `hide` calls `close()` and
+drops the item; `toggle` is hide when open, else summon. Its
+`updateEntryInline` records every settings write and hands the entry back
+to the pill after 30 ms, as the shell's reload of `shell.json` does
+(`HARNESS_REFUSE` makes it refuse). Steps (`HARNESS_STEPS`, the header of
+`harness/desk.qml` lists them): `summon`, `hide`, `toggle`, `pill:<left|
+middle|right>`, `shim:<method>[:<arg>]` (the pill's `jax.seldon.panel`
+handler), `call`, `section`, `select`, `width:<pct>` and `sidebar:<mode>`
+(Omarchy's bar settings changing a key), `resize`, real keys (`key:
+[Alt+]<Name>`, `text`, `type`), `click`, `clickName`, `clickAt`, `drag`/
+`release` (the width slider), `hover`, `settle`, `wait:<path>=<v>`
+(`^=` for a prefix), `shot`, `view`. After each it prints `Desk.view()`,
+the facade's calls and writes, every visible text and every text outside
+the window or the desk.
 
-Two live scenarios (WP-012) run without `SELDON_INDEX`: the service reads
-the state index the fake engine writes. They type into the QuickEntry with
-real keys (`--help` would switch tabs if a key leaked to the panel), refuse
-a blank note, pick a case with Tab, ↓ and Enter, open the journal, ledger
-and STATUS.md with `e`, and press `c`: the fake engine's next `status`
-writes an index with one more event, and the Changelog shows 59 rows
-through the FileView, without a restart. The exact argv and the editor
-paths are compared, and a note the engine refuses keeps its text.
-
-The Work tab (WP-020) has three scenarios. On the sample (dev mode): the
-columns Queued 3 · Active 3 · Completed 2 in cursor order, "2 / 3 active",
-the "1 proposed" badge on exactly one tile, the card of the case under the
-cursor with its actions by status, and nothing armed or run without an
-engine. Live: `3`, `+`, the title `--help` typed into the sheet (no tab
-switch), zone, risk and priority picked with Tab, ←/→ and Enter, the area
-`Dev` refused in the plugin, `dev-env` accepted, Enter: the new case
-appears in Queued through the FileView with the cursor on it; then start →
-verify → done on C-2026-005 with Enter twice each, the case moving columns
-(after start "3 / 3 active · at the limit") and the cursor following it;
-Enter on the completed case opens it; Done on C-2026-008, which the fake
-engine's logbook has active (`$HOME/cases`), shows the engine's refusal
-and changes nothing; a cursor move disarms; x twice drops C-2026-004; `e`
-opens it; the exact argv of all of it. Locked: the engine refuses the new
-case (exit 4), the sheet shows the message and keeps the title, Esc and
-`+` bring it back intact.
-
-*Start agent* (WP-022): on the sample (dev mode) the active case's card
-lists *Verify, Start agent, Drop, Open* and "agent: claude-code", and
-neither `a` nor a click arms it ("Dev mode is read-only"). Live: `a` on a
-queued case does nothing; on C-2026-003 the first `a` arms (the hint
-"Start agent on C-2026-003? Press a again or click Confirm start agent.",
-the button "Confirm start agent"), Enter re-arms Verify instead, `a` twice
-runs and the result line names the launcher; with the mouse on C-2026-004
-a click arms and the second click runs; the fake engine's logbook has
-C-2026-004 queued (`$HOME/cases`), so its refusal with the `seldon plan
-start` hint is the result line and the banner stays empty; the exact argv
-of both calls.
-
-The drift sheet (WP-021) has eight scenarios. On the sample (dev mode):
-Enter on the theme row and `resolve:<id>` for the other three items open
-the sheet with Link and C-2026-005 preselected for the theme item, Explain
-with the item's zone for the two crises and the group, the group's three
-members and "All 3 / Only firefox", a member row naming its own package,
-and a click on the red strip opening the first crisis with the cursor on
-its row; nothing can be sent. Capped: `summary.openDrift` 250 shows "+246
-more changes without a case not listed here", the pill `2 · 250` with
-`driftInBar` `all` (`HARNESS_SETTINGS`) and the quiet line "248 changes
-without a case". Quiet surfaces (ADR-0028 §4b, WP-110): a crisis in the
-yellow zone on a hook path with attention only around it shows one crisis
-in the strip, the urgent Today pictogram, pill `2 · 1`, "3 changes without
-a case" on the Changelog, rows toned by class (crisis urgent, the red
-ollama install accent), the sheet's "RESOLVE A CRISIS" and "yellow ·
-crisis" with Explain pre-filled yellow, "RESOLVE DRIFT" and no word
-"crisis" for the attention item, the *Ask agent* slot first, hidden and
-0 high, the quiet line in the dim foreground, and a click
-on the strip opening the yellow crisis; attention alone shows no strip,
-the all-clear pictogram (the case-active one with active cases), no D in
-the pill and no word "crisis" anywhere. Live, with real keys: Enter,
-Enter, Enter links the theme item to C-2026-005 (hint "Press Enter again:
-Link tokyo-night to C-2026-005", then `linked to C-2026-005` folded, pill
-`2 · 2`: D is the crisis count); a click on the strip opens the first crisis, which is
-explained with the text `--help`, risk R2 (the change disarms) and area
-`dev-env`; the strip drops to "1 change …", *Open C-2026-009* opens the
-new case and Work lists it as completed; the firefox group is dismissed
-as one (three rows `dismissed: routine update`, no badge, pill `2 ·
-1`); the exact argv. `--only`: Link without a case is refused in the
-plugin, C-2026-004 is picked in the case picker by keys, *Only firefox*
-links the leader alone and the rest returns as "noto-fonts +1" with two
-members. Already: an item `$HOME/resolved` lists shows "Already resolved:
-linked to C-2026-005" and nothing changes. Locked: the refusal keeps the
-text, Esc and reopening bring the draft back, another item gets its own
-defaults. Members: with one member missing from `index.events`, the sheet
-shows "… and 1 more", asks `seldon drift show` (always for the group's leader) and
-lists all three, also when opened from a member row.
-
-Decisions and Memory (WP-023) have three scenarios. On the sample (dev
-mode): `4` shows ADR-0004 (proposed) to ADR-0001 with id, status, title,
-date and file, ↑/↓ and a click on a title move the cursor, Enter and `e`
-are refused with dev mode's reason, `d` opens no sheet; `6` shows LESSONS
-(3) and TOPICS (2, with path and `updated`). Live, with real keys: `d`,
-the title `--help "q"` (no tab switch), Enter arms ("Press Enter again:
-create the decision “…”"), Backspace disarms, Enter twice sends `decide
---no-edit --json -- '--help "q"'` and then `open ADR-0005`; the sheet
-closes, the keys come back and the cursor sits on ADR-0005 once the index
-lists it; Enter, *Open* and `e` open ADR-0003/ADR-0004; on Memory Enter
-and *Open* open the logbook folder; the exact argv and editor paths.
-Refused: Enter on a blank title is refused in the plugin; the engine's
-refusal (lock held) shows in the sheet and keeps the title; Esc gives the
-keys back, the tab shows the refusal, and `d` brings the title back.
-
-The step format is documented in the header of
-`tests/plugin/harness/panel.qml`, e.g.
-`HARNESS_STEPS="view;tab:changelog;key:Down*5;key:Return"`, plus
-`type:<text>`, `settle` (no engine call queued or running),
-`wait:<view path>=<value>`, `resolve:<event id|crisis>`, `click:<text>`
-(the centre of the first visible item with that text) and `shot:<name>`
-(saves the window to `$HARNESS_SHOTS/<name>.png`); a new scenario is one
-`run` line plus its `expect`/`shows` checks in `panel-view.sh`.
-
-Offscreen theme renders: copy a theme's `colors.toml` from
-`$OMARCHY_PATH/themes/<theme>/` to
-`<harness HOME>/.local/state/omarchy/current/theme/colors.toml` and add
-`shot:` steps; the harness paints the theme's background under the panel.
-They show the real components in the theme's colours, not the live
-layer-shell window; the live sweep below stays the acceptance check.
-`PANEL_SHOTS=<dir> bash tests/plugin/panel-view.sh` does this for the
-Today tab in Osaka Jade, Tokyo Night and Catppuccin Latte
-(`<dir>/panel-<theme>-today.png`): a live run against the fake engine, so
-the render has no dev-mode note (which would print the index path) and the
-QuickEntry looks as a user sees it. Since WP-051 it also renders the
-not-initialised banner with its pictogram (`<dir>/panel-<theme>-uninit.png`,
-fake engine in mode `uninit`) and checks the header mark, the day's state
-and the banner pictogram in each.
-
-Label fit (WP-039): every report also carries `overflow`, the visible
-texts that do not fit (`elided:` a Text elided or cut at its line limit,
-`wide:` content wider than its box, `button:` a qs.Ui Button narrower than
-its label and padding, `outside:` text past the panel's right edge), and
-`contentWidth`, the panel's width. The `fit-*` cases put a
-`~/.config/omarchy/shell.toml` with `[font] base-size` 12 and 15 (font
-scale 1.0 and 1.25; `Style.space` follows the font) into the harness HOME,
-walk every tab and require: width 460 and 575, the tab strip on one line
-with the same cell widths whatever tab is selected, no `button:`, `wide:`
-or `outside:` entry anywhere, the Changelog header never elided, and no
-elision at all on Today, Decisions, System and Memory (only Changelog row
-text and Work mini-card titles, user content, may elide). `fit-narrow`
-sets `HARNESS_CARD_WIDTH=300` (the stand-in KeyboardPanel's
-`availableCardWidth`, a screen narrower than the panel): the strip wraps
-and still nothing that is a label is cut. `PANEL_FIT_SHOTS=<dir>` runs
-the two scales in Tokyo Night, Osaka Jade and Catppuccin Latte and saves
-every tab (`<dir>/fit-100-<theme>-<tab>.png`, `fit-125-…`).
-
-### 3b. `Overlay.qml` in a private headless Quickshell
-
-`bash tests/plugin/overlay-view.sh` runs the Prime Radiant the same way:
-copies of the shell's `Commons/` and `Ui/`, `tests/plugin/harness/overlay.qml`
-as `shell.qml`, and a copy of `plugin/` whose layer-shell window
-(`components/overlay/OverlayWindow.qml`) is replaced by
-`tests/plugin/harness/OverlayWindow.qml`, an Item that fills the harness
-window. The harness creates Overlay.qml the way the shell's overlay
-Loader does: without properties, then it assigns `shell`, `manifest` and
-`service`, so the overlay's bindings first run with `service === null`
-and must do no work then (SPEC-PLUGIN §6; with `service` as a creation
-property the harness missed the 23 aggregation passes the live shell
-showed, WP-013 FINDINGS §5.1). `fresh` reports that as `firstFrame.bare`,
-and the script asserts it next to `firstFrame.overlay == 0`. The harness
-hands the overlay a stand-in shell facade whose
-`hide()` records the id and calls `close()`, as the shell's does, and
-after each step prints `Overlay.view()`, the hidden ids, every visible
-text, and every text that leaves its slot or the window.
-
-Steps (header of `harness/overlay.qml`): `toggle[:<json>]` (what `shell
-toggle` does: hide when open, else `open(json)`), `fresh[:<json>]` (what
-the shell's Loader does on summon: a new Overlay.qml, then `open(json)`;
-the report's `firstFrame` holds the aggregation counts and paints sampled
-on its first swapped frame and the frame by which every chart painted),
-`summon[:<json>]`, `hide`, `key:<Left|Right|Escape|…>`, `text:<c>`,
-`click:<text>`, `clickAt:<x>,<y>`, `hover:<slot>:<fx>,<fy>` and
-`hoverItem:<slot>:<i>` (a real mouse move onto a point of a chart, or onto
-its item i as `chart.locate(i)` places it), `leave`, `resize:<W>x<H>`,
-`call:<method>:<arg>` (what `shell call jax.seldon` does), `shot:<name>`,
-`view`.
-
-Checks: closed until toggled; toggle opens on 90 d with the header (title,
-machine, Omarchy version, index time, the period's dates) and the six
-slots with the sample's counts and each chart's summary (its caption);
-`1`–`4`, ←/→ and `h`/`l` pick periods (wrapping) and the counts and
-summaries follow (`30,2,5,3,17,2` for 30 d, `366,…` for All); Esc closes through `shell.hide("jax.seldon")`; toggle closes; a click
-on the scrim closes; `summon` with `{"period":"365"}` opens on 365 d; a
-click on *30 d*, `call setPeriod all` (an unknown id changes nothing) and
-`call view` work; *Close* closes. Layout at 1920×1080, 2560×1440 and, for
-a 1.25 output scale, 1536×864 and 2048×1152 (each with every period) and
-once with `QT_SCALE_FACTOR=1.25`: six slots with a size, all inside the
-window, every chart with a plot of its own, no text outside its slot or
-the window, no scrolling, three columns. 760×1000 reflows to two columns,
-560×700 to one and scrolls. Charts (WP-031): after a `fresh` open the
-first frame has run no aggregation (the service's count is the one from
-before, the overlay's own 0) and painted nothing (Canvas gets its context
-then); by frame 2 every chart has painted exactly once. A period switch
-aggregates nothing and repaints only the charts whose data changed
-(RiskDonut and The Plan have no period); hovering repaints nothing; a
-resize (one dimension, the harness sets width and height separately)
-repaints each chart once, also through the medium and narrow modes. Hover
-read-outs from real mouse moves onto items of every chart and from `call
-hover` (exact texts, e.g. the heatmap's 2026-10-01 with its counts by
-source); a malformed `call hover` (no such slot, `.`, `1.2.3`, a point
-outside [0, 1], one number) returns `{ error }` and leaves the hover as it
-was. The aggregation count covers every chart file's own Model.js
-instance: a `Model.heatmapChart(…)` call slipped into
-`Heatmap.onPaintRequested` fails `fresh #2 .view.aggregations.overlay`. The not-initialised variant shows the banner with *Copy* only
-and the hint, every chart in its empty state ("no data in this period",
-"no cases yet · all time", "no active cases") and nothing painted; every
-other index variant renders every chart. Every run's log is free of
-warnings and errors.
-
-`OVERLAY_SHOTS=<dir> bash tests/plugin/overlay-view.sh` also renders the
-overlay at 1920×1080 and 2560×1440 in Osaka Jade, Tokyo Night and
-Catppuccin Latte into `<dir>`, each once on 90 d and once on 365 d with
-the pointer on the heatmap's last day (offscreen renders with each
-theme's `colors.toml`, not live screenshots).
+Checks: the width at 50 / 67 / 75 / 100 % on 1366, 1920, 2560 and 3840 px
+windows (the ADR-0034 §1 clamp, centred within a pixel); the sidebar's
+icons under 960 px and with `deskSidebar` collapsed, the stacked layout
+under 760 px, solo sections; the keyboard map (digits and `,` over the
+nine targets, Alt+↑/↓ wrapping both ways, Tab doing nothing, `/` and the
+search's Enter and Esc, the Esc order, closing through `hide`); Settings ›
+Appearance (dragging previews and writes nothing, the release writes once
+with every key of the entry, a preset once, the same preset not again,
+the sidebar switch and the fold button, a refusal); open and close through
+the shell, the pill and the shim (`tab work` lands on section 3, the
+section remembered across a hide, `{"period":"30"}` on section 7); the
+stacked Esc order; and the notices under the header with their fixes
+(snapper, not initialised and the chip, the restart notice and its one
+launch, the rules update live with doctor beside the queue, capture
+warnings and `c`). Every case ends with a log free of warnings,
+`TypeError`s and binding loops. `DESK_SHOTS=<dir>` also renders the desk
+in Tokyo Night, Kanagawa and Catppuccin Latte (Today at 100 % and 50 %,
+Settings, not initialised).
 
 ### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
 
@@ -923,6 +747,22 @@ font. The framed panel is 500×578, placed 22 px right of the overlay with
 layout changes. The image must stay under 1 MB (it is about 150 KB).
 
 ### 4. Runtime smoke test in the shell
+
+From 0.2.0 (ADR-0034) the panel and the overlay are one surface, the
+desk; the `jax.seldon.panel` commands below reach it through the shim
+(SPEC-PLUGIN §8) until WP-126 rewrites this section for the desk.
+
+**The desk's window on a live session** (any host with a Hyprland
+session, the dev host included: it touches neither the running shell nor
+`~/.config`): build a scratch config root as `desk-view.sh` does — copies
+of `$OMARCHY_PATH/shell/Commons` and `Ui`, a copy of `plugin/` with the
+**real** `DeskWindow.qml` — and a `shell.qml` that loads Service.qml and
+Desk.qml with a stand-in facade, then run it with `SELDON_INDEX` set
+(`quickshell -p <root>/shell.qml`, `WAYLAND_DISPLAY` and
+`HYPRLAND_INSTANCE_SIGNATURE` of the session). `hyprctl layers -j` shows
+the `jax-seldon-desk` surface (monitor, position below the bar, size) and
+`Desk.view()` the card's geometry; `grim` shows the result. WP-121 did
+this on both hosts (HANDOVER.md).
 
 The bar widget, panel and banner import `qs.Ui`/`qs.Commons`, which only the
 running shell provides; layer 3 covers them against copies, the live shell
