@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 65ad985 -->
+<!-- source: en/11-update-and-uninstall.md @ 5d68748 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -47,6 +47,12 @@ Das AUR-Paket `jax-seldon` kommt bald. Sobald es existiert, aktualisierst
 du es mit deinem AUR-Helfer (`yay -S jax-seldon`). Das Paket installiert
 die Manpage und die Vervollständigung für alle drei Shells. Installiere
 nur aus einer Quelle: Beide legen ein `seldon` in deinen `PATH`.
+
+Von 0.1.3 auf 0.1.4: Die erste Erfassung nach dem Update kopiert Seldons
+Claude-Code-Hooks aus `.claude/settings.json` des Logbuchs nach
+`~/.claude/settings.json`, einmal, und lässt dort alles andere stehen
+(nicht bei `[agent] workdir = "logbook"`; siehe
+[Mit Agenten arbeiten](04-working-with-agents.md#hooks-eines-älteren-logbuchs)).
 
 ## Das Plugin aktualisieren
 

@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 65ad985 -->
+<!-- source: en/06-configuration.md @ 5d68748 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -405,7 +405,9 @@ Agenten starten würde: im Ordner, in dem `seldon agent start` läuft, und
 in `~/Work` (dein Home, wenn es keins gibt), wenn dieser Ordner dein Home
 oder `/` ist, wie aus dem Panel. Agenten vertrauen `~/Work`, und Seldons
 Hooks zeichnen die Sitzung dort auf, weil Seldon sie gestartet hat. Damit
-Agenten wie vor 0.1.4 im Ordner des Logbuchs starten:
+Agenten wie vor 0.1.4 im Ordner des Logbuchs starten und die Hooks in den
+Einstellungen des Logbuchs bleiben (es wird keine nutzerweite Kopie
+angelegt):
 
 ```toml
 [agent]

@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 7ff67a6 -->
+<!-- source: en/04-working-with-agents.md @ 5d68748 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -260,7 +260,10 @@ Logbuchs, die Claude Code nur im Logbuch-Ordner liest. Die erste
 Erfassung nach dem Update trägt sie von selbst in
 `~/.claude/settings.json` ein, lässt alles andere in dieser Datei stehen
 und sagt es in einer `note:`-Zeile. Das tut sie einmal: Nimmst du sie
-später aus `~/.claude/settings.json` heraus, bleiben sie draußen. Bis
+später aus `~/.claude/settings.json` heraus, bleiben sie draußen. Bei
+`[agent] workdir = "logbook"` legt sie keine Kopie an: Die Hooks bleiben
+in den Einstellungen des Logbuchs, wo Agenten, die im Logbuch-Ordner
+starten, sie finden. Bis
 dahin, oder nachdem du sie herausgenommen hast, zeigt `seldon doctor`:
 
 ```text
@@ -373,7 +376,11 @@ on C-2026-003; … this session is recorded.“ Befehle landen weiter auf dem
 aktiven Case. Ist der Case erledigt, werden die Befehle der Sitzung
 außerhalb des Logbuchs nicht mehr aufgezeichnet. Setz `SELDON_CASE` nie
 selbst: Seldon setzt es, und jede Sitzung, die es erbt, wird
-aufgezeichnet, solange ihr Case offen ist. Die Variablen
+aufgezeichnet, solange ihr Case offen ist. Ein Logbuch pro gestarteter
+Sitzung: Die Variable nennt einen Case des Logbuchs, für das Seldon den
+Agenten gestartet hat; richte diese Sitzung nicht auf ein anderes Logbuch
+(`SELDON_LOGBOOK`, `--logbook`), das sie sonst aufzeichnen würde, wenn es
+einen offenen Case mit derselben ID hat. Die Variablen
 erreichen den Agenten nur, wenn der Launcher das Terminal startet; ein
 Terminal-Server (`footclient`, `kitty --single-instance`, ein wezterm-Mux)
 nimmt seine eigene Umgebung, und dann nennt nur `--actor` den Agenten.
