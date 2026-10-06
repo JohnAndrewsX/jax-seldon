@@ -733,6 +733,8 @@ fn launch(
     let mut cmd = Command::new(program);
     cmd.args(launcher.args(how.prompt))
         .current_dir(how.cwd)
+        // a launcher that is no shell reads the folder from PWD
+        .env("PWD", how.cwd)
         .env(LOGBOOK_ENV, &logbook.root)
         .env(ACTOR_ENV, how.actor)
         .env(ATTENDED_ENV, "1")

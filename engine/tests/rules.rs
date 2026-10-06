@@ -644,3 +644,49 @@ fn a_silent_upgrade_is_committed_alone() {
     assert_eq!(v["rulesUpdated"]["git"]["committed"], false, "{v}");
     assert_eq!(read(&path), current);
 }
+
+/// Stage-1 N7: when `AGENTS.md` holds an uncommitted change of the
+/// user's (below the block), the update is written but not committed on
+/// its own: a commit named "unedited" never carries the user's edit; the
+/// capture line says so.
+#[test]
+fn a_silent_upgrade_of_a_file_with_own_changes_is_not_committed() {
+    let env = Env::new(Snapper::Allowed);
+    if !env.has_git {
+        return;
+    }
+    let root = logbook(&env, "en");
+    let path = root.join("AGENTS.md");
+    let current = read(&path);
+    std::fs::write(&path, v3("wp111", "en")).unwrap();
+    let out = env.git(
+        &root,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qam",
+            "v3",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let head = last_commit(&env, &root);
+    // the user's own line, not committed
+    let mine = "- Never touch ~/Music.\n";
+    std::fs::write(&path, format!("{}{mine}", v3("wp111", "en"))).unwrap();
+
+    let out = capture(&env, false);
+    let human = stdout(&out);
+    assert!(
+        human.contains(
+            "updated from v3 to v4 (Seldon's text was unedited; your own rules are kept); not committed: AGENTS.md has uncommitted changes of yours; the update goes with your next commit"
+        ),
+        "{human}"
+    );
+    assert_eq!(read(&path), format!("{current}{mine}"));
+    assert_eq!(last_commit(&env, &root), head, "no commit");
+    let status = env.git(&root, &["status", "--porcelain", "--", "AGENTS.md"]);
+    assert_eq!(String::from_utf8_lossy(&status.stdout), " M AGENTS.md\n");
+}

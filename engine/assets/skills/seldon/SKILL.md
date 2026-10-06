@@ -85,7 +85,8 @@ it), or when the task came as a message from the user in this session. A
 session started by a timer, a hook, another agent or any other launcher is
 unattended: record and report only. Read, plan, write the Log; change
 nothing. A cached `sudo` or a passwordless rule never makes a session
-attended. When you start another agent process, a job or a timer, unset
+attended. When you start another agent process, a job, a timer or a
+server that outlives your step (tmux, an editor server), unset
 `SELDON_ATTENDED` and `SELDON_CASE` and set `SELDON_ACTOR` to that agent's
 name (`agent:<name>`); never leave it unset. A sub-agent inside your own
 session shares your attendance and acts as you; privileged steps stay in
@@ -146,14 +147,15 @@ its own, so it needs the user's terminal ([`update.md`](update.md)).
 
 ## Outside the Logbook Folder
 
-A session `seldon agent start` launched is served wherever it runs: the
-launch sets `SELDON_CASE` in your environment, and Seldon records the
-session by it. Claude Code is served by its hooks (Seldon puts them into
+A session `seldon agent start` launched is served wherever it runs, as
+long as its case is open: the launch sets `SELDON_CASE` in your
+environment, and Seldon records the session by it. Never set or export
+`SELDON_CASE` yourself. Claude Code is served by its hooks (Seldon puts them into
 the user-wide `~/.claude/settings.json`); every other agent reports its
 commands through `seldon hook generic`, below. A session started any
 other way is served only inside the logbook folder, or everywhere when
-`seldon doctor --json` shows `"hooks": {"scope": "all"}` (the user's
-setting); elsewhere a report records nothing: skip it there. The
+`hooks.scope` in `seldon doctor --json` is `"all"` (the user's setting);
+elsewhere a report records nothing: skip it there. The
 collectors still record every package, service and watched-path change.
 
 When no hook serves you — any agent but Claude Code, or Claude Code whose

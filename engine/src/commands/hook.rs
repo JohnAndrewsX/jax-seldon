@@ -74,6 +74,7 @@ use crate::ledger::Ledger;
 use crate::logbook::cases::{self, CaseFile};
 use crate::logbook::lock::{self, Lock};
 use crate::logbook::{Logbook, journal};
+use crate::model::CaseStatus;
 use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, Source, Zone, zone_for};
 use crate::model::is_agent;
 use crate::pkgcmd::{
@@ -710,16 +711,23 @@ struct Setup {
     skip: SkipPaths,
 }
 
-fn setup(ctx: &Context) -> Result<Setup> {
+/// The config and the logbook when the hooks serve the session whose
+/// directory is `cwd` ([`in_scope`]), else `None`: a session they do not
+/// serve costs this check and nothing more (WP-116 round 2).
+fn served(ctx: &Context, cwd: Option<&str>) -> Result<Option<(Config, Logbook)>> {
     let (config, logbook) = ctx.open_logbook()?;
+    Ok(in_scope(&config, &logbook.root, cwd).then_some((config, logbook)))
+}
+
+fn setup(ctx: &Context, (config, logbook): (Config, Logbook)) -> Setup {
     let scope = Scope::new(&ctx.dirs, &config, &logbook.root);
     let skip = SkipPaths::new(&ctx.dirs.home, &config.redaction.skip_paths);
-    Ok(Setup {
+    Setup {
         config,
         logbook,
         scope,
         skip,
-    })
+    }
 }
 
 /// Claude Code's project directory, set in the environment of the hook
@@ -734,22 +742,52 @@ const PROJECT_DIR_ENV: &str = "CLAUDE_PROJECT_DIR";
 /// person running the hook itself) the session is served. With `[hooks]
 /// scope = "logbook"`, the default, only a session inside the logbook; with
 /// `"all"` every session. A directory that is not an absolute path is
-/// outside. (b): the hook's environment holds [`CASE_ENV`] with a case id
-/// ([`launched_case`]), under either scope. Relative paths in a command
-/// still resolve against `cwd`.
+/// outside. (b): the hook's environment holds [`CASE_ENV`] naming an open
+/// case of this logbook ([`launched_case`]), under either scope. Relative
+/// paths in a command still resolve against `cwd`. Clause (a) first: it
+/// reads no file.
 fn in_scope(config: &Config, logbook: &Path, cwd: Option<&str>) -> bool {
-    launched_case().is_some() || in_scope_by_dir(config, logbook, cwd)
+    in_scope_by_dir(config, logbook, cwd) || launched_case(logbook).is_some()
 }
 
 /// The case `seldon agent start` launched this session on: [`CASE_ENV`]
-/// in the hook's environment, when it is a case id (clause (b) of
-/// [`in_scope`]). An empty value, or one that is not a case id, is no
-/// marker. Only the scope and the context's launch line read it: hook
-/// events still take their case from `.seldon/active-case` (ADR-0030 §1).
-fn launched_case() -> Option<String> {
-    std::env::var(CASE_ENV)
+/// in the hook's environment, when it names a case of the logbook at
+/// `logbook` that is active or in verification (clause (b) of
+/// [`in_scope`]; ADR-0032). Anything else is no marker: an empty value,
+/// one that is not a case id, a case this logbook does not have, a
+/// queued, completed or dropped case — so a server the agent started
+/// (tmux, an editor server) that keeps the variable after the case is
+/// done records nothing. Only the scope and the context's launch line
+/// read it: hook events still take their case from `.seldon/active-case`
+/// (ADR-0030 §1). It reads the folder of active cases only.
+fn launched_case(logbook: &Path) -> Option<String> {
+    let id = std::env::var(CASE_ENV)
         .ok()
-        .filter(|id| parse_case_id(id).is_ok())
+        .filter(|id| parse_case_id(id).is_ok())?;
+    let (prefix, exact) = (format!("{id}-"), format!("{id}.md"));
+    let dir = logbook.join("work").join(CaseStatus::Active.folder());
+    let open = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name().is_some_and(|n| {
+                let n = n.to_string_lossy();
+                n.ends_with(".md") && (n.starts_with(&prefix) || n == exact)
+            })
+        })
+        .filter_map(|p| CaseFile::load(&p).ok())
+        .any(|f| {
+            f.case.id == id
+                && matches!(f.case.status, CaseStatus::Active | CaseStatus::Verification)
+        });
+    open.then_some(id)
+}
+
+/// Whether the hook's environment holds a well-formed [`CASE_ENV`],
+/// whatever case it names.
+fn marked() -> bool {
+    std::env::var(CASE_ENV).is_ok_and(|id| parse_case_id(&id).is_ok())
 }
 
 /// Clause (a) of [`in_scope`]: the session's directory and the scope.
@@ -817,11 +855,11 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
         Some("PostToolUse") => Search::Whole,
         _ => return Ok(()),
     };
-    let tool = payload.tool_name.as_deref().unwrap_or("");
-    let setup = setup(ctx)?;
-    if !in_scope(&setup.config, &setup.logbook.root, payload.cwd.as_deref()) {
+    let Some(served) = served(ctx, payload.cwd.as_deref())? else {
         return Ok(());
-    }
+    };
+    let tool = payload.tool_name.as_deref().unwrap_or("");
+    let setup = setup(ctx, served);
     let cwd = working_dir(payload.cwd.as_deref(), &ctx.dirs);
     let records = match tool {
         "Bash" => {
@@ -865,6 +903,9 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
             "stdin is not {{\"command\",\"actor\"?,\"cwd\",\"startedAt\"?,\"case\"?}}: {e}"
         ))
     })?;
+    let Some(served) = served(ctx, payload.cwd.as_deref())? else {
+        return Ok(());
+    };
     let actor = match &payload.actor {
         Some(actor) => parse_person(actor).map_err(Error::user)?,
         None => env_actor(parse_person)?.ok_or_else(|| {
@@ -886,10 +927,7 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
         })?,
         None => ctx.now,
     };
-    let setup = setup(ctx)?;
-    if !in_scope(&setup.config, &setup.logbook.root, payload.cwd.as_deref()) {
-        return Ok(());
-    }
+    let setup = setup(ctx, served);
     let cwd = working_dir(payload.cwd.as_deref(), &ctx.dirs);
     let Some(rec) = bash_record(&payload.command, &setup, &cwd) else {
         return Ok(());
@@ -1342,16 +1380,28 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
         )));
     }
     let (config, logbook) = ctx.open_logbook()?;
-    if !in_scope(&config, &logbook.root, payload_cwd(stdin).as_deref()) {
-        return Ok(());
-    }
     let session = serde_json::from_str::<ToolPayload>(stdin)
         .ok()
         .and_then(|p| p.session_id)
         .filter(|s| !s.is_empty());
+    let served = in_scope(&config, &logbook.root, payload_cwd(stdin).as_deref());
+    // the agent may have closed its case before the session ends: a
+    // launched session whose events the ledger holds is still ended
+    let events = match (served, &session) {
+        (false, Some(id)) if marked() => {
+            match session_events(ctx, &config, &logbook, actor, Some(id)) {
+                Ok(n) if n > 0 => Some(Ok(n)),
+                _ => return Ok(()),
+            }
+        }
+        (false, _) => return Ok(()),
+        (true, _) => None,
+    };
     let report = |step: &str, e: &dyn std::fmt::Display| eprintln!("seldon hook: {step}: {e}");
 
-    let text = match session_events(ctx, &config, &logbook, actor, session.as_deref()) {
+    let events =
+        events.unwrap_or_else(|| session_events(ctx, &config, &logbook, actor, session.as_deref()));
+    let text = match events {
         Ok(n) => format!(
             "session ended; {n} {} recorded",
             if n == 1 { "event" } else { "events" }

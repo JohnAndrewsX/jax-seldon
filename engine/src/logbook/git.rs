@@ -314,6 +314,19 @@ pub fn is_dirty(root: &Path) -> Result<bool, String> {
     }
 }
 
+/// Whether `path` (relative to `root`) has no change against HEAD, staged
+/// or not (`git status --porcelain -- <path>` prints nothing).
+pub fn is_clean_path(root: &Path, path: &str) -> Result<bool, String> {
+    match run(Some(root), &["status", "--porcelain", "--", path]) {
+        Run::Exited {
+            code: Some(0),
+            stdout,
+            ..
+        } => Ok(stdout.trim().is_empty()),
+        other => Err(failure("status", &other)),
+    }
+}
+
 /// The full hash of HEAD, `None` before the first commit.
 pub fn head(root: &Path) -> Option<String> {
     match run(Some(root), &["rev-parse", "--verify", "-q", "HEAD"]) {

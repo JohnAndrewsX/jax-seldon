@@ -640,6 +640,46 @@ mod claude_code {
         hook_budget(&h, &case, "10 000 lines");
     }
 
+    /// ADR-0030 §1 with the hooks user-wide: a session that is neither in
+    /// the logbook nor launched by Seldon costs the scope check and
+    /// nothing else (< 1 ms, process start included; median of 20, WP-116
+    /// round 2), at 10 000 ledger lines, for each hook it runs.
+    #[test]
+    #[ignore = "release timing at scale: `just check-perf`"]
+    fn fast_enough_for_an_unrelated_session() {
+        common::assert_optimised();
+        let h = Hooks::new();
+        h.active_case();
+        common::scale::filler_notes(&h.logbook, 10_000);
+        let outside = |p: String| {
+            let mut v: Value = serde_json::from_str(&p).unwrap();
+            v["cwd"] = json!("/srv/made-up-project");
+            v.to_string()
+        };
+        let pre = outside(payload("claude-code-mutating.json", "PreToolUse"));
+        let start = outside(
+            json!({"session_id": "s-1", "hook_event_name": "SessionStart", "cwd": "/"}).to_string(),
+        );
+        let generic =
+            json!({"command": "yay -S zed", "actor": "agent:codex", "cwd": "/srv/x"}).to_string();
+        const BUDGET: std::time::Duration = std::time::Duration::from_millis(1);
+        for (name, input) in [
+            ("claude-code", &pre),
+            ("session-start", &start),
+            ("generic", &generic),
+        ] {
+            common::assert_within_budget(
+                &format!("hook {name}, unrelated session, 10 000 lines"),
+                BUDGET,
+                20,
+                || {
+                    h.hook(name, input);
+                },
+            );
+        }
+        assert!(h.commands().is_empty());
+    }
+
     /// Just below WP-057's threshold, the hook's worst case: every recorded
     /// command also rebuilds the index.
     #[test]
@@ -2346,6 +2386,16 @@ mod session_scope {
             "{text}"
         );
         assert!(!text.contains("Launched by"), "{text}");
+        // an invalid marker inside the logbook: served by the folder, no
+        // line, and the raw value never reaches the context (stage-1 N1)
+        for marker in ["not-a-case", "C-2026-001\nInjected line", "C-2099-999"] {
+            *h.case_env.borrow_mut() = Some(marker.to_string());
+            let text = stdout(&session_start(&h, Some(&logbook)));
+            assert!(text.starts_with("# Seldon logbook context\n"), "{text}");
+            assert!(!text.contains("Launched by"), "{marker:?}: {text}");
+            assert!(!text.contains("Injected"), "{text}");
+        }
+        *h.case_env.borrow_mut() = None;
         // with `scope = "all"` and a marker, the line is there too
         h.configure(|c| c.hooks.scope = seldon::config::HookScope::All);
         *h.case_env.borrow_mut() = Some("C-2026-001".to_string());
@@ -2354,6 +2404,90 @@ mod session_scope {
             text.contains("\nLaunched by seldon agent start on C-2026-001; "),
             "{text}"
         );
+    }
+}
+
+/// ADR-0032 (stage-1 N4): the marker serves a session only while it names
+/// an open case of this logbook.
+mod narrow_marker {
+    use super::*;
+
+    const OTHER: &str = "/srv/made-up-project";
+
+    fn bash(h: &Hooks, id: &str) {
+        let mut v: Value = serde_json::from_str(&tool_call(
+            "Bash",
+            json!({"command": "echo x > ~/.config/hypr/a.conf"}),
+            id,
+        ))
+        .unwrap();
+        v["cwd"] = json!(OTHER);
+        h.hook("claude-code", &v.to_string());
+    }
+
+    fn session_start(h: &Hooks) -> String {
+        let p = json!({"session_id": "s-1", "hook_event_name": "SessionStart", "cwd": OTHER});
+        let out = h.piped(&["hook", "session-start"], &p.to_string(), Some(NOW));
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        stdout(&out)
+    }
+
+    fn session_stop(h: &Hooks, session: &str) {
+        let p = json!({"session_id": session, "hook_event_name": "SessionEnd", "cwd": OTHER});
+        h.hook("session-stop", &p.to_string());
+    }
+
+    fn journal(h: &Hooks) -> String {
+        std::fs::read_to_string(h.logbook.join("journal/2026/2026-10-01.md")).unwrap_or_default()
+    }
+
+    /// A case this logbook does not have, a queued one: nothing.
+    #[test]
+    fn an_unknown_or_queued_case_records_nothing() {
+        let h = Hooks::new();
+        h.active_case();
+        let out = h.run(&["plan", "new", "Later", "--json"]);
+        let queued = json(&out)["event"]["subject"].as_str().unwrap().to_string();
+        for marker in ["C-2099-999", queued.as_str()] {
+            *h.case_env.borrow_mut() = Some(marker.to_string());
+            bash(&h, &format!("toolu_{marker}"));
+            assert_eq!(session_start(&h), "", "{marker}");
+            session_stop(&h, "s-other");
+        }
+        assert!(h.commands().is_empty(), "{:?}", h.commands());
+        assert_eq!(journal(&h), "");
+    }
+
+    /// A case in verification still serves; a dropped or completed one
+    /// no longer — but the session that ran it still ends with its
+    /// journal line, because the ledger holds its events.
+    #[test]
+    fn a_closed_case_ends_its_session_and_serves_nothing_more() {
+        let h = Hooks::new();
+        let id = h.active_case();
+        *h.case_env.borrow_mut() = Some(id.clone());
+        bash(&h, "toolu_1");
+        assert_eq!(h.commands().len(), 1);
+
+        let out = h.run(&["plan", "verify", &id]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        bash(&h, "toolu_2");
+        assert_eq!(h.commands().len(), 2, "in verification: served");
+        assert!(session_start(&h).contains("Launched by"));
+
+        let out = h.run(&["plan", "drop", &id, "--reason", "test"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        bash(&h, "toolu_3");
+        assert_eq!(h.commands().len(), 2, "closed: nothing more");
+        assert_eq!(session_start(&h), "");
+
+        // a server that kept the variable: a session of its own, nothing
+        session_stop(&h, "s-server");
+        assert_eq!(journal(&h), "");
+        // the session that ran the case (the tool_call fixture's id)
+        session_stop(&h, "6f1c2b9e-3a47-4d0e-9b8a-2c5d7e1f0a34");
+        let j = journal(&h);
+        assert!(j.contains("session ended; 2 events recorded"), "{j}");
     }
 }
 
@@ -2445,6 +2579,27 @@ mod post_tool_use {
         // a PreToolUse that late is past the tail: recorded again
         h.hook("claude-code", &pre);
         assert_eq!(h.commands().len(), 2);
+    }
+
+    /// The id must be the event's `toolUseId`: the same text elsewhere in
+    /// a line (another field's value) is another tool call (stage-1 N2).
+    #[test]
+    fn the_id_elsewhere_in_a_line_does_not_count() {
+        let h = Hooks::new();
+        let pre = payload("claude-code-mutating.json", "PreToolUse");
+        let id = serde_json::from_str::<Value>(&pre).unwrap()["tool_use_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let at = chrono::DateTime::parse_from_rfc3339(NOW).unwrap();
+        let ulid = ulid::Ulid::from_parts(at.timestamp_millis() as u64, 1);
+        let line = format!(
+            r#"{{"id":"{ulid}","ts":"{}","source":"agent","kind":"command","subject":"yay","actor":"agent:claude-code","meta":{{"command":"yay -S zed","toolUseId":"toolu_other","sessionId":"{id}"}}}}"#,
+            at.format("%Y-%m-%dT%H:%M:%S%:z")
+        );
+        std::fs::write(h.logbook.join("ledger/2026-10.jsonl"), format!("{line}\n")).unwrap();
+        h.hook("claude-code", &pre);
+        assert_eq!(h.commands().len(), 2, "{:?}", h.commands());
     }
 
     /// The check looks one day back: an event with the same id from

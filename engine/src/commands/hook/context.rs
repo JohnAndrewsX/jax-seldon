@@ -24,15 +24,16 @@ const QUOTE: &str = "> ";
 /// [`DRIFT_DAYS`] days (ADR-0028 §3, WP-111), the last 5 journal lines,
 /// the lessons' headings.
 /// Empty for a session the hooks do not serve (`cwd` from the payload,
-/// [`super::in_scope`]). A session `seldon agent start` launched gets
-/// [`launch_line`] under the title (ADR-0030 §3).
+/// [`super::in_scope`]). A session `seldon agent start` launched on a case
+/// that is still open gets [`launch_line`] under the title (ADR-0030 §3,
+/// ADR-0032).
 pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
     let (config, logbook) = ctx.open_logbook()?;
     if !super::in_scope(&config, &logbook.root, cwd) {
         return Ok(String::new());
     }
     let mut out = "# Seldon logbook context\n\n".to_string();
-    if let Some(id) = super::launched_case() {
+    if let Some(id) = super::launched_case(&logbook.root) {
         let _ = writeln!(
             out,
             "{}\n",
@@ -102,7 +103,7 @@ pub fn session_start(ctx: &Context, cwd: Option<&str>) -> Result<String> {
 }
 
 /// The engine's line for a session `seldon agent start` launched on `id`
-/// (`SELDON_CASE`, a checked case id; `logbook` `~`-shortened): the agent
+/// (`SELDON_CASE`, an open case of the logbook; `logbook` `~`-shortened): the agent
 /// knows its case and that the hooks serve it without probing.
 pub fn launch_line(id: &str, logbook: &str) -> String {
     format!("Launched by seldon agent start on {id}; logbook {logbook}; this session is recorded.")

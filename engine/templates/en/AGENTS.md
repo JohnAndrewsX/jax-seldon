@@ -43,7 +43,8 @@ it), or when the task came as a message from the user in this session.
 A session started by a timer, a hook, another agent or any other launcher
 is unattended: record and report only. Read, plan, write the Log; change
 nothing. A cached `sudo` or a passwordless rule never makes a session
-attended. When you start another agent process, a job or a timer, unset
+attended. When you start another agent process, a job, a timer or a
+server that outlives your step (tmux, an editor server), unset
 `SELDON_ATTENDED` and `SELDON_CASE` and set `SELDON_ACTOR` to that
 agent's name (`agent:<name>`); never leave it unset. A sub-agent inside
 your own session shares your attendance and acts as you; privileged steps
@@ -324,8 +325,9 @@ The harness reports your commands to `seldon`; you do not have to:
   `seldon hook session-stop --actor agent:<name>`.
 
 The hooks serve a session in the logbook folder and a session
-`seldon agent start` launched, wherever it works (it sets `SELDON_CASE`);
-any other session only when the user set `[hooks] scope = "all"`.
+`seldon agent start` launched, wherever it works, while its case is open
+(it sets `SELDON_CASE`; never set it yourself); any other session only
+when the user set `[hooks] scope = "all"`.
 
 Recorded: package, Omarchy and `systemctl` changes (red), writes into
 watched paths (yellow), any other change only while a case is active

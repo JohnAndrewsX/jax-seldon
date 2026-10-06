@@ -380,6 +380,10 @@ struct Upgraded {
     warnings: Vec<String>,
 }
 
+/// Why a silent rules update was not committed on its own.
+const RULES_NOT_COMMITTED: &str =
+    "AGENTS.md has uncommitted changes of yours; the update goes with your next commit";
+
 /// The subject of the ledger note of an agent skill update.
 pub const SKILL_NOTE: &str = "skill";
 
@@ -428,21 +432,29 @@ fn upgrade_defaults(
     if let Some(old) = text {
         let template = super::rules::template(logbook, ctx.now.date_naive());
         if let Some(plan) = crate::logbook::rules::silent_upgrade(&old, &template) {
+            // a commit of its own only when the file holds nothing else
+            // uncommitted: the user's own edits never go into a commit
+            // named "unedited" (WP-116 round 2, N7)
+            let own_changes = crate::logbook::git::is_repo(&logbook.root)
+                && !crate::logbook::git::is_clean_path(&logbook.root, rules).unwrap_or(false);
             match crate::sys::write_atomic(&logbook.path(rules), plan.text.as_bytes()) {
                 Ok(()) => {
                     out.rules_from = plan.from;
-                    // its own commit, the user's other changes left out
                     let from = plan.from.map_or("v?".to_string(), |v| format!("v{v}"));
-                    out.rules_commit = Some(super::autocommit_paths(
-                        ctx,
-                        config,
-                        logbook,
-                        &[rules],
-                        &format!(
-                            "rules update (unedited, {from} → v{})",
-                            crate::logbook::rules::VERSION
-                        ),
-                    ));
+                    out.rules_commit = Some(if own_changes {
+                        super::Commit::Skipped(RULES_NOT_COMMITTED)
+                    } else {
+                        super::autocommit_paths(
+                            ctx,
+                            config,
+                            logbook,
+                            &[rules],
+                            &format!(
+                                "rules update (unedited, {from} → v{})",
+                                crate::logbook::rules::VERSION
+                            ),
+                        )
+                    });
                 }
                 Err(e) => out.warnings.push(format!(
                     "{rules}: Seldon's agent rules were not updated: {e:#}"
@@ -453,6 +465,8 @@ fn upgrade_defaults(
     let skills = super::skills::upgrade_unedited_under(lock, ctx, config);
     out.skills = skills.updated;
     out.warnings.extend(skills.warnings);
+    // WP-116 round 1b, until the operator rules: the one automatic step
+    // outside the logbook; without this line it is doctor's fix only
     let hooks = super::hook::migrate_to_user_wide(lock, ctx, config, logbook);
     out.hooks_to = hooks.added_to.map(|p| ctx.dirs.display(&p));
     out.warnings.extend(hooks.warnings);
@@ -1150,8 +1164,12 @@ fn render(
             crate::logbook::rules::FILE,
             crate::logbook::rules::VERSION
         );
-        if let Some(c) = &upgraded.rules_commit {
-            human.push_str(&c.human());
+        match &upgraded.rules_commit {
+            Some(super::Commit::Skipped(why)) if *why == RULES_NOT_COMMITTED => {
+                let _ = write!(human, "; not committed: {why}");
+            }
+            Some(c) => human.push_str(&c.human()),
+            None => {}
         }
     }
     if !upgraded.skills.is_empty() {

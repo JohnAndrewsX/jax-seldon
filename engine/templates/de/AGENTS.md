@@ -50,7 +50,8 @@ anderer Agent oder ein anderer Starter begonnen hat, ist unbetreut: nur
 aufzeichnen und berichten. Lesen, planen, das Log schreiben; nichts
 ändern. Ein zwischengespeichertes `sudo` oder eine Regel ohne Passwort
 macht eine Sitzung nie betreut. Startest du einen anderen
-Agentenprozess, einen Job oder einen Timer, entferne `SELDON_ATTENDED`
+Agentenprozess, einen Job, einen Timer oder einen Server, der deinen
+Schritt überdauert (tmux, ein Editor-Server), entferne `SELDON_ATTENDED`
 und `SELDON_CASE` und setze `SELDON_ACTOR` auf den Namen dieses Agenten
 (`agent:<name>`); lass es nie ungesetzt. Ein Sub-Agent in deiner eigenen
 Sitzung teilt deine Betreuung und handelt als du; privilegierte Schritte
@@ -357,9 +358,9 @@ Der Harness meldet deine Befehle an `seldon`; du musst das nicht tun:
   `seldon hook session-stop --actor agent:<name>` aufrufen.
 
 Die Hooks bedienen eine Sitzung im Logbuch-Ordner und eine Sitzung, die
-`seldon agent start` gestartet hat, wo immer sie arbeitet (es setzt
-`SELDON_CASE`); jede andere Sitzung nur, wenn der Nutzer
-`[hooks] scope = "all"` gesetzt hat.
+`seldon agent start` gestartet hat, wo immer sie arbeitet, solange ihr
+Case offen ist (es setzt `SELDON_CASE`; setz es nie selbst); jede andere
+Sitzung nur, wenn der Nutzer `[hooks] scope = "all"` gesetzt hat.
 
 Aufgezeichnet werden: Änderungen an Paketen, Omarchy und mit `systemctl`
 (rot), Schreibzugriffe in beobachtete Pfade (gelb), jede andere Änderung

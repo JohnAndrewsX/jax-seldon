@@ -881,6 +881,47 @@ mod start_folder {
         assert_eq!(o.status.code(), Some(1), "{}", stderr(&o));
     }
 
+    /// The launcher gets `PWD` for the folder it starts in: a launcher
+    /// that is no shell reads it as it is (stage-1 N3). The stub is an awk
+    /// script, which does not set `PWD` itself as a shell would.
+    #[test]
+    fn the_launcher_gets_pwd() {
+        let env = Env::new(Snapper::Missing);
+        let _root = logbook(&env);
+        let out = env.tmp.path().join("pwd.seen");
+        let stub = env.tmp.path().join("pwd-stub");
+        common::write_executable(
+            &stub,
+            &format!(
+                "#!/usr/bin/awk -f\nBEGIN {{ print ENVIRON[\"PWD\"] > \"{}\"; exit }}\n",
+                out.display()
+            ),
+        );
+        add_config(
+            &env,
+            &format!(
+                "[agent.launchers]\npwd = [\"{}\", \"{{prompt}}\"]",
+                stub.display()
+            ),
+        );
+        let work = env.home.join("Work");
+        std::fs::create_dir(&work).unwrap();
+        for (dir, want) in [
+            (env.home.clone(), work.clone()),
+            (work.clone(), work.clone()),
+        ] {
+            let o = env
+                .command(&["agent", "start", "C-2026-001", "--launcher", "pwd"])
+                .env("SELDON_NOW", T0)
+                .env("PWD", "/somewhere/stale")
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+            assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+            assert_eq!(read(&out).trim_end(), want.to_str().unwrap(), "{dir:?}");
+        }
+    }
+
     /// `--new` launches the same way, on the new case.
     #[test]
     fn the_new_case_is_the_marker() {
