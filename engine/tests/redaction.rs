@@ -1531,24 +1531,28 @@ mod redaction {
         for (rule, input, ..) in TABLE {
             let lower = trigger_text(input);
             assert!(
-                triggers(rule).iter().any(|t| holds_trigger(&lower, t)),
+                triggers(rule)
+                    .iter()
+                    .any(|t| holds_trigger(input, &lower, t)),
                 "{rule}: no trigger in `{input}`"
             );
         }
-        // the marker can never trigger a rule, nor add a part of one
+        // the marker can never trigger a rule, nor add a part of one,
+        // as written or in lower case
         let marker = trigger_text(REDACTED);
         for rule in BUILTIN {
             assert!(
                 !triggers(rule)
                     .iter()
                     .flat_map(|t| t.split('+'))
-                    .any(|part| marker.contains(part)),
+                    .any(|part| marker.contains(part) || REDACTED.contains(part)),
                 "{rule}"
             );
         }
         // a curl line without their options compiles none of the curl
         // rules (WP-084)
-        let plain = trigger_text("curl -fsSL https://h.example/f -o /tmp/f");
+        let line = "curl -fsSL https://h.example/f -o /tmp/f";
+        let plain = trigger_text(line);
         for rule in [
             "curl-user",
             "proxy-option",
@@ -1556,7 +1560,9 @@ mod redaction {
             "cookie-option",
         ] {
             assert!(
-                !triggers(rule).iter().any(|t| holds_trigger(&plain, t)),
+                !triggers(rule)
+                    .iter()
+                    .any(|t| holds_trigger(line, &plain, t)),
                 "{rule}"
             );
         }
@@ -1571,15 +1577,16 @@ mod redaction {
             assert!(
                 !triggers("httpie-auth")
                     .iter()
-                    .any(|t| holds_trigger(&lower, t)),
+                    .any(|t| holds_trigger(line, &lower, t)),
                 "`{line}`"
             );
         }
-        let word = trigger_text("git commit -am \"fix https redirect\"");
+        let line = "git commit -am \"fix https redirect\"";
+        let word = trigger_text(line);
         assert!(
             triggers("httpie-auth")
                 .iter()
-                .any(|t| holds_trigger(&word, t))
+                .any(|t| holds_trigger(line, &word, t))
         );
     }
 

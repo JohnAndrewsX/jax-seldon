@@ -214,10 +214,10 @@ impl Rule {
         found
     }
 
-    /// Whether `lower` (the text through [`trigger_text`]) may hold a
+    /// Whether `text` (`lower`: through [`trigger_text`]) may hold a
     /// match.
-    fn triggered(&self, lower: &str) -> bool {
-        self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(lower, t))
+    fn triggered(&self, text: &str, lower: &str) -> bool {
+        self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(text, lower, t))
     }
 
     /// Whether a group of `unless` keeps this match as it is. A group of
@@ -402,18 +402,26 @@ pub const BUILTIN: [&str; 27] = [
 /// regex is compiled the first time a text triggers its rule.
 static BUILTIN_RULES: LazyLock<Vec<Rule>> = LazyLock::new(builtin_rules);
 
-/// Whether `lower` (the text through [`trigger_text`]) holds `trigger`:
-/// every one of its literals, which a `+` joins (`curl+-x`: both `curl`
-/// and `-x`, anywhere in the text).
-pub fn holds_trigger(lower: &str, trigger: &str) -> bool {
-    trigger.split('+').all(|part| lower.contains(part))
+/// Whether `text` holds `trigger`: every one of its literals, which a `+`
+/// joins (`curl+-x`: both `curl` and `-x`, anywhere in the text). A
+/// trigger with an ASCII capital is looked for in `text` as written
+/// (`curl+-U`, for a rule whose `curl` and `-U` are case-sensitive), any
+/// other in `lower`, the text through [`trigger_text`].
+pub fn holds_trigger(text: &str, lower: &str, trigger: &str) -> bool {
+    let hay = if trigger.bytes().any(|b| b.is_ascii_uppercase()) {
+        text
+    } else {
+        lower
+    };
+    trigger.split('+').all(|part| hay.contains(part))
 }
 
-/// Literal text, in lower case, that every match of the built-in rule
-/// `name` contains (any one of them, see [`holds_trigger`]), as
-/// [`trigger_text`] spells it. A rule is tried only when the text holds
-/// one; the replacement `‹redacted›` holds no literal of them, so the
-/// text after an earlier rule needs no new check.
+/// Literal text that every match of the built-in rule `name` contains
+/// (any one of them, see [`holds_trigger`]): in lower case as
+/// [`trigger_text`] spells it, or with a capital as written where the
+/// rule is case-sensitive. A rule is tried only when the text holds one;
+/// the replacement `‹redacted›` holds no literal of them, so the text
+/// after an earlier rule needs no new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         "url-userinfo" => &["://"],
@@ -462,8 +470,8 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "proxy-option" => &["curl+-u", "--proxy-"],
         "proxy-userinfo" => &["curl+-x", "proxy"],
         "cookie-option" => &["curl+-b", "curl+--cookie"],
-        // `-E` reads `-e` here
-        "cert-password" => &["curl+-e", "--cert", "--proxy-cert"],
+        // `curl` and `-E` as written: `set -e` holds no trigger
+        "cert-password" => &["curl+-E", "--cert", "--proxy-cert"],
         // the command word and the white space or `\` after it, as the
         // rule requires them (ASCII, so a match always holds one)
         "httpie-auth" => &[
@@ -867,7 +875,7 @@ impl Redactor {
         let mut out = text.to_string();
         let lower = trigger_text(text);
         for rule in self.rules() {
-            if !rule.triggered(&lower) || !rule.regex().is_match(&out) {
+            if !rule.triggered(text, &lower) || !rule.regex().is_match(&out) {
                 continue;
             }
             out = rule.replace(&out);
@@ -882,7 +890,7 @@ impl Redactor {
         let lower = trigger_text(text);
         self.rules()
             .filter(|r| {
-                if !r.triggered(&lower) {
+                if !r.triggered(text, &lower) {
                     return false;
                 }
                 let all = r.matches(text);
