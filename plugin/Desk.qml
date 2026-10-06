@@ -174,7 +174,9 @@ Item {
     root.visit(target)
     root.currentSection = root.sectionItem(target)
     root.remember()
-    if (root.opened && !root.editing) keyCatcher.forceActiveFocus()
+    // The keys come back to the desk, from the search field too (a click
+    // on a sidebar row leaves the field focused otherwise).
+    if (root.opened && !(root.currentSection && root.currentSection.editing)) keyCatcher.forceActiveFocus()
     return "ok"
   }
 

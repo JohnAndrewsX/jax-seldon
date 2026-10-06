@@ -66,7 +66,7 @@ Item {
 
     Text {
       id: title
-      x: root.mark.box + root.mark.gap * 2
+      x: root.mark.box + root.mark.gap
       y: Math.round((root.mark.baseline - title.baselineOffset) * root.dpr) / root.dpr
       textFormat: Text.PlainText
       text: "SELDON"

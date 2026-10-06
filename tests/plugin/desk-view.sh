@@ -208,7 +208,7 @@ clean_log thresholds
 #    filter, and Esc then clears it before it closes the desk; the next Esc
 #    closes through the shell's hide.
 run keys "$sample" 1920x1080 \
-  "summon;text:2;text:3;text:4;text:5;text:6;text:7;text:8;text:,;text:1;key:Alt+Down;key:Alt+Down*8;key:Alt+Up;key:Alt+Down;key:Tab;key:Backtab;text:/;text:3;type:ab;key:Escape;text:/;type:mesa;key:Return;key:Escape;key:Escape"
+  "summon;text:2;text:3;text:4;text:5;text:6;text:7;text:8;text:,;text:1;key:Alt+Down;key:Alt+Down*8;key:Alt+Up;key:Alt+Down;key:Tab;key:Backtab;text:/;text:3;type:ab;key:Escape;text:/;type:mesa;key:Return;key:Escape;key:Escape;summon;text:/;type:x;click:Work;text:4"
 i=1
 for want in today changelog work decisions system memory radiant graph settings today changelog today settings today today today; do
   expect keys $i .view.section "$want"
@@ -229,6 +229,11 @@ expect keys 24 '[.view.search.text, .view.opened] | map(tostring) | join(",")' "
 expect keys 25 .view.opened false
 expect keys 25 '.calls | map(select(startswith("hide"))) | length' 1
 expect keys 25 '.writes | length' 0
+# A click on a sidebar row while the search has the keys: the section
+# changes, its filter goes and the keys come back to the desk.
+expect keys 28 '[.view.search.focused, .view.search.text] | map(tostring) | join(",")' "true,x"
+expect keys 29 '[.view.section, .view.search.focused, .view.search.text, .view.keys] | map(tostring) | join(",")' "work,false,,true"
+expect keys 30 .view.section decisions
 clean_log keys
 
 # ---------------------------------------------------------------------------
