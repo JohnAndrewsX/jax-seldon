@@ -14,6 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-105 | redact collector messages before cursors.json, capture --json and the index | Engine | `engine-105` (opus) | `wt/WP-105` · `wp/105-redact-messages` | 2026-10-06 |
 | WP-106 | redaction: openssl -pass pass: | Engine | `engine-106` (opus) | `wt/WP-106` · `wp/106-openssl-pass` | 2026-10-06 |
 | WP-107 | config replay with an exact marker | Engine | `engine-107` (opus) | `wt/WP-107` · `wp/107-replay-marker` | 2026-10-06 |
 
