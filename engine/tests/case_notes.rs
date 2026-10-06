@@ -58,6 +58,8 @@ impl Bench {
             .env
             .command(args)
             .env("SELDON_NOW", now)
+            // snapper's dates are local time; the expectations are CEST
+            .env("TZ", "Europe/Berlin")
             .env("SELDON_PACMAN_LOG", tmp.join("pacman.log"))
             .env("SELDON_PACMAN_DB_LOCK", tmp.join("no-db.lck"))
             .stdin(Stdio::piped())
