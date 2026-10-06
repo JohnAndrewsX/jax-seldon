@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-104 | state reset after a crash: no false note; doctor's prediction | Engine | `engine-104` (opus) | `wt/WP-104` · `wp/104-no-false-reset` | 2026-10-06 |
 | WP-106 | redaction: openssl -pass pass: | Engine | `engine-106` (opus) | `wt/WP-106` · `wp/106-openssl-pass` | 2026-10-06 |
 | WP-107 | config replay with an exact marker | Engine | `engine-107` (opus) | `wt/WP-107` · `wp/107-replay-marker` | 2026-10-06 |
 
@@ -46,6 +45,11 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-104 a crash after a capture appended the first events
+  of a silently baselined source no longer yields a false state-reset
+  note (`silentBaselines`); a collector the crashed note names does not
+  wait and is not reset twice; doctor warns of a crashed reset instead of
+  predicting a new one; Opus review, one round, Fable look; merged.
 - 2026-10-05 WP-097 redaction covers the remaining command-line forms:
   continued lines, quoted strings across lines, redirections inside a
   command, curl `--pass`/`--proxy-pass`/`--oauth2-bearer`, `-E`/`--cert`
