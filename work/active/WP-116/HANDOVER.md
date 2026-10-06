@@ -494,3 +494,38 @@ Verified by: flock /tmp/seldon-check.lock just check → exit 0 (`check: ok`) on
 | # | Mutant | Caught by |
 |---|---|---|
 | M37 | no `workdir = "logbook"` guard | `migration::not_with_workdir_logbook` |
+
+## Merge with main
+
+`main` at `d919974` (WP-115 merged: rule 9 / ADR-0029, plan verify/done
+capture; ADR-0033; WP-117…119 work files) merged into the branch as
+`5364df0`; `5dc2446` re-stamps the German guide 05.
+
+```
+WP-116 MERGE WITH MAIN
+Done: merge of main d919974; four conflicts resolved as briefed
+Verified by: flock /tmp/seldon-check.lock just check → exit 0 (`check: ok`) on 5dc2446; docs-check ok without warnings
+```
+
+Conflicts and how they were resolved:
+
+- `CHANGELOG.md` (Unreleased → Engine): both sides kept, WP-116's
+  entries first, then WP-115's (ADR-0029 link, plan verify/done capture).
+- `DECISIONS.md`: every row kept, ADR-0032 before ADR-0033.
+- `docs/SPEC-ENGINE.md` (`capture --json` shape): one shape with both
+  sides — `linkedPlanned` (WP-115) and `rulesUpdated` v4 with `git`,
+  `hooksUserWide` (WP-116); the comment line names `hooksUserWide` with
+  the silent upgrade.
+- `docs/user/de/05-cli-reference.md`: the help blocks regenerated from
+  the merged engine (`docs-check --write`: WP-115's `--no-capture` and
+  "runs a capture first"), both prose changes kept (WP-116's
+  `SELDON_CASE`/`CLAUDE_CONFIG_DIR` rows and doctor/agent start/hook
+  install text); the source line re-stamped to the merge commit
+  (`5364df0`), where the merged English page last changed.
+
+Auto-merged without conflict and checked by the suite: `capture.rs`
+(WP-115's capture before verify/done next to the rules/skill/hooks
+upgrades), `doctor.rs`, `hook.rs`, `tests/agent.rs`, `tests/rules.rs`,
+`tests/common/` (the user-owned root probe of `3367ccb`; the migration
+tests pass with it). The skill's `case.md` change from WP-115 touches no
+file of WP-116.
