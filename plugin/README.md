@@ -19,7 +19,7 @@ and matches it against the changes you planned as cases. This plugin
 shows the result in the Omarchy shell. You write notes, plan cases and
 explain unexpected changes from the panel; the engine does the writing.
 
-- A pill in the bar counts active cases and unexplained changes
+- A pill in the bar counts active cases and crises
   ([The pill](#the-pill)).
 - A panel with six tabs shows today's journal, the changelog, your work
   cases, decisions, the system and your agents' memory
@@ -127,12 +127,16 @@ omarchy-restart-shell
 
 ### The pill
 
-The Seldon mark, then `A · D` — A active cases, D unexplained changes
-(open drift); zero parts are hidden (the mark alone, `2`, `· 3`). Accent
-colour while cases are active, the theme's urgent colour when a change is
-in the red zone, dimmed while something needs fixing; the mark takes the
-same colour, so it follows the theme. The tooltip says what and when the
-engine last captured.
+The Seldon mark, then `A · D` — A active cases, D crises: changes that can
+affect boot, login or the shell and have no case (ADR-0028); zero parts are
+hidden (the mark alone, `2`, `· 1`). Other changes without a case are
+listed in the panel and never counted in the bar unless you set
+`driftInBar` to `all` (see [Configure](#configure)). Accent colour while
+cases are active, the theme's urgent colour while a crisis is open (in
+every `driftInBar` mode), dimmed while something needs fixing; the mark
+takes the same colour, so it follows the theme. The tooltip counts
+everything and says when the engine last captured: "Seldon — 2 active
+cases, 1 crisis, 7 changes without a case, last capture 4 min ago".
 
 | Click | Does |
 |---|---|
@@ -147,15 +151,18 @@ Six tabs, each with a fixed number key:
 | # | Tab | Shows | Actions |
 |---|---|---|---|
 | 1 | Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), the QuickEntry, today's journal entries, yesterday's behind one row | write a note; *Open in editor* (today's journal) |
-| 2 | Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; snapshot rows highlighted; unexplained changes marked | *Resolve…* on every unexplained change; *Ledger* (this month's ledger); *Capture now* |
+| 2 | Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; snapshot rows highlighted; changes without a case marked (crises in the urgent colour, the others in the accent), and a quiet "N changes without a case" line under the header | *Resolve…* on every change without a case; *Ledger* (this month's ledger); *Capture now* |
 | 3 | Work | your cases in three columns, Queued · Active (verification included) · Completed (the last 50, dropped ones struck through); "2 / 3 active" against your limit; the card of the case under the cursor | *New case*; the card's actions (below) |
 | 4 | Decisions | your decisions (ADRs), newest first: id, status (*proposed* marked, *superseded* struck through), title, date | *Open*; *New decision* |
 | 5 | System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine | *Open in editor* (the logbook's `STATUS.md`) |
 | 6 | Memory | what your agents read at session start: the headings of `memory/lessons.md` and the other memory files with path and last update | *Open* (the logbook folder) |
 
 Above every tab: the status banner (see [States](#states)), the snapper
-banner when snapshots cannot be read, and a red strip "N changes in the red
-zone need a reason" (a click opens the drift sheet for the first of them).
+banner when snapshots cannot be read, and, only while a crisis is open, a
+red strip "N changes that can affect boot, login or the shell have no case"
+(a click opens the drift sheet for the first of them). Nothing else asks
+for your attention: the other changes without a case wait quietly on the
+Changelog, and resolving them is up to you or your agent, never required.
 
 The panel is 460 spacing units wide (`Style.space(460)`), so it grows with
 your theme's font size (`[font] base-size`) and stays within the screen.
@@ -211,10 +218,10 @@ text until the case exists, so a refused case is not lost.
 The engine writes the decision as *proposed* (`seldon decide`) and the
 plugin opens it in your editor.
 
-**Resolve drift** (Enter on an unexplained Changelog row, its *Resolve…*
+**Resolve drift** (Enter on a Changelog row without a case, its *Resolve…*
 button, or a click on the red strip). The sheet shows the change (what,
-who, when, its zone, the proposed case, every package of a transaction)
-and three ways to resolve it:
+who, when, its zone, "crisis" when it is one, the proposed case, every
+package of a transaction) and three ways to resolve it:
 
 | Action | Runs | Afterwards |
 |---|---|---|
@@ -336,9 +343,11 @@ not on every capture.
 |---|---|---|
 | `captureIntervalMin` | `15` | How often (5–120 minutes) the engine captures system changes while the shell runs |
 | `wipLimit` | `3` | The Work tab shows active cases against this limit ("2 / 3 active"); 1–20; it warns, it never blocks. Cases in verification do not count |
+| `driftInBar` | `crisis` | What the bar's second number counts: `crisis` (changes that can affect boot, login or the shell and have no case), `all` (every change without a case, as before 0.1.4) or `none` (no number). The urgent colour on a crisis stays in every mode |
 
 ```sh
 omarchy bar set jax.seldon captureIntervalMin 30 --json
+omarchy bar set jax.seldon driftInBar all
 omarchy bar move jax.seldon --section right
 ```
 
