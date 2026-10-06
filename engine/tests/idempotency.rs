@@ -2344,25 +2344,141 @@ mod messages {
         assert_eq!(access(&cli), [note.as_str()]);
     }
 
-    /// An invalid `[redaction] patterns` entry fails every capture; the
-    /// index still masks with the built-in rules.
+    /// `seldon doctor` (text) and `seldon --json doctor`: the exit code,
+    /// the text, and the message of the rows `collectors` and `snapper`.
+    fn doctor(cli: &Cli) -> (Option<i32>, String, serde_json::Value, serde_json::Value) {
+        let out = cli.run(&["doctor"]);
+        let human = common::stdout(&out);
+        let json = cli.run(&["--json", "doctor"]);
+        assert_eq!(json.status.code(), out.status.code());
+        let json = common::json(&json);
+        let row = |name: &str| {
+            let checks = json["checks"].as_array().unwrap();
+            let row = checks.iter().find(|c| c["name"] == name);
+            row.map_or(serde_json::Value::Null, |c| c["message"].clone())
+        };
+        let (collectors, snapper) = (row("collectors"), row("snapper"));
+        for text in [human.clone(), json.to_string()] {
+            assert!(!text.contains("fake0123456789"), "{text}");
+            assert!(!text.contains("fake-host-alpha"), "{text}");
+        }
+        (out.status.code(), human, collectors, snapper)
+    }
+
+    /// doctor's `collectors` row shows the message an older engine saved,
+    /// masked, before any capture with this engine.
     #[test]
-    fn an_invalid_pattern_leaves_the_built_in_rules_to_the_index() {
+    fn doctor_masks_the_saved_message() {
+        let cli = Cli::new();
+        patterns(&cli, &["fake-host-[a-z]+"]);
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        plant_raw(&cli);
+        let (code, human, collectors, _) = doctor(&cli);
+        assert_eq!(code, Some(0), "{human}");
+        let row = format!("last capture failed: snapper: {MESSAGE}");
+        assert_eq!(collectors, row.as_str());
+        assert!(human.contains(&row), "{human}");
+    }
+
+    /// doctor's own snapper probe (also in `init`'s output) shows what
+    /// snapper printed, masked.
+    #[test]
+    fn the_snapper_probe_masks_what_snapper_printed() {
+        let cli = Cli::new();
+        patterns(&cli, &["fake-host-[a-z]+"]);
+        cli.stub("snapper", &format!("echo '{STDERR}' >&2; exit 3"));
+        let (code, human, _, snapper) = doctor(&cli);
+        assert_eq!(code, Some(0), "{human}");
+        let row = "snapper failed: exit 3: token=‹redacted› at ‹redacted›";
+        assert_eq!(snapper, row);
+        assert!(human.contains(row), "{human}");
+
+        // init prints the same probe, as text and in --json
+        let other = cli.env.tmp.path().join("other");
+        let init = |json: bool| {
+            let path = other.join(if json { "json" } else { "text" });
+            let mut args = vec!["init", "--non-interactive", "--no-git", "--no-capture"];
+            args.extend(["--path", path.to_str().unwrap()]);
+            if json {
+                args.insert(0, "--json");
+            }
+            let out = cli.run(&args);
+            assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+            common::stdout(&out)
+        };
+        let text = init(false);
+        assert!(
+            text.contains(&format!("Snapper: degraded — {row}")),
+            "{text}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&init(true)).unwrap();
+        assert_eq!(json["snapper"]["message"], row, "{json}");
+        for text in [text, json.to_string()] {
+            assert!(!text.contains("fake0123456789"), "{text}");
+            assert!(!text.contains("fake-host-alpha"), "{text}");
+        }
+    }
+
+    /// doctor's omarchy probe runs the omarchy collector's program; what
+    /// it printed on a failure is masked the same way.
+    #[test]
+    fn the_omarchy_probe_masks_what_it_printed() {
+        let cli = Cli::new();
+        patterns(&cli, &["fake-host-[a-z]+"]);
+        cli.stub("omarchy-version", &format!("echo '{STDERR}' >&2; exit 3"));
+        let (_, human, _, _) = doctor(&cli);
+        let tail = "failed: exit 3: token=‹redacted› at ‹redacted›";
+        let row = human.lines().find(|l| l.contains(" omarchy ")).unwrap();
+        assert!(row.ends_with(tail), "{human}");
+    }
+
+    /// N1 (round 2): a user pattern that matches across the marker does
+    /// not grow the saved message from one capture to the next, nor what
+    /// the index shows.
+    #[test]
+    fn a_pattern_across_the_marker_does_not_grow_the_message() {
+        let cli = Cli::new();
+        patterns(&cli, &["fake-host-[a-z]+", "›."]);
+        cli.capture(&["--since", FIXTURE_CREATED]);
+        cli.stub("snapper", &format!("echo '{STDERR}' >&2; exit 3"));
+        cli.capture(&[]);
+        let first = saved(&cli);
+        assert!(first.as_str().unwrap().contains("‹redacted›"), "{first}");
+        let shown = indexed(&cli);
+        for _ in 0..3 {
+            let out = cli.run(&["capture", "--source", "pacman", "--json"]);
+            assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
+            assert_eq!(saved(&cli), first);
+            assert_eq!(indexed(&cli), shown);
+        }
+    }
+
+    /// N2 (round 2): an invalid `[redaction] patterns` entry fails every
+    /// capture (exit 1); the index and doctor withhold every collector
+    /// message instead of showing it with the built-in rules, and so does
+    /// doctor's snapper probe while config.toml cannot be parsed.
+    #[test]
+    fn an_invalid_pattern_withholds_the_message() {
+        use seldon::collectors::MESSAGE_WITHHELD;
         let cli = Cli::new();
         cli.capture(&["--since", FIXTURE_CREATED]);
         plant_raw(&cli);
+        cli.stub("snapper", &format!("echo '{STDERR}' >&2; exit 3"));
         patterns(&cli, &["("]);
         let out = cli.run(&["index"]);
         assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
-        let text = std::fs::read_to_string(state(&cli).join("index.json")).unwrap();
-        assert!(!text.contains("fake0123456789"), "{text}");
-        let index: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let rows = index["state"]["collectors"].as_array().unwrap();
-        let row = rows.iter().find(|c| c["name"] == "snapper").unwrap();
-        assert_eq!(
-            row["message"],
-            "snapper failed (exit 3): token=‹redacted› at fake-host-alpha"
-        );
+        assert_eq!(indexed(&cli), MESSAGE_WITHHELD);
+        let (_, human, collectors, snapper) = doctor(&cli);
+        let row = format!("last capture failed: snapper: {MESSAGE_WITHHELD}");
+        assert_eq!(collectors, row.as_str(), "{human}");
+        assert_eq!(snapper, format!("snapper failed: {MESSAGE_WITHHELD}"));
+
+        // config.toml that does not parse: its patterns are unknown
+        let file = cli.env.config_file();
+        std::fs::write(&file, "[redaction\n").unwrap();
+        let (code, human, _, snapper) = doctor(&cli);
+        assert_eq!(code, Some(1), "{human}");
+        assert_eq!(snapper, format!("snapper failed: {MESSAGE_WITHHELD}"));
     }
 }
 
