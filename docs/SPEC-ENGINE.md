@@ -332,6 +332,24 @@ seldon hook install claude-code [--settings FILE]
 seldon hook uninstall claude-code [--settings FILE]
                                                # WP-049: the inverse of install (§8); `generic` has
                                                # nothing installed, so nothing to uninstall
+seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8: the Seldon agent skill
+                                               # (engine/assets/skills/seldon/, compiled in) into every
+                                               # agent skill folder that exists: ~/.agents/skills,
+                                               # ~/.claude/skills, ~/.codex/skills, ~/.pi/agent/skills,
+                                               # ~/.hermes/skills, ~/.hermes/profiles/*/skills (Omarchy's
+                                               # list); none is created. Target <folder>/seldon/; the
+                                               # manifest .seldon-skill.json (sha256 per file as written)
+                                               # marks it as Seldon's. States: missing, current, outdated,
+                                               # changed (a file edited by hand), foreign (no manifest, a
+                                               # link, a file). install writes missing/outdated, keeps
+                                               # changed and foreign; uninstall removes only files whose
+                                               # content is Seldon's, the manifest unless a file is kept,
+                                               # the folder when empty. Under the lock; own writes (§5
+                                               # rule 7). No logbook needed; --settings is refused.
+                                               # A folder that fails (action "failed", its error) does
+                                               # not stop the others; exit 1 then, after the report.
+                                               # --json → {skill, dirs: [{dir, path, state, action,
+                                               # written, removed, kept, error}], absent, ownWrites}
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…"?,"cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub
@@ -352,8 +370,11 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # budget: < 10 MB on the ×10 fixture (`just check-rss`). User unit:
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
-                                               # rollbacks, collectors, state, omarchy, snapper, git, watch,
-                                               # drift checks (read-only)
+                                               # rollbacks, collectors, state, skills, omarchy, snapper,
+                                               # git, watch, drift checks (read-only). skills (WP-094):
+                                               # installed or no folder → ok; missing → ok, fix `seldon
+                                               # hook install skills`; outdated, changed, foreign →
+                                               # degraded, fix
 seldon doctor --only rules                     # WP-101 round 3: the engine and rules rows only; starts no
                                                # program (no omarchy, snapper or git probe), reads no collector
                                                # state, takes no lock; exit 3 without a logbook, 1 when the
@@ -1216,7 +1237,8 @@ After every capture:
    under a watched path — the theme hook script that `init --theme-hook`
    has `omarchy hook install` copy to
    `~/.config/omarchy/hooks/theme-set.d/seldon-theme-set.sh`, a Claude
-   Code settings file `hook install` writes under a watched path — is
+   Code settings file `hook install` writes under a watched path, the
+   agent skill's files `hook install skills` writes (WP-094) — is
    recorded right after the write, under the lock, in
    `$XDG_STATE_HOME/seldon/owned.json`: its `~`-path, the sha256 of its
    content, and the command (`by`). Only paths the config collector

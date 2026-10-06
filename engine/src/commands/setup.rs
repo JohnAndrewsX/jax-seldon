@@ -7,6 +7,8 @@
 //!
 //! - **Harnesses.** `claude-code` merges WP-009's hooks into
 //!   `<logbook>/.claude/settings.json` ([`hook::merge_claude_hooks`]).
+//!   `skills` puts the Seldon agent skill into the agent skill folders that
+//!   exist ([`super::skills`]).
 //!   `omarchy-agent` copies the Omarchy-Agent kit's guard and skills from a
 //!   template directory ([`kit_dir`]) into `<logbook>/.claude/`, keeping
 //!   files that are already there; without the directory it copies nothing
@@ -114,8 +116,16 @@ pub struct HarnessReport {
 
 /// Sets up `names` in the logbook at `root`, the Omarchy-Agent kit first
 /// so that Claude Code's hooks are merged into a settings file the kit
-/// may bring.
-pub fn harnesses(dirs: &Dirs, root: &Path, names: &[String]) -> Vec<HarnessReport> {
+/// may bring. The caller holds the state lock (`skills` records its writes
+/// under it).
+pub fn harnesses(
+    ctx: &Context,
+    lock: &Lock,
+    config: &Config,
+    root: &Path,
+    names: &[String],
+) -> Vec<HarnessReport> {
+    let dirs = &ctx.dirs;
     let mut ordered: Vec<&String> = names.iter().collect();
     ordered.sort_by_key(|n| n.as_str() != "omarchy-agent");
     ordered.dedup();
@@ -124,6 +134,7 @@ pub fn harnesses(dirs: &Dirs, root: &Path, names: &[String]) -> Vec<HarnessRepor
         .map(|name| match name.as_str() {
             "omarchy-agent" => omarchy_agent(dirs, root),
             "claude-code" => claude_code(dirs, root),
+            "skills" => skills(ctx, lock, config),
             other => HarnessReport {
                 name: other.to_string(),
                 human: format!("unknown harness `{other}`; nothing set up"),
@@ -155,6 +166,23 @@ fn claude_code(dirs: &Dirs, root: &Path) -> HarnessReport {
                 dirs.display(&path)
             ),
             json: json!({ "settings": path, "error": e.to_string() }),
+            done: false,
+        },
+    }
+}
+
+fn skills(ctx: &Context, lock: &Lock, config: &Config) -> HarnessReport {
+    match super::skills::install_under(lock, ctx, config) {
+        Ok(installed) => HarnessReport {
+            name: "skills".into(),
+            human: installed.summary(&ctx.dirs),
+            json: installed.json(&ctx.dirs),
+            done: installed.done(),
+        },
+        Err(e) => HarnessReport {
+            name: "skills".into(),
+            human: format!("not installed: {e} (fix: {})", super::skills::INSTALL_BY),
+            json: json!({ "error": e.to_string() }),
             done: false,
         },
     }

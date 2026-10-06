@@ -60,7 +60,7 @@ enum Command {
     /// Create a logbook (wizard; --non-interactive takes defaults)
     Init(InitCmd),
 
-    /// Check engine, config, logbook, collector state, omarchy, snapper and git
+    /// Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
     #[command(after_help = "Examples:
   seldon doctor
   seldon doctor --only rules --json")]
@@ -183,7 +183,7 @@ struct InitCmd {
     obsidian: bool,
 
     /// Agent harness to set up (repeatable)
-    #[arg(long, value_name = "NAME", value_parser = ["claude-code", "omarchy-agent"])]
+    #[arg(long, value_name = "NAME", value_parser = ["claude-code", "omarchy-agent", "skills"])]
     harness: Vec<String>,
 
     /// Backfill: the first capture also records changes since TS, a date

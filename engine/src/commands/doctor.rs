@@ -1,5 +1,6 @@
 //! `seldon doctor`: engine, config, logbook, cases, ledger, fences,
-//! collectors, state, omarchy, snapper and git checks (SPEC-ENGINE §3).
+//! collectors, state, skills, omarchy, snapper and git checks
+//! (SPEC-ENGINE §3).
 //! Read-only: no lock, no write; never runs anything with privileges.
 //!
 //! Every check is `ok`, `degraded` (works with less, e.g. snapper without
@@ -233,6 +234,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
         None
     };
     checks.extend(check_state(ctx));
+    checks.push(check_skills(ctx));
     checks.push(check_omarchy(&effective, &shown));
     checks.push(check_snapper(&effective, &shown));
     checks.push(check_git(&effective, logbook.as_ref()));
@@ -689,6 +691,16 @@ fn check_fences(logbook: &Logbook) -> Check {
         Status::Ok,
         "STATUS.md and DECISIONS.md: every generated fence has its end marker",
     )
+}
+
+/// The Seldon agent skill in the agent skill folders (WP-094).
+fn check_skills(ctx: &Context) -> Check {
+    let (status, message, fix) = super::skills::doctor_row(&ctx.dirs);
+    let check = Check::new("skills", status, message);
+    match fix {
+        Some(f) => check.fix(f),
+        None => check,
+    }
 }
 
 /// The rules block of `AGENTS.md` against this engine's (ADR-0027,

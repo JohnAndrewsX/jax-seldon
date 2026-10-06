@@ -281,6 +281,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opened an item, so the curve can no longer go negative. Old charts
   show fewer opened and resolved items (WP-109).
 
+- **The Seldon agent skill (WP-094).** `seldon hook install skills` puts
+  a `seldon` skill into every agent skill folder that exists
+  (`~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`,
+  `~/.pi/agent/skills`, `~/.hermes/skills`, Hermes profiles), next to
+  Omarchy's own skills, so an agent started anywhere — Omarchy's agents
+  menu, `omarchy agent crash`, a terminal in any folder — knows the
+  logbook rules: find or open a case, act inside the Intent, check
+  package transactions against `alwaysRed`, snapshot an R2/R3 case,
+  verify and close it, report commands through `seldon hook generic`,
+  and explain drift only with evidence. Seldon never creates an agent's
+  folder and never overwrites a file it did not write or that you
+  changed; `seldon hook uninstall skills` removes it again. `seldon
+  doctor` has a `skills` row; `seldon init` offers it
+  (`--harness skills`).
+
 ### Plugin
 
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts

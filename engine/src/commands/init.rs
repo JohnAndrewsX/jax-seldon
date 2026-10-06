@@ -214,7 +214,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     };
 
     // inside the first commit: the harness files are part of the logbook
-    let harnesses = setup::harnesses(&ctx.dirs, &root, &choices.harnesses);
+    let harnesses = setup::harnesses(ctx, &lock, &config, &root, &choices.harnesses);
     let git = setup_git(&root, choices.git, !ctx.no_commit);
     let snapper = doctor::check_snapper(&config, &ShownMessages::new(Some(&config)));
     // the capture and the baseline take the lock themselves
@@ -238,7 +238,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
     let mut next = vec!["seldon doctor".to_string()];
     for h in harnesses
         .iter()
-        .filter(|h| !h.done && h.name == "claude-code")
+        .filter(|h| !h.done && matches!(h.name.as_str(), "claude-code" | "skills"))
     {
         next.push(format!("seldon hook install {}", h.name));
     }
@@ -688,7 +688,13 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
         );
         let picked = MultiSelect::with_theme(&theme)
             .with_prompt("Agent harnesses (space toggles, enter confirms)")
-            .items(&["Claude Code hooks (claude-code)".to_string(), kit_label])
+            .items(&[
+                "Claude Code hooks (claude-code)".to_string(),
+                kit_label,
+                "Seldon agent skill for every agent: into the agent skill folders that exist \
+                 (~/.claude/skills, ~/.agents/skills, …; skills)"
+                    .to_string(),
+            ])
             .defaults(&checked)
             .interact()
             .map_err(prompt_err)?;

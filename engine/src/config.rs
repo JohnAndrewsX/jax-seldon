@@ -258,7 +258,8 @@ pub struct Config {
     /// Paths the config collector hashes; expanded at use
     /// ([`Dirs::expand_config`]).
     pub watch_paths: Vec<String>,
-    /// Agent harnesses chosen in the wizard (`claude-code`, `omarchy-agent`).
+    /// Agent harnesses chosen in the wizard (`claude-code`, `omarchy-agent`,
+    /// `skills`).
     pub harnesses: Vec<String>,
     pub collectors: Collectors,
     pub git: GitConfig,
@@ -371,9 +372,11 @@ impl Config {
 }
 
 /// Harnesses the wizard can set up: Claude Code's hooks
-/// (`.claude/settings.json`) and the Omarchy-Agent kit's guard and skills
-/// (copied into `.claude/` from a template directory, `commands::setup`).
-pub const HARNESSES: [&str; 2] = ["claude-code", "omarchy-agent"];
+/// (`.claude/settings.json`), the Omarchy-Agent kit's guard and skills
+/// (copied into `.claude/` from a template directory, `commands::setup`)
+/// and the Seldon agent skill (into the agent skill folders that exist,
+/// `commands::skills`).
+pub const HARNESSES: [&str; 3] = ["claude-code", "omarchy-agent", "skills"];
 
 /// Collectors on/off, all on by default (SPEC-ENGINE §9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
