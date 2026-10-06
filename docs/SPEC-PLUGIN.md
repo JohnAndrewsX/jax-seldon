@@ -216,10 +216,14 @@ and the rest of the surface is a transparent click-catcher that closes
 the desk (no dimming: the desk reads as an application). It keeps out of
 other surfaces' exclusive zones (`ExclusionMode.Normal`, no zone of its
 own), so the bar stays visible above it and the pill stays clickable. On
-every open from closed it moves to the monitor Hyprland has focused
-(`Hyprland.focusedMonitor.name` against `Quickshell.screens`, as
-`Bar.qml focusedScreenName`; the first screen when none matches); one
-window, never one per screen.
+every open — from closed, and again on a summon of the open desk (the
+keybinding, the pill of another monitor) — it moves to the monitor
+Hyprland has focused (`Hyprland.focusedMonitor.name` against
+`Quickshell.screens`, as `Bar.qml focusedScreenName`; the first screen
+when none matches); one window, never one per screen. It does not follow
+the focus while it stays open: with Hyprland's focus following the mouse,
+a pointer crossing to the other monitor would move the desk away under
+the user; the next open takes it there.
 
 Width (`Model.deskGeometry`): with the window's width `W` (the screen's
 usable width) and `gap = Style.gapsOut`, `avail = W − 2·gap` and
@@ -229,7 +233,10 @@ width = clamp(round(avail × deskWidth / 100), min(960, avail), avail)
 ```
 
 centred (`x = gap + ⌊(avail − width) / 2⌋`), from `gap` below the bar to
-`gap` above the screen's bottom. At 100 % it fills the row. ADR-0034 §1
+`gap` above the screen's bottom. At 100 % it fills the row. ADR-0034 §1's
+`screen.width` is read as this `avail`: the screen's usable width minus
+Omarchy's outer gaps on both sides (90 % of a 1920 px screen is 1719 px,
+not 1728). ADR-0034 §1
 assumed an unanchored layer-shell axis for the centring; the desk
 computes it instead (WP-121 verified the menu pattern on the dev and the
 test host: the surface sits below the bar, the card centred to the pixel).
@@ -333,8 +340,12 @@ Four groups in the list; Appearance is selected first.
   presets 50 % / 67 % / 75 % / Full, the line "N px on this screen" and a
   small picture of the screen with the desk on it; "Sidebar" — Open /
   Collapsed. Dragging previews the width on the desk itself and writes
-  nothing; the release, a preset or a sidebar click (and the sidebar's
-  fold button) **writes once** through the facade's
+  nothing; so does the mouse wheel or a touchpad over the slider, which
+  `PanelSlider` turns into a move and a release per notch: the desk takes
+  those as a preview and writes once, 600 ms after the last notch (or
+  the next release or preset click takes its place, or closing the desk
+  writes it). The release, a preset or a sidebar click (and the sidebar's
+  fold button) **write once** through the facade's
   `updateEntryInline("jax.seldon", settings)` — the only place the plugin
   writes `shell.json`, its own entry only. `settings` is every key of the
   current entry (unknown ones too) plus the changed one, because the
@@ -346,8 +357,13 @@ Four groups in the list; Appearance is selected first.
   entry back through the pill, the desk shows the written value (5 s at
   most). A refused write (`false`, or no such method) leaves the stored
   value and the page says "The shell did not take the change. Change it
-  in Omarchy's bar settings (Seldon widget)." — no error state. Omarchy's
-  bar settings show the same keys; both paths are valid.
+  in Omarchy's bar settings (Seldon widget)." — no error state. When the
+  plugin is enabled but not in the bar (no pill has pushed an entry,
+  `Service.entryKnown`), the shell has no entry to keep the setting in:
+  the desk writes nothing, keeps the change in the service until the
+  shell restarts, and says "Add Seldon to the bar to keep this setting;
+  until then it holds until the shell restarts." Omarchy's bar settings
+  show the same keys; both paths are valid.
 - **Capture**, **Agents**, **Quiet** (read-only): the values in force and
   where each is set — the capture interval, the active cases limit and
   "changes counted in the bar" in Omarchy's bar settings; the collectors,

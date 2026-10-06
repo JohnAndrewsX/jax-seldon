@@ -653,8 +653,11 @@ middle|right>`, `shim:<method>[:<arg>]` (the pill's `jax.seldon.panel`
 handler), `call`, `section`, `select`, `width:<pct>` and `sidebar:<mode>`
 (Omarchy's bar settings changing a key), `resize`, real keys (`key:
 [Alt+]<Name>`, `text`, `type`), `click`, `clickName`, `clickAt`, `drag`/
-`release` (the width slider), `hover`, `settle`, `wait:<path>=<v>`
-(`^=` for a prefix), `shot`, `view`. After each it prints `Desk.view()`,
+`release` (the width slider), `wheel:<objectName>:<delta>`, `hover`,
+`settle`, `wait:<path>=<v>` (`^=` for a prefix), `pause:<ms>`, `shot`,
+`view`; `HARNESS_NO_PILL` runs without the pill (the plugin not in the
+bar). The facade stand-in answers `false` when the entry would not
+change, as `shell.qml` does. After each it prints `Desk.view()`,
 the facade's calls and writes, every visible text and every text outside
 the window or the desk.
 
@@ -666,7 +669,11 @@ nine targets, Alt+↑/↓ wrapping both ways, Tab doing nothing, `/` and the
 search's Enter and Esc, the Esc order, closing through `hide`); Settings ›
 Appearance (dragging previews and writes nothing, the release writes once
 with every key of the entry, a preset once, the same preset not again,
-the sidebar switch and the fold button, a refusal); open and close through
+the sidebar switch and the fold button, a refusal; a slider click at the
+stored value writes nothing, with and without the key in the entry; three
+wheel notches write once after the pause, a preset or Esc takes a pending
+wheel value's place; no pill: nothing written, the change kept, the
+sentence); open and close through
 the shell, the pill and the shim (`tab work` lands on section 3, the
 section remembered across a hide, `{"period":"30"}` on section 7); the
 stacked Esc order; and the notices under the header with their fixes
