@@ -28,7 +28,8 @@
 | ADR-0024 | While the AUR package does not exist, the plugin's one-click engine install runs the verified GitHub installer | accepted |
 | ADR-0025 | The index clips long texts of events and drift items with a visible marker (extends ADR-0020); the reference clip followed in WP-077 | accepted |
 | ADR-0026 | Snapper access by a read grant on the snapshot directory; doctor prints the revert of the old opt-in (supersedes ADR-0011) | accepted |
-| ADR-0027 | Act, then account: a case the user started authorises the agent; the agent verifies and closes; only steps that can make the machine unbootable need the user's go | accepted |
+| ADR-0027 | Act, then account: a case the user started authorises the agent; the agent verifies and closes; only steps that can make the machine unbootable need the user's go | accepted; H2 amended in part by ADR-0029 |
 | ADR-0028 | Attention is earned by consequence: routine changes are history, not drift; crisis by the harm test | accepted |
+| ADR-0029 | A change made while exactly one case planned it is that case's; a case captures before it closes | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

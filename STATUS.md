@@ -14,6 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-115 | link a change to the one case that planned it; capture before close (ADR-0029) | Engine | `engine-115` (opus) | `wt/WP-115` · `wp/115-planned-link` | 2026-10-06 |
 | WP-111 | agent texts and docs for quiet drift; rules v3; silent upgrades (ADR-0028) | Engine + Docs | `engine-111` (opus) | `wt/WP-111` · `wp/111-agent-texts` | 2026-10-06 |
 
 ## Queued (next up)
@@ -536,6 +537,13 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- ADR-0029 accepted (from the live test): a change made while exactly
+  one case was active and named it in its Plan is that case's, whoever
+  typed it; `alwaysRed` subjects only for an R3 case; `plan verify`/`done`
+  capture first. WP-115 in 0.1.4.
+- The Seldon agent starts like Omarchy's agent (from ~/Work); ADR-0030
+  drafted (hooks user-wide, scope by a launch marker), awaiting the
+  operator's confirmation.
 - Test host: reinstalled fresh after 2026-10-07 10:00 (variant 1) and
   kept free of personal settings; a snapper baseline "fresh" is the reset
   point for live and release tests. Until then the lived-in host gives

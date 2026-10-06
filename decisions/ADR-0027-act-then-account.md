@@ -1,7 +1,9 @@
 # ADR-0027 — Act, then account: a case the user started authorises the agent; Seldon takes work off the user
 
-**Status:** accepted (operator decision 2026-10-05)
+**Status:** accepted (operator decision 2026-10-05); the debate verdict H2 amended in part by ADR-0029
 **Date:** 2026-10-05
+
+> Amended in part by [ADR-0029](ADR-0029-planned-and-active-link.md) (2026-10-06): a change made while exactly one case was active and named it in its Plan is linked to that case by the engine (one narrowly evidenced rule, not a general heuristic); `plan verify`/`plan done` capture first.
 
 ## Context
 
