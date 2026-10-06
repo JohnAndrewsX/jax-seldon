@@ -34,7 +34,9 @@ authorized_keys; each item approved separately), WP-114 (pacman.conf;
 needs an AGENTS.md §6 amendment).
 Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
 Omarchy upstream contribution before 1.0. Then the
-contract v2 bundle for v0.2.0 (autocommit result in the index,
+contract v2 bundle for v0.2.0 (a case's risk in the ledger — `meta.risk` on
+case-created/started and a ledger line for `plan set --risk`, so ADR-0029's
+harm guard reads only engine-written records (WP-115 stage 2); autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
 account: WP-033 (update-impact, option C) and WP-042 (marketplace
 submission). (see `work/queued/`)
