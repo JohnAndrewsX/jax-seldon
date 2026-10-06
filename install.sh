@@ -476,8 +476,8 @@ do_install() {
 # A path under $HOME as ~/…, for the lines a person reads.
 shown() { # path
   case "$1" in
-    "$HOME") printf '~\n' ;;
-    "$HOME"/*) printf '~/%s\n' "${1#"$HOME"/}" ;;
+    "$HOME") printf '%s\n' '~' ;;
+    "$HOME"/*) printf '%s/%s\n' '~' "${1#"$HOME"/}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }

@@ -83,7 +83,7 @@ take it. In a list, Space ticks or unticks an item and Enter confirms.
 | More paths | leave empty |
 | Agent setup | tick Claude Code hooks with Space, if you use Claude Code; else none |
 | Record theme switches instantly? | no (the next capture records them anyway) |
-| Make the logbook a git repository with a first commit? | yes |
+| Keep the logbook in git, with a first commit? | yes |
 | Backfill since | a date about three months back, or empty to start from now |
 | Mark them as the pre-Seldon baseline? | yes (asked only after a backfill that found something) |
 
@@ -93,14 +93,14 @@ no case covers; the wizard then offers to mark them as the pre-Seldon
 baseline, which dismisses them and keeps the events.
 [Concepts](02-concepts.md#baseline) explains it.
 
-The wizard ends with what it set up:
+The wizard ends with what it set up, for example (your numbers differ):
 
 ```text
 Logbook     ~/Seldon (English, git repository)
 Config      ~/.config/seldon/config.toml; list noisy or secret files in its [redaction] skipPaths
 Recording   snapshots, packages, Omarchy updates, plugins, themes, config files
 Agents      Claude Code hooks (user-wide)
-History     1692 event(s) since 2026-07-01; 82 drift item(s) marked as the pre-Seldon baseline
+History     1500 event(s) since 2026-07-01; 40 drift item(s) marked as the pre-Seldon baseline
 Snapshots   not readable yet; optional, Seldon works without them
 
 Seldon is recording. Nothing else to do.

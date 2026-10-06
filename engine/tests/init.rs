@@ -812,6 +812,15 @@ mod setup {
         assert_eq!(dossier["sections"]["hardware.summary"], "written");
         assert_eq!(dossier["sections"]["packages.summary"], "skipped");
         assert!(!next.iter().any(|s| s == "seldon dossier"), "{next:?}");
+        // its warnings leave one step, with their count (WP-118)
+        let warnings = dossier["warnings"].as_array().unwrap().len();
+        assert!(warnings > 0, "{dossier}");
+        assert!(
+            next.iter().any(
+                |s| s == &format!("seldon dossier   # the first run had {warnings} warning(s)")
+            ),
+            "{next:?}"
+        );
         let hardware = common::read(&env.tmp.path().join("logbook/system/hardware.md"));
         assert!(
             hardware.contains("- cpu: Intel(R) Core(TM) i7-14700K\n"),
@@ -960,6 +969,30 @@ mod setup {
                 .unwrap()
                 .iter()
                 .any(|s| s.as_str().unwrap().starts_with("seldon drift"))
+        );
+        // the History row says what the baseline did (WP-118)
+        let human_env = Env::new(Snapper::NoPermissions);
+        let human = init_with(
+            &human_env,
+            &log,
+            &["--since", "2026-08-01", "--baseline"],
+            &[("SELDON_OMARCHY", &omarchy(&human_env))],
+        );
+        assert_eq!(human.status.code(), Some(0), "{}", stderr(&human));
+        let text = stdout(&human);
+        let row = text
+            .lines()
+            .find(|l| l.starts_with("History     "))
+            .unwrap_or_default();
+        assert!(
+            row.starts_with(&format!("History     {written} event(s) since 2026-08-01")),
+            "{text}"
+        );
+        assert!(
+            row.ends_with(&format!(
+                "; {open} drift item(s) marked as the pre-Seldon baseline"
+            )),
+            "{text}"
         );
 
         let drift = env.seldon(&["--json", "drift"]);

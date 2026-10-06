@@ -612,8 +612,9 @@ fn baseline_note(items: usize, crisis: usize) -> String {
         String::new()
     };
     format!(
-        "The backfill opened {items} drift item(s){crisis}: changes from before Seldon.\n\
-         The baseline dismisses them with the reason \"{BASELINE_REASON}\"."
+        "The backfill opened {items} drift item(s){crisis}:\n\
+         changes from before Seldon. The baseline dismisses them with the\n\
+         reason \"{BASELINE_REASON}\"."
     )
 }
 
@@ -821,10 +822,13 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
     Ok(c)
 }
 
-/// The wizard's questions (WP-118). Each fits on one line of the
-/// presentation terminal (876 px, about 70 columns after dialoguer's
-/// marks): a prompt that wraps is drawn twice. Explanations go above a
-/// question as plain lines ([`THEME_HOOK_NOTE`], [`BACKFILL_NOTE`]).
+/// The wizard's questions (WP-118). Each is drawn on one line of a
+/// 70-column terminal, dialoguer's marks included ([`rendered_width`]):
+/// a prompt or list item that wraps is drawn twice, because dialoguer
+/// clears one line per logical line. Omarchy's presentation terminal is
+/// wider (about 120 columns); 70 leaves room for a narrow window.
+/// Explanations go above a question as plain lines ([`THEME_HOOK_NOTE`],
+/// [`BACKFILL_NOTE`], [`baseline_note`]).
 pub mod prompts {
     pub const PATH: &str = "Where should the logbook live?";
     pub const CUSTOM_PATH: &str = "Logbook path";
@@ -834,44 +838,56 @@ pub mod prompts {
     pub const WATCH_PATHS: &str = "Watched config paths";
     pub const MORE_PATHS: &str = "More paths, comma-separated (empty for none)";
     pub const HARNESSES: &str = "Agent setup (space toggles, enter confirms)";
-    pub const THEME_HOOK: &str = "Record theme switches instantly? (installs an Omarchy hook)";
-    pub const GIT: &str = "Make the logbook a git repository with a first commit?";
-    pub const BACKFILL: &str = "Backfill since (YYYY-MM-DD; empty: from now on)";
+    pub const THEME_HOOK: &str = "Record theme switches instantly?";
+    pub const GIT: &str = "Keep the logbook in git, with a first commit?";
+    pub const BACKFILL: &str = "Backfill since (YYYY-MM-DD; empty for none)";
     pub const BASELINE: &str = "Mark them as the pre-Seldon baseline?";
-
-    pub const ALL: [&str; 12] = [
-        PATH,
-        CUSTOM_PATH,
-        LANGUAGE,
-        OBSIDIAN,
-        COLLECTORS,
-        WATCH_PATHS,
-        MORE_PATHS,
-        HARNESSES,
-        THEME_HOOK,
-        GIT,
-        BACKFILL,
-        BASELINE,
-    ];
 }
 
-/// The longest prompt in [`prompts`] and the widest line of a note.
-pub const PROMPT_WIDTH: usize = 60;
-pub const NOTE_WIDTH: usize = 72;
+/// The terminal width every wizard line fits in ([`prompts`]).
+pub const WIZARD_COLUMNS: usize = 70;
+
+/// How dialoguer's `ColorfulTheme` draws a question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptKind {
+    /// `? <prompt> (y/n) › yes`
+    Confirm,
+    /// `? <prompt> › <answer>`, with an answer of `answer` columns
+    Input { answer: usize },
+    /// `? <prompt> ›` above `❯ <item>` / `⬚ <item>` lines
+    List,
+}
+
+/// Columns the line of a question takes on screen, dialoguer's marks
+/// included (dialoguer 0.12, `ColorfulTheme`).
+pub fn rendered_width(kind: PromptKind, prompt: &str) -> usize {
+    let text = prompt.chars().count();
+    match kind {
+        PromptKind::Confirm => "? ".len() + text + " (y/n) › yes".chars().count(),
+        PromptKind::Input { answer } => "? ".len() + text + " › ".chars().count() + answer,
+        PromptKind::List => "? ".len() + text + " ›".chars().count(),
+    }
+}
+
+/// Columns a list item takes on screen (`⬚ <item>`).
+pub fn rendered_item_width(item: &str) -> usize {
+    "⬚ ".chars().count() + item.chars().count()
+}
 
 /// What the wizard says before it asks for the theme hook.
 pub const THEME_HOOK_NOTE: &str = "\
-The next capture records a theme switch anyway. Omarchy's theme-set hook
-(`omarchy hook install theme-set`) records it the moment it happens.";
+The next capture records a theme switch anyway. Yes installs
+Omarchy's theme-set hook (`omarchy hook install theme-set`), which
+records it the moment it happens.";
 
 /// What the wizard says before it asks for a backfill. Under ADR-0028
 /// most of an older history is routine; what is left opens as drift and
 /// can be marked as the baseline right after the capture.
 pub const BACKFILL_NOTE: &str = "\
-A new logbook records changes from now on. A backfill also records older
-changes (the package log, snapshots). Most of them are routine history;
-the rest you can mark as the pre-Seldon baseline in one step after the
-capture. The events stay in the ledger either way.";
+A new logbook records changes from now on. A backfill also records
+older changes (the package log, snapshots). Most of them are routine
+history; the rest you can mark as the pre-Seldon baseline in one step
+after the capture. The events stay in the ledger either way.";
 
 /// The wizard's agent items, in [`HARNESSES`] order, as (name, label).
 /// The Omarchy-Agent kit is a private template, not Omarchy's agent: it
@@ -884,7 +900,7 @@ pub fn harness_items(kit_present: bool) -> Vec<(&'static str, &'static str)> {
             let label = match *name {
                 "claude-code" => "Claude Code hooks (user-wide)",
                 "omarchy-agent" => "Omarchy-Agent kit (private template)",
-                "skills" => "Seldon agent skill (into the agent skill folders that exist)",
+                "skills" => "Seldon agent skill (into existing skill folders)",
                 other => other,
             };
             (*name, label)
@@ -1102,48 +1118,93 @@ mod tests {
         std::fs::remove_dir_all(&home).unwrap();
     }
 
-    /// WP-118: the wizard's texts, pinned, each on one line of the
-    /// presentation terminal; the notes say nothing about a red pill.
+    /// WP-118: the wizard's texts, pinned, each drawn on one line of a
+    /// 70-column terminal with dialoguer's marks; the notes say nothing
+    /// about a red pill.
     #[test]
     fn wizard_texts_fit_and_say_what_0_1_4_does() {
-        for prompt in prompts::ALL {
-            assert!(prompt.chars().count() <= PROMPT_WIDTH, "{prompt}");
+        use PromptKind::{Confirm, Input, List};
+        // a date for the backfill, a short answer for the rest
+        let questions = [
+            (prompts::PATH, List),
+            (prompts::CUSTOM_PATH, Input { answer: 20 }),
+            (prompts::LANGUAGE, List),
+            (prompts::OBSIDIAN, Confirm),
+            (prompts::COLLECTORS, List),
+            (prompts::WATCH_PATHS, List),
+            (prompts::MORE_PATHS, Input { answer: 20 }),
+            (prompts::HARNESSES, List),
+            (prompts::THEME_HOOK, Confirm),
+            (prompts::GIT, Confirm),
+            (prompts::BACKFILL, Input { answer: 10 }),
+            (prompts::BASELINE, Confirm),
+        ];
+        // one column short of the edge: a line that fills it puts the
+        // cursor past it on some terminals
+        for (prompt, kind) in questions {
+            assert!(
+                rendered_width(kind, prompt) < WIZARD_COLUMNS,
+                "{prompt}: {} columns",
+                rendered_width(kind, prompt)
+            );
+        }
+        // dialoguer's marks, counted as on screen
+        assert_eq!(rendered_width(Confirm, prompts::THEME_HOOK), 46);
+        assert_eq!(
+            rendered_width(Confirm, "x"),
+            "? x (y/n) › yes".chars().count()
+        );
+        assert_eq!(rendered_width(List, "x"), "? x ›".chars().count());
+        assert_eq!(
+            rendered_width(Input { answer: 1 }, "x"),
+            "? x › a".chars().count()
+        );
+        let items: Vec<&str> = harness_items(true).into_iter().map(|(_, l)| l).collect();
+        let watch = Config::default().watch_paths;
+        for item in items
+            .iter()
+            .copied()
+            .chain(Collectors::NAMES)
+            .chain(watch.iter().map(String::as_str))
+        {
+            assert!(rendered_item_width(item) < WIZARD_COLUMNS, "{item}");
         }
         for note in [
             THEME_HOOK_NOTE,
             BACKFILL_NOTE,
             SNAPPER_OPTIONAL,
             SNAPPER_RECOMMENDED,
+            &baseline_note(123_456, 123_456),
         ] {
             for line in note.lines() {
-                assert!(line.chars().count() <= NOTE_WIDTH, "{line}");
+                assert!(line.chars().count() < WIZARD_COLUMNS, "{line}");
             }
         }
-        for (_, label) in harness_items(true) {
-            assert!(label.chars().count() <= PROMPT_WIDTH, "{label}");
-        }
-        assert_eq!(
-            prompts::THEME_HOOK,
-            "Record theme switches instantly? (installs an Omarchy hook)"
-        );
+        assert_eq!(prompts::THEME_HOOK, "Record theme switches instantly?");
         assert_eq!(
             THEME_HOOK_NOTE,
-            "The next capture records a theme switch anyway. Omarchy's theme-set hook\n\
-             (`omarchy hook install theme-set`) records it the moment it happens."
+            "The next capture records a theme switch anyway. Yes installs\n\
+             Omarchy's theme-set hook (`omarchy hook install theme-set`), which\n\
+             records it the moment it happens."
         );
         assert_eq!(
             BACKFILL_NOTE,
-            "A new logbook records changes from now on. A backfill also records older\n\
-             changes (the package log, snapshots). Most of them are routine history;\n\
-             the rest you can mark as the pre-Seldon baseline in one step after the\n\
-             capture. The events stay in the ledger either way."
+            "A new logbook records changes from now on. A backfill also records\n\
+             older changes (the package log, snapshots). Most of them are routine\n\
+             history; the rest you can mark as the pre-Seldon baseline in one step\n\
+             after the capture. The events stay in the ledger either way."
         );
         assert!(!BACKFILL_NOTE.contains("red") && !BACKFILL_NOTE.contains("crises"));
+        assert_eq!(
+            prompts::GIT,
+            "Keep the logbook in git, with a first commit?"
+        );
         assert_eq!(prompts::BASELINE, "Mark them as the pre-Seldon baseline?");
         assert_eq!(
-            baseline_note(82, 0),
-            "The backfill opened 82 drift item(s): changes from before Seldon.\n\
-             The baseline dismisses them with the reason \"pre-Seldon baseline\"."
+            baseline_note(40, 0),
+            "The backfill opened 40 drift item(s):\n\
+             changes from before Seldon. The baseline dismisses them with the\n\
+             reason \"pre-Seldon baseline\"."
         );
         assert!(baseline_note(5, 2).starts_with("The backfill opened 5 drift item(s) (2 crisis):"));
     }
@@ -1156,10 +1217,7 @@ mod tests {
             harness_items(false),
             [
                 ("claude-code", "Claude Code hooks (user-wide)"),
-                (
-                    "skills",
-                    "Seldon agent skill (into the agent skill folders that exist)"
-                ),
+                ("skills", "Seldon agent skill (into existing skill folders)"),
             ]
         );
         assert_eq!(
@@ -1167,10 +1225,7 @@ mod tests {
             [
                 ("claude-code", "Claude Code hooks (user-wide)"),
                 ("omarchy-agent", "Omarchy-Agent kit (private template)"),
-                (
-                    "skills",
-                    "Seldon agent skill (into the agent skill folders that exist)"
-                ),
+                ("skills", "Seldon agent skill (into existing skill folders)"),
             ]
         );
     }

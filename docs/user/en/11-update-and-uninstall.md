@@ -21,16 +21,19 @@ and refuses on a mismatch. With the GitHub CLI (`gh`) installed and
 logged in it also verifies the build provenance (`gh attestation
 verify`): the download must come from the project's release workflow for
 that release's tag, or nothing is installed. Without `gh` one note says
-that only the checksum was checked. When your logbook is set up and the
-plugin is installed, it ends with "Your logbook is already set up;
-nothing else to do." Update the plugin too
-([Update the plugin](#update-the-plugin)): it cannot see by itself that a
-newer one exists.
+that only the checksum was checked. Its next steps leave out what you
+have: no `seldon init` when your logbook is set up, no plugin line when
+the plugin is installed. When nothing is left it says "Your logbook is
+already set up; nothing else to do." With zsh installed, the `fpath=(…)`
+line below is printed on every run instead: it is for the zsh
+completions and needs nothing once it is in your `~/.zshrc`. Update the
+plugin too ([Update the plugin](#update-the-plugin)): it cannot see by
+itself that a newer one exists.
 
 It also installs the man page (`man seldon`) and the Tab completions for
 bash, zsh and fish, each for a shell that is installed on your machine.
 For zsh it prints one `fpath=(…)` line to add to `~/.zshrc` before
-`compinit`.
+`compinit`, on every run (it does not check whether you added it).
 
 | Option | Effect |
 |---|---|

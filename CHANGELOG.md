@@ -461,12 +461,14 @@ and the package does not exist yet. Update the plugin first:
   no `seldon doctor` on a clean run; `--json` keeps every key and adds
   `optionalSteps`. In the wizard the backfill note no longer promises a
   red pill (most older changes are routine history, ADR-0028); the theme
-  hook question is short, with its explanation on the line above, so it
-  is no longer printed twice in a narrow terminal; the Omarchy-Agent kit
+  hook question is short ("Record theme switches instantly?"), with its
+  explanation on the lines above; every question and list item fits a
+  70-column terminal, so none is drawn twice; the git question reads
+  "Keep the logbook in git, with a first commit?"; the Omarchy-Agent kit
   is offered only when its directory exists, as "Omarchy-Agent kit
   (private template)"; the agent items read "Claude Code hooks
-  (user-wide)" and "Seldon agent skill (into the agent skill folders
-  that exist)".
+  (user-wide)" and "Seldon agent skill (into existing skill folders)".
+
 ### Plugin
 
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts
@@ -559,8 +561,7 @@ and the package does not exist yet. Update the plugin first:
   host; `--dry-run` shows the plan, `--release vX.Y.Z` brings the host
   back to a release. Productive machines keep running releases only
   (WP-098).
-
-- **install.sh says what it does (WP-118).** It starts with one line:
+- **install.sh says what it does (WP-118).** It starts with two lines:
   where it installs the engine, as your user, without a password, and
   that the download is checked first. Its next steps follow what is
   there: no `seldon init` when Seldon's `config.toml` exists, no plugin
@@ -571,6 +572,7 @@ and the package does not exist yet. Update the plugin first:
   panel's new banner titles and buttons in Troubleshooting, and in
   Update and uninstall what Omarchy's plugin update shows and the way
   out for a plugin 0.1.0 panel.
+
 ## [0.1.3] - 2026-10-05
 
 ### Engine

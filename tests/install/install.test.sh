@@ -692,6 +692,24 @@ out=$(env -i HOME="$RUN_HOME" XDG_CONFIG_HOME="$RUN_HOME/xdg" PATH="$work/trap:$
   SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
   SELDON_INSTALL_SHARE="$share" bash "$script" 2>&1) || rc=$?
 check "XDG_CONFIG_HOME config: nothing else to do" has "Your logbook is already set up; nothing else to do."
+# a relative XDG_CONFIG_HOME is ignored, as by the engine: ~/.config counts,
+# and a config under the relative path in the working directory does not
+next_home relxdg config plugin
+mkdir -p "$RUN_HOME/cwd/rel" "$RUN_HOME/cwd2/rel/seldon"
+touch "$RUN_HOME/cwd2/rel/seldon/config.toml"
+rc=0
+out=$(cd "$RUN_HOME/cwd" && env -i HOME="$RUN_HOME" XDG_CONFIG_HOME=rel PATH="$work/trap:$work/gh-ok:$work/shells:$work/host" \
+  SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
+  SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
+  SELDON_INSTALL_SHARE="$share" bash "$script" 2>&1) || rc=$?
+check "relative XDG_CONFIG_HOME: ~/.config counts" has "Your logbook is already set up; nothing else to do."
+rm "$RUN_HOME/.config/seldon/config.toml"
+rc=0
+out=$(cd "$RUN_HOME/cwd2" && env -i HOME="$RUN_HOME" XDG_CONFIG_HOME=rel PATH="$work/trap:$work/gh-ok:$work/shells:$work/host" \
+  SELDON_INSTALL_DOWNLOAD_URL="file://$work/releases/download" \
+  SELDON_INSTALL_API_URL="file://$work/releases/latest.json" \
+  SELDON_INSTALL_SHARE="$share" bash "$script" 2>&1) || rc=$?
+check "relative XDG_CONFIG_HOME: a config under it does not count" has "  seldon init        create your logbook"
 RUN_HOME=""
 
 # ---- 9. uninstall ------------------------------------------------------------

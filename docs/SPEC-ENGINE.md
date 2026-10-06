@@ -2145,8 +2145,10 @@ paths (defaults shown) → agent setup (`claude-code`, `skills`, and
 template, WP-118) → theme hook (a note above a short yes/no question,
 default no) → git → backfill (a note: older changes are mostly routine
 history, the rest can be marked as the baseline; then a date or empty).
-Every question fits on one line of the presentation terminal; an
-explanation is a plain line above it (a prompt that wraps is drawn twice). Then `init` runs, in order
+Every question and list item, dialoguer's marks included, fits on one
+line of a 70-column terminal (Omarchy's presentation terminal is wider);
+an explanation is a plain line above it (a prompt or item that wraps is
+drawn twice). Then `init` runs, in order
 (WP-024): `config.toml` saved with the choices (first, WP-074: a save that
 fails writes nothing into the logbook folder, so the same `init` runs
 again once it is fixed; `[git] autocommit = false` when git is declined,
