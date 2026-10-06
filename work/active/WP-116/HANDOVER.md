@@ -339,3 +339,110 @@ Decisions (brief silent):
 | M24 | no marker after migrating | `once_with_the_foreign_entries_kept` |
 | M25 | migrates without hooks in the logbook | `nothing_without_hooks_…` |
 | M26 | migration not called | all three other `migration::*` tests |
+
+## Round 2
+
+Brief: `review-0.1.1/handovers/WP-116-round-2-brief.md` (private), after
+stage 1 APPROVE of `a0f4f57` with seven non-blocking findings
+(`WP-116-review-1.md`); built on round 1b (`184f4e4`).
+
+```
+WP-116 ROUND 2
+Done: N1 and N2 tests (both stage-1 survivors now killed); N3 PWD for the launcher; N4 narrower marker (ADR-0032, proposed) with session-end handling, docs "never set it yourself", hand-down names servers and multiplexers; N5 wizard wording; N6 skill wording; N7 no "unedited" commit over the user's own uncommitted AGENTS.md changes; scope check before setup() with a before/after bench; the round-1b migration kept as one marked call
+Not done: nothing of the brief
+Verified by: flock /tmp/seldon-check.lock just check → exit 0 (`check: ok`) on 343b6c2; 10 new manual mutants killed (one after a test was added)
+Decisions needed: ADR-0032's acceptance (written as proposed); the round-1b migration ruling (operator, asked by the orchestrator)
+```
+
+### Commits
+
+- `868c5da` engine: marker serves an open case only; scope before setup; PWD; own-change rules not committed
+- `7ff67a6` docs: ADR-0032 (proposed) and round-2 docs
+- `84e971c` docs: German guide 04 and 05 follow
+- `343b6c2` engine: test that the marker's case status decides, not only its folder
+- (this section)
+
+### Per item
+
+1. **N1** `session_scope::a_marker_that_is_no_case_id_serves_nothing`
+   now also starts a session *inside* the logbook with `not-a-case`, a
+   marker with a line break and `C-2099-999`: served by the folder, no
+   `Launched by` line, the raw value never in the context. **N2**
+   `post_tool_use::the_id_elsewhere_in_a_line_does_not_count`: an
+   in-window event that holds the id as its `sessionId` (another
+   `toolUseId`) does not stop the call from being recorded.
+2. **N3** `launch()` sets `PWD` to the start folder.
+   `start_folder::the_launcher_gets_pwd` uses an awk script as a named
+   launcher (a shell stub would reset `PWD` itself) with a stale `PWD`
+   in the caller: the launcher sees `~/Work` from `$HOME`.
+3. **N4** `launched_case(logbook)` reads `work/active/` and serves only
+   a case whose own status is active or verification. ADR-0030 §1 said
+   "a value that parses as a case id"; **ADR-0032** (new, *proposed*:
+   the brief is the orchestrator's decision, I did not mark it accepted
+   for the operator) amends §1 clause (b) and §3, linked from ADR-0030's
+   head and `DECISIONS.md`. Consequence I had to handle (R2-D1): the
+   agent closes its case before its session ends, so `session-stop`
+   would have lost the journal line acceptance 7 expects. It now also
+   serves a call with a well-formed marker whose `session_id` has
+   events in the ledger — the session that ran the case; a server's
+   later session recorded nothing and stays unserved. Docs: guide 04/05
+   en/de, SPEC §8, rules v4 en/de, SKILL.md, AGENT-GUIDE ("never set it
+   yourself"; the hand-down now reads "another agent process, a job, a
+   timer or a server that outlives your step (tmux, an editor server)").
+   v4 is not released, so the block text changed without a new version.
+4. **N5** wizard item: "Claude Code hooks into ~/.claude/settings.json
+   (user-wide; Seldon records only logbook sessions and those it
+   launches; claude-code)".
+5. **N6** SKILL.md: "`hooks.scope` in `seldon doctor --json` is
+   `"all"`".
+6. **N7** before writing the silent upgrade, `git status --porcelain --
+   AGENTS.md`; with an uncommitted change of the user's the update is
+   written, not committed (`Commit::Skipped`, reason in `--json
+   rulesUpdated.git`), and the `note:` line ends "; not committed:
+   AGENTS.md has uncommitted changes of yours; the update goes with your
+   next commit". Test `a_silent_upgrade_of_a_file_with_own_changes_is_not_committed`.
+7. **Scope before setup.** `served()` opens config and logbook and runs
+   `in_scope` (clause (a) first: it reads no file) before `Setup`
+   (watch-path scope, skip-path globs) is built, in `hook claude-code`
+   and `hook generic` (there also before the actor and `startedAt`
+   checks, so an unrelated session's bad input costs nothing either).
+   Bench `claude_code::fast_enough_for_an_unrelated_session` (ignored,
+   `just check-perf`; budget 1 ms, process start included; 10 000 ledger
+   lines; median of 20; two runs each, quiet host):
+
+   | hook | before | after |
+   |---|---|---|
+   | claude-code | 706 / 724 µs | 686 / 698 µs |
+   | session-start | 844 / 867 µs | 844 / 866 µs (already checked first) |
+   | generic | 885 / 887 µs | 838 / 836 µs |
+
+   What remains is the process start plus reading `config.toml` and the
+   logbook's `.seldon/logbook.toml`, which the check itself needs.
+8. The round-1b migration stays one call in `capture::upgrade_defaults`,
+   marked with a comment; deleting that line makes it doctor-only.
+
+### Mutants (round 2)
+
+| # | Mutant | Caught by |
+|---|---|---|
+| M27 | dedup confirmation `toolUseId ==` → `true` (stage-1 R6) | `the_id_elsewhere_in_a_line_does_not_count` |
+| M28 | launch line from the raw env (stage-1 R9) | `a_marker_that_is_no_case_id_serves_nothing` |
+| M29 | marker: no status check | `a_closed_status_in_the_active_folder_serves_nothing` (added after it survived: the folder alone excluded closed cases) |
+| M30 | marker: any well-formed id | `narrow_marker::*` |
+| M31 | marker: verification not open | `a_closed_case_ends_its_session_and_serves_nothing_more` |
+| M32 | session-stop without the session exception | same |
+| M33 | session exception without ledger events | `narrow_marker::*` |
+| M34 | no `PWD` | `the_launcher_gets_pwd` |
+| M35 | rules committed despite own changes | `a_silent_upgrade_of_a_file_with_own_changes_is_not_committed` |
+| M36 | rules never committed | `a_silent_upgrade_is_committed_alone` |
+
+Not a behavioural mutant: the order "scope before setup" (only the bench
+shows it).
+
+### Note for the merge
+
+`main` gained `3367ccb` (user-owned root probe in `common::Env`). The
+round-1b test `migration::never_as_root` sets `SELDON_TEST_ROOT_PROBE=/`
+on the command itself, which overrides the new default; the other
+migration tests rely on the default probe being a user, which `main`
+now provides under CI's root too.
