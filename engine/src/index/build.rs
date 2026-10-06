@@ -755,21 +755,16 @@ fn drift_weeks(events: &[Event], today: NaiveDate, classifier: &Classifier) -> V
     };
     let mut sorted: Vec<&Event> = events.iter().collect();
     sorted.sort_by(|a, b| newest_first(b, a));
-    let tx_key = |e: &'_ Event| -> Option<String> {
-        e.tx_id
-            .as_deref()
-            .filter(|_| e.source == Source::Pacman)
-            .map(String::from)
-    };
+
     let caseless =
         |e: &Event| e.source.is_drift_eligible() && e.case.is_none() && e.kind != Kind::Resolution;
     // which caseless events opened an item: the members of every group
     // whose class is not routine (every group under `attention = "all"`)
     let mut groups: Vec<Vec<&Event>> = Vec::new();
-    let mut by_tx: HashMap<String, usize> = HashMap::new();
+    let mut by_tx: HashMap<&str, usize> = HashMap::new();
     for e in sorted.iter().copied().filter(|e| caseless(e)) {
-        match tx_key(e) {
-            Some(tx) => match by_tx.get(&tx) {
+        match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
+            Some(tx) => match by_tx.get(tx) {
                 Some(&i) => groups[i].push(e),
                 None => {
                     by_tx.insert(tx, groups.len());

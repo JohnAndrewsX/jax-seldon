@@ -22,13 +22,11 @@
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
 use super::drift::AlwaysRed;
-use crate::collectors::config::SkipPaths;
 use crate::config::{AttentionMode, DriftConfig};
 use crate::model::event::{Event, Kind, Source};
 use crate::pkgcmd::{PacmanCommand, parse_command, split_logged};
@@ -115,8 +113,8 @@ pub struct Rules {
     pub attention: AttentionMode,
     pub always_red: AlwaysRed,
     routine: HashSet<String>,
-    routine_paths: SkipPaths,
-    always_red_paths: SkipPaths,
+    routine_paths: PathGlobs,
+    always_red_paths: PathGlobs,
     routine_packages: HashSet<String>,
 }
 
@@ -132,15 +130,84 @@ fn glob_path(subject: &str) -> String {
     }
 }
 
+/// `routinePaths` and `alwaysRedPaths`: the `[redaction] skipPaths` glob
+/// syntax (`collectors::config::SkipPaths`, SPEC-ENGINE §7) on a subject
+/// as [`glob_path`] writes it, without a regex (an index build compiles
+/// nothing). A pattern with a `/` matches the whole path, anywhere at a
+/// directory boundary when it is not absolute; one without matches the
+/// last component; `*` and `?` stay in one component, `**` crosses them;
+/// a match on a directory covers everything below it.
+#[derive(Debug, Default)]
+struct PathGlobs {
+    paths: Vec<String>,
+    names: Vec<String>,
+}
+
+impl PathGlobs {
+    fn new(patterns: &[String]) -> Self {
+        let mut globs = PathGlobs::default();
+        for p in patterns.iter().map(|p| p.trim()).filter(|p| !p.is_empty()) {
+            let p = p.trim_end_matches('/');
+            if !p.contains('/') && p != "~" {
+                globs.names.push(p.to_string());
+            } else {
+                globs.paths.push(glob_path(p));
+            }
+        }
+        globs
+    }
+
+    fn matches(&self, path: &str) -> bool {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        self.names
+            .iter()
+            .any(|n| glob_match(n.as_bytes(), name.as_bytes(), true))
+            || self.paths.iter().any(|p| {
+                let (p, t) = (p.as_bytes(), path.as_bytes());
+                if p.first() == Some(&b'/') {
+                    return glob_match(p, t, false);
+                }
+                // at the start or after any `/`
+                std::iter::once(0)
+                    .chain(
+                        t.iter()
+                            .enumerate()
+                            .filter(|(_, c)| **c == b'/')
+                            .map(|(i, _)| i + 1),
+                    )
+                    .any(|at| glob_match(p, &t[at..], false))
+            })
+    }
+}
+
+/// Whether `pat` matches all of `text` (`whole`), or a prefix of it that
+/// ends at its end or before a `/` (a directory and what lies below).
+fn glob_match(pat: &[u8], text: &[u8], whole: bool) -> bool {
+    match pat.split_first() {
+        None => text.is_empty() || (!whole && text[0] == b'/'),
+        Some((b'*', rest)) if rest.first() == Some(&b'*') => {
+            let rest = &rest[1..];
+            (0..=text.len()).any(|i| glob_match(rest, &text[i..], whole))
+        }
+        Some((b'*', rest)) => {
+            let span = text.iter().position(|&c| c == b'/').unwrap_or(text.len());
+            (0..=span).any(|i| glob_match(rest, &text[i..], whole))
+        }
+        Some((b'?', rest)) => {
+            text.first().is_some_and(|&c| c != b'/') && glob_match(rest, &text[1..], whole)
+        }
+        Some((&c, rest)) => text.first() == Some(&c) && glob_match(rest, &text[1..], whole),
+    }
+}
+
 impl Rules {
     pub fn new(config: &DriftConfig) -> Self {
-        let home = Path::new(HOME_KEY);
         Rules {
             attention: config.attention,
             always_red: AlwaysRed::new(&config.always_red),
             routine: config.routine.iter().cloned().collect(),
-            routine_paths: SkipPaths::new(home, &config.routine_paths),
-            always_red_paths: SkipPaths::new(home, &config.always_red_paths),
+            routine_paths: PathGlobs::new(&config.routine_paths),
+            always_red_paths: PathGlobs::new(&config.always_red_paths),
             routine_packages: config.routine_packages.iter().cloned().collect(),
         }
     }
@@ -268,7 +335,7 @@ impl Rules {
             }
         }
         let path = glob_path(&e.subject);
-        if self.routine_paths.matches(Path::new(&path))
+        if self.routine_paths.matches(&path)
             && let Some(v) = self.routine("routine-paths")
         {
             return v;
@@ -276,7 +343,7 @@ impl Rules {
         if removed {
             return Verdict::new(Class::Attention, "config-remove");
         }
-        if self.always_red_paths.matches(Path::new(&path)) && !inert_hook(&e.subject) {
+        if self.always_red_paths.matches(&path) && !inert_hook(&e.subject) {
             return Verdict::new(Class::Crisis, "always-red-paths");
         }
         if let Some(rest) = e.subject.strip_prefix(THEMES_DIR)
@@ -432,6 +499,8 @@ impl<'a> Classifier<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::model::event::Meta;
 
@@ -1127,6 +1196,71 @@ mod tests {
         ] {
             assert!(!package_shaped(v), "{v}");
         }
+    }
+
+    /// The regex-free matcher agrees with `SkipPaths` (the `skipPaths`
+    /// syntax it promises) on the defaults and on the syntax's cases.
+    #[test]
+    fn path_globs_agree_with_skip_paths() {
+        use crate::collectors::config::SkipPaths;
+        let mut patterns: Vec<String> = DriftConfig::default().routine_paths;
+        patterns.extend(DriftConfig::default().always_red_paths);
+        patterns.extend(
+            [
+                "*.key",
+                "id_?sa",
+                "**/tokens/*.json",
+                "app/secret.conf",
+                "~/.config/omarchy/private/",
+                "a.b",
+                "~",
+            ]
+            .map(String::from),
+        );
+        let subjects = [
+            "~/.config/omarchy/shell.json",
+            "~/.config/omarchy/shell.json.x",
+            "~/.config/hypr/hyprland.lua.bak.1786539345",
+            "~/.bak.x",
+            "x.bak.1",
+            "~/.config/systemd/user/a.service",
+            "~/.config/systemd/user/default.target.wants/b.service",
+            "~/.config/systemd/userx/a",
+            "~/.config/systemd/user",
+            "~/.config/omarchy/hooks/post-boot",
+            "~/.config/omarchy/hooks/post-update.d/x.sh",
+            "~/.profile",
+            "~/.profile.d/x",
+            "~/.profiles",
+            "~/.bash_profile",
+            "~/.config/x/server.key",
+            "~/.config/x/server.keys",
+            "~/.ssh/id_rsa",
+            "~/.config/app/tokens/gh.json",
+            "~/.config/app/tokens/sub/gh.json",
+            "~/.config/app/secret.conf",
+            "~/.config/myapp/secret.conf",
+            "~/.config/omarchy/private/a/b",
+            "~/.config/omarchy/privateer",
+            "/x/aXb",
+            "/x/a.b",
+            "/etc/pacman.conf",
+            "~",
+        ];
+        let ours = PathGlobs::new(&patterns);
+        for p in &patterns {
+            let one = PathGlobs::new(std::slice::from_ref(p));
+            let theirs = SkipPaths::new(Path::new(HOME_KEY), std::slice::from_ref(p));
+            for s in subjects {
+                let path = glob_path(s);
+                assert_eq!(
+                    one.matches(&path),
+                    theirs.matches(Path::new(&path)),
+                    "{p} on {s}"
+                );
+            }
+        }
+        assert!(ours.matches(&glob_path("~/.config/uwsm/env")));
     }
 
     #[test]
