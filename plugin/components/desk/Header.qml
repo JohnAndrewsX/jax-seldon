@@ -7,14 +7,17 @@ import "../../Model.js" as Model
 
 // The desk's header row (ADR-0034 §2): the mark and "SELDON" over machine ·
 // Omarchy version · captured N ago; the status chip when a notice is up
-// (the first notice's title and how many more; a click folds the notices
-// under the header); the KPI strip; Settings (`,`) and Esc.
+// (the first notice's title and how many more, or "N notices" where the
+// title does not fit; a click folds the notices under the header); the KPI strip; Settings (`,`) and Esc.
 Item {
   id: root
 
   property string subline: ""
   property var kpis: []
   property string chipText: ""
+  // How many notices the chip stands for; when its title does not fit
+  // between the mark and the KPI strip, the chip says "N notices".
+  property int chipCount: 0
   property string chipTone: ""
   property bool noticesFolded: false
   property color foreground: Color.popups.text
@@ -26,6 +29,7 @@ Item {
   readonly property var mark: Model.panelMark(capMetrics.tightBoundingRect.height, root.dpr)
   readonly property string markFile: headerMark.file
   readonly property bool markReady: headerMark.ready
+  readonly property string chipShown: chip.visible ? chipLabel.text : ""
   readonly property color chipColor: root.chipTone === "urgent" ? root.urgent
     : root.chipTone === "neutral" ? root.foreground : root.accent
 
@@ -85,15 +89,24 @@ Item {
     }
   }
 
+  TextMetrics {
+    id: chipFull
+    font: chipLabel.font
+    text: "▾ " + root.chipText
+  }
+
   BorderSurface {
     id: chip
+    readonly property real room: Math.max(0, kpiStrip.x - brand.x - brand.width - Style.spacing.huge * 2)
+    readonly property bool fits: chipFull.advanceWidth + Style.spacing.xl * 2 <= room
+    readonly property string shown: fits ? root.chipText
+      : root.chipCount === 1 ? "1 notice" : root.chipCount + " notices"
     objectName: "deskChip"
     visible: root.chipText !== ""
     anchors.left: brand.right
     anchors.leftMargin: Style.spacing.huge
     anchors.verticalCenter: parent.verticalCenter
-    width: Math.min(chipLabel.implicitWidth + Style.spacing.xl * 2,
-      Math.max(0, kpiStrip.x - brand.x - brand.width - Style.spacing.huge * 2))
+    width: Math.min(chipLabel.implicitWidth + Style.spacing.xl * 2, chip.room)
     height: chipLabel.implicitHeight + Style.spacing.sm * 2
     radius: height / 2
     color: Style.selectedFillFor(root.chipColor, root.chipColor)
@@ -105,7 +118,7 @@ Item {
       width: parent.width - Style.spacing.xl * 2
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
-      text: (root.noticesFolded ? "▸ " : "▾ ") + root.chipText
+      text: (root.noticesFolded ? "▸ " : "▾ ") + chip.shown
       color: root.chipColor
       elide: Text.ElideRight
       font.family: root.fontFamily

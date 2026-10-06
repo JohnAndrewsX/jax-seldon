@@ -361,7 +361,9 @@ clean_log stacked
 #    the header's chip.
 # 7a. Snapper not readable (ADR-0026, WP-054): the notice with Run in
 #     terminal and Check again; after the click, the hint under the buttons.
-run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 "summon;click:Run in terminal" \
+#     On a narrow desk the chip's title does not fit beside the KPI strip:
+#     it says "1 notice".
+run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 "summon;click:Run in terminal;resize:1000x900" \
   HARNESS_RECORD="$work/snapper.record"
 expect snapper 1 '.view.notices | join(",")' "Snapshots not readable"
 expect snapper 1 .view.chip "Snapshots not readable"
@@ -369,6 +371,9 @@ shows snapper 1 'sudo setfacl -m u:$USER:rx /.snapshots'
 shows snapper 1 "Check again"
 expect snapper 1 '[.texts[] | select(. == "When the command has finished, press Check again")] | length' 0
 shows snapper 2 "When the command has finished, press Check again"
+expect snapper 1 .view.chipShown "▾ Snapshots not readable"
+expect snapper 3 .view.chipShown "▾ 1 notice"
+expect snapper 3 '.overflow | join(" | ")' ""
 clean_log snapper
 
 # 7b. Not initialised: the status notice with its pictogram's fix, no KPI

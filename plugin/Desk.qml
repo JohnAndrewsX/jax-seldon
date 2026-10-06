@@ -347,6 +347,7 @@ Item {
       notices: notices.items.map(function(n) { return n.banner.title }),
       noticesFolded: root.noticesFolded,
       chip: header.chipText,
+      chipShown: header.chipShown,
       settings: {
         stored: root.storedWidth,
         sidebar: root.sidebarPref,
@@ -460,6 +461,7 @@ Item {
             kpis: Model.deskKpis(root.indexData)
             chipText: notices.items.length === 0 ? ""
               : notices.items[0].banner.title + (notices.items.length > 1 ? " +" + (notices.items.length - 1) : "")
+            chipCount: notices.items.length
             chipTone: notices.items.length === 0 ? "" : String(notices.items[0].banner.tone || "")
             noticesFolded: root.noticesFolded
             foreground: root.foreground
