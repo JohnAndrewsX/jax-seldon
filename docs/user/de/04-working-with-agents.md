@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 1a11d7b -->
+<!-- source: en/04-working-with-agents.md @ e2da66f -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -339,10 +339,10 @@ vorher.
 
 Ein Agent, der außerhalb des Logbuch-Ordners startet, liest die
 `AGENTS.md` des Logbuchs nie. Gib ihm die Regeln mit dem
-[Agentenskill](#der-agentenskill): Dann weiß Claude Code, Codex, Pi,
-OpenCode oder Hermes, gestartet aus Omarchys Agentenmenü, mit
-`omarchy agent crash` oder von Hand in irgendeinem Ordner, dass es einen
-Case finden oder anlegen muss, bevor es die Maschine ändert.
+[Agentenskill](#der-agentenskill): Dann weiß jeder Agent, der einen der
+Skill-Ordner unten liest, gestartet aus Omarchys Agentenmenü, mit
+`omarchy agent crash` oder von Hand in irgendeinem Ordner, dass er einen
+Case finden oder anlegen muss, bevor er die Maschine ändert.
 
 Ein Agent ohne Seldons Hooks — Codex, ein Skript, ein eigener Agent,
 Claude Code außerhalb des Logbuchs — meldet sich bei Seldon mit drei
