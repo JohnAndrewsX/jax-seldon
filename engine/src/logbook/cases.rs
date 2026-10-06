@@ -403,6 +403,128 @@ pub fn append_log(body: &str, line: &str) -> String {
     out
 }
 
+/// `body` with the content of its `## Intent` section replaced by `text`
+/// (a new case's body, WP-101). A body without an Intent section gets one
+/// before `## Plan`, else before `## Log`, else at the end.
+pub fn put_intent(body: &str, text: &str) -> String {
+    let nl = if body.contains("\r\n") { "\r\n" } else { "\n" };
+    let text: String = text.trim().lines().collect::<Vec<_>>().join(nl);
+    if let Some(range) = section(body, "Intent") {
+        let tail = if range.end == body.len() { "" } else { nl };
+        return format!(
+            "{}{text}{nl}{tail}{}",
+            &body[..range.start],
+            &body[range.end..]
+        );
+    }
+    let block = format!("## Intent{nl}{text}{nl}{nl}");
+    match heading_start(body, "Plan").or_else(|| heading_start(body, "Log")) {
+        Some(at) => format!("{}{block}{}", &body[..at], &body[at..]),
+        None => {
+            let mut out = body.to_string();
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push_str(nl);
+            }
+            if !out.is_empty() && !out.ends_with(&format!("{nl}{nl}")) {
+                out.push_str(nl);
+            }
+            out.push_str(block.trim_end());
+            out.push_str(nl);
+            out
+        }
+    }
+}
+
+/// The text of the `## Intent` section, trimmed ("" when there is none).
+pub fn intent(body: &str) -> &str {
+    section(body, "Intent").map_or("", |r| body[r].trim())
+}
+
+/// Free text as section content of a case: a line that Markdown or
+/// [`section`] would read as a heading or a code fence (`#`, three
+/// backticks or tildes, after leading blanks) gets a `\` in front, so the
+/// text can never end its section or hide the ones after it.
+pub fn escape_lines(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let t = line.trim_start();
+            if t.starts_with('#') || t.starts_with("```") || t.starts_with("~~~") {
+                format!("{}\\{t}", &line[..line.len() - t.len()])
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `text` without HTML comments (`<!-- … -->`; an unclosed one runs to the
+/// end).
+pub fn strip_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find("<!--") {
+        out.push_str(&rest[..open]);
+        match rest[open + 4..].find("-->") {
+            Some(close) => rest = &rest[open + 4 + close + 3..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// What an agent's close lacks (ADR-0027 §5): the *Result* has no text
+/// (comments do not count), and *Plan › Verification* — the `Verification:`
+/// item of the Plan with its indented continuation lines — has none.
+/// Empty when both are filled.
+pub fn close_gaps(body: &str) -> Vec<&'static str> {
+    let mut gaps = Vec::new();
+    let result = section(body, "Result").map_or("", |r| &body[r]);
+    if strip_comments(result).trim().is_empty() {
+        gaps.push("its Result is empty");
+    }
+    if !verification_filled(body) {
+        gaps.push("its Plan › Verification is not filled in");
+    }
+    gaps
+}
+
+/// Whether the Plan's `Verification:` item (case-insensitive, as a list
+/// item or a plain line) has text after the colon or in the lines indented
+/// below it.
+fn verification_filled(body: &str) -> bool {
+    let Some(range) = section(body, "Plan") else {
+        return false;
+    };
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let lines: Vec<&str> = body[range].lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        let item = line.trim_start();
+        let item = ["- ", "* ", "+ "]
+            .iter()
+            .find_map(|m| item.strip_prefix(m))
+            .unwrap_or(item)
+            .trim_start();
+        let Some(head) = item.get(..13) else {
+            continue;
+        };
+        if !head.eq_ignore_ascii_case("verification:") {
+            continue;
+        }
+        let mut text = item[13..].to_string();
+        for next in &lines[i + 1..] {
+            if !next.trim().is_empty() && indent(next) <= indent(line) {
+                break;
+            }
+            text.push('\n');
+            text.push_str(next);
+        }
+        return !strip_comments(&text).trim().is_empty();
+    }
+    false
+}
+
 /// The `## Plan` checkboxes (`- [ ]`, `- [x]`): (total, done).
 pub fn plan_steps(body: &str) -> (usize, usize) {
     let Some(range) = section(body, "Plan") else {
@@ -671,6 +793,85 @@ mod tests {
     fn log_line_is_one_line() {
         let line = log_line(&now(), "a\nb\r\n  c", "agent:x");
         assert_eq!(line, "- 2026-10-01 09:05 · a b c · agent:x");
+    }
+
+    #[test]
+    fn the_intent_replaces_the_section_content() {
+        let template = "# C-1 — T\n\n## Intent\n<!-- Why? -->\n\n## Plan\n- Goal:\n";
+        assert_eq!(
+            put_intent(template, "  Do it.\nNow.  \n"),
+            "# C-1 — T\n\n## Intent\nDo it.\nNow.\n\n## Plan\n- Goal:\n"
+        );
+        assert_eq!(intent(&put_intent(template, "x")), "x");
+        // CRLF stays CRLF; an Intent at the end of the body
+        assert_eq!(
+            put_intent("## Intent\r\nold\r\n", "a\nb"),
+            "## Intent\r\na\r\nb\r\n"
+        );
+        // no Intent section: before Plan, else Log, else at the end
+        assert_eq!(
+            put_intent("# T\n\n## Plan\n", "x"),
+            "# T\n\n## Intent\nx\n\n## Plan\n"
+        );
+        assert_eq!(
+            put_intent("# T\n\n## Log\n", "x"),
+            "# T\n\n## Intent\nx\n\n## Log\n"
+        );
+        assert_eq!(put_intent("# T", "x"), "# T\n\n## Intent\nx\n");
+        assert_eq!(intent("# T\n"), "");
+    }
+
+    #[test]
+    fn escaped_lines_open_no_section_and_no_fence() {
+        let text = "Do it.\n## Log\n  # x\n```\n~~~sh\nok # not first";
+        let escaped = escape_lines(text);
+        assert_eq!(
+            escaped,
+            "Do it.\n\\## Log\n  \\# x\n\\```\n\\~~~sh\nok # not first"
+        );
+        let body = put_intent(
+            "## Intent\n\n## Plan\n- Verification: x\n\n## Log\n\n## Result\nr\n",
+            &escaped,
+        );
+        assert_eq!(headings(&body).len(), 4, "{body}");
+        assert!(close_gaps(&body).is_empty());
+    }
+
+    #[test]
+    fn comments_are_not_text() {
+        assert_eq!(strip_comments("a<!-- b -->c<!-- d"), "ac");
+        assert_eq!(strip_comments("<!--\nx\n-->\n"), "\n");
+        assert_eq!(strip_comments("plain"), "plain");
+    }
+
+    #[test]
+    fn close_gaps_name_what_an_agent_close_lacks() {
+        let body = |verification: &str, result: &str| {
+            format!(
+                "## Intent\nx\n\n## Plan\n- Goal: g\n{verification}- Rollback: r\n\n## Log\n\n## Result\n{result}"
+            )
+        };
+        let both = [
+            "its Result is empty",
+            "its Plan › Verification is not filled in",
+        ];
+        assert_eq!(close_gaps(&body("- Verification:\n", "")), both);
+        assert_eq!(
+            close_gaps(&body("- Verification: <!-- later -->\n", "<!-- x -->\n")),
+            both
+        );
+        assert_eq!(close_gaps(&body("", "done\n")), [both[1]]);
+        assert!(close_gaps(&body("- Verification: `zed --version`\n", "ok\n")).is_empty());
+        assert!(close_gaps(&body("* verification:\n  - `pacman -Q zed`\n", "ok\n")).is_empty());
+        assert!(close_gaps(&body("Verification: it runs\n", "ok\n")).is_empty());
+        // a sibling item below is not the verification's text
+        assert_eq!(close_gaps(&body("- Verification:\n", "ok\n")), [both[1]]);
+        // a Verification outside the Plan does not count
+        assert_eq!(
+            close_gaps("## Plan\n- Goal:\n\n## Log\n- Verification: x\n\n## Result\nok\n"),
+            [both[1]]
+        );
+        assert_eq!(close_gaps("no sections"), both);
     }
 
     #[test]
