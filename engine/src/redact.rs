@@ -45,7 +45,11 @@
 //! holds one of its literal triggers ([`triggers`]); a command line
 //! without `://`, `=`, a token prefix, … compiles none of them, and a
 //! `curl` line compiles a `curl` rule only when it also holds that rule's
-//! option (`-u`, `-x`, `-b`, …).
+//! option (`-u`, `-x`, `-b`, …), a case-sensitive one as written (`-U`,
+//! `-E`) and, where a match needs it, in order (`-E` and then the `:` of
+//! its value; `://` and then `@`). An option rule compiles the pattern
+//! that finds its option again in the same command only when the rest
+//! holds that option (WP-108).
 //!
 //! The rules for an option of a command (`curl -u`, `sshpass -p`,
 //! `docker login -p`) look for it within one command ([`COMMAND_REST`]:
@@ -450,8 +454,9 @@ pub fn holds_trigger(text: &str, lower: &str, trigger: &str) -> bool {
 /// (any one of them, see [`holds_trigger`]): in lower case as
 /// [`trigger_text`] spells it, or with a capital as written where the
 /// rule is case-sensitive. A rule is tried only when the text holds one;
-/// the replacement `‹redacted›` holds no literal of them, so the text
-/// after an earlier rule needs no new check.
+/// the replacement `‹redacted›` holds no literal of them, and the text
+/// it leaves keeps its order, so the text after an earlier rule needs no
+/// new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
         // the `@` after the scheme: a URL without userinfo holds none
