@@ -1122,9 +1122,15 @@ same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The
 `seldon` notes (§3 state reset, §4 snapper) are events and are redacted
-the same way; the snapper note's detail embeds the collector's message,
-which `cursors.json`, `capture --json` and `index.json`
-(`state.collectors`, no event) carry as the collector gave it (WP-099).
+the same way (WP-099). A collector's message (snapper's stderr, for
+example) goes through the same redaction once, before the capture saves
+it in `cursors.json`, prints it (`capture` and `capture --json`) or
+embeds it in the snapper note; a capture also redacts the messages an
+older engine saved in `cursors.json` when it loads the file, and the
+index build redacts each message it reads from there again, so
+`index.json` (`state.collectors`) and `STATUS.md` hold none unredacted;
+with an invalid `[redaction] patterns` entry the index uses the built-in
+rules (WP-105).
 The rules
 (`redact::BUILTIN`, in this order): URLs with userinfo; `--password`
 (also wget's `--http-password` and `--ftp-password`);
