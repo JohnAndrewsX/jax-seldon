@@ -6,7 +6,10 @@
 //!   snapshot's description (the rules have the agent write
 //!   `-d "<ID>"`), else the case of the agent's recorded `snapper …
 //!   create` / `omarchy-snapshot create` (hook `command` events, subject
-//!   [`SNAPSHOT_SUBJECT`]) in the [`ATTRIBUTION_WINDOW`] before it.
+//!   [`SNAPSHOT_SUBJECT`]) in its window, `[date − ATTRIBUTION_WINDOW,
+//!   date + SKEW]`; one command owns one snapshot, and commands of two
+//!   cases in one window fill nothing but tell each case (WP-101 round 2).
+//!   `plan snapshot`'s checks follow as Log lines.
 //! - **A pruned rollback.** A `snapshot-delete` of a number that is some
 //!   case's `snapshotBefore` (not dropped): `rollback for <ID> pruned
 //!   (snapshot N)`; `seldon doctor` shows it too.

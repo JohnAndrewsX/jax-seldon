@@ -794,6 +794,14 @@ mod reopen {
         ));
         let v = ok(&run(&env, T3, None, &["plan", "reopen", "C-2026-001"]));
         assert_eq!(v["activeCase"]["set"], v["case"]["id"]);
+        // a stale marker that names a completed case holds nothing
+        std::fs::write(root.join(".seldon/active-case"), "C-2026-001\n").unwrap();
+        let v = ok(&run(&env, T3, None, &["plan", "reopen", "C-2026-001"]));
+        assert_eq!(v["activeCase"]["set"], v["case"]["id"]);
+        assert_eq!(
+            read(&root.join(".seldon/active-case")).trim(),
+            v["case"]["id"].as_str().unwrap()
+        );
     }
 
     #[test]
