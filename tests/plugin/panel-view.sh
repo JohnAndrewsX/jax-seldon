@@ -367,7 +367,7 @@ expect work 3 .view.work.cursor C-2026-005
 expect work 4 .view.work.cursor C-2026-003
 expect work 4 '.view.work.card.actions | join(",")' "Verify,Start agent,Drop,Open"
 shows work 4 "agent: claude-code"
-shows work 4 "red · R2"
+shows work 4 "red · R3"
 shows work 4 "shell · priority high · 4/5 steps"
 shows work 4 "created 2026-09-26 · started 2026-10-01"
 expect work 5 .view.work.cursor C-2026-008

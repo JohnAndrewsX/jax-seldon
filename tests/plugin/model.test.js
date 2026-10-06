@@ -979,17 +979,17 @@ test("periodTable: the sample's counts per period", () => {
   const table = M.periodTable(ok.index)
   assert.strictEqual(table.today, "2026-10-01")
   const rows = (p) => table.periods[p].slots.map((s) => s.id + "=" + s.rows).join(",")
-  assert.strictEqual(rows("30"), "heatmap=30,series=2,driftBars=5,riskDonut=3,timeline=17,plan=2")
-  assert.strictEqual(rows("90"), "heatmap=90,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
-  assert.strictEqual(rows("365"), "heatmap=365,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
-  assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
+  assert.strictEqual(rows("30"), "heatmap=30,series=2,driftBars=5,riskDonut=4,timeline=17,plan=2")
+  assert.strictEqual(rows("90"), "heatmap=90,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
+  assert.strictEqual(rows("365"), "heatmap=365,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
+  assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
   same(s30.map((s) => s.detail), ["57 events", "Explicit 324 → 327", "13 opened · 9 resolved",
-    "R0 1 · R1 3 · R2 4 · R3 0 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
+    "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
   assert.strictEqual(table.periods["90"].slots[0].detail, "62 events")
-  same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 4, R3: 0 })
+  same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
   assert.strictEqual(M.periodView(table, "365").window.period, "365")
@@ -1222,11 +1222,11 @@ test("driftChart: weeks with gaps filled, peak, hover text", () => {
 
 test("riskChart: shares, part at an angle, all time", () => {
   const r = M.periodTable(ok.index).periods["30"].charts.riskDonut
-  same(r.numbers, { total: 8, R0: 1, R1: 3, R2: 4, R3: 0 })
-  same(r.parts.map((p) => [p.risk, p.count, p.from, p.to]), [["R0", 1, 0, 0.125], ["R1", 3, 0.125, 0.5], ["R2", 4, 0.5, 1], ["R3", 0, 1, 1]])
-  assert.strictEqual(r.summary, "8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time")
-  same([0, 0.1, 0.125, 0.49, 0.5, 0.99, 1.0, -0.25].map((f) => M.riskPartAt(r, f)), [0, 0, 1, 1, 2, 2, 0, 2])
-  same([M.riskPartText(r.parts[0]), M.riskPartText(r.parts[2])], ["R0 · 1 case · 13% · all time", "R2 · 4 cases · 50% · all time"])
+  same(r.numbers, { total: 8, R0: 1, R1: 3, R2: 3, R3: 1 })
+  same(r.parts.map((p) => [p.risk, p.count, p.from, p.to]), [["R0", 1, 0, 0.125], ["R1", 3, 0.125, 0.5], ["R2", 3, 0.5, 0.875], ["R3", 1, 0.875, 1]])
+  assert.strictEqual(r.summary, "8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time")
+  same([0, 0.1, 0.125, 0.49, 0.5, 0.99, 1.0, -0.25].map((f) => M.riskPartAt(r, f)), [0, 0, 1, 1, 2, 3, 0, 2])
+  same([M.riskPartText(r.parts[0]), M.riskPartText(r.parts[2])], ["R0 · 1 case · 13% · all time", "R2 · 3 cases · 38% · all time"])
   // The same object for every period (no dates).
   const t = M.periodTable(ok.index)
   assert.ok(t.periods["30"].charts.riskDonut === t.periods["all"].charts.riskDonut)
