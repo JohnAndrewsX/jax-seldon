@@ -53,7 +53,7 @@ repo=$work/repo
 mkdir -p "$L" "$R/omarchy/bin" "$R/bin" "$R/run"
 printf '# test hosts\n%s  # the fake one\nother-host\n' "$host" >"$work/hosts"
 # the fake host's machine-id, as the probe reads it (the stub runs here)
-remote_id=$(cat /etc/machine-id 2>/dev/null || hostname)
+remote_id=$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname)
 printf '# alias machine-id\n# %s 0000-a-commented-pin\nother-host 1111\n%s %s  # pinned\n' "$host" "$host" "$remote_id" >"$work/pins"
 
 # make-seldon <version> prints a seldon that answers what the smoke asks
@@ -110,8 +110,9 @@ EOF
 # ---- remote stubs -----------------------------------------------------------------
 # plain tools the remote scripts use, nothing else
 for t in bash sh cat chmod mkdir mv cp rm install touch date sed awk grep find sort xargs sha256sum \
-  cut mktemp tar rsync jq base64 id ls seq sleep hostname dirname stat env tr head tail wc; do
-  ln -s "$(command -v "$t")" "$R/bin/$t"
+  cut mktemp tar rsync jq base64 id ls seq sleep dirname stat env tr head tail wc; do
+  p=$(command -v "$t") || { echo "deploy-test-host.test: needs $t on PATH" >&2; exit 1; }
+  ln -s "$p" "$R/bin/$t"
 done
 cat >"$R/omarchy/bin/omarchy-shell" <<EOF
 #!/bin/bash
@@ -196,9 +197,9 @@ make_release v0.1.2
 # reset_remote — the host as the operator left it: release engine 0.1.3, the
 # plugin as a release git clone, unlocked.
 reset_remote() {
-  rm -rf "$R/home" "$R/calls" "$R/lock.json" "$R/restart_rc" "$R/doctor_rc" "$R/validate_rc" \
-    "$R/service_version" "$R/restart_notice" "$R/capture_rc" "$R/no_session" "$R/watch_active" \
-    "$R/watch_restart_rc"
+  rm -rf "${R:?}/home" "${R:?}/calls" "${R:?}/lock.json" "${R:?}/restart_rc" "${R:?}/doctor_rc" "${R:?}/validate_rc" \
+    "${R:?}/service_version" "${R:?}/restart_notice" "${R:?}/capture_rc" "${R:?}/no_session" "${R:?}/watch_active" \
+    "${R:?}/watch_restart_rc"
   mkdir -p "$R/home/.local/bin" "$R/home/.config/omarchy/plugins/jax.seldon/.git"
   fake_seldon 0.1.3 >"$R/home/.local/bin/seldon"
   chmod 755 "$R/home/.local/bin/seldon"
@@ -261,7 +262,7 @@ deploy() {
 has() { grep -qF -- "$1" <<<"$out"; }
 called() { grep -qF -- "$1" "$R/calls" 2>/dev/null; }
 count() { grep -cF -- "$1" "$R/calls" 2>/dev/null || true; }
-show() { sed 's/^/     | /' <<<"$out"; }
+show() { local l; while IFS= read -r l; do printf '     | %s\n' "$l"; done <<<"$out"; }
 pdir=$R/home/.config/omarchy/plugins/jax.seldon
 short=$(git -C "$repo" rev-parse --short HEAD)
 
@@ -290,7 +291,7 @@ TEST_HOST=other refused "a prefix of a listed host" "is not listed" "$log"
 TEST_HOST=the refused "a word of a comment" "is not listed" "$log"
 TEST_HOST=-oProxyCommand=x refused "an ssh option as host" "not a plain ssh alias" "$log"
 HOSTS_FILE=$work/no-such-file refused "no host list" "no test host list" "$log"
-LOCAL_ID=$(cat /etc/machine-id 2>/dev/null || hostname) refused "the host is this machine" "is this machine" "$log"
+LOCAL_ID=$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname) refused "the host is this machine" "is this machine" "$log"
 # the machine-id pin (scripts/deploy-hosts.local)
 printf '%s 0123456789abcdef0123456789abcdef\n' "$host" >"$work/pins-wrong"
 rm -f "$work/ssh.log"

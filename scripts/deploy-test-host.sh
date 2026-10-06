@@ -219,7 +219,7 @@ else
   tools="curl git jq sha256sum find xargs omarchy omarchy-shell omarchy-restart-shell"
 fi
 probe=$(rsh "tools='$tools'"'
-echo "id=$(cat /etc/machine-id 2>/dev/null || hostname)"
+echo "id=$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname)"
 missing=""
 for t in $tools; do command -v "$t" >/dev/null 2>&1 || missing+=" $t"; done
 echo "missing=${missing# }"
@@ -234,7 +234,7 @@ echo "engine=$(seldon --version --json 2>/dev/null | jq -r ".version // empty" 2
 echo "pending=$([[ -f $dev_dir/restart-pending ]] && echo 1 || echo 0)"
 echo "lock=$(lock_free && echo free || echo held)"' </dev/null) \
   || refuse "cannot reach $host over ssh"
-local_id=${SELDON_DEPLOY_LOCAL_ID:-$(cat /etc/machine-id 2>/dev/null || hostname)}
+local_id=${SELDON_DEPLOY_LOCAL_ID:-$(cat /etc/machine-id 2>/dev/null || cat /proc/sys/kernel/hostname)}
 remote_id=$(value id "$probe")
 [[ $remote_id != "$local_id" ]] || refuse "$host is this machine; the test host must be another one"
 # The alias must still lead to the machine the orchestrator pinned: an ssh
