@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ 1bae1cd -->
+<!-- source: en/03-daily-use.md @ e3463b2 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
@@ -66,7 +66,7 @@ Theme Tokyo Night. Dein Panel nimmt dein Theme und zeigt deine Daten.
 *Beispieldaten.*
 
 Today zeigt das Datum und die Zahlen des Tages: Ereignisse heute und in
-sieben Tagen, aktive und geplante Cases, offene Drift. Darunter liegt das
+sieben Tagen, aktive und geplante Cases, Änderungen ohne Case. Darunter liegt das
 Notizfeld: Notiz tippen, Enter drücken, und sie landet über `seldon log`
 im heutigen Journal. Wähl unter dem Feld einen offenen Case, um die
 Notiz unter ihm abzulegen. Das Feld leert sich erst, wenn die Notiz
