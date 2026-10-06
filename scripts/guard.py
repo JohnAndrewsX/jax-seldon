@@ -1271,15 +1271,16 @@ class Guard:
             return [c.rstrip("/") + "/" + d + "/" + UNK for c in scope.get(".cwd", [UNK])]
         return [c.rstrip("/") + "/" + UNK for c in scope.get(".cwd", [UNK])]
 
-    TILDE_RE = re.compile(r"~([A-Za-z0-9._-]*|[+-])(?=/|$)")
+    TILDE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*=)?~([A-Za-z0-9._-]*|[+-])(?=/|$)")
 
     def options(self, parts, scope, ctx, tilde):
         """Each part with its possible values."""
         parts = list(parts)
         if tilde and parts and parts[0][0] == "lit" and not parts[0][2]:
             m = self.TILDE_RE.match(parts[0][1])
-            if m:
-                parts = [("tilde", m.group(1), False), ("lit", parts[0][1][m.end():], False)] + parts[1:]
+            if m:  # `~/x`, and `name=~/x` as bash expands it in any word
+                parts = ([("lit", m.group(1), True)] if m.group(1) else []) + [
+                    ("tilde", m.group(2), False), ("lit", parts[0][1][m.end():], False)] + parts[1:]
         opts = []
         for kind, payload, _ in parts:
             if kind == "lit":
@@ -1363,7 +1364,8 @@ class Guard:
 
     def effects(self, cmd, scope, ctx, after):
         """Scope changes of builtins: cd, export, read, unset, eval."""
-        new = dict(after if after is not None else scope)
+        # eval may change variables; its values become candidates beside the old ones
+        new = merge([scope, after]) if after is not None else dict(scope)
         w0 = cmd.words[0]
         if not all(k == "lit" for k, _, _ in w0):
             return new
@@ -1457,8 +1459,9 @@ class Guard:
             i = first_operand(args, "nq", ("--interval", "--equexit"))
             if any(plain(a) in ("-x", "--exec") for a in args[:i]):
                 return wrapped(args[i:])
-            return self.run_script(" ".join(args[i:]), dict(scope), ctx.but(stdin=stdin), "watch") \
-                if args[i:] else None
+            if args[i:]:
+                self.run_script(" ".join(args[i:]), dict(scope), ctx.but(stdin=stdin), "watch")
+            return None
         if name == "script":
             ops, opts = operands(args, "cBEIOTm", ("--command", "--log-in", "--log-out", "--log-io",
                                                   "--log-timing", "--echo", "--logging-format", "--output-limit"))
@@ -1546,6 +1549,9 @@ class Guard:
         return self.check_argv(args[i:], env, ctx, stdin, False, node)
 
     def w_flock(self, args, scope, ctx, stdin, node):
+        for k, a in enumerate(args[:-1]):
+            if plain(a) in ("-c", "--command"):
+                self.run_script(args[k + 1], dict(scope), ctx.but(stdin=stdin), "flock -c")
         i = first_operand(args, "wE", ("--timeout", "--conflict-exit-code"))
         if i >= len(args):
             return None
@@ -1557,7 +1563,7 @@ class Guard:
         if plain(rest[0]) in ("-c", "--command"):
             if len(rest) < 2:
                 raise Unsure("flock -c without a command")
-            return self.run_script(rest[1], dict(scope), ctx.but(stdin=stdin), "flock -c")
+            return None  # checked above
         return self.check_argv(rest, scope, ctx, stdin, False, node)
 
     def w_shell(self, args, scope, ctx, stdin, name):
@@ -1586,7 +1592,8 @@ class Guard:
         if cmode:
             if not rest:
                 raise Unsure(f"{name} -c without a command string")
-            return self.run_script(rest[0], dict(scope), ctx.but(stdin=stdin), f"{name} -c")
+            self.run_script(rest[0], dict(scope), ctx.but(stdin=stdin), f"{name} -c")
+            return None
         if rest and not smode:
             self.sourced(plain(rest[0]), scope, ctx, stdin, name)
             return None

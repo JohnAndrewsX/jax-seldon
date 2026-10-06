@@ -188,6 +188,8 @@ check A 'export HOME=/tmp/h && cd /tmp; mkdir -p ~/.config/seldon'
 check B 'false || export HOME=/tmp/h; mkdir -p ~/.config/x'
 check B 'false && export HOME=/tmp/h; mkdir -p ~/.config/x'
 check B 'export HOME=$X; mkdir -p ~/.config/x'
+check B "HOME=/tmp/h sh -c 'true'; mkdir -p ~/.config/x"
+check B '(HOME=/tmp/h); mkdir -p ~/.config/x'
 # WP-130: sudo setfacl in a test file's text
 check A 'cat >> engine/tests/snapper.rs <<'"'"'EOF'"'"'
 // the operator grants: sudo setfacl -m u:me:rx /.snapshots
@@ -274,6 +276,8 @@ check B 'mkdir ~/.config/omarchy/plugins/jax.seldon/../../hypr'
 check B 'rm -rf ~'
 check B 'rm -rf ~/.config/omarchy/plugins'
 check B 'find ~/.config/hypr -name "*.conf" -delete'
+check B 'dd if=x of=~/.config/hypr/x'
+check B "flock -c 'sudo ls' /tmp/l"
 check B 'rsync -a x/ ~/.config/hypr/'
 check A 'rsync -a plugin/ ~/.config/omarchy/plugins/jax.seldon/'
 check A 'rm -rf ~/.config/omarchy/plugins/jax.seldon && cp -r plugin ~/.config/omarchy/plugins/jax.seldon'

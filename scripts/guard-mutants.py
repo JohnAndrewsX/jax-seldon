@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # (what the mutant drops, text in guard.py, replacement)
 MUTANTS = [
     ("bash -c recursion",
-     'return self.run_script(rest[0], dict(scope), ctx.but(stdin=stdin), f"{name} -c")', "return None"),
+     'self.run_script(rest[0], dict(scope), ctx.but(stdin=stdin), f"{name} -c")', "pass"),
     ("$(…) and backticks are checked", 'if kind in ("cmd", "proc"):', 'if kind in ("proc",):'),
     ("<(…) is checked", 'if kind in ("cmd", "proc"):', 'if kind in ("cmd",):'),
     ("a heredoc fed to a shell is code", "for text in stdin[1]:", "for text in []:"),
