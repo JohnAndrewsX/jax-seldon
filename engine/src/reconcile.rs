@@ -27,6 +27,11 @@
 //!   each event of its own plugin or package
 //!   ([`attribution::own_change`]) the same way: the new ones, and those
 //!   an earlier capture left without a resolution (WP-088).
+//! - **The planned-and-active link** (rule 9, ADR-0029 §1):
+//!   [`planned_links`] links an event without case and resolution, by any
+//!   actor, to the one case whose ledger window held its time and whose
+//!   Plan names its subject; [`link_planned`] writes it after rules 7 and
+//!   8, under the capture's lock, and tells the case files.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -38,15 +43,16 @@ use crate::collectors::config::{self, OwnWrites};
 use crate::config::Dirs;
 use crate::error::{Error, Result};
 use crate::index::Built;
-use crate::index::build::ClassifiedItem;
+use crate::index::build::{ClassifiedItem, r3_advisory};
 use crate::index::class::Class;
+use crate::index::drift::{AlwaysRed, names_token};
 use crate::index::model::IndexEvent;
 use crate::ledger::Ledger;
 use crate::logbook::Logbook;
 use crate::logbook::cases::{self, CaseFile};
 use crate::logbook::lock::Lock;
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Meta, Resolution, Source};
-use crate::model::is_ulid;
+use crate::model::{CaseStatus, Risk, is_ulid};
 
 /// What a `drift link|explain|dismiss` on one event resolves.
 #[derive(Debug, Clone)]
@@ -112,7 +118,17 @@ pub fn item_of<'a>(built: &'a Built, e: &Event) -> Option<&'a ClassifiedItem> {
     if !built.linkable.contains(&e.id) {
         return None;
     }
-    built.items.iter().find(|i| i.members.contains(&e.id))
+    built
+        .items
+        .iter()
+        .chain(&built.reresolvable)
+        .find(|i| i.members.contains(&e.id))
+}
+
+/// Whether `e`'s latest resolution is the engine's (ADR-0029 §3): a
+/// command on it writes a later line that wins.
+pub fn engine_resolved(built: &Built, e: &Event) -> bool {
+    built.reresolvable.iter().any(|i| i.members.contains(&e.id))
 }
 
 /// The open drift members of `e`'s drift item, oldest first: for an open
@@ -426,37 +442,392 @@ pub fn own_change_resolutions(events: &[Event], ts: DateTime<FixedOffset>) -> Ve
 }
 
 /// After every capture (SPEC-ENGINE §5 rule 8): appends the
-/// [`own_change_resolutions`] of the whole ledger, `written` included.
-/// That also catches up on own changes an earlier capture left open (the
-/// engine stopped or the append failed between the two appends, or a
-/// version before rule 8 wrote them, WP-088). When the ledger cannot be
-/// read, only `written` is explained. Returns how many events were
-/// explained, and warnings: the append already happened, so nothing here
-/// fails the capture.
+/// [`own_change_resolutions`] of the whole ledger `all`, `written`
+/// included. That also catches up on own changes an earlier capture left
+/// open (the engine stopped or the append failed between the two appends,
+/// or a version before rule 8 wrote them, WP-088). When the ledger could
+/// not be read (`all` is the error), only `written` is explained. Returns the
+/// lines appended, and warnings: the append already happened, so nothing
+/// here fails the capture.
 pub fn explain_own_changes(
     lock: &Lock,
     ledger: &Ledger,
     written: &[Event],
+    all: std::result::Result<&[Event], &str>,
     ts: DateTime<FixedOffset>,
-) -> (usize, Vec<String>) {
+) -> (Vec<Event>, Vec<String>) {
     let mut warnings = Vec::new();
-    let lines = match ledger.read_all() {
-        Ok(events) => own_change_resolutions(&events, ts),
+    let lines = match all {
+        Ok(events) => own_change_resolutions(events, ts),
         Err(e) => {
-            warnings.push(format!("seldon's earlier own changes not checked: {e:#}"));
+            warnings.push(format!("seldon's earlier own changes not checked: {e}"));
             own_change_resolutions(written, ts)
         }
     };
     if lines.is_empty() {
-        return (0, warnings);
+        return (Vec::new(), warnings);
     }
     match ledger.append(lock, lines) {
-        Ok(lines) => (lines.len(), warnings),
+        Ok(lines) => (lines, warnings),
         Err(e) => {
             warnings.push(format!("seldon's own changes not explained: {e}"));
-            (0, warnings)
+            (Vec::new(), warnings)
         }
     }
+}
+
+/// The detail of a rule-9 `linked` line (ADR-0029 §1).
+pub fn planned_detail(case: &str) -> String {
+    format!("planned by {case}; active at the time")
+}
+
+/// What rule 9 needs of a case: its id and risk, the text of its `## Plan`
+/// as it is now, and whether it is closed now (completed or dropped).
+#[derive(Debug, Clone)]
+pub struct PlanningCase {
+    pub id: String,
+    pub risk: Risk,
+    pub plan: String,
+    pub closed: bool,
+}
+
+impl PlanningCase {
+    pub fn of(file: &CaseFile) -> Self {
+        PlanningCase {
+            id: file.case.id.clone(),
+            risk: file.case.risk,
+            plan: cases::section(&file.doc.body, "Plan")
+                .map(|r| file.doc.body[r].to_string())
+                .unwrap_or_default(),
+            closed: matches!(
+                file.case.status,
+                CaseStatus::Completed | CaseStatus::Dropped
+            ),
+        }
+    }
+}
+
+/// One stretch of time a case was open (active or in verification): from
+/// a `case-started` to the next `case-completed`/`case-dropped`, both ends
+/// included; `end` is `None` while it is still open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Window {
+    pub start: DateTime<FixedOffset>,
+    pub end: Option<DateTime<FixedOffset>>,
+}
+
+impl Window {
+    pub fn holds(&self, ts: DateTime<FixedOffset>) -> bool {
+        self.start <= ts && self.end.is_none_or(|end| ts <= end)
+    }
+}
+
+/// Every case's windows, read from the ledger's case events alone (ADR-0029
+/// §1a): never from the case file's status or dates, never from
+/// `.seldon/active-case`, which keeps no history. A queued case has none.
+pub fn case_windows(events: &[Event]) -> BTreeMap<&str, Vec<Window>> {
+    let mut steps: Vec<&Event> = events
+        .iter()
+        .filter(|e| e.source == Source::Seldon)
+        .filter(|e| {
+            matches!(
+                e.kind,
+                Kind::CaseStarted | Kind::CaseCompleted | Kind::CaseDropped
+            )
+        })
+        .collect();
+    steps.sort_by_key(|e| e.ts);
+    let mut out: BTreeMap<&str, Vec<Window>> = BTreeMap::new();
+    for e in steps {
+        let windows = out.entry(e.subject.as_str()).or_default();
+        let open = windows.last_mut().filter(|w| w.end.is_none());
+        match (e.kind, open) {
+            (Kind::CaseStarted, None) => windows.push(Window {
+                start: e.ts,
+                end: None,
+            }),
+            (Kind::CaseCompleted | Kind::CaseDropped, Some(w)) => w.end = Some(e.ts),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// What rule 9 writes into one case file.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CaseNotes {
+    /// The events linked to it, for its `events:`.
+    pub events: Vec<Event>,
+    /// Its new Log lines, by `system`, each written once.
+    pub log: Vec<String>,
+}
+
+/// What rule 9 writes (ADR-0029 §1).
+#[derive(Debug, Clone, Default)]
+pub struct PlannedLinks {
+    /// One `linked` resolution per linked event, oldest event first.
+    pub lines: Vec<Event>,
+    /// Per case id.
+    pub cases: BTreeMap<String, CaseNotes>,
+}
+
+/// `pacman install glow at 13:40:57`: an event as a Log line names it,
+/// its time in its own offset.
+fn named(e: &Event) -> String {
+    format!(
+        "{} {} {} at {}",
+        e.source,
+        e.kind,
+        e.subject,
+        e.ts.format("%H:%M:%S")
+    )
+}
+
+/// The events rule 9 still takes (ADR-0029 §1): drift eligible, no case,
+/// no resolution line at all (the engine never writes over anyone's).
+fn unresolved(events: &[Event]) -> impl Fn(&Event) -> bool + '_ {
+    let resolved: HashSet<Ulid> = events
+        .iter()
+        .filter(|e| e.kind == Kind::Resolution)
+        .filter_map(|e| e.refers_to)
+        .collect();
+    move |e: &Event| {
+        e.source.is_drift_eligible()
+            && e.kind != Kind::Resolution
+            && e.case.is_none()
+            && !resolved.contains(&e.id)
+    }
+}
+
+/// Whether rule 9 has anything to test: an event it still takes inside
+/// some case's window. Cheap: no case file is read.
+pub fn has_planned_candidates(events: &[Event]) -> bool {
+    let windows = case_windows(events);
+    if windows.is_empty() {
+        return false;
+    }
+    let open = unresolved(events);
+    events
+        .iter()
+        .filter(|e| open(e))
+        .any(|e| windows.values().flatten().any(|w| w.holds(e.ts)))
+}
+
+/// Rule 9, the planned-and-active link (SPEC-ENGINE §5, ADR-0029 §1), over
+/// the whole ledger `events`: every event without case and resolution, of
+/// a drift-eligible source and by any actor, whose time lies in exactly one
+/// case's window ([`case_windows`]) among the `cases` whose Plan names its
+/// subject as a whole-word token (rule 3's test), is linked to that case.
+///
+/// A pacman event of a transaction with an explicit member is tested only
+/// when it is explicit; the transaction's non-explicit members follow
+/// their explicit members' case (when those go to one case only), one
+/// line each, `meta.txId` on every line of a transaction with two or more.
+/// Two or more cases: no link, and each gets a Log line naming the others
+/// (rule 3 still proposes while one is open). Harm guard: an `alwaysRed`
+/// subject links only to an R3 case; below R3 the case gets the R3
+/// advisory instead. Lines: `source: seldon`, actor `system`, `case`,
+/// detail [`planned_detail`], at `now` or the event's time, whichever is
+/// later (WP-088).
+pub fn planned_links(
+    events: &[Event],
+    cases: &[PlanningCase],
+    always_red: &AlwaysRed,
+    now: DateTime<FixedOffset>,
+) -> PlannedLinks {
+    let mut out = PlannedLinks::default();
+    let windows = case_windows(events);
+    if windows.is_empty() {
+        return out;
+    }
+    let open = unresolved(events);
+    let pacman_tx = |e: &Event| {
+        e.tx_id
+            .as_deref()
+            .filter(|_| e.source == Source::Pacman)
+            .map(str::to_string)
+    };
+    let explicit_tx: HashSet<String> = events
+        .iter()
+        .filter(|e| e.explicit == Some(true))
+        .filter_map(pacman_tx)
+        .collect();
+    let follows = |e: &Event| {
+        e.explicit != Some(true) && pacman_tx(e).is_some_and(|tx| explicit_tx.contains(&tx))
+    };
+    let mut cases: Vec<&PlanningCase> = cases.iter().collect();
+    cases.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let mut links: Vec<(&Event, &PlanningCase)> = Vec::new();
+    for e in events.iter().filter(|e| open(e) && !follows(e)) {
+        let planned: Vec<&PlanningCase> = cases
+            .iter()
+            .copied()
+            .filter(|c| {
+                windows
+                    .get(c.id.as_str())
+                    .is_some_and(|ws| ws.iter().any(|w| w.holds(e.ts)))
+            })
+            .filter(|c| names_token(&c.plan, &e.subject))
+            .collect();
+        match planned.as_slice() {
+            [] => {}
+            [c] if always_red.matches(&e.subject) && c.risk != Risk::R3 => {
+                let advisory = format!("advisory: {}", r3_advisory(&c.id, c.risk, &e.subject));
+                out.cases
+                    .entry(c.id.clone())
+                    .or_default()
+                    .log
+                    .push(advisory);
+            }
+            [c] => {
+                links.push((e, c));
+                let line = format!(
+                    "linked after the fact: {} ({})",
+                    named(e),
+                    if c.closed {
+                        "planned here, no capture ran before the close"
+                    } else {
+                        "planned here"
+                    }
+                );
+                out.cases.entry(c.id.clone()).or_default().log.push(line);
+            }
+            several => {
+                for c in several {
+                    let others: Vec<&str> = several
+                        .iter()
+                        .filter(|o| o.id != c.id)
+                        .map(|o| o.id.as_str())
+                        .collect();
+                    let line = format!(
+                        "not linked: {} is planned here and in {}, {} active at the time; \
+                         `seldon drift link {} <CASE>` links it",
+                        named(e),
+                        others.join(", "),
+                        if others.len() == 1 { "both" } else { "all" },
+                        e.id
+                    );
+                    out.cases.entry(c.id.clone()).or_default().log.push(line);
+                }
+            }
+        }
+    }
+
+    // the dependencies follow when their explicit members go to one case
+    let mut tx_cases: HashMap<String, BTreeMap<&str, &PlanningCase>> = HashMap::new();
+    for (e, c) in &links {
+        if let Some(tx) = pacman_tx(e) {
+            tx_cases.entry(tx).or_default().insert(&c.id, c);
+        }
+    }
+    let mut members: Vec<(&Event, &PlanningCase)> = links.clone();
+    for e in events.iter().filter(|e| open(e) && follows(e)) {
+        let tx = pacman_tx(e).expect("a follower has a transaction");
+        if let Some(only) = tx_cases.get(&tx).filter(|cs| cs.len() == 1) {
+            members.push((e, *only.values().next().expect("one case")));
+        }
+    }
+    members.sort_by_key(|(e, _)| (e.ts, e.id));
+    let mut per_tx: HashMap<String, usize> = HashMap::new();
+    for (e, _) in &members {
+        if let Some(tx) = pacman_tx(e) {
+            *per_tx.entry(tx).or_default() += 1;
+        }
+    }
+
+    for (e, c) in &members {
+        let tx_id = pacman_tx(e).filter(|tx| per_tx.get(tx).is_some_and(|n| *n > 1));
+        let mut r = Event::new(
+            now.max(e.ts),
+            Source::Seldon,
+            Kind::Resolution,
+            e.subject.clone(),
+        )
+        .actor(ACTOR_SYSTEM)
+        .case(Some(c.id.clone()))
+        .detail(planned_detail(&c.id))
+        .meta(Meta {
+            tx_id,
+            ..Meta::default()
+        });
+        r.refers_to = Some(e.id);
+        r.resolution = Some(Resolution::Linked);
+        out.lines.push(r);
+        out.cases
+            .entry(c.id.clone())
+            .or_default()
+            .events
+            .push((*e).clone());
+    }
+    out
+}
+
+/// After every capture, after rules 7 and 8 (SPEC-ENGINE §5 rule 9):
+/// appends the [`planned_links`] of the whole ledger `all` under the
+/// capture's lock, then records the linked ids in each case's `events:`
+/// and writes its Log lines (each once: a Log that has the line already
+/// gets none). Case files are read only when some event without a case
+/// lies in a case's window. Returns how many events were linked, and
+/// warnings: the capture's append already happened, so nothing here fails
+/// it.
+pub fn link_planned(
+    lock: &Lock,
+    ledger: &Ledger,
+    logbook: &Logbook,
+    all: &[Event],
+    always_red: &AlwaysRed,
+    now: DateTime<FixedOffset>,
+) -> (usize, Vec<String>) {
+    let mut warnings = Vec::new();
+    if !has_planned_candidates(all) {
+        return (0, warnings);
+    }
+    let files = match cases::all(logbook) {
+        Ok((files, _)) => files,
+        Err(e) => {
+            warnings.push(format!("planned changes not linked: {e}"));
+            return (0, warnings);
+        }
+    };
+    let planning: Vec<PlanningCase> = files.iter().map(PlanningCase::of).collect();
+    let links = planned_links(all, &planning, always_red, now);
+    let linked = if links.lines.is_empty() {
+        0
+    } else {
+        match ledger.append(lock, links.lines) {
+            Ok(lines) => lines.len(),
+            Err(e) => {
+                warnings.push(format!("planned changes not linked: {e}"));
+                return (0, warnings);
+            }
+        }
+    };
+    let ts = ts_index(all);
+    for (id, notes) in links.cases {
+        let Some(mut file) = files.iter().find(|f| f.case.id == id).cloned() else {
+            continue;
+        };
+        let log = cases::section(&file.doc.body, "Log")
+            .map_or(String::new(), |r| file.doc.body[r].to_string());
+        let mut changed = attach(&mut file, &notes.events.iter().collect::<Vec<_>>(), |id| {
+            ts.get(id).copied()
+        }) > 0;
+        let mut added: Vec<String> = Vec::new();
+        for line in &notes.log {
+            // as `log_line` writes it: one line, single spaces
+            let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !log.contains(&line) && !added.contains(&line) {
+                file.log(&now, &line, ACTOR_SYSTEM);
+                added.push(line);
+                changed = true;
+            }
+        }
+        if changed && let Err(e) = file.save(logbook) {
+            warnings.push(format!("{id}: case file not updated: {e}"));
+        }
+    }
+    (linked, warnings)
 }
 
 /// `body` with `text` as the last line of its `## <name>` section (after
@@ -646,6 +1017,297 @@ mod tests {
         let mut caught_up = ledger.to_vec();
         caught_up.extend(lines);
         assert!(own_change_resolutions(&caught_up, now).is_empty());
+    }
+
+    /// Rule 9's fixtures: case events and changes on 2026-10-06, CEST.
+    mod planned {
+        use super::*;
+
+        pub const NOW: &str = "2026-10-06T14:00:00+02:00";
+
+        pub fn at(hm: &str) -> DateTime<FixedOffset> {
+            ts(&format!("2026-10-06T{hm}:00+02:00"))
+        }
+
+        pub fn step(n: u64, hm: &str, kind: Kind, case: &str) -> Event {
+            let mut e = Event::new(at(hm), Source::Seldon, kind, case).case(Some(case.into()));
+            e.id = Ulid::from_parts(n, 0);
+            e
+        }
+
+        pub fn change(n: u64, hm: &str, subject: &str) -> Event {
+            let mut e = Event::new(at(hm), Source::Pacman, Kind::Install, subject).actor("human");
+            e.id = Ulid::from_parts(n, 0);
+            e.explicit = Some(true);
+            e
+        }
+
+        pub fn case(id: &str, risk: Risk, plan: &str) -> PlanningCase {
+            PlanningCase {
+                id: id.into(),
+                risk,
+                plan: plan.into(),
+                closed: true,
+            }
+        }
+
+        pub fn links(events: &[Event], cases: &[PlanningCase]) -> PlannedLinks {
+            let red = AlwaysRed::new(&["linux*".to_string()]);
+            planned_links(events, cases, &red, ts(NOW))
+        }
+
+        /// (event id, case) of every line.
+        pub fn linked(l: &PlannedLinks) -> Vec<(u64, String)> {
+            l.lines
+                .iter()
+                .map(|r| {
+                    let n = (r.refers_to.unwrap().0 >> 80) as u64;
+                    (n, r.case.clone().unwrap())
+                })
+                .collect()
+        }
+    }
+
+    /// ADR-0029 §5 acceptance 3: the window comes from the ledger's case
+    /// events, both ends included; verification stays inside it, a queued
+    /// case has none, a reopened case's predecessor ends at its close, and
+    /// a dropped case's window counts.
+    #[test]
+    fn the_window_is_read_from_the_case_events() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        const B: &str = "C-2026-002";
+        const Q: &str = "C-2026-003";
+        const D: &str = "C-2026-004";
+        let mut ledger = vec![
+            step(1, "10:00", Kind::CaseCreated, A),
+            step(2, "10:00", Kind::CaseStarted, A),
+            step(3, "10:30", Kind::CaseVerified, A),
+            step(4, "11:00", Kind::CaseCompleted, A),
+            // A reopened as B at 11:30
+            step(5, "11:30", Kind::CaseStarted, B),
+            step(6, "10:00", Kind::CaseCreated, Q),
+            step(7, "12:00", Kind::CaseStarted, D),
+            step(8, "12:30", Kind::CaseDropped, D),
+        ];
+        let windows = case_windows(&ledger);
+        assert_eq!(
+            windows[A],
+            [Window {
+                start: at("10:00"),
+                end: Some(at("11:00"))
+            }]
+        );
+        assert_eq!(
+            windows[B],
+            [Window {
+                start: at("11:30"),
+                end: None
+            }]
+        );
+        assert!(!windows.contains_key(Q), "queued: no window");
+        assert!(windows[A][0].holds(at("10:00")) && windows[A][0].holds(at("11:00")));
+        assert!(!windows[A][0].holds(at("09:59")) && !windows[A][0].holds(at("11:01")));
+
+        ledger.extend([
+            change(10, "09:59", "glow"),  // before A started
+            change(11, "10:45", "glow"),  // A in verification
+            change(12, "11:01", "glow"),  // after A's close, before B started
+            change(13, "11:45", "mdcat"), // B open, but A (closed) names it only
+            change(14, "10:15", "fzf"),   // a queued case names it
+            change(15, "12:10", "bat"),   // D's window, D dropped since
+        ]);
+        let cases = [
+            case(A, Risk::R1, "- Steps: install glow and mdcat"),
+            case(B, Risk::R1, "- Steps: install glow"),
+            case(Q, Risk::R1, "- Steps: install fzf"),
+            case(D, Risk::R1, "- Steps: install bat"),
+        ];
+        let l = links(&ledger, &cases);
+        assert_eq!(linked(&l), [(11, A.into()), (15, D.into())]);
+        assert!(has_planned_candidates(&ledger));
+    }
+
+    /// Acceptance 4 and 5: exactly one case; any actor; an event with a
+    /// case or any resolution is left alone; non-drift sources never link.
+    #[test]
+    fn one_case_any_actor_and_never_over_a_resolution() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        const B: &str = "C-2026-002";
+        let mut ledger = vec![
+            step(1, "10:00", Kind::CaseStarted, A),
+            step(2, "10:00", Kind::CaseStarted, B),
+            change(10, "10:10", "glow"),
+            change(11, "10:11", "zed").actor("system"),
+            change(12, "10:12", "fzf").actor("agent:codex"),
+            change(13, "10:13", "bat").case(Some(B.into())),
+            change(14, "10:14", "mdcat"),
+            change(15, "10:15", "htop"),
+        ];
+        let mut note = Event::new(at("10:16"), Source::Seldon, Kind::Note, "glow");
+        note.id = Ulid::from_parts(16, 0);
+        ledger.push(note);
+        let mut dismissed =
+            Event::new(at("10:20"), Source::Seldon, Kind::Resolution, "mdcat").actor("human");
+        dismissed.id = Ulid::from_parts(17, 0);
+        dismissed.refers_to = Some(Ulid::from_parts(14, 0));
+        dismissed.resolution = Some(Resolution::Dismissed);
+        ledger.push(dismissed);
+        let cases = [
+            case(A, Risk::R1, "glow zed fzf bat mdcat htop"),
+            case(B, Risk::R1, "htop"),
+        ];
+        let l = links(&ledger, &cases);
+        assert_eq!(
+            linked(&l),
+            [(10, A.into()), (11, A.into()), (12, A.into())],
+            "human, system, agent; bat has a case, mdcat a resolution, htop two cases"
+        );
+        let r = &l.lines[0];
+        assert_eq!(
+            (r.source, r.kind, r.actor.as_str(), r.resolution, r.ts),
+            (
+                Source::Seldon,
+                Kind::Resolution,
+                ACTOR_SYSTEM,
+                Some(Resolution::Linked),
+                ts(NOW)
+            )
+        );
+        assert_eq!(
+            r.detail.as_deref(),
+            Some("planned by C-2026-001; active at the time")
+        );
+        assert_eq!(l.cases[A].events.len(), 3);
+        assert_eq!(
+            l.cases[A].log[0],
+            "linked after the fact: pacman install glow at 10:10:00 \
+             (planned here, no capture ran before the close)"
+        );
+        let htop = Ulid::from_parts(15, 0);
+        assert_eq!(
+            l.cases[B].log,
+            [format!(
+                "not linked: pacman install htop at 10:15:00 is planned here and in {A}, both \
+                 active at the time; `seldon drift link {htop} <CASE>` links it"
+            )]
+        );
+        assert!(
+            l.cases[A]
+                .log
+                .iter()
+                .any(|x| x.contains(&format!("here and in {B}, both")))
+        );
+
+        // linked: the next pass has nothing left
+        let mut after = ledger.clone();
+        for (i, mut line) in l.lines.into_iter().enumerate() {
+            line.id = Ulid::from_parts(100 + i as u64, 0);
+            after.push(line);
+        }
+        let again = links(&after, &cases);
+        assert!(again.lines.is_empty());
+        // an open case says so in the Log line; a later event time wins
+        let mut late = change(20, "15:00", "glow");
+        late.id = Ulid::from_parts(20, 0);
+        let open = [PlanningCase {
+            closed: false,
+            ..case(A, Risk::R1, "glow")
+        }];
+        let l = links(&[step(1, "10:00", Kind::CaseStarted, A), late], &open);
+        assert_eq!(l.lines[0].ts, at("15:00"));
+        assert_eq!(
+            l.cases[A].log,
+            ["linked after the fact: pacman install glow at 15:00:00 (planned here)"]
+        );
+    }
+
+    /// Acceptance 6: an `alwaysRed` subject links to an R3 case only;
+    /// below R3 the case gets the R3 advisory.
+    #[test]
+    fn the_harm_guard_wants_r3() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        let ledger = [
+            step(1, "10:00", Kind::CaseStarted, A),
+            change(10, "10:10", "linux-zen"),
+        ];
+        let l = links(&ledger, &[case(A, Risk::R3, "linux-zen")]);
+        assert_eq!(linked(&l), [(10, A.into())]);
+        let l = links(&ledger, &[case(A, Risk::R2, "linux-zen")]);
+        assert!(l.lines.is_empty());
+        assert_eq!(
+            l.cases[A].log,
+            [format!(
+                "advisory: {}",
+                r3_advisory(A, Risk::R2, "linux-zen")
+            )]
+        );
+    }
+
+    /// Acceptance 7: the explicit member decides, the dependencies follow
+    /// (one line each, `meta.txId`); a dependency the Plan names is not
+    /// tested on its own; dependencies of explicit members that go to two
+    /// cases stay; a transaction without explicit members tests each.
+    #[test]
+    fn dependencies_follow_their_explicit_member() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        const B: &str = "C-2026-002";
+        let tx = |mut e: Event, tx: &str, explicit: bool| {
+            e.tx_id = Some(tx.into());
+            e.explicit = Some(explicit);
+            e
+        };
+        let ledger = [
+            step(1, "10:00", Kind::CaseStarted, A),
+            step(2, "10:00", Kind::CaseStarted, B),
+            tx(change(10, "10:10", "glow"), "t1", true),
+            tx(change(11, "10:10", "libyaml"), "t1", false),
+            tx(change(12, "10:10", "oniguruma"), "t1", false),
+            tx(change(20, "10:20", "zed"), "t2", true),
+            tx(change(21, "10:20", "bat"), "t2", true),
+            tx(change(22, "10:20", "alsa-lib"), "t2", false),
+            tx(change(30, "10:30", "lua"), "t3", false),
+            tx(change(31, "10:30", "mdcat"), "t3", true),
+            tx(change(40, "10:40", "fzf"), "t4", false),
+        ];
+        let cases = [
+            case(A, Risk::R1, "glow, zed, lua, fzf"),
+            case(B, Risk::R1, "bat"),
+        ];
+        let l = links(&ledger, &cases);
+        assert_eq!(
+            linked(&l),
+            [
+                (10, A.into()),
+                (11, A.into()),
+                (12, A.into()),
+                (20, A.into()),
+                (21, B.into()),
+                (40, A.into()),
+            ],
+            "alsa-lib: zed and bat went to two cases; lua follows mdcat, which no Plan names"
+        );
+        let txs: Vec<Option<&str>> = l.lines.iter().map(|r| r.meta.tx_id.as_deref()).collect();
+        assert_eq!(
+            txs,
+            [
+                Some("t1"),
+                Some("t1"),
+                Some("t1"),
+                Some("t2"),
+                Some("t2"),
+                None
+            ]
+        );
+        assert_eq!(
+            l.cases[A].log.len(),
+            3,
+            "glow, zed, fzf: {:?}",
+            l.cases[A].log
+        );
     }
 
     #[test]

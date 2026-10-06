@@ -14,7 +14,7 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::config::{AttentionMode, DriftConfig};
-use crate::model::event::{Event, Kind, Source, format_ts};
+use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
 
 /// Most events the index lists (CONTRACT.md rule 4).
@@ -65,11 +65,17 @@ pub struct Built {
     /// by an open case's Plan).
     pub open_drift: HashSet<Ulid>,
     /// Ids of every event a resolution may still take (ADR-0028 §8: drift
-    /// eligible, no case, no resolution), routine ones included.
+    /// eligible, no case, no resolution), routine ones included, and those
+    /// the engine resolved (ADR-0029 §3: [`Built::reresolvable`]).
     pub linkable: HashSet<Ulid>,
-    /// Every item of linkable events with its class, newest first,
-    /// uncapped (`drift --all`, `drift show`).
+    /// Every item of unresolved linkable events with its class, newest
+    /// first, uncapped (`drift --all`, `drift show`).
     pub items: Vec<ClassifiedItem>,
+    /// The items of drift-eligible events whose latest resolution the
+    /// engine wrote (actor `system`: SPEC-ENGINE §5 rules 7, 8, 9), grouped
+    /// and classified the same way, never open drift (ADR-0029 §3): `drift
+    /// link|explain|dismiss` writes a later line that wins.
+    pub reresolvable: Vec<ClassifiedItem>,
     /// What could not be read while loading.
     pub warnings: Vec<String>,
 }
@@ -90,13 +96,22 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         ..
     } = loaded;
 
-    let folded = fold(&events);
+    let (folded, by_engine) = fold(&events);
     let rules = Rules::new(&input.drift);
     let classifier = Classifier::new(&rules, &events);
     warnings.extend(r3_advisories(&events, &cases, &rules.always_red));
-    let items = drift_items(&folded, &cases, &classifier);
+    let items = drift_items(&folded, &cases, &classifier, is_linkable, true);
+    // ADR-0029 §3: an engine resolution yields to anyone's later line
+    let reresolvable = drift_items(
+        &folded,
+        &cases,
+        &classifier,
+        |e| e.source.is_drift_eligible() && by_engine.contains(&e.id),
+        false,
+    );
     let linkable: HashSet<Ulid> = items
         .iter()
+        .chain(&reresolvable)
         .flat_map(|i| i.members.iter().copied())
         .collect();
     let open_drift: HashSet<Ulid> = items
@@ -259,6 +274,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         open_drift,
         linkable,
         items,
+        reresolvable,
         warnings,
     }
 }
@@ -339,8 +355,9 @@ fn newest_first(a: &Event, b: &Event) -> std::cmp::Ordering {
 /// Every event except resolutions, with the latest resolution of each
 /// folded onto its target: `resolution`, `resolutionDetail` and, when
 /// the resolution carries one, `case` (ADR-0012 §8, §11, ADR-0021). A resolution counts only for an
-/// event earlier in the ledger.
-fn fold(events: &[Event]) -> Vec<IndexEvent> {
+/// event earlier in the ledger. Also the ids whose folded resolution the
+/// engine wrote (actor `system`, ADR-0029 §3).
+fn fold(events: &[Event]) -> (Vec<IndexEvent>, HashSet<Ulid>) {
     let mut seen: HashSet<Ulid> = HashSet::with_capacity(events.len());
     let mut resolutions: HashMap<Ulid, &Event> = HashMap::new();
     for e in events {
@@ -375,7 +392,12 @@ fn fold(events: &[Event]) -> Vec<IndexEvent> {
             }),
     );
     folded.sort_by(|a, b| newest_first(&a.event, &b.event));
-    folded
+    let by_engine = resolutions
+        .iter()
+        .filter(|(_, r)| r.actor == ACTOR_SYSTEM)
+        .map(|(id, _)| *id)
+        .collect();
+    (folded, by_engine)
 }
 
 /// `text` as the index carries it: unchanged when it takes at most
@@ -510,16 +532,20 @@ pub struct ClassifiedItem {
     pub listed: bool,
 }
 
-/// Every item of linkable events, newest first. Caseless pacman events of
-/// one transaction form one item (ADR-0013 §1); its fields and proposal
-/// are the leader's (ADR-0015 §1). Its class is the highest of its members
-/// (ADR-0028 §2); `zone` is the leader's ledger zone, `crisis` the class.
-/// Under `attention = "all"` every item is open drift and the pacman zone
-/// is computed, crisis iff red (ADR-0013 §3, the rule before ADR-0028).
+/// Every item of the events `take` admits (linkable ones, or those the
+/// engine resolved), newest first. Pacman events of one transaction form
+/// one item (ADR-0013 §1); its fields and proposal are the leader's
+/// (ADR-0015 §1). Its class is the highest of its members (ADR-0028 §2);
+/// `zone` is the leader's ledger zone, `crisis` the class. Under
+/// `attention = "all"` every item is open drift and the pacman zone is
+/// computed, crisis iff red (ADR-0013 §3, the rule before ADR-0028).
+/// Without `open` (resolved events) no item is proposed or listed.
 fn drift_items(
     folded: &[IndexEvent],
     cases: &[LoadedCase],
     classifier: &Classifier,
+    take: impl Fn(&Event) -> bool,
+    open: bool,
 ) -> Vec<ClassifiedItem> {
     let open_cases: Vec<&LoadedCase> = cases.iter().filter(|c| c.case.status.is_open()).collect();
     // one scan of the open Plans per subject: routine items need their
@@ -543,7 +569,7 @@ fn drift_items(
     let mut by_tx: HashMap<&str, usize> = HashMap::new();
     for f in folded {
         let e = &f.event;
-        if !is_linkable(e) {
+        if !take(e) {
             continue;
         }
         match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
@@ -575,7 +601,7 @@ fn drift_items(
                 .iter()
                 .min_by_key(|m| m.id)
                 .expect("an item has members");
-            let proposed_case = proposed(&lead.subject);
+            let proposed_case = if open { proposed(&lead.subject) } else { None };
             let (zone, class, rule) = if legacy {
                 let zone = if lead.source == Source::Pacman {
                     Some(
@@ -622,7 +648,7 @@ fn drift_items(
                 class,
                 rule,
                 members: members.iter().map(|m| m.id).collect(),
-                listed: class != Class::Routine,
+                listed: open && class != Class::Routine,
             };
             (lead.ts, lead.id, classified)
         })

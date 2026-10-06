@@ -326,12 +326,35 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
             eprintln!("seldon: warning: {w}");
         }
     }
+    // rules 8 and 9 read the whole ledger once (rule 7's lines included)
+    let mut all = ledger.read_all().map_err(|e| format!("{e:#}"));
     // rule 8: Seldon updating itself is no drift, also what an earlier
     // capture left open
-    let (explained_self, own_warnings) =
-        crate::reconcile::explain_own_changes(&lock, &ledger, &written, now);
+    let (own_lines, own_warnings) = crate::reconcile::explain_own_changes(
+        &lock,
+        &ledger,
+        &written,
+        all.as_deref().map_err(String::as_str),
+        now,
+    );
+    let explained_self = own_lines.len();
     for w in own_warnings {
         eprintln!("seldon: warning: {w}");
+    }
+    // rule 9: a change exactly one case planned while it was open is that
+    // case's (ADR-0029 §1), also what was recorded before this engine
+    let mut linked_planned = 0;
+    match all.as_mut() {
+        Ok(all) => {
+            all.extend(own_lines);
+            let (n, warnings) =
+                crate::reconcile::link_planned(&lock, &ledger, &logbook, all, &always_red, now);
+            linked_planned = n;
+            for w in warnings {
+                eprintln!("seldon: warning: {w}");
+            }
+        }
+        Err(e) => eprintln!("seldon: warning: planned changes not linked: {e}"),
     }
     crate::index::rebuild_if_initialised(ctx);
     drop(lock);
@@ -341,7 +364,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         &written,
         &reports,
         &since_ignored,
-        (explained, explained_self),
+        (explained, explained_self, linked_planned),
         &watch_added,
         &warnings,
     ))
@@ -954,7 +977,7 @@ fn render(
     written: &[Event],
     reports: &[CollectorReport],
     since_ignored: &[&str],
-    (explained, explained_self): (usize, usize),
+    (explained, explained_self, linked_planned): (usize, usize, usize),
     watch_added: &[String],
     warnings: &[String],
 ) -> Output {
@@ -988,6 +1011,7 @@ fn render(
         "sinceIgnored": since_ignored,
         "explainedOwn": explained,
         "explainedSelf": explained_self,
+        "linkedPlanned": linked_planned,
         "watchPathsAdded": watch_added,
         "warnings": warnings,
     });
@@ -1015,6 +1039,12 @@ fn render(
         let _ = write!(
             human,
             "\nnote: {explained_self} event(s) explained as seldon updating itself"
+        );
+    }
+    if linked_planned > 0 {
+        let _ = write!(
+            human,
+            "\nnote: {linked_planned} event(s) linked to the one case that planned them while it was open"
         );
     }
     if !watch_added.is_empty() {

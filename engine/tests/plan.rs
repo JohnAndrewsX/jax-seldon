@@ -494,7 +494,8 @@ mod plan {
             text.contains(&format!("\nwarning: {id} is risk R2")),
             "{text}"
         );
-        let out = env.at(T2, &["plan", "verify", &id, "--json"]);
+        // (no capture: its degraded collectors would warn too)
+        let out = env.at(T2, &["plan", "verify", &id, "--no-capture", "--json"]);
         assert_eq!(json(&out)["warnings"], serde_json::json!([]));
     }
 

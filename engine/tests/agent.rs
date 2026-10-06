@@ -296,7 +296,8 @@ fn a_queued_case_is_refused_with_the_hint() {
     assert_eq!(active_case(&root).as_deref(), Some("C-2026-003"));
 
     // not active either: verification, completed; an unknown or bad id
-    env.at(T0, &["plan", "verify", "C-2026-001"]);
+    // no capture: it would call the recording `omarchy` stub
+    env.at(T0, &["plan", "verify", "C-2026-001", "--no-capture"]);
     let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(
@@ -500,13 +501,15 @@ fn the_launched_agents_writes_are_recorded_as_the_agent() {
     let tmp = env.tmp.path();
     let (go, done) = (tmp.join("go"), tmp.join("done"));
     // waits (shell builtins only) until `agent start` returned and dropped
-    // the lock, then logs a note and closes the case without --actor
+    // the lock, then logs a note and closes the case without --actor (no
+    // capture: it would call this stub again)
     env.stub(
         "omarchy",
         &format!(
             "(i=0; while [ ! -e '{go}' ] && [ $i -lt 2000000 ]; do i=$((i+1)); done; \
              '{bin}' log --case C-2026-001 'from the agent' && \
-             '{bin}' plan verify C-2026-001 && '{bin}' plan done C-2026-001; \
+             '{bin}' plan verify C-2026-001 --no-capture && \
+             '{bin}' plan done C-2026-001 --no-capture; \
              echo $? > '{done}') >/dev/null 2>&1 &",
             go = go.display(),
             done = done.display(),

@@ -81,7 +81,7 @@ pub const CLAUDE_CODE: &str = "agent:claude-code";
 /// holds it while its collectors run (each may take seconds), so the wait
 /// is long, but it stays below the 10 s timeout `hook install` gives the
 /// PreToolUse hook: Claude Code would otherwise cancel the hook first.
-const LOCK_PATIENCE: Duration = Duration::from_secs(8);
+pub(crate) const LOCK_PATIENCE: Duration = Duration::from_secs(8);
 
 mod context;
 pub use context::{DATA_NOTE, quote, session_start};
