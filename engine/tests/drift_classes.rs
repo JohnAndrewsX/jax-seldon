@@ -15,6 +15,19 @@ use common::{Env, Snapper, copy_dir, fixture_logbook, json, read, stderr};
 /// The sample index's clock (`fixtures/index.sample.json`).
 const GENERATED_AT: &str = "2026-10-01T17:05:12+02:00";
 
+/// `dir` and every directory below it get `mode` (the guard's owner owns
+/// them: under `SELDON_TEST_GUARD` that stands in for root).
+fn trust(dir: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt as _;
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let p = entry.unwrap().path();
+        if p.is_dir() {
+            trust(&p, mode);
+        }
+    }
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
 fn write(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
@@ -168,6 +181,7 @@ fn capture_marks_the_evidence_and_the_class_follows_it() {
     // the shell rewrites its state file
     write(&home.join(".config/omarchy/shell.json"), "{}\n");
 
+    trust(&omarchy, 0o755);
     let c = capture_config(&env);
     assert_eq!(c["ok"], true, "{c}");
     let events = config_events(&env.tmp.path().join("logbook"));
@@ -499,7 +513,13 @@ fn doctor_shows_the_drift_rules() {
     let r = row(&d, "drift");
     assert_eq!(r["status"], "ok");
     assert!(
-        r["message"].as_str().unwrap().ends_with("; all defaults"),
+        r["message"].as_str().unwrap().contains("; all defaults; "),
+        "{r}"
+    );
+    assert!(
+        r["message"].as_str().unwrap().ends_with(
+            "omarchy does not exist (it must be root's and neither group- nor world-writable)"
+        ),
         "{r}"
     );
     assert_eq!(d["drift"]["attention"], "normal");
@@ -586,4 +606,91 @@ fn index_builds_are_identical_and_write_no_ledger_line() {
     let second = build();
     assert_eq!(first, second, "byte-identical");
     assert_eq!(ledger(&lb), before, "no ledger line written");
+}
+
+/// WP-109 round 1b (operator decision): Omarchy's tree counts as evidence
+/// only when it is root's (here: the test guard's owner) and neither group-
+/// nor world-writable, the directories down to the copy included; else a
+/// byte-equal copy is an ordinary override, and `doctor` says why.
+#[test]
+fn omarchy_path_counts_only_when_trusted() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let omarchy = env.tmp.path().join("omarchy");
+    let lua = |n: u32| env.home.join(format!(".config/hypr/h{n}.lua"));
+    let shipped = |n: u32| omarchy.join(format!("config/hypr/h{n}.lua"));
+    for n in 1..=3 {
+        write(&lua(n), "-- mine\n");
+        write(&shipped(n), &format!("-- Omarchy's {n}\n"));
+    }
+    capture_config(&env); // baseline
+    let marks = || -> Vec<(String, Value)> {
+        config_events(&env.tmp.path().join("logbook"))
+            .into_iter()
+            .map(|(s, m, _)| (s, m))
+            .collect()
+    };
+    let row = |d: &Value| row(d, "drift")["message"].as_str().unwrap().to_string();
+
+    // trusted: the copy is Omarchy's
+    trust(&omarchy, 0o755);
+    write(&lua(1), "-- Omarchy's 1\n");
+    capture_config(&env);
+    assert!(row(&ok(&env, &["doctor", "--json"])).ends_with(&format!(
+        "; Omarchy's copies count as evidence ({})",
+        omarchy.display()
+    )));
+    // group-writable tree: no evidence, an ordinary override
+    std::fs::set_permissions(&omarchy, std::fs::Permissions::from_mode(0o775)).unwrap();
+    write(&lua(2), "-- Omarchy's 2\n");
+    capture_config(&env);
+    let d = ok(&env, &["doctor", "--json"]);
+    assert!(
+        row(&d).ends_with(
+            "omarchy is group-writable (it must be root's and neither group- nor world-writable)"
+        ),
+        "{}",
+        row(&d)
+    );
+    // trusted tree, but a writable directory on the way to the copy
+    std::fs::set_permissions(&omarchy, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(
+        omarchy.join("config"),
+        std::fs::Permissions::from_mode(0o777),
+    )
+    .unwrap();
+    write(&lua(3), "-- Omarchy's 3\n");
+    capture_config(&env);
+    trust(&omarchy, 0o755);
+
+    let got = marks();
+    let mark = |n: u32| {
+        got.iter()
+            .rev()
+            .find(|(s, _)| s == &format!("~/.config/hypr/h{n}.lua"))
+            .unwrap()
+            .1
+            .clone()
+    };
+    assert_eq!(mark(1), "omarchy-default");
+    assert_eq!(mark(2), Value::Null, "a group-writable tree is no evidence");
+    assert_eq!(
+        mark(3),
+        Value::Null,
+        "a writable directory on the way is no evidence"
+    );
+    let open: Vec<String> = items(&env, false).into_iter().map(|i| i.0).collect();
+    assert!(
+        open.contains(&"~/.config/hypr/h2.lua".to_string()),
+        "{open:?}"
+    );
+    assert!(
+        open.contains(&"~/.config/hypr/h3.lua".to_string()),
+        "{open:?}"
+    );
+    assert!(
+        !open.contains(&"~/.config/hypr/h1.lua".to_string()),
+        "{open:?}"
+    );
 }

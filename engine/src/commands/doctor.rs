@@ -240,7 +240,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     // their places)
     if let Some(c) = &config {
         checks.push(check_watch_paths(c));
-        checks.push(check_drift_rules(c));
+        checks.push(check_drift_rules(c, &omarchy_evidence(ctx)));
     }
 
     let ok = checks.iter().all(|c| c.status != Status::Error);
@@ -434,10 +434,25 @@ fn check_watch_paths(config: &Config) -> Check {
     ))
 }
 
+/// Whether the capture takes Omarchy's shipped files as evidence
+/// (`omarchy-default`, WP-109 round 1b), and if not, why.
+fn omarchy_evidence(ctx: &Context) -> String {
+    use crate::collectors::config::{omarchy_trust, trusted_owner};
+    let path = crate::collectors::Sources::from_env().omarchy_path;
+    let shown = ctx.dirs.display(&path);
+    match omarchy_trust(&path, trusted_owner()) {
+        Ok(()) => format!("Omarchy's copies count as evidence ({shown})"),
+        Err(why) => format!(
+            "Omarchy's copies do not count as evidence: {shown} {why} (it must be root's and neither group- nor world-writable)"
+        ),
+    }
+}
+
 /// ADR-0028 §4c, §6: the effective `[drift]` rule set, non-default keys
 /// marked (the config can silence rules; the change is shown, not
-/// refused). An unknown routine rule id is degraded.
-fn check_drift_rules(config: &Config) -> Check {
+/// refused), and whether `omarchy-default` evidence is taken
+/// (`evidence`). An unknown routine rule id is degraded.
+fn check_drift_rules(config: &Config, evidence: &str) -> Check {
     let d = &config.drift;
     let non_default = d.non_default();
     let message = format!(
@@ -458,6 +473,7 @@ fn check_drift_rules(config: &Config) -> Check {
             format!("non-default: {}", non_default.join(", "))
         }
     );
+    let message = format!("{message}; {evidence}");
     let unknown = d.unknown_routine();
     if unknown.is_empty() {
         return Check::new("drift", Status::Ok, message);

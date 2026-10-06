@@ -785,16 +785,16 @@ fn diff(ctx: &Ctx, base: &Generation, scan: &Scan, since: DateTime<FixedOffset>)
 /// hash), `theme-repo` for a file of a theme directory with a `.git`
 /// directory (`omarchy theme install`, which strips a theme's code).
 fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
+    let owner = trusted_owner();
+    let omarchy = &ctx.sources.omarchy_path;
+    let trusted = omarchy_trust(omarchy, owner)
+        .is_ok()
+        .then_some((omarchy.as_path(), owner));
     for e in events
         .iter_mut()
         .filter(|e| matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange))
     {
-        let mark = evidence(
-            ctx.dirs,
-            &ctx.sources.omarchy_path,
-            &e.subject,
-            e.meta.hash_to.as_deref(),
-        );
+        let mark = evidence(ctx.dirs, trusted, &e.subject, e.meta.hash_to.as_deref());
         if let Some(mark) = mark {
             e.meta
                 .extra
@@ -803,11 +803,73 @@ fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
     }
 }
 
+/// Who must own Omarchy's tree for its files to count as evidence: root;
+/// under `SELDON_TEST_GUARD` the guard directory's owner (a test stands in
+/// for root; nothing else changes).
+pub fn trusted_owner() -> u32 {
+    trusted_owner_of(std::env::var_os(crate::config::TEST_GUARD_ENV).as_deref())
+}
+
+/// [`trusted_owner`] for a given `SELDON_TEST_GUARD` value.
+fn trusted_owner_of(guard: Option<&std::ffi::OsStr>) -> u32 {
+    guard
+        .filter(|g| !g.is_empty())
+        .and_then(|g| std::fs::metadata(g).ok())
+        .map_or(0, |m| m.uid())
+}
+
+/// Whether `path` (followed if a link) is owned by `owner` and neither
+/// group- nor world-writable; `Err` says why not.
+fn trusted_entry(path: &Path, owner: u32) -> Result<(), String> {
+    let m = std::fs::metadata(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => "does not exist".to_string(),
+        _ => format!("cannot be read ({e})"),
+    })?;
+    if m.uid() != owner {
+        return Err(format!(
+            "is owned by uid {}, not {}",
+            m.uid(),
+            owner_name(owner)
+        ));
+    }
+    match m.mode() & 0o022 {
+        0 => Ok(()),
+        0o020 => Err("is group-writable".to_string()),
+        _ => Err("is world-writable".to_string()),
+    }
+}
+
+fn owner_name(owner: u32) -> String {
+    if owner == 0 {
+        "root".to_string()
+    } else {
+        format!("uid {owner} (the test guard's owner)")
+    }
+}
+
+/// Operator decision on ADR-0028 (WP-109 round 1b): `$OMARCHY_PATH` is a
+/// trust root for `omarchy-default`, so its files count only when the
+/// directory is owned by root ([`trusted_owner`]) and neither group- nor
+/// world-writable. `Err` says why not (`doctor`'s drift row).
+pub fn omarchy_trust(omarchy: &Path, owner: u32) -> Result<(), String> {
+    trusted_entry(omarchy, owner)
+}
+
+/// Whether the copy `copy` under the trusted `root`, and every directory
+/// between them, is trusted too (a writable subdirectory would let anyone
+/// plant a "shipped" file).
+fn copy_trusted(copy: &Path, root: &Path, owner: u32) -> bool {
+    copy.ancestors()
+        .take_while(|a| a.starts_with(root) && *a != root)
+        .all(|a| trusted_entry(a, owner).is_ok())
+}
+
 /// The evidence mark of the file `key` whose content hashes to `hash`
-/// ([`mark_evidence`]).
+/// ([`mark_evidence`]); `omarchy` is Omarchy's tree and its trusted owner
+/// when [`omarchy_trust`] holds, else no `omarchy-default` evidence.
 pub fn evidence(
     dirs: &Dirs,
-    omarchy: &Path,
+    omarchy: Option<(&Path, u32)>,
     key: &str,
     hash: Option<&str>,
 ) -> Option<&'static str> {
@@ -817,12 +879,14 @@ pub fn evidence(
         return Some(MATCHES_SYSTEM_LINK);
     }
     if let Some(hash) = hash
+        && let Some((omarchy, owner)) = omarchy
         && omarchy_copies(dirs, omarchy, &path).iter().any(|copy| {
             std::fs::metadata(copy)
                 .ok()
                 .filter(|m| m.is_file())
                 .and_then(|m| hash_file(copy, m.len()))
                 .is_some_and(|h| h == hash)
+                && copy_trusted(copy, omarchy, owner)
         })
     {
         return Some(MATCHES_OMARCHY_DEFAULT);
@@ -1272,6 +1336,60 @@ impl Collector for ConfigFiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-109 round 1b: Omarchy's tree is evidence only when it is root's
+    /// and neither group- nor world-writable. A temp dir owned by the user
+    /// running the tests never counts as root's; with `SELDON_TEST_GUARD`
+    /// the guard's owner stands in for root.
+    #[test]
+    fn omarchy_trust_needs_root_and_no_write_bits() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = std::env::temp_dir().join(format!("seldon-trust-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let tree = tmp.join("omarchy");
+        std::fs::create_dir_all(tree.join("config/hypr")).unwrap();
+        let mode = |p: &Path, m: u32| {
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap()
+        };
+        mode(&tree, 0o755);
+        mode(&tree.join("config"), 0o755);
+        mode(&tree.join("config/hypr"), 0o755);
+        let me = std::fs::metadata(&tree).unwrap().uid();
+        // the rule without a guard: root
+        assert_eq!(trusted_owner_of(None), 0);
+        assert_eq!(trusted_owner_of(Some(std::ffi::OsStr::new(""))), 0);
+        if me != 0 {
+            let e = omarchy_trust(&tree, 0).unwrap_err();
+            assert_eq!(e, format!("is owned by uid {me}, not root"));
+        }
+        // the guard's owner stands in for root
+        assert_eq!(trusted_owner_of(Some(tmp.as_os_str())), me);
+        assert_eq!(omarchy_trust(&tree, me), Ok(()));
+        mode(&tree, 0o775);
+        assert_eq!(omarchy_trust(&tree, me).unwrap_err(), "is group-writable");
+        mode(&tree, 0o757);
+        assert_eq!(omarchy_trust(&tree, me).unwrap_err(), "is world-writable");
+        mode(&tree, 0o755);
+        assert_eq!(
+            omarchy_trust(&tmp.join("nothing"), me).unwrap_err(),
+            "does not exist"
+        );
+        // every directory between the tree and a copy counts too
+        let copy = tree.join("config/hypr/hyprland.lua");
+        std::fs::write(&copy, "x").unwrap();
+        mode(&copy, 0o644);
+        assert!(copy_trusted(&copy, &tree, me));
+        mode(&tree.join("config"), 0o777);
+        assert!(!copy_trusted(&copy, &tree, me));
+        mode(&tree.join("config"), 0o755);
+        mode(&copy, 0o666);
+        assert!(!copy_trusted(&copy, &tree, me));
+        if me != 0 {
+            mode(&copy, 0o644);
+            assert!(!copy_trusted(&copy, &tree, 0));
+        }
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 
     fn skip(patterns: &[&str]) -> SkipPaths {
         let patterns: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();

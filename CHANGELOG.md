@@ -264,8 +264,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`omarchy-default`, `system-link`, `theme-repo`; only the fact, never
   a link target or content). The theme hook and the watcher unit (any
   `ExecStart` prefix) are recognised by their built-in templates, so a
-  lost state directory or `install.sh --unit` no longer leaves a crisis
-  (WP-109).
+  lost state directory or `install.sh --unit` no longer leaves a crisis.
+  Omarchy's own copies count only from a root-owned `$OMARCHY_PATH` that
+  is neither group- nor world-writable; `seldon doctor` says when they
+  do not (WP-109).
 - `series.drift` changes for the past too: a routine change opens
   nothing, and a resolution counts only when the event it resolves
   opened an item, so the curve can no longer go negative. Old charts

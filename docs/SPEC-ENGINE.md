@@ -586,7 +586,9 @@ config.toml: "…", …`. `drift` prints the effective `[drift]` set
 defaults` or `non-default: <keys>`: the config can silence rules, so the
 change is shown, never refused; an unknown routine rule id is
 `degraded` with the list of valid ids. `--json` carries the full set as
-`drift`.
+`drift`. The row ends with whether Omarchy's copies count
+as evidence, or why not (`$OMARCHY_PATH` missing, not root's, group- or
+world-writable).
 
 ```
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
@@ -1020,7 +1022,14 @@ git itself is killed, with the same bounded pipe wait. Rules:
   content; old events have no mark and classify by path. `OMARCHY_PATH`
   defaults to `/usr/share/omarchy` (under `SELDON_TEST_GUARD` without
   the variable: `<guard>/omarchy`); the files there are only read and
-  hashed. Changed/added/
+  hashed. **Trust (operator decision, WP-109 round 1b):** the directory
+  is a trust root, so `omarchy-default` evidence comes from it only when
+  it is owned by root and neither group- nor world-writable, and the
+  same holds for every directory below it on the way to the copy and for
+  the copy itself (a user-owned checkout, `omarchy dev link`, gives no
+  such evidence: Omarchy's copies there are ordinary overrides).
+  Under `SELDON_TEST_GUARD` the guard directory's owner stands in for
+  root. `system-link` and `theme-repo` do not read `$OMARCHY_PATH`. Changed/added/
   removed → `config-add|config-change|config-remove` with the path written
   with `~` and both hashes (`detail` `sha256 <8> → <8>`). Binary files (a
   NUL in the first 8000 bytes) and files over 1 MiB are listed as
