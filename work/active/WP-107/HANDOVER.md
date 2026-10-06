@@ -222,3 +222,62 @@ Appended to `memory/pitfalls.md`:
 - The two pre-fix probes (the re-add part and the real-clock c03 under
   K1) were temporary edits of the test file, restored with
   `git checkout HEAD --` in the same command and never committed.
+
+## Round 2 (stage 1 APPROVE; Decision 1 accepted; N1, N2, nit)
+
+Commits:
+
+- `c4b3601`: the q09 test (N1);
+- `6c88b4d`: SPEC-ENGINE §4 (N2) and §2 (nit);
+- this section.
+
+### Done
+
+1. **N1.** `a_marker_leaves_out_the_captures_events_before_its_check`
+   in `idempotency.rs` has the reviewer's q09 shape:
+   - capture A at 10:10 writes only a change clamped to 10:00, and its
+     marker is 0 (asserted);
+   - capture B at 10:10 removes `x.conf`, and its cursor save fails;
+   - the capture at 10:20 writes nothing, and the ledger holds 2 config
+     events.
+2. **N2.** SPEC-ENGINE §4 now names the two assumptions of the count:
+   - **Ledger order at one instant.** It fails only when two captures
+     stamp the same instant with different UTC offsets across a month
+     boundary. A time zone change within that second plus a failed
+     cursor save can then record an event twice.
+   - **Lines at the check read the same later.** A later engine that
+     drops such a line shifts the count by one.
+3. **Nit.** SPEC-ENGINE §2, the `cursors.json` row: "config = manifest
+   hash, check time and the marker `atCheck` (§4, WP-107)".
+
+### Mutant
+
+| # | Mutant | Caught by |
+|---|---|---|
+| X1 | the marker counts all of the capture's own events, not only those stamped `now` | `a_marker_leaves_out_the_captures_events_before_its_check` |
+
+It ran against the whole engine suite with `--no-fail-fast`, using the
+same script as round 1. `config.rs` was restored afterwards, and
+`git status` was clean.
+
+### Verified (round 2)
+
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+  are clean.
+- `cargo test --no-fail-fast` (whole engine suite): 787 passed, 0
+  failed.
+- `scripts/docs-check.sh`: ok. No line over 80 characters in the
+  touched §4 range.
+- **`flock /tmp/seldon-check.lock just check` at `6c88b4d`: exit 0**
+  (02:04–02:16).
+  - Cargo test results over all its runs: 1584 passed, 0 failed.
+  - service-states 314/0, panel-view 782/0, overlay-view 319/0,
+    bar-view 143/0, install 209/0, deploy-test-host 190/0,
+    real-home-guard 11/0, model.test.js 89; qmllint 29 files;
+    docs-check ok; `check: ok`.
+  - The commit after `6c88b4d` adds only this section.
+
+### Touched outside scope (round 2)
+
+- None. No guard-hook blocks; nothing outside the repository; scratch
+  benches only.
