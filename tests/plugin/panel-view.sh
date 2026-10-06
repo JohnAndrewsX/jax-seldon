@@ -377,7 +377,7 @@ expect work 6 .view.work.card.armed ""
 expect work 6 .view.work.result ""
 expect work 7 .view.work.card.armed ""
 expect work 8 .view.work.cursor C-2026-001
-expect work 8 '.view.work.card.actions | join(",")' "Open"
+expect work 8 '.view.work.card.actions | join(",")' "Open,Reopen"
 shows work 8 "created 2026-09-01 · started 2026-09-01 · closed 2026-09-01"
 expect work 9 .view.work.cursor C-2026-005
 # Start agent (WP-022) is gated by canWrite: neither key a nor a click arms it
@@ -446,7 +446,7 @@ expect work-live 26 '.view.work.card.actions | join(",")' "Verify,Start agent,Dr
 expect work-live 30 .view.work.result "C-2026-005: active → verification"
 expect work-live 34 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
 expect work-live 34 .view.work.result "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md"
-expect work-live 34 '.view.work.card.actions | join(",")' "Open"
+expect work-live 34 '.view.work.card.actions | join(",")' "Open,Reopen"
 expect work-live 36 .view.openResult "Opened $work/home-work/Seldon/work/active/C-2026-005.md in omarchy-launch-editor"
 expect work-live 37 .view.work.cursor C-2026-008
 expect work-live 38 .view.work.card.armed done
@@ -1247,6 +1247,123 @@ else
   fail=$((fail + 1)); echo "FAIL restart-updated: launches differ"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
 fi
 clean_log restart-updated
+
+# 30. WP-101 (ADR-0027 §5, §6). The sample: C-2026-002, closed by an agent,
+#     carries "by agent" on its tile and "completed by agent" on its card,
+#     with Reopen beside Open; the By agent filter narrows the Completed
+#     column to it and back. Dev mode: Run is off, the field says why.
+run work-agent "$fx/index.sample.json" "text:3;key:Down*7;click:By agent;click:By agent"
+expect work-agent 2 .view.work.cursor C-2026-002
+expect work-agent 2 '.view.work.card.actions | join(",")' "Open,Reopen"
+shows work-agent 2 "C-2026-002 · completed by agent"
+shows work-agent 2 "by agent"
+shows work-agent 2 "Dev mode is read-only"
+shows work-agent 2 "Run"
+expect work-agent 2 '[.texts[] | select(. == "by agent")] | length' 1
+expect work-agent 3 .view.work.filter agent
+expect work-agent 3 '.view.work.columns | join(",")' "queued 3,active 3,completed 1"
+shows work-agent 3 "COMPLETED 1 / 2"
+expect work-agent 3 .view.work.cursor C-2026-002
+expect work-agent 4 .view.work.filter ""
+expect work-agent 4 '.view.work.columns | join(",")' "queued 3,active 3,completed 2"
+shows work-agent 4 "COMPLETED 2"
+# the new header row and the column titles fit (tile titles may elide at two lines)
+expect work-agent 3 '[.overflow[] | select(test("By agent|COMPLETED|Run|New case|active"))] | length' 0
+expect work-agent 2 '[.overflow[] | select(test("by agent|Reopen|New case: say"))] | length' 0
+clean_log work-agent
+
+# The variant case-reopened: the reopen's card names the case it reopens.
+run work-reopened "$fx/index-variants/case-reopened.json" "text:3;key:Down*6"
+expect work-reopened 2 .view.work.cursor C-2026-009
+shows work-reopened 2 "reopens C-2026-002 · hyprland · priority normal · 0/0 steps"
+shows work-reopened 2 "3 / 3 active · at the limit"
+clean_log work-reopened
+
+# 31. Run (WP-101): i takes the field, the sentence goes as one argument
+#     after `--`, busy while the engine works, then the new case under the
+#     cursor and the field empty. Without a default agent the engine's
+#     refusal is the result line and the text stays.
+intent='Install tool X. It needs --help $(id) and one package'
+mkdir -p "$work/home-run"
+run work-run "" "text:3;text:i;type:$intent;key:Return;settle;wait:work.cursor=C-2026-009;key:Escape;view" \
+  HOME="$work/home-run" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect work-run 2 .view.keys false
+expect work-run 3 .view.work.intent "$intent"
+expect work-run 4 .view.work.pending true
+expect work-run 4 .view.work.running true
+shows work-run 4 "Running"
+expect work-run 6 .view.work.result "Created C-2026-009 · Install tool X · agent started · launcher default (omarchy)"
+expect work-run 6 .view.work.resultOk true
+expect work-run 6 .view.work.intent ""
+expect work-run 6 '.view.work.columns | join(",")' "queued 3,active 4,completed 2"
+expect work-run 6 .view.work.card.status active
+expect work-run 8 .view.keys true
+got=$(cat "$work/home-run/argv.log" 2>/dev/null | grep '^agent' || true)
+want=$(printf '%q ' agent start --new --json -- "$intent")
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   work-run: agent start --new, the sentence one argument after --"
+else
+  fail=$((fail + 1)); echo "FAIL work-run: argv $got (want $want)"
+fi
+clean_log work-run
+mkdir -p "$work/home-run-refused"
+run work-run-refused "" "text:3;text:i;type:Install zed;key:Return;settle" \
+  HOME="$work/home-run-refused" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_NO_DEFAULT_AGENT=1
+expect work-run-refused 5 .view.work.resultOk false
+expect work-run-refused 5 .view.work.result "no default agent: Omarchy has none set, so \`omarchy agent prompt\` cannot start one; nothing was created. Fix: \`omarchy default agent <name>\` (e.g. claude), or set \`[agent] launcher\` in ~/.config/seldon/config.toml"
+expect work-run-refused 5 .view.work.intent "Install zed"
+expect work-run-refused 5 '.view.work.columns | join(",")' "queued 3,active 3,completed 2"
+clean_log work-run-refused 'agent exit 1: no default agent'
+
+# 32. Reopen (WP-101): one click on the completed C-2026-002, no arming; the
+#     cursor goes to the new active case; key r reopens it again, a second
+#     case that names the first. r on an open case does nothing.
+mkdir -p "$work/home-reopen"
+run work-reopen "" "text:3;key:Down*7;click:Reopen;settle;wait:work.cursor=C-2026-009;text:r;key:Down*2;text:r;settle;wait:work.cursor=C-2026-010" \
+  HOME="$work/home-reopen" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
+expect work-reopen 5 .view.work.result "Reopened C-2026-002 as C-2026-009 (active)"
+expect work-reopen 5 '.view.work.columns | join(",")' "queued 3,active 4,completed 2"
+shows work-reopen 5 "reopens C-2026-002 · hyprland · priority normal · 0/0 steps"
+expect work-reopen 6 .view.work.result "Reopened C-2026-002 as C-2026-009 (active)"
+expect work-reopen 7 .view.work.cursor C-2026-002
+expect work-reopen 10 .view.work.result "Reopened C-2026-002 as C-2026-010 (active) · reopened before as C-2026-009"
+expect work-reopen 10 .view.work.card.id C-2026-010
+expect work-reopen 10 .view.work.card.status active
+got=$(grep '^plan' "$work/home-reopen/argv.log" 2>/dev/null || true)
+want=$(printf '%s\n' "$(q plan reopen C-2026-002 --json)" "$(q plan reopen C-2026-002 --json)")
+if [[ $got == "$want" ]]; then
+  pass=$((pass + 1)); echo "ok   work-reopen: plan reopen C-2026-002 --json, twice"
+else
+  fail=$((fail + 1)); echo "FAIL work-reopen: argv differs"; diff <(echo "$want") <(echo "$got") | sed 's/^/     /' || true
+fi
+clean_log work-reopen
+
+# 33. The rules banner (WP-101): doctor --json when the panel opens (its own
+#     process: not in argv.log); outdated rules offer Update rules, one
+#     click runs `rules update --json`, doctor runs again and the banner
+#     goes. A damaged block is shown without the click. Dev mode asks
+#     nothing.
+mkdir -p "$work/home-rules"
+run rules-outdated "" "wait:rules.title=The logbook's agent rules are outdated (v1);click:Update rules;settle;wait:rules=null;view" \
+  HOME="$work/home-rules" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_RULES=outdated
+expect rules-outdated 1 .view.rules.title "The logbook's agent rules are outdated (v1)"
+expect rules-outdated 1 '.view.rules.actions | join(",")' "Update rules"
+shows rules-outdated 1 "Agents read AGENTS.md. Update rewrites only Seldon's block; your own rules stay, an edited block is archived first."
+expect rules-outdated 5 .view.rules null
+if grep -qx "$(q rules update --json)" "$work/home-rules/argv.log" && [[ $(grep -c . "$work/home-rules/doctor.log") == 2 ]] \
+  && ! grep -q '^doctor' "$work/home-rules/argv.log"; then
+  pass=$((pass + 1)); echo "ok   rules-outdated: rules update once, doctor before and after, beside the queue"
+else
+  fail=$((fail + 1)); echo "FAIL rules-outdated: calls differ"; cat "$work/home-rules/argv.log" "$work/home-rules/doctor.log" 2>/dev/null | sed 's/^/     /'
+fi
+clean_log rules-outdated
+mkdir -p "$work/home-rules-damaged"
+run rules-damaged "" "wait:rules.title=The logbook's agent rules are damaged (the block has no end marker)" HOME="$work/home-rules-damaged" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_RULES=damaged
+expect rules-damaged 1 .view.rules.title "The logbook's agent rules are damaged (the block has no end marker)"
+expect rules-damaged 1 '.view.rules.actions | length' 0
+shows rules-damaged 1 "Fix in a terminal: seldon rules update --replace (archives the file)"
+clean_log rules-damaged
+expect sample 1 .view.rules null
 
 real_home_check panel-view
 

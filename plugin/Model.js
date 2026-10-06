@@ -514,8 +514,10 @@ function validateArgs(args) {
       if (k === n) return ""
     }
     if (!withText && n === 3 && matches(PLAN_STEPS, a[1]) && CASE_ID.test(a[2])) return ""
+    // WP-101: reopen a completed case (a new case; nothing is destroyed)
+    if (!withText && n === 3 && a[1] === "reopen" && CASE_ID.test(a[2]) && json) return ""
     return "plan must be: plan new --zone <z> --risk <r> [--area <a>] [--priority <p>] -- <title>"
-      + " | plan start|verify|done|drop <caseId>"
+      + " | plan start|verify|done|drop <caseId> | plan reopen <caseId> --json"
   case "drift":
     var id = n >= 3 && EVENT_ID.test(a[2])
     if (id && !withText && a[1] === "link" && n >= 4 && CASE_ID.test(a[3]) && (n === 4 || only(4))) return ""
@@ -537,8 +539,15 @@ function validateArgs(args) {
       + " [--risk <r>] [--area <a>] -- <text> | dismiss <eventId> [--only] -- <text> | show <eventId> --json"
   case "agent":
     // WP-022: the engine reads the launcher from its config; nothing else.
-    return !withText && n === 3 && a[1] === "start" && CASE_ID.test(a[2]) && json
-      ? "" : "agent must be: agent start <caseId> --json"
+    if (!withText && n === 3 && a[1] === "start" && CASE_ID.test(a[2]) && json) return ""
+    // WP-101: one sentence creates, starts and hands a case to the agent
+    if (withText && n === 3 && a[1] === "start" && a[2] === "--new" && json) return ""
+    return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
+  case "doctor":
+    // WP-101: read-only, for the rules row (Service.checkRules)
+    return !withText && n === 1 && json ? "" : "doctor must be: doctor --json"
+  case "rules":
+    return !withText && n === 2 && a[1] === "update" && json ? "" : "rules must be: rules update --json"
   case "decide":
     return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
   case "open":
@@ -1160,12 +1169,38 @@ function workCase(c, group, column) {
     stepsText: steps ? Math.min(count(steps.done), total) + "/" + total : "",
     proposed: Array.isArray(c.proposedEvents) ? c.proposedEvents.length : 0,
     agents: Array.isArray(c.agents) ? c.agents.filter(function(a) { return typeof a === "string" && a !== "" }) : [],
+    closedByAgent: caseTags(c).indexOf(TAG_CLOSED_BY_AGENT) !== -1,
+    reopens: reopensOf(c),
     actionable: CASE_ID.test(id)
   }
 }
 
-// [{ id, title, cases }] for queued, active (+ verification), completed.
-function workColumns(index) {
+// The reserved case tags (CONTRACT.md, ADR-0027 §5): an agent closed the
+// case; the case reopens another (`reopens:<caseId>`).
+var TAG_CLOSED_BY_AGENT = "closed-by-agent"
+var TAG_REOPENS = "reopens:"
+
+// A case's tags, strings only.
+function caseTags(c) {
+  return isObject(c) && Array.isArray(c.tags) ? c.tags.filter(function(t) { return typeof t === "string" }) : []
+}
+
+// The case id a `reopens:<caseId>` tag names, "" without one or with an id
+// that is not a case id.
+function reopensOf(c) {
+  var tags = caseTags(c)
+  for (var i = 0; i < tags.length; i++) {
+    if (tags[i].indexOf(TAG_REOPENS) !== 0) continue
+    var id = tags[i].slice(TAG_REOPENS.length)
+    if (CASE_ID.test(id)) return id
+  }
+  return ""
+}
+
+// [{ id, title, cases, total }] for queued, active (+ verification),
+// completed. `filter` "agent" keeps only the completed cases an agent closed
+// (the spot check, ADR-0027 §5); `total` is the column's count without it.
+function workColumns(index, filter) {
   var cases = index && isObject(index.cases) ? index.cases : {}
   var out = []
   for (var k = 0; k < WORK_COLUMNS.length; k++) {
@@ -1177,9 +1212,20 @@ function workColumns(index) {
       for (var i = 0; i < group.length; i++)
         if (isObject(group[i])) list.push(workCase(group[i], col.groups[g], col.id))
     }
-    out.push({ id: col.id, title: col.title, cases: list })
+    var shown = col.id === "completed" && filter === COMPLETED_FILTER_AGENT
+      ? list.filter(function(c) { return c.closedByAgent }) : list
+    out.push({ id: col.id, title: col.title, cases: shown, total: list.length })
   }
   return out
+}
+
+// The Completed column's filter that keeps the cases an agent closed.
+var COMPLETED_FILTER_AGENT = "agent"
+
+// "COMPLETED 2", or "COMPLETED 1 / 2" while the filter hides some.
+function columnHeader(col) {
+  var head = String(col.title).toUpperCase() + " " + col.cases.length
+  return col.total !== undefined && col.total !== col.cases.length ? head + " / " + col.total : head
 }
 
 // Every case of the columns in reading order, the order the cursor walks.
@@ -1216,14 +1262,16 @@ var ACTIONS = {
   agent: { id: "agent", label: "Start agent", write: true, confirm: false, twice: true },
   done: { id: "done", label: "Done", write: true, confirm: false, twice: false },
   drop: { id: "drop", label: "Drop", write: true, confirm: true, twice: false },
-  open: { id: "open", label: "Open", write: false, confirm: false, twice: false }
+  open: { id: "open", label: "Open", write: false, confirm: false, twice: false },
+  // WP-101: one click, no arming: it creates a case and destroys nothing
+  reopen: { id: "reopen", label: "Reopen", write: true, confirm: false, twice: false }
 }
 
 var ACTIONS_BY_STATUS = {
   queued: ["start", "open"],
   active: ["verify", "agent", "drop", "open"],
   verification: ["done", "drop", "open"],
-  completed: ["open"],
+  completed: ["open", "reopen"],
   dropped: ["open"]
 }
 
@@ -1245,9 +1293,11 @@ function caseAction(c, actionId) {
   return null
 }
 
-// "dev-env · priority high · 2/4 steps"
+// "dev-env · priority high · 2/4 steps"; a reopen leads with "reopens
+// C-2026-002".
 function caseMeta(c) {
   var parts = []
+  if (c.reopens) parts.push("reopens " + c.reopens)
   if (c.area !== "") parts.push(c.area)
   if (c.priority !== "") parts.push("priority " + c.priority)
   if (c.stepsText !== "") parts.push(c.stepsText + " steps")
@@ -1297,7 +1347,7 @@ function planArgs(action, input) {
     if (priority !== NEW_CASE_DEFAULTS.priority) args.push("--priority", priority)
     return { args: args.concat(["--json", "--", title]) }
   }
-  if (!matches(PLAN_STEPS, action)) return { error: "Not a plan step: " + action }
+  if (!matches(PLAN_STEPS, action) && action !== "reopen") return { error: "Not a plan step: " + action }
   var id = String(input || "")
   if (!CASE_ID.test(id)) return { error: "Not a case id: " + id }
   return { args: ["plan", action, id, "--json"] }
@@ -1312,6 +1362,12 @@ function planResult(exitCode, stdoutText, stderrText) {
   var c = data && isObject(data.case) ? data.case : null
   var id = c && typeof c.id === "string" && CASE_ID.test(c.id) ? c.id : ""
   var name = id !== "" ? id : "The case"
+  // `plan reopen` (WP-101): {"case", "reopens", "earlier", …}
+  if (data && typeof data.reopens === "string" && CASE_ID.test(data.reopens)) {
+    var earlier = Array.isArray(data.earlier) ? data.earlier.filter(function(e) { return CASE_ID.test(String(e)) }) : []
+    var again = earlier.length > 0 ? " · reopened before as " + earlier.join(", ") : ""
+    return { ok: true, text: "Reopened " + data.reopens + " as " + name + " (active)" + again, caseId: id }
+  }
   if (data && typeof data.from === "string" && typeof data.to === "string") {
     var text = name + ": " + data.from + " → " + data.to
     if (typeof data.journal === "string" && data.journal !== "") text += " · journal " + data.journal
@@ -1330,6 +1386,14 @@ function agentArgs(caseId) {
   return { args: ["agent", "start", id, "--json"] }
 }
 
+// `seldon agent start --new --json -- <intent>` (WP-101, ADR-0027 §6): the
+// intent is one argument after `--`, exactly as typed. { args } or { error }.
+function agentNewArgs(intent) {
+  if (!hasText(intent)) return { error: "Say what the agent should do" }
+  if (String(intent).indexOf("\u0000") !== -1) return { error: "The text contains a NUL character" }
+  return { args: ["agent", "start", "--new", "--json", "--", String(intent)] }
+}
+
 function agentResult(exitCode, stdoutText, stderrText) {
   if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), caseId: "" }
   var data = parseJson(stdoutText)
@@ -1337,7 +1401,66 @@ function agentResult(exitCode, stdoutText, stderrText) {
   var launcher = data && typeof data.launcher === "string" ? data.launcher : ""
   var program = data && typeof data.program === "string" ? data.program : ""
   var via = launcher === "" ? program : program === "" || program === launcher ? launcher : launcher + " (" + program + ")"
-  return { ok: true, text: "Agent started on " + (id !== "" ? id : "the case") + (via !== "" ? " · launcher " + via : ""), caseId: id }
+  var created = data && isObject(data.created) && isObject(data.created.case) ? data.created.case : null
+  var head = created && id !== ""
+    ? "Created " + id + (typeof created.title === "string" && created.title !== "" ? " · " + created.title : "") + " · agent started"
+    : "Agent started on " + (id !== "" ? id : "the case")
+  return { ok: true, text: head + (via !== "" ? " · launcher " + via : ""), caseId: id }
+}
+
+// ---- The rules banner (WP-100, WP-101; ADR-0027 Migration) ------------------
+//
+// `seldon doctor --json` names the state of the logbook's agent rules in its
+// `rules` row. When they are outdated and the engine's fix is a plain
+// `seldon rules update` (it rewrites only the engine's block and archives an
+// edited one: nothing is lost), the banner offers it as one click. A damaged
+// or newer block (fix with --replace, or "update seldon") is shown without
+// the click: that is the user's decision.
+function rulesBanner(doctorText) {
+  var data = parseJson(doctorText)
+  var checks = data && Array.isArray(data.checks) ? data.checks : []
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i]
+    if (!isObject(c) || c.name !== "rules" || c.status === "ok") continue
+    var fix = typeof c.fix === "string" ? c.fix : ""
+    var oneClick = fix.indexOf("seldon rules update") === 0 && fix.indexOf("--replace") === -1
+    var message = typeof c.message === "string" ? firstLine(c.message) : ""
+    return {
+      status: "rulesOutdated",
+      tone: "accent",
+      title: "The logbook's agent rules are " + (message !== "" ? message : "not current"),
+      detail: oneClick
+        ? "Agents read AGENTS.md. Update rewrites only Seldon's block; your own rules stay, an edited block is archived first."
+        : "Fix in a terminal: " + (fix !== "" ? fix : "seldon doctor"),
+      command: "",
+      actions: oneClick ? [{ id: "update", label: "Update rules" }] : [],
+      hint: ""
+    }
+  }
+  return null
+}
+
+// How often the panel asks `seldon doctor --json` at most (on open).
+var RULES_CHECK_MS = 10 * 60 * 1000
+
+// The banner with the update's answer: pending or refused shows as its hint;
+// a done update shows nothing (the next doctor answer decides).
+function rulesBannerWith(banner, result) {
+  if (!banner) return null
+  if (!isObject(result) || (result.ok && !result.pending)) return banner
+  var out = {}
+  for (var k in banner) out[k] = banner[k]
+  out.hint = String(result.text || "")
+  if (result.pending) out.actions = []
+  return out
+}
+
+// `seldon rules update --json` → { ok, text }.
+function rulesUpdateResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  var data = parseJson(stdoutText)
+  var action = data && typeof data.action === "string" ? data.action : ""
+  return { ok: true, text: action === "unchanged" ? "The rules were current" : "Rules updated" }
 }
 
 // ---- Drift sheet (WP-021) ---------------------------------------------------
