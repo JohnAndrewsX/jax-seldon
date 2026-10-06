@@ -125,6 +125,19 @@ Item {
   // The bar widget setting `driftInBar` (ADR-0028 §4a), pushed by the
   // widget like the capture interval; only the IPC read-out's `pill` uses it.
   property string driftInBar: Model.DRIFT_IN_BAR_DEFAULT
+  // The desk's settings (ADR-0034 §1), pushed by the widget the same way:
+  // the width in per cent of the screen and the sidebar's state, and the
+  // whole shell.json entry, which the desk's settings write carries back
+  // (the facade's updateEntryInline replaces the entry).
+  property int deskWidth: Model.DESK_WIDTH_DEFAULT
+  property string deskSidebar: Model.DESK_SIDEBAR_DEFAULT
+  property var entrySettings: ({})
+  // The loaded desk (Desk.qml registers itself), for the pill's
+  // `jax.seldon.panel` shim; null while the shell has it unloaded.
+  property var desk: null
+  // What the desk remembers between opens within one shell session (the
+  // shell unloads it on hide): { section, selected: { <section>: id } }.
+  property var deskMemory: ({ section: Model.DESK_SECTION_DEFAULT, selected: {} })
 
   // Exit 4 (lock held) of a capture or status: what runs again when
   // lockRetry fires ("capture", which brings its status, or "status"), and
@@ -196,6 +209,16 @@ Item {
 
   function setDriftInBar(mode) {
     root.driftInBar = Model.driftInBarMode(mode)
+  }
+
+  // The widget's shell.json entry (its `settings`), as it is.
+  function setDeskSettings(entry) {
+    var copy = ({})
+    if (entry && typeof entry === "object")
+      for (var k in entry) copy[k] = entry[k]
+    root.entrySettings = copy
+    root.deskWidth = Model.clampDeskWidth(copy.deskWidth)
+    root.deskSidebar = Model.deskSidebarMode(copy.deskSidebar)
   }
 
   // ---- Index.
@@ -716,6 +739,8 @@ Item {
       decideResult: root.decideResult,
       pill: Model.pillText(root.counts, root.driftInBar),
       driftInBar: root.driftInBar,
+      deskWidth: root.deskWidth,
+      deskSidebar: root.deskSidebar,
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),
       banner: root.banner ? root.banner.title : "",
