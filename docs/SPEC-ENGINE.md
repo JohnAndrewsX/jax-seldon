@@ -602,7 +602,8 @@ a note of its own. A collector such a note names is not waiting in that
 capture (below): it is not marked `pendingBaseline` when the capture
 does not run it or it degrades, and when it is not run, a mark it had
 before the crash is cleared (an entry with only the mark is dropped), as
-its gap is recorded. The same save, also when there is no note, adds to
+its gap is recorded; its next successful run takes a silent baseline, as
+the collectors the crashed capture ran do. The same save, also when there is no note, adds to
 `silentBaselines` under the logbook's canonical path the sources whose
 baseline the capture takes or leaves waiting (below) without a note
 because the ledger holds no event of them, in run order and after the
