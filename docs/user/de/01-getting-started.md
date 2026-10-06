@@ -1,6 +1,6 @@
 # Erste Schritte
 
-<!-- source: en/01-getting-started.md @ 2120ee8 -->
+<!-- source: en/01-getting-started.md @ 9daa7a3 -->
 
 Diese Seite führt dich in etwa fünfzehn Minuten zu einem fertigen
 Logbuch. Du installierst die Engine, legst dein Logbuch an, fügst das
@@ -90,7 +90,7 @@ die Leertaste ein Häkchen, Enter bestätigt.
 | More paths | leer lassen |
 | Agent setup | „Claude Code hooks“ mit der Leertaste anhaken, wenn du Claude Code nutzt; sonst nichts |
 | Record theme switches instantly? | nein (die nächste Erfassung zeichnet sie ohnehin auf) |
-| Make the logbook a git repository with a first commit? | ja |
+| Keep the logbook in git, with a first commit? | ja |
 | Backfill since | ein Datum etwa drei Monate zurück, oder leer, um ab jetzt aufzuzeichnen |
 | Mark them as the pre-Seldon baseline? | ja (kommt nur nach einer Nacherfassung, die etwas gefunden hat) |
 
@@ -101,14 +101,14 @@ Assistent bietet dann an, sie als Baseline vor Seldon zu markieren. Das
 weist sie ab und behält die Ereignisse.
 [Konzepte](02-concepts.md#baseline) erklärt sie.
 
-Am Ende zeigt der Assistent, was er eingerichtet hat:
+Am Ende zeigt der Assistent, was er eingerichtet hat, zum Beispiel (deine Zahlen weichen ab):
 
 ```text
 Logbook     ~/Seldon (Deutsch, git repository)
 Config      ~/.config/seldon/config.toml; list noisy or secret files in its [redaction] skipPaths
 Recording   snapshots, packages, Omarchy updates, plugins, themes, config files
 Agents      Claude Code hooks (user-wide)
-History     1692 event(s) since 2026-07-01; 82 drift item(s) marked as the pre-Seldon baseline
+History     1500 event(s) since 2026-07-01; 40 drift item(s) marked as the pre-Seldon baseline
 Snapshots   not readable yet; optional, Seldon works without them
 
 Seldon is recording. Nothing else to do.

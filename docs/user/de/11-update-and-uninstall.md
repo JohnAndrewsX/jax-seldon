@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 2120ee8 -->
+<!-- source: en/11-update-and-uninstall.md @ 9daa7a3 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -23,16 +23,22 @@ und bricht bei einer Abweichung ab. Ist die GitHub-CLI (`gh`) installiert
 und angemeldet, prüft er außerdem die Build-Herkunft (`gh attestation
 verify`): Der Download muss vom Release-Workflow des Projekts für das Tag
 dieses Release stammen, sonst wird nichts installiert. Ohne `gh` meldet
-eine Zeile, dass nur die Prüfsumme geprüft wurde. Ist dein Logbuch
-eingerichtet und das Plugin installiert, endet er mit „Your logbook is
-already set up; nothing else to do.“ Aktualisiere auch das Plugin
+eine Zeile, dass nur die Prüfsumme geprüft wurde. Seine nächsten
+Schritte lassen weg, was du schon hast: kein `seldon init`, wenn dein
+Logbuch eingerichtet ist, keine Plugin-Zeile, wenn das Plugin installiert
+ist. Bleibt nichts zu tun, sagt er „Your logbook is already set up;
+nothing else to do.“ Ist zsh installiert, steht stattdessen bei jedem
+Lauf die `fpath=(…)`-Zeile von unten da: Sie ist für die
+zsh-Vervollständigung und braucht nichts mehr, sobald sie in deiner
+`~/.zshrc` steht. Aktualisiere auch das Plugin
 ([Das Plugin aktualisieren](#das-plugin-aktualisieren)): Es merkt nicht
 von selbst, dass es ein neueres gibt.
 
 Er installiert auch die Manpage (`man seldon`) und die Tab-Vervollständigung
 für bash, zsh und fish, jeweils für eine Shell, die auf deinem Rechner
 installiert ist. Für zsh gibt er eine `fpath=(…)`-Zeile aus, die du in
-`~/.zshrc` vor `compinit` einträgst.
+`~/.zshrc` vor `compinit` einträgst, bei jedem Lauf (er prüft nicht, ob
+sie schon dort steht).
 
 | Option | Wirkung |
 |---|---|
