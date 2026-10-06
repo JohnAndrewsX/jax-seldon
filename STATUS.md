@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
-| WP-116 | the Seldon agent starts like the Omarchy agent; rules v4 (ADR-0030, ADR-0031) | Engine + Docs | `engine-116` (opus) | `wt/WP-116` · `wp/116-start-like-omarchy` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -52,6 +51,16 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-116 the Seldon agent starts like Omarchy's agent (the
+  caller's folder, `~/Work` from home; `[agent] workdir`); Seldon's Claude
+  Code hooks live in the user-wide settings and serve only sessions Seldon
+  launched (`SELDON_CASE`, while that case is open — ADR-0032) or inside
+  the logbook; an existing install's logbook-only hooks are carried
+  user-wide once by a capture (never as root, not with `workdir =
+  "logbook"`, a removal is kept); rules v4 (Omarchy's privilege wording,
+  as few password prompts as the route allows, snapshot `root` only);
+  silent upgrades recorded; Opus review, three rounds, Fable stage 2;
+  merged.
 - 2026-10-06 WP-115 a change made while exactly one case was open and
   named it in its Plan is linked to that case, whoever typed it (rule 9,
   ADR-0029); a subject that fails the harm test (`alwaysRed` packages or
