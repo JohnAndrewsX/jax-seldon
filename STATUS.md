@@ -16,7 +16,6 @@ decisions).
 |---|---|---|---|---|---|
 | WP-130 | guard: stop false positives on text, keep every real block | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
 | WP-118 | wizard, installer and docs texts (UX review) | Engine + Docs | `engine-118` (opus) | `wt/WP-118` · `wp/118-setup-texts` | 2026-10-06 |
-| WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -53,6 +52,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-07 WP-117 every terminal the panel opens (engine install and
+  update, logbook setup, snapshot grant, plugin update) says what it will
+  do, shows the command and reports only what happened (failures, a
+  cancelled password prompt and a partial grant included); banners one
+  sentence with step titles; Opus review, one round, Fable stage 2;
+  merged.
 - 2026-10-06 WP-116 the Seldon agent starts like Omarchy's agent (the
   caller's folder, `~/Work` from home; `[agent] workdir`); Seldon's Claude
   Code hooks live in the user-wide settings and serve only sessions Seldon
