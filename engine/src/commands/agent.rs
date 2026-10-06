@@ -31,13 +31,15 @@ use std::process::{Command, Stdio};
 use clap::{Args, Subcommand};
 use serde_json::json;
 
-use super::event::{ACTOR_ENV, parse_case_id};
+use super::event::{ACTOR_ENV, actor_or_env, parse_case_id, parse_person};
 use super::open::launch_detached;
-use super::{CONFIG_ENV, Context, Output};
+use super::{CONFIG_ENV, Context, Output, autocommit, required_text};
 use crate::config::{AgentConfig, DEFAULT_AGENT_LAUNCHER, LOGBOOK_ENV};
 use crate::error::{Error, Result};
 use crate::logbook::{Logbook, cases};
-use crate::model::CaseStatus;
+use crate::model::event::ACTOR_HUMAN;
+use crate::model::{CaseStatus, Priority, Risk, Zone};
+use crate::redact::Redactor;
 use crate::sys::Run;
 
 /// The launcher element replaced by the prompt.
@@ -181,22 +183,144 @@ pub struct AgentArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub enum AgentCommand {
     /// Launch an agent on an active case, with the case as the active case
-    /// and a prompt that names the case and the logbook
-    Start {
-        /// The case (must be active)
-        #[arg(value_name = "ID", value_parser = parse_case_id)]
-        id: String,
-        /// A launcher from `[agent.launchers]` in config.toml; `omarchy`
-        /// is the built-in one (default: `[agent] launcher`)
-        #[arg(long, value_name = "NAME")]
-        launcher: Option<String>,
-    },
+    /// and a prompt that names the case and the logbook; with --new, create
+    /// and start the case from one sentence first
+    #[command(after_help = "Examples:\n  seldon agent start C-2026-004\n  \
+                            seldon agent start --new -- \"Install zed as a second editor\"")]
+    Start(StartArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct StartArgs {
+    /// The case (must be active)
+    #[arg(
+        value_name = "ID",
+        value_parser = parse_case_id,
+        required_unless_present = "new",
+        conflicts_with = "new"
+    )]
+    pub id: Option<String>,
+
+    /// Create and start a case from the text after `--` (title: its first
+    /// sentence; Intent: the whole text), then launch the agent on it
+    #[arg(long, requires = "intent")]
+    pub new: bool,
+
+    /// With --new: green, yellow or red
+    #[arg(long, value_name = "ZONE", default_value = "yellow", requires = "new")]
+    pub zone: Zone,
+
+    /// With --new: R0 to R3
+    #[arg(long, value_name = "RISK", default_value = "R1", requires = "new")]
+    pub risk: Risk,
+
+    /// With --new: area slug; created under areas/ on first use
+    #[arg(long, value_name = "AREA", requires = "new")]
+    pub area: Option<String>,
+
+    /// A launcher from `[agent.launchers]` in config.toml; `omarchy`
+    /// is the built-in one (default: `[agent] launcher`)
+    #[arg(long, value_name = "NAME")]
+    pub launcher: Option<String>,
+
+    /// With --new: what the agent should do, as one argument after `--`
+    #[arg(value_name = "INTENT", last = true, requires = "new")]
+    pub intent: Option<String>,
 }
 
 pub fn run(ctx: &Context, args: AgentArgs) -> Result<Output> {
     match args.command {
-        AgentCommand::Start { id, launcher } => start(ctx, &id, launcher.as_deref()),
+        AgentCommand::Start(a) => match (a.new, a.id, a.intent) {
+            (true, _, Some(intent)) => {
+                let new = New {
+                    intent,
+                    zone: a.zone,
+                    risk: a.risk,
+                    area: a.area,
+                };
+                start(ctx, Target::New(new), a.launcher.as_deref())
+            }
+            (false, Some(id), _) => start(ctx, Target::Case(id), a.launcher.as_deref()),
+            // clap's requires/conflicts rule the other shapes out
+            _ => Err(Error::user(
+                "give a case id, or --new -- \"<intent>\"".to_string(),
+            )),
+        },
     }
+}
+
+/// What `agent start` works on: an active case, or a new one.
+enum Target {
+    Case(String),
+    New(New),
+}
+
+/// `agent start --new`: the case to create and start.
+struct New {
+    intent: String,
+    zone: Zone,
+    risk: Risk,
+    area: Option<String>,
+}
+
+/// The longest title `--new` derives, in characters.
+pub const TITLE_MAX: usize = 72;
+
+/// The title of a case made from an intent (ADR-0027 §6): its first
+/// sentence — up to the first line break, or the first `.`, `!` or `?`
+/// followed by white space or the end — without a final `.`, at most
+/// [`TITLE_MAX`] characters, cut at a word with `…` when longer.
+pub fn title_of(intent: &str) -> String {
+    let text = intent.trim();
+    let line = text.lines().next().unwrap_or("").trim();
+    let chars: Vec<char> = line.chars().collect();
+    let mut end = chars.len();
+    for (i, c) in chars.iter().enumerate() {
+        if matches!(c, '.' | '!' | '?') && chars.get(i + 1).is_none_or(|n| n.is_whitespace()) {
+            end = if *c == '.' { i } else { i + 1 };
+            break;
+        }
+    }
+    let sentence: String = chars[..end].iter().collect();
+    let sentence = sentence.trim();
+    if sentence.chars().count() <= TITLE_MAX {
+        return sentence.to_string();
+    }
+    let head: Vec<char> = sentence.chars().take(TITLE_MAX - 1).collect();
+    let cut = head
+        .iter()
+        .rposition(|c| c.is_whitespace())
+        .filter(|&i| i > 0)
+        .unwrap_or(head.len());
+    let mut title: String = head[..cut].iter().collect();
+    title = title.trim_end().to_string();
+    title.push('…');
+    title
+}
+
+/// Omarchy's default agent file, which `omarchy agent prompt` reads
+/// (`omarchy-default-agent`): without it, the built-in launcher exits at
+/// once.
+const OMARCHY_DEFAULT_AGENT: &str = ".config/omarchy/defaults/agent";
+
+/// Refuses the built-in launcher when Omarchy has no default agent, before
+/// `--new` writes anything (ADR-0027 §6). Read-only; any other launcher is
+/// not checked.
+fn check_default_agent(ctx: &Context, launcher: &Launcher) -> Result<()> {
+    if launcher.argv != DEFAULT_AGENT_LAUNCHER {
+        return Ok(());
+    }
+    let file = ctx.dirs.home.join(OMARCHY_DEFAULT_AGENT);
+    let set = std::fs::read_to_string(&file).is_ok_and(|t| !t.trim().is_empty());
+    if set {
+        return Ok(());
+    }
+    Err(Error::user(format!(
+        "no default agent: Omarchy has none set, so `omarchy agent prompt` cannot start one; \
+         nothing was created. Fix: `omarchy default agent <name>` (e.g. claude), or set \
+         `[agent] launcher` in {}",
+        ctx.dirs.display(&ctx.config_file)
+    )))
 }
 
 /// A launcher from the config, checked.
@@ -335,13 +459,80 @@ impl Launcher {
     }
 }
 
-fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
+fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
+    // the creator of a --new case: the caller (default human)
+    let creator = match &target {
+        Target::New(_) => Some(actor_or_env(None, parse_person, ACTOR_HUMAN)?),
+        Target::Case(_) => None,
+    };
     let (config, logbook) = ctx.open_logbook()?;
     // the launcher is checked before anything is written
     let launcher = Launcher::resolve(&config.agent, name)?;
     let actor = launcher.actor()?;
+    let new = match target {
+        Target::Case(id) => {
+            let lock = ctx.lock()?;
+            return launch_on(ctx, &logbook, &launcher, &actor, &id, lock, None);
+        }
+        Target::New(new) => new,
+    };
+    check_default_agent(ctx, &launcher)?;
+    let intent = required_text("the intent", &new.intent)?;
+    let redactor = Redactor::for_config(&config)?;
+    let intent = redactor.redact(&intent);
+    let title = title_of(&intent);
+    let intent = cases::escape_lines(&intent);
+    if title.is_empty() {
+        return Err(Error::user(
+            "the intent's first sentence is empty; start it with what to do".to_string(),
+        ));
+    }
     let lock = ctx.lock()?;
-    let file = cases::find(&logbook, id)?;
+    let created = super::plan::create(
+        ctx,
+        &config,
+        &logbook,
+        &lock,
+        super::plan::Spec {
+            title,
+            zone: new.zone,
+            risk: new.risk,
+            area: new.area,
+            priority: Priority::Normal,
+            actor: creator.unwrap_or_else(|| ACTOR_HUMAN.to_string()),
+            intent: Some(intent),
+            tags: Vec::new(),
+            note: None,
+            start: true,
+        },
+    )?;
+    let id = created.file.case.id.clone();
+    let commit = autocommit(ctx, &config, &logbook, &format!("{id} created and started"));
+    crate::index::rebuild_if_initialised(ctx);
+    launch_on(
+        ctx,
+        &logbook,
+        &launcher,
+        &actor,
+        &id,
+        lock,
+        Some((&created, commit)),
+    )
+}
+
+/// Launches `launcher` on case `id` under `lock`. `created`: the case
+/// `--new` made under the same lock hold (it stays active when the launch
+/// fails, and the error says how to retry).
+fn launch_on(
+    ctx: &Context,
+    logbook: &Logbook,
+    launcher: &Launcher,
+    actor: &str,
+    id: &str,
+    lock: crate::logbook::lock::Lock,
+    created: Option<(&super::plan::Created, super::Commit)>,
+) -> Result<Output> {
+    let file = cases::find(logbook, id)?;
     match file.case.status {
         CaseStatus::Active => {}
         CaseStatus::Queued => {
@@ -356,33 +547,56 @@ fn start(ctx: &Context, id: &str, name: Option<&str>) -> Result<Output> {
         }
     }
 
-    let previous = cases::active_case(&logbook);
-    cases::set_active_case(&logbook, id)?;
-    let launched = launch(ctx, &logbook, &launcher, &actor, &prompt(id, &logbook.root));
-    if let Err(e) = launched.map_err(Error::User) {
-        restore(&logbook, id, previous.as_deref());
-        return Err(e);
+    let previous = cases::active_case(logbook);
+    cases::set_active_case(logbook, id)?;
+    let launched = launch(ctx, logbook, launcher, actor, &prompt(id, &logbook.root));
+    if let Err(e) = launched {
+        if created.is_some() {
+            // the case holds the user's intent: it stays, active
+            return Err(Error::user(format!(
+                "{e}; {id} was created and started and stays active: fix the launcher, then \
+                 run `seldon agent start {id}` (or Start agent on its card)"
+            )));
+        }
+        restore(logbook, id, previous.as_deref());
+        return Err(Error::User(e));
     }
     drop(lock);
 
     let program = &launcher.argv[0];
-    Ok(Output::ok(
-        format!(
-            "Agent started on {id} with launcher `{}` ({program}) in {}, as {actor}",
-            launcher.name,
-            ctx.dirs.display(&logbook.root)
-        ),
-        json!({
-            "launched": true,
-            "launcher": launcher.name,
-            "program": program,
-            "argv": launcher.argv,
-            "actor": actor,
-            "case": id,
-            "cwd": logbook.root,
-            "previousActiveCase": previous,
-        }),
-    ))
+    let mut human = String::new();
+    if let Some((c, _)) = &created {
+        human.push_str(&format!(
+            "Created and started {id} \"{}\" in {}\n",
+            c.file.case.title,
+            c.file.relative(logbook)
+        ));
+    }
+    human.push_str(&format!(
+        "Agent started on {id} with launcher `{}` ({program}) in {}, as {actor}",
+        launcher.name,
+        ctx.dirs.display(&logbook.root)
+    ));
+    let mut out = json!({
+        "launched": true,
+        "launcher": launcher.name,
+        "program": program,
+        "argv": launcher.argv,
+        "actor": actor,
+        "case": id,
+        "cwd": logbook.root,
+        "previousActiveCase": previous,
+    });
+    if let Some((c, commit)) = created {
+        human.push_str(&commit.human());
+        out["created"] = json!({
+            "case": super::plan::case_json(logbook, &c.file),
+            "events": c.events.iter().map(super::event::event_json).collect::<Vec<_>>(),
+            "areaCreated": c.area_created,
+            "git": commit.json(),
+        });
+    }
+    Ok(Output::ok(human, out))
 }
 
 /// The launcher's prompt: the case id (checked by `cases::find`), the
