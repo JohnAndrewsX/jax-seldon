@@ -163,8 +163,8 @@ banner (both numbers, "Update the plugin") — the existing rule 3.
   golden test follow every field; the engine compiles
   `proposal.schema.json` into `index --check`.
 - CONTRACT.md rules 3, 5, 8 and a new rule for the proposal file;
-  SPEC-ENGINE §3 (`plan set`, `capture`), §5 rule 9, §6; SPEC-LOGBOOK's
-  kind list.
+  SPEC-ENGINE §2 (the two state files), §3 (`plan set`, `capture`), §5
+  rule 9, §6; SPEC-LOGBOOK §4.
 
 ## Alternatives considered
 

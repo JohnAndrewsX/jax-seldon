@@ -16,7 +16,7 @@ Normative. Lives in `plugin/`, installed to `~/.config/omarchy/plugins/jax.seldo
   "kinds": ["service", "bar-widget", "overlay"],
   "entryPoints": { "service": "Service.qml", "barWidget": "BarWidget.qml", "overlay": "Overlay.qml" },
   "barWidget": { "displayName": "Seldon", "category": "System", "allowMultiple": false, "defaultSection": "right" },
-  "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }
+  "seldon": { "contractVersion": 2, "engineMin": "0.1.0" }
 }
 ```
 

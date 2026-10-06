@@ -9,7 +9,8 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | `index.sample.json` | canonical index; the plugin develops against it | `schema/index.schema.json` |
 | `index.attention-all.json` | the same logbook indexed with `[drift] attention = "all"` (ADR-0028 §5: the rollback, the drift rules before ADR-0028); derived by the script's legacy path, held to `seldon index` by the engine's golden test | `schema/index.schema.json` |
 | `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0026), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`, `case-reopened` (ADR-0027); generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
-| `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
+| `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v3` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
+| `proposals/<id>.json` | the agent's triage proposal the sample's `triage` points at (ADR-0034 §6, ADR-0035 §6): a link (tokyo-night → C-2026-005, evidence a Plan line and a journal entry), an explain (the `monitors.conf` removal) and a crisis item (the ollama unit); `logbook` is the sample's `/home/user/Seldon`. In the engine's state directory in real life; the plugin's dev mode reads it next to the index | `schema/proposal.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
 | `logs/omarchy-packages/` | verbatim copies of Omarchy's `install/omarchy-base.packages` and `omarchy-other.packages` (dev host, 2026-10-01); the dossier's `SELDON_OMARCHY_PACKAGES` in tests (WP-036) | — |
@@ -39,15 +40,17 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-29 | plugin `weather-plus` disabled and enabled again; the shell rewrites `shell.json`; a hook `post-update.d/backup-dotfiles.sh` appears (no case, `system`) | toggles and `shell.json` **routine**; the hook a **crisis** in the yellow zone (ADR-0028 §2) |
 | 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays without a resolution (WP-014) | a plain full upgrade: **routine** history since ADR-0028 (with `attention = "all"`: one yellow drift group, ADR-0013) |
 | 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (the install quiet **attention**, the unit a **crisis**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
+| 10-01 (WP-120) | The engine speaks contract 2 from the start of the day (ADR-0035): at 08:55 a capture finds `owned.json` unreadable and re-baselines the config collector (`state-loss`); at 09:00 the human raises C-2026-003 to R3 (`case-updated`, `meta.risk: R3`; its Log's `set risk R2 → R3`); every case line of the day carries `meta.risk`, the older ones do not (C-2026-003 was created on 09-26, so the harm guard reads its Log). The proposal of 17:02 (`proposals/`), the autocommit of the 17:00 note (`logbook.git.autocommit`, sample only), ADR-0003 naming C-2026-004 and C-2026-005, and the long note of 09-12 (the one clipped text, `meta.truncated`) complete the v2 surfaces | `case-updated`, `state-loss`, `meta.risk`, `meta.truncated`, `decisions[].cases`, `triage` |
 | 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5: its verify and done by `agent:claude-code`); C-2026-003 was raised to R3 before the `omarchy update` (Omarchy itself is R3, ADR-0027 §2c; as R2 the update would raise the R3 advisory). The reopen of C-2026-002 lives in the variant `case-reopened` (index only) | `closed-by-agent` marker |
 
-Result: 83 ledger lines (10 resolutions), 73 index events (8 with
-`resolutionDetail`; 1 with `zone: green`), 6 snapshots in `system.snapshots`
+Result: 85 ledger lines (10 resolutions), 75 index events (8 with
+`resolutionDetail`; 1 with `zone: green`; 1 with `meta.truncated`), 6 snapshots in `system.snapshots`
 (1 pre/post pair), 6 open drift items — 5 single (2 crises: the user unit
 and the hook) and 1 attention group of 3 (the mesa downgrade) —, 6 routine
 items (`drift --all`: the `-Syu` group, the two theme switches, the two
 toggles, `shell.json`), 8 cases (3 queued, 2 active, 1 verification, 2
-completed), 4 decisions (1 proposed).
+completed), 4 decisions (1 proposed; ADR-0003 names two cases), 1 triage
+proposal (3 items, 1 crisis).
 
 ## How the index derives from the logbook
 
