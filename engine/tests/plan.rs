@@ -670,8 +670,8 @@ mod plan {
             Some(0)
         );
         assert!(
-            find_file(&root.join("work/queued"), "C-2026-010-").is_file(),
-            "after C-2026-009"
+            find_file(&root.join("work/queued"), "C-2026-009-").is_file(),
+            "after C-2026-008"
         );
         ledger(&root);
     }

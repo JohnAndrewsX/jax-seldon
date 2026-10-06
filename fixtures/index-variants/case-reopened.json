@@ -54,7 +54,7 @@
     ]
   },
   "summary": {
-    "activeCases": 2,
+    "activeCases": 3,
     "queuedCases": 3,
     "openDrift": 4,
     "crisis": 2,
@@ -1080,6 +1080,29 @@
         "steps": {
           "total": 4,
           "done": 2
+        }
+      },
+      {
+        "id": "C-2026-009",
+        "title": "Reopen: Hyprland-Monitorlayout für Dual-WQHD",
+        "status": "active",
+        "zone": "yellow",
+        "risk": "R1",
+        "priority": "normal",
+        "area": "hyprland",
+        "created": "2026-10-01",
+        "started": "2026-10-01",
+        "closed": null,
+        "snapshotBefore": null,
+        "agents": [],
+        "events": [],
+        "tags": [
+          "reopens:C-2026-002"
+        ],
+        "path": "work/active/C-2026-009-reopen-hyprland-monitorlayout-fuer-dual.md",
+        "steps": {
+          "total": 0,
+          "done": 0
         }
       }
     ],

@@ -56,7 +56,7 @@ mod round_trip {
     #[test]
     fn case_files() {
         let files = logbook().case_files().unwrap();
-        assert_eq!(files.len(), 9, "fixtures/README.md: 9 cases");
+        assert_eq!(files.len(), 8, "fixtures/README.md: 8 cases");
         let cases: Vec<Case> = assert_round_trip(&files);
         for (path, case) in files.iter().zip(&cases) {
             let folder = path.parent().unwrap().file_name().unwrap();

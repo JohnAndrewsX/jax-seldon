@@ -457,7 +457,7 @@ mod doctor {
         assert_eq!(logbook["status"], "ok", "{logbook}");
         let message = logbook["message"].as_str().unwrap();
         assert!(
-            message.contains("9 cases, 4 decisions, 10 journal days"),
+            message.contains("8 cases, 4 decisions, 10 journal days"),
             "{message}"
         );
         assert!(message.contains("workstation-7f3a"));

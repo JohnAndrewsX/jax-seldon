@@ -1008,9 +1008,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/59/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/59/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/59/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/56/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/56/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/56/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's four, so the plugin shows "+246 more open drift items not listed here".
@@ -1018,13 +1018,29 @@ VARIANTS = {
         {"op": "test", "path": "/summary/openDrift", "value": 4},
         {"op": "replace", "path": "/summary/openDrift", "value": 250},
     ],
+    # ADR-0027 §5 (WP-101): the user reopened the agent-closed C-2026-002 (`seldon plan reopen`):
+    # a new active case with the tag `reopens:C-2026-002`, its Intent copied. Index only, like
+    # drift-explained-case: in the logbook it would move every list the plugin harness walks.
+    "case-reopened": [
+        {"op": "test", "path": "/cases/completed/0/id", "value": "C-2026-002"},
+        {"op": "test", "path": "/cases/completed/0/tags", "value": ["closed-by-agent"]},
+        {"op": "add", "path": "/cases/active/2", "value": {
+            "id": "C-2026-009", "title": "Reopen: Hyprland-Monitorlayout für Dual-WQHD",
+            "status": "active", "zone": "yellow", "risk": "R1", "priority": "normal", "area": "hyprland",
+            "created": "2026-10-01", "started": "2026-10-01", "closed": None, "snapshotBefore": None,
+            "agents": [], "events": [], "tags": ["reopens:C-2026-002"],
+            "path": "work/active/C-2026-009-reopen-hyprland-monitorlayout-fuer-dual.md",
+            "steps": {"total": 0, "done": 0}}},
+        {"op": "test", "path": "/summary/activeCases", "value": 2},
+        {"op": "replace", "path": "/summary/activeCases", "value": 3},
+    ],
     # CONTRACT.md rule 4: index.events may omit members of an open group. noto-fonts leaves events,
     # the firefox group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/3/members", "value": 3},
-        {"op": "test", "path": "/events/34/id", "value": "01M3SXBRV0E702XKBM22HEV1B8"},
-        {"op": "test", "path": "/events/34/subject", "value": "noto-fonts"},
-        {"op": "remove", "path": "/events/34"},
+        {"op": "test", "path": "/events/31/id", "value": "01M3SXBRV0E702XKBM22HEV1B8"},
+        {"op": "test", "path": "/events/31/subject", "value": "noto-fonts"},
+        {"op": "remove", "path": "/events/31"},
     ],
 }
 

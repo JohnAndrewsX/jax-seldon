@@ -59,8 +59,8 @@
     "queuedCases": 3,
     "openDrift": 4,
     "crisis": 2,
-    "eventsToday": 33,
-    "events7d": 44
+    "eventsToday": 30,
+    "events7d": 41
   },
   "today": {
     "date": "2026-10-01",
@@ -101,34 +101,6 @@
     ]
   },
   "events": [
-    {
-      "id": "01M3VZWSR0J8D4N6PQ2T7XKB5M",
-      "ts": "2026-10-01T17:04:00+02:00",
-      "source": "seldon",
-      "kind": "case-verified",
-      "subject": "C-2026-009",
-      "actor": "agent:claude-code",
-      "case": "C-2026-009"
-    },
-    {
-      "id": "01M3VZS4J0R7K2QX9VDMWA5E3J",
-      "ts": "2026-10-01T17:02:00+02:00",
-      "source": "seldon",
-      "kind": "case-started",
-      "subject": "C-2026-009",
-      "actor": "human",
-      "case": "C-2026-009"
-    },
-    {
-      "id": "01M3VZS4J0R7K2QX9VDMWA5E3H",
-      "ts": "2026-10-01T17:02:00+02:00",
-      "source": "seldon",
-      "kind": "case-created",
-      "subject": "C-2026-009",
-      "detail": "Reopen: Hyprland-Monitorlayout für Dual-WQHD",
-      "actor": "human",
-      "case": "C-2026-009"
-    },
     {
       "id": "01M3VZNFC0M2FQVGJBZGX9KDF7",
       "ts": "2026-10-01T17:00:00+02:00",
@@ -1135,31 +1107,6 @@
           "total": 4,
           "done": 3
         }
-      },
-      {
-        "id": "C-2026-009",
-        "title": "Reopen: Hyprland-Monitorlayout für Dual-WQHD",
-        "status": "verification",
-        "zone": "yellow",
-        "risk": "R1",
-        "priority": "normal",
-        "area": "hyprland",
-        "created": "2026-10-01",
-        "started": "2026-10-01",
-        "closed": null,
-        "snapshotBefore": null,
-        "agents": [
-          "agent:claude-code"
-        ],
-        "events": [],
-        "tags": [
-          "reopens:C-2026-002"
-        ],
-        "path": "work/active/C-2026-009-reopen-hyprland-monitorlayout-fuer-dual.md",
-        "steps": {
-          "total": 2,
-          "done": 1
-        }
       }
     ],
     "completed": [
@@ -1312,7 +1259,7 @@
       {
         "name": "hyprland",
         "hasAgentsMd": true,
-        "cases": 2
+        "cases": 1
       },
       {
         "name": "packages",
@@ -2864,7 +2811,7 @@
       },
       {
         "date": "2026-10-01",
-        "total": 33,
+        "total": 30,
         "bySource": {
           "agent": 6,
           "config": 2,
@@ -2872,7 +2819,7 @@
           "omarchy": 1,
           "pacman": 7,
           "plugins": 1,
-          "seldon": 9,
+          "seldon": 6,
           "snapper": 4,
           "theme": 1
         }
@@ -2924,7 +2871,7 @@
     ],
     "risk": {
       "R0": 1,
-      "R1": 4,
+      "R1": 3,
       "R2": 3,
       "R3": 1
     },
@@ -3002,13 +2949,6 @@
         "end": null,
         "label": "C-2026-008 Tailscale für Fernzugriff einrichten",
         "ref": "C-2026-008"
-      },
-      {
-        "kind": "case",
-        "ts": "2026-10-01",
-        "end": null,
-        "label": "C-2026-009 Reopen: Hyprland-Monitorlayout für Dual-WQHD",
-        "ref": "C-2026-009"
       },
       {
         "kind": "snapshot",

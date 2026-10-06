@@ -200,7 +200,7 @@ fn link_explain_dismiss_append_valid_resolutions_and_the_rows_disappear() {
     let line = &explain["events"][1];
     assert_eq!(line["resolution"], "explained");
     assert_eq!(line["detail"], "Codex set up ollama for local models");
-    assert_eq!(line["case"], "C-2026-010", "the next free id");
+    assert_eq!(line["case"], "C-2026-009", "the next free id");
     let new_case = &explain["case"];
     assert_valid_case(new_case);
     assert_eq!(new_case["status"], "completed");
@@ -221,7 +221,7 @@ fn link_explain_dismiss_append_valid_resolutions_and_the_rows_disappear() {
     );
     assert_eq!(new_case["events"], json!([OLLAMA]));
     assert_eq!(new_case["agents"], json!(["agent:codex"]), "who did it");
-    let path = find_file(&lb.join("work/completed"), "C-2026-010-");
+    let path = find_file(&lb.join("work/completed"), "C-2026-009-");
     let text = read(&path);
     assert!(
         text.contains("## Intent\n<!-- Warum dieser Case? Was soll danach anders sein? -->\nCodex set up ollama for local models\n"),
@@ -283,7 +283,7 @@ fn link_explain_dismiss_append_valid_resolutions_and_the_rows_disappear() {
     assert_eq!(event(OLLAMA)["resolution"], "explained");
     assert_eq!(
         event(OLLAMA)["case"],
-        "C-2026-010",
+        "C-2026-009",
         "ADR-0021: the explained event carries its new case"
     );
     assert_eq!(
@@ -296,7 +296,7 @@ fn link_explain_dismiss_append_valid_resolutions_and_the_rows_disappear() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|c| c["id"] == "C-2026-010")
+            .any(|c| c["id"] == "C-2026-009")
     );
 }
 
@@ -472,7 +472,7 @@ fn ids_and_cases_are_checked_before_anything_is_written() {
         e.unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with("C-2026-010")
+            .starts_with("C-2026-009")
     }));
     // a logbook that is not initialised: exit 3
     let none = env.tmp.path().join("nothing");

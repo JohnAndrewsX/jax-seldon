@@ -38,7 +38,6 @@ Zweiter WQHD-Monitor: sauberes Layout statt Auto-Erkennung.
 - 2026-09-12 10:02 · linked drift `~/.config/hypr/monitors.conf` · human
 - 2026-09-13 10:58 · verification · agent:claude-code
 - 2026-09-13 11:00 · completed · agent:claude-code
-- 2026-10-01 17:02 · reopened as C-2026-009 · human
 
 ## Result
 Layout steht, Skalierung 1.25. Abweichung in `system/deviations.md` eingetragen.
