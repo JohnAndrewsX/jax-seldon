@@ -1227,7 +1227,11 @@ its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
 case-insensitive matching folds them (`redact::trigger_text`); a trigger
 may join literals with `+` that must all be present, so a `curl` rule
-needs `curl` and its option (`curl+-x`; WP-084). The option rules
+needs `curl` and its option (`curl+-x`; WP-084), or with `>` that must
+be present in that order (`://>@`: an `@` after `://`). A trigger with
+a capital is checked on the text as written, for a rule whose literals
+are case-sensitive (`curl+-U`, `curl>-E>:`: `curl`, then `-E`, then the
+`:` of the value; WP-108). The option rules
 (`curl -u`/`--user`, `-U`/`--proxy-user`, `-x`/`--proxy`,
 `-b`/`--cookie`, `-E`/`--cert`, `http|xh -a`/`--auth`, `sshpass -p`,
 `docker … login -p`) look for the option within one command: up to an
@@ -1257,7 +1261,10 @@ query `?token=abc` inside a quoted URL stops at the closing quote; a
 double-quoted value may hold `\"` (WP-097).
 An option given twice in one command is masked
 each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
-from the end of its previous match, without a second command word;
+from the end of its previous match, without a second command word,
+and compiles the pattern for that only when the text after the match
+holds the option as written (`-u`, `-U`, `-x`, `-b`, `-E`, `-a`, `-p`,
+or a long form; WP-108);
 `sshpass` masks only its first `-p`, as a later one belongs to the
 command it runs (`ssh -p 2222`) (WP-087). Not masked (WP-097):
 combined short options (`curl -su a:b`, `-sE c.pem:pw`; a trigger is
@@ -1289,12 +1296,15 @@ after `$"pass:…"`, which reads as an unclosed quote. A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
-the output holds one marker (WP-106). `cert-password` compiles on any
-curl line holding `-e` (`set -e`, `sudo -E`), about 0.3 ms per hook
-call; accepted. `openssl-pass` compiles only on a line holding `pass:`,
-about 0.4 ms there; no hook line does; accepted. An e-mail address
-(`email`, WP-093) is a local part, `@`, and a domain of at least two
-labels whose last holds letters only (`example.de`, `müller.example`,
+the output holds one marker (WP-106). `cert-password` compiles only on
+a line holding `curl`, then `-E` as written, then a `:`, or `--cert` or
+`--proxy-cert` and a `:` after it, so neither `set -e` nor a later
+`sudo -E` without a `:` after it compiles it (WP-108; before, any curl
+line holding `-e` did, about 0.3 ms per hook call). `openssl-pass`
+compiles only on a line holding `pass:`, about 0.4 ms there; no hook
+line does; accepted. An e-mail address (`email`, WP-093) is a local
+part, `@`, and a domain of at least two labels whose last holds
+letters only (`example.de`, `müller.example`,
 `.испытание`). The local part is ASCII letters, digits and `._%+-`,
 plus characters beyond ASCII other than the no-break space, general
 punctuation (U+2000–U+206F: `—`, `„`, the quotes of `‹redacted›`), CJK
@@ -1427,7 +1437,9 @@ above the threshold; WP-076; 2026-10-05 after WP-092, load 2 to 3:
 0.6 ms, 2.8 ms and 1.2 ms, and for a curl line whose URL leaves a
 marker 3.9 ms with the rebuild and 2.2 ms above the threshold; with
 WP-093's e-mail rule 4.1 ms for that curl line and 3.6 ms for a line
-with an address). On a disk the sync of §1 comes on top.
+with an address; 2026-10-06 after WP-108, load below 1: 3.9 ms with
+the rebuild for a curl line with `-u`, `set -e`, `sudo -E` and `-am`,
+4.8 ms before). On a disk the sync of §1 comes on top.
 WP-062's redaction is not
 slower than before it: measured 2026-10-03 on a loaded dev host (load
 average 3 to 8), release builds interleaved with a build of the code

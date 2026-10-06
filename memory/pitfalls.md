@@ -2129,3 +2129,28 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   invalid user pattern the built-in rules still leave what the pattern
   was for; SPEC §7 says nothing unredacted is written. Show a fixed text
   (`collectors::MESSAGE_WITHHELD`).
+
+## 2026-10-06 · WP-108 (Engine Dev)
+
+- **A literal trigger for an option is held by every other command
+  that has the same option.** `cert-password`'s `curl+-e` fired on
+  `set -e`; the WP's narrower `-E` as written still fires on a later
+  `sudo -E` in the same line, since a trigger cannot say "in the same
+  command". What a match needs after the option is the better literal:
+  `curl>-E>:` (the value's `:`), checked in order. Probe the trigger on
+  the real hook line before you build an A/B around it.
+- **An option rule pays two compiles.** The scan-on pattern (`next`)
+  is as large as the rule's own and was compiled on the first match,
+  about 0.25 ms, even when the command gave the option once. It is now
+  compiled only when the rest holds the option. A test of that needs
+  fresh rules (`builtin_rules()`), because the shared `BUILTIN_RULES`
+  keep what an earlier test compiled.
+- **Measure the per-rule cost before choosing a lever.** A throwaway
+  probe (an `eprintln!` of each rule's compile and search time behind
+  an env var, run through `seldon event … --subject` in a scratch
+  logbook) showed four rules compiling on the hook line, of which the
+  WP's target (`cert-password`) was the smallest; it alone could not
+  reach the target.
+- **`hooks::robustness::a_panic_exits_zero` fails in the bench
+  profile.** Its panic switch is `#[cfg(debug_assertions)]`; run the
+  hooks suite in the bench profile only for the ignored timing tests.

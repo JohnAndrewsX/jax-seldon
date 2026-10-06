@@ -45,7 +45,11 @@
 //! holds one of its literal triggers ([`triggers`]); a command line
 //! without `://`, `=`, a token prefix, … compiles none of them, and a
 //! `curl` line compiles a `curl` rule only when it also holds that rule's
-//! option (`-u`, `-x`, `-b`, …).
+//! option (`-u`, `-x`, `-b`, …), a case-sensitive one as written (`-U`,
+//! `-E`) and, where a match needs it, in order (`-E` and then the `:` of
+//! its value; `://` and then `@`). An option rule compiles the pattern
+//! that finds its option again in the same command only when the rest
+//! holds that option (WP-108).
 //!
 //! The rules for an option of a command (`curl -u`, `sshpass -p`,
 //! `docker login -p`) look for it within one command ([`COMMAND_REST`]:
@@ -125,14 +129,16 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// around [`REDACTED`]. With `check`, a match counts only when its group
 /// `v` passes it. With `next`, the rule is an option of a command and
 /// finds the option again in the same command ([`Rule::matches`]). The
-/// regexes are compiled on first use; a text whose ASCII lower case holds
-/// none of `triggers` cannot match (empty: always try; see
-/// [`holds_trigger`] for `+`). A match in which one of the groups in
-/// `unless` takes part is left as it is: such a group stands for context
-/// that the `regex` crate cannot look behind or ahead for, so the pattern
-/// matches it and the rule then keeps the match. A group in
-/// `unless_followed` does so only for what follows the match
-/// ([`Rule::kept`]).
+/// regexes are compiled on first use; a text that holds none of
+/// `triggers` as [`holds_trigger`] reads them (in lower case, or as
+/// written for one with a capital; `+` and the `>` order) cannot match
+/// (empty: always try); `next` is compiled only for a rest of the
+/// command that holds one of `again` ([`Rule::again`]). A match in
+/// which one of the groups in `unless` takes part is left as it is:
+/// such a group stands for context that the `regex` crate cannot look
+/// behind or ahead for, so the pattern matches it and the rule then
+/// keeps the match. A group in `unless_followed` does so only for what
+/// follows the match ([`Rule::kept`]).
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
@@ -145,6 +151,7 @@ struct Rule {
     unless: &'static [&'static str],
     unless_followed: &'static [&'static str],
     triggers: &'static [&'static str],
+    again: &'static [&'static str],
 }
 
 /// One match of a rule: its groups, whose positions count from `offset`
@@ -188,13 +195,13 @@ impl Rule {
     /// word, and the scan never leaves the command. The search for the
     /// next command word goes on after the last of them.
     fn matches<'t>(&self, text: &'t str) -> Vec<Found<'t>> {
-        let Some(next) = self.next_regex() else {
+        if self.next.is_none() {
             return self
                 .regex()
                 .captures_iter(text)
                 .map(|caps| Found { offset: 0, caps })
                 .collect();
-        };
+        }
         let mut found = Vec::new();
         let mut pos = 0;
         while let Some(caps) = self.regex().captures_at(text, pos) {
@@ -202,7 +209,7 @@ impl Rule {
             let (start, mut end) = first.range();
             let in_command = first.caps.name("cmd").is_some();
             found.push(first);
-            while in_command && let Some(caps) = next.captures(&text[end..]) {
+            while in_command && let Some(caps) = self.again(&text[end..]) {
                 let again = Found { offset: end, caps };
                 end = again.range().1;
                 found.push(again);
@@ -214,10 +221,24 @@ impl Rule {
         found
     }
 
-    /// Whether `lower` (the text through [`trigger_text`]) may hold a
+    /// The match of `next` at the start of `rest`, the text after the
+    /// previous match of an option rule. `next` is compiled only once a
+    /// `rest` holds one of `again`, literals as written that every match
+    /// of it holds (`-u` for `curl -u`/`--user`): most commands give an
+    /// option once, and a rest without one cannot match.
+    fn again<'t>(&self, rest: &'t str) -> Option<Captures<'t>> {
+        let next = match self.next_re.get() {
+            Some(next) => next,
+            None if self.again.iter().any(|a| rest.contains(a)) => self.next_regex()?,
+            None => return None,
+        };
+        next.captures(rest)
+    }
+
+    /// Whether `text` (`lower`: through [`trigger_text`]) may hold a
     /// match.
-    fn triggered(&self, lower: &str) -> bool {
-        self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(lower, t))
+    fn triggered(&self, text: &str, lower: &str) -> bool {
+        self.triggers.is_empty() || self.triggers.iter().any(|t| holds_trigger(text, lower, t))
     }
 
     /// Whether a group of `unless` keeps this match as it is. A group of
@@ -402,21 +423,45 @@ pub const BUILTIN: [&str; 27] = [
 /// regex is compiled the first time a text triggers its rule.
 static BUILTIN_RULES: LazyLock<Vec<Rule>> = LazyLock::new(builtin_rules);
 
-/// Whether `lower` (the text through [`trigger_text`]) holds `trigger`:
-/// every one of its literals, which a `+` joins (`curl+-x`: both `curl`
-/// and `-x`, anywhere in the text).
-pub fn holds_trigger(lower: &str, trigger: &str) -> bool {
-    trigger.split('+').all(|part| lower.contains(part))
+/// Whether `text` holds `trigger`: every one of its literals, which a `+`
+/// joins (`curl+-x`: both `curl` and `-x`, anywhere in the text) or a `>`
+/// joins in order (`curl>-E>:`: `-E` after `curl`, then `:` after
+/// `-E`). A trigger with an ASCII capital is looked for in `text` as
+/// written (`curl>-E>:`, for a rule whose `curl` and `-E` are
+/// case-sensitive), any other in `lower`, the text through
+/// [`trigger_text`].
+pub fn holds_trigger(text: &str, lower: &str, trigger: &str) -> bool {
+    let hay = if trigger.bytes().any(|b| b.is_ascii_uppercase()) {
+        text
+    } else {
+        lower
+    };
+    if !trigger.contains('>') {
+        return trigger.split('+').all(|part| hay.contains(part));
+    }
+    // the leftmost occurrence of each literal leaves the most text for
+    // the next one
+    let mut rest = hay;
+    trigger.split('>').all(|part| match rest.find(part) {
+        Some(i) => {
+            rest = &rest[i + part.len()..];
+            true
+        }
+        None => false,
+    })
 }
 
-/// Literal text, in lower case, that every match of the built-in rule
-/// `name` contains (any one of them, see [`holds_trigger`]), as
-/// [`trigger_text`] spells it. A rule is tried only when the text holds
-/// one; the replacement `‹redacted›` holds no literal of them, so the
-/// text after an earlier rule needs no new check.
+/// Literal text that every match of the built-in rule `name` contains
+/// (any one of them, see [`holds_trigger`]): in lower case as
+/// [`trigger_text`] spells it, or with a capital as written where the
+/// rule is case-sensitive. A rule is tried only when the text holds one;
+/// the replacement `‹redacted›` holds no literal of them, and the text
+/// it leaves keeps its order, so the text after an earlier rule needs no
+/// new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
-        "url-userinfo" => &["://"],
+        // the `@` after the scheme: a URL without userinfo holds none
+        "url-userinfo" => &["://>@"],
         "password-option" => &["--password", "--http-password", "--ftp-password"],
         "secret-option" => &["token", "secret", "passphrase", "-pass", "bearer"],
         "openssl-pass" => &["pass:"],
@@ -457,13 +502,16 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "slack-token" => &["xox"],
         "sk-key" => &["sk-", "sk_"],
         "db-client-password" => &["mysql", "psql", "smbclient"],
-        // `-U` and `--user` both read `-u` here
+        // `--user` holds `-u`
         "curl-user" => &["curl+-u"],
-        "proxy-option" => &["curl+-u", "--proxy-"],
+        // `curl` and `-U` as written: `curl -u` holds no trigger
+        "proxy-option" => &["curl+-U", "--proxy-"],
         "proxy-userinfo" => &["curl+-x", "proxy"],
         "cookie-option" => &["curl+-b", "curl+--cookie"],
-        // `-E` reads `-e` here
-        "cert-password" => &["curl+-e", "--cert", "--proxy-cert"],
+        // `curl` and `-E` as written, and the `:` of the value after
+        // the option: neither `set -e` nor `curl … | sudo -E bash` holds
+        // one
+        "cert-password" => &["curl>-E>:", "--cert>:", "--proxy-cert>:"],
         // the command word and the white space or `\` after it, as the
         // rule requires them (ASCII, so a match always holds one)
         "httpie-auth" => &[
@@ -503,6 +551,7 @@ fn rule(name: &'static str, pattern: &str, replacement: &str) -> Rule {
         unless: &[],
         unless_followed: &[],
         triggers: triggers(name),
+        again: &[],
     }
 }
 
@@ -542,7 +591,29 @@ fn option_rule(
     }
     Rule {
         next: Some(format!(r"\A({COMMAND_REST}{option}){value}")),
+        again: again(name),
         ..rule(name, &format!("({first}){value}"), replacement)
+    }
+}
+
+/// Literal text, as written, that every match of the option `option` of
+/// the option rule `name` holds ([`option_rule`]; the options are
+/// case-sensitive, a case-insensitive long form holds `--`): the rule
+/// scans on in a command only when the rest of it holds one
+/// ([`Rule::again`]).
+fn again(name: &str) -> &'static [&'static str] {
+    match name {
+        // `--user` holds `-u`
+        "curl-user" => &["-u"],
+        "proxy-option" => &["-U", "--"],
+        "proxy-userinfo" => &["-x", "--"],
+        "cookie-option" => &["-b", "--cookie"],
+        // `--cert` and `--proxy-cert` hold `-cert`
+        "cert-password" => &["-E", "-cert"],
+        // `--auth` holds `-a`
+        "httpie-auth" => &["-a"],
+        "registry-login-password" => &["-p"],
+        _ => &[],
     }
 }
 
@@ -787,6 +858,10 @@ fn builtin_rules() -> Vec<Rule> {
         rules.iter().map(|r| r.name).eq(BUILTIN),
         "BUILTIN lists the rules"
     );
+    debug_assert!(
+        rules.iter().all(|r| r.next.is_some() != r.again.is_empty()),
+        "every option rule, and only one, has literals to scan on"
+    );
     rules
 }
 
@@ -849,6 +924,7 @@ impl Redactor {
                 unless: &[],
                 unless_followed: &[],
                 triggers: &[],
+                again: &[],
             });
         }
         Ok(redactor)
@@ -867,7 +943,7 @@ impl Redactor {
         let mut out = text.to_string();
         let lower = trigger_text(text);
         for rule in self.rules() {
-            if !rule.triggered(&lower) || !rule.regex().is_match(&out) {
+            if !rule.triggered(text, &lower) || !rule.regex().is_match(&out) {
                 continue;
             }
             out = rule.replace(&out);
@@ -882,7 +958,7 @@ impl Redactor {
         let lower = trigger_text(text);
         self.rules()
             .filter(|r| {
-                if !r.triggered(&lower) {
+                if !r.triggered(text, &lower) {
                     return false;
                 }
                 let all = r.matches(text);
@@ -890,5 +966,66 @@ impl Redactor {
             })
             .map(|r| r.name)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WP-108: an option rule compiles `next` only when the rest of the
+    /// command holds one of its `again` literals, and then finds the
+    /// option there again. Fresh rules, so no earlier text compiled it.
+    #[test]
+    fn option_rules_scan_on_only_with_their_literals() {
+        for (name, text) in [
+            ("curl-user", "curl -u a:fakeA1 h.example -u b:fakeA2"),
+            ("curl-user", "curl -u a:fakeA1 h.example --user b:fakeA2"),
+            ("proxy-option", "curl -U a:fakeB1 h.example -U b:fakeB2"),
+            (
+                "proxy-userinfo",
+                "curl -x a:fakeC1@p.example h.example -x b:fakeC2@q.example",
+            ),
+            ("cookie-option", "curl -b s=fakeD1 h.example -b t=fakeD2"),
+            (
+                "cookie-option",
+                "curl -b s=fakeD1 h.example --cookie t=fakeD2",
+            ),
+            (
+                "cert-password",
+                "curl -E c.pem:fakeE1 h.example -E d.pem:fakeE2",
+            ),
+            ("httpie-auth", "http -a a:fakeF1 h.example -a b:fakeF2"),
+            ("httpie-auth", "http -a a:fakeF1 h.example --auth b:fakeF2"),
+            (
+                "registry-login-password",
+                "docker login -p fakeG1 r.example -p fakeG2",
+            ),
+            // the repeated option glued to its value: a literal is the
+            // option alone, not the option and a space (WP-108 round 2)
+            ("curl-user", "curl -u a:fakeA1 h -ub:fakeA2"),
+            ("proxy-option", "curl -U a:fakeB1 h -Ub:fakeB2"),
+            ("proxy-userinfo", "curl -x a:fakeC1@p h -xb:fakeC2@q"),
+            ("cookie-option", "curl -b s=fakeD1 h -bt=fakeD2"),
+            ("cert-password", "curl -E c.pem:fakeE1 h -Ed.pem:fakeE2"),
+            ("httpie-auth", "http -a a:fakeF1 h -ab:fakeF2"),
+            (
+                "registry-login-password",
+                "docker login -p fakeG1 r -pfakeG2",
+            ),
+        ] {
+            let rules = builtin_rules();
+            let rule = rules.iter().find(|r| r.name == name).unwrap();
+            let out = rule.replace(text);
+            assert!(!out.contains("fake"), "{name}: {out}");
+            assert_eq!(out.matches(REDACTED).count(), 2, "{name}: {out}");
+        }
+        // a curl line that gives `-u` once leaves `next` uncompiled
+        let rules = builtin_rules();
+        let rule = rules.iter().find(|r| r.name == "curl-user").unwrap();
+        let out = rule
+            .replace("set -e; curl -fsSL -u a:fakeA1 https://h.example/i.sh && git commit -am x");
+        assert!(!out.contains("fake"), "{out}");
+        assert!(rule.next_re.get().is_none());
     }
 }
