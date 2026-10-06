@@ -233,7 +233,11 @@ commands only while a case is active.
 
 Before 0.1.4 the hooks went into the logbook's own
 `.claude/settings.json`, which Claude Code reads only in the logbook
-folder. `seldon doctor` shows that:
+folder. The first capture after the update adds them to
+`~/.claude/settings.json` on its own, keeps everything else in that
+file, and says so in one `note:` line. It does this once: if you take
+them out of `~/.claude/settings.json` later, they stay out. Until then,
+or after you took them out, `seldon doctor` shows:
 
 ```text
   degraded  hooks    logbook only (.claude/settings.json): sessions started from ~/Work are not recorded

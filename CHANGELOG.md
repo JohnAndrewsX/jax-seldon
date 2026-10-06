@@ -382,6 +382,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only (degraded: "sessions started from ~/Work are not recorded", fix
   `seldon hook install claude-code`), none (ok unless `harnesses` names
   claude-code); `--json` `hooks.installed`.
+- **Existing installs keep recording (WP-116 round 1b).** A logbook from
+  before 0.1.4 has the hooks in its own `.claude/settings.json`, which
+  Claude Code does not read in `~/Work`. The first capture after the
+  update (as the user, never as root) adds them to the user-wide
+  settings when that file has none of Seldon's hooks, keeps every
+  foreign hook and key, and says so in one `note:` line (`--json`
+  `hooksUserWide`). It does this once: hooks you take out of the
+  user-wide file later are not added again.
 - **Agent rules v4 (WP-116, ADR-0030, ADR-0031).** The aim is "as few
   password prompts as the route allows" (no longer "at most one"):
   before an R2 or R3 step the agent snapshots the `root` config, another

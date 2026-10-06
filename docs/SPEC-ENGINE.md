@@ -508,7 +508,18 @@ and its fix), a missing `AGENTS.md` or a folder without the skill stays
 so, a damaged or newer block is left. A skill update writes one
 `seldon` note to the ledger (subject `skill`, detail "Seldon agent skill
 updated to seldon <version> in <folders> (it was unedited)"; WP-116): the
-files lie outside the logbook, so the ledger keeps the record. A released block in the other
+files lie outside the logbook, so the ledger keeps the record. (c)
+(WP-116 round 1b, ADR-0030 §5) carries Claude Code's hooks user-wide
+once: when the logbook's own `.claude/settings.json` holds any of
+Seldon's three hooks and the user-wide settings (`hook install`'s
+default) none, it merges them there as `hook install` does (foreign
+hooks and keys kept), records the write as its own (`by: seldon
+capture`), and writes the marker `$XDG_STATE_HOME/seldon/hooks-user-wide`;
+the marker is also written when the user-wide file already holds one of
+Seldon's hooks. With the marker nothing is added again, so hooks the user
+removed stay removed; without hooks in the logbook's file nothing
+happens (doctor's `hooks` row names the fix); a user-wide file that is
+not JSON is left alone with a `warnings` line and no marker. A released block in the other
 language becomes this engine's block in the logbook's language (the
 logbook's language is the user's choice). A CRLF copy of a released v1
 file counts as that file. Skipped when the process runs as root (the
@@ -516,7 +527,8 @@ owner of `/proc/self` is 0), and, failing closed, when that owner cannot
 be read (one `warnings` line); the package has no install
 script (`just check-packaging` pins it), so no package hook runs it. One
 `note:` line each in the human output; `--json` `rulesUpdated` (with the
-commit's `git`) and `skillsUpdated`. A failure is a `warnings` line, never
+commit's `git`), `skillsUpdated` and `hooksUserWide` (the `~`-path, or
+`null`). A failure is a `warnings` line, never
 the capture's.
 
 Help texts (WP-049): every command's `--help` starts with one sentence;
@@ -692,7 +704,8 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
                           "sinceIgnored":[…],"explainedOwn":N,"explainedSelf":N,
                           "watchPathsAdded":[…],"rulesUpdated":{"from":"vN","version":4,"git"}|null,
-                          "skillsUpdated":["~/.claude/skills",…],"warnings":[…]}
+                          "skillsUpdated":["~/.claude/skills",…],
+                          "hooksUserWide":"~/.claude/settings.json"|null,"warnings":[…]}
                                                                     # explainedOwn: §5 rule 7;
                                                                     # watchPathsAdded: §4 config;
                                                                     # rulesUpdated, skillsUpdated:
@@ -1935,7 +1948,9 @@ agents call `hook generic` themselves.
 
 Two settings files with the hooks (the user-wide one and an older
 logbook's own) make Claude Code run the PreToolUse hook twice per tool
-call; the engine records a tool call once whatever runs it: a call whose
+call (an older logbook's own file is carried user-wide by the next
+capture, §3, and stays as it was); the engine records a tool call once
+whatever runs it: a call whose
 `tool_use_id` the ledger already holds within a day writes nothing, for
 `PreToolUse` as for `PostToolUse` (ADR-0030 §5, WP-116). A `PreToolUse`
 searches the last 256 KiB of each month file in range for the id (its
