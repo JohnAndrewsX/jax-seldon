@@ -1423,7 +1423,9 @@ above the threshold; WP-076; 2026-10-05 after WP-092, load 2 to 3:
 0.6 ms, 2.8 ms and 1.2 ms, and for a curl line whose URL leaves a
 marker 3.9 ms with the rebuild and 2.2 ms above the threshold; with
 WP-093's e-mail rule 4.1 ms for that curl line and 3.6 ms for a line
-with an address). On a disk the sync of §1 comes on top.
+with an address; 2026-10-06 after WP-108, load below 1: 3.9 ms with
+the rebuild for a curl line with `-u`, `set -e`, `sudo -E` and `-am`,
+4.8 ms before). On a disk the sync of §1 comes on top.
 WP-062's redaction is not
 slower than before it: measured 2026-10-03 on a loaded dev host (load
 average 3 to 8), release builds interleaved with a build of the code
