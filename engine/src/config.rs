@@ -292,15 +292,78 @@ impl Default for Config {
 
 /// SPEC-ENGINE §4 (config collector). `~/.config/omarchy/plugins/` and
 /// the desktop entries' `mimeinfo.cache` are excluded by the collector;
-/// missing paths are skipped.
-pub const DEFAULT_WATCH_PATHS: [&str; 6] = [
+/// missing paths are skipped. The last six are the persistence paths of
+/// ADR-0028 §4d (`[drift] alwaysRedPaths`).
+pub const DEFAULT_WATCH_PATHS: [&str; 12] = [
     "~/.config/hypr",
     "~/.config/omarchy",
     "~/.config/waybar",
     "~/.bashrc",
     "~/.zshrc",
     "~/.local/share/applications",
+    "~/.config/systemd/user",
+    "~/.config/autostart",
+    "~/.config/environment.d",
+    "~/.config/uwsm",
+    "~/.profile",
+    "~/.bash_profile",
 ];
+
+/// The default `watchPaths` of earlier engines: 0.1.0 to 0.1.3, and the
+/// unreleased list of WP-089. A config whose list still equals one of
+/// them (in any order) gains the current defaults (ADR-0028 §4d).
+pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 2] = [
+    &[
+        "~/.config/hypr",
+        "~/.config/omarchy",
+        "~/.config/waybar",
+        "~/.bashrc",
+        "~/.zshrc",
+    ],
+    &[
+        "~/.config/hypr",
+        "~/.config/omarchy",
+        "~/.config/waybar",
+        "~/.bashrc",
+        "~/.zshrc",
+        "~/.local/share/applications",
+    ],
+];
+
+impl Config {
+    /// ADR-0028 §4d: when `watchPaths` equals an earlier engine's default
+    /// list, appends the current defaults it lacks and returns them; a
+    /// list the user changed is never widened (empty result).
+    pub fn upgrade_watch_paths(&mut self) -> Vec<String> {
+        let mut have: Vec<&str> = self.watch_paths.iter().map(String::as_str).collect();
+        have.sort_unstable();
+        have.dedup();
+        let earlier = EARLIER_DEFAULT_WATCH_PATHS.iter().any(|list| {
+            let mut list = list.to_vec();
+            list.sort_unstable();
+            list == have
+        });
+        if !earlier {
+            return Vec::new();
+        }
+        let added: Vec<String> = DEFAULT_WATCH_PATHS
+            .iter()
+            .filter(|p| !self.watch_paths.iter().any(|w| w == *p))
+            .map(|p| p.to_string())
+            .collect();
+        self.watch_paths.extend(added.iter().cloned());
+        added
+    }
+
+    /// The current default `watchPaths` a user-changed list lacks (for
+    /// `doctor`); empty for a list that holds them all.
+    pub fn missing_default_watch_paths(&self) -> Vec<&'static str> {
+        DEFAULT_WATCH_PATHS
+            .into_iter()
+            .filter(|p| !self.watch_paths.iter().any(|w| w == p))
+            .collect()
+    }
+}
 
 /// Harnesses the wizard can set up: Claude Code's hooks
 /// (`.claude/settings.json`) and the Omarchy-Agent kit's guard and skills
@@ -415,19 +478,119 @@ pub const DEFAULT_SKIP_PATHS: [&str; 5] = [
     "~/.config/omarchy/**/*.log",
 ];
 
-/// Drift grouping (ADR-0013).
+/// `[drift]`: grouping (ADR-0013) and the classification by consequence
+/// (ADR-0028 §2, §4c), read at index time. The keys ADR-0028 added are
+/// written only when they differ from the default, so a later engine's
+/// new defaults reach a config `init` wrote.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DriftConfig {
     pub always_red: Vec<String>,
+    /// `normal`: the §2 table; `all`: every drift-eligible event without a
+    /// case is open drift, crisis iff red (the derivation before ADR-0028,
+    /// its rollback).
+    #[serde(skip_serializing_if = "AttentionMode::is_default")]
+    pub attention: AttentionMode,
+    /// The routine rule ids that apply ([`ROUTINE_RULES`]); drop one to
+    /// make its events attention again.
+    #[serde(skip_serializing_if = "is_default_routine")]
+    pub routine: Vec<String>,
+    /// `config-*` subjects that are routine (`skipPaths` glob syntax).
+    #[serde(skip_serializing_if = "is_default_routine_paths")]
+    pub routine_paths: Vec<String>,
+    /// Packages whose explicit transactions are routine (`keyring`).
+    #[serde(skip_serializing_if = "is_default_routine_packages")]
+    pub routine_packages: Vec<String>,
+    /// `config-*` subjects that are crises: the persistence paths
+    /// (`skipPaths` glob syntax).
+    #[serde(skip_serializing_if = "is_default_always_red_paths")]
+    pub always_red_paths: Vec<String>,
+}
+
+/// `[drift] attention`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttentionMode {
+    #[default]
+    Normal,
+    All,
+}
+
+impl AttentionMode {
+    fn is_default(&self) -> bool {
+        *self == AttentionMode::default()
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AttentionMode::Normal => "normal",
+            AttentionMode::All => "all",
+        }
+    }
+}
+
+/// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules), the
+/// default of `[drift] routine`.
+pub const ROUTINE_RULES: [&str; 11] = [
+    "sysupgrade",
+    "upgrade",
+    "keyring",
+    "omarchy-update",
+    "plugin-toggle",
+    "theme",
+    "omarchy-default",
+    "system-link",
+    "routine-paths",
+    "theme-assets",
+    "theme-repo",
+];
+
+/// Default `[drift] routinePaths`: the shell's own state file and backups
+/// (`omarchy refresh` writes `<file>.bak.<epoch>`).
+pub const DEFAULT_ROUTINE_PATHS: [&str; 2] = ["~/.config/omarchy/shell.json", "**/*.bak.*"];
+
+/// Default `[drift] routinePackages`.
+pub const DEFAULT_ROUTINE_PACKAGES: [&str; 2] = ["archlinux-keyring", "omarchy-keyring"];
+
+/// Default `[drift] alwaysRedPaths`: code that runs at login or on events
+/// without being configuration (ADR-0028 §2).
+pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 7] = [
+    "~/.config/systemd/user/**",
+    "~/.config/omarchy/hooks/**",
+    "~/.config/autostart/**",
+    "~/.config/environment.d/**",
+    "~/.config/uwsm/**",
+    "~/.profile",
+    "~/.bash_profile",
+];
+
+fn strings(list: &[&str]) -> Vec<String> {
+    list.iter().map(|s| s.to_string()).collect()
+}
+
+fn is_default_routine(v: &Vec<String>) -> bool {
+    *v == strings(&ROUTINE_RULES)
+}
+
+fn is_default_routine_paths(v: &Vec<String>) -> bool {
+    *v == strings(&DEFAULT_ROUTINE_PATHS)
+}
+
+fn is_default_routine_packages(v: &Vec<String>) -> bool {
+    *v == strings(&DEFAULT_ROUTINE_PACKAGES)
+}
+
+fn is_default_always_red_paths(v: &Vec<String>) -> bool {
+    *v == strings(&DEFAULT_ALWAYS_RED_PATHS)
 }
 
 impl Default for DriftConfig {
-    /// The R3 subjects of ADR-0023 as package globs (WP-050): the kernels
-    /// (not firmware or headers), systemd, glibc, Hyprland, Omarchy itself,
-    /// the shell, the boot loader and initramfs, the login path (`pam`,
-    /// `sddm`, `uwsm`); `/etc` through `omarchy-settings` (Omarchy's `/etc`
-    /// layer) and `filesystem` (the base `/etc` files).
+    /// `alwaysRed`: the R3 subjects of ADR-0023 as package globs (WP-050):
+    /// the kernels (not firmware or headers), systemd, glibc, Hyprland,
+    /// Omarchy itself, the shell, the boot loader and initramfs, the login
+    /// path (`pam`, `sddm`, `uwsm`); `/etc` through `omarchy-settings`
+    /// (Omarchy's `/etc` layer) and `filesystem` (the base `/etc` files).
+    /// The rest: ADR-0028 §2.
     fn default() -> Self {
         DriftConfig {
             always_red: [
@@ -454,6 +617,11 @@ impl Default for DriftConfig {
             ]
             .map(String::from)
             .to_vec(),
+            attention: AttentionMode::Normal,
+            routine: strings(&ROUTINE_RULES),
+            routine_paths: strings(&DEFAULT_ROUTINE_PATHS),
+            routine_packages: strings(&DEFAULT_ROUTINE_PACKAGES),
+            always_red_paths: strings(&DEFAULT_ALWAYS_RED_PATHS),
         }
     }
 }

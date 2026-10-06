@@ -8,7 +8,9 @@
 //! `open_drift`, `index.drift`) and only decides what to write.
 //!
 //! - **Resolving drift** (`seldon drift link|explain|dismiss`, ADR-0008,
-//!   ADR-0013 §4): [`select`] picks the open members a command resolves,
+//!   ADR-0013 §4, ADR-0028 §3): [`select`] picks the members a command
+//!   resolves (`link` also takes routine events; `explain|dismiss` refuse
+//!   them),
 //!   [`resolutions`] builds one `resolution` line per member for one ledger
 //!   write. The original lines are never touched.
 //! - **Case files** (ADR-0012 §10): [`attach`] records event ids in a
@@ -35,6 +37,8 @@ use crate::attribution;
 use crate::collectors::config::OwnWrites;
 use crate::error::{Error, Result};
 use crate::index::Built;
+use crate::index::build::ClassifiedItem;
+use crate::index::class::Class;
 use crate::index::model::IndexEvent;
 use crate::ledger::Ledger;
 use crate::logbook::Logbook;
@@ -48,13 +52,32 @@ use crate::model::is_ulid;
 pub struct Selection<'a> {
     /// The named event as the index sees it (resolution folded).
     pub event: &'a IndexEvent,
-    /// The open members to resolve, oldest first: the named event and, for
-    /// a pacman event without `--only`, every other open member of its
-    /// transaction. Empty when the named event is not open drift.
+    /// The members to resolve, oldest first: the named event and, for a
+    /// pacman event without `--only`, every other linkable member of its
+    /// transaction. Empty when the named event can no longer be resolved.
     pub members: Vec<&'a Event>,
     /// The transaction's `txId` when the write fans out over two or more
     /// members (`meta.txId` of every line, ADR-0013 §4).
     pub group: Option<&'a str>,
+    /// The item the named event belongs to (class, rule; ADR-0028 §2);
+    /// `None` when it can no longer be resolved.
+    pub item: Option<&'a ClassifiedItem>,
+}
+
+impl Selection<'_> {
+    /// Whether the named event's item is a crisis (ADR-0028 §3).
+    pub fn crisis(&self) -> bool {
+        self.item.is_some_and(|i| i.class == Class::Crisis)
+    }
+}
+
+/// What a resolving command does, as far as the selection goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Intent {
+    /// `drift link`: any linkable event, routine ones too (ADR-0028 §8).
+    Link,
+    /// `drift explain|dismiss`: open drift only; a routine event exits 1.
+    Resolve,
 }
 
 /// Checks the form of an event id given on the command line.
@@ -83,36 +106,49 @@ pub fn find<'a>(built: &'a Built, id: &str) -> Result<&'a IndexEvent> {
     Err(Error::user(format!("unknown event {id}")))
 }
 
+/// The item of linkable events `e` belongs to, with its class.
+pub fn item_of<'a>(built: &'a Built, e: &Event) -> Option<&'a ClassifiedItem> {
+    if !built.linkable.contains(&e.id) {
+        return None;
+    }
+    built.items.iter().find(|i| i.members.contains(&e.id))
+}
+
 /// The open drift members of `e`'s drift item, oldest first: for an open
 /// pacman event with a `txId`, every open pacman event of that transaction
 /// (ADR-0013 §1); for any other open event, the event itself; nothing when
-/// `e` is not open drift.
+/// `e` is not open drift (resolved, or routine, ADR-0028).
 pub fn open_members<'a>(built: &'a Built, e: &Event) -> Vec<&'a Event> {
     if !built.open_drift.contains(&e.id) {
         return Vec::new();
     }
-    let tx = e.tx_id.as_deref().filter(|_| e.source == Source::Pacman);
+    linkable_members(built, e)
+}
+
+/// The linkable members of `e`'s item, oldest first (open drift or
+/// routine); nothing when `e` can no longer be resolved.
+pub fn linkable_members<'a>(built: &'a Built, e: &Event) -> Vec<&'a Event> {
+    let Some(item) = item_of(built, e) else {
+        return Vec::new();
+    };
     let mut members: Vec<&Event> = built
         .folded
         .iter()
         .map(|f| &f.event)
-        .filter(|m| built.open_drift.contains(&m.id))
-        .filter(|m| match tx {
-            Some(tx) => m.source == Source::Pacman && m.tx_id.as_deref() == Some(tx),
-            None => m.id == e.id,
-        })
+        .filter(|m| item.members.contains(&m.id))
         .collect();
     members.sort_by_key(|m| (m.ts, m.id));
     members
 }
 
-/// What a command on `id` resolves: the open members of its item, or the
-/// event alone with `only` (ADR-0013 §4). A named event that is no longer
-/// open selects nothing, so a re-run writes nothing, also after `--only`
-/// (the remaining members are a new item with a leader of their own).
-/// Exit 1 for an unknown id and for an event that can never be drift
-/// (ADR-0012 §6).
-pub fn select<'a>(built: &'a Built, id: &str, only: bool) -> Result<Selection<'a>> {
+/// What a command on `id` resolves: the members of its item, or the event
+/// alone with `only` (ADR-0013 §4). A named event that can no longer be
+/// resolved selects nothing, so a re-run writes nothing, also after
+/// `--only` (the remaining members are a new item with a leader of their
+/// own). Exit 1 for an unknown id, for an event that can never be drift
+/// (ADR-0012 §6), and for `explain|dismiss` of a routine event (ADR-0028
+/// §3: history, not drift; `link` still takes it).
+pub fn select<'a>(built: &'a Built, id: &str, only: bool, intent: Intent) -> Result<Selection<'a>> {
     let event = find(built, id)?;
     let e = &event.event;
     if !e.source.is_drift_eligible() {
@@ -121,7 +157,17 @@ pub fn select<'a>(built: &'a Built, id: &str, only: bool) -> Result<Selection<'a
             e.source, e.kind
         )));
     }
-    let mut members = open_members(built, e);
+    let item = item_of(built, e);
+    if intent == Intent::Resolve
+        && let Some(i) = item.filter(|i| i.class == Class::Routine)
+    {
+        return Err(Error::user(format!(
+            "{id} is routine (rule `{}`, ADR-0028): history, not drift; nothing to explain or dismiss. \
+             `seldon drift link` ties it to a case",
+            i.rule
+        )));
+    }
+    let mut members = linkable_members(built, e);
     if only {
         members.retain(|m| m.id == e.id);
     }
@@ -133,6 +179,7 @@ pub fn select<'a>(built: &'a Built, id: &str, only: bool) -> Result<Selection<'a
         event,
         members,
         group,
+        item,
     })
 }
 

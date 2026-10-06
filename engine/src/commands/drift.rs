@@ -1,9 +1,14 @@
-//! `seldon drift [--crisis-only]`, `drift link|explain|dismiss|show`
+//! `seldon drift [--crisis-only] [--all]`, `drift link|explain|dismiss|show`
 //! (SPEC-ENGINE §3 §5, CONTRACT.md "Commands the plugin may run").
 //!
 //! The list is the index's drift model (WP-007), not a second derivation:
 //! the newest 200 open items, crises first (ADR-0020), with the totals of
-//! every open item. A resolving command appends one `resolution` line per
+//! every open item; `--all` lists every item that can still be resolved,
+//! routine ones too, uncapped (ADR-0028 §4c). Each item carries its class
+//! and the rule that gave it (ADR-0028 §2). `link` also resolves a routine
+//! event; `explain` and `dismiss` refuse one (exit 1). An agent actor may
+//! not explain or dismiss a crisis, and may link one only to an active
+//! case that lists it in `agents` (ADR-0028 §3); a human is never refused. A resolving command appends one `resolution` line per
 //! open member of the named event's item in one ledger write (ADR-0008,
 //! ADR-0013 §4); `--only` resolves the named event alone; a re-run finds
 //! nothing open and writes nothing. `link` and `explain` record the
@@ -21,6 +26,8 @@ use super::event::{actor_or_env, clip, emit, event_json, parse_case_id, parse_pe
 use super::plan::case_json;
 use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::{Error, Result};
+use crate::index::build::ClassifiedItem;
+use crate::index::class::Class;
 use crate::index::{self, Built};
 use crate::logbook::cases::{self, CaseFile};
 use crate::model::event::{ACTOR_HUMAN, Event, Kind, Resolution, Source};
@@ -34,9 +41,13 @@ pub struct DriftArgs {
     #[command(subcommand)]
     pub command: Option<DriftCommand>,
 
-    /// Only crises (red-zone items)
+    /// Only crises (changes that can affect boot, login or the shell)
     #[arg(long)]
     pub crisis_only: bool,
+
+    /// Also routine events (history, not drift), every item, uncapped
+    #[arg(long)]
+    pub all: bool,
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -140,7 +151,7 @@ pub fn parse_event_id(s: &str) -> Result<String, String> {
 
 pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
     match args.command {
-        None => list(ctx, args.crisis_only),
+        None => list(ctx, args.crisis_only, args.all),
         Some(DriftCommand::Show { id }) => show(ctx, &id),
         Some(DriftCommand::Link(a)) => resolve(
             ctx,
@@ -173,34 +184,60 @@ pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
     }
 }
 
-/// The open drift items of the index model; `--crisis-only` keeps the red
-/// ones. `openDrift`/`crisis` count every open item, also past the cap.
-fn list(ctx: &Context, crisis_only: bool) -> Result<Output> {
+/// An item as the list and `show` print it: the index's fields plus its
+/// class and rule (ADR-0028 §2).
+fn item_json(i: &ClassifiedItem) -> Value {
+    let mut v = serde_json::to_value(&i.item).expect("an item always serialises");
+    v["class"] = json!(i.class.as_str());
+    v["rule"] = json!(i.rule);
+    v
+}
+
+/// The open drift items of the index model (crises first past the cap,
+/// ADR-0020), or with `--all` every item of linkable events, routine ones
+/// included, uncapped; `--crisis-only` keeps the crises. `openDrift` and
+/// `crisis` count every open item, also past the cap.
+fn list(ctx: &Context, crisis_only: bool, all: bool) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     let built = index::derive(ctx, &config, &logbook)?;
     warn(&built);
     let summary = &built.index.summary;
-    let items: Vec<&index::model::DriftItem> = built
-        .index
-        .drift
-        .iter()
-        .filter(|d| !crisis_only || d.crisis)
-        .collect();
-    let shown_total = if crisis_only {
-        summary.crisis
+    let listed: Vec<&ClassifiedItem> = if all {
+        built.items.iter().collect()
     } else {
-        summary.open_drift
+        // the capped index list, in its order
+        built
+            .index
+            .drift
+            .iter()
+            .filter_map(|d| built.items.iter().find(|i| i.item.event_id == d.event_id))
+            .collect()
+    };
+    let items: Vec<&ClassifiedItem> = listed
+        .into_iter()
+        .filter(|i| !crisis_only || i.class == Class::Crisis)
+        .collect();
+    let routine = built
+        .items
+        .iter()
+        .filter(|i| i.class == Class::Routine)
+        .count();
+    let shown_total = match (crisis_only, all) {
+        (true, _) => summary.crisis,
+        (false, true) => summary.open_drift + routine,
+        (false, false) => summary.open_drift,
     };
 
     let mut human = String::new();
-    for d in &items {
+    for i in &items {
+        let d = &i.item;
         let _ = writeln!(
             human,
-            "{:<6}  {}  {}/{}  {}{}{}  {}",
-            if d.crisis {
-                "CRISIS"
-            } else {
-                d.zone.as_deref().unwrap_or("-")
+            "{:<9}  {}  {}/{}  {}{}{}  {}",
+            match i.class {
+                Class::Crisis => "CRISIS",
+                Class::Routine => "routine",
+                Class::Attention => d.zone.as_deref().unwrap_or("-"),
             },
             short_ts(&d.ts),
             d.source,
@@ -217,10 +254,10 @@ fn list(ctx: &Context, crisis_only: bool) -> Result<Output> {
         );
     }
     if items.is_empty() {
-        human.push_str(if crisis_only {
-            "No crises."
-        } else {
-            "No open drift."
+        human.push_str(match (crisis_only, all) {
+            (true, _) => "No crises.",
+            (false, true) => "Nothing to resolve.",
+            (false, false) => "No open drift.",
         });
     } else {
         let _ = write!(
@@ -228,6 +265,9 @@ fn list(ctx: &Context, crisis_only: bool) -> Result<Output> {
             "{} open drift item(s), {} crisis",
             summary.open_drift, summary.crisis
         );
+        if all {
+            let _ = write!(human, "; {routine} routine (history, not drift)");
+        }
         if items.len() < shown_total {
             let _ = write!(human, "; showing the newest {}", items.len());
         }
@@ -235,26 +275,25 @@ fn list(ctx: &Context, crisis_only: bool) -> Result<Output> {
     Ok(Output::ok(
         human.trim_end(),
         json!({
-            "drift": items,
+            "drift": items.iter().map(|i| item_json(i)).collect::<Vec<_>>(),
             "openDrift": summary.open_drift,
             "crisis": summary.crisis,
+            "routine": routine,
         }),
     ))
 }
 
-/// `drift show <id>`: the event as the index folds it, its item (when the
-/// capped index lists it) and every open member of its group, oldest first.
+/// `drift show <id>`: the event as the index folds it, its item with class
+/// and rule, and every member of its item that can still be resolved,
+/// oldest first (open drift, or routine: ADR-0028).
 fn show(ctx: &Context, id: &str) -> Result<Output> {
     let (config, logbook) = ctx.open_logbook()?;
     let built = index::derive(ctx, &config, &logbook)?;
     warn(&built);
     let event = reconcile::find(&built, id)?;
-    let members = reconcile::open_members(&built, &event.event);
-    let item = built
-        .index
-        .drift
-        .iter()
-        .find(|d| members.iter().any(|m| m.id.to_string() == d.event_id));
+    let members = reconcile::linkable_members(&built, &event.event);
+    let item = reconcile::item_of(&built, &event.event);
+    let open = item.is_some_and(|i| i.listed);
     let folded = |m: &Event| -> Value {
         built
             .folded
@@ -266,39 +305,46 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
 
     let e = &event.event;
     let mut human = format!("{}  {}\n", e.id, e);
-    if members.is_empty() {
-        human.push_str(&not_open(event));
-    } else {
-        let _ = writeln!(
-            human,
-            "Open drift{}:",
-            item.map(|d| format!(
-                " ({}{})",
-                d.zone.as_deref().unwrap_or("-"),
-                if d.crisis { ", crisis" } else { "" }
-            ))
-            .unwrap_or_default()
-        );
-        for m in &members {
+    match item {
+        None => human.push_str(&not_open(event)),
+        Some(i) => {
+            let d = &i.item;
             let _ = writeln!(
                 human,
-                "  {}  {}{}",
-                m.id,
-                m,
-                if m.explicit == Some(true) {
-                    "  (explicit)"
-                } else {
-                    ""
-                }
+                "{} (rule {}):",
+                match i.class {
+                    Class::Routine =>
+                        "Routine, history, not drift; `drift link` still takes it".to_string(),
+                    Class::Crisis =>
+                        format!("Open drift ({}, crisis)", d.zone.as_deref().unwrap_or("-")),
+                    Class::Attention =>
+                        format!("Open drift ({})", d.zone.as_deref().unwrap_or("-")),
+                },
+                i.rule
             );
+            for m in &members {
+                let _ = writeln!(
+                    human,
+                    "  {}  {}{}",
+                    m.id,
+                    m,
+                    if m.explicit == Some(true) {
+                        "  (explicit)"
+                    } else {
+                        ""
+                    }
+                );
+            }
         }
     }
     Ok(Output::ok(
         human.trim_end(),
         json!({
             "event": folded(e),
-            "open": !members.is_empty(),
-            "item": item,
+            "open": open,
+            "class": item.map(|i| i.class.as_str()),
+            "rule": item.map(|i| i.rule),
+            "item": item.map(item_json),
             "txId": e.tx_id.as_deref().filter(|_| members.len() > 1),
             "members": members.iter().map(|m| folded(m)).collect::<Vec<_>>(),
         }),
@@ -363,7 +409,12 @@ fn resolve(
         Action::Link { case } => Some(cases::find(&logbook, case)?),
         _ => None,
     };
-    let sel = reconcile::select(&built, id, only)?;
+    let intent = match &action {
+        Action::Link { .. } => reconcile::Intent::Link,
+        _ => reconcile::Intent::Resolve,
+    };
+    let sel = reconcile::select(&built, id, only, intent)?;
+    refuse_agent(actor, &sel, &action, case_file.as_ref())?;
     let resolution = action.resolution();
     if sel.members.is_empty() {
         drop(lock);
@@ -485,6 +536,35 @@ fn resolve(
             "git": commit.json(),
         }),
     ))
+}
+
+/// ADR-0028 §3, enforced: an agent actor may not explain or dismiss a
+/// crisis, and may link one only to an active case that lists it in
+/// `agents`. A human is never refused. Exit 1 before any write.
+fn refuse_agent(
+    actor: &str,
+    sel: &Selection,
+    action: &Action,
+    case: Option<&CaseFile>,
+) -> Result<()> {
+    if !crate::model::is_agent(actor) || !sel.crisis() {
+        return Ok(());
+    }
+    let id = &sel.event.event.id;
+    match (action, case) {
+        (Action::Link { .. }, Some(file))
+            if file.case.status == CaseStatus::Active
+                && file.case.agents.iter().any(|a| a == actor) =>
+        {
+            Ok(())
+        }
+        (Action::Link { case: c }, _) => Err(Error::user(format!(
+            "{id} is a crisis (ADR-0028 §3): {actor} may link it only to an active case that lists {actor} in `agents`, which {c} does not; tell the user"
+        ))),
+        _ => Err(Error::user(format!(
+            "{id} is a crisis (ADR-0028 §3): an agent may not explain or dismiss it; tell the user in one line, or link it to your active case if your own work caused it"
+        ))),
+    }
 }
 
 /// The case `drift explain` creates: WP-006's template and id sequence,
