@@ -901,8 +901,10 @@ function changelogRows(index, filter) {
     var item = leader || group
     var grouped = leader !== null && typeof leader.members === "number"
     // One colour source per row: open drift by its item's class (driftTone:
-    // crisis urgent, attention accent), anything else by the event's own zone.
-    var tone = item === null ? zoneTone(e.zone) : driftTone(item)
+    // crisis urgent, attention accent). Every other row is an ordinary
+    // Changelog row (ADR-0028 §4b), quiet whatever its zone: the muted
+    // stripe when it has a zone, none when it has not.
+    var tone = item !== null ? driftTone(item) : ZONES.indexOf(e.zone) !== -1 ? "muted" : ""
     var day = dayOf(e.ts)
     rows.push({
       id: str(e.id),
@@ -1028,6 +1030,9 @@ function journalEntries(list) {
 }
 
 // Today's journal, yesterday's (shown collapsed) and the summary counts.
+// "without a case" is the attention count (openDrift − crisis), the number
+// the tooltip and the Changelog line show; crises are in the strip and the
+// pictogram (ADR-0028 §4b).
 function todayView(index) {
   var today = index && isObject(index.today) ? index.today : {}
   var summary = index && isObject(index.summary) ? index.summary : {}
@@ -1043,7 +1048,7 @@ function todayView(index) {
       { label: "in 7 days", value: count(summary.events7d) },
       { label: "active", value: count(summary.activeCases) },
       { label: "queued", value: count(summary.queuedCases) },
-      { label: "open drift", value: count(summary.openDrift) }
+      { label: "without a case", value: Math.max(0, count(summary.openDrift) - count(summary.crisis)) }
     ]
   }
 }
@@ -1602,12 +1607,12 @@ function firstCrisis(index) {
 }
 
 // ADR-0020: the index lists the newest 200 open drift items; the summary
-// counts all. "+N more open drift items not listed here", or "".
+// counts all. "+N more changes without a case not listed here", or "".
 function moreDriftText(index) {
   var c = counts(index)
   var listed = index && Array.isArray(index.drift) ? index.drift.length : 0
   var more = c ? c.drift - listed : 0
-  return more > 0 ? "+" + more + " more open drift " + (more === 1 ? "item" : "items") + " not listed here" : ""
+  return more > 0 ? "+" + plural(more, "more change", "more changes") + " without a case not listed here" : ""
 }
 
 // ---- Decisions (WP-023) -----------------------------------------------------

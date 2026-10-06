@@ -70,6 +70,9 @@ test("pillTone: crisis beats active beats default", () => {
   assert.strictEqual(M.pillTone(null), "default")
   assert.strictEqual(M.pillTone({ active: 0, crisis: 0 }), "default")
   assert.strictEqual(M.pillTone({ active: 1, crisis: 0 }), "accent")
+  // ADR-0028 §4a: attention alone never colours the bar
+  assert.strictEqual(M.pillTone({ active: 0, drift: 4, crisis: 0 }), "default")
+  assert.strictEqual(M.pillTone({ active: 0, drift: 4, crisis: 0, attention: 4 }), "default")
   assert.strictEqual(M.pillTone({ active: 0, crisis: 1 }), "urgent")
   assert.strictEqual(M.pillTone({ active: 2, crisis: 2 }), "urgent")
 })
@@ -370,15 +373,25 @@ test("changelogRows: 62 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(rows[0].tone, "")
   // One colour source per row: open drift by its item's class (ADR-0028
   // §4b), so the attention group (members red in the ledger) is accent
-  // throughout; resolved or cased events by their own zone.
+  // throughout; every other row is an ordinary, quiet row: muted whatever
+  // its zone, no stripe without one.
   for (const s of ["firefox", "libinput", "noto-fonts"]) {
     const r = rows.find((x) => x.subject === s)
     assert.strictEqual(r.zone, "red", s + " ledger zone")
     assert.strictEqual(r.tone, "accent", s)
   }
-  assert.strictEqual(rows.find((r) => r.subject === "hyprland").tone, "urgent")
-  assert.strictEqual(rows.find((r) => r.subject === "btop").tone, "urgent")
-  assert.strictEqual(tyme.tone, "accent")
+  // red zone with a case, not drift; red zone resolved (explained, linked);
+  // yellow zone resolved: all muted
+  for (const s of ["hyprland", "zed", "btop", "tailscale"]) {
+    const r = rows.find((x) => x.subject === s)
+    assert.strictEqual(r.zone, "red", s + " ledger zone")
+    assert.strictEqual(r.drift, false, s)
+    assert.strictEqual(r.tone, "muted", s)
+  }
+  assert.strictEqual(tyme.zone, "yellow")
+  assert.strictEqual(tyme.tone, "muted")
+  same([...new Set(rows.filter((r) => !r.drift).map((r) => r.tone))].sort(), ["", "muted"])
+  assert.strictEqual(rows.filter((r) => !r.drift && r.tone === "").every((r) => r.zone === ""), true)
   // The tone follows `crisis`, never the zone: without a zone, and with
   // zones swapped (a yellow crisis, a red attention item).
   const noZone = JSON.parse(sample)
@@ -445,7 +458,12 @@ test("todayView: today's and yesterday's journal and the summary counts", () => 
   assert.strictEqual(t.yesterday.length, 1)
   assert.strictEqual(M.entryMeta(t.entries[0]), "09:25 · claude-code · C-2026-003")
   assert.strictEqual(M.entryMeta(t.entries[2]), "14:40 · human")
-  same(t.stats.map((s) => s.value), [30, 41, 2, 3, 4])
+  // "without a case" is the attention count: 4 open drift − 2 crises
+  same(t.stats.map((s) => s.label), ["events today", "in 7 days", "active", "queued", "without a case"])
+  same(t.stats.map((s) => s.value), [30, 41, 2, 3, 2])
+  const over = JSON.parse(sample)
+  over.summary.crisis = 9
+  assert.strictEqual(M.todayView(over).stats[4].value, 0, "never negative")
   const empty = M.todayView(null)
   same([empty.entries.length, empty.yesterday.length, empty.title], [0, 0, "Today"])
 })
@@ -906,9 +924,9 @@ test("folded resolutions: explained · C-… (ADR-0021), the crisis target, +N m
   assert.strictEqual(M.moreDriftText(sampleIndex), "")
   const capped = JSON.parse(sample)
   capped.summary.openDrift = 250
-  assert.strictEqual(M.moreDriftText(capped), "+246 more open drift items not listed here")
+  assert.strictEqual(M.moreDriftText(capped), "+246 more changes without a case not listed here")
   capped.summary.openDrift = 5
-  assert.strictEqual(M.moreDriftText(capped), "+1 more open drift item not listed here")
+  assert.strictEqual(M.moreDriftText(capped), "+1 more change without a case not listed here")
 })
 
 // ---- Decisions and Memory (WP-023) ----

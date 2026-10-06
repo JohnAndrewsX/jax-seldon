@@ -60,6 +60,10 @@ Item {
   readonly property int rowCount: rows.length
   readonly property string moreDrift: Model.moreDriftText(indexData)
   readonly property string attention: Model.attentionText(indexData)
+  // The quiet line is drawn in the dim foreground, never a tone (read-out).
+  // Compared as #AARRGGBB: Text keeps its colour in 8 bits per channel, so
+  // Qt.colorEqual with the 16-bit `dim` (alpha 0.65) never matches.
+  readonly property bool attentionDim: String(attentionLine.color) === String(root.dim)
   readonly property bool editing: sheetOpen && sheet.editing
   readonly property color dim: Util.alpha(foreground, 0.65)
 

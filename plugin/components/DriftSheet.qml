@@ -131,6 +131,9 @@ FocusScope {
     .filter(function(p) { return p !== "" }).join(" · ") : ""
   // ADR-0028 §4b: *Ask agent* comes before Link / Explain / Dismiss.
   readonly property bool askSlotFirst: formColumn.children[0] === askAgentSlot
+  // Empty until WP-095: hidden and no height (read-out).
+  readonly property bool askSlotVisible: askAgentSlot.visible
+  readonly property real askSlotHeight: askAgentSlot.height
   property alias askAgentSlot: askAgentSlot
 
   signal leaveRequested()

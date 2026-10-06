@@ -150,8 +150,8 @@ Six tabs, each with a fixed number key:
 
 | # | Tab | Shows | Actions |
 |---|---|---|---|
-| 1 | Today | the date, today's counts (events today and in 7 days, active and queued cases, open drift), the QuickEntry, today's journal entries, yesterday's behind one row | write a note; *Open in editor* (today's journal) |
-| 2 | Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; snapshot rows highlighted; changes without a case marked (crises in the urgent colour, the others in the accent), and a quiet "N changes without a case" line under the header | *Resolve…* on every change without a case; *Ledger* (this month's ledger); *Capture now* |
+| 1 | Today | the date, today's counts (events today and in 7 days, active and queued cases, changes without a case that are no crisis), the QuickEntry, today's journal entries, yesterday's behind one row | write a note; *Open in editor* (today's journal) |
+| 2 | Changelog | every event in the index, newest first, grouped by day; source filter chips with counts; snapshot rows highlighted; changes without a case marked (crises in the urgent colour, the others in the accent; every other row has a muted stripe whatever its zone), and a quiet "N changes without a case" line under the header | *Resolve…* on every change without a case; *Ledger* (this month's ledger); *Capture now* |
 | 3 | Work | your cases in three columns, Queued · Active (verification included) · Completed (the last 50, dropped ones struck through); "2 / 3 active" against your limit; the card of the case under the cursor | *New case*; the card's actions (below) |
 | 4 | Decisions | your decisions (ADRs), newest first: id, status (*proposed* marked, *superseded* struck through), title, date | *Open*; *New decision* |
 | 5 | System | Omarchy version, theme and last update, package counts, deviations, plugins, snapshots, areas, collectors, machine and engine | *Open in editor* (the logbook's `STATUS.md`) |
@@ -244,7 +244,7 @@ resolved the change; if the logbook resolved it already, the sheet says
 | ← / →, `h` / `l` | previous / next tab |
 | ↑ / ↓, `k` / `j` | move in the list (the first press shows the cursor); on Work, through the cases column by column |
 | Tab / Shift-Tab | the bar's next / previous panel, as in every Omarchy panel (never cycles tabs) |
-| Enter, Space | open the row; on an unexplained Changelog row, the drift sheet; on Work, the card's first action (*Open* at once; *Start*, *Verify* or *Done* on the second press); on Decisions and Memory, the file in the editor |
+| Enter, Space | open the row; on a Changelog row without a case, the drift sheet; on Work, the card's first action (*Open* at once; *Start*, *Verify* or *Done* on the second press); on Decisions and Memory, the file in the editor |
 | `x` | Work: drop the case under the cursor, on the second press |
 | `a` | Work: start an agent on the active case under the cursor, on the second press |
 | `f` / `F` | Changelog: next / previous source filter |

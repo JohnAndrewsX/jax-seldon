@@ -127,6 +127,9 @@ expect sample 1 .view.today.state crisis
 expect sample 1 .view.crisis "2 changes that can affect boot, login or the shell have no case"
 shows sample 1 "2 changes that can affect boot, login or the shell have no case"
 expect sample 1 .view.today.entries 4
+# ADR-0028 §4b: the counts row's last stat is the attention count
+shows sample 1 "without a case"
+expect sample 1 '[.texts[] | select(. == "open drift")] | length' 0
 expect sample 1 .view.today.yesterday 1
 shows sample 1 "Thursday, 1 Oct 2026"
 shows sample 1 "09:25 · claude-code · C-2026-003"
@@ -608,8 +611,8 @@ clean_log drift-sample
 # 13. ADR-0020: the index lists fewer drift items than the summary counts.
 jq '.summary.openDrift = 250' "$fx/index.sample.json" >"$work/capped.json"
 run drift-capped "$work/capped.json" "tab:changelog" HARNESS_SETTINGS='{"driftInBar":"all"}'
-expect drift-capped 1 .view.changelog.more "+246 more open drift items not listed here"
-shows drift-capped 1 "+246 more open drift items not listed here"
+expect drift-capped 1 .view.changelog.more "+246 more changes without a case not listed here"
+shows drift-capped 1 "+246 more changes without a case not listed here"
 # driftInBar `all`: D is summary.openDrift, not the listed items
 expect drift-capped 1 .view.pill "2 · 250"
 expect drift-capped 1 .view.changelog.attention "248 changes without a case"
@@ -638,6 +641,7 @@ expect quiet-crisis 1 .view.pill "2 · 1"
 expect quiet-crisis 1 .view.crisis "1 change that can affect boot, login or the shell has no case"
 shows quiet-crisis 1 "1 change that can affect boot, login or the shell has no case"
 expect quiet-crisis 2 .view.changelog.attention "3 changes without a case"
+expect quiet-crisis 2 .view.changelog.attentionDim true
 shows quiet-crisis 2 "3 changes without a case"
 expect quiet-crisis 2 '.view.changelog.driftTones | join(",")' \
   "tokyo-night accent,$HOOK urgent,ollama accent,libinput accent,noto-fonts accent,firefox accent"
@@ -650,6 +654,8 @@ expect quiet-crisis 3 .view.drift.heading "RESOLVE A CRISIS"
 expect quiet-crisis 3 .view.drift.zoneLabel "yellow · crisis"
 expect quiet-crisis 3 .view.drift.explainZone yellow
 expect quiet-crisis 3 .view.drift.askSlotFirst true
+expect quiet-crisis 3 .view.drift.askSlotVisible false
+expect quiet-crisis 3 .view.drift.askSlotHeight 0
 shows quiet-crisis 3 "RESOLVE A CRISIS"
 shows quiet-crisis 3 "yellow · crisis"
 expect quiet-crisis 5 .view.drift.eventId $OLLAMA
@@ -659,6 +665,8 @@ expect quiet-crisis 5 .view.drift.tone accent
 expect quiet-crisis 5 .view.drift.heading "RESOLVE DRIFT"
 expect quiet-crisis 5 .view.drift.zoneLabel red
 expect quiet-crisis 5 .view.drift.askSlotFirst true
+expect quiet-crisis 5 .view.drift.askSlotVisible false
+expect quiet-crisis 5 .view.drift.askSlotHeight 0
 shows quiet-crisis 5 "RESOLVE DRIFT"
 expect quiet-crisis 5 '[.texts[] | select(test("crisis|CRISIS"))] | length' 0
 expect quiet-crisis 7 .view.drift.open true
@@ -677,6 +685,7 @@ expect quiet-attention 1 .view.crisis ""
 expect quiet-attention 1 .view.today.state all-clear
 expect quiet-attention 1 .view.pill ""
 expect quiet-attention 2 .view.changelog.attention "4 changes without a case"
+expect quiet-attention 2 .view.changelog.attentionDim true
 shows quiet-attention 2 "4 changes without a case"
 expect quiet-attention 2 '.view.changelog.driftTones | map(select(endswith(" urgent"))) | length' 0
 shows quiet-attention 2 "No case"
