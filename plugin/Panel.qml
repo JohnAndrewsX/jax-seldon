@@ -187,6 +187,13 @@ Panel {
       bannerPictogram: statusBanner.visible ? statusBanner.pictogram : "",
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
       snapper: snapperBanner.visible && root.service.snapperBanner ? root.service.snapperBanner.title : "",
+      // the snapper banner's hover text: the engine's message and what the
+      // grant gives (WP-117)
+      snapperTip: {
+        text: snapperBanner.visible ? snapperBanner.tooltipText : "",
+        shown: snapperBanner.tooltipShown,
+        fits: snapperBanner.tooltipFits
+      },
       rules: rulesBanner.visible && root.service.rulesBanner ? {
         title: root.service.rulesBanner.title,
         actions: root.service.rulesBanner.actions.map(function(a) { return a.label }),
