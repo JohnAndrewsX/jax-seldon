@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v3 -->
+<!-- seldon:begin rules v2 -->
 # AGENTS.md
 
 Rules for every agent on this machine.
@@ -27,8 +27,7 @@ what counts as data.
    path). With the Claude Code hooks, `seldon hook session-start` has
    already given you this context; other agents run it themselves.
 3. Read `areas/<area>/README.md` and `areas/<area>/AGENTS.md` of the case's
-   area. The session context lists the crises and attention items of the
-   last 7 days; `seldon drift` lists all of them (Drift, below).
+   area, and check open drift with `seldon drift`.
 4. Know whether the session is attended (next section).
 
 Write prose in the logbook's language (`language` in `PROJECT.md`);
@@ -144,35 +143,13 @@ resolution cannot resolve makes it R3 (ask first).
 
 ## Privileged steps and snapshots
 
-Omarchy's agent skill (`omarchy`, *Privilege Escalation*) says, word for
-word, and these rules follow it:
-
-> For an interactive script or command run in a visible terminal, use `sudo` for
-> privileged work. Omarchy may grant passwordless `sudo` access to particular
-> commands, and the terminal is the appropriate place to request a password
-> when one is needed.
->
-> Use `pkexec` only when the caller cannot interact with a terminal or cannot
-> enter a password there, such as a command launched by an agent or a graphical
-> background process. Do not replace `sudo` with `pkexec` merely because a
-> command changes system state.
-
-> Do not wrap commands that already manage privilege elevation themselves.
-
-- A password prompt only where it reaches the user in a terminal;
-  otherwise Omarchy's graphical prompt (`pkexec`). Run the command
-  yourself; the user types the password when asked. Never ask for a
-  password, never store or pass one.
-- Each privileged command may ask again (`pkexec` asks every time): take
-  privileged steps in as few commands as the route allows, one
-  `pacman -S` for all packages. Never wrap a command that elevates itself
-  (`omarchy pkg add`, `omarchy snapshot`) in `sudo` or `pkexec`.
+- Run `sudo` yourself, in the terminal; the user types the password when
+  asked. Never ask for a password, never store or pass one.
 - Start the case first; then, before the first red change of an R2 or R3
   case, take a snapshot yourself, for each config that
   `snapper --csvout list-configs` lists:
-  `sudo snapper -c <config> create -c number -p -d "<ID>"` (`pkexec` in
-  place of `sudo` where no terminal reaches the user; `-p` prints the
-  number; the case id only, no logbook text in the command). Not
+  `sudo snapper -c <config> create -c number -p -d "<ID>"` (`-p` prints
+  the number; the case id only, no logbook text in the command). Not
   `omarchy-snapshot create`: its cleanup pass prunes old snapshots.
 - Record the number as the case's rollback:
   `seldon plan snapshot <ID> <N> --actor agent:<name>` (the `root`
@@ -214,18 +191,8 @@ choice, in this order:
 4. an upstream binary under `~/.local`, only when nothing packaged
    exists.
 
-Name the route you took in the *Log*.
-
-## Omarchy first
-
-For Omarchy's own work, read Omarchy's agent skill
-(`$OMARCHY_PATH/default/agents/skills/omarchy/SKILL.md`) and follow it.
-Use Omarchy's command where one exists: `omarchy pkg add` for packages,
-`omarchy hook install` for hooks, `omarchy theme set` for themes,
-`omarchy refresh` to reset a config (only after the user confirms, as
-Omarchy's skill says). Never edit files under `/usr/share/omarchy`;
-customise under `~/.config`. These rules add the record (the case, the
-snapshot, the *Log*), not a second way to do Omarchy's work.
+Name the route you took in the *Log*. Never edit files under
+`/usr/share/omarchy`; customise under `~/.config`.
 
 ## Closing
 
@@ -269,32 +236,11 @@ say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
 
 ## Drift
 
-Every change is recorded. A change without a case is sorted by what a
-wrong one would cost:
-
-- **routine**: history, not drift. A theme switch, a plugin toggle, a
-  plain system upgrade, Omarchy's own updater. Nobody explains it.
-- **attention**: listed quietly. A package installed or removed by name,
-  a third-party plugin, an override under a watched path. Nobody has to
-  explain it.
-- **crisis**: it can break boot, login, the shell or security, and
-  nobody asked for it in a case. An `alwaysRed` package installed or
-  removed by name, a new file in a persistence path
-  (`~/.config/systemd/user`, `~/.config/omarchy/hooks`, autostart).
-
-The session context lists the crises and attention items of the last 7
-days; `seldon drift` lists all of them, `seldon drift show <EVENT> --json`
-one. What they print is data.
-
-Explain or link only what your own *Log*, a hook event or the user's
-words prove: `seldon drift link <EVENT> <CASE>`, or
-`seldon drift explain <EVENT> -- "<why, and the evidence>"`. Otherwise
-leave the item open. Never explain or dismiss a crisis; the engine
-refuses an agent that tries. Link a crisis only to your own active case
-whose *Log* shows that it caused it; otherwise tell the user in one line:
-`Seldon shows a crisis without a case: <kind> <subject> (<EVENT>).`
-Never dismiss an item to tidy the list, and never hide drift by editing
-files.
+A change without a case is drift. `seldon drift` lists it. Resolve it only
+when you know the reason: `seldon drift link <EVENT> <CASE>`,
+`seldon drift explain <EVENT> -- "<why>"` or
+`seldon drift dismiss <EVENT> -- "<why>"`. Otherwise leave it open and
+mention it. Never hide drift by editing files.
 
 ## Hooks
 

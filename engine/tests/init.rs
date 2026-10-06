@@ -1471,6 +1471,46 @@ mod setup {
         assert!(checked > 40, "{checked} commands checked");
     }
 
+    /// Omarchy's agent skill, *Privilege Escalation*, as the rules block
+    /// quotes it (WP-111): line for line as in
+    /// `$OMARCHY_PATH/default/agents/skills/omarchy/SKILL.md`.
+    const OMARCHY_PRIVILEGE: &str =
+        "For an interactive script or command run in a visible terminal, use `sudo` for
+privileged work. Omarchy may grant passwordless `sudo` access to particular
+commands, and the terminal is the appropriate place to request a password
+when one is needed.
+
+Use `pkexec` only when the caller cannot interact with a terminal or cannot
+enter a password there, such as a command launched by an agent or a graphical
+background process. Do not replace `sudo` with `pkexec` merely because a
+command changes system state.";
+
+    /// The same skill, *Critical Safety Rules*.
+    const OMARCHY_NO_WRAP: &str =
+        "Do not wrap commands that already manage privilege elevation themselves.";
+
+    /// On a host with Omarchy: the quoted text is still the skill's.
+    #[test]
+    fn the_quoted_privilege_wording_is_omarchys() {
+        let omarchy = std::env::var_os("OMARCHY_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| "/usr/share/omarchy".into());
+        let Ok(skill) =
+            std::fs::read_to_string(omarchy.join("default/agents/skills/omarchy/SKILL.md"))
+        else {
+            eprintln!("skipped: no Omarchy agent skill on this host");
+            return;
+        };
+        assert!(
+            skill.contains(OMARCHY_PRIVILEGE),
+            "the skill's wording changed"
+        );
+        assert!(
+            skill.contains(OMARCHY_NO_WRAP),
+            "the skill's wording changed"
+        );
+    }
+
     #[test]
     fn agents_md_carries_the_agent_rules_in_both_languages() {
         // WP-047: the short form of docs/AGENT-GUIDE.md; one file, no CLAUDE.md
@@ -1481,7 +1521,7 @@ mod setup {
         }
         // WP-100: the ADR-0027 rules (v2), Seldon's block first, then the
         // user's part
-        const SECTIONS: [&str; 18] = [
+        const SECTIONS: [&str; 19] = [
             "## Session start",
             "## Attended or not",
             "## Instructions and data",
@@ -1492,6 +1532,7 @@ mod setup {
             "## Privileged steps and snapshots",
             "## Zones and risk",
             "## Installing software",
+            "## Omarchy first",
             "## Closing",
             "## Commands",
             "## Journal and memory",
@@ -1501,7 +1542,7 @@ mod setup {
             "## Never",
             "## Your rules",
         ];
-        let rules: [(&str, &[&str]); 15] = [
+        let rules: [(&str, &[&str]); 16] = [
             (
                 "## Session start",
                 &[
@@ -1557,6 +1598,10 @@ mod setup {
                 "## Privileged steps and snapshots",
                 &[
                     "sudo",
+                    "pkexec",
+                    "*Privilege Escalation*",
+                    "> Do not wrap commands that already manage privilege elevation themselves.",
+                    "omarchy pkg add",
                     "snapper --csvout list-configs",
                     "sudo snapper -c <config> create -c number -p -d \"<ID>\"",
                     "snapshot <N> (<config>) before <step>",
@@ -1572,6 +1617,17 @@ mod setup {
                     "makepkg -si",
                     "~/.local",
                     "curl … | sh",
+                ],
+            ),
+            (
+                "## Omarchy first",
+                &[
+                    "$OMARCHY_PATH/default/agents/skills/omarchy/SKILL.md",
+                    "omarchy pkg add",
+                    "omarchy hook install",
+                    "omarchy theme set",
+                    "omarchy refresh",
+                    "/usr/share/omarchy",
                 ],
             ),
             (
@@ -1600,9 +1656,13 @@ mod setup {
             (
                 "## Drift",
                 &[
-                    "seldon drift link",
-                    "seldon drift explain",
-                    "seldon drift dismiss",
+                    "seldon drift link <EVENT> <CASE>",
+                    "seldon drift explain <EVENT> --",
+                    "seldon drift show <EVENT> --json",
+                    "*Log*",
+                    "alwaysRed",
+                    "~/.config/omarchy/hooks",
+                    "Seldon shows a crisis without a case: <kind> <subject> (<EVENT>).",
                 ],
             ),
             (
@@ -1647,7 +1707,18 @@ mod setup {
                 assert!(!agents.contains(dropped), "{language}: {dropped}");
             }
             assert!(
-                agents.starts_with("<!-- seldon:begin rules v2 -->\n"),
+                agents.starts_with("<!-- seldon:begin rules v3 -->\n"),
+                "{language}"
+            );
+            // Omarchy's privilege wording, word for word (WP-111)
+            let quoted: String = section(&agents, "## Privileged steps and snapshots")
+                .lines()
+                .filter_map(|l| l.strip_prefix("> ").or(l.strip_prefix(">")))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(
+                quoted,
+                format!("{OMARCHY_PRIVILEGE}\n{OMARCHY_NO_WRAP}"),
                 "{language}"
             );
             assert!(agents.contains("docs/AGENT-GUIDE.md"), "{language}");

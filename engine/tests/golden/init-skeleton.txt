@@ -1,5 +1,5 @@
 == AGENTS.md
-fence rules v2
+fence rules v3
 # AGENTS.md
 ## Session start
 ## Attended or not
@@ -11,6 +11,7 @@ fence rules v2
 ## Privileged steps and snapshots
 ## Zones and risk
 ## Installing software
+## Omarchy first
 ## Closing
 ## Commands
 ## Journal and memory

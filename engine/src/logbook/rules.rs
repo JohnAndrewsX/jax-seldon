@@ -5,9 +5,12 @@
 //! the user's own rules after it. `seldon rules update` brings the block of
 //! an existing file up to this engine's rules and keeps everything outside
 //! it; a file from before the block keeps only the user's own lines (WP-100
-//! round 2). `seldon doctor` reports the block's [`State`]. Pure
-//! functions: the command does the reading, archiving, writing and
-//! committing.
+//! round 2). `seldon doctor` reports the block's [`State`]. Every
+//! `seldon capture` brings a block nobody edited (one an earlier engine
+//! shipped, word for word) up to this engine's ([`silent_upgrade`],
+//! WP-111; ADR-0028 §4d: an unchanged default is upgraded, the user's own
+//! text is kept). Pure functions: the commands do the reading, archiving,
+//! writing and committing.
 //!
 //! Marker lines count only as whole lines (`\n` or `\r\n`); the block ends
 //! at the first `<!-- seldon:end -->` line after its begin marker. The
@@ -19,7 +22,7 @@ use std::borrow::Cow;
 use crate::index::load::{FENCE_BEGIN, FENCE_END};
 
 /// The rules version this engine writes.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// The rules file, relative to the logbook root.
 pub const FILE: &str = "AGENTS.md";
@@ -60,15 +63,26 @@ const V1_TEXTS: [&str; 10] = [
     include_str!("../../templates/rules-v1/AGENTS-wp047-de.md"),
 ];
 
-/// sha256 of every rules block Seldon wrote (LF line ends), besides this
-/// engine's own: rewriting one of them loses nothing, any other block was
-/// edited and its file is archived first. A change of the block text adds
-/// the old one here: the v2 block of WP-100, before WP-101 put
-/// `plan snapshot` and `plan set` into it (en, de; on `main` and the test
-/// host, in no release; `templates/rules-v2/`).
-const RELEASED_BLOCKS: [&str; 2] = [
+/// sha256 of every rules block an earlier engine shipped (LF line ends),
+/// en and de: rewriting one of them loses nothing, any other block was
+/// edited and its file is archived first; a file whose block is one of
+/// them is upgraded by the next capture ([`silent_upgrade`]). A change of
+/// the block text adds the old one here, with its rendering under
+/// `templates/rules-v<N>/`: the v2 blocks of WP-100 (rounds 1, 2 and the
+/// merged one) and of WP-101 (on `main` and the test host, in no release).
+const RELEASED_BLOCKS: [&str; 8] = [
+    // WP-100 round 1 (6625cf9), en, de
+    "8246c602f96980427956697d995bec2500aa8f66cc5b8b502ca12a86b4dc5d23",
+    "7831a764354213f6b847bc329f8f9a5830d7f04ac0b1421067cd1b29ca57919a",
+    // WP-100 round 2 (d201048)
+    "21b2c0eb5a036ce5ee9c55e48226f63afe39141b01f0ac0bb08f1c2a056f10a3",
+    "66fdb593ed07d4fbfdf41fdadbaf783414649d203ec927a0651bfd0a5cd1ef3a",
+    // WP-100 as merged (1a0a043)
     "b0ddf1fddb392159c078597b9d03aa7593125e0ef2a398086f4fb034f3d13bba",
     "68e9aaf90fc7b4d38bc65c859f5623ee39bd093d05f3a6f1e42824e8ca386bef",
+    // WP-101 (f89381a), the last v2
+    "cb59e3b806b8b1adfc2cdfd45dbb5c91c3871b92cfa7e00fc1d14d635c427292",
+    "0267b6a12155d2e65efcebb49b2568afe8b52151a66cc55f4e0883c6c88b95a3",
 ];
 
 /// Where the rules block of a text is.
@@ -168,7 +182,13 @@ pub fn template_block(template: &str) -> &str {
 pub enum State {
     /// The block is this engine's, word for word.
     Current,
-    /// An older block, or none (`1`, a file from before the block).
+    /// An older block, or a block of this version with other text,
+    /// exactly as an earlier engine shipped it; or a file from before the
+    /// block exactly as a release wrote it (`1`). Nobody edited it: the
+    /// next capture upgrades it ([`silent_upgrade`]).
+    Unedited(u32),
+    /// An older block that was edited, or none (`1`, a file from before
+    /// the block that is not a released one).
     Outdated(u32),
     /// A block of this version whose text differs from this engine's.
     Changed,
@@ -185,6 +205,9 @@ impl State {
     pub fn label(&self) -> String {
         match self {
             State::Current => format!("current (v{VERSION})"),
+            State::Unedited(v) => {
+                format!("v{v} as Seldon wrote it; the next capture updates it to v{VERSION}")
+            }
             State::Outdated(v) => format!("outdated (v{v})"),
             State::Changed => {
                 format!("outdated (v{VERSION}, its text differs from this seldon's rules)")
@@ -203,18 +226,49 @@ pub fn state(text: Option<&str>, template: &str) -> State {
         return State::Missing;
     };
     match find(text) {
+        Block::Unfenced if is_released_v1(text) => State::Unedited(1),
         Block::Unfenced => State::Outdated(1),
         Block::Damaged(why) => State::Damaged(why),
         Block::Fenced { version, .. } if version > VERSION => State::Newer(version),
-        Block::Fenced { version, .. } if version < VERSION => State::Outdated(version),
-        Block::Fenced { start, end, .. } => {
-            if lf(&text[start..end]) == template_block(template) {
+        Block::Fenced {
+            version,
+            start,
+            end,
+            ..
+        } => {
+            let block = lf(&text[start..end]);
+            if version == VERSION && block == template_block(template) {
                 State::Current
+            } else if is_released_block(&block) {
+                State::Unedited(version)
+            } else if version < VERSION {
+                State::Outdated(version)
             } else {
                 State::Changed
             }
         }
     }
+}
+
+/// The new text of the rules file `old` when the next capture upgrades it
+/// without asking: its block is one an earlier engine shipped, word for
+/// word, or the file is a released v1 file ([`State::Unedited`]). The
+/// text outside the block stays byte for byte; nothing is archived,
+/// because nothing in it is the user's. `None` for every other file: an
+/// edited block keeps the doctor row and its fix, a missing file stays
+/// missing.
+pub fn silent_upgrade(old: &str, template: &str) -> Option<Update> {
+    if !matches!(state(Some(old), template), State::Unedited(_)) {
+        return None;
+    }
+    update(Some(old), template, false)
+        .ok()
+        .filter(|u| u.action == Action::Rewritten && !u.archive)
+}
+
+/// Whether `block` (LF line ends) is a block an earlier engine shipped.
+fn is_released_block(block: &str) -> bool {
+    RELEASED_BLOCKS.contains(&crate::sys::sha256_hex(block.as_bytes()).as_str())
 }
 
 fn lf(text: &str) -> Cow<'_, str> {
@@ -365,7 +419,7 @@ fn is_seldon_block(block: &str) -> bool {
         let t = crate::logbook::templates::find(FILE).expect("a built-in AGENTS.md template");
         template_block(t.text(language)) == block
     });
-    ours || RELEASED_BLOCKS.contains(&crate::sys::sha256_hex(block.as_bytes()).as_str())
+    ours || is_released_block(&block)
 }
 
 /// The lines of an unfenced `old` that occur in no text Seldon wrote
@@ -516,26 +570,102 @@ mod tests {
         }
     }
 
-    /// WP-101 changed the v2 block's text: a logbook with WP-100's block
-    /// reads as outdated and is rewritten without an archive (its text is
-    /// Seldon's), keeping the user's part; an edited one is archived.
+    /// Every v2 rendering on `main` (WP-100 rounds 1 and 2, WP-100 as
+    /// merged, WP-101), en and de.
+    const V2_FILES: [&str; 4] = ["wp100r1", "wp100r2", "wp100", "wp101"];
+
+    fn v2(name: &str, language: &str) -> String {
+        let path = format!(
+            "{}/templates/rules-v2/AGENTS-{name}-{language}.md",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        std::fs::read_to_string(&path).unwrap()
+    }
+
+    /// Every block an earlier engine shipped is known by its hash, and
+    /// the list holds nothing else (WP-111).
     #[test]
-    fn the_wp100_block_is_seldons_and_is_rewritten_without_an_archive() {
-        for (name, language) in [("en", Language::En), ("de", Language::De)] {
-            let path = format!(
-                "{}/templates/rules-v2/AGENTS-wp100-{name}.md",
-                env!("CARGO_MANIFEST_DIR")
-            );
-            let old = std::fs::read_to_string(&path).unwrap();
-            let t = template(language);
-            assert_ne!(old, t, "{name}: the block text changed");
-            let old = format!("{old}- my own rule\n");
-            let u = update(Some(&old), &t, false).unwrap();
-            assert!(!u.archive, "{name}");
-            assert_eq!(u.text, format!("{t}- my own rule\n"), "{name}");
-            let edited = old.replacen("\n# AGENTS.md\n", "\n# AGENTS\n", 1);
-            assert!(update(Some(&edited), &t, false).unwrap().archive, "{name}");
+    fn the_released_blocks_are_exactly_the_shipped_v2_blocks() {
+        let mut hashes: Vec<String> = V2_FILES
+            .iter()
+            .flat_map(|name| ["en", "de"].map(|l| v2(name, l)))
+            .map(|text| crate::sys::sha256_hex(block(&text).unwrap().as_bytes()))
+            .collect();
+        hashes.sort();
+        let mut listed: Vec<String> = RELEASED_BLOCKS.iter().map(|h| h.to_string()).collect();
+        listed.sort();
+        assert_eq!(hashes, listed);
+        // this engine's own block is not among them: it is current
+        for language in Language::ALL {
+            assert!(!is_released_block(template_block(&template(language))));
         }
+    }
+
+    /// A shipped v2 block nobody edited: unedited, upgraded by the next
+    /// capture without an archive, the user's part kept; an edited one is
+    /// outdated, left to `rules update`, which archives it (WP-111).
+    #[test]
+    fn a_shipped_block_is_upgraded_silently_an_edited_one_is_not() {
+        for (name, language) in [("en", Language::En), ("de", Language::De)] {
+            let t = template(language);
+            for file in V2_FILES {
+                let old = format!("{}- my own rule\n", v2(file, name));
+                assert_ne!(old, t, "{file}-{name}: the block text changed");
+                assert_eq!(state(Some(&old), &t), State::Unedited(2), "{file}-{name}");
+                let u = silent_upgrade(&old, &t).unwrap();
+                assert_eq!(
+                    (u.action, u.from, u.archive),
+                    (Action::Rewritten, Some(2), false)
+                );
+                assert_eq!(u.text, format!("{t}- my own rule\n"), "{file}-{name}");
+                assert_eq!(state(Some(&u.text), &t), State::Current);
+                assert!(silent_upgrade(&u.text, &t).is_none(), "idempotent");
+                // CRLF: the same block
+                let crlf = old.replace('\n', "\r\n");
+                let u = silent_upgrade(&crlf, &t).unwrap();
+                assert!(u.text.ends_with("- my own rule\r\n"));
+                assert_eq!(state(Some(&u.text), &t), State::Current);
+
+                let edited = old.replacen("\n# AGENTS.md\n", "\n# AGENTS\n", 1);
+                assert_eq!(
+                    state(Some(&edited), &t),
+                    State::Outdated(2),
+                    "{file}-{name}"
+                );
+                assert!(silent_upgrade(&edited, &t).is_none());
+                assert!(update(Some(&edited), &t, false).unwrap().archive);
+            }
+        }
+    }
+
+    #[test]
+    fn only_an_unedited_default_is_upgraded_silently() {
+        let t = template(Language::En);
+        // a released v1 file: replaced whole
+        let u = silent_upgrade(&golden("v0.1.1-en"), &t).unwrap();
+        assert_eq!(
+            (u.action, u.from, u.text.as_str()),
+            (Action::Rewritten, Some(1), t.as_str())
+        );
+        assert_eq!(state(Some(&golden("v0.1.0-de")), &t), State::Unedited(1));
+        // left alone: a v1 file with a line of the user's, a pre-release
+        // rendering, a blank file, an edited block of this version, a
+        // damaged or newer block, this engine's block in another language,
+        // and the current file
+        let edited = t.replacen("Rules for every agent", "Rules for any agent", 1);
+        for old in [
+            format!("{}- mine\n", golden("v0.1.1-en")),
+            golden("wp003-en"),
+            String::new(),
+            edited,
+            "<!-- seldon:begin rules v2 -->\nno end\n".to_string(),
+            "<!-- seldon:begin rules v9 -->\nx\n<!-- seldon:end -->\n".to_string(),
+            template(Language::De),
+            t.clone(),
+        ] {
+            assert!(silent_upgrade(&old, &t).is_none(), "{old:?}");
+        }
+        assert_eq!(state(Some(&golden("wp003-en")), &t), State::Outdated(1));
     }
 
     #[test]
@@ -619,11 +749,11 @@ mod tests {
     fn state_tells_every_case() {
         let t = template(Language::En);
         assert_eq!(state(None, &t), State::Missing);
-        assert_eq!(state(Some(&golden("v0.1.1-en")), &t), State::Outdated(1));
+        assert_eq!(state(Some(&golden("v0.1.1-en")), &t), State::Unedited(1));
         let v1 = "<!-- seldon:begin rules v1 -->\nold\n<!-- seldon:end -->\n";
         assert_eq!(state(Some(v1), &t), State::Outdated(1));
-        let v3 = "<!-- seldon:begin rules v3 -->\nnew\n<!-- seldon:end -->\n";
-        assert_eq!(state(Some(v3), &t), State::Newer(3));
+        let v4 = "<!-- seldon:begin rules v4 -->\nnew\n<!-- seldon:end -->\n";
+        assert_eq!(state(Some(v4), &t), State::Newer(4));
         let edited = t.replacen("Rules for every agent", "Rules for any agent", 1);
         assert_eq!(state(Some(&edited), &t), State::Changed);
         // the user's part may change freely
@@ -844,9 +974,9 @@ mod tests {
             e.contains("has no end marker line") && e.contains("--replace"),
             "{e}"
         );
-        let newer = "<!-- seldon:begin rules v3 -->\nx\n<!-- seldon:end -->\n";
+        let newer = "<!-- seldon:begin rules v4 -->\nx\n<!-- seldon:end -->\n";
         let e = update(Some(newer), &t, false).unwrap_err();
-        assert!(e.contains("v3") && e.contains("update seldon"), "{e}");
+        assert!(e.contains("v4") && e.contains("update seldon"), "{e}");
         for old in [damaged, newer, "mine\n"] {
             let u = update(Some(old), &t, true).unwrap();
             assert_eq!((u.action, u.text.as_str()), (Action::Replaced, t.as_str()));

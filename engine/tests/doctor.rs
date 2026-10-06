@@ -1501,7 +1501,10 @@ fn only_rules_starts_no_program() {
     std::fs::write(root.join("AGENTS.md"), "# AGENTS.md\n\nold rules\n").unwrap();
     let v = json(&env.seldon(&["doctor", "--only", "rules", "--json"]));
     assert_eq!(check(&v, "rules")["status"], "degraded");
-    assert_eq!(check(&v, "rules")["fix"], "seldon rules update");
+    assert_eq!(
+        check(&v, "rules")["fix"],
+        "seldon rules update (archives your copy)"
+    );
     // an unknown check: clap's usage error, exit 1; no logbook: exit 3
     let out = env.seldon(&["doctor", "--only", "probes", "--json"]);
     assert_eq!(out.status.code(), Some(1));

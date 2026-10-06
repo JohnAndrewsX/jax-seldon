@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use common::{Env, Snapper, json, read, stderr, stdout};
 
 const NOW: &str = "2026-10-05T10:00:00+02:00";
-const BEGIN: &str = "<!-- seldon:begin rules v2 -->\n";
+const BEGIN: &str = "<!-- seldon:begin rules v3 -->\n";
 const END: &str = "<!-- seldon:end -->\n";
 
 fn golden_v1(name: &str) -> String {
@@ -58,7 +58,7 @@ fn block(text: &str) -> &str {
 }
 
 #[test]
-fn init_writes_the_v2_block_first_and_doctor_calls_it_current() {
+fn init_writes_the_v3_block_first_and_doctor_calls_it_current() {
     for language in ["en", "de"] {
         let env = Env::new(Snapper::Allowed);
         let root = logbook(&env, language);
@@ -67,7 +67,7 @@ fn init_writes_the_v2_block_first_and_doctor_calls_it_current() {
         assert!(text.contains("\n## Your rules\n"), "{language}");
         let row = rules_row(&env);
         assert_eq!(row["status"], "ok", "{row}");
-        assert_eq!(row["message"], "current (v2)");
+        assert_eq!(row["message"], "current (v3)");
         assert!(row.get("fix").is_none(), "{row}");
         // nothing to do: no write, no commit, exit 0
         let head = env.has_git.then(|| last_commit(&env, &root));
@@ -102,7 +102,7 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
         (row["status"].as_str(), row["message"].as_str()),
         (Some("degraded"), Some("outdated (v1)"))
     );
-    assert_eq!(row["fix"], "seldon rules update");
+    assert_eq!(row["fix"], "seldon rules update (archives your copy)");
 
     let (code, v) = update(&env, &[]);
     assert_eq!(code, 0, "{v}");
@@ -118,7 +118,7 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
     );
     assert!(diff.contains("\n-Propose a case and wait.\n"), "{diff}");
     assert!(
-        diff.contains("\n+<!-- seldon:begin rules v2 -->\n"),
+        diff.contains("\n+<!-- seldon:begin rules v3 -->\n"),
         "{diff}"
     );
     assert!(!diff.contains("Music"), "{diff}");
@@ -140,7 +140,7 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
         assert_eq!(last_commit(&env, &root), head);
     }
 
-    // a v2 block whose text was changed counts as outdated, too
+    // a v3 block whose text was changed counts as outdated, too
     std::fs::write(
         &path,
         current.replacen("Rules for every agent", "Rules for some agents", 1),
@@ -149,14 +149,14 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
     let row = rules_row(&env);
     assert_eq!(row["status"], "degraded");
     assert!(
-        row["message"].as_str().unwrap().starts_with("outdated (v2"),
+        row["message"].as_str().unwrap().starts_with("outdated (v3"),
         "{row}"
     );
     assert_eq!(row["fix"], "seldon rules update (archives your copy)");
     let (code, v) = update(&env, &[]);
     assert_eq!(
         (code, v["action"].as_str(), v["from"].as_str()),
-        (0, Some("rewritten"), Some("v2"))
+        (0, Some("rewritten"), Some("v3"))
     );
     assert_eq!(v["archived"], "archive/AGENTS-2026-10-05-2.md");
     assert!(
@@ -233,7 +233,7 @@ fn doctor_reads_the_fixture_logbook_as_v1() {
         (
             Some("degraded"),
             Some("outdated (v1)"),
-            Some("seldon rules update")
+            Some("seldon rules update (archives your copy)")
         )
     );
 }
@@ -323,8 +323,8 @@ fn a_damaged_or_newer_block_is_refused_and_left_alone() {
             "--replace",
         ),
         (
-            "<!-- seldon:begin rules v3 -->\nfuture\n<!-- seldon:end -->\n",
-            "newer (v3) than this seldon's rules (v2)",
+            "<!-- seldon:begin rules v4 -->\nfuture\n<!-- seldon:end -->\n",
+            "newer (v4) than this seldon's rules (v3)",
             "update seldon",
         ),
     ] {
