@@ -385,3 +385,51 @@ the test host: the orchestrator's.
   `check_collectors(ctx, &effective, logbook, &shown)`).
 - `Install e.g. zed` → title `Install e.g` (N4, left as is; say if an
   abbreviation rule is wanted).
+
+## Merge with main
+
+`git merge main` at `e14b232` (WP-105, WP-108, WP-110) → `4cf9375`.
+Three textual conflicts: `engine/src/commands/doctor.rs` keeps both
+pushes (`check_rollbacks(logbook)`, then WP-105's
+`check_collectors(ctx, &effective, logbook, &shown)`); `CHANGELOG.md`
+and `memory/pitfalls.md` keep both sides, main first. Plugin files
+(`Model.js`, `Panel.qml`, `Service.qml`), the harness and
+`model.test.js` merged without conflict; WP-110's quiet behaviour stays,
+the WP-101 parts (Run, By agent, Reopen, the rules banner) sit beside
+it. No harness pin moved: before round 3 the merged tree ran model 96,
+service-states 316, panel-view 900, overlay-view 326, bar-view 194, all
+passed.
+
+# Round 3
+
+Brief: `review-0.1.1/handovers/WP-101-round-3-brief.md` (stage 2
+APPROVE with one condition). Commits `a592655`, `c0bf25c`.
+
+- **`seldon doctor --only rules`** (`clap::ValueEnum` `Only::Rules`,
+  `doctor::run_only`): the `engine` and `rules` rows only. It starts no
+  program (no omarchy, snapper or git probe), reads no collector state
+  and takes no lock; exit 3 without a logbook, 1 when the row is an
+  error; an unknown check (`--only probes`) is clap's exit 1. The panel
+  calls exactly `["doctor", "--only", "rules", "--json"]`;
+  `Model.validateArgs` accepts that form only (`doctor --json` is now
+  refused). Test `doctor::only_rules_starts_no_program`: stubbed
+  `snapper` and `omarchy-version` that record their calls stay silent
+  for `--only rules` and are called by the full doctor; the outdated row
+  and the fix; exit 1 and 3. The harness pins the argv in `doctor.log`.
+  SPEC-ENGINE §3, SPEC-PLUGIN §3/§5, CONTRACT.md, guide 05 en/de (de
+  re-stamped `a592655`).
+- **`owner()` prefix**: a description that is a case id, or starts with
+  one followed by `:` or white space (`C-2026-001: Install zed`, the
+  ADR-0027 §3 wording), names the case; a longer token (`C-2026-002x`)
+  does not. Test `a_description_that_starts_with_the_case_id_fills_it`.
+- **SPEC-ENGINE §3**: the close guard goes by provenance; a session that
+  unsets `SELDON_ACTOR` and names no agent is outside it (the "agent
+  closes later reopened" metric of ADR-0027 §1 watches that).
+- N4 (`Install e.g. zed`): left as is, per the orchestrator.
+
+Check (merge and round 3): `flock /tmp/seldon-check.lock just check` →
+`check: ok`, exit 0, at `c0bf25c`: 1728 engine tests in 74 binaries;
+validate-fixtures ok (9 variants); docs-check ok (431 links, 45
+commands, 525 command lines); plugin-validate ok; qmllint ok (29 files);
+model 96, service-states 316, panel-view 900, overlay-view 326, bar-view
+194, all passed.
