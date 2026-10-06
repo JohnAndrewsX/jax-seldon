@@ -264,6 +264,22 @@ fn an_install_the_user_made_inside_the_case_is_linked_after_the_close() {
         (json!(0), json!(0))
     );
     assert_eq!(read(&file), text);
+
+    // a human confirms the link to the same case: a later line, the case
+    // keeps the event and says nothing about losing it
+    let l = b.ok(
+        "2026-10-06T13:55:00+02:00",
+        &["drift", "link", glow["id"].as_str().unwrap(), &id],
+    );
+    assert_eq!(l["resolved"], 1, "{l}");
+    assert_eq!(b.case_json(&id)["events"], json!([glow["id"]]));
+    assert!(
+        b.log_lines(&id)
+            .iter()
+            .all(|l| !l.contains("no longer linked")),
+        "{:?}",
+        b.log_lines(&id)
+    );
 }
 
 /// Acceptance 2: with ADR-0029 §2 the capture inside `plan verify` records
@@ -282,6 +298,10 @@ fn plan_verify_captures_first_and_links_while_the_case_is_open() {
     assert_eq!(v["capture"]["written"], 1, "{v}");
     assert_eq!(v["capture"]["linkedPlanned"], 1, "{v}");
     assert_eq!(v["to"], "verification");
+    // snapper and the plugins degrade in this bench: doctor says so, the
+    // step does not (round 2, R1)
+    assert_eq!(v["capture"]["ok"], false);
+    assert_eq!(v["warnings"], json!([]), "{v}");
 
     let ledger = b.ledger();
     let order: Vec<(String, String)> = ledger
@@ -612,4 +632,224 @@ fn the_window_comes_from_the_case_events() {
             .unwrap()
             .ends_with("(planned here, no capture ran before the close) · system")
     );
+}
+
+impl Bench {
+    /// Writes `text` to `~/<rel>` of the bench's home.
+    fn home_file(&self, rel: &str, text: &str) {
+        let path = self.env.home.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    fn config_event(&self, subject: &str) -> Value {
+        self.ledger()
+            .into_iter()
+            .find(|e| e["source"] == "config" && e["subject"] == subject)
+            .unwrap_or_else(|| panic!("no config event of {subject}"))
+    }
+}
+
+/// Round 2, B1 (the reviewer's probe): a user unit and an Omarchy hook
+/// the Plan of an R1 case names stay crises, with an advisory in the
+/// case; an ordinary config file it names links.
+#[test]
+fn a_persistence_path_the_plan_names_stays_a_crisis_below_r3() {
+    let b = Bench::new();
+    let unit = "~/.config/systemd/user/evil.service";
+    let hook = "~/.config/omarchy/hooks/post-update.d/backup.sh";
+    let plain = "~/.config/hypr/bindings.lua";
+    let id = b.case(
+        "2026-10-06T13:38:00+02:00",
+        "units",
+        "R1",
+        &format!("write `{unit}`, `{hook}` and `{plain}`"),
+    );
+    b.home_file(
+        ".config/systemd/user/evil.service",
+        "[Service]\nExecStart=/bin/true\n",
+    );
+    b.home_file(
+        ".config/omarchy/hooks/post-update.d/backup.sh",
+        "#!/bin/sh\n",
+    );
+    b.home_file(".config/hypr/bindings.lua", "-- keys\n");
+    let c = b.capture("2026-10-06T13:45:00+02:00");
+    assert_eq!(c["linkedPlanned"], 1, "{c}");
+    assert_eq!(b.resolutions(&b.config_event(plain)["id"]).len(), 1);
+    for path in [unit, hook] {
+        let e = b.config_event(path);
+        let eid = e["id"].as_str().unwrap();
+        assert!(b.resolutions(&e["id"]).is_empty(), "{path}");
+        assert!(
+            b.log_lines(&id)
+                .iter()
+                .any(|l| l.contains(&format!(
+                    "advisory: not linked: config config-add {path} at 13:45:00 can affect boot"
+                )) && l.contains(&format!("`seldon drift link {eid} {id}`"))),
+            "{path}: {:?}",
+            b.log_lines(&id)
+        );
+    }
+    let d = b.ok("2026-10-06T13:46:00+02:00", &["drift"]);
+    assert_eq!(d["crisis"], 2, "{d}");
+    let rules: Vec<&Value> = d["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["crisis"] == true)
+        .map(|i| &i["rule"])
+        .collect();
+    assert_eq!(
+        rules,
+        [&json!("always-red-paths"), &json!("always-red-paths")]
+    );
+    // said once
+    let text = read(&b.case_path(&id));
+    b.capture("2026-10-06T13:50:00+02:00");
+    assert_eq!(read(&b.case_path(&id)), text);
+}
+
+/// Round 2, Q3: the risk at the event's time. An agent raises the case to
+/// R3 after the kernel was installed: still no link; one installed after
+/// the raise links.
+#[test]
+fn raising_the_risk_afterwards_does_not_link_an_earlier_change() {
+    let b = Bench::new();
+    let id = b.case(
+        "2026-10-06T13:38:00+02:00",
+        "kernels",
+        "R1",
+        "install linux-zen and linux-lts",
+    );
+    b.install("2026-10-06T13:40:57+02:00", &["linux-zen"], &[]);
+    b.ok(
+        "2026-10-06T13:42:00+02:00",
+        &["plan", "set", &id, "--risk", "R3", "--actor", "agent:codex"],
+    );
+    b.install("2026-10-06T13:43:10+02:00", &["linux-lts"], &[]);
+    let c = b.capture("2026-10-06T13:45:00+02:00");
+    assert_eq!(c["linkedPlanned"], 1, "{c}");
+    assert!(b.resolutions(&b.pacman("linux-zen")["id"]).is_empty());
+    assert_eq!(
+        b.resolutions(&b.pacman("linux-lts")["id"])[0]["case"],
+        json!(id)
+    );
+    assert!(
+        b.log_lines(&id).iter().any(|l| l.contains(&format!(
+            "advisory: {id} is R1, but its red change `linux-zen`"
+        ))),
+        "{:?}",
+        b.log_lines(&id)
+    );
+}
+
+/// Round 2, B2 (the reviewer's probe): two open cases plan `glow`, one
+/// file does not load; nothing links, the capture warns and doctor names
+/// it. Repaired, the next capture finds two cases and links nothing.
+#[test]
+fn a_case_file_that_does_not_load_blocks_the_link() {
+    let b = Bench::new();
+    let first = b.case("2026-10-06T13:38:00+02:00", "glow", "R1", "install glow");
+    let second = b.case(
+        "2026-10-06T13:39:00+02:00",
+        "glow too",
+        "R1",
+        "install glow",
+    );
+    let path = b.case_path(&second);
+    std::fs::write(&path, read(&path).replacen("risk: R1", "risk: R9", 1)).unwrap();
+    b.install("2026-10-06T13:40:57+02:00", &["glow"], &[]);
+    let out = b.run("2026-10-06T13:45:00+02:00", &["capture"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(json(&out)["linkedPlanned"], 0);
+    let glow = b.pacman("glow");
+    assert!(b.resolutions(&glow["id"]).is_empty());
+    assert!(
+        stderr(&out).contains(&format!(
+            "event {} lies in the window of {second}, whose case file does not load",
+            glow["id"].as_str().unwrap()
+        )),
+        "{}",
+        stderr(&out)
+    );
+    assert!(b.log_lines(&first).iter().all(|l| !l.contains("glow at")));
+    let doctor = b.run("2026-10-06T13:46:00+02:00", &["doctor"]);
+    let checks = json(&doctor)["checks"].clone();
+    let row = checks
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "planned")
+        .unwrap_or_else(|| panic!("no planned row: {checks}"))
+        .clone();
+    assert_eq!(row["status"], "degraded");
+    assert!(
+        row["message"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("1 in the window of {second}")),
+        "{row}"
+    );
+    std::fs::write(&path, read(&path).replacen("risk: R9", "risk: R1", 1)).unwrap();
+    let c = b.capture("2026-10-06T13:50:00+02:00");
+    assert_eq!(c["linkedPlanned"], 0);
+    assert!(
+        b.log_lines(&first)
+            .last()
+            .unwrap()
+            .contains(&format!("is planned here and in {second}")),
+    );
+}
+
+/// Round 2, Q4: a token that stands only in an HTML comment of the Plan
+/// neither links (rule 9) nor proposes (rule 3).
+#[test]
+fn a_plan_comment_is_no_plan() {
+    let b = Bench::new();
+    let id = b.case(
+        "2026-10-06T13:38:00+02:00",
+        "glow",
+        "R1",
+        "<!-- do not install glow --> read the docs",
+    );
+    b.install("2026-10-06T13:40:57+02:00", &["glow"], &[]);
+    let c = b.capture("2026-10-06T13:45:00+02:00");
+    assert_eq!(c["linkedPlanned"], 0, "{c}");
+    let d = b.ok("2026-10-06T13:46:00+02:00", &["drift"]);
+    assert_eq!(d["drift"][0]["subject"], "glow");
+    assert_eq!(d["drift"][0]["proposedCase"], Value::Null, "{d}");
+    assert!(b.log_lines(&id).iter().all(|l| !l.contains("glow at")));
+}
+
+/// Round 2, N1 (MI): Seldon updating itself inside a case that names it
+/// is rule 8's: one `explained` line, and rule 9 adds none in the same
+/// capture.
+#[test]
+fn rule_8_wins_over_rule_9_in_the_same_capture() {
+    let b = Bench::new();
+    let id = b.case(
+        "2026-10-06T13:38:00+02:00",
+        "update seldon",
+        "R1",
+        "upgrade jax-seldon",
+    );
+    let stamp = "[2026-10-06T13:40:57+0200]";
+    let mut log = read(&b.log);
+    log.push_str(&format!(
+        "{stamp} [PACMAN] Running 'pacman -S jax-seldon'\n{stamp} [ALPM] transaction started\n\
+         {stamp} [ALPM] upgraded jax-seldon (0.1.3-1 -> 0.1.4-1)\n\
+         {stamp} [ALPM] transaction completed\n"
+    ));
+    std::fs::write(&b.log, log).unwrap();
+    let c = b.capture("2026-10-06T13:45:00+02:00");
+    assert_eq!(
+        (c["explainedSelf"].clone(), c["linkedPlanned"].clone()),
+        (json!(1), json!(0)),
+        "{c}"
+    );
+    let lines = b.resolutions(&b.pacman("jax-seldon")["id"]);
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["resolution"], "explained");
+    assert_eq!(b.case_json(&id)["events"], json!([]));
 }
