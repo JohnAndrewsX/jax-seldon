@@ -986,41 +986,70 @@ fn the_report_recipe_sends_the_command_verbatim_and_runs_none_of_it() {
     let recipe = &skill[start..start + skill[start..].find("```").unwrap()];
     // inside the logbook: the default `[hooks] scope` records there
     let work = root.clone();
-    let line = "sed -i 's/a/b/' ~/.config/hypr/x.conf; echo '$(touch MARK1)' && touch `touch MARK2` \"$(touch MARK3)\" ; echo $HOME";
-    let script = recipe
-        .replace("<the command line, unchanged>", line)
-        .replace("agent:<name>", "agent:codex")
-        .replace("<ID>", &id);
-    for placeholder in ["<the command", "<name>", "<ID>"] {
-        assert!(!script.contains(placeholder), "{script}");
-    }
     let bin = env.tmp.path().join("recipe-bin");
     std::fs::create_dir(&bin).unwrap();
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_seldon"), bin.join("seldon")).unwrap();
     std::os::unix::fs::symlink(&jq, bin.join("jq")).unwrap();
-    let out = std::process::Command::new(&bash)
-        .arg("-c")
-        .arg(&script)
-        .env_clear()
-        .env("HOME", &env.home)
-        .env("PATH", &bin)
-        .env("LANG", "C")
-        .env("SELDON_TEST_GUARD", env.tmp.path())
-        .current_dir(&work)
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert!(stdout(&out).is_empty(), "{}", stdout(&out));
-    for mark in ["MARK1", "MARK2", "MARK3"] {
-        assert!(!work.join(mark).exists(), "{mark}: part of the command ran");
+    // (actor, delimiter, command, marks that must not appear, the command
+    // as recorded: heredoc bodies are stdin, never recorded, SPEC-ENGINE §7)
+    let commands: [(&str, &str, &str, &[&str], &str); 3] = [
+        (
+            "agent:codex",
+            "SELDON_CMD",
+            "sed -i 's/a/b/' ~/.config/hypr/x.conf; echo '$(touch MARK1)' && touch `touch MARK2` \"$(touch MARK3)\" ; echo $HOME",
+            &["MARK1", "MARK2", "MARK3"],
+            "sed -i 's/a/b/' ~/.config/hypr/x.conf; echo '$(touch MARK1)' && touch `touch MARK2` \"$(touch MARK3)\" ; echo $HOME",
+        ),
+        // WP-111: several lines with a heredoc of their own
+        (
+            "agent:pi",
+            "SELDON_CMD",
+            "cat > ~/.config/hypr/y.conf <<'EOF'\nbind = SUPER, E, exec, zeditor\n$(touch MARK4)\nEOF\nchmod 600 ~/.config/hypr/y.conf",
+            &["MARK4"],
+            "cat > ~/.config/hypr/y.conf <<'EOF'\nEOF\nchmod 600 ~/.config/hypr/y.conf",
+        ),
+        // a line that is the delimiter itself: another word in both places
+        (
+            "agent:opencode",
+            "SELDON_CMD_2",
+            "cat > ~/.config/hypr/z.conf <<'SELDON_CMD'\n$(touch MARK5)\nSELDON_CMD\nchmod 600 ~/.config/hypr/z.conf",
+            &["MARK5"],
+            "cat > ~/.config/hypr/z.conf <<'SELDON_CMD'\nSELDON_CMD\nchmod 600 ~/.config/hypr/z.conf",
+        ),
+    ];
+    for (actor, delimiter, line, marks, as_recorded) in commands {
+        let script = recipe
+            .replace("SELDON_CMD", delimiter)
+            .replace("<the command line, unchanged>", line)
+            .replace("agent:<name>", actor)
+            .replace("<ID>", &id);
+        for placeholder in ["<the command", "<name>", "<ID>"] {
+            assert!(!script.contains(placeholder), "{script}");
+        }
+        let out = std::process::Command::new(&bash)
+            .arg("-c")
+            .arg(&script)
+            .env_clear()
+            .env("HOME", &env.home)
+            .env("PATH", &bin)
+            .env("LANG", "C")
+            .env("SELDON_TEST_GUARD", env.tmp.path())
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert!(stdout(&out).is_empty(), "{}", stdout(&out));
+        for mark in marks {
+            assert!(!work.join(mark).exists(), "{mark}: part of the command ran");
+        }
+        let events = common::ledger(&root);
+        let recorded = events
+            .iter()
+            .find(|e| e["actor"] == actor)
+            .unwrap_or_else(|| panic!("{actor}: not recorded: {events:?}"));
+        assert_eq!(recorded["meta"]["command"], as_recorded, "{recorded}");
+        assert_eq!(recorded["case"], id.as_str());
     }
-    let events = common::ledger(&root);
-    let recorded = events
-        .iter()
-        .find(|e| e["actor"] == "agent:codex")
-        .unwrap_or_else(|| panic!("not recorded: {events:?}"));
-    assert_eq!(recorded["meta"]["command"], line, "{recorded}");
-    assert_eq!(recorded["case"], id.as_str());
 }
 
 // ---------------------------------------------------------------------------

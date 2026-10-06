@@ -146,7 +146,11 @@ logbook's `.claude/settings.json`), or in every folder when the user put
 them into the user-wide settings and set `[hooks] scope = "all"`. When no
 hook serves you — any agent but Claude Code, or Claude Code whose session
 did not start with the `# Seldon logbook context` block — report each
-changing command yourself, before it runs:
+changing command yourself, before it runs, when it is recorded: in the
+logbook folder always; outside it only when `seldon doctor --json` shows
+`"hooks": {"scope": "all"}`. With the default scope (`logbook`) a report
+from outside the logbook records nothing: skip it there. The collectors
+still record every package, service and watched-path change.
 
 ```bash
 jq -cn --rawfile command /dev/stdin --arg cwd "$PWD" \
@@ -157,10 +161,11 @@ SELDON_CMD
 
 Put the command line between the two `SELDON_CMD` lines exactly as you
 will run it: the quoted heredoc expands nothing, so nothing in it runs
-while you report it. `seldon hook generic` is silent and always exits 0.
-Name your case with `--case <ID>`. Whether a command run outside the
-logbook is recorded is the user's setting (`[hooks] scope`); never leave
-out `cwd` to get around it. At the end of the session:
+while you report it. If a line of the command is itself `SELDON_CMD`, use
+another word as the delimiter in both places. `seldon hook generic` is
+silent and always exits 0. Name your case with `--case <ID>`. Whether a
+command run outside the logbook is recorded is the user's setting
+(`[hooks] scope`); never leave out `cwd` to get around it. At the end of the session:
 `seldon hook session-stop --actor agent:<name>`.
 
 ## The Engine Is the Only Writer
