@@ -170,6 +170,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   password itself (`pass:…`), so `-passin pass:…` is recorded as
   `-passin ‹redacted›`. A source such as `env:VAR`, `file:path`, `fd:N`
   or `stdin` stays as it is (WP-106).
+- Redaction compiles fewer of its rules for a common curl line: a URL
+  without a user and password in it, `curl -u` (without `-U`), an `-E`
+  with no `:` after it (`set -e`, `curl … | sudo -E bash`) and an option
+  given only once no longer compile the rules that could not match. The
+  agent hook takes about 1 ms less for such a line near 1000 ledger
+  lines. What is masked is unchanged (WP-108).
 
 ### Plugin
 
