@@ -31,5 +31,6 @@
 | ADR-0027 | Act, then account: a case the user started authorises the agent; the agent verifies and closes; only steps that can make the machine unbootable need the user's go | accepted; H2 amended in part by ADR-0029 |
 | ADR-0028 | Attention is earned by consequence: routine changes are history, not drift; crisis by the harm test | accepted |
 | ADR-0029 | A change made while exactly one case planned it is that case's; a case captures before it closes | accepted |
+| ADR-0030 | The Seldon agent starts like the Omarchy agent: from the caller's folder, hooks user-wide, served by a launch marker | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

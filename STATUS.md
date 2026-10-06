@@ -541,9 +541,10 @@ submission). (see `work/queued/`)
   one case was active and named it in its Plan is that case's, whoever
   typed it; `alwaysRed` subjects only for an R3 case; `plan verify`/`done`
   capture first. WP-115 in 0.1.4.
-- The Seldon agent starts like Omarchy's agent (from ~/Work); ADR-0030
-  drafted (hooks user-wide, scope by a launch marker), awaiting the
-  operator's confirmation.
+- ADR-0030 accepted: the Seldon agent starts like Omarchy's agent (from
+  ~/Work); Seldon's Claude Code hooks move to the user-wide settings and
+  serve only sessions Seldon launched (`SELDON_CASE`) or inside the
+  logbook. WP-116 in 0.1.4, after WP-111.
 - Test host: reinstalled fresh after 2026-10-07 10:00 (variant 1) and
   kept free of personal settings; a snapper baseline "fresh" is the reset
   point for live and release tests. Until then the lived-in host gives
