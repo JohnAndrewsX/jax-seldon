@@ -16,7 +16,6 @@ decisions).
 |---|---|---|---|---|---|
 | WP-101 | one-click start, agent snapshot and close path, closed-by-agent marker, reopen | Engine + Plugin | `engine-101` (opus) | `wt/WP-101` · `wp/101-one-click-close` | 2026-10-06 |
 | WP-109 | engine: drift classification by consequence (ADR-0028) | Engine | `engine-109` (opus) | `wt/WP-109` · `wp/109-drift-classes` | 2026-10-06 |
-| WP-110 | plugin: quiet surfaces (ADR-0028) | Plugin | `plugin-110` (opus) | `wt/WP-110` · `wp/110-quiet-surfaces` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -51,6 +50,12 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-110 the plugin is quiet for everything but a crisis
+  (ADR-0028): the bar counts crises only (`driftInBar` in the shell's
+  plugin settings: crisis, all, none), the red strip shows only for a
+  crisis, labels follow `crisis` not the zone, Today counts changes
+  "without a case", and only open drift is tinted in the Changelog;
+  Opus review, one round, Fable stage 2; merged.
 - 2026-10-06 WP-108 the agent hook is faster on curl lines that hold
   `-e`/`-E` elsewhere in the line: redaction triggers are literal text
   every match holds, now also in order (`>`) and as written for a
