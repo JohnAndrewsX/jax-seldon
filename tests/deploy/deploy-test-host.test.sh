@@ -197,9 +197,9 @@ make_release v0.1.2
 # reset_remote — the host as the operator left it: release engine 0.1.3, the
 # plugin as a release git clone, unlocked.
 reset_remote() {
-  rm -rf "$R/home" "$R/calls" "$R/lock.json" "$R/restart_rc" "$R/doctor_rc" "$R/validate_rc" \
-    "$R/service_version" "$R/restart_notice" "$R/capture_rc" "$R/no_session" "$R/watch_active" \
-    "$R/watch_restart_rc"
+  rm -rf "${R:?}/home" "${R:?}/calls" "${R:?}/lock.json" "${R:?}/restart_rc" "${R:?}/doctor_rc" "${R:?}/validate_rc" \
+    "${R:?}/service_version" "${R:?}/restart_notice" "${R:?}/capture_rc" "${R:?}/no_session" "${R:?}/watch_active" \
+    "${R:?}/watch_restart_rc"
   mkdir -p "$R/home/.local/bin" "$R/home/.config/omarchy/plugins/jax.seldon/.git"
   fake_seldon 0.1.3 >"$R/home/.local/bin/seldon"
   chmod 755 "$R/home/.local/bin/seldon"
@@ -262,7 +262,7 @@ deploy() {
 has() { grep -qF -- "$1" <<<"$out"; }
 called() { grep -qF -- "$1" "$R/calls" 2>/dev/null; }
 count() { grep -cF -- "$1" "$R/calls" 2>/dev/null || true; }
-show() { sed 's/^/     | /' <<<"$out"; }
+show() { local l; while IFS= read -r l; do printf '     | %s\n' "$l"; done <<<"$out"; }
 pdir=$R/home/.config/omarchy/plugins/jax.seldon
 short=$(git -C "$repo" rev-parse --short HEAD)
 
