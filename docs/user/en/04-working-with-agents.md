@@ -309,8 +309,14 @@ fails, its error is in `~/.local/state/seldon/agent-launch.log`.
 
 ## Other agents
 
-Codex, a script or an agent of your own reports to Seldon with three
-commands. At the start of a session, for context:
+An agent started outside the logbook folder never reads the logbook's
+`AGENTS.md`. Give it the rules with the [agent skill](#the-agent-skill):
+then Claude Code, Codex, Pi, OpenCode or Hermes, started from Omarchy's
+agents menu, `omarchy agent crash` or by hand in any folder, knows to find
+or open a case before it changes the machine.
+
+An agent without Seldon's hooks — Codex, a script, an agent of your own,
+Claude Code outside the logbook — reports to Seldon with three commands. At the start of a session, for context:
 
 ```sh
 seldon hook session-start
@@ -332,7 +338,53 @@ The JSON may also carry `"startedAt"` (a timestamp) and `"case"` (a case
 id instead of the active case). The actor is always `agent:` and a name.
 Without `"actor"`, `seldon hook generic` takes `SELDON_ACTOR`.
 `seldon hook generic` is silent and always exits 0, so it never breaks
-the agent.
+the agent. Whether a command run outside the logbook folder is recorded
+is your choice: `[hooks] scope` in `config.toml`, as for Claude Code
+above.
+
+## The agent skill
+
+Omarchy gives every coding agent its own skills (`omarchy`,
+`diagnose-crash`) through the agents' skill folders. Seldon ships one
+more, `seldon`, in the same shape:
+
+```sh
+seldon hook install skills
+```
+
+It goes into every agent skill folder that exists — `~/.agents/skills`,
+`~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills`,
+`~/.hermes/skills`, `~/.hermes/profiles/*/skills` — as
+`<folder>/seldon/`. Seldon creates none of these folders; an agent you
+install later gets the skill when you run the command again. `seldon
+init` offers it next to the Claude Code hooks (`--harness skills`).
+
+The skill tells the agent, in short, what the logbook's `AGENTS.md` says
+at length:
+
+- check whether there is a logbook (`seldon plan list --status active
+  --json`); without one the skill does not apply;
+- find the active case, or open and start one for your request, and act
+  inside its *Intent*; print a preview line before the first privileged
+  step;
+- before a package transaction, resolve it read-only and check it against
+  `[drift] alwaysRed`; a hit is R3 and waits for your go;
+- take the snapshot of an R2 or R3 case itself and record its number;
+- verify with a check that is not its own, fill *Result* and close the
+  case;
+- report its commands through `seldon hook generic` when no hook serves
+  it;
+- explain drift only with evidence, and tell you about a crisis in one
+  line;
+- for Omarchy itself (Hyprland, the bar, themes), follow Omarchy's own
+  skill.
+
+`seldon doctor` shows the skill's state in the `skills` row. After an
+engine update that changes the skill, the row says `outdated`; run
+`seldon hook install skills` again. A file in `<folder>/seldon/` you
+changed by hand is never overwritten: the row says so, and the fix is to
+move the folder away and install again. `seldon hook uninstall skills`
+removes what Seldon wrote and keeps what you changed or added.
 
 ## The Omarchy-Agent kit
 

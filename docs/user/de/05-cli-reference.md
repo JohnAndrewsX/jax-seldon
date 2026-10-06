@@ -29,7 +29,7 @@ Usage: seldon [OPTIONS] [COMMAND]
 Commands:
   contract-version  Print the engine/plugin contract version
   init              Create a logbook (wizard; --non-interactive takes defaults)
-  doctor            Check engine, config, logbook, collector state, omarchy, snapper and git
+  doctor            Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
   capture           Run collectors and append new events to the ledger
   log               Write a note: a ledger event and a journal entry
   event             Record an event by hand (hooks, scripts)
@@ -108,6 +108,8 @@ Konfiguration, dann die Vorgaben. `--since` nimmt ein Datum
 `--baseline` braucht `--since`; `--no-capture` geht nicht zusammen mit
 `--since`. Siehe
 [Erste Schritte](01-getting-started.md#schritt-2-dein-logbuch-anlegen).
+`--harness skills` installiert den Seldon-Agentenskill, wie es
+[`seldon hook install skills`](#seldon-hook-install) tut.
 `--remove-theme-hook` ist die einzige Option, die kein Logbuch anlegt:
 Sie entfernt den Theme-Hook, den `--theme-hook` installiert hat, und geht
 mit keiner anderen Option zusammen. Siehe
@@ -124,7 +126,7 @@ Options:
       --non-interactive      Ask nothing; take flags, then the existing config, then the defaults: ~/Seldon, language from the locale, all collectors, git on, first capture from now on, no backfill, no theme hook
       --language <LANGUAGE>  Language of the logbook prose [possible values: en, de]
       --obsidian             Add Obsidian settings (.obsidian/)
-      --harness <NAME>       Agent harness to set up (repeatable) [possible values: claude-code, omarchy-agent]
+      --harness <NAME>       Agent harness to set up (repeatable) [possible values: claude-code, omarchy-agent, skills]
       --since <TS>           Backfill: the first capture also records changes since TS, a date (YYYY-MM-DD, local midnight) or an RFC 3339 time; each one opens as drift
       --baseline             Mark the backfilled drift as the pre-Seldon baseline (dismissed)
       --no-capture           Do not run the first capture
@@ -144,7 +146,10 @@ Examples:
 
 Prüft die Engine, die Konfiguration, das Logbuch (Cases, Ledger,
 generierte Abschnitte), den letzten Capture der Collectors und ihre
-Zustandsdateien, Omarchy, Snapper und git. Es liest nur. Jede Zeile sagt
+Zustandsdateien, den Seldon-Agentenskill, Omarchy, Snapper und git. Es
+liest nur. Die Zeile `skills` sagt, wo der Skill installiert ist, wo er
+fehlt (optional), veraltet ist, von Hand geändert wurde oder wo ein
+anderer Skill namens `seldon` liegt. Jede Zeile sagt
 `ok`, `degraded` oder `error`, und eine fehlerhafte Prüfung nennt den
 Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler ist, 1, wenn eine
 Prüfung ein Fehler ist (auch, wenn `config.toml` nicht gelesen oder
@@ -154,7 +159,7 @@ kein anderes Programm; das Panel fragt das, wenn es sich öffnet.
 
 <!-- help: seldon doctor -->
 ```text
-Check engine, config, logbook, collector state, omarchy, snapper and git
+Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
 
 Usage: seldon doctor [OPTIONS]
 
@@ -886,8 +891,8 @@ Agent hooks: record commands, print session context, install into or uninstall f
 Usage: seldon hook [OPTIONS] <COMMAND>
 
 Commands:
-  install        Merge Seldon's hooks into an agent harness's settings
-  uninstall      Remove Seldon's hooks from an agent harness's settings, keeping the rest
+  install        Merge Seldon's hooks into an agent harness's settings; `skills`: put the Seldon agent skill into every agent skill folder that exists
+  uninstall      Remove Seldon's hooks from an agent harness's settings, keeping the rest; `skills`: remove the Seldon agent skill, keeping files changed by hand
   claude-code    Record a Claude Code tool call (hook payload on stdin; silent, exit 0)
   generic        Record any agent's command ({"command","actor"?,"cwd","startedAt"?,"case"?} on stdin; without "actor", $SELDON_ACTOR)
   session-start  Print the context block an agent session starts with
@@ -904,17 +909,28 @@ Fügt Seldons drei Hooks in die Einstellungen von Claude Code ein,
 standardmäßig in `.claude/settings.json` des Logbuchs. Vorhandene Hooks
 bleiben. Ein zweiter Aufruf ändert nichts.
 
+`seldon hook install skills` legt den Seldon-Agentenskill in jeden
+Skill-Ordner eines Agenten, den es gibt: `~/.agents/skills`,
+`~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills`,
+`~/.hermes/skills` und `~/.hermes/profiles/*/skills`, die Ordner, in die
+Omarchy seine eigenen Skills verlinkt. Es legt keinen davon an. Der Skill
+kommt nach `<Ordner>/seldon/`; ein `seldon` dort, das Seldon nicht
+geschrieben hat, oder eine Datei darin, die du geändert hast, bleibt, wie
+es ist, und der Bericht nennt es. Ein älterer Skill wird aktualisiert.
+Ein zweiter Aufruf ändert nichts. Siehe
+[Mit Agenten arbeiten](04-working-with-agents.md#der-agentenskill).
+
 <!-- help: seldon hook install -->
 ```text
-Merge Seldon's hooks into an agent harness's settings
+Merge Seldon's hooks into an agent harness's settings; `skills`: put the Seldon agent skill into every agent skill folder that exists
 
 Usage: seldon hook install [OPTIONS] <HARNESS>
 
 Arguments:
-  <HARNESS>  The harness [possible values: claude-code]
+  <HARNESS>  The harness [possible values: claude-code, skills]
 
 Options:
-      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json)
+      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json; claude-code only)
 ```
 <!-- /help -->
 
@@ -926,17 +942,22 @@ gesetzt hast. Eine Datei, die nur Seldons Hooks enthielt, wird gelöscht.
 Ein zweiter Aufruf ändert nichts. Das nächste `seldon capture` meldet die
 Änderung nicht als Drift.
 
+`seldon hook uninstall skills` entfernt die Dateien des Skills aus jedem
+Skill-Ordner. Eine Datei, die du geändert hast, bleibt, ebenso eine, die
+du hinzugefügt hast; einen Ordner `seldon`, den Seldon nicht geschrieben
+hat, rührt es nicht an.
+
 <!-- help: seldon hook uninstall -->
 ```text
-Remove Seldon's hooks from an agent harness's settings, keeping the rest
+Remove Seldon's hooks from an agent harness's settings, keeping the rest; `skills`: remove the Seldon agent skill, keeping files changed by hand
 
 Usage: seldon hook uninstall [OPTIONS] <HARNESS>
 
 Arguments:
-  <HARNESS>  The harness [possible values: claude-code]
+  <HARNESS>  The harness [possible values: claude-code, skills]
 
 Options:
-      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json)
+      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json; claude-code only)
 ```
 <!-- /help -->
 

@@ -60,7 +60,7 @@ enum Command {
     /// Create a logbook (wizard; --non-interactive takes defaults)
     Init(InitCmd),
 
-    /// Check engine, config, logbook, collector state, omarchy, snapper and git
+    /// Check engine, config, logbook, collector state, agent skill, omarchy, snapper and git
     #[command(after_help = "Examples:
   seldon doctor
   seldon doctor --only rules --json")]

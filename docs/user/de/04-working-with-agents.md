@@ -337,7 +337,15 @@ vorher.
 
 ## Andere Agenten
 
-Codex, ein Skript oder ein eigener Agent meldet sich bei Seldon mit drei
+Ein Agent, der außerhalb des Logbuch-Ordners startet, liest die
+`AGENTS.md` des Logbuchs nie. Gib ihm die Regeln mit dem
+[Agentenskill](#der-agentenskill): Dann weiß Claude Code, Codex, Pi,
+OpenCode oder Hermes, gestartet aus Omarchys Agentenmenü, mit
+`omarchy agent crash` oder von Hand in irgendeinem Ordner, dass es einen
+Case finden oder anlegen muss, bevor es die Maschine ändert.
+
+Ein Agent ohne Seldons Hooks — Codex, ein Skript, ein eigener Agent,
+Claude Code außerhalb des Logbuchs — meldet sich bei Seldon mit drei
 Befehlen. Zu Beginn einer Sitzung, für den Kontext:
 
 ```sh
@@ -360,7 +368,57 @@ Das JSON kann außerdem `"startedAt"` (einen Zeitstempel) und `"case"`
 (eine Case-ID statt des aktiven Case) enthalten. Der Actor ist immer
 `agent:` und ein Name. Fehlt `"actor"`, nimmt `seldon hook generic`
 `SELDON_ACTOR`. `seldon hook generic` gibt nichts aus und endet
-immer mit 0, bricht den Agenten also nie.
+immer mit 0, bricht den Agenten also nie. Ob ein Befehl außerhalb des
+Logbuch-Ordners aufgezeichnet wird, entscheidest du: `[hooks] scope` in
+`config.toml`, wie oben bei Claude Code.
+
+## Der Agentenskill
+
+Omarchy gibt jedem Coding-Agenten eigene Skills (`omarchy`,
+`diagnose-crash`) über die Skill-Ordner der Agenten. Seldon liefert einen
+weiteren, `seldon`, in derselben Form:
+
+```sh
+seldon hook install skills
+```
+
+Er kommt in jeden Skill-Ordner eines Agenten, den es gibt —
+`~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`,
+`~/.pi/agent/skills`, `~/.hermes/skills`, `~/.hermes/profiles/*/skills` —
+als `<Ordner>/seldon/`. Seldon legt keinen dieser Ordner an; ein Agent,
+den du später installierst, bekommt den Skill, wenn du den Befehl noch
+einmal ausführst. `seldon init` bietet ihn neben den Claude-Code-Hooks an
+(`--harness skills`).
+
+Der Skill sagt dem Agenten kurz, was die `AGENTS.md` des Logbuchs
+ausführlich sagt:
+
+- prüfen, ob es ein Logbuch gibt (`seldon plan list --status active
+  --json`); ohne Logbuch gilt der Skill nicht;
+- den aktiven Case finden oder für deine Bitte einen anlegen und starten
+  und innerhalb seiner *Intent* handeln; vor dem ersten privilegierten
+  Schritt eine Vorschauzeile ausgeben;
+- vor einer Pakettransaktion diese nur lesend auflösen und gegen
+  `[drift] alwaysRed` prüfen; ein Treffer ist R3 und wartet auf dein Go;
+- den Snapshot eines R2- oder R3-Case selbst anlegen und seine Nummer
+  festhalten;
+- mit einer Prüfung verifizieren, die nicht sein eigenes Artefakt ist,
+  *Result* füllen und den Case abschließen;
+- seine Befehle über `seldon hook generic` melden, wenn kein Hook ihn
+  bedient;
+- Drift nur mit Belegen erklären und dir eine Krise in einer Zeile
+  melden;
+- für Omarchy selbst (Hyprland, die Leiste, Themes) Omarchys eigenem
+  Skill folgen.
+
+`seldon doctor` zeigt den Zustand des Skills in der Zeile `skills`. Nach
+einem Engine-Update, das den Skill ändert, sagt die Zeile `outdated`;
+führe `seldon hook install skills` noch einmal aus. Eine Datei in
+`<Ordner>/seldon/`, die du von Hand geändert hast, wird nie
+überschrieben: Die Zeile sagt es, und die Abhilfe ist, den Ordner
+wegzuverschieben und neu zu installieren. `seldon hook uninstall skills`
+entfernt, was Seldon geschrieben hat, und behält, was du geändert oder
+hinzugefügt hast.
 
 ## Das Omarchy-Agent-Kit
 
