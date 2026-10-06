@@ -60,11 +60,16 @@ const V1_TEXTS: [&str; 10] = [
     include_str!("../../templates/rules-v1/AGENTS-wp047-de.md"),
 ];
 
-/// sha256 of every rules block a release wrote (LF line ends), besides
-/// this engine's own: rewriting one of them loses nothing, any other block
-/// was edited and its file is archived first. None yet: v2 is the first
-/// block; a release that changes the block text adds the old one here.
-const RELEASED_BLOCKS: [&str; 0] = [];
+/// sha256 of every rules block Seldon wrote (LF line ends), besides this
+/// engine's own: rewriting one of them loses nothing, any other block was
+/// edited and its file is archived first. A change of the block text adds
+/// the old one here: the v2 block of WP-100, before WP-101 put
+/// `plan snapshot` and `plan set` into it (en, de; on `main` and the test
+/// host, in no release; `templates/rules-v2/`).
+const RELEASED_BLOCKS: [&str; 2] = [
+    "b0ddf1fddb392159c078597b9d03aa7593125e0ef2a398086f4fb034f3d13bba",
+    "68e9aaf90fc7b4d38bc65c859f5623ee39bd093d05f3a6f1e42824e8ca386bef",
+];
 
 /// Where the rules block of a text is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -508,6 +513,28 @@ mod tests {
             assert_eq!(state(Some(&t), &t), State::Current, "{language}");
             // the user's part after the block
             assert!(t[end..].contains("\n## Your rules\n"), "{language}");
+        }
+    }
+
+    /// WP-101 changed the v2 block's text: a logbook with WP-100's block
+    /// reads as outdated and is rewritten without an archive (its text is
+    /// Seldon's), keeping the user's part; an edited one is archived.
+    #[test]
+    fn the_wp100_block_is_seldons_and_is_rewritten_without_an_archive() {
+        for (name, language) in [("en", Language::En), ("de", Language::De)] {
+            let path = format!(
+                "{}/templates/rules-v2/AGENTS-wp100-{name}.md",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let old = std::fs::read_to_string(&path).unwrap();
+            let t = template(language);
+            assert_ne!(old, t, "{name}: the block text changed");
+            let old = format!("{old}- my own rule\n");
+            let u = update(Some(&old), &t, false).unwrap();
+            assert!(!u.archive, "{name}");
+            assert_eq!(u.text, format!("{t}- my own rule\n"), "{name}");
+            let edited = old.replacen("\n# AGENTS.md\n", "\n# AGENTS\n", 1);
+            assert!(update(Some(&edited), &t, false).unwrap().archive, "{name}");
         }
     }
 

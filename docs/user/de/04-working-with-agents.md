@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 79bfb0e -->
+<!-- source: en/04-working-with-agents.md @ 2ca5b94 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -70,7 +70,9 @@ Regeln, ohne den Block. `seldon doctor` zeigt das:
                      fix: seldon rules update
 ```
 
-Führ die Lösung einmal aus:
+Das Panel prüft das, wenn du es öffnest, und zeigt „The logbook's agent
+rules are outdated (v1)“ mit *Update rules*; ein Klick führt die Lösung
+aus. Im Terminal führst du sie einmal aus:
 
 ```sh
 seldon rules update
@@ -98,8 +100,18 @@ Ledger nennt den Agenten als den, der den Case abgeschlossen hat. Du
 kannst jeden Case später lesen (siehe
 [Prüfen, was der Agent getan hat](#prüfen-was-der-agent-getan-hat)).
 Kann der Agent das Ergebnis nicht prüfen, lässt er den Case offen und
-sagt, was fehlt. Abschließen kannst du jeden Case weiterhin selbst:
+sagt, was fehlt. Die Engine hält ihn daran: Das `plan done` eines
+Agenten wird abgelehnt, solange *Result* des Case leer ist oder der
+*Plan* keinen Text unter `Verification:` hat, auch wenn der Agent
+`--actor` weglässt. Abschließen kannst du jeden Case weiterhin selbst:
 *Done* im Tab Work oder `seldon plan done`.
+
+Ein Case, den ein Agent abgeschlossen hat, bekommt den Tag
+`closed-by-agent`. Der Tab Work markiert ihn mit „by agent“, und *By
+agent* listet nur diese Cases, für eine Stichprobe, wann immer du willst.
+Stimmt etwas nicht, startet *Reopen* auf seiner Karte (oder
+`seldon plan reopen <ID>`) einen neuen Case mit demselben *Intent*, den
+ein Agent wie gewohnt übernehmen kann; der alte Case bleibt, wie er ist.
 
 ## Claude Code
 
@@ -243,8 +255,26 @@ einfache Befehle auszuführen.
 
 ## Einen Agenten aus dem Panel starten
 
-*Start agent* auf der Karte eines aktiven Case (oder zweimal `a` im Tab
-Work) führt aus:
+Am schnellsten geht es mit einem Satz. Schreib in das Feld oben im Tab
+Work, was erledigt werden soll, und drück Enter oder *Run*. Das Panel
+führt aus:
+
+```sh
+seldon agent start --new -- "Install tool X, it ships a PKGBUILD"
+```
+
+Die Engine macht aus deinem Satz einen Case: Der Titel ist sein erster
+Satz (höchstens 72 Zeichen), der *Intent* der ganze Text. Sie startet den
+Case (gelb, R1; der Agent stuft Zone und Risiko hoch, wenn die Arbeit es
+braucht) und startet den Agenten darauf, genau wie unten. Das ist ein
+Klick und ein Satz; der Agent fragt dich nur nach einem Passwort, einem
+R3-Schritt oder etwas außerhalb deines Satzes. Hat Omarchy noch keinen
+Standard-Agenten, wird nichts angelegt, und das Panel sagt: Führ
+`omarchy default agent <name>` aus (zum Beispiel `claude`), oder nenne
+einen Launcher in der Konfiguration.
+
+Für einen Case, den du selbst angelegt hast, führt *Start agent* auf der
+Karte eines aktiven Case (oder zweimal `a` im Tab Work) aus:
 
 ```sh
 seldon agent start C-2026-003

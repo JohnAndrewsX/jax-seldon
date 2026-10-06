@@ -131,10 +131,9 @@ through `filesystem` or `omarchy-settings`; in packages, the
    `-Syu`) and any package transaction you cannot resolve read-only are
    R3 as such: one go, with the list of what changes (`checkupdates`
    shows it without touching the database).
-3. A hit makes the step R3. Raise the case first:
-   `seldon plan set <ID> --risk R3 --actor agent:<name>`; write
-   `R3: <package>` in the *Log*, show the user the step and its rollback,
-   and wait for an explicit go: one go per such step.
+3. A hit makes the step R3. Write `R3: <package>` in the *Log*, show the
+   user the step and its rollback, and wait for an explicit go: one go
+   per such step.
 4. Never take an R3 step in an unattended session, and never without a
    snapshot.
 
@@ -151,10 +150,7 @@ resolution cannot resolve makes it R3 (ask first).
   `sudo snapper -c <config> create -c number -p -d "<ID>"` (`-p` prints
   the number; the case id only, no logbook text in the command). Not
   `omarchy-snapshot create`: its cleanup pass prunes old snapshots.
-- Record the number as the case's rollback:
-  `seldon plan snapshot <ID> <N> --actor agent:<name>` (the `root`
-  config's number; the engine checks it and warns, never refuses). The
-  other configs' numbers go into a *Log* line
+- Record the number with a *Log* line
   `snapshot <N> (<config>) before <step>`.
 - No snapper, or no configs: an R3 step stops and you ask; for R2 take a
   named backup instead, name it in the *Plan* and say so in the *Log*.
@@ -171,9 +167,8 @@ resolution cannot resolve makes it R3 (ask first).
 Risk: `R0` undone in seconds; `R1` undone by hand in minutes, the *Plan*
 names how; `R2` rollback needs a snapshot or backup; `R3` can break boot,
 login or the shell. Zone and risk are the case's estimate: when the work
-turns out redder or riskier, raise them with
-`seldon plan set <ID> --zone <zone> --risk <risk> --actor agent:<name>`,
-take the snapshot it needs, and for R3 stop as above.
+turns out redder or riskier, say so in the *Log*, take the snapshot it
+needs, and for R3 stop as above.
 
 ## Installing software
 
@@ -202,13 +197,10 @@ When the *Plan*'s verification passes, close the case yourself:
    Include one check that is not your own artefact: the real use case's
    exit status, `pacman -Q <package>`, `systemctl is-active <unit>`.
 2. `seldon plan verify <ID> --actor agent:<name>`, then
-   `seldon plan done <ID> --actor agent:<name>`, in one go. The engine
-   refuses an agent's `plan done` while *Result* or the *Plan*'s
-   `Verification:` is empty.
+   `seldon plan done <ID> --actor agent:<name>`, in one go.
 
 Nothing is left for the user. The record names you as the one who closed
-it, and the case gets the tag `closed-by-agent`; the user can reopen it
-in one click (`seldon plan reopen <ID>`, a new case). When the verification fails or cannot run, leave the case open and
+it. When the verification fails or cannot run, leave the case open and
 say what is left; to give up, `seldon plan drop <ID> --reason "<why>"`.
 
 ## Commands

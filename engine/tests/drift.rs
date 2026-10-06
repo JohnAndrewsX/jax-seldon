@@ -1005,3 +1005,35 @@ fn a_hooked_config_edit_lands_in_the_case_file() {
     assert_eq!(c["agents"], json!(["agent:claude-code"]));
     assert_eq!(drift(&env, &lb)["openDrift"], 0);
 }
+
+/// WP-101 round 2 (ADR-0027 §5): the retroactive case an agent's
+/// `explain` completes is an agent's close: tag `closed-by-agent`; a
+/// person's explain gets none.
+#[test]
+fn an_agents_explain_tags_the_completed_case() {
+    let env = Env::new(Snapper::Missing);
+    let lb = fixture_copy(&env);
+    let v = run(
+        &env,
+        &lb,
+        &[
+            "drift",
+            "explain",
+            OLLAMA,
+            "--actor",
+            "agent:codex",
+            "--",
+            "local models",
+        ],
+        0,
+    );
+    assert_eq!(v["case"]["tags"], json!(["closed-by-agent"]));
+    assert_eq!(v["case"]["status"], "completed");
+    let v = run(
+        &env,
+        &lb,
+        &["drift", "explain", UNIT, "--", "tested by hand"],
+        0,
+    );
+    assert_eq!(v["case"]["tags"], json!([]));
+}

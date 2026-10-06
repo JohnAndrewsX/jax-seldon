@@ -39,6 +39,12 @@
 #                        do not know (default C-2026-999): exit 1, "unknown case <id>"
 #   FAKE_SELDON_NO_LAUNCHER  if set, `agent start` answers as the engine does
 #                        without `omarchy` on PATH (exit 1)
+#   FAKE_SELDON_NO_DEFAULT_AGENT  if set, `agent start --new` answers as the
+#                        engine does without an Omarchy default agent (exit 1,
+#                        nothing created) (WP-101)
+#   FAKE_SELDON_RULES    the rules row `doctor --json` reports: current
+#                        (default) | outdated | damaged; $HOME/rules overrides
+#                        it, and `rules update` writes "current" there (WP-101)
 #
 # `plan` treats the index the fake last wrote (the state index) as its
 # logbook: a case's status is the one the index lists, unless $HOME/cases
@@ -70,6 +76,16 @@
 # start` hint), launches nothing, and answers with the engine's JSON for
 # the default launcher; it writes the id to $HOME/active-case.
 #
+# `agent start --new -- <intent>` (WP-101) creates and starts a case in the
+# state index (title: the text up to its first ". ", at most 72 characters)
+# and answers like `agent start` plus `created`. `plan reopen <id>` (a
+# completed case only) adds an active "Reopen: <title>" case with the tag
+# `reopens:<id>` and answers with `reopens` and `earlier`; it takes
+# $HOME/active-case only when that names no open case (else `kept`). `doctor --json`
+# reports one `rules` row and is logged to $HOME/doctor.log only (it runs in
+# its own process, beside the queue, so it is kept out of calls.log and
+# argv.log); `rules update --json` sets the rules current.
+#
 # `log` and `open` answer in the SPEC-ENGINE §3 JSON shapes. `open … --editor` hands the path to
 # `omarchy-launch-editor` as the real engine does without a terminal; the
 # harness puts a recorder there.
@@ -80,6 +96,19 @@ cmd="${1:-}"
 mode=${FAKE_SELDON_MODE:-ok}
 unknown=${FAKE_SELDON_UNKNOWN_CASE:-C-2026-999}
 [[ -f $HOME/mode ]] && mode=$(<"$HOME/mode")
+if [[ $cmd == doctor ]]; then
+  printf '%s\n' "$(printf '%q ' "$@")" >>"$HOME/doctor.log"
+  rules=${FAKE_SELDON_RULES:-current}
+  [[ -f $HOME/rules ]] && rules=$(<"$HOME/rules")
+  case $rules in
+    outdated) row='{"name":"rules","status":"degraded","message":"outdated (v1)","fix":"seldon rules update"}' ;;
+    damaged) row='{"name":"rules","status":"error","message":"damaged (the block has no end marker)","fix":"seldon rules update --replace (archives the file)"}' ;;
+    *) row='{"name":"rules","status":"ok","message":"current (v2)"}' ;;
+  esac
+  echo "{\"checks\":[{\"name\":\"engine\",\"status\":\"ok\",\"message\":\"seldon 0.1.0-fake\"},$row]}"
+  [[ $rules == damaged ]] && exit 1
+  exit 0
+fi
 printf '%s\n' "$(printf '%q ' "$@")" >>"$HOME/argv.log"
 echo "start $cmd" >>"$log"
 trap 'echo "end $cmd" >>"$log"' EXIT
@@ -374,6 +403,78 @@ decide() { # decide --no-edit [--json] -- <title>
     git: {committed: true, message: ($id + " proposed")}}' "$index"
 }
 
+# A new case in the state index, in column $2 (queued | active), with the
+# tags of the JSON list $8: new_case <id> <status> <title> <zone> <risk> <area> <priority> <tags>
+new_case() {
+  rewrite_index '.cases[$status] += [{id: $id, title: $title, status: $status, zone: $zone, risk: $risk, priority: $priority}
+      + (if $area == "" then {} else {area: $area} end)
+      + {created: "2026-10-01", started: (if $status == "active" then "2026-10-01" else null end), closed: null,
+         snapshotBefore: null, agents: [], events: [], tags: $tags,
+         path: ("work/" + $status + "/" + $id + "-case.md"), steps: {total: 0, done: 0}}]
+    | .summary.queuedCases = (.cases.queued | length)
+    | .summary.activeCases = (.cases.active | length)' \
+    --arg id "$1" --arg status "$2" --arg title "$3" --arg zone "$4" --arg risk "$5" --arg area "$6" \
+    --arg priority "$7" --argjson tags "$8"
+}
+
+next_id() {
+  local index next=9
+  index=$(state_index)
+  [[ -f $index ]] && next=$(jq '[.cases[][] | .id | capture("^C-2026-(?<n>[0-9]+)$").n | tonumber] | (max // 0) + 1' "$index")
+  printf 'C-2026-%03d' "$next"
+}
+
+agent_new() { # agent_new [--zone Z] [--risk R] [--area A] [--json] -- <intent>
+  local zone=yellow risk=R1 area="" intent title id
+  while (($# > 0)) && [[ $1 != -- ]]; do
+    case $1 in
+      --zone) zone=$2; shift ;;
+      --risk) risk=$2; shift ;;
+      --area) area=$2; shift ;;
+    esac
+    shift
+  done
+  intent=${2:-}
+  [[ -n ${intent//[[:space:]]/} ]] || user_error "the intent must not be empty"
+  [[ -n ${FAKE_SELDON_NO_DEFAULT_AGENT:-} ]] \
+    && user_error "no default agent: Omarchy has none set, so \`omarchy agent prompt\` cannot start one; nothing was created. Fix: \`omarchy default agent <name>\` (e.g. claude), or set \`[agent] launcher\` in ~/.config/seldon/config.toml"
+  title=${intent%%$'\n'*}
+  title=${title%%. *}
+  title=${title%.}
+  title=${title:0:72}
+  id=$(next_id)
+  set_status "$id" active
+  new_case "$id" active "$title" "$zone" "$risk" "$area" normal '[]'
+  echo "$id" >"$HOME/active-case"
+  jq -cn --arg id "$id" --arg title "$title" --arg cwd "$HOME/Seldon" '{launched: true, launcher: "default", program: "omarchy",
+    argv: ["omarchy", "agent", "prompt", "{prompt}"], actor: "agent:default", case: $id, cwd: $cwd, previousActiveCase: null,
+    created: {case: {id: $id, title: $title, status: "active"}, events: [], areaCreated: null, git: {committed: true}}}'
+}
+
+plan_reopen() { # plan_reopen <id>
+  local id=$1 from index old new earlier
+  [[ $id == "$unknown" ]] && user_error "unknown case $id"
+  from=$(case_status "$id")
+  [[ -n $from ]] || user_error "unknown case $id"
+  [[ $from == completed ]] || user_error "$id is $from; \`seldon plan reopen\` reopens a completed case only"
+  index=$(state_index)
+  old=$(jq -c --arg id "$id" '[.cases[][] | select(.id == $id)][0]' "$index")
+  earlier=$(jq -c --arg tag "reopens:$id" '[.cases[][] | select((.tags // []) | index($tag)) | .id]' "$index")
+  new=$(next_id)
+  local held="" held_status=""
+  [[ -f $HOME/active-case ]] && held=$(<"$HOME/active-case")
+  [[ -n $held ]] && held_status=$(case_status "$held")
+  [[ $held_status == queued || $held_status == active || $held_status == verification ]] || held=""
+  set_status "$new" active
+  new_case "$new" active "Reopen: $(jq -r .title <<<"$old")" "$(jq -r .zone <<<"$old")" "$(jq -r .risk <<<"$old")" \
+    "$(jq -r '.area // ""' <<<"$old")" "$(jq -r '.priority // "normal"' <<<"$old")" "[\"reopens:$id\"]"
+  [[ -z $held ]] && echo "$new" >"$HOME/active-case"
+  jq -cn --arg id "$new" --arg old "$id" --argjson earlier "$earlier" --arg held "$held" '{
+    case: {id: $id, status: "active", tags: ["reopens:" + $old]}, reopens: $old, earlier: $earlier,
+    events: [], activeCase: (if $held == "" then {set: $id} else {kept: $held} end),
+    git: {committed: true, message: ($old + " reopened as " + $id)}}'
+}
+
 agent_start() { # agent_start <id> — the engine's checks and answer, no launch
   local id=$1 status
   [[ $id == "$unknown" ]] && user_error "unknown case $id"
@@ -484,6 +585,7 @@ case "$cmd" in
     case "${2:-}" in
       new) shift 2; plan_new "$@" ;;
       start | verify | done | drop) plan_step "$2" "${3:-}" ;;
+      reopen) plan_reopen "${3:-}" ;;
       *) user_error "unrecognized subcommand '${2:-}'" ;;
     esac
     ;;
@@ -521,9 +623,23 @@ case "$cmd" in
       exit 4
     fi
     case "${2:-}" in
-      start) agent_start "${3:-}" ;;
+      start)
+        if [[ ${3:-} == --new ]]; then
+          shift 3
+          agent_new "$@"
+        else
+          agent_start "${3:-}"
+        fi
+        ;;
       *) user_error "unrecognized subcommand '${2:-}'" ;;
     esac
+    ;;
+  rules)
+    sleep 0.2
+    [[ $mode == uninit ]] && uninit
+    [[ ${2:-} == update ]] || user_error "unrecognized subcommand '${2:-}'"
+    echo current >"$HOME/rules"
+    echo '{"file":"AGENTS.md","action":"rewritten","from":1,"version":2,"archived":null,"diff":"","git":{"committed":true}}'
     ;;
   *)
     user_error "unrecognized subcommand"

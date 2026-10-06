@@ -6,17 +6,27 @@ import qs.Commons
 import qs.Ui
 import "../Model.js" as Model
 
-// Work tab (SPEC-PLUGIN §5): the planning desk. Three columns, Queued ·
-// Active (verification included) · Completed, from Model.workColumns(); the
-// WIP text ("2 / 3 active") against the `wipLimit` setting; under the board
-// the CaseCard of the case under the cursor, with its actions; the
-// NewCaseSheet in place of board and card while it is open.
+// Work tab (SPEC-PLUGIN §5): the planning desk. On top the one-sentence
+// start (WP-101, ADR-0027 §6): an intent field and *Run*, which sends
+// `seldon agent start --new --json -- <intent>` (the text one argument,
+// exactly as typed) and follows the new case; the field keeps its text until
+// the engine has made the case. Then the WIP text ("2 / 3 active") against
+// the `wipLimit` setting, the *Closed by agent* filter of the Completed
+// column (the spot check, ADR-0027 §5) and *New case*, the hand-made case
+// (the NewCaseSheet, in place of board and card while it is open). Three
+// columns, Queued · Active (verification included) · Completed, from
+// Model.workColumns(); a completed case an agent closed carries "by agent".
+// Under the board the CaseCard of the case under the cursor, with its
+// actions; a completed case offers *Reopen* (one click, no arming: it
+// creates a case and destroys nothing).
 //
-// Every action goes through Service.plan(), Service.startAgent() or
-// Service.openInEditor() with a fixed argument list and a case id checked
-// against the schema pattern (Model.planArgs, Model.agentArgs). The result line shows the engine's answer; the moved
-// case arrives with the next index (Service.qml's FileView), and the cursor
-// follows it into its new column.
+// Every action goes through Service.plan(), Service.startAgent(),
+// Service.startAgentNew() or Service.openInEditor() with a fixed argument
+// list and a case id checked against the schema pattern (Model.planArgs,
+// Model.agentArgs, Model.agentNewArgs). The result line shows the engine's
+// answer; the moved case arrives with the next index (Service.qml's
+// FileView), and the cursor follows it into its new column, or to the case
+// a reopen or a Run made.
 //
 // Keyboard (forwarded by Panel.qml):
 //   ↑ / ↓, k / j   move through the cases, column by column
@@ -26,6 +36,8 @@ import "../Model.js" as Model
 //   x              Drop, armed by the first press, run by the second
 //   a              Start agent on an active case, armed by the first press,
 //                  run by the second (WP-022)
+//   r              Reopen the completed case under the cursor, at once
+//   i              the intent field (Enter runs, Esc gives the keys back)
 //   e              open the case under the cursor in the editor
 //   +              new case (Panel.qml, from any tab)
 // Any other key, a cursor move or a new index disarms. With the mouse, a
@@ -50,12 +62,17 @@ Item {
   // "<caseId> <action>" while an action waits for its second key or click.
   property string armedKey: ""
   property bool sheetOpen: false
+  // "" or Model.COMPLETED_FILTER_AGENT: the Completed column's filter.
+  property string completedFilter: ""
+  // The intent sent last, until the engine answers (the QuickEntry pattern).
+  property string sentIntent: ""
+  property alias intentField: intentField
 
   signal cursorWanted()
   // The sheet gives the keys back (Esc, Cancel, a created case).
   signal leaveRequested()
 
-  readonly property var columns: Model.workColumns(indexData)
+  readonly property var columns: Model.workColumns(indexData, completedFilter)
   readonly property var cases: Model.workCases(columns)
   readonly property int rowCount: cases.length
   readonly property var current: cases.length > 0 ? cases[Math.max(0, Math.min(cursor, cases.length - 1))] : null
@@ -63,7 +80,8 @@ Item {
   readonly property var result: service ? service.planResult : null
   readonly property bool pending: !!result && result.pending
   readonly property bool canWrite: !!service && service.canWrite
-  readonly property bool editing: sheetOpen && sheet.editing
+  readonly property bool editing: (sheetOpen && sheet.editing) || intentField.activeFocus
+  readonly property bool running: pending && !!result && result.action === "agent-new"
   readonly property string armedFor: current && armedKey.indexOf(current.id + " ") === 0 ? armedKey.slice(current.id.length + 1) : ""
   readonly property color dim: Util.alpha(foreground, 0.65)
   property alias sheet: sheet
@@ -128,6 +146,24 @@ Item {
     return root.service.plan(actionId, c.id)
   }
 
+  // *Run*: one sentence, a new case, an agent on it (WP-101).
+  function runIntent() {
+    if (!root.service || root.pending) return false
+    var sent = root.service.startAgentNew(intentField.text)
+    if (sent) root.sentIntent = intentField.text
+    return sent
+  }
+
+  function focusIntent() {
+    root.disarm()
+    if (root.sheetOpen) root.closeSheet()
+    intentField.forceActiveFocus()
+  }
+
+  function toggleCompletedFilter() {
+    root.completedFilter = root.completedFilter === "" ? Model.COMPLETED_FILTER_AGENT : ""
+  }
+
   // A click on a card button: runs it, except Drop and Start agent, which
   // need a second click.
   function clickAction(actionId) {
@@ -173,6 +209,14 @@ Item {
       root.arm("agent")
       return true
     }
+    if (t === "r" && Model.caseAction(root.current, "reopen")) {
+      if (root.canWrite && !root.pending) root.runAction("reopen")
+      return true
+    }
+    if (t === "i") {
+      if (root.canWrite) root.focusIntent()
+      return true
+    }
     root.disarm()
     return false
   }
@@ -191,10 +235,67 @@ Item {
     if (root.editing) root.leaveRequested()
   }
   onCursorActiveChanged: if (!cursorActive) root.disarm()
+  // A reopen or a Run made a case: the cursor goes to it; a Run's field
+  // empties once the engine has made the case.
+  onResultChanged: {
+    var r = root.result
+    if (!r || r.pending || !r.ok || (r.action !== "reopen" && r.action !== "agent-new")) return
+    if (r.action === "agent-new" && intentField.text === root.sentIntent) intentField.text = ""
+    root.sentIntent = ""
+    if (r.caseId) root.follow(r.caseId)
+  }
 
   Column {
     anchors.fill: parent
     spacing: Style.spacing.md
+
+    // The one-sentence start (ADR-0027 §6).
+    Item {
+      id: intentRow
+      width: parent.width
+      implicitHeight: Math.max(intentField.implicitHeight, runButton.implicitHeight)
+
+      TextField {
+        id: intentField
+        anchors.left: parent.left
+        anchors.right: runButton.left
+        anchors.rightMargin: Style.spacing.sm
+        anchors.verticalCenter: parent.verticalCenter
+        enabled: root.canWrite
+        placeholderText: root.canWrite ? "New case: say what to do, Enter runs an agent"
+          : root.service ? root.service.writeBlocker : "The Seldon service is not running"
+        foreground: root.foreground
+        accent: root.accent
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        onAccepted: root.runIntent()
+        Keys.onEscapePressed: function(event) {
+          root.leaveRequested()
+          event.accepted = true
+        }
+      }
+
+      Button {
+        id: runButton
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.running ? "Running" : "Run"
+        iconText: root.running ? "󰦖" : ""
+        iconSpinning: root.running
+        iconSize: Style.font.caption
+        enabled: root.canWrite && !root.pending && intentField.text.trim() !== ""
+        selected: true
+        bordered: true
+        foreground: root.foreground
+        accent: root.accent
+        fontFamily: root.fontFamily
+        fontSize: Style.font.caption
+        verticalPadding: Style.spacing.xs
+        tooltipText: root.canWrite ? "Creates and starts the case, launches the agent (Enter; key i)"
+          : (root.service ? root.service.writeBlocker : "")
+        onClicked: root.runIntent()
+      }
+    }
 
     Item {
       id: header
@@ -204,7 +305,7 @@ Item {
       Text {
         id: wipText
         anchors.left: parent.left
-        anchors.right: newButton.left
+        anchors.right: agentFilter.left
         anchors.rightMargin: Style.spacing.sm
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
@@ -214,6 +315,23 @@ Item {
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         font.bold: true
+      }
+
+      Button {
+        id: agentFilter
+        anchors.right: newButton.left
+        anchors.rightMargin: Style.spacing.sm
+        anchors.verticalCenter: parent.verticalCenter
+        text: "By agent"
+        selected: root.completedFilter === Model.COMPLETED_FILTER_AGENT
+        bordered: true
+        foreground: root.foreground
+        accent: root.accent
+        fontFamily: root.fontFamily
+        fontSize: Style.font.caption
+        verticalPadding: Style.spacing.xs
+        tooltipText: "Completed: only the cases an agent closed (a spot check)"
+        onClicked: root.toggleCompletedFilter()
       }
 
       Button {
@@ -244,6 +362,8 @@ Item {
       height: implicitHeight
       textFormat: Text.PlainText
       text: root.result && !(root.sheetOpen && root.result.action === "new") ? root.result.text : ""
+      wrapMode: Text.Wrap
+      maximumLineCount: 2
       color: root.result && !root.result.ok ? root.urgent : root.dim
       elide: Text.ElideRight
       font.family: root.fontFamily
@@ -279,7 +399,7 @@ Item {
 
           PanelSectionHeader {
             id: colHeader
-            text: col.modelData.title.toUpperCase() + " " + col.modelData.cases.length
+            text: Model.columnHeader(col.modelData)
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
@@ -382,7 +502,7 @@ Item {
                   width: parent.width
                   spacing: Style.spacing.sm
                   // Not from the children's `visible`: a hidden Flow hides them too.
-                  visible: tile.marked || tile.modelData.proposed > 0
+                  visible: tile.marked || tile.modelData.proposed > 0 || tile.modelData.closedByAgent
 
                   Text {
                     id: tileStatus
@@ -390,6 +510,17 @@ Item {
                     textFormat: Text.PlainText
                     text: tile.modelData.status
                     color: tile.modelData.status === "verification" ? root.accent : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.italic: true
+                  }
+
+                  // An agent closed it (ADR-0027 §5): the spot check's marker.
+                  Text {
+                    visible: tile.modelData.closedByAgent
+                    textFormat: Text.PlainText
+                    text: "by agent"
+                    color: root.accent
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     font.italic: true
@@ -433,7 +564,8 @@ Item {
             width: parent.width
             visible: col.modelData.cases.length === 0 && !!root.indexData
             textFormat: Text.PlainText
-            text: col.modelData.id === "queued" ? "Nothing queued" : col.modelData.id === "active" ? "Nothing active" : "Nothing completed"
+            text: col.modelData.id === "queued" ? "Nothing queued" : col.modelData.id === "active" ? "Nothing active"
+              : col.modelData.total > 0 ? "None closed by an agent" : "Nothing completed"
             color: root.dim
             wrapMode: Text.Wrap
             font.family: root.fontFamily

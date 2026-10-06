@@ -570,7 +570,8 @@ fn refuse_agent(
 /// The case `drift explain` creates: WP-006's template and id sequence,
 /// title and `## Intent` from the intent, status completed (created and
 /// started on the day of the earliest resolved event, closed today), zone
-/// from `--zone` or the drift item.
+/// from `--zone` or the drift item; the tag `closed-by-agent` when an agent
+/// explains.
 fn retroactive_case(
     ctx: &Context,
     logbook: &crate::logbook::Logbook,
@@ -601,7 +602,12 @@ fn retroactive_case(
         snapshot_before: None,
         agents: Vec::new(),
         events: Vec::new(),
-        tags: Vec::new(),
+        // an agent's explanation closes a case too (ADR-0027 §5, WP-101)
+        tags: if crate::model::is_agent(actor) {
+            vec![super::plan::TAG_CLOSED_BY_AGENT.to_string()]
+        } else {
+            Vec::new()
+        },
     };
     let body = cases::new_body(logbook, &id, intent)?;
     let body = reconcile::append_to_section(&body, "Intent", intent);

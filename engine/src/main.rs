@@ -61,10 +61,17 @@ enum Command {
     Init(InitCmd),
 
     /// Check engine, config, logbook, collector state, omarchy, snapper and git
+    #[command(after_help = "Examples:
+  seldon doctor
+  seldon doctor --only rules --json")]
     Doctor {
         /// Logbook to check (same as the global --logbook)
         #[arg(long, value_name = "DIR")]
         path: Option<PathBuf>,
+        /// Run one check only; `rules`: the logbook's agent rules, without
+        /// starting omarchy, snapper or git (what the panel asks)
+        #[arg(long, value_name = "CHECK")]
+        only: Option<commands::doctor::Only>,
     },
 
     /// Run collectors and append new events to the ledger
@@ -343,7 +350,10 @@ fn run(cli: Cli) -> Result<Output, Error> {
                 },
             },
         ),
-        Command::Doctor { path } => commands::doctor::run(&ctx, path.as_deref()),
+        Command::Doctor { path, only } => match only {
+            Some(only) => commands::doctor::run_only(&ctx, path.as_deref(), only),
+            None => commands::doctor::run(&ctx, path.as_deref()),
+        },
         Command::Capture { source, all, since } => commands::capture::run(
             &ctx,
             CaptureArgs {

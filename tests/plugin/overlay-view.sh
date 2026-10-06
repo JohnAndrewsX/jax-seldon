@@ -144,7 +144,7 @@ clean_log() {
 
 sample="$fx/index.sample.json"
 plan_s="2 active cases · 6 of 9 steps done"
-risk_s="8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time"
+risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
 drift_s="11 opened · 6 resolved in 5 weeks · peak 2026-W40"
 s30="67 events on 14 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s90="72 events on 15 of 90 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
@@ -164,7 +164,7 @@ expect ipc 1 .view.opened false
 expect ipc 2 .view.opened true
 expect ipc 2 .view.status ok
 expect ipc 2 .view.banner ""
-counts ipc 2 90 "90,3,5,3,18,2"
+counts ipc 2 90 "90,3,5,4,18,2"
 expect ipc 2 '.view.window.from + " " + .view.window.to' "2026-07-04 2026-10-01"
 expect ipc 2 .view.meta "workstation-7f3a · Omarchy 4.0.7-1 · generated 2026-10-01 17:05"
 shows ipc 2 "Prime Radiant"
@@ -181,31 +181,31 @@ shows ipc 2 "72 events on 15 of 90 days · busiest 2026-10-01 (30)"
 shows ipc 2 "$risk_s"
 shows ipc 2 "$plan_s"
 # The Plan's cards: id and risk, title, steps and agent.
-shows ipc 2 "C-2026-003 · R2"
+shows ipc 2 "C-2026-003 · R3"
 shows ipc 2 "Omarchy auf 4.0.7 aktualisieren"
 shows ipc 2 "4/5 steps · agent: claude-code"
 shows ipc 2 "2/4 steps · agent: claude-code"
 expect ipc 2 '[.view.slots[] | .chart.empty] | any' false
 expect ipc 2 .view.mode wide
 fits ipc 2 1920 1080
-counts ipc 3 30 "30,2,5,3,17,2"
+counts ipc 3 30 "30,2,5,4,17,2"
 summaries ipc 3 "$s30"
 expect ipc 3 '.view.window.from + " " + .view.window.to' "2026-09-02 2026-10-01"
 shows ipc 3 "67 events on 14 of 30 days · busiest 2026-10-01 (30)"
 shows ipc 3 "30 d · 2026-09-02 – 2026-10-01"
-counts ipc 4 90 "90,3,5,3,18,2"
-counts ipc 5 365 "365,3,5,3,18,2"
+counts ipc 4 90 "90,3,5,4,18,2"
+counts ipc 5 365 "365,3,5,4,18,2"
 summaries ipc 5 "$s365"
 expect ipc 5 '.view.window.from' "2025-10-02"
-counts ipc 6 all "366,3,5,3,18,2"
+counts ipc 6 all "366,3,5,4,18,2"
 summaries ipc 6 "$sall"
 expect ipc 6 '.view.window.from + "|" + .view.window.to' "|"
 shows ipc 6 "All · everything in the index"
-counts ipc 7 365 "365,3,5,3,18,2"
-counts ipc 8 all "366,3,5,3,18,2"
-counts ipc 9 30 "30,2,5,3,17,2"
-counts ipc 10 all "366,3,5,3,18,2"
-counts ipc 11 30 "30,2,5,3,17,2"
+counts ipc 7 365 "365,3,5,4,18,2"
+counts ipc 8 all "366,3,5,4,18,2"
+counts ipc 9 30 "30,2,5,4,17,2"
+counts ipc 10 all "366,3,5,4,18,2"
+counts ipc 11 30 "30,2,5,4,17,2"
 expect ipc 12 .view.opened false
 expect ipc 12 '.hides | join(",")' jax.seldon
 expect ipc 12 '.texts | length' 0
@@ -216,12 +216,12 @@ expect ipc 15 .view.opened true
 expect ipc 16 .view.opened false
 expect ipc 16 '.hides | length' 3
 expect ipc 17 .view.opened true
-counts ipc 17 365 "365,3,5,3,18,2"
-counts ipc 18 30 "30,2,5,3,17,2"
+counts ipc 17 365 "365,3,5,4,18,2"
+counts ipc 18 30 "30,2,5,4,17,2"
 expect ipc 18 .view.opened true
 # The chip click left the keys with the overlay.
-counts ipc 19 365 "365,3,5,3,18,2"
-counts ipc 20 all "366,3,5,3,18,2"
+counts ipc 19 365 "365,3,5,4,18,2"
+counts ipc 20 all "366,3,5,4,18,2"
 expect ipc 20 .call all
 expect ipc 21 .call all
 expect ipc 21 .view.period all
@@ -261,13 +261,13 @@ expect fresh 2 .firstFrame.paintedBy 2
 paints fresh 2 "1,1,1,1,1,1"
 expect fresh 2 '.view.aggregations.service == .firstFrame.service' true
 expect fresh 2 .view.aggregations.overlay 0
-counts fresh 3 30 "30,2,5,3,17,2"
+counts fresh 3 30 "30,2,5,4,17,2"
 paints fresh 4 "2,2,2,1,2,1"
 expect fresh 4 '.view.aggregations.service == .firstFrame.service' true
 expect fresh 4 .view.aggregations.overlay 0
 hovered fresh 5 heatmap "Thu 2026-10-01 · 30 events · pacman 7 · agent 6 · seldon 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1"
 shows fresh 5 "Thu 2026-10-01 · 30 events · pacman 7 · agent 6 · seldon 6 · snapper 4 · config 2 · manual 2 · omarchy 1 · plugins 1 · theme 1"
-hovered fresh 6 plan "C-2026-003 · Omarchy auf 4.0.7 aktualisieren · 4/5 steps · agent: claude-code · red R2"
+hovered fresh 6 plan "C-2026-003 · Omarchy auf 4.0.7 aktualisieren · 4/5 steps · agent: claude-code · red R3"
 expect fresh 7 '[.view.slots[] | .chart.hover] | join("")' ""
 paints fresh 8 "2,2,2,1,2,1"
 expect fresh 9 .view.size.w 2560
@@ -293,7 +293,7 @@ hovered hover 3 heatmap "Sat 2026-07-04 · 0 events"
 hovered hover 4 series "2026-09-03 · explicit 324 · total 2005"
 hovered hover 5 driftBars "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2"
 hovered hover 6 riskDonut "R0 · 1 case · 13% · all time"
-hovered hover 7 riskDonut "R2 · 4 cases · 50% · all time"
+hovered hover 7 riskDonut "R2 · 3 cases · 38% · all time"
 hovered hover 8 timeline "crisis · config config-add ~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh · 2026-09-29 20:45"
 hovered hover 9 timeline "case · C-2026-002 Hyprland-Monitorlayout für Dual-WQHD · 2026-09-12 – 2026-09-13"
 hovered hover 10 plan "C-2026-004 · Zed als zweiten Editor installieren · 2/4 steps · agent: claude-code · red R2"
@@ -326,7 +326,7 @@ for size in 2560x1440 1536x864 2048x1152; do
   for step in 1 2 3 4; do fits "size-$size" $step "${size%x*}" "${size#*x}"; done
   expect "size-$size" 1 .view.mode wide
   expect "size-$size" 4 '[.view.slots[] | select(.chart.w < 100 or .chart.h < 40)] | length' 0
-  counts "size-$size" 2 30 "30,2,5,3,17,2"
+  counts "size-$size" 2 30 "30,2,5,4,17,2"
   summaries "size-$size" 2 "$s30"
   clean_log "size-$size"
 done
@@ -335,7 +335,7 @@ done
 run scaled "$sample" 1536x864 "toggle;text:2" QT_SCALE_FACTOR=1.25
 fits scaled 1 1536 864
 fits scaled 2 1536 864
-counts scaled 2 90 "90,3,5,3,18,2"
+counts scaled 2 90 "90,3,5,4,18,2"
 clean_log scaled
 
 # 6. Narrow windows reflow the grid: two columns, then one slot per row and

@@ -28,7 +28,7 @@ use crate::index::views::{self, DECISIONS_FENCE, STATUS_FENCE};
 use crate::ledger::Ledger;
 use crate::logbook::{Logbook, git, layout};
 use crate::model::event::{Kind, Source};
-use crate::model::{self, Area, Case, Decision, Journal, Memory, Record};
+use crate::model::{self, Area, Case, CaseStatus, Decision, Journal, Memory, Record};
 use crate::redact::Redactor;
 use crate::sys::{self, Run};
 use crate::{CONTRACT_VERSION, VERSION};
@@ -88,6 +88,59 @@ impl Check {
         self.fix = Some(fix.into());
         self
     }
+}
+
+/// A check `seldon doctor --only` runs alone (WP-101 round 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Only {
+    /// The rules block of the logbook's `AGENTS.md`
+    Rules,
+}
+
+/// `seldon doctor --only rules`: the `engine` and `rules` rows, nothing
+/// else. It starts no program (no omarchy, snapper or git probe), reads no
+/// collector state and takes no lock: the panel asks it when it opens
+/// (SPEC-PLUGIN §3). Exit 3 when the logbook is not initialised, 1 when the
+/// row is an error. The JSON is doctor's.
+pub fn run_only(ctx: &Context, path: Option<&Path>, only: Only) -> Result<Output> {
+    let Only::Rules = only;
+    // a config.toml that cannot be read leaves the default path, as the
+    // other commands would refuse; the rules row then speaks for the path
+    let config = ctx.load_config().ok().flatten();
+    let (root, _) = ctx.resolve_logbook(path, config.as_ref());
+    let logbook = Logbook::open(&root)?;
+    let checks = vec![
+        Check::new(
+            "engine",
+            Status::Ok,
+            format!("seldon {VERSION}, contract {CONTRACT_VERSION}"),
+        ),
+        check_rules(ctx, &logbook),
+    ];
+    let ok = checks.iter().all(|c| c.status != Status::Error);
+    let mut human = format!("seldon doctor · {}\n", ctx.dirs.display(&root));
+    for c in &checks {
+        let _ = writeln!(
+            human,
+            "  {:<9} {:<8} {}",
+            c.status.as_str(),
+            c.name,
+            c.message
+        );
+        if let Some(fix) = &c.fix {
+            let _ = writeln!(human, "  {:<9} {:<8} fix: {fix}", "", "");
+        }
+    }
+    human.push_str(if ok {
+        "doctor: ok"
+    } else {
+        "doctor: problems found"
+    });
+    Ok(Output {
+        human,
+        json: json!({ "ok": ok, "logbook": root, "checks": checks }),
+        exit: if ok { Exit::Ok } else { Exit::UserError },
+    })
 }
 
 /// `seldon doctor [--path DIR]`.
@@ -164,6 +217,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_ledger(logbook));
             checks.push(check_fences(logbook));
             checks.push(check_rules(ctx, logbook));
+            checks.push(check_rollbacks(logbook));
             checks.push(check_collectors(ctx, &effective, logbook, &shown));
             checks.extend(check_reset(ctx, logbook));
             checks.extend(check_pending_reset(ctx, &effective, logbook, source));
@@ -440,6 +494,69 @@ fn check_cases(cases: &[(String, String)]) -> Check {
     }
     Check::new("cases", Status::Error, twice.join("; "))
         .fix("delete the stale copy of each case and keep the file in the folder of its status")
+}
+
+/// The rollback snapshots of the cases (ADR-0027 §3, WP-101): a case
+/// whose `snapshotBefore` the snapper collector saw deleted (a
+/// `snapshot-delete` of that number on or after the case's creation day)
+/// has lost its rollback. Degraded for an open case, said for a completed
+/// one; dropped cases do not count.
+fn check_rollbacks(logbook: &Logbook) -> Check {
+    let (files, _) = match crate::logbook::cases::all(logbook) {
+        Ok(found) => found,
+        Err(e) => return Check::new("rollbacks", Status::Error, one_line(&format!("{e}"))),
+    };
+    let with: Vec<_> = files
+        .iter()
+        .filter(|f| f.case.status != CaseStatus::Dropped)
+        .filter_map(|f| f.case.snapshot_before.map(|n| (f, n)))
+        .collect();
+    if with.is_empty() {
+        return Check::new("rollbacks", Status::Ok, "no case has a rollback snapshot");
+    }
+    let events = match Ledger::new(logbook, Redactor::builtin()).read_all() {
+        Ok(events) => events,
+        Err(e) => return Check::new("rollbacks", Status::Error, format!("{e:#}")),
+    };
+    let (mut open, mut closed) = (Vec::new(), Vec::new());
+    for (f, n) in &with {
+        let subject = n.to_string();
+        let pruned = events.iter().any(|e| {
+            e.source == Source::Snapper
+                && e.kind == Kind::SnapshotDelete
+                && e.subject == subject
+                && e.ts.date_naive() >= f.case.created
+        });
+        if pruned {
+            let line = format!("{}: snapshot {n} pruned", f.case.id);
+            match f.case.status {
+                CaseStatus::Completed => closed.push(line),
+                _ => open.push(line),
+            }
+        }
+    }
+    let mut message = if open.is_empty() && closed.is_empty() {
+        format!(
+            "{} case(s) with a rollback snapshot, none pruned",
+            with.len()
+        )
+    } else {
+        open.iter()
+            .chain(&closed)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    if open.is_empty() {
+        if !closed.is_empty() {
+            message.push_str(" (completed: the case's work stands, its snapshot rollback is gone)");
+        }
+        return Check::new("rollbacks", Status::Ok, message);
+    }
+    Check::new("rollbacks", Status::Degraded, message).fix(
+        "snapper's number cleanup removed it (5 numbered snapshots); before the case's next \
+         red change take a new snapshot and write its number into the case's Log",
+    )
 }
 
 /// Ledger lines that are not events (a torn write, a hand edit; F-132):

@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 79bfb0e -->
+<!-- source: en/05-cli-reference.md @ a592655 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -149,6 +149,8 @@ Zustandsdateien, Omarchy, Snapper und git. Es liest nur. Jede Zeile sagt
 Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler ist, 1, wenn eine
 Prüfung ein Fehler ist (auch, wenn `config.toml` nicht gelesen oder
 geparst werden kann), 3, wenn das Logbuch nicht angelegt ist.
+`--only rules` prüft nur die Agentenregeln in `AGENTS.md` und startet
+kein anderes Programm; das Panel fragt das, wenn es sich öffnet.
 
 <!-- help: seldon doctor -->
 ```text
@@ -157,7 +159,36 @@ Check engine, config, logbook, collector state, omarchy, snapper and git
 Usage: seldon doctor [OPTIONS]
 
 Options:
-      --path <DIR>     Logbook to check (same as the global --logbook)
+      --path <DIR>
+          Logbook to check (same as the global --logbook)
+
+      --json
+          Machine-readable output
+
+      --only <CHECK>
+          Run one check only; `rules`: the logbook's agent rules, without starting omarchy, snapper or git (what the panel asks)
+
+          Possible values:
+          - rules: The rules block of the logbook's `AGENTS.md`
+
+      --logbook <DIR>
+          Logbook directory (overrides config.toml and SELDON_LOGBOOK)
+
+      --quiet
+          No human output on success
+
+      --no-commit
+          Do not commit logbook changes to git
+
+      --config <FILE>
+          Config file (overrides SELDON_CONFIG and ~/.config/seldon/config.toml)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  seldon doctor
+  seldon doctor --only rules --json
 ```
 <!-- /help -->
 
@@ -326,14 +357,17 @@ Plan and track cases: new, start, verify, done, drop, list, show
 Usage: seldon plan [OPTIONS] <COMMAND>
 
 Commands:
-  new     Create a case in work/queued/
-  start   Start a case: queued → active; it becomes the active case
-  verify  Hand an active case to verification: active → verification
-  done    Complete a verified case: verification → completed
-  drop    Drop a case that is queued, active or in verification
-  list    List cases, optionally by status or area
-  show    Print one case file with its path
-  help    Print this message or the help of the given subcommand(s)
+  new       Create a case in work/queued/
+  start     Start a case: queued → active; it becomes the active case
+  verify    Hand an active case to verification: active → verification
+  done      Complete a verified case: verification → completed
+  drop      Drop a case that is queued, active or in verification
+  set       Change an open case's zone, risk or area, e.g. raise it to R3 before a step that can break boot
+  snapshot  Record the snapper snapshot taken before the case's first red change as its rollback (checked, never refused)
+  reopen    Reopen a completed case: a new active case "Reopen: <title>" with the same Intent
+  list      List cases, optionally by status or area
+  show      Print one case file with its path
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
 ```
@@ -408,7 +442,14 @@ Options:
 ### seldon plan done
 
 Schließt einen Case in Prüfung ab. Es schreibt eine Journal-Zeile und
-leert den aktiven Case, wenn er diesen Case nannte.
+leert den aktiven Case, wenn er diesen Case nannte. Der Abschluss eines
+Agenten (`--actor agent:…` oder ohne die Option `SELDON_ACTOR`) wird
+abgelehnt, solange *Result* des Case leer ist oder sein *Plan* keinen
+Text unter `Verification:` hat; die Meldung sagt, was fehlt. Ein Case,
+den ein Agent abgeschlossen hat, bekommt den Tag `closed-by-agent`. In
+der Sitzung eines Agenten (`SELDON_ACTOR=agent:…`) wird `--actor human`
+abgelehnt: Der Abschluss eines Agenten wird nie als der einer Person
+aufgezeichnet.
 
 <!-- help: seldon plan done -->
 ```text
@@ -442,6 +483,80 @@ Arguments:
 Options:
       --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
       --actor <ACTOR>  Who takes the step: human or agent:NAME (default: $SELDON_ACTOR, else human)
+```
+<!-- /help -->
+
+### seldon plan set
+
+Ändert Zone, Risiko oder Bereich eines offenen Case, zum Beispiel
+`seldon plan set C-2026-004 --risk R3` vor einem Schritt, der den Boot
+brechen kann. Es schreibt eine *Log*-Zeile; ein Wert, den der Case schon
+hat, ändert nichts. Ein abgeschlossener oder aufgegebener Case wird
+abgelehnt.
+
+<!-- help: seldon plan set -->
+```text
+Change an open case's zone, risk or area, e.g. raise it to R3 before a step that can break boot
+
+Usage: seldon plan set [OPTIONS] <--zone <ZONE>|--risk <RISK>|--area <AREA>> <ID>
+
+Arguments:
+  <ID>  The case id, e.g. C-2026-004
+
+Options:
+      --zone <ZONE>    green, yellow or red
+      --risk <RISK>    R0 to R3
+      --area <AREA>    Area slug; created under areas/ on first use
+      --actor <ACTOR>  Who changes it: human or agent:NAME (default: $SELDON_ACTOR, else human)
+```
+<!-- /help -->
+
+### seldon plan snapshot
+
+Hält den snapper-Snapshot, der vor der ersten roten Änderung des Case
+entstand, als dessen Rollback fest (`snapshotBefore`), zum Beispiel
+`seldon plan snapshot C-2026-004 42`. Es prüft, dass der Snapshot
+existiert, nicht älter als der Start des Case und nicht neuer als seine
+erste rote Änderung ist, und warnt, wenn nicht; es lehnt nie ab. Ein
+Case behält seine erste Nummer: eine andere wird abgelehnt, dieselbe
+noch einmal ändert nichts.
+
+<!-- help: seldon plan snapshot -->
+```text
+Record the snapper snapshot taken before the case's first red change as its rollback (checked, never refused)
+
+Usage: seldon plan snapshot [OPTIONS] <ID> <NUMBER>
+
+Arguments:
+  <ID>      The case id, e.g. C-2026-004
+  <NUMBER>  The snapper snapshot number, e.g. 42 (`snapper create -p` prints it)
+
+Options:
+      --actor <ACTOR>  Who records it: human or agent:NAME (default: $SELDON_ACTOR, else human)
+```
+<!-- /help -->
+
+### seldon plan reopen
+
+Öffnet einen abgeschlossenen Case wieder: einen neuen aktiven Case
+„Reopen: <Titel>“ mit derselben Zone, demselben Risiko, Bereich und
+*Intent*, mit dem Tag `reopens:<ID>`. Der abgeschlossene Case bleibt
+abgeschlossen und bekommt eine *Log*-Zeile. Jeder Aufruf legt einen
+neuen Case an. Der neue Case wird nur dann der aktive Case, wenn kein
+offener Case es ist; ein Agent, der an einem anderen Case arbeitet,
+zeichnet weiter auf diesem auf.
+
+<!-- help: seldon plan reopen -->
+```text
+Reopen a completed case: a new active case "Reopen: <title>" with the same Intent
+
+Usage: seldon plan reopen [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The completed case, e.g. C-2026-004
+
+Options:
+      --actor <ACTOR>  Who reopens it: human or agent:NAME (default: $SELDON_ACTOR, else human)
 ```
 <!-- /help -->
 
@@ -660,7 +775,7 @@ Start an agent on an active case
 Usage: seldon agent [OPTIONS] <COMMAND>
 
 Commands:
-  start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook
+  start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
   help   Print this message or the help of the given subcommand(s)
 
 Options:
@@ -673,7 +788,12 @@ Macht den Case zum aktiven Case und startet einen Agenten im Ordner des
 Logbuchs. Der erste Prompt nennt den Case und das Logbuch und sagt dem
 Agenten, `seldon hook session-start` und `seldon plan show <ID>`
 auszuführen; er enthält keinen Text aus dem Logbuch. Der Case muss
-aktiv sein. Der Launcher kommt aus `config.toml`; siehe
+aktiv sein. Mit `--new -- "<was zu tun ist>"` legt es zuerst aus diesem
+Satz einen Case an und startet ihn (Titel: sein erster Satz, höchstens
+72 Zeichen; *Intent*: der ganze Text; `--zone`, `--risk`, `--area` wie
+bei `plan new`). Ohne Standard-Agenten in Omarchy und mit dem
+eingebauten Launcher wird nichts angelegt; die Meldung nennt
+`omarchy default agent <name>`. Der Launcher kommt aus `config.toml`; siehe
 [Konfiguration](06-configuration.md#agent-launcher). Der Agent läuft mit
 `SELDON_ACTOR=agent:<Name des Launchers>` und `SELDON_ATTENDED=1`
 ([Umgebungsvariablen](#umgebungsvariablen)); ein Launcher-Name ohne
@@ -681,15 +801,24 @@ ASCII-Buchstaben oder -Ziffer wird abgelehnt.
 
 <!-- help: seldon agent start -->
 ```text
-Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook
+Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
 
-Usage: seldon agent start [OPTIONS] <ID>
+Usage: seldon agent start [OPTIONS] [ID] [-- <INTENT>]
 
 Arguments:
-  <ID>  The case (must be active)
+  [ID]      The case (must be active)
+  [INTENT]  With --new: what the agent should do, as one argument after `--`
 
 Options:
+      --new              Create and start a case from the text after `--` (title: its first sentence; Intent: the whole text), then launch the agent on it
+      --zone <ZONE>      With --new: green, yellow or red [default: yellow]
+      --risk <RISK>      With --new: R0 to R3 [default: R1]
+      --area <AREA>      With --new: area slug; created under areas/ on first use
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+
+Examples:
+  seldon agent start C-2026-004
+  seldon agent start --new -- "Install zed as a second editor"
 ```
 <!-- /help -->
 

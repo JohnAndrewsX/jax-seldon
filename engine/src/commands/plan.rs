@@ -9,14 +9,26 @@ use chrono::Datelike as _;
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
-use super::event::{actor_or_env, clip, emit_one, event_json, parse_case_id, parse_person};
+use super::event::{
+    ACTOR_ENV, actor_or_env, clip, emit, emit_one, env_actor, event_json, parse_case_id,
+    parse_person,
+};
 use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::{Error, Result};
 use crate::logbook::cases::{self, CaseFile, Transition};
 use crate::logbook::{Logbook, journal};
 use crate::model::event::{ACTOR_HUMAN, Event, Kind, Source};
-use crate::model::{Case, CaseStatus, Language, Priority, Risk, Zone};
+use crate::model::{Case, CaseStatus, Language, Priority, Risk, Zone, is_agent};
 use crate::redact::Redactor;
+
+pub(crate) mod snapshot;
+
+/// The tag of a case an agent closed (ADR-0027 §5; CONTRACT.md lists the
+/// reserved tags).
+pub const TAG_CLOSED_BY_AGENT: &str = "closed-by-agent";
+
+/// The tag prefix of a case `plan reopen` made: `reopens:<ID>`.
+pub const TAG_REOPENS: &str = "reopens:";
 
 #[derive(Debug, Clone, Args)]
 pub struct PlanArgs {
@@ -36,6 +48,15 @@ pub enum PlanCommand {
     Done(StepArgs),
     /// Drop a case that is queued, active or in verification
     Drop(StepArgs),
+    /// Change an open case's zone, risk or area, e.g. raise it to R3 before
+    /// a step that can break boot
+    Set(SetArgs),
+    /// Record the snapper snapshot taken before the case's first red
+    /// change as its rollback (checked, never refused)
+    Snapshot(SnapshotArgs),
+    /// Reopen a completed case: a new active case "Reopen: <title>" with
+    /// the same Intent
+    Reopen(ReopenArgs),
     /// List cases, optionally by status or area
     List(ListArgs),
     /// Print one case file with its path
@@ -102,6 +123,60 @@ pub struct StepArgs {
     pub actor: Option<String>,
 }
 
+/// `plan set`: at least one of zone, risk and area.
+#[derive(Debug, Clone, Args)]
+#[command(group(clap::ArgGroup::new("change").required(true).multiple(true).args(["zone", "risk", "area"])))]
+pub struct SetArgs {
+    /// The case id, e.g. C-2026-004
+    #[arg(value_name = "ID", value_parser = parse_case_id)]
+    pub id: String,
+
+    /// green, yellow or red
+    #[arg(long, value_name = "ZONE")]
+    pub zone: Option<Zone>,
+
+    /// R0 to R3
+    #[arg(long, value_name = "RISK")]
+    pub risk: Option<Risk>,
+
+    /// Area slug; created under areas/ on first use
+    #[arg(long, value_name = "AREA")]
+    pub area: Option<String>,
+
+    /// Who changes it: human or agent:NAME (default: $SELDON_ACTOR, else
+    /// human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SnapshotArgs {
+    /// The case id, e.g. C-2026-004
+    #[arg(value_name = "ID", value_parser = parse_case_id)]
+    pub id: String,
+
+    /// The snapper snapshot number, e.g. 42 (`snapper create -p` prints it)
+    #[arg(value_name = "NUMBER", value_parser = clap::value_parser!(u64).range(1..))]
+    pub number: u64,
+
+    /// Who records it: human or agent:NAME (default: $SELDON_ACTOR, else
+    /// human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ReopenArgs {
+    /// The completed case, e.g. C-2026-004
+    #[arg(value_name = "ID", value_parser = parse_case_id)]
+    pub id: String,
+
+    /// Who reopens it: human or agent:NAME (default: $SELDON_ACTOR, else
+    /// human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct ListArgs {
     /// Only cases with this status (queued, active, verification, completed, dropped)
@@ -120,6 +195,9 @@ pub fn run(ctx: &Context, args: PlanArgs) -> Result<Output> {
         PlanCommand::Verify(a) => step(ctx, Transition::Verify, a, None),
         PlanCommand::Done(a) => step(ctx, Transition::Done, a, None),
         PlanCommand::Drop(a) => step(ctx, Transition::Drop, a, None),
+        PlanCommand::Set(a) => set(ctx, a),
+        PlanCommand::Snapshot(a) => record_snapshot(ctx, a),
+        PlanCommand::Reopen(a) => reopen(ctx, a),
         PlanCommand::List(a) => list(ctx, a),
         PlanCommand::Show { id } => show(ctx, &id),
     }
@@ -132,8 +210,90 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
     // the case file, its name, STATUS.md and the ledger get the redacted title
     let title = Redactor::for_config(&config)?.redact(&title);
     let lock = ctx.lock()?;
+    let created = create(
+        ctx,
+        &config,
+        &logbook,
+        &lock,
+        Spec {
+            title,
+            zone: args.zone,
+            risk: args.risk,
+            area: args.area,
+            priority: args.priority,
+            actor,
+            intent: None,
+            tags: Vec::new(),
+            note: None,
+            start: false,
+            point: false,
+        },
+    )?;
+    let id = created.file.case.id.clone();
+    let commit = autocommit(ctx, &config, &logbook, &format!("{id} created"));
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
 
-    if let Some(area) = args.area.as_deref()
+    let mut human = format!(
+        "Created {id} \"{}\" in {}",
+        created.file.case.title,
+        created.file.relative(&logbook)
+    );
+    if let Some(area) = &created.area_created {
+        human.push_str(&format!("\nNew area: {area}"));
+    }
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "case": case_json(&logbook, &created.file),
+            "event": event_json(&created.events[0]),
+            "areaCreated": created.area_created,
+            "git": commit.json(),
+        }),
+    ))
+}
+
+/// A case to create ([`create`]). `title` and `intent` are redacted
+/// already; `note` goes into the `created` Log line.
+pub(crate) struct Spec {
+    pub title: String,
+    pub zone: Zone,
+    pub risk: Risk,
+    pub area: Option<String>,
+    pub priority: Priority,
+    pub actor: String,
+    pub intent: Option<String>,
+    pub tags: Vec<String>,
+    pub note: Option<String>,
+    /// Created and started in one go: status active, `case-created` and
+    /// `case-started` in one ledger write.
+    pub start: bool,
+    /// With `start`: the new case becomes `.seldon/active-case`, which the
+    /// hooks attribute an agent's commands by.
+    pub point: bool,
+}
+
+/// What [`create`] wrote: the case file, its ledger events (created, then
+/// started), the area README it created.
+pub(crate) struct Created {
+    pub file: CaseFile,
+    pub events: Vec<Event>,
+    pub area_created: Option<String>,
+}
+
+/// Creates a case under the caller's lock: the next id, the logbook's case
+/// template (with `intent` in *Intent*), the Log line(s), the ledger
+/// event(s) first, then the file, the area and, when started, the active
+/// case. No commit and no index rebuild: the caller does both.
+pub(crate) fn create(
+    ctx: &Context,
+    config: &crate::config::Config,
+    logbook: &Logbook,
+    lock: &crate::logbook::lock::Lock,
+    spec: Spec,
+) -> Result<Created> {
+    if let Some(area) = spec.area.as_deref()
         && !crate::model::is_slug(area)
     {
         return Err(Error::user(format!(
@@ -141,28 +301,36 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
         )));
     }
     let today = ctx.now.date_naive();
-    let id = cases::next_id(&logbook, ctx.now.year())?;
+    let id = cases::next_id(logbook, ctx.now.year())?;
+    let status = if spec.start {
+        CaseStatus::Active
+    } else {
+        CaseStatus::Queued
+    };
     let case = Case {
         id: id.clone(),
-        title: title.clone(),
-        status: CaseStatus::Queued,
-        zone: args.zone,
-        risk: args.risk,
-        priority: Some(args.priority),
-        area: args.area.clone(),
+        title: spec.title.clone(),
+        status,
+        zone: spec.zone,
+        risk: spec.risk,
+        priority: Some(spec.priority),
+        area: spec.area.clone(),
         created: today,
-        started: None,
+        started: spec.start.then_some(today),
         closed: None,
         snapshot_before: None,
         agents: Vec::new(),
         events: Vec::new(),
-        tags: Vec::new(),
+        tags: spec.tags.clone(),
     };
-    let body = cases::new_body(&logbook, &id, &title)?;
+    let mut body = cases::new_body(logbook, &id, &spec.title)?;
+    if let Some(intent) = &spec.intent {
+        body = cases::put_intent(&body, intent);
+    }
     let path = logbook
         .path("work")
-        .join(CaseStatus::Queued.folder())
-        .join(case.file_name(&cases::slug(&title, "case")));
+        .join(status.folder())
+        .join(case.file_name(&cases::slug(&spec.title, "case")));
     let mut file = CaseFile {
         path,
         case,
@@ -171,12 +339,15 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
             body,
         },
     };
-    file.add_agent(&actor);
-    file.log(
-        &ctx.now,
-        &format!("created (zone {}, risk {})", args.zone, args.risk),
-        &actor,
-    );
+    file.add_agent(&spec.actor);
+    let mut line = format!("created (zone {}, risk {})", spec.zone, spec.risk);
+    if let Some(note) = &spec.note {
+        line.push_str(&format!(": {note}"));
+    }
+    file.log(&ctx.now, &line, &spec.actor);
+    if spec.start {
+        file.log(&ctx.now, Transition::Start.log_word(), &spec.actor);
+    }
     let text = crate::model::render_new(&file.case, &file.doc.body);
     if file.path.exists() {
         return Err(Error::user(format!(
@@ -186,36 +357,35 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
     }
 
     // the ledger first: if it cannot be written, nothing else is
-    let event = Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
-        .detail(title.clone())
-        .actor(&actor)
-        .case(Some(id.clone()));
-    let event = emit_one(&lock, &config, &logbook, event)?;
-    let area_created = args
+    let mut events = vec![
+        Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
+            .detail(spec.title.clone())
+            .actor(&spec.actor)
+            .case(Some(id.clone())),
+    ];
+    if spec.start {
+        events.push(
+            Event::new(ctx.now, Source::Seldon, Kind::CaseStarted, &id)
+                .actor(&spec.actor)
+                .case(Some(id.clone())),
+        );
+    }
+    let events = emit(lock, config, logbook, events)?;
+    let area_created = spec
         .area
         .as_deref()
-        .map(|a| cases::ensure_area(&logbook, a))
+        .map(|a| cases::ensure_area(logbook, a))
         .transpose()?
         .flatten();
     write_new(&file.path, &text)?;
-    let commit = autocommit(ctx, &config, &logbook, &format!("{id} created"));
-    crate::index::rebuild_if_initialised(ctx);
-    drop(lock);
-
-    let mut human = format!("Created {id} \"{title}\" in {}", file.relative(&logbook));
-    if let Some(area) = &area_created {
-        human.push_str(&format!("\nNew area: {area}"));
+    if spec.start && spec.point {
+        cases::set_active_case(logbook, &id)?;
     }
-    human.push_str(&commit.human());
-    Ok(Output::ok(
-        human,
-        json!({
-            "case": case_json(&logbook, &file),
-            "event": event_json(&event),
-            "areaCreated": area_created,
-            "git": commit.json(),
-        }),
-    ))
+    Ok(Created {
+        file,
+        events,
+        area_created,
+    })
 }
 
 /// One step; `snapshot` only comes with `plan start` (clap has no
@@ -231,6 +401,20 @@ fn step(
         .as_deref()
         .map(|r| one_line("--reason", r))
         .transpose()?;
+    // an agent's session cannot close as a person (ADR-0027 §5: an agent
+    // close is never recorded as human; WP-101 round 2)
+    if transition == Transition::Done
+        && args.actor.as_deref() == Some(ACTOR_HUMAN)
+        && let Ok(Some(session)) = env_actor(parse_person)
+        && is_agent(&session)
+    {
+        return Err(Error::user(format!(
+            "{} is not closed: `--actor human` in a session of {session} ({ACTOR_ENV}); an \
+             agent's close is never recorded as human (ADR-0027 §5). Close it as {session}, or \
+             from a session of your own (the panel's Done)",
+            args.id
+        )));
+    }
     let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
@@ -241,6 +425,30 @@ fn step(
     let to = transition
         .target(from)
         .map_err(|e| Error::user(format!("{} {e}", args.id)))?;
+
+    // an agent closes only with evidence (ADR-0027 §5); the resolved
+    // actor counts, so `SELDON_ACTOR` cannot go around it
+    if transition == Transition::Done && is_agent(&actor) {
+        let gaps = cases::close_gaps(&file.doc.body);
+        if !gaps.is_empty() {
+            return Err(Error::user(format!(
+                "{} is not closed: {actor} closes a case only with its evidence, and {}; \
+                 fill it in, then run `seldon plan done {}` again (ADR-0027 §5)",
+                args.id,
+                gaps.join(" and "),
+                args.id
+            )));
+        }
+        if !file.case.tags.iter().any(|t| t == TAG_CLOSED_BY_AGENT) {
+            file.case.tags.push(TAG_CLOSED_BY_AGENT.to_string());
+        }
+    }
+    // `--snapshot` at the start: only "before the first red event" can be
+    // checked (the case was not started before); warnings, never refusal
+    let snapshot_checks = match snapshot {
+        Some(n) => snapshot::checks(&config, &logbook, &args.id, n, false)?,
+        None => Vec::new(),
+    };
 
     let today = ctx.now.date_naive();
     file.case.status = to;
@@ -317,11 +525,12 @@ fn step(
     if let Some(path) = &journal_entry {
         human.push_str(&format!("\nJournal: {path}"));
     }
-    let warnings: Vec<String> = (transition == Transition::Start)
+    let mut warnings: Vec<String> = (transition == Transition::Start)
         .then(|| snapshot_warning(&file.case))
         .flatten()
         .into_iter()
         .collect();
+    warnings.extend(snapshot_checks);
     human.push_str(&super::index::warnings_human(&warnings));
     human.push_str(&commit.human());
     Ok(Output::ok(
@@ -361,6 +570,299 @@ fn snapshot_warning(case: &Case) -> Option<String> {
              never unattended (ADR-0023)"
         )),
     }
+}
+
+/// A case that is still open (queued, active, verification), or why a
+/// command `what` cannot change it.
+fn open_only(file: &CaseFile, what: &str) -> Result<()> {
+    match file.case.status {
+        CaseStatus::Queued | CaseStatus::Active | CaseStatus::Verification => Ok(()),
+        closed => Err(Error::user(format!(
+            "{} is {closed}; `seldon plan {what}` changes an open case only{}",
+            file.case.id,
+            if closed == CaseStatus::Completed {
+                format!(" (`seldon plan reopen {}` starts a new one)", file.case.id)
+            } else {
+                String::new()
+            }
+        ))),
+    }
+}
+
+/// `plan set`: zone, risk and area of an open case, in its frontmatter,
+/// with one Log line. No ledger event (no kind fits; a new one would be a
+/// contract change): the Log line and the commit are the record. A value
+/// equal to the current one is no change; with nothing changed nothing is
+/// written (exit 0).
+fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
+    let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
+    if let Some(area) = args.area.as_deref()
+        && !crate::model::is_slug(area)
+    {
+        return Err(Error::user(format!(
+            "area `{area}` is not a lowercase slug ([a-z0-9][a-z0-9-]*)"
+        )));
+    }
+    let (config, logbook) = ctx.open_logbook()?;
+    let lock = ctx.lock()?;
+    let mut file = cases::find(&logbook, &args.id)?;
+    open_only(&file, "set")?;
+
+    let c = &mut file.case;
+    let mut changed: Vec<Value> = Vec::new();
+    let mut words: Vec<String> = Vec::new();
+    let mut note = |key: &str, from: String, to: String| {
+        words.push(format!("{key} {from} → {to}"));
+        changed.push(json!({ "key": key, "from": from, "to": to }));
+    };
+    if let Some(z) = args.zone.filter(|z| *z != c.zone) {
+        note("zone", c.zone.to_string(), z.to_string());
+        c.zone = z;
+    }
+    if let Some(r) = args.risk.filter(|r| *r != c.risk) {
+        note("risk", c.risk.to_string(), r.to_string());
+        c.risk = r;
+    }
+    if let Some(a) = args.area.filter(|a| c.area.as_deref() != Some(a.as_str())) {
+        note(
+            "area",
+            c.area.clone().unwrap_or_else(|| "-".into()),
+            a.clone(),
+        );
+        c.area = Some(a);
+    }
+    if changed.is_empty() {
+        drop(lock);
+        return Ok(Output::ok(
+            format!("{}: nothing changed", args.id),
+            json!({
+                "case": case_json(&logbook, &file),
+                "changed": changed,
+                "areaCreated": Value::Null,
+                "git": Value::Null,
+            }),
+        ));
+    }
+    file.add_agent(&actor);
+    file.log(&ctx.now, &format!("set {}", words.join(", ")), &actor);
+    file.prepare(&logbook, |_| {})?;
+    let area_created = match &file.case.area {
+        Some(a) if changed.iter().any(|c| c["key"] == "area") => cases::ensure_area(&logbook, a)?,
+        _ => None,
+    };
+    file.save(&logbook)?;
+    let commit = autocommit(
+        ctx,
+        &config,
+        &logbook,
+        &format!("{} set {}", args.id, words.join(", ")),
+    );
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
+
+    let mut human = format!("{}: {}", args.id, words.join(", "));
+    if let Some(area) = &area_created {
+        human.push_str(&format!("\nNew area: {area}"));
+    }
+    let warnings: Vec<String> = raised_warning(&file.case).into_iter().collect();
+    human.push_str(&super::index::warnings_human(&warnings));
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "case": case_json(&logbook, &file),
+            "changed": changed,
+            "areaCreated": area_created,
+            "git": commit.json(),
+            "warnings": warnings,
+        }),
+    ))
+}
+
+/// The advice for an R2 or R3 case without a recorded snapshot after
+/// `plan set` (ADR-0027 §3, §2c).
+fn raised_warning(case: &Case) -> Option<String> {
+    if case.snapshot_before.is_some() {
+        return None;
+    }
+    let id = &case.id;
+    match case.risk {
+        Risk::R0 | Risk::R1 => None,
+        Risk::R2 => Some(format!(
+            "{id} is R2: take a snapshot before its first red change and record it with \
+             `seldon plan snapshot {id} <N>` (ADR-0027 §3)"
+        )),
+        Risk::R3 => Some(format!(
+            "{id} is R3: take a snapshot before its first red change, record it with \
+             `seldon plan snapshot {id} <N>`, and ask for the user's explicit go per R3 step \
+             (ADR-0027 §2c)"
+        )),
+    }
+}
+
+/// `plan snapshot`: records the rollback snapshot in `snapshotBefore` when
+/// it is empty (ADR-0027 §3). Another number there is exit 1; the same one
+/// again changes nothing. The checks are warnings, never a refusal.
+fn record_snapshot(ctx: &Context, args: SnapshotArgs) -> Result<Output> {
+    let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
+    let (config, logbook) = ctx.open_logbook()?;
+    let lock = ctx.lock()?;
+    let mut file = cases::find(&logbook, &args.id)?;
+    open_only(&file, "snapshot")?;
+    let n = args.number;
+    match file.case.snapshot_before {
+        Some(m) if m == n => {
+            drop(lock);
+            return Ok(Output::ok(
+                format!("{}: snapshot {n} is already recorded", args.id),
+                json!({
+                    "case": case_json(&logbook, &file),
+                    "recorded": false,
+                    "snapshot": n,
+                    "git": Value::Null,
+                    "warnings": [],
+                }),
+            ));
+        }
+        Some(m) => {
+            return Err(Error::user(format!(
+                "{} has snapshot {m} recorded as its rollback; a case keeps the snapshot from \
+                 before its first change (write a later one into its Log)",
+                args.id
+            )));
+        }
+        None => {}
+    }
+    let warnings = snapshot::checks(&config, &logbook, &args.id, n, true)?;
+    file.case.snapshot_before = Some(n);
+    file.add_agent(&actor);
+    file.log(&ctx.now, &format!("snapshot {n}"), &actor);
+    file.save(&logbook)?;
+    let commit = autocommit(ctx, &config, &logbook, &format!("{} snapshot {n}", args.id));
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
+
+    let mut human = format!("{}: snapshot {n} recorded as its rollback", args.id);
+    human.push_str(&super::index::warnings_human(&warnings));
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "case": case_json(&logbook, &file),
+            "recorded": true,
+            "snapshot": n,
+            "git": commit.json(),
+            "warnings": warnings,
+        }),
+    ))
+}
+
+/// `plan reopen`: a completed case stays completed (ADR-0003); a new
+/// active case "Reopen: <title>" takes its zone, risk, area, priority and
+/// Intent, the tag `reopens:<ID>`, and becomes the active case. Both get a
+/// Log line. Every reopen makes a new case; the output names the earlier
+/// ones.
+fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
+    let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
+    let (config, logbook) = ctx.open_logbook()?;
+    let redactor = Redactor::for_config(&config)?;
+    let lock = ctx.lock()?;
+    let mut old = cases::find(&logbook, &args.id)?;
+    if old.case.status != CaseStatus::Completed {
+        return Err(Error::user(format!(
+            "{} is {}; `seldon plan reopen` reopens a completed case only",
+            args.id, old.case.status
+        )));
+    }
+    let tag = format!("{TAG_REOPENS}{}", args.id);
+    let (all, _) = cases::all(&logbook)?;
+    let earlier: Vec<String> = all
+        .iter()
+        .filter(|f| f.case.tags.contains(&tag))
+        .map(|f| f.case.id.clone())
+        .collect();
+    let intent = cases::intent(&old.doc.body).to_string();
+    let title = redactor.redact(&format!("Reopen: {}", old.case.title));
+    // the active-case marker routes a running agent's recorded commands:
+    // a reopen takes it only when no open case holds it (WP-101 round 2)
+    let holder = cases::active_case(&logbook).filter(|held| {
+        all.iter().any(|f| {
+            f.case.id == *held
+                && matches!(
+                    f.case.status,
+                    CaseStatus::Queued | CaseStatus::Active | CaseStatus::Verification
+                )
+        })
+    });
+    // the old case's Log line is written after the new case exists, so
+    // its save is checked first (WP-077)
+    old.prepare(&logbook, |f| {
+        f.log(&ctx.now, "reopened as C-0000-000", &actor)
+    })?;
+    let created = create(
+        ctx,
+        &config,
+        &logbook,
+        &lock,
+        Spec {
+            title,
+            zone: old.case.zone,
+            risk: old.case.risk,
+            area: old.case.area.clone(),
+            priority: old.case.priority.unwrap_or(Priority::Normal),
+            actor: actor.clone(),
+            intent: (!intent.is_empty()).then(|| redactor.redact(&intent)),
+            tags: vec![tag],
+            note: Some(format!("reopens {}", args.id)),
+            start: true,
+            point: holder.is_none(),
+        },
+    )?;
+    let id = created.file.case.id.clone();
+    old.log(&ctx.now, &format!("reopened as {id}"), &actor);
+    old.save(&logbook)?;
+    let commit = autocommit(
+        ctx,
+        &config,
+        &logbook,
+        &format!("{} reopened as {id}", args.id),
+    );
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
+
+    let mut human = format!(
+        "{} reopened as {id} \"{}\" (active) in {}",
+        args.id,
+        created.file.case.title,
+        created.file.relative(&logbook)
+    );
+    if !earlier.is_empty() {
+        human.push_str(&format!(
+            "\nReopened before as {}; this is a new case",
+            earlier.join(", ")
+        ));
+    }
+    if let Some(held) = &holder {
+        human.push_str(&format!(
+            "\nThe active case stays {held}: commands an agent runs are still recorded on it. \
+             `seldon agent start {id}` hands the new case to an agent"
+        ));
+    }
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "case": case_json(&logbook, &created.file),
+            "reopens": args.id,
+            "earlier": earlier,
+            "events": created.events.iter().map(event_json).collect::<Vec<_>>(),
+            "activeCase": match &holder {
+                Some(held) => json!({ "kept": held }),
+                None => json!({ "set": id }),
+            },
+            "git": commit.json(),
+        }),
+    ))
 }
 
 /// The ledger kind of a step (`event.schema.json`).
