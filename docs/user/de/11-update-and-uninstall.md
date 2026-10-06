@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 5d68748 -->
+<!-- source: en/11-update-and-uninstall.md @ 2120ee8 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -23,7 +23,11 @@ und bricht bei einer Abweichung ab. Ist die GitHub-CLI (`gh`) installiert
 und angemeldet, prüft er außerdem die Build-Herkunft (`gh attestation
 verify`): Der Download muss vom Release-Workflow des Projekts für das Tag
 dieses Release stammen, sonst wird nichts installiert. Ohne `gh` meldet
-eine Zeile, dass nur die Prüfsumme geprüft wurde.
+eine Zeile, dass nur die Prüfsumme geprüft wurde. Ist dein Logbuch
+eingerichtet und das Plugin installiert, endet er mit „Your logbook is
+already set up; nothing else to do.“ Aktualisiere auch das Plugin
+([Das Plugin aktualisieren](#das-plugin-aktualisieren)): Es merkt nicht
+von selbst, dass es ein neueres gibt.
 
 Er installiert auch die Manpage (`man seldon`) und die Tab-Vervollständigung
 für bash, zsh und fish, jeweils für eine Shell, die auf deinem Rechner
@@ -60,6 +64,15 @@ Claude-Code-Hooks aus `.claude/settings.json` des Logbuchs nach
 omarchy plugin update jax.seldon
 omarchy-restart-shell
 ```
+
+Omarchy zeigt jede geänderte Zeile des Plugins und fragt
+`Update jax.seldon?`; antworte mit ja. Die Liste ist lang, wenn viele
+Dateien geändert sind; das ist Omarchys normale Prüfung, kein Fehler.
+
+Bietet das Panel von Plugin 0.1.0 `omarchy pkg aur add jax-seldon` an?
+Dieses Paket gibt es noch nicht, der Befehl scheitert also. Aktualisiere
+zuerst das Plugin, mit den beiden Befehlen oben; das neue Plugin
+installiert die Engine stattdessen aus dem GitHub-Release.
 
 Das Update holt die neuen Plugin-Dateien und bittet die Shell, ihre
 Plugins neu zu laden. Die Shell führt aber den Plugin-Code, den sie

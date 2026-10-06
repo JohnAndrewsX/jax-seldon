@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 65ad985 -->
+<!-- source: en/10-troubleshooting.md @ 2120ee8 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -41,13 +41,13 @@ Knopf, der es behebt.
 
 | Banner | Ursache | Abhilfe |
 |---|---|---|
-| Seldon engine not installed | das Plugin kann `seldon` nicht starten | *Install in terminal* startet den GitHub-Installer in einem Terminal, das du siehst; oder du installierst selbst ([Erste Schritte](01-getting-started.md#schritt-1-die-engine-installieren)), dann *Check again* |
-| Logbook not initialised | es gibt noch kein Logbuch | *Run in terminal* startet `seldon init` |
+| Install the engine (ein Einrichtungsschritt); Seldon engine missing, in Rot, wenn die Engine vorher da war | das Plugin kann `seldon` nicht starten | *Install* öffnet ein Terminal, das sagt, was es tut, und den GitHub-Installer startet; oder du installierst selbst ([Erste Schritte](01-getting-started.md#schritt-1-die-engine-installieren)); dann *Check again* |
+| Create your logbook | es gibt noch kein Logbuch | *Create* öffnet ein Terminal, das `seldon init` startet; das Panel aktualisiert sich von selbst, sobald das Logbuch da ist |
 | No index yet / Index unreadable | `~/.local/state/seldon/index.json` fehlt oder ist kaputt | *Build index* startet `seldon status` |
 | Index is stale | der Index ist älter als zwei Stunden | *Capture now* |
-| Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`, danach `omarchy-restart-shell`. Engine: *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
-| Engine too old | die Engine ist älter, als dieses Plugin sie braucht (das `engineMin` in seinem Manifest) | *Update in terminal* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)), dann *Check again* |
-| Snapshots not readable | Snapper weist deinen Benutzer ab, und `/.snapshots` ist nicht lesbar | *Run in terminal* startet die einmalige Lesefreigabe; dort tippst du dein Passwort |
+| Index format mismatch | Plugin und Engine sprechen verschiedene Versionen des Index | das ältere aktualisieren. Plugin: `omarchy plugin update jax.seldon`, danach `omarchy-restart-shell`. Engine: *Update* führt den Installer noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)) |
+| Engine too old | die Engine ist älter, als dieses Plugin sie braucht (das `engineMin` in seinem Manifest) | *Update* führt den Installer in einem Terminal noch einmal aus (bis es das AUR-Paket gibt; siehe [Aktualisieren und entfernen](11-update-and-uninstall.md)), dann *Check again* |
+| Read snapshots (optional) | Snapper weist deinen Benutzer ab, und `/.snapshots` ist nicht lesbar | *Grant* öffnet ein Terminal, das sagt, was die Freigabe erlaubt, die einmalige Lesefreigabe startet (dort tippst du dein Passwort) und die Snapshots aufzeichnet; danach verschwindet das Banner von selbst. Seldon funktioniert auch ohne Snapshots |
 | Restart the shell to finish the update | das Plugin wurde aktualisiert, aber die Shell führt noch den vorher geladenen Code aus (neuen Plugin-Code lädt sie erst beim Neustart) | *Restart shell* startet `omarchy-restart-shell`; Leiste und Panels sind nach wenigen Sekunden wieder da. Siehe [Das Plugin aktualisieren](11-update-and-uninstall.md#das-plugin-aktualisieren) |
 | Capture warned | ein Capture, das das Plugin gestartet hat, endete mit einer Warnung, etwa [einem Zustands-Reset](#ein-zustands-reset-wurde-festgehalten); der Hinweis zeigt die erste Zeile jeder Warnung, der Mauszeiger darüber zeigt sie ganz | kein Knopf: tu, was die Warnung sagt. Der Hinweis verschwindet nach dem nächsten Capture ohne Warnungen |
 
