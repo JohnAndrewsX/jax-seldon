@@ -4,7 +4,7 @@
 
 Diese Anleitung bringt eine frische Omarchy-Installation in den Zustand, den dieses Logbuch dokumentiert. Arbeite die Abschnitte der Reihe nach ab; jede Zeile nennt das Ledger-Ereignis, aus dem sie stammt.
 
-Stand: letztes Ereignis 2026-10-01 17:02
+Stand: letztes Ereignis 2026-10-01 17:04
 
 ## 1. Base
 - Omarchy 4.0.7-1 · aktualisiert am 2026-10-01 · `01M3V5D0V0YT5KRGAHD1VQDF2Q`

@@ -54,12 +54,12 @@
     ]
   },
   "summary": {
-    "activeCases": 3,
+    "activeCases": 2,
     "queuedCases": 3,
     "openDrift": 4,
     "crisis": 2,
-    "eventsToday": 32,
-    "events7d": 43
+    "eventsToday": 33,
+    "events7d": 44
   },
   "today": {
     "date": "2026-10-01",
@@ -100,6 +100,15 @@
     ]
   },
   "events": [
+    {
+      "id": "01M3VZWSR0J8D4N6PQ2T7XKB5M",
+      "ts": "2026-10-01T17:04:00+02:00",
+      "source": "seldon",
+      "kind": "case-verified",
+      "subject": "C-2026-009",
+      "actor": "agent:claude-code",
+      "case": "C-2026-009"
+    },
     {
       "id": "01M3VZS4J0R7K2QX9VDMWA5E3J",
       "ts": "2026-10-01T17:02:00+02:00",
@@ -1101,29 +1110,6 @@
           "total": 4,
           "done": 2
         }
-      },
-      {
-        "id": "C-2026-009",
-        "title": "Reopen: Hyprland-Monitorlayout für Dual-WQHD",
-        "status": "active",
-        "zone": "yellow",
-        "risk": "R1",
-        "priority": "normal",
-        "area": "hyprland",
-        "created": "2026-10-01",
-        "started": "2026-10-01",
-        "closed": null,
-        "snapshotBefore": null,
-        "agents": [],
-        "events": [],
-        "tags": [
-          "reopens:C-2026-002"
-        ],
-        "path": "work/active/C-2026-009-reopen-hyprland-monitorlayout-fuer-dual.md",
-        "steps": {
-          "total": 0,
-          "done": 0
-        }
       }
     ],
     "verification": [
@@ -1148,6 +1134,31 @@
         "steps": {
           "total": 4,
           "done": 3
+        }
+      },
+      {
+        "id": "C-2026-009",
+        "title": "Reopen: Hyprland-Monitorlayout für Dual-WQHD",
+        "status": "verification",
+        "zone": "yellow",
+        "risk": "R1",
+        "priority": "normal",
+        "area": "hyprland",
+        "created": "2026-10-01",
+        "started": "2026-10-01",
+        "closed": null,
+        "snapshotBefore": null,
+        "agents": [
+          "agent:claude-code"
+        ],
+        "events": [],
+        "tags": [
+          "reopens:C-2026-002"
+        ],
+        "path": "work/active/C-2026-009-reopen-hyprland-monitorlayout-fuer-dual.md",
+        "steps": {
+          "total": 2,
+          "done": 1
         }
       }
     ],
@@ -2853,7 +2864,7 @@
       },
       {
         "date": "2026-10-01",
-        "total": 32,
+        "total": 33,
         "bySource": {
           "agent": 6,
           "config": 2,
@@ -2861,7 +2872,7 @@
           "omarchy": 1,
           "pacman": 7,
           "plugins": 1,
-          "seldon": 8,
+          "seldon": 9,
           "snapper": 4,
           "theme": 1
         }

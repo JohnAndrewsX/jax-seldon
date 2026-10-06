@@ -33,12 +33,12 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-26…30 | cases 003–006 created; snapshot 111; snapshots 108/109 deleted | snapshot-delete |
 | 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays open (WP-014) | **one yellow drift group** (`members: 3`, `txId`), ADR-0013 |
 | 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (**two crises**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
-| 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5); C-2026-003 was raised to R3 before the `omarchy update` (an Omarchy update is R3, ADR-0027 §2c); at 17:02 the human reopens C-2026-002 as **C-2026-009** (`reopens:C-2026-002`, active, Intent copied) | `closed-by-agent` marker, `reopens:` |
+| 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5); C-2026-003 was raised to R3 before the `omarchy update` (an Omarchy update is R3, ADR-0027 §2c); at 17:02 the human reopens C-2026-002 as **C-2026-009** (`reopens:C-2026-002`, Intent copied); Claude finds the layout in place and hands it to verification, which needs a reboot | `closed-by-agent` marker, `reopens:` |
 
-Result: 73 ledger lines (9 resolutions), 64 index events (7 with
+Result: 74 ledger lines (9 resolutions), 65 index events (7 with
 `resolutionDetail`; 1 with `zone: green`), 6 snapshots in `system.snapshots`
 (1 pre/post pair), 4 open drift items — 3 single (2 crises) and 1 yellow group
-of 3 —, 9 cases (3 queued, 3 active, 1 verification, 2 completed), 4 decisions
+of 3 —, 9 cases (3 queued, 2 active, 2 verification, 2 completed), 4 decisions
 (1 proposed).
 
 ## How the index derives from the logbook
