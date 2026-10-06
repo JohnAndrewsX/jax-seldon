@@ -20,9 +20,12 @@
 #   `-Q…` and `-S` with `-p`/`--print` (no -y/-u/-c/-w); yay, paru, makepkg,
 #   pacstrap; systemctl except status/show/cat/is-*/list-*; loginctl,
 #   reboot, shutdown, mkinitcpio, grub-*, systemd-run; Omarchy commands
-#   that change the system or launch agents/apps (`omarchy … --help` only
-#   prints help); writes (redirections, tee, cp/mv/ln/install, rm, mkdir,
-#   touch, chmod, sed -i, dd of=, rsync/scp destinations, find -delete)
+#   that change the system (pkg, update, install, theme set, plugin
+#   add/remove/update/clone/enable/disable, snapshot, migrate, refresh,
+#   hook, dev link, branch, channel set; also as omarchy-* binaries) or
+#   launch agents/apps (`omarchy … --help` only prints help); writes
+#   (redirections, tee, cp/mv/ln/install, rm, mkdir, touch, chmod, sed -i,
+#   dd of=, rsync/scp destinations, find -delete)
 #   under /etc /usr /boot /var, under ~/.config outside
 #   ~/.config/omarchy/plugins/jax.seldon, and under the real ~/Seldon and
 #   ~/.local/state/seldon. `~`, `$HOME` and `cd` are resolved; a scratch
@@ -38,13 +41,16 @@
 #   operator released to the agents (operator decision 2026-10-05). Nothing
 #   may run locally: one line, the remote command one quoted string or
 #   plain words without `;`, `&`, `|`; a local `$(…)`, backticks or a
-#   redirection are still checked here. `GUARD_HOSTS_FILE` overrides the
-#   file (the test table uses it).
+#   redirection are still checked here. `GUARD_HOSTS_FILE` replaces the
+#   file only when `SELDON_TEST_GUARD` is set (the test table), so a
+#   settings `env` block cannot widen the list.
 # - The two makepkg forms packaging/README.md uses on the test host over
 #   ssh pass as exact strings (ORCHESTRATION.md §11, WP-040 review).
 # - Fail closed: input it cannot parse, a computed command name, a shell
 #   reading commands from a pipe, `env -S` or an internal error is blocked
-#   with the reason.
+#   with the reason. So is work the hook's 5 s timeout could cut off (a
+#   timed-out hook does not block): hook input over 256 KB, more than 256
+#   variables in one command, more than 3 s of checking.
 # The parser and the rules live in guard.py (Python 3 standard library);
 # the expectation table is scripts/guard-test.sh.
 set -u

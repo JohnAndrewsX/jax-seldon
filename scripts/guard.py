@@ -21,6 +21,7 @@ import json
 import os
 import pwd
 import re
+import signal
 import sys
 
 UNK = ""  # text the guard cannot know: an unknown variable, a command's output
@@ -28,6 +29,12 @@ STAR, QMARK, LBRACK = "", "", ""  # unquoted glob characters
 GLOBS = STAR + QMARK + LBRACK
 MAX_DEPTH = 12
 MAX_CANDIDATES = 16
+
+# The hook has 5 s (.claude/settings.json); a hook that times out does not
+# block, so the guard bounds its own work and fails closed beyond it.
+MAX_INPUT = 256 * 1024  # bytes of hook input, checked before parsing
+MAX_VARS = 256  # distinct variables tracked in one command; keeps every scope copy small
+TIME_BUDGET = 3.0  # seconds of checking, then fail closed
 
 RED = "AGENTS.md §6 red zone"
 CLOSED = "fail closed, cannot check this command"
@@ -945,12 +952,16 @@ SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "mksh", "rbash", "ash", "yash", "f
 # `omarchy <route>` that changes the system: (first word, second words or None).
 # Each word matches as a prefix (`omarchy updates`, `omarchy installed …`), as
 # the grep rules before WP-130 did.
+# `hook` runs the user's hooks, `branch` and `channel set` switch what Omarchy
+# installs, `plugin enable|disable` changes the shell (WP-130 round 2).
 OMARCHY_SYSTEM = [("pkg", ("add", "aur", "drop", "install", "remove")), ("update", None), ("install", None),
-                  ("theme", ("set",)), ("plugin", ("add", "remove", "update", "clone")), ("snapshot", None),
-                  ("migrate", None), ("refresh", None), ("hook", ("install",)), ("dev", ("link",))]
+                  ("theme", ("set",)), ("plugin", ("add", "remove", "update", "clone", "enable", "disable")),
+                  ("snapshot", None), ("migrate", None), ("refresh", None), ("hook", None), ("dev", ("link",)),
+                  ("branch", None), ("channel", ("set",))]
 OMARCHY_BIN_SYSTEM = ("pkg-add", "pkg-aur", "pkg-drop", "pkg-install", "pkg-remove", "update", "install",
-                      "theme-set", "plugin-add", "plugin-remove", "plugin-update", "plugin-clone", "snapshot",
-                      "migrate", "refresh", "hook-install", "dev-link")
+                      "theme-set", "plugin-add", "plugin-remove", "plugin-update", "plugin-clone", "plugin-enable",
+                      "plugin-disable", "snapshot", "migrate", "refresh", "hook", "dev-link", "branch",
+                      "channel-set")
 AGENT_VERBS = ("prompt", "launch", "start", "run", "chat", "ask")
 
 SYSTEM_DIRS = [["etc"], ["usr"], ["boot"], ["var"]]
@@ -1047,8 +1058,12 @@ MAKEPKG_RE = re.compile(r"[ \t]*ssh[ \t]+[A-Za-z0-9._@-]+[ \t]+'cd /tmp/[A-Za-z0
 
 
 def read_hosts():
-    path = os.environ.get("GUARD_HOSTS_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                              "guard-hosts.local")
+    # The fixed git-ignored file. `GUARD_HOSTS_FILE` replaces it only for the
+    # test table (`SELDON_TEST_GUARD` set): a settings `env` block must not
+    # widen the guard.
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "guard-hosts.local")
+    if os.environ.get("SELDON_TEST_GUARD") and os.environ.get("GUARD_HOSTS_FILE"):
+        path = os.environ["GUARD_HOSTS_FILE"]
     hosts = set()
     try:
         with open(path, encoding="utf-8") as f:
@@ -1094,14 +1109,14 @@ class Guard:
     def walk_andor(self, ao, scope, ctx):
         # The first pipeline always runs; each later one may not, so what it
         # assigns is one candidate among the values before it.
-        scopes, cur, all_and = [], scope, True
+        merged, cur, all_and = None, scope, True
         for k, pl in enumerate(ao.pipelines):
             if k > 0 and ao.ops[k - 1] == "||":
                 all_and = False
-            entry = scope if k == 0 else (cur if all_and else merge(scopes))
+            entry = scope if k == 0 else (cur if all_and else merged)
             cur = self.walk_pipeline(pl, entry, ctx)
-            scopes.append(cur)
-        return merge(scopes)
+            merged = cur if merged is None else merge([merged, cur])  # running merge: linear in the chain
+        return merged
 
     def walk_pipeline(self, pl, scope, ctx):
         if len(pl.cmds) == 1:
@@ -1136,6 +1151,7 @@ class Guard:
                     values.extend(fields)
             if cmd.var:
                 body_scope[cmd.var] = dedupe(values) if cmd.words else [UNK]
+                self.bounded(body_scope)
             return merge([scope, self.walk_list(cmd.body, body_scope, inner)])
         if kind == "case":
             self.walk_parts(cmd.word, scope, ctx)
@@ -1165,6 +1181,11 @@ class Guard:
             elif kind in ("unk", "nest"):
                 self.walk_parts(payload, scope, ctx)
 
+    def bounded(self, scope):
+        if len(scope) - (".cwd" in scope) > MAX_VARS:
+            raise Unsure(f"more than {MAX_VARS} variables in one command; split it")
+        return scope
+
     def walk_simple(self, cmd, scope, ctx, piped):
         for w in cmd.assigns + cmd.words:
             self.walk_parts(w, scope, ctx)
@@ -1175,13 +1196,13 @@ class Guard:
             name, values = self.assignment(w, env, ctx)
             env[name] = values
         if not cmd.words:
-            return env
+            return self.bounded(env)
         after = None
         for argv in self.expand_words(cmd.words, scope, ctx):
             res = self.check_argv(argv, env, ctx, stdin, True, cmd)
             if res is not None:
                 after = res
-        return self.effects(cmd, scope, ctx, after)
+        return self.bounded(self.effects(cmd, scope, ctx, after))
 
     def redirs(self, redirs, scope, ctx, node):
         """Check redirection targets; return what fd 0 reads, if set here."""
@@ -1815,8 +1836,13 @@ class Guard:
 
 
 def main():
+    raw = sys.stdin.buffer.read(MAX_INPUT + 1)
+    if len(raw) > MAX_INPUT:
+        print(f"guard: blocked ({CLOSED}): the hook input is over {MAX_INPUT // 1024} KB, too large to check "
+              "within the hook timeout; write big files with the Write/Edit tools or in parts", file=sys.stderr)
+        return 2
     try:
-        data = json.loads(sys.stdin.read())
+        data = json.loads(raw.decode("utf-8"))
     except ValueError:
         print(f"guard: blocked ({CLOSED}): the hook input is not JSON", file=sys.stderr)
         return 2
@@ -1828,8 +1854,19 @@ def main():
         print(f"guard: blocked ({CLOSED}): the command is not a string", file=sys.stderr)
         return 2
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd").startswith("/") else os.getcwd()
+    budget = TIME_BUDGET
+    if os.environ.get("SELDON_TEST_GUARD") and os.environ.get("GUARD_TIME_BUDGET"):
+        budget = min(budget, float(os.environ["GUARD_TIME_BUDGET"]))  # the test table, shorter only
+
+    def out_of_time(signum, frame):
+        raise Unsure(f"checking took longer than {budget:g} s; split the command or write big files "
+                     "with the Write/Edit tools")
+
+    signal.signal(signal.SIGALRM, out_of_time)
+    signal.setitimer(signal.ITIMER_REAL, budget)
     try:
         Guard(command, cwd).run()
+        signal.setitimer(signal.ITIMER_REAL, 0)
     except Blocked as e:
         print(f"guard: blocked ({RED}): {e}", file=sys.stderr)
         return 2

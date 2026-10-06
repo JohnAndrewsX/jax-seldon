@@ -6,21 +6,22 @@
 #   GUARD_TEST_FAILFAST=1  stop at the first failing row
 #   GUARD_TEST_QUIET=1     print only failing rows and the summary
 G=${GUARD_SH:-"$(dirname "$0")/guard.sh"}
-export HOME=/home/tester OMARCHY_PATH=/usr/share/omarchy
+# SELDON_TEST_GUARD lets GUARD_HOSTS_FILE replace the git-ignored hosts file.
+export HOME=/home/tester OMARCHY_PATH=/usr/share/omarchy SELDON_TEST_GUARD=1
 unset TMPDIR
 cwd=/home/tester/repo
 fail=0 rows=0
 check() {
-  local want=$1 cmd=$2
+  local want=$1 cmd=$2 label=${3:-$2}
   rows=$((rows + 1))
   printf '{"tool_input":{"command":%s},"cwd":"%s"}' "$(printf '%s' "$cmd" | jq -Rs .)" "$cwd" | bash "$G" >/dev/null 2>&1
   local rc=$?
   local got=?; [ $rc -eq 0 ] && got=A; [ $rc -eq 2 ] && got=B
   if [ "$got" != "$want" ]; then
-    echo "FAIL want=$want got=$got :: $cmd"; fail=1
+    echo "FAIL want=$want got=$got :: $label"; fail=1
     [ -n "${GUARD_TEST_FAILFAST:-}" ] && exit 1
   elif [ -z "${GUARD_TEST_QUIET:-}" ]; then
-    echo "ok   $want :: $cmd"
+    echo "ok   $want :: $label"
   fi
   return 0
 }
@@ -338,5 +339,46 @@ checkh B 'ssh test-host true
 ssh test-host sudo pacman -Syu'
 checkh A 'ssh test-host journalctl --user -n 50 > /tmp/test-host.log'
 checkh A "ssh test-host 'echo \$(sudo pacman -Q)'"
+# WP-130 round 2: GUARD_HOSTS_FILE counts only with SELDON_TEST_GUARD set
+# (the test table); otherwise the fixed git-ignored file is read
+checkx() { SELDON_TEST_GUARD='' GUARD_HOSTS_FILE=$hosts check "$@"; }
+checkx B 'ssh test-host omarchy plugin update jax.seldon'
+checkx B 'timeout 60 ssh test-host sudo pacman -Syu'
+# WP-130 round 2: Omarchy routes that change the system, as routes and binaries
+check B 'omarchy plugin enable jax.seldon'
+check B 'omarchy plugin disable jax.seldon'
+check B 'omarchy hook post-update'
+check B 'omarchy hook'
+check B 'omarchy branch set dev'
+check B 'omarchy channel set edge'
+check B 'omarchy-plugin-enable jax.seldon'
+check B 'omarchy-plugin-disable jax.seldon'
+check B 'omarchy-hook post-update'
+check B 'omarchy-branch-set dev'
+check B 'omarchy-channel-set edge'
+check B 'ssh other-host omarchy plugin enable jax.seldon'
+check A 'omarchy version'
+check A 'omarchy plugin list'
+check A 'omarchy channel current'
+check A 'omarchy-channel-current'
+check A 'omarchy hook --help'
+check A 'omarchy plugin enable --help'
+check A 'omarchy-plugin-list --json'
+# WP-130 round 2: the size cap, 256 KB of hook input, checked before parsing
+# (the hook has 5 s). Exactly at the cap passes, one byte more is blocked.
+cap=$((256 * 1024))
+over=$(printf '{"tool_input":{"command":""},"cwd":"%s"}' "$cwd" | wc -c)
+big=$(yes 'echo x;' | head -c $((cap - over)) | tr '\n' ' ')
+check A "$big" "(echo x; repeated: hook input of exactly $cap bytes)"
+check B "${big}x" "(echo x; repeated: hook input of $((cap + 1)) bytes)"
+# WP-130 round 2: work bounds inside the cap (a hook that times out does not
+# block): at most 256 variables per command, and a 3 s time budget that the
+# test table may shorten (never lengthen) with SELDON_TEST_GUARD set
+vars=$(for i in $(seq 0 255); do printf 'v%d=1; ' "$i"; done)
+check A "${vars}echo ok" "(256 distinct variables)"
+check B "${vars}v256=1; echo ok" "(257 distinct variables)"
+mid=$(yes 'echo x;' | head -c 40000 | tr '\n' ' ')
+GUARD_TIME_BUDGET=0.01 check B "$mid" "(40 KB of echo x; with a 0.01 s budget)"
+SELDON_TEST_GUARD='' GUARD_TIME_BUDGET=0.01 check A "$mid" "(the same, budget variable without SELDON_TEST_GUARD)"
 echo "rows: $rows"
 exit $fail

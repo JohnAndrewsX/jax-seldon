@@ -52,6 +52,20 @@ MUTANTS = [
      "        if not comp_match(c, base[k]):\n            return False\n    return False\n\n\ndef definitely_inside"),
     ("~/Seldon and ~/.local/state/seldon are protected",
      'for d in (self.home_comps + ["Seldon"], self.home_comps + [".local", "state", "seldon"]):', "for d in ():"),
+    # round 2
+    ("hook input over 256 KB is blocked",
+     "raw = sys.stdin.buffer.read(MAX_INPUT + 1)\n    if len(raw) > MAX_INPUT:",
+     "raw = sys.stdin.buffer.read()\n    if False:"),
+    ("more than 256 variables are blocked", 'if len(scope) - (".cwd" in scope) > MAX_VARS:', "if False:"),
+    ("the time budget", "    signal.setitimer(signal.ITIMER_REAL, budget)\n    try:", "    try:"),
+    ("GUARD_HOSTS_FILE needs SELDON_TEST_GUARD",
+     'if os.environ.get("SELDON_TEST_GUARD") and os.environ.get("GUARD_HOSTS_FILE"):',
+     'if os.environ.get("GUARD_HOSTS_FILE"):'),
+    ("omarchy plugin enable|disable is blocked", '"clone", "enable", "disable")),', '"clone")),'),
+    ("omarchy hook is blocked", '("hook", None)', '("hook", ("install",))'),
+    ("omarchy branch / channel set are blocked", '("branch", None), ("channel", ("set",))]', "]"),
+    ("the round-2 binaries are blocked", '"hook", "dev-link", "branch",\n                      "channel-set")',
+     '"hook-install", "dev-link")'),
 ]
 
 

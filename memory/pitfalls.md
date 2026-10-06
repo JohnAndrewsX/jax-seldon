@@ -2241,3 +2241,9 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   Editing `scripts/guard.py` changes the guard of your own session at
   once; a broken guard blocks every Bash call (fail closed). Fix it with
   the Edit tool, which the hook does not check.
+- **The guard bounds its own work (WP-130 round 2).** A hook that runs
+  past its 5 s timeout does not block, so the guard fails closed first:
+  hook input over 256 KB, more than 256 variables in one command, more
+  than 3 s of checking. Write big files with the Write/Edit tools, not a
+  giant heredoc. `GUARD_HOSTS_FILE` only counts with `SELDON_TEST_GUARD`
+  set (the test table).
