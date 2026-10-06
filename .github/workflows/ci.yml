@@ -27,7 +27,7 @@ jobs:
     steps:
       # Arch's `rust` package ships cargo, clippy and rustfmt.
       - name: Install toolchain
-        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck
+        run: pacman -Syu --noconfirm --needed git rust just jq shellcheck rsync
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

@@ -111,7 +111,8 @@ EOF
 # plain tools the remote scripts use, nothing else
 for t in bash sh cat chmod mkdir mv cp rm install touch date sed awk grep find sort xargs sha256sum \
   cut mktemp tar rsync jq base64 id ls seq sleep dirname stat env tr head tail wc; do
-  ln -s "$(command -v "$t")" "$R/bin/$t"
+  p=$(command -v "$t") || { echo "deploy-test-host.test: needs $t on PATH" >&2; exit 1; }
+  ln -s "$p" "$R/bin/$t"
 done
 cat >"$R/omarchy/bin/omarchy-shell" <<EOF
 #!/bin/bash
