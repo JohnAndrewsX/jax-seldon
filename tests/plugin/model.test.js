@@ -1764,9 +1764,26 @@ test("WP-101: the rules banner from doctor's rules row", () => {
   same(M.rulesBannerWith(outdated, { ok: false, pending: false, text: "lock held" }).hint, "lock held")
   assert.strictEqual(M.rulesBannerWith(outdated, { ok: true, pending: false, text: "Rules updated" }), outdated)
   assert.strictEqual(M.rulesBannerWith(null, { ok: false, text: "x" }), null)
-  same(M.rulesUpdateResult(0, JSON.stringify({ action: "rewritten" }), ""), { ok: true, text: "Rules updated" })
-  same(M.rulesUpdateResult(0, JSON.stringify({ action: "unchanged" }), ""), { ok: true, text: "The rules were current" })
-  same(M.rulesUpdateResult(4, JSON.stringify({ error: { code: 4, message: "locked" } }), ""), { ok: false, text: "locked" })
+  same(M.rulesUpdateResult(0, JSON.stringify({ action: "rewritten" }), ""), { ok: true, text: "Agent rules updated" })
+  same(M.rulesUpdateResult(0, JSON.stringify({ action: "unchanged" }), ""), { ok: true, text: "The agent rules were already current" })
+  same(M.rulesUpdateResult(4, JSON.stringify({ error: { code: 4, message: "locked" } }), ""), { ok: false, text: "Updating the agent rules failed: locked" })
+})
+
+test("WP-111: one line for the Update rules click", () => {
+  const r = (v) => M.rulesUpdateResult(0, JSON.stringify(v), "")
+  same(r({ action: "rewritten", from: "v2", version: 3, archived: null }), { ok: true, text: "Agent rules updated to v3" })
+  same(r({ action: "rewritten", from: "v2", version: 3, archived: "archive/AGENTS-2026-10-06.md" }),
+    { ok: true, text: "Agent rules updated to v3; your old copy is in archive/AGENTS-2026-10-06.md" })
+  same(r({ action: "kept", version: 3, archived: "archive/AGENTS-2026-10-06-2.md" }).text,
+    "Agent rules updated to v3; your old copy is in archive/AGENTS-2026-10-06-2.md")
+  same(r({ action: "unchanged", version: 3 }), { ok: true, text: "The agent rules were already current (v3)" })
+  // only the first line of an archive path; a version that is no number is left out
+  same(r({ action: "created", version: "3; rm", archived: "a\nb" }).text, "Agent rules updated; your old copy is in a")
+  const notice = M.rulesNotice({ ok: true, pending: false, text: "Agent rules updated to v3" })
+  same([notice.status, notice.tone, notice.title, notice.actions], ["rulesUpdated", "neutral", "Agent rules updated to v3", []])
+  for (const quiet of [null, undefined, "x", { ok: true, pending: true, text: "Updating the rules…" },
+    { ok: false, pending: false, text: "Updating the agent rules failed: x" }, { ok: true, pending: false, text: "" }])
+    assert.strictEqual(M.rulesNotice(quiet), null)
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))

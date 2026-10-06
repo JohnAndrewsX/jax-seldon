@@ -1503,12 +1503,36 @@ function rulesBannerWith(banner, result) {
   return out
 }
 
-// `seldon rules update --json` → { ok, text }.
+// `seldon rules update --json` → { ok, text }: one line that says what the
+// click did (WP-111), from the engine's `version` and `archived`; a refusal
+// says what failed.
 function rulesUpdateResult(exitCode, stdoutText, stderrText) {
-  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode) }
+  if (exitCode !== 0) return { ok: false, text: "Updating the agent rules failed: " + engineError(stdoutText, stderrText, exitCode) }
   var data = parseJson(stdoutText)
   var action = data && typeof data.action === "string" ? data.action : ""
-  return { ok: true, text: action === "unchanged" ? "The rules were current" : "Rules updated" }
+  var version = data && typeof data.version === "number" && isFinite(data.version) ? " v" + data.version : ""
+  var archived = data && typeof data.archived === "string" ? firstLine(data.archived) : ""
+  if (action === "unchanged") return { ok: true, text: "The agent rules were already current" + (version !== "" ? " (" + version.trim() + ")" : "") }
+  var text = "Agent rules updated" + (version !== "" ? " to" + version : "")
+  if (archived !== "") text += "; your old copy is in " + archived
+  return { ok: true, text: text }
+}
+
+// The neutral notice for a finished *Update rules* click (WP-111): its one
+// line, until the panel opens again (Service.clearRulesResult). A pending or
+// refused update shows in the banner instead; the capture's silent upgrade
+// of an unedited block shows nothing.
+function rulesNotice(result) {
+  if (!isObject(result) || result.pending || !result.ok || !hasText(result.text)) return null
+  return {
+    status: "rulesUpdated",
+    tone: "neutral",
+    title: String(result.text),
+    detail: "",
+    command: "",
+    actions: [],
+    hint: ""
+  }
 }
 
 // ---- Drift sheet (WP-021) ---------------------------------------------------
