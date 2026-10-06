@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 64d5f55 -->
+<!-- source: en/10-troubleshooting.md @ 65ad985 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -173,9 +173,12 @@ dich später in die Irre.
 
 ### Die Befehle eines Agenten werden nicht aufgezeichnet
 
-- Claude Code: Hast du es im Ordner des Logbuchs gestartet und dem
-  Ordner vertraut? Gibt es `.claude/settings.json`?
-  `seldon hook install claude-code` ergänzt, was fehlt.
+- Claude Code: Hat Seldon es gestartet (*Run*, *Start agent*,
+  `seldon agent start`), oder hast du es im Ordner des Logbuchs
+  gestartet? Eine Sitzung, die du anderswo von Hand startest, wird nicht
+  aufgezeichnet. Stehen die Hooks in `~/.claude/settings.json`? Die Zeile
+  `hooks` von `seldon doctor` sagt es; `seldon hook install claude-code`
+  ergänzt, was fehlt.
 - Ist ein Case aktiv? Grüne Befehle werden nur dann aufgezeichnet.
 - Befehle in `xargs`, `find -exec` oder `python -c` liest der Hook nicht.
 - Andere Agenten rufen `seldon hook generic` selbst auf

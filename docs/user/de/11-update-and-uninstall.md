@@ -1,6 +1,6 @@
 # Aktualisieren und entfernen
 
-<!-- source: en/11-update-and-uninstall.md @ 3f0e416 -->
+<!-- source: en/11-update-and-uninstall.md @ 65ad985 -->
 
 Diese Seite zeigt, wie du die Engine und das Plugin aktualisierst, wie
 du den optionalen Watcher betreibst und wie du Seldon ganz oder in Teilen
@@ -131,28 +131,28 @@ Engine, also führ sie vor Schritt 5 aus.
    seldon init --remove-theme-hook
    ```
 
-4. Die Hooks von Claude Code. Behältst du das Logbuch, nimm sie aus ihm
-   heraus: Sie liegen in `.claude/settings.json` des Logbuchs, und ohne
-   diesen Schritt ruft Claude Code weiter ein `seldon` auf, das es nicht
-   mehr gibt. Der Befehl entfernt nur die Hooks von Seldon; deine
-   eigenen Einstellungen und Hooks bleiben, und eine Datei, die sonst
-   nichts enthielt, wird gelöscht:
+4. Die Hooks von Claude Code. Sie liegen in deiner
+   `~/.claude/settings.json`, und ohne diesen Schritt ruft Claude Code
+   weiter ein `seldon` auf, das es nicht mehr gibt. Der Befehl entfernt
+   nur die Hooks von Seldon; deine eigenen Einstellungen und Hooks
+   bleiben, und eine Datei, die sonst nichts enthielt, wird gelöscht:
 
    ```sh
    seldon hook uninstall claude-code
    ```
 
-   Hast du sie auch in `~/.claude/settings.json` installiert, nimm sie
-   auch aus dieser Datei heraus, mit demselben Befehl und `--settings`:
+   Ein Logbuch von vor 0.1.4 kann sie auch enthalten, in seiner eigenen
+   `.claude/settings.json`. Behältst du das Logbuch, nimm sie dort mit
+   demselben Befehl und `--settings` heraus:
 
    ```sh
-   seldon hook uninstall claude-code --settings ~/.claude/settings.json
+   seldon hook uninstall claude-code --settings ~/Seldon/.claude/settings.json
    ```
 
    Jeder Befehl gibt aus, was er entfernt hat, oder sagt, dass nichts
-   installiert war. Das nächste `seldon capture` hält beide Entfernungen
+   installiert war. Das nächste `seldon capture` hält die Entfernungen
    fest, ohne Drift zu öffnen. Löschst du das Logbuch ebenfalls, gehen
-   seine eigenen Hooks mit ihm, und nur der zweite Befehl ist nötig.
+   seine eigenen Hooks mit ihm, und nur der erste Befehl ist nötig.
 
 5. Die Engine. Der Installer entfernt genau die Dateien, die er
    installiert hat, Manpage und Vervollständigung eingeschlossen; eine

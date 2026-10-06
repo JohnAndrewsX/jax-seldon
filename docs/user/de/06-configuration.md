@@ -1,6 +1,6 @@
 # Konfiguration
 
-<!-- source: en/06-configuration.md @ 1bae1cd -->
+<!-- source: en/06-configuration.md @ 65ad985 -->
 
 Diese Seite beschreibt alles, was du einstellen kannst: die
 `config.toml` der Engine mit Collectors, beobachteten Pfaden, Schwärzung,
@@ -77,6 +77,7 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 | `[drift] routinePaths`, `routinePackages`, `alwaysRedPaths` | siehe [Drift](#drift) | Pfade und Pakete, die Routine sind, und die Persistenzpfade |
 | `[agent] launcher` | `omarchy agent prompt` | was `seldon agent start` startet, siehe [Agent-Launcher](#agent-launcher) |
 | `[agent.launchers]` | keine | weitere Launcher mit Namen |
+| `[agent] workdir` | `"inherit"` | wo der Launcher startet; `"logbook"` startet ihn im Ordner des Logbuchs, siehe [Agent-Launcher](#agent-launcher) |
 
 Den Pfad des Logbuchs nimmt die Engine in dieser Reihenfolge:
 `--logbook`, `SELDON_LOGBOOK`, `logbook` aus der Konfiguration,
@@ -399,8 +400,19 @@ launcher = ["alacritty", "-e", "claude", "{prompt}"]
 codex = ["alacritty", "-e", "codex", "{prompt}"]
 ```
 
-Der Launcher startet losgelöst im Ordner des Logbuchs. Seine
-Fehlerausgabe landet in `~/.local/state/seldon/agent-launch.log`.
+Der Launcher startet losgelöst dort, wo `omarchy agent prompt` den
+Agenten starten würde: im Ordner, in dem `seldon agent start` läuft, und
+in `~/Work` (dein Home, wenn es keins gibt), wenn dieser Ordner dein Home
+oder `/` ist, wie aus dem Panel. Agenten vertrauen `~/Work`, und Seldons
+Hooks zeichnen die Sitzung dort auf, weil Seldon sie gestartet hat. Damit
+Agenten wie vor 0.1.4 im Ordner des Logbuchs starten:
+
+```toml
+[agent]
+workdir = "logbook"
+```
+
+Seine Fehlerausgabe landet in `~/.local/state/seldon/agent-launch.log`.
 
 ## Git
 
