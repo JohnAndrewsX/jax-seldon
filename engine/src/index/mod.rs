@@ -27,6 +27,7 @@ use crate::commands::Context;
 use crate::config::{Config, Dirs};
 use crate::error::Result;
 use crate::logbook::{Logbook, git};
+use crate::redact::Redactor;
 use crate::sys::{self, Run};
 
 pub use build::{Built, Input};
@@ -82,6 +83,10 @@ pub fn write(path: &Path, index: &Index) -> anyhow::Result<()> {
 /// A `cursors.json` that cannot be read makes every capture fail (F-133):
 /// every enabled collector is then `ok: false` with that message, and the
 /// second value is the load warning.
+///
+/// A message goes through the logbook's redaction (SPEC-ENGINE §7) once
+/// more: a capture saves it redacted since WP-105, an older engine did
+/// not. An invalid `[redaction] patterns` entry leaves the built-in rules.
 pub fn collector_state(
     dirs: &Dirs,
     config: &Config,
@@ -98,6 +103,8 @@ pub fn collector_state(
     let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let mine = cursors.logbook.as_deref() == Some(canonical.as_path());
     let mut last_capture: Option<DateTime<FixedOffset>> = None;
+    // built for the first message only: most states hold none
+    let mut redactor: Option<Redactor> = None;
     let rows = ["pacman", "snapper", "omarchy", "plugins", "theme", "config"]
         .into_iter()
         .map(|name| {
@@ -124,7 +131,11 @@ pub fn collector_state(
                 name,
                 enabled,
                 ok: state.is_none_or(|s| s.ok),
-                message: state.and_then(|s| s.message.clone()),
+                message: state.and_then(|s| s.message.as_deref()).map(|m| {
+                    redactor
+                        .get_or_insert_with(|| Redactor::for_config(config).unwrap_or_default())
+                        .redact(m)
+                }),
                 last_run,
             }
         })

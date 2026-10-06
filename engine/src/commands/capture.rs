@@ -5,7 +5,10 @@
 //! then saves `cursors.json`. A collector that degrades (`ok: false`, e.g.
 //! snapper without permissions, ADR-0026) does not fail the capture; it is
 //! reported with its message and fix. Running it twice in a row writes
-//! nothing the second time.
+//! nothing the second time. A collector's message goes through the
+//! logbook's redaction (SPEC-ENGINE §7) once, before it is saved in
+//! `cursors.json`, printed or put into a note; the messages an older
+//! engine saved there are redacted when the file is loaded (WP-105).
 //!
 //! Selection: no flag or `--all` runs every collector enabled in
 //! `config.toml [collectors]`; `--source` runs exactly the named ones, also
@@ -120,6 +123,8 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     );
     let cursors_path = collectors::cursors_file(&ctx.dirs);
     let mut cursors = Cursors::load(&cursors_path)?;
+    // an older engine saved the messages as the collectors gave them
+    redact_messages(&mut cursors, ledger.redactor());
     // as loaded: what a crash before this capture's save leaves behind
     let loaded = cursors.clone();
     let binding = Binding::of(&cursors, &logbook.root);
@@ -818,7 +823,9 @@ fn collect_all(
             ledger,
             earlier: &events,
         };
-        let out = collector.collect(&cctx, cursors.cursor(&logbook.root, name));
+        let mut out = collector.collect(&cctx, cursors.cursor(&logbook.root, name));
+        // once, before it is saved, printed or put into a note (WP-105)
+        out.message = out.message.map(|m| ledger.redactor().redact(&m));
         if out.ok
             && let Some(l) = out.baseline
         {
@@ -867,6 +874,17 @@ fn collect_all(
         states,
         stamps,
         lost,
+    }
+}
+
+/// Every collector message in `cursors` through `redactor`, so the file
+/// holds no message as an engine before WP-105 saved it, also of a
+/// collector this capture does not run.
+fn redact_messages(cursors: &mut Cursors, redactor: &Redactor) {
+    for state in cursors.collectors.values_mut() {
+        if let Some(m) = &mut state.message {
+            *m = redactor.redact(m);
+        }
     }
 }
 
