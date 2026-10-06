@@ -95,8 +95,9 @@ plugin/
   as plain text, never part of a command. It stays until a capture the
   plugin runs exits 0 without warnings; a failed or locked capture leaves
   it. Captures run outside the plugin (the CLI, hooks) are not seen.
-- The rules check (WP-101): `["seldon", "doctor", "--json"]` in its own
-  `Process`, read-only and beside the queue (it takes no lock), when the
+- The rules check (WP-101): `["seldon", "doctor", "--only", "rules",
+  "--json"]` in its own `Process`, read-only and beside the queue (it
+  takes no lock and starts no omarchy, snapper or git probe), when the
   panel opens or the engine turns up while it is open, at most every
   10 minutes; never in dev mode or without an engine. Only its `rules` row
   is read (`rulesBanner`, §5). Doctor's exit 1 (an error row) still
@@ -328,7 +329,7 @@ initialised → "Run `seldon init`" with *Run in terminal*, *Copy* and
 *Check again*; index stale →
 *Capture now*; outdated agent rules (WP-101, ADR-0027 migration) → "The
 logbook's agent rules are outdated (v1)" from the `rules` row of `seldon
-doctor --json`, which the service runs when the panel opens (and when the
+doctor --only rules --json`, which the service runs when the panel opens (and when the
 engine turns up while it is open), at most every 10 minutes, in its own
 read-only process beside the queue, never in dev mode; *Update rules* runs
 `seldon rules update --json` (it rewrites only the engine's block and

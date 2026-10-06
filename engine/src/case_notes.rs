@@ -242,9 +242,7 @@ fn owner(snap: &Event, commands: &[Event], used: &mut HashSet<ulid::Ulid>) -> Ow
             .max_by_key(|c| (c.ts, c.id))
             .map(|c| c.id)
     };
-    if let Some(d) = snap.detail.as_deref().map(str::trim)
-        && is_case_id(d)
-    {
+    if let Some(d) = snap.detail.as_deref().and_then(described_case) {
         if let Some(c) = latest_of(d) {
             used.insert(c);
         }
@@ -271,6 +269,18 @@ fn owner(snap: &Event, commands: &[Event], used: &mut HashSet<ulid::Ulid>) -> Ow
         }
         _ => Owner::Several(cases.into_iter().map(String::from).collect()),
     }
+}
+
+/// The case a snapshot description names: the whole description, or its
+/// start followed by `:` or white space (`C-2026-001: Install zed`, the
+/// ADR-0027 §3 wording; WP-101 round 3).
+fn described_case(description: &str) -> Option<&str> {
+    let d = description.trim();
+    let end = d
+        .find(|c: char| c == ':' || c.is_whitespace())
+        .unwrap_or(d.len());
+    let id = &d[..end];
+    is_case_id(id).then_some(id)
 }
 
 /// Writes `notes` into case `id` under the capture's lock: once each.

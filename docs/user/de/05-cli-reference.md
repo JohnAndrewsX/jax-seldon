@@ -157,7 +157,36 @@ Check engine, config, logbook, collector state, omarchy, snapper and git
 Usage: seldon doctor [OPTIONS]
 
 Options:
-      --path <DIR>     Logbook to check (same as the global --logbook)
+      --path <DIR>
+          Logbook to check (same as the global --logbook)
+
+      --json
+          Machine-readable output
+
+      --only <CHECK>
+          Run one check only; `rules`: the logbook's agent rules, without starting omarchy, snapper or git (what the panel asks)
+
+          Possible values:
+          - rules: The rules block of the logbook's `AGENTS.md`
+
+      --logbook <DIR>
+          Logbook directory (overrides config.toml and SELDON_LOGBOOK)
+
+      --quiet
+          No human output on success
+
+      --no-commit
+          Do not commit logbook changes to git
+
+      --config <FILE>
+          Config file (overrides SELDON_CONFIG and ~/.config/seldon/config.toml)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  seldon doctor
+  seldon doctor --only rules --json
 ```
 <!-- /help -->
 

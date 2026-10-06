@@ -1678,7 +1678,7 @@ test("WP-101: agent start --new, plan reopen, doctor and rules update are the on
   assert.ok(M.agentNewArgs("a\u0000b").error)
   same(M.planArgs("reopen", "C-2026-002").args, ["plan", "reopen", "C-2026-002", "--json"])
   assert.ok(M.planArgs("reopen", "C-26-2; rm").error)
-  for (const ok of [["plan", "reopen", "C-2026-002", "--json"], ["doctor", "--json"], ["rules", "update", "--json"]])
+  for (const ok of [["plan", "reopen", "C-2026-002", "--json"], ["doctor", "--only", "rules", "--json"], ["rules", "update", "--json"]])
     assert.strictEqual(M.validateArgs(ok), "", ok.join(" "))
   for (const bad of [
     ["agent", "start", "--new", "--", "x"],            // --json missing
@@ -1687,7 +1687,8 @@ test("WP-101: agent start --new, plan reopen, doctor and rules update are the on
     ["agent", "start", "C-2026-001", "--json", "--", "x"],
     ["plan", "reopen", "C-2026-002"],
     ["plan", "reopen", "C-2026-002", "--json", "--", "x"],
-    ["doctor"], ["doctor", "--fix", "--json"],
+    ["doctor"], ["doctor", "--json"], ["doctor", "--fix", "--json"], ["doctor", "--only", "rules"],
+    ["doctor", "--only", "probes", "--json"],
     ["rules", "update"], ["rules", "update", "--replace", "--json"], ["rules", "--json"]
   ]) assert.notStrictEqual(M.validateArgs(bad), "", bad.join(" "))
 })

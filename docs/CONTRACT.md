@@ -77,7 +77,7 @@ seldon drift show <eventId> --json          # full member list of a group (ADR-0
 seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
 seldon rebuild --json
 seldon update-impact --json
-seldon doctor --json                            # WP-101: read-only, on panel open (own process, not the queue); the `rules` row
+seldon doctor --only rules --json               # WP-101: read-only, on panel open (own process, not the queue); runs no probe
 seldon rules update --json                      # WP-101: the rules banner's one click; rewrites only the engine's block
 ```
 

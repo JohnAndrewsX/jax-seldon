@@ -567,8 +567,9 @@ function validateArgs(args) {
     if (withText && n === 3 && a[1] === "start" && a[2] === "--new" && json) return ""
     return "agent must be: agent start <caseId> --json | agent start --new --json -- <intent>"
   case "doctor":
-    // WP-101: read-only, for the rules row (Service.checkRules)
-    return !withText && n === 1 && json ? "" : "doctor must be: doctor --json"
+    // WP-101: read-only, the rules row only (Service.checkRules); no probe
+    return !withText && n === 3 && a[1] === "--only" && a[2] === "rules" && json
+      ? "" : "doctor must be: doctor --only rules --json"
   case "rules":
     return !withText && n === 2 && a[1] === "update" && json ? "" : "rules must be: rules update --json"
   case "decide":
@@ -1457,8 +1458,8 @@ function agentResult(exitCode, stdoutText, stderrText) {
 
 // ---- The rules banner (WP-100, WP-101; ADR-0027 Migration) ------------------
 //
-// `seldon doctor --json` names the state of the logbook's agent rules in its
-// `rules` row. When they are outdated and the engine's fix is a plain
+// `seldon doctor --only rules --json` names the state of the logbook's agent
+// rules in its `rules` row. When they are outdated and the engine's fix is a plain
 // `seldon rules update` (it rewrites only the engine's block and archives an
 // edited one: nothing is lost), the banner offers it as one click. A damaged
 // or newer block (fix with --replace, or "update seldon") is shown without

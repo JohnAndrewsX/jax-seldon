@@ -1440,6 +1440,7 @@ expect rules-outdated 1 '.view.rules.actions | join(",")' "Update rules"
 shows rules-outdated 1 "Agents read AGENTS.md. Update rewrites only Seldon's block; your own rules stay, an edited block is archived first."
 expect rules-outdated 5 .view.rules null
 if grep -qx "$(q rules update --json)" "$work/home-rules/argv.log" && [[ $(grep -c . "$work/home-rules/doctor.log") == 2 ]] \
+  && [[ $(sort -u "$work/home-rules/doctor.log") == "$(q doctor --only rules --json)" ]] \
   && ! grep -q '^doctor' "$work/home-rules/argv.log"; then
   pass=$((pass + 1)); echo "ok   rules-outdated: rules update once, doctor before and after, beside the queue"
 else

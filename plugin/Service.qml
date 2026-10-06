@@ -386,7 +386,7 @@ Item {
   function checkRules(force) {
     if (root.devMode || root.engineState !== "present" || doctorCall.running) return false
     if (!force && root.rulesCheckedAtMs > 0 && Date.now() - root.rulesCheckedAtMs < Model.RULES_CHECK_MS) return false
-    var args = ["doctor", "--json"]
+    var args = ["doctor", "--only", "rules", "--json"]
     if (Model.validateArgs(args) !== "") return false
     root.rulesCheckedAtMs = Date.now()
     doctorCall.launch(["seldon"].concat(args))

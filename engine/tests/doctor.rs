@@ -1451,3 +1451,68 @@ mod doctor {
         }
     }
 }
+
+/// `doctor --only rules` (WP-101 round 3): what the panel asks on open.
+/// The engine and rules rows only; no probe runs (stubs that record their
+/// calls stay silent), while the full doctor does start them.
+#[test]
+fn only_rules_starts_no_program() {
+    let env = Env::new(Snapper::Missing);
+    let root = init(&env);
+    let calls = env.tmp.path().join("probe-calls");
+    for program in ["snapper", "omarchy-version"] {
+        env.stub(
+            program,
+            &format!("echo {program} >> '{}'; echo 4.0.4-1", calls.display()),
+        );
+    }
+    let out = env.seldon(&["doctor", "--only", "rules", "--json"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    let v = json(&out);
+    let names: Vec<&str> = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["engine", "rules"]);
+    assert_eq!(check(&v, "rules")["status"], "ok");
+    assert_eq!(v["logbook"], root.to_str().unwrap());
+    assert!(
+        !calls.exists(),
+        "a probe ran: {}",
+        std::fs::read_to_string(&calls).unwrap_or_default()
+    );
+    // the full doctor does run them: the stubs are the ones it finds
+    let out = env.seldon(&["doctor", "--json"]);
+    assert!(out.status.code().is_some());
+    assert!(
+        std::fs::read_to_string(&calls)
+            .unwrap()
+            .contains("omarchy-version")
+    );
+    // an outdated block is the row's state, as in the full doctor
+    std::fs::write(root.join("AGENTS.md"), "# AGENTS.md\n\nold rules\n").unwrap();
+    let v = json(&env.seldon(&["doctor", "--only", "rules", "--json"]));
+    assert_eq!(check(&v, "rules")["status"], "degraded");
+    assert_eq!(check(&v, "rules")["fix"], "seldon rules update");
+    // an unknown check: clap's usage error, exit 1; no logbook: exit 3
+    let out = env.seldon(&["doctor", "--only", "probes", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    let none = env.tmp.path().join("nothing");
+    let out = env.seldon(&[
+        "doctor",
+        "--only",
+        "rules",
+        "--path",
+        none.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(3));
+}

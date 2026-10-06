@@ -90,6 +90,59 @@ impl Check {
     }
 }
 
+/// A check `seldon doctor --only` runs alone (WP-101 round 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Only {
+    /// The rules block of the logbook's `AGENTS.md`
+    Rules,
+}
+
+/// `seldon doctor --only rules`: the `engine` and `rules` rows, nothing
+/// else. It starts no program (no omarchy, snapper or git probe), reads no
+/// collector state and takes no lock: the panel asks it when it opens
+/// (SPEC-PLUGIN §3). Exit 3 when the logbook is not initialised, 1 when the
+/// row is an error. The JSON is doctor's.
+pub fn run_only(ctx: &Context, path: Option<&Path>, only: Only) -> Result<Output> {
+    let Only::Rules = only;
+    // a config.toml that cannot be read leaves the default path, as the
+    // other commands would refuse; the rules row then speaks for the path
+    let config = ctx.load_config().ok().flatten();
+    let (root, _) = ctx.resolve_logbook(path, config.as_ref());
+    let logbook = Logbook::open(&root)?;
+    let checks = vec![
+        Check::new(
+            "engine",
+            Status::Ok,
+            format!("seldon {VERSION}, contract {CONTRACT_VERSION}"),
+        ),
+        check_rules(ctx, &logbook),
+    ];
+    let ok = checks.iter().all(|c| c.status != Status::Error);
+    let mut human = format!("seldon doctor · {}\n", ctx.dirs.display(&root));
+    for c in &checks {
+        let _ = writeln!(
+            human,
+            "  {:<9} {:<8} {}",
+            c.status.as_str(),
+            c.name,
+            c.message
+        );
+        if let Some(fix) = &c.fix {
+            let _ = writeln!(human, "  {:<9} {:<8} fix: {fix}", "", "");
+        }
+    }
+    human.push_str(if ok {
+        "doctor: ok"
+    } else {
+        "doctor: problems found"
+    });
+    Ok(Output {
+        human,
+        json: json!({ "ok": ok, "logbook": root, "checks": checks }),
+        exit: if ok { Exit::Ok } else { Exit::UserError },
+    })
+}
+
 /// `seldon doctor [--path DIR]`.
 pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     let mut checks = vec![Check::new(

@@ -87,7 +87,10 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # item or a plain line, the label bold or not); the message names what is
 # missing (ADR-0027 §5). Text means a line that is no heading and holds a
 # letter or digit (zero-width characters and punctuation alone do not count)
-# — a guard against forgetting, not a check of the evidence. A human close
+# — a guard against forgetting, not a check of the evidence. The guard goes by
+# provenance: a session that unsets `SELDON_ACTOR` and names no agent is
+# outside it (the "agent closes later reopened" metric of ADR-0027 §1 watches
+# that). A human close
 # is never refused, but `--actor human` in an agent's session
 # (`SELDON_ACTOR=agent:…`) is: exit 1 naming the conflict (an agent close is
 # never recorded as human). An agent's close adds the tag `closed-by-agent`;
@@ -338,6 +341,11 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
                                                # rollbacks, collectors, state, omarchy, snapper, git checks
                                                # (read-only)
+seldon doctor --only rules                     # WP-101 round 3: the engine and rules rows only; starts no
+                                               # program (no omarchy, snapper or git probe), reads no collector
+                                               # state, takes no lock; exit 3 without a logbook, 1 when the
+                                               # row is an error; an unknown check is clap's exit 1. The
+                                               # panel's call (SPEC-PLUGIN §3)
 seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules block of the logbook's AGENTS.md
                                                # (`<!-- seldon:begin rules vN -->` … `<!-- seldon:end -->`,
                                                # marker lines as whole lines) becomes this engine's v2 block.
@@ -439,9 +447,9 @@ seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
 ```
 
 `doctor --path DIR` is an alias of the global `--logbook DIR`. The doctor
-shape is not part of `schema/`. The plugin runs `doctor --json` for one
-row only, `rules` (WP-101, SPEC-PLUGIN §3: on panel open, read-only, its
-own process); every other banner comes from `index.json`, its `seldon
+shape is not part of `schema/`. The plugin runs `doctor --only rules
+--json` (WP-101, SPEC-PLUGIN §3: on panel open, read-only, its own
+process, no probes); every other banner comes from `index.json`, its `seldon
 --version --json` probe and the results of its engine calls.
 
 `rollbacks` (WP-101, ADR-0027 §3): a case (not dropped) whose

@@ -196,6 +196,29 @@ mod snapshot_before {
         assert_eq!(b.log("C-2026-001").len(), 3, "{:?}", b.log("C-2026-001"));
     }
 
+    /// ADR-0027 §3's wording, `-d "<case id>: <title>"`: the id at the
+    /// start of the description names the case too (WP-101 round 3).
+    #[test]
+    fn a_description_that_starts_with_the_case_id_fills_it() {
+        let b = Bench::new();
+        b.snapshot(
+            42,
+            "2026-10-01 08:30:00",
+            "single",
+            "C-2026-001: Install zed",
+        );
+        b.capture("2026-10-01T10:40:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], 42);
+        // a longer token is no case id
+        b.second_case();
+        b.snapshot(43, "2026-10-01 08:45:00", "single", "C-2026-002x before");
+        b.capture("2026-10-01T10:50:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-002")["snapshotBefore"], Value::Null);
+        b.snapshot(44, "2026-10-01 08:46:00", "single", "C-2026-002 before zed");
+        b.capture("2026-10-01T10:55:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-002")["snapshotBefore"], 44);
+    }
+
     #[test]
     fn the_recorded_snapshot_command_fills_it() {
         let b = Bench::new();

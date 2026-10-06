@@ -141,7 +141,9 @@ fences), the collectors' last capture and state files, Omarchy, snapper
 and git. It only reads. Each line says `ok`, `degraded` or `error`, and a
 broken check prints the command that fixes it. Exit 0 when nothing is an
 error, 1 when a check is an error (also when `config.toml` cannot be read
-or parsed), 3 when the logbook is not initialised.
+or parsed), 3 when the logbook is not initialised. `--only rules` checks
+just the agent rules in `AGENTS.md` and starts no other program; the
+panel asks this when it opens.
 
 <!-- help: seldon doctor -->
 ```text
@@ -150,7 +152,36 @@ Check engine, config, logbook, collector state, omarchy, snapper and git
 Usage: seldon doctor [OPTIONS]
 
 Options:
-      --path <DIR>     Logbook to check (same as the global --logbook)
+      --path <DIR>
+          Logbook to check (same as the global --logbook)
+
+      --json
+          Machine-readable output
+
+      --only <CHECK>
+          Run one check only; `rules`: the logbook's agent rules, without starting omarchy, snapper or git (what the panel asks)
+
+          Possible values:
+          - rules: The rules block of the logbook's `AGENTS.md`
+
+      --logbook <DIR>
+          Logbook directory (overrides config.toml and SELDON_LOGBOOK)
+
+      --quiet
+          No human output on success
+
+      --no-commit
+          Do not commit logbook changes to git
+
+      --config <FILE>
+          Config file (overrides SELDON_CONFIG and ~/.config/seldon/config.toml)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  seldon doctor
+  seldon doctor --only rules --json
 ```
 <!-- /help -->
 
