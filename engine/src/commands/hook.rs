@@ -367,25 +367,27 @@ fn classify_segment(
     let word = argv.first().map(String::as_str).unwrap_or("");
     let program = word.rsplit('/').next().unwrap_or(word);
     let args = argv.get(1..).unwrap_or_default();
-    let subject = if program.is_empty() { "sh" } else { program };
+    // a snapshot an agent takes (ADR-0027 §3): recorded with its case, so
+    // the capture after it can fill the case's `snapshotBefore` when the
+    // agent did not record the number itself (WP-101); the files the same
+    // command writes are classified as for any other (round 2)
+    let snapshot = is_snapshot_create(program, argv);
+    let subject = if snapshot {
+        SNAPSHOT_SUBJECT
+    } else if program.is_empty() {
+        "sh"
+    } else {
+        program
+    };
     let mutation = |(zone, needs_case): (Option<Zone>, bool)| Mutation {
         subject: subject.to_string(),
         zone,
         needs_case,
     };
 
-    // a snapshot an agent takes (ADR-0027 §3): recorded with its case, so
-    // the capture after it can fill the case's `snapshotBefore` when the
-    // agent did not record the number itself (WP-101)
-    if is_snapshot_create(program, argv) {
-        return Some(Mutation {
-            subject: SNAPSHOT_SUBJECT.to_string(),
-            zone: Some(Zone::Green),
-            needs_case: true,
-        });
-    }
     let argv_str: Vec<&str> = argv.iter().map(String::as_str).collect();
     let command = match parse_command(&argv_str) {
+        _ if snapshot => Some((Some(Zone::Green), true)),
         Some(cmd) => cmd.is_mutating().then_some((Some(Zone::Red), false)),
         None => match program {
             p if p == "omarchy" || p.starts_with("omarchy-") => omarchy_route(argv)

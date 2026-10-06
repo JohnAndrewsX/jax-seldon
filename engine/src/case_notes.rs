@@ -17,12 +17,14 @@
 //! The ledger write already happened, so nothing here fails the capture:
 //! a problem is a warning.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use chrono::{DateTime, Duration, FixedOffset};
 
 use crate::attribution::ATTRIBUTION_WINDOW;
+use crate::collectors::Sources;
 use crate::commands::hook::SNAPSHOT_SUBJECT;
+use crate::commands::plan::snapshot::warnings as snapshot_checks;
 use crate::index::build::r3_advisory;
 use crate::index::drift::AlwaysRed;
 use crate::ledger::Ledger;
@@ -31,10 +33,11 @@ use crate::logbook::cases::{self, CaseFile};
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source};
 use crate::model::{CaseStatus, Risk, Zone, is_case_id};
 
-/// How long after the recorded command the snapshot may carry its date:
-/// the hook records the command before it runs, snapper dates the
-/// snapshot when it is made.
-const AFTER: i64 = 120;
+/// How far a snapshot's date may lie *before* the command that made it:
+/// snapper cuts its date to the second, the hook stamps the command when
+/// it is about to run (WP-101 round 2: 5 s, not minutes, so a later
+/// agent's command never claims an earlier snapshot).
+const SKEW: i64 = 5;
 
 /// The notes of one capture's `written` events; the warnings.
 pub fn after_capture(
@@ -53,46 +56,93 @@ pub fn after_capture(
     let by_id: BTreeMap<&str, &CaseFile> = all.iter().map(|f| (f.case.id.as_str(), f)).collect();
 
     // the rollback the agent forgot
-    let created: Vec<&Event> = written
+    let mut created: Vec<&Event> = written
         .iter()
         .filter(|e| e.source == Source::Snapper && e.kind == Kind::Snapshot)
         .filter(|e| e.meta.snapshot_type.as_deref() != Some("post"))
         .collect();
-    let commands = match created.iter().map(|e| e.ts).min() {
-        Some(from) => {
-            let to = created.iter().map(|e| e.ts).max().unwrap_or(from);
-            match ledger.read_range(from - ATTRIBUTION_WINDOW, to + Duration::seconds(AFTER)) {
-                Ok(events) => events,
+    created.sort_by_key(|e| (e.ts, e.id));
+    let commands: Vec<Event> = match (created.first(), created.last()) {
+        (Some(first), Some(last)) => {
+            match ledger.read_range(
+                first.ts - ATTRIBUTION_WINDOW,
+                last.ts + Duration::seconds(SKEW),
+            ) {
+                Ok(events) => events
+                    .into_iter()
+                    .filter(|c| c.source == Source::Agent && c.kind == Kind::Command)
+                    .filter(|c| c.subject == SNAPSHOT_SUBJECT && c.case.is_some())
+                    .collect(),
                 Err(e) => {
                     warnings.push(format!("snapshots not matched to cases: {e:#}"));
                     Vec::new()
                 }
             }
         }
-        None => Vec::new(),
+        _ => Vec::new(),
     };
-    let mut filled: Vec<&str> = Vec::new();
-    for snap in &created {
-        let Ok(n) = snap.subject.parse::<u64>() else {
-            continue;
-        };
-        let Some((id, actor, why)) = owner(snap, &commands) else {
-            continue;
-        };
-        let open = by_id.get(id.as_str()).is_some_and(|f| {
+    // a recorded command makes one snapshot: once it owns one, it is used
+    let mut used: HashSet<ulid::Ulid> = HashSet::new();
+    let mut filled: Vec<String> = Vec::new();
+    let mut ledger_events: Option<Vec<Event>> = None;
+    let fillable = |id: &str| {
+        by_id.get(id).is_some_and(|f| {
             matches!(
                 f.case.status,
                 CaseStatus::Queued | CaseStatus::Active | CaseStatus::Verification
             ) && f.case.snapshot_before.is_none()
-        });
-        if open && !filled.contains(&by_id[id.as_str()].case.id.as_str()) {
-            filled.push(by_id[id.as_str()].case.id.as_str());
-            notes.entry(id).or_default().push(Note::Snapshot {
-                n,
-                text: format!("snapshot {n} ({why})"),
-                actor,
-            });
+        })
+    };
+    for snap in &created {
+        let Ok(n) = snap.subject.parse::<u64>() else {
+            continue;
+        };
+        let (id, actor, why) = match owner(snap, &commands, &mut used) {
+            Owner::One { id, actor, why } => (id, actor, why),
+            Owner::None => continue,
+            Owner::Several(ids) => {
+                // two agents' snapshot commands in one window: the engine
+                // cannot tell whose this is, so it fills nothing and says so
+                for id in ids.iter().filter(|id| fillable(id)) {
+                    notes.entry(id.clone()).or_default().push(Note::Line(
+                        format!(
+                            "snapshot {n} was taken while the agents of {} ran a snapshot command; \
+                             if it is this case's rollback, record it: `seldon plan snapshot {id} {n}`",
+                            ids.join(" and ")
+                        ),
+                        ACTOR_SYSTEM.into(),
+                    ));
+                }
+                continue;
+            }
+        };
+        if !fillable(&id) || filled.contains(&id) {
+            continue;
         }
+        filled.push(id.clone());
+        // `plan snapshot`'s checks; a warning is a Log line, never a refusal
+        let events = match &ledger_events {
+            Some(events) => events,
+            None => match ledger.read_all() {
+                Ok(events) => ledger_events.insert(events),
+                Err(e) => {
+                    warnings.push(format!("snapshot {n} not checked: {e:#}"));
+                    ledger_events.insert(Vec::new())
+                }
+            },
+        };
+        let checks = snapshot_checks(events, &Sources::from_env().snapshots, &id, n, true);
+        let entry = notes.entry(id).or_default();
+        entry.push(Note::Snapshot {
+            n,
+            text: format!("snapshot {n} ({why})"),
+            actor,
+        });
+        entry.extend(
+            checks
+                .into_iter()
+                .map(|w| Note::Line(w, ACTOR_SYSTEM.into())),
+        );
     }
 
     // a pruned rollback
@@ -156,34 +206,68 @@ enum Note {
     Line(String, String),
 }
 
+/// Whose a new snapshot is.
+enum Owner {
+    One {
+        id: String,
+        actor: String,
+        why: String,
+    },
+    /// Recorded commands of these cases (sorted) are in its window.
+    Several(Vec<String>),
+    None,
+}
+
 /// The case a new snapshot belongs to: its description, when that is a
-/// case id; else the case of the last recorded snapshot command in the
-/// window before it. (id, actor of the Log line, why).
-fn owner(snap: &Event, commands: &[Event]) -> Option<(String, String, String)> {
+/// case id; else the case of the recorded snapshot commands not yet used
+/// in its window, `[date − ATTRIBUTION_WINDOW, date + SKEW]`, the latest
+/// one owning it. Commands of more than one case there: [`Owner::Several`].
+/// The command that owns a snapshot (also the latest of the named case
+/// when the description decides) is marked used.
+fn owner(snap: &Event, commands: &[Event], used: &mut HashSet<ulid::Ulid>) -> Owner {
+    let window: Vec<&Event> = commands
+        .iter()
+        .filter(|c| !used.contains(&c.id))
+        .filter(|c| {
+            c.ts >= snap.ts - ATTRIBUTION_WINDOW && c.ts <= snap.ts + Duration::seconds(SKEW)
+        })
+        .collect();
+    let latest_of = |id: &str| {
+        window
+            .iter()
+            .filter(|c| c.case.as_deref() == Some(id))
+            .max_by_key(|c| (c.ts, c.id))
+            .map(|c| c.id)
+    };
     if let Some(d) = snap.detail.as_deref().map(str::trim)
         && is_case_id(d)
     {
-        return Some((
-            d.to_string(),
-            ACTOR_SYSTEM.to_string(),
-            "its description names the case".to_string(),
-        ));
+        if let Some(c) = latest_of(d) {
+            used.insert(c);
+        }
+        return Owner::One {
+            id: d.to_string(),
+            actor: ACTOR_SYSTEM.to_string(),
+            why: "its description names the case".to_string(),
+        };
     }
-    commands
-        .iter()
-        .filter(|c| c.source == Source::Agent && c.kind == Kind::Command)
-        .filter(|c| c.subject == SNAPSHOT_SUBJECT && c.case.is_some())
-        .filter(|c| {
-            c.ts >= snap.ts - ATTRIBUTION_WINDOW && c.ts <= snap.ts + Duration::seconds(AFTER)
-        })
-        .max_by_key(|c| c.ts)
-        .map(|c| {
-            (
-                c.case.clone().unwrap_or_default(),
-                c.actor.clone(),
-                "from the recorded snapshot command".to_string(),
-            )
-        })
+    let cases: BTreeSet<&str> = window.iter().filter_map(|c| c.case.as_deref()).collect();
+    match cases.len() {
+        0 => Owner::None,
+        1 => {
+            let c = window
+                .iter()
+                .max_by_key(|c| (c.ts, c.id))
+                .expect("one case has a command");
+            used.insert(c.id);
+            Owner::One {
+                id: c.case.clone().unwrap_or_default(),
+                actor: c.actor.clone(),
+                why: "from the recorded snapshot command".to_string(),
+            }
+        }
+        _ => Owner::Several(cases.into_iter().map(String::from).collect()),
+    }
 }
 
 /// Writes `notes` into case `id` under the capture's lock: once each.

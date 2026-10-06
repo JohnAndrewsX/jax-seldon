@@ -640,6 +640,9 @@ mod new {
             ("Is zed installed? Check it.", "Is zed installed?"),
             ("Update to v1.2.3 please", "Update to v1.2.3 please"),
             ("  first line\nsecond line", "first line"),
+            // a lone \r, a tab: spaces (WP-101 round 2)
+            ("first\rsecond", "first second"),
+            ("tab\there", "tab here"),
             (
                 "Install the editor with its language servers for Rust, Python, Go and \
                  TypeScript today",
@@ -670,6 +673,14 @@ mod new {
         );
         assert!(!calls.exists(), "nothing launched");
         assert!(common::ledger(&root).is_empty());
+        // Omarchy reads the first line only: an empty first line is no agent
+        let dir = env.home.join(".config/omarchy/defaults");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("agent"), "\nclaude\n").unwrap();
+        let out = start_new(&env, &[], "Install zed");
+        assert_eq!(out.status.code(), Some(1));
+        assert!(!calls.exists(), "nothing launched");
+        std::fs::remove_file(dir.join("agent")).unwrap();
         assert!(
             !std::fs::read_dir(root.join("work/active"))
                 .unwrap()
@@ -720,6 +731,13 @@ mod new {
         ] {
             let out = env.at(T0, args);
             assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stderr(&out));
+        }
+        // a first sentence without a letter or digit (WP-101 round 2)
+        for intent in [".", "!", "…", "?!", "!\nInstall zed"] {
+            let out = start_new(&env, &[], intent);
+            assert_eq!(out.status.code(), Some(1), "{intent:?}");
+            let m = json(&out)["error"]["message"].as_str().unwrap().to_string();
+            assert!(m.contains("has no letter or digit"), "{intent:?}: {m}");
         }
         // a blank intent
         let out = start_new(&env, &[], "  \n ");

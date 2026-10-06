@@ -474,14 +474,15 @@ pub fn strip_comments(text: &str) -> String {
     out
 }
 
-/// What an agent's close lacks (ADR-0027 §5): the *Result* has no text
-/// (comments do not count), and *Plan › Verification* — the `Verification:`
-/// item of the Plan with its indented continuation lines — has none.
-/// Empty when both are filled.
+/// What an agent's close lacks (ADR-0027 §5): the *Result* has no text,
+/// and *Plan › Verification* — the `Verification:` item of the Plan with
+/// its indented continuation lines — has none. Text is [`has_text`]: a
+/// line that is no heading and holds a letter or digit, HTML comments
+/// left out. Empty when both are filled.
 pub fn close_gaps(body: &str) -> Vec<&'static str> {
     let mut gaps = Vec::new();
     let result = section(body, "Result").map_or("", |r| &body[r]);
-    if strip_comments(result).trim().is_empty() {
+    if !has_text(result) {
         gaps.push("its Result is empty");
     }
     if !verification_filled(body) {
@@ -490,8 +491,19 @@ pub fn close_gaps(body: &str) -> Vec<&'static str> {
     gaps
 }
 
+/// Whether `text` says something: without its HTML comments, a line that
+/// is not a heading (`#`) holds a letter or digit (white space, zero-width
+/// characters and punctuation alone do not count; WP-101 round 2).
+pub fn has_text(text: &str) -> bool {
+    strip_comments(text).lines().any(|line| {
+        let line = line.trim();
+        !line.starts_with('#') && line.chars().any(char::is_alphanumeric)
+    })
+}
+
 /// Whether the Plan's `Verification:` item (case-insensitive, as a list
-/// item or a plain line) has text after the colon or in the lines indented
+/// item or a plain line, the label bold or not: `**Verification:**`,
+/// `**Verification**:`) has text after the colon or in the lines indented
 /// below it.
 fn verification_filled(body: &str) -> bool {
     let Some(range) = section(body, "Plan") else {
@@ -505,14 +517,18 @@ fn verification_filled(body: &str) -> bool {
             .iter()
             .find_map(|m| item.strip_prefix(m))
             .unwrap_or(item)
-            .trim_start();
-        let Some(head) = item.get(..13) else {
+            .trim_start()
+            .trim_start_matches(['*', '_']);
+        let Some(head) = item.get(..12) else {
             continue;
         };
-        if !head.eq_ignore_ascii_case("verification:") {
+        if !head.eq_ignore_ascii_case("verification") {
             continue;
         }
-        let mut text = item[13..].to_string();
+        let Some(rest) = item[12..].trim_start_matches(['*', '_']).strip_prefix(':') else {
+            continue;
+        };
+        let mut text = rest.trim_start_matches(['*', '_']).to_string();
         for next in &lines[i + 1..] {
             if !next.trim().is_empty() && indent(next) <= indent(line) {
                 break;
@@ -520,7 +536,7 @@ fn verification_filled(body: &str) -> bool {
             text.push('\n');
             text.push_str(next);
         }
-        return !strip_comments(&text).trim().is_empty();
+        return has_text(&text);
     }
     false
 }
@@ -872,6 +888,32 @@ mod tests {
             [both[1]]
         );
         assert_eq!(close_gaps("no sections"), both);
+        // round 2: a heading, zero-width or punctuation is no text
+        for result in [
+            "### Evidence\n",
+            "\u{200b}\u{feff}\n",
+            "- …\n",
+            "<!-- x -->\n# y\n",
+        ] {
+            let gaps = close_gaps(&body("- Verification: v\n", result));
+            assert_eq!(gaps, [both[0]], "{result:?}");
+        }
+        assert!(close_gaps(&body("- Verification: v\n", "### Evidence\nexit 0\n")).is_empty());
+        // a bold label
+        for item in [
+            "- **Verification:** `zed --version`\n",
+            "- **Verification**: it runs\n",
+            "__verification:__ ok\n",
+        ] {
+            assert!(close_gaps(&body(item, "ok\n")).is_empty(), "{item:?}");
+        }
+        for item in [
+            "- **Verification:**\n",
+            "- **Verification:** …\n",
+            "- Verifications: x\n",
+        ] {
+            assert_eq!(close_gaps(&body(item, "ok\n")), [both[1]], "{item:?}");
+        }
     }
 
     #[test]

@@ -276,7 +276,16 @@ pub const TITLE_MAX: usize = 72;
 /// [`TITLE_MAX`] characters, cut at a word with `…` when longer.
 pub fn title_of(intent: &str) -> String {
     let text = intent.trim();
-    let line = text.lines().next().unwrap_or("").trim();
+    let line = text.split('\n').next().unwrap_or("");
+    // a lone `\r`, a tab or any other control character is a space, and a
+    // run of white space one (`plan new` refuses `\r` in a title)
+    let line = line
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let chars: Vec<char> = line.chars().collect();
     let mut end = chars.len();
     for (i, c) in chars.iter().enumerate() {
@@ -314,8 +323,10 @@ fn check_default_agent(ctx: &Context, launcher: &Launcher) -> Result<()> {
     if launcher.argv != DEFAULT_AGENT_LAUNCHER {
         return Ok(());
     }
+    // `omarchy-default-agent` reads the first line (`read -r agent`)
     let file = ctx.dirs.home.join(OMARCHY_DEFAULT_AGENT);
-    let set = std::fs::read_to_string(&file).is_ok_and(|t| !t.trim().is_empty());
+    let set = std::fs::read_to_string(&file)
+        .is_ok_and(|t| t.lines().next().is_some_and(|l| !l.trim().is_empty()));
     if set {
         return Ok(());
     }
@@ -486,9 +497,11 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
     let intent = redactor.redact(&intent);
     let title = title_of(&intent);
     let intent = cases::escape_lines(&intent);
-    if title.is_empty() {
+    // `.`, `!` or `…` alone say nothing to do (WP-101 round 2)
+    if !title.chars().any(char::is_alphanumeric) {
         return Err(Error::user(
-            "the intent's first sentence is empty; start it with what to do".to_string(),
+            "the intent's first sentence has no letter or digit; start it with what to do"
+                .to_string(),
         ));
     }
     let lock = ctx.lock()?;
@@ -508,6 +521,7 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
             tags: Vec::new(),
             note: None,
             start: true,
+            point: true,
         },
     )?;
     let id = created.file.case.id.clone();

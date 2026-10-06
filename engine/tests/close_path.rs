@@ -510,6 +510,84 @@ mod close {
         );
     }
 
+    /// ADR-0027 §5: an agent close is never recorded as human. In an
+    /// agent's session (`SELDON_ACTOR=agent:…`) `--actor human` on `plan
+    /// done` is refused (WP-101 round 2).
+    #[test]
+    fn an_agent_session_cannot_close_as_human() {
+        let env = Env::new(Snapper::Missing);
+        let root = logbook(&env);
+        verified(&env, &root);
+        let before = ledger(&root).len();
+        let file = read(&case_path(&root, "C-2026-001"));
+        let m = refused(&run(
+            &env,
+            T2,
+            Some("agent:x"),
+            &["plan", "done", "C-2026-001", "--actor", "human"],
+        ));
+        assert_eq!(
+            m,
+            "C-2026-001 is not closed: `--actor human` in a session of agent:x (SELDON_ACTOR); \
+             an agent's close is never recorded as human (ADR-0027 §5). Close it as agent:x, or \
+             from a session of your own (the panel's Done)"
+        );
+        assert_eq!(ledger(&root).len(), before);
+        assert_eq!(read(&case_path(&root, "C-2026-001")), file);
+        // a person's own session: the flag is the person
+        let v = ok(&run(
+            &env,
+            T2,
+            None,
+            &["plan", "done", "C-2026-001", "--actor", "human"],
+        ));
+        assert_eq!(v["event"]["actor"], "human");
+    }
+
+    /// The guard is for forgetfulness: a heading, a zero-width space or
+    /// punctuation is no Result; a bold label is a Verification.
+    #[test]
+    fn a_result_needs_a_letter_or_digit_and_the_label_may_be_bold() {
+        let env = Env::new(Snapper::Missing);
+        let root = logbook(&env);
+        verified(&env, &root);
+        edit(
+            &root,
+            "C-2026-001",
+            VERIFICATION,
+            "- **Verification:** `zed --version` exits 0\n",
+        );
+        for result in ["### Evidence\n", "\u{200b}\n", "- …\n"] {
+            let path = case_path(&root, "C-2026-001");
+            let text = read(&path);
+            let start = text.rfind("## Result\n").unwrap() + "## Result\n".len();
+            std::fs::write(&path, format!("{}{result}", &text[..start])).unwrap();
+            let m = refused(&run(
+                &env,
+                T2,
+                Some("agent:x"),
+                &["plan", "done", "C-2026-001"],
+            ));
+            assert!(
+                m.contains("its Result is empty") && !m.contains("Verification"),
+                "{result:?}: {m}"
+            );
+        }
+        edit(
+            &root,
+            "C-2026-001",
+            "- …\n",
+            "### Evidence\nzed 0.150 runs\n",
+        );
+        let v = ok(&run(
+            &env,
+            T2,
+            Some("agent:x"),
+            &["plan", "done", "C-2026-001"],
+        ));
+        assert_eq!(v["case"]["tags"], serde_json::json!(["closed-by-agent"]));
+    }
+
     #[test]
     fn a_human_close_is_never_refused_and_gets_no_tag() {
         let env = Env::new(Snapper::Missing);
@@ -655,6 +733,67 @@ mod reopen {
             stdout(&out)
         );
         find_file(&root.join("work/active"), "C-2026-004-");
+    }
+
+    /// The active-case marker routes a running agent's recorded commands:
+    /// a reopen leaves it on an open case (WP-101 round 2), and an agent's
+    /// next command still lands there.
+    #[test]
+    fn a_reopen_keeps_the_active_case_of_an_open_case() {
+        let env = Env::new(Snapper::Missing);
+        let root = completed(&env);
+        ok(&run(&env, T3, None, &["plan", "new", "--", "Being worked"]));
+        ok(&run(&env, T3, None, &["plan", "start", "C-2026-002"]));
+        let v = ok(&run(&env, T3, None, &["plan", "reopen", "C-2026-001"]));
+        assert_eq!(v["case"]["id"], "C-2026-003");
+        assert_eq!(v["case"]["status"], "active");
+        assert_eq!(v["activeCase"], serde_json::json!({ "kept": "C-2026-002" }));
+        assert_eq!(read(&root.join(".seldon/active-case")).trim(), "C-2026-002");
+        // the human output says so
+        let mut cmd = env.command(&["plan", "reopen", "C-2026-001"]);
+        cmd.env("SELDON_NOW", T3);
+        let out = cmd.output().unwrap();
+        assert!(
+            stdout(&out).contains(
+                "The active case stays C-2026-002: commands an agent runs are still recorded on \
+                 it. `seldon agent start C-2026-004` hands the new case to an agent"
+            ),
+            "{}",
+            stdout(&out)
+        );
+        // an agent's next command, without a case of its own
+        let payload = serde_json::json!({
+            "command": "npm install -g left-pad",
+            "actor": "agent:claude-code",
+            "cwd": root,
+        });
+        let mut cmd = env.command(&["hook", "generic"]);
+        cmd.env("SELDON_NOW", T3)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = cmd.spawn().unwrap();
+        use std::io::Write as _;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.to_string().as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let last = ledger(&root).pop().unwrap();
+        assert_eq!(last["kind"], "command");
+        assert_eq!(last["case"], "C-2026-002");
+        // the marker on a closed case, or none: the reopen takes it
+        ok(&run(
+            &env,
+            T3,
+            None,
+            &["plan", "drop", "C-2026-002", "--reason", "x"],
+        ));
+        let v = ok(&run(&env, T3, None, &["plan", "reopen", "C-2026-001"]));
+        assert_eq!(v["activeCase"]["set"], v["case"]["id"]);
     }
 
     #[test]

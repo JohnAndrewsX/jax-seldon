@@ -120,6 +120,25 @@ impl Bench {
         self.run(at, &["hook", "generic"], Some(&payload.to_string()));
     }
 
+    /// The same for an agent `actor` working `case`.
+    fn hook_for(&self, command: &str, at: &str, actor: &str, case: &str) {
+        let payload = json!({
+            "command": command,
+            "actor": actor,
+            "cwd": self.logbook,
+            "startedAt": at,
+            "case": case,
+        });
+        self.run(at, &["hook", "generic"], Some(&payload.to_string()));
+    }
+
+    /// C-2026-002, started at 10:00 beside C-2026-001.
+    fn second_case(&self) {
+        let at = "2026-10-01T10:00:00+02:00";
+        self.run(at, &["plan", "new", "--", "Other"], None);
+        self.run(at, &["plan", "start", "C-2026-002"], None);
+    }
+
     fn case(&self, id: &str) -> Value {
         let out = self.run(SINCE, &["plan", "show", id, "--json"], None);
         serde_json::from_slice::<Value>(&out.stdout).unwrap()["case"].clone()
@@ -245,6 +264,154 @@ mod snapshot_before {
         b.snapshot(43, "2026-10-01 08:30:00", "single", "second");
         b.capture("2026-10-01T10:40:00+02:00", "snapper");
         assert_eq!(b.case("C-2026-001")["snapshotBefore"], Value::Null);
+    }
+
+    /// The stage-1 probe (WP-101 round 2): two agents snapshot a minute
+    /// apart, one capture sees both; each case gets its own.
+    #[test]
+    fn two_agents_a_minute_apart_get_their_own_snapshots() {
+        let b = Bench::new();
+        b.second_case();
+        let cmd = "sudo snapper -c root create -c number -p -d x";
+        b.hook_for(cmd, "2026-10-01T10:10:00+02:00", "agent:one", "C-2026-001");
+        b.hook_for(cmd, "2026-10-01T10:11:00+02:00", "agent:two", "C-2026-002");
+        b.snapshot(2, "2026-10-01 08:10:05", "single", "x");
+        b.snapshot(3, "2026-10-01 08:11:05", "single", "x");
+        b.capture("2026-10-01T10:20:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], 2);
+        assert_eq!(b.case("C-2026-002")["snapshotBefore"], 3);
+        assert!(b.log("C-2026-002").last().unwrap().ends_with("· agent:two"));
+    }
+
+    /// A command recorded after the snapshot's date (beyond the 5 s of
+    /// clock skew) did not make it.
+    #[test]
+    fn a_later_command_does_not_claim_an_earlier_snapshot() {
+        let b = Bench::new();
+        b.hook_for(
+            "sudo snapper -c root create -d x",
+            "2026-10-01T10:10:11+02:00",
+            "agent:one",
+            "C-2026-001",
+        );
+        b.snapshot(2, "2026-10-01 08:10:05", "single", "x");
+        b.capture("2026-10-01T10:20:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], Value::Null);
+        // within the skew it did
+        b.snapshot(3, "2026-10-01 08:10:07", "single", "x");
+        b.capture("2026-10-01T10:21:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], 3);
+    }
+
+    /// Two cases' commands in one snapshot's window: nothing is filled,
+    /// each case is told how to record it.
+    #[test]
+    fn a_tie_fills_nothing_and_says_so_on_both() {
+        let b = Bench::new();
+        b.second_case();
+        let cmd = "sudo snapper -c root create -d x";
+        b.hook_for(cmd, "2026-10-01T10:10:00+02:00", "agent:one", "C-2026-001");
+        b.hook_for(cmd, "2026-10-01T10:10:02+02:00", "agent:two", "C-2026-002");
+        b.snapshot(2, "2026-10-01 08:10:05", "single", "x");
+        b.capture("2026-10-01T10:20:00+02:00", "snapper");
+        for id in ["C-2026-001", "C-2026-002"] {
+            assert_eq!(b.case(id)["snapshotBefore"], Value::Null, "{id}");
+            assert_eq!(
+                b.log(id).last().unwrap(),
+                &format!(
+                    "- 2026-10-01 10:20 · snapshot 2 was taken while the agents of C-2026-001 \
+                     and C-2026-002 ran a snapshot command; if it is this case's rollback, \
+                     record it: `seldon plan snapshot {id} 2` · system"
+                )
+            );
+        }
+    }
+
+    /// A snapshot named by its case consumes that case's command, so the
+    /// command cannot make a tie for the next snapshot.
+    #[test]
+    fn a_described_snapshot_uses_its_cases_command() {
+        let b = Bench::new();
+        b.second_case();
+        let at1 = "2026-10-01T10:10:00+02:00";
+        b.hook_for(
+            "sudo snapper -c root create -d C-2026-001",
+            at1,
+            "agent:one",
+            "C-2026-001",
+        );
+        b.hook_for(
+            "sudo snapper -c root create -d x",
+            "2026-10-01T10:11:00+02:00",
+            "agent:two",
+            "C-2026-002",
+        );
+        b.snapshot(2, "2026-10-01 08:10:01", "single", "C-2026-001");
+        b.snapshot(3, "2026-10-01 08:11:01", "single", "x");
+        b.capture("2026-10-01T10:20:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], 2);
+        assert_eq!(b.case("C-2026-002")["snapshotBefore"], 3);
+    }
+
+    /// `plan snapshot`'s checks run on the fallback too: a snapshot after
+    /// the case's first red change still fills, with the warning as a Log
+    /// line.
+    #[test]
+    fn the_fallback_warns_like_plan_snapshot() {
+        let b = Bench::new();
+        b.run(
+            "2026-10-01T10:05:00+02:00",
+            &[
+                "event",
+                "pacman",
+                "install",
+                "--subject",
+                "zed",
+                "--case",
+                "C-2026-001",
+                "--actor",
+                "agent:codex",
+            ],
+            None,
+        );
+        b.hook(
+            "sudo snapper -c root create -d x",
+            "2026-10-01T10:09:59+02:00",
+        );
+        b.snapshot(2, "2026-10-01 08:10:00", "single", "x");
+        b.capture("2026-10-01T10:20:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], 2);
+        let log = b.log("C-2026-001");
+        let n = log.len();
+        assert!(
+            log[n - 2].contains("snapshot 2 (from the recorded snapshot command)"),
+            "{log:?}"
+        );
+        assert_eq!(
+            log[n - 1],
+            "- 2026-10-01 10:20 · snapshot 2 was taken at 2026-10-01 10:10:00, after \
+             C-2026-001's first red change (`zed` at 2026-10-01 10:05:00): it does not hold the \
+             state before that change · system"
+        );
+    }
+
+    /// The files a snapshot command writes are classified as for any other
+    /// command: a redirect into a watched path makes it yellow.
+    #[test]
+    fn a_snapshot_command_that_writes_a_watched_file_is_yellow() {
+        let b = Bench::new();
+        b.hook(
+            "sudo snapper -c root create -p -d x > ~/.config/hypr/last-snapshot",
+            "2026-10-01T10:09:59+02:00",
+        );
+        let commands: Vec<Value> = common::ledger(&b.logbook)
+            .into_iter()
+            .filter(|e| e["kind"] == "command")
+            .collect();
+        assert_eq!(commands.len(), 1, "{commands:?}");
+        assert_eq!(commands[0]["subject"], "snapper");
+        assert_eq!(commands[0]["zone"], "yellow");
+        assert_eq!(commands[0]["case"], "C-2026-001");
     }
 
     #[test]

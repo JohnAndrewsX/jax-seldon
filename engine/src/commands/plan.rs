@@ -9,7 +9,10 @@ use chrono::Datelike as _;
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
-use super::event::{actor_or_env, clip, emit, emit_one, event_json, parse_case_id, parse_person};
+use super::event::{
+    ACTOR_ENV, actor_or_env, clip, emit, emit_one, env_actor, event_json, parse_case_id,
+    parse_person,
+};
 use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::{Error, Result};
 use crate::logbook::cases::{self, CaseFile, Transition};
@@ -18,7 +21,7 @@ use crate::model::event::{ACTOR_HUMAN, Event, Kind, Source};
 use crate::model::{Case, CaseStatus, Language, Priority, Risk, Zone, is_agent};
 use crate::redact::Redactor;
 
-mod snapshot;
+pub(crate) mod snapshot;
 
 /// The tag of a case an agent closed (ADR-0027 §5; CONTRACT.md lists the
 /// reserved tags).
@@ -223,6 +226,7 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
             tags: Vec::new(),
             note: None,
             start: false,
+            point: false,
         },
     )?;
     let id = created.file.case.id.clone();
@@ -263,8 +267,11 @@ pub(crate) struct Spec {
     pub tags: Vec<String>,
     pub note: Option<String>,
     /// Created and started in one go: status active, `case-created` and
-    /// `case-started` in one ledger write, the active case set.
+    /// `case-started` in one ledger write.
     pub start: bool,
+    /// With `start`: the new case becomes `.seldon/active-case`, which the
+    /// hooks attribute an agent's commands by.
+    pub point: bool,
 }
 
 /// What [`create`] wrote: the case file, its ledger events (created, then
@@ -371,7 +378,7 @@ pub(crate) fn create(
         .transpose()?
         .flatten();
     write_new(&file.path, &text)?;
-    if spec.start {
+    if spec.start && spec.point {
         cases::set_active_case(logbook, &id)?;
     }
     Ok(Created {
@@ -394,6 +401,20 @@ fn step(
         .as_deref()
         .map(|r| one_line("--reason", r))
         .transpose()?;
+    // an agent's session cannot close as a person (ADR-0027 §5: an agent
+    // close is never recorded as human; WP-101 round 2)
+    if transition == Transition::Done
+        && args.actor.as_deref() == Some(ACTOR_HUMAN)
+        && let Ok(Some(session)) = env_actor(parse_person)
+        && is_agent(&session)
+    {
+        return Err(Error::user(format!(
+            "{} is not closed: `--actor human` in a session of {session} ({ACTOR_ENV}); an \
+             agent's close is never recorded as human (ADR-0027 §5). Close it as {session}, or \
+             from a session of your own (the panel's Done)",
+            args.id
+        )));
+    }
     let actor = actor_or_env(args.actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
@@ -762,6 +783,17 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
         .collect();
     let intent = cases::intent(&old.doc.body).to_string();
     let title = redactor.redact(&format!("Reopen: {}", old.case.title));
+    // the active-case marker routes a running agent's recorded commands:
+    // a reopen takes it only when no open case holds it (WP-101 round 2)
+    let holder = cases::active_case(&logbook).filter(|held| {
+        all.iter().any(|f| {
+            f.case.id == *held
+                && matches!(
+                    f.case.status,
+                    CaseStatus::Queued | CaseStatus::Active | CaseStatus::Verification
+                )
+        })
+    });
     // the old case's Log line is written after the new case exists, so
     // its save is checked first (WP-077)
     old.prepare(&logbook, |f| {
@@ -783,6 +815,7 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             tags: vec![tag],
             note: Some(format!("reopens {}", args.id)),
             start: true,
+            point: holder.is_none(),
         },
     )?;
     let id = created.file.case.id.clone();
@@ -809,6 +842,12 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             earlier.join(", ")
         ));
     }
+    if let Some(held) = &holder {
+        human.push_str(&format!(
+            "\nThe active case stays {held}: commands an agent runs are still recorded on it. \
+             `seldon agent start {id}` hands the new case to an agent"
+        ));
+    }
     human.push_str(&commit.human());
     Ok(Output::ok(
         human,
@@ -817,7 +856,10 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             "reopens": args.id,
             "earlier": earlier,
             "events": created.events.iter().map(event_json).collect::<Vec<_>>(),
-            "activeCase": { "set": id },
+            "activeCase": match &holder {
+                Some(held) => json!({ "kept": held }),
+                None => json!({ "set": id }),
+            },
             "git": commit.json(),
         }),
     ))
