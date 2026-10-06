@@ -16,18 +16,24 @@ decisions).
 |---|---|---|---|---|---|
 | WP-108 | hook headroom on curl lines with -e | Engine | `engine-108` (opus) | `wt/WP-108` · `wp/108-hook-headroom` | 2026-10-06 |
 | WP-101 | one-click start, agent snapshot and close path, closed-by-agent marker, reopen | Engine + Plugin | `engine-101` (opus) | `wt/WP-101` · `wp/101-one-click-close` | 2026-10-06 |
+| WP-109 | engine: drift classification by consequence (ADR-0028) | Engine | `engine-109` (opus) | `wt/WP-109` · `wp/109-drift-classes` | 2026-10-06 |
+| WP-110 | plugin: quiet surfaces (ADR-0028) | Plugin | `plugin-110` (opus) | `wt/WP-110` · `wp/110-quiet-surfaces` | 2026-10-06 |
 
 ## Queued (next up)
 
-0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
-advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
-notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
 In 0.1.4 (operator decision 2026-10-06: keep building 0.1.4 before a
 release): the rest of ADR-0027 (a case the user started authorises the
 agent; the agent verifies and closes; only steps that can make the
 machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
 (one-click start, snapshot and close path, reopen) active, WP-094 (skill)
 after WP-101 (it quotes `plan snapshot` and the agent-close refusal).
+ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
+classification) and WP-110 (plugin quiet surfaces) active, WP-111 (agent
+texts, docs, live check) after WP-109. Then the 0.1.4 release preparation
+(tag on the operator's go). Later from ADR-0028: WP-112 (measured routine
+paths after a real update), WP-113 (plugin trees, toggles, opt-in
+authorized_keys; each item approved separately), WP-114 (pacman.conf;
+needs an AGENTS.md §6 amendment).
 Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
 Omarchy upstream contribution before 1.0. Then the
 contract v2 bundle for v0.2.0 (autocommit result in the index,
@@ -489,6 +495,22 @@ submission). (see `work/queued/`)
   `jax-seldon-plugin` via subtree split → ADR-0009.
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
+
+## Decided 2026-10-06
+- 0.1.4 keeps growing before a release: WP-101 and WP-094 (ADR-0027) and
+  ADR-0028 (WP-109…111) are in it; the release after them, tag on the
+  operator's go. Release policy: by theme, not by calendar; privacy and
+  data-loss fixes go out promptly (the logbook is append-only).
+- ADR-0028 accepted: attention is earned by consequence. Routine changes
+  (theme, plugin toggles, Omarchy's updater, a plain full upgrade,
+  Omarchy's own writes) are history, not drift; a package installed by
+  hand without a case is quiet attention; a crisis is a change without a
+  case that can break boot, login, the shell or security (hooks, user
+  units, autostart, environment, login profiles). Existing default watch
+  lists gain the new paths; a user-changed list stays.
+- Omarchy first: Omarchy's own agent skill
+  (`$OMARCHY_PATH/default/agents/skills/omarchy/`) and `omarchy commands
+  --json` are inputs to every WP that touches Omarchy integration.
 
 ## Decided 2026-10-05
 - ADR-0027 (act, then account): a case the user started authorises the
