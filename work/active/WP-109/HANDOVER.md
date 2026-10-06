@@ -546,3 +546,32 @@ byte after line 1, a script over 1 MiB → WP-113.
 - `just check-rss`: **0**. Peak in three more runs with `--nocapture`:
   10 164, 9 888, 10 008 kB (limit 10 240 kB). The margin is thin
   (N4, unchanged in kind from round 1): 76–352 kB.
+
+## Round 3 (B5)
+
+Stage 2 (Fable): approve after one fix. **B5:** the hook runner executes
+every file in `~/.config/omarchy/hooks/<name>.d/` except `*.sample`, so
+`x.sample.bak.<epoch>` runs. In `Rules::config` the `routinePaths`
+exemption inside the `alwaysRedPaths` block now also requires
+`!e.subject.starts_with(HOOKS_DIR)`: under the hook directories a file
+that matches `routinePaths` is a crisis even when it holds its base's
+last recorded content (`9ade17e`).
+
+- Tests: `a_refresh_backup_in_a_persistence_path_needs_its_base` (unit:
+  the edited sample stays attention `config`; its backup with the same
+  content is a crisis) and `drift_classes::a_backup_of_a_hook_sample_is_a_crisis`
+  (CLI: capture 1 writes content to `hooks/post-update.d/x.sample` →
+  attention `config`; capture 2, a second later, copies it to
+  `x.sample.bak.1786539345` → crisis `always-red-paths`). The pause makes
+  the backup follow the sample's recorded state, so the base-content
+  evidence holds and only the new rule decides.
+- Mutant (the new condition removed): killed by both tests (the CLI test
+  only with the pause; without it the same-second ordering already gave
+  a crisis — fixed before commit).
+- Mirrored in `scripts/validate-fixtures.py` (`Classifier.event`, config
+  branch) and SPEC-ENGINE §5 item 4 ("… except under
+  `~/.config/omarchy/hooks/`, where every file not named `*.sample`
+  runs"); CHANGELOG line added.
+- `flock /tmp/seldon-check.lock just check` at `9ade17e`: **0**
+  (validate-fixtures ok, 43 self-checks; model 96, service-states 316/0,
+  panel-view 900/0, overlay-view 326/0, bar-view 194/0).
