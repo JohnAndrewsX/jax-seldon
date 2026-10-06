@@ -61,7 +61,7 @@ Tokyo Night theme. Your panel uses your theme and shows your data.
 *Sample data.*
 
 Today shows the date and today's counts: events today and in seven days,
-active and queued cases, open drift. Below is the note field: type a
+active and queued cases, changes without a case. Below is the note field: type a
 note, press Enter, and it goes into today's journal through `seldon log`.
 Pick an open case under the field to file the note under it. The field
 empties only once the note is saved. Today's journal entries follow;
