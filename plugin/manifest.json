@@ -14,18 +14,20 @@
   },
   "barWidget": {
     "displayName": "Seldon",
-    "description": "Active cases and unexplained changes at a glance",
+    "description": "Active cases and crises at a glance",
     "category": "System",
     "aliases": ["seldon", "logbook", "drift"],
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
       "captureIntervalMin": 15,
-      "wipLimit": 3
+      "wipLimit": 3,
+      "driftInBar": "crisis"
     },
     "schema": [
       { "key": "captureIntervalMin", "type": "integer", "label": "Capture interval (minutes)", "min": 5, "max": 120, "step": 5, "defaultValue": 15, "description": "How often the engine captures system changes while the shell runs." },
-      { "key": "wipLimit", "type": "integer", "label": "Active cases limit", "min": 1, "max": 20, "step": 1, "defaultValue": 3, "description": "The Work tab shows active cases against this limit (\"2 / 3 active\"); it warns, it does not block." }
+      { "key": "wipLimit", "type": "integer", "label": "Active cases limit", "min": 1, "max": 20, "step": 1, "defaultValue": 3, "description": "The Work tab shows active cases against this limit (\"2 / 3 active\"); it warns, it does not block." },
+      { "key": "driftInBar", "type": "enum", "label": "Changes counted in the bar", "options": ["crisis", "all", "none"], "defaultValue": "crisis", "description": "crisis: changes that can affect boot, login or the shell and have no case. all: every change without a case. none: no count. The bar turns to the error colour on a crisis in every mode." }
     ]
   },
   "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }

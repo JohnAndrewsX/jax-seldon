@@ -20,7 +20,9 @@ import "../Model.js" as Model
 // drift rows: they show the folded resolution once the engine has rebuilt
 // the index. While the sheet is open it takes the tab's place; when the
 // index lists fewer drift items than it counts (ADR-0020) a line says how
-// many more there are.
+// many more there are. Under the header a quiet line counts the changes
+// without a case that are no crisis (ADR-0028 §4b): dim, no badge, no
+// colour, no action.
 Item {
   id: root
 
@@ -57,6 +59,7 @@ Item {
   readonly property var chips: Model.filterChips(indexData)
   readonly property int rowCount: rows.length
   readonly property string moreDrift: Model.moreDriftText(indexData)
+  readonly property string attention: Model.attentionText(indexData)
   readonly property bool editing: sheetOpen && sheet.editing
   readonly property color dim: Util.alpha(foreground, 0.65)
 
@@ -237,6 +240,19 @@ Item {
         // capture is queued), as the bar and the `c` key do (WP-078).
         onClicked: root.captureRequested()
       }
+    }
+
+    Text {
+      id: attentionLine
+      objectName: "changelogAttention"
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      text: root.attention
+      color: root.dim
+      wrapMode: Text.Wrap
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
     }
 
     Text {

@@ -124,8 +124,8 @@ expect sample 1 .view.mark.box 24
 expect sample 1 .view.mark.ready true
 expect sample 1 .view.bannerPictogram ""
 expect sample 1 .view.today.state crisis
-expect sample 1 .view.crisis "2 changes in the red zone need a reason"
-shows sample 1 "2 changes in the red zone need a reason"
+expect sample 1 .view.crisis "2 changes that can affect boot, login or the shell have no case"
+shows sample 1 "2 changes that can affect boot, login or the shell have no case"
 expect sample 1 .view.today.entries 4
 expect sample 1 .view.today.yesterday 1
 shows sample 1 "Thursday, 1 Oct 2026"
@@ -138,10 +138,10 @@ expect sample 2 .view.changelog.folded 7
 expect sample 2 .view.changelog.snapshots 8
 expect sample 2 '.view.changelog.driftTones | join(",")' \
   "tokyo-night accent,~/.config/systemd/user/ollama.service urgent,ollama urgent,libinput accent,noto-fonts accent,firefox accent"
-shows sample 2 "2 changes in the red zone need a reason"
+shows sample 2 "2 changes that can affect boot, login or the shell have no case"
 shows sample 2 "62 events · newest first"
 shows sample 2 "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar."
-shows sample 2 "Unexplained · proposed for C-2026-005"
+shows sample 2 "No case · proposed for C-2026-005"
 expect sample 3 .view.changelog.filter pacman
 expect sample 3 .view.changelog.rows 12
 shows sample 3 "12 events from pacman · newest first"
@@ -152,7 +152,7 @@ expect sample 6 .view.cursorActive true
 expect sample 7 .view.cursor 32
 shows sample 7 "firefox"
 shows sample 7 "+2"
-shows sample 7 "Unexplained"
+shows sample 7 "No case"
 expect sample 8 .view.drift.open true
 expect sample 8 .view.drift.subject firefox
 expect sample 8 '.view.drift.members | length' 3
@@ -162,7 +162,7 @@ expect sample 9 .view.tab system
 expect sample 9 '.view.system | join(",")' "OMARCHY,PACKAGES,PLUGINS,SNAPSHOTS,AREAS,COLLECTORS,SELDON"
 shows sample 9 "33 of 40 enabled"
 shows sample 9 "2026-10-01 16:30 · tailscale: MagicDNS · pre"
-shows sample 9 "2 changes in the red zone need a reason"
+shows sample 9 "2 changes that can affect boot, login or the shell have no case"
 expect sample 10 .view.cursor 28
 clean_log sample
 
@@ -559,7 +559,7 @@ clean_log work-locked
 THEME=01M3VTGNY0NZG4AY80814WSKGR UNIT=01M3VNJ9JGZ9169T01XCW16FT0 OLLAMA=01M3VNFTF8EVHWFFZ687N14Q0C
 FIREFOX=01M3SXBQVR7AW8PJQC1YXDCQ14 NOTO=01M3SXBRV0E702XKBM22HEV1B8
 run drift-sample "$fx/index.sample.json" \
-  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Escape;resolve:$UNIT;key:Escape;resolve:$OLLAMA;key:Escape;resolve:$FIREFOX;key:Escape;resolve:$NOTO;key:Escape;click:2 changes in the red zone need a reason"
+  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Escape;resolve:$UNIT;key:Escape;resolve:$OLLAMA;key:Escape;resolve:$FIREFOX;key:Escape;resolve:$NOTO;key:Escape;click:2 changes that can affect boot, login or the shell have no case"
 expect drift-sample 3 .view.cursor 4
 shows drift-sample 3 "Resolve…"
 expect drift-sample 4 .view.drift.open true
@@ -585,7 +585,7 @@ expect drift-sample 7 .view.drift.zone red
 expect drift-sample 7 .view.drift.explainZone red
 expect drift-sample 7 .view.drift.risk R1
 expect drift-sample 7 '.view.drift.cases[0]' ""
-shows drift-sample 7 "RESOLVE A RED-ZONE CHANGE"
+shows drift-sample 7 "RESOLVE A CRISIS"
 shows drift-sample 7 "red · crisis"
 expect drift-sample 9 .view.drift.subject ollama
 expect drift-sample 9 .view.drift.action explain
@@ -607,11 +607,90 @@ clean_log drift-sample
 
 # 13. ADR-0020: the index lists fewer drift items than the summary counts.
 jq '.summary.openDrift = 250' "$fx/index.sample.json" >"$work/capped.json"
-run drift-capped "$work/capped.json" "tab:changelog"
+run drift-capped "$work/capped.json" "tab:changelog" HARNESS_SETTINGS='{"driftInBar":"all"}'
 expect drift-capped 1 .view.changelog.more "+246 more open drift items not listed here"
 shows drift-capped 1 "+246 more open drift items not listed here"
+# driftInBar `all`: D is summary.openDrift, not the listed items
 expect drift-capped 1 .view.pill "2 · 250"
+expect drift-capped 1 .view.changelog.attention "248 changes without a case"
 clean_log drift-capped
+
+# 13b. ADR-0028 §4b, quiet surfaces. A crisis in the yellow zone (a hook
+#     file; the row WP-109's fixture is to carry) and attention only around
+#     it (the ollama install is red in the ledger and no crisis): one crisis
+#     in the strip, the Today pictogram urgent, the Changelog's quiet line
+#     counts the other three, rows are toned by class (crisis urgent,
+#     attention accent, whatever the zone), the sheet labels follow `crisis`
+#     ("RESOLVE A CRISIS", "yellow · crisis"), Explain pre-fills the ledger
+#     zone, and the Ask agent slot comes first. A click on the strip opens
+#     the yellow crisis.
+HOOK="~/.config/omarchy/hooks/post-update.d/10-sync"
+jq --arg u "$UNIT" --arg o "$OLLAMA" --arg h "$HOOK" '
+  .summary.crisis = 1
+  | .drift |= map(if .eventId == $u then .zone = "yellow" | .subject = $h
+                  elif .eventId == $o then .crisis = false else . end)
+  | .events |= map(if .id == $u then .zone = "yellow" | .subject = $h else . end)' \
+  "$fx/index.sample.json" >"$work/quiet-hook.json"
+run quiet-crisis "$work/quiet-hook.json" \
+  "view;tab:changelog;resolve:$UNIT;key:Escape;resolve:$OLLAMA;key:Escape;click:1 change that can affect boot, login or the shell has no case"
+expect quiet-crisis 1 .view.today.state crisis
+expect quiet-crisis 1 .view.pill "2 · 1"
+expect quiet-crisis 1 .view.crisis "1 change that can affect boot, login or the shell has no case"
+shows quiet-crisis 1 "1 change that can affect boot, login or the shell has no case"
+expect quiet-crisis 2 .view.changelog.attention "3 changes without a case"
+shows quiet-crisis 2 "3 changes without a case"
+expect quiet-crisis 2 '.view.changelog.driftTones | join(",")' \
+  "tokyo-night accent,$HOOK urgent,ollama accent,libinput accent,noto-fonts accent,firefox accent"
+shows quiet-crisis 2 "Crisis · no case"
+expect quiet-crisis 3 .view.drift.eventId $UNIT
+expect quiet-crisis 3 .view.drift.crisis true
+expect quiet-crisis 3 .view.drift.zone yellow
+expect quiet-crisis 3 .view.drift.tone urgent
+expect quiet-crisis 3 .view.drift.heading "RESOLVE A CRISIS"
+expect quiet-crisis 3 .view.drift.zoneLabel "yellow · crisis"
+expect quiet-crisis 3 .view.drift.explainZone yellow
+expect quiet-crisis 3 .view.drift.askSlotFirst true
+shows quiet-crisis 3 "RESOLVE A CRISIS"
+shows quiet-crisis 3 "yellow · crisis"
+expect quiet-crisis 5 .view.drift.eventId $OLLAMA
+expect quiet-crisis 5 .view.drift.crisis false
+expect quiet-crisis 5 .view.drift.zone red
+expect quiet-crisis 5 .view.drift.tone accent
+expect quiet-crisis 5 .view.drift.heading "RESOLVE DRIFT"
+expect quiet-crisis 5 .view.drift.zoneLabel red
+expect quiet-crisis 5 .view.drift.askSlotFirst true
+shows quiet-crisis 5 "RESOLVE DRIFT"
+expect quiet-crisis 5 '[.texts[] | select(test("crisis|CRISIS"))] | length' 0
+expect quiet-crisis 7 .view.drift.open true
+expect quiet-crisis 7 .view.drift.eventId $UNIT
+expect quiet-crisis 7 .view.tab changelog
+clean_log quiet-crisis
+
+# 13c. Attention alone (open drift, no crisis, no active case): no strip, the
+#     Today pictogram all clear, no D in the bar's count (driftInBar
+#     default), the quiet line and plain row notes on the Changelog, and no
+#     word "crisis" anywhere.
+jq '.summary.crisis = 0 | .summary.activeCases = 0 | .drift |= map(.crisis = false)' \
+  "$fx/index.sample.json" >"$work/quiet-only.json"
+run quiet-attention "$work/quiet-only.json" "view;tab:changelog"
+expect quiet-attention 1 .view.crisis ""
+expect quiet-attention 1 .view.today.state all-clear
+expect quiet-attention 1 .view.pill ""
+expect quiet-attention 2 .view.changelog.attention "4 changes without a case"
+shows quiet-attention 2 "4 changes without a case"
+expect quiet-attention 2 '.view.changelog.driftTones | map(select(endswith(" urgent"))) | length' 0
+shows quiet-attention 2 "No case"
+for n in 1 2; do
+  expect quiet-attention $n '[.texts[] | select(test("crisis|boot, login"))] | length' 0
+done
+clean_log quiet-attention
+# The same index with active cases: the pictogram is the active case, not
+# open drift (attention alone changes nothing).
+jq '.summary.activeCases = 2' "$work/quiet-only.json" >"$work/quiet-active.json"
+run quiet-active "$work/quiet-active.json" "view"
+expect quiet-active 1 .view.today.state case-active
+expect quiet-active 1 .view.pill "2"
+clean_log quiet-active
 
 # 14. The drift sheet live, against the fake engine, with real keys: Enter on
 #     the theme row, Enter twice links it to the preselected C-2026-005; a
@@ -622,7 +701,7 @@ clean_log drift-capped
 #     the strip follow every index.
 mkdir -p "$work/home-drift"
 run drift-live "" \
-  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;click:2 changes in the red zone need a reason;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:drift.isOpen=false;key:Return;settle;key:Escape;text:3;text:2;key:Down*25;key:Return;key:Backtab;key:Backtab;key:Right;key:Return;key:Tab;key:Tab;type:routine update;key:Return;key:Return;wait:drift.isOpen=false;key:Escape" \
+  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;click:2 changes that can affect boot, login or the shell have no case;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:drift.isOpen=false;key:Return;settle;key:Escape;text:3;text:2;key:Down*25;key:Return;key:Backtab;key:Backtab;key:Right;key:Return;key:Tab;key:Tab;type:routine update;key:Return;key:Return;wait:drift.isOpen=false;key:Escape" \
   HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECORD="$work/drift-live.record"
 expect drift-live 4 .view.drift.caseId C-2026-005
 expect drift-live 4 .view.drift.editing true
@@ -635,8 +714,8 @@ expect drift-live 7 .view.drift.resolution "linked to C-2026-005"
 expect drift-live 7 .view.drift.openCase C-2026-005
 shows drift-live 7 "Resolved: linked to C-2026-005"
 shows drift-live 7 "Open C-2026-005"
-expect drift-live 7 .view.pill "2 · 3"
-expect drift-live 7 .view.crisis "2 changes in the red zone need a reason"
+expect drift-live 7 .view.pill "2 · 2"
+expect drift-live 7 .view.crisis "2 changes that can affect boot, login or the shell have no case"
 expect drift-live 7 '.view.changelog.resolved | map(select(startswith("tokyo-night"))) | join(",")' "tokyo-night: linked to C-2026-005"
 expect drift-live 8 .view.drift.open false
 expect drift-live 9 .view.drift.eventId $UNIT
@@ -652,8 +731,8 @@ expect drift-live 17 .view.drift.area dev-env
 expect drift-live 18 .view.drift.hint "Press Enter again: Explain ~/.config/systemd/user/ollama.service as a new completed case"
 expect drift-live 20 .view.drift.result "Explained 1 event · created C-2026-009 · new area dev-env"
 expect drift-live 20 .view.drift.resolution "explained · C-2026-009: --help"
-expect drift-live 20 .view.crisis "1 change in the red zone needs a reason"
-expect drift-live 20 .view.pill "2 · 2"
+expect drift-live 20 .view.crisis "1 change that can affect boot, login or the shell has no case"
+expect drift-live 20 .view.pill "2 · 1"
 shows drift-live 20 "Open C-2026-009"
 expect drift-live 22 .view.openResult "Opened $work/home-drift/Seldon/work/active/C-2026-009.md in omarchy-launch-editor"
 expect drift-live 23 .view.drift.open false
@@ -709,7 +788,7 @@ expect drift-only 23 .view.drift.hint "Press Enter again: Link firefox only to C
 expect drift-only 25 .view.drift.result "Linked 1 event to C-2026-004"
 expect drift-only 25 .view.drift.resolution "linked to C-2026-004"
 expect drift-only 25 '.view.changelog.badges | join(",")' "noto-fonts +1"
-expect drift-only 25 .view.pill "2 · 4"
+expect drift-only 25 .view.pill "2 · 2"
 expect drift-only 27 .view.cursor 31
 expect drift-only 28 .view.drift.eventId $NOTO
 expect drift-only 28 .view.drift.badge +1
@@ -736,7 +815,7 @@ expect drift-already 4 .view.drift.result "Already resolved: linked to C-2026-00
 expect drift-already 4 .view.drift.already true
 expect drift-already 4 .view.drift.resultOk true
 expect drift-already 4 .view.drift.isOpen true
-expect drift-already 4 .view.pill "2 · 4"
+expect drift-already 4 .view.pill "2 · 2"
 shows drift-already 4 "Already resolved: linked to C-2026-005"
 clean_log drift-already
 
@@ -819,7 +898,7 @@ expect decisions 1 '.view.decisions.rows | join(",")' "ADR-0004 proposed,ADR-000
 expect decisions 1 .view.decisions.cursor ADR-0004
 for text in "4 decisions · 1 proposed" "New decision" "ADR-0004" "proposed" "Ollama nur als User-Service mit Case" \
   "2026-10-01 · decisions/ADR-0004-ollama-user-service.md" "ADR-0001" "accepted" "Logbuch-Sprache Deutsch, Struktur Englisch" \
-  "2026-09-01 · decisions/ADR-0001-language.md" "2 changes in the red zone need a reason"; do
+  "2026-09-01 · decisions/ADR-0001-language.md" "2 changes that can affect boot, login or the shell have no case"; do
   shows decisions 1 "$text"
 done
 expect decisions 2 .view.cursorActive true

@@ -31,12 +31,39 @@ const same = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b))
 const gen = Date.parse("2026-10-01T17:05:12+02:00")
 const H = 3600 * 1000
 
-test("pillText hides zero parts (SPEC-PLUGIN §4)", () => {
-  assert.strictEqual(M.pillText(null), "")
-  assert.strictEqual(M.pillText({ active: 0, drift: 0 }), "")
-  assert.strictEqual(M.pillText({ active: 2, drift: 0 }), "2")
-  assert.strictEqual(M.pillText({ active: 0, drift: 3 }), "· 3")
-  assert.strictEqual(M.pillText({ active: 2, drift: 3 }), "2 · 3")
+test("pillText hides zero parts (SPEC-PLUGIN §4), D by driftInBar (ADR-0028 §4a)", () => {
+  for (const mode of [undefined, "crisis", "all", "none", "bogus"]) {
+    assert.strictEqual(M.pillText(null, mode), "", String(mode))
+    assert.strictEqual(M.pillText({ active: 0, drift: 0, crisis: 0 }, mode), "", String(mode))
+    assert.strictEqual(M.pillText({ active: 2, drift: 0, crisis: 0 }, mode), "2", String(mode))
+  }
+  // all: every open drift item, the behaviour before 0.1.4
+  assert.strictEqual(M.pillText({ active: 0, drift: 3, crisis: 0 }, "all"), "· 3")
+  assert.strictEqual(M.pillText({ active: 2, drift: 3, crisis: 1 }, "all"), "2 · 3")
+  // crisis, the default (also for a missing or unknown value): the crisis count
+  for (const mode of [undefined, "", "crisis", "bogus", 7]) {
+    assert.strictEqual(M.pillText({ active: 0, drift: 3, crisis: 0 }, mode), "", String(mode))
+    assert.strictEqual(M.pillText({ active: 2, drift: 3, crisis: 0 }, mode), "2", String(mode))
+    assert.strictEqual(M.pillText({ active: 2, drift: 3, crisis: 1 }, mode), "2 · 1", String(mode))
+    assert.strictEqual(M.pillText({ active: 0, drift: 3, crisis: 2 }, mode), "· 2", String(mode))
+  }
+  // none: never a D
+  assert.strictEqual(M.pillText({ active: 0, drift: 3, crisis: 2 }, "none"), "")
+  assert.strictEqual(M.pillText({ active: 2, drift: 3, crisis: 2 }, "none"), "2")
+})
+
+test("driftInBarMode: the manifest's options, anything else the default", () => {
+  same(M.DRIFT_IN_BAR_MODES, ["crisis", "all", "none"])
+  assert.strictEqual(M.DRIFT_IN_BAR_DEFAULT, "crisis")
+  for (const m of ["crisis", "all", "none"]) assert.strictEqual(M.driftInBarMode(m), m)
+  for (const m of [undefined, null, "", "All", "crises", 1, true, {}]) assert.strictEqual(M.driftInBarMode(m), "crisis")
+  // the manifest declares the same setting: an enum with these options and default
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "plugin/manifest.json"), "utf8"))
+  const entry = manifest.barWidget.schema.find((e) => e.key === "driftInBar")
+  assert.strictEqual(entry.type, "enum")
+  same(entry.options, M.DRIFT_IN_BAR_MODES)
+  assert.strictEqual(entry.defaultValue, M.DRIFT_IN_BAR_DEFAULT)
+  assert.strictEqual(manifest.barWidget.defaults.driftInBar, M.DRIFT_IN_BAR_DEFAULT)
 })
 
 test("pillTone: crisis beats active beats default", () => {
@@ -50,8 +77,9 @@ test("pillTone: crisis beats active beats default", () => {
 test("parseIndex accepts the sample and reads its counts", () => {
   const r = M.parseIndex(sample)
   assert.strictEqual(r.ok, true)
-  same(M.counts(r.index), { active: 2, queued: 3, drift: 4, crisis: 2 })
-  assert.strictEqual(M.pillText(M.counts(r.index)), "2 · 4")
+  same(M.counts(r.index), { active: 2, queued: 3, drift: 4, crisis: 2, attention: 2 })
+  assert.strictEqual(M.pillText(M.counts(r.index)), "2 · 2")
+  assert.strictEqual(M.pillText(M.counts(r.index), "all"), "2 · 4")
 })
 
 test("parseIndex reports a contract mismatch with the version found", () => {
@@ -105,15 +133,22 @@ test("effectiveNowMs pins the clock only in dev mode", () => {
   assert.strictEqual(M.effectiveNowMs(42, true, "garbage", "garbage"), 42)
 })
 
-test("tooltipText matches the SPEC-PLUGIN §4 example", () => {
+test("tooltipText matches the SPEC-PLUGIN §4 / ADR-0028 §4a example", () => {
   const c = { active: 2, drift: 3, crisis: 0, queued: 0 }
   const now = Date.parse("2026-10-01T17:09:00+02:00")
   assert.strictEqual(M.tooltipText("ok", c, "2026-10-01T17:05:00+02:00", now),
-    "Seldon — 2 active cases, 3 unexplained changes, last capture 4 min ago")
+    "Seldon — 2 active cases, 3 changes without a case, last capture 4 min ago")
+  assert.strictEqual(M.tooltipText("ok", { active: 2, drift: 8, crisis: 1 }, "2026-10-01T17:05:00+02:00", now),
+    "Seldon — 2 active cases, 1 crisis, 7 changes without a case, last capture 4 min ago")
   assert.strictEqual(M.tooltipText("ok", { active: 1, drift: 1, crisis: 1 }, "", now),
-    "Seldon — 1 active case, 1 unexplained change (1 in the red zone), never captured")
+    "Seldon — 1 active case, 1 crisis, 0 changes without a case, never captured")
+  assert.strictEqual(M.tooltipText("ok", { active: 0, drift: 3, crisis: 2 }, "", now),
+    "Seldon — 0 active cases, 2 crises, 1 change without a case, never captured")
+  // a summary that counts more crises than drift never goes negative
+  assert.strictEqual(M.tooltipText("ok", { active: 0, drift: 1, crisis: 2 }, "", now),
+    "Seldon — 0 active cases, 2 crises, 0 changes without a case, never captured")
   assert.strictEqual(M.tooltipText("indexStale", c, "2026-10-01T17:05:00+02:00", now + 3 * H),
-    "Seldon — 2 active cases, 3 unexplained changes, last capture 3 h ago · index is stale")
+    "Seldon — 2 active cases, 3 changes without a case, last capture 3 h ago · index is stale")
   assert.strictEqual(M.tooltipText("engineMissing", null, "", now), "Seldon — engine not installed")
   assert.strictEqual(M.tooltipText("notInitialised", { active: 0, drift: 0, crisis: 0 }, "", now),
     "Seldon — logbook not initialised")
@@ -231,14 +266,33 @@ test("stateIndexPath honours XDG_STATE_HOME (CONTRACT.md rule 1)", () => {
 const sampleIndex = JSON.parse(sample)
 const degraded = JSON.parse(fs.readFileSync(path.join(root, "fixtures/index-variants/snapper-degraded.json"), "utf8"))
 
-test("crisisText: the red strip of SPEC-PLUGIN §5", () => {
-  assert.strictEqual(M.crisisText(sampleIndex), "2 changes in the red zone need a reason")
+test("crisisText: the red strip of SPEC-PLUGIN §5 / ADR-0028 §4b, only with a crisis", () => {
+  assert.strictEqual(M.crisisText(sampleIndex), "2 changes that can affect boot, login or the shell have no case")
   const one = JSON.parse(sample)
   one.summary.crisis = 1
-  assert.strictEqual(M.crisisText(one), "1 change in the red zone needs a reason")
+  assert.strictEqual(M.crisisText(one), "1 change that can affect boot, login or the shell has no case")
+  // attention alone: no strip
   one.summary.crisis = 0
   assert.strictEqual(M.crisisText(one), "")
   assert.strictEqual(M.crisisText(null), "")
+})
+
+test("attentionText: the Changelog header's quiet line (ADR-0028 §4b)", () => {
+  // the sample: 4 open drift, 2 crises → 2 without a case besides the crises
+  assert.strictEqual(M.attentionText(sampleIndex), "2 changes without a case")
+  const x = JSON.parse(sample)
+  x.summary.openDrift = 3
+  x.summary.crisis = 2
+  assert.strictEqual(M.attentionText(x), "1 change without a case")
+  x.summary.crisis = 3
+  assert.strictEqual(M.attentionText(x), "")
+  x.summary.crisis = 5
+  assert.strictEqual(M.attentionText(x), "", "never negative")
+  x.summary.openDrift = 0
+  x.summary.crisis = 0
+  assert.strictEqual(M.attentionText(x), "")
+  assert.strictEqual(M.attentionText(null), "")
+  same(M.counts(x), { active: 2, queued: 3, drift: 0, crisis: 0, attention: 0 })
 })
 
 test("snapperBanner: only for an enabled snapper collector that fails (ADR-0026)", () => {
@@ -299,12 +353,12 @@ test("changelogRows: 62 events newest first, one +2 group (3 members), folded re
   same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "install"])
   const theme = rows.find((r) => r.id === EID)
   assert.strictEqual(theme.proposedCase, "C-2026-005")
-  assert.strictEqual(M.rowStatus(theme), "Unexplained · proposed for C-2026-005")
+  assert.strictEqual(M.rowStatus(theme), "No case · proposed for C-2026-005")
   const tyme = rows.find((r) => r.subject === "io.github.example.tyme")
   assert.strictEqual(M.rowStatus(tyme), "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar.")
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "tailscale")), "linked to C-2026-008")
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "libinput")), "In the open firefox group")
-  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "ollama")), "Needs a reason")
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "ollama")), "Crisis · no case")
   assert.strictEqual(M.rowStatus(rows[0]), "")
   assert.strictEqual(rows[0].dayLabel, "Today")
   assert.strictEqual(rows[0].time, "17:00")
@@ -313,9 +367,9 @@ test("changelogRows: 62 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(rows.find((r) => r.subject === "ollama").tone, "urgent")
   assert.strictEqual(theme.tone, "accent")
   assert.strictEqual(rows[0].tone, "")
-  // One colour source per row: open drift by its item's zone, so the routine
-  // group (members red in the ledger) is accent throughout; resolved or
-  // cased events by their own zone.
+  // One colour source per row: open drift by its item's class (ADR-0028
+  // §4b), so the attention group (members red in the ledger) is accent
+  // throughout; resolved or cased events by their own zone.
   for (const s of ["firefox", "libinput", "noto-fonts"]) {
     const r = rows.find((x) => x.subject === s)
     assert.strictEqual(r.zone, "red", s + " ledger zone")
@@ -324,11 +378,19 @@ test("changelogRows: 62 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(rows.find((r) => r.subject === "hyprland").tone, "urgent")
   assert.strictEqual(rows.find((r) => r.subject === "btop").tone, "urgent")
   assert.strictEqual(tyme.tone, "accent")
+  // The tone follows `crisis`, never the zone: without a zone, and with
+  // zones swapped (a yellow crisis, a red attention item).
   const noZone = JSON.parse(sample)
   noZone.drift.forEach((d) => { delete d.zone })
   const nz = M.changelogRows(noZone, "all")
   assert.strictEqual(nz.find((r) => r.subject === "ollama").tone, "urgent", "crisis without zone")
-  assert.strictEqual(nz.find((r) => r.subject === "firefox").tone, "urgent", "falls back to the event zone")
+  assert.strictEqual(nz.find((r) => r.subject === "firefox").tone, "accent", "attention without zone")
+  const swapped = JSON.parse(sample)
+  swapped.drift.forEach((d) => { d.zone = d.crisis ? "yellow" : "red" })
+  const sw = M.changelogRows(swapped, "all")
+  assert.strictEqual(sw.find((r) => r.subject === "ollama").tone, "urgent", "yellow crisis")
+  assert.strictEqual(sw.find((r) => r.id === EID).tone, "accent", "red attention")
+  assert.strictEqual(sw.find((r) => r.subject === "libinput").tone, "accent", "red attention group member")
   assert.strictEqual(M.rowMeta(rows.find((r) => r.subject === "zed")), "0.198.4-1 · claude-code · C-2026-004")
 })
 
@@ -722,6 +784,34 @@ test("driftItemFor: the four sample items, a group member, and events that are n
   assert.strictEqual(M.driftItemFor(sampleIndex, "01M1MB2M1GWZYF485HTGVZ1KS3"), null) // btop, explained
   assert.strictEqual(M.driftItemFor(sampleIndex, "not an id"), null)
   assert.strictEqual(M.driftItemFor(null, THEME), null)
+})
+
+test("driftItemFor: zone is the ledger zone, tone and labels follow crisis (ADR-0028 §7, §4b)", () => {
+  // A crisis on a hook path in the yellow zone (the row WP-109's fixture is
+  // to carry), and an attention install that is red in the ledger.
+  const x = JSON.parse(sample)
+  const unit = x.drift.find((d) => d.eventId === UNIT)
+  unit.zone = "yellow"
+  unit.subject = "~/.config/omarchy/hooks/post-update.d/10-sync"
+  const ollama = x.drift.find((d) => d.eventId === OLLAMA)
+  ollama.crisis = false
+  const yc = M.driftItemFor(x, UNIT)
+  assert.strictEqual(yc.crisis, true)
+  assert.strictEqual(yc.zone, "yellow")
+  assert.strictEqual(yc.tone, "urgent")
+  const ra = M.driftItemFor(x, OLLAMA)
+  assert.strictEqual(ra.crisis, false)
+  assert.strictEqual(ra.zone, "red")
+  assert.strictEqual(ra.tone, "accent")
+  // Explain pre-fills the ledger zone: a yellow crisis sends no --zone
+  same(M.driftArgs("explain", { eventId: UNIT, text: "x", zone: yc.zone, itemZone: yc.zone }).args,
+    ["drift", "explain", UNIT, "--json", "--", "x"])
+  // without a zone on the item: the event's zone, never "red" because of crisis
+  delete unit.zone
+  const ev = x.events.find((e) => e.id === UNIT)
+  ev.zone = "yellow"
+  assert.strictEqual(M.driftItemFor(x, UNIT).zone, "yellow")
+  assert.strictEqual(M.driftItemFor(x, UNIT).tone, "urgent")
 })
 
 test("caseOptionsFor: the proposed case first, else 'Pick a case'; open cases only", () => {
@@ -1366,7 +1456,10 @@ test("state pictograms: one per non-ok status but the contract mismatch, the day
     ["engine-missing", "logbook-not-initialised", "index-missing", "index-stale", "", ""])
   assert.strictEqual(M.todayState(null), null)
   same(M.todayState({ active: 2, drift: 4, crisis: 2 }), { id: "crisis", tone: "urgent" })
-  same(M.todayState({ active: 2, drift: 4, crisis: 0 }), { id: "drift-open", tone: "accent" })
+  // ADR-0028 §4b: attention alone changes nothing
+  same(M.todayState({ active: 2, drift: 4, crisis: 0 }), { id: "case-active", tone: "accent" })
+  same(M.todayState({ active: 0, drift: 4, crisis: 0 }), { id: "all-clear", tone: "default" })
+  same(M.todayState({ active: 0, drift: 4, crisis: 1 }), { id: "crisis", tone: "urgent" })
   same(M.todayState({ active: 2, drift: 0, crisis: 0 }), { id: "case-active", tone: "accent" })
   same(M.todayState({ active: 0, drift: 0, crisis: 0 }), { id: "all-clear", tone: "default" })
   assert.strictEqual(M.pictogramFile("crisis", 48), "a11-state-crisis-48.svg")

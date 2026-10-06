@@ -80,6 +80,8 @@ Panel {
   readonly property bool editing: todayTab.editing || workTab.editing || changelogTab.editing || decisionsTab.editing
   // The bar widget setting `wipLimit` (Work tab).
   readonly property int wipLimit: Model.clampWipLimit(setting("wipLimit", Model.WIP_LIMIT_DEFAULT))
+  // The bar widget setting `driftInBar` (ADR-0028 §4a), for the read-out's pill.
+  readonly property string driftInBar: Model.driftInBarMode(setting("driftInBar", Model.DRIFT_IN_BAR_DEFAULT))
   readonly property var currentTab: tabItems[tabIndex]
 
   // Every tab change (keys, a click on the strip, IPC `tab`) gives the keys
@@ -176,7 +178,7 @@ Panel {
       keys: keyCatcher.activeFocus,
       tabStrip: { oneLine: tabStrip.fitsOneLine, widths: tabStrip.cellWidths.join(",") },
       status: root.service ? root.service.status : "",
-      pill: root.service ? Model.pillText(root.service.counts) : "",
+      pill: root.service ? Model.pillText(root.service.counts, root.driftInBar) : "",
       // The header mark and the pictograms on screen (A5, A11): file names.
       mark: { file: headerMark.file, box: header.mark.box, ready: headerMark.ready },
       restartNotice: restartNotice.visible && root.service.restartNotice ? root.service.restartNotice.title : "",
@@ -224,6 +226,7 @@ Panel {
         badges: rows.filter(function(r) { return r.badge !== "" }).map(function(r) { return r.subject + " " + r.badge }),
         folded: rows.filter(function(r) { return r.resolutionDetail !== "" }).length,
         snapshots: rows.filter(function(r) { return r.snapshot }).length,
+        attention: changelogTab.attention,
         driftTones: rows.filter(function(r) { return r.drift }).map(function(r) { return r.subject + " " + r.tone }),
         resolved: rows.filter(function(r) { return r.resolution !== "" }).map(function(r) { return r.subject + ": " + Model.rowStatus(r) }),
         more: changelogTab.moreDrift,
@@ -273,6 +276,11 @@ Panel {
       subject: it ? it.subject : "",
       badge: it ? it.badge : "",
       zone: it ? it.zone : "",
+      crisis: !!it && it.crisis,
+      heading: s.heading,
+      zoneLabel: s.zoneLabel,
+      tone: it ? it.tone : "",
+      askSlotFirst: s.askSlotFirst,
       members: s.memberLines,
       action: s.action,
       caseId: s.caseId,
@@ -482,8 +490,9 @@ Panel {
           fontFamily: root.fontFamily
         }
 
-        // The red strip (SPEC-PLUGIN §5); a click opens the drift sheet for
-        // the first crisis on the Changelog.
+        // The red strip (SPEC-PLUGIN §5, ADR-0028 §4b), only while a crisis
+        // is open; a click opens the drift sheet for the first crisis on the
+        // Changelog.
         BorderSurface {
           id: crisisStrip
           width: parent.width
