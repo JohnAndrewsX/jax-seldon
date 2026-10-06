@@ -563,6 +563,21 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- Operator, 2026-10-06 night ("all as recommended"): (1) v0.1.4 may be
+  tagged by the orchestrator once WP-117 and WP-118 are merged, the main
+  check and CI are green, the release dry run is green and the live test
+  on the freshly installed test host is green — otherwise no tag and a
+  report; (2) no separate 0.1.5: WP-119, WP-095 (incl. bulk triage) and
+  WP-102 are built in the 0.2.0 desk; (3) the contract v2 bundle ships in
+  0.2.0 (ADR first); (4) AGENTS.md §1 names Omarchy's agent skill
+  ("Omarchy first"); (5) the orchestrator may improve `scripts/guard.sh`
+  as WP-130 (text arguments and read-only queries stop blocking; real
+  commands stay blocked; every rule a row in the test table, shown before
+  the merge); (6) WP-113: plugin trees and the toggles dir approved,
+  `authorized_keys` opt-in; (7) WP-114 approved for 0.2.0, AGENTS.md §6
+  amended (pacman.conf hashes); (10) dependabot for the pinned actions;
+  (11) plugin-repo README pushed with the 0.1.4 release. Still the
+  operator's: the `v*` tag ruleset, the AUR account.
 - First setup of the release on a productive laptop (operator, 2026-10-06):
   works end to end but does not feel like Omarchy; UX review taken. In
   0.1.4: WP-117 (plugin texts; every terminal the panel opens says what,
