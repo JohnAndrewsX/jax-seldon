@@ -35,7 +35,10 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use chrono::{DateTime, Duration, FixedOffset};
+use std::sync::LazyLock;
+
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Timelike as _};
+use regex::Regex;
 use ulid::Ulid;
 
 use crate::attribution;
@@ -44,8 +47,8 @@ use crate::config::Dirs;
 use crate::error::{Error, Result};
 use crate::index::Built;
 use crate::index::build::{ClassifiedItem, r3_advisory};
-use crate::index::class::Class;
-use crate::index::drift::{AlwaysRed, names_token};
+use crate::index::class::{Class, Classifier, Rules};
+use crate::index::drift::names_token;
 use crate::index::model::IndexEvent;
 use crate::ledger::Ledger;
 use crate::logbook::Logbook;
@@ -481,30 +484,89 @@ pub fn planned_detail(case: &str) -> String {
     format!("planned by {case}; active at the time")
 }
 
-/// What rule 9 needs of a case: its id and risk, the text of its `## Plan`
-/// as it is now, and whether it is closed now (completed or dropped).
+/// What rule 9 needs of a case: its id, the text of its `## Plan` as it is
+/// now without HTML comments (a template placeholder is no plan), its
+/// risk over time ([`risk_timeline`]), and whether it is closed now
+/// (completed or dropped).
 #[derive(Debug, Clone)]
 pub struct PlanningCase {
     pub id: String,
-    pub risk: Risk,
     pub plan: String,
+    /// `(minute, risk)` from its own record, oldest first: the `created`
+    /// Log line, then each `set … risk A → B`; `None` when the Log has no
+    /// `created` line with a risk.
+    pub risks: Option<Vec<(NaiveDateTime, Risk)>>,
     pub closed: bool,
 }
 
 impl PlanningCase {
     pub fn of(file: &CaseFile) -> Self {
+        let body = &file.doc.body;
         PlanningCase {
             id: file.case.id.clone(),
-            risk: file.case.risk,
-            plan: cases::section(&file.doc.body, "Plan")
-                .map(|r| file.doc.body[r].to_string())
+            plan: cases::section(body, "Plan")
+                .map(|r| cases::strip_comments(&body[r]))
                 .unwrap_or_default(),
+            risks: risk_timeline(body),
             closed: matches!(
                 file.case.status,
                 CaseStatus::Completed | CaseStatus::Dropped
             ),
         }
     }
+
+    /// The case's risk at the local time `at`, when its record tells it
+    /// (ADR-0029 §1(d), orchestrator decision round 2): the last change
+    /// before `at`'s minute; a change in that very minute makes it unknown
+    /// unless it leaves the risk as it was. `None`: cannot be told.
+    pub fn risk_at(&self, at: NaiveDateTime) -> Option<Risk> {
+        let minute = at.with_second(0)?.with_nanosecond(0)?;
+        let risks = self.risks.as_ref()?;
+        let before = risks
+            .iter()
+            .rev()
+            .find(|(m, _)| *m < minute)
+            .map(|(_, r)| *r);
+        let mut values = before
+            .into_iter()
+            .chain(risks.iter().filter(|(m, _)| *m == minute).map(|(_, r)| *r));
+        let first = values.next()?;
+        values.all(|r| r == first).then_some(first)
+    }
+}
+
+/// A case's risk over time from its Log (Log lines carry the writer's
+/// local time to the minute): `created (zone Z, risk R…)` (also
+/// `created retroactively …`), then every `set … risk A → B`. `None`
+/// without a `created` line that names a risk.
+pub fn risk_timeline(body: &str) -> Option<Vec<(NaiveDateTime, Risk)>> {
+    static LINE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*) · \S+\s*$").expect("regex")
+    });
+    static CREATED: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^created\b.*\brisk (R[0-3])\b").expect("regex"));
+    static SET: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^set .*\brisk R[0-3] → (R[0-3])\b").expect("regex"));
+    let log = &body[cases::section(body, "Log")?];
+    let mut out: Vec<(NaiveDateTime, Risk)> = Vec::new();
+    for line in log.lines() {
+        let Some(c) = LINE.captures(line) else {
+            continue;
+        };
+        let Ok(at) = NaiveDateTime::parse_from_str(&c[1], "%Y-%m-%d %H:%M") else {
+            continue;
+        };
+        let text = &c[2];
+        let risk = if out.is_empty() {
+            CREATED.captures(text)
+        } else {
+            SET.captures(text)
+        };
+        if let Some(r) = risk.and_then(|r| r[1].parse::<Risk>().ok()) {
+            out.push((at, r));
+        }
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// One stretch of time a case was open (active or in verification): from
@@ -569,6 +631,9 @@ pub struct PlannedLinks {
     pub lines: Vec<Event>,
     /// Per case id.
     pub cases: BTreeMap<String, CaseNotes>,
+    /// Events left unlinked because their time lies in the window of a
+    /// case whose file does not load ([`unreadable_windows`]).
+    pub blocked: Vec<(Ulid, String)>,
 }
 
 /// `pacman install glow at 13:40:57`: an event as a Log line names it,
@@ -599,6 +664,59 @@ fn unresolved(events: &[Event]) -> impl Fn(&Event) -> bool + '_ {
     }
 }
 
+/// The pacman transaction of `e`, if it is a pacman event with one.
+fn pacman_tx(e: &Event) -> Option<&str> {
+    e.tx_id.as_deref().filter(|_| e.source == Source::Pacman)
+}
+
+/// Rule 9's candidates: the events it still takes ([`unresolved`]) that
+/// it tests itself — not the non-explicit member of a pacman transaction
+/// that has an explicit one (it follows that member).
+fn candidates(events: &[Event]) -> Vec<&Event> {
+    let open = unresolved(events);
+    let explicit_tx: HashSet<&str> = events
+        .iter()
+        .filter(|e| e.explicit == Some(true))
+        .filter_map(pacman_tx)
+        .collect();
+    events
+        .iter()
+        .filter(|e| open(e))
+        .filter(|e| {
+            e.explicit == Some(true) || pacman_tx(e).is_none_or(|tx| !explicit_tx.contains(tx))
+        })
+        .collect()
+}
+
+/// The candidates of rule 9 whose time lies in the window of a case that
+/// is not among `known` (its file does not load, or lies outside the
+/// status folders), with that case's id: the engine cannot tell whether
+/// that case planned them, so rule 9 links none of them (ADR-0029 §1(c),
+/// round 2). `seldon doctor` names them.
+pub fn unreadable_windows<'a>(
+    events: &'a [Event],
+    known: &HashSet<&str>,
+) -> Vec<(&'a Event, String)> {
+    let windows = case_windows(events);
+    let unknown: Vec<(&str, &Vec<Window>)> = windows
+        .iter()
+        .filter(|(id, _)| !known.contains(*id))
+        .map(|(id, ws)| (*id, ws))
+        .collect();
+    if unknown.is_empty() {
+        return Vec::new();
+    }
+    candidates(events)
+        .into_iter()
+        .filter_map(|e| {
+            unknown
+                .iter()
+                .find(|(_, ws)| ws.iter().any(|w| w.holds(e.ts)))
+                .map(|(id, _)| (e, id.to_string()))
+        })
+        .collect()
+}
+
 /// Whether rule 9 has anything to test: an event it still takes inside
 /// some case's window. Cheap: no case file is read.
 pub fn has_planned_candidates(events: &[Event]) -> bool {
@@ -624,42 +742,45 @@ pub fn has_planned_candidates(events: &[Event]) -> bool {
 /// their explicit members' case (when those go to one case only), one
 /// line each, `meta.txId` on every line of a transaction with two or more.
 /// Two or more cases: no link, and each gets a Log line naming the others
-/// (rule 3 still proposes while one is open). Harm guard: an `alwaysRed`
-/// subject links only to an R3 case; below R3 the case gets the R3
-/// advisory instead. Lines: `source: seldon`, actor `system`, `case`,
+/// (rule 3 still proposes while one is open). An event in the window of a
+/// case not among `cases` is not linked ([`PlannedLinks::blocked`]).
+/// Harm guard (ADR-0028 §1 test 1): an `alwaysRed` subject, or an event
+/// the classifier makes a crisis (a persistence path, `alwaysRedPaths`),
+/// links only to a case that was R3 at the event's time (`local` gives the
+/// local time its Log lines are written in); else the case gets an
+/// advisory Log line. Lines: `source: seldon`, actor `system`, `case`,
 /// detail [`planned_detail`], at `now` or the event's time, whichever is
 /// later (WP-088).
 pub fn planned_links(
     events: &[Event],
     cases: &[PlanningCase],
-    always_red: &AlwaysRed,
+    rules: &Rules,
     now: DateTime<FixedOffset>,
+    local: impl Fn(DateTime<FixedOffset>) -> NaiveDateTime,
 ) -> PlannedLinks {
     let mut out = PlannedLinks::default();
     let windows = case_windows(events);
     if windows.is_empty() {
         return out;
     }
+    let classifier = Classifier::new(rules, events);
     let open = unresolved(events);
-    let pacman_tx = |e: &Event| {
-        e.tx_id
-            .as_deref()
-            .filter(|_| e.source == Source::Pacman)
-            .map(str::to_string)
-    };
-    let explicit_tx: HashSet<String> = events
-        .iter()
-        .filter(|e| e.explicit == Some(true))
-        .filter_map(pacman_tx)
-        .collect();
-    let follows = |e: &Event| {
-        e.explicit != Some(true) && pacman_tx(e).is_some_and(|tx| explicit_tx.contains(&tx))
-    };
+    let tested = candidates(events);
+    let tested_ids: HashSet<Ulid> = tested.iter().map(|e| e.id).collect();
     let mut cases: Vec<&PlanningCase> = cases.iter().collect();
     cases.sort_by(|a, b| a.id.cmp(&b.id));
+    let known: HashSet<&str> = cases.iter().map(|c| c.id.as_str()).collect();
+    let blocked: HashMap<Ulid, String> = unreadable_windows(events, &known)
+        .into_iter()
+        .map(|(e, id)| (e.id, id))
+        .collect();
 
     let mut links: Vec<(&Event, &PlanningCase)> = Vec::new();
-    for e in events.iter().filter(|e| open(e) && !follows(e)) {
+    for e in tested {
+        if let Some(id) = blocked.get(&e.id) {
+            out.blocked.push((e.id, id.clone()));
+            continue;
+        }
         let planned: Vec<&PlanningCase> = cases
             .iter()
             .copied()
@@ -672,15 +793,15 @@ pub fn planned_links(
             .collect();
         match planned.as_slice() {
             [] => {}
-            [c] if always_red.matches(&e.subject) && c.risk != Risk::R3 => {
-                let advisory = format!("advisory: {}", r3_advisory(&c.id, c.risk, &e.subject));
-                out.cases
-                    .entry(c.id.clone())
-                    .or_default()
-                    .log
-                    .push(advisory);
-            }
             [c] => {
+                let package = rules.always_red.matches(&e.subject);
+                let crisis = classifier.group(&[e], e).class == Class::Crisis;
+                let risk = c.risk_at(local(e.ts));
+                if (package || crisis) && risk != Some(Risk::R3) {
+                    let line = guard_advisory(c, risk, e, package);
+                    out.cases.entry(c.id.clone()).or_default().log.push(line);
+                    continue;
+                }
                 links.push((e, c));
                 let line = format!(
                     "linked after the fact: {} ({})",
@@ -715,21 +836,26 @@ pub fn planned_links(
     }
 
     // the dependencies follow when their explicit members go to one case
-    let mut tx_cases: HashMap<String, BTreeMap<&str, &PlanningCase>> = HashMap::new();
+    let mut tx_cases: HashMap<&str, BTreeMap<&str, &PlanningCase>> = HashMap::new();
     for (e, c) in &links {
         if let Some(tx) = pacman_tx(e) {
             tx_cases.entry(tx).or_default().insert(&c.id, c);
         }
     }
     let mut members: Vec<(&Event, &PlanningCase)> = links.clone();
-    for e in events.iter().filter(|e| open(e) && follows(e)) {
-        let tx = pacman_tx(e).expect("a follower has a transaction");
-        if let Some(only) = tx_cases.get(&tx).filter(|cs| cs.len() == 1) {
+    for e in events
+        .iter()
+        .filter(|e| open(e) && !tested_ids.contains(&e.id))
+    {
+        let Some(tx) = pacman_tx(e) else {
+            continue;
+        };
+        if let Some(only) = tx_cases.get(tx).filter(|cs| cs.len() == 1) {
             members.push((e, *only.values().next().expect("one case")));
         }
     }
     members.sort_by_key(|(e, _)| (e.ts, e.id));
-    let mut per_tx: HashMap<String, usize> = HashMap::new();
+    let mut per_tx: HashMap<&str, usize> = HashMap::new();
     for (e, _) in &members {
         if let Some(tx) = pacman_tx(e) {
             *per_tx.entry(tx).or_default() += 1;
@@ -737,7 +863,9 @@ pub fn planned_links(
     }
 
     for (e, c) in &members {
-        let tx_id = pacman_tx(e).filter(|tx| per_tx.get(tx).is_some_and(|n| *n > 1));
+        let tx_id = pacman_tx(e)
+            .filter(|tx| per_tx.get(tx).is_some_and(|n| *n > 1))
+            .map(str::to_string);
         let mut r = Event::new(
             now.max(e.ts),
             Source::Seldon,
@@ -763,6 +891,32 @@ pub fn planned_links(
     out
 }
 
+/// The Log line of the harm guard: the R3 advisory of the case notes for
+/// an `alwaysRed` package whose case's risk at the time is known (one
+/// line for both, written once), else a line that says why the change was
+/// not linked and how to link it.
+fn guard_advisory(c: &PlanningCase, risk: Option<Risk>, e: &Event, package: bool) -> String {
+    if let (true, Some(risk)) = (package, risk) {
+        return format!("advisory: {}", r3_advisory(&c.id, risk, &e.subject));
+    }
+    let what = if package {
+        "is `alwaysRed`"
+    } else {
+        "can affect boot, login or the shell (`[drift] alwaysRedPaths`)"
+    };
+    let was = match risk {
+        Some(r) => format!("{} was {r} at the time", c.id),
+        None => format!("the record of {} does not tell its risk at the time", c.id),
+    };
+    format!(
+        "advisory: not linked: {} {what}, which only an R3 case takes, and {was} (ADR-0027 \
+         §2c); if this case made it: `seldon drift link {} {}`",
+        named(e),
+        e.id,
+        c.id
+    )
+}
+
 /// After every capture, after rules 7 and 8 (SPEC-ENGINE §5 rule 9):
 /// appends the [`planned_links`] of the whole ledger `all` under the
 /// capture's lock, then records the linked ids in each case's `events:`
@@ -776,7 +930,7 @@ pub fn link_planned(
     ledger: &Ledger,
     logbook: &Logbook,
     all: &[Event],
-    always_red: &AlwaysRed,
+    rules: &Rules,
     now: DateTime<FixedOffset>,
 ) -> (usize, Vec<String>) {
     let mut warnings = Vec::new();
@@ -791,7 +945,15 @@ pub fn link_planned(
         }
     };
     let planning: Vec<PlanningCase> = files.iter().map(PlanningCase::of).collect();
-    let links = planned_links(all, &planning, always_red, now);
+    let links = planned_links(all, &planning, rules, now, |t| {
+        t.with_timezone(&chrono::Local).naive_local()
+    });
+    for (id, case) in &links.blocked {
+        warnings.push(format!(
+            "planned changes: event {id} lies in the window of {case}, whose case file does not \
+             load; not linked (`seldon doctor`)"
+        ));
+    }
     let linked = if links.lines.is_empty() {
         0
     } else {
@@ -1042,18 +1204,24 @@ mod tests {
             e
         }
 
+        /// A closed case, created at 09:00 with `risk` and never changed.
         pub fn case(id: &str, risk: Risk, plan: &str) -> PlanningCase {
             PlanningCase {
                 id: id.into(),
-                risk,
                 plan: plan.into(),
+                risks: Some(vec![(at("09:00").naive_local(), risk)]),
                 closed: true,
             }
         }
 
         pub fn links(events: &[Event], cases: &[PlanningCase]) -> PlannedLinks {
-            let red = AlwaysRed::new(&["linux*".to_string()]);
-            planned_links(events, cases, &red, ts(NOW))
+            let config = crate::config::DriftConfig {
+                always_red: vec!["linux*".to_string()],
+                ..crate::config::DriftConfig::default()
+            };
+            planned_links(events, cases, &Rules::new(&config), ts(NOW), |t| {
+                t.naive_local()
+            })
         }
 
         /// (event id, case) of every line.
@@ -1307,6 +1475,159 @@ mod tests {
             3,
             "glow, zed, fzf: {:?}",
             l.cases[A].log
+        );
+    }
+
+    /// Round 2, B1: the guard is the harm test. A persistence path
+    /// (`alwaysRedPaths`, the classifier's crisis) links only to an R3
+    /// case, an Omarchy hook too; an ordinary config file links.
+    #[test]
+    fn the_harm_guard_covers_persistence_paths() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        let file = |n, subject: &str| {
+            let mut e = Event::new(at("10:10"), Source::Config, Kind::ConfigAdd, subject);
+            e.id = Ulid::from_parts(n, 0);
+            e
+        };
+        let unit = "~/.config/systemd/user/evil.service";
+        let hook = "~/.config/omarchy/hooks/post-update.d/backup.sh";
+        let plain = "~/.config/hypr/bindings.lua";
+        let ledger = [
+            step(1, "10:00", Kind::CaseStarted, A),
+            file(10, unit),
+            file(11, hook),
+            file(12, plain),
+        ];
+        let plan = format!("- Affected paths: `{unit}`, `{hook}`, `{plain}`");
+        let l = links(&ledger, &[case(A, Risk::R1, &plan)]);
+        assert_eq!(linked(&l), [(12, A.into())]);
+        let unit_id = Ulid::from_parts(10, 0);
+        assert_eq!(
+            l.cases[A].log[0],
+            format!(
+                "advisory: not linked: config config-add {unit} at 10:10:00 can affect boot, \
+                 login or the shell (`[drift] alwaysRedPaths`), which only an R3 case takes, and \
+                 {A} was R1 at the time (ADR-0027 §2c); if this case made it: `seldon drift link \
+                 {unit_id} {A}`"
+            )
+        );
+        assert!(l.cases[A].log[1].contains(hook), "{:?}", l.cases[A].log);
+        let l = links(&ledger, &[case(A, Risk::R3, &plan)]);
+        assert_eq!(linked(&l), [(10, A.into()), (11, A.into()), (12, A.into())]);
+    }
+
+    /// Round 2, Q3: the risk at the event's time, from the case's own
+    /// record; raised later does not count; the same minute, or no record,
+    /// cannot be told and counts as below R3.
+    #[test]
+    fn the_guard_reads_the_risk_at_the_events_time() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        let body = "## Log\n<!-- c -->\n\
+                    - 2026-10-06 09:00 · created (zone red, risk R1): reopens C-2026-000 · human\n\
+                    - 2026-10-06 09:30 · started · human\n\
+                    - 2026-10-06 10:20 · set zone yellow → red, risk R1 → R3 · agent:codex\n\
+                    - 2026-10-06 11:00 · set risk R3 → R2 · human\n\n## Result\n";
+        let risks = risk_timeline(body);
+        let m = |hm: &str| at(hm).naive_local();
+        assert_eq!(
+            risks,
+            Some(vec![
+                (m("09:00"), Risk::R1),
+                (m("10:20"), Risk::R3),
+                (m("11:00"), Risk::R2)
+            ])
+        );
+        assert_eq!(
+            risk_timeline("## Log\n- 2026-10-06 09:30 · started · human\n"),
+            None
+        );
+        let c = PlanningCase {
+            id: A.into(),
+            plan: "linux-zen".into(),
+            risks,
+            closed: true,
+        };
+        let sec = |hm: &str, s: u32| m(hm).with_second(s).unwrap();
+        assert_eq!(c.risk_at(sec("10:10", 0)), Some(Risk::R1));
+        assert_eq!(
+            c.risk_at(sec("10:20", 30)),
+            None,
+            "the minute of the change"
+        );
+        assert_eq!(c.risk_at(sec("10:21", 0)), Some(Risk::R3));
+        assert_eq!(c.risk_at(sec("11:30", 0)), Some(Risk::R2));
+        assert_eq!(c.risk_at(sec("08:59", 0)), None, "before the case existed");
+
+        let ledger = |hm: &str| {
+            [
+                step(1, "09:30", Kind::CaseStarted, A),
+                change(10, hm, "linux-zen"),
+            ]
+        };
+        assert!(
+            links(&ledger("10:10"), std::slice::from_ref(&c))
+                .lines
+                .is_empty(),
+            "raised later"
+        );
+        assert!(
+            links(&ledger("10:20"), std::slice::from_ref(&c))
+                .lines
+                .is_empty(),
+            "same minute"
+        );
+        assert_eq!(
+            linked(&links(&ledger("10:30"), std::slice::from_ref(&c))),
+            [(10, A.into())]
+        );
+        let unknown = PlanningCase {
+            risks: None,
+            ..c.clone()
+        };
+        let l = links(&ledger("10:30"), &[unknown]);
+        assert!(l.lines.is_empty());
+        assert!(l.cases[A].log[0].contains("does not tell its risk at the time"));
+        // an unguarded change links whatever the record says
+        let l = links(
+            &[
+                step(1, "09:30", Kind::CaseStarted, A),
+                change(11, "10:30", "glow"),
+            ],
+            &[PlanningCase {
+                risks: None,
+                plan: "glow".into(),
+                ..c
+            }],
+        );
+        assert_eq!(linked(&l), [(11, A.into())]);
+    }
+
+    /// Round 2, B2: a case with a window but no readable file might have
+    /// planned the change too, so nothing in its window links.
+    #[test]
+    fn a_window_of_an_unreadable_case_links_nothing() {
+        use planned::*;
+        const A: &str = "C-2026-001";
+        const B: &str = "C-2026-002";
+        let ledger = [
+            step(1, "10:00", Kind::CaseStarted, A),
+            step(2, "10:00", Kind::CaseStarted, B),
+            step(3, "10:30", Kind::CaseCompleted, B),
+            change(10, "10:10", "glow"),
+            change(11, "10:40", "glow"),
+        ];
+        let l = links(&ledger, &[case(A, Risk::R1, "glow")]);
+        assert_eq!(linked(&l), [(11, A.into())], "after B's window only");
+        assert_eq!(l.blocked, [(Ulid::from_parts(10, 0), B.to_string())]);
+        assert!(l.cases[A].log.iter().all(|x| !x.contains("10:10:00")));
+        let known: HashSet<&str> = [A].into();
+        let held = unreadable_windows(&ledger, &known);
+        assert_eq!(held.len(), 1);
+        assert_eq!(
+            (held[0].0.id, held[0].1.as_str()),
+            (Ulid::from_parts(10, 0), B)
         );
     }
 

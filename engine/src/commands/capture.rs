@@ -347,8 +347,9 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     match all.as_mut() {
         Ok(all) => {
             all.extend(own_lines);
+            let rules = crate::index::class::Rules::new(&config.drift);
             let (n, warnings) =
-                crate::reconcile::link_planned(&lock, &ledger, &logbook, all, &always_red, now);
+                crate::reconcile::link_planned(&lock, &ledger, &logbook, all, &rules, now);
             linked_planned = n;
             for w in warnings {
                 eprintln!("seldon: warning: {w}");
