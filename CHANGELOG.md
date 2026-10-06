@@ -186,6 +186,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   agent hook takes about 1 ms less for such a line near 1000 ledger
   lines. What is masked is unchanged (WP-108).
 
+- **One sentence starts the work (ADR-0027 §6).** `seldon agent start
+  --new -- "<what to do>"` creates a case from the sentence (title: its
+  first sentence, at most 72 characters; *Intent*: the whole text),
+  starts it and launches the agent on it. Without an Omarchy default
+  agent nothing is created and the message names
+  `omarchy default agent <name>`; a launcher that fails afterwards leaves
+  the case active with the retry (WP-101).
+- **The agent closes, the engine checks (ADR-0027 §5).** `plan done` by
+  an agent (`--actor` or `SELDON_ACTOR`) is refused while the case's
+  *Result* is empty or its *Plan* has no `Verification:` text; an
+  agent's close tags the case `closed-by-agent`. `seldon plan reopen
+  <ID>` makes a new active case "Reopen: <title>" with the same *Intent*
+  and the tag `reopens:<ID>`; the completed case stays as it is, and
+  the active-case marker stays on an open case an agent may be working.
+  `--actor human` in an agent's session cannot close a case, and an
+  agent's `drift explain` tags its case `closed-by-agent` (WP-101).
+- `seldon plan set <ID> --zone|--risk|--area` changes an open case (one
+  *Log* line), e.g. to R3 before a step that can break boot.
+  `seldon plan snapshot <ID> <N>` records the rollback snapshot and
+  checks it (it exists, after the start, before the first red change),
+  with warnings only; `plan start --snapshot` gets the red-change check.
+  A forgotten number is filled by the next capture from a snapshot whose
+  description is the case id, or from the agent's recorded
+  `snapper … create` (the hook now records it, with a case) in the
+  snapshot's window; when two agents' commands share that window, both
+  cases are told how to record it instead. A deleted
+  rollback snapshot writes `rollback for <ID> pruned (snapshot N)` into
+  the case and shows in `seldon doctor` (row `rollbacks`). A red change of
+  an `alwaysRed` package in an open case below R3 gets an `advisory:`
+  line in the case and an index warning. The agent rules name the new
+  commands; `rules update` rewrites the earlier v2 block without an
+  archive (WP-101).
+
 ### Plugin
 
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts
@@ -212,6 +245,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still says "red zone" where "crisis" is meant (the strip, the tooltip,
   the sheet); behaviour is the same, only the labels are wrong. Update
   the plugin with the engine (WP-110).
+- **Run (WP-101).** The Work tab starts a case with one sentence: type
+  what to do, Enter or *Run*; the engine makes and starts the case and
+  launches your agent, the cursor goes to the new case, and a refusal
+  (no default agent) says how to fix it. A case an agent closed reads
+  "by agent"; *By agent* narrows Completed to those cases for a spot
+  check. Every completed case has *Reopen* (one click, key `r`). When
+  the logbook's agent rules are outdated, the panel says so and *Update
+  rules* runs `seldon rules update`.
 - After `omarchy plugin update jax.seldon` the shell keeps running the
   old plugin code until it restarts. The panel now notices this: when
   the installed manifest names another version than the code running,
@@ -221,6 +262,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   say to restart the shell after every plugin update (WP-090).
 
 ### Packaging and docs
+
+- CONTRACT.md lists the reserved case tags (`closed-by-agent`,
+  `reopens:<ID>`, `imported`) and the plugin's new commands; no schema
+  change. The sample logbook's C-2026-002 was closed by an agent and its
+  Omarchy update case is R3; the variant `case-reopened` shows a reopen
+  (WP-101).
 
 - `just deploy-test-host <main check log>`
   (`scripts/deploy-test-host.sh`) puts the main build of engine and

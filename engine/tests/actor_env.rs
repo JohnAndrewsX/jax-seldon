@@ -116,6 +116,11 @@ fn a_refused_variable_is_exit_1_and_writes_nothing() {
             &["log", "note"][..],
             &["plan", "new", "--", "Other"],
             &["plan", "start", "C-2026-001"],
+            // WP-101: the new plan commands, and the creator of `agent start --new`
+            &["plan", "set", "C-2026-001", "--risk", "R3"],
+            &["plan", "snapshot", "C-2026-001", "42"],
+            &["plan", "reopen", "C-2026-001"],
+            &["agent", "start", "--new", "--", "Other"],
             // refused before the event is looked up
             &["drift", "dismiss", THEME, "--only", "--", "x"],
         ] {
@@ -133,6 +138,8 @@ fn a_refused_variable_is_exit_1_and_writes_nothing() {
     }
     assert_eq!(ledger_len(&root), before);
     assert_eq!(case(&env, "C-2026-001")["status"], "queued");
+    assert_eq!(case(&env, "C-2026-001")["risk"], "R1");
+    assert_eq!(case(&env, "C-2026-001")["snapshotBefore"], Value::Null);
 
     // with --actor the variable is not read, so a bad one does not matter
     let v = ok(&run(
@@ -178,6 +185,14 @@ fn plan_steps_take_the_variable_without_actor() {
         "{v}"
     );
     for step in ["start", "verify", "done"] {
+        if step == "done" {
+            // the evidence an agent's close needs (ADR-0027 §5, WP-101)
+            let path = common::find_file(&root.join("work/active"), "C-2026-001");
+            let text = read(&path)
+                .replacen("- Verification:\n", "- Verification: it runs\n", 1)
+                .replacen("## Result\n", "## Result\nIt runs.\n", 1);
+            std::fs::write(&path, text).unwrap();
+        }
         let v = ok(&run(&env, T0, agent, &["plan", step, "C-2026-001"]));
         assert_eq!(v["event"]["actor"], "agent:codex", "{step}");
     }

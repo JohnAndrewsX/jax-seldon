@@ -104,7 +104,8 @@ more, and `.seldon/active-case` names the one started last.
    text that bounds the work, so it must be the user's, not your summary.
    Then `seldon plan start <ID> --actor agent:<name>`, before any
    change and before the snapshot (§4). Zone and risk are your estimate;
-   say so in the *Log* when the work turns out redder or riskier.
+   when the work turns out redder or riskier, raise them:
+   `seldon plan set <ID> --zone <zone> --risk <risk> --actor agent:<name>`.
 3. **The *Plan* is a running note, not a gate.** Write the steps so far,
    the affected paths, the rollback and the verification as you go. Name
    packages and paths exactly as they will appear: Seldon proposes
@@ -187,9 +188,12 @@ packages, they are the `[drift] alwaysRed` list in
    `-Syu`) and any package transaction you cannot resolve read-only are
    R3 as such: one go, with the list of what changes (`checkupdates`
    shows it without touching the database).
-3. A hit makes the step R3. Write `R3: <package>` in the *Log*, show the
-   user the step and its rollback, and wait for an explicit go — one go
-   per such step.
+3. A hit makes the step R3. Raise the case first
+   (`seldon plan set <ID> --risk R3 --actor agent:<name>`), write
+   `R3: <package>` in the *Log*, show the user the step and its rollback,
+   and wait for an explicit go — one go per such step. If an R3 subject
+   ends up in a case below R3 anyway, the next capture writes an
+   `advisory:` line into the case's *Log*, and every index rebuild warns.
 4. Never take an R3 step in an unattended session, and never without a
    snapshot.
 
@@ -217,13 +221,22 @@ no other logbook text in the command. Do not use `omarchy-snapshot create`:
 it runs snapper's number cleanup afterwards, which deletes the oldest
 numbered snapshots.
 
-Record the number with a *Log* line
-`snapshot <N> (<config>) before <step>`, one per config. (`plan start
---snapshot N` stays for a person who snapshots before starting a case.)
+Record the `root` config's number as the case's rollback:
+`seldon plan snapshot <ID> <N> --actor agent:<name>`. The engine checks
+that the snapshot exists and lies between the case's start and its first
+red change, and warns when not; it never refuses. Other configs' numbers
+go into a *Log* line `snapshot <N> (<config>) before <step>`. (`plan
+start --snapshot N` stays for a person who snapshots before starting a
+case.) Forgot it? With the hooks, the next capture fills the field from
+your recorded `snapper … create`; a snapshot whose description is the
+case id is found without them.
 
 Retention: Omarchy keeps five numbered snapshots, and every
 `omarchy update` prunes the oldest. A case snapshot lives until a later
 cleanup ages it out; say so in *Result* when the rollback depends on it.
+When the collector sees the case's snapshot deleted, it writes
+`rollback for <ID> pruned (snapshot N)` into the case's *Log*, and
+`seldon doctor` shows it (row `rollbacks`).
 
 No snapper, or no configs: an R3 step stops and you ask the user. For R2
 take a named backup instead (a copy of the files the step changes), name
@@ -356,8 +369,12 @@ is left for the user afterwards:
 2. `seldon plan verify <ID> --actor agent:<name>`, then
    `seldon plan done <ID> --actor agent:<name>`, in one go.
 
-The ledger names you as the one who closed the case; the user can look
-at it whenever they like, and never has to. When the verification fails
+The engine refuses an agent's `plan done` while *Result* is empty or the
+*Plan*'s `Verification:` has no text (also without `--actor`, through
+`SELDON_ACTOR`). The ledger names you as the one who closed the case,
+and the case gets the tag `closed-by-agent`; the user can look at it
+whenever they like, and never has to, and reopens it in one click
+(`seldon plan reopen <ID>`: a new case with the same *Intent*). When the verification fails
 or cannot run, leave the case open and say what is left, in the *Log* and
 to the user.
 
@@ -410,8 +427,13 @@ sudo snapper -c root create -c number -p -d "C-2026-014"     # prints 118
 sudo snapper -c home create -c number -p -d "C-2026-014"     # prints 31
 ```
 
-It records `snapshot 118 (root) before makepkg` and
-`snapshot 31 (home) before makepkg` in the case's *Log*, writes the
+It records the rollback and the second number:
+
+```sh
+seldon plan snapshot C-2026-014 118 --actor agent:claude-code
+```
+
+and `snapshot 31 (home) before makepkg` in the case's *Log*, writes the
 preview line into the terminal and the *Log*, and builds:
 
 ```text

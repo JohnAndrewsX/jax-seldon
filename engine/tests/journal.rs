@@ -127,6 +127,14 @@ mod journal {
             &["plan", "verify", "C-2026-001"][..],
             &["plan", "done", "C-2026-001", "--actor", "agent:claude-code"][..],
         ] {
+            if args[1] == "done" {
+                // the evidence an agent's close needs (ADR-0027 §5, WP-101)
+                let path = common::find_file(&root.join("work/active"), "C-2026-001");
+                let text = read(&path)
+                    .replacen("- Verification:\n", "- Verification: beide an\n", 1)
+                    .replacen("## Result\n", "## Result\nLäuft.\n", 1);
+                std::fs::write(&path, text).unwrap();
+            }
             let mut full = vec!["--logbook", lb];
             full.extend_from_slice(args);
             let out = env.at(t, &full);

@@ -18,7 +18,9 @@ import "../Model.js" as Model
 //   ▌ Enter again: Verify C-2026-004
 //
 // The stripe is the zone's theme colour (red = urgent, yellow = accent,
-// green = muted). The buttons are Model.caseActions(); a click asks the tab
+// green = muted). A completed case an agent closed reads "completed by
+// agent" (ADR-0027 §5); a reopen names the case it reopens in its meta
+// line. The buttons are Model.caseActions(); a click asks the tab
 // to run one (`actionRequested`); the tab owns arming and the engine call.
 // An armed action shows the cursor on its button and the hint line; Start
 // agent (WP-022) is armed by key a or a click and asks for the same again.
@@ -98,7 +100,7 @@ BorderSurface {
         anchors.rightMargin: Style.spacing.md
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        text: root.caseData ? root.caseData.id + " · " + root.caseData.status : ""
+        text: root.caseData ? root.caseData.id + " · " + root.caseData.status + (root.caseData.closedByAgent ? " by agent" : "") : ""
         color: root.dim
         elide: Text.ElideRight
         font.family: root.fontFamily
@@ -210,6 +212,7 @@ BorderSurface {
           verticalPadding: Style.spacing.xs
           tooltipText: modelData.id === "open" ? "Open the case file in the editor (key e)"
             : modelData.id === "agent" ? "Launch the configured agent on this case (key a, twice)"
+            : modelData.id === "reopen" ? "A new active case with the same Intent; this one stays completed (key r)"
             : modelData.primary ? "Key Enter, twice"
             : modelData.id === "drop" ? "Key x, twice"
             : ""

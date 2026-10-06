@@ -513,6 +513,12 @@ fn the_launched_agents_writes_are_recorded_as_the_agent() {
             bin = env!("CARGO_BIN_EXE_seldon"),
         ),
     );
+    // the evidence an agent's close needs (ADR-0027 §5, WP-101)
+    let case = common::find_file(&root.join("work/active"), "C-2026-001-");
+    let text = read(&case)
+        .replacen("- Verification:\n", "- Verification: `zed --version`\n", 1)
+        .replacen("## Result\n", "## Result\nzed 0.150 runs.\n", 1);
+    std::fs::write(&case, text).unwrap();
     let out = env.at(T0, &["agent", "start", "C-2026-001"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     std::fs::write(&go, "").unwrap();
@@ -546,4 +552,221 @@ fn the_launched_agents_writes_are_recorded_as_the_agent() {
         ],
         "{mine:?}"
     );
+    let closed = common::find_file(&root.join("work/completed"), "C-2026-001-");
+    assert!(read(&closed).contains("\ntags: [closed-by-agent]\n"));
+}
+
+/// `agent start --new` (ADR-0027 §6, WP-101).
+mod new {
+    use super::*;
+
+    /// Omarchy's default agent is set (the file `omarchy-default-agent`
+    /// reads).
+    fn default_agent(env: &Env) {
+        let dir = env.home.join(".config/omarchy/defaults");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("agent"), "claude\n").unwrap();
+    }
+
+    fn start_new(env: &Env, extra: &[&str], intent: &str) -> std::process::Output {
+        let mut args = vec!["agent", "start", "--new", "--json"];
+        args.extend_from_slice(extra);
+        args.extend(["--", intent]);
+        env.at(T0, &args)
+    }
+
+    #[test]
+    fn creates_starts_and_launches_from_one_sentence() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        default_agent(&env);
+        let (argv, calls, _) = recording_stub(&env, "omarchy");
+        let intent = "Install tool X with its Arch package; the README has a PKGBUILD. \
+                      Use `$(touch pwned)` nowhere.\n# not a heading\n```\nno fence";
+        let out = start_new(&env, &["--risk", "R2", "--area", "tool-x"], intent);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["launched"], true);
+        assert_eq!(v["case"], "C-2026-001");
+        assert_eq!(v["actor"], "agent:default");
+        let c = &v["created"]["case"];
+        assert_eq!(
+            c["title"],
+            "Install tool X with its Arch package; the README has a PKGBUILD"
+        );
+        assert_eq!(c["status"], "active");
+        assert_eq!((&c["zone"], &c["risk"]), (&"yellow".into(), &"R2".into()));
+        assert_eq!(c["area"], "tool-x");
+        assert_eq!(v["created"]["areaCreated"], "areas/tool-x/README.md");
+        let kinds: Vec<&str> = v["created"]["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["case-created", "case-started"]);
+        assert_eq!(v["created"]["events"][0]["actor"], "human");
+        assert_eq!(active_case(&root).as_deref(), Some("C-2026-001"));
+
+        // the whole text is the Intent; heading and fence lines escaped
+        let text = read(&common::find_file(&root.join("work/active"), "C-2026-001-"));
+        assert!(
+            text.contains(
+                "## Intent\nInstall tool X with its Arch package; the README has a PKGBUILD. \
+                 Use `$(touch pwned)` nowhere.\n\\# not a heading\n\\```\nno fence\n\n## Plan\n"
+            ),
+            "{text}"
+        );
+        assert!(text.contains("· created (zone yellow, risk R2) · human\n"));
+        assert!(text.contains("· started · human\n"));
+
+        // the prompt names the id and the logbook only
+        assert_eq!(read(&calls), "call\n");
+        let args = recorded(&argv);
+        assert_eq!(args[..2], ["agent", "prompt"]);
+        assert!(args[2].starts_with("Work case C-2026-001 in the Seldon logbook at "));
+        assert!(!args[2].contains("Install tool X"), "{}", args[2]);
+        assert!(!env.tmp.path().join("pwned").exists());
+    }
+
+    #[test]
+    fn the_title_is_the_first_sentence_within_72_characters() {
+        let env = Env::new(Snapper::Missing);
+        env.init_logbook();
+        default_agent(&env);
+        recording_stub(&env, "omarchy");
+        for (intent, title) in [
+            ("Install zed. Then configure it.", "Install zed"),
+            ("Is zed installed? Check it.", "Is zed installed?"),
+            ("Update to v1.2.3 please", "Update to v1.2.3 please"),
+            ("  first line\nsecond line", "first line"),
+            // a lone \r, a tab: spaces (WP-101 round 2)
+            ("first\rsecond", "first second"),
+            ("tab\there", "tab here"),
+            (
+                "Install the editor with its language servers for Rust, Python, Go and \
+                 TypeScript today",
+                "Install the editor with its language servers for Rust, Python, Go and…",
+            ),
+        ] {
+            let out = start_new(&env, &[], intent);
+            assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            let got = json(&out)["created"]["case"]["title"].clone();
+            assert_eq!(got, title, "{intent:?}");
+            assert!(title.chars().count() <= 72);
+        }
+    }
+
+    #[test]
+    fn without_a_default_agent_nothing_is_created() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let (_, calls, _) = recording_stub(&env, "omarchy");
+        let out = start_new(&env, &[], "Install zed");
+        assert_eq!(out.status.code(), Some(1));
+        let m = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(
+            m.starts_with("no default agent: Omarchy has none set")
+                && m.contains("nothing was created")
+                && m.contains("Fix: `omarchy default agent <name>`"),
+            "{m}"
+        );
+        assert!(!calls.exists(), "nothing launched");
+        assert!(common::ledger(&root).is_empty());
+        // Omarchy reads the first line only: an empty first line is no agent
+        let dir = env.home.join(".config/omarchy/defaults");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("agent"), "\nclaude\n").unwrap();
+        let out = start_new(&env, &[], "Install zed");
+        assert_eq!(out.status.code(), Some(1));
+        assert!(!calls.exists(), "nothing launched");
+        std::fs::remove_file(dir.join("agent")).unwrap();
+        assert!(
+            !std::fs::read_dir(root.join("work/active"))
+                .unwrap()
+                .any(|e| e.unwrap().file_name().to_string_lossy().starts_with("C-"))
+        );
+        // another launcher is not checked
+        let (_, mine, _) = recording_stub(&env, "my-agent");
+        add_config(&env, "[agent]\nlauncher = [\"my-agent\", \"{prompt}\"]");
+        let out = start_new(&env, &[], "Install zed");
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        assert_eq!(read(&mine), "call\n");
+    }
+
+    #[test]
+    fn a_launcher_that_fails_leaves_the_case_active_and_says_how_to_retry() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        env.stub("broken", "echo 'agent exploded' >&2; exit 3");
+        add_config(&env, "[agent]\nlauncher = [\"broken\", \"{prompt}\"]");
+        let out = start_new(&env, &[], "Install zed");
+        assert_eq!(out.status.code(), Some(1));
+        let m = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(
+            m.contains("agent exploded")
+                && m.contains("C-2026-001 was created and started and stays active")
+                && m.contains("`seldon agent start C-2026-001`"),
+            "{m}"
+        );
+        assert_eq!(active_case(&root).as_deref(), Some("C-2026-001"));
+        common::find_file(&root.join("work/active"), "C-2026-001-");
+    }
+
+    #[test]
+    fn the_argument_shapes() {
+        let env = Env::new(Snapper::Missing);
+        env.init_logbook();
+        default_agent(&env);
+        for args in [
+            // --new without the text, the text without --new
+            &["agent", "start", "--new"][..],
+            &["agent", "start", "--", "Install zed"],
+            // a case id and --new
+            &["agent", "start", "C-2026-001", "--new", "--", "x"],
+            // --zone and friends belong to --new
+            &["agent", "start", "C-2026-001", "--risk", "R2"],
+            // nothing
+            &["agent", "start"],
+        ] {
+            let out = env.at(T0, args);
+            assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stderr(&out));
+        }
+        // a first sentence without a letter or digit (WP-101 round 2)
+        for intent in [".", "!", "…", "?!", "!\nInstall zed"] {
+            let out = start_new(&env, &[], intent);
+            assert_eq!(out.status.code(), Some(1), "{intent:?}");
+            let m = json(&out)["error"]["message"].as_str().unwrap().to_string();
+            assert!(m.contains("has no letter or digit"), "{intent:?}: {m}");
+        }
+        // a blank intent
+        let out = start_new(&env, &[], "  \n ");
+        assert_eq!(out.status.code(), Some(1));
+        let m = json(&out)["error"]["message"].as_str().unwrap().to_string();
+        assert!(m.contains("the intent must not be empty"), "{m}");
+    }
+
+    #[test]
+    fn the_creator_is_the_caller() {
+        let env = Env::new(Snapper::Missing);
+        env.init_logbook();
+        default_agent(&env);
+        recording_stub(&env, "omarchy");
+        let mut cmd = env.command(&["agent", "start", "--new", "--json", "--", "Install zed"]);
+        cmd.env("SELDON_NOW", T0)
+            .env("SELDON_ACTOR", "agent:planner");
+        let out = cmd.output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(v["created"]["events"][0]["actor"], "agent:planner");
+        assert_eq!(
+            v["actor"], "agent:default",
+            "the launched agent's own actor"
+        );
+        let mut cmd = env.command(&["agent", "start", "--new", "--", "Install zed"]);
+        cmd.env("SELDON_NOW", T0).env("SELDON_ACTOR", "root");
+        let out = cmd.output().unwrap();
+        assert_eq!(out.status.code(), Some(1));
+        assert!(stderr(&out).contains("SELDON_ACTOR"));
+    }
 }

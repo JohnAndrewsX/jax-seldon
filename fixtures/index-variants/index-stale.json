@@ -721,7 +721,7 @@
       "source": "seldon",
       "kind": "case-completed",
       "subject": "C-2026-002",
-      "actor": "human",
+      "actor": "agent:claude-code",
       "case": "C-2026-002"
     },
     {
@@ -730,7 +730,7 @@
       "source": "seldon",
       "kind": "case-verified",
       "subject": "C-2026-002",
-      "actor": "human",
+      "actor": "agent:claude-code",
       "case": "C-2026-002"
     },
     {
@@ -1025,7 +1025,7 @@
         "title": "Omarchy auf 4.0.7 aktualisieren",
         "status": "active",
         "zone": "red",
-        "risk": "R2",
+        "risk": "R3",
         "priority": "high",
         "area": "shell",
         "created": "2026-09-26",
@@ -1129,7 +1129,9 @@
           "01M2ACN5Q043TW9W44NJEZ4K9S",
           "01M2ADMJK8H2NCRVDF2RA9WA56"
         ],
-        "tags": [],
+        "tags": [
+          "closed-by-agent"
+        ],
         "path": "work/completed/C-2026-002-monitors.md",
         "steps": {
           "total": 3,
@@ -2869,8 +2871,8 @@
     "risk": {
       "R0": 1,
       "R1": 3,
-      "R2": 4,
-      "R3": 0
+      "R2": 3,
+      "R3": 1
     },
     "timeline": [
       {

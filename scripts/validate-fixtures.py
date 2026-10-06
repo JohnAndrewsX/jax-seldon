@@ -1018,6 +1018,22 @@ VARIANTS = {
         {"op": "test", "path": "/summary/openDrift", "value": 4},
         {"op": "replace", "path": "/summary/openDrift", "value": 250},
     ],
+    # ADR-0027 §5 (WP-101): the user reopened the agent-closed C-2026-002 (`seldon plan reopen`):
+    # a new active case with the tag `reopens:C-2026-002`, its Intent copied. Index only, like
+    # drift-explained-case: in the logbook it would move every list the plugin harness walks.
+    "case-reopened": [
+        {"op": "test", "path": "/cases/completed/0/id", "value": "C-2026-002"},
+        {"op": "test", "path": "/cases/completed/0/tags", "value": ["closed-by-agent"]},
+        {"op": "add", "path": "/cases/active/2", "value": {
+            "id": "C-2026-009", "title": "Reopen: Hyprland-Monitorlayout für Dual-WQHD",
+            "status": "active", "zone": "yellow", "risk": "R1", "priority": "normal", "area": "hyprland",
+            "created": "2026-10-01", "started": "2026-10-01", "closed": None, "snapshotBefore": None,
+            "agents": [], "events": [], "tags": ["reopens:C-2026-002"],
+            "path": "work/active/C-2026-009-reopen-hyprland-monitorlayout-fuer-dual.md",
+            "steps": {"total": 0, "done": 0}}},
+        {"op": "test", "path": "/summary/activeCases", "value": 2},
+        {"op": "replace", "path": "/summary/activeCases", "value": 3},
+    ],
     # CONTRACT.md rule 4: index.events may omit members of an open group. noto-fonts leaves events,
     # the firefox group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [

@@ -465,7 +465,15 @@ mod plan {
         );
         assert_eq!(case_at(&root, &r3).1.status, CaseStatus::Active);
 
-        // with a snapshot: no warning, for either level
+        // with a snapshot: no warning, for either level (snapshot 7 exists:
+        // `plan start --snapshot` checks it, WP-101)
+        let seven = env.tmp.path().join(".snapshots/7");
+        std::fs::create_dir_all(&seven).unwrap();
+        std::fs::write(
+            seven.join("info.xml"),
+            "<snapshot><type>single</type><num>7</num><date>2026-10-01 07:00:00</date></snapshot>",
+        )
+        .unwrap();
         for risk in ["R2", "R3"] {
             let id = new_case(&env, risk, &["--risk", risk]);
             assert!(start(&id, &["--snapshot", "7"]).is_empty(), "{risk}");

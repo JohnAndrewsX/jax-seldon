@@ -128,7 +128,7 @@ Stand: 2026-10-01 · letztes Ereignis 17:00 · Omarchy 4.0.7-1 · Theme tokyo-ni
 - Ereignisse heute: 30 · letzte 7 Tage: 41
 
 ## Active cases
-- [[C-2026-003]] Omarchy auf 4.0.7 aktualisieren — red/R2 — 4/5 Schritte — agent:claude-code
+- [[C-2026-003]] Omarchy auf 4.0.7 aktualisieren — red/R3 — 4/5 Schritte — agent:claude-code
 - [[C-2026-004]] Zed als zweiten Editor installieren — red/R2 — 2/4 Schritte — agent:claude-code
 
 ## In verification

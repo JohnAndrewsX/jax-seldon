@@ -367,7 +367,18 @@ fn classify_segment(
     let word = argv.first().map(String::as_str).unwrap_or("");
     let program = word.rsplit('/').next().unwrap_or(word);
     let args = argv.get(1..).unwrap_or_default();
-    let subject = if program.is_empty() { "sh" } else { program };
+    // a snapshot an agent takes (ADR-0027 §3): recorded with its case, so
+    // the capture after it can fill the case's `snapshotBefore` when the
+    // agent did not record the number itself (WP-101); the files the same
+    // command writes are classified as for any other (round 2)
+    let snapshot = is_snapshot_create(program, argv);
+    let subject = if snapshot {
+        SNAPSHOT_SUBJECT
+    } else if program.is_empty() {
+        "sh"
+    } else {
+        program
+    };
     let mutation = |(zone, needs_case): (Option<Zone>, bool)| Mutation {
         subject: subject.to_string(),
         zone,
@@ -376,6 +387,7 @@ fn classify_segment(
 
     let argv_str: Vec<&str> = argv.iter().map(String::as_str).collect();
     let command = match parse_command(&argv_str) {
+        _ if snapshot => Some((Some(Zone::Green), true)),
         Some(cmd) => cmd.is_mutating().then_some((Some(Zone::Red), false)),
         None => match program {
             p if p == "omarchy" || p.starts_with("omarchy-") => omarchy_route(argv)
@@ -409,6 +421,32 @@ fn classify_segment(
         .flatten()
         .map(mutation)
         .reduce(|a, b| if b.rank() > a.rank() { b } else { a })
+}
+
+/// The subject of a recorded snapshot command: `snapper … create`,
+/// `omarchy-snapshot create`, `omarchy snapshot create`.
+pub const SNAPSHOT_SUBJECT: &str = "snapper";
+
+/// Whether a simple command (after its wrappers) creates a snapper
+/// snapshot: `snapper [options] create …` or Omarchy's snapshot route.
+fn is_snapshot_create(program: &str, argv: &[String]) -> bool {
+    if program == "snapper" {
+        // `-c <config>` and the like take a value; `create` is the first
+        // word that is no option's value
+        let mut words = argv.iter().skip(1).map(String::as_str);
+        while let Some(w) = words.next() {
+            match w {
+                "-c" | "--config" | "-r" | "--root" => {
+                    words.next();
+                }
+                w if w.starts_with('-') => {}
+                w => return w == "create",
+            }
+        }
+        return false;
+    }
+    (program == "omarchy" || program.starts_with("omarchy-"))
+        && omarchy_route(argv).is_some_and(|r| r.starts_with(&["snapshot", "create"]))
 }
 
 /// `systemctl` verbs that change units (SPEC-ENGINE §8).

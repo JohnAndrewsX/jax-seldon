@@ -7,7 +7,7 @@ the sample logbook). Owner: Schema Keeper (WP-002, WP-014, WP-015).
 | Path | What | Schema |
 |---|---|---|
 | `index.sample.json` | canonical index; the plugin develops against it | `schema/index.schema.json` |
-| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0026), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`; generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
+| `index-variants/*.json` | states the sample does not show: `snapper-degraded` (ADR-0026), `not-initialised`, `index-stale`, `plugins-degraded`, `omarchy-git-checkout`, `drift-explained-case` (ADR-0021), `drift-capped` (ADR-0020), `drift-members-capped`, `case-reopened` (ADR-0027); generated from the sample by an overlay (see below), never hand-edited | `schema/index.schema.json` |
 | `invalid/<schema>.*.json` | must **fail** their schema (validator self-test; `index.contract-v2` doubles as the plugin's `contractMismatch` case) | `schema/<schema>.schema.json` |
 | `logbook/` | a complete small logbook (SPEC-LOGBOOK), the source of `index.sample.json` | ledger lines: `event.schema.json`; case frontmatter: `case.schema.json` |
 | `logs/` | raw collector inputs (pacman, snapper, `omarchy plugin list/catalog`) | `schema/external/*.schema.json` |
@@ -33,6 +33,7 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-26…30 | cases 003–006 created; snapshot 111; snapshots 108/109 deleted | snapshot-delete |
 | 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays open (WP-014) | **one yellow drift group** (`members: 3`, `txId`), ADR-0013 |
 | 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (**two crises**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
+| 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5: its verify and done by `agent:claude-code`); C-2026-003 was raised to R3 before the `omarchy update` (Omarchy itself is R3, ADR-0027 §2c; as R2 the update would raise the R3 advisory). The reopen of C-2026-002 lives in the variant `case-reopened` (index only) | `closed-by-agent` marker |
 
 Result: 71 ledger lines (9 resolutions), 62 index events (7 with
 `resolutionDetail`; 1 with `zone: green`), 6 snapshots in `system.snapshots`
@@ -119,6 +120,7 @@ add a banner state, add an overlay and run `--write-index`.
 | `drift-explained-case` | btop's event (`01M1MB2M…`, `resolution: explained`) gets `case: C-2026-002`; jq: `.events \|= map(if .id == "01M1MB2M1GWZYF485HTGVZ1KS3" then .case = "C-2026-002" else . end)`. Index only: the logbook's explained lines stay caseless and C-2026-002's `events:` does not list btop | ADR-0021: the row reads `explained · C-2026-002: Kleines Monitoring-Tool, bewusst ohne Case.` and names the case |
 | `drift-capped` | `summary.openDrift: 250`, `drift` unchanged (4 items); jq: `.summary.openDrift = 250` | ADR-0020: "+246 more open drift items not listed here" under the drift rows; pill `2 · 250` |
 | `drift-members-capped` | noto-fonts (`01M3SXBRV0E7…`) removed from `events`; the firefox group keeps `members: 3`; jq: `.events \|= map(select(.id != "01M3SXBRV0E702XKBM22HEV1B8"))` | CONTRACT.md rule 4: the drift sheet lists firefox and libinput plus "… and 1 more", then asks `seldon drift show <firefox> --json` for all three (the fallback) |
+| `case-reopened` | a third active case C-2026-009 `Reopen: Hyprland-Monitorlayout für Dual-WQHD` with `tags: [reopens:C-2026-002]` (what `seldon plan reopen C-2026-002` makes), `summary.activeCases: 3`. Index only: in the logbook it would move every list the plugin harness walks | ADR-0027 §5: the reopen of an agent-closed case; WIP at the limit |
 
 Not derivable from the logbook and therefore not checked beyond the index
 times above: `generatedAt`, `engineVersion`, `logbook.path`, `logbook.git`,

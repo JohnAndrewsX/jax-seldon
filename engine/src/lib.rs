@@ -4,6 +4,7 @@
 //! integration tests in `tests/` can use the types directly.
 
 pub mod attribution;
+pub mod case_notes;
 pub mod collectors;
 pub mod commands;
 pub mod config;

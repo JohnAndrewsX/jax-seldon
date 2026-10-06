@@ -97,12 +97,23 @@ says "Already resolved: …" and writes nothing.
 
 *Sample data.*
 
+The field at the top starts a case in one sentence: type what you want
+done ("Install tool X, it ships a PKGBUILD") and press Enter or *Run*.
+Seldon makes the case from the sentence, starts it and starts your agent
+on it; the agent does the rest and closes the case itself (see
+[Working with agents](04-working-with-agents.md#start-an-agent-from-the-panel)).
+*Run* reads *Running* while that happens, then the cursor is on the new
+case. If no agent can start, the line under the field says why and how
+to fix it, and your sentence stays in the field.
+
 Work shows your cases in three columns: Queued, Active (cases in
 verification included) and Completed (the last 50; dropped cases struck
 through). "2 / 3 active" compares your active cases with your limit. The
 limit warns; it never blocks. A tile shows the id, steps done of total,
 the title and the zone as its stripe colour. "N proposed" means Seldon
-thinks some open drift belongs to this case.
+thinks some open drift belongs to this case. "by agent" marks a case an
+agent closed; *By agent* shows only those in Completed, for a spot check
+when you feel like one (it is never due).
 
 The card below shows the case under the cursor and the actions its
 status allows:
@@ -112,10 +123,18 @@ status allows:
 | queued | *Start*, *Open* |
 | active | *Verify*, *Start agent*, *Drop*, *Open* |
 | verification | *Done*, *Drop*, *Open* |
-| completed, dropped | *Open* |
+| completed | *Open*, *Reopen* |
+| dropped | *Open* |
+
+*Reopen* (one click, or `r`) does not touch the completed case: it makes
+a new active case "Reopen: <title>" with the same *Intent*, and the
+cursor moves to it. Its card says which case it reopens. If another
+case is open as the active case, it stays the active case, so an agent
+working on it keeps recording there; the line under the field says so.
 
 *New case* (or `+` from any tab) asks for a title, zone, risk, priority
-and an optional area. It starts at yellow, R1, normal. *Start agent*
+and an optional area. It starts at yellow, R1, normal. Use it when you
+want to plan a case yourself, or hand it to an agent later. *Start agent*
 sends an agent to work the case; see
 [Working with agents](04-working-with-agents.md#start-an-agent-from-the-panel).
 
@@ -164,6 +183,8 @@ The panel's keys work while the panel is open.
 | Enter, Space | open the row; on a drift row, the drift sheet; on Work, the card's first action |
 | `x` | Work: drop the case under the cursor (press twice) |
 | `a` | Work: start an agent on the active case under the cursor (press twice) |
+| `r` | Work: reopen the completed case under the cursor |
+| `i` | Work: the one-sentence field (Enter runs, Esc gives the keys back) |
 | `f` / `F` | Changelog: next / previous source filter |
 | `c` | capture now |
 | `n` | write a note (from any tab) |
@@ -177,8 +198,9 @@ Actions that write take two presses on the keyboard: *Start*,
 a new decision. The first Enter arms the action and
 the card says "Press Enter again: Start C-2026-005". The second press
 sends it. Any other key in a list disarms it. A note and a new case are
-sent with one Enter. With the mouse, one click sends, except *Drop* and
-*Start agent*, which ask for a second click.
+sent with one Enter, a *Run* sentence too. *Reopen* takes one press or
+click: it only adds a case. With the mouse, one click sends, except
+*Drop* and *Start agent*, which ask for a second click.
 
 While a text field or a sheet has focus, every key goes to it. Tab and
 Shift-Tab walk its fields. Esc gives the keys back to the panel and
@@ -239,8 +261,11 @@ so the result is the same:
 |---|---|
 | note field | `seldon log -- "Text"` |
 | *Capture now* | `seldon capture` |
+| *Run* | `seldon agent start --new -- "What to do"` |
 | *New case* | `seldon plan new -- "Title"` |
 | *Start*, *Verify*, *Done*, *Drop* | `seldon plan start <ID>` and so on |
+| *Reopen* | `seldon plan reopen <ID>` |
+| *Update rules* | `seldon rules update` |
 | drift sheet | `seldon drift link`, `explain`, `dismiss` |
 | *New decision* | `seldon decide -- "Title"` |
 | *Open in editor* | `seldon open journal --editor` |

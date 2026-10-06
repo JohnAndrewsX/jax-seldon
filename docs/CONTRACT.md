@@ -39,6 +39,17 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    escapes it and never evaluates it.
 7. Fixtures: `fixtures/index.sample.json` is the canonical example. CI
    validates it against the schema and the golden engine output.
+8. Reserved case tags (ADR-0027, WP-101). `tags` is a free string array in
+   the case schema and the index; the engine writes these values, and the
+   plugin may read meaning into them (no schema change, `contractVersion`
+   stays 1):
+   - `closed-by-agent` — an agent actor ran `seldon plan done` (the engine
+     refuses that close without a *Result* and a *Plan › Verification*),
+     or an agent's `drift explain` made the completed case.
+     The panel marks the case and filters the Completed column by it.
+   - `reopens:<caseId>` — `seldon plan reopen <caseId>` made this case.
+   - `imported` — `seldon import task` made this case (WP-102).
+   A user's own tag with one of these values means the same to the plugin.
 
 ## Changing the contract
 
@@ -57,6 +68,8 @@ seldon open <journal|ledger|status|logbook|caseId|ADR-NNNN> --editor --json   # 
 seldon plan new --zone <z> --risk <r> [--area <slug>] [--priority <p>] --json -- <title>
 seldon plan start|verify|done|drop <id> --json   # id validated by the schema regex; the engine enforces the transition
 seldon agent start <caseId> --json              # active case only; the engine launches the configured agent launcher detached (WP-022)
+seldon agent start --new --json -- <intent>     # WP-101: creates and starts a case from the sentence, then launches as above
+seldon plan reopen <caseId> --json              # WP-101: a completed case only; a new active case, nothing destroyed
 seldon drift link <eventId> <caseId> [--only] --json
 seldon drift explain <eventId> [--only] [--zone <z>] [--risk <r>] [--area <slug>] --json -- <text>
 seldon drift dismiss <eventId> [--only] --json -- <reason>   # same rule as explain: text after `--`
@@ -64,6 +77,8 @@ seldon drift show <eventId> --json          # full member list of a group (ADR-0
 seldon decide --no-edit --json -- <title>        # then `open <newId> --editor --json` from the result
 seldon rebuild --json
 seldon update-impact --json
+seldon doctor --only rules --json               # WP-101: read-only, on panel open (own process, not the queue); runs no probe
+seldon rules update --json                      # WP-101: the rules banner's one click; rewrites only the engine's block
 ```
 
 IDs are validated by regex in QML before being passed. Free text is passed

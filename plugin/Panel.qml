@@ -10,7 +10,8 @@ import "Model.js" as Model
 //
 // Top to bottom: title, tab strip, the restart notice after a plugin
 // update (WP-090), the status banner (WP-010), the snapper-degraded banner
-// (ADR-0026), the capture-warning notice (WP-085), the red crisis strip,
+// (ADR-0026), the outdated-rules banner (WP-101), the capture-warning
+// notice (WP-085), the red crisis strip,
 // then the current tab. The banners and the strip sit
 // above the tabs, so every tab shows them.
 // Tabs: Today, Changelog, Work, Decisions, System, Memory, in the order of
@@ -185,6 +186,11 @@ Panel {
       bannerPictogram: statusBanner.visible ? statusBanner.pictogram : "",
       banner: statusBanner.visible && root.service.banner ? root.service.banner.title : "",
       snapper: snapperBanner.visible && root.service.snapperBanner ? root.service.snapperBanner.title : "",
+      rules: rulesBanner.visible && root.service.rulesBanner ? {
+        title: root.service.rulesBanner.title,
+        actions: root.service.rulesBanner.actions.map(function(a) { return a.label }),
+        hint: root.service.rulesBanner.hint
+      } : null,
       captureNotice: {
         title: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.title : "",
         detail: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.detail : "",
@@ -324,6 +330,9 @@ Panel {
       result: workTab.result ? workTab.result.text : "",
       resultOk: workTab.result ? workTab.result.ok : null,
       pending: workTab.pending,
+      intent: workTab.intentField.text,
+      running: workTab.running,
+      filter: workTab.completedFilter,
       sheet: {
         open: workTab.sheetOpen,
         editing: workTab.sheet.editing,
@@ -337,7 +346,16 @@ Panel {
     }
   }
 
+  // The rules check once the engine is there, when the panel opened first.
+  Connections {
+    target: root.service
+    function onEngineStateChanged() {
+      if (root.opened) root.service.checkRules(false)
+    }
+  }
+
   onOpenedChanged: if (opened) {
+    if (root.service) root.service.checkRules(false)
     root.cursorActive = false
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -480,6 +498,18 @@ Panel {
           urgent: root.urgent
           fontFamily: root.fontFamily
           onActionRequested: function(actionId) { if (root.service) root.service.fix(actionId, "snapper") }
+        }
+
+        // The logbook's agent rules are outdated (WP-101, ADR-0027 Migration):
+        // `seldon doctor --json` on open, one click runs `seldon rules update`.
+        Banner {
+          id: rulesBanner
+          width: parent.width
+          banner: root.service ? root.service.rulesBanner : null
+          foreground: root.foreground
+          urgent: root.urgent
+          fontFamily: root.fontFamily
+          onActionRequested: function(actionId) { if (root.service) root.service.fix(actionId, "rules") }
         }
 
         // The last capture's warnings (WP-085): neutral, no action, until a

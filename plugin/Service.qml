@@ -171,6 +171,14 @@ Item {
   property var captureWarnings: []
   readonly property var captureNotice: Model.captureWarningNotice(root.captureWarnings)
   property var planResult: null
+  // WP-101: the rules row of `seldon doctor --json` (read-only, its own
+  // process, never the write queue), checked when the panel opens, at most
+  // every Model.RULES_CHECK_MS unless forced; the answer of the banner's
+  // one-click `seldon rules update --json`.
+  property string doctorText: ""
+  property double rulesCheckedAtMs: 0
+  property var rulesResult: null
+  readonly property var rulesBanner: Model.rulesBannerWith(Model.rulesBanner(root.doctorText), root.rulesResult)
   property var driftResult: null
   property var decideResult: null
   // The drift sheet's `seldon drift show` answer: { eventId, pending, ok,
@@ -326,7 +334,8 @@ Item {
       root.planResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, action: action, caseId: caseId }
       return false
     }
-    var doing = { new: "Creating the case", start: "Starting", verify: "Moving to verification:", done: "Completing", drop: "Dropping" }
+    var doing = { new: "Creating the case", start: "Starting", verify: "Moving to verification:", done: "Completing", drop: "Dropping",
+      reopen: "Reopening" }
     root.planResult = { ok: true, pending: true, text: doing[action] + (caseId !== "" ? " " + caseId : "") + "…",
       action: action, caseId: caseId }
     return true
@@ -350,6 +359,44 @@ Item {
     }
     root.planResult = { ok: true, pending: true, text: "Starting an agent on " + id + "…", action: "agent", caseId: id }
     return true
+  }
+
+  // Work tab, *Run* (WP-101, ADR-0027 §6): `seldon agent start --new --json
+  // -- <intent>`. The engine creates and starts the case from the sentence
+  // and launches the configured agent; the answer shares the plan result
+  // line (`action` "agent-new") and its one-at-a-time rule.
+  function startAgentNew(intent) {
+    if (root.planResult && root.planResult.pending) return root.refuseBusy("plan", "agent-new", "", "")
+    var built = Model.agentNewArgs(intent)
+    if (built.error) {
+      root.planResult = { ok: false, pending: false, text: built.error, action: "agent-new", caseId: "" }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.planResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, action: "agent-new", caseId: "" }
+      return false
+    }
+    root.planResult = { ok: true, pending: true, text: "Creating the case and starting an agent…", action: "agent-new", caseId: "" }
+    return true
+  }
+
+  // The rules check (WP-101): `seldon doctor --json` in its own process.
+  // Read-only; skipped in dev mode, without an engine, while one runs, and
+  // within Model.RULES_CHECK_MS of the last unless `force`.
+  function checkRules(force) {
+    if (root.devMode || root.engineState !== "present" || doctorCall.running) return false
+    if (!force && root.rulesCheckedAtMs > 0 && Date.now() - root.rulesCheckedAtMs < Model.RULES_CHECK_MS) return false
+    var args = ["doctor", "--only", "rules", "--json"]
+    if (Model.validateArgs(args) !== "") return false
+    root.rulesCheckedAtMs = Date.now()
+    doctorCall.launch(["seldon"].concat(args))
+    return true
+  }
+
+  // doctor exits 1 when a row is an error; its JSON is the answer either way.
+  function doctorDone(exitCode, out, err) {
+    if (exitCode > 1) root.warnFailure(["doctor"], exitCode, out, err)
+    root.doctorText = exitCode <= 1 ? out : ""
   }
 
   // Drift sheet: `seldon drift link|explain|dismiss …` (input: { eventId,
@@ -411,9 +458,12 @@ Item {
       if (result.caseId === undefined || result.caseId === "") result.caseId = args[1] === "new" ? "" : args[2]
       root.planResult = result
     } else if (args[0] === "agent") {
-      result.action = "agent"
-      if (result.caseId === undefined || result.caseId === "") result.caseId = args[2]
+      var isNew = args[2] === "--new"
+      result.action = isNew ? "agent-new" : "agent"
+      if (result.caseId === undefined || result.caseId === "") result.caseId = isNew ? "" : args[2]
       root.planResult = result
+    } else if (args[0] === "rules") {
+      root.rulesResult = result
     } else if (args[0] === "drift" && args[1] === "show") {
       result.eventId = args[2]
       if (result.members === undefined) result.members = []
@@ -474,6 +524,7 @@ Item {
       : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
       : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
       : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
+      : args[0] === "rules" ? Model.rulesUpdateResult(exitCode, out, err)
       : null
     if (result) {
       result.pending = false
@@ -489,7 +540,8 @@ Item {
       root.engineNotInitialised = true
       root.dropQueue("the logbook is not initialised")
       root.lastError = ""
-    } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide") {
+    } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide"
+        && args[0] !== "rules") {
       // QuickEntry, the Work tab (case actions, Start agent), the drift sheet
       // and the new-decision sheet show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
@@ -499,6 +551,8 @@ Item {
     indexFile.reload()
     // A created decision opens in the editor (the id is checked).
     if (args[0] === "decide" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
+    // Updated rules: ask doctor again, so the banner goes.
+    if (args[0] === "rules") root.checkRules(true)
     root.finished(args, exitCode, out)
     root.pump()
   }
@@ -592,6 +646,13 @@ Item {
       Quickshell.execDetached(Model.RESTART_SHELL_ARGV)
       return true
     }
+    if (bannerId === "rules") {
+      // One click (WP-101): the engine rewrites only its own block.
+      if (actionId !== "update" || !root.rulesBanner || root.queued("rules")) return false
+      if (!root.canWrite || !root.run(["rules", "update", "--json"])) return false
+      root.rulesResult = { ok: true, pending: true, text: "Updating the rules…" }
+      return true
+    }
     var source = bannerId === "snapper" ? root.snapperBanner : root.banner
     var command = source ? source.command : ""
     if (actionId === "copy" && command !== "") {
@@ -655,7 +716,9 @@ Item {
       snapper: root.snapperBanner ? root.snapperBanner.title : "",
       snapperDetail: root.snapperBanner ? root.snapperBanner.detail : "",
       snapperActions: root.snapperBanner ? root.snapperBanner.actions.map(function(a) { return a.id + ":" + a.label }) : [],
-      snapperHint: root.snapperBanner ? root.snapperBanner.hint : ""
+      snapperHint: root.snapperBanner ? root.snapperBanner.hint : "",
+      rules: root.rulesBanner ? root.rulesBanner.title : "",
+      rulesResult: root.rulesResult
     }
   }
 
@@ -725,6 +788,12 @@ Item {
     id: probe
     onDone: function(exitCode, out, err) { root.probeDone(exitCode, out, err) }
     onFailedToStart: root.probeFailedToStart()
+  }
+
+  EngineCall {
+    id: doctorCall
+    onDone: function(exitCode, out, err) { root.doctorDone(exitCode, out, err) }
+    onFailedToStart: root.doctorText = ""
   }
 
   EngineCall {

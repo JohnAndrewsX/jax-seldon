@@ -666,7 +666,9 @@ test("caseActions by status (WP-020); Enter runs the first, Drop asks twice", ()
   same(by("C-2026-003"), ["verify*", "agent!", "drop?", "open"])
   assert.strictEqual(M.caseAction(cases.find(c => c.id === "C-2026-003"), "agent").label, "Start agent")
   same(by("C-2026-008"), ["done*", "drop?", "open"])
-  same(by("C-2026-002"), ["open*"])
+  same(by("C-2026-002"), ["open*", "reopen"])
+  // Reopen (WP-101): one click, no arming
+  assert.strictEqual(M.caseAction(cases.find(c => c.id === "C-2026-002"), "reopen").label, "Reopen")
   same(M.caseActions({ id: "C-2026-010", status: "dropped", actionable: true }).map(a => a.id), ["open"])
   same(M.caseActions(null), [])
   assert.strictEqual(M.caseAction(cases[0], "drop"), null)
@@ -1088,17 +1090,17 @@ test("periodTable: the sample's counts per period", () => {
   const table = M.periodTable(ok.index)
   assert.strictEqual(table.today, "2026-10-01")
   const rows = (p) => table.periods[p].slots.map((s) => s.id + "=" + s.rows).join(",")
-  assert.strictEqual(rows("30"), "heatmap=30,series=2,driftBars=5,riskDonut=3,timeline=17,plan=2")
-  assert.strictEqual(rows("90"), "heatmap=90,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
-  assert.strictEqual(rows("365"), "heatmap=365,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
-  assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
+  assert.strictEqual(rows("30"), "heatmap=30,series=2,driftBars=5,riskDonut=4,timeline=17,plan=2")
+  assert.strictEqual(rows("90"), "heatmap=90,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
+  assert.strictEqual(rows("365"), "heatmap=365,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
+  assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
   same(s30.map((s) => s.detail), ["57 events", "Explicit 324 → 327", "13 opened · 9 resolved",
-    "R0 1 · R1 3 · R2 4 · R3 0 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
+    "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
   assert.strictEqual(table.periods["90"].slots[0].detail, "62 events")
-  same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 4, R3: 0 })
+  same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
   assert.strictEqual(M.periodView(table, "365").window.period, "365")
@@ -1331,11 +1333,11 @@ test("driftChart: weeks with gaps filled, peak, hover text", () => {
 
 test("riskChart: shares, part at an angle, all time", () => {
   const r = M.periodTable(ok.index).periods["30"].charts.riskDonut
-  same(r.numbers, { total: 8, R0: 1, R1: 3, R2: 4, R3: 0 })
-  same(r.parts.map((p) => [p.risk, p.count, p.from, p.to]), [["R0", 1, 0, 0.125], ["R1", 3, 0.125, 0.5], ["R2", 4, 0.5, 1], ["R3", 0, 1, 1]])
-  assert.strictEqual(r.summary, "8 cases · R0 1 · R1 3 · R2 4 · R3 0 · all time")
-  same([0, 0.1, 0.125, 0.49, 0.5, 0.99, 1.0, -0.25].map((f) => M.riskPartAt(r, f)), [0, 0, 1, 1, 2, 2, 0, 2])
-  same([M.riskPartText(r.parts[0]), M.riskPartText(r.parts[2])], ["R0 · 1 case · 13% · all time", "R2 · 4 cases · 50% · all time"])
+  same(r.numbers, { total: 8, R0: 1, R1: 3, R2: 3, R3: 1 })
+  same(r.parts.map((p) => [p.risk, p.count, p.from, p.to]), [["R0", 1, 0, 0.125], ["R1", 3, 0.125, 0.5], ["R2", 3, 0.5, 0.875], ["R3", 1, 0.875, 1]])
+  assert.strictEqual(r.summary, "8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time")
+  same([0, 0.1, 0.125, 0.49, 0.5, 0.99, 1.0, -0.25].map((f) => M.riskPartAt(r, f)), [0, 0, 1, 1, 2, 3, 0, 2])
+  same([M.riskPartText(r.parts[0]), M.riskPartText(r.parts[2])], ["R0 · 1 case · 13% · all time", "R2 · 3 cases · 38% · all time"])
   // The same object for every period (no dates).
   const t = M.periodTable(ok.index)
   assert.ok(t.periods["30"].charts.riskDonut === t.periods["all"].charts.riskDonut)
@@ -1661,6 +1663,94 @@ test("captureResult keeps the capture's warnings; captureWarningNotice (WP-085)"
   const two = M.captureWarningNotice([reset, "\ncannot move ~/.local/state/seldon/owned.json aside: denied\n  caused by: EACCES\n"])
   assert.strictEqual(two.detail, reset + "\ncannot move ~/.local/state/seldon/owned.json aside: denied")
   assert.strictEqual(two.full, reset + "\n\ncannot move ~/.local/state/seldon/owned.json aside: denied\n  caused by: EACCES")
+})
+
+
+// ---- WP-101: one-sentence start, closed-by-agent, reopen, the rules banner
+
+test("WP-101: agent start --new, plan reopen, doctor and rules update are the only new forms", () => {
+  for (const intent of ["--help", "Install zed; rm -rf ~", "$(reboot)", "-- x", "a\nb"]) {
+    const built = M.agentNewArgs(intent)
+    same(built.args, ["agent", "start", "--new", "--json", "--", intent])
+    assert.strictEqual(M.validateArgs(built.args), "", intent)
+  }
+  assert.ok(M.agentNewArgs("  ").error)
+  assert.ok(M.agentNewArgs("a\u0000b").error)
+  same(M.planArgs("reopen", "C-2026-002").args, ["plan", "reopen", "C-2026-002", "--json"])
+  assert.ok(M.planArgs("reopen", "C-26-2; rm").error)
+  for (const ok of [["plan", "reopen", "C-2026-002", "--json"], ["doctor", "--only", "rules", "--json"], ["rules", "update", "--json"]])
+    assert.strictEqual(M.validateArgs(ok), "", ok.join(" "))
+  for (const bad of [
+    ["agent", "start", "--new", "--", "x"],            // --json missing
+    ["agent", "start", "--new", "--json"],            // no text
+    ["agent", "start", "--new", "--zone", "red", "--json", "--", "x"],
+    ["agent", "start", "C-2026-001", "--json", "--", "x"],
+    ["plan", "reopen", "C-2026-002"],
+    ["plan", "reopen", "C-2026-002", "--json", "--", "x"],
+    ["doctor"], ["doctor", "--json"], ["doctor", "--fix", "--json"], ["doctor", "--only", "rules"],
+    ["doctor", "--only", "probes", "--json"],
+    ["rules", "update"], ["rules", "update", "--replace", "--json"], ["rules", "--json"]
+  ]) assert.notStrictEqual(M.validateArgs(bad), "", bad.join(" "))
+})
+
+test("WP-101: the answers of agent start --new and plan reopen", () => {
+  const created = JSON.stringify({ launched: true, launcher: "default", program: "omarchy", case: "C-2026-009",
+    created: { case: { id: "C-2026-009", title: "Install zed" } } })
+  same(M.agentResult(0, created, ""), { ok: true, text: "Created C-2026-009 · Install zed · agent started · launcher default (omarchy)", caseId: "C-2026-009" })
+  const refused = JSON.stringify({ error: { code: 1, message: "no default agent: Omarchy has none set; nothing was created. Fix: `omarchy default agent <name>`" } })
+  same(M.agentResult(1, refused, ""), { ok: false, text: "no default agent: Omarchy has none set; nothing was created. Fix: `omarchy default agent <name>`", caseId: "" })
+  const reopened = JSON.stringify({ case: { id: "C-2026-010" }, reopens: "C-2026-002", earlier: ["C-2026-009", "x; y"] })
+  same(M.planResult(0, reopened, ""), { ok: true, text: "Reopened C-2026-002 as C-2026-010 (active) · reopened before as C-2026-009", caseId: "C-2026-010" })
+  same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009" }, reopens: "C-2026-002", earlier: [] }), "").text,
+    "Reopened C-2026-002 as C-2026-009 (active)")
+  // round 2: the active case an agent works stays
+  same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009" }, reopens: "C-2026-002", earlier: [], activeCase: { kept: "C-2026-004" } }), "").text,
+    "Reopened C-2026-002 as C-2026-009 (active) · the active case stays C-2026-004")
+  same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009" }, reopens: "C-2026-002", earlier: [], activeCase: { kept: "x; rm" } }), "").text,
+    "Reopened C-2026-002 as C-2026-009 (active)")
+})
+
+test("WP-101: closed-by-agent marker, the Completed filter, reopens in the meta line", () => {
+  const index = JSON.parse(sample)
+  const all = M.workColumns(index)
+  const c2 = all[2].cases.find(c => c.id === "C-2026-002")
+  same([c2.closedByAgent, c2.reopens], [true, ""])
+  same([all[2].cases.find(c => c.id === "C-2026-001").closedByAgent], [false])
+  const agent = M.workColumns(index, M.COMPLETED_FILTER_AGENT)
+  same(agent[2].cases.map(c => c.id), ["C-2026-002"])
+  same(agent.map(c => M.columnHeader(c)), ["QUEUED 3", "ACTIVE 3", "COMPLETED 1 / 2"])
+  same(all.map(c => M.columnHeader(c)), ["QUEUED 3", "ACTIVE 3", "COMPLETED 2"])
+  // the filter touches the Completed column only
+  same(agent[0].cases.length + agent[1].cases.length, all[0].cases.length + all[1].cases.length)
+  const reopened = JSON.parse(fs.readFileSync(path.join(root, "fixtures/index-variants/case-reopened.json"), "utf8"))
+  const c9 = M.workColumns(reopened)[1].cases.find(c => c.id === "C-2026-009")
+  same([c9.reopens, c9.closedByAgent, M.caseMeta(c9)], ["C-2026-002", false, "reopens C-2026-002 · hyprland · priority normal · 0/0 steps"])
+  // a tag that names no case id is no reopen; tags that are not strings are ignored
+  same(M.workCase({ id: "C-2026-011", tags: ["reopens:x; rm", 7, null, "closed-by-agent"] }, "completed", "completed").reopens, "")
+  same(M.workCase({ id: "C-2026-011", tags: "closed-by-agent" }, "completed", "completed").closedByAgent, false)
+})
+
+test("WP-101: the rules banner from doctor's rules row", () => {
+  const doctor = (row) => JSON.stringify({ checks: [{ name: "engine", status: "ok", message: "x" }, row] })
+  const outdated = M.rulesBanner(doctor({ name: "rules", status: "degraded", message: "outdated (v1)", fix: "seldon rules update" }))
+  same([outdated.title, outdated.actions.map(a => a.id), outdated.command],
+    ["The logbook's agent rules are outdated (v1)", ["update"], ""])
+  // an edited block is archived by the same command: still one click
+  same(M.rulesBanner(doctor({ name: "rules", status: "degraded", message: "outdated (v2, its text differs)", fix: "seldon rules update (archives your copy)" })).actions.length, 1)
+  // damaged or newer: shown, no click
+  const damaged = M.rulesBanner(doctor({ name: "rules", status: "error", message: "damaged", fix: "seldon rules update --replace (archives the file)" }))
+  same([damaged.actions, damaged.detail], [[], "Fix in a terminal: seldon rules update --replace (archives the file)"])
+  same(M.rulesBanner(doctor({ name: "rules", status: "degraded", message: "newer (v3)", fix: "update seldon" })).actions, [])
+  for (const quiet of [doctor({ name: "rules", status: "ok", message: "current (v2)" }), "", "not json", JSON.stringify({ checks: "x" })])
+    assert.strictEqual(M.rulesBanner(quiet), null)
+  // the update's answer: pending hides the click, a refusal is the hint, done changes nothing
+  same(M.rulesBannerWith(outdated, { ok: true, pending: true, text: "Updating the rules…" }).actions, [])
+  same(M.rulesBannerWith(outdated, { ok: false, pending: false, text: "lock held" }).hint, "lock held")
+  assert.strictEqual(M.rulesBannerWith(outdated, { ok: true, pending: false, text: "Rules updated" }), outdated)
+  assert.strictEqual(M.rulesBannerWith(null, { ok: false, text: "x" }), null)
+  same(M.rulesUpdateResult(0, JSON.stringify({ action: "rewritten" }), ""), { ok: true, text: "Rules updated" })
+  same(M.rulesUpdateResult(0, JSON.stringify({ action: "unchanged" }), ""), { ok: true, text: "The rules were current" })
+  same(M.rulesUpdateResult(4, JSON.stringify({ error: { code: 4, message: "locked" } }), ""), { ok: false, text: "locked" })
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
