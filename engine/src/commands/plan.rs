@@ -580,8 +580,10 @@ fn step(
 
 /// The capture before `plan verify|done` (ADR-0029 §2): a default `seldon
 /// capture`, waiting for a held lock as a hook does. Returns its summary
-/// for `--json` (`null` when it failed) and the warnings: a degraded
-/// collector, the capture's own warnings, or the capture's failure.
+/// for `--json` (`null` when it failed) and the warning when it failed (an
+/// error, or the lock still held after the wait). A degraded collector is
+/// no warning here: `seldon doctor` reports it (orchestrator ruling, WP-115
+/// round 2).
 fn capture_first(ctx: &Context) -> (Value, Vec<String>) {
     let start = std::time::Instant::now();
     let out = loop {
@@ -592,45 +594,23 @@ fn capture_first(ctx: &Context) -> (Value, Vec<String>) {
             other => break other,
         }
     };
-    let out = match out {
-        Ok(out) => out.json,
-        Err(e) => {
-            return (
-                Value::Null,
-                vec![format!(
-                    "the capture before the step did not run: {e}; the step went on \
-                     (`seldon capture` records what it missed)"
-                )],
-            );
-        }
-    };
-    let mut warnings: Vec<String> = out["collectors"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|c| c["ran"] == true && c["ok"] == false)
-        .map(|c| {
-            let name = c["name"].as_str().unwrap_or("?");
-            match c["message"].as_str() {
-                Some(m) => format!("capture before the step: {name} degraded: {m}"),
-                None => format!("capture before the step: {name} degraded"),
-            }
-        })
-        .collect();
-    warnings.extend(
-        out["warnings"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(|w| format!("capture before the step: {w}")),
-    );
-    let summary = json!({
-        "ok": out["ok"],
-        "written": out["written"],
-        "linkedPlanned": out["linkedPlanned"],
-    });
-    (summary, warnings)
+    match out {
+        Ok(out) => (
+            json!({
+                "ok": out.json["ok"],
+                "written": out.json["written"],
+                "linkedPlanned": out.json["linkedPlanned"],
+            }),
+            Vec::new(),
+        ),
+        Err(e) => (
+            Value::Null,
+            vec![format!(
+                "the capture before the step did not run: {e}; the step went on \
+                 (`seldon capture` records what it missed)"
+            )],
+        ),
+    }
 }
 
 /// The advice for a case started without a snapshot (ADR-0023): R2 and R3
