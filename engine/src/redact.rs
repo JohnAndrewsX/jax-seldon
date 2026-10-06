@@ -127,7 +127,8 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// finds the option again in the same command ([`Rule::matches`]). The
 /// regexes are compiled on first use; a text whose ASCII lower case holds
 /// none of `triggers` cannot match (empty: always try; see
-/// [`holds_trigger`] for `+`). A match in which one of the groups in
+/// [`holds_trigger`] for `+`); `next` is compiled only for a rest of the
+/// command that holds one of `again` ([`Rule::again`]). A match in which one of the groups in
 /// `unless` takes part is left as it is: such a group stands for context
 /// that the `regex` crate cannot look behind or ahead for, so the pattern
 /// matches it and the rule then keeps the match. A group in
@@ -145,6 +146,7 @@ struct Rule {
     unless: &'static [&'static str],
     unless_followed: &'static [&'static str],
     triggers: &'static [&'static str],
+    again: &'static [&'static str],
 }
 
 /// One match of a rule: its groups, whose positions count from `offset`
@@ -188,13 +190,13 @@ impl Rule {
     /// word, and the scan never leaves the command. The search for the
     /// next command word goes on after the last of them.
     fn matches<'t>(&self, text: &'t str) -> Vec<Found<'t>> {
-        let Some(next) = self.next_regex() else {
+        if self.next.is_none() {
             return self
                 .regex()
                 .captures_iter(text)
                 .map(|caps| Found { offset: 0, caps })
                 .collect();
-        };
+        }
         let mut found = Vec::new();
         let mut pos = 0;
         while let Some(caps) = self.regex().captures_at(text, pos) {
@@ -202,7 +204,7 @@ impl Rule {
             let (start, mut end) = first.range();
             let in_command = first.caps.name("cmd").is_some();
             found.push(first);
-            while in_command && let Some(caps) = next.captures(&text[end..]) {
+            while in_command && let Some(caps) = self.again(&text[end..]) {
                 let again = Found { offset: end, caps };
                 end = again.range().1;
                 found.push(again);
@@ -212,6 +214,20 @@ impl Rule {
             pos = end;
         }
         found
+    }
+
+    /// The match of `next` at the start of `rest`, the text after the
+    /// previous match of an option rule. `next` is compiled only once a
+    /// `rest` holds one of `again`, literals as written that every match
+    /// of it holds (`-u` for `curl -u`/`--user`): most commands give an
+    /// option once, and a rest without one cannot match.
+    fn again<'t>(&self, rest: &'t str) -> Option<Captures<'t>> {
+        let next = match self.next_re.get() {
+            Some(next) => next,
+            None if self.again.iter().any(|a| rest.contains(a)) => self.next_regex()?,
+            None => return None,
+        };
+        next.captures(rest)
     }
 
     /// Whether `text` (`lower`: through [`trigger_text`]) may hold a
@@ -529,6 +545,7 @@ fn rule(name: &'static str, pattern: &str, replacement: &str) -> Rule {
         unless: &[],
         unless_followed: &[],
         triggers: triggers(name),
+        again: &[],
     }
 }
 
@@ -568,7 +585,29 @@ fn option_rule(
     }
     Rule {
         next: Some(format!(r"\A({COMMAND_REST}{option}){value}")),
+        again: again(name),
         ..rule(name, &format!("({first}){value}"), replacement)
+    }
+}
+
+/// Literal text, as written, that every match of the option `option` of
+/// the option rule `name` holds ([`option_rule`]; the options are
+/// case-sensitive, a case-insensitive long form holds `--`): the rule
+/// scans on in a command only when the rest of it holds one
+/// ([`Rule::again`]).
+fn again(name: &str) -> &'static [&'static str] {
+    match name {
+        // `--user` holds `-u`
+        "curl-user" => &["-u"],
+        "proxy-option" => &["-U", "--"],
+        "proxy-userinfo" => &["-x", "--"],
+        "cookie-option" => &["-b", "--cookie"],
+        // `--cert` and `--proxy-cert` hold `-cert`
+        "cert-password" => &["-E", "-cert"],
+        // `--auth` holds `-a`
+        "httpie-auth" => &["-a"],
+        "registry-login-password" => &["-p"],
+        _ => &[],
     }
 }
 
@@ -813,6 +852,10 @@ fn builtin_rules() -> Vec<Rule> {
         rules.iter().map(|r| r.name).eq(BUILTIN),
         "BUILTIN lists the rules"
     );
+    debug_assert!(
+        rules.iter().all(|r| r.next.is_some() != r.again.is_empty()),
+        "every option rule, and only one, has literals to scan on"
+    );
     rules
 }
 
@@ -875,6 +918,7 @@ impl Redactor {
                 unless: &[],
                 unless_followed: &[],
                 triggers: &[],
+                again: &[],
             });
         }
         Ok(redactor)
@@ -916,5 +960,54 @@ impl Redactor {
             })
             .map(|r| r.name)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WP-108: an option rule compiles `next` only when the rest of the
+    /// command holds one of its `again` literals, and then finds the
+    /// option there again. Fresh rules, so no earlier text compiled it.
+    #[test]
+    fn option_rules_scan_on_only_with_their_literals() {
+        for (name, text) in [
+            ("curl-user", "curl -u a:fakeA1 h.example -u b:fakeA2"),
+            ("curl-user", "curl -u a:fakeA1 h.example --user b:fakeA2"),
+            ("proxy-option", "curl -U a:fakeB1 h.example -U b:fakeB2"),
+            (
+                "proxy-userinfo",
+                "curl -x a:fakeC1@p.example h.example -x b:fakeC2@q.example",
+            ),
+            ("cookie-option", "curl -b s=fakeD1 h.example -b t=fakeD2"),
+            (
+                "cookie-option",
+                "curl -b s=fakeD1 h.example --cookie t=fakeD2",
+            ),
+            (
+                "cert-password",
+                "curl -E c.pem:fakeE1 h.example -E d.pem:fakeE2",
+            ),
+            ("httpie-auth", "http -a a:fakeF1 h.example -a b:fakeF2"),
+            ("httpie-auth", "http -a a:fakeF1 h.example --auth b:fakeF2"),
+            (
+                "registry-login-password",
+                "docker login -p fakeG1 r.example -p fakeG2",
+            ),
+        ] {
+            let rules = builtin_rules();
+            let rule = rules.iter().find(|r| r.name == name).unwrap();
+            let out = rule.replace(text);
+            assert!(!out.contains("fake"), "{name}: {out}");
+            assert_eq!(out.matches(REDACTED).count(), 2, "{name}: {out}");
+        }
+        // a curl line that gives `-u` once leaves `next` uncompiled
+        let rules = builtin_rules();
+        let rule = rules.iter().find(|r| r.name == "curl-user").unwrap();
+        let out = rule
+            .replace("set -e; curl -fsSL -u a:fakeA1 https://h.example/i.sh && git commit -am x");
+        assert!(!out.contains("fake"), "{out}");
+        assert!(rule.next_re.get().is_none());
     }
 }
