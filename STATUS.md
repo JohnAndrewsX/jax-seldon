@@ -14,6 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-111 | agent texts and docs for quiet drift; rules v3; silent upgrades (ADR-0028) | Engine + Docs | `engine-111` (opus) | `wt/WP-111` · `wp/111-agent-texts` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -25,7 +26,7 @@ machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
 done (it quotes `plan snapshot` and the agent-close refusal).
 ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
 classification) and WP-110 (plugin quiet surfaces) done, WP-111 (agent
-texts, docs, live check) after WP-109. Then the 0.1.4 release preparation
+texts, docs, live check) active. Then the 0.1.4 release preparation
 (tag on the operator's go). Later from ADR-0028: WP-112 (measured routine
 paths after a real update), WP-113 (plugin trees, toggles, opt-in
 authorized_keys; each item approved separately), WP-114 (pacman.conf;
@@ -535,6 +536,12 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- Test host: reinstalled fresh after 2026-10-07 10:00 (variant 1) and
+  kept free of personal settings; a snapper baseline "fresh" is the reset
+  point for live and release tests. Until then the lived-in host gives
+  reference measurements for a clean-vs-lived-in comparison. A live test
+  that ran under the operator's own agent rules is not evidence for
+  Seldon.
 - 0.1.4 keeps growing before a release: WP-101 and WP-094 (ADR-0027) and
   ADR-0028 (WP-109…111) are in it; the release after them, tag on the
   operator's go. Release policy: by theme, not by calendar; privacy and
