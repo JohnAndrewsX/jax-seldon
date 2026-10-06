@@ -1289,10 +1289,11 @@ the output holds one marker (WP-106). `cert-password` compiles only on
 a line holding `curl`, then `-E` as written, then a `:`, or `--cert` or
 `--proxy-cert` and a `:` after it, so neither `set -e` nor a later
 `sudo -E` without a `:` after it compiles it (WP-108; before, any curl
-line holding `-e` did, about 0.3 ms per hook call). `openssl-pass` compiles only on a line holding `pass:`,
-about 0.4 ms there; no hook line does; accepted. An e-mail address
-(`email`, WP-093) is a local part, `@`, and a domain of at least two
-labels whose last holds letters only (`example.de`, `müller.example`,
+line holding `-e` did, about 0.3 ms per hook call). `openssl-pass`
+compiles only on a line holding `pass:`, about 0.4 ms there; no hook
+line does; accepted. An e-mail address (`email`, WP-093) is a local
+part, `@`, and a domain of at least two labels whose last holds
+letters only (`example.de`, `müller.example`,
 `.испытание`). The local part is ASCII letters, digits and `._%+-`,
 plus characters beyond ASCII other than the no-break space, general
 punctuation (U+2000–U+206F: `—`, `„`, the quotes of `‹redacted›`), CJK
