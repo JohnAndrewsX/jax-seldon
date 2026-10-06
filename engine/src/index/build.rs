@@ -14,7 +14,7 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::config::{AttentionMode, DriftConfig};
-use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, format_ts};
+use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, TRUNCATED, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
 
 /// Most events the index lists (CONTRACT.md rule 4).
@@ -265,6 +265,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         system,
         memory,
         series,
+        triage: None,
     };
     warnings.extend(over_budget(&index));
     Built {
@@ -330,12 +331,21 @@ pub fn r3_advisory(id: &str, risk: Risk, subject: &str) -> String {
 pub fn decision_rows(decisions: Vec<(String, Decision)>) -> Vec<DecisionRow> {
     let mut rows: Vec<DecisionRow> = decisions
         .into_iter()
-        .map(|(path, d)| DecisionRow {
-            id: d.id,
-            title: d.title,
-            status: d.status.as_str().to_string(),
-            date: d.date.to_string(),
-            path,
+        .map(|(path, d)| {
+            let mut cases: Vec<String> = Vec::with_capacity(d.cases.len());
+            for c in d.cases {
+                if !cases.contains(&c) {
+                    cases.push(c);
+                }
+            }
+            DecisionRow {
+                id: d.id,
+                title: d.title,
+                status: d.status.as_str().to_string(),
+                date: d.date.to_string(),
+                path,
+                cases,
+            }
         })
         .collect();
     rows.sort_by(|a, b| b.id.cmp(&a.id));
@@ -433,10 +443,14 @@ pub fn clip(text: &str) -> Cow<'_, str> {
     Cow::Owned(format!("{head}{}", marker(total - head.chars().count())))
 }
 
-/// An event as `index.events` lists it: every free text [`clip`]ped.
+/// An event as `index.events` lists it: every free text [`clip`]ped, and
+/// `meta.truncated: true` when one was (ADR-0035 §3; index-only, so one
+/// a hand-edited ledger line carries is dropped).
 fn clipped(f: &IndexEvent) -> IndexEvent {
     let mut f = f.clone();
+    let mut cut = false;
     let meta = &mut f.event.meta;
+    meta.extra.remove(TRUNCATED);
     let texts = [
         &mut f.event.detail,
         &mut f.resolution_detail,
@@ -453,6 +467,7 @@ fn clipped(f: &IndexEvent) -> IndexEvent {
     for text in texts.into_iter().flatten() {
         if let Cow::Owned(short) = clip(text) {
             *text = short;
+            cut = true;
         }
     }
     for value in meta.extra.values_mut() {
@@ -460,7 +475,12 @@ fn clipped(f: &IndexEvent) -> IndexEvent {
             && let Cow::Owned(short) = clip(text)
         {
             *text = short;
+            cut = true;
         }
+    }
+    if cut {
+        meta.extra
+            .insert(TRUNCATED.to_string(), serde_json::Value::Bool(true));
     }
     f
 }
@@ -636,6 +656,11 @@ fn drift_items(
                 kind: lead.kind.as_str().to_string(),
                 subject: lead.subject.clone(),
                 detail: lead.detail.as_deref().map(|d| clip(d).into_owned()),
+                truncated: lead
+                    .detail
+                    .as_deref()
+                    .is_some_and(|d| matches!(clip(d), Cow::Owned(_)))
+                    .then_some(true),
                 actor: lead.actor.clone(),
                 zone: zone.map(String::from),
                 crisis: class == Class::Crisis,

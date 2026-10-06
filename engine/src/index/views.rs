@@ -776,6 +776,7 @@ mod tests {
             status: "accepted".into(),
             date: "2026-10-01".into(),
             path: format!("decisions/{id}-x.md"),
+            cases: Vec::new(),
         };
         let rows = [row("ADR-0002", "a | b"), row("ADR-0001", "One")];
         let fresh = "| ID | Title | Status | Date |\n|---|---|---|---|\n\

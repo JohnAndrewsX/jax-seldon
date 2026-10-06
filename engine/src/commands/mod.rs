@@ -175,6 +175,17 @@ impl Commit {
         }
     }
 
+    /// Keeps an attempt for `logbook.git.autocommit` (ADR-0035 §2); a
+    /// skip is no attempt.
+    pub fn record(&self, ctx: &Context, config: &Config, logbook: &Logbook) {
+        let (ok, message) = match self {
+            Commit::Committed(m) => (true, m),
+            Commit::Failed(e) | Commit::Warned(e) => (false, e),
+            Commit::Skipped(_) => return,
+        };
+        crate::index::autocommit::record(&ctx.dirs, config, &logbook.root, ctx.now, ok, message);
+    }
+
     /// A line for the human output, empty when there is nothing to say.
     pub fn human(&self) -> String {
         match self {
@@ -200,7 +211,7 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     if !git::is_repo(&logbook.root) {
         return Commit::Skipped("the logbook is not a git repository");
     }
-    match git::commit_all(&logbook.root, summary) {
+    let commit = match git::commit_all(&logbook.root, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
         Err(e) => {
             // not eprintln!: a closed stderr must not abort the command
@@ -210,7 +221,9 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
             );
             Commit::Warned(e)
         }
-    }
+    };
+    commit.record(ctx, config, logbook);
+    commit
 }
 
 /// [`autocommit`] of `paths` alone (relative to the logbook): a commit of
@@ -231,7 +244,7 @@ pub fn autocommit_paths(
     if !git::is_repo(&logbook.root) {
         return Commit::Skipped("the logbook is not a git repository");
     }
-    match git::commit_paths(&logbook.root, paths, summary) {
+    let commit = match git::commit_paths(&logbook.root, paths, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
         Err(e) => {
             let _ = writeln!(
@@ -240,7 +253,9 @@ pub fn autocommit_paths(
             );
             Commit::Warned(e)
         }
-    }
+    };
+    commit.record(ctx, config, logbook);
+    commit
 }
 
 /// The text of a free-text argument, or a user error when it is blank.

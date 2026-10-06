@@ -10,12 +10,14 @@
 //! - Every command that changes the logbook calls
 //!   [`rebuild_if_initialised`] once, after its own writes.
 
+pub mod autocommit;
 pub mod build;
 pub mod check;
 pub mod class;
 pub mod drift;
 pub mod load;
 pub mod model;
+pub mod triage;
 pub mod views;
 
 use std::path::Path;
@@ -58,7 +60,9 @@ pub fn derive_at(
         state,
         drift: config.drift.clone(),
     };
-    Ok(build::build(loaded, &input))
+    let mut built = build::build(loaded, &input);
+    built.index.triage = triage::read(dirs, &logbook.root, &mut built.warnings);
+    Ok(built)
 }
 
 /// The index as written: compact JSON plus a newline.
@@ -182,6 +186,7 @@ pub fn git_info(root: &Path) -> Option<model::GitInfo> {
     Some(model::GitInfo {
         head,
         dirty: Some(dirty),
+        autocommit: None,
     })
 }
 
@@ -222,7 +227,11 @@ pub fn git_head_fast(root: &Path) -> Option<model::GitInfo> {
     let head = sha
         .filter(|s| s.len() >= 7 && s.bytes().all(|b| b.is_ascii_hexdigit()))
         .map(|s| s[..7].to_string());
-    Some(model::GitInfo { head, dirty: None })
+    Some(model::GitInfo {
+        head,
+        dirty: None,
+        autocommit: None,
+    })
 }
 
 /// The index of a logbook that does not exist yet: `state.status
@@ -258,6 +267,7 @@ pub fn not_initialised(path: &Path, now: DateTime<FixedOffset>) -> Index {
         system: model::System::default(),
         memory: model::MemoryInfo::default(),
         series: model::Series::default(),
+        triage: None,
     }
 }
 
@@ -358,6 +368,7 @@ fn try_rebuild(ctx: &Context, probe: GitProbe) -> Result<Vec<String>> {
         GitProbe::Full => git_info(&logbook.root),
         GitProbe::HeadOnly => git_head_fast(&logbook.root),
     };
+    autocommit::attach(&mut built.index.logbook.git, &ctx.dirs, &config, &logbook.root);
     write(&ctx.dirs.index_file(), &built.index)?;
     Ok(built.warnings)
 }
