@@ -349,7 +349,10 @@ impl Rules {
         // §2): a file there runs at login whatever its name, so a backup
         // is routine only with evidence that it is one (WP-109 round 2)
         if !removed && self.always_red_paths.matches(&path) && !inert_hook(&e.subject) {
+            // not in Omarchy's hook directories: `omarchy-hook` runs every
+            // file there not named `*.sample`, a backup included (B5)
             if self.routine_paths.matches(&path)
+                && !e.subject.starts_with(HOOKS_DIR)
                 && history.holds_base_content(e)
                 && let Some(v) = self.routine("routine-paths")
             {
@@ -1345,6 +1348,28 @@ mod tests {
         let mut bare = config(Kind::ConfigAdd, "~/.config/uwsm/env.bak.", None);
         bare.meta.hash_to = Some("H-old".into());
         let ledger = [old, bare];
+        assert_eq!(verdict(&d, &ledger, &[1]), (C, "always-red-paths"));
+        // B5: in a hook directory a backup runs too (`omarchy-hook` skips
+        // only `*.sample`): a crisis even with its base's content
+        let mut sample = config(
+            Kind::ConfigChange,
+            "~/.config/omarchy/hooks/post-update.d/x.sample",
+            None,
+        );
+        sample.meta.hash_to = Some("H-run".into());
+        let sample = at_ts(sample, "2026-09-01T10:00:00+02:00");
+        let mut copy = config(
+            Kind::ConfigAdd,
+            "~/.config/omarchy/hooks/post-update.d/x.sample.bak.1786539345",
+            None,
+        );
+        copy.meta.hash_to = Some("H-run".into());
+        let ledger = [sample, copy];
+        assert_eq!(
+            verdict(&d, &ledger, &[0]),
+            (A, "config"),
+            "the sample stays quiet"
+        );
         assert_eq!(verdict(&d, &ledger, &[1]), (C, "always-red-paths"));
         // outside the persistence paths a backup stays routine without evidence
         let ledger = [config(Kind::ConfigAdd, "~/.config/hypr/x.lua.bak.1", None)];

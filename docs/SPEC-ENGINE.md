@@ -1184,7 +1184,9 @@ After every capture:
    holds the content the ledger last recorded for `<base>` (the `hashTo`
    of the latest event of `<base>` before it, or the `hashFrom` of the
    first at or after it: the copy `omarchy refresh` makes before it
-   restores the default), else a crisis, whatever its name; then
+   restores the default), except under `~/.config/omarchy/hooks/`, where
+   every file not named `*.sample` runs (WP-109 round 3); else a crisis,
+   whatever its name; then
    `routinePaths` routine `routine-paths`; any other `config-remove`
    attention `config-remove`; in a theme directory
    `~/.config/omarchy/themes/<slug>/`, `meta.matches = theme-repo`

@@ -270,7 +270,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is neither group- nor world-writable; `seldon doctor` says when they
   do not. A file in a persistence path is a crisis whatever its name: a
   `*.bak.*` there is routine only when it holds what the file had before
-  (the backup `omarchy refresh` makes). The watcher unit counts as
+  (the backup `omarchy refresh` makes), and never in Omarchy's hook
+  directories, where every file not named `*.sample` runs. The watcher unit counts as
   Seldon's own only when it starts this engine; a theme counts as cloned
   only with a real `.git` directory; `pacman -Syu -` (targets from stdin)
   is no plain upgrade; `-U` is an upgrade only from a package cache

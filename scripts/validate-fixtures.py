@@ -332,7 +332,9 @@ class Classifier:
             # the persistence paths right after the evidence rows; a backup there needs evidence
             inert = subject.startswith("~/.config/omarchy/hooks/") and subject.endswith(".sample")
             if not removed and path_match(self.red_paths, subject) and not inert:
-                if path_match(self.routine_paths, subject) and self.holds_base_content(e):
+                # not under the hooks dir: omarchy-hook runs every file not named *.sample (B5)
+                if (path_match(self.routine_paths, subject) and not subject.startswith("~/.config/omarchy/hooks/")
+                        and self.holds_base_content(e)):
                     return ("routine", "routine-paths")
                 return ("crisis", "always-red-paths")
             if path_match(self.routine_paths, subject):
