@@ -145,9 +145,9 @@ clean_log() {
 sample="$fx/index.sample.json"
 plan_s="2 active cases · 6 of 9 steps done"
 risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
-drift_s="11 opened · 6 resolved in 5 weeks · peak 2026-W40"
-s30="67 events on 14 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
-s90="72 events on 15 of 90 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+drift_s="12 opened · 7 resolved in 5 weeks · peak 2026-W40"
+s30="68 events on 14 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s90="73 events on 15 of 90 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s365=${s90/of 90 days/of 365 days}
 sall=${s90/of 90 days/of 366 days}
 
@@ -177,7 +177,7 @@ expect ipc 2 '[.texts[] | select(. == "Releases, snapshots, cases, crises")] | l
 for label in Heatmap Series DriftBars RiskDonut Timeline "The Plan"; do shows ipc 2 "$label"; done
 # Each chart's summary is its caption, in the slot's title row.
 summaries ipc 2 "$s90"
-shows ipc 2 "72 events on 15 of 90 days · busiest 2026-10-01 (30)"
+shows ipc 2 "73 events on 15 of 90 days · busiest 2026-10-01 (30)"
 shows ipc 2 "$risk_s"
 shows ipc 2 "$plan_s"
 # The Plan's cards: id and risk, title, steps and agent.
@@ -191,7 +191,7 @@ fits ipc 2 1920 1080
 counts ipc 3 30 "30,2,5,4,17,2"
 summaries ipc 3 "$s30"
 expect ipc 3 '.view.window.from + " " + .view.window.to' "2026-09-02 2026-10-01"
-shows ipc 3 "67 events on 14 of 30 days · busiest 2026-10-01 (30)"
+shows ipc 3 "68 events on 14 of 30 days · busiest 2026-10-01 (30)"
 shows ipc 3 "30 d · 2026-09-02 – 2026-10-01"
 counts ipc 4 90 "90,3,5,4,18,2"
 counts ipc 5 365 "365,3,5,4,18,2"
