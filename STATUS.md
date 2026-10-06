@@ -537,6 +537,10 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- ADR-0031 accepted: password prompts follow Omarchy (sudo in the user's
+  terminal, pkexec otherwise, one program per pkexec); the target is "as
+  few as the route allows" (replaces ADR-0027's "at most one"); the
+  agent snapshots `root` only. No polkit rule, no root helper.
 - ADR-0029 accepted (from the live test): a change made while exactly
   one case was active and named it in its Plan is that case's, whoever
   typed it; `alwaysRed` subjects only for an R3 case; `plan verify`/`done`
