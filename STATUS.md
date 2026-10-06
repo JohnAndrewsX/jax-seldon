@@ -14,6 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-118 | wizard, installer and docs texts (UX review) | Engine + Docs | `engine-118` (opus) | `wt/WP-118` · `wp/118-setup-texts` | 2026-10-06 |
 | WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
 
 ## Queued (next up)
