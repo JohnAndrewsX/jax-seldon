@@ -335,3 +335,69 @@ Appended to `memory/pitfalls.md` (WP-108):
   - That logbook's `init` ran its read-only dossier queries on the dev
     host into the scratchpad, not into the repo.
 - The A/B binaries are in `engine/target/ab/` (git-ignored target dir).
+
+## Round 2 (review: stage 1 SEND BACK, tests only)
+
+Commits: `55d908d` (B1 rows, N1), `2455b6e` (N2), plus this section. No
+merge of `main` (N3 is the orchestrator's).
+
+### Items
+
+1. **B1.** `redact::tests::option_rules_scan_on_only_with_their_literals`
+   has seven new rows, one per option rule. Each repeats the option
+   glued to its value, so an `again` literal that holds the option plus
+   a space no longer passes:
+   - `curl -u a:fakeA1 h -ub:fakeA2`;
+   - `curl -U a:fakeB1 h -Ub:fakeB2`;
+   - `curl -x a:fakeC1@p h -xb:fakeC2@q`;
+   - `curl -b s=fakeD1 h -bt=fakeD2`;
+   - `curl -E c.pem:fakeE1 h -Ed.pem:fakeE2`;
+   - `http -a a:fakeF1 h -ab:fakeF2`;
+   - `docker login -p fakeG1 r -pfakeG2`.
+
+   Each row runs on fresh `builtin_rules()`, as the hook process does.
+   The test asserts that no `fake` is left and that the output holds
+   two markers.
+2. **N1.** The `Rule` doc now says "a text that holds none of
+   `triggers` as [`holds_trigger`] reads them (in lower case, or as
+   written for one with a capital; `+` and the `>` order) cannot match".
+   The paragraph is re-wrapped, and no comment line is longer than 74
+   columns.
+3. **N2.** SPEC-ENGINE §7: the 107-column line is re-wrapped, and so are
+   the next two lines. No word changed.
+
+### Mutants (round 2)
+
+The runner is the same as in round 1, run on the committed `55d908d`
+(dev profile, `--lib --test redaction --no-fail-fast`). The baseline
+was green before it: lib 221, redaction 26. The source diff was empty
+after it.
+
+| # | Mutant | Result |
+|---|---|---|
+| M4 | cert `again` `-E ` | killed: `option_rules_scan_on…` |
+| M15 | registry `again` `-p ` | killed: `option_rules_scan_on…` |
+| M22 | cookie `again` `-b ` | killed: `option_rules_scan_on…` |
+| M23 | proxy-userinfo `again` `-x ` | killed: `option_rules_scan_on…` |
+| M24 | proxy-option `again` `-U ` | killed: `option_rules_scan_on…` |
+| M25 | curl-user `again` `-u ` (with `--user` kept) | killed: `option_rules_scan_on…` |
+| M14 | httpie `again` `-a ` (re-run; killed in review 1) | killed: `option_rules_scan_on…` |
+
+Result: 7 of 7 killed. With round 1, 38 mutants: 35 killed, and 3
+equivalent survivors (L4, L6, L10), which stay as decided.
+
+### Verified
+
+- `cargo fmt` and `cargo clippy --all-targets -- -D warnings` are clean,
+  inside `just check`.
+- **`flock /tmp/seldon-check.lock just check` at `2455b6e`: exit 0**
+  (10:09–10:18). Results:
+  - 70 test binaries ok;
+  - install 209/0, deploy-test-host 190/0, real-home-guard 11/0;
+  - service-states 314/0, panel-view 782/0, overlay-view 319/0,
+    bar-view 143/0;
+  - qmllint 29 files, docs-check ok, `check: ok`.
+- `check-perf` was not re-run. This round changed a test, a doc comment
+  and a SPEC line; no code on the hook path changed.
+
+No guard-hook blocks this round. Touched outside WP scope: none.
