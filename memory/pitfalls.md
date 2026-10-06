@@ -2055,3 +2055,23 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   look the same; `--source pacman` then `--source omarchy`, both with an
   unreadable cursor and no events of their source, kill the "replace"
   mutant.
+
+## 2026-10-06 · WP-105 (Engine Dev)
+
+- **A test of the ledger's copy cannot prove redaction of the source.**
+  `Ledger::append` redacts every event, so the WP-099 note test passes
+  with the collector message raw everywhere else; the mutant "no
+  redaction at the source" survives it. Assert on `cursors.json`,
+  `capture --json` and `index.json` themselves.
+- **A collector message reaches the logbook too.** `STATUS.md` lists a
+  degraded collector with the index's message (`views.rs`), and the
+  session-end hook commits it. Anything the index carries can end up in
+  the logbook's git history.
+- **`cursors.json` entries of collectors a capture does not run are
+  saved as loaded.** A fix to what a capture writes there leaves older
+  entries as they were unless the capture rewrites them on load; do it
+  before the WP-099 "as loaded" copy, or the marked file keeps the old
+  text (`the_file_a_crash_leaves_holds_it_masked`).
+- **A user pattern in a test is the only way to tell "the logbook's
+  redactor" from `Redactor::builtin()`.** Give every redaction test a
+  `[redaction] patterns` entry that matches part of the planted text.
