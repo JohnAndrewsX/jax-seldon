@@ -446,3 +446,51 @@ round-1b test `migration::never_as_root` sets `SELDON_TEST_ROOT_PROBE=/`
 on the command itself, which overrides the new default; the other
 migration tests rely on the default probe being a user, which `main`
 now provides under CI's root too.
+
+## Round 3
+
+Brief: `review-0.1.1/handovers/WP-116-round-3-brief.md` (private).
+Stage 2 (Fable) approved `44601ae` except the migration, pending the
+operator's ruling; the operator decided ADR-0032 accepted and migration
+option (A), automatic once with a guard.
+
+```
+WP-116 ROUND 3
+Done: ADR-0032 accepted (status, §1 wording, new §5 amending ADR-0030 §5); ADR-0030 header back-reference (status line + one quote line) and DECISIONS.md; the migration guard for [agent] workdir = "logbook" with a test; guide 06 (workdir keeps the hooks in the logbook's settings), guide 11 (the first capture after the update copies the hooks once), guide 04 ("one logbook per launched session", and the guard), en/de; SPEC-ENGINE §3; CHANGELOG
+Not done: nothing of the brief
+Verified by: flock /tmp/seldon-check.lock just check → exit 0 (`check: ok`) on 735c9f6; mutant M37 killed
+```
+
+### Commits
+
+- `15c2745` engine: no user-wide hook copy with `[agent] workdir = "logbook"`
+- `5d68748` docs: ADR-0032 accepted with §5 (hooks user-wide once); guides 04, 06, 11
+- `735c9f6` docs: German guides 04, 06, 11 follow
+- (this section)
+
+### Details
+
+- **Guard.** `migrate_to_user_wide` returns first when `[agent] workdir =
+  "logbook"`: no copy and no marker (R3-D1: without a marker, switching
+  back to the default later migrates, which is what that user then
+  asks for). Test `migration::not_with_workdir_logbook`: no copy, user
+  file byte-for-byte, no marker; after the key is set to `"inherit"`
+  the next capture migrates. (The test edits the config text: a save
+  keeps keys it does not write, so `configure()` cannot switch back.)
+- **ADR-0032** status "accepted (operator decision 2026-10-06 …)"; §1
+  now "reads the folder of active cases (where verification cases also
+  live)"; §5 with the operator's sentence, word for word, plus why and
+  how. **ADR-0030**: the status line names the amendment of §1 clause
+  (b), §3 and §5 by ADR-0032; the quote line under the date replaces
+  round 2's "proposed" note. `DECISIONS.md` rows for both.
+- **Guide 04**: "One logbook per launched session" after "Never set
+  `SELDON_CASE` yourself" (the marker names a case of the logbook Seldon
+  started the agent on; a session re-pointed with `SELDON_LOGBOOK` or
+  `--logbook` would be recorded in another logbook that has an open
+  case with the same id); "Hooks of an older logbook" names the guard.
+  Guide 06's `workdir` paragraph and guide 11's update section as the
+  brief words them. German source lines point at `5d68748`.
+
+| # | Mutant | Caught by |
+|---|---|---|
+| M37 | no `workdir = "logbook"` guard | `migration::not_with_workdir_logbook` |
