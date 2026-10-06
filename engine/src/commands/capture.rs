@@ -43,6 +43,11 @@
 //! append clears it. A crash between the two leaves the mark, and the next
 //! capture, which repeats the same comparison, does not write a note the
 //! ledger holds at that time again ([`pending_notes`], WP-099).
+//! The same save marks the sources whose baseline the capture takes (or
+//! leaves waiting) without a note, because the ledger holds no event of
+//! them, in `silentBaselines`: the next capture after such a crash does
+//! not count the events the crashed append wrote of them as held, so it
+//! records no state reset that lost nothing ([`held_sources`], WP-104).
 //! A corrupt `owned.json` counts for the config collector; a capture that
 //! runs that collector moves it to `owned.json.bad` after the ledger write,
 //! so the next capture does not report it again.
@@ -153,7 +158,25 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         .filter(|(_, run)| !run)
         .map(|(name, _)| *name)
         .collect();
-    let waiting = waiting_baselines(&ledger, &states, &not_run, binding, &cursors, &logbook.root)?;
+    owned_corrupt &= reports.iter().any(|r| r.name == "config" && r.ran && r.ok);
+    if owned_corrupt {
+        lost.push(("config", Lost::Owned));
+    }
+    // what a crashed capture baselined silently: its events are no loss
+    let unheld = cursors
+        .silent_baselines
+        .get(&logbook.root)
+        .cloned()
+        .unwrap_or_default();
+    let candidates = waiting_candidates(&states, &not_run, binding, &cursors, &logbook.root);
+    let held = held_sources(&ledger, lost.iter().chain(&candidates), &unheld)?;
+    let recorded = pending_notes(&ledger, &cursors.pending_notes)?;
+    // a loss the crashed capture's note names is recorded: it does not wait
+    let noted = noted_sources(&recorded);
+    let waiting: Vec<(&'static str, Lost)> = only_held(&candidates, &held)
+        .into_iter()
+        .filter(|(n, _)| !noted.contains(n))
+        .collect();
     let mark = |name: &str| {
         waiting
             .iter()
@@ -168,13 +191,8 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         .iter()
         .filter_map(|&name| Some((name, CollectorState::waiting(mark(name)?))))
         .collect();
-    owned_corrupt &= reports.iter().any(|r| r.name == "config" && r.ran && r.ok);
-    if owned_corrupt {
-        lost.push(("config", Lost::Owned));
-    }
     attribution::attribute_capture(&ledger, &mut events, &ctx.dirs.home, &stamps)?;
-    let recorded = pending_notes(&ledger, &cursors.pending_notes)?;
-    let reset = state_reset(&ledger, &lost, &recorded, baseline, now)?;
+    let reset = state_reset(only_held(&lost, &held), &recorded, baseline, now);
     let access = access_change(&cursors, &states, now)
         .filter(|note| !recorded.iter().any(|r| r.subject == note.subject));
     let notes: Vec<Event> = reset
@@ -183,14 +201,29 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         .into_iter()
         .chain(access)
         .collect();
+    // a crash between the append and the save below must not write the
+    // notes again (WP-099), nor count the first events this append writes
+    // of a silent baseline as a loss (WP-104)
+    let mut marked = loaded.clone();
     if !notes.is_empty() {
-        // a crash between the append and the save below must not write
-        // the notes again (WP-099)
-        let mut marked = loaded;
         let at = format_ts(&now);
         if !marked.pending_notes.contains(&at) {
             marked.pending_notes.push(at);
         }
+    }
+    let silent = unheld_sources(lost.iter().chain(&candidates), &held);
+    if !silent.is_empty() {
+        let names = marked
+            .silent_baselines
+            .entry(logbook.root.clone())
+            .or_default();
+        for name in silent {
+            if !names.iter().any(|n| n == name) {
+                names.push(name.to_string());
+            }
+        }
+    }
+    if marked != loaded {
         marked.save(&cursors_path)?;
     }
     #[cfg(debug_assertions)]
@@ -203,7 +236,18 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     for (name, state) in states.into_iter().chain(bare) {
         cursors.collectors.insert(name.to_string(), state);
     }
+    // not run, and waiting since before the crashed capture whose note
+    // recorded its gap: no longer waiting (an entry with only the mark goes)
+    for name in not_run.iter().filter(|n| noted.contains(n)) {
+        if let Some(entry) = cursors.collectors.get_mut(*name) {
+            entry.pending_baseline = None;
+            if entry.last_run.is_none() && entry.cursor.is_none() {
+                cursors.collectors.remove(*name);
+            }
+        }
+    }
     cursors.pending_notes.clear();
+    cursors.silent_baselines.clear();
     cursors.save(&cursors_path)?;
     let mut warnings = Vec::new();
     if let Some(reset) = &reset {
@@ -319,31 +363,29 @@ fn baselines(
 /// this capture, and what they lost: among `states` those that degraded
 /// (WP-088), and among `not_run` those without an entry in `cursors` (as
 /// bound for this capture), whose state the capture drops (WP-091; one
-/// with an entry keeps it as it is). The baseline each would have taken
-/// waits, through the capture's gate ([`losses`]: [`Lost::Cursor`] or
-/// [`Lost::Logbook`]) and ledger rule ([`held_losses`]); a collector
-/// already waiting stays so, with its kind. Its first successful run
-/// records the gap as a state reset.
-fn waiting_baselines(
-    ledger: &Ledger,
+/// with an entry keeps it as it is). Through the capture's gate
+/// ([`losses`]: [`Lost::Cursor`] or [`Lost::Logbook`]); the baseline of
+/// each that also passes the ledger rule ([`held_sources`]) waits, and a
+/// collector already waiting stays so, with its kind. Its first
+/// successful run records the gap as a state reset.
+fn waiting_candidates(
     states: &[(&'static str, CollectorState)],
     not_run: &[&'static str],
     binding: Binding,
     cursors: &Cursors,
     logbook: &Path,
-) -> Result<Vec<(&'static str, Lost)>> {
+) -> Vec<(&'static str, Lost)> {
     let degraded = states.iter().filter(|(_, s)| !s.ok).map(|(n, _)| *n);
     let dropped = not_run
         .iter()
         .copied()
         .filter(|n| !cursors.collectors.contains_key(*n));
-    let lost = losses(
+    losses(
         baselines(cursors, logbook, degraded.chain(dropped)),
         binding,
         cursors,
         logbook,
-    );
-    held_losses(ledger, &lost)
+    )
 }
 
 /// The state reset the next `seldon capture` would record, predicted from
@@ -356,14 +398,13 @@ fn waiting_baselines(
 /// recorded (`cursors`, or `logbook`). Not predicted: whether a collector degrades in that
 /// capture (it then takes no baseline, and its baseline waits), and the
 /// config collector's `manifest.json` and `owned.json` losses (doctor's
-/// `state` rows check those files). Also returns the binding, which names
-/// the cause.
+/// `state` rows check those files).
 pub(crate) fn pending_reset(
     ledger: &Ledger,
     config: &Config,
     cursors: &Cursors,
     logbook: &Path,
-) -> Result<(Binding, Vec<(&'static str, Lost)>)> {
+) -> Result<PendingReset> {
     let binding = Binding::of(cursors, logbook);
     let enabled = select(config, &CaptureArgs::default())?
         .into_iter()
@@ -375,7 +416,33 @@ pub(crate) fn pending_reset(
         cursors,
         logbook,
     );
-    Ok((binding, held_losses(ledger, &lost)?))
+    let unheld = cursors
+        .silent_baselines
+        .get(logbook)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let lost = held_losses(ledger, &lost, unheld)?;
+    let notes = pending_notes(ledger, &cursors.pending_notes)?;
+    let noted = noted_sources(&notes);
+    let (recorded, lost) = lost.into_iter().partition(|(n, _)| noted.contains(n));
+    Ok(PendingReset {
+        binding,
+        lost,
+        recorded,
+    })
+}
+
+/// The state reset the next capture would record ([`pending_reset`]).
+#[derive(Debug, Clone)]
+pub(crate) struct PendingReset {
+    /// Names the cause.
+    pub binding: Binding,
+    /// The losses its note will name.
+    pub lost: Vec<(&'static str, Lost)>,
+    /// The losses a `state-reset` note in the ledger already names, written
+    /// by a capture that stopped before its save of `cursors.json`
+    /// ([`pending_notes`]): the next capture only warns of them (WP-104).
+    pub recorded: Vec<(&'static str, Lost)>,
 }
 
 /// Whether a collector's baseline for want of `lost` is a loss. Bound to
@@ -510,20 +577,18 @@ struct Reset {
     lost: Vec<(&'static str, Lost)>,
 }
 
-/// The state reset of the collectors in `lost` whose source the ledger
-/// already holds events of; `None` when there is none (no loss, or the
-/// first capture of a logbook). Its note names those that no note among
-/// `recorded` names (WP-099): each loss is recorded once.
+/// The state reset of the collectors in `lost`, whose source the ledger
+/// already holds events of ([`held_sources`]); `None` when there is none
+/// (no loss, or the first capture of a logbook). Its note names those that
+/// no note among `recorded` names (WP-099): each loss is recorded once.
 fn state_reset(
-    ledger: &Ledger,
-    lost: &[(&'static str, Lost)],
+    lost: Vec<(&'static str, Lost)>,
     recorded: &[Event],
     baseline: DateTime<FixedOffset>,
     now: DateTime<FixedOffset>,
-) -> Result<Option<Reset>> {
-    let lost = held_losses(ledger, lost)?;
+) -> Option<Reset> {
     if lost.is_empty() {
-        return Ok(None);
+        return None;
     }
     let noted = noted_sources(recorded);
     let unnoted: Vec<(&'static str, Lost)> = lost
@@ -532,7 +597,7 @@ fn state_reset(
         .filter(|(n, _)| !noted.contains(n))
         .collect();
     let note = (!unnoted.is_empty()).then(|| reset_note(&unnoted, baseline, now));
-    Ok(Some(Reset { note, lost }))
+    Some(Reset { note, lost })
 }
 
 /// The `state-reset` note for the losses `lost`.
@@ -572,23 +637,61 @@ fn reset_note(
 }
 
 /// The losses among `lost` whose source the ledger holds at least one event
-/// of (the WP-081 rule: the first capture of a logbook loses nothing).
+/// of, `unheld` aside ([`held_sources`]).
 fn held_losses(
     ledger: &Ledger,
     lost: &[(&'static str, Lost)],
+    unheld: &[String],
 ) -> Result<Vec<(&'static str, Lost)>> {
-    let mut wanted: Vec<Source> = lost.iter().filter_map(|(n, _)| n.parse().ok()).collect();
+    let held = held_sources(ledger, lost, unheld)?;
+    Ok(only_held(lost, &held))
+}
+
+/// The sources of `lost` the ledger holds at least one event of (the
+/// WP-081 rule: the first capture of a logbook loses nothing), except
+/// those in `unheld` ([`Cursors::silent_baselines`]): the events a capture
+/// that stopped before its save of `cursors.json` wrote of a source it
+/// baselined without a note are not what a loss loses (WP-104).
+fn held_sources<'a>(
+    ledger: &Ledger,
+    lost: impl IntoIterator<Item = &'a (&'static str, Lost)>,
+    unheld: &[String],
+) -> Result<Vec<Source>> {
+    let mut wanted: Vec<Source> = lost
+        .into_iter()
+        .filter(|(n, _)| !unheld.iter().any(|u| u == n))
+        .filter_map(|(n, _)| n.parse().ok())
+        .collect();
     wanted.sort_by_key(|s| s.as_str());
     wanted.dedup();
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
-    let held = recorded_sources(ledger, &wanted)?;
-    Ok(lost
-        .iter()
+    recorded_sources(ledger, &wanted)
+}
+
+/// The losses among `lost` whose source is in `held`.
+fn only_held(lost: &[(&'static str, Lost)], held: &[Source]) -> Vec<(&'static str, Lost)> {
+    lost.iter()
         .copied()
         .filter(|(n, _)| held.iter().any(|s| s.as_str() == *n))
-        .collect())
+        .collect()
+}
+
+/// The collector names of `lost` whose source is not in `held`, each once
+/// in run order: the baselines taken (or waiting) without a note.
+fn unheld_sources<'a>(
+    lost: impl IntoIterator<Item = &'a (&'static str, Lost)>,
+    held: &[Source],
+) -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = Vec::new();
+    for (n, _) in lost {
+        let source: Option<Source> = n.parse().ok();
+        if source.is_some_and(|s| !held.contains(&s)) && !names.contains(n) {
+            names.push(n);
+        }
+    }
+    names
 }
 
 /// The collector names of `lost`, each once, in run order.

@@ -1,6 +1,6 @@
 # Fehlersuche
 
-<!-- source: en/10-troubleshooting.md @ 9aca4f0 -->
+<!-- source: en/10-troubleshooting.md @ 64d5f55 -->
 
 Diese Seite hilft, wenn etwas falsch aussieht: Sie beginnt mit
 `seldon doctor`, geht dann durch die Banner des Panels, die Exit-Codes
@@ -220,6 +220,12 @@ beschrieben.
   wiederherzustellen: Der Zustand gehört zu einem anderen Logbuch-Pfad
   (du hast das Logbuch verschoben oder einen Befehl mit `--logbook` für
   ein anderes ausgeführt). Führe `seldon capture` aus.
+- Sagt die Zeile `the next capture will warn of the state reset for …`,
+  hat ein Capture den Reset festgehalten und ist stehen geblieben, bevor
+  es seinen Zustand gespeichert hat (ein Absturz, ein Kill). Es gelten
+  dieselben Schritte; das nächste Capture hält den Reset kein zweites
+  Mal fest, es gibt nur die Warnung aus, und danach bleibt keine Zeile
+  stehen.
 
 doctor kann nicht wissen, ob ein Collector in diesem Capture degraded
 läuft (snapper ohne die Lesefreigabe zum Beispiel). So ein Collector

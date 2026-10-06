@@ -88,6 +88,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capture first marks the notes in `cursors.json` (`pendingNotes`), and
   the next one skips a note the ledger already holds, but still prints
   the state-reset warning the crash hid (WP-099).
+- Such a crash no longer makes the next capture record a state reset for
+  a source the crashed capture recorded first (its first capture, or a
+  source without events before): the capture also marks those sources in
+  `cursors.json` (`silentBaselines`), and the next one does not count
+  their new events as lost. `seldon doctor` after a crashed state reset
+  no longer says the next capture will record it; it says the next
+  capture will warn of it. A `--source` capture right after such a crash
+  no longer leaves the collectors it does not run waiting for a baseline
+  the crashed note already recorded, which gave a second reset note
+  later (WP-104).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains

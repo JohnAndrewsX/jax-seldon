@@ -303,6 +303,14 @@ pub struct Cursors {
     /// again. Not written while empty: older files read unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_notes: Vec<String>,
+    /// Per logbook, the sources a capture baselined without a note (the
+    /// ledger held no event of them) when it saved this file right before
+    /// the append, with [`Cursors::pending_notes`]; cleared by the same
+    /// save after the append (WP-104). The events that append wrote are no
+    /// loss of the next capture's (`capture::held_sources`). Not written
+    /// while empty: older files read unchanged.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub silent_baselines: BTreeMap<PathBuf, Vec<String>>,
 }
 
 /// One collector's entry in `cursors.json`. `ok`, `message` and `lastRun`
