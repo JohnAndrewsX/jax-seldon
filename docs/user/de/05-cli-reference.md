@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 65ad985 -->
+<!-- source: en/05-cli-reference.md @ 7ff67a6 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -91,7 +91,7 @@ Options:
 | `VISUAL`, `EDITOR` | der Editor, den `seldon open --editor` und `seldon decide` im Terminal starten |
 | `SELDON_ACTOR` | wen `log`, `event`, `plan` und `drift` aufzeichnen, wenn `--actor` fehlt, und `hook generic`, wenn sein JSON kein `"actor"` hat. `seldon agent start` setzt sie für den Agenten (`agent:` und der Name des Launchers). Ein Wert, den der Befehl nicht annimmt, ist ein Bedienfehler (1); leer zählt als nicht gesetzt |
 | `SELDON_ATTENDED` | `1` für einen Agenten, den `seldon agent start` gestartet hat: Die Sitzung hat der Benutzer begonnen. Gesetzt für die Regeln des Agenten; die Engine liest sie nie |
-| `SELDON_CASE` | die Case-ID für einen Agenten, den `seldon agent start` gestartet hat. Die Hooks zeichnen eine solche Sitzung auf, wo immer sie arbeitet; ein Wert, der keine Case-ID ist, gilt als nicht gesetzt. Befehle landen weiter auf dem aktiven Case |
+| `SELDON_CASE` | die Case-ID für einen Agenten, den `seldon agent start` gestartet hat. Die Hooks zeichnen eine solche Sitzung auf, wo immer sie arbeitet, solange dieser Case aktiv oder in Prüfung ist; jeder andere Wert gilt als nicht gesetzt. Befehle landen weiter auf dem aktiven Case. Seldon setzt sie; setz sie nie selbst |
 | `CLAUDE_CONFIG_DIR` | der Einstellungsordner von Claude Code: `hook install claude-code` und `doctor` nehmen dessen `settings.json` statt `~/.claude/settings.json` |
 | `SELDON_NOW` | eine feste Uhrzeit (RFC 3339), für Vorführungen und Tests |
 | `SELDON_TEST_GUARD` | ein Ordner; die Engine verweigert den Start (Exit 2), wenn ihr Home-, Konfigurations- oder Zustandsordner außerhalb davon liegt. Nimm sie, wenn du Seldon in einem Wegwerf-Home ausprobierst |

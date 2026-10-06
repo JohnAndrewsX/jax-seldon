@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 927090b -->
+<!-- source: en/04-working-with-agents.md @ 7ff67a6 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -83,6 +83,9 @@ nächste Erfassung bringt Seldons Block auf den neuen Stand, lässt deinen
 Teil darunter Byte für Byte, wie er ist, und sagt es in einer
 `note:`-Zeile; die Änderung bekommt einen eigenen Commit,
 `seldon: rules update (unedited, v3 → v4)`, der nur `AGENTS.md` enthält.
+Hatte `AGENTS.md` Änderungen von dir, die du noch nicht committet hast,
+wird das Update geschrieben, aber nicht committet; es geht mit deinem
+nächsten Commit mit, und die `note:`-Zeile sagt das.
 Eine Datei aus Version 0.1.0 bis 0.1.3, die niemand bearbeitet hat, wird
 genauso ersetzt. `seldon doctor` liest eine solche Datei bis dahin als
 `ok`.
@@ -364,9 +367,13 @@ dessen Case. `SELDON_ATTENDED=1` sagt dem Agenten, dass du ihn gestartet
 hast; was er dann darf, sagen die Regeln des Logbuchs (`AGENTS.md`).
 Seldon selbst liest die Variable nie. `SELDON_CASE` nennt den Case: Es
 sagt Seldons Hooks, dass Seldon diese Sitzung gestartet hat, sodass sie
-sie in jedem Ordner aufzeichnen, und der Kontext der Sitzung beginnt mit
-der Zeile „Launched by seldon agent start on C-2026-003; … this session
-is recorded.“ Befehle landen weiter auf dem aktiven Case. Die Variablen
+sie in jedem Ordner aufzeichnen, solange der Case offen ist, und der
+Kontext der Sitzung beginnt mit der Zeile „Launched by seldon agent start
+on C-2026-003; … this session is recorded.“ Befehle landen weiter auf dem
+aktiven Case. Ist der Case erledigt, werden die Befehle der Sitzung
+außerhalb des Logbuchs nicht mehr aufgezeichnet. Setz `SELDON_CASE` nie
+selbst: Seldon setzt es, und jede Sitzung, die es erbt, wird
+aufgezeichnet, solange ihr Case offen ist. Die Variablen
 erreichen den Agenten nur, wenn der Launcher das Terminal startet; ein
 Terminal-Server (`footclient`, `kitty --single-instance`, ein wezterm-Mux)
 nimmt seine eigene Umgebung, und dann nennt nur `--actor` den Agenten.
