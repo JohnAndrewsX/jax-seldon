@@ -333,8 +333,10 @@ seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8: the Seldo
                                                # content is Seldon's, the manifest unless a file is kept,
                                                # the folder when empty. Under the lock; own writes (§5
                                                # rule 7). No logbook needed; --settings is refused.
+                                               # A folder that fails (action "failed", its error) does
+                                               # not stop the others; exit 1 then, after the report.
                                                # --json → {skill, dirs: [{dir, path, state, action,
-                                               # written, removed, kept}], absent, ownWrites}
+                                               # written, removed, kept, error}], absent, ownWrites}
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…"?,"cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub

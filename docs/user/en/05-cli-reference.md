@@ -893,7 +893,9 @@ skill folder that exists: `~/.agents/skills`, `~/.claude/skills`,
 into. It creates none of them. The skill lands in `<folder>/seldon/`; a
 `seldon` there that Seldon did not write, or a file in it you changed, is
 left as it is and named in the report. An older skill is updated.
-Running it again changes nothing. See
+A folder it cannot write fails alone: the others are still installed, the
+report names the failed one, and the command exits 1. Running it again
+changes nothing. See
 [Working with agents](04-working-with-agents.md#the-agent-skill).
 
 <!-- help: seldon hook install -->
