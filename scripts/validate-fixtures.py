@@ -1220,18 +1220,21 @@ CASE_STEPS = {
 }
 
 
-def check_case_logs(ledger, case_files):
+# ADR-0035 §1, the fixture story: the engine speaks contract 2 from the start of 2026-10-01; the
+# case lines written from then on carry meta.risk and every `set` Log line has its case-updated
+CONTRACT_2_FROM = "2026-10-01T00:00:00+02:00"
+
+
+def check_case_logs(ledger, case_files, contract_2_from=CONTRACT_2_FROM):
     """Walk every case's Log lines through the state machine `queued → active → verification →
     completed`, open → `dropped`. The walk must end in the frontmatter status; its steps must be
     the case's `case-*` ledger events (same kind, minute and actor, in order); `created`, `started`
     and `closed` are the dates of their steps; `started (snapshot N)` is `snapshotBefore`.
-    ADR-0035 §1: from the first ledger line that carries `meta.risk` on (the engine speaks
-    contract 2), every `set …` Log line is a `case-updated` line with its words as `detail`, and
-    every `case-created|started|updated` line carries the risk the Log has at that step; lines
-    before it carry none."""
+    ADR-0035 §1: from `contract_2_from` on (None: never), every `set …` Log line is a
+    `case-updated` line with its words as `detail`, and every `case-created|started|updated` line
+    carries the risk the Log has at that step; lines before it carry none."""
     out = []
-    risked = [instant(e["ts"]) for _, e in ledger if "risk" in e.get("meta", {})]
-    v2_since = min(risked) if risked else None
+    v2_since = instant(contract_2_from) if contract_2_from else None
 
     def v2(day, hm):
         return v2_since is not None and \
@@ -1855,6 +1858,44 @@ def self_checks(today):
     if not any("C-2026-001" in e and "'completed' from active" in e for e in errs):
         out.append(f"self-check 'C-2026-001 active -> completed is rejected': walker reported {errs}")
 
+    # ADR-0035 §1: a contract-2 `set` Log line without its case-updated line is caught, and so is
+    # a case-started line whose meta.risk is not the Log's risk at that step
+    def drop_case_updated(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if e["kind"] != "case-updated"]
+
+    ledger, case_files = load_logbook(LOGBOOK, [], drop_case_updated)
+    errs = check_case_logs(ledger, case_files)
+    if not any("C-2026-003" in e and "case-updated" in e for e in errs):
+        out.append(f"self-check 'a set line needs its case-updated line (ADR-0035)': walker reported {errs}")
+
+    def wrong_start_risk(ledger):
+        for _, e in ledger:
+            if e["kind"] == "case-started" and e["subject"] == "C-2026-008":
+                e["meta"]["risk"] = "R1"
+
+    ledger, case_files = load_logbook(LOGBOOK, [], wrong_start_risk)
+    errs = check_case_logs(ledger, case_files)
+    if not any("C-2026-008" in e and "meta.risk" in e for e in errs):
+        out.append(f"self-check 'meta.risk is the Log's risk at the step (ADR-0035)': walker reported {errs}")
+
+    # ADR-0035 §1, append-only: the same logbook with every meta.risk gone (an engine of contract
+    # 1 wrote the case lines, the set line had no ledger line) derives the same cases and drift
+    def contract_1(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if e["kind"] != "case-updated"]
+        for _, e in ledger:
+            if "risk" in e.get("meta", {}):
+                del e["meta"]["risk"]
+                if not e["meta"]:
+                    del e["meta"]
+
+    problems = []
+    base, _, _ = derive(LOGBOOK, today, [])
+    old, _, old_cases = derive(LOGBOOK, today, problems, mutate=contract_1)
+    ledger, _ = load_logbook(LOGBOOK, [], contract_1)
+    problems += check_case_logs(ledger, old_cases, None)
+    if problems or old["cases"] != base["cases"] or old["drift"] != base["drift"]:
+        out.append(f"self-check 'a ledger without meta.risk derives the same (ADR-0035)': {problems[:3]}")
+
     # ADR-0029 rule 9: the sample's engine link must be missed without its line, and must be
     # extra when C-2026-002's Plan no longer names the package, or when a second case planned it
     # in the same window (no link then, and a Log line in each)
@@ -1941,7 +1982,7 @@ def self_checks(today):
         lines, logs = planned_links([e for _, e in ledger], case_files)
         if not ok(lines, logs):
             out.append(f"self-check 'rule 9: {label}': lines {[(e['id'], c) for e, c, _ in lines]}, logs {logs}")
-    return out, len(cases) + len(proposals) + 2 + len(rule9) + len(round2)
+    return out, len(cases) + len(proposals) + 5 + len(rule9) + len(round2)
 
 
 # --------------------------------------------------------------------------- snapshot info files

@@ -124,6 +124,14 @@ Rules the fixture check implements beyond the plain field copies:
   `started (snapshot N)` is `snapshotBefore`. A 22nd self-check removes
   C-2026-001's verification step (the fixture before WP-015) and requires the
   walk to reject `completed` from active.
+  Contract 2 (ADR-0035 §1; `CONTRACT_2_FROM`, the start of 10-01 in the
+  story): from then on every `set …` Log line is a `case-updated` line with
+  its words as `detail`, and every `case-created|started|updated` line
+  carries the risk the Log has at that step (`meta.risk`); earlier lines
+  carry none. Three self-checks: without the `case-updated` line, with a
+  wrong `meta.risk` on a start, and the whole logbook without any
+  `meta.risk` (a contract-1 ledger), which must derive the same cases and
+  drift.
 - **Index times.** `generatedAt` is not before any event in `events`, and
   `state.lastCapture` is not before any collector event (the engine stamps
   both when it writes). This holds for the sample and every variant.
