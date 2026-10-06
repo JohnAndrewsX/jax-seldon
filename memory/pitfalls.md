@@ -2225,8 +2225,8 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 
 ## 2026-10-07 · WP-130 (Engine)
 
-- **The guard parses the command since WP-130.** The substring bullets
-  above (WP-002, WP-007, WP-008, WP-013 …) describe the old grep guard:
+- **The guard parses the command since WP-130.** The red-zone guard
+  bullets in earlier sections describe the old substring (grep) guard:
   words in quotes, heredoc bodies, `grep` patterns, `jq` filters and
   commit messages are data now. What it still blocks without a red-zone
   action is fail-closed: a computed command name (`$CMD …`; assign it in
