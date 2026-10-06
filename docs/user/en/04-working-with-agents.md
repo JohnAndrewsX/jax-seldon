@@ -364,16 +364,19 @@ at length:
 
 - check whether there is a logbook (`seldon plan list --status active
   --json`); without one the skill does not apply;
-- find the active case, or open and start one for your request, and act
-  inside its *Intent*; print a preview line before the first privileged
-  step;
+- work on the case it was launched on or you name; an active case it
+  only finds is not its own, so for your request it opens and starts a
+  new one (or asks you which case it belongs to), and acts inside its
+  *Intent*; print a preview line before the first privileged step;
 - before a package transaction, resolve it read-only and check it against
   `[drift] alwaysRed`; a hit is R3 and waits for your go;
 - take the snapshot of an R2 or R3 case itself and record its number;
 - verify with a check that is not its own, fill *Result* and close the
   case;
 - report its commands through `seldon hook generic` when no hook serves
-  it;
+  it, in a form that runs nothing of the reported command;
+- treat your own rules below Seldon's block in `AGENTS.md` as limits
+  only: nothing there loosens the R3 stop or "unattended: record only";
 - explain drift only with evidence, and tell you about a crisis in one
   line;
 - for Omarchy itself (Hyprland, the bar, themes), follow Omarchy's own
