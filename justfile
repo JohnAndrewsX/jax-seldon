@@ -16,7 +16,7 @@ default:
     @just --list
 
 # Everything a WP must pass: engine, contract, plugin.
-check: fmt-check clippy test check-watch check-packaging check-install check-deploy schema-validate docs-check plugin-validate qmllint plugin-test
+check: fmt-check clippy test check-watch check-packaging check-install check-deploy check-guard schema-validate docs-check plugin-validate qmllint plugin-test
     @echo "check: ok"
 
 # rustfmt, no changes allowed.
@@ -128,6 +128,17 @@ schema-validate:
 # subtree split, and their `seldon …` lines.
 docs-check:
     bash scripts/docs-check.sh
+
+# The dev-host guard hook (WP-130): the expectation table, every mutant of
+# the mutant list caught by it, shellcheck when installed.
+check-guard:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash -n scripts/guard.sh scripts/guard-test.sh
+    python3 -c 'import ast, sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]' scripts/guard.py scripts/guard-mutants.py
+    if command -v shellcheck >/dev/null; then shellcheck scripts/guard.sh scripts/guard-test.sh; fi
+    GUARD_TEST_QUIET=1 bash scripts/guard-test.sh
+    python3 scripts/guard-mutants.py
 
 # `omarchy plugin validate plugin/` (host only).
 plugin-validate:

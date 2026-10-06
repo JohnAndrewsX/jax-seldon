@@ -312,6 +312,9 @@ sudo pacman -Syu'
 checkh B 'ssh test-host "$(sudo pacman -Syu)"'
 checkh B 'ssh test-host ls > ~/.config/hypr/x'
 checkh B 'ssh test-host x; omarchy agent prompt y'
+checkh B 'ssh test-host sudo pacman -Syu; echo done'
+checkh B 'ssh test-host true
+ssh test-host sudo pacman -Syu'
 checkh A 'ssh test-host journalctl --user -n 50 > /tmp/test-host.log'
 checkh A "ssh test-host 'echo \$(sudo pacman -Q)'"
 echo "rows: $rows"
