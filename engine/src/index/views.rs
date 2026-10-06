@@ -122,12 +122,13 @@ fn is_case_kind(kind: Kind) -> bool {
 }
 
 /// Whether the month view shows `detail`: versions, hashes, snapshot
-/// descriptions; not note texts, command lines or reasons.
+/// descriptions, what `plan set` changed; not note texts, command lines,
+/// reasons or case titles.
 fn shows_detail(kind: Kind) -> bool {
     !matches!(
         kind,
         Kind::Note | Kind::Correction | Kind::Command | Kind::Resolution
-    ) && !is_case_kind(kind)
+    ) && (!is_case_kind(kind) || kind == Kind::CaseUpdated)
 }
 
 fn one_line(s: &str) -> String {

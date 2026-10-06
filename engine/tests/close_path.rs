@@ -151,8 +151,21 @@ mod set {
             "- 2026-10-01 11:00 · set zone yellow → red, risk R1 → R3, area editors → boot · \
              agent:claude-code"
         );
-        // no ledger event: no kind fits, the Log line and the commit are the record
-        assert_eq!(ledger(&root).len(), before);
+        // one `case-updated` line with the risk after it (ADR-0035 §1)
+        let lines = ledger(&root);
+        assert_eq!(lines.len(), before + 1);
+        let e = lines.last().unwrap();
+        assert_eq!(e["kind"], "case-updated");
+        assert_eq!(e["source"], "seldon");
+        assert_eq!(e["subject"], "C-2026-001");
+        assert_eq!(e["case"], "C-2026-001");
+        assert_eq!(e["actor"], "agent:claude-code");
+        assert_eq!(
+            e["detail"],
+            "zone yellow → red, risk R1 → R3, area editors → boot"
+        );
+        assert_eq!(e["meta"], serde_json::json!({ "risk": "R3" }));
+        assert_eq!(v["event"]["id"], e["id"]);
         assert!(root.join("areas/boot/README.md").is_file());
 
         // the same values again: nothing changed, nothing written
@@ -164,7 +177,19 @@ mod set {
             &["plan", "set", "C-2026-001", "--risk", "R3"],
         ));
         assert_eq!(v["changed"], serde_json::json!([]));
+        assert_eq!(v["event"], serde_json::Value::Null);
         assert_eq!(read(&case_path(&root, "C-2026-001")), file);
+        assert_eq!(ledger(&root).len(), before + 1, "nothing changed, no line");
+
+        // a change of the area alone still carries the risk
+        let v = ok(&run(
+            &env,
+            T2,
+            None,
+            &["plan", "set", "C-2026-001", "--area", "editors"],
+        ));
+        assert_eq!(v["event"]["detail"], "area boot → editors");
+        assert_eq!(v["event"]["meta"], serde_json::json!({ "risk": "R3" }));
 
         // human output
         let mut cmd = env.command(&["plan", "set", "C-2026-001", "--risk", "R2"]);

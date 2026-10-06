@@ -108,6 +108,20 @@ fn write_cursors(env: &Env, logbook: &Path, degraded: Option<(&str, &str)>) {
     std::fs::write(state.join("cursors.json"), cursors.to_string()).unwrap();
 }
 
+/// `fixtures/proposals/` in the state directory (the sample's `triage`,
+/// ADR-0035 §6), bound to `logbook` instead of the fixture's
+/// `/home/user/Seldon`.
+fn write_proposals(env: &Env, logbook: &Path) {
+    let dir = env.home.join(".local/state/seldon/proposals");
+    std::fs::create_dir_all(&dir).unwrap();
+    for entry in std::fs::read_dir(repo("fixtures/proposals")).unwrap() {
+        let path = entry.unwrap().path();
+        let mut p = json_file(&path);
+        p["logbook"] = json!(std::fs::canonicalize(logbook).unwrap());
+        std::fs::write(dir.join(path.file_name().unwrap()), p.to_string()).unwrap();
+    }
+}
+
 /// A copy of the fixture logbook in `env` (changed by `prepare`), indexed
 /// at the sample's time.
 fn golden_run(
@@ -119,6 +133,7 @@ fn golden_run(
     copy_dir(&fixture_logbook(), &lb);
     prepare(&lb);
     write_cursors(env, &lb, degraded);
+    write_proposals(env, &lb);
     let out = env.at(
         GENERATED_AT,
         &[
@@ -1052,7 +1067,7 @@ fn reader(path: PathBuf, stop: Arc<AtomicBool>) -> std::thread::JoinHandle<usize
                     bytes.len()
                 )
             });
-            assert_eq!(v["contractVersion"], json!(1));
+            assert_eq!(v["contractVersion"], json!(seldon::CONTRACT_VERSION));
             reads += 1;
         }
         reads
@@ -1117,7 +1132,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     let tmp = TempDir::new("x10");
     let root = tmp.path().join("logbook");
     let lines = common::scale::scaled_logbook(&fixture_logbook(), &root, 10);
-    assert_eq!(lines, 830, "83 ledger lines ×10");
+    assert_eq!(lines, 850, "85 ledger lines ×10");
     let logbook = Logbook::open(&root).unwrap();
     let dirs = Dirs {
         home: tmp.path().into(),
@@ -1787,15 +1802,62 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
         )
         .filter_map(Value::as_str)
         .collect();
+    // and the sample's own long note of 2026-09-12 (ADR-0035 §3)
     let n = probes.len();
     assert_eq!(
         all.iter().filter(|t| marked(t).is_some()).count(),
-        3 * n + n / 2 + n / 2,
+        3 * n + n / 2 + n / 2 + 1,
         "clipped texts"
     );
     for text in &all {
         assert!(json_bytes(text) <= build::TEXT_MAX, "{text:?}");
     }
+
+    // ADR-0035 §3: `meta.truncated` (events) and `truncated` (drift) mark
+    // exactly the clipped ones
+    for e in index["events"].as_array().unwrap() {
+        let cut = [
+            &e["detail"],
+            &e["resolutionDetail"],
+            &e["meta"]["command"],
+            &e["meta"]["note"],
+        ]
+        .into_iter()
+        .filter_map(Value::as_str)
+        .any(|t| marked(t).is_some());
+        let want = if cut { json!(true) } else { Value::Null };
+        assert_eq!(e["meta"]["truncated"], want, "{}", e["id"]);
+    }
+    for d in index["drift"].as_array().unwrap() {
+        let cut = d["detail"].as_str().is_some_and(|t| marked(t).is_some());
+        let want = if cut { json!(true) } else { Value::Null };
+        assert_eq!(d["truncated"], want, "{}", d["eventId"]);
+    }
+}
+
+/// ADR-0035 §3: `meta.truncated` is index-only. A ledger line that carries
+/// one (a hand edit) does not make an unclipped event look cut, and the
+/// engine never writes one into the ledger (`seldon event --meta` refuses
+/// it; `cli.rs`).
+#[test]
+fn a_ledger_truncated_mark_is_dropped() {
+    let env = Env::new(Snapper::Missing);
+    let (_, _, index) = golden_run(&env, None, |lb| {
+        let month = lb.join("ledger/2026-10.jsonl");
+        let text = std::fs::read_to_string(&month).unwrap();
+        let text = text.replace(
+            r#""meta":{"command":"omarchy update"}"#,
+            r#""meta":{"command":"omarchy update","truncated":true}"#,
+        );
+        std::fs::write(&month, text).unwrap();
+    });
+    let e = index["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "01M3V4RY8GW92AWEZ8KFTHZRAW")
+        .unwrap();
+    assert_eq!(e["meta"], json!({ "command": "omarchy update" }));
 }
 
 // --------------------------------------------------------------------------

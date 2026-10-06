@@ -30,5 +30,5 @@
       { "key": "driftInBar", "type": "enum", "label": "Changes counted in the bar", "options": ["crisis", "all", "none"], "defaultValue": "crisis", "description": "crisis: changes that can affect boot, login or the shell and have no case. all: every change without a case. none: no count. The bar turns to the error colour on a crisis in every mode." }
     ]
   },
-  "seldon": { "contractVersion": 1, "engineMin": "0.1.0" }
+  "seldon": { "contractVersion": 2, "engineMin": "0.1.0" }
 }

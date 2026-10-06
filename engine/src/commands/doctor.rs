@@ -980,7 +980,7 @@ fn check_reset(ctx: &Context, logbook: &Logbook) -> Option<Check> {
         let events = ledger.read_month(m).ok()?.events;
         events
             .into_iter()
-            .filter(|e| crate::collectors::is_state_loss(e))
+            .filter(crate::collectors::is_state_loss)
             .max_by_key(|e| e.ts)
     })?;
     if reset.ts < last {
