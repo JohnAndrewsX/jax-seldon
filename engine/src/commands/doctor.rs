@@ -1,5 +1,5 @@
 //! `seldon doctor`: engine, config, logbook, cases, ledger, fences,
-//! collectors, state, skills, omarchy, snapper and git checks
+//! collectors, state, skills, hooks, omarchy, snapper and git checks
 //! (SPEC-ENGINE §3).
 //! Read-only: no lock, no write; never runs anything with privileges.
 //!
@@ -235,6 +235,8 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     };
     checks.extend(check_state(ctx));
     checks.push(check_skills(ctx));
+    let (hooks_check, hooks_installed) = check_hooks(ctx, &effective, logbook.as_ref());
+    checks.push(hooks_check);
     checks.push(check_omarchy(&effective, &shown));
     checks.push(check_snapper(&effective, &shown));
     checks.push(check_git(&effective, logbook.as_ref()));
@@ -291,7 +293,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             // which sessions the hooks record (`[hooks] scope`): the agent
             // skill reports commands from outside the logbook only with
             // `all` (WP-111)
-            "hooks": { "scope": effective.hooks.scope },
+            "hooks": { "scope": effective.hooks.scope, "installed": hooks_installed },
         }),
         exit,
     })
@@ -704,6 +706,103 @@ fn check_skills(ctx: &Context) -> Check {
     match fix {
         Some(f) => check.fix(f),
         None => check,
+    }
+}
+
+/// Where Seldon's Claude Code hooks are installed (ADR-0030 §5): the
+/// user-wide settings file serves every session `seldon agent start`
+/// launched, wherever it works; the logbook's own file only sessions in the
+/// logbook. `user-wide` and `both` are ok (`both` offers the tidy-up),
+/// `logbook` is degraded, `none` is ok unless `harnesses` names
+/// `claude-code`. Also returns that word for the JSON. Read-only.
+fn check_hooks(ctx: &Context, config: &Config, logbook: Option<&Logbook>) -> (Check, &'static str) {
+    use super::hook::{CLAUDE_HOOKS, LOGBOOK_SETTINGS, claude_hooks_in, user_settings_file};
+    const INSTALL: &str = "seldon hook install claude-code";
+    let all = CLAUDE_HOOKS.len();
+    let user = user_settings_file(&ctx.dirs);
+    let shown = ctx.dirs.display(&user);
+    let user_count = match claude_hooks_in(&user) {
+        Ok(n) => n,
+        Err(why) => {
+            return (
+                Check::new("hooks", Status::Degraded, format!("{shown} {why}"))
+                    .fix(format!("correct {shown}, then {INSTALL}")),
+                "unknown",
+            );
+        }
+    };
+    let local = logbook.map(|l| l.path(LOGBOOK_SETTINGS));
+    let in_logbook = local
+        .as_deref()
+        .is_some_and(|p| claude_hooks_in(p).is_ok_and(|n| n > 0));
+    let tidy = local.as_deref().map(|p| {
+        format!(
+            "optional: seldon hook uninstall claude-code --settings {}",
+            ctx.dirs.display(p)
+        )
+    });
+    match (user_count, in_logbook) {
+        (n, false) if n == all => (
+            Check::new(
+                "hooks",
+                Status::Ok,
+                format!("user-wide ({shown}): every session seldon agent start launches is recorded"),
+            ),
+            "user-wide",
+        ),
+        (n, true) if n == all => {
+            let check = Check::new(
+                "hooks",
+                Status::Ok,
+                format!(
+                    "user-wide ({shown}) and in the logbook's {LOGBOOK_SETTINGS}; a tool call is recorded once"
+                ),
+            );
+            (
+                match tidy {
+                    Some(t) => check.fix(t),
+                    None => check,
+                },
+                "both",
+            )
+        }
+        (0, true) => (
+            Check::new(
+                "hooks",
+                Status::Degraded,
+                format!(
+                    "logbook only ({LOGBOOK_SETTINGS}): sessions started from ~/Work are not recorded"
+                ),
+            )
+            .fix(INSTALL),
+            "logbook",
+        ),
+        (0, false) if !config.harnesses.iter().any(|h| h == "claude-code") => (
+            Check::new(
+                "hooks",
+                Status::Ok,
+                "none: no Claude Code harness is configured",
+            ),
+            "none",
+        ),
+        (0, false) => (
+            Check::new(
+                "hooks",
+                Status::Degraded,
+                "none: the Claude Code harness is configured, but no settings file holds Seldon's hooks",
+            )
+            .fix(INSTALL),
+            "none",
+        ),
+        (n, _) => (
+            Check::new(
+                "hooks",
+                Status::Degraded,
+                format!("incomplete: {shown} holds {n} of Seldon's {all} hooks"),
+            )
+            .fix(INSTALL),
+            if in_logbook { "both" } else { "user-wide" },
+        ),
     }
 }
 
