@@ -19,17 +19,22 @@
 //! program is known to run its arguments as code is refused (a check by
 //! program name, not a sandbox).
 //!
-//! The launcher starts detached in the logbook directory, with
-//! `SELDON_LOGBOOK` set to it ([`launch_detached`], as `open --editor`),
-//! `SELDON_ACTOR=agent:<launcher name>` ([`Launcher::actor`]; the actor of
-//! the agent's `seldon` calls that give no `--actor`) and
-//! `SELDON_ATTENDED=1` (ADR-0027 §2d: the session has a user; the agent's
-//! rules read it, the engine never does) (WP-096).
+//! The launcher starts detached ([`launch_detached`], as `open --editor`)
+//! where `omarchy agent prompt` would start the agent (ADR-0030 §2,
+//! [`start_dir`]): in the folder `agent start` was called in, or `~/Work`
+//! (else `$HOME`) when that is `$HOME`, `/` or gone; `[agent] workdir =
+//! "logbook"` starts it in the logbook. Its environment holds
+//! `SELDON_LOGBOOK` (the logbook), `SELDON_ACTOR=agent:<launcher name>`
+//! ([`Launcher::actor`]; the actor of the agent's `seldon` calls that give
+//! no `--actor`), `SELDON_ATTENDED=1` (ADR-0027 §2d: the session has a
+//! user; the agent's rules read it, the engine never does) (WP-096) and
+//! `SELDON_CASE=<id>`, the marker by which the hooks serve the session
+//! wherever it works (ADR-0030 §1).
 //! Its stderr goes to `<state>/agent-launch.log`, so a launcher that fails
 //! at once is reported with its message. On a failure the previous active
 //! case is restored.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use clap::{Args, Subcommand};
@@ -38,7 +43,7 @@ use serde_json::json;
 use super::event::{ACTOR_ENV, actor_or_env, parse_case_id, parse_person};
 use super::open::launch_detached;
 use super::{CONFIG_ENV, Context, Output, autocommit, required_text};
-use crate::config::{AgentConfig, DEFAULT_AGENT_LAUNCHER, LOGBOOK_ENV};
+use crate::config::{AgentConfig, AgentWorkdir, DEFAULT_AGENT_LAUNCHER, LOGBOOK_ENV};
 use crate::error::{Error, Result};
 use crate::logbook::{Logbook, cases};
 use crate::model::event::ACTOR_HUMAN;
@@ -59,6 +64,43 @@ pub const OMARCHY_NAME: &str = "omarchy";
 /// Set to `1` for the launched agent: a session `seldon agent start`
 /// launched is attended (ADR-0027 §2d). Nothing in the engine reads it.
 pub const ATTENDED_ENV: &str = "SELDON_ATTENDED";
+
+/// Set to the case id for the launched agent: the hooks serve a session
+/// that carries it wherever it works (ADR-0030 §1). Nothing else in the
+/// engine reads it; hook attribution stays with `.seldon/active-case`.
+pub const CASE_ENV: &str = "SELDON_CASE";
+
+/// The folder `omarchy-agent` moves to from `$HOME`, below the home
+/// directory.
+pub const WORK_DIR: &str = "Work";
+
+/// Where the launcher starts (ADR-0030 §2): `here`, the folder `agent
+/// start` was called in, unless it is `$HOME`, `/` or not a directory
+/// (`None`: gone); then `~/Work` when it is a directory, else `home`. The
+/// rule of `omarchy-agent`, so the agent gets the same trusted folder as
+/// from `omarchy agent prompt` whichever launcher runs it.
+pub fn start_dir(here: Option<&Path>, home: &Path) -> PathBuf {
+    let same = |a: &Path, b: &Path| {
+        a == b
+            || matches!(
+                (std::fs::canonicalize(a), std::fs::canonicalize(b)),
+                (Ok(x), Ok(y)) if x == y
+            )
+    };
+    match here {
+        Some(dir) if dir.is_dir() && !same(dir, home) && !same(dir, Path::new("/")) => {
+            dir.to_path_buf()
+        }
+        _ => {
+            let work = home.join(WORK_DIR);
+            if work.is_dir() {
+                work
+            } else {
+                home.to_path_buf()
+            }
+        }
+    }
+}
 
 /// Where the launcher's stderr goes, in the state directory.
 pub const LAUNCH_LOG: &str = "agent-launch.log";
@@ -487,7 +529,16 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
     let new = match target {
         Target::Case(id) => {
             let lock = ctx.lock()?;
-            return launch_on(ctx, &logbook, &launcher, &actor, &id, lock, None);
+            return launch_on(
+                ctx,
+                &logbook,
+                &launcher,
+                config.agent.workdir,
+                &actor,
+                &id,
+                lock,
+                None,
+            );
         }
         Target::New(new) => new,
     };
@@ -531,6 +582,7 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
         ctx,
         &logbook,
         &launcher,
+        config.agent.workdir,
         &actor,
         &id,
         lock,
@@ -541,10 +593,12 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
 /// Launches `launcher` on case `id` under `lock`. `created`: the case
 /// `--new` made under the same lock hold (it stays active when the launch
 /// fails, and the error says how to retry).
+#[allow(clippy::too_many_arguments)]
 fn launch_on(
     ctx: &Context,
     logbook: &Logbook,
     launcher: &Launcher,
+    workdir: AgentWorkdir,
     actor: &str,
     id: &str,
     lock: crate::logbook::lock::Lock,
@@ -565,9 +619,23 @@ fn launch_on(
         }
     }
 
+    let cwd = match workdir {
+        AgentWorkdir::Logbook => logbook.root.clone(),
+        AgentWorkdir::Inherit => start_dir(std::env::current_dir().ok().as_deref(), &ctx.dirs.home),
+    };
     let previous = cases::active_case(logbook);
     cases::set_active_case(logbook, id)?;
-    let launched = launch(ctx, logbook, launcher, actor, &prompt(id, &logbook.root));
+    let launched = launch(
+        ctx,
+        logbook,
+        launcher,
+        Launch {
+            actor,
+            case: id,
+            cwd: &cwd,
+            prompt: &prompt(id, &logbook.root),
+        },
+    );
     if let Err(e) = launched {
         if created.is_some() {
             // the case holds the user's intent: it stays, active
@@ -593,7 +661,7 @@ fn launch_on(
     human.push_str(&format!(
         "Agent started on {id} with launcher `{}` ({program}) in {}, as {actor}",
         launcher.name,
-        ctx.dirs.display(&logbook.root)
+        ctx.dirs.display(&cwd)
     ));
     let mut out = json!({
         "launched": true,
@@ -602,7 +670,7 @@ fn launch_on(
         "argv": launcher.argv,
         "actor": actor,
         "case": id,
-        "cwd": logbook.root,
+        "cwd": cwd,
         "previousActiveCase": previous,
     });
     if let Some((c, commit)) = created {
@@ -617,15 +685,20 @@ fn launch_on(
     Ok(Output::ok(human, out))
 }
 
-/// The launcher's prompt: the case id (checked by `cases::find`), the
-/// logbook path from the config and fixed text. The agent reads the
-/// logbook context itself, so no logbook text is in the process arguments.
+/// The launcher's prompt (ADR-0030 §3): the case id (checked by
+/// `cases::find`), the logbook path from the config and fixed text. It
+/// names the skill, and the rules file for a harness without skills (the
+/// agent may start outside the logbook), as `omarchy-agent-crash` names its
+/// skill. The agent reads the logbook context itself, so no logbook text is
+/// in the process arguments.
 pub fn prompt(id: &str, root: &Path) -> String {
     format!(
-        "Work case {id} in the Seldon logbook at {}. First run `seldon hook session-start` \
-         (the logbook context) and `seldon plan show {id}` (the case file). Every mutating \
-         command is recorded.",
-        root.display()
+        "Work case {id} in the Seldon logbook at {}. Use the seldon skill; if your harness has \
+         no skill mechanism, read {} (Seldon's rules) instead. First run `seldon hook \
+         session-start` unless your harness already gave you the block `# Seldon logbook \
+         context`, then `seldon plan show {id}`. Every mutating command is recorded.",
+        root.display(),
+        root.join(crate::logbook::rules::FILE).display()
     )
 }
 
@@ -641,21 +714,31 @@ fn restore(logbook: &Logbook, id: &str, previous: Option<&str>) {
     }
 }
 
-/// Starts the launcher detached in the logbook. `Err` is the message.
+/// What one launch passes to the launcher besides its argv.
+struct Launch<'a> {
+    actor: &'a str,
+    case: &'a str,
+    cwd: &'a Path,
+    prompt: &'a str,
+}
+
+/// Starts the launcher detached in `cwd`. `Err` is the message.
 fn launch(
     ctx: &Context,
     logbook: &Logbook,
     launcher: &Launcher,
-    actor: &str,
-    prompt: &str,
+    how: Launch,
 ) -> Result<(), String> {
     let program = &launcher.argv[0];
     let mut cmd = Command::new(program);
-    cmd.args(launcher.args(prompt))
-        .current_dir(&logbook.root)
+    cmd.args(launcher.args(how.prompt))
+        .current_dir(how.cwd)
+        // a launcher that is no shell reads the folder from PWD
+        .env("PWD", how.cwd)
         .env(LOGBOOK_ENV, &logbook.root)
-        .env(ACTOR_ENV, actor)
-        .env(ATTENDED_ENV, "1");
+        .env(ACTOR_ENV, how.actor)
+        .env(ATTENDED_ENV, "1")
+        .env(CASE_ENV, how.case);
     // the agent's own `seldon` calls read the config this one read
     if ctx.config_file != ctx.dirs.config_file() {
         cmd.env(CONFIG_ENV, &ctx.config_file);
@@ -932,10 +1015,49 @@ mod tests {
         let p = prompt("C-2026-007", Path::new("/home/u/Seldon"));
         assert_eq!(
             p,
-            "Work case C-2026-007 in the Seldon logbook at /home/u/Seldon. First run \
-             `seldon hook session-start` (the logbook context) and `seldon plan show C-2026-007` \
-             (the case file). Every mutating command is recorded."
+            "Work case C-2026-007 in the Seldon logbook at /home/u/Seldon. Use the seldon skill; \
+             if your harness has no skill mechanism, read /home/u/Seldon/AGENTS.md (Seldon's \
+             rules) instead. First run `seldon hook session-start` unless your harness already \
+             gave you the block `# Seldon logbook context`, then `seldon plan show C-2026-007`. \
+             Every mutating command is recorded."
         );
         assert!(!p.contains('\n'));
+    }
+
+    /// `omarchy-agent`'s folder rule, extended to `/` and a folder that is
+    /// gone (ADR-0030 §2).
+    #[test]
+    fn the_start_folder_follows_omarchy_agent() {
+        let base = std::env::temp_dir().join(format!("seldon-start-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let home = base.join("home");
+        let project = home.join("src/project");
+        std::fs::create_dir_all(&project).unwrap();
+        let file = home.join("file");
+        std::fs::write(&file, "").unwrap();
+        let gone = home.join("gone");
+        // without ~/Work: home
+        assert_eq!(start_dir(Some(&project), &home), project);
+        assert_eq!(start_dir(Some(&home), &home), home);
+        assert_eq!(start_dir(Some(Path::new("/")), &home), home);
+        assert_eq!(start_dir(None, &home), home);
+        assert_eq!(start_dir(Some(&gone), &home), home);
+        assert_eq!(start_dir(Some(&file), &home), home);
+        // with ~/Work
+        let work = home.join("Work");
+        std::fs::create_dir(&work).unwrap();
+        assert_eq!(start_dir(Some(&project), &home), project);
+        assert_eq!(start_dir(Some(&home), &home), work);
+        assert_eq!(start_dir(Some(&home.join("src/..")), &home), work);
+        assert_eq!(start_dir(Some(Path::new("/")), &home), work);
+        assert_eq!(start_dir(None, &home), work);
+        assert_eq!(start_dir(Some(&gone), &home), work);
+        assert_eq!(start_dir(Some(&work), &home), work);
+        // home reached through a link is home
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&home, &link).unwrap();
+        assert_eq!(start_dir(Some(&link), &home), work);
+        assert_eq!(start_dir(Some(&home), &link), link.join("Work"));
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

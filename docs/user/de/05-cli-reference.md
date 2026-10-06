@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ a77ce69 -->
+<!-- source: en/05-cli-reference.md @ 5364df0 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -91,6 +91,8 @@ Options:
 | `VISUAL`, `EDITOR` | der Editor, den `seldon open --editor` und `seldon decide` im Terminal starten |
 | `SELDON_ACTOR` | wen `log`, `event`, `plan` und `drift` aufzeichnen, wenn `--actor` fehlt, und `hook generic`, wenn sein JSON kein `"actor"` hat. `seldon agent start` setzt sie für den Agenten (`agent:` und der Name des Launchers). Ein Wert, den der Befehl nicht annimmt, ist ein Bedienfehler (1); leer zählt als nicht gesetzt |
 | `SELDON_ATTENDED` | `1` für einen Agenten, den `seldon agent start` gestartet hat: Die Sitzung hat der Benutzer begonnen. Gesetzt für die Regeln des Agenten; die Engine liest sie nie |
+| `SELDON_CASE` | die Case-ID für einen Agenten, den `seldon agent start` gestartet hat. Die Hooks zeichnen eine solche Sitzung auf, wo immer sie arbeitet, solange dieser Case aktiv oder in Prüfung ist; jeder andere Wert gilt als nicht gesetzt. Befehle landen weiter auf dem aktiven Case. Seldon setzt sie; setz sie nie selbst |
+| `CLAUDE_CONFIG_DIR` | der Einstellungsordner von Claude Code: `hook install claude-code` und `doctor` nehmen dessen `settings.json` statt `~/.claude/settings.json` |
 | `SELDON_NOW` | eine feste Uhrzeit (RFC 3339), für Vorführungen und Tests |
 | `SELDON_TEST_GUARD` | ein Ordner; die Engine verweigert den Start (Exit 2), wenn ihr Home-, Konfigurations- oder Zustandsordner außerhalb davon liegt. Nimm sie, wenn du Seldon in einem Wegwerf-Home ausprobierst |
 | `SELDON_OMARCHY_AGENT_KIT` | wo `init --harness omarchy-agent` das Kit findet, statt `~/.local/share/seldon/harness/omarchy-agent/` |
@@ -149,7 +151,12 @@ generierte Abschnitte), den letzten Capture der Collectors und ihre
 Zustandsdateien, den Seldon-Agentenskill, Omarchy, Snapper und git. Es
 liest nur. Die Zeile `skills` sagt, wo der Skill installiert ist, wo er
 fehlt (optional), veraltet ist, von Hand geändert wurde oder wo ein
-anderer Skill namens `seldon` liegt. Jede Zeile sagt
+anderer Skill namens `seldon` liegt. Die Zeile `hooks` sagt, wo Seldons
+Claude-Code-Hooks liegen: nutzerweit (`ok`), nur in `.claude/settings.json`
+des Logbuchs (`degraded`: Sitzungen, die Seldon in `~/Work` startet,
+werden nicht aufgezeichnet; die Lösung installiert sie nutzerweit),
+beides (`ok`, mit optionalem Aufräumen) oder nirgends (`ok`, außer du
+hast den Claude-Code-Harness gewählt). Jede Zeile sagt
 `ok`, `degraded` oder `error`, und eine fehlerhafte Prüfung nennt den
 Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler ist, 1, wenn eine
 Prüfung ein Fehler ist (auch, wenn `config.toml` nicht gelesen oder
@@ -791,19 +798,23 @@ Options:
 
 ### seldon agent start
 
-Macht den Case zum aktiven Case und startet einen Agenten im Ordner des
-Logbuchs. Der erste Prompt nennt den Case und das Logbuch und sagt dem
-Agenten, `seldon hook session-start` und `seldon plan show <ID>`
-auszuführen; er enthält keinen Text aus dem Logbuch. Der Case muss
-aktiv sein. Mit `--new -- "<was zu tun ist>"` legt es zuerst aus diesem
+Macht den Case zum aktiven Case und startet einen Agenten dort, wo
+`omarchy agent prompt` es täte: im aktuellen Ordner, oder in `~/Work`
+(dein Home, wenn es keins gibt), wenn der aktuelle Ordner dein Home oder
+`/` ist; `[agent] workdir = "logbook"` startet ihn im Ordner des
+Logbuchs. Der erste Prompt nennt den Case und das Logbuch, verweist auf
+den Skill `seldon` und sagt dem Agenten, `seldon hook session-start` und
+`seldon plan show <ID>` auszuführen; er enthält keinen Text aus dem
+Logbuch. Der Case muss aktiv sein. Mit `--new -- "<was zu tun ist>"` legt es zuerst aus diesem
 Satz einen Case an und startet ihn (Titel: sein erster Satz, höchstens
 72 Zeichen; *Intent*: der ganze Text; `--zone`, `--risk`, `--area` wie
 bei `plan new`). Ohne Standard-Agenten in Omarchy und mit dem
 eingebauten Launcher wird nichts angelegt; die Meldung nennt
 `omarchy default agent <name>`. Der Launcher kommt aus `config.toml`; siehe
 [Konfiguration](06-configuration.md#agent-launcher). Der Agent läuft mit
-`SELDON_ACTOR=agent:<Name des Launchers>` und `SELDON_ATTENDED=1`
-([Umgebungsvariablen](#umgebungsvariablen)); ein Launcher-Name ohne
+`SELDON_ACTOR=agent:<Name des Launchers>`, `SELDON_ATTENDED=1` und
+`SELDON_CASE=<ID>` ([Umgebungsvariablen](#umgebungsvariablen)); ein
+Launcher-Name ohne
 ASCII-Buchstaben oder -Ziffer wird abgelehnt.
 
 <!-- help: seldon agent start -->
@@ -911,8 +922,13 @@ Options:
 ### seldon hook install
 
 Fügt Seldons drei Hooks in die Einstellungen von Claude Code ein,
-standardmäßig in `.claude/settings.json` des Logbuchs. Vorhandene Hooks
-bleiben. Ein zweiter Aufruf ändert nichts.
+standardmäßig in die nutzerweite `~/.claude/settings.json`
+(`$CLAUDE_CONFIG_DIR/settings.json`, wenn das gesetzt ist); ein Logbuch
+braucht es nicht. Vorhandene Hooks und Einstellungen bleiben. Ein zweiter
+Aufruf ändert nichts. Die letzte Zeile sagt, welche Sitzungen Seldon
+aufzeichnet: die im Logbuch-Ordner und die, die `seldon agent start`
+gestartet hat; jede andere nur mit `[hooks] scope = "all"`, was die Zeile
+zur Warnung macht.
 
 `seldon hook install skills` legt den Seldon-Agentenskill in jeden
 Skill-Ordner eines Agenten, den es gibt: `~/.agents/skills`,
@@ -941,15 +957,15 @@ Arguments:
   <HARNESS>  The harness [possible values: claude-code, skills]
 
 Options:
-      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json; claude-code only)
+      --settings <FILE>  Settings file (default: the user-wide $CLAUDE_CONFIG_DIR/settings.json, else ~/.claude/settings.json; claude-code only)
       --replace          skills only: where you changed the skill, archive your copy to the logbook's archive/ and install it as shipped
 ```
 <!-- /help -->
 
 ### seldon hook uninstall
 
-Nimmt Seldons drei Hooks wieder aus den Einstellungen von Claude Code und
-lässt alles andere stehen, auch einen Hook, den du neben einen von Seldons
+Nimmt Seldons drei Hooks wieder aus den Einstellungen von Claude Code
+(dieselbe Standarddatei wie `install`) und lässt alles andere stehen, auch einen Hook, den du neben einen von Seldons
 gesetzt hast. Eine Datei, die nur Seldons Hooks enthielt, wird gelöscht.
 Ein zweiter Aufruf ändert nichts. Das nächste `seldon capture` meldet die
 Änderung nicht als Drift.
@@ -969,7 +985,7 @@ Arguments:
   <HARNESS>  The harness [possible values: claude-code, skills]
 
 Options:
-      --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json; claude-code only)
+      --settings <FILE>  Settings file (default: the user-wide $CLAUDE_CONFIG_DIR/settings.json, else ~/.claude/settings.json; claude-code only)
 ```
 <!-- /help -->
 

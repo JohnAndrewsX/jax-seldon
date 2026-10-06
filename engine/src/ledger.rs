@@ -49,6 +49,15 @@ pub struct MonthFile {
     pub bad_lines: Vec<usize>,
 }
 
+/// One line of a month file (without its line end) as the event
+/// [`Ledger::read_month`] reads from it; `None` for a bad line.
+pub fn parse_line(raw: &[u8]) -> Option<Event> {
+    std::str::from_utf8(raw)
+        .ok()
+        .and_then(|line| serde_json::from_str::<Event>(line).ok())
+        .filter(loadable)
+}
+
 impl Ledger {
     pub fn new(logbook: &Logbook, redactor: Redactor) -> Self {
         Ledger::at(logbook.path(LEDGER_DIR), redactor)
@@ -124,11 +133,7 @@ impl Ledger {
             if raw.trim_ascii().is_empty() {
                 continue;
             }
-            match std::str::from_utf8(raw)
-                .ok()
-                .and_then(|line| serde_json::from_str::<Event>(line).ok())
-                .filter(loadable)
-            {
+            match parse_line(raw) {
                 Some(e) => file.events.push(e),
                 None => file.bad_lines.push(n + 1),
             }

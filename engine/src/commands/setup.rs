@@ -114,10 +114,10 @@ pub struct HarnessReport {
     pub done: bool,
 }
 
-/// Sets up `names` in the logbook at `root`, the Omarchy-Agent kit first
-/// so that Claude Code's hooks are merged into a settings file the kit
-/// may bring. The caller holds the state lock (`skills` records its writes
-/// under it).
+/// Sets up `names` for the logbook at `root`: the Omarchy-Agent kit into
+/// the logbook, Claude Code's hooks into the user-wide settings (ADR-0030
+/// §1), the skill into the agent skill folders. The caller holds the state
+/// lock (`claude-code` and `skills` record their writes under it).
 pub fn harnesses(
     ctx: &Context,
     lock: &Lock,
@@ -133,7 +133,7 @@ pub fn harnesses(
         .into_iter()
         .map(|name| match name.as_str() {
             "omarchy-agent" => omarchy_agent(dirs, root),
-            "claude-code" => claude_code(dirs, root),
+            "claude-code" => claude_code(ctx, lock, config),
             "skills" => skills(ctx, lock, config),
             other => HarnessReport {
                 name: other.to_string(),
@@ -145,26 +145,47 @@ pub fn harnesses(
         .collect()
 }
 
-fn claude_code(dirs: &Dirs, root: &Path) -> HarnessReport {
-    let path = root.join(HARNESS_DIR).join("settings.json");
-    let shown = format!("{HARNESS_DIR}/settings.json");
+/// Claude Code's hooks into the user-wide settings file
+/// ([`hook::user_settings_file`]), merged; a written file under a watched
+/// path is recorded as the engine's own write, as by `hook install`.
+fn claude_code(ctx: &Context, lock: &Lock, config: &Config) -> HarnessReport {
+    let path = hook::user_settings_file(&ctx.dirs);
+    let shown = ctx.dirs.display(&path);
     match hook::merge_claude_hooks(&path, &shown) {
-        Ok(m) => HarnessReport {
-            name: "claude-code".into(),
-            human: format!(
+        Ok(m) => {
+            let own = (!m.added.is_empty()).then(|| {
+                record_own_writes_under(
+                    lock,
+                    ctx,
+                    config,
+                    std::slice::from_ref(&path),
+                    "seldon init",
+                    OwnOp::Install,
+                )
+            });
+            let mut human = format!(
                 "{shown}: {} hook(s) added, {} already there",
                 m.added.len(),
                 m.present.len()
-            ),
-            json: json!({ "settings": path, "added": m.added, "present": m.present }),
-            done: true,
-        },
+            );
+            if let Some(Err(e)) = &own {
+                human.push_str(&format!("; {}", own_writes_warning(e)));
+            }
+            HarnessReport {
+                name: "claude-code".into(),
+                human,
+                json: json!({
+                    "settings": path,
+                    "added": m.added,
+                    "present": m.present,
+                    "ownWrites": own.as_ref().map_or(Value::Null, own_writes_json),
+                }),
+                done: true,
+            }
+        }
         Err(e) => HarnessReport {
             name: "claude-code".into(),
-            human: format!(
-                "{shown}: not set up: {e} (fix: seldon hook install claude-code; {})",
-                dirs.display(&path)
-            ),
+            human: format!("{shown}: not set up: {e} (fix: seldon hook install claude-code)"),
             json: json!({ "settings": path, "error": e.to_string() }),
             done: false,
         },

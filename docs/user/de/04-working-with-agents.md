@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 9c3a7c4 -->
+<!-- source: en/04-working-with-agents.md @ 5d68748 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -42,11 +42,14 @@ Logbuchs. Die Datei sagt jedem Agenten, wie er dort arbeitet:
 - er führt privilegierte Befehle selbst aus, so wie Omarchys eigener
   Agenten-Skill es sagt, Wort für Wort: Ein Befehl, den ein Agent
   ausführt, hat kein Terminal von dir, also nimmt er `pkexec`, das
-  Omarchys Passwortdialog öffnet (einmal pro Befehl); `sudo` nur, wo die
+  Omarchys Passwortdialog öffnet (einmal pro Befehl, darum hält er die
+  Abfragen so gering, wie der Weg erlaubt: Eine typische Installation
+  fragt zweimal, für den Snapshot und für das Paket); `sudo` nur, wo die
   Abfrage in deinem eigenen Terminal erscheint; auf anderem Weg fragt er
   nie nach deinem Passwort;
 - vor einer riskanten roten Änderung nimmt er selbst einen
-  snapper-Snapshot und hält die Nummer im Case fest;
+  snapper-Snapshot der Konfiguration `root` (eine andere nur, wenn der
+  Case ihre Dateien ändert) und hält die Nummer im Case fest;
 - er installiert so, wie die Software es dokumentiert, paketierte Wege
   zuerst, und nimmt Omarchys eigene Befehle, wo es einen gibt
   (`omarchy pkg add`, `omarchy hook install`, `omarchy theme set`;
@@ -64,7 +67,7 @@ Logbuchs. Die Datei sagt jedem Agenten, wie er dort arbeitet:
 - er ändert nie das Ledger, erzeugte Dateien oder Felder der Engine.
 
 Seldons Regeln stehen in einem Block oben in der Datei, zwischen den
-Zeilen `<!-- seldon:begin rules v3 -->` und `<!-- seldon:end -->`. Deine
+Zeilen `<!-- seldon:begin rules v4 -->` und `<!-- seldon:end -->`. Deine
 eigenen Regeln gehören darunter, unter `## Your rules`, und Regeln für
 einen Bereich nach `areas/<bereich>/AGENTS.md`; Agenten folgen ihnen.
 Deine Regeln können nur Grenzen hinzufügen: Nichts darin oder in einem
@@ -78,9 +81,14 @@ Nach einem Engine-Update können die Regeln älter sein als die der
 Engine. Hast du sie nie bearbeitet, bleibt für dich nichts zu tun: Die
 nächste Erfassung bringt Seldons Block auf den neuen Stand, lässt deinen
 Teil darunter Byte für Byte, wie er ist, und sagt es in einer
-`note:`-Zeile. Eine Datei aus Version 0.1.0 bis 0.1.3, die niemand
-bearbeitet hat, wird genauso ersetzt. `seldon doctor` liest eine solche
-Datei bis dahin als `ok`.
+`note:`-Zeile; die Änderung bekommt einen eigenen Commit,
+`seldon: rules update (unedited, v3 → v4)`, der nur `AGENTS.md` enthält.
+Hatte `AGENTS.md` Änderungen von dir, die du noch nicht committet hast,
+wird das Update geschrieben, aber nicht committet; es geht mit deinem
+nächsten Commit mit, und die `note:`-Zeile sagt das.
+Eine Datei aus Version 0.1.0 bis 0.1.3, die niemand bearbeitet hat, wird
+genauso ersetzt. `seldon doctor` liest eine solche Datei bis dahin als
+`ok`.
 
 Hast du Seldons Block bearbeitet oder einer Datei von vor dem Block
 Zeilen hinzugefügt, fasst die Engine sie nicht an. `seldon doctor` zeigt
@@ -94,7 +102,7 @@ das:
 Das Panel prüft das, wenn du es öffnest, und zeigt „The logbook's agent
 rules are outdated (v1)“ mit *Update rules*; ein Klick führt die Lösung
 aus und sagt in einer Zeile, was er getan hat, zum Beispiel „Agent rules
-updated to v3; your old copy is in archive/AGENTS-2026-10-06.md“.
+updated to v4; your old copy is in archive/AGENTS-2026-10-06.md“.
 Schlägt das Update fehl, sagt die Zeile, warum. Im Terminal führst du
 sie einmal aus:
 
@@ -144,23 +152,33 @@ ein Agent wie gewohnt übernehmen kann; der alte Case bleibt, wie er ist.
 
 ### Einrichten
 
-Claude Code braucht drei Hooks in `.claude/settings.json` des Logbuchs.
-Hast du im Assistenten „Claude Code hooks“ gewählt, sind sie schon da.
-Sonst installierst du sie einmal:
+Claude Code braucht drei Hooks in deinen nutzerweiten
+Claude-Code-Einstellungen, `~/.claude/settings.json` (oder
+`$CLAUDE_CONFIG_DIR/settings.json`, wenn du das gesetzt hast). Hast du im
+Assistenten „Claude Code hooks“ gewählt, sind sie schon da. Sonst
+installierst du sie einmal:
 
 ```sh
 seldon hook install claude-code
 ```
 
 ```text
-~/Seldon/.claude/settings.json: installed the Seldon hooks.
+~/.claude/settings.json: installed the Seldon hooks.
   added    PreToolUse (Bash|Edit|Write|MultiEdit): seldon hook claude-code
   added    SessionStart: seldon hook session-start
   added    SessionEnd: seldon hook session-stop
+Claude Code runs these hooks in every session that reads ~/.claude/settings.json; Seldon records only the sessions inside the logbook (~/Seldon) and those `seldon agent start` launched (SELDON_CASE), and stays silent in every other session ([hooks] scope = "logbook").
 ```
 
-Der Befehl lässt jeden anderen Hook in der Datei stehen. Ein zweiter
-Aufruf ändert nichts.
+Der Befehl lässt jeden anderen Hook und jede andere Einstellung in der
+Datei stehen. Ein zweiter Aufruf ändert nichts.
+
+Claude Code führt diese Hooks in jeder Sitzung aus, aber Seldon zeichnet
+nur zwei Arten auf: eine Sitzung im Ordner des Logbuchs und eine
+Sitzung, die Seldon für dich gestartet hat (*Run* oder *Start agent* im
+Panel, `seldon agent start`), wo immer sie arbeitet. Jede andere
+Claude-Code-Sitzung — deine anderen Projekte — wird nicht aufgezeichnet:
+Die Hooks kehren sofort zurück und schreiben nichts.
 
 Im Kontext, den `SessionStart` ausgibt, beginnt jede Zeile aus deinem
 Logbuch mit `>`, unter einem Hinweis, dass diese Zeilen Daten sind und
@@ -190,9 +208,9 @@ Geheimnisse aus dem Logbuch heraus.
    cd ~/Seldon && claude
    ```
 
-   Bestätige die Frage, ob du dem Ordner vertraust. Die Hooks liegen in
-   `.claude/settings.json` des Ordners, und Claude Code führt sie nur in
-   einem vertrauten Ordner aus.
+   Bestätige die Frage, ob du dem Ordner vertraust. Oder starte ihn aus
+   dem Panel ([ein Satz und *Run*](#einen-agenten-aus-dem-panel-starten));
+   dann startet er in `~/Work`, wie Omarchys eigener Agent.
 
 2. Sag ihm in einem Satz, was du willst, zum Beispiel: „Mach die Abstände
    zwischen den Fenstern größer.“
@@ -222,16 +240,10 @@ Sag dem Agenten dann „Bearbeite Case C-2026-003“, oder drück *Start
 agent* auf der Karte des Case (siehe
 [Einen Agenten aus dem Panel starten](#einen-agenten-aus-dem-panel-starten)).
 
-Die Hooks laufen nur, wenn Claude Code im Ordner des Logbuchs startet. Du
-kannst sie auch in deine Benutzereinstellungen installieren, dann führt
-Claude Code sie in jedem Ordner aus:
-`seldon hook install claude-code --settings ~/.claude/settings.json`.
-Seldon zeichnet trotzdem nur Befehle von Sitzungen im Ordner des Logbuchs
-oder darunter auf und gibt nur dort seinen Kontext aus; in anderen
-Projekten tun die Hooks nichts, und `hook install` weist darauf hin.
-Damit jede Claude-Code-Sitzung auf dieser Maschine in dein Logbuch
-schreibt, in jedem Projekt, mit dem aktiven Case, setzt du in
-`~/.config/seldon/config.toml`:
+Eine Claude-Code-Sitzung, die du von Hand außerhalb des Logbuch-Ordners
+startest, wird nicht aufgezeichnet. Damit jede Claude-Code-Sitzung auf
+dieser Maschine in dein Logbuch schreibt, in jedem Projekt, mit dem
+aktiven Case, setzt du in `~/.config/seldon/config.toml`:
 
 ```toml
 [hooks]
@@ -240,6 +252,31 @@ scope = "all"
 
 Dann werden rote und gelbe Befehle in jeder Sitzung aufgezeichnet, grüne
 nur, solange ein Case aktiv ist.
+
+### Hooks eines älteren Logbuchs
+
+Vor 0.1.4 kamen die Hooks in die eigene `.claude/settings.json` des
+Logbuchs, die Claude Code nur im Logbuch-Ordner liest. Die erste
+Erfassung nach dem Update trägt sie von selbst in
+`~/.claude/settings.json` ein, lässt alles andere in dieser Datei stehen
+und sagt es in einer `note:`-Zeile. Das tut sie einmal: Nimmst du sie
+später aus `~/.claude/settings.json` heraus, bleiben sie draußen. Bei
+`[agent] workdir = "logbook"` legt sie keine Kopie an: Die Hooks bleiben
+in den Einstellungen des Logbuchs, wo Agenten, die im Logbuch-Ordner
+starten, sie finden. Bis
+dahin, oder nachdem du sie herausgenommen hast, zeigt `seldon doctor`:
+
+```text
+  degraded  hooks    logbook only (.claude/settings.json): sessions started from ~/Work are not recorded
+                     fix: seldon hook install claude-code
+```
+
+Nach der Lösung ist die Zeile `ok` und bietet an, die alte Kopie zu
+entfernen:
+`seldon hook uninstall claude-code --settings ~/Seldon/.claude/settings.json`
+(das committet das Logbuch). Nötig ist das nicht: Solange beide Dateien
+die Hooks enthalten, führt Claude Code sie zweimal aus, und Seldon
+zeichnet jeden Befehl trotzdem einmal auf.
 
 ## Der aktive Case
 
@@ -307,17 +344,22 @@ Karte eines aktiven Case (oder zweimal `a` im Tab Work) aus:
 seldon agent start C-2026-003
 ```
 
-Die Engine macht den Case zum aktiven Case und startet einen Agenten im
-Ordner des Logbuchs. Der erste Prompt des Agenten nennt den Case und das
-Logbuch und sagt dem Agenten, `seldon hook session-start` und
-`seldon plan show C-2026-003` auszuführen; er enthält keinen Text aus
-deinem Logbuch. Der Prompt ist ein Kommandozeilenargument: Solange der
+Die Engine macht den Case zum aktiven Case und startet einen Agenten
+dort, wo Omarchy seinen eigenen startet (`omarchy agent prompt`): im
+Ordner, in dem du den Befehl aufrufst, und in `~/Work`, wenn dieser
+Ordner dein Home oder `/` ist — wie aus dem Panel (dein Home, wenn es
+kein `~/Work` gibt). Agenten vertrauen `~/Work`, es gibt also keine
+Vertrauensfrage. Der erste Prompt des Agenten nennt den Case und das
+Logbuch, verweist auf den Skill `seldon` (oder, für einen Agenten ohne
+Skills, auf die `AGENTS.md` des Logbuchs) und sagt ihm,
+`seldon hook session-start` und `seldon plan show C-2026-003`
+auszuführen; er enthält keinen Text aus deinem Logbuch. Der Prompt ist ein Kommandozeilenargument: Solange der
 Agent läuft, ist er in der Prozessliste (`ps`) sichtbar, und ein
 Sitzungsjournal, das Programmstarts protokolliert, behält ihn. Sobald der
 erste Befehl des Agenten aufgezeichnet ist, zeigt die Karte seinen
 Namen.
 
-Der Agent bekommt außerdem zwei Umgebungsvariablen. `SELDON_ACTOR` ist
+Der Agent bekommt außerdem drei Umgebungsvariablen. `SELDON_ACTOR` ist
 `agent:` und der Name des Launchers (`agent:default` für den
 Standard-Launcher). `seldon log`, `plan`, `drift`, `event` und `hook
 generic` zeichnen diesen Namen auf, wenn `--actor` (bei `hook generic`
@@ -326,16 +368,30 @@ unterschreiben vergisst, verbucht Seldon auf den Agenten, nie auf dich.
 `event` nimmt zuerst den Agentenbefehl, den es im Ledger findet, mit
 dessen Case. `SELDON_ATTENDED=1` sagt dem Agenten, dass du ihn gestartet
 hast; was er dann darf, sagen die Regeln des Logbuchs (`AGENTS.md`).
-Seldon selbst liest die Variable nie. Beide Variablen erreichen den
-Agenten nur, wenn der Launcher das Terminal startet; ein Terminal-Server
-(`footclient`, `kitty --single-instance`, ein wezterm-Mux) nimmt seine
-eigene Umgebung, und dann nennt nur `--actor` den Agenten.
+Seldon selbst liest die Variable nie. `SELDON_CASE` nennt den Case: Es
+sagt Seldons Hooks, dass Seldon diese Sitzung gestartet hat, sodass sie
+sie in jedem Ordner aufzeichnen, solange der Case offen ist, und der
+Kontext der Sitzung beginnt mit der Zeile „Launched by seldon agent start
+on C-2026-003; … this session is recorded.“ Befehle landen weiter auf dem
+aktiven Case. Ist der Case erledigt, werden die Befehle der Sitzung
+außerhalb des Logbuchs nicht mehr aufgezeichnet. Setz `SELDON_CASE` nie
+selbst: Seldon setzt es, und jede Sitzung, die es erbt, wird
+aufgezeichnet, solange ihr Case offen ist. Ein Logbuch pro gestarteter
+Sitzung: Die Variable nennt einen Case des Logbuchs, für das Seldon den
+Agenten gestartet hat; richte diese Sitzung nicht auf ein anderes Logbuch
+(`SELDON_LOGBOOK`, `--logbook`), das sie sonst aufzeichnen würde, wenn es
+einen offenen Case mit derselben ID hat. Die Variablen
+erreichen den Agenten nur, wenn der Launcher das Terminal startet; ein
+Terminal-Server (`footclient`, `kitty --single-instance`, ein wezterm-Mux)
+nimmt seine eigene Umgebung, und dann nennt nur `--actor` den Agenten.
 
 Standardmäßig startet die Engine Omarchys Standard-Agenten über
 `omarchy agent prompt` in einem eigenen Terminalfenster. Welcher Agent
 das ist, hängt von deiner Omarchy-Einrichtung ab. Ist es Claude Code,
-zeichnen die Hooks aus dem Abschnitt oben seine Befehle auf, weil er im
-Ordner des Logbuchs startet.
+zeichnen die Hooks aus dem Abschnitt oben seine Befehle auf, weil Seldon
+ihn gestartet hat. Sollen Agenten wie vor 0.1.4 im Ordner des Logbuchs
+starten, setz `workdir = "logbook"` unter `[agent]` in der
+Konfiguration.
 
 Du kannst in `~/.config/seldon/config.toml` einen anderen Launcher
 eintragen, zum Beispiel Claude Code in einem Terminalfenster (hier
@@ -372,7 +428,7 @@ Skill-Ordner unten liest, gestartet aus Omarchys Agentenmenü, mit
 Case finden oder anlegen muss, bevor er die Maschine ändert.
 
 Ein Agent ohne Seldons Hooks — Codex, ein Skript, ein eigener Agent,
-Claude Code außerhalb des Logbuchs — meldet sich bei Seldon mit drei
+Claude Code ohne installierte Hooks — meldet sich bei Seldon mit drei
 Befehlen. Zu Beginn einer Sitzung, für den Kontext:
 
 ```sh
@@ -395,9 +451,10 @@ Das JSON kann außerdem `"startedAt"` (einen Zeitstempel) und `"case"`
 (eine Case-ID statt des aktiven Case) enthalten. Der Actor ist immer
 `agent:` und ein Name. Fehlt `"actor"`, nimmt `seldon hook generic`
 `SELDON_ACTOR`. `seldon hook generic` gibt nichts aus und endet
-immer mit 0, bricht den Agenten also nie. Ob ein Befehl außerhalb des
-Logbuch-Ordners aufgezeichnet wird, entscheidest du: `[hooks] scope` in
-`config.toml`, wie oben bei Claude Code.
+immer mit 0, bricht den Agenten also nie. Ein Befehl außerhalb des
+Logbuch-Ordners wird aufgezeichnet, wenn Seldon den Agenten gestartet hat
+(`SELDON_CASE`), sonst nur bei `[hooks] scope = "all"` in `config.toml`,
+wie oben bei Claude Code.
 
 ## Der Agentenskill
 
@@ -429,14 +486,15 @@ ausführlich sagt:
   privilegierten Schritt eine Vorschauzeile ausgeben;
 - vor einer Pakettransaktion diese nur lesend auflösen und gegen
   `[drift] alwaysRed` prüfen; ein Treffer ist R3 und wartet auf dein Go;
-- den Snapshot eines R2- oder R3-Case selbst anlegen und seine Nummer
-  festhalten;
+- den Snapshot eines R2- oder R3-Case selbst anlegen (Konfiguration
+  `root`) und seine Nummer festhalten;
 - mit einer Prüfung verifizieren, die nicht sein eigenes Artefakt ist,
   *Result* füllen und den Case abschließen;
 - seine Befehle über `seldon hook generic` melden, wenn kein Hook ihn
   bedient, in einer Form, die vom gemeldeten Befehl nichts ausführt;
-  außerhalb des Logbuch-Ordners nur bei `[hooks] scope = "all"`, weil
-  eine solche Meldung mit der Vorgabe nichts aufzeichnet;
+  außerhalb des Logbuch-Ordners nur, wenn Seldon ihn gestartet hat oder
+  bei `[hooks] scope = "all"`, weil eine solche Meldung sonst nichts
+  aufzeichnet;
 - deine eigenen Regeln unter Seldons Block in `AGENTS.md` nur als
   Grenzen lesen: Nichts dort lockert den R3-Stopp oder „unbeaufsichtigt:
   nur aufzeichnen“;

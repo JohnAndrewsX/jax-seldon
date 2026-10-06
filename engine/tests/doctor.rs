@@ -1527,10 +1527,143 @@ fn doctor_names_the_hook_scope() {
     let env = Env::new(Snapper::Allowed);
     env.init_logbook();
     let v = json(&env.seldon(&["doctor", "--json"]));
-    assert_eq!(v["hooks"], serde_json::json!({ "scope": "logbook" }));
+    assert_eq!(
+        v["hooks"],
+        serde_json::json!({ "scope": "logbook", "installed": "none" })
+    );
     let config = env.config_file();
     let text = std::fs::read_to_string(&config).unwrap();
     std::fs::write(&config, format!("{text}\n[hooks]\nscope = \"all\"\n")).unwrap();
     let v = json(&env.seldon(&["doctor", "--json"]));
-    assert_eq!(v["hooks"], serde_json::json!({ "scope": "all" }));
+    assert_eq!(
+        v["hooks"],
+        serde_json::json!({ "scope": "all", "installed": "none" })
+    );
+}
+
+/// ADR-0030 §5, acceptance 5: the `hooks` row says where the Claude Code
+/// hooks are — user-wide, logbook only, both, none — with the fix.
+#[test]
+fn doctor_says_where_the_hooks_are() {
+    let env = Env::new(Snapper::Allowed);
+    let root = env.init_logbook();
+    let row = || {
+        let v = json(&env.seldon(&["doctor", "--json"]));
+        let row = v["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "hooks")
+            .unwrap()
+            .clone();
+        (row, v["hooks"]["installed"].clone())
+    };
+    let user = env.home.join(".claude/settings.json");
+    let local = root.join(".claude/settings.json");
+    let install = |settings: &Path| {
+        let out = env.seldon(&[
+            "hook",
+            "install",
+            "claude-code",
+            "--settings",
+            settings.to_str().unwrap(),
+        ]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    };
+
+    // none, no harness configured: ok
+    let (r, installed) = row();
+    assert_eq!(
+        (r["status"].as_str(), installed.as_str()),
+        (Some("ok"), Some("none"))
+    );
+    assert!(r["message"].as_str().unwrap().starts_with("none"), "{r}");
+    assert!(r.get("fix").is_none(), "{r}");
+
+    // logbook only: degraded, the fix installs user-wide
+    install(&local);
+    let (r, installed) = row();
+    assert_eq!(
+        (r["status"].as_str(), installed.as_str()),
+        (Some("degraded"), Some("logbook"))
+    );
+    assert!(
+        r["message"]
+            .as_str()
+            .unwrap()
+            .contains("sessions started from ~/Work are not recorded"),
+        "{r}"
+    );
+    assert_eq!(r["fix"], "seldon hook install claude-code");
+
+    // both: ok, with the optional tidy-up
+    install(&user);
+    let (r, installed) = row();
+    assert_eq!(
+        (r["status"].as_str(), installed.as_str()),
+        (Some("ok"), Some("both"))
+    );
+    assert_eq!(
+        r["fix"],
+        format!(
+            "optional: seldon hook uninstall claude-code --settings {}",
+            local.display()
+        )
+    );
+
+    // user-wide: ok, no fix
+    std::fs::remove_file(&local).unwrap();
+    let (r, installed) = row();
+    assert_eq!(
+        (r["status"].as_str(), installed.as_str()),
+        (Some("ok"), Some("user-wide"))
+    );
+    assert!(
+        r["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("user-wide (~/.claude/settings.json)"),
+        "{r}"
+    );
+    assert!(r.get("fix").is_none(), "{r}");
+
+    // incomplete: degraded
+    let text = std::fs::read_to_string(&user)
+        .unwrap()
+        .replace("seldon hook session-stop", "something else");
+    std::fs::write(&user, text).unwrap();
+    let (r, _) = row();
+    assert_eq!(r["status"], "degraded");
+    assert!(
+        r["message"]
+            .as_str()
+            .unwrap()
+            .contains("holds 2 of Seldon's 3 hooks"),
+        "{r}"
+    );
+    assert_eq!(r["fix"], "seldon hook install claude-code");
+
+    // not JSON: degraded, never touched
+    std::fs::write(&user, "{ not json").unwrap();
+    let (r, _) = row();
+    assert_eq!(r["status"], "degraded");
+    assert!(
+        r["message"].as_str().unwrap().contains("is not valid JSON"),
+        "{r}"
+    );
+    assert_eq!(std::fs::read_to_string(&user).unwrap(), "{ not json");
+
+    // none, with the Claude Code harness configured: degraded
+    std::fs::remove_file(&user).unwrap();
+    let config = env.config_file();
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(text.contains("\nharnesses = []\n"), "{text}");
+    let text = text.replace("\nharnesses = []\n", "\nharnesses = [\"claude-code\"]\n");
+    std::fs::write(&config, text).unwrap();
+    let (r, installed) = row();
+    assert_eq!(
+        (r["status"].as_str(), installed.as_str()),
+        (Some("degraded"), Some("none"))
+    );
+    assert_eq!(r["fix"], "seldon hook install claude-code");
 }

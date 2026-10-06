@@ -64,8 +64,12 @@
 //! this engine's files in every agent skill folder where it is outdated
 //! and nobody touched it ([`super::skills::upgrade_unedited_under`]). One
 //! note line each; an edited block or skill is left to `doctor` and its
-//! fix, a missing one stays missing. Never as root. Not committed: the
-//! next engine commit carries the file.
+//! fix, a missing one stays missing. Claude Code's hooks found only in the
+//! logbook's own settings go user-wide once
+//! ([`super::hook::migrate_to_user_wide`], WP-116 round 1b). Never as root. Each is on record
+//! (WP-116): the rules file in a commit of its own, `seldon: rules update
+//! (unedited, vN → vM)`, the skill (outside the logbook) as a `seldon`
+//! note in the ledger.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -254,6 +258,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         .and_then(|r| r.note.clone())
         .into_iter()
         .chain(access)
+        .chain(skill_note(&upgraded.skills, now))
         .collect();
     // a crash between the append and the save below must not write the
     // notes again (WP-099), nor count the first events this append writes
@@ -389,9 +394,34 @@ struct Upgraded {
     /// The rules version `AGENTS.md` had before its unedited block was
     /// replaced (`1`: a released file from before the block).
     rules_from: Option<u32>,
+    /// The commit of the updated rules file alone.
+    rules_commit: Option<super::Commit>,
     /// The agent skill folders whose unedited skill was updated.
     skills: Vec<String>,
+    /// The user-wide Claude Code settings the logbook's hooks were added
+    /// to (WP-116 round 1b), `~`-shortened.
+    hooks_to: Option<String>,
     warnings: Vec<String>,
+}
+
+/// Why a silent rules update was not committed on its own.
+const RULES_NOT_COMMITTED: &str =
+    "AGENTS.md has uncommitted changes of yours; the update goes with your next commit";
+
+/// The subject of the ledger note of an agent skill update.
+pub const SKILL_NOTE: &str = "skill";
+
+/// The `seldon` note of a capture that updated the unedited agent skill in
+/// `folders` (WP-116): the files are outside the logbook, so the ledger
+/// keeps the record.
+fn skill_note(folders: &[String], now: DateTime<FixedOffset>) -> Option<Event> {
+    (!folders.is_empty()).then(|| {
+        Event::new(now, Source::Seldon, Kind::Note, SKILL_NOTE).detail(format!(
+            "Seldon agent skill updated to seldon {} in {} (it was unedited)",
+            crate::VERSION,
+            folders.join(", ")
+        ))
+    })
 }
 
 /// ADR-0028 §4d, WP-111: an unchanged default is upgraded, the user's own
@@ -426,8 +456,30 @@ fn upgrade_defaults(
     if let Some(old) = text {
         let template = super::rules::template(logbook, ctx.now.date_naive());
         if let Some(plan) = crate::logbook::rules::silent_upgrade(&old, &template) {
+            // a commit of its own only when the file holds nothing else
+            // uncommitted: the user's own edits never go into a commit
+            // named "unedited" (WP-116 round 2, N7)
+            let own_changes = crate::logbook::git::is_repo(&logbook.root)
+                && !crate::logbook::git::is_clean_path(&logbook.root, rules).unwrap_or(false);
             match crate::sys::write_atomic(&logbook.path(rules), plan.text.as_bytes()) {
-                Ok(()) => out.rules_from = plan.from,
+                Ok(()) => {
+                    out.rules_from = plan.from;
+                    let from = plan.from.map_or("v?".to_string(), |v| format!("v{v}"));
+                    out.rules_commit = Some(if own_changes {
+                        super::Commit::Skipped(RULES_NOT_COMMITTED)
+                    } else {
+                        super::autocommit_paths(
+                            ctx,
+                            config,
+                            logbook,
+                            &[rules],
+                            &format!(
+                                "rules update (unedited, {from} → v{})",
+                                crate::logbook::rules::VERSION
+                            ),
+                        )
+                    });
+                }
                 Err(e) => out.warnings.push(format!(
                     "{rules}: Seldon's agent rules were not updated: {e:#}"
                 )),
@@ -437,6 +489,11 @@ fn upgrade_defaults(
     let skills = super::skills::upgrade_unedited_under(lock, ctx, config);
     out.skills = skills.updated;
     out.warnings.extend(skills.warnings);
+    // WP-116 round 1b, until the operator rules: the one automatic step
+    // outside the logbook; without this line it is doctor's fix only
+    let hooks = super::hook::migrate_to_user_wide(lock, ctx, config, logbook);
+    out.hooks_to = hooks.added_to.map(|p| ctx.dirs.display(&p));
+    out.warnings.extend(hooks.warnings);
     out
 }
 
@@ -1086,8 +1143,10 @@ fn render(
         "rulesUpdated": upgraded.rules_from.map(|from| json!({
             "from": format!("v{from}"),
             "version": crate::logbook::rules::VERSION,
+            "git": upgraded.rules_commit.as_ref().map_or(serde_json::Value::Null, |c| c.json()),
         })),
         "skillsUpdated": upgraded.skills,
+        "hooksUserWide": upgraded.hooks_to,
         "warnings": warnings,
     });
 
@@ -1136,12 +1195,25 @@ fn render(
             crate::logbook::rules::FILE,
             crate::logbook::rules::VERSION
         );
+        match &upgraded.rules_commit {
+            Some(super::Commit::Skipped(why)) if *why == RULES_NOT_COMMITTED => {
+                let _ = write!(human, "; not committed: {why}");
+            }
+            Some(c) => human.push_str(&c.human()),
+            None => {}
+        }
     }
     if !upgraded.skills.is_empty() {
         let _ = write!(
             human,
             "\nnote: the Seldon agent skill updated in {} (it was unedited)",
             upgraded.skills.join(", ")
+        );
+    }
+    if let Some(to) = &upgraded.hooks_to {
+        let _ = write!(
+            human,
+            "\nnote: Claude Code's Seldon hooks added to {to} (they were in the logbook's .claude/settings.json only), so the sessions Seldon starts in ~/Work are recorded; your other sessions are not"
         );
     }
     if !since_ignored.is_empty() {

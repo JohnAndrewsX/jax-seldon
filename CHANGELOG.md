@@ -353,6 +353,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work; outside the logbook folder an agent reports its commands only
   when `[hooks] scope = "all"`, because with the default scope such a
   report records nothing.
+- **The Seldon agent starts like the Omarchy agent (ADR-0030, WP-116).**
+  `seldon agent start` (and *Run* / *Start agent* in the panel) starts
+  the launcher where `omarchy agent prompt` would: in the folder it is
+  called in, and in `~/Work` (else `$HOME`) when that is `$HOME`, `/` or
+  gone — so from the panel the agent opens in `~/Work`, with no trust
+  prompt. `[agent] workdir = "logbook"` keeps the old folder. The launch
+  sets `SELDON_CASE=<ID>`; the prompt names the `seldon` skill and the
+  logbook's `AGENTS.md` for agents without skills. `--json` `cwd` is the
+  folder used.
+- **New default: Claude Code's hooks are user-wide (ADR-0030).**
+  `seldon hook install claude-code` and `seldon init --harness
+  claude-code` merge the three hooks into `~/.claude/settings.json`
+  (`$CLAUDE_CONFIG_DIR/settings.json` when set), keeping every other
+  hook and key; no logbook is needed. The hooks serve a session inside
+  the logbook, as before, and a session `seldon agent start` launched
+  (`SELDON_CASE` holds a case id), wherever it works; every other
+  Claude Code session of the user is not recorded. Its context opens
+  with `Launched by seldon agent start on <ID>; logbook <path>; this
+  session is recorded.` `[hooks] scope = "all"` is unchanged. The
+  install report ends with one line saying which sessions are recorded
+  (`--json` `scope`; a warning only under `"all"`). A logbook's own
+  `.claude/settings.json` still works; while both hold the hooks a tool
+  call is recorded once (a second `PreToolUse` with the same
+  `tool_use_id` writes nothing). `seldon doctor` gets a `hooks` row:
+  user-wide (ok), both (ok, optional tidy-up `seldon hook uninstall
+  claude-code --settings <logbook>/.claude/settings.json`), logbook
+  only (degraded: "sessions started from ~/Work are not recorded", fix
+  `seldon hook install claude-code`), none (ok unless `harnesses` names
+  claude-code); `--json` `hooks.installed`.
+- **Existing installs keep recording (WP-116 round 1b).** A logbook from
+  before 0.1.4 has the hooks in its own `.claude/settings.json`, which
+  Claude Code does not read in `~/Work`. The first capture after the
+  update (as the user, never as root, and not with `[agent] workdir =
+  "logbook"`; ADR-0032 §5) adds them to the user-wide settings when that
+  file has none of Seldon's hooks, keeps every
+  foreign hook and key, and says so in one `note:` line (`--json`
+  `hooksUserWide`). It does this once: hooks you take out of the
+  user-wide file later are not added again.
+- **Agent rules v4 (WP-116, ADR-0030, ADR-0031).** The aim is "as few
+  password prompts as the route allows" (no longer "at most one"):
+  before an R2 or R3 step the agent snapshots the `root` config, another
+  config only when the case changes its files; one program per
+  `pkexec`, never bundled in `pkexec sh -c`; `omarchy pkg add` where the
+  user's terminal shows the prompt, `pkexec pacman -S` through the
+  agent's tool; privileged steps of a sub-agent stay in the session;
+  `SELDON_CASE` is unset with `SELDON_ATTENDED` for another agent
+  process; the hooks section names the user-wide settings and which
+  sessions they serve. German wording fixes. The skill follows
+  (*Outside the Logbook Folder* rewritten, `snapshot.md`). Every v3 block
+  that was on `main` is known, so an unedited one becomes v4 at the next
+  capture.
+- **Silent upgrades are on record (WP-116).** A capture that brings an
+  unedited rules block up to date commits `AGENTS.md` alone, `seldon:
+  rules update (unedited, vN → vM)`, leaving the user's other changes
+  out (`--json` `rulesUpdated.git`); one that updates the unedited agent
+  skill writes a `seldon` note to the ledger (subject `skill`). An
+  `AGENTS.md` with uncommitted changes of the user's is updated but not
+  committed; the update goes with the user's next commit, and the
+  `note:` line says so.
+- **The launch marker serves an open case only (ADR-0032).**
+  `SELDON_CASE` makes the hooks record a session outside the logbook only
+  while it names a case of the logbook that is active or in verification;
+  a server or multiplexer that kept the variable after the case is done
+  records nothing. The session that ran the case still gets its journal
+  line at its end. The hooks check the scope before anything else, so an
+  unrelated Claude Code session costs the check alone. The launcher gets
+  `PWD` for the folder it starts in. The rules and the skill hand-down
+  name servers and multiplexers; the guides say never to set the
+  variable by hand. The wizard names `~/.claude/settings.json`.
 - **A change the one open case planned is that case's (ADR-0029,
   WP-115).** When you install a package (or add a plugin, change a
   watched file) by hand while a case whose *Plan* names it is open, and

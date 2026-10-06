@@ -689,7 +689,9 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
         let picked = MultiSelect::with_theme(&theme)
             .with_prompt("Agent harnesses (space toggles, enter confirms)")
             .items(&[
-                "Claude Code hooks (claude-code)".to_string(),
+                "Claude Code hooks into ~/.claude/settings.json (user-wide; Seldon records only \
+                 logbook sessions and those it launches; claude-code)"
+                    .to_string(),
                 kit_label,
                 "Seldon agent skill for every agent: into the agent skill folders that exist \
                  (~/.claude/skills, ~/.agents/skills, …; skills)"

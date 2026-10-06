@@ -20,7 +20,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve, §8; WP-063; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
+| `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[drift] attention` (`"normal"`, default: the classification of ADR-0028 §2, §5; `"all"`: every drift-eligible event without a case is open drift with the pacman zone computed and `crisis` iff red, the derivation before ADR-0028 and its rollback), `routine` (the routine rule ids that apply, default all: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`; a rule left out does not apply and its events fall to the next row, usually attention), `routinePaths` (default `~/.config/omarchy/shell.json`, `**/*.bak.*`), `routinePackages` (default `archlinux-keyring`, `omarchy-keyring`), `alwaysRedPaths` (default `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`); the path lists take the `skipPaths` glob syntax (§7) against the `~`-path subject; these five keys are read at index time and written only when they differ from the default, so a later engine's defaults reach a config `init` wrote (ADR-0028 §4c; WP-109); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[agent] workdir` (`"inherit"`, default, not written: the launcher starts where `agent start` was called, by `omarchy-agent`'s rule; `"logbook"`: in the logbook, the folder before ADR-0030; §3 `agent start`; WP-116); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve besides the ones `agent start` launched, §8; WP-063, ADR-0030; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
 | `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
@@ -41,7 +41,11 @@ seldon init [--path DIR] [--non-interactive] [--language de|en] [--obsidian]
 seldon init --remove-theme-hook                # WP-049: undoes --theme-hook (§9); conflicts with
                                                # every other init flag, needs no logbook
 seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case only; the prompt
-                                                         # names the case, no logbook text (WP-058)
+                                                         # names the case, no logbook text (WP-058).
+                                                         # ADR-0030 (WP-116): starts the launcher
+                                                         # where `omarchy agent prompt` would start
+                                                         # the agent (PWD set to that folder), and
+                                                         # sets SELDON_CASE=<ID>
 seldon agent start --new [--zone Z] [--risk R] [--area A] [--launcher NAME] [--json] -- "<intent>"
                                                # WP-101 (ADR-0027 §6): one sentence. Title = the first
                                                # sentence (up to the first line break, or `.`/`!`/`?` before
@@ -341,6 +345,9 @@ seldon import omarchy-agent <VAULT> [--dry-run|--apply] [--json]
                                                # reason, error}],
                                                # files, marker, git}
 seldon hook install claude-code [--settings FILE]
+                                               # ADR-0030 (WP-116): default the user-wide
+                                               # $CLAUDE_CONFIG_DIR/settings.json, else
+                                               # ~/.claude/settings.json; no logbook needed (§8)
                                                # WP-050: `generic` dropped from the synopsis: it has no
                                                # settings file to merge into; other agents pipe into
                                                # `hook generic` themselves (§8)
@@ -406,7 +413,17 @@ seldon doctor                                  # engine, config, logbook, cases,
                                                # (a file gone) → degraded, fix install; changed → degraded,
                                                # "outdated in <dir> (changed by hand: <files>)", fix
                                                # `seldon hook install skills --replace (archives your
-                                               # copy)`; foreign → degraded, fix: move it away, install
+                                               # copy)`; foreign → degraded, fix: move it away, install.
+                                               # hooks (ADR-0030 §5, WP-116): where Seldon's three Claude
+                                               # Code hooks are — user-wide (all three in the file of
+                                               # `hook install`'s default) → ok; both (and some in
+                                               # <logbook>/.claude/settings.json) → ok, fix "optional:
+                                               # seldon hook uninstall claude-code --settings <that
+                                               # file>"; logbook only → degraded, "sessions started from
+                                               # ~/Work are not recorded", fix `seldon hook install
+                                               # claude-code`; none → ok, degraded with that fix when
+                                               # `harnesses` names claude-code; 1–2 of 3 user-wide or a
+                                               # file that is not JSON → degraded. Read-only
 seldon doctor --only rules                     # WP-101 round 3: the engine and rules rows only; starts no
                                                # program (no omarchy, snapper or git probe), reads no collector
                                                # state, takes no lock; exit 3 without a logbook, 1 when the
@@ -497,20 +514,44 @@ under its lock and before the collectors run, (a) rewrites the rules
 block of `AGENTS.md` when it is one an earlier engine shipped word for
 word (`RELEASED_BLOCKS`), or replaces a released v1 file whole
 (`RELEASED_V1`); the text outside the block stays byte for byte, nothing
-is archived, nothing is committed (the next engine commit carries it);
+is archived, and `AGENTS.md` alone is committed, `seldon: rules update
+(unedited, vN → vM)`, the user's other changes left out (WP-116;
+`--no-commit` and `git.autocommit = false` leave it to the next commit;
+so does an `AGENTS.md` that already had an uncommitted change before the
+update, which a commit named "unedited" must not carry: the `note:` line
+ends with "not committed: AGENTS.md has uncommitted changes of yours; the
+update goes with your next commit", `--json` `rulesUpdated.git`
+`{committed: false, reason}`, round 2);
 (b) updates the agent skill in every agent skill folder where it is
 outdated and every file its manifest names is there as written or as
 shipped. Nothing else: an edited block or skill keeps its files (doctor
 and its fix), a missing `AGENTS.md` or a folder without the skill stays
-so, a damaged or newer block is left. A released block in the other
+so, a damaged or newer block is left. A skill update writes one
+`seldon` note to the ledger (subject `skill`, detail "Seldon agent skill
+updated to seldon <version> in <folders> (it was unedited)"; WP-116): the
+files lie outside the logbook, so the ledger keeps the record. (c)
+(WP-116 round 1b, ADR-0032 §5) carries Claude Code's hooks user-wide
+once, unless `[agent] workdir = "logbook"` (no copy, no marker): when
+the logbook's own `.claude/settings.json` holds any of
+Seldon's three hooks and the user-wide settings (`hook install`'s
+default) none, it merges them there as `hook install` does (foreign
+hooks and keys kept), records the write as its own (`by: seldon
+capture`), and writes the marker `$XDG_STATE_HOME/seldon/hooks-user-wide`;
+the marker is also written when the user-wide file already holds one of
+Seldon's hooks. With the marker nothing is added again, so hooks the user
+removed stay removed; without hooks in the logbook's file nothing
+happens (doctor's `hooks` row names the fix); a user-wide file that is
+not JSON is left alone with a `warnings` line and no marker. A released block in the other
 language becomes this engine's block in the logbook's language (the
 logbook's language is the user's choice). A CRLF copy of a released v1
 file counts as that file. Skipped when the process runs as root (the
 owner of `/proc/self` is 0), and, failing closed, when that owner cannot
 be read (one `warnings` line); the package has no install
 script (`just check-packaging` pins it), so no package hook runs it. One
-`note:` line each in the human output; `--json` `rulesUpdated` and
-`skillsUpdated`. A failure is a `warnings` line, never the capture's.
+`note:` line each in the human output; `--json` `rulesUpdated` (with the
+commit's `git`), `skillsUpdated` and `hooksUserWide` (the `~`-path, or
+`null`). A failure is a `warnings` line, never
+the capture's.
 
 Help texts (WP-049): every command's `--help` starts with one sentence;
 values are named by what they are (`<ID>` a case id, `<EVENT>` an event
@@ -539,7 +580,9 @@ seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
                                      "checks":[{"name","status":"ok|degraded|error","message","fix"?}],
                                      "drift":{"attention","routine","routinePaths","routinePackages",
                                               "alwaysRedPaths","alwaysRed","nonDefault"},
-                                     "hooks":{"scope":"logbook|all"}}       # hooks: WP-111, for the skill
+                                     "hooks":{"scope":"logbook|all",       # scope: WP-111, for the skill;
+                                              "installed":"user-wide|logbook|both|none|unknown"}}
+                                                                            # installed: the hooks row (WP-116)
                                     exit 0 (no error), 1 (a check is error), 3 (not initialised)
 ```
 
@@ -691,11 +734,12 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
                           "sinceIgnored":[…],"explainedOwn":N,"explainedSelf":N,
                           "linkedPlanned":N,"watchPathsAdded":[…],
-                          "rulesUpdated":{"from":"vN","version":3}|null,
-                          "skillsUpdated":["~/.claude/skills",…],"warnings":[…]}
+                          "rulesUpdated":{"from":"vN","version":4,"git"}|null,
+                          "skillsUpdated":["~/.claude/skills",…],
+                          "hooksUserWide":"~/.claude/settings.json"|null,"warnings":[…]}
                                                                     # explainedOwn: §5 rule 7;
                                                                     # watchPathsAdded: §4 config;
-                                                                    # rulesUpdated, skillsUpdated:
+                                                                    # rulesUpdated, skillsUpdated, hooksUserWide:
                                                                     # the silent upgrade (§3, WP-111);
                                                                     # explainedSelf: §5 rule 8;
                                                                     # linkedPlanned: §5 rule 9;
@@ -758,8 +802,8 @@ seldon agent start <caseId> --json → {launched, launcher, program, argv (with 
                         build `bash -c` strings, `env -S`, `sudo -s|-i`; names compare without a version
                         suffix (`python3.12` is `python`); a heuristic by program name, not a sandbox, and
                         the error says so (WP-058). The prompt holds no logbook text: it names the case id
-                        and the logbook path and tells the agent to run `seldon hook session-start` and
-                        `seldon plan show <id>` (WP-058). As an argument it is visible in the process list
+                        and the logbook path, names the skill and the rules file, and tells the agent to
+                        run `seldon hook session-start` and `seldon plan show <id>` (WP-058, below). As an argument it is visible in the process list
                         (`ps`) and in a session journal that logs the launch; stderr goes to
                         `$XDG_STATE_HOME/seldon/agent-launch.log`; `.seldon/active-case` is set and
                         restored on failure; no ledger event (WP-022). The launcher runs with
@@ -767,7 +811,17 @@ seldon agent start <caseId> --json → {launched, launcher, program, argv (with 
                         lowercased, every run of characters other than a-z and 0-9 one `-`, none at
                         either end, so `default` → agent:default, `Claude Code` → agent:claude-code;
                         a name with nothing left is exit 1 before anything changes) and
-                        SELDON_ATTENDED=1, replacing the caller's values (WP-096, §8).
+                        SELDON_ATTENDED=1, replacing the caller's values (WP-096, §8), and
+                        SELDON_CASE=<id>, the launch marker by which the hooks serve the session wherever
+                        it works (ADR-0030 §1, §8). Folder (ADR-0030 §2, WP-116): the folder `agent start`
+                        was called in; when that is `$HOME`, `/` or gone, `~/Work` if it is a directory,
+                        else `$HOME` — `omarchy-agent`'s rule, also for a named launcher; `[agent] workdir =
+                        "logbook"` starts it in the logbook instead. `cwd` is the folder used. The prompt
+                        (ADR-0030 §3): "Work case <ID> in the Seldon logbook at <root>. Use the seldon
+                        skill; if your harness has no skill mechanism, read <root>/AGENTS.md (Seldon's
+                        rules) instead. First run `seldon hook session-start` unless your harness already
+                        gave you the block `# Seldon logbook context`, then `seldon plan show <ID>`. Every
+                        mutating command is recorded."
 seldon agent start --new … --json -- "<intent>" → the same, plus created: {case, events (case-created,
                         case-started), areaCreated, git} (WP-101)
 ```
@@ -1944,8 +1998,29 @@ signal, defined by the logbook's `AGENTS.md` and the skill; nothing in
 the engine reads it, and a sudo credential cache or a NOPASSWD rule never
 makes a session attended.
 
-Session scope (WP-063): the hooks serve the sessions inside the logbook.
-A session's directory is `CLAUDE_PROJECT_DIR` when that is set in the
+Session scope (WP-063, ADR-0030 §1): the hooks serve (a) the sessions
+inside the logbook and (b) the sessions `seldon agent start` launched.
+(b): the hook's environment holds `SELDON_CASE` naming a case of this
+logbook that is active or in verification (ADR-0032; read from
+`work/active/`; empty, not a case id, a case the logbook does not have, a
+queued, completed or dropped case: no marker), wherever the session works
+and under either `[hooks] scope`. Clause (a) is checked first, and both
+before anything else the hook does (WP-116 round 2): a session neither
+clause serves costs the process start, reading `config.toml` and the
+logbook's marker, and the check (median about 0.7–0.9 ms, bench
+profile). `hook session-stop` also serves a call with a well-formed
+marker whose `session_id` has events in the ledger: the agent may have
+closed its case before the session ends (ADR-0032 §3). Seldon sets the
+variable; nobody else should (a server or multiplexer the agent starts
+gets it unset, by the rules' hand-down sentence). The marker says only that
+Seldon launched the session; hook events still take their case from
+`.seldon/active-case` (§5 rule 1), and nothing else in the engine reads
+it. It is a variable of its own, not `SELDON_LOGBOOK` or `SELDON_ACTOR`
+(a user may export those in their shell) nor `SELDON_ATTENDED` (the
+agent's signal, unread by the engine). A Claude Code session the user
+starts by hand outside the logbook carries no marker: the user-wide hooks
+fire and the engine stays silent. (a):
+a session's directory is `CLAUDE_PROJECT_DIR` when that is set in the
 hook's environment (Claude Code sets it for its hook commands; it stays
 the project while the agent's `cwd` moves), else the payload's `cwd`;
 relative paths in a command still resolve against `cwd`. `hook
@@ -1955,33 +2030,49 @@ no capture, no commit, exit 0 — when that directory is not the logbook
 or a directory below it (compared as written and with symbolic links
 resolved; a directory that is not an absolute path counts as outside).
 A call with neither (an agent or a person running the hook itself) is
-served. `config.toml [hooks] scope` sets this: `"logbook"`
+served. `config.toml [hooks] scope` sets (a): `"logbook"`
 (the default; not written to the file) or `"all"`, which serves every
 session wherever it works, as the hooks did before WP-063. A settings
-file that only the logbook's sessions read (the default
-`<logbook>/.claude/settings.json`) gives the same result under both; the
-setting matters for a settings file outside the logbook, such as the
-user-wide `~/.claude/settings.json`, whose hooks Claude Code runs in every
-session of the user.
+file that only the logbook's sessions read (`<logbook>/.claude/settings.json`,
+the default before ADR-0030) gives the same result under both; the
+setting matters for the user-wide `~/.claude/settings.json`, whose hooks
+Claude Code runs in every session of the user.
 
 `seldon hook install claude-code
 [--settings FILE]` merges `PreToolUse` (`Bash|Edit|Write|MultiEdit`),
 `SessionStart` and `SessionEnd` (timeout 60 s, Claude Code's cap; `Stop`
-would fire after every reply) into `<logbook>/.claude/settings.json`
-without clobbering existing hooks, idempotently; the merged file is
-written with sorted keys. When it writes a file under a watched path
+would fire after every reply) into the user-wide Claude Code settings,
+`$CLAUDE_CONFIG_DIR/settings.json` when that is set and not empty, else
+`~/.claude/settings.json` (ADR-0030 §1, WP-116; `--settings` overrides,
+the logbook's `.claude/settings.json` stays a valid target; `seldon init
+--harness claude-code` writes the same file), without clobbering
+existing hooks or keys, idempotently (written only when a hook was
+missing); the merged file is written with sorted keys. No logbook is
+needed; a settings file inside the logbook is committed (`seldon: hook
+install claude-code`), any other is not. When it writes a file under a watched path
 (e.g. `--settings ~/.claude/settings.json` with `~/.claude` watched), it
 records the file as the engine's own write (§5 rule 7), so the next
 capture explains its config event; `--json` adds `ownWrites` (the
 recorded `~`-paths, `{error}` when they could not be recorded, `null` when nothing
-was added). A settings file outside the logbook (any `--settings` path
-not inside it, compared as for the session scope) gets a warning, in the
-report as `warning: …` and under `--json` in `warnings` (empty
-otherwise), also when nothing was added: Claude Code runs the hooks in
-every session that reads the file, and the text says what Seldon does in
-the sessions outside the logbook under the current `[hooks] scope`
-(nothing under `"logbook"`; records and prints the context under
-`"all"`). Other agents call `hook generic` themselves.
+was added). The report ends with one line, `--json` `scope`, also when
+nothing was added: Claude Code runs the hooks in every session that
+reads the file, and Seldon records only the sessions of the two clauses
+above; under `"all"` the line says that every session is recorded and is
+a warning (`warning: …`, `--json` `warnings`; empty otherwise). Other
+agents call `hook generic` themselves.
+
+Two settings files with the hooks (the user-wide one and an older
+logbook's own) make Claude Code run the PreToolUse hook twice per tool
+call (an older logbook's own file is carried user-wide by the next
+capture, §3, and stays as it was); the engine records a tool call once
+whatever runs it: a call whose
+`tool_use_id` the ledger already holds within a day writes nothing, for
+`PreToolUse` as for `PostToolUse` (ADR-0030 §5, WP-116). A `PreToolUse`
+searches the last 256 KiB of each month file in range for the id (its
+pair comes moments later), a `PostToolUse` the whole files; only a line
+that holds the id is parsed, which keeps the hook within its budget (§1;
+at 10 000 lines 1.6 ms recorded, 0.2 ms more than without the check). `seldon doctor`'s `hooks` row
+(§3) names the state and the tidy-up.
 
 `seldon hook uninstall claude-code [--settings FILE]` (WP-049) is the
 inverse: it takes out each hook `install` writes (same event, matcher and
@@ -1989,18 +2080,22 @@ command) and keeps everything else, also a hook the user added to one of
 Seldon's groups; a group, an event list or the `hooks` object it leaves
 empty goes too, and a file left as `{}` is deleted (its directory stays).
 None of Seldon's hooks there (or no file): nothing is written, exit 0. A
-file that is not a JSON object is refused unchanged (exit 1). The write or
+file that is not a JSON object is refused unchanged (exit 1). Its default
+file is `install`'s. The write or
 deletion is recorded as the engine's own (§5 rule 7: `op: remove` or
-`delete`), the logbook's own file is committed as `seldon: hook uninstall
-claude-code`. It is not an agent hook: errors keep their exit codes
-(3 without a logbook). `--json` → `{settings, removed, absent, deleted,
+`delete`), a file inside the logbook is committed as `seldon: hook uninstall
+claude-code`. It is not an agent hook: errors keep their exit codes. `--json` → `{settings, removed, absent, deleted,
 ownWrites, git}`. Both `install` and `uninstall` hold the state lock from
 reading the settings file to the commit (WP-049 review), so no capture or
 `watch` sees the written file before its record; while another `seldon`
 holds the lock they change nothing and exit 4.
 
 `seldon hook session-start` prints a compact context block to stdout
-(nothing for a session outside the session scope above):
+(nothing for a session outside the session scope above). A session with
+the launch marker (clause (b)) gets one fixed engine line under the
+title, before the data note: `Launched by seldon agent start on <ID>;
+logbook <~-path>; this session is recorded.` (ADR-0030 §3; `<ID>` is the
+checked case id):
 STATUS summary, active case (id, title, plan steps), the drift of the
 last 7 days (WP-111, ADR-0028 §3b: `## Drift (last 7 days)`, a count line
 "N crisis|crises, M for attention" — "; the first 10" when more — then

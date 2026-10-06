@@ -46,6 +46,12 @@ with your AUR helper (`yay -S jax-seldon`). The package installs the man
 page and the completions for all three shells. Install from one source
 only: both put a `seldon` on your `PATH`.
 
+From 0.1.3 to 0.1.4: the first capture after the update copies Seldon's
+Claude Code hooks from the logbook's `.claude/settings.json` to
+`~/.claude/settings.json`, once, keeping everything else there (not with
+`[agent] workdir = "logbook"`; see
+[Working with agents](04-working-with-agents.md#hooks-of-an-older-logbook)).
+
 ## Update the plugin
 
 ```sh
@@ -125,27 +131,27 @@ step 5.
    seldon init --remove-theme-hook
    ```
 
-4. Claude Code's hooks. If you keep the logbook, take them out of it:
-   they live in the logbook's `.claude/settings.json`, and without this
-   step Claude Code keeps calling a `seldon` that is gone. The command
-   removes only Seldon's hooks; your own settings and hooks stay, and a
-   file that held nothing else is deleted:
+4. Claude Code's hooks. They live in your `~/.claude/settings.json`,
+   and without this step Claude Code keeps calling a `seldon` that is
+   gone. The command removes only Seldon's hooks; your own settings and
+   hooks stay, and a file that held nothing else is deleted:
 
    ```sh
    seldon hook uninstall claude-code
    ```
 
-   If you also installed them into `~/.claude/settings.json`, take them
-   out of that file too, with the same command and `--settings`:
+   A logbook from before 0.1.4 may hold them too, in its own
+   `.claude/settings.json`. If you keep the logbook, take them out of it
+   with the same command and `--settings`:
 
    ```sh
-   seldon hook uninstall claude-code --settings ~/.claude/settings.json
+   seldon hook uninstall claude-code --settings ~/Seldon/.claude/settings.json
    ```
 
    Each command prints what it removed, or says that nothing was
-   installed. The next `seldon capture` records both removals without
+   installed. The next `seldon capture` records the removals without
    opening drift. If you delete the logbook as well, its own hooks go
-   with it and only the second command is needed.
+   with it and only the first command is needed.
 
 5. The engine. The installer removes exactly the files it installed,
    the man page and the completions included; a file you changed since

@@ -208,6 +208,32 @@ pub fn commit_all(root: &Path, summary: &str) -> Result<(), String> {
     git(root, &args)
 }
 
+/// Commits `paths` (relative to `root`) alone, `seldon: <summary>`:
+/// whatever else is changed or staged stays as it is (`git commit --
+/// <paths>`). Nothing to commit in them: `Ok`, no commit.
+pub fn commit_paths(root: &Path, paths: &[&str], summary: &str) -> Result<(), String> {
+    check_toplevel(root)?;
+    if is_detached(root)? {
+        return Err(DETACHED.to_string());
+    }
+    let mut add = vec!["add", "--"];
+    add.extend(paths);
+    git(root, &add)?;
+    let mut diff = vec!["diff", "--cached", "--quiet", "--"];
+    diff.extend(paths);
+    if matches!(run(Some(root), &diff), Run::Exited { code: Some(0), .. }) && has_head(root) {
+        return Ok(());
+    }
+    let message = format!("seldon: {summary}");
+    let mut args: Vec<&str> = Vec::new();
+    if !has_identity(root) {
+        args.extend(FALLBACK_IDENTITY);
+    }
+    args.extend(["commit", "-q", "-m", &message, "--"]);
+    args.extend(paths);
+    git(root, &args)
+}
+
 /// Whether HEAD is detached: `git symbolic-ref -q HEAD` exits 1. An unborn
 /// branch is not detached.
 pub fn is_detached(root: &Path) -> Result<bool, String> {
@@ -284,6 +310,19 @@ pub fn is_dirty(root: &Path) -> Result<bool, String> {
             stdout,
             ..
         } => Ok(!stdout.trim().is_empty()),
+        other => Err(failure("status", &other)),
+    }
+}
+
+/// Whether `path` (relative to `root`) has no change against HEAD, staged
+/// or not (`git status --porcelain -- <path>` prints nothing).
+pub fn is_clean_path(root: &Path, path: &str) -> Result<bool, String> {
+    match run(Some(root), &["status", "--porcelain", "--", path]) {
+        Run::Exited {
+            code: Some(0),
+            stdout,
+            ..
+        } => Ok(stdout.trim().is_empty()),
         other => Err(failure("status", &other)),
     }
 }

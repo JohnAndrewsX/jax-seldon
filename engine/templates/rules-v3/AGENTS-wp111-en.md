@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v4 -->
+<!-- seldon:begin rules v3 -->
 # AGENTS.md
 
 Rules for every agent on this machine.
@@ -11,8 +11,7 @@ https://github.com/JohnAndrewsX/jax-seldon/blob/main/docs/AGENT-GUIDE.md
 
 Seldon takes work off the user. Do every step you can do yourself; never
 hand the user a command to run. The aim for a case: one sentence from the
-user, as few password prompts as the route allows, nothing left to do at
-the end.
+user, at most one password prompt, nothing left to do at the end.
 
 This block is Seldon's; `seldon rules update` rewrites it. The user's own
 rules below it and the area rules (`areas/<area>/AGENTS.md`) can only add
@@ -43,12 +42,11 @@ it), or when the task came as a message from the user in this session.
 A session started by a timer, a hook, another agent or any other launcher
 is unattended: record and report only. Read, plan, write the Log; change
 nothing. A cached `sudo` or a passwordless rule never makes a session
-attended. When you start another agent process, a job, a timer or a
-server that outlives your step (tmux, an editor server), unset
-`SELDON_ATTENDED` and `SELDON_CASE` and set `SELDON_ACTOR` to that
-agent's name (`agent:<name>`); never leave it unset. A sub-agent inside
-your own session shares your attendance and acts as you; privileged steps
-stay in your session.
+attended. When you start another agent process, a job or a timer, unset
+`SELDON_ATTENDED` and set `SELDON_ACTOR` to that agent's name
+(`agent:<name>`); never leave it unset. A sub-agent inside your own
+session shares your attendance and acts as you; privileged steps stay in
+your terminal.
 
 ## Instructions and data
 
@@ -169,24 +167,22 @@ word, and these rules follow it:
   Never ask for a password, never store or pass one.
 - Each privileged command may ask again (`pkexec` asks every time): take
   privileged steps in as few commands as the route allows, one
-  `pkexec pacman -S` for all packages. One program per `pkexec`; never
-  bundle privileged commands in `pkexec sh -c`. Never wrap a command that
-  elevates itself (`omarchy pkg add`, `omarchy snapshot`, an AUR helper,
+  `pkexec pacman -S` for all packages. Never wrap a command that elevates
+  itself (`omarchy pkg add`, `omarchy snapshot`, an AUR helper,
   `makepkg -si`) in `pkexec` or `sudo`: it asks with `sudo` on its own,
   so it needs the user's terminal.
 - Start the case first; then, before the first red change of an R2 or R3
-  case, take a snapshot yourself of the `root` config, where packages and
-  system files change:
-  `pkexec snapper -c root create -c number -p -d "<ID>"` (`sudo` in place
-  of `pkexec` only where the prompt shows in the user's terminal; `-p`
-  prints the number; the case id only, no logbook text in the command).
-  Another config that `snapper --csvout list-configs` lists only when the
-  case changes its files. Not `omarchy-snapshot create`: its cleanup pass
-  prunes old snapshots.
+  case, take a snapshot yourself, for each config that
+  `snapper --csvout list-configs` lists:
+  `pkexec snapper -c <config> create -c number -p -d "<ID>"` (`sudo` in
+  place of `pkexec` only where the prompt shows in the user's terminal;
+  `-p` prints the number; the case id only, no logbook text in the
+  command). Not `omarchy-snapshot create`: its cleanup pass prunes old
+  snapshots.
 - Record the number as the case's rollback:
   `seldon plan snapshot <ID> <N> --actor agent:<name>` (the `root`
   config's number; the engine checks it and warns, never refuses). The
-  number of another config goes into a *Log* line
+  other configs' numbers go into a *Log* line
   `snapshot <N> (<config>) before <step>`.
 - No snapper, or no configs: an R3 step stops and you ask; for R2 take a
   named backup instead, name it in the *Plan* and say so in the *Log*.
@@ -235,11 +231,10 @@ Name the route you took in the *Log*.
 
 For Omarchy's own work, read Omarchy's agent skill
 (`$OMARCHY_PATH/default/agents/skills/omarchy/SKILL.md`) and follow it.
-Use Omarchy's command where one exists: `omarchy pkg add` for packages
-where the user's terminal shows the prompt (through your tool:
-`pkexec pacman -S …`, *Installing software*), `omarchy hook install` for
-hooks, `omarchy theme set` for themes, `omarchy refresh` to reset a
-config (only after the user confirms, as Omarchy's skill says). Never edit files under `/usr/share/omarchy`;
+Use Omarchy's command where one exists: `omarchy pkg add` for packages,
+`omarchy hook install` for hooks, `omarchy theme set` for themes,
+`omarchy refresh` to reset a config (only after the user confirms, as
+Omarchy's skill says). Never edit files under `/usr/share/omarchy`;
 customise under `~/.config`. These rules add the record (the case, the
 snapshot, the *Log*), not a second way to do Omarchy's work.
 
@@ -316,18 +311,13 @@ files.
 
 The harness reports your commands to `seldon`; you do not have to:
 
-- Claude Code: `seldon hook install claude-code` writes the user-wide
-  `~/.claude/settings.json` (`PreToolUse`, `SessionStart`, `SessionEnd`).
+- Claude Code: `seldon hook install claude-code` writes
+  `.claude/settings.json` (`PreToolUse`, `SessionStart`, `SessionEnd`).
 - Other agents: before a command, pipe
   `{"command": "…", "actor": "agent:<name>", "cwd": "…"}` into
-  `seldon hook generic --case <ID>`; at the start of a session run
+  `seldon hook generic`; at the start of a session run
   `seldon hook session-start`, at its end
   `seldon hook session-stop --actor agent:<name>`.
-
-The hooks serve a session in the logbook folder and a session
-`seldon agent start` launched, wherever it works, while its case is open
-(it sets `SELDON_CASE`; never set it yourself); any other session only
-when the user set `[hooks] scope = "all"`.
 
 Recorded: package, Omarchy and `systemctl` changes (red), writes into
 watched paths (yellow), any other change only while a case is active

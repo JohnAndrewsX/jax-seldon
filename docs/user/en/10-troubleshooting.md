@@ -159,8 +159,10 @@ in the journal. A wrong explanation misleads you later.
 
 ### An agent's commands are not recorded
 
-- Claude Code: did you start it in the logbook folder and accept the
-  trust prompt? Is `.claude/settings.json` there?
+- Claude Code: did Seldon start it (*Run*, *Start agent*,
+  `seldon agent start`), or did you start it in the logbook folder? A
+  session you start by hand elsewhere is not recorded. Are the hooks in
+  `~/.claude/settings.json`? The `hooks` row of `seldon doctor` says;
   `seldon hook install claude-code` adds what is missing.
 - Is a case active? Green commands are recorded only then.
 - Commands inside `xargs`, `find -exec` or `python -c` are not read.

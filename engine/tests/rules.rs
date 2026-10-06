@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use common::{Env, Snapper, json, read, stderr, stdout};
 
 const NOW: &str = "2026-10-05T10:00:00+02:00";
-const BEGIN: &str = "<!-- seldon:begin rules v3 -->\n";
+const BEGIN: &str = "<!-- seldon:begin rules v4 -->\n";
 const END: &str = "<!-- seldon:end -->\n";
 
 fn golden_v1(name: &str) -> String {
@@ -58,7 +58,7 @@ fn block(text: &str) -> &str {
 }
 
 #[test]
-fn init_writes_the_v3_block_first_and_doctor_calls_it_current() {
+fn init_writes_the_v4_block_first_and_doctor_calls_it_current() {
     for language in ["en", "de"] {
         let env = Env::new(Snapper::Allowed);
         let root = logbook(&env, language);
@@ -67,7 +67,7 @@ fn init_writes_the_v3_block_first_and_doctor_calls_it_current() {
         assert!(text.contains("\n## Your rules\n"), "{language}");
         let row = rules_row(&env);
         assert_eq!(row["status"], "ok", "{row}");
-        assert_eq!(row["message"], "current (v3)");
+        assert_eq!(row["message"], "current (v4)");
         assert!(row.get("fix").is_none(), "{row}");
         // nothing to do: no write, no commit, exit 0
         let head = env.has_git.then(|| last_commit(&env, &root));
@@ -118,7 +118,7 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
     );
     assert!(diff.contains("\n-Propose a case and wait.\n"), "{diff}");
     assert!(
-        diff.contains("\n+<!-- seldon:begin rules v3 -->\n"),
+        diff.contains("\n+<!-- seldon:begin rules v4 -->\n"),
         "{diff}"
     );
     assert!(!diff.contains("Music"), "{diff}");
@@ -140,7 +140,7 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
         assert_eq!(last_commit(&env, &root), head);
     }
 
-    // a v3 block whose text was changed counts as outdated, too
+    // a v4 block whose text was changed counts as outdated, too
     std::fs::write(
         &path,
         current.replacen("Rules for every agent", "Rules for some agents", 1),
@@ -149,14 +149,14 @@ fn a_fenced_file_gets_the_block_rewritten_and_nothing_else() {
     let row = rules_row(&env);
     assert_eq!(row["status"], "degraded");
     assert!(
-        row["message"].as_str().unwrap().starts_with("outdated (v3"),
+        row["message"].as_str().unwrap().starts_with("outdated (v4"),
         "{row}"
     );
     assert_eq!(row["fix"], "seldon rules update (archives your copy)");
     let (code, v) = update(&env, &[]);
     assert_eq!(
         (code, v["action"].as_str(), v["from"].as_str()),
-        (0, Some("rewritten"), Some("v3"))
+        (0, Some("rewritten"), Some("v4"))
     );
     assert_eq!(v["archived"], "archive/AGENTS-2026-10-05-2.md");
     assert!(
@@ -323,8 +323,8 @@ fn a_damaged_or_newer_block_is_refused_and_left_alone() {
             "--replace",
         ),
         (
-            "<!-- seldon:begin rules v4 -->\nfuture\n<!-- seldon:end -->\n",
-            "newer (v4) than this seldon's rules (v3)",
+            "<!-- seldon:begin rules v5 -->\nfuture\n<!-- seldon:end -->\n",
+            "newer (v5) than this seldon's rules (v4)",
             "update seldon",
         ),
     ] {
@@ -434,7 +434,7 @@ fn a_capture_upgrades_a_block_seldon_shipped_and_keeps_the_rest() {
             (row["status"].as_str(), row["message"].as_str()),
             (
                 Some("ok"),
-                Some("v2 as Seldon wrote it; the next capture updates it to v3")
+                Some("v2 as Seldon wrote it; the next capture updates it to v4")
             ),
             "{row}"
         );
@@ -444,8 +444,8 @@ fn a_capture_upgrades_a_block_seldon_shipped_and_keeps_the_rest() {
         assert!(out.status.code().is_some(), "{}", stderr(&out));
         let v = json(&out);
         assert_eq!(
-            v["rulesUpdated"],
-            serde_json::json!({"from": "v2", "version": 3})
+            (&v["rulesUpdated"]["from"], &v["rulesUpdated"]["version"]),
+            (&serde_json::json!("v2"), &serde_json::json!(4))
         );
         assert_eq!(read(&path), format!("{current}{mine}"), "{language}");
         let archived: Vec<_> = std::fs::read_dir(root.join("archive"))
@@ -454,7 +454,7 @@ fn a_capture_upgrades_a_block_seldon_shipped_and_keeps_the_rest() {
             .filter(|e| e.file_name() != ".gitkeep")
             .collect();
         assert!(archived.is_empty(), "nothing to archive: {archived:?}");
-        assert_eq!(rules_row(&env)["message"], "current (v3)");
+        assert_eq!(rules_row(&env)["message"], "current (v4)");
         // once
         let v = json(&capture(&env, true));
         assert_eq!(v["rulesUpdated"], serde_json::Value::Null);
@@ -472,7 +472,7 @@ fn a_capture_says_so_in_one_line_and_replaces_a_released_v1_file() {
     let human = stdout(&out);
     assert!(
         human.contains(
-            "note: AGENTS.md: Seldon's agent rules updated from v1 to v3 (Seldon's text was unedited; your own rules are kept)"
+            "note: AGENTS.md: Seldon's agent rules updated from v1 to v4 (Seldon's text was unedited; your own rules are kept)"
         ),
         "{human}"
     );
@@ -554,8 +554,140 @@ fn a_capture_that_cannot_tell_the_user_changes_nothing() {
         &[("SELDON_TEST_ROOT_PROBE", &mine)],
     ));
     assert_eq!(
-        v["rulesUpdated"],
-        serde_json::json!({"from": "v2", "version": 3})
+        (&v["rulesUpdated"]["from"], &v["rulesUpdated"]["version"]),
+        (&serde_json::json!("v2"), &serde_json::json!(4))
     );
     assert_eq!(read(&path), current);
+}
+
+fn v3(name: &str, language: &str) -> String {
+    read(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("templates/rules-v3/AGENTS-{name}-{language}.md")),
+    )
+}
+
+/// WP-116 (WP-111's D7 reopened): the unedited v3 block of 0.1.3 becomes
+/// v4 in a commit of its own, which holds `AGENTS.md` and nothing else;
+/// the user's other changes stay uncommitted.
+#[test]
+fn a_silent_upgrade_is_committed_alone() {
+    let env = Env::new(Snapper::Allowed);
+    if !env.has_git {
+        return;
+    }
+    let root = logbook(&env, "en");
+    let path = root.join("AGENTS.md");
+    let current = read(&path);
+    let mine = "- Never touch ~/Music.\n";
+    std::fs::write(&path, format!("{}{mine}", v3("wp111", "en"))).unwrap();
+    let out = env.git(
+        &root,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qam",
+            "my rule",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    // the user's own change, not committed, one staged and one not
+    std::fs::write(root.join("memory/notes.md"), "mine\n").unwrap();
+    let lessons = root.join("memory/lessons.md");
+    std::fs::write(&lessons, format!("{}- staged\n", read(&lessons))).unwrap();
+    let out = env.git(&root, &["add", "memory/lessons.md"]);
+    assert_eq!(out.status.code(), Some(0));
+
+    let out = capture(&env, true);
+    let v = json(&out);
+    assert_eq!(v["rulesUpdated"]["from"], "v3", "{v}");
+    assert_eq!(v["rulesUpdated"]["git"]["committed"], true, "{v}");
+    assert_eq!(read(&path), format!("{current}{mine}"));
+    assert_eq!(
+        last_commit(&env, &root),
+        "seldon: rules update (unedited, v3 → v4)"
+    );
+    let files = env.git(&root, &["show", "--name-only", "--format=", "HEAD"]);
+    assert_eq!(String::from_utf8_lossy(&files.stdout), "AGENTS.md\n");
+    let status = env.git(&root, &["status", "--porcelain"]);
+    let status = String::from_utf8_lossy(&status.stdout).to_string();
+    assert!(
+        status.contains("M  memory/lessons.md"),
+        "still staged: {status}"
+    );
+    assert!(status.contains("?? memory/notes.md"), "{status}");
+    assert!(!status.contains("AGENTS.md"), "{status}");
+
+    // the human output says it once; a second capture finds nothing
+    let v = json(&capture(&env, true));
+    assert_eq!(v["rulesUpdated"], serde_json::Value::Null);
+    assert_eq!(
+        last_commit(&env, &root),
+        "seldon: rules update (unedited, v3 → v4)"
+    );
+
+    // --no-commit and `git.autocommit = false` leave it to the next commit
+    std::fs::write(&path, v3("wp111r2", "en")).unwrap();
+    let out = env
+        .command(&["--no-commit", "--json", "capture", "--all"])
+        .env("SELDON_NOW", NOW)
+        .env("SELDON_PACMAN_LOG", env.tmp.path().join("pacman.log"))
+        .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+        .env("SELDON_OMARCHY_PLUGINS_DIR", env.tmp.path().join("plugins"))
+        .env("SELDON_THEME_FILE", env.tmp.path().join("theme.name"))
+        .output()
+        .unwrap();
+    let v = json(&out);
+    assert_eq!(v["rulesUpdated"]["from"], "v3", "{v}");
+    assert_eq!(v["rulesUpdated"]["git"]["committed"], false, "{v}");
+    assert_eq!(read(&path), current);
+}
+
+/// Stage-1 N7: when `AGENTS.md` holds an uncommitted change of the
+/// user's (below the block), the update is written but not committed on
+/// its own: a commit named "unedited" never carries the user's edit; the
+/// capture line says so.
+#[test]
+fn a_silent_upgrade_of_a_file_with_own_changes_is_not_committed() {
+    let env = Env::new(Snapper::Allowed);
+    if !env.has_git {
+        return;
+    }
+    let root = logbook(&env, "en");
+    let path = root.join("AGENTS.md");
+    let current = read(&path);
+    std::fs::write(&path, v3("wp111", "en")).unwrap();
+    let out = env.git(
+        &root,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qam",
+            "v3",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let head = last_commit(&env, &root);
+    // the user's own line, not committed
+    let mine = "- Never touch ~/Music.\n";
+    std::fs::write(&path, format!("{}{mine}", v3("wp111", "en"))).unwrap();
+
+    let out = capture(&env, false);
+    let human = stdout(&out);
+    assert!(
+        human.contains(
+            "updated from v3 to v4 (Seldon's text was unedited; your own rules are kept); not committed: AGENTS.md has uncommitted changes of yours; the update goes with your next commit"
+        ),
+        "{human}"
+    );
+    assert_eq!(read(&path), format!("{current}{mine}"));
+    assert_eq!(last_commit(&env, &root), head, "no commit");
+    let status = env.git(&root, &["status", "--porcelain", "--", "AGENTS.md"]);
+    assert_eq!(String::from_utf8_lossy(&status.stdout), " M AGENTS.md\n");
 }

@@ -49,9 +49,10 @@ you or your agents give.
   it or dismiss it, from the terminal or the panel.
 - Claude Code's hooks, or one `seldon hook` command for any other agent,
   record each changing command with the agent's name and the active
-  case, for agent sessions inside the logbook. Hooks installed for every
-  project (`--settings ~/.claude/settings.json`) do nothing in sessions
-  elsewhere unless `config.toml` sets `[hooks] scope = "all"`. Every
+  case, for agent sessions inside the logbook and for the sessions Seldon
+  starts (from `~/Work`, as Omarchy's own agent). The hooks sit in
+  `~/.claude/settings.json` and do nothing in your other sessions unless
+  `config.toml` sets `[hooks] scope = "all"`. Every
   logbook carries an `AGENTS.md` with the rules agents follow there.
 - In the Omarchy shell, a bar pill counts active cases and open drift. A
   panel with six tabs and the Prime Radiant overlay with charts follow

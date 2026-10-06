@@ -10,12 +10,17 @@
 //!   and `MultiEdit` become `subject: edit|write|multiedit`, `meta.command
 //!   "<Tool> <~path>"`, the path redacted when it matches `[redaction]
 //!   skipPaths`; a command line that names such a path is recorded as
-//!   `<program> ‹redacted›`. `PostToolUse` writes nothing for a tool call
-//!   that is already recorded; one that is not (a settings file with only
-//!   the PostToolUse hook) is recorded with the time it arrives.
-//! - Scope: the hooks serve a session whose payload `cwd` lies inside the
-//!   logbook, or names no `cwd`; `[hooks] scope = "all"` serves every
-//!   session ([`in_scope`]).
+//!   `<program> ‹redacted›`. A tool call that is already
+//!   recorded (by `toolUseId`) writes nothing: a `PostToolUse` after its
+//!   `PreToolUse`, or a second `PreToolUse` when two settings files hold
+//!   the hook (ADR-0030 §5). A `PostToolUse` whose call is not recorded (a
+//!   settings file with only that hook) is recorded with the time it
+//!   arrives.
+//! - Scope: the hooks serve a session whose directory (`CLAUDE_PROJECT_DIR`,
+//!   else the payload's `cwd`) lies inside the logbook, or that names none,
+//!   and a session `seldon agent start` launched (`SELDON_CASE` holds a
+//!   case id, ADR-0030 §1); `[hooks] scope = "all"` serves every session
+//!   ([`in_scope`]).
 //! - Zones: what a collector tracks keeps its zone (red packages, services
 //!   and updates; yellow config under `watchPaths`, plugins, themes). Any
 //!   other change (a file written outside `watchPaths` and the logbook, a
@@ -30,9 +35,11 @@
 //! - `hook session-start` prints the context block an agent starts with.
 //! - `hook session-stop` writes the journal stub, runs `capture --all` and
 //!   commits.
-//! - `hook install claude-code` merges these hooks into the logbook's
-//!   `.claude/settings.json`; a settings file under a watched path is
-//!   recorded as the engine's own write (SPEC-ENGINE §5 rule 7).
+//! - `hook install claude-code` merges these hooks into the user-wide
+//!   Claude Code settings (`$CLAUDE_CONFIG_DIR/settings.json`, else
+//!   `~/.claude/settings.json`; ADR-0030 §1), or into `--settings FILE`; a
+//!   settings file under a watched path is recorded as the engine's own
+//!   write (SPEC-ENGINE §5 rule 7).
 //!   `hook uninstall claude-code` takes exactly those hooks out again
 //!   ([`unmerge_claude_hooks`]) and records its write, or the deletion of
 //!   a file that is left empty, the same way.
@@ -55,17 +62,19 @@ use clap::{Args, Subcommand};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::agent::CASE_ENV;
 use super::capture::{self, CaptureArgs};
 use super::event::{ACTOR_ENV, clip, env_actor, parse_case_id, parse_person};
 use super::{Context, Output, autocommit};
 use crate::attribution::{home_path, normalise};
 use crate::collectors::config::{OwnOp, SkipPaths};
-use crate::config::{Config, Dirs, HookScope};
+use crate::config::{AgentWorkdir, Config, Dirs, HookScope};
 use crate::error::{Error, Result};
 use crate::ledger::Ledger;
 use crate::logbook::cases::{self, CaseFile};
 use crate::logbook::lock::{self, Lock};
 use crate::logbook::{Logbook, journal};
+use crate::model::CaseStatus;
 use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, Source, Zone, zone_for};
 use crate::model::is_agent;
 use crate::pkgcmd::{
@@ -101,7 +110,8 @@ pub enum HookCommand {
         /// The harness
         #[arg(value_parser = ["claude-code", "skills"])]
         harness: String,
-        /// Settings file (default: <logbook>/.claude/settings.json; claude-code only)
+        /// Settings file (default: the user-wide $CLAUDE_CONFIG_DIR/settings.json, else
+        /// ~/.claude/settings.json; claude-code only)
         #[arg(long, value_name = "FILE")]
         settings: Option<PathBuf>,
         /// skills only: where you changed the skill, archive your copy to the
@@ -115,7 +125,8 @@ pub enum HookCommand {
         /// The harness
         #[arg(value_parser = ["claude-code", "skills"])]
         harness: String,
-        /// Settings file (default: <logbook>/.claude/settings.json; claude-code only)
+        /// Settings file (default: the user-wide $CLAUDE_CONFIG_DIR/settings.json, else
+        /// ~/.claude/settings.json; claude-code only)
         #[arg(long, value_name = "FILE")]
         settings: Option<PathBuf>,
     },
@@ -700,31 +711,87 @@ struct Setup {
     skip: SkipPaths,
 }
 
-fn setup(ctx: &Context) -> Result<Setup> {
+/// The config and the logbook when the hooks serve the session whose
+/// directory is `cwd` ([`in_scope`]), else `None`: a session they do not
+/// serve costs this check and nothing more (WP-116 round 2).
+fn served(ctx: &Context, cwd: Option<&str>) -> Result<Option<(Config, Logbook)>> {
     let (config, logbook) = ctx.open_logbook()?;
+    Ok(in_scope(&config, &logbook.root, cwd).then_some((config, logbook)))
+}
+
+fn setup(ctx: &Context, (config, logbook): (Config, Logbook)) -> Setup {
     let scope = Scope::new(&ctx.dirs, &config, &logbook.root);
     let skip = SkipPaths::new(&ctx.dirs.home, &config.redaction.skip_paths);
-    Ok(Setup {
+    Setup {
         config,
         logbook,
         scope,
         skip,
-    })
+    }
 }
 
 /// Claude Code's project directory, set in the environment of the hook
 /// commands it runs.
 const PROJECT_DIR_ENV: &str = "CLAUDE_PROJECT_DIR";
 
-/// Whether the hooks serve the session the hook is called for. The
-/// session's directory is [`PROJECT_DIR_ENV`] when it is set (the project
-/// stays the same while the agent's `cwd` moves), else `cwd`, the
-/// directory the hook's payload names; with neither (an agent or a person
-/// running the hook itself) the session is served. With `[hooks] scope =
-/// "logbook"`, the default, only a session inside the logbook; with
+/// Whether the hooks serve the session the hook is called for (ADR-0030
+/// §1): (a) by its directory, or (b) because `seldon agent start` launched
+/// it. (a): the session's directory is [`PROJECT_DIR_ENV`] when it is set
+/// (the project stays the same while the agent's `cwd` moves), else `cwd`,
+/// the directory the hook's payload names; with neither (an agent or a
+/// person running the hook itself) the session is served. With `[hooks]
+/// scope = "logbook"`, the default, only a session inside the logbook; with
 /// `"all"` every session. A directory that is not an absolute path is
-/// outside. Relative paths in a command still resolve against `cwd`.
+/// outside. (b): the hook's environment holds [`CASE_ENV`] naming an open
+/// case of this logbook ([`launched_case`]), under either scope. Relative
+/// paths in a command still resolve against `cwd`. Clause (a) first: it
+/// reads no file.
 fn in_scope(config: &Config, logbook: &Path, cwd: Option<&str>) -> bool {
+    in_scope_by_dir(config, logbook, cwd) || launched_case(logbook).is_some()
+}
+
+/// The case `seldon agent start` launched this session on: [`CASE_ENV`]
+/// in the hook's environment, when it names a case of the logbook at
+/// `logbook` that is active or in verification (clause (b) of
+/// [`in_scope`]; ADR-0032). Anything else is no marker: an empty value,
+/// one that is not a case id, a case this logbook does not have, a
+/// queued, completed or dropped case — so a server the agent started
+/// (tmux, an editor server) that keeps the variable after the case is
+/// done records nothing. Only the scope and the context's launch line
+/// read it: hook events still take their case from `.seldon/active-case`
+/// (ADR-0030 §1). It reads the folder of active cases only.
+fn launched_case(logbook: &Path) -> Option<String> {
+    let id = std::env::var(CASE_ENV)
+        .ok()
+        .filter(|id| parse_case_id(id).is_ok())?;
+    let (prefix, exact) = (format!("{id}-"), format!("{id}.md"));
+    let dir = logbook.join("work").join(CaseStatus::Active.folder());
+    let open = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name().is_some_and(|n| {
+                let n = n.to_string_lossy();
+                n.ends_with(".md") && (n.starts_with(&prefix) || n == exact)
+            })
+        })
+        .filter_map(|p| CaseFile::load(&p).ok())
+        .any(|f| {
+            f.case.id == id
+                && matches!(f.case.status, CaseStatus::Active | CaseStatus::Verification)
+        });
+    open.then_some(id)
+}
+
+/// Whether the hook's environment holds a well-formed [`CASE_ENV`],
+/// whatever case it names.
+fn marked() -> bool {
+    std::env::var(CASE_ENV).is_ok_and(|id| parse_case_id(&id).is_ok())
+}
+
+/// Clause (a) of [`in_scope`]: the session's directory and the scope.
+fn in_scope_by_dir(config: &Config, logbook: &Path, cwd: Option<&str>) -> bool {
     let project = std::env::var(PROJECT_DIR_ENV)
         .ok()
         .filter(|d| !d.is_empty());
@@ -783,16 +850,16 @@ fn working_dir(cwd: Option<&str>, dirs: &Dirs) -> PathBuf {
 fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
     let payload: ToolPayload = serde_json::from_str(stdin)
         .map_err(|e| Error::user(format!("stdin is not a Claude Code hook payload: {e}")))?;
-    let post = match payload.hook_event_name.as_deref() {
-        Some("PreToolUse") => false,
-        Some("PostToolUse") => true,
+    let search = match payload.hook_event_name.as_deref() {
+        Some("PreToolUse") => Search::Tail,
+        Some("PostToolUse") => Search::Whole,
         _ => return Ok(()),
     };
-    let tool = payload.tool_name.as_deref().unwrap_or("");
-    let setup = setup(ctx)?;
-    if !in_scope(&setup.config, &setup.logbook.root, payload.cwd.as_deref()) {
+    let Some(served) = served(ctx, payload.cwd.as_deref())? else {
         return Ok(());
-    }
+    };
+    let tool = payload.tool_name.as_deref().unwrap_or("");
+    let setup = setup(ctx, served);
     let cwd = working_dir(payload.cwd.as_deref(), &ctx.dirs);
     let records = match tool {
         "Bash" => {
@@ -825,7 +892,7 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
         actor: CLAUDE_CODE,
         ts: ctx.now,
         case: None,
-        unless_recorded: tool_use_id.as_deref().filter(|_| post),
+        unless_recorded: tool_use_id.as_deref().map(|id| (id, search)),
     };
     record(ctx, &setup, ledger, entry, records, &extra)
 }
@@ -836,6 +903,9 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
             "stdin is not {{\"command\",\"actor\"?,\"cwd\",\"startedAt\"?,\"case\"?}}: {e}"
         ))
     })?;
+    let Some(served) = served(ctx, payload.cwd.as_deref())? else {
+        return Ok(());
+    };
     let actor = match &payload.actor {
         Some(actor) => parse_person(actor).map_err(Error::user)?,
         None => env_actor(parse_person)?.ok_or_else(|| {
@@ -857,10 +927,7 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
         })?,
         None => ctx.now,
     };
-    let setup = setup(ctx)?;
-    if !in_scope(&setup.config, &setup.logbook.root, payload.cwd.as_deref()) {
-        return Ok(());
-    }
+    let setup = setup(ctx, served);
     let cwd = working_dir(payload.cwd.as_deref(), &ctx.dirs);
     let Some(rec) = bash_record(&payload.command, &setup, &cwd) else {
         return Ok(());
@@ -1073,14 +1140,93 @@ fn edit_records(setup: &Setup, tool: &str, input: &Value, cwd: &Path) -> Vec<Rec
         .collect()
 }
 
-/// Whether the ledger already holds an event for this tool call (a
-/// PostToolUse after its PreToolUse).
-fn already_recorded(ledger: &Ledger, ctx: &Context, tool_use_id: &str) -> Result<bool> {
-    let since = ctx.now - chrono::Duration::days(1);
-    Ok(ledger
-        .read_range(since, ctx.now + chrono::Duration::days(1))?
-        .iter()
-        .any(|e| e.meta.extra.get("toolUseId").and_then(Value::as_str) == Some(tool_use_id)))
+/// How much of a tool call's history [`already_recorded`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Search {
+    /// The last [`PRE_TAIL`] bytes of each month file: a second
+    /// `PreToolUse` comes moments after the first (ADR-0030 §5).
+    Tail,
+    /// The whole month files: a `PostToolUse` may come long after its
+    /// `PreToolUse`.
+    Whole,
+}
+
+/// The end of a month file a `PreToolUse` searches for its tool call
+/// (about 500 events).
+const PRE_TAIL: u64 = 256 * 1024;
+
+/// Whether the ledger already holds an event of the last day for this
+/// tool call: a PostToolUse after its PreToolUse, or a second PreToolUse
+/// from a second settings file (ADR-0030 §5). The month files are searched
+/// for the id as a JSON string, and only a line that holds it is parsed:
+/// asked for every recorded call, this keeps the hook within its budget
+/// (SPEC-ENGINE §1).
+fn already_recorded(
+    ledger: &Ledger,
+    ctx: &Context,
+    tool_use_id: &str,
+    search: Search,
+) -> Result<bool> {
+    let (from, to) = (
+        ctx.now - chrono::Duration::days(1),
+        ctx.now + chrono::Duration::days(1),
+    );
+    let quoted = serde_json::to_string(tool_use_id).map_err(anyhow::Error::from)?;
+    // the months `Ledger::read_range` reads (a day more: an event's month
+    // file goes by its own offset)
+    let first = (from - chrono::Duration::days(1))
+        .format("%Y-%m")
+        .to_string();
+    let last = (to + chrono::Duration::days(1)).format("%Y-%m").to_string();
+    let tail = (search == Search::Tail).then_some(PRE_TAIL);
+    for month in ledger.months()? {
+        if month < first || month > last {
+            continue;
+        }
+        let bytes = read_end(&ledger.month_file(&month), tail)?;
+        let text = String::from_utf8_lossy(&bytes);
+        let found = text.match_indices(&quoted).any(|(at, _)| {
+            let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+            let end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+            crate::ledger::parse_line(text[start..end].trim_end_matches('\r').as_bytes())
+                .is_some_and(|e| {
+                    e.ts >= from
+                        && e.ts <= to
+                        && e.meta.extra.get("toolUseId").and_then(Value::as_str)
+                            == Some(tool_use_id)
+                })
+        });
+        if found {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The bytes of `path` from `tail` bytes before its end on (all of it with
+/// `None`), starting at a line start; nothing when there is no file.
+fn read_end(path: &Path, tail: Option<u64>) -> Result<Vec<u8>> {
+    use std::io::{Seek as _, SeekFrom};
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(anyhow::Error::new(e).into()),
+    };
+    let len = file.metadata().map_err(anyhow::Error::from)?.len();
+    let start = tail.map_or(0, |t| len.saturating_sub(t));
+    file.seek(SeekFrom::Start(start))
+        .map_err(anyhow::Error::from)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(anyhow::Error::from)?;
+    if start > 0 {
+        // the first line is cut: it starts before the tail
+        let cut = bytes
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(bytes.len(), |i| i + 1);
+        bytes.drain(..cut);
+    }
+    Ok(bytes)
 }
 
 /// Takes the state lock, waiting up to [`LOCK_PATIENCE`] for another
@@ -1098,13 +1244,13 @@ fn lock_patiently(ctx: &Context) -> Result<Lock> {
 }
 
 /// Who recorded the commands, when they started, their case if the caller
-/// named one (else `.seldon/active-case`), and for a `PostToolUse` the
-/// tool call's id: nothing is written when the ledger holds it already.
+/// named one (else `.seldon/active-case`), and for a Claude Code tool call
+/// its id: nothing is written when the ledger holds it already.
 struct Entry<'a> {
     actor: &'a str,
     ts: chrono::DateTime<chrono::FixedOffset>,
     case: Option<String>,
-    unless_recorded: Option<&'a str>,
+    unless_recorded: Option<(&'a str, Search)>,
 }
 
 /// Appends one `agent/command` event per record and attaches them to the
@@ -1142,8 +1288,8 @@ fn record(
         }
         Err(e) => return Err(e),
     };
-    if let Some(id) = entry.unless_recorded
-        && already_recorded(&ledger, ctx, id)?
+    if let Some((id, search)) = entry.unless_recorded
+        && already_recorded(&ledger, ctx, id, search)?
     {
         return Ok(());
     }
@@ -1234,16 +1380,28 @@ fn session_stop(ctx: &Context, actor: &str, stdin: &str) -> Result<()> {
         )));
     }
     let (config, logbook) = ctx.open_logbook()?;
-    if !in_scope(&config, &logbook.root, payload_cwd(stdin).as_deref()) {
-        return Ok(());
-    }
     let session = serde_json::from_str::<ToolPayload>(stdin)
         .ok()
         .and_then(|p| p.session_id)
         .filter(|s| !s.is_empty());
+    let served = in_scope(&config, &logbook.root, payload_cwd(stdin).as_deref());
+    // the agent may have closed its case before the session ends: a
+    // launched session whose events the ledger holds is still ended
+    let events = match (served, &session) {
+        (false, Some(id)) if marked() => {
+            match session_events(ctx, &config, &logbook, actor, Some(id)) {
+                Ok(n) if n > 0 => Some(Ok(n)),
+                _ => return Ok(()),
+            }
+        }
+        (false, _) => return Ok(()),
+        (true, _) => None,
+    };
     let report = |step: &str, e: &dyn std::fmt::Display| eprintln!("seldon hook: {step}: {e}");
 
-    let text = match session_events(ctx, &config, &logbook, actor, session.as_deref()) {
+    let events =
+        events.unwrap_or_else(|| session_events(ctx, &config, &logbook, actor, session.as_deref()));
+    let text = match events {
         Ok(n) => format!(
             "session ended; {n} {} recorded",
             if n == 1 { "event" } else { "events" }
@@ -1418,13 +1576,7 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
             .as_array_mut()
             .ok_or_else(|| refuse(format!("`hooks.{event}` is not a list")))?;
         let label = hook_label(event, matcher, command);
-        let has = groups.iter().any(|g| {
-            group_matches(g, matcher)
-                && g.get("hooks")
-                    .and_then(Value::as_array)
-                    .is_some_and(|hs| hs.iter().any(|h| h.get("command") == Some(&json!(command))))
-        });
-        if has {
+        if has_hook(groups, matcher, command) {
             merged.present.push(label);
             continue;
         }
@@ -1448,19 +1600,19 @@ pub fn merge_claude_hooks(path: &Path, shown: &str) -> Result<Merged> {
 }
 
 /// `seldon hook install claude-code [--settings FILE]`: adds each of
-/// [`CLAUDE_HOOKS`] that is not there yet ([`merge_claude_hooks`]),
+/// [`CLAUDE_HOOKS`] that is not there yet ([`merge_claude_hooks`]) to the
+/// user-wide settings by default ([`settings_file`], ADR-0030 §1),
 /// records a written file under a watched path as the engine's own write
 /// (so the next capture explains its config event), and commits the
-/// logbook when its own settings file changed. The state lock is held from
-/// the read to the commit: no capture sees the written file before its
-/// record. A settings file outside the logbook gets a warning that says
-/// which sessions the hooks then serve ([`scope_warning`]).
+/// logbook when a settings file inside it changed. The state lock is held
+/// from the read to the commit: no capture sees the written file before
+/// its record. The output says which sessions the hooks serve
+/// ([`scope_line`]); with `[hooks] scope = "all"` that is a warning.
 fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     let (path, logbook) = settings_file(ctx, settings)?;
     let shown = ctx.dirs.display(&path);
-    let warnings: Vec<String> = scope_warning(ctx, &path, logbook.as_ref())
-        .into_iter()
-        .collect();
+    let (scope, all) = scope_line(ctx, &shown, logbook.as_ref());
+    let warnings: Vec<String> = all.then(|| scope.clone()).into_iter().collect();
     let lock = ctx.lock()?;
     let Merged { added, present } = merge_claude_hooks(&path, &shown)?;
     let own = (!added.is_empty()).then(|| {
@@ -1503,8 +1655,10 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     if let Some(c) = &commit {
         human.push_str(&c.human());
     }
-    for w in &warnings {
-        let _ = write!(human, "\nwarning: {w}");
+    if all {
+        let _ = write!(human, "\nwarning: {scope}");
+    } else {
+        let _ = write!(human, "\n{scope}");
     }
     Ok(Output::ok(
         human,
@@ -1512,6 +1666,7 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
             "settings": path,
             "added": added,
             "present": present,
+            "scope": scope,
             "warnings": warnings,
             "ownWrites": own.as_ref().map_or(Value::Null, super::setup::own_writes_json),
             "git": commit.map_or(Value::Null, |c| c.json()),
@@ -1519,14 +1674,12 @@ fn install(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
     ))
 }
 
-/// The warning for a settings file outside the logbook: Claude Code runs
-/// the hooks in every session that reads the file, and `[hooks] scope`
-/// decides what Seldon does in the sessions outside the logbook.
-fn scope_warning(
-    ctx: &Context,
-    path: &Path,
-    logbook: Option<&(Config, Logbook)>,
-) -> Option<String> {
+/// Which sessions the hooks in the settings file `shown` serve, in one
+/// line (ADR-0030 §1, §5): Claude Code runs them in every session that
+/// reads the file, and Seldon serves the two clauses of [`in_scope`] — or,
+/// with `[hooks] scope = "all"`, every session (`true`: then the line is a
+/// warning).
+fn scope_line(ctx: &Context, shown: &str, logbook: Option<&(Config, Logbook)>) -> (String, bool) {
     let loaded;
     let (config, root) = match logbook {
         Some((config, logbook)) => (config, logbook.root.clone()),
@@ -1535,24 +1688,26 @@ fn scope_warning(
             (&loaded, ctx.resolve_logbook(None, Some(&loaded)).0)
         }
     };
-    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    if is_inside(&path, &root) {
-        return None;
-    }
     let root = ctx.dirs.display(&root);
-    Some(match config.hooks.scope {
-        HookScope::Logbook => format!(
-            "this settings file is outside the logbook ({root}). Claude Code runs the hooks \
-             in every session that reads it; Seldon records commands and prints the logbook \
-             context only for sessions whose directory is inside the logbook \
-             ([hooks] scope = \"logbook\", the default)."
+    match config.hooks.scope {
+        HookScope::Logbook => (
+            format!(
+                "Claude Code runs these hooks in every session that reads {shown}; Seldon \
+                 records only the sessions inside the logbook ({root}) and those `seldon agent \
+                 start` launched ({CASE_ENV}), and stays silent in every other session \
+                 ([hooks] scope = \"logbook\")."
+            ),
+            false,
         ),
-        HookScope::All => format!(
-            "this settings file is outside the logbook ({root}). Claude Code runs the hooks \
-             in every session that reads it, and with [hooks] scope = \"all\" Seldon records \
-             the commands of each of them in the logbook and prints the logbook context there."
+        HookScope::All => (
+            format!(
+                "Claude Code runs these hooks in every session that reads {shown}, and with \
+                 [hooks] scope = \"all\" Seldon records the commands of each of them in the \
+                 logbook ({root}) and prints the logbook context there."
+            ),
+            true,
         ),
-    })
+    }
 }
 
 /// What [`unmerge_claude_hooks`] found: one label per hook of
@@ -1574,6 +1729,40 @@ pub enum After {
     Write(String),
     /// Nothing but Seldon's hooks was in it: the file goes.
     Delete,
+}
+
+/// Whether the hook groups of one event hold `command` under `matcher`.
+fn has_hook(groups: &[Value], matcher: Option<&str>, command: &str) -> bool {
+    groups.iter().any(|g| {
+        group_matches(g, matcher)
+            && g.get("hooks")
+                .and_then(Value::as_array)
+                .is_some_and(|hs| hs.iter().any(|h| h.get("command") == Some(&json!(command))))
+    })
+}
+
+/// How many of [`CLAUDE_HOOKS`] the Claude Code settings file at `path`
+/// holds (0 without the file). Read-only, for `doctor`; `Err` is why the
+/// file cannot be read as settings.
+pub fn claude_hooks_in(path: &Path) -> std::result::Result<usize, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) if t.trim().is_empty() => return Ok(0),
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(format!("cannot be read: {e}")),
+    };
+    let root: Value =
+        serde_json::from_str(&text).map_err(|e| format!("is not valid JSON ({e})"))?;
+    let hooks = root.get("hooks").and_then(Value::as_object);
+    Ok(CLAUDE_HOOKS
+        .iter()
+        .filter(|(event, matcher, command, _)| {
+            hooks
+                .and_then(|h| h.get(*event))
+                .and_then(Value::as_array)
+                .is_some_and(|groups| has_hook(groups, *matcher, command))
+        })
+        .count())
 }
 
 /// The label of one hook of [`CLAUDE_HOOKS`] in reports.
@@ -1768,23 +1957,136 @@ fn uninstall(ctx: &Context, settings: Option<PathBuf>) -> Result<Output> {
 }
 
 /// The settings file `hook install|uninstall` works on: `--settings`
-/// (`~` expanded; no logbook needed), else the logbook's own
-/// `.claude/settings.json`, with the config and logbook for the commit.
+/// (`~` expanded), else the user-wide one ([`user_settings_file`],
+/// ADR-0030 §1); no logbook is needed. With the config and the logbook
+/// when the file lies inside the logbook, whose commit then holds it.
 fn settings_file(
     ctx: &Context,
     settings: Option<PathBuf>,
 ) -> Result<(PathBuf, Option<(Config, Logbook)>)> {
-    Ok(match settings {
-        Some(p) => (ctx.dirs.expand(&p.to_string_lossy()), None),
-        None => {
-            let (config, logbook) = ctx.open_logbook()?;
-            (
-                logbook.path(".claude/settings.json"),
-                Some((config, logbook)),
-            )
-        }
-    })
+    let path = match settings {
+        Some(p) => ctx.dirs.expand(&p.to_string_lossy()),
+        None => user_settings_file(&ctx.dirs),
+    };
+    let logbook = ctx
+        .open_logbook()
+        .ok()
+        .filter(|(_, logbook)| is_inside(&path, &logbook.root));
+    Ok((path, logbook))
 }
+
+/// The marker in the state directory that the hooks of a logbook's own
+/// settings were carried to the user-wide ones, or found there
+/// ([`migrate_to_user_wide`]): after it, a capture never adds them again.
+pub const MIGRATED_MARKER: &str = "hooks-user-wide";
+
+/// What [`migrate_to_user_wide`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Migration {
+    /// The user-wide settings file the hooks were added to.
+    pub added_to: Option<PathBuf>,
+    pub warnings: Vec<String>,
+}
+
+/// ADR-0030 §5, WP-116 round 1b: an install from before 0.1.4 has Seldon's
+/// hooks in the logbook's own `.claude/settings.json` only, which Claude
+/// Code does not read in `~/Work`, where `agent start` now starts the
+/// agent. Once, the hooks go into the user-wide settings with the merge of
+/// `hook install` (foreign hooks and keys kept), recorded as Seldon's own
+/// write under a watched path. Then, or when the user-wide file already
+/// holds one of Seldon's hooks, [`MIGRATED_MARKER`] is written: a user who
+/// takes the user-wide hooks out later keeps it so. Nothing without hooks
+/// in the logbook's file (`doctor` names the fix), and nothing with
+/// `[agent] workdir = "logbook"`: that user keeps project-level hooks only
+/// (ADR-0030 §2, ADR-0032 §5; no marker, so switching back migrates). The
+/// caller holds the state lock and runs as the user, never as root.
+pub fn migrate_to_user_wide(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+) -> Migration {
+    let mut out = Migration::default();
+    if config.agent.workdir == AgentWorkdir::Logbook {
+        return out;
+    }
+    let marker = ctx.dirs.state_dir.join(MIGRATED_MARKER);
+    if marker.exists() {
+        return out;
+    }
+    let local = logbook.path(LOGBOOK_SETTINGS);
+    if !claude_hooks_in(&local).is_ok_and(|n| n > 0) {
+        return out;
+    }
+    let user = user_settings_file(&ctx.dirs);
+    let shown = ctx.dirs.display(&user);
+    match claude_hooks_in(&user) {
+        Ok(0) => {}
+        Ok(_) => {
+            write_marker(&marker, &mut out);
+            return out;
+        }
+        Err(why) => {
+            out.warnings.push(format!(
+                "Claude Code's hooks were not added to {shown}: it {why}; fix it, then seldon hook install claude-code"
+            ));
+            return out;
+        }
+    }
+    match merge_claude_hooks(&user, &shown) {
+        Ok(merged) => {
+            if !merged.added.is_empty()
+                && let Err(e) = super::setup::record_own_writes_under(
+                    lock,
+                    ctx,
+                    config,
+                    std::slice::from_ref(&user),
+                    "seldon capture",
+                    OwnOp::Install,
+                )
+            {
+                out.warnings
+                    .push(format!("{shown}: {}", super::setup::own_writes_warning(&e)));
+            }
+            out.added_to = Some(user);
+            write_marker(&marker, &mut out);
+        }
+        Err(e) => out.warnings.push(format!(
+            "Claude Code's hooks were not added to {shown}: {e}"
+        )),
+    }
+    out
+}
+
+fn write_marker(marker: &Path, out: &mut Migration) {
+    let text =
+        "Seldon's Claude Code hooks are user-wide (WP-116); a capture does not add them again.\n";
+    if let Err(e) = crate::sys::create_dir_private(marker.parent().unwrap_or(marker))
+        .and_then(|()| std::fs::write(marker, text))
+    {
+        out.warnings
+            .push(format!("cannot write {}: {e}", marker.display()));
+    }
+}
+
+/// Claude Code's configuration folder, when not `~/.claude`.
+pub const CLAUDE_CONFIG_ENV: &str = "CLAUDE_CONFIG_DIR";
+
+/// The user-wide Claude Code settings file, where `hook install
+/// claude-code` and `init --harness claude-code` put the hooks (ADR-0030
+/// §1): `$CLAUDE_CONFIG_DIR/settings.json` when it is set, else
+/// `~/.claude/settings.json`.
+pub fn user_settings_file(dirs: &Dirs) -> PathBuf {
+    std::env::var(CLAUDE_CONFIG_ENV)
+        .ok()
+        .filter(|d| !d.is_empty())
+        .map_or_else(|| dirs.home.join(".claude"), |d| dirs.expand(&d))
+        .join("settings.json")
+}
+
+/// The logbook's own Claude Code settings file, the default before
+/// ADR-0030 (project settings: read only by a session in the logbook).
+pub const LOGBOOK_SETTINGS: &str = ".claude/settings.json";
 
 #[cfg(test)]
 mod tests {

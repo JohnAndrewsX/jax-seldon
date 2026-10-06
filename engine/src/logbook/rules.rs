@@ -22,7 +22,7 @@ use std::borrow::Cow;
 use crate::index::load::{FENCE_BEGIN, FENCE_END};
 
 /// The rules version this engine writes.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 /// The rules file, relative to the logbook root.
 pub const FILE: &str = "AGENTS.md";
@@ -69,8 +69,10 @@ const V1_TEXTS: [&str; 10] = [
 /// them is upgraded by the next capture ([`silent_upgrade`]). A change of
 /// the block text adds the old one here, with its rendering under
 /// `templates/rules-v<N>/`: the v2 blocks of WP-100 (rounds 1, 2 and the
-/// merged one) and of WP-101 (on `main` and the test host, in no release).
-const RELEASED_BLOCKS: [&str; 8] = [
+/// merged one) and of WP-101 (on `main` and the test host, in no release);
+/// the v3 blocks of WP-111 (stage 1, round 2 and its follow-up, the merged
+/// one; reachable from `main`, in no release).
+const RELEASED_BLOCKS: [&str; 15] = [
     // WP-100 round 1 (6625cf9), en, de
     "8246c602f96980427956697d995bec2500aa8f66cc5b8b502ca12a86b4dc5d23",
     "7831a764354213f6b847bc329f8f9a5830d7f04ac0b1421067cd1b29ca57919a",
@@ -83,6 +85,17 @@ const RELEASED_BLOCKS: [&str; 8] = [
     // WP-101 (f89381a), the last v2
     "cb59e3b806b8b1adfc2cdfd45dbb5c91c3871b92cfa7e00fc1d14d635c427292",
     "0267b6a12155d2e65efcebb49b2568afe8b52151a66cc55f4e0883c6c88b95a3",
+    // WP-111 stage 1 (243dac3), the first v3
+    "c308ea5d646d851a2f1ff1d5eba0d6a5080d9241f29744b4dd466f1325c28d12",
+    "ce8e3aaa1c04d5938cbe3d3b3900341a74ddb39db9d9e7a56fad83b71e96e024",
+    // WP-111 round 2 (9c3a7c4)
+    "9759dd0c7a78e47eb478cadb87ee6f3f8837d6adcb1d98188da621ed5fe753fa",
+    "738417c5601534f1c0dec752b534f12631ed1ad2349b08f67a6e0ece9851d202",
+    // WP-111 round 2, `--noconfirm` (0f09a3e): de only, en as merged
+    "82fb14c9c30533371878c174157469e0f7343e4d490c52cf5928f8fac23522f1",
+    // WP-111 as merged (070ff1f, dd41fe2), the last v3
+    "25ea43fb9358d3ab3e566ab07dd87f1d434ddd52153de49e6668d3776ee42eb4",
+    "20ec344f024ae13642d296fd1f5fa248fc86fa37497584ad8fbedc5cbaa61875",
 ];
 
 /// Where the rules block of a text is.
@@ -575,24 +588,52 @@ mod tests {
     /// merged, WP-101), en and de.
     const V2_FILES: [&str; 4] = ["wp100r1", "wp100r2", "wp100", "wp101"];
 
-    fn v2(name: &str, language: &str) -> String {
+    /// Every v3 rendering reachable from `main` (WP-111 stage 1, round 2,
+    /// its `--noconfirm` follow-up, WP-111 as merged), by language: the
+    /// follow-up's en block is the merged one.
+    const V3_FILES: [(&str, &str); 7] = [
+        ("wp111r1", "en"),
+        ("wp111r1", "de"),
+        ("wp111r2", "en"),
+        ("wp111r2", "de"),
+        ("wp111r2b", "de"),
+        ("wp111", "en"),
+        ("wp111", "de"),
+    ];
+
+    fn rendering(version: u32, name: &str, language: &str) -> String {
         let path = format!(
-            "{}/templates/rules-v2/AGENTS-{name}-{language}.md",
+            "{}/templates/rules-v{version}/AGENTS-{name}-{language}.md",
             env!("CARGO_MANIFEST_DIR")
         );
         std::fs::read_to_string(&path).unwrap()
     }
 
-    /// Every block an earlier engine shipped is known by its hash, and
-    /// the list holds nothing else (WP-111).
-    #[test]
-    fn the_released_blocks_are_exactly_the_shipped_v2_blocks() {
-        let mut hashes: Vec<String> = V2_FILES
+    /// Every earlier rendering with a block: (version, file, language).
+    fn shipped() -> Vec<(u32, &'static str, &'static str)> {
+        V2_FILES
             .iter()
-            .flat_map(|name| ["en", "de"].map(|l| v2(name, l)))
+            .flat_map(|name| ["en", "de"].map(|l| (2, *name, l)))
+            .chain(V3_FILES.iter().map(|(name, l)| (3, *name, *l)))
+            .collect()
+    }
+
+    /// Every block an earlier engine shipped is known by its hash, and
+    /// the list holds nothing else (WP-111, WP-116).
+    #[test]
+    fn the_released_blocks_are_exactly_the_shipped_blocks() {
+        let mut hashes: Vec<String> = shipped()
+            .into_iter()
+            .map(|(v, name, l)| rendering(v, name, l))
             .map(|text| crate::sys::sha256_hex(block(&text).unwrap().as_bytes()))
             .collect();
         hashes.sort();
+        hashes.dedup();
+        assert_eq!(
+            hashes.len(),
+            RELEASED_BLOCKS.len(),
+            "one rendering per hash"
+        );
         let mut listed: Vec<String> = RELEASED_BLOCKS.iter().map(|h| h.to_string()).collect();
         listed.sort();
         assert_eq!(hashes, listed);
@@ -602,21 +643,30 @@ mod tests {
         }
     }
 
-    /// A shipped v2 block nobody edited: unedited, upgraded by the next
-    /// capture without an archive, the user's part kept; an edited one is
-    /// outdated, left to `rules update`, which archives it (WP-111).
+    /// A shipped v2 or v3 block nobody edited: unedited, upgraded by the
+    /// next capture without an archive, the user's part kept; an edited one
+    /// is outdated, left to `rules update`, which archives it (WP-111).
     #[test]
     fn a_shipped_block_is_upgraded_silently_an_edited_one_is_not() {
-        for (name, language) in [("en", Language::En), ("de", Language::De)] {
+        for (version, file, name) in shipped() {
+            let language = if name == "en" {
+                Language::En
+            } else {
+                Language::De
+            };
             let t = template(language);
-            for file in V2_FILES {
-                let old = format!("{}- my own rule\n", v2(file, name));
+            {
+                let old = format!("{}- my own rule\n", rendering(version, file, name));
                 assert_ne!(old, t, "{file}-{name}: the block text changed");
-                assert_eq!(state(Some(&old), &t), State::Unedited(2), "{file}-{name}");
+                assert_eq!(
+                    state(Some(&old), &t),
+                    State::Unedited(version),
+                    "{file}-{name}"
+                );
                 let u = silent_upgrade(&old, &t).unwrap();
                 assert_eq!(
                     (u.action, u.from, u.archive),
-                    (Action::Rewritten, Some(2), false)
+                    (Action::Rewritten, Some(version), false)
                 );
                 assert_eq!(u.text, format!("{t}- my own rule\n"), "{file}-{name}");
                 assert_eq!(state(Some(&u.text), &t), State::Current);
@@ -630,7 +680,7 @@ mod tests {
                 let edited = old.replacen("\n# AGENTS.md\n", "\n# AGENTS\n", 1);
                 assert_eq!(
                     state(Some(&edited), &t),
-                    State::Outdated(2),
+                    State::Outdated(version),
                     "{file}-{name}"
                 );
                 assert!(silent_upgrade(&edited, &t).is_none());
@@ -753,8 +803,8 @@ mod tests {
         assert_eq!(state(Some(&golden("v0.1.1-en")), &t), State::Unedited(1));
         let v1 = "<!-- seldon:begin rules v1 -->\nold\n<!-- seldon:end -->\n";
         assert_eq!(state(Some(v1), &t), State::Outdated(1));
-        let v4 = "<!-- seldon:begin rules v4 -->\nnew\n<!-- seldon:end -->\n";
-        assert_eq!(state(Some(v4), &t), State::Newer(4));
+        let v5 = "<!-- seldon:begin rules v5 -->\nnew\n<!-- seldon:end -->\n";
+        assert_eq!(state(Some(v5), &t), State::Newer(5));
         let edited = t.replacen("Rules for every agent", "Rules for any agent", 1);
         assert_eq!(state(Some(&edited), &t), State::Changed);
         // the user's part may change freely
@@ -985,9 +1035,9 @@ mod tests {
             e.contains("has no end marker line") && e.contains("--replace"),
             "{e}"
         );
-        let newer = "<!-- seldon:begin rules v4 -->\nx\n<!-- seldon:end -->\n";
+        let newer = "<!-- seldon:begin rules v5 -->\nx\n<!-- seldon:end -->\n";
         let e = update(Some(newer), &t, false).unwrap_err();
-        assert!(e.contains("v4") && e.contains("update seldon"), "{e}");
+        assert!(e.contains("v5") && e.contains("update seldon"), "{e}");
         for old in [damaged, newer, "mine\n"] {
             let u = update(Some(old), &t, true).unwrap();
             assert_eq!((u.action, u.text.as_str()), (Action::Replaced, t.as_str()));

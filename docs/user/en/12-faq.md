@@ -9,8 +9,9 @@ No. The engine reads the package log, snapper, the Omarchy version, the
 plugin list, the theme and your watched config files. It writes only its
 logbook, `~/.config/seldon/config.toml` and `~/.local/state/seldon/`.
 Two things happen only if you choose them in the wizard: the theme hook
-in Omarchy's hook folder, and Claude Code's hooks in the logbook's
-`.claude/settings.json`. It never runs a package manager, `sudo` or
+in Omarchy's hook folder, and Claude Code's hooks in your
+`~/.claude/settings.json` (Seldon adds its three hooks and keeps the
+rest). It never runs a package manager, `sudo` or
 `systemctl` with a changing verb.
 
 ## Does Seldon stop an agent from doing something dangerous?

@@ -1,6 +1,6 @@
 # FAQ
 
-<!-- source: en/12-faq.md @ 1bae1cd -->
+<!-- source: en/12-faq.md @ 65ad985 -->
 
 Kurze Antworten auf die Fragen, die zuerst kommen. Jede Antwort verweist
 auf die Seite mit den Einzelheiten.
@@ -12,7 +12,8 @@ Plugin-Liste, das Theme und deine beobachteten Konfigurationsdateien. Sie
 schreibt nur ihr Logbuch, `~/.config/seldon/config.toml` und
 `~/.local/state/seldon/`. Zwei Dinge passieren nur, wenn du sie im
 Assistenten wählst: der Theme-Hook im Hook-Ordner von Omarchy und die
-Hooks von Claude Code in `.claude/settings.json` des Logbuchs. Sie
+Hooks von Claude Code in deiner `~/.claude/settings.json` (Seldon fügt
+seine drei Hooks hinzu und lässt den Rest stehen). Sie
 startet nie einen Paketmanager, `sudo` oder `systemctl` mit einem
 ändernden Befehl.
 

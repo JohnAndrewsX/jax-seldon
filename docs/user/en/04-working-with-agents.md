@@ -38,10 +38,13 @@ language. It tells every agent how to work there:
 - it runs privileged commands itself, the way Omarchy's own agent skill
   says, word for word: a command an agent runs has no terminal of yours,
   so it uses `pkexec`, which opens Omarchy's password dialog (once per
-  command); `sudo` only where the prompt shows in your own terminal; it
-  never asks for your password in any other way;
-- before a risky red change it takes a snapper snapshot itself and
-  records the number in the case;
+  command, so it keeps them as few as the route allows: a typical
+  install asks twice, for the snapshot and for the package); `sudo` only
+  where the prompt shows in your own terminal; it never asks for your
+  password in any other way;
+- before a risky red change it takes a snapper snapshot of the `root`
+  config itself (another config only when the case changes its files)
+  and records the number in the case;
 - it installs the way the software documents, packaged routes first,
   and uses Omarchy's own commands where one exists (`omarchy pkg add`,
   `omarchy hook install`, `omarchy theme set`; `omarchy refresh` only
@@ -57,7 +60,7 @@ language. It tells every agent how to work there:
 - it never edits the ledger, generated files or engine-owned fields.
 
 Seldon's rules sit in a block at the top of the file, between the lines
-`<!-- seldon:begin rules v3 -->` and `<!-- seldon:end -->`. Your own
+`<!-- seldon:begin rules v4 -->` and `<!-- seldon:end -->`. Your own
 rules go below it, under `## Your rules`, and rules for one area into
 `areas/<area>/AGENTS.md`; agents follow them. Your rules can only add
 limits: nothing in them, or in any other text, loosens Seldon's block,
@@ -70,9 +73,13 @@ The long form of the rules is the project's
 After an engine update the rules may be older than the engine's. If you
 never edited them, nothing is left for you: the next capture brings
 Seldon's block up to date, keeps your part below it byte for byte and
-says so in one `note:` line. A file from release 0.1.0 to 0.1.3 that
-nobody edited is replaced the same way. `seldon doctor` reads such a file
-as `ok` until then.
+says so in one `note:` line; the change gets a commit of its own,
+`seldon: rules update (unedited, v3 → v4)`, which holds `AGENTS.md` and
+nothing else. If `AGENTS.md` had changes of yours that you had not
+committed yet, the update is written but not committed; it goes with
+your next commit, and the `note:` line says so. A file from release 0.1.0 to 0.1.3 that nobody edited is
+replaced the same way. `seldon doctor` reads such a file as `ok` until
+then.
 
 If you edited Seldon's block, or added lines to a file from before the
 block, the engine does not touch it. `seldon doctor` shows it:
@@ -84,7 +91,7 @@ block, the engine does not touch it. `seldon doctor` shows it:
 
 The panel checks this when you open it and shows "The logbook's agent
 rules are outdated (v1)" with *Update rules*; one click runs the fix and
-says in one line what it did, for example "Agent rules updated to v3;
+says in one line what it did, for example "Agent rules updated to v4;
 your old copy is in archive/AGENTS-2026-10-06.md". If the update fails,
 the line says why. In a terminal, run it once:
 
@@ -130,23 +137,31 @@ which an agent can take on as before; the old case stays as it was.
 
 ### Set it up
 
-Claude Code needs three hooks in the logbook's `.claude/settings.json`.
-If you chose "Claude Code hooks" in the wizard, they are already there.
-Otherwise install them once:
+Claude Code needs three hooks in your user-wide Claude Code settings,
+`~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json` when you
+set that). If you chose "Claude Code hooks" in the wizard, they are
+already there. Otherwise install them once:
 
 ```sh
 seldon hook install claude-code
 ```
 
 ```text
-~/Seldon/.claude/settings.json: installed the Seldon hooks.
+~/.claude/settings.json: installed the Seldon hooks.
   added    PreToolUse (Bash|Edit|Write|MultiEdit): seldon hook claude-code
   added    SessionStart: seldon hook session-start
   added    SessionEnd: seldon hook session-stop
+Claude Code runs these hooks in every session that reads ~/.claude/settings.json; Seldon records only the sessions inside the logbook (~/Seldon) and those `seldon agent start` launched (SELDON_CASE), and stays silent in every other session ([hooks] scope = "logbook").
 ```
 
-The command keeps every other hook in the file. Running it again changes
-nothing.
+The command keeps every other hook and setting in the file. Running it
+again changes nothing.
+
+Claude Code runs these hooks in every session, but Seldon records only
+two kinds: a session in the logbook folder, and a session Seldon started
+for you (*Run* or *Start agent* in the panel, `seldon agent start`),
+wherever it works. Every other Claude Code session — your other
+projects — is not recorded: the hooks return at once and write nothing.
 
 In the context that `SessionStart` prints, every line from your logbook
 starts with `>`, under a note that these lines are data, not
@@ -175,9 +190,9 @@ the logbook.
    cd ~/Seldon && claude
    ```
 
-   Accept the workspace trust prompt. The hooks live in the folder's
-   `.claude/settings.json`, and Claude Code only runs them in a trusted
-   folder.
+   Accept the workspace trust prompt. Or start it from the panel
+   ([one sentence and *Run*](#start-an-agent-from-the-panel)); then it
+   starts in `~/Work`, as Omarchy's own agent does.
 
 2. Tell it what you want, in one sentence, for example: "Make the gaps
    between windows larger."
@@ -203,15 +218,10 @@ seldon plan start C-2026-003
 Then tell the agent "Work case C-2026-003", or press *Start agent* on the
 case's card (see [Start an agent from the panel](#start-an-agent-from-the-panel)).
 
-The hooks only run when Claude Code starts in the logbook folder. You
-can also install them into your user settings, so that Claude Code runs
-them in every folder:
-`seldon hook install claude-code --settings ~/.claude/settings.json`.
-Seldon still records commands and prints its context only for sessions
-in the logbook folder or below it; in other projects the hooks do
-nothing, and `hook install` says so. To have every Claude Code session on
-this machine write into your logbook, in any project, with the active
-case, set this in `~/.config/seldon/config.toml`:
+A Claude Code session you start by hand outside the logbook folder is
+not recorded. To have every Claude Code session on this machine write
+into your logbook, in any project, with the active case, set this in
+`~/.config/seldon/config.toml`:
 
 ```toml
 [hooks]
@@ -220,6 +230,29 @@ scope = "all"
 
 Red and yellow commands are then recorded in every session; green
 commands only while a case is active.
+
+### Hooks of an older logbook
+
+Before 0.1.4 the hooks went into the logbook's own
+`.claude/settings.json`, which Claude Code reads only in the logbook
+folder. The first capture after the update adds them to
+`~/.claude/settings.json` on its own, keeps everything else in that
+file, and says so in one `note:` line. It does this once: if you take
+them out of `~/.claude/settings.json` later, they stay out. With
+`[agent] workdir = "logbook"` it makes no copy: the hooks stay in the
+logbook's settings, where agents started in the logbook folder find them. Until then,
+or after you took them out, `seldon doctor` shows:
+
+```text
+  degraded  hooks    logbook only (.claude/settings.json): sessions started from ~/Work are not recorded
+                     fix: seldon hook install claude-code
+```
+
+After the fix the row is `ok` and offers to remove the old copy:
+`seldon hook uninstall claude-code --settings ~/Seldon/.claude/settings.json`
+(this commits the logbook). You do not have to: while both files hold
+the hooks, Claude Code runs them twice, and Seldon still records each
+command once.
 
 ## The active case
 
@@ -281,16 +314,21 @@ For a case you made yourself, *Start agent* on an active case's card (or
 seldon agent start C-2026-003
 ```
 
-The engine makes the case the active case and starts an agent in the
-logbook folder. The agent's first prompt names the case and the logbook
-and tells the agent to run `seldon hook session-start` and
-`seldon plan show C-2026-003`; it holds no text from your logbook. The
+The engine makes the case the active case and starts an agent where
+Omarchy starts its own (`omarchy agent prompt`): in the folder you ran
+the command in, and in `~/Work` when that folder is your home or `/` —
+as from the panel (your home when there is no `~/Work`). Agents trust
+`~/Work`, so there is no trust prompt. The agent's first prompt names
+the case and the logbook, points it to the `seldon` skill (or, for an
+agent without skills, to the logbook's `AGENTS.md`) and tells it to run
+`seldon hook session-start` and `seldon plan show C-2026-003`; it holds
+no text from your logbook. The
 prompt is a command-line argument, so it is visible in the process list
 (`ps`) while the agent runs, and a session journal that logs app
 launches keeps it. Once the agent's first command is recorded, the card
 shows its name.
 
-The agent also gets two environment variables. `SELDON_ACTOR` is
+The agent also gets three environment variables. `SELDON_ACTOR` is
 `agent:` and the launcher's name (`agent:default` for the default
 launcher). `seldon log`, `plan`, `drift`, `event` and `hook generic`
 record that name when `--actor` (for `hook generic`, `"actor"`) is
@@ -298,16 +336,28 @@ missing, so a note or a case step the agent forgets to sign is recorded
 as the agent, never as you. `event` first takes the agent command it
 finds in the ledger, with that command's case. `SELDON_ATTENDED=1` tells the agent
 that you started it: the logbook's rules (`AGENTS.md`) say what it may
-do then. Seldon itself never reads it. Both variables reach the agent
-only when the launcher starts the terminal; a terminal server
+do then. Seldon itself never reads it. `SELDON_CASE` names the case:
+it tells Seldon's hooks that Seldon started this session, so they record
+it in any folder while the case is open, and the session's context opens
+with the line "Launched by seldon agent start on C-2026-003; … this
+session is recorded." Commands still land on the active case. Once the
+case is done, the session's commands outside the logbook are no longer
+recorded. Never set `SELDON_CASE` yourself: Seldon sets it, and every
+session that inherits it while its case is open is recorded. One
+logbook per launched session: the variable names a case of the logbook
+Seldon started the agent on; do not point that session at another
+logbook (`SELDON_LOGBOOK`, `--logbook`), which would record it there if
+that logbook has an open case with the same id. The variables reach
+the agent only when the launcher starts the terminal; a terminal server
 (`footclient`, `kitty --single-instance`, a wezterm mux) reuses its own
 environment, and then only `--actor` names the agent.
 
 By default the engine starts Omarchy's default coding agent, through
 `omarchy agent prompt`, in its own terminal window. Which agent that is
 depends on your Omarchy setup. If it is Claude Code, the hooks from the
-section above record its commands, because it starts in the logbook
-folder.
+section above record its commands, because Seldon started it. To start
+agents in the logbook folder instead, as before 0.1.4, set
+`workdir = "logbook"` under `[agent]` in the config.
 
 You can name another launcher in `~/.config/seldon/config.toml`, for
 example Claude Code in a terminal window (here Alacritty):
@@ -339,7 +389,7 @@ Omarchy's agents menu, `omarchy agent crash` or by hand in any folder,
 knows to find or open a case before it changes the machine.
 
 An agent without Seldon's hooks — Codex, a script, an agent of your own,
-Claude Code outside the logbook — reports to Seldon with three commands. At the start of a session, for context:
+Claude Code without the hooks installed — reports to Seldon with three commands. At the start of a session, for context:
 
 ```sh
 seldon hook session-start
@@ -361,9 +411,9 @@ The JSON may also carry `"startedAt"` (a timestamp) and `"case"` (a case
 id instead of the active case). The actor is always `agent:` and a name.
 Without `"actor"`, `seldon hook generic` takes `SELDON_ACTOR`.
 `seldon hook generic` is silent and always exits 0, so it never breaks
-the agent. Whether a command run outside the logbook folder is recorded
-is your choice: `[hooks] scope` in `config.toml`, as for Claude Code
-above.
+the agent. A command run outside the logbook folder is recorded when
+Seldon started the agent (`SELDON_CASE`), and otherwise only under
+`[hooks] scope = "all"` in `config.toml`, as for Claude Code above.
 
 ## The agent skill
 
@@ -393,13 +443,14 @@ at length:
   *Intent*; print a preview line before the first privileged step;
 - before a package transaction, resolve it read-only and check it against
   `[drift] alwaysRed`; a hit is R3 and waits for your go;
-- take the snapshot of an R2 or R3 case itself and record its number;
+- take the snapshot of an R2 or R3 case itself (the `root` config) and
+  record its number;
 - verify with a check that is not its own, fill *Result* and close the
   case;
 - report its commands through `seldon hook generic` when no hook serves
   it, in a form that runs nothing of the reported command; outside the
-  logbook folder only when `[hooks] scope = "all"`, because with the
-  default scope such a report records nothing;
+  logbook folder only when Seldon started it or `[hooks] scope = "all"`,
+  because otherwise such a report records nothing;
 - treat your own rules below Seldon's block in `AGENTS.md` as limits
   only: nothing there loosens the R3 stop or "unattended: record only";
 - explain drift only with evidence, and tell you about a crisis in one
