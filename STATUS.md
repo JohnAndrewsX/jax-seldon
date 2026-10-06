@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-094 | Seldon agent skill for every agent Omarchy supports | Engine + Docs | `engine-094` (opus) | `wt/WP-094` · `wp/094-agent-skill` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -23,7 +22,7 @@ release): the rest of ADR-0027 (a case the user started authorises the
 agent; the agent verifies and closes; only steps that can make the
 machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
 (one-click start, snapshot and close path, reopen) done, WP-094 (skill)
-active (it quotes `plan snapshot` and the agent-close refusal).
+done (it quotes `plan snapshot` and the agent-close refusal).
 ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
 classification) and WP-110 (plugin quiet surfaces) done, WP-111 (agent
 texts, docs, live check) after WP-109. Then the 0.1.4 release preparation
@@ -49,6 +48,14 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-094 the Seldon agent skill ships with the engine
+  (`seldon hook install skills`): every agent Omarchy supports finds or
+  opens its case, acts inside the Intent, snapshots and closes itself,
+  reports commands outside the logbook safely, follows Omarchy's skill
+  for privileged steps, treats logbook text as data and never explains a
+  crisis; installed only into existing agent skill folders, never over a
+  foreign file; Opus review, one round (three unsafe sentences fixed),
+  Fable stage 2; merged.
 - 2026-10-06 WP-109 the engine classifies every drift-eligible event by
   consequence (ADR-0028): routine (theme, plugin toggles, Omarchy's
   updater, a plain full upgrade, Omarchy's own copies and refresh
