@@ -743,9 +743,46 @@ def journal(path):
     return entries
 
 
+def strip_comments(text):
+    """engine: cases::strip_comments (an unclosed comment runs to the end)."""
+    return re.sub(r"<!--.*?(?:-->|\Z)", "", text, flags=re.S)
+
+
 def plan_section(body):
+    """The `## Plan` text without HTML comments: a template placeholder is no plan (rules 3 and 9,
+    WP-115 round 2)."""
     m = re.search(r"^## Plan\n(.*?)(?=^## |\Z)", body, re.S | re.M)
-    return m.group(1) if m else ""
+    return strip_comments(m.group(1)) if m else ""
+
+
+LOG_RISK = re.compile(r"^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · (.*) · \S+\s*$")
+
+
+def risk_timeline(body):
+    """engine: reconcile::risk_timeline — [(minute, risk)] from the `created` Log line and every
+    `set … risk A → B`; None without a `created` line that names a risk."""
+    m = re.search(r"^## Log\n(.*?)(?=^## |\Z)", body, re.S | re.M)
+    out = []
+    for line in (m.group(1) if m else "").splitlines():
+        lm = LOG_RISK.match(line)
+        if not lm:
+            continue
+        at = dt.datetime.strptime(lm.group(1), "%Y-%m-%d %H:%M")
+        r = re.match(r"created\b.*\brisk (R[0-3])\b", lm.group(2)) if not out else \
+            re.match(r"set .*\brisk R[0-3] → (R[0-3])\b", lm.group(2))
+        if r:
+            out.append((at, r.group(1)))
+    return out or None
+
+
+def risk_at(risks, at):
+    """engine: PlanningCase::risk_at — the risk at local time `at`, None when it cannot be told."""
+    if risks is None:
+        return None
+    minute = at.replace(second=0, microsecond=0)
+    before = [r for m, r in risks if m < minute][-1:]
+    values = before + [r for m, r in risks if m == minute]
+    return values[0] if values and all(v == values[0] for v in values) else None
 
 
 def instant(ts):
@@ -1237,21 +1274,41 @@ def planned_links(events, case_files):
         return f"{e['source']} {e['kind']} {e['subject']} at {e['ts'][11:19]}"
 
     cases = sorted(((fm["id"], fm, body) for _, fm, body in case_files), key=lambda c: c[0])
+    known = {cid for cid, _, _ in cases}
+    by_case = {cid: body for cid, _, body in cases}
+    classifier = Classifier(events)
     logs, links = {}, []
     for e in events:
         if not open_(e) or follows(e):
             continue
         t, pat = instant(e["ts"]), token_pattern(e["subject"])
+        # a case whose file does not load might have planned it: no link (round 2, B2)
+        if any(s <= t and (end is None or t <= end)
+               for cid, ws in windows.items() if cid not in known for s, end in ws):
+            continue
         planned = [(cid, fm) for cid, fm, body in cases
                    if any(s <= t and (end is None or t <= end) for s, end in windows.get(cid, []))
                    and pat.search(plan_section(body))]
         if len(planned) == 1:
             cid, fm = planned[0]
-            if always_red(e["subject"]) and fm["risk"] != "R3":
-                logs.setdefault(cid, []).append(
-                    f"advisory: {cid} is {fm['risk']}, but its red change `{e['subject']}` is R3 "
-                    f"(`[drift] alwaysRed`): an R3 step needs the user's explicit go and a snapshot; "
-                    f"raise it with `seldon plan set {cid} --risk R3` (ADR-0027 §2c)")
+            package = always_red(e["subject"])
+            crisis = classifier.group([e], e)[0] == "crisis"
+            # the Log's local time; the fixture's events carry the same offset
+            risk = risk_at(risk_timeline(by_case[cid]), t.replace(tzinfo=None))
+            if (package or crisis) and risk != "R3":
+                if package and risk:
+                    logs.setdefault(cid, []).append(
+                        f"advisory: {cid} is {risk}, but its red change `{e['subject']}` is R3 "
+                        f"(`[drift] alwaysRed`): an R3 step needs the user's explicit go and a snapshot; "
+                        f"raise it with `seldon plan set {cid} --risk R3` (ADR-0027 §2c)")
+                else:
+                    what = ("is `alwaysRed`" if package
+                            else "can affect boot, login or the shell (`[drift] alwaysRedPaths`)")
+                    was = (f"{cid} was {risk} at the time" if risk
+                           else f"the record of {cid} does not tell its risk at the time")
+                    logs.setdefault(cid, []).append(
+                        f"advisory: not linked: {named(e)} {what}, which only an R3 case takes, and "
+                        f"{was} (ADR-0027 §2c); if this case made it: `seldon drift link {e['id']} {cid}`")
             else:
                 links.append((e, cid))
                 closed = fm["status"] in ("completed", "dropped")
@@ -1708,7 +1765,45 @@ def self_checks(today):
         errs = check_planned_links(ledger, case_files)
         if not any(want in e for e in errs):
             out.append(f"self-check 'rule 9: {label}': {errs}")
-    return out, len(cases) + len(proposals) + 2 + len(rule9)
+
+    # round 2: the harm guard takes persistence paths, an unreadable case blocks, a Plan comment
+    # is no plan (planned_links on the sample without its engine line)
+    UNIT = "~/.config/systemd/user/display.service"
+
+    def add_unit(ledger):
+        drop_engine_link(ledger)
+        ledger.append(("<self-check>:unit", {
+            "id": "01M2CZW4J034FDMVAAEWT2G7X9", "ts": "2026-09-13T10:59:30+02:00", "source": "config",
+            "kind": "config-add", "subject": UNIT, "detail": "sha256 — → 1234abcd", "actor": "system",
+            "zone": "yellow", "meta": {"hashTo": "1234abcd" * 8}}))
+
+    def plan_unit(cases):
+        return [(f, fm, body.replace("## Plan\n", f"## Plan\n- `{UNIT}`\n", 1)
+                 if fm["id"] == "C-2026-002" else body) for f, fm, body in cases]
+
+    def without_002(cases):
+        return [c for c in cases if c[1]["id"] != "C-2026-002"]
+
+    def commented(cases):
+        return [(f, fm, body.replace("`io.github.example.display-profiles`",
+                                     "<!-- io.github.example.display-profiles -->")
+                 if fm["id"] == "C-2026-002" else body) for f, fm, body in cases]
+
+    round2 = [
+        ("a persistence path below R3 is not linked", add_unit, plan_unit,
+         lambda lines, logs: (["01M2CZW4J034FDMVAAEWT2G7X8"] == [e["id"] for e, _, _ in lines]
+                              and any("alwaysRedPaths" in t for t in logs.get("C-2026-002", [])))),
+        ("an unreadable case blocks its window", drop_engine_link, without_002,
+         lambda lines, logs: lines == []),
+        ("a Plan comment is no plan", drop_engine_link, commented,
+         lambda lines, logs: lines == []),
+    ]
+    for label, m, mc, ok in round2:
+        ledger, case_files = load_logbook(LOGBOOK, [], m, mc)
+        lines, logs = planned_links([e for _, e in ledger], case_files)
+        if not ok(lines, logs):
+            out.append(f"self-check 'rule 9: {label}': lines {[(e['id'], c) for e, c, _ in lines]}, logs {logs}")
+    return out, len(cases) + len(proposals) + 2 + len(rule9) + len(round2)
 
 
 # --------------------------------------------------------------------------- snapshot info files
