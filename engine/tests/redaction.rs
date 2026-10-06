@@ -1424,6 +1424,10 @@ const CLEAR: &[&str] = &[
     // close to the WP-084 rules
     "useradd -U -m bob",
     "sudo useradd -U bob && curl https://h.example",
+    // the command word is case-sensitive, as the as-written triggers
+    // `curl>-E>:` and `curl+-U` read it (WP-108)
+    "Curl -E c.pem:fakePw1 h",
+    "CURL -U a:fakePw2 h",
     "curl -x proxy.example:3128 https://h.example",
     "curl -x me@proxy.example:3128 https://h.example",
     "git -c http.proxy=http://proxy.example:3128 fetch",
@@ -1531,24 +1535,28 @@ mod redaction {
         for (rule, input, ..) in TABLE {
             let lower = trigger_text(input);
             assert!(
-                triggers(rule).iter().any(|t| holds_trigger(&lower, t)),
+                triggers(rule)
+                    .iter()
+                    .any(|t| holds_trigger(input, &lower, t)),
                 "{rule}: no trigger in `{input}`"
             );
         }
-        // the marker can never trigger a rule, nor add a part of one
+        // the marker can never trigger a rule, nor add a part of one,
+        // as written or in lower case
         let marker = trigger_text(REDACTED);
         for rule in BUILTIN {
             assert!(
                 !triggers(rule)
                     .iter()
-                    .flat_map(|t| t.split('+'))
-                    .any(|part| marker.contains(part)),
+                    .flat_map(|t| t.split(['+', '>']))
+                    .any(|part| marker.contains(part) || REDACTED.contains(part)),
                 "{rule}"
             );
         }
         // a curl line without their options compiles none of the curl
         // rules (WP-084)
-        let plain = trigger_text("curl -fsSL https://h.example/f -o /tmp/f");
+        let line = "curl -fsSL https://h.example/f -o /tmp/f";
+        let plain = trigger_text(line);
         for rule in [
             "curl-user",
             "proxy-option",
@@ -1556,7 +1564,9 @@ mod redaction {
             "cookie-option",
         ] {
             assert!(
-                !triggers(rule).iter().any(|t| holds_trigger(&plain, t)),
+                !triggers(rule)
+                    .iter()
+                    .any(|t| holds_trigger(line, &plain, t)),
                 "{rule}"
             );
         }
@@ -1571,16 +1581,91 @@ mod redaction {
             assert!(
                 !triggers("httpie-auth")
                     .iter()
-                    .any(|t| holds_trigger(&lower, t)),
+                    .any(|t| holds_trigger(line, &lower, t)),
                 "`{line}`"
             );
         }
-        let word = trigger_text("git commit -am \"fix https redirect\"");
+        let line = "git commit -am \"fix https redirect\"";
+        let word = trigger_text(line);
         assert!(
             triggers("httpie-auth")
                 .iter()
-                .any(|t| holds_trigger(&word, t))
+                .any(|t| holds_trigger(line, &word, t))
         );
+        // `curl -u` and `--user` do not compile `proxy-option`: its
+        // triggers are `curl` and `-U` as written (WP-108)
+        for line in [
+            "curl -u bob:x https://h.example/",
+            "curl --user bob:x h.example",
+        ] {
+            let lower = trigger_text(line);
+            assert!(
+                !triggers("proxy-option")
+                    .iter()
+                    .any(|t| holds_trigger(line, &lower, t)),
+                "`{line}`"
+            );
+        }
+        // a URL without an `@` after its scheme does not compile
+        // `url-userinfo` (WP-108)
+        for line in [
+            "curl -fsSL https://h.example/f -o f",
+            "git push git@h.example:o/r https://h.example/r",
+        ] {
+            let lower = trigger_text(line);
+            assert!(
+                !triggers("url-userinfo")
+                    .iter()
+                    .any(|t| holds_trigger(line, &lower, t)),
+                "`{line}`"
+            );
+        }
+        // `set -e`, curl's `-e` and an `-E` with no `:` after it do not
+        // compile `cert-password` (WP-108): its triggers are `curl` and
+        // `-E` as written, then a `:`
+        for line in [
+            "set -e; curl -fsSL -u bob:x https://h.example/i.sh | sudo -E bash && git commit -am zed",
+            "set -e; curl -e https://ref.example/ -o f https://h.example/f",
+        ] {
+            let lower = trigger_text(line);
+            assert!(
+                !triggers("cert-password")
+                    .iter()
+                    .any(|t| holds_trigger(line, &lower, t)),
+                "`{line}`"
+            );
+        }
+    }
+
+    /// A trigger with a capital is looked for as written, one joined by
+    /// `>` in order (WP-108).
+    #[test]
+    fn triggers_in_order_and_as_written() {
+        let holds = |text: &str, trigger: &str| holds_trigger(text, &trigger_text(text), trigger);
+        for (text, trigger, expected) in [
+            ("curl -E c.pem:pw", "curl>-E>:", true),
+            ("curl -Ec.pem:pw", "curl>-E>:", true),
+            ("curl -e c.pem:pw", "curl>-E>:", false),
+            ("CURL -E c.pem:pw", "curl>-E>:", false),
+            ("curl -E c.pem", "curl>-E>:", false),
+            ("curl x: -E c.pem", "curl>-E>:", false),
+            ("-E a:b curl", "curl>-E>:", false),
+            ("-E a:b; curl -E c:d", "curl>-E>:", true),
+            ("curl -E a -E b:c", "curl>-E>:", true),
+            ("curl -E a:b curl", "curl>-E>:", true),
+            (":curl", "curl>:", false),
+            ("curl:", "curl>:", true),
+            ("curl", "cur>rl", false),
+            ("curlrl", "cur>rl", true),
+            ("me@h https://h/", "://>@", false),
+            ("HTTPS://u:p@h", "://>@", true),
+            ("curl -U x", "curl+-U", true),
+            ("curl -u x", "curl+-U", false),
+            ("-U x; curl", "curl+-U", true),
+            ("CURL -u x", "curl+-u", true),
+        ] {
+            assert_eq!(holds(text, trigger), expected, "`{text}`, {trigger}");
+        }
     }
 
     #[test]

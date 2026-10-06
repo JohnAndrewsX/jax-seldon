@@ -119,8 +119,8 @@ ink() {
   python3 "$root/tests/plugin/png-ink.py" "$work/$1.png" "$x" "$y" "$w" "$h"
 }
 
-# 1. The sample (2 active, 4 open drift, crises: the urgent tone) in three
-# themes at the three scales.
+# 1. The sample (2 active, 4 open drift, 2 crises: the urgent tone) in three
+# themes at the three scales; D is the crisis count (driftInBar default).
 for theme in tokyo-night catppuccin-latte osaka-jade; do
   for scale in 100 125 out125; do
     name="$theme-$scale"
@@ -132,7 +132,7 @@ for theme in tokyo-night catppuccin-latte osaka-jade; do
     check "$name file" "$(field "$name" .file)" "$want_file"
     check "$name box" "$(field "$name" .box)" "$want_box"
     check "$name ready" "$(field "$name" .ready)" true
-    check "$name text" "$(field "$name" .pill.text)" "2 · 6"
+    check "$name text" "$(field "$name" .pill.text)" "2 · 2"
     check "$name glyph" "$(field "$name" .pill.glyph)" "$want_file"
     check "$name tone" "$(field "$name" .pill.tone)" urgent
     # check 4 from the pixels (device px), and the tint: the hinted glyph's
@@ -150,13 +150,14 @@ done
 
 # 2. The other two tones, derived from the sample in the scratch dir: no
 # crisis → accent (2 active cases), no crisis and no active case → the bar
-# foreground (`· 6`). The glyph takes the tone in every theme.
+# foreground (`· 6`). The glyph takes the tone in every theme. driftInBar
+# `all`, so the pill keeps its digits to measure the glyph against.
 jq '.summary.crisis = 0' "$fx/index.sample.json" >"$work/index-accent.json"
 jq '.summary.crisis = 0 | .summary.activeCases = 0' "$fx/index.sample.json" >"$work/index-default.json"
 for theme in tokyo-night catppuccin-latte osaka-jade; do
   for tone in accent default; do
     name="$theme-$tone"
-    run "$name" "$theme" 12 "$work/index-$tone.json"
+    run "$name" "$theme" 12 "$work/index-$tone.json" HARNESS_SETTINGS='{"driftInBar":"all"}'
     check "$name tone" "$(field "$name" .pill.tone)" "$tone"
     check "$name text" "$(field "$name" .pill.text)" "$([[ $tone == accent ]] && echo "2 · 6" || echo "· 6")"
     glyph=$(ink "$name" glyphRect)
@@ -171,6 +172,54 @@ for theme in tokyo-night catppuccin-latte osaka-jade; do
   inks=$(for c in "$theme-100" "$theme-accent" "$theme-default"; do field "$c" .ink; done | sort -u | wc -l)
   check "$theme three tones" "$inks" 3
 done
+
+# 2b. ADR-0028 §4a, the setting `driftInBar`: D is the crisis count
+# (`crisis`, also for a missing or unknown value), all open drift (`all`)
+# or hidden (`none`); the colour is urgent while any crisis is open in every
+# mode, and the tooltip is the same neutral text. The service's read-out
+# follows the setting the widget pushes.
+sample_tip="Seldon — 2 active cases, 2 crises, 4 changes without a case"
+for mode in default crisis all none bogus; do
+  case $mode in
+    default) settings=""; want_text="2 · 2"; want_mode=crisis ;;
+    crisis) settings='{"driftInBar":"crisis"}'; want_text="2 · 2"; want_mode=crisis ;;
+    all) settings='{"driftInBar":"all"}'; want_text="2 · 6"; want_mode=all ;;
+    none) settings='{"driftInBar":"none"}'; want_text="2"; want_mode=none ;;
+    bogus) settings='{"driftInBar":"loud"}'; want_text="2 · 2"; want_mode=crisis ;;
+  esac
+  name="mode-$mode"
+  if [[ -n $settings ]]; then
+    run "$name" tokyo-night 12 "$fx/index.sample.json" HARNESS_SETTINGS="$settings"
+  else
+    run "$name" tokyo-night 12 "$fx/index.sample.json"
+  fi
+  check "$name text" "$(field "$name" .pill.text)" "$want_text"
+  check "$name mode" "$(field "$name" .pill.driftInBar)" "$want_mode"
+  check "$name tone" "$(field "$name" .pill.tone)" urgent
+  check "$name urgent" "$(field "$name" .pill.urgent)" true
+  check "$name tooltip" "$(field "$name" '.pill.tooltip | split(", last capture")[0]')" "$sample_tip"
+  check "$name service pill" "$(field "$name" .service.pill)" "$want_text"
+  check "$name service mode" "$(field "$name" .service.driftInBar)" "$want_mode"
+  clean_log "$name"
+done
+# A crisis with `none` and no active case: the glyph alone, still urgent.
+jq '.summary.activeCases = 0' "$fx/index.sample.json" >"$work/index-crisis-only.json"
+run none-crisis tokyo-night 12 "$work/index-crisis-only.json" HARNESS_SETTINGS='{"driftInBar":"none"}'
+check "none-crisis text" "$(field none-crisis .pill.text)" ""
+check "none-crisis tone" "$(field none-crisis .pill.tone)" urgent
+check "none-crisis tint" "$(jq -r .colour <<<"$(ink none-crisis glyphRect)")" "$(field none-crisis .ink)"
+clean_log none-crisis
+# Attention alone (open drift, no crisis, no case) in the default mode: the
+# quiet bar, the glyph alone in the bar foreground; the tooltip still counts.
+jq '.summary.crisis = 0 | .summary.activeCases = 0' "$fx/index.sample.json" >"$work/index-attention.json"
+run attention tokyo-night 12 "$work/index-attention.json"
+check "attention text" "$(field attention .pill.text)" ""
+check "attention tone" "$(field attention .pill.tone)" default
+check "attention urgent" "$(field attention .pill.urgent)" false
+check "attention tooltip" "$(field attention '.pill.tooltip | split(", last capture")[0]')" "Seldon — 0 active cases, 6 changes without a case"
+check "attention tint" "$(jq -r .colour <<<"$(ink attention glyphRect)")" "$(field attention .ink)"
+check "attention tint is not urgent" "$([[ $(field attention .ink) != "$(field mode-default .ink)" ]] && echo yes)" yes
+clean_log attention
 
 # 3. Not initialised: the glyph alone, no counts, dimmed.
 run uninit tokyo-night 12 "$fx/index-variants/not-initialised.json"

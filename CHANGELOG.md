@@ -9,62 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
-- **Attention is earned by consequence (ADR-0028).** Every change is
-  still recorded, but only what a wrong one would cost decides whether it
-  needs attention. Each drift-eligible event gets a class at index time:
-  *routine* (a plain full upgrade such as `pacman -Syu`, `-Syyuu`, bare
-  `yay` or `omarchy update`, kernels included; an upgrade of what is
-  installed, also `-U` from the cache; the keyrings; Omarchy's own update;
-  a plugin toggle; a theme switch; Omarchy's own copy of a file;
-  `shell.json`; `<file>.bak.<epoch>` backups; a link into `/usr/`; a
-  theme's colours and backgrounds) is history in the Changelog and no
-  longer drift; *attention* (a package installed, removed or downgraded
-  by name, a third-party plugin added, removed or updated, an override
-  under a watched path, a removed file) stays open drift, quietly;
-  *crisis* is now the harm test, no longer "the zone is red": a named
-  install, removal or downgrade of an `alwaysRed` package, or a new file
-  in a persistence path (`~/.config/systemd/user`, Omarchy's hooks,
-  `~/.config/autostart`, `environment.d`, `uwsm`, `~/.profile`,
-  `~/.bash_profile`). Nothing is written to the ledger: on the first
-  index build, open theme switches, toggles, routine upgrades, `omarchy
-  update` rows and `shell.json` changes leave the drift list. A routine
-  event an open case's Plan names is still shown, with its proposal.
-  `drift[].zone` is now the ledger zone (pacman items are red) and
-  `crisis` the class; contract version 1 is unchanged, only the schema
-  descriptions of `crisis` and `zone` say so (WP-109).
-- `config.toml [drift]` gains `attention` (`"all"` restores the rules
-  before ADR-0028: the rollback), `routine` (the routine rule ids; drop
-  `"theme"` to make theme switches attention again), `routinePaths`,
-  `routinePackages` and `alwaysRedPaths`, written only when changed.
-  `seldon doctor` prints the effective rule set and marks what is not
-  the default (WP-109).
-- `seldon drift --all` lists routine items too; `drift` and `drift show`
-  report each item's `class` and the `rule` that gave it. `drift link`
-  also takes a routine event; `drift explain|dismiss` of one exits 1.
-  An agent may no longer explain or dismiss a crisis, and may link one
-  only to an active case that lists it in `agents`; a human is never
-  refused (WP-109).
-- Six new default `watchPaths`: `~/.config/systemd/user`,
-  `~/.config/autostart`, `~/.config/environment.d`, `~/.config/uwsm`,
-  `~/.profile`, `~/.bash_profile`. A `config.toml` whose list is still the
-  default of an earlier engine gains them at the next capture, which says
-  so once; files already there record nothing. A list you wrote yourself
-  is kept, and `seldon doctor` names the paths it lacks with the line to
-  add (WP-109).
-- New config events carry capture-time evidence in `meta.matches`
-  (`omarchy-default`, `system-link`, `theme-repo`; only the fact, never
-  a link target or content). The theme hook and the watcher unit (any
-  `ExecStart` prefix) are recognised by their built-in templates, so a
-  lost state directory or `install.sh --unit` no longer leaves a crisis
-  (WP-109).
-- `series.drift` changes for the past too: a routine change opens
-  nothing, and a resolution counts only when the event it resolves
-  opened an item, so the curve can no longer go negative. Old charts
-  show fewer opened and resolved items (WP-109).
-- Label skew: a plugin older than the engine shows "red zone" where it
-  means a crisis; the counts and colours are right (the plugin keys on
-  `crisis`). The new plugin fixes the labels (WP-109, WP-110).
-
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
   and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,
   `log`, `drift` and `event` record `SELDON_ACTOR` when `--actor` is not
@@ -235,9 +179,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   password itself (`pass:…`), so `-passin pass:…` is recorded as
   `-passin ‹redacted›`. A source such as `env:VAR`, `file:path`, `fd:N`
   or `stdin` stays as it is (WP-106).
+- Redaction compiles fewer of its rules for a common curl line: a URL
+  without a user and password in it, `curl -u` (without `-U`), an `-E`
+  with no `:` after it (`set -e`, `curl … | sudo -E bash`) and an option
+  given only once no longer compile the rules that could not match. The
+  agent hook takes about 1 ms less for such a line near 1000 ledger
+  lines. What is masked is unchanged (WP-108).
+- **Attention is earned by consequence (ADR-0028).** Every change is
+  still recorded, but only what a wrong one would cost decides whether it
+  needs attention. Each drift-eligible event gets a class at index time:
+  *routine* (a plain full upgrade such as `pacman -Syu`, `-Syyuu`, bare
+  `yay` or `omarchy update`, kernels included; an upgrade of what is
+  installed, also `-U` from the cache; the keyrings; Omarchy's own update;
+  a plugin toggle; a theme switch; Omarchy's own copy of a file;
+  `shell.json`; `<file>.bak.<epoch>` backups; a link into `/usr/`; a
+  theme's colours and backgrounds) is history in the Changelog and no
+  longer drift; *attention* (a package installed, removed or downgraded
+  by name, a third-party plugin added, removed or updated, an override
+  under a watched path, a removed file) stays open drift, quietly;
+  *crisis* is now the harm test, no longer "the zone is red": a named
+  install, removal or downgrade of an `alwaysRed` package, or a new file
+  in a persistence path (`~/.config/systemd/user`, Omarchy's hooks,
+  `~/.config/autostart`, `environment.d`, `uwsm`, `~/.profile`,
+  `~/.bash_profile`). Nothing is written to the ledger: on the first
+  index build, open theme switches, toggles, routine upgrades, `omarchy
+  update` rows and `shell.json` changes leave the drift list. A routine
+  event an open case's Plan names is still shown, with its proposal.
+  `drift[].zone` is now the ledger zone (pacman items are red) and
+  `crisis` the class; contract version 1 is unchanged, only the schema
+  descriptions of `crisis` and `zone` say so (WP-109).
+- `config.toml [drift]` gains `attention` (`"all"` restores the rules
+  before ADR-0028: the rollback), `routine` (the routine rule ids; drop
+  `"theme"` to make theme switches attention again), `routinePaths`,
+  `routinePackages` and `alwaysRedPaths`, written only when changed.
+  `seldon doctor` prints the effective rule set and marks what is not
+  the default (WP-109).
+- `seldon drift --all` lists routine items too; `drift` and `drift show`
+  report each item's `class` and the `rule` that gave it. `drift link`
+  also takes a routine event; `drift explain|dismiss` of one exits 1.
+  An agent may no longer explain or dismiss a crisis, and may link one
+  only to an active case that lists it in `agents`; a human is never
+  refused (WP-109).
+- Six new default `watchPaths`: `~/.config/systemd/user`,
+  `~/.config/autostart`, `~/.config/environment.d`, `~/.config/uwsm`,
+  `~/.profile`, `~/.bash_profile`. A `config.toml` whose list is still the
+  default of an earlier engine gains them at the next capture, which says
+  so once; files already there record nothing. A list you wrote yourself
+  is kept, and `seldon doctor` names the paths it lacks with the line to
+  add (WP-109).
+- New config events carry capture-time evidence in `meta.matches`
+  (`omarchy-default`, `system-link`, `theme-repo`; only the fact, never
+  a link target or content). The theme hook and the watcher unit (any
+  `ExecStart` prefix) are recognised by their built-in templates, so a
+  lost state directory or `install.sh --unit` no longer leaves a crisis
+  (WP-109).
+- `series.drift` changes for the past too: a routine change opens
+  nothing, and a resolution counts only when the event it resolves
+  opened an item, so the curve can no longer go negative. Old charts
+  show fewer opened and resolved items (WP-109).
 
 ### Plugin
 
+- **Quiet surfaces (ADR-0028).** The bar's second number now counts
+  crises only: changes that can affect boot, login or the shell and have
+  no case. Other changes without a case no longer show in the bar; the
+  new setting `driftInBar` (`crisis`, the default; `all`, the behaviour
+  up to 0.1.3; `none`) changes that, e.g. `omarchy bar set jax.seldon
+  driftInBar all`. The bar still turns to the error colour on a crisis in
+  every mode. The tooltip reads "Seldon — 2 active cases, 1 crisis, 7
+  changes without a case, last capture …". The red strip appears only for
+  a crisis and reads "N changes that can affect boot, login or the shell
+  have no case". The Changelog shows a quiet "N changes without a case"
+  line under its header; open rows say "Crisis · no case" or "No case"
+  instead of "Needs a reason" / "Unexplained", and are coloured by
+  whether they are a crisis (urgent) or not (accent), no longer by zone;
+  every other row (resolved, with a case, routine) has a muted stripe
+  whatever its zone. The Today counts and the Changelog's "+N more …"
+  line say "without a case" instead of "open drift"; Today counts the
+  changes without a case that are no crisis.
+  The drift sheet says "RESOLVE A CRISIS" and "<zone> · crisis" for a
+  crisis in any zone and keeps a slot for *Ask agent* above Link /
+  Explain / Dismiss. The Today pictogram no longer changes for changes
+  without a case. Label skew: a plugin up to 0.1.3 with a 0.1.4 engine
+  still says "red zone" where "crisis" is meant (the strip, the tooltip,
+  the sheet); behaviour is the same, only the labels are wrong. Update
+  the plugin with the engine (WP-110).
 - After `omarchy plugin update jax.seldon` the shell keeps running the
   old plugin code until it restarts. The panel now notices this: when
   the installed manifest names another version than the code running,

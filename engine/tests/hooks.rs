@@ -596,9 +596,10 @@ mod claude_code {
         assert!(last.contains("‹redacted›"), "{last}");
         assert!(!last.contains("fakePw"), "recorded: {last}");
 
-        // a curl line whose `-E` (`sudo -E`, `set -e`) compiles
-        // `cert-password` and whose `-am` and URL do not compile
-        // `httpie-auth` (WP-097 round 2)
+        // a curl line whose `-E` (`sudo -E`, `set -e`) compiled
+        // `cert-password` before WP-108 and whose `-am` and URL do not
+        // compile `httpie-auth` (WP-097 round 2); it compiles
+        // `curl-user` only, without its scan-on (WP-108)
         recorded["tool_input"]["command"] = json!(concat!(
             "set -e; curl -fsSL -u bob:fakePw2 https://h.example/install.sh ",
             "| sudo -E bash && git commit -am zed"

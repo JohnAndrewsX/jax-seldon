@@ -86,8 +86,9 @@ Item {
       width: parent.width
       spacing: Style.spacing.lg
 
-      // The day's state (A11): crisis, open drift, active cases or all
-      // clear (Model.todayState), left of the date and the counts.
+      // The day's state (A11): crisis, active cases or all clear
+      // (Model.todayState; attention alone changes nothing, ADR-0028 §4b),
+      // left of the date and the counts.
       Item {
         id: summary
         width: parent.width
