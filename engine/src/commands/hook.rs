@@ -68,7 +68,7 @@ use super::event::{ACTOR_ENV, clip, env_actor, parse_case_id, parse_person};
 use super::{Context, Output, autocommit};
 use crate::attribution::{home_path, normalise};
 use crate::collectors::config::{OwnOp, SkipPaths};
-use crate::config::{Config, Dirs, HookScope};
+use crate::config::{AgentWorkdir, Config, Dirs, HookScope};
 use crate::error::{Error, Result};
 use crate::ledger::Ledger;
 use crate::logbook::cases::{self, CaseFile};
@@ -1996,8 +1996,10 @@ pub struct Migration {
 /// write under a watched path. Then, or when the user-wide file already
 /// holds one of Seldon's hooks, [`MIGRATED_MARKER`] is written: a user who
 /// takes the user-wide hooks out later keeps it so. Nothing without hooks
-/// in the logbook's file (`doctor` names the fix). The caller holds the
-/// state lock and runs as the user, never as root.
+/// in the logbook's file (`doctor` names the fix), and nothing with
+/// `[agent] workdir = "logbook"`: that user keeps project-level hooks only
+/// (ADR-0030 §2, ADR-0032 §5; no marker, so switching back migrates). The
+/// caller holds the state lock and runs as the user, never as root.
 pub fn migrate_to_user_wide(
     lock: &Lock,
     ctx: &Context,
@@ -2005,6 +2007,9 @@ pub fn migrate_to_user_wide(
     logbook: &Logbook,
 ) -> Migration {
     let mut out = Migration::default();
+    if config.agent.workdir == AgentWorkdir::Logbook {
+        return out;
+    }
     let marker = ctx.dirs.state_dir.join(MIGRATED_MARKER);
     if marker.exists() {
         return out;

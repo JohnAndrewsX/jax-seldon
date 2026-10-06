@@ -2826,6 +2826,31 @@ mod migration {
         assert!(seldon_commands(&user).is_empty());
     }
 
+    /// `[agent] workdir = "logbook"`: the user keeps project-level hooks
+    /// only; no copy, no marker, so switching back migrates (ADR-0032 §5).
+    #[test]
+    fn not_with_workdir_logbook() {
+        let h = Hooks::new();
+        let (_, user) = old_install(&h);
+        h.configure(|c| c.agent.workdir = seldon::config::AgentWorkdir::Logbook);
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], Value::Null, "{v}");
+        assert_eq!(read(&user), super::install::USER_WIDE);
+        assert!(!marker(&h).exists());
+        // back to the default (a save keeps keys it does not write: edit
+        // the text)
+        let config = h.env.config_file();
+        let text = read(&config);
+        assert!(text.contains("workdir = \"logbook\""), "{text}");
+        std::fs::write(
+            &config,
+            text.replace("workdir = \"logbook\"", "workdir = \"inherit\""),
+        )
+        .unwrap();
+        let v = capture(&h, &[]);
+        assert_eq!(v["hooksUserWide"], "~/.claude/settings.json", "{v}");
+    }
+
     #[test]
     fn json_names_the_file() {
         let h = Hooks::new();
