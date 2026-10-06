@@ -910,6 +910,7 @@ Arguments:
 
 Options:
       --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json; claude-code only)
+      --replace          skills only: where you changed the skill, archive your copy to the logbook's archive/ and install it as shipped
 ```
 <!-- /help -->
 

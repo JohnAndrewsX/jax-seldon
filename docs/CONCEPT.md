@@ -66,18 +66,40 @@ fiction. Seldon needs both, and keeps them linked by case IDs and event IDs.
 
 ## Drift and Crisis
 
-`seldon drift` lists ledger events that are not linked to any case and not
-resolved. Each can be:
+Every change is recorded. Whether a change without a case also **needs
+attention** is decided by what a wrong one would cost (ADR-0028), not by
+who made it:
+
+- **Routine** — history, not drift: a theme switch, a plugin toggle, a
+  plain full upgrade (`pacman -Syu`, `omarchy update`, kernels included),
+  Omarchy's own copy of a file. It shows in the Changelog; nobody is asked
+  for a reason.
+- **Attention** — quiet drift: a package installed or removed by name, a
+  third-party plugin added or updated, an override under a watched path.
+  The panel lists it, the bar does not count it, nothing is asked. An
+  agent explains it only with evidence: its own Log, a hook event or the
+  user's words.
+- **Crisis** — it can break boot, login, the shell or security, and nobody
+  asked for it in a case: an `alwaysRed` package installed or removed by
+  name, a new file in a persistence path (`~/.config/systemd/user`,
+  Omarchy's hooks, autostart). The only thing that colours the bar; the
+  user is told once and never has to act. An agent may not explain or
+  dismiss a crisis.
+
+`seldon drift` lists attention and crises (`--all` adds routine). Each can
+be:
 
 - **linked** to an existing case (`seldon drift link <event> <case>`),
 - **explained** — Seldon creates a retroactive case from the event
-  (`seldon drift explain <event> "wanted ollama for local models"`),
-- **dismissed** (`seldon drift dismiss <event> --reason "dependency pull"`).
+  (`seldon drift explain <event> -- "wanted ollama for local models"`),
+- **dismissed** (`seldon drift dismiss <event> -- "dependency pull"`).
 
-Dependencies pulled in by an explicit install are auto-linked to that
-install's case (pacman's log tells us). Drift in the red zone (packages,
-`/etc`, units) is shown as **Crisis** — it still has the same three actions,
-it is just sorted first and coloured by the theme's error colour.
+The user may, never must. Dependencies pulled in by an explicit install
+are auto-linked to that install's case (pacman's log tells us). The
+session-start context lists the crises and attention items of the last
+seven days for every agent session. `config.toml [drift] attention =
+"all"` restores the louder picture (every change without a case is drift,
+crisis iff red zone).
 
 ## Cases: planning that agents can follow
 
@@ -98,7 +120,7 @@ did, next to what it was asked to do.
 
 ## The plugin surfaces
 
-- **Bar pill** the Seldon mark, then `2 · 3` — active cases, open drift. Colour by worst state.
+- **Bar pill** the Seldon mark, then `2 · 1` — active cases, crises (hidden at 0; `driftInBar` shows all changes without a case or none). Colour by worst state.
   Click → panel. `SUPER+SHIFT+S` toggles (user-configurable).
 - **Panel** — tabs: *Today* (journal, quick entry), *Changelog* (ledger
   timeline with source filter and snapshot markers), *Work* (queued /

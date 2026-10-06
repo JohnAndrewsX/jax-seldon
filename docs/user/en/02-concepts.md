@@ -18,8 +18,8 @@ Seldon keeps both and compares them:
   Agent hooks record the commands an agent runs.
 - It holds what you plan to change. You write cases: one Markdown file per
   planned change.
-- It shows the difference. A change that no case covers is drift.
-  You decide what it was.
+- It shows the difference. A change that no case covers and that is
+  worth a look is drift. You may say what it was; you never have to.
 
 Seldon is a recorder. It never changes your system, never runs a package
 manager or `sudo`, never blocks a command and never sends anything over
@@ -139,9 +139,10 @@ starts as yellow, `R1`, unless you say otherwise.
 
 ## Drift
 
-Drift is an event that changes the system, has no case and has no
-resolution yet. Only changes can be drift: packages, Omarchy, plugins,
-theme and config. Snapshots, notes and case steps never are.
+Every change is recorded. Drift is a recorded change that has no case,
+has no resolution yet, and is worth a look. Only changes can be drift:
+packages, Omarchy, plugins, theme and config. Snapshots, notes and case
+steps never are.
 
 Most changes are linked to a case on their own:
 
@@ -150,14 +151,22 @@ Most changes are linked to a case on their own:
 - A package that came in as a dependency of a package in a case belongs
   to that case.
 
-Everything else is drift. That includes all your own changes, in the
-terminal or anywhere else: a collector sees that the theme changed, but
-not that you meant it for a case. Only an agent's command, recorded by a
-hook, carries the active case. If an open case names the changed
-package, path or theme in its *Plan*, Seldon proposes that case (the
-*proposed case*), and the panel shows it preselected.
+A change without a case is sorted by what a wrong one would cost, not by
+who made it:
 
-You resolve drift in one of three ways:
+| Class | Examples | What happens |
+|---|---|---|
+| routine | a theme switch, a plugin toggle, a plain full upgrade (`pacman -Syu`, `omarchy update`, kernels included), Omarchy's own copy of a file, `shell.json` | history in the Changelog, not drift; nobody is asked |
+| attention | a package installed or removed by name, a third-party plugin added or updated, an override under a watched path, a removed file | open drift, quietly: the panel lists it, the bar does not count it |
+| crisis | an `alwaysRed` package installed or removed by name, a new file in a persistence path such as `~/.config/systemd/user` or Omarchy's hooks | see [Crisis](#crisis) |
+
+Your own changes in the terminal are recorded like any other: a
+collector sees that a package came in, not that you meant it for a case.
+If an open case names the changed package, path or theme in its *Plan*,
+Seldon proposes that case (the *proposed case*), and the panel shows it
+preselected, also for a routine change.
+
+You may resolve drift, you never have to. There are three ways:
 
 | Action | Command | Use it when |
 |---|---|---|
@@ -167,27 +176,44 @@ You resolve drift in one of three ways:
 
 The event stays in the ledger either way. The resolution is a new event
 that points to it. Packages from one transaction form one drift item, a
-*transaction group*: a routine upgrade of forty packages is one item, and one command resolves
-all of them. Add `--only` to resolve that one event alone.
+*transaction group*: an install of a package with ten dependencies is one
+item, and one command resolves all of them. Add `--only` to resolve that
+one event alone.
+
+Agents see the open items too. The context every agent session starts
+with lists the crises and attention items of the last seven days. An
+agent explains or links an item only when its own *Log*, a hook event or
+your words prove why it happened; otherwise it leaves the item open.
 
 ## Crisis
 
-A crisis is drift in the red zone. It has the same three actions. The
-pill and the panel show crises first, in your theme's error colour, with
-the line "N changes in the red zone need a reason".
+A crisis is a change that can break boot, login, the shell or security,
+and that nobody asked for in a case. It is the one change Seldon makes
+loud: the pill counts it in your theme's error colour, and the panel
+shows the line "N changes that can affect boot, login or the shell have
+no case". You are told once. Nothing else is required of you.
 
-Routine upgrades are not crises. A transaction that only upgrades
-packages, from a full system upgrade, is yellow drift. It turns red when
-it installs or removes a package, or when it touches a package on the
-always-red list (`linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`,
-`quickshell` by default; see [Configuration](06-configuration.md#drift)).
+It has the same three actions. An agent may not explain or dismiss a
+crisis; it may link one only to its own active case, and otherwise tells
+you about it in one line.
+
+Routine upgrades are not crises, even when they bring a new kernel. A
+package from the always-red list (`linux*`, `systemd`, `glibc`,
+`hyprland`, `omarchy`, `quickshell` by default; see
+[Configuration](06-configuration.md#drift)) is a crisis only when it is
+installed or removed by name outside a case. A new file in a persistence
+path is a crisis whoever wrote it: units in `~/.config/systemd/user`,
+Omarchy's hooks in `~/.config/omarchy/hooks`, `~/.config/autostart`,
+`~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
+`~/.bash_profile`. Those files run at login or on events without being
+your ordinary configuration.
 
 ## Baseline
 
 A new logbook records from the moment you create it. The wizard can also
 *backfill*: record changes since a past date, from the package log and
-snapper. None of those older changes belongs to a case, so each one opens
-as drift, and most of them as crises.
+snapper. None of those older changes belongs to a case, so many of them
+open as drift.
 
 The baseline settles that. After a backfill the wizard asks whether
 to mark everything it found as the pre-Seldon baseline. Say yes, and the
