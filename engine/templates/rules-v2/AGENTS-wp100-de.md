@@ -146,11 +146,9 @@ R3-Gegenstände: Kernel, der Bootloader, die Initramfs, `systemd`, `glibc`,
    auflösen kannst, sind als solche R3: ein Okay, mit der Liste dessen,
    was sich ändert (`checkupdates` zeigt sie, ohne die Datenbank
    anzufassen).
-3. Ein Treffer macht den Schritt zu R3. Stuf zuerst den Case hoch:
-   `seldon plan set <ID> --risk R3 --actor agent:<name>`; schreib
-   `R3: <paket>` ins *Log*, zeig dem Nutzer den Schritt und seinen
-   Rollback und warte auf ein ausdrückliches Okay: eines pro solchem
-   Schritt.
+3. Ein Treffer macht den Schritt zu R3. Schreib `R3: <paket>` ins *Log*,
+   zeig dem Nutzer den Schritt und seinen Rollback und warte auf ein
+   ausdrückliches Okay: eines pro solchem Schritt.
 4. Nie einen R3-Schritt in einer unbetreuten Sitzung, und nie ohne
    Snapshot.
 
@@ -169,10 +167,7 @@ die diese nur lesende Auflösung nicht auflösen kann, macht sie zu R3
   (`-p` gibt die Nummer aus; nur die Case-ID, kein Text des Logbuchs im
   Befehl). Nicht `omarchy-snapshot create`: sein Aufräumlauf löscht
   ältere Snapshots.
-- Halte die Nummer als Rollback des Case fest:
-  `seldon plan snapshot <ID> <N> --actor agent:<name>` (die Nummer der
-  Konfiguration `root`; die Engine prüft sie und warnt, lehnt nie ab).
-  Die Nummern der anderen Konfigurationen kommen in eine *Log*-Zeile
+- Halte die Nummer mit einer *Log*-Zeile fest:
   `snapshot <N> (<config>) before <step>`.
 - Kein snapper oder keine Konfigurationen: ein R3-Schritt hält an und du
   fragst; für R2 nimm stattdessen eine benannte Sicherung, nenne sie im
@@ -192,9 +187,8 @@ Risiko: `R0` in Sekunden rückgängig; `R1` von Hand in Minuten
 rückgängig, der *Plan* nennt wie; `R2` der Rollback braucht einen
 Snapshot oder eine Sicherung; `R3` kann Boot, Anmeldung oder die Shell
 brechen. Zone und Risiko sind die Schätzung des Case: wird die Arbeit
-röter oder riskanter, stuf sie hoch mit
-`seldon plan set <ID> --zone <zone> --risk <risiko> --actor agent:<name>`,
-nimm den Snapshot, den sie braucht, und halte bei R3 an wie oben.
+röter oder riskanter, schreib es ins *Log*, nimm den Snapshot, den sie
+braucht, und halte bei R3 an wie oben.
 
 ## Installing software
 
@@ -225,14 +219,10 @@ Wenn die Prüfung aus dem *Plan* besteht, schließ den Case selbst ab:
    den Exit-Status des echten Anwendungsfalls, `pacman -Q <paket>`,
    `systemctl is-active <unit>`.
 2. `seldon plan verify <ID> --actor agent:<name>`, dann
-   `seldon plan done <ID> --actor agent:<name>`, in einem Zug. Die Engine
-   lehnt das `plan done` eines Agenten ab, solange *Result* oder
-   `Verification:` im *Plan* leer ist.
+   `seldon plan done <ID> --actor agent:<name>`, in einem Zug.
 
 Für den Nutzer bleibt nichts zu tun. Die Aufzeichnung nennt dich als den,
-der abgeschlossen hat, und der Case bekommt den Tag `closed-by-agent`;
-der Nutzer kann ihn mit einem Klick wieder öffnen
-(`seldon plan reopen <ID>`, ein neuer Case). Schlägt die Prüfung fehl oder lässt sie sich nicht
+der abgeschlossen hat. Schlägt die Prüfung fehl oder lässt sie sich nicht
 ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
 `seldon plan drop <ID> --reason "<warum>"`.
 
