@@ -20,8 +20,8 @@ It records and accounts; it never stops a command and never runs one. You do
 the work, Seldon keeps the record.
 
 Seldon takes work off the user. Do every step you can do yourself; never hand
-the user a command to run. The aim for a case: one sentence from the user, at
-most one password prompt, nothing left to do at the end.
+the user a command to run. The aim for a case: one sentence from the user, as
+few password prompts as the route allows, nothing left to do at the end.
 
 ## When This Skill MUST Be Used
 
@@ -86,10 +86,10 @@ session started by a timer, a hook, another agent or any other launcher is
 unattended: record and report only. Read, plan, write the Log; change
 nothing. A cached `sudo` or a passwordless rule never makes a session
 attended. When you start another agent process, a job or a timer, unset
-`SELDON_ATTENDED` and set `SELDON_ACTOR` to that agent's name
-(`agent:<name>`); never leave it unset. A sub-agent inside your own
+`SELDON_ATTENDED` and `SELDON_CASE` and set `SELDON_ACTOR` to that agent's
+name (`agent:<name>`); never leave it unset. A sub-agent inside your own
 session shares your attendance and acts as you; privileged steps stay in
-your terminal.
+your session.
 
 ## Act, Then Account
 
@@ -145,16 +145,19 @@ its own, so it needs the user's terminal ([`update.md`](update.md)).
 
 ## Outside the Logbook Folder
 
-Seldon's Claude Code hooks serve Claude Code in the logbook folder (the
-logbook's `.claude/settings.json`), or in every folder when the user put
-them into the user-wide settings and set `[hooks] scope = "all"`. When no
-hook serves you — any agent but Claude Code, or Claude Code whose session
-did not start with the `# Seldon logbook context` block — report each
-changing command yourself, before it runs, when it is recorded: in the
-logbook folder always; outside it only when `seldon doctor --json` shows
-`"hooks": {"scope": "all"}`. With the default scope (`logbook`) a report
-from outside the logbook records nothing: skip it there. The collectors
-still record every package, service and watched-path change.
+A session `seldon agent start` launched is served wherever it runs: the
+launch sets `SELDON_CASE` in your environment, and Seldon records the
+session by it. Claude Code is served by its hooks (Seldon puts them into
+the user-wide `~/.claude/settings.json`); every other agent reports its
+commands through `seldon hook generic`, below. A session started any
+other way is served only inside the logbook folder, or everywhere when
+`seldon doctor --json` shows `"hooks": {"scope": "all"}` (the user's
+setting); elsewhere a report records nothing: skip it there. The
+collectors still record every package, service and watched-path change.
+
+When no hook serves you — any agent but Claude Code, or Claude Code whose
+session did not start with the `# Seldon logbook context` block — report
+each changing command yourself, before it runs, where it is recorded:
 
 ```bash
 jq -cn --rawfile command /dev/stdin --arg cwd "$PWD" \
@@ -168,8 +171,9 @@ will run it: the quoted heredoc expands nothing, so nothing in it runs
 while you report it. If a line of the command is itself `SELDON_CMD`, use
 another word as the delimiter in both places. `seldon hook generic` is
 silent and always exits 0. Name your case with `--case <ID>`. Whether a
-command run outside the logbook is recorded is the user's setting
-(`[hooks] scope`); never leave out `cwd` to get around it. At the end of the session:
+command run outside the logbook is recorded follows from how the session
+started and the user's setting (`[hooks] scope`); never leave out `cwd` to
+get around it. At the end of the session:
 `seldon hook session-stop --actor agent:<name>`.
 
 ## The Engine Is the Only Writer
