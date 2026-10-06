@@ -1588,6 +1588,20 @@ mod redaction {
                 .iter()
                 .any(|t| holds_trigger(line, &word, t))
         );
+        // a URL without an `@` after its scheme does not compile
+        // `url-userinfo` (WP-108)
+        for line in [
+            "curl -fsSL https://h.example/f -o f",
+            "git push git@h.example:o/r https://h.example/r",
+        ] {
+            let lower = trigger_text(line);
+            assert!(
+                !triggers("url-userinfo")
+                    .iter()
+                    .any(|t| holds_trigger(line, &lower, t)),
+                "`{line}`"
+            );
+        }
         // `set -e`, curl's `-e` and an `-E` with no `:` after it do not
         // compile `cert-password` (WP-108): its triggers are `curl` and
         // `-E` as written, then a `:`

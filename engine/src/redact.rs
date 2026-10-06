@@ -438,7 +438,8 @@ pub fn holds_trigger(text: &str, lower: &str, trigger: &str) -> bool {
 /// after an earlier rule needs no new check.
 pub fn triggers(name: &str) -> &'static [&'static str] {
     match name {
-        "url-userinfo" => &["://"],
+        // the `@` after the scheme: a URL without userinfo holds none
+        "url-userinfo" => &["://>@"],
         "password-option" => &["--password", "--http-password", "--ftp-password"],
         "secret-option" => &["token", "secret", "passphrase", "-pass", "bearer"],
         "openssl-pass" => &["pass:"],
