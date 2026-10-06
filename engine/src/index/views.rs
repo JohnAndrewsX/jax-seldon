@@ -117,6 +117,7 @@ fn is_case_kind(kind: Kind) -> bool {
             | Kind::CaseVerified
             | Kind::CaseCompleted
             | Kind::CaseDropped
+            | Kind::CaseUpdated
     )
 }
 

@@ -374,13 +374,15 @@ pub(crate) fn create(
         Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
             .detail(spec.title.clone())
             .actor(&spec.actor)
-            .case(Some(id.clone())),
+            .case(Some(id.clone()))
+            .risk(spec.risk),
     ];
     if spec.start {
         events.push(
             Event::new(ctx.now, Source::Seldon, Kind::CaseStarted, &id)
                 .actor(&spec.actor)
-                .case(Some(id.clone())),
+                .case(Some(id.clone()))
+                .risk(spec.risk),
         );
     }
     let events = emit(lock, config, logbook, events)?;
@@ -516,6 +518,10 @@ fn step(
     let mut event = Event::new(ctx.now, Source::Seldon, kind(transition), &args.id)
         .actor(&actor)
         .case(Some(args.id.clone()));
+    if transition == Transition::Start {
+        // ADR-0035 §1: the risk the case starts with
+        event = event.risk(file.case.risk);
+    }
     event.detail = reason.clone();
     let event = emit_one(&lock, &config, &logbook, event)?;
 
@@ -654,8 +660,8 @@ fn open_only(file: &CaseFile, what: &str) -> Result<()> {
 }
 
 /// `plan set`: zone, risk and area of an open case, in its frontmatter,
-/// with one Log line. No ledger event (no kind fits; a new one would be a
-/// contract change): the Log line and the commit are the record. A value
+/// with one Log line and one `case-updated` ledger line that carries the
+/// risk after the change (ADR-0035 §1; the harm guard reads it). A value
 /// equal to the current one is no change; with nothing changed nothing is
 /// written (exit 0).
 fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
@@ -702,6 +708,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
             json!({
                 "case": case_json(&logbook, &file),
                 "changed": changed,
+                "event": Value::Null,
                 "areaCreated": Value::Null,
                 "git": Value::Null,
             }),
@@ -710,6 +717,13 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
     file.add_agent(&actor);
     file.log(&ctx.now, &format!("set {}", words.join(", ")), &actor);
     file.prepare(&logbook, |_| {})?;
+    // the ledger first: if it cannot be written, the case file stays
+    let event = Event::new(ctx.now, Source::Seldon, Kind::CaseUpdated, &args.id)
+        .detail(words.join(", "))
+        .actor(&actor)
+        .case(Some(args.id.clone()))
+        .risk(file.case.risk);
+    let event = emit_one(&lock, &config, &logbook, event)?;
     let area_created = match &file.case.area {
         Some(a) if changed.iter().any(|c| c["key"] == "area") => cases::ensure_area(&logbook, a)?,
         _ => None,
@@ -736,6 +750,7 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
         json!({
             "case": case_json(&logbook, &file),
             "changed": changed,
+            "event": event_json(&event),
             "areaCreated": area_created,
             "git": commit.json(),
             "warnings": warnings,

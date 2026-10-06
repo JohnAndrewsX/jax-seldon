@@ -17,14 +17,16 @@ use chrono::{DateTime, FixedOffset, SecondsFormat};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ulid::Ulid;
 
-pub use super::case::Zone;
 use super::case::str_enum;
+pub use super::case::{Risk, Zone};
 use super::{is_agent, is_case_id};
 
 /// Longest `subject` the schema accepts (characters).
 pub const SUBJECT_MAX: usize = 512;
 /// Longest `detail` the schema accepts (characters).
 pub const DETAIL_MAX: usize = 4096;
+/// The index-only `meta` key that marks a clipped text (ADR-0035 §3).
+pub const TRUNCATED: &str = "truncated";
 
 str_enum!(
     /// Who produced the event (`event.schema.json#/properties/source`).
@@ -70,6 +72,8 @@ str_enum!(
         CaseVerified = "case-verified",
         CaseCompleted = "case-completed",
         CaseDropped = "case-dropped",
+        CaseUpdated = "case-updated",
+        StateLoss = "state-loss",
     }
 );
 
@@ -156,6 +160,10 @@ pub struct Meta {
     /// resolution only: the drift group's txId (ADR-0013 §4).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_id: Option<String>,
+    /// case-created, case-started, case-updated: the case's risk after the
+    /// event (ADR-0035 §1); absent on lines written before contract 2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk: Option<Risk>,
     /// Any other scalar key.
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
@@ -245,6 +253,12 @@ impl Event {
         self
     }
 
+    /// `meta.risk`: a case line's risk after the event (ADR-0035 §1).
+    pub fn risk(mut self, risk: Risk) -> Self {
+        self.meta.risk = Some(risk);
+        self
+    }
+
     /// `ts` as written to the ledger: RFC 3339, offset kept, whole seconds
     /// unless the source had fractions.
     pub fn ts_string(&self) -> String {
@@ -308,6 +322,24 @@ impl Event {
         }
         if self.meta.tx_id.is_some() && self.kind != Kind::Resolution {
             return Err("meta.txId is only allowed on a resolution".into());
+        }
+        // ADR-0035 §1, §3, §4
+        let risked = matches!(
+            self.kind,
+            Kind::CaseCreated | Kind::CaseStarted | Kind::CaseUpdated
+        );
+        if self.meta.risk.is_some() && !risked {
+            return Err("meta.risk is only allowed on case-created, -started and -updated".into());
+        }
+        if self.kind == Kind::CaseUpdated && (self.meta.risk.is_none() || self.case.is_none()) {
+            return Err("a case-updated line needs meta.risk and case".into());
+        }
+        if matches!(self.kind, Kind::CaseUpdated | Kind::StateLoss) && self.source != Source::Seldon
+        {
+            return Err(format!("{} is written by seldon only", self.kind));
+        }
+        if self.meta.extra.contains_key(TRUNCATED) {
+            return Err("meta.truncated is index-only (ADR-0035 §3)".into());
         }
         if let Some((k, v)) = self
             .meta

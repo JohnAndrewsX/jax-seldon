@@ -729,7 +729,9 @@ fn pending_notes(ledger: &Ledger, pending: &[String]) -> Result<Vec<Event>> {
     let mut notes = Vec::new();
     for month in months {
         notes.extend(ledger.read_month(&month)?.events.into_iter().filter(|e| {
-            e.source == Source::Seldon && e.kind == Kind::Note && times.contains(&e.ts)
+            e.source == Source::Seldon
+                && matches!(e.kind, Kind::Note | Kind::StateLoss)
+                && times.contains(&e.ts)
         }));
     }
     Ok(notes)
@@ -742,7 +744,7 @@ fn pending_notes(ledger: &Ledger, pending: &[String]) -> Result<Vec<Event>> {
 fn noted_sources(recorded: &[Event]) -> Vec<&str> {
     recorded
         .iter()
-        .filter(|e| e.subject == STATE_RESET)
+        .filter(|e| collectors::is_state_loss(e))
         .filter_map(|e| e.meta.extra.get("sources")?.as_str())
         .flat_map(|s| s.split(','))
         .filter(|s| !s.is_empty())
@@ -804,7 +806,7 @@ fn state_reset(
     Some(Reset { note, lost })
 }
 
-/// The `state-reset` note for the losses `lost`.
+/// The `state-loss` line for the losses `lost` (ADR-0035 §4).
 fn reset_note(
     lost: &[(&'static str, Lost)],
     baseline: DateTime<FixedOffset>,
@@ -830,7 +832,7 @@ fn reset_note(
     meta.extra
         .insert("sources".into(), json!(sources.join(",")));
     meta.extra.insert("files".into(), json!(files.join(",")));
-    Event::new(now, Source::Seldon, Kind::Note, STATE_RESET)
+    Event::new(now, Source::Seldon, Kind::StateLoss, STATE_RESET)
         .detail(format!(
             "state directory missing, unreadable or bound to another logbook: new baseline for {} at {}, recorded {}; changes made in between may not be recorded",
             named.join(", "),

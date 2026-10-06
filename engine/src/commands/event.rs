@@ -60,6 +60,8 @@ pub fn is_engine_only(kind: Kind) -> bool {
             | Kind::CaseVerified
             | Kind::CaseCompleted
             | Kind::CaseDropped
+            | Kind::CaseUpdated
+            | Kind::StateLoss
     )
 }
 
@@ -355,6 +357,16 @@ fn parse_meta(pairs: &[String]) -> Result<Meta> {
                     "--meta txId is only written on drift resolutions",
                 ));
             }
+            "risk" => {
+                return Err(Error::user(
+                    "--meta risk is only written on case lines (`seldon plan`)",
+                ));
+            }
+            crate::model::event::TRUNCATED => {
+                return Err(Error::user(
+                    "--meta truncated is index-only; the ledger keeps every text whole",
+                ));
+            }
             "enabled" => {
                 meta.enabled = Some(match value {
                     "true" => true,
@@ -408,6 +420,8 @@ mod tests {
             "txId=1",
             "enabled=yes",
             "pairOf=x",
+            "risk=R1",
+            "truncated=true",
             "=1",
             "a b=1",
         ] {

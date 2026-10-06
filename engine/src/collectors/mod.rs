@@ -118,9 +118,19 @@ impl Lost {
     }
 }
 
-/// Subject of the `seldon` `note` a capture writes when collectors lost
-/// their state although the ledger holds their events (WP-081).
+/// Subject of the `seldon` `state-loss` line a capture writes when
+/// collectors lost their state although the ledger holds their events
+/// (WP-081; a `note` before contract 2, ADR-0035 §4).
 pub const STATE_RESET: &str = "state-reset";
+
+/// Whether `e` records a state loss: a `state-loss` line, or the `note`
+/// with subject [`STATE_RESET`] an engine before contract 2 wrote. Old
+/// lines are never rewritten (append-only), so every reader takes both.
+pub fn is_state_loss(e: &Event) -> bool {
+    use crate::model::event::{Kind, Source};
+    e.source == Source::Seldon
+        && (e.kind == Kind::StateLoss || (e.kind == Kind::Note && e.subject == STATE_RESET))
+}
 
 impl Outcome {
     pub fn ok(events: Vec<Event>, cursor: Value) -> Self {
