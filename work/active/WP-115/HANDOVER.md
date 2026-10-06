@@ -191,3 +191,138 @@ handover commit; only this file follows):
    `doctor`? (An ADR wording question; I kept the ADR.)
 2. ADR-0029's open point (exactly one *active case at all* vs. one that
    planned it) is untouched; the live round counts false links.
+
+## Round 2
+
+Brief: `review-0.1.1/handovers/WP-115-round-2-brief.md` (stage 1
+`WP-115-review-1.md`). Main not merged (orchestrator resolves).
+
+### Done
+
+1. **B1 / Q1 — harm guard = harm test.** `reconcile::planned_links`
+   guards when the subject matches `[drift] alwaysRed` **or** the
+   classifier (`index::class::Classifier`, the same rules as the index)
+   makes the single event a crisis — i.e. `always-red-paths` (user units,
+   autostart, environment.d, uwsm, `~/.profile`, Omarchy hooks; an inert
+   `*.sample` hook or an evidence row stays unguarded, as in the index).
+   Below R3 the event stays drift/crisis and the case gets one advisory
+   Log line: the existing R3 advisory for an `alwaysRed` package with a
+   known risk, else `advisory: not linked: <event> can affect boot, login
+   or the shell (`[drift] alwaysRedPaths`), which only an R3 case takes,
+   and <ID> was R<n> at the time (ADR-0027 §2c); if this case made it:
+   `seldon drift link <EVENT> <ID>``. Reviewer's probe and a hook path
+   are tests (unit + e2e).
+2. **Q3 — risk at the event's time.** `risk_timeline` reads the case's
+   own Log: the `created (…, risk Rn…)` line (also `created
+   retroactively …`, reopen's `created …: reopens …`), then every `set …
+   risk A → B`. `PlanningCase::risk_at` takes the last change before the
+   event's minute; a change in that very minute, or no `created` line,
+   cannot tell → below R3. Log lines are local time to the minute, so the
+   engine compares in `chrono::Local` (`link_planned`); the unit tests and
+   the validator use the event's own offset (fixture and tests are one
+   offset). Test: an agent raises the case to R3 after `linux-zen` → no
+   link; `linux-lts` installed after the raise → linked.
+3. **B2 / Q2 — unreadable case blocks.** `unreadable_windows`: a
+   candidate whose time lies in the window of a case id with no loadable
+   file (does not parse, or lies outside the status folders) is not
+   linked (`PlannedLinks::blocked`); the capture warns on stderr and
+   `seldon doctor` gets a `planned` row (degraded, only when it applies,
+   fix: repair the file / put it back). Reviewer's probe is a test; after
+   the repair the next capture sees two planners and links nothing.
+4. **Q4 — Plan comments.** `cases::strip_comments` on the Plan for rule 3
+   (`index/load.rs`) and rule 9 (`PlanningCase::of`); validator
+   `plan_section` too. Fixture and golden index unchanged (no fixture
+   Plan names a subject only in a comment). Test: `<!-- do not install
+   glow -->` neither links nor proposes.
+5. **R1 — capture warning.** `capture_first` warns only on `Err` (an
+   error, or the lock still held after 8 s); degraded collectors are
+   doctor's. `tests/plan.rs` lost its `--no-capture`; `plan_verify_
+   captures_first…` asserts `warnings: []` with snapper and plugins
+   degraded. SPEC §3, AGENT-GUIDE, CHANGELOG.
+6. **N1** — MI killed by `rule_8_wins_over_rule_9_in_the_same_capture`
+   (a `jax-seldon` upgrade inside a case whose Plan names it: one
+   `explained` line, `linkedPlanned: 0`, the case lists nothing); MK
+   killed by a same-case human re-link in acceptance 1 (the case keeps the
+   id, no "no longer linked" line). **N2** — CHANGELOG ("while a case
+   whose Plan names it is open, and no other case open at the time names
+   it") and AGENT-GUIDE ("no other case that was open at the time") now
+   say the implemented rule.
+7. Validator (`scripts/validate-fixtures.py`): guard via its
+   `Classifier`, `risk_timeline`/`risk_at`, unknown-case block,
+   comment-stripping; five new self-checks (path below R3 not linked;
+   path linked to a case raised to R3 before it; unreadable case blocks
+   with a second planner; Plan comment) — 50 self-checks.
+8. `docs/user/de/05-cli-reference.md` source marker moved to 62e6048
+   (round 1 changed only generated help blocks, regenerated in both
+   languages); this removes the docs-check translation warning round 1
+   left.
+
+### Decisions (round 2)
+
+- The guard asks the classifier for the **single event** (not its
+  pacman group): rule 9 decides per event; a dependency follows its
+  explicit member as before.
+- An `alwaysRed` package keeps the subject test whatever its class
+  (round 1, D2) — the brief's "alwaysRed packages *or* alwaysRedPaths".
+- Same-minute ambiguity resolves to "cannot tell" (below R3) unless the
+  change leaves the risk as it was.
+- `plan set` without `risk` (zone/area only) does not touch the
+  timeline.
+- A blocked event writes no Log line into the readable case (it cannot
+  name the other planner's Plan); the capture warning and doctor carry
+  it.
+- ADR-0029 §1(d)'s clarifying note (guard = harm test, risk at the
+  time, unreadable case) is written into SPEC-ENGINE §5 rule 9; the ADR
+  itself is accepted and immutable — a note there is the orchestrator's.
+
+### Mutants (round 2)
+
+Engine: on-disk copy (`git archive HEAD` at 19022cf, own target dir),
+each alone, sources restored. Validator: the same copy, each applied to
+the script alone.
+
+| # | Mutant | Result |
+|---|---|---|
+| N1 | guard ignores the classifier's crisis | killed: `the_harm_guard_covers_persistence_paths`, `a_persistence_path_the_plan_names_stays_a_crisis_below_r3` |
+| N2 | risk ignores `plan set` lines | killed: `the_guard_reads_the_risk_at_the_events_time`, `raising_the_risk_afterwards…` |
+| N3 | a change in the event's minute counts as before | killed: unit |
+| N4 | unknown risk counts as R3 | killed: unit |
+| N5 | risk now, not at the time | killed: unit, `raising_the_risk_afterwards…` |
+| N6 | unreadable case does not block | killed: `a_window_of_an_unreadable_case_links_nothing`, `a_case_file_that_does_not_load_blocks_the_link` |
+| N7 | rule 9 reads Plan comments | killed: `a_plan_comment_is_no_plan` |
+| N8 | rule 3 reads Plan comments | killed: `a_plan_comment_is_no_plan` |
+| N9 | doctor has no `planned` row | killed: `a_case_file_that_does_not_load_blocks_the_link` |
+| N10 | (MI) rule 9 without rule 8's lines of the same capture | killed: `rule_8_wins_over_rule_9_in_the_same_capture` |
+| N11 | (MK) same-case re-link drops the id | killed: acceptance 1 |
+| N12 | a degraded collector warns again | killed: `plan_verify_captures_first…` |
+| N13 | same-minute values not compared | killed: unit |
+| V1 | validator: guard ignores `alwaysRedPaths` | killed: self-check "persistence path below R3" |
+| V2 | validator: unreadable case does not block | killed after a stronger self-check (first try survived: no second planner) |
+| V3 | validator: Plan comments count | killed: self-check "Plan comment" |
+| V4 | validator: risk at the time ignored | killed after a new self-check (case raised to R3 before the change) |
+
+17 of 17 killed (V2, V4 needed the stronger self-checks, committed in
+3f117d9). Reviewer's ME (follower test `explicit == Some(false)`)
+stays equivalent as they noted.
+
+### Checks (round 2)
+
+Under `flock /tmp/seldon-check.lock`, `CARGO_TARGET_DIR` on disk, head
+3f117d9 (code identical to the round-2 handover commit; only this file
+follows):
+
+- `just check`: **exit 0** (`check: ok`). Rust 1868 passed, 0 failed, 8
+  ignored; clippy/fmt clean (also `--features watch`);
+  `validate-fixtures: ok` (83 events, 50 self-checks); `docs-check: ok`
+  (no translation warning); `qmllint: ok`; plugin harness model 96,
+  panel 900, overlay 326, bar 194, service-states 316, real-home-guard 11.
+- `just check-perf` (`index/load.rs` is the index build): **exit 0**.
+  Index ×10 median 4.6 ms, ×150 55 ms; `status` at the stated scale
+  42.8 ms; hooks ≤ 4.3 ms median.
+
+### Open
+
+- N4 (cost): `has_planned_candidates` stays true while any unresolved
+  event lies in any window; every such capture reads the case files. The
+  item-10 measurement should use a logbook with open attention items.
+- ADR-0029 §1(d) note (see Decisions) — orchestrator.
