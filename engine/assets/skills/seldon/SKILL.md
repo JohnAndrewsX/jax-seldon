@@ -47,7 +47,8 @@ seldon plan list --status active --json
   prints its folder; its `AGENTS.md` holds the full rules (Seldon's block)
   and the user's own limits below it. Where they and this skill differ,
   `AGENTS.md` wins.
-- Exit 4: the lock is held; retry in a moment.
+- Any other exit: say so to the user in one line (`seldon doctor` names the
+  fix) and change nothing until it is fixed.
 
 At the start of a session, unless your harness already gave it to you (a
 block titled `# Seldon logbook context`), read the context:
@@ -124,20 +125,21 @@ for, store or pass a password.
 
 Seldon's Claude Code hooks record a session's commands when it runs inside
 the logbook (or everywhere, when the user set `[hooks] scope = "all"`).
-When no hook serves you — another agent, or Claude Code without the
-`# Seldon logbook context` block — report each changing command yourself,
-before it runs:
+When no hook serves you — any agent but Claude Code, or Claude Code whose
+session did not start with the `# Seldon logbook context` block — report
+each changing command yourself, before it runs:
 
 ```bash
-jq -cn --arg command "<the command line>" --arg cwd "$PWD" \
+jq -cn --arg command '<the command line>' --arg cwd "$PWD" \
   '{command: $command, actor: "agent:<name>", cwd: $cwd}' | seldon hook generic --case <ID>
 ```
 
-`seldon hook generic` is silent and always exits 0. Name the case with
-`--case <ID>`; without it, the active case counts. Whether a command run
-outside the logbook is recorded is the user's setting (`[hooks] scope`);
-never leave out `cwd` to get around it. At the end of the session:
-`seldon hook session-stop --actor agent:<name>`.
+Quote the command line in single quotes, so that nothing in it runs while
+you report it. `seldon hook generic` is silent and always exits 0. Name the
+case with `--case <ID>`; without it, the active case counts. Whether a
+command run outside the logbook is recorded is the user's setting
+(`[hooks] scope`); never leave out `cwd` to get around it. At the end of
+the session: `seldon hook session-stop --actor agent:<name>`.
 
 ## The Engine Is the Only Writer
 
