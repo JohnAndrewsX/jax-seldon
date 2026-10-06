@@ -269,3 +269,119 @@ test binaries run, the file restored; 45 mutants.
    `checks.push(check_collectors(ctx, &effective, logbook, &shown));`.
    The `rollbacks` message holds case ids and numbers only (no user
    text to redact).
+
+# Round 2
+
+Brief: `review-0.1.1/handovers/WP-101-round-2-brief.md` (stage-1 review
+`WP-101-review-1.md`, SEND BACK). Every item done. No merge of `main`
+(the doctor.rs conflict with WP-105 stays for the orchestrator: keep both
+pushes).
+
+## Done
+
+- **B1 — snapshot ownership** (`engine/src/case_notes.rs`). A
+  snapshot's window is `[date − 10 min, date + 5 s]` (`SKEW`, was
+  120 s). Snapshots are taken oldest first; a recorded command owns one
+  snapshot (`used`), the latest unused one of a single case in the window
+  owns it; a snapshot named by its case id uses that case's latest
+  command in its window. Unused commands of two or more cases in one
+  window: nothing filled, and each such case (open, field empty) gets
+  `snapshot N was taken while the agents of <IDs> ran a snapshot
+  command; if it is this case's rollback, record it: `seldon plan
+  snapshot <ID> N``. Tests: the reviewer's probe (two agents, a minute
+  apart → 2 and 3), a later command beyond the skew claims nothing (and
+  within it does), the tie on both cases, a described snapshot uses its
+  command.
+- **B2 — reopen and the active-case marker** (`plan.rs`, `Spec.point`).
+  `plan reopen` sets `.seldon/active-case` only when it names no open
+  case; otherwise the new case is active but not the marker, the output
+  says "The active case stays <ID>: commands an agent runs are still
+  recorded on it. `seldon agent start <NEW>` hands the new case to an
+  agent", JSON `activeCase: {kept}`. The panel's result line adds "the
+  active case stays <ID>"; the fake engine mirrors it. Test: after a
+  reopen, an agent's `hook generic` command without a case lands on the
+  original case; a stale marker (completed case) or none: the reopen
+  takes it.
+- **N1** the fallback runs `plan snapshot`'s checks (`snapshot::warnings`,
+  now `pub(crate)`); each warning is a Log line by `system`, the snapshot
+  still fills. Test: red change at 10:05, snapshot at 10:10.
+- **N2** `plan done --actor human` with `SELDON_ACTOR=agent:*`: exit 1,
+  "`--actor human` in a session of agent:x (SELDON_ACTOR); an agent's
+  close is never recorded as human (ADR-0027 §5) …", nothing written; a
+  person's own session (no variable) still closes as human. An invalid
+  variable is ignored here, as `--actor` always ignored it.
+- **N3** a first sentence without a Unicode letter or digit (`.`, `!`,
+  `…`, `?!`, `!` followed by a line) is refused before anything is
+  written.
+- **N4** control characters (a lone `\r`, a tab) are spaces in the
+  title, white-space runs one. Not changed: `Install e.g. zed` still
+  cuts at `e.g` (a sentence end is `.` before white space; an
+  abbreviation list would be language-specific).
+- **N5** no early return in `classify_segment`: a snapshot command is a
+  green, cased classification folded with the files the segment writes
+  (subject stays `snapper`). Test: `snapper create … > ~/.config/hypr/…`
+  is recorded yellow with the case.
+- **N6** `cases::has_text`: a Result (and the Verification text) counts
+  only with a line that is no heading and holds a letter or digit,
+  comments stripped (zero-width characters and punctuation are no
+  letters); a bold label counts (`- **Verification:** x`,
+  `**Verification**: x`, `__verification:__ x`). SPEC-ENGINE §3 says it
+  is a guard against forgetting, not a check of the evidence.
+- **N7** an agent's `drift explain` tags its completed case
+  `closed-by-agent`; a person's gets none. CONTRACT rule 8 says so.
+- **N8** harness: the panel can be closed and opened (`close`/`open`
+  steps); a second open within 10 minutes asks doctor nothing (one line
+  in `doctor.log`); the forced check after *Update rules* stays covered.
+- **N9** the default-agent check reads the first line, trimmed, as
+  `omarchy-default-agent` does; an empty first line is no agent (test).
+- **Open question 1 (decided)**: no tag, no field in 0.1.4. SPEC-ENGINE
+  §5 states the deviation from ADR-0027 §2c ("the panel shows it from
+  contract v2"; ADR-0028 points the same way). Not done in the panel by
+  decision.
+- Docs: SPEC-ENGINE §3/§5, SPEC-LOGBOOK §3, SPEC-PLUGIN §5, CONTRACT rule
+  8, guides en 03/05 and de 03/05 (re-stamped `e852f0c`), CHANGELOG.
+
+## Mutants (round 2)
+
+Script in the session scratchpad; each applied alone, the named tests
+run, restored; 16 of 16 killed, all compiled.
+
+| # | Item | Mutant | Killed by |
+|---|---|---|---|
+| R1 | B1 | window end 120 s | a_later_command_does_not_claim…, two_agents_a_minute_apart… |
+| R2 | B1 | commands not consumed | two_agents_a_minute_apart… |
+| R3 | B1 | a tie takes the latest | a_tie_fills_nothing_and_says_so_on_both |
+| R4 | B1 | a described snapshot keeps the command | a_described_snapshot_uses_its_cases_command |
+| R5 | B1 | a tie writes no Log line | a_tie_fills_nothing… |
+| R6 | N1 | fallback without the checks | the_fallback_warns_like_plan_snapshot |
+| R7 | B2 | reopen always takes the marker | a_reopen_keeps_the_active_case_of_an_open_case |
+| R8 | B2 | any marker holds (stale too) | same |
+| R9 | N2 | human close in an agent session allowed | an_agent_session_cannot_close_as_human |
+| R10 | N2 | the check fires without the flag | three close tests |
+| R11 | N3 | only an empty title refused (the stage-1 survivor) | new::the_argument_shapes |
+| R12 | N3 | no title check | same |
+| R13 | N6 | a heading is text | cases::close_gaps…, close_path |
+| R14 | N6 | any character is text | same |
+| R15 | N6 | bold label not read | same |
+| R16 | N6 | Verification by non-blank | same |
+
+N8's throttle is killed by its own harness case (a check without the
+throttle makes the second open call doctor again: two lines).
+
+## Check
+
+`flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+`4641b06`: 1704 engine tests in 74 binaries (the watch feature too);
+validate-fixtures ok (9 variants); docs-check ok (430 links, 45
+commands, 525 command lines); plugin-validate ok; qmllint ok (29 files);
+model 93, service-states 314, panel-view 847, overlay-view 326,
+bar-view 143. shellcheck not installed (`bash -n` only). Live check on
+the test host: the orchestrator's.
+
+## Open
+
+- Merge: `engine/src/commands/doctor.rs` conflicts with WP-105 (keep
+  `checks.push(check_rollbacks(logbook));` and WP-105's
+  `check_collectors(ctx, &effective, logbook, &shown)`).
+- `Install e.g. zed` → title `Install e.g` (N4, left as is; say if an
+  abbreviation rule is wanted).
