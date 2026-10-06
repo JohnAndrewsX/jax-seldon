@@ -33,13 +33,15 @@ import qs.Ui
 //                       through `quickshell ipc` (WP-067). Prints
 //                       `HARNESS ipc {json}` instead of the bar report: which
 //                       widget owns `jax.seldon.panel`, which one an IPC
-//                       `open` reaches, and the same once the owner is gone.
+//                       `open` reaches (each widget's count of calls it
+//                       forwarded to the desk through the facade, the shim of
+//                       ADR-0034 §7), and the same once the owner is gone.
 //   HARNESS_IPC_PLACEHOLDER  with HARNESS_IPC: the first widget the bar
 //                       lists is a zero-size, hidden placeholder (a module in the
 //                       bar's centre section, WP-078), the second is drawn. After
 //                       open/close a reconfiguration draws the placeholder
 //                       and hides the other (report `ownersSwapped`,
-//                       `openedSwapped`), then the owner goes.
+//                       `callsSwapped`), then the owner goes.
 ShellRoot {
   id: root
 
@@ -121,7 +123,10 @@ ShellRoot {
   QtObject {
     id: shellFacade
     function serviceFor(id) { return id === "jax.seldon" ? root.service : null }
-    function toggle(id, payload) {}
+    // The desk is not loaded here; the shim's calls only have to arrive.
+    function summon(id, payload) { return true }
+    function hide(id) { return true }
+    function toggle(id, payload) { return true }
   }
 
   Window {
@@ -189,7 +194,7 @@ ShellRoot {
   property string ipcPending: ""
 
   function owners() { return root.widgets.map(function(w) { return w ? w.ipcOwner : null }) }
-  function openedState() { return root.widgets.map(function(w) { return w ? w.opened : null }) }
+  function deskCalls() { return root.widgets.map(function(w) { return w ? w.deskCalls : null }) }
 
   function ipcCall(tag, args) {
     root.ipcPending = tag
@@ -226,12 +231,12 @@ ShellRoot {
   readonly property var ipcSteps: {
     var head = [
       function(r) { r.owners = root.owners(); root.ipcCall("open", ["open"]) },
-      function(r) { r.opened = root.openedState(); root.ipcCall("close", ["close"]) }
+      function(r) { r.calls = root.deskCalls(); root.ipcCall("close", ["close"]) }
     ]
     var swap = [
       function(r) {
         // A live reconfiguration: the placeholder is drawn, the other hidden.
-        r.closed = root.openedState()
+        r.callsClosed = root.deskCalls()
         slot0.width = 100
         slot0.height = Style.bar.sizeHorizontal
         slot0.visible = true
@@ -239,16 +244,16 @@ ShellRoot {
         ipcStep.restart()
       },
       function(r) { r.ownersSwapped = root.owners(); root.ipcCall("openSwapped", ["open"]) },
-      function(r) { r.openedSwapped = root.openedState(); root.ipcCall("closeSwapped", ["close"]) },
+      function(r) { r.callsSwapped = root.deskCalls(); root.ipcCall("closeSwapped", ["close"]) },
       function(r) { root.dropOwner(); ipcStep.restart() }
     ]
     var drop = [
-      function(r) { r.closed = root.openedState(); root.dropOwner(); ipcStep.restart() }
+      function(r) { r.callsClosed = root.deskCalls(); root.dropOwner(); ipcStep.restart() }
     ]
     var tail = [
       function(r) { r.ownersAfter = root.owners(); root.ipcCall("openAfter", ["open"]) },
       function(r) {
-        r.openedAfter = root.openedState()
+        r.callsAfter = root.deskCalls()
         console.log("HARNESS ipc " + JSON.stringify(r))
         Qt.quit()
       }
