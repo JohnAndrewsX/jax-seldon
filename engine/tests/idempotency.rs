@@ -985,6 +985,36 @@ mod idempotency {
     }
 
     #[test]
+    fn a_marker_leaves_out_the_captures_events_before_its_check() {
+        // q09: the first capture at 10:10 writes only a change clamped to
+        // 10:00 (`cp -p`), so it wrote nothing at its check and its marker
+        // is 0; the removal by the second capture at 10:10, whose cursor
+        // save fails, is read again by the next one (WP-107 round 2)
+        let mut b = support::Bench::new("crash-config-marker-before-check");
+        let a = hypr(&b, "a.conf", "A\n");
+        let x = hypr(&b, "x.conf", "x\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        std::fs::write(&a, "B\n").unwrap();
+        let at = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(
+                support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64
+            );
+        let file = std::fs::File::options().write(true).open(&a).unwrap();
+        file.set_modified(at).unwrap();
+        let written = config_run(&mut b, "10:10");
+        assert_eq!(written[0].ts, support::ts("2026-10-01T10:00:00+02:00"));
+        assert_eq!(b.cursors["config"]["atCheck"], 0);
+
+        let before = b.cursors.clone();
+        std::fs::remove_file(&x).unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
     fn a_restored_state_directory_does_not_repeat_a_change_at_its_check() {
         // the second known limit of WP-103: a change with an older mtime
         // (`cp -p`) is stamped with the check of the cursor the backup
