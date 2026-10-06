@@ -1937,9 +1937,11 @@ Two settings files with the hooks (the user-wide one and an older
 logbook's own) make Claude Code run the PreToolUse hook twice per tool
 call; the engine records a tool call once whatever runs it: a call whose
 `tool_use_id` the ledger already holds within a day writes nothing, for
-`PreToolUse` as for `PostToolUse` (ADR-0030 §5, WP-116; the month files
-are searched for the id as text first and parsed only on a hit, which
-keeps the hook within its budget, §1). `seldon doctor`'s `hooks` row
+`PreToolUse` as for `PostToolUse` (ADR-0030 §5, WP-116). A `PreToolUse`
+searches the last 256 KiB of each month file in range for the id (its
+pair comes moments later), a `PostToolUse` the whole files; only a line
+that holds the id is parsed, which keeps the hook within its budget (§1;
+at 10 000 lines 1.6 ms recorded, 0.2 ms more than without the check). `seldon doctor`'s `hooks` row
 (§3) names the state and the tidy-up.
 
 `seldon hook uninstall claude-code [--settings FILE]` (WP-049) is the
