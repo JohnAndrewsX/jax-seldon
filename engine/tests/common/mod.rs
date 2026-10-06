@@ -72,6 +72,11 @@ impl Env {
         let bin = tmp.path().join("bin");
         std::fs::create_dir_all(&home).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
+        // made here, not on first use: tests compare the temp tree before
+        // and after a command
+        let probe = tmp.path().join("user-probe");
+        std::fs::write(&probe, "").unwrap();
+        user_owned(&probe);
         stub(&bin, "omarchy-version", "echo 4.0.4-1");
         match snapper {
             Snapper::NoPermissions => stub(&bin, "snapper", "echo 'No permissions.' >&2; exit 1"),
@@ -120,8 +125,17 @@ impl Env {
             // Omarchy's package lists (dossier, WP-036): the fixture copies,
             // never the host's `/usr/share/omarchy`
             .env("SELDON_OMARCHY_PACKAGES", omarchy_packages())
+            // the silent upgrades run only for a user (sys::runner); CI runs
+            // the tests as root, so the probe is a file a user owns
+            .env("SELDON_TEST_ROOT_PROBE", self.user_probe())
             .current_dir(self.tmp.path());
         cmd
+    }
+
+    /// A file in the temp dir that a user (not root) owns: the default
+    /// `SELDON_TEST_ROOT_PROBE` of [`Env::command`].
+    pub fn user_probe(&self) -> PathBuf {
+        self.tmp.path().join("user-probe")
     }
 
     /// `git args…` in `dir`, with this environment's HOME and PATH.
@@ -524,4 +538,13 @@ pub fn assert_within_budget(
         }
     }
     panic!("{what}: medians {medians:?}, budget {budget:?}");
+}
+
+/// Gives `path` to an unprivileged owner when the tests run as root (CI's
+/// container), so `sys::runner` reads it as a user's; a no-op otherwise.
+pub fn user_owned(path: &Path) {
+    use std::os::unix::fs::MetadataExt as _;
+    if std::fs::metadata(path).is_ok_and(|m| m.uid() == 0) {
+        std::os::unix::fs::chown(path, Some(65534), Some(65534)).expect("chown the probe");
+    }
 }
