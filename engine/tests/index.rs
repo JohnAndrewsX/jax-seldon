@@ -174,6 +174,24 @@ fn golden_index_equals_the_sample() {
     );
 }
 
+/// ADR-0028 §5: `[drift] attention = "all"` is the rollback, the
+/// derivation before ADR-0028 (computed pacman zone, crisis iff red, every
+/// caseless event open). `fixtures/index.attention-all.json` is derived by
+/// that path of `scripts/validate-fixtures.py`.
+#[test]
+fn attention_all_reproduces_the_pre_adr_golden() {
+    let env = Env::new(Snapper::Missing);
+    std::fs::create_dir_all(env.config_file().parent().unwrap()).unwrap();
+    std::fs::write(env.config_file(), "[drift]\nattention = \"all\"\n").unwrap();
+    let (_, out, index) = golden_run(&env, None, |_| {});
+    assert_eq!(out["valid"], json!(true));
+    assert_same(
+        json_file(&repo("fixtures/index.attention-all.json")),
+        index,
+        "attention = all",
+    );
+}
+
 #[test]
 fn ledger_views_equal_the_fixture_views() {
     let env = Env::new(Snapper::Missing);
@@ -341,15 +359,32 @@ fn input() -> Input {
             last_capture: None,
             collectors: Vec::new(),
         },
-        always_red: Config::default().drift.always_red,
+        drift: Config::default().drift,
     }
 }
 
 fn derive(mutate: impl FnOnce(&mut load::Loaded)) -> model::Index {
+    derive_with(Config::default().drift, mutate)
+}
+
+/// [`derive`] under `[drift] attention = "all"`: the rollback, the rules
+/// before ADR-0028 (ADR-0013 §3).
+fn derive_all(mutate: impl FnOnce(&mut load::Loaded)) -> model::Index {
+    let drift = seldon::config::DriftConfig {
+        attention: seldon::config::AttentionMode::All,
+        ..Config::default().drift
+    };
+    derive_with(drift, mutate)
+}
+
+fn derive_with(
+    drift: seldon::config::DriftConfig,
+    mutate: impl FnOnce(&mut load::Loaded),
+) -> model::Index {
     let mut loaded = fixture_loaded();
     assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
     mutate(&mut loaded);
-    build::build(loaded, &input()).index
+    build::build(loaded, &Input { drift, ..input() }).index
 }
 
 fn members(loaded: &mut load::Loaded) -> Vec<&mut Event> {
@@ -390,6 +425,7 @@ fn resolution(target: &Event, i: u8, fan_out: bool) -> Event {
     r
 }
 
+/// ADR-0013 §3, kept as the rollback (`attention = "all"`).
 #[test]
 fn drift_group_zone_rules() {
     let yellow = Some(("yellow".to_string(), false, 3));
@@ -499,6 +535,153 @@ fn drift_group_zone_rules() {
     ];
     let mut failed = Vec::new();
     for (label, mutate, want) in cases {
+        let got = group(&derive_all(mutate));
+        if got != want {
+            failed.push(format!("{label}: got {got:?}, want {want:?}"));
+        }
+    }
+    assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// ADR-0028 §2 on the sample's open `-Syu` group: `None` = routine,
+/// history, not drift; else (zone, crisis, members). The zone is the
+/// ledger zone (red for pacman, §7).
+#[test]
+fn drift_group_classes() {
+    let attention = Some(("red".to_string(), false, 3));
+    let crisis = Some(("red".to_string(), true, 3));
+    type Mutation = Box<dyn FnOnce(&mut load::Loaded)>;
+    type Group = Option<(String, bool, usize)>;
+    fn first(f: fn(&mut Event)) -> Mutation {
+        Box::new(move |l| f(members(l).remove(0)))
+    }
+    fn command(c: &'static str) -> Mutation {
+        Box::new(move |l| {
+            for m in members(l) {
+                m.meta.command = Some(c.into());
+            }
+        })
+    }
+    fn both(a: Mutation, b: Mutation) -> Mutation {
+        Box::new(move |l| {
+            a(l);
+            b(l);
+        })
+    }
+    let cases: Vec<(&str, Mutation, Group)> = vec![
+        ("plain -Syu", Box::new(|_| {}), None),
+        (
+            "a kernel in it",
+            first(|e| e.subject = "linux".into()),
+            None,
+        ),
+        ("an install in it", first(|e| e.kind = Kind::Install), None),
+        (
+            "a :: Replace removal",
+            first(|e| e.kind = Kind::Remove),
+            None,
+        ),
+        (
+            "a kernel removal",
+            first(|e| {
+                e.subject = "linux".into();
+                e.kind = Kind::Remove;
+            }),
+            attention.clone(),
+        ),
+        (
+            "a kernel downgrade",
+            first(|e| {
+                e.subject = "systemd".into();
+                e.kind = Kind::Downgrade;
+            }),
+            attention.clone(),
+        ),
+        (
+            "a downgrade",
+            first(|e| e.kind = Kind::Downgrade),
+            attention.clone(),
+        ),
+        ("-Syyuu", command("pacman -Syyuu"), None),
+        ("-Su", command("pacman -Su"), None),
+        ("bare yay", command("yay"), None),
+        ("yay -Syu", command("yay -Syu"), None),
+        ("Omarchy's update line", command(OMARCHY_UPDATE_LINE), None),
+        (
+            "a full upgrade naming a package",
+            command("pacman -Syu ollama"),
+            attention.clone(),
+        ),
+        ("no -u", command("pacman -Sy"), attention.clone()),
+        (
+            "no command line on the lead: nothing says it was plain",
+            first(|e| e.meta.command = None),
+            attention.clone(),
+        ),
+        (
+            "a named upgrade",
+            both(
+                command("pacman -S firefox"),
+                first(|e| e.explicit = Some(true)),
+            ),
+            None,
+        ),
+        (
+            "a named kernel upgrade",
+            both(
+                command("pacman -S linux"),
+                first(|e| {
+                    e.explicit = Some(true);
+                    e.subject = "linux".into();
+                }),
+            ),
+            attention.clone(),
+        ),
+        (
+            "a named kernel install",
+            both(
+                command("pacman -S linux"),
+                first(|e| {
+                    e.explicit = Some(true);
+                    e.subject = "linux".into();
+                    e.kind = Kind::Install;
+                }),
+            ),
+            crisis.clone(),
+        ),
+        (
+            "an upgrade from the cache (yay -Sua)",
+            both(
+                command(
+                    "pacman -U /home/user/.cache/yay/firefox/firefox-143.0.2-1-x86_64.pkg.tar.zst",
+                ),
+                first(|e| e.explicit = Some(true)),
+            ),
+            None,
+        ),
+        (
+            "the keyring",
+            both(
+                command("pacman -Sy --noconfirm archlinux-keyring"),
+                first(|e| {
+                    e.explicit = Some(true);
+                    e.subject = "archlinux-keyring".into();
+                    e.kind = Kind::Install;
+                }),
+            ),
+            None,
+        ),
+        (
+            "--only leaves routine members",
+            Box::new(|l| {
+                let r = resolution(&members(l)[0].clone(), 0, false);
+                l.events.push(r);
+            }),
+            None,
+        ),
+    ];
+    let mut failed = Vec::new();
+    for (label, mutate, want) in cases {
         let got = group(&derive(mutate));
         if got != want {
             failed.push(format!("{label}: got {got:?}, want {want:?}"));
@@ -507,22 +690,200 @@ fn drift_group_zone_rules() {
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
+/// ADR-0028 §5, the migration: a ledger written before ADR-0028 with
+/// open theme, toggle, `omarchy update`, `-Syu` and `shell.json` drift,
+/// and an old resolution of a theme switch. Under the default rules the
+/// routine rows leave `drift` (nothing is written: the build is a pure
+/// function of ledger and config), the old resolutions still fold, and
+/// `series.drift` never goes negative; `attention = "all"` brings the
+/// rows back (the rollback).
+#[test]
+fn migration_routine_rows_leave_drift() {
+    let line = |v: Value| -> Event { serde_json::from_value(v).unwrap() };
+    let syu = "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*";
+    let lines = vec![
+        // August: a theme tried and dismissed, in a week of its own
+        line(
+            json!({"id": "01M20000000000000000000A01", "ts": "2026-08-10T10:00:00+02:00",
+            "source": "theme", "kind": "theme-set", "subject": "nord", "actor": "human", "zone": "yellow"}),
+        ),
+        line(
+            json!({"id": "01M20000000000000000000A02", "ts": "2026-08-11T10:00:00+02:00",
+            "source": "seldon", "kind": "resolution", "subject": "nord", "actor": "human",
+            "refersTo": "01M20000000000000000000A01", "resolution": "dismissed", "detail": "tried"}),
+        ),
+        // 10-01 evening, all open: an `omarchy update` with a kernel in it
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM01", "ts": "2026-10-01T16:40:00+02:00",
+            "source": "pacman", "kind": "upgrade", "subject": "omarchy", "detail": "4.0.7-1 → 4.0.8-1",
+            "actor": "system", "zone": "red", "explicit": false, "txId": "tx-20261001T164000",
+            "meta": {"command": syu, "from": "4.0.7-1", "to": "4.0.8-1"}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM02", "ts": "2026-10-01T16:40:01+02:00",
+            "source": "pacman", "kind": "upgrade", "subject": "linux", "detail": "6.17.1-1 → 6.17.2-1",
+            "actor": "system", "zone": "red", "explicit": false, "txId": "tx-20261001T164000",
+            "meta": {"command": syu, "from": "6.17.1-1", "to": "6.17.2-1"}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM03", "ts": "2026-10-01T16:42:00+02:00",
+            "source": "omarchy", "kind": "update", "subject": "omarchy", "detail": "4.0.7-1 → 4.0.8-1",
+            "actor": "system", "zone": "red", "meta": {"from": "4.0.7-1", "to": "4.0.8-1"}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM04", "ts": "2026-10-01T16:50:00+02:00",
+            "source": "theme", "kind": "theme-set", "subject": "nord", "actor": "human", "zone": "yellow"}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM05", "ts": "2026-10-01T16:51:00+02:00",
+            "source": "plugins", "kind": "plugin-disable", "subject": "io.github.example.weather-plus",
+            "actor": "system", "zone": "yellow", "meta": {"enabled": false}}),
+        ),
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM06", "ts": "2026-10-01T16:51:01+02:00",
+            "source": "config", "kind": "config-change", "subject": "~/.config/omarchy/shell.json",
+            "actor": "system", "zone": "yellow", "meta": {"hashFrom": "a", "hashTo": "b"}}),
+        ),
+        // an Omarchy-default copy from before the marks: classified by path
+        line(
+            json!({"id": "7ZZZZZZZZZZZZZZZZZZZZZZM07", "ts": "2026-10-01T16:52:00+02:00",
+            "source": "config", "kind": "config-change", "subject": "~/.config/hypr/looknfeel.lua",
+            "actor": "system", "zone": "yellow", "meta": {"hashFrom": "c", "hashTo": "d"}}),
+        ),
+    ];
+    // only these lines, and no Plan that names them (a proposal would show
+    // a routine row as attention, ADR-0028 §3)
+    let with = |l: &mut load::Loaded| {
+        l.events = lines.clone();
+        for c in &mut l.cases {
+            c.plan = "- [ ] nothing to see\n".into();
+        }
+    };
+    let new = derive(with);
+    let old = derive_all(with);
+    let ids = |ix: &model::Index| -> Vec<String> {
+        ix.drift.iter().map(|d| d.event_id.clone()).collect()
+    };
+    assert_eq!(
+        ids(&new),
+        ["7ZZZZZZZZZZZZZZZZZZZZZZM07"],
+        "every routine row left; an old copy without its mark is an override (by path)"
+    );
+    assert_eq!((new.summary.open_drift, new.summary.crisis), (1, 0));
+    for id in ["M01", "M03", "M04", "M05", "M06"] {
+        let id = format!("7ZZZZZZZZZZZZZZZZZZZZZZ{id}");
+        assert!(
+            ids(&old).contains(&id),
+            "{id} is open under attention = all"
+        );
+    }
+    assert_eq!(
+        old.summary.crisis, 2,
+        "the -Syu with a kernel and the update were red"
+    );
+    // the update stays a release marker
+    let timeline = new.series.timeline.as_ref().unwrap();
+    assert!(
+        timeline
+            .iter()
+            .any(|t| t.kind == "release" && t.reference == "4.0.8-1")
+    );
+    // old resolutions still fold
+    let folded = new
+        .events
+        .iter()
+        .find(|e| e.event.id.to_string() == "01M20000000000000000000A01")
+        .unwrap();
+    assert_eq!(folded.event.resolution, Some(Resolution::Dismissed));
+    // never negative: the open count after each week
+    for (name, ix) in [("default", &new), ("all", &old)] {
+        let mut open = 0i64;
+        for w in &ix.series.drift {
+            open += w.opened as i64 - w.resolved as i64;
+            assert!(open >= 0, "{name}: {} goes to {open}", w.week);
+        }
+    }
+    let aug = |ix: &model::Index| -> (usize, usize) {
+        let w = ix
+            .series
+            .drift
+            .iter()
+            .find(|w| w.week == "2026-W33")
+            .unwrap();
+        (w.opened, w.resolved)
+    };
+    assert_eq!(
+        aug(&new),
+        (0, 0),
+        "a routine switch opens nothing, its dismissal counts nothing"
+    );
+    assert_eq!(aug(&old), (1, 1));
+}
+
+/// The system upgrade of `omarchy update` as pacman logs it (quotes gone),
+/// from `$OMARCHY_PATH/bin/omarchy-update-system-pkgs`.
+const OMARCHY_UPDATE_LINE: &str = "pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*";
+
+/// The pinned line is still Omarchy's, where Omarchy is installed.
+#[test]
+fn the_omarchy_update_line_is_omarchys() {
+    let root = std::env::var("OMARCHY_PATH").unwrap_or_else(|_| "/usr/share/omarchy".into());
+    let Ok(script) =
+        std::fs::read_to_string(Path::new(&root).join("bin/omarchy-update-system-pkgs"))
+    else {
+        eprintln!(
+            "omarchy-update-system-pkgs not installed; the pinned line is checked by the class test only"
+        );
+        return;
+    };
+    // continuation lines joined, the shell's quotes gone: what pacman logs
+    let joined = script.replace("\\\n", " ");
+    let line = joined
+        .lines()
+        .find(|l| l.contains("pacman -Syu --noconfirm"))
+        .expect("the non-interactive upgrade line");
+    let from = line.find("pacman -Syu").unwrap();
+    let to = line[from..].find("2>").map_or(line.len(), |i| from + i);
+    let logged: Vec<String> = line[from..to]
+        .split_whitespace()
+        .map(|w| w.replace(['\'', '"'], ""))
+        .collect();
+    assert_eq!(logged.join(" "), OMARCHY_UPDATE_LINE);
+}
+
+/// ADR-0013 §4, under the rollback (in the default rules the group is
+/// routine and its resolutions count nowhere, ADR-0028 §5).
 #[test]
 fn a_fan_out_resolution_counts_once() {
-    let ix = derive(|l| {
+    let w40 = |ix: &model::Index| {
+        ix.series
+            .drift
+            .iter()
+            .find(|w| w.week == "2026-W40")
+            .unwrap()
+            .resolved
+    };
+    let fan_out = |l: &mut load::Loaded| {
+        let targets: Vec<Event> = members(l).into_iter().map(|e| e.clone()).collect();
+        for (i, t) in targets.iter().enumerate() {
+            l.events.push(resolution(t, i as u8, true));
+        }
+    };
+    let routine = derive(fan_out);
+    assert_eq!(
+        w40(&routine),
+        w40(&derive(|_| {})),
+        "a routine target opened nothing"
+    );
+    let before = w40(&derive_all(|_| {}));
+    let ix = derive_all(|l| {
         let targets: Vec<Event> = members(l).into_iter().map(|e| e.clone()).collect();
         for (i, t) in targets.iter().enumerate() {
             l.events.push(resolution(t, i as u8, true));
         }
     });
     assert_eq!(group(&ix), None, "the group is resolved");
-    let w40 = ix
-        .series
-        .drift
-        .iter()
-        .find(|w| w.week == "2026-W40")
-        .unwrap();
-    assert_eq!(w40.resolved, 3, "two in the sample, plus one write");
+    assert_eq!(w40(&ix), before + 1, "one write");
     let folded = ix
         .events
         .iter()
@@ -590,10 +951,10 @@ fn proposal_token_rule_end_to_end() {
         let ix = derive(|l| {
             let zed: Event = serde_json::from_value(json!({
                 "id": "7ZZZZZZZZZZZZZZZZZZZZZZZZD", "ts": "2026-10-01T16:55:00+02:00",
-                "source": "pacman", "kind": "upgrade", "subject": "zed",
-                "detail": "0.198.4-1 → 0.198.5-1", "actor": "system", "zone": "red",
-                "explicit": false, "txId": "tx-20261001T165500",
-                "meta": {"command": "pacman -Syu", "from": "0.198.4-1", "to": "0.198.5-1"},
+                "source": "pacman", "kind": "install", "subject": "zed",
+                "detail": "0.198.5-1", "actor": "system", "zone": "red",
+                "explicit": true, "txId": "tx-20261001T165500",
+                "meta": {"command": "pacman -S zed", "version": "0.198.5-1"},
             }))
             .unwrap();
             l.events.push(zed);
@@ -756,7 +1117,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     let tmp = TempDir::new("x10");
     let root = tmp.path().join("logbook");
     let lines = common::scale::scaled_logbook(&fixture_logbook(), &root, 10);
-    assert_eq!(lines, 710, "71 ledger lines ×10");
+    assert_eq!(lines, 810, "81 ledger lines ×10");
     let logbook = Logbook::open(&root).unwrap();
     let dirs = Dirs {
         home: tmp.path().into(),
@@ -776,7 +1137,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     let ix = &built.index;
     assert_eq!(ix.events.len(), 500);
     assert_eq!(ix.cases.all().count(), 80);
-    assert_eq!(ix.drift.len(), 40, "4 open items per copy");
+    assert_eq!(ix.drift.len(), 60, "6 open items per copy");
     assert_eq!(ix.decisions.len(), 40);
     common::assert_valid_index(&serde_json::to_value(ix).unwrap());
 
@@ -833,12 +1194,13 @@ fn drift_is_capped_at_200_crises_first() {
     let base = derive(|_| {});
     let (crises0, open0) = (base.summary.crisis, base.summary.open_drift);
     let ix = derive(|l| {
-        // 30 old crises (caseless explicit installs) and 220 newer yellow items
+        // 30 old crises (caseless explicit installs of `alwaysRed`
+        // packages) and 220 newer attention items (overrides)
         for i in 0..30u32 {
             let e: Event = serde_json::from_value(json!({
                 "id": ulid::Ulid::from_parts(1, u128::from(i) + 1),
                 "ts": format!("2026-08-01T10:{i:02}:00+02:00"),
-                "source": "pacman", "kind": "install", "subject": format!("pkg{i}"),
+                "source": "pacman", "kind": "install", "subject": format!("limine-pkg{i}"),
                 "actor": "system", "zone": "red", "explicit": true,
             }))
             .unwrap();
@@ -848,7 +1210,8 @@ fn drift_is_capped_at_200_crises_first() {
             let e: Event = serde_json::from_value(json!({
                 "id": ulid::Ulid::from_parts(2, u128::from(i) + 1),
                 "ts": format!("2026-09-25T{:02}:{:02}:00+02:00", i / 60, i % 60),
-                "source": "theme", "kind": "theme-set", "subject": format!("theme-{i}"),
+                "source": "config", "kind": "config-change",
+                "subject": format!("~/.config/hypr/theme-{i}.lua"),
                 "actor": "human", "zone": "yellow",
             }))
             .unwrap();
@@ -874,8 +1237,12 @@ fn drift_is_capped_at_200_crises_first() {
         .collect();
     assert!(ts.windows(2).all(|w| w[0] >= w[1]), "still newest first");
     // the yellow items cut are the oldest ones
-    assert!(ix.drift.iter().any(|d| d.subject == "theme-219"));
-    assert!(!ix.drift.iter().any(|d| d.subject == "theme-0"));
+    assert!(
+        ix.drift
+            .iter()
+            .any(|d| d.subject.ends_with("/theme-219.lua"))
+    );
+    assert!(!ix.drift.iter().any(|d| d.subject.ends_with("/theme-0.lua")));
     common::assert_valid_index(&serde_json::to_value(&ix).unwrap());
 }
 
@@ -1145,7 +1512,7 @@ fn long_texts_keep_the_index_under_its_size_budget() {
     let drift = loaded
         .events
         .iter()
-        .find(|e| build::is_open_drift(e) && e.source != seldon::model::event::Source::Pacman)
+        .find(|e| build::is_linkable(e) && e.source != seldon::model::event::Source::Pacman)
         .unwrap()
         .clone();
     let id = |i: u32| ulid::Ulid::from_parts(1_800_000_000_000, u128::from(i) + 1);
@@ -1437,7 +1804,7 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
 // --------------------------------------------------------------------------
 
 /// `seldon status` at the scale of the budget (`scale::stated_scale`:
-/// 10 011 ledger lines, 304 cases, 365 journal files): median wall time of
+/// 10 044 ledger lines, 304 cases, 365 journal files): median wall time of
 /// 11 runs, process start included, < 100 ms (`assert_within_budget`).
 #[test]
 #[ignore = "release timing at scale: `just check-perf`"]
@@ -1447,7 +1814,7 @@ fn status_at_10_000_ledger_lines_is_under_100_ms() {
     let env = Env::new(Snapper::Missing);
     let root = env.tmp.path().join("logbook");
     let lines = common::scale::stated_scale(&fixture_logbook(), &root);
-    assert_eq!(lines, 10_011);
+    assert_eq!(lines, 10_044);
     let args = ["--logbook", root.to_str().unwrap(), "status", "--json"];
     let out = env.at(GENERATED_AT, &args);
     assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));

@@ -128,6 +128,7 @@ impl Bench {
             omarchy: missing,
             plugins_dir: Some(scratch.path("plugins")),
             theme_file: Some(scratch.path("theme.name")),
+            omarchy_path: scratch.path("omarchy"),
         };
         Bench {
             ledger: Ledger::at(scratch.path("logbook/ledger"), Redactor::builtin()),
@@ -309,7 +310,7 @@ pub fn story() -> Bench {
     assert!(out.ok, "{:?}", out.message);
     assert_eq!(
         out.events.len(),
-        12,
+        15,
         "fixtures/README.md: the ledger's pacman events, got {:?}",
         subjects(&out.events)
     );
@@ -366,6 +367,7 @@ fn the_bench_reads_nothing_of_the_host() {
         &s.snapshots,
         s.plugins_dir.as_deref().expect("plugins_dir"),
         s.theme_file.as_deref().expect("theme_file"),
+        &s.omarchy_path,
     ];
     let programs = [&s.snapper, &s.omarchy_version, &s.pacman, &s.omarchy].map(Path::new);
     for p in paths.into_iter().chain(programs) {

@@ -668,7 +668,8 @@ Commands:
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-      --crisis-only    Only crises (red-zone items)
+      --crisis-only    Only crises (changes that can affect boot, login or the shell)
+      --all            Also routine events (history, not drift), every item, uncapped
 ```
 <!-- /help -->
 

@@ -14,7 +14,6 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-109 | engine: drift classification by consequence (ADR-0028) | Engine | `engine-109` (opus) | `wt/WP-109` · `wp/109-drift-classes` | 2026-10-06 |
 | WP-094 | Seldon agent skill for every agent Omarchy supports | Engine + Docs | `engine-094` (opus) | `wt/WP-094` · `wp/094-agent-skill` | 2026-10-06 |
 
 ## Queued (next up)
@@ -26,7 +25,7 @@ machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
 (one-click start, snapshot and close path, reopen) done, WP-094 (skill)
 active (it quotes `plan snapshot` and the agent-close refusal).
 ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
-classification) and WP-110 (plugin quiet surfaces) active, WP-111 (agent
+classification) and WP-110 (plugin quiet surfaces) done, WP-111 (agent
 texts, docs, live check) after WP-109. Then the 0.1.4 release preparation
 (tag on the operator's go). Later from ADR-0028: WP-112 (measured routine
 paths after a real update), WP-113 (plugin trees, toggles, opt-in
@@ -50,6 +49,17 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-109 the engine classifies every drift-eligible event by
+  consequence (ADR-0028): routine (theme, plugin toggles, Omarchy's
+  updater, a plain full upgrade, Omarchy's own copies and refresh
+  backups, `shell.json`) is history, not drift; a hand-installed package
+  is quiet attention; a crisis is a change without a case on a login or
+  hook path or an `alwaysRed` install; evidence from `$OMARCHY_PATH`
+  only when root-owned; six new default watch paths (an unchanged
+  default list gains them, `config.toml` kept byte for byte otherwise);
+  an agent cannot explain or dismiss a crisis; `attention = "all"`
+  restores the old picture; Opus review, three rounds (four persistence
+  bypasses closed), Fable stage 2; merged.
 - 2026-10-06 WP-101 a case costs one click and one sentence (ADR-0027):
   `seldon agent start --new -- "<intent>"` and the panel's New case run
   the agent; `plan set`, `plan snapshot`, `plan reopen`; the agent records

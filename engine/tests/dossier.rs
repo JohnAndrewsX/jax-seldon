@@ -322,10 +322,11 @@ fn empty_fences_are_filled_and_the_ledger_marks_known_packages() {
         "- cpu: Intel(R) Core(TM) i7-14700K\n- memory: 63 GiB\n- machine: MS-7D91\n- rootfs: btrfs\n"
     );
     // the cased config events of the ledger, oldest first; uncased
-    // changes (the user's own deviations) are not the engine's to add
+    // changes (the user's own deviations) are not the engine's to add, and
+    // a removed file (monitors.conf, 10-01) is no deviation
     assert_eq!(
         b["deviations.table"],
-        "| path | reason | date | case |\n|---|---|---|---|\n| ~/.config/hypr/monitors.conf |  | 2026-09-12 | [[C-2026-002]] |\n| ~/.config/hypr/bindings.conf |  | 2026-10-01 | [[C-2026-004]] |\n"
+        "| path | reason | date | case |\n|---|---|---|---|\n| ~/.config/hypr/bindings.conf |  | 2026-10-01 | [[C-2026-004]] |\n"
     );
     // without the old rows, no case survives for tailscaled
     assert!(

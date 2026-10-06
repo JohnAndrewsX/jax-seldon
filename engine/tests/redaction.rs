@@ -2443,7 +2443,7 @@ mod commands {
         let lbs = lb.to_str().unwrap();
         let intent = token("INTENT");
         let reason = token("DISMISS");
-        // the fixture's theme item and the leader of its 09-30 group
+        // the fixture's theme item and the leader of its 10-01 downgrade group
         let v = run(
             &env,
             &[
@@ -2468,14 +2468,14 @@ mod commands {
                 lbs,
                 "drift",
                 "dismiss",
-                "01M3SXBQVR7AW8PJQC1YXDCQ14",
+                "01M3H6M720FC6BAG7ETNQTXW9K",
                 "--",
-                &format!("routine, {reason}"),
+                &format!("rolled back, {reason}"),
             ],
         );
         assert_eq!(
             last_ledger_line(&lb)["detail"],
-            format!("routine, {REDACTED}").as_str()
+            format!("rolled back, {REDACTED}").as_str()
         );
         assert_nowhere(&env, &lb, &[&intent, &reason]);
     }

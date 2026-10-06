@@ -7,6 +7,13 @@
 [2026-09-15T20:11:31+0200] [ALPM] upgraded omarchy (4.0.5-1 -> 4.0.6-1)
 [2026-09-15T20:11:31+0200] [ALPM] transaction completed
 [2026-09-15T20:11:31+0200] [ALPM] running '35-systemd-update.hook'...
+[2026-09-27T12:29:58+0200] [PACMAN] Running 'pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst'
+[2026-09-27T12:30:00+0200] [ALPM] running '10-limine-snapper-lock.hook'...
+[2026-09-27T12:30:00+0200] [ALPM] transaction started
+[2026-09-27T12:30:00+0200] [ALPM] downgraded mesa (1:26.2.0-2 -> 1:26.1.0-1)
+[2026-09-27T12:30:01+0200] [ALPM] downgraded vulkan-radeon (1:26.2.0-2 -> 1:26.1.0-1)
+[2026-09-27T12:30:01+0200] [ALPM] downgraded lib32-mesa (1:26.2.0-2 -> 1:26.1.0-1)
+[2026-09-27T12:30:01+0200] [ALPM] transaction completed
 [2026-09-30T21:40:02+0200] [PACMAN] Running 'pacman -Syu'
 [2026-09-30T21:40:02+0200] [PACMAN] synchronizing package lists
 [2026-09-30T21:40:03+0200] [PACMAN] starting full system upgrade

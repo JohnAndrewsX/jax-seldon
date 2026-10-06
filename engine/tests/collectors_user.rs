@@ -150,6 +150,7 @@ impl Bench {
             omarchy: missing,
             plugins_dir: Some(tmp.path().join("plugins")),
             theme_file: Some(tmp.path().join("theme.name")),
+            omarchy_path: tmp.path().join("omarchy"),
         };
         Bench {
             lock: lock::acquire(&tmp.path().join("lock")).unwrap(),

@@ -8,7 +8,9 @@
 //! `open_drift`, `index.drift`) and only decides what to write.
 //!
 //! - **Resolving drift** (`seldon drift link|explain|dismiss`, ADR-0008,
-//!   ADR-0013 §4): [`select`] picks the open members a command resolves,
+//!   ADR-0013 §4, ADR-0028 §3): [`select`] picks the members a command
+//!   resolves (`link` also takes routine events; `explain|dismiss` refuse
+//!   them),
 //!   [`resolutions`] builds one `resolution` line per member for one ledger
 //!   write. The original lines are never touched.
 //! - **Case files** (ADR-0012 §10): [`attach`] records event ids in a
@@ -32,9 +34,12 @@ use chrono::{DateTime, Duration, FixedOffset};
 use ulid::Ulid;
 
 use crate::attribution;
-use crate::collectors::config::OwnWrites;
+use crate::collectors::config::{self, OwnWrites};
+use crate::config::Dirs;
 use crate::error::{Error, Result};
 use crate::index::Built;
+use crate::index::build::ClassifiedItem;
+use crate::index::class::Class;
 use crate::index::model::IndexEvent;
 use crate::ledger::Ledger;
 use crate::logbook::Logbook;
@@ -48,13 +53,32 @@ use crate::model::is_ulid;
 pub struct Selection<'a> {
     /// The named event as the index sees it (resolution folded).
     pub event: &'a IndexEvent,
-    /// The open members to resolve, oldest first: the named event and, for
-    /// a pacman event without `--only`, every other open member of its
-    /// transaction. Empty when the named event is not open drift.
+    /// The members to resolve, oldest first: the named event and, for a
+    /// pacman event without `--only`, every other linkable member of its
+    /// transaction. Empty when the named event can no longer be resolved.
     pub members: Vec<&'a Event>,
     /// The transaction's `txId` when the write fans out over two or more
     /// members (`meta.txId` of every line, ADR-0013 §4).
     pub group: Option<&'a str>,
+    /// The item the named event belongs to (class, rule; ADR-0028 §2);
+    /// `None` when it can no longer be resolved.
+    pub item: Option<&'a ClassifiedItem>,
+}
+
+impl Selection<'_> {
+    /// Whether the named event's item is a crisis (ADR-0028 §3).
+    pub fn crisis(&self) -> bool {
+        self.item.is_some_and(|i| i.class == Class::Crisis)
+    }
+}
+
+/// What a resolving command does, as far as the selection goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Intent {
+    /// `drift link`: any linkable event, routine ones too (ADR-0028 §8).
+    Link,
+    /// `drift explain|dismiss`: open drift only; a routine event exits 1.
+    Resolve,
 }
 
 /// Checks the form of an event id given on the command line.
@@ -83,36 +107,49 @@ pub fn find<'a>(built: &'a Built, id: &str) -> Result<&'a IndexEvent> {
     Err(Error::user(format!("unknown event {id}")))
 }
 
+/// The item of linkable events `e` belongs to, with its class.
+pub fn item_of<'a>(built: &'a Built, e: &Event) -> Option<&'a ClassifiedItem> {
+    if !built.linkable.contains(&e.id) {
+        return None;
+    }
+    built.items.iter().find(|i| i.members.contains(&e.id))
+}
+
 /// The open drift members of `e`'s drift item, oldest first: for an open
 /// pacman event with a `txId`, every open pacman event of that transaction
 /// (ADR-0013 §1); for any other open event, the event itself; nothing when
-/// `e` is not open drift.
+/// `e` is not open drift (resolved, or routine, ADR-0028).
 pub fn open_members<'a>(built: &'a Built, e: &Event) -> Vec<&'a Event> {
     if !built.open_drift.contains(&e.id) {
         return Vec::new();
     }
-    let tx = e.tx_id.as_deref().filter(|_| e.source == Source::Pacman);
+    linkable_members(built, e)
+}
+
+/// The linkable members of `e`'s item, oldest first (open drift or
+/// routine); nothing when `e` can no longer be resolved.
+pub fn linkable_members<'a>(built: &'a Built, e: &Event) -> Vec<&'a Event> {
+    let Some(item) = item_of(built, e) else {
+        return Vec::new();
+    };
     let mut members: Vec<&Event> = built
         .folded
         .iter()
         .map(|f| &f.event)
-        .filter(|m| built.open_drift.contains(&m.id))
-        .filter(|m| match tx {
-            Some(tx) => m.source == Source::Pacman && m.tx_id.as_deref() == Some(tx),
-            None => m.id == e.id,
-        })
+        .filter(|m| item.members.contains(&m.id))
         .collect();
     members.sort_by_key(|m| (m.ts, m.id));
     members
 }
 
-/// What a command on `id` resolves: the open members of its item, or the
-/// event alone with `only` (ADR-0013 §4). A named event that is no longer
-/// open selects nothing, so a re-run writes nothing, also after `--only`
-/// (the remaining members are a new item with a leader of their own).
-/// Exit 1 for an unknown id and for an event that can never be drift
-/// (ADR-0012 §6).
-pub fn select<'a>(built: &'a Built, id: &str, only: bool) -> Result<Selection<'a>> {
+/// What a command on `id` resolves: the members of its item, or the event
+/// alone with `only` (ADR-0013 §4). A named event that can no longer be
+/// resolved selects nothing, so a re-run writes nothing, also after
+/// `--only` (the remaining members are a new item with a leader of their
+/// own). Exit 1 for an unknown id, for an event that can never be drift
+/// (ADR-0012 §6), and for `explain|dismiss` of a routine event (ADR-0028
+/// §3: history, not drift; `link` still takes it).
+pub fn select<'a>(built: &'a Built, id: &str, only: bool, intent: Intent) -> Result<Selection<'a>> {
     let event = find(built, id)?;
     let e = &event.event;
     if !e.source.is_drift_eligible() {
@@ -121,7 +158,17 @@ pub fn select<'a>(built: &'a Built, id: &str, only: bool) -> Result<Selection<'a
             e.source, e.kind
         )));
     }
-    let mut members = open_members(built, e);
+    let item = item_of(built, e);
+    if intent == Intent::Resolve
+        && let Some(i) = item.filter(|i| i.class == Class::Routine)
+    {
+        return Err(Error::user(format!(
+            "{id} is routine (rule `{}`, ADR-0028): history, not drift; nothing to explain or dismiss. \
+             `seldon drift link` ties it to a case",
+            i.rule
+        )));
+    }
+    let mut members = linkable_members(built, e);
     if only {
         members.retain(|m| m.id == e.id);
     }
@@ -133,6 +180,7 @@ pub fn select<'a>(built: &'a Built, id: &str, only: bool) -> Result<Selection<'a
         event,
         members,
         group,
+        item,
     })
 }
 
@@ -267,13 +315,15 @@ pub fn record_cases(logbook: &Logbook, ledger: &Ledger, written: &[Event]) -> Ve
 /// The `explained` resolutions rule 7 writes: one per written config
 /// event without a case that an own write in `own` explains
 /// ([`OwnWrites::explaining`]: an add or change with the hash written, a
-/// removal of the content deleted); `source: seldon`, actor `system`, no
-/// case, detail `installed by <command>` (`removed by <command>` for a
-/// removal command), at `ts`.
+/// removal of the content deleted), detail `installed by <command>`
+/// (`removed by <command>` for a removal command), or whose new content is
+/// a built-in template (`template`, ADR-0028 §2: the detail it returns);
+/// `source: seldon`, actor `system`, no case, at `ts`.
 pub fn own_write_resolutions(
     written: &[Event],
     own: &OwnWrites,
     ts: DateTime<FixedOffset>,
+    template: impl Fn(&Event) -> Option<&'static str>,
 ) -> Vec<Event> {
     written
         .iter()
@@ -285,10 +335,13 @@ pub fn own_write_resolutions(
             )
         })
         .filter_map(|e| {
-            let w = own.explaining(e)?;
+            let detail = match own.explaining(e) {
+                Some(w) => format!("{} by {}", w.op.verb(), w.by),
+                None => template(e)?.to_string(),
+            };
             let mut r = Event::new(ts, Source::Seldon, Kind::Resolution, e.subject.clone())
                 .actor(ACTOR_SYSTEM)
-                .detail(format!("{} by {}", w.op.verb(), w.by));
+                .detail(detail);
             r.refers_to = Some(e.id);
             r.resolution = Some(Resolution::Explained);
             Some(r)
@@ -297,33 +350,45 @@ pub fn own_write_resolutions(
 }
 
 /// After a capture that ran the config collector (SPEC-ENGINE §5 rule 7):
-/// appends the [`own_write_resolutions`] of `written` and forgets every
+/// appends the [`own_write_resolutions`] of `written` (own writes and the
+/// built-in templates, [`config::builtin_template`]) and forgets every
 /// recorded own write, explained or not (the collector has now seen each
-/// file: as an event, in its baseline, or changed by someone else).
+/// file: as an event, in its baseline, or changed by someone else). An
+/// unreadable `owned.json` is kept and only the templates explain.
 /// Returns how many events were explained, and warnings: the append
 /// already happened, so nothing here fails the capture.
 pub fn explain_own_writes(
     lock: &Lock,
     ledger: &Ledger,
+    dirs: &Dirs,
     file: &std::path::Path,
     written: &[Event],
     ts: DateTime<FixedOffset>,
 ) -> (usize, Vec<String>) {
-    let own = match OwnWrites::load(file) {
-        Ok(own) if own.0.is_empty() => return (0, Vec::new()),
-        Ok(own) => own,
-        Err(e) => return (0, vec![format!("own writes not read: {e}")]),
-    };
     let mut warnings = Vec::new();
-    let lines = own_write_resolutions(written, &own, ts);
-    let explained = match ledger.append(lock, lines) {
-        Ok(lines) => lines.len(),
+    let (own, loaded) = match OwnWrites::load(file) {
+        Ok(own) => (own, true),
         Err(e) => {
-            warnings.push(format!("own writes not explained: {e}"));
-            0
+            warnings.push(format!("own writes not read: {e}"));
+            (OwnWrites::default(), false)
         }
     };
-    if let Err(e) = OwnWrites::default().save(file) {
+    let lines = own_write_resolutions(written, &own, ts, |e| config::builtin_template(dirs, e));
+    let explained = if lines.is_empty() {
+        0
+    } else {
+        match ledger.append(lock, lines) {
+            Ok(lines) => lines.len(),
+            Err(e) => {
+                warnings.push(format!("own writes not explained: {e}"));
+                0
+            }
+        }
+    };
+    if loaded
+        && !own.0.is_empty()
+        && let Err(e) = OwnWrites::default().save(file)
+    {
         warnings.push(format!("{e:#}"));
     }
     (explained, warnings)

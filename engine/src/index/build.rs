@@ -9,9 +9,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{DateTime, Datelike as _, Duration, FixedOffset, NaiveDate};
 use ulid::Ulid;
 
+use super::class::{Class, Classifier, Rules};
 use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
+use crate::config::{AttentionMode, DriftConfig};
 use crate::model::event::{Event, Kind, Source, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
 
@@ -45,8 +47,8 @@ pub struct Input {
     pub machine: String,
     pub git: Option<GitInfo>,
     pub state: State,
-    /// `config.toml [drift] alwaysRed`.
-    pub always_red: Vec<String>,
+    /// `config.toml [drift]` (ADR-0013, ADR-0028).
+    pub drift: DriftConfig,
 }
 
 /// The index and what the generated Markdown views need besides it.
@@ -58,8 +60,16 @@ pub struct Built {
     /// Every non-resolution event, folded, newest first (`index.events`
     /// is the first [`MAX_EVENTS`] of these).
     pub folded: Vec<IndexEvent>,
-    /// Ids of open drift events (every member of a group).
+    /// Ids of open drift events: every member of an item `index.drift`
+    /// lists or would list past the cap (ADR-0028: not routine, or named
+    /// by an open case's Plan).
     pub open_drift: HashSet<Ulid>,
+    /// Ids of every event a resolution may still take (ADR-0028 §8: drift
+    /// eligible, no case, no resolution), routine ones included.
+    pub linkable: HashSet<Ulid>,
+    /// Every item of linkable events with its class, newest first,
+    /// uncapped (`drift --all`, `drift show`).
+    pub items: Vec<ClassifiedItem>,
     /// What could not be read while loading.
     pub warnings: Vec<String>,
 }
@@ -81,9 +91,24 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
     } = loaded;
 
     let folded = fold(&events);
-    let always_red = AlwaysRed::new(&input.always_red);
-    warnings.extend(r3_advisories(&events, &cases, &always_red));
-    let (drift, open_drift) = drift_items(&folded, &cases, &always_red);
+    let rules = Rules::new(&input.drift);
+    let classifier = Classifier::new(&rules, &events);
+    warnings.extend(r3_advisories(&events, &cases, &rules.always_red));
+    let items = drift_items(&folded, &cases, &classifier);
+    let linkable: HashSet<Ulid> = items
+        .iter()
+        .flat_map(|i| i.members.iter().copied())
+        .collect();
+    let open_drift: HashSet<Ulid> = items
+        .iter()
+        .filter(|i| i.listed)
+        .flat_map(|i| i.members.iter().copied())
+        .collect();
+    let drift: Vec<DriftItem> = items
+        .iter()
+        .filter(|i| i.listed)
+        .map(|i| i.item.clone())
+        .collect();
     let (drift_total, crisis_total) = (drift.len(), drift.iter().filter(|d| d.crisis).count());
     let drift = cap_drift(drift);
     let groups = case_groups(&cases, &drift);
@@ -195,7 +220,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
                     .collect()
             })
             .unwrap_or_default(),
-        drift: drift_weeks(&events, today),
+        drift: drift_weeks(&events, today, &classifier),
         risk: Some(
             ["R0", "R1", "R2", "R3"]
                 .into_iter()
@@ -232,6 +257,8 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         ledger: events,
         folded,
         open_drift,
+        linkable,
+        items,
         warnings,
     }
 }
@@ -459,38 +486,66 @@ fn over_budget(index: &Index) -> Option<String> {
     ))
 }
 
-/// Whether a folded event is open drift (ADR-0012 §6): from a
-/// system-changing collector, no case, no resolution.
-pub fn is_open_drift(e: &Event) -> bool {
+/// Whether a folded event can still be resolved (ADR-0012 §6, ADR-0028
+/// §8): from a system-changing collector, no case, no resolution. Whether
+/// it is open drift depends on its item's class ([`Built::open_drift`]).
+pub fn is_linkable(e: &Event) -> bool {
     e.source.is_drift_eligible() && e.case.is_none() && e.resolution.is_none()
 }
 
-/// Open drift items, newest first, and the ids of every open drift event.
-/// Caseless pacman events of one transaction form one item (ADR-0013 §1);
-/// its fields and proposal are the leader's (ADR-0015 §1), its zone is
-/// computed (ADR-0013 §3, ADR-0015 §3).
+/// One item of linkable events and its class (ADR-0028 §2).
+#[derive(Debug, Clone)]
+pub struct ClassifiedItem {
+    /// The item as `index.drift` lists it; `crisis` follows the class.
+    pub item: DriftItem,
+    /// The class shown: routine, or attention for a routine item an open
+    /// case's Plan names (ADR-0028 §3), attention, crisis.
+    pub class: Class,
+    /// The row of the table that gave the class (`attention-all` under
+    /// `[drift] attention = "all"`).
+    pub rule: &'static str,
+    /// Its events, newest first.
+    pub members: Vec<Ulid>,
+    /// Whether it is open drift (`index.drift` lists it, up to the cap).
+    pub listed: bool,
+}
+
+/// Every item of linkable events, newest first. Caseless pacman events of
+/// one transaction form one item (ADR-0013 §1); its fields and proposal
+/// are the leader's (ADR-0015 §1). Its class is the highest of its members
+/// (ADR-0028 §2); `zone` is the leader's ledger zone, `crisis` the class.
+/// Under `attention = "all"` every item is open drift and the pacman zone
+/// is computed, crisis iff red (ADR-0013 §3, the rule before ADR-0028).
 fn drift_items(
     folded: &[IndexEvent],
     cases: &[LoadedCase],
-    always_red: &AlwaysRed,
-) -> (Vec<DriftItem>, HashSet<Ulid>) {
+    classifier: &Classifier,
+) -> Vec<ClassifiedItem> {
     let open_cases: Vec<&LoadedCase> = cases.iter().filter(|c| c.case.status.is_open()).collect();
-    let proposed = |subject: &str| {
-        open_cases
+    // one scan of the open Plans per subject: routine items need their
+    // proposal too, and subjects repeat (themes, packages, config files)
+    let mut proposals: HashMap<String, Option<String>> = HashMap::new();
+    let mut proposed = |subject: &str| -> Option<String> {
+        if let Some(p) = proposals.get(subject) {
+            return p.clone();
+        }
+        let p = open_cases
             .iter()
             .find(|c| names_token(&c.plan, subject))
-            .map(|c| c.case.id.clone())
+            .map(|c| c.case.id.clone());
+        proposals.insert(subject.to_string(), p.clone());
+        p
     };
+    let rules = classifier.rules;
+    let legacy = rules.attention == AttentionMode::All;
 
     let mut items: Vec<Vec<&Event>> = Vec::new();
     let mut by_tx: HashMap<&str, usize> = HashMap::new();
-    let mut open = HashSet::new();
     for f in folded {
         let e = &f.event;
-        if !is_open_drift(e) {
+        if !is_linkable(e) {
             continue;
         }
-        open.insert(e.id);
         match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
             Some(tx) => match by_tx.get(tx) {
                 Some(&i) => items[i].push(e),
@@ -503,7 +558,7 @@ fn drift_items(
         }
     }
 
-    let mut drift: Vec<(DateTime<FixedOffset>, Ulid, DriftItem)> = items
+    let mut out: Vec<(DateTime<FixedOffset>, Ulid, ClassifiedItem)> = items
         .into_iter()
         .map(|members| {
             let explicit: Vec<&Event> = members
@@ -520,14 +575,32 @@ fn drift_items(
                 .iter()
                 .min_by_key(|m| m.id)
                 .expect("an item has members");
-            let zone = if lead.source == Source::Pacman {
-                Some(if members.iter().all(|m| is_routine(m, always_red)) {
-                    "yellow"
+            let proposed_case = proposed(&lead.subject);
+            let (zone, class, rule) = if legacy {
+                let zone = if lead.source == Source::Pacman {
+                    Some(
+                        if members.iter().all(|m| is_routine(m, &rules.always_red)) {
+                            "yellow"
+                        } else {
+                            "red"
+                        },
+                    )
                 } else {
-                    "red"
-                })
+                    lead.zone.map(|z| z.as_str())
+                };
+                let class = if zone == Some("red") {
+                    Class::Crisis
+                } else {
+                    Class::Attention
+                };
+                (zone, class, "attention-all")
             } else {
-                lead.zone.map(|z| z.as_str())
+                let v = classifier.group(&members, lead);
+                let class = match v.class {
+                    Class::Routine if proposed_case.is_some() => Class::Attention,
+                    c => c,
+                };
+                (lead.zone.map(|z| z.as_str()), class, v.rule)
             };
             let group = members.len() > 1;
             let item = DriftItem {
@@ -539,16 +612,23 @@ fn drift_items(
                 detail: lead.detail.as_deref().map(|d| clip(d).into_owned()),
                 actor: lead.actor.clone(),
                 zone: zone.map(String::from),
-                crisis: zone == Some("red"),
-                proposed_case: proposed(&lead.subject),
+                crisis: class == Class::Crisis,
+                proposed_case,
                 tx_id: group.then(|| lead.tx_id.clone()).flatten(),
                 members: group.then_some(members.len()),
             };
-            (lead.ts, lead.id, item)
+            let classified = ClassifiedItem {
+                item,
+                class,
+                rule,
+                members: members.iter().map(|m| m.id).collect(),
+                listed: class != Class::Routine,
+            };
+            (lead.ts, lead.id, classified)
         })
         .collect();
-    drift.sort_by_key(|d| std::cmp::Reverse((d.0, d.1)));
-    (drift.into_iter().map(|(_, _, d)| d).collect(), open)
+    out.sort_by_key(|d| std::cmp::Reverse((d.0, d.1)));
+    out.into_iter().map(|(_, _, d)| d).collect()
 }
 
 /// At most [`MAX_DRIFT`] items (ADR-0020): every crisis before any other
@@ -703,11 +783,14 @@ pub fn iso_week(d: NaiveDate) -> String {
 }
 
 /// Every ISO week from the first ledger week to today: drift items opened
-/// and resolution writes (ADR-0012 §10, ADR-0013 §4, ADR-0015 §5). A
-/// caseless pacman transaction opens once, in the week of its earliest
-/// line; the resolution lines of one group write (same `meta.txId`, `ts`,
-/// `actor`) count once.
-fn drift_weeks(events: &[Event], today: NaiveDate) -> Vec<DriftWeek> {
+/// and resolution writes (ADR-0012 §10, ADR-0013 §4, ADR-0015 §5,
+/// ADR-0028 §5). A caseless pacman transaction opens once, in the week of
+/// its earliest line, unless its class is routine; a routine event opens
+/// nothing. The resolution lines of one group write (same `meta.txId`,
+/// `ts`, `actor`) count once, and only when the event they resolve opened
+/// an item, so the curve cannot go negative. The class here ignores
+/// proposals (they depend on today's open cases).
+fn drift_weeks(events: &[Event], today: NaiveDate, classifier: &Classifier) -> Vec<DriftWeek> {
     #[derive(Hash, PartialEq, Eq)]
     enum Key<'a> {
         Event(Ulid),
@@ -719,26 +802,68 @@ fn drift_weeks(events: &[Event], today: NaiveDate) -> Vec<DriftWeek> {
     };
     let mut sorted: Vec<&Event> = events.iter().collect();
     sorted.sort_by(|a, b| newest_first(b, a));
+
+    let caseless =
+        |e: &Event| e.source.is_drift_eligible() && e.case.is_none() && e.kind != Kind::Resolution;
+    // which caseless events opened an item: the members of every group
+    // whose class is not routine (every group under `attention = "all"`)
+    let mut groups: Vec<Vec<&Event>> = Vec::new();
+    let mut by_tx: HashMap<&str, usize> = HashMap::new();
+    for e in sorted.iter().copied().filter(|e| caseless(e)) {
+        match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
+            Some(tx) => match by_tx.get(tx) {
+                Some(&i) => groups[i].push(e),
+                None => {
+                    by_tx.insert(tx, groups.len());
+                    groups.push(vec![e]);
+                }
+            },
+            None => groups.push(vec![e]),
+        }
+    }
+    let legacy = classifier.rules.attention == AttentionMode::All;
+    let opened_ids: HashSet<Ulid> = groups
+        .iter()
+        .filter(|members| {
+            legacy || {
+                let lead = members
+                    .iter()
+                    .copied()
+                    .filter(|m| m.explicit == Some(true))
+                    .min_by_key(|m| m.id)
+                    .or_else(|| members.iter().copied().min_by_key(|m| m.id))
+                    .expect("a group has members");
+                classifier.group(members, lead).class != Class::Routine
+            }
+        })
+        .flatten()
+        .map(|e| e.id)
+        .collect();
     let mut seen: HashSet<Key> = HashSet::new();
     let mut opened: HashMap<String, usize> = HashMap::new();
     let mut resolved: HashMap<String, usize> = HashMap::new();
     for e in sorted {
-        let (key, counter) =
-            if e.source.is_drift_eligible() && e.case.is_none() && e.kind != Kind::Resolution {
-                let key = match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
-                    Some(tx) => Key::Tx(tx),
-                    None => Key::Event(e.id),
-                };
-                (key, &mut opened)
-            } else if e.kind == Kind::Resolution {
-                let key = match e.meta.tx_id.as_deref() {
-                    Some(tx) => Key::Write(tx, format_ts(&e.ts), e.actor.as_str()),
-                    None => Key::Event(e.id),
-                };
-                (key, &mut resolved)
-            } else {
+        let (key, counter) = if caseless(e) {
+            if !opened_ids.contains(&e.id) {
                 continue;
+            }
+            let key = match e.tx_id.as_deref().filter(|_| e.source == Source::Pacman) {
+                Some(tx) => Key::Tx(tx),
+                None => Key::Event(e.id),
             };
+            (key, &mut opened)
+        } else if e.kind == Kind::Resolution {
+            if !e.refers_to.is_some_and(|t| opened_ids.contains(&t)) {
+                continue;
+            }
+            let key = match e.meta.tx_id.as_deref() {
+                Some(tx) => Key::Write(tx, format_ts(&e.ts), e.actor.as_str()),
+                None => Key::Event(e.id),
+            };
+            (key, &mut resolved)
+        } else {
+            continue;
+        };
         if seen.insert(key) {
             *counter.entry(iso_week(day(e))).or_default() += 1;
         }

@@ -20,7 +20,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::dossier;
-use crate::index::build::is_open_drift;
 use crate::index::load::{fence_kv, fence_table, fences};
 use crate::index::model::{DriftItem, IndexEvent};
 use crate::index::{Built, views};
@@ -247,7 +246,7 @@ pub fn collect(
     since: &str,
     title: impl Fn(&str) -> Option<String>,
 ) -> Rebuild {
-    let why = |f: &IndexEvent| why_of(f, &title);
+    let why = |f: &IndexEvent| why_of(f, &title, &built.open_drift);
     // oldest first; `folded` is newest first with ties by id descending
     let chrono: Vec<&IndexEvent> = built.folded.iter().rev().collect();
     let dismissed_res = |f: &IndexEvent| f.event.resolution == Some(Resolution::Dismissed);
@@ -636,14 +635,18 @@ fn pacman_tx(f: &IndexEvent) -> Option<&str> {
         .filter(|_| f.event.source == Source::Pacman)
 }
 
-fn why_of(f: &IndexEvent, title: &impl Fn(&str) -> Option<String>) -> Why {
+fn why_of(
+    f: &IndexEvent,
+    title: &impl Fn(&str) -> Option<String>,
+    open: &std::collections::HashSet<ulid::Ulid>,
+) -> Why {
     let e = &f.event;
     Why {
         case: e.case.clone(),
         case_title: e.case.as_deref().and_then(title),
         resolution: e.resolution,
         reason: f.resolution_detail.clone().filter(|d| !d.trim().is_empty()),
-        open: is_open_drift(e),
+        open: open.contains(&e.id),
         agent: e.actor.starts_with("agent:").then(|| e.actor.clone()),
         event: Some(e.id.to_string()),
     }

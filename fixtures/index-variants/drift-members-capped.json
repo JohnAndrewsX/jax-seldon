@@ -56,10 +56,10 @@
   "summary": {
     "activeCases": 2,
     "queuedCases": 3,
-    "openDrift": 4,
+    "openDrift": 6,
     "crisis": 2,
     "eventsToday": 30,
-    "events7d": 41
+    "events7d": 51
   },
   "today": {
     "date": "2026-10-01",
@@ -516,6 +516,23 @@
       }
     },
     {
+      "id": "01M3SXBRV0E702XKBM22HEV1B8",
+      "ts": "2026-09-30T21:41:16+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "noto-fonts",
+      "detail": "1:2026.09.01-1 → 1:2026.09.15-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": false,
+      "txId": "tx-20260930T214115",
+      "meta": {
+        "command": "pacman -Syu",
+        "from": "1:2026.09.01-1",
+        "to": "1:2026.09.15-1"
+      }
+    },
+    {
       "id": "01M3SXBQVR7AW8PJQC1YXDCQ14",
       "ts": "2026-09-30T21:41:15+02:00",
       "source": "pacman",
@@ -589,6 +606,19 @@
       "case": "C-2026-006"
     },
     {
+      "id": "01M3Q7R0Z08ZD5R76DQA3PHQ1G",
+      "ts": "2026-09-29T20:45:00+02:00",
+      "source": "config",
+      "kind": "config-add",
+      "subject": "~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
+      "detail": "sha256 — → 27d5c56a",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "hashTo": "27d5c56abb19bbe46eea34a2d7ec4ba47da20c86498d05ba0e202fb0e7b47829"
+      }
+    },
+    {
       "id": "01M3Q3F9Z08J1QW989HBCEGTNR",
       "ts": "2026-09-29T19:30:20+02:00",
       "source": "seldon",
@@ -597,6 +627,48 @@
       "detail": "Theme-Wechsel auf Tokyo Night durchziehen (Zed, Neovim)",
       "actor": "human",
       "case": "C-2026-005"
+    },
+    {
+      "id": "01M3PYK1Z0BS00S6B97XBQJ9J3",
+      "ts": "2026-09-29T18:05:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-enable",
+      "subject": "io.github.example.weather-plus",
+      "detail": "1.3.0",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "version": "1.3.0",
+        "enabled": true
+      }
+    },
+    {
+      "id": "01M3PY9XZ8JQEWN9G1M309QXRZ",
+      "ts": "2026-09-29T18:00:01+02:00",
+      "source": "config",
+      "kind": "config-change",
+      "subject": "~/.config/omarchy/shell.json",
+      "detail": "sha256 cd7e59a7 → d333b1b4",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "hashFrom": "cd7e59a7ea970e4d737d72c98eebb6263e547f4d62b0dba5064b7175d8bbc641",
+        "hashTo": "d333b1b4780b8d235d520b25b4b4121fa2285e3a4532203abaeb5dd5ecb61d48"
+      }
+    },
+    {
+      "id": "01M3PY9X00PHFTWZ10BFQWAY6R",
+      "ts": "2026-09-29T18:00:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-disable",
+      "subject": "io.github.example.weather-plus",
+      "detail": "1.3.0",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "version": "1.3.0",
+        "enabled": false
+      }
     },
     {
       "id": "01M3MKEDQ8MXG8VM5YXX5RMHBT",
@@ -609,6 +681,53 @@
       "case": "C-2026-004"
     },
     {
+      "id": "01M3KVWFR06078ZQTPRZCFYHK0",
+      "ts": "2026-09-28T13:20:00+02:00",
+      "source": "config",
+      "kind": "config-remove",
+      "subject": "~/.config/hypr/monitors.conf",
+      "detail": "sha256 6d81c412 → —",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "hashFrom": "6d81c41202034fff47fdb480400142b8472fcfed536bab61a1fd785d6315c272"
+      }
+    },
+    {
+      "id": "01M3H6M818EPKV6HMJ0GN4PGFG",
+      "ts": "2026-09-27T12:30:01+02:00",
+      "source": "pacman",
+      "kind": "downgrade",
+      "subject": "vulkan-radeon",
+      "detail": "1:26.2.0-2 → 1:26.1.0-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20260927T123000",
+      "meta": {
+        "command": "pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst",
+        "from": "1:26.2.0-2",
+        "to": "1:26.1.0-1"
+      }
+    },
+    {
+      "id": "01M3H6M720FC6BAG7ETNQTXW9K",
+      "ts": "2026-09-27T12:30:00+02:00",
+      "source": "pacman",
+      "kind": "downgrade",
+      "subject": "mesa",
+      "detail": "1:26.2.0-2 → 1:26.1.0-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20260927T123000",
+      "meta": {
+        "command": "pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst",
+        "from": "1:26.2.0-2",
+        "to": "1:26.1.0-1"
+      }
+    },
+    {
       "id": "01M3F79KG03PMFQ1ERMRS9VRP7",
       "ts": "2026-09-26T18:03:12+02:00",
       "source": "seldon",
@@ -617,6 +736,34 @@
       "detail": "Omarchy auf 4.0.7 aktualisieren",
       "actor": "human",
       "case": "C-2026-003"
+    },
+    {
+      "id": "01M3CRD49GM72DN67HHC1715KC",
+      "ts": "2026-09-25T19:04:30+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "kanagawa",
+      "detail": "catppuccin → kanagawa",
+      "actor": "human",
+      "zone": "yellow",
+      "meta": {
+        "from": "catppuccin",
+        "to": "kanagawa"
+      }
+    },
+    {
+      "id": "01M3CR4WM083GP1DFYWR7Y370C",
+      "ts": "2026-09-25T19:00:00+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "catppuccin",
+      "detail": "kanagawa → catppuccin",
+      "actor": "human",
+      "zone": "yellow",
+      "meta": {
+        "from": "kanagawa",
+        "to": "catppuccin"
+      }
     },
     {
       "id": "01M3A5RK9GGCM0KRRCQ47NGCN0",
@@ -915,21 +1062,45 @@
       "detail": "0.6.1-1",
       "actor": "agent:codex",
       "zone": "red",
+      "crisis": false,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3Q7R0Z08ZD5R76DQA3PHQ1G",
+      "ts": "2026-09-29T20:45:00+02:00",
+      "source": "config",
+      "kind": "config-add",
+      "subject": "~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
+      "detail": "sha256 — → 27d5c56a",
+      "actor": "system",
+      "zone": "yellow",
       "crisis": true,
       "proposedCase": null
     },
     {
-      "eventId": "01M3SXBQVR7AW8PJQC1YXDCQ14",
-      "ts": "2026-09-30T21:41:15+02:00",
-      "source": "pacman",
-      "kind": "upgrade",
-      "subject": "firefox",
-      "detail": "143.0.1-1 → 143.0.2-1",
+      "eventId": "01M3KVWFR06078ZQTPRZCFYHK0",
+      "ts": "2026-09-28T13:20:00+02:00",
+      "source": "config",
+      "kind": "config-remove",
+      "subject": "~/.config/hypr/monitors.conf",
+      "detail": "sha256 6d81c412 → —",
       "actor": "system",
       "zone": "yellow",
       "crisis": false,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3H6M720FC6BAG7ETNQTXW9K",
+      "ts": "2026-09-27T12:30:00+02:00",
+      "source": "pacman",
+      "kind": "downgrade",
+      "subject": "mesa",
+      "detail": "1:26.2.0-2 → 1:26.1.0-1",
+      "actor": "system",
+      "zone": "red",
+      "crisis": false,
       "proposedCase": null,
-      "txId": "tx-20260930T214115",
+      "txId": "tx-20260927T123000",
       "members": 3
     }
   ],
@@ -2754,7 +2925,10 @@
       },
       {
         "date": "2026-09-25",
-        "total": 0
+        "total": 2,
+        "bySource": {
+          "theme": 2
+        }
       },
       {
         "date": "2026-09-26",
@@ -2765,19 +2939,25 @@
       },
       {
         "date": "2026-09-27",
-        "total": 0
+        "total": 3,
+        "bySource": {
+          "pacman": 3
+        }
       },
       {
         "date": "2026-09-28",
-        "total": 1,
+        "total": 2,
         "bySource": {
+          "config": 1,
           "seldon": 1
         }
       },
       {
         "date": "2026-09-29",
-        "total": 1,
+        "total": 5,
         "bySource": {
+          "config": 2,
+          "plugins": 2,
           "seldon": 1
         }
       },
@@ -2837,13 +3017,13 @@
       },
       {
         "week": "2026-W38",
-        "opened": 3,
-        "resolved": 2
+        "opened": 0,
+        "resolved": 0
       },
       {
         "week": "2026-W39",
-        "opened": 1,
-        "resolved": 2
+        "opened": 2,
+        "resolved": 1
       },
       {
         "week": "2026-W40",
@@ -2906,6 +3086,12 @@
         "ref": "C-2026-005"
       },
       {
+        "kind": "crisis",
+        "ts": "2026-09-29T20:45:00+02:00",
+        "label": "config config-add ~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
+        "ref": "01M3Q7R0Z08ZD5R76DQA3PHQ1G"
+      },
+      {
         "kind": "case",
         "ts": "2026-09-30",
         "end": null,
@@ -2943,12 +3129,6 @@
         "ts": "2026-10-01T09:21:00+02:00",
         "label": "Omarchy 4.0.7-1",
         "ref": "4.0.7-1"
-      },
-      {
-        "kind": "crisis",
-        "ts": "2026-10-01T14:02:09+02:00",
-        "label": "pacman install ollama",
-        "ref": "01M3VNFTF8EVHWFFZ687N14Q0C"
       },
       {
         "kind": "crisis",

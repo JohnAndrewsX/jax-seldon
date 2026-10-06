@@ -198,6 +198,11 @@ pub struct Sources {
     /// `SELDON_THEME_FILE`; `None` = Omarchy's
     /// `~/.local/state/omarchy/current/theme.name` ([`theme::Theme::file`]).
     pub theme_file: Option<PathBuf>,
+    /// `OMARCHY_PATH`, default `/usr/share/omarchy`: Omarchy's shipped
+    /// files, read only to compare a config file with Omarchy's own copy
+    /// (`meta.matches = "omarchy-default"`, ADR-0028 §2). Under
+    /// `SELDON_TEST_GUARD` without the variable it is `<guard>/omarchy`.
+    pub omarchy_path: PathBuf,
 }
 
 impl Default for Sources {
@@ -212,6 +217,7 @@ impl Default for Sources {
             omarchy: "omarchy".into(),
             plugins_dir: None,
             theme_file: None,
+            omarchy_path: PathBuf::from("/usr/share/omarchy"),
         }
     }
 }
@@ -235,6 +241,12 @@ impl Sources {
             omarchy: var("SELDON_OMARCHY").unwrap_or(d.omarchy),
             plugins_dir: var("SELDON_OMARCHY_PLUGINS_DIR").map(PathBuf::from),
             theme_file: var("SELDON_THEME_FILE").map(PathBuf::from),
+            omarchy_path: var("OMARCHY_PATH")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    var(crate::config::TEST_GUARD_ENV).map(|g| Path::new(&g).join("omarchy"))
+                })
+                .unwrap_or(d.omarchy_path),
         }
     }
 }

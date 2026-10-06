@@ -150,7 +150,7 @@ done
 
 # 2. The other two tones, derived from the sample in the scratch dir: no
 # crisis → accent (2 active cases), no crisis and no active case → the bar
-# foreground (`· 4`). The glyph takes the tone in every theme. driftInBar
+# foreground (`· 6`). The glyph takes the tone in every theme. driftInBar
 # `all`, so the pill keeps its digits to measure the glyph against.
 jq '.summary.crisis = 0' "$fx/index.sample.json" >"$work/index-accent.json"
 jq '.summary.crisis = 0 | .summary.activeCases = 0' "$fx/index.sample.json" >"$work/index-default.json"
@@ -159,7 +159,7 @@ for theme in tokyo-night catppuccin-latte osaka-jade; do
     name="$theme-$tone"
     run "$name" "$theme" 12 "$work/index-$tone.json" HARNESS_SETTINGS='{"driftInBar":"all"}'
     check "$name tone" "$(field "$name" .pill.tone)" "$tone"
-    check "$name text" "$(field "$name" .pill.text)" "$([[ $tone == accent ]] && echo "2 · 4" || echo "· 4")"
+    check "$name text" "$(field "$name" .pill.text)" "$([[ $tone == accent ]] && echo "2 · 6" || echo "· 6")"
     glyph=$(ink "$name" glyphRect)
     digits=$(ink "$name" countsRect)
     within "$name centre (pixels)" "$(jq -r .centre <<<"$glyph")" "$(jq -r .centre <<<"$digits")" 1
@@ -178,12 +178,12 @@ done
 # or hidden (`none`); the colour is urgent while any crisis is open in every
 # mode, and the tooltip is the same neutral text. The service's read-out
 # follows the setting the widget pushes.
-sample_tip="Seldon — 2 active cases, 2 crises, 2 changes without a case"
+sample_tip="Seldon — 2 active cases, 2 crises, 4 changes without a case"
 for mode in default crisis all none bogus; do
   case $mode in
     default) settings=""; want_text="2 · 2"; want_mode=crisis ;;
     crisis) settings='{"driftInBar":"crisis"}'; want_text="2 · 2"; want_mode=crisis ;;
-    all) settings='{"driftInBar":"all"}'; want_text="2 · 4"; want_mode=all ;;
+    all) settings='{"driftInBar":"all"}'; want_text="2 · 6"; want_mode=all ;;
     none) settings='{"driftInBar":"none"}'; want_text="2"; want_mode=none ;;
     bogus) settings='{"driftInBar":"loud"}'; want_text="2 · 2"; want_mode=crisis ;;
   esac
@@ -216,7 +216,7 @@ run attention tokyo-night 12 "$work/index-attention.json"
 check "attention text" "$(field attention .pill.text)" ""
 check "attention tone" "$(field attention .pill.tone)" default
 check "attention urgent" "$(field attention .pill.urgent)" false
-check "attention tooltip" "$(field attention '.pill.tooltip | split(", last capture")[0]')" "Seldon — 0 active cases, 4 changes without a case"
+check "attention tooltip" "$(field attention '.pill.tooltip | split(", last capture")[0]')" "Seldon — 0 active cases, 6 changes without a case"
 check "attention tint" "$(jq -r .colour <<<"$(ink attention glyphRect)")" "$(field attention .ink)"
 check "attention tint is not urgent" "$([[ $(field attention .ink) != "$(field mode-default .ink)" ]] && echo yes)" yes
 clean_log attention

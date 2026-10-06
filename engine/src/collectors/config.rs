@@ -70,6 +70,9 @@ use serde_json::Value;
 use super::plugins::Plugins;
 use super::{Collector, Ctx, Lost, Outcome, Tz, to_cursor, typed_cursor};
 use crate::config::{Config, Dirs};
+use crate::index::class::{
+    MATCHES_KEY, MATCHES_OMARCHY_DEFAULT, MATCHES_SYSTEM_LINK, MATCHES_THEME_REPO,
+};
 use crate::logbook::lock::Lock;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
 use crate::sys;
@@ -774,6 +777,252 @@ fn diff(ctx: &Ctx, base: &Generation, scan: &Scan, since: DateTime<FixedOffset>)
     events
 }
 
+/// ADR-0028 §5: the capture-time evidence of a new `config-add` or
+/// `config-change`, as `meta.matches` (the boolean fact, never the target
+/// or the content): `system-link` for a symlink whose target lies under
+/// `/usr/` (`systemctl --user enable`, Omarchy's migrations),
+/// `omarchy-default` for content equal to Omarchy's shipped copy (its
+/// hash), `theme-repo` for a file of a theme directory with a `.git`
+/// directory (`omarchy theme install`, which strips a theme's code).
+fn mark_evidence(ctx: &Ctx, events: &mut [Event]) {
+    let owner = trusted_owner();
+    let omarchy = &ctx.sources.omarchy_path;
+    let trusted = omarchy_trust(omarchy, owner)
+        .is_ok()
+        .then_some((omarchy.as_path(), owner));
+    for e in events
+        .iter_mut()
+        .filter(|e| matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange))
+    {
+        let mark = evidence(ctx.dirs, trusted, &e.subject, e.meta.hash_to.as_deref());
+        if let Some(mark) = mark {
+            e.meta
+                .extra
+                .insert(MATCHES_KEY.to_string(), Value::String(mark.to_string()));
+        }
+    }
+}
+
+/// Who must own Omarchy's tree for its files to count as evidence: root;
+/// under `SELDON_TEST_GUARD` the guard directory's owner (a test stands in
+/// for root; nothing else changes).
+pub fn trusted_owner() -> u32 {
+    trusted_owner_of(std::env::var_os(crate::config::TEST_GUARD_ENV).as_deref())
+}
+
+/// [`trusted_owner`] for a given `SELDON_TEST_GUARD` value.
+fn trusted_owner_of(guard: Option<&std::ffi::OsStr>) -> u32 {
+    guard
+        .filter(|g| !g.is_empty())
+        .and_then(|g| std::fs::metadata(g).ok())
+        .map_or(0, |m| m.uid())
+}
+
+/// Whether `path` (followed if a link) is owned by `owner` and neither
+/// group- nor world-writable; `Err` says why not.
+fn trusted_entry(path: &Path, owner: u32) -> Result<(), String> {
+    let m = std::fs::metadata(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => "does not exist".to_string(),
+        _ => format!("cannot be read ({e})"),
+    })?;
+    if m.uid() != owner {
+        return Err(format!(
+            "is owned by uid {}, not {}",
+            m.uid(),
+            owner_name(owner)
+        ));
+    }
+    match m.mode() & 0o022 {
+        0 => Ok(()),
+        0o020 => Err("is group-writable".to_string()),
+        _ => Err("is world-writable".to_string()),
+    }
+}
+
+fn owner_name(owner: u32) -> String {
+    if owner == 0 {
+        "root".to_string()
+    } else {
+        format!("uid {owner} (the test guard's owner)")
+    }
+}
+
+/// Operator decision on ADR-0028 (WP-109 round 1b): `$OMARCHY_PATH` is a
+/// trust root for `omarchy-default`, so its files count only when the
+/// directory is owned by root ([`trusted_owner`]) and neither group- nor
+/// world-writable. `Err` says why not (`doctor`'s drift row).
+pub fn omarchy_trust(omarchy: &Path, owner: u32) -> Result<(), String> {
+    trusted_entry(omarchy, owner)
+}
+
+/// Whether the copy `copy` under the trusted `root`, and every directory
+/// between them, is trusted too (a writable subdirectory would let anyone
+/// plant a "shipped" file).
+fn copy_trusted(copy: &Path, root: &Path, owner: u32) -> bool {
+    copy.ancestors()
+        .take_while(|a| a.starts_with(root) && *a != root)
+        .all(|a| trusted_entry(a, owner).is_ok())
+}
+
+/// The evidence mark of the file `key` whose content hashes to `hash`
+/// ([`mark_evidence`]); `omarchy` is Omarchy's tree and its trusted owner
+/// when [`omarchy_trust`] holds, else no `omarchy-default` evidence.
+pub fn evidence(
+    dirs: &Dirs,
+    omarchy: Option<(&Path, u32)>,
+    key: &str,
+    hash: Option<&str>,
+) -> Option<&'static str> {
+    let path = key_path(dirs, key);
+    let is_link = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
+    if is_link && std::fs::canonicalize(&path).is_ok_and(|t| t.starts_with("/usr/")) {
+        return Some(MATCHES_SYSTEM_LINK);
+    }
+    if let Some(hash) = hash
+        && let Some((omarchy, owner)) = omarchy
+        && omarchy_copies(dirs, omarchy, &path).iter().any(|copy| {
+            std::fs::metadata(copy)
+                .ok()
+                .filter(|m| m.is_file())
+                .and_then(|m| hash_file(copy, m.len()))
+                .is_some_and(|h| h == hash)
+                && copy_trusted(copy, omarchy, owner)
+        })
+    {
+        return Some(MATCHES_OMARCHY_DEFAULT);
+    }
+    // Omarchy's own test (`theme_came_from_a_repo`): the theme directory is
+    // no link and holds a real `.git` directory (not a file, not a link)
+    let themes = dirs.home.join(".config/omarchy/themes");
+    let real_dir = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_dir());
+    if let Ok(rest) = path.strip_prefix(&themes)
+        && let Some(slug) = rest.components().next()
+        && rest.components().count() > 1
+        && real_dir(&themes.join(slug))
+        && real_dir(&themes.join(slug).join(".git"))
+    {
+        return Some(MATCHES_THEME_REPO);
+    }
+    None
+}
+
+/// Omarchy's shipped copies of `path`: `$OMARCHY_PATH/config/<rel>` for
+/// `~/.config/<rel>` (`omarchy refresh config`, migrations), and for a
+/// desktop entry `~/.local/share/applications/<name>` the file of that
+/// name under `$OMARCHY_PATH/applications/`, or for `Alacritty.desktop`
+/// `$OMARCHY_PATH/default/alacritty/Alacritty.desktop`
+/// (`omarchy-refresh-applications`).
+fn omarchy_copies(dirs: &Dirs, omarchy: &Path, path: &Path) -> Vec<PathBuf> {
+    if let Ok(rel) = path.strip_prefix(dirs.home.join(".config")) {
+        return vec![omarchy.join("config").join(rel)];
+    }
+    if let Ok(rel) = path.strip_prefix(dirs.home.join(".local/share/applications")) {
+        let mut copies = vec![omarchy.join("applications").join(rel)];
+        if rel == Path::new("Alacritty.desktop") {
+            copies.push(omarchy.join("default/alacritty/Alacritty.desktop"));
+        }
+        return copies;
+    }
+    Vec::new()
+}
+
+/// `engine/systemd/seldon-watch.service`, compiled in: the watcher unit
+/// `install.sh --unit` writes (with its own `ExecStart`).
+pub const WATCH_UNIT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/systemd/seldon-watch.service"
+));
+
+/// Rule 7 evidence beyond `owned.json` (ADR-0028 §2): a written config
+/// event whose new content is one of the engine's built-in templates, so
+/// a lost state directory or `install.sh --unit` is no drift. The theme
+/// hook by its file name and hash; the watcher unit by its file name and
+/// content, read once more and
+/// checked against the event's hash, with any `ExecStart=<prefix> watch`
+/// line. Returns the resolution's detail.
+pub fn builtin_template(dirs: &Dirs, e: &Event) -> Option<&'static str> {
+    if !matches!(e.kind, Kind::ConfigAdd | Kind::ConfigChange) {
+        return None;
+    }
+    let hash = e.meta.hash_to.as_deref()?;
+    let hook = crate::commands::setup::THEME_HOOK_NAME;
+    if e.subject.rsplit('/').next() == Some(hook)
+        && hash == sys::sha256_hex(crate::commands::setup::THEME_HOOK_SCRIPT.as_bytes())
+    {
+        return Some("installed by seldon init --theme-hook (built-in template)");
+    }
+    if !e.subject.ends_with("/seldon-watch.service") {
+        return None;
+    }
+    let path = key_path(dirs, &e.subject);
+    let meta = std::fs::metadata(&path).ok().filter(|m| m.is_file())?;
+    if meta.len() > MAX_FILE_SIZE {
+        return None;
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    (sys::sha256_hex(text.as_bytes()) == hash
+        && is_watch_unit(&text)
+        && exec_program(&text, &dirs.home).is_some_and(|p| is_this_engine(&p)))
+    .then_some("installed by install.sh --unit (built-in template)")
+}
+
+/// The program of the unit's `ExecStart=<prefix>/seldon watch`, `%h`
+/// expanded to the home directory.
+fn exec_program(text: &str, home: &Path) -> Option<PathBuf> {
+    let line = text.lines().find(|l| l.starts_with("ExecStart="))?;
+    let program = line.strip_prefix("ExecStart=")?.strip_suffix(" watch")?;
+    Some(match program.strip_prefix("%h/") {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(program),
+    })
+}
+
+/// Whether `program` is the engine that runs now (WP-109 round 2: the
+/// template proves the unit's text, not the binary it starts): the same
+/// file as the running executable, or one with the same content.
+fn is_this_engine(program: &Path) -> bool {
+    let Ok(me) = std::env::current_exe() else {
+        return false;
+    };
+    let canonical = |p: &Path| std::fs::canonicalize(p).ok();
+    if canonical(program).is_some_and(|p| Some(p) == canonical(&me)) {
+        return true;
+    }
+    // same size first: hashing a binary is the slow part
+    let size = |p: &Path| {
+        std::fs::metadata(p)
+            .ok()
+            .filter(|m| m.is_file())
+            .map(|m| m.len())
+    };
+    if size(program).is_none() || size(program) != size(&me) {
+        return false;
+    }
+    static ME: OnceLock<Option<String>> = OnceLock::new();
+    let digest = |p: &Path| std::fs::read(p).ok().map(|b| sys::sha256_hex(&b));
+    ME.get_or_init(|| digest(&me))
+        .as_ref()
+        .is_some_and(|d| digest(program).as_ref() == Some(d))
+}
+
+/// Whether `text` is [`WATCH_UNIT`] with any `ExecStart` that runs a
+/// `seldon` binary's `watch` (no whitespace in the path).
+fn is_watch_unit(text: &str) -> bool {
+    let exec = |l: &str| {
+        l.strip_prefix("ExecStart=")
+            .and_then(|rest| rest.strip_suffix("/seldon watch"))
+            .is_some_and(|prefix| !prefix.is_empty() && !prefix.contains(char::is_whitespace))
+    };
+    let (mut ours, mut theirs) = (WATCH_UNIT.lines(), text.lines());
+    loop {
+        match (ours.next(), theirs.next()) {
+            (None, None) => return true,
+            (Some(a), Some(b)) if a == b || (exec(a) && exec(b)) => {}
+            _ => return false,
+        }
+    }
+}
+
 /// Fits `base`, taken in its own scope, to `scope`: drops the files the
 /// scope no longer reaches, and adds the files of `scan` it did not reach
 /// before (when its scope is known) as they are now. A scope change is no
@@ -1073,7 +1322,9 @@ impl ConfigFiles {
                         "watch scope changed: {left} file(s) left it, {entered} entered it; no events for them"
                     ));
                 }
-                diff(ctx, &base, &scan, prev.checked)
+                let mut events = diff(ctx, &base, &scan, prev.checked);
+                mark_evidence(ctx, &mut events);
+                events
             }
             (Some(_), None) => {
                 notes.push(format!(
@@ -1130,6 +1381,95 @@ impl Collector for ConfigFiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-109 round 2 (B2): `theme-repo` follows Omarchy's own test — the
+    /// theme directory is no link and holds a real `.git` directory. (The
+    /// walker never enters a linked directory, so a capture cannot show
+    /// the first half; `evidence` is asked directly.)
+    #[test]
+    fn theme_repo_needs_a_real_directory_and_a_real_git() {
+        let tmp = std::env::temp_dir().join(format!("seldon-theme-repo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let home = tmp.join("home");
+        let themes = home.join(".config/omarchy/themes");
+        let dirs = Dirs {
+            home: home.clone(),
+            xdg_config_home: home.join(".config"),
+            state_dir: home.join(".local/state/seldon"),
+        };
+        let theme = |name: &str| {
+            std::fs::create_dir_all(themes.join(name)).unwrap();
+            std::fs::write(themes.join(name).join("hyprland.lua"), "-- x\n").unwrap();
+        };
+        theme("cloned");
+        std::fs::create_dir_all(themes.join("cloned/.git")).unwrap();
+        // a link to a cloned theme is no cloned theme
+        std::os::unix::fs::symlink(themes.join("cloned"), themes.join("linked")).unwrap();
+        theme("filegit");
+        std::fs::write(themes.join("filegit/.git"), "gitdir: x\n").unwrap();
+        let key = |t: &str| format!("~/.config/omarchy/themes/{t}/hyprland.lua");
+        assert_eq!(
+            evidence(&dirs, None, &key("cloned"), None),
+            Some(MATCHES_THEME_REPO)
+        );
+        assert_eq!(evidence(&dirs, None, &key("linked"), None), None);
+        assert_eq!(evidence(&dirs, None, &key("filegit"), None), None);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// WP-109 round 1b: Omarchy's tree is evidence only when it is root's
+    /// and neither group- nor world-writable. A temp dir owned by the user
+    /// running the tests never counts as root's; with `SELDON_TEST_GUARD`
+    /// the guard's owner stands in for root.
+    #[test]
+    fn omarchy_trust_needs_root_and_no_write_bits() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = std::env::temp_dir().join(format!("seldon-trust-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let tree = tmp.join("omarchy");
+        std::fs::create_dir_all(tree.join("config/hypr")).unwrap();
+        let mode = |p: &Path, m: u32| {
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap()
+        };
+        mode(&tree, 0o755);
+        mode(&tree.join("config"), 0o755);
+        mode(&tree.join("config/hypr"), 0o755);
+        let me = std::fs::metadata(&tree).unwrap().uid();
+        // the rule without a guard: root
+        assert_eq!(trusted_owner_of(None), 0);
+        assert_eq!(trusted_owner_of(Some(std::ffi::OsStr::new(""))), 0);
+        if me != 0 {
+            let e = omarchy_trust(&tree, 0).unwrap_err();
+            assert_eq!(e, format!("is owned by uid {me}, not root"));
+        }
+        // the guard's owner stands in for root
+        assert_eq!(trusted_owner_of(Some(tmp.as_os_str())), me);
+        assert_eq!(omarchy_trust(&tree, me), Ok(()));
+        mode(&tree, 0o775);
+        assert_eq!(omarchy_trust(&tree, me).unwrap_err(), "is group-writable");
+        mode(&tree, 0o757);
+        assert_eq!(omarchy_trust(&tree, me).unwrap_err(), "is world-writable");
+        mode(&tree, 0o755);
+        assert_eq!(
+            omarchy_trust(&tmp.join("nothing"), me).unwrap_err(),
+            "does not exist"
+        );
+        // every directory between the tree and a copy counts too
+        let copy = tree.join("config/hypr/hyprland.lua");
+        std::fs::write(&copy, "x").unwrap();
+        mode(&copy, 0o644);
+        assert!(copy_trusted(&copy, &tree, me));
+        mode(&tree.join("config"), 0o777);
+        assert!(!copy_trusted(&copy, &tree, me));
+        mode(&tree.join("config"), 0o755);
+        mode(&copy, 0o666);
+        assert!(!copy_trusted(&copy, &tree, me));
+        if me != 0 {
+            mode(&copy, 0o644);
+            assert!(!copy_trusted(&copy, &tree, 0));
+        }
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
 
     fn skip(patterns: &[&str]) -> SkipPaths {
         let patterns: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
