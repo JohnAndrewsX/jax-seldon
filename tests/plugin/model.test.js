@@ -288,6 +288,7 @@ test("attentionText: the Changelog header's quiet line (ADR-0028 §4b)", () => {
   assert.strictEqual(M.attentionText(x), "")
   x.summary.crisis = 5
   assert.strictEqual(M.attentionText(x), "", "never negative")
+  assert.strictEqual(M.counts(x).attention, 0, "never negative")
   x.summary.openDrift = 0
   x.summary.crisis = 0
   assert.strictEqual(M.attentionText(x), "")
