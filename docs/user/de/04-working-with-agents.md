@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 65ad985 -->
+<!-- source: en/04-working-with-agents.md @ 927090b -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -253,8 +253,12 @@ nur, solange ein Case aktiv ist.
 ### Hooks eines älteren Logbuchs
 
 Vor 0.1.4 kamen die Hooks in die eigene `.claude/settings.json` des
-Logbuchs, die Claude Code nur im Logbuch-Ordner liest. `seldon doctor`
-zeigt das:
+Logbuchs, die Claude Code nur im Logbuch-Ordner liest. Die erste
+Erfassung nach dem Update trägt sie von selbst in
+`~/.claude/settings.json` ein, lässt alles andere in dieser Datei stehen
+und sagt es in einer `note:`-Zeile. Das tut sie einmal: Nimmst du sie
+später aus `~/.claude/settings.json` heraus, bleiben sie draußen. Bis
+dahin, oder nachdem du sie herausgenommen hast, zeigt `seldon doctor`:
 
 ```text
   degraded  hooks    logbook only (.claude/settings.json): sessions started from ~/Work are not recorded
