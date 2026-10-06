@@ -311,9 +311,9 @@ fails, its error is in `~/.local/state/seldon/agent-launch.log`.
 
 An agent started outside the logbook folder never reads the logbook's
 `AGENTS.md`. Give it the rules with the [agent skill](#the-agent-skill):
-then Claude Code, Codex, Pi, OpenCode or Hermes, started from Omarchy's
-agents menu, `omarchy agent crash` or by hand in any folder, knows to find
-or open a case before it changes the machine.
+then every agent that reads one of the skill folders below, started from
+Omarchy's agents menu, `omarchy agent crash` or by hand in any folder,
+knows to find or open a case before it changes the machine.
 
 An agent without Seldon's hooks — Codex, a script, an agent of your own,
 Claude Code outside the logbook — reports to Seldon with three commands. At the start of a session, for context:
