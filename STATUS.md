@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-105 | redact collector messages before cursors.json, capture --json and the index | Engine | `engine-105` (opus) | `wt/WP-105` · `wp/105-redact-messages` | 2026-10-06 |
-| WP-106 | redaction: openssl -pass pass: | Engine | `engine-106` (opus) | `wt/WP-106` · `wp/106-openssl-pass` | 2026-10-06 |
 | WP-107 | config replay with an exact marker | Engine | `engine-107` (opus) | `wt/WP-107` · `wp/107-replay-marker` | 2026-10-06 |
 
 ## Queued (next up)
@@ -46,6 +45,11 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-106 redaction masks openssl `-pass`/`-passin`/`-passout`
+  values `pass:…` (option kept, value masked, quoted and unclosed-quote
+  forms included); the value's shape is part of the regex, so a broad
+  option name cannot swallow the next option; `-k`/`enc -k` stays a
+  documented limit; Opus review, Fable stage 2, two rounds; merged.
 - 2026-10-06 WP-104 a crash after a capture appended the first events
   of a silently baselined source no longer yields a false state-reset
   note (`silentBaselines`); a collector the crashed note names does not
