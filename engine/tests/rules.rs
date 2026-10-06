@@ -382,3 +382,134 @@ fn without_a_logbook_it_exits_3() {
     let out = env.seldon(&["rules", "update"]);
     assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
 }
+
+// ---------------------------------------------------------------------------
+// The capture's upgrade of an unedited block (WP-111)
+// ---------------------------------------------------------------------------
+
+fn v2(name: &str, language: &str) -> String {
+    read(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("templates/rules-v2/AGENTS-{name}-{language}.md")),
+    )
+}
+
+/// `seldon capture --all` with the collectors pointed at nothing, as
+/// output.
+fn capture(env: &Env, json_out: bool) -> std::process::Output {
+    let mut args = vec!["capture", "--all"];
+    if json_out {
+        args.insert(0, "--json");
+    }
+    env.command(&args)
+        .env("SELDON_NOW", NOW)
+        .env("SELDON_PACMAN_LOG", env.tmp.path().join("pacman.log"))
+        .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
+        .env("SELDON_OMARCHY_PLUGINS_DIR", env.tmp.path().join("plugins"))
+        .env("SELDON_THEME_FILE", env.tmp.path().join("theme.name"))
+        .env("SELDON_HARDWARE_ROOT", common::hardware_root())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_capture_upgrades_a_block_seldon_shipped_and_keeps_the_rest() {
+    for language in ["en", "de"] {
+        let env = Env::new(Snapper::Allowed);
+        let root = logbook(&env, language);
+        let path = root.join("AGENTS.md");
+        let current = read(&path);
+        let mine = "- Never touch ~/Music.\n";
+        std::fs::write(&path, format!("{}{mine}", v2("wp101", language))).unwrap();
+        // nobody edited it: no banner, the capture does it
+        let row = rules_row(&env);
+        assert_eq!(
+            (row["status"].as_str(), row["message"].as_str()),
+            (
+                Some("ok"),
+                Some("v2 as Seldon wrote it; the next capture updates it to v3")
+            ),
+            "{row}"
+        );
+        assert!(row.get("fix").is_none(), "{row}");
+
+        let out = capture(&env, true);
+        assert!(out.status.code().is_some(), "{}", stderr(&out));
+        let v = json(&out);
+        assert_eq!(
+            v["rulesUpdated"],
+            serde_json::json!({"from": "v2", "version": 3})
+        );
+        assert_eq!(read(&path), format!("{current}{mine}"), "{language}");
+        let archived: Vec<_> = std::fs::read_dir(root.join("archive"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != ".gitkeep")
+            .collect();
+        assert!(archived.is_empty(), "nothing to archive: {archived:?}");
+        assert_eq!(rules_row(&env)["message"], "current (v3)");
+        // once
+        let v = json(&capture(&env, true));
+        assert_eq!(v["rulesUpdated"], serde_json::Value::Null);
+    }
+}
+
+#[test]
+fn a_capture_says_so_in_one_line_and_replaces_a_released_v1_file() {
+    let env = Env::new(Snapper::Allowed);
+    let root = logbook(&env, "de");
+    let path = root.join("AGENTS.md");
+    let current = read(&path);
+    std::fs::write(&path, golden_v1("v0.1.1-de")).unwrap();
+    let out = capture(&env, false);
+    let human = stdout(&out);
+    assert!(
+        human.contains(
+            "note: AGENTS.md: Seldon's agent rules updated from v1 to v3 (Seldon's text was unedited; your own rules are kept)"
+        ),
+        "{human}"
+    );
+    assert_eq!(read(&path), current);
+}
+
+#[test]
+fn a_capture_leaves_edited_missing_and_damaged_rules_alone() {
+    let env = Env::new(Snapper::Allowed);
+    let root = logbook(&env, "en");
+    let path = root.join("AGENTS.md");
+    let edited = v2("wp101", "en").replacen("Rules for every agent", "Rules for my agents", 1);
+    for text in [
+        Some(edited.as_str()),
+        Some("<!-- seldon:begin rules v2 -->\nno end\n"),
+        Some("# My own rules\n"),
+        None,
+    ] {
+        match text {
+            Some(t) => std::fs::write(&path, t).unwrap(),
+            None => {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        let v = json(&capture(&env, true));
+        assert_eq!(v["rulesUpdated"], serde_json::Value::Null, "{text:?}");
+        match text {
+            Some(t) => assert_eq!(read(&path), t),
+            None => assert!(!path.exists(), "a missing file stays missing"),
+        }
+    }
+    // the edited block keeps the banner and its fix
+    std::fs::write(&path, &edited).unwrap();
+    let row = rules_row(&env);
+    assert_eq!(
+        (
+            row["status"].as_str(),
+            row["message"].as_str(),
+            row["fix"].as_str()
+        ),
+        (
+            Some("degraded"),
+            Some("outdated (v2)"),
+            Some("seldon rules update (archives your copy)")
+        )
+    );
+}

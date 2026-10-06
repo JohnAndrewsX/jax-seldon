@@ -22,6 +22,15 @@ pub const NEW_DIR_MODE: u32 = 0o700;
 /// Symbolic links followed at most, as the kernel's `MAXSYMLINKS`.
 const MAX_LINKS: usize = 40;
 
+/// Whether this process runs as root (its effective user id, the owner
+/// of `/proc/self`, is 0). The upgrades a capture makes in the user's
+/// files (the rules block, the agent skill; WP-111) are skipped then: a
+/// root process's home is not the user's, and a package hook runs as root.
+pub fn runs_as_root() -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0)
+}
+
 /// Creates `dir` and its missing parents with [`NEW_DIR_MODE`]; existing
 /// directories keep their mode.
 pub fn create_dir_private(dir: &Path) -> std::io::Result<()> {

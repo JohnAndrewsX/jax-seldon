@@ -84,6 +84,11 @@ check-packaging:
       echo "check-packaging: shellcheck not installed; bash -n only"
     fi
     bash packaging/check-srcinfo.sh
+    # WP-111: the capture upgrades the rules and the skill as the user; no
+    # package hook runs seldon as root
+    if grep -Eq '^[[:space:]]*install=' packaging/PKGBUILD || compgen -G 'packaging/*.install' >/dev/null; then
+      echo "check-packaging: PKGBUILD must not have an install script (upgrades run as the user)"; exit 1
+    fi
     bash tests/release/release-notes.test.sh
     bash tests/release/audit-ignore.test.sh
     bash tests/release/workflow-pins.test.sh

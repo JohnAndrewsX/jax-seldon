@@ -332,6 +332,7 @@ fn a_foreign_seldon_folder_link_or_file_is_never_touched() {
 #[test]
 fn a_file_changed_by_hand_is_kept_by_install_and_uninstall() {
     let env = Env::new(Snapper::Missing);
+    env.init_logbook();
     let claude = mkdir(&env, ".claude/skills");
     install(&env);
     let case = claude.join("seldon/case.md");
@@ -350,12 +351,20 @@ fn a_file_changed_by_hand_is_kept_by_install_and_uninstall() {
     );
     let row = skills_row(&env);
     assert_eq!(row["status"], "degraded", "{row}");
-    assert!(
-        row["message"]
-            .as_str()
-            .unwrap()
-            .contains("changed by hand in ~/.claude/skills"),
-        "{row}"
+    assert_eq!(
+        row["message"],
+        "seldon agent skill: outdated in ~/.claude/skills (changed by hand: case.md)"
+    );
+    assert_eq!(
+        row["fix"],
+        "seldon hook install skills --replace (archives your copy)"
+    );
+    // a capture leaves it as it is (WP-111)
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["skillsUpdated"], json!([]), "{c}");
+    assert_eq!(
+        home_snapshot(&env).get(".claude/skills/seldon/case.md"),
+        before.get(".claude/skills/seldon/case.md")
     );
 
     let v = uninstall(&env);
@@ -941,12 +950,14 @@ fn a_new_folder_gets_its_manifest_first_and_an_update_last() {
         dir_report(&v, "~/.claude/skills")["written"],
         json!(["case.md"])
     );
+    // every file is still Seldon's: the next capture finishes it (WP-111)
     let row = skills_row(&env);
-    assert!(
-        row["message"]
-            .as_str()
-            .unwrap()
-            .contains("outdated in ~/.claude/skills"),
+    assert_eq!(
+        (row["status"].as_str(), row["message"].as_str()),
+        (
+            Some("ok"),
+            Some("seldon agent skill: updated at the next capture in ~/.claude/skills")
+        ),
         "{row}"
     );
     let v = install(&env);
@@ -1269,4 +1280,213 @@ fn the_skill_has_omarchy_s_shape_and_the_adr_0028_drift_rule() {
         assert!(!text.contains("--no-commit"), "{name}");
         assert!(!text.contains("omarchy-snapshot create`:") || name == "snapshot.md");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Upgrades (WP-111): a capture updates an unedited skill; `--replace`
+// ---------------------------------------------------------------------------
+
+/// Makes Seldon's skill in `folder` look like an older engine's that
+/// nobody touched: `case.md` and `drift.md` with other text, the manifest
+/// naming that text.
+fn make_older(folder: &Path) {
+    let target = folder.join("seldon");
+    let mut manifest: Value = serde_json::from_str(&read(&target.join(MANIFEST))).unwrap();
+    for (name, old) in [
+        ("case.md", "# Cases (older engine)\n"),
+        ("drift.md", "# Drift (older engine)\n"),
+    ] {
+        std::fs::write(target.join(name), old).unwrap();
+        manifest["files"][name] = json!(sha256_hex(old.as_bytes()));
+    }
+    std::fs::write(target.join(MANIFEST), manifest.to_string()).unwrap();
+}
+
+#[test]
+fn a_capture_updates_an_unedited_skill_and_nothing_else() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let claude = mkdir(&env, ".claude/skills");
+    let agents = mkdir(&env, ".agents/skills");
+    let hermes = mkdir(&env, ".hermes/skills");
+    install(&env);
+    // the user removed the skill from one folder; another folder appeared
+    // after the install: both stay without it
+    let codex = mkdir(&env, ".codex/skills");
+    let pi = mkdir(&env, ".pi/agent/skills");
+    uninstall_from_one(&env, &pi);
+    make_older(&claude);
+    // older and changed by hand: kept
+    make_older(&agents);
+    std::fs::write(agents.join("seldon/drift.md"), "my drift notes\n").unwrap();
+    // older, a file deleted by the user: no longer "as Seldon wrote it"
+    make_older(&hermes);
+    std::fs::remove_file(hermes.join("seldon/case.md")).unwrap();
+    // something else named seldon: never touched
+    std::fs::create_dir_all(codex.join("seldon")).unwrap();
+    std::fs::write(codex.join("seldon/SKILL.md"), "mine\n").unwrap();
+
+    let row = skills_row(&env);
+    let message = row["message"].as_str().unwrap();
+    assert!(
+        message.contains("updated at the next capture in ~/.claude/skills"),
+        "{row}"
+    );
+    assert!(
+        message.contains("outdated in ~/.agents/skills (changed by hand: drift.md)"),
+        "{row}"
+    );
+    assert!(message.contains("outdated in ~/.hermes/skills"), "{row}");
+    let before = home_snapshot(&env);
+
+    let out = run(&env, &["capture", "--all"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(
+        stdout(&out)
+            .contains("note: the Seldon agent skill updated in ~/.claude/skills (it was unedited)"),
+        "{}",
+        stdout(&out)
+    );
+    assert_installed(&claude);
+    let after = home_snapshot(&env);
+    for (rel, entry) in &before {
+        if rel.starts_with(".claude/") || rel.starts_with(".local/") {
+            continue;
+        }
+        let now = after.get(rel).map(|(k, b, _)| (k, b));
+        assert_eq!(now, Some((&entry.0, &entry.1)), "{rel} changed");
+    }
+    assert!(
+        !pi.join("seldon").exists(),
+        "an uninstalled skill came back"
+    );
+    assert_eq!(read(&agents.join("seldon/drift.md")), "my drift notes\n");
+    assert!(!hermes.join("seldon/case.md").exists());
+    assert_eq!(read(&codex.join("seldon/SKILL.md")), "mine\n");
+
+    // the second capture changes nothing
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["skillsUpdated"], json!([]), "{c}");
+}
+
+/// `hook uninstall skills` as it acts on one folder: the others keep the
+/// skill (the test removes the folder's skill by hand the way uninstall
+/// leaves it: gone).
+fn uninstall_from_one(_env: &Env, folder: &Path) {
+    let target = folder.join("seldon");
+    if target.exists() {
+        std::fs::remove_dir_all(&target).unwrap();
+    }
+}
+
+#[test]
+fn a_capture_records_the_skill_update_as_seldons_own() {
+    let env = Env::new(Snapper::Missing);
+    let config = env.config_file();
+    env.init_logbook();
+    // the config collector watches the skill folder
+    let text = read(&config).replace(
+        "watchPaths = [",
+        "watchPaths = [\n    \"~/.claude/skills\",",
+    );
+    std::fs::write(&config, text).unwrap();
+    let claude = mkdir(&env, ".claude/skills");
+    install(&env);
+    ok(&env, &["capture", "--all"]);
+    let open = ok(&env, &["drift"])["openDrift"].as_u64().unwrap();
+    make_older(&claude);
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["skillsUpdated"], json!(["~/.claude/skills"]), "{c}");
+    assert_installed(&claude);
+    // the update ran before the collectors: they see the files as they
+    // were, and nothing opens drift
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["skillsUpdated"], json!([]), "{c}");
+    let d = ok(&env, &["drift"]);
+    assert_eq!(d["openDrift"].as_u64().unwrap(), open, "{d}");
+}
+
+#[test]
+fn replace_archives_a_changed_skill_and_installs_it() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let claude = mkdir(&env, ".claude/skills");
+    let pi = mkdir(&env, ".pi/agent/skills");
+    install(&env);
+    std::fs::write(claude.join("seldon/case.md"), "my case notes\n").unwrap();
+    std::fs::write(claude.join("seldon/notes.txt"), "not seldon's\n").unwrap();
+    std::fs::remove_dir_all(pi.join("seldon")).unwrap();
+    std::fs::create_dir(pi.join("seldon")).unwrap();
+    std::fs::write(pi.join("seldon/SKILL.md"), "mine\n").unwrap();
+
+    let out = env
+        .command(&["--json", "hook", "install", "skills", "--replace"])
+        .env("SELDON_NOW", "2026-10-06T10:00:00+02:00")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let v = json(&out);
+    let d = dir_report(&v, "~/.claude/skills");
+    assert_eq!(
+        (d["state"].as_str(), d["action"].as_str()),
+        (Some("changed"), Some("replaced")),
+        "{v}"
+    );
+    assert_eq!(d["archived"], "archive/skill-2026-10-06/claude-skills");
+    assert_eq!(d["archivedFiles"], json!(["case.md"]));
+    assert_eq!(
+        read(&root.join("archive/skill-2026-10-06/claude-skills/case.md")),
+        "my case notes\n"
+    );
+    assert_installed(&claude);
+    // a file that is not Seldon's stays, as does a foreign folder
+    assert_eq!(read(&claude.join("seldon/notes.txt")), "not seldon's\n");
+    assert_eq!(dir_report(&v, "~/.pi/agent/skills")["action"], "kept");
+    assert_eq!(read(&pi.join("seldon/SKILL.md")), "mine\n");
+    assert_eq!(
+        skills_row(&env)["fix"],
+        json!(
+            "move the folder named seldon away where it is not seldon's, then seldon hook install skills"
+        )
+    );
+
+    // nothing left to replace: no second archive
+    let out = env
+        .command(&["--json", "hook", "install", "skills", "--replace"])
+        .env("SELDON_NOW", "2026-10-06T10:00:00+02:00")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(
+        dir_report(&json(&out), "~/.claude/skills")["action"],
+        "unchanged"
+    );
+    assert!(!root.join("archive/skill-2026-10-06-2").exists());
+    // a second change the same day takes the next free name
+    std::fs::write(claude.join("seldon/drift.md"), "mine too\n").unwrap();
+    let out = env
+        .command(&["--json", "hook", "install", "skills", "--replace"])
+        .env("SELDON_NOW", "2026-10-06T11:00:00+02:00")
+        .output()
+        .unwrap();
+    assert_eq!(
+        dir_report(&json(&out), "~/.claude/skills")["archived"],
+        "archive/skill-2026-10-06-2/claude-skills"
+    );
+}
+
+#[test]
+fn replace_needs_a_logbook_and_is_for_skills_only() {
+    let env = Env::new(Snapper::Missing);
+    mkdir(&env, ".claude/skills");
+    let out = env.seldon(&["hook", "install", "skills", "--replace"]);
+    assert_eq!(out.status.code(), Some(3), "{}", stderr(&out));
+    env.init_logbook();
+    let out = env.seldon(&["hook", "install", "claude-code", "--replace"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("--replace is for skills"),
+        "{}",
+        stderr(&out)
+    );
 }
