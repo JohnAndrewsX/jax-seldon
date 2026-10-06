@@ -141,6 +141,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masked name and content is no longer taken for that one and is
   recorded, and a restore after two changes of one file no longer adds a
   change that skips the middle one (WP-103).
+- The config collector's cursor marks how far the ledger's config
+  events at its last check go, so the check of the ledger no longer
+  depends on whole seconds. Three rare cases are fixed: a removal by a
+  capture in the same second as the one before it, whose cursor save
+  then failed, is no longer recorded twice (nor a file back since then
+  missed); after a restored state directory, a change stamped with the
+  backed-up check (an older mtime, or the same second) is no longer
+  recorded again; and after a failed cursor save, the previous
+  capture's change is no longer taken for a file with the same masked
+  name and content. A cursor from an older version is read as before
+  until the next capture saves the mark (WP-107).
 - Redaction covers more forms of credentials on command lines: a
   command continued over lines with `\`, or with a quoted string that
   spans lines, is read as one command, also between an option and its

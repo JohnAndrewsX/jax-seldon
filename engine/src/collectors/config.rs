@@ -30,7 +30,11 @@
 //! generation the events the ledger holds since the cursor's check
 //! ([`replay`]), so neither a failed cursor save nor a restored older state
 //! directory (guide 07) repeats them, and a file that went back to its old
-//! content is not missed. Files whose names differ only in a part the
+//! content is not missed. The cursor also counts the config events stamped
+//! with its check that the ledger holds once the capture's own are written
+//! (`atCheck`); the replay reads only those after them, so it never takes
+//! an event of the cursor's capture again, whatever second the next
+//! captures run in (WP-107). Files whose names differ only in a part the
 //! redaction masks share a subject in the ledger; the replay tells them
 //! apart by their hashes. The first run (no cursor) is a baseline: no
 //! events.
@@ -465,6 +469,14 @@ struct ConfigCursor {
     hash: String,
     /// Capture time of the last check.
     checked: DateTime<FixedOffset>,
+    /// How many config events stamped `checked` the ledger holds once this
+    /// capture's are written, in ledger order: the last of them is the last
+    /// config event at that time the capture wrote, or that came before it
+    /// (WP-107). The replay reads past them. An event has no id before the
+    /// append, so the cursor counts instead. Absent in a cursor saved
+    /// before WP-107, or when the ledger could not be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    at_check: Option<usize>,
 }
 
 /// `config.toml [redaction] skipPaths`: files that are never hashed and
@@ -841,19 +853,22 @@ impl Step<'_> {
 /// the ledger holds since the cursor's check `since`, until none applies,
 /// so the diff neither repeats them nor misses a file that went back to
 /// its old content before this capture (`A→B` recorded, now `A`: the
-/// ledger gets `B→A`).
+/// ledger gets `B→A`). `recorded` are the ledger's config events from
+/// `since` on, in ledger order.
 ///
 /// - `behind` (a failed cursor save or ledger write): the events are
 ///   those of the captures since, and `seen` is the generation the last
-///   of them stored. The ledger is read from `since` on, as a change whose
-///   file has an older mtime (`cp -p`) is stamped with `since`; a removal
-///   at exactly `since` is the previous capture's (it carries the capture
-///   time) and already in `base`, and is skipped.
+///   of them stored.
 /// - Not behind (a restored older state directory, or nothing to do):
-///   `seen` is this capture's scan, and the ledger is read strictly after
-///   `since`. Events at `since` are the previous capture's, and one of
-///   them can fit `base` again when that capture ran in the same second
-///   as the one before it (added, then removed).
+///   `seen` is this capture's scan.
+///
+/// Every event after `since` is read. Of those stamped `since`, the
+/// cursor's capture wrote some (a removal carries the capture time, a
+/// change whose file has an older mtime, `cp -p`, is clamped to the
+/// check), and later captures in that second or with such a file wrote
+/// others. `at_check` (the cursor's marker, WP-107) counts the first: the
+/// replay reads the ones after them. A cursor without it reads as WP-103
+/// did: when behind, all of them but the removals; when not, none.
 ///
 /// An event goes to a file whose state in `base` is the one it starts
 /// from (`hashFrom`, or no file for an addition). The ledger holds
@@ -869,20 +884,27 @@ fn replay(
     ctx: &Ctx,
     base: &mut Generation,
     seen: &Generation,
+    recorded: &[Event],
     since: DateTime<FixedOffset>,
+    at_check: Option<usize>,
     behind: bool,
-) -> anyhow::Result<()> {
-    let mut recorded: Vec<Event> = ctx
-        .ledger
-        .read_range(since.min(ctx.now), ctx.now)?
-        .into_iter()
+) {
+    let mut at_since = 0;
+    let mut recorded: Vec<&Event> = recorded
+        .iter()
         .filter(|r| {
-            r.source == Source::Config
-                && (r.ts > since || behind && r.ts == since && r.kind != Kind::ConfigRemove)
+            if r.ts != since {
+                return r.ts > since;
+            }
+            at_since += 1;
+            match at_check {
+                Some(n) => at_since > n,
+                None => behind && r.kind != Kind::ConfigRemove,
+            }
         })
         .collect();
     if recorded.is_empty() {
-        return Ok(());
+        return;
     }
     recorded.sort_by_key(|r| r.ts);
     // the ledger holds subjects redacted
@@ -933,7 +955,7 @@ fn replay(
             .enumerate()
             .find_map(|(i, s)| Some((i, s.place(base, seen)?.0.clone())))
         else {
-            return Ok(());
+            return;
         };
         steps.remove(i).apply(base, &path);
     }
@@ -990,10 +1012,21 @@ impl ConfigFiles {
             return Outcome::degraded(format!("{e:#}"), None);
         }
 
-        let next = to_cursor(&ConfigCursor {
-            hash: current.hash.clone(),
-            checked: ctx.now,
-        });
+        // the ledger's config events from the cursor's check (or now) on,
+        // in ledger order: what the replay reads, and the events at `now`
+        // the new cursor's marker counts
+        let recorded = ctx
+            .ledger
+            .read_range(
+                prev.as_ref().map_or(ctx.now, |p| p.checked).min(ctx.now),
+                ctx.now,
+            )
+            .map(|events| {
+                events
+                    .into_iter()
+                    .filter(|e| e.source == Source::Config)
+                    .collect::<Vec<_>>()
+            });
         let mut notes = Vec::new();
         if scan.unnamed > 0 {
             notes.push(format!(
@@ -1019,9 +1052,21 @@ impl ConfigFiles {
                 // (guide 07) finds the events recorded since in the ledger
                 let seen = stored_ahead.unwrap_or(&current);
                 let behind = stored_ahead.is_some();
-                if let Err(e) = replay(ctx, &mut base, seen, prev.checked, behind) {
-                    return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
-                }
+                let recorded = match &recorded {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return Outcome::degraded(format!("cannot read the ledger: {e:#}"), None);
+                    }
+                };
+                replay(
+                    ctx,
+                    &mut base,
+                    seen,
+                    recorded,
+                    prev.checked,
+                    prev.at_check,
+                    behind,
+                );
                 let (left, entered) = rescope(ctx.dirs, &mut base, &scope, &scan);
                 if left + entered > 0 {
                     notes.push(format!(
@@ -1039,6 +1084,16 @@ impl ConfigFiles {
             }
             (None, _) => Vec::new(), // baseline
         };
+        // every config event at `now` is in the ledger before this
+        // capture's: the capture holds the lock from the read to its append
+        let at_check = recorded
+            .ok()
+            .map(|r| r.iter().chain(&events).filter(|e| e.ts == ctx.now).count());
+        let next = to_cursor(&ConfigCursor {
+            hash: current.hash.clone(),
+            checked: ctx.now,
+            at_check,
+        });
         Outcome {
             message: (!notes.is_empty()).then(|| notes.join("; ")),
             since,

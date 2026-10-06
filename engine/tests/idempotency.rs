@@ -807,8 +807,7 @@ mod idempotency {
         // a file written with an older mtime (`cp -p`) gets an event at
         // the cursor's check, the earliest time it can have; after a
         // failed cursor save the replay reads from that check on (WP-103
-        // round 2). A restored older state directory reads strictly after
-        // it and records such a change again (a known limit, SPEC §4)
+        // round 2), past the events the cursor's capture wrote (WP-107)
         let mut b = support::Bench::new("crash-config-clamped");
         let a = hypr(&b, "a.conf", "A\n");
         assert!(config_run(&mut b, "10:00").is_empty());
@@ -885,20 +884,272 @@ mod idempotency {
         assert!(config_run(&mut b, "10:40").is_empty());
     }
 
+    /// Removes the marker from the config cursor (`atCheck`), as a cursor
+    /// saved before WP-107 lacks it.
+    fn without_marker(b: &mut support::Bench) {
+        let cursor = b.cursors.get_mut("config").unwrap();
+        let marker = cursor.as_object_mut().unwrap().remove("atCheck");
+        assert!(marker.is_some(), "{cursor}");
+    }
+
     #[test]
-    fn a_state_directory_restored_through_the_cli_records_nothing_twice() {
-        // the steps of guide 07: back the folder up, change a file,
-        // capture, put the folder back, capture (WP-103 round 2)
+    fn a_change_at_the_cursors_check_is_not_replayed_onto_a_twin() {
+        // r13, the change-side twin of r10: Alice's change is stamped with
+        // the capture time, the cursor's check. After the next capture's
+        // failed save the replay must not read it again: it no longer fits
+        // Alice's entry, and Bob's has the content it starts from (WP-107)
+        let mut b = support::Bench::new("crash-config-change-since");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Same", None);
+        entry(&bob, "Same", None);
+        let other = hypr(&b, "other.conf", "x\n");
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        entry(&alice, "Alice 1", None);
+        let changed = config_run(&mut b, "10:10");
+        assert_eq!(steps(&changed), [(CHANGE, Some("Same"), Some("Alice 1"))]);
+        assert_eq!(changed[0].ts, support::ts("2026-10-01T10:10:00+02:00"));
+
+        let before = b.cursors.clone();
+        std::fs::write(&other, "y\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:20").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:30");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    /// Two captures in the second 10:10: the first changes `a.conf` and
+    /// saves its cursor, the second removes `x.conf` and its cursor save
+    /// fails. With `back`, `x.conf` is there again before the next capture.
+    /// Returns that capture's events. The removal of `y.conf` at 10:00, the
+    /// first capture's `since`, is not at its check and not in its marker.
+    fn removed_in_the_same_second_as_the_check(tag: &str, back: bool) -> Vec<Event> {
+        let mut b = support::Bench::new(tag);
+        let a = hypr(&b, "a.conf", "A\n");
+        let x = hypr(&b, "x.conf", "x\n");
+        let y = hypr(&b, "y.conf", "y\n");
+        assert!(config_run(&mut b, "09:50").is_empty());
+        std::fs::remove_file(&y).unwrap();
+        assert_eq!(config_run(&mut b, "10:00").len(), 1);
+        std::fs::write(&a, "B\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        assert_eq!(b.cursors["config"]["atCheck"], 1);
+        let before = b.cursors.clone();
+        std::fs::remove_file(&x).unwrap();
+        assert_eq!(
+            kinds(&config_run(&mut b, "10:10")),
+            [(REMOVE, "~/.config/hypr/x.conf".into())]
+        );
+        b.cursors = before; // the cursor save failed
+        if back {
+            hypr(&b, "x.conf", "x\n");
+        }
+        config_run(&mut b, "10:20")
+    }
+
+    #[test]
+    fn a_removal_by_a_capture_in_the_same_second_as_the_check_is_replayed() {
+        // the first known limit of WP-103: the removal carries the time of
+        // the cursor's check, but the cursor's capture did not write it
+        // (WP-107)
+        let again = removed_in_the_same_second_as_the_check("config-same-second-remove", false);
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        let back = removed_in_the_same_second_as_the_check("config-same-second-back", true);
+        assert_eq!(kinds(&back), [(ADD, "~/.config/hypr/x.conf".into())]);
+    }
+
+    #[test]
+    fn a_marker_counts_the_events_of_earlier_captures_in_the_same_second() {
+        // the cursor of the second capture at 10:10 must cover the first
+        // capture's change and its own removal, both stamped 10:10; then
+        // Alice's removal does not go to Bob after a failed save (WP-107)
+        let mut b = support::Bench::new("crash-config-marker-count");
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Same", None);
+        entry(&bob, "Same", None);
+        let other = hypr(&b, "other.conf", "x\n");
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        std::fs::write(&other, "y\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        std::fs::remove_file(&alice).unwrap();
+        assert_eq!(twin_run(&mut b, "10:10"), [(REMOVE, Some("Same"), None)]);
+        assert_eq!(b.cursors["config"]["atCheck"], 2);
+
+        let before = b.cursors.clone();
+        std::fs::write(&other, "z\n").unwrap();
+        assert_eq!(config_run(&mut b, "10:20").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:30");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 3);
+    }
+
+    #[test]
+    fn a_marker_leaves_out_the_captures_events_before_its_check() {
+        // q09: the first capture at 10:10 writes only a change clamped to
+        // 10:00 (`cp -p`), so it wrote nothing at its check and its marker
+        // is 0; the removal by the second capture at 10:10, whose cursor
+        // save fails, is read again by the next one (WP-107 round 2)
+        let mut b = support::Bench::new("crash-config-marker-before-check");
+        let a = hypr(&b, "a.conf", "A\n");
+        let x = hypr(&b, "x.conf", "x\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        std::fs::write(&a, "B\n").unwrap();
+        let at = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(
+                support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64
+            );
+        let file = std::fs::File::options().write(true).open(&a).unwrap();
+        file.set_modified(at).unwrap();
+        let written = config_run(&mut b, "10:10");
+        assert_eq!(written[0].ts, support::ts("2026-10-01T10:00:00+02:00"));
+        assert_eq!(b.cursors["config"]["atCheck"], 0);
+
+        let before = b.cursors.clone();
+        std::fs::remove_file(&x).unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+    }
+
+    #[test]
+    fn a_restored_state_directory_does_not_repeat_a_change_at_its_check() {
+        // the second known limit of WP-103: a change with an older mtime
+        // (`cp -p`) is stamped with the check of the cursor the backup
+        // holds; the capture that recorded it ran after the backup (WP-107)
+        let mut b = support::Bench::new("restore-config-clamped");
+        let a = hypr(&b, "a.conf", "A\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let saved = backup(&b);
+        std::fs::write(&a, "B\n").unwrap();
+        let at = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(
+                support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64
+            );
+        let file = std::fs::File::options().write(true).open(&a).unwrap();
+        file.set_modified(at).unwrap();
+        let written = config_run(&mut b, "10:10");
+        assert_eq!(written.len(), 1);
+        assert_eq!(written[0].ts, support::ts("2026-10-01T10:00:00+02:00"));
+
+        restore(&mut b, &saved);
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 1);
+    }
+
+    /// Twins with the same content; Alice's entry is removed at 10:10, and
+    /// the cursor of that capture loses its marker.
+    fn same_content_removed_with_an_old_cursor(tag: &str) -> support::Bench {
+        let mut b = support::Bench::new(tag);
+        let [alice, bob] = twins(&b, ["alice", "bob"]);
+        entry(&alice, "Same", None);
+        entry(&bob, "Same", None);
+        hypr(&b, "other.conf", "x\n");
+        assert_eq!(twin_run(&mut b, "10:00"), []);
+        std::fs::remove_file(&alice).unwrap();
+        assert_eq!(twin_run(&mut b, "10:10"), [(REMOVE, Some("Same"), None)]);
+        without_marker(&mut b);
+        b
+    }
+
+    #[test]
+    fn a_cursor_without_the_marker_reads_the_window_it_was_saved_for() {
+        // a cursor saved before WP-107 has no marker; the replay then reads
+        // as WP-103 did: strictly after the check when the cursor is not
+        // behind, and from it on without its removals when it is
+
+        // not behind: neither the removal nor the addition at the check
+        let mut b = same_content_removed_with_an_old_cursor("config-old-cursor");
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert!(b.cursors["config"]["atCheck"].is_number(), "saved anew");
+        let mut b = support::Bench::new("config-old-cursor-same-second");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        let x = hypr(&b, "x.conf", "x\n");
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        std::fs::remove_file(&x).unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        without_marker(&mut b);
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+
+        // behind: not the removal at the check, but a change clamped to it
+        let mut b = same_content_removed_with_an_old_cursor("crash-config-old-cursor");
+        let before = b.cursors.clone();
+        hypr(&b, "other.conf", "y\n");
+        assert_eq!(config_run(&mut b, "10:20").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:30");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+        assert_eq!(b.ledger_events(Source::Config).len(), 2);
+        let mut b = support::Bench::new("crash-config-old-cursor-clamped");
+        let a = hypr(&b, "a.conf", "A\n");
+        assert!(config_run(&mut b, "10:00").is_empty());
+        without_marker(&mut b);
+        let before = b.cursors.clone();
+        std::fs::write(&a, "B\n").unwrap();
+        let at = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(
+                support::ts("2026-10-01T09:00:00+02:00").timestamp() as u64
+            );
+        let file = std::fs::File::options().write(true).open(&a).unwrap();
+        file.set_modified(at).unwrap();
+        assert_eq!(config_run(&mut b, "10:10").len(), 1);
+        b.cursors = before; // the cursor save failed
+        let again = config_run(&mut b, "10:20");
+        assert!(again.is_empty(), "{:?}", kinds(&again));
+    }
+
+    #[test]
+    fn a_ledger_that_cannot_be_read_gives_no_marker() {
+        // a baseline does not need the ledger and saves a cursor without
+        // the marker; a capture with a cursor degrades (WP-107)
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut b = support::Bench::new("config-unreadable-ledger");
+        hypr(&b, "a.conf", "A\n");
+        let dir = b.ledger.dir().to_path_buf();
+        std::fs::create_dir_all(&dir).unwrap();
+        let mode = |m: u32| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(m));
+        mode(0o000).unwrap();
+        if std::fs::read_dir(&dir).is_ok() {
+            mode(0o700).unwrap();
+            eprintln!("skipped: permissions do not apply to this user");
+            return;
+        }
+        let baseline = b.run(&ConfigFiles, "2026-10-01T10:00:00+02:00");
+        assert!(baseline.ok, "{:?}", baseline.message);
+        assert!(
+            b.cursors["config"].get("atCheck").is_none(),
+            "{}",
+            b.cursors["config"]
+        );
+        assert!(b.cursors["config"]["checked"].is_string());
+        let degraded = b.run(&ConfigFiles, "2026-10-01T10:10:00+02:00");
+        mode(0o700).unwrap();
+        assert!(!degraded.ok);
+        let message = degraded.message.unwrap_or_default();
+        assert!(message.starts_with("cannot read the ledger"), "{message}");
+    }
+
+    /// The steps of guide 07 through `seldon capture --all`: back the state
+    /// folder up, change a file, capture, put the folder back, capture. With
+    /// `clock`, the captures run at its three times (`SELDON_NOW`) and the
+    /// changed file gets the modification time `mtime`; without, they run on
+    /// the real clock.
+    fn restore_through_the_cli(clock: Option<([&str; 3], &str)>) {
         let cli = Cli::new();
         let file = cli.env.home.join(".config/hypr/monitors.conf");
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, "monitor=,preferred,auto,1\n").unwrap();
-        let capture = |now: &str| {
-            let out = cli
-                .command(&["capture", "--all", "--json"])
-                .env("SELDON_NOW", now)
-                .output()
-                .unwrap();
+        let capture = |i: usize| {
+            let mut command = cli.command(&["capture", "--all", "--json"]);
+            if let Some((times, _)) = clock {
+                command.env("SELDON_NOW", times[i]);
+            }
+            let out = command.output().unwrap();
             assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
             common::json(&out)
         };
@@ -908,28 +1159,49 @@ mod idempotency {
                 .filter(|e| e.source == Source::Config)
                 .count()
         };
-        capture("2030-01-01T10:00:00+01:00");
+        capture(0);
         let state = cli.env.home.join(".local/state/seldon");
         let saved = cli.env.tmp.path().join("state-backup");
         copy_dir(&state, &saved);
 
         std::fs::write(&file, "monitor=,preferred,auto,1.25\n").unwrap();
-        // changed between the two captures (an older mtime is clamped to
-        // the first one: `a_change_clamped_to_the_cursors_check_is_replayed`)
-        let at = std::time::UNIX_EPOCH
-            + std::time::Duration::from_secs(
-                support::ts("2030-01-01T10:05:00+01:00").timestamp() as u64
-            );
-        let handle = std::fs::File::options().write(true).open(&file).unwrap();
-        handle.set_modified(at).unwrap();
-        assert_eq!(capture("2030-01-01T10:10:00+01:00")["written"], 1);
+        if let Some((_, mtime)) = clock {
+            let at = std::time::UNIX_EPOCH
+                + std::time::Duration::from_secs(support::ts(mtime).timestamp() as u64);
+            let handle = std::fs::File::options().write(true).open(&file).unwrap();
+            handle.set_modified(at).unwrap();
+        }
+        assert_eq!(capture(1)["written"], 1);
         assert_eq!(config(), 1);
 
         std::fs::remove_dir_all(&state).unwrap();
         copy_dir(&saved, &state);
-        let again = capture("2030-01-01T10:20:00+01:00");
+        let again = capture(2);
         assert_eq!(again["written"], 0, "{again}");
         assert_eq!(config(), 1);
+    }
+
+    const RESTORE_CLOCK: [&str; 3] = [
+        "2030-01-01T10:00:00+01:00",
+        "2030-01-01T10:10:00+01:00",
+        "2030-01-01T10:20:00+01:00",
+    ];
+
+    #[test]
+    fn a_state_directory_restored_through_the_cli_records_nothing_twice() {
+        // the steps of guide 07; the file changed between the two captures
+        // (WP-103 round 2)
+        restore_through_the_cli(Some((RESTORE_CLOCK, "2030-01-01T10:05:00+01:00")));
+    }
+
+    #[test]
+    fn a_change_in_the_second_of_the_restored_check_is_not_recorded_twice() {
+        // c03: the change falls into the second of the first capture, the
+        // check of the cursor the backup holds, so it is stamped with it;
+        // once with that second fixed, once on the real clock, where the
+        // steps usually take less than a second (WP-107)
+        restore_through_the_cli(Some((RESTORE_CLOCK, RESTORE_CLOCK[0])));
+        restore_through_the_cli(None);
     }
 
     /// `cp -a` without the program: the test PATH has only stubs.
@@ -2830,6 +3102,63 @@ mod crash {
         );
         assert_eq!(cli.cursors().get("pendingNotes"), None);
         assert_eq!(cli.capture_at(&at(4), &[])["written"], 0);
+    }
+
+    #[test]
+    fn the_marker_counts_config_events_only() {
+        // the theme collector's event at the check stands before the
+        // config removal in the ledger; the cursor's marker counts config
+        // events, or the removal is read again after a crash before the
+        // cursor save and goes to the twin with the same content (WP-107)
+        let cli = Cli::new();
+        let at = clock();
+        let apps = cli.env.home.join(".local/share/applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        let entry = |name: &str| apps.join(format!("Mail ({name}.webapp@example.com).desktop"));
+        for name in ["alice", "bob"] {
+            std::fs::write(entry(name), "[Desktop Entry]\nName=Same\n").unwrap();
+        }
+        let other = cli.env.home.join(".config/hypr/other.conf");
+        std::fs::create_dir_all(other.parent().unwrap()).unwrap();
+        std::fs::write(&other, "x\n").unwrap();
+        cli.capture_at(&at(0), &[]);
+
+        let theme = cli.env.tmp.path().join("theme.name");
+        std::fs::write(&theme, "kanagawa\n").unwrap();
+        let mtime = chrono::DateTime::parse_from_rfc3339(&at(10)).unwrap();
+        let mtime =
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(mtime.timestamp() as u64);
+        let file = std::fs::File::options().write(true).open(&theme).unwrap();
+        file.set_modified(mtime).unwrap();
+        std::fs::remove_file(entry("alice")).unwrap();
+        assert_eq!(cli.capture_at(&at(10), &[])["written"], 2);
+        let order: Vec<Source> = cli
+            .ledger()
+            .iter()
+            .rev()
+            .take(2)
+            .rev()
+            .map(|e| e.source)
+            .collect();
+        assert_eq!(order, [Source::Theme, Source::Config], "both at the check");
+        assert_eq!(
+            cli.cursors()["collectors"]["config"]["cursor"]["atCheck"],
+            1
+        );
+
+        std::fs::write(&other, "y\n").unwrap();
+        cli.crash(&at(20), "after-append", &[]);
+        let again = cli.capture_at(&at(30), &[]);
+        assert_eq!(again["written"], 0, "{again}");
+        // also the crashed capture, which read the ledger with the same
+        // cursor, wrote only the change
+        let config: Vec<Kind> = cli
+            .ledger()
+            .iter()
+            .filter(|e| e.source == Source::Config)
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(config, [Kind::ConfigRemove, Kind::ConfigChange]);
     }
 
     #[test]

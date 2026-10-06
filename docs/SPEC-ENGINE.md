@@ -22,7 +22,7 @@ Normative. Rust crate in `engine/`, binary `seldon`.
 |---|---|
 | `~/.config/seldon/config.toml` | keys (WP-003): `logbook`, `language` (the language `init` gives a new logbook; no key = the locale, §9; the logbook keeps its own in `.seldon/logbook.toml`, which every later command reads, so changing the key later leaves an existing logbook as it is; WP-074), `watchPaths`, `harnesses`; `[collectors] snapper|pacman|omarchy|plugins|theme|config` (bool); `[git] autocommit`; `[redaction] patterns, skipPaths` (`skipPaths` default: the plugin state files `~/.config/omarchy/**/history.json`, `**/history/`, `**/state.json`, `**/cache/`, `**/*.log`; WP-069; an empty list, as `init` wrote it before, also means the defaults, a non-empty list replaces them; `init` writes the defaults into a new file and names `skipPaths` in its output); `[drift] alwaysRed` (ADR-0013; package globs, default `linux`, `linux-lts`, `linux-zen`, `linux-hardened`, `linux-rt`, `linux-rt-lts`, `linux-omarchy`, `systemd`, `glibc`, `hyprland`, `omarchy`, `omarchy-settings`, `quickshell`, `limine*`, `grub`, `mkinitcpio*`, `filesystem`, `pam`, `sddm`, `uwsm` — the R3 subjects of ADR-0023 as packages: the kernels only (firmware and headers are not R3; another kernel package is added by hand), the login path `pam`/`sddm`/`uwsm`, `/etc` through `omarchy-settings` and `filesystem`; WP-050. `init` writes the list into the file, so an existing config keeps its own); `[agent] launcher` (argv list with `{prompt}`) and `[agent.launchers] NAME = [...]` (WP-022; the section is omitted on save while it is the default); `[hooks] scope` (`"logbook"` or `"all"`, which agent sessions the hooks serve, §8; WP-063; omitted on save while it is the default `"logbook"`). `$XDG_STATE_HOME/seldon/agent-launch.log` holds the launcher's stderr; `$XDG_STATE_HOME/seldon/hooks/` the installed hook scripts (WP-024). Unknown keys survive a save; comments and key order do not (toml crate; the header says so). Precedence for the logbook path: `--logbook` > `SELDON_LOGBOOK` > config > `~/Seldon`. Path values in the file (`logbook`, `watchPaths`): `~`, `~/…`, `$HOME/…`, `${HOME}/…` and a relative value lie under the home directory, never the current directory (the plugin and the hooks run the engine from different directories; WP-069), `.`/`..` folded, an empty value ignored; the wizard stores typed watch paths as `~/…`. `--logbook`, `SELDON_LOGBOOK`, `--config` and `SELDON_CONFIG` stay relative to the current directory. A global `--config FILE` / `SELDON_CONFIG` override lands in WP-006 so tests and the test host never touch the real file |
 | `~/.local/state/seldon/index.json` | the contract output (see CONTRACT.md) |
-| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash. `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
+| `~/.local/state/seldon/cursors.json` | `{logbook, collectors: {name: {cursor, ok, message, fix, lastRun, events, pendingBaseline}}, pendingNotes}` (`pendingBaseline`: `cursors` or `logbook`, only while set, §3 state reset; an entry without `lastRun` and `cursor`, only `ok: true`, `events: 0` and the mark, is a collector that was not run in the capture that lost its state, WP-091; `pendingNotes`: the times of `seldon` notes a capture was about to append, only while set, §3 state reset, WP-099; `silentBaselines`: per canonical logbook path, the sources whose baseline a capture took or left waiting without a note, only while set, §3 state reset, WP-104), bound to the canonical logbook path (another logbook re-baselines every collector). Cursors: pacman byte offset + inode; snapper = the set of known snapshots (number, type, description — a delete event needs what was deleted); omarchy = last version; plugins = last list hash + versions; config = manifest hash, check time and the marker `atCheck` (§4, WP-107). `index.state.collectors` is derived from `ok`/`message`/`lastRun`, and from an entry with only the mark as from no entry (`ok: true`, no message, `lastRun: null`) (the schema object is closed and has no `fix`; `fix` stays in `cursors.json`, `capture --json` and `doctor`) |
 | `~/.local/state/seldon/manifest.json` | `{hash, files: {"~/path": sha256}, skipped: [paths], scope: {watch, exclude, skip}, stats: {"~/path": [size, mtimeNs, ctimeNs, inode]}, previous?}` for watched config files; written by the config collector during `collect`, with `previous` = the generation the cursor names so a failed ledger write never loses or duplicates a change (WP-005); per state dir, so switching logbooks re-baselines config with a message. `hash` covers `files` and `skipped` only. `scope` (WP-069) is the scope the generation was taken in: the watch paths and excluded folders and files as `~`-paths and the `skipPaths` patterns as configured, sorted (a generation written before WP-069 has none). `stats` holds the size, mtime and ctime (ns) and inode of each hashed file of the current generation, except files modified less than 2 s before the walk started |
 | `~/.local/state/seldon/owned.json` | `{"~/path": {hash, by, op?}}`: files the engine wrote or deleted itself under a watched path (`init --theme-hook`, `hook install`; WP-049: `init --remove-theme-hook`, `hook uninstall`) whose config event the next capture has not seen yet (§5 rule 7, WP-038); `op` is `remove` (Seldon's part taken out, the file stays) or `delete` (`hash` = the content deleted), absent for an install; written under the lock, removed by the next capture that runs the config collector successfully |
 | `~/.local/state/seldon/lock` | flock during writes |
@@ -548,13 +548,13 @@ Baseline: a collector without a cursor emits only events at or after the
 logbook's `created` (or `--since TS`); diff collectors record their first
 state silently. `--since` has no effect on a collector that already has a
 cursor (one notice line in human output). Diff collectors check the
-ledger on every capture (the config collector by replaying its config
-events onto the cursor's generation, §4), so a restored older state
-directory or a failed cursor save never duplicates events; a lost
-`cursors.json` is a baseline (state reset, below). `capture` runs the
-shared attribution pass before the append (ADR-0017), then rebuilds the
-index (CONTRACT rule 2); the commit helper and reconciliation (WP-008)
-follow.
+ledger on every capture (the config collector by replaying the config
+events after its cursor's marker onto the cursor's generation, §4), so
+a restored older state directory or a failed cursor save never
+duplicates events; a lost `cursors.json` is a baseline (state reset,
+below). `capture` runs the shared attribution pass before the append
+(ADR-0017), then rebuilds the index (CONTRACT rule 2); the commit helper
+and reconciliation (WP-008) follow.
 
 State reset (WP-081). A collector that takes a baseline because its state
 was missing or unreadable says which state file it missed: `cursors` (no
@@ -895,7 +895,7 @@ git itself is killed, with the same bounded pipe wait. Rules:
   it is now: a narrowed scope writes no `config-remove`, a widened one no
   `config-add`, and the message says `watch scope changed: N file(s)
   left it, M entered it; no events for them`. **Replay
-  (WP-069, WP-073, WP-103):** the config events the ledger holds since
+  (WP-069, WP-073, WP-103, WP-107):** the config events the ledger holds since
   the cursor's check are first applied to the cursor's generation, each
   to a file whose state is its `hashFrom` (for an addition, no file), so
   the capture repeats nothing and a file that went back to its old
@@ -910,24 +910,30 @@ git itself is killed, with the same bounded pipe wait. Rules:
   first. A subject that no file has names its own path when the
   redaction leaves it as it is; a masked subject does, as it masks to
   itself (a removal the ledger lost is then recorded under it). The
-  replay runs on every capture that has a cursor and its generation.
-  When the cursor is behind, it reads the ledger from the cursor's check
-  on (a change whose file has an older mtime, `cp -p`, is stamped with
-  it) and skips removals stamped with exactly that time (they are the
-  previous capture's, a removal carries the capture time, and already in
-  the generation); when it is not, it reads strictly after it, and the
-  scan stands in for the current generation, so a restored older state
-  directory records only what changed since (guide 07). Known limits: a
-  removal by a capture that ran in the same second as the one before it
-  and then failed its cursor save is skipped too (the next capture
-  records it again, or misses the re-addition of a file that is back);
-  after a restore, a change stamped with the restored cursor's check
-  (an older mtime, or one in the same second as that check) is recorded
-  again; after a failed cursor save, a change the previous capture made
-  at its check time is read again and can go to a twin with the same
-  content (a false `config-change` for that twin). A marker of
-  the last event a capture wrote, kept in the cursor, removes all three
-  (a follow-up WP).
+  replay runs on every capture that has a cursor and its generation;
+  when the cursor is not behind, the scan stands in for the current
+  generation, so a restored older state directory records only what
+  changed since (guide 07). It reads every config event stamped after
+  the cursor's check and, of those stamped with exactly that time, the
+  ones after the cursor's marker: a removal carries the capture time,
+  and a change whose file has an older mtime (`cp -p`), or one made in
+  the second of the check, is stamped with it, so the cursor's capture
+  and later ones both write events at that time. The marker (`atCheck`,
+  WP-107) counts the config events stamped with the check that the
+  ledger holds, in ledger order, once that capture's own are written. An
+  event has no id before the append, and the capture holds the state
+  lock from its ledger read to its append, so the count ends at the
+  capture's last event at that time (or the last before it). The count
+  assumes two things: the events of one instant are read in the order
+  they were written, which fails only when two captures stamp it with
+  different UTC offsets across a month boundary (separate month files;
+  a time zone change within that second plus a failed cursor save can
+  then record an event twice); and every line at the check reads the
+  same later (a later engine that drops such a line shifts the count by
+  one). A cursor without a marker (saved before WP-107, or by a capture
+  that could not read the ledger) reads as WP-103 did, for that one
+  capture: when behind, from the check on without the removals stamped
+  with it; when not, strictly after it.
 
 All events get `actor: system` unless the collector can prove otherwise.
 Proof is an agent hook `command` event that (a) named the subject
