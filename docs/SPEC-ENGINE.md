@@ -1506,7 +1506,7 @@ Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
 build in-process on the fixture logbook scaled ×10 and prints ×150 (10 650
 ledger lines, 1 200 cases); `just check-perf` (opt-in, quiet host) asserts
-×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 044 ledger
+×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 292 ledger
 lines, 304 cases and 365 journal files, median wall time of 11 runs,
 process start included. A median over budget is measured once more before
 a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,
