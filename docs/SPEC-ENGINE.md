@@ -515,8 +515,9 @@ so, a damaged or newer block is left. A skill update writes one
 `seldon` note to the ledger (subject `skill`, detail "Seldon agent skill
 updated to seldon <version> in <folders> (it was unedited)"; WP-116): the
 files lie outside the logbook, so the ledger keeps the record. (c)
-(WP-116 round 1b, ADR-0030 §5) carries Claude Code's hooks user-wide
-once: when the logbook's own `.claude/settings.json` holds any of
+(WP-116 round 1b, ADR-0032 §5) carries Claude Code's hooks user-wide
+once, unless `[agent] workdir = "logbook"` (no copy, no marker): when
+the logbook's own `.claude/settings.json` holds any of
 Seldon's three hooks and the user-wide settings (`hook install`'s
 default) none, it merges them there as `hook install` does (foreign
 hooks and keys kept), records the write as its own (`by: seldon

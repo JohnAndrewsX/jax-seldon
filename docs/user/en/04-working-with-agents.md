@@ -238,7 +238,9 @@ Before 0.1.4 the hooks went into the logbook's own
 folder. The first capture after the update adds them to
 `~/.claude/settings.json` on its own, keeps everything else in that
 file, and says so in one `note:` line. It does this once: if you take
-them out of `~/.claude/settings.json` later, they stay out. Until then,
+them out of `~/.claude/settings.json` later, they stay out. With
+`[agent] workdir = "logbook"` it makes no copy: the hooks stay in the
+logbook's settings, where agents started in the logbook folder find them. Until then,
 or after you took them out, `seldon doctor` shows:
 
 ```text
@@ -341,7 +343,11 @@ with the line "Launched by seldon agent start on C-2026-003; … this
 session is recorded." Commands still land on the active case. Once the
 case is done, the session's commands outside the logbook are no longer
 recorded. Never set `SELDON_CASE` yourself: Seldon sets it, and every
-session that inherits it while its case is open is recorded. The variables reach
+session that inherits it while its case is open is recorded. One
+logbook per launched session: the variable names a case of the logbook
+Seldon started the agent on; do not point that session at another
+logbook (`SELDON_LOGBOOK`, `--logbook`), which would record it there if
+that logbook has an open case with the same id. The variables reach
 the agent only when the launcher starts the terminal; a terminal server
 (`footclient`, `kitty --single-instance`, a wezterm mux) reuses its own
 environment, and then only `--actor` names the agent.

@@ -385,8 +385,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Existing installs keep recording (WP-116 round 1b).** A logbook from
   before 0.1.4 has the hooks in its own `.claude/settings.json`, which
   Claude Code does not read in `~/Work`. The first capture after the
-  update (as the user, never as root) adds them to the user-wide
-  settings when that file has none of Seldon's hooks, keeps every
+  update (as the user, never as root, and not with `[agent] workdir =
+  "logbook"`; ADR-0032 §5) adds them to the user-wide settings when that
+  file has none of Seldon's hooks, keeps every
   foreign hook and key, and says so in one `note:` line (`--json`
   `hooksUserWide`). It does this once: hooks you take out of the
   user-wide file later are not added again.
@@ -411,7 +412,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AGENTS.md` with uncommitted changes of the user's is updated but not
   committed; the update goes with the user's next commit, and the
   `note:` line says so.
-- **The launch marker serves an open case only (ADR-0032, proposed).**
+- **The launch marker serves an open case only (ADR-0032).**
   `SELDON_CASE` makes the hooks record a session outside the logbook only
   while it names a case of the logbook that is active or in verification;
   a server or multiplexer that kept the variable after the case is done

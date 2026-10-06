@@ -46,6 +46,12 @@ with your AUR helper (`yay -S jax-seldon`). The package installs the man
 page and the completions for all three shells. Install from one source
 only: both put a `seldon` on your `PATH`.
 
+From 0.1.3 to 0.1.4: the first capture after the update copies Seldon's
+Claude Code hooks from the logbook's `.claude/settings.json` to
+`~/.claude/settings.json`, once, keeping everything else there (not with
+`[agent] workdir = "logbook"`; see
+[Working with agents](04-working-with-agents.md#hooks-of-an-older-logbook)).
+
 ## Update the plugin
 
 ```sh

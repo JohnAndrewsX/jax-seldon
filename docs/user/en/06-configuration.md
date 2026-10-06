@@ -377,7 +377,8 @@ agent: in the folder `seldon agent start` runs in, and in `~/Work` (your
 home when there is none) when that folder is your home or `/`, as from
 the panel. Agents trust `~/Work`, and Seldon's hooks record the session
 there because Seldon started it. To start agents in the logbook folder,
-as before 0.1.4:
+as before 0.1.4, and keep the hooks in the logbook's settings (no
+user-wide copy is made):
 
 ```toml
 [agent]

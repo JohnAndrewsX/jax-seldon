@@ -1,11 +1,9 @@
 # ADR-0030 — The Seldon agent starts like the Omarchy agent: from the caller's folder, hooks user-wide, served by a launch marker
 
-**Status:** accepted (operator decision 2026-10-06: the Seldon agent starts like the Omarchy agent, from `~/Work`; this design confirmed as recommended, including Seldon's hooks in the user-wide Claude Code settings). Ships in 0.1.4 with WP-116.
+**Status:** accepted (operator decision 2026-10-06: the Seldon agent starts like the Omarchy agent, from `~/Work`; this design confirmed as recommended, including Seldon's hooks in the user-wide Claude Code settings). Ships in 0.1.4 with WP-116. §1 clause (b), §3's launch line and §5 amended in part by ADR-0032.
 **Date:** 2026-10-06
 
-> Amended in part by [ADR-0032](ADR-0032-launch-marker-open-case.md)
-> (proposed, 2026-10-06): clause (b) serves only a marker that names an
-> open case of the logbook; §3's launch line likewise.
+> Amended in part by [ADR-0032](ADR-0032-launch-marker-open-case.md) (2026-10-06): clause (b) and the launch line serve only a marker that names an open case of the logbook; one capture carries logbook-only hooks user-wide once (§5), unless `[agent] workdir = "logbook"`.
 
 > Extends [ADR-0027](ADR-0027-act-then-account.md) §6 (the
 > one-click start) and §8 (work outside a Seldon-started session). Amends
