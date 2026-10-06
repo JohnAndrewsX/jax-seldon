@@ -401,3 +401,4 @@ equivalent survivors (L4, L6, L10), which stay as decided.
   and a SPEC line; no code on the hook path changed.
 
 No guard-hook blocks this round. Touched outside WP scope: none.
+- Stage 2 addition: CLEAR rows `Curl -E c.pem:fakePw1 h` and `CURL -U a:fakePw2 h` pin the case-sensitive command word that the as-written triggers rely on; `cargo test --test redaction` 26 passed, 1 ignored.

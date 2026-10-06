@@ -1424,6 +1424,10 @@ const CLEAR: &[&str] = &[
     // close to the WP-084 rules
     "useradd -U -m bob",
     "sudo useradd -U bob && curl https://h.example",
+    // the command word is case-sensitive, as the as-written triggers
+    // `curl>-E>:` and `curl+-U` read it (WP-108)
+    "Curl -E c.pem:fakePw1 h",
+    "CURL -U a:fakePw2 h",
     "curl -x proxy.example:3128 https://h.example",
     "curl -x me@proxy.example:3128 https://h.example",
     "git -c http.proxy=http://proxy.example:3128 fetch",
