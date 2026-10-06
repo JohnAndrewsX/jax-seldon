@@ -72,6 +72,11 @@ impl Env {
         let bin = tmp.path().join("bin");
         std::fs::create_dir_all(&home).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
+        // made here, not on first use: tests compare the temp tree before
+        // and after a command
+        let probe = tmp.path().join("user-probe");
+        std::fs::write(&probe, "").unwrap();
+        user_owned(&probe);
         stub(&bin, "omarchy-version", "echo 4.0.4-1");
         match snapper {
             Snapper::NoPermissions => stub(&bin, "snapper", "echo 'No permissions.' >&2; exit 1"),
@@ -129,13 +134,8 @@ impl Env {
 
     /// A file in the temp dir that a user (not root) owns: the default
     /// `SELDON_TEST_ROOT_PROBE` of [`Env::command`].
-    pub fn user_probe(&self) -> std::path::PathBuf {
-        let path = self.tmp.path().join("user-probe");
-        if !path.exists() {
-            std::fs::write(&path, "").expect("write the user probe");
-            user_owned(&path);
-        }
-        path
+    pub fn user_probe(&self) -> PathBuf {
+        self.tmp.path().join("user-probe")
     }
 
     /// `git args…` in `dir`, with this environment's HOME and PATH.
