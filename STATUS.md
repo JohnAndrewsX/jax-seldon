@@ -15,7 +15,6 @@ decisions).
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
 | WP-116 | the Seldon agent starts like the Omarchy agent; rules v4 (ADR-0030, ADR-0031) | Engine + Docs | `engine-116` (opus) | `wt/WP-116` · `wp/116-start-like-omarchy` | 2026-10-06 |
-| WP-115 | link a change to the one case that planned it; capture before close (ADR-0029) | Engine | `engine-115` (opus) | `wt/WP-115` · `wp/115-planned-link` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -52,6 +51,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-115 a change made while exactly one case was open and
+  named it in its Plan is linked to that case, whoever typed it (rule 9,
+  ADR-0029); a subject that fails the harm test (`alwaysRed` packages or
+  paths) links only to a case that was R3 at the time; an unreadable
+  case file or an inconsistent risk record links nothing; `plan
+  verify|done` capture first and warn only when that fails; engine links
+  are re-resolvable; Opus review, three rounds, Fable stage 2; merged.
 - 2026-10-06 WP-111 agents explain drift only with evidence and never a
   crisis; the session-start context lists open crises and items "zur
   Kenntnis" as quoted data; rules v3 quote Omarchy's privilege wording; an
