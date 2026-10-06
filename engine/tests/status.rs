@@ -120,16 +120,17 @@ fn status_prose_follows_the_logbook_language() {
 <!-- seldon:begin status -->
 # Status — workstation-7f3a
 
-Stand: 2026-10-01 · letztes Ereignis 17:00 · Omarchy 4.0.7-1 · Theme tokyo-night
+Stand: 2026-10-01 · letztes Ereignis 17:02 · Omarchy 4.0.7-1 · Theme tokyo-night
 
 ## Overview
-- Aktive Cases: 2 · in Prüfung: 1 · geplant: 3
+- Aktive Cases: 3 · in Prüfung: 1 · geplant: 3
 - Offene Drift: 4, davon Krise: 2
-- Ereignisse heute: 30 · letzte 7 Tage: 41
+- Ereignisse heute: 32 · letzte 7 Tage: 43
 
 ## Active cases
-- [[C-2026-003]] Omarchy auf 4.0.7 aktualisieren — red/R2 — 4/5 Schritte — agent:claude-code
+- [[C-2026-003]] Omarchy auf 4.0.7 aktualisieren — red/R3 — 4/5 Schritte — agent:claude-code
 - [[C-2026-004]] Zed als zweiten Editor installieren — red/R2 — 2/4 Schritte — agent:claude-code
+- [[C-2026-009]] Reopen: Hyprland-Monitorlayout für Dual-WQHD — yellow/R1
 
 ## In verification
 - [[C-2026-008]] Tailscale für Fernzugriff einrichten — red/R2 — 3/4 Schritte

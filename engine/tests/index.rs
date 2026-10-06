@@ -661,7 +661,7 @@ fn caps_of_the_view() {
         l.cases.sort_by(|a, b| a.case.id.cmp(&b.case.id));
     });
     assert_eq!(ix.events.len(), 500);
-    let newest = DateTime::parse_from_rfc3339("2026-10-01T17:00:00+02:00").unwrap();
+    let newest = DateTime::parse_from_rfc3339("2026-10-01T17:02:00+02:00").unwrap();
     assert_eq!(ix.events[0].event.ts, newest, "newest first");
     assert_eq!(ix.cases.completed.len(), 50);
     assert_eq!(
@@ -756,7 +756,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     let tmp = TempDir::new("x10");
     let root = tmp.path().join("logbook");
     let lines = common::scale::scaled_logbook(&fixture_logbook(), &root, 10);
-    assert_eq!(lines, 710, "71 ledger lines ×10");
+    assert_eq!(lines, 730, "73 ledger lines ×10");
     let logbook = Logbook::open(&root).unwrap();
     let dirs = Dirs {
         home: tmp.path().into(),
@@ -775,7 +775,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     assert!(built.warnings.is_empty(), "{:?}", built.warnings);
     let ix = &built.index;
     assert_eq!(ix.events.len(), 500);
-    assert_eq!(ix.cases.all().count(), 80);
+    assert_eq!(ix.cases.all().count(), 90);
     assert_eq!(ix.drift.len(), 40, "4 open items per copy");
     assert_eq!(ix.decisions.len(), 40);
     common::assert_valid_index(&serde_json::to_value(ix).unwrap());

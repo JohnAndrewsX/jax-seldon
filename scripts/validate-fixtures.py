@@ -1008,9 +1008,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/56/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/56/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/56/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/58/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/58/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/58/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's four, so the plugin shows "+246 more open drift items not listed here".
@@ -1022,9 +1022,9 @@ VARIANTS = {
     # the firefox group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/3/members", "value": 3},
-        {"op": "test", "path": "/events/31/id", "value": "01M3SXBRV0E702XKBM22HEV1B8"},
-        {"op": "test", "path": "/events/31/subject", "value": "noto-fonts"},
-        {"op": "remove", "path": "/events/31"},
+        {"op": "test", "path": "/events/33/id", "value": "01M3SXBRV0E702XKBM22HEV1B8"},
+        {"op": "test", "path": "/events/33/subject", "value": "noto-fonts"},
+        {"op": "remove", "path": "/events/33"},
     ],
 }
 

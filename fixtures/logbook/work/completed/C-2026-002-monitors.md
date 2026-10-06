@@ -13,7 +13,7 @@ closed: 2026-09-13
 snapshotBefore: 108
 agents: [agent:claude-code]
 events: [01M2A9MNTG5XQ4EPAYSBBYJ92N, 01M2ACN5Q043TW9W44NJEZ4K9S, 01M2ADMJK8H2NCRVDF2RA9WA56]
-tags: []
+tags: [closed-by-agent]
 ---
 # C-2026-002 — Hyprland-Monitorlayout für Dual-WQHD
 
@@ -36,8 +36,9 @@ Zweiter WQHD-Monitor: sauberes Layout statt Auto-Erkennung.
 - 2026-09-12 09:05 · created (zone yellow, risk R1) · human
 - 2026-09-12 09:31 · started (snapshot 108) · human
 - 2026-09-12 10:02 · linked drift `~/.config/hypr/monitors.conf` · human
-- 2026-09-13 10:58 · verification · human
-- 2026-09-13 11:00 · completed · human
+- 2026-09-13 10:58 · verification · agent:claude-code
+- 2026-09-13 11:00 · completed · agent:claude-code
+- 2026-10-01 17:02 · reopened as C-2026-009 · human
 
 ## Result
 Layout steht, Skalierung 1.25. Abweichung in `system/deviations.md` eingetragen.
