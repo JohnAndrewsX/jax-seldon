@@ -374,7 +374,8 @@ struct Upgraded {
 /// text is kept. The rules block of `AGENTS.md` when it is one an earlier
 /// engine shipped, and the agent skill where it is outdated and unedited.
 /// Under the capture's lock; a failure is a warning, never the capture's.
-/// Nothing as root: the files are the user's.
+/// Nothing as root, nor when the user cannot be told (a warning then):
+/// the files are the user's.
 fn upgrade_defaults(
     lock: &lock::Lock,
     ctx: &Context,
@@ -382,8 +383,16 @@ fn upgrade_defaults(
     logbook: &Logbook,
 ) -> Upgraded {
     let mut out = Upgraded::default();
-    if crate::sys::runs_as_root() {
-        return out;
+    match crate::sys::runner() {
+        crate::sys::Runner::User => {}
+        crate::sys::Runner::Root => return out,
+        // fail closed: no write into files that may not be this user's
+        crate::sys::Runner::Unknown(why) => {
+            out.warnings.push(format!(
+                "Seldon's agent rules and skill were not checked for an update: cannot tell which user runs this capture ({why})"
+            ));
+            return out;
+        }
     }
     let rules = crate::logbook::rules::FILE;
     let text = super::rules::read(logbook)

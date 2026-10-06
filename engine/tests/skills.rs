@@ -357,7 +357,7 @@ fn a_file_changed_by_hand_is_kept_by_install_and_uninstall() {
     );
     assert_eq!(
         row["fix"],
-        "seldon hook install skills --replace (archives your copy)"
+        "seldon hook install skills --replace (archives your copy; a folder without the skill stays without it)"
     );
     // a capture leaves it as it is (WP-111)
     let c = ok(&env, &["capture", "--all"]);
@@ -1433,6 +1433,39 @@ fn a_capture_records_the_skill_update_as_seldons_own() {
     assert_eq!(c["skillsUpdated"], json!([]), "{c}");
     let d = ok(&env, &["drift"]);
     assert_eq!(d["openDrift"].as_u64().unwrap(), open, "{d}");
+
+    // N2: a change the collector sees is explained as the capture's own.
+    // The baseline takes the older files while the manifest still names
+    // the shipped ones (changed by hand: no update); then the manifest
+    // names the older files (unedited): the next capture updates them
+    // before the collectors, which see them change back
+    let target = claude.join("seldon");
+    for (name, old) in [
+        ("case.md", "# Cases (older engine)\n"),
+        ("drift.md", "# Drift (older engine)\n"),
+    ] {
+        std::fs::write(target.join(name), old).unwrap();
+    }
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["skillsUpdated"], json!([]), "{c}");
+    make_older(&claude);
+    let c = ok(&env, &["capture", "--all"]);
+    assert_eq!(c["skillsUpdated"], json!(["~/.claude/skills"]), "{c}");
+    assert_eq!(c["explainedOwn"], 2, "{c}");
+    let root = env.tmp.path().join("logbook");
+    let details: Vec<String> = common::ledger(&root)
+        .iter()
+        .filter(|e| e["kind"] == "resolution")
+        .filter_map(|e| e["detail"].as_str().map(str::to_string))
+        .collect();
+    assert_eq!(
+        details
+            .iter()
+            .filter(|d| *d == "installed by seldon capture")
+            .count(),
+        2,
+        "{details:?}"
+    );
 }
 
 #[test]
@@ -1441,7 +1474,10 @@ fn replace_archives_a_changed_skill_and_installs_it() {
     let root = env.init_logbook();
     let claude = mkdir(&env, ".claude/skills");
     let pi = mkdir(&env, ".pi/agent/skills");
+    let codex = mkdir(&env, ".codex/skills");
     install(&env);
+    // the user removed the skill here: --replace leaves it removed (N7)
+    std::fs::remove_dir_all(codex.join("seldon")).unwrap();
     std::fs::write(claude.join("seldon/case.md"), "my case notes\n").unwrap();
     std::fs::write(claude.join("seldon/notes.txt"), "not seldon's\n").unwrap();
     std::fs::remove_dir_all(pi.join("seldon")).unwrap();
@@ -1463,6 +1499,19 @@ fn replace_archives_a_changed_skill_and_installs_it() {
     );
     assert_eq!(d["archived"], "archive/skill-2026-10-06/claude-skills");
     assert_eq!(d["archivedFiles"], json!(["case.md"]));
+    assert_eq!(dir_report(&v, "~/.codex/skills")["action"], "absent");
+    assert!(!codex.join("seldon").exists(), "a removed skill came back");
+    // the archive is committed (N1)
+    if env.has_git {
+        assert_eq!(v["git"]["committed"], true, "{v}");
+        let log = env.git(&root, &["log", "-1", "--format=%s"]);
+        assert_eq!(
+            String::from_utf8_lossy(&log.stdout).trim(),
+            "seldon: hook install skills --replace"
+        );
+        let status = env.git(&root, &["status", "--porcelain"]);
+        assert_eq!(String::from_utf8_lossy(&status.stdout), "", "uncommitted");
+    }
     assert_eq!(
         read(&root.join("archive/skill-2026-10-06/claude-skills/case.md")),
         "my case notes\n"

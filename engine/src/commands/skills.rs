@@ -754,7 +754,10 @@ pub fn doctor_row(dirs: &Dirs) -> (super::doctor::Status, String, Option<String>
     }
     if by.contains_key("changed") {
         fixes.push(REPLACE_FIX.to_string());
-    } else if by.contains_key("outdated") || by.contains_key("missing") {
+    } else if (by.contains_key("outdated") || by.contains_key("missing"))
+        && !by.contains_key("foreign")
+    {
+        // the foreign fix ends in the same command
         fixes.push(INSTALL_BY.to_string());
     }
     let fix = (!fixes.is_empty()).then(|| fixes.join("; "));
@@ -820,8 +823,10 @@ fn own_json(reports: &[DirReport]) -> Value {
 }
 
 /// Installs the skill into every agent skill folder that exists, under the
-/// caller's state lock; with `archive` (`--replace`) also where it was
-/// changed by hand.
+/// caller's state lock; with `archive` (`--replace`) only where Seldon's
+/// skill is today, also where it was changed by hand: a folder without the
+/// skill (the user removed it, or never had it) stays without it
+/// (`absent`, WP-111 round 2).
 pub fn install_under(
     lock: &Lock,
     ctx: &Context,
@@ -832,6 +837,15 @@ pub fn install_under(
     let reports = present
         .iter()
         .map(|folder| {
+            if archive.is_some() && state(folder) == State::Missing {
+                return DirReport {
+                    folder: folder.clone(),
+                    before: State::Missing.as_str(),
+                    action: "absent",
+                    by: INSTALL_BY,
+                    ..DirReport::default()
+                };
+            }
             install_into(
                 lock,
                 ctx,
@@ -858,11 +872,12 @@ pub struct Upgraded {
 /// The capture's part (WP-111): updates the skill in every agent skill
 /// folder where it is outdated and unedited ([`unedited`]), under the
 /// caller's state lock. Nothing else: no folder gets a skill it does not
-/// have, a skill changed by hand or not Seldon's is left as it is. Never
-/// as root: a root process's home is not the user's.
+/// have, a skill changed by hand or not Seldon's is left as it is. Only
+/// as a user that is not root ([`sys::runner`], failing closed): a root
+/// process's home is not the user's.
 pub fn upgrade_unedited_under(lock: &Lock, ctx: &Context, config: &Config) -> Upgraded {
     let mut out = Upgraded::default();
-    if sys::runs_as_root() {
+    if sys::runner() != sys::Runner::User {
         return out;
     }
     let (present, _) = skill_dirs(&ctx.dirs.home);
@@ -911,7 +926,7 @@ fn kept_fix(dirs: &Dirs, r: &DirReport) -> String {
 }
 
 /// The one-command fix for a skill changed by hand.
-pub const REPLACE_FIX: &str = "seldon hook install skills --replace (archives your copy)";
+pub const REPLACE_FIX: &str = "seldon hook install skills --replace (archives your copy; a folder without the skill stays without it)";
 
 /// `seldon hook install skills [--replace]`. `--replace` copies the files
 /// of a skill changed by hand into the logbook's `archive/` and installs
@@ -958,6 +973,12 @@ pub fn install(ctx: &Context, replace: bool) -> Result<Output> {
                     human,
                     "\n  failed     {path}: {}",
                     r.error.as_deref().unwrap_or_default()
+                );
+            }
+            "absent" => {
+                let _ = write!(
+                    human,
+                    "\n  absent     {path}: no skill here; --replace installs none"
                 );
             }
             "replaced" => {

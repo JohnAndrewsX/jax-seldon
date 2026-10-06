@@ -481,9 +481,10 @@ pub fn own_lines(old: &str) -> String {
 }
 
 /// Whether `text` is an `AGENTS.md` exactly as a release wrote it before
-/// the block ([`RELEASED_V1`]).
+/// the block ([`RELEASED_V1`]); line ends do not count (a CRLF copy is
+/// the same file).
 pub fn is_released_v1(text: &str) -> bool {
-    RELEASED_V1.contains(&crate::sys::sha256_hex(text.as_bytes()).as_str())
+    RELEASED_V1.contains(&crate::sys::sha256_hex(lf(text).as_bytes()).as_str())
 }
 
 /// A unified diff of `old` and `new` for `name` with one hunk and no
@@ -780,6 +781,16 @@ mod tests {
         }
         let edited = format!("{}\n- my rule\n", golden("v0.1.1-en"));
         assert!(!is_released_v1(&edited));
+        // CRLF line ends: the same file (round 2, N5)
+        let crlf = golden("v0.1.0-de").replace('\n', "\r\n");
+        assert!(is_released_v1(&crlf));
+        let t = template(Language::De);
+        assert_eq!(state(Some(&crlf), &t), State::Unedited(1));
+        let u = silent_upgrade(&crlf, &t).unwrap();
+        assert_eq!(
+            (u.action, u.archive, u.text.as_str()),
+            (Action::Rewritten, false, t.as_str())
+        );
     }
 
     #[test]

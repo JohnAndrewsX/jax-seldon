@@ -397,12 +397,19 @@ fn v2(name: &str, language: &str) -> String {
 /// `seldon capture --all` with the collectors pointed at nothing, as
 /// output.
 fn capture(env: &Env, json_out: bool) -> std::process::Output {
+    capture_with(env, json_out, &[])
+}
+
+fn capture_with(env: &Env, json_out: bool, vars: &[(&str, &Path)]) -> std::process::Output {
     let mut args = vec!["capture", "--all"];
     if json_out {
         args.insert(0, "--json");
     }
-    env.command(&args)
-        .env("SELDON_NOW", NOW)
+    let mut cmd = env.command(&args);
+    for (k, v) in vars {
+        cmd.env(k, v);
+    }
+    cmd.env("SELDON_NOW", NOW)
         .env("SELDON_PACMAN_LOG", env.tmp.path().join("pacman.log"))
         .env("SELDON_PACMAN_DB_LOCK", env.tmp.path().join("no-db.lck"))
         .env("SELDON_OMARCHY_PLUGINS_DIR", env.tmp.path().join("plugins"))
@@ -512,4 +519,42 @@ fn a_capture_leaves_edited_missing_and_damaged_rules_alone() {
             Some("seldon rules update (archives your copy)")
         )
     );
+}
+
+/// Round 2, N6: when the user cannot be told, the capture fails closed:
+/// no write, one warning; a probe owned by this user lets it write.
+#[test]
+fn a_capture_that_cannot_tell_the_user_changes_nothing() {
+    let env = Env::new(Snapper::Allowed);
+    let root = logbook(&env, "en");
+    let path = root.join("AGENTS.md");
+    let current = read(&path);
+    let old = v2("wp101", "en");
+    std::fs::write(&path, &old).unwrap();
+    let missing = env.tmp.path().join("no-such-probe");
+    let v = json(&capture_with(
+        &env,
+        true,
+        &[("SELDON_TEST_ROOT_PROBE", &missing)],
+    ));
+    assert_eq!(v["rulesUpdated"], serde_json::Value::Null, "{v}");
+    assert_eq!(read(&path), old);
+    let warnings = v["warnings"].to_string();
+    assert!(
+        warnings.contains("cannot tell which user runs this capture"),
+        "{warnings}"
+    );
+    // a probe this user owns: a user, so the upgrade runs
+    let mine = env.tmp.path().join("probe");
+    std::fs::write(&mine, "").unwrap();
+    let v = json(&capture_with(
+        &env,
+        true,
+        &[("SELDON_TEST_ROOT_PROBE", &mine)],
+    ));
+    assert_eq!(
+        v["rulesUpdated"],
+        serde_json::json!({"from": "v2", "version": 3})
+    );
+    assert_eq!(read(&path), current);
 }
