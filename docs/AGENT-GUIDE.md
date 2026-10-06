@@ -70,8 +70,8 @@ only add limits.
    is unattended: record and report only — read, plan, write the *Log*,
    change nothing on the machine. A cached `sudo` or a passwordless sudo
    rule never makes a session attended. When you start another agent
-   process, a job or a timer, unset `SELDON_ATTENDED` and `SELDON_CASE`
-   and set `SELDON_ACTOR` to that agent's name (`agent:<name>`); never
+   process, a job, a timer or a server that outlives your step (tmux, an
+   editor server), unset `SELDON_ATTENDED` and `SELDON_CASE` and set `SELDON_ACTOR` to that agent's name (`agent:<name>`); never
    leave it unset. A sub-agent inside your own session shares your
    attendance and acts as you; privileged steps stay in your session.
 
@@ -352,7 +352,8 @@ With the Claude Code harness (`seldon init --harness claude-code`, or
 `seldon hook install claude-code` afterwards) the user-wide
 `~/.claude/settings.json` has three hooks. They serve a session in the
 logbook folder and a session `seldon agent start` launched, wherever it
-works (the launch sets `SELDON_CASE`; the context block then opens with
+works, while its case is open (the launch sets `SELDON_CASE`; never set
+it yourself; the context block then opens with
 `Launched by seldon agent start on <ID>; …`); any other session only
 under `[hooks] scope = "all"`:
 

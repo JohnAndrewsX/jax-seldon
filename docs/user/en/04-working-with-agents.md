@@ -75,7 +75,9 @@ never edited them, nothing is left for you: the next capture brings
 Seldon's block up to date, keeps your part below it byte for byte and
 says so in one `note:` line; the change gets a commit of its own,
 `seldon: rules update (unedited, v3 → v4)`, which holds `AGENTS.md` and
-nothing else. A file from release 0.1.0 to 0.1.3 that nobody edited is
+nothing else. If `AGENTS.md` had changes of yours that you had not
+committed yet, the update is written but not committed; it goes with
+your next commit, and the `note:` line says so. A file from release 0.1.0 to 0.1.3 that nobody edited is
 replaced the same way. `seldon doctor` reads such a file as `ok` until
 then.
 
@@ -334,9 +336,12 @@ finds in the ledger, with that command's case. `SELDON_ATTENDED=1` tells the age
 that you started it: the logbook's rules (`AGENTS.md`) say what it may
 do then. Seldon itself never reads it. `SELDON_CASE` names the case:
 it tells Seldon's hooks that Seldon started this session, so they record
-it in any folder, and the session's context opens with the line
-"Launched by seldon agent start on C-2026-003; … this session is
-recorded." Commands still land on the active case. The variables reach
+it in any folder while the case is open, and the session's context opens
+with the line "Launched by seldon agent start on C-2026-003; … this
+session is recorded." Commands still land on the active case. Once the
+case is done, the session's commands outside the logbook are no longer
+recorded. Never set `SELDON_CASE` yourself: Seldon sets it, and every
+session that inherits it while its case is open is recorded. The variables reach
 the agent only when the launcher starts the terminal; a terminal server
 (`footclient`, `kitty --single-instance`, a wezterm mux) reuses its own
 environment, and then only `--actor` names the agent.

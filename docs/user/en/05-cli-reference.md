@@ -88,7 +88,7 @@ Options:
 | `VISUAL`, `EDITOR` | the editor that `seldon open --editor` and `seldon decide` start in a terminal |
 | `SELDON_ACTOR` | who `log`, `event`, `plan` and `drift` record when `--actor` is not given, and `hook generic` when its JSON has no `"actor"`. `seldon agent start` sets it for the agent (`agent:` and the launcher's name). A value the command does not accept is a user error (1); empty counts as unset |
 | `SELDON_ATTENDED` | `1` for an agent that `seldon agent start` launched: the user started this session. Set for the agent's rules; the engine never reads it |
-| `SELDON_CASE` | the case id for an agent that `seldon agent start` launched. The hooks record such a session wherever it works; a value that is not a case id counts as unset. Commands still land on the active case |
+| `SELDON_CASE` | the case id for an agent that `seldon agent start` launched. The hooks record such a session wherever it works, while that case is active or in verification; any other value counts as unset. Commands still land on the active case. Seldon sets it; never set it yourself |
 | `CLAUDE_CONFIG_DIR` | Claude Code's settings folder: `hook install claude-code` and `doctor` use its `settings.json` instead of `~/.claude/settings.json` |
 | `SELDON_NOW` | a fixed clock (RFC 3339), for demos and tests |
 | `SELDON_TEST_GUARD` | a directory; the engine refuses to run (exit 2) when its home, config or state directory lies outside it. Use it when you try Seldon in a scratch home |

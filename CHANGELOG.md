@@ -407,7 +407,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unedited rules block up to date commits `AGENTS.md` alone, `seldon:
   rules update (unedited, vN → vM)`, leaving the user's other changes
   out (`--json` `rulesUpdated.git`); one that updates the unedited agent
-  skill writes a `seldon` note to the ledger (subject `skill`).
+  skill writes a `seldon` note to the ledger (subject `skill`). An
+  `AGENTS.md` with uncommitted changes of the user's is updated but not
+  committed; the update goes with the user's next commit, and the
+  `note:` line says so.
+- **The launch marker serves an open case only (ADR-0032, proposed).**
+  `SELDON_CASE` makes the hooks record a session outside the logbook only
+  while it names a case of the logbook that is active or in verification;
+  a server or multiplexer that kept the variable after the case is done
+  records nothing. The session that ran the case still gets its journal
+  line at its end. The hooks check the scope before anything else, so an
+  unrelated Claude Code session costs the check alone. The launcher gets
+  `PWD` for the folder it starts in. The rules and the skill hand-down
+  name servers and multiplexers; the guides say never to set the
+  variable by hand. The wizard names `~/.claude/settings.json`.
 
 ### Plugin
 

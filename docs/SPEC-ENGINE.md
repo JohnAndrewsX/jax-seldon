@@ -44,7 +44,8 @@ seldon agent start <caseId> [--launcher NAME] [--json]   # WP-022: active case o
                                                          # names the case, no logbook text (WP-058).
                                                          # ADR-0030 (WP-116): starts the launcher
                                                          # where `omarchy agent prompt` would start
-                                                         # the agent, and sets SELDON_CASE=<ID>
+                                                         # the agent (PWD set to that folder), and
+                                                         # sets SELDON_CASE=<ID>
 seldon agent start --new [--zone Z] [--risk R] [--area A] [--launcher NAME] [--json] -- "<intent>"
                                                # WP-101 (ADR-0027 §6): one sentence. Title = the first
                                                # sentence (up to the first line break, or `.`/`!`/`?` before
@@ -500,7 +501,12 @@ word (`RELEASED_BLOCKS`), or replaces a released v1 file whole
 (`RELEASED_V1`); the text outside the block stays byte for byte, nothing
 is archived, and `AGENTS.md` alone is committed, `seldon: rules update
 (unedited, vN → vM)`, the user's other changes left out (WP-116;
-`--no-commit` and `git.autocommit = false` leave it to the next commit);
+`--no-commit` and `git.autocommit = false` leave it to the next commit;
+so does an `AGENTS.md` that already had an uncommitted change before the
+update, which a commit named "unedited" must not carry: the `note:` line
+ends with "not committed: AGENTS.md has uncommitted changes of yours; the
+update goes with your next commit", `--json` `rulesUpdated.git`
+`{committed: false, reason}`, round 2);
 (b) updates the agent skill in every agent skill folder where it is
 outdated and every file its manifest names is there as written or as
 shipped. Nothing else: an edited block or skill keeps its files (doctor
@@ -1895,9 +1901,19 @@ makes a session attended.
 
 Session scope (WP-063, ADR-0030 §1): the hooks serve (a) the sessions
 inside the logbook and (b) the sessions `seldon agent start` launched.
-(b): the hook's environment holds `SELDON_CASE` with a value that is a
-case id (`C-YYYY-NNN`; empty or anything else is no marker), wherever the
-session works and under either `[hooks] scope`. The marker says only that
+(b): the hook's environment holds `SELDON_CASE` naming a case of this
+logbook that is active or in verification (ADR-0032; read from
+`work/active/`; empty, not a case id, a case the logbook does not have, a
+queued, completed or dropped case: no marker), wherever the session works
+and under either `[hooks] scope`. Clause (a) is checked first, and both
+before anything else the hook does (WP-116 round 2): a session neither
+clause serves costs the process start, reading `config.toml` and the
+logbook's marker, and the check (median about 0.7–0.9 ms, bench
+profile). `hook session-stop` also serves a call with a well-formed
+marker whose `session_id` has events in the ledger: the agent may have
+closed its case before the session ends (ADR-0032 §3). Seldon sets the
+variable; nobody else should (a server or multiplexer the agent starts
+gets it unset, by the rules' hand-down sentence). The marker says only that
 Seldon launched the session; hook events still take their case from
 `.seldon/active-case` (§5 rule 1), and nothing else in the engine reads
 it. It is a variable of its own, not `SELDON_LOGBOOK` or `SELDON_ACTOR`
