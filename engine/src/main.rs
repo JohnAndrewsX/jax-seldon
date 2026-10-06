@@ -183,7 +183,7 @@ struct InitCmd {
     obsidian: bool,
 
     /// Agent harness to set up (repeatable)
-    #[arg(long, value_name = "NAME", value_parser = ["claude-code", "omarchy-agent"])]
+    #[arg(long, value_name = "NAME", value_parser = ["claude-code", "omarchy-agent", "skills"])]
     harness: Vec<String>,
 
     /// Backfill: the first capture also records changes since TS, a date

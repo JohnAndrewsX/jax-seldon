@@ -36,6 +36,9 @@
 //!   `hook uninstall claude-code` takes exactly those hooks out again
 //!   ([`unmerge_claude_hooks`]) and records its write, or the deletion of
 //!   a file that is left empty, the same way.
+//! - `hook install skills` / `hook uninstall skills` put the Seldon agent
+//!   skill into the agent skill folders that exist, or take it out again
+//!   ([`super::skills`]).
 //!
 //! Every hook an agent calls is silent and exits 0, whatever happens: a
 //! failure goes to stderr and never blocks the agent ([`run_agent_hook`]).
@@ -92,21 +95,23 @@ pub struct HookArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum HookCommand {
-    /// Merge Seldon's hooks into an agent harness's settings
+    /// Merge Seldon's hooks into an agent harness's settings; `skills`: put the
+    /// Seldon agent skill into every agent skill folder that exists
     Install {
         /// The harness
-        #[arg(value_parser = ["claude-code"])]
+        #[arg(value_parser = ["claude-code", "skills"])]
         harness: String,
-        /// Settings file (default: <logbook>/.claude/settings.json)
+        /// Settings file (default: <logbook>/.claude/settings.json; claude-code only)
         #[arg(long, value_name = "FILE")]
         settings: Option<PathBuf>,
     },
-    /// Remove Seldon's hooks from an agent harness's settings, keeping the rest
+    /// Remove Seldon's hooks from an agent harness's settings, keeping the rest;
+    /// `skills`: remove the Seldon agent skill, keeping files changed by hand
     Uninstall {
         /// The harness
-        #[arg(value_parser = ["claude-code"])]
+        #[arg(value_parser = ["claude-code", "skills"])]
         harness: String,
-        /// Settings file (default: <logbook>/.claude/settings.json)
+        /// Settings file (default: <logbook>/.claude/settings.json; claude-code only)
         #[arg(long, value_name = "FILE")]
         settings: Option<PathBuf>,
     },
@@ -143,9 +148,30 @@ impl HookCommand {
 /// command).
 pub fn run(ctx: &Context, args: HookArgs) -> Result<Output> {
     match args.command {
+        HookCommand::Install { harness, settings } if harness == SKILLS => {
+            no_settings(settings)?;
+            super::skills::install(ctx)
+        }
+        HookCommand::Uninstall { harness, settings } if harness == SKILLS => {
+            no_settings(settings)?;
+            super::skills::uninstall(ctx)
+        }
         HookCommand::Install { settings, .. } => install(ctx, settings),
         HookCommand::Uninstall { settings, .. } => uninstall(ctx, settings),
         _ => Err(Error::user("this hook is run by an agent harness")),
+    }
+}
+
+/// The harness of `hook install|uninstall skills` (the agent skill, WP-094).
+pub const SKILLS: &str = "skills";
+
+/// `--settings` names a Claude Code settings file; the skill has none.
+fn no_settings(settings: Option<PathBuf>) -> Result<()> {
+    match settings {
+        Some(_) => Err(Error::user(
+            "--settings is for claude-code; the skill goes into the agent skill folders",
+        )),
+        None => Ok(()),
     }
 }
 
