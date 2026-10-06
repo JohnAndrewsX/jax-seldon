@@ -872,6 +872,23 @@
       "case": "C-2026-002"
     },
     {
+      "id": "01M2CZW4J034FDMVAAEWT2G7X8",
+      "ts": "2026-09-13T10:59:20+02:00",
+      "source": "plugins",
+      "kind": "plugin-add",
+      "subject": "io.github.example.display-profiles",
+      "detail": "0.3.0",
+      "actor": "system",
+      "case": "C-2026-002",
+      "zone": "yellow",
+      "resolution": "linked",
+      "resolutionDetail": "planned by C-2026-002; active at the time",
+      "meta": {
+        "version": "0.3.0",
+        "enabled": true
+      }
+    },
+    {
       "id": "01M2CZTKQGYDYRBHNCVJA5W315",
       "ts": "2026-09-13T10:58:30+02:00",
       "source": "seldon",
@@ -1299,15 +1316,16 @@
         "events": [
           "01M2A9MNTG5XQ4EPAYSBBYJ92N",
           "01M2ACN5Q043TW9W44NJEZ4K9S",
-          "01M2ADMJK8H2NCRVDF2RA9WA56"
+          "01M2ADMJK8H2NCRVDF2RA9WA56",
+          "01M2CZW4J034FDMVAAEWT2G7X8"
         ],
         "tags": [
           "closed-by-agent"
         ],
         "path": "work/completed/C-2026-002-monitors.md",
         "steps": {
-          "total": 3,
-          "done": 3
+          "total": 4,
+          "done": 4
         }
       },
       {
@@ -2881,8 +2899,9 @@
       },
       {
         "date": "2026-09-13",
-        "total": 2,
+        "total": 3,
         "bySource": {
+          "plugins": 1,
           "seldon": 2
         }
       },
@@ -3030,8 +3049,8 @@
       },
       {
         "week": "2026-W37",
-        "opened": 1,
-        "resolved": 1
+        "opened": 2,
+        "resolved": 2
       },
       {
         "week": "2026-W38",

@@ -1193,6 +1193,123 @@ def check_case_logs(ledger, case_files):
     return out
 
 
+# SPEC-ENGINE §5 rule 9 (ADR-0029 §1): the detail of the engine's planned-and-active link.
+PLANNED_DETAIL = "planned by {}; active at the time"
+
+
+def case_windows(events):
+    """ADR-0029 §1a: every case's windows [start, end] (end None while open), from its
+    `case-started` to the next `case-completed`/`case-dropped`, read from the ledger alone."""
+    steps = sorted((e for e in events if e["source"] == "seldon"
+                    and e["kind"] in ("case-started", "case-completed", "case-dropped")),
+                   key=lambda e: instant(e["ts"]))
+    out = {}
+    for e in steps:
+        ws = out.setdefault(e["subject"], [])
+        if e["kind"] == "case-started":
+            if not ws or ws[-1][1] is not None:
+                ws.append([instant(e["ts"]), None])
+        elif ws and ws[-1][1] is None:
+            ws[-1][1] = instant(e["ts"])
+    return out
+
+
+def planned_links(events, case_files):
+    """Rule 9, the reference of engine/src/reconcile.rs planned_links(): ([(event, case id,
+    txId or None)] oldest first, {case id: [Log line text]}) for the ledger `events` and the case
+    files [(path, frontmatter, body)] as they are."""
+    windows = case_windows(events)
+    resolved = {e["refersTo"] for e in events if e["kind"] == "resolution" and "refersTo" in e}
+
+    def open_(e):
+        return (e["source"] in DRIFT_SOURCES and e["kind"] != "resolution" and "case" not in e
+                and e["id"] not in resolved)
+
+    def tx(e):
+        return e.get("txId") if e["source"] == "pacman" else None
+
+    explicit_tx = {tx(e) for e in events if e.get("explicit") is True and tx(e)}
+
+    def follows(e):
+        return e.get("explicit") is not True and tx(e) in explicit_tx
+
+    def named(e):
+        return f"{e['source']} {e['kind']} {e['subject']} at {e['ts'][11:19]}"
+
+    cases = sorted(((fm["id"], fm, body) for _, fm, body in case_files), key=lambda c: c[0])
+    logs, links = {}, []
+    for e in events:
+        if not open_(e) or follows(e):
+            continue
+        t, pat = instant(e["ts"]), token_pattern(e["subject"])
+        planned = [(cid, fm) for cid, fm, body in cases
+                   if any(s <= t and (end is None or t <= end) for s, end in windows.get(cid, []))
+                   and pat.search(plan_section(body))]
+        if len(planned) == 1:
+            cid, fm = planned[0]
+            if always_red(e["subject"]) and fm["risk"] != "R3":
+                logs.setdefault(cid, []).append(
+                    f"advisory: {cid} is {fm['risk']}, but its red change `{e['subject']}` is R3 "
+                    f"(`[drift] alwaysRed`): an R3 step needs the user's explicit go and a snapshot; "
+                    f"raise it with `seldon plan set {cid} --risk R3` (ADR-0027 §2c)")
+            else:
+                links.append((e, cid))
+                closed = fm["status"] in ("completed", "dropped")
+                logs.setdefault(cid, []).append(
+                    f"linked after the fact: {named(e)} ("
+                    + ("planned here, no capture ran before the close" if closed else "planned here") + ")")
+        elif len(planned) > 1:
+            for cid, _ in planned:
+                others = [o for o, _ in planned if o != cid]
+                logs.setdefault(cid, []).append(
+                    f"not linked: {named(e)} is planned here and in {', '.join(others)}, "
+                    f"{'both' if len(others) == 1 else 'all'} active at the time; "
+                    f"`seldon drift link {e['id']} <CASE>` links it")
+    tx_cases = {}
+    for e, cid in links:
+        if tx(e):
+            tx_cases.setdefault(tx(e), set()).add(cid)
+    members = list(links)
+    for e in events:
+        if open_(e) and follows(e) and len(tx_cases.get(tx(e), ())) == 1:
+            members.append((e, next(iter(tx_cases[tx(e)]))))
+    members.sort(key=lambda m: (instant(m[0]["ts"]), m[0]["id"]))
+    per_tx = {}
+    for e, _ in members:
+        if tx(e):
+            per_tx[tx(e)] = per_tx.get(tx(e), 0) + 1
+    return [(e, cid, tx(e) if per_tx.get(tx(e), 0) > 1 else None) for e, cid in members], logs
+
+
+def check_planned_links(ledger, case_files):
+    """The sample logbook is the state after a capture: its rule-9 lines (`linked` by `system`,
+    detail `planned by …`) are exactly what rule 9 writes on the ledger without them, each case
+    lists the linked ids in `events:` and has every Log line rule 9 writes."""
+    out = []
+    events = [e for _, e in ledger]
+    engine = [e for e in events if e["kind"] == "resolution" and e["actor"] == "system"
+              and e.get("resolution") == "linked" and e.get("detail", "").startswith("planned by ")]
+    ids = {e["id"] for e in engine}
+    lines, logs = planned_links([e for e in events if e["id"] not in ids], case_files)
+    want = sorted((e["id"], cid, t) for e, cid, t in lines)
+    have = sorted((e["refersTo"], e.get("case"), e.get("meta", {}).get("txId")) for e in engine)
+    if want != have:
+        out.append(f"rule 9 (ADR-0029): the ledger's engine links {have} != what rule 9 writes {want}")
+    for e in engine:
+        if e.get("detail") != PLANNED_DETAIL.format(e.get("case")):
+            out.append(f"rule 9 line {e['id']}: detail {e.get('detail')!r}")
+    by_case = {fm["id"]: (f, fm, body) for f, fm, body in case_files}
+    for e, cid, _ in lines:
+        if e["id"] not in (by_case[cid][1].get("events") or []):
+            out.append(f"{rel(by_case[cid][0])}: rule 9 linked {e['id']}, not in events:")
+    for cid, texts in logs.items():
+        f, _, body = by_case[cid]
+        for text in texts:
+            if f" · {text} · system" not in body:
+                out.append(f"{rel(f)}: rule 9 Log line missing: {text}")
+    return out
+
+
 def check_times(index, name):
     """An index is not older than what it lists: generatedAt is not before any event, lastCapture
     not before any collector event (the engine stamps both at write time)."""
@@ -1285,9 +1402,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/66/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/66/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/66/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/67/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/67/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/67/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
@@ -1561,7 +1678,37 @@ def self_checks(today):
     errs = check_case_logs(ledger, case_files)
     if not any("C-2026-001" in e and "'completed' from active" in e for e in errs):
         out.append(f"self-check 'C-2026-001 active -> completed is rejected': walker reported {errs}")
-    return out, len(cases) + len(proposals) + 2
+
+    # ADR-0029 rule 9: the sample's engine link must be missed without its line, and must be
+    # extra when C-2026-002's Plan no longer names the package, or when a second case planned it
+    # in the same window (no link then, and a Log line in each)
+    def drop_engine_link(ledger):
+        ledger[:] = [(w, e) for w, e in ledger if not e.get("detail", "").startswith("planned by ")]
+
+    def unplan(cases):
+        return [(f, fm, body.replace("`io.github.example.display-profiles`", "`display-profiles`") if fm["id"] == "C-2026-002" else body)
+                for f, fm, body in cases]
+
+    def second_window(ledger):
+        ledger.append(("<self-check>:start", {
+            "id": "7" + "Z" * 23 + "SW", "ts": "2026-09-13T10:00:00+02:00", "source": "seldon",
+            "kind": "case-started", "subject": "C-2026-007", "actor": "human", "case": "C-2026-007"}))
+
+    def plan_it(cases):
+        return [(f, fm, re.sub(r"^## Plan\n", "## Plan\n- [ ] `io.github.example.display-profiles`\n", body, flags=re.M)
+                 if fm["id"] == "C-2026-007" else body) for f, fm, body in cases]
+
+    rule9 = [
+        ("without its line the link is missed", drop_engine_link, None, "!= what rule 9 writes"),
+        ("an unplanned package is not linked", None, unplan, "!= what rule 9 writes"),
+        ("two cases that planned it link nothing", second_window, plan_it, "is planned here and in C-2026-002"),
+    ]
+    for label, m, mc, want in rule9:
+        ledger, case_files = load_logbook(LOGBOOK, [], m, mc)
+        errs = check_planned_links(ledger, case_files)
+        if not any(want in e for e in errs):
+            out.append(f"self-check 'rule 9: {label}': {errs}")
+    return out, len(cases) + len(proposals) + 2 + len(rule9)
 
 
 # --------------------------------------------------------------------------- snapshot info files
@@ -1717,6 +1864,7 @@ def main():
         if sample["logbook"].get(k) != derived["logbook"][k]:
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
     problems += check_case_logs(ledger, case_files)
+    problems += check_planned_links(ledger, case_files)
     problems += check_times(sample, "index.sample.json")
 
     # 2b. the `attention = "all"` index is the sample logbook's legacy derivation

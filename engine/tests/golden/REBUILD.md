@@ -52,6 +52,7 @@ Plugins außer den Erstanbieter-Plugins (die kommen mit Omarchy).
 - `io.github.example.tyme` — `omarchy plugin add <url>` (Quell-URL nicht erfasst), bleibt deaktiviert · erklärt: Zeiterfassung nur zum Testen, noch nicht in der Bar. · `01M3VWSXP0SCPF5TBS4PCB12ZC`
 - `io.github.example.weather-plus` — `omarchy plugin add <url>` (Quell-URL nicht erfasst), dann `omarchy plugin enable io.github.example.weather-plus` · erklärt: Wetter-Widget für die Bar, kleine Spielerei ohne Case. · `01M1S72J7GGHJGP6KVV6T0ZDXC`
 - `user.clock` — `omarchy plugin clone omarchy.clock` (wird zu `<benutzername>.clock`, vom Klonen aktiviert)
+- `io.github.example.display-profiles` — `omarchy plugin add <url>` (Quell-URL nicht erfasst), dann `omarchy plugin enable io.github.example.display-profiles` · [[C-2026-002]] Hyprland-Monitorlayout für Dual-WQHD · verknüpft · `01M2CZW4J034FDMVAAEWT2G7X8`
 
 Hier deaktivierte Erstanbieter-Plugins; nach der Installation jeweils mit `omarchy plugin disable <id>` abschalten: `omarchy.active-window`, `omarchy.dropbox`, `omarchy.media`, `omarchy.microphone`, `omarchy.spacer`
 
