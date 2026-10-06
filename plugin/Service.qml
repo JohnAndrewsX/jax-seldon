@@ -122,6 +122,9 @@ Item {
   property var currentArgs: []
   property string lastError: ""
   property int captureIntervalMin: Model.CAPTURE_INTERVAL_MIN_DEFAULT
+  // The bar widget setting `driftInBar` (ADR-0028 §4a), pushed by the
+  // widget like the capture interval; only the IPC read-out's `pill` uses it.
+  property string driftInBar: Model.DRIFT_IN_BAR_DEFAULT
 
   // Exit 4 (lock held) of a capture or status: what runs again when
   // lockRetry fires ("capture", which brings its status, or "status"), and
@@ -187,6 +190,10 @@ Item {
 
   function setCaptureInterval(minutes) {
     root.captureIntervalMin = Model.clampInterval(minutes)
+  }
+
+  function setDriftInBar(mode) {
+    root.driftInBar = Model.driftInBarMode(mode)
   }
 
   // ---- Index.
@@ -700,7 +707,8 @@ Item {
       driftResult: root.driftResult,
       driftShown: root.driftShown,
       decideResult: root.decideResult,
-      pill: Model.pillText(root.counts),
+      pill: Model.pillText(root.counts, root.driftInBar),
+      driftInBar: root.driftInBar,
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),
       banner: root.banner ? root.banner.title : "",

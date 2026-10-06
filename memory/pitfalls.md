@@ -2096,6 +2096,83 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   `read_dir` still works (root ignores the mode), and put the mode back
   before asserting, or the scratch folder cannot be removed.
 
+## 2026-10-06 · WP-105 (Engine Dev)
+
+- **A test of the ledger's copy cannot prove redaction of the source.**
+  `Ledger::append` redacts every event, so the WP-099 note test passes
+  with the collector message raw everywhere else; the mutant "no
+  redaction at the source" survives it. Assert on `cursors.json`,
+  `capture --json` and `index.json` themselves.
+- **A collector message reaches the logbook too.** `STATUS.md` lists a
+  degraded collector with the index's message (`views.rs`), and the
+  session-end hook commits it. Anything the index carries can end up in
+  the logbook's git history.
+- **`cursors.json` entries of collectors a capture does not run are
+  saved as loaded.** A fix to what a capture writes there leaves older
+  entries as they were unless the capture rewrites them on load; do it
+  before the WP-099 "as loaded" copy, or the marked file keeps the old
+  text (`the_file_a_crash_leaves_holds_it_masked`).
+- **A user pattern in a test is the only way to tell "the logbook's
+  redactor" from `Redactor::builtin()`.** Give every redaction test a
+  `[redaction] patterns` entry that matches part of the planted text.
+- **Redacting twice is idempotent only for the built-in rules.** A user
+  pattern that matches across the marker (`›.`) changes already
+  redacted text again, so a pass that writes its result back (the
+  capture's load pass) grows the text on every run (WP-105 review N1).
+  Skip text that holds `‹redacted›` in such a pass; a pass that starts
+  from the stored text each time (the index, doctor) cannot grow.
+- **doctor prints program output too.** Its `omarchy` and `snapper`
+  probes show the first line of stderr, and `init` prints the snapper
+  probe; `doctor --json` is what an agent reads to diagnose a failure.
+  Grep for `describe(` and `stderr` when a WP says "everywhere".
+- **Fail closed means withheld, not "built-in rules only".** With an
+  invalid user pattern the built-in rules still leave what the pattern
+  was for; SPEC §7 says nothing unredacted is written. Show a fixed text
+  (`collectors::MESSAGE_WITHHELD`).
+
+## 2026-10-06 · WP-108 (Engine Dev)
+
+- **A literal trigger for an option is held by every other command
+  that has the same option.** `cert-password`'s `curl+-e` fired on
+  `set -e`; the WP's narrower `-E` as written still fires on a later
+  `sudo -E` in the same line, since a trigger cannot say "in the same
+  command". What a match needs after the option is the better literal:
+  `curl>-E>:` (the value's `:`), checked in order. Probe the trigger on
+  the real hook line before you build an A/B around it.
+- **An option rule pays two compiles.** The scan-on pattern (`next`)
+  is as large as the rule's own and was compiled on the first match,
+  about 0.25 ms, even when the command gave the option once. It is now
+  compiled only when the rest holds the option. A test of that needs
+  fresh rules (`builtin_rules()`), because the shared `BUILTIN_RULES`
+  keep what an earlier test compiled.
+- **Measure the per-rule cost before choosing a lever.** A throwaway
+  probe (an `eprintln!` of each rule's compile and search time behind
+  an env var, run through `seldon event … --subject` in a scratch
+  logbook) showed four rules compiling on the hook line, of which the
+  WP's target (`cert-password`) was the smallest; it alone could not
+  reach the target.
+- **`hooks::robustness::a_panic_exits_zero` fails in the bench
+  profile.** Its panic switch is `#[cfg(debug_assertions)]`; run the
+  hooks suite in the bench profile only for the ignored timing tests.
+
+## 2026-10-06 · WP-110 (Plugin Dev)
+
+- **The panel harness's `texts` include the dev-mode banner, and that
+  banner names the index file.** A test that asserts a word is *absent*
+  from every visible text (`select(test("crisis"))`) fails on its own
+  scratch file name (`yellow-crisis.json`). Name derived indexes so they
+  cannot match the words a case looks for.
+- **A mutant copy of the tree needs more than `plugin/` and
+  `tests/plugin/`.** `model.test.js` reads `assets/` (copies check) and
+  `engine/Cargo.toml` (engineMin); without them every mutant is
+  "killed" by an unrelated test. Run an unmutated baseline in the same
+  copy first; it must pass.
+- **Zone and class are separate since ADR-0028.** `drift[].zone` is the
+  ledger zone, `crisis` the harm test; a crisis may be yellow, an
+  attention item red (pacman). Colour and labels key on `crisis` only;
+  a fallback such as `crisis ? "red" : …` for a missing zone is now a
+  false statement that Explain would pre-fill into a resolution.
+
 ## 2026-10-06 · WP-101 (Engine + Plugin Dev)
 
 - **A new case in `fixtures/logbook/` moves every list the plugin

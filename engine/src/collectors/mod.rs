@@ -34,6 +34,7 @@ pub mod plugins;
 pub mod snapper;
 pub mod theme;
 
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -46,6 +47,7 @@ use serde_json::Value;
 use crate::config::{Config, Dirs};
 use crate::ledger::Ledger;
 use crate::model::event::Event;
+use crate::redact::Redactor;
 use crate::sys;
 
 /// Timeout for every program a collector runs.
@@ -442,4 +444,43 @@ pub fn typed_cursor<T: serde::de::DeserializeOwned>(cursor: Option<&Value>) -> O
 /// `value` as a JSON value (cursors are small plain structs).
 pub fn to_cursor<T: Serialize>(value: &T) -> Value {
     serde_json::to_value(value).expect("a cursor always serialises")
+}
+
+/// Shown in place of every collector message while `config.toml` or one
+/// of its `[redaction] patterns` cannot be used: the redaction the user
+/// asked for cannot run, and nothing is shown unredacted (SPEC-ENGINE §7).
+pub const MESSAGE_WITHHELD: &str =
+    "‹redacted› (withheld: config.toml or one of its [redaction] patterns cannot be used)";
+
+/// Collector messages and probe output as the index and `doctor` show them
+/// (WP-105): through the logbook's redaction, built for the first message
+/// only (most states hold none), or [`MESSAGE_WITHHELD`] when it cannot be
+/// built. Each call starts from the text it is given (`cursors.json`, a
+/// probe's output), so a user pattern that matches across a marker does
+/// not grow what is shown from one call to the next.
+pub struct ShownMessages<'a> {
+    /// `None`: config.toml could not be read, its patterns are unknown.
+    config: Option<&'a Config>,
+    redactor: OnceCell<Option<Redactor>>,
+}
+
+impl<'a> ShownMessages<'a> {
+    /// With the redaction of `config`; `None` withholds every message.
+    pub fn new(config: Option<&'a Config>) -> Self {
+        ShownMessages {
+            config,
+            redactor: OnceCell::new(),
+        }
+    }
+
+    /// `message` as shown.
+    pub fn show(&self, message: &str) -> String {
+        let redactor = self
+            .redactor
+            .get_or_init(|| Redactor::for_config(self.config?).ok());
+        match redactor {
+            Some(r) => r.redact(message),
+            None => MESSAGE_WITHHELD.to_string(),
+        }
+    }
 }

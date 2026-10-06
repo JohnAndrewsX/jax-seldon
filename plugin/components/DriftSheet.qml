@@ -7,13 +7,17 @@ import "../Model.js" as Model
 
 // The drift sheet on the Changelog tab (SPEC-PLUGIN §5, WP-021): resolve one
 // open drift item. Opened by Enter on an open drift row, the row's
-// *Resolve…* button, or the crisis strip (the first crisis).
+// *Resolve…* button, or the crisis strip (the first crisis). Labels follow
+// the item's `crisis`, never its zone (ADR-0028 §4b): a crisis reads
+// "RESOLVE A CRISIS" and "<zone> · crisis" in the urgent colour whatever
+// its zone; anything else "RESOLVE DRIFT" and its zone in the accent.
 //
-//   RESOLVE DRIFT
-//   ▌ glyph kind subject [+N]                         red · crisis
+//   RESOLVE A CRISIS                                  (else RESOLVE DRIFT)
+//   ▌ glyph kind subject [+N]                      yellow · crisis
 //   ▌ detail · actor · day time
 //   ▌ · upgrade libinput 1.29.1-1 → 1.29.2-1     (a group's members)
 //   ▌ proposed for C-2026-005
+//   [Ask agent]                       (the slot, first; the button is WP-095)
 //   [Link] [Explain] [Dismiss]
 //   Link:    Case [the proposed case first]    Resolve [All 3] [Only libinput]
 //   Explain: why it changed; zone (the item's), risk (R1), area (optional)
@@ -122,6 +126,15 @@ FocusScope {
   readonly property color dim: Util.alpha(foreground, 0.65)
   readonly property color toneColor: shown && shown.tone === "urgent" ? urgent : shown && shown.tone === "accent" ? accent : muted
   readonly property real labelWidth: Style.space(64)
+  readonly property string heading: shown && shown.crisis ? "RESOLVE A CRISIS" : "RESOLVE DRIFT"
+  readonly property string zoneLabel: shown ? [shown.zone, shown.crisis ? "crisis" : ""]
+    .filter(function(p) { return p !== "" }).join(" · ") : ""
+  // ADR-0028 §4b: *Ask agent* comes before Link / Explain / Dismiss.
+  readonly property bool askSlotFirst: formColumn.children[0] === askAgentSlot
+  // Empty until WP-095: hidden and no height (read-out).
+  readonly property bool askSlotVisible: askAgentSlot.visible
+  readonly property real askSlotHeight: askAgentSlot.height
+  property alias askAgentSlot: askAgentSlot
 
   signal leaveRequested()
 
@@ -310,7 +323,7 @@ FocusScope {
     spacing: Style.spacing.md
 
     PanelSectionHeader {
-      text: root.shown && root.shown.crisis ? "RESOLVE A RED-ZONE CHANGE" : "RESOLVE DRIFT"
+      text: root.heading
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
@@ -367,7 +380,7 @@ FocusScope {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
-            text: root.shown ? root.shown.zone + (root.shown.crisis ? " · crisis" : "") : ""
+            text: root.zoneLabel
             color: root.toneColor
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -455,6 +468,18 @@ FocusScope {
       width: parent.width
       spacing: Style.spacing.md
       visible: root.isOpen
+
+      // The *Ask agent* slot (ADR-0028 §4b): first, before the human's own
+      // actions, because the agent explains with evidence and the human
+      // never has to. Empty until WP-095 puts its button here; an empty
+      // slot takes no space.
+      Item {
+        id: askAgentSlot
+        objectName: "askAgentSlot"
+        width: parent.width
+        visible: children.length > 0
+        implicitHeight: childrenRect.height
+      }
 
       ButtonGroup {
         id: actionGroup

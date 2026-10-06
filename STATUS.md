@@ -14,21 +14,24 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-105 | redact collector messages before cursors.json, capture --json and the index | Engine | `engine-105` (opus) | `wt/WP-105` · `wp/105-redact-messages` | 2026-10-06 |
-| WP-108 | hook headroom on curl lines with -e | Engine | `engine-108` (opus) | `wt/WP-108` · `wp/108-hook-headroom` | 2026-10-06 |
 | WP-101 | one-click start, agent snapshot and close path, closed-by-agent marker, reopen | Engine + Plugin | `engine-101` (opus) | `wt/WP-101` · `wp/101-one-click-close` | 2026-10-06 |
+| WP-109 | engine: drift classification by consequence (ADR-0028) | Engine | `engine-109` (opus) | `wt/WP-109` · `wp/109-drift-classes` | 2026-10-06 |
 
 ## Queued (next up)
 
-0.1.4 wave: wave 1 WP-087…090 active (file-disjoint, scoped with the
-advisor: no ADR, no contract change); wave 2 WP-091 (snapper access
-notes, after WP-088) and WP-092 (hook rebuild margin, after WP-087).
 In 0.1.4 (operator decision 2026-10-06: keep building 0.1.4 before a
 release): the rest of ADR-0027 (a case the user started authorises the
 agent; the agent verifies and closes; only steps that can make the
 machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
 (one-click start, snapshot and close path, reopen) active, WP-094 (skill)
 after WP-101 (it quotes `plan snapshot` and the agent-close refusal).
+ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
+classification) and WP-110 (plugin quiet surfaces) active, WP-111 (agent
+texts, docs, live check) after WP-109. Then the 0.1.4 release preparation
+(tag on the operator's go). Later from ADR-0028: WP-112 (measured routine
+paths after a real update), WP-113 (plugin trees, toggles, opt-in
+authorized_keys; each item approved separately), WP-114 (pacman.conf;
+needs an AGENTS.md §6 amendment).
 Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
 Omarchy upstream contribution before 1.0. Then the
 contract v2 bundle for v0.2.0 (autocommit result in the index,
@@ -47,6 +50,26 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-110 the plugin is quiet for everything but a crisis
+  (ADR-0028): the bar counts crises only (`driftInBar` in the shell's
+  plugin settings: crisis, all, none), the red strip shows only for a
+  crisis, labels follow `crisis` not the zone, Today counts changes
+  "without a case", and only open drift is tinted in the Changelog;
+  Opus review, one round, Fable stage 2; merged.
+- 2026-10-06 WP-108 the agent hook is faster on curl lines that hold
+  `-e`/`-E` elsewhere in the line: redaction triggers are literal text
+  every match holds, now also in order (`>`) and as written for a
+  capital; four rules compile less often; the 900-line row went from 4.8
+  to 3.9 ms (bound 5 ms unchanged); an old/new differential over 2 × 1 M
+  lines showed no masking change; Opus review, one round, Fable stage 2;
+  merged.
+- 2026-10-06 WP-105 collector messages (a program's stderr in a
+  degraded note) are redacted before they reach `cursors.json`, capture
+  output and `--json`, doctor, init, `index.json` and `STATUS.md`; a
+  message an older engine saved is redacted on load and on every display;
+  with an invalid `[redaction] patterns` entry the index and doctor
+  withhold the message instead of falling back to the built-in rules;
+  Opus review, one round, Fable stage 2; merged.
 - 2026-10-06 WP-107 the config cursor carries an exact marker
   (`atCheck`: the count of config events at its check time), so the
   replay reads past the previous capture's own events instead of a
@@ -483,6 +506,22 @@ submission). (see `work/queued/`)
   `jax-seldon-plugin` via subtree split → ADR-0009.
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
+
+## Decided 2026-10-06
+- 0.1.4 keeps growing before a release: WP-101 and WP-094 (ADR-0027) and
+  ADR-0028 (WP-109…111) are in it; the release after them, tag on the
+  operator's go. Release policy: by theme, not by calendar; privacy and
+  data-loss fixes go out promptly (the logbook is append-only).
+- ADR-0028 accepted: attention is earned by consequence. Routine changes
+  (theme, plugin toggles, Omarchy's updater, a plain full upgrade,
+  Omarchy's own writes) are history, not drift; a package installed by
+  hand without a case is quiet attention; a crisis is a change without a
+  case that can break boot, login, the shell or security (hooks, user
+  units, autostart, environment, login profiles). Existing default watch
+  lists gain the new paths; a user-changed list stays.
+- Omarchy first: Omarchy's own agent skill
+  (`$OMARCHY_PATH/default/agents/skills/omarchy/`) and `omarchy commands
+  --json` are inputs to every WP that touches Omarchy integration.
 
 ## Decided 2026-10-05
 - ADR-0027 (act, then account): a case the user started authorises the

@@ -12,12 +12,12 @@ import "../Model.js" as Model
 //   ▌        resolution: why        (folded, ADR-0012 §8 §11)   [Resolve…]
 //
 // One colour per row, `row.tone` from Model.changelogRows(), in theme colours
-// (red = urgent, yellow = accent, green = muted): the zone of the open drift
-// item while the event is open drift (a routine group is yellow although its
-// members are red in the ledger, ADR-0013 §3), else the event's own zone. It
-// paints the stripe and, for open drift, the glyph, status line and "+N"
-// badge. Snapshot rows carry the theme's selected
-// fill. A drift group's leader shows "+N", N the members besides it; expanded, it lists the members
+// (red = urgent, yellow = accent, green = muted): while the event is open
+// drift, its item's class (ADR-0028 §4b: a crisis urgent, attention the
+// accent, whatever the zone), else muted (an ordinary row is quiet whatever
+// its zone; no stripe without a zone). It paints the
+// stripe and, for open drift, the glyph, status line and "+N" badge.
+// Snapshot rows carry the theme's selected fill. A drift group's leader shows "+N", N the members besides it; expanded, it lists the members
 // that index.events still holds. An open drift row carries *Resolve…*
 // (`resolveRequested`), which opens the DriftSheet. Every string is plain text.
 CursorSurface {

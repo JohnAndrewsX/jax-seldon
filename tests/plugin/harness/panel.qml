@@ -43,6 +43,9 @@ import qs.Commons
 //                       state index the fake engine writes and runs actions
 //   HARNESS_MANIFEST    a manifest as JSON text, assigned to the service's
 //                       `manifest` after creation, as the shell injects it
+//   HARNESS_SETTINGS    the bar widget's settings (shell.json's entry) as
+//                       JSON text, handed to the panel as the widget does,
+//                       e.g. {"driftInBar":"all"} (ADR-0028 §4a)
 //   HARNESS_BAR         if set, give the panel a stand-in bar whose
 //                       switchPanelFrom() records its direction; each report
 //                       then carries `switches` (Tab hands over to the bar)
@@ -237,6 +240,8 @@ ShellRoot {
     var manifestJson = Quickshell.env("HARNESS_MANIFEST") || ""
     if (root.service && manifestJson !== "") root.service.manifest = JSON.parse(manifestJson)
     var props = { service: root.service }
+    var settingsJson = Quickshell.env("HARNESS_SETTINGS") || ""
+    if (settingsJson !== "") props.settings = JSON.parse(settingsJson)
     if (Quickshell.env("HARNESS_BAR")) props.bar = fakeBar
     root.panel = root.load("Panel.qml", win.contentItem, props)
     if (root.panel) root.panel.open()

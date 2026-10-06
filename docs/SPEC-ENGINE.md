@@ -1263,9 +1263,20 @@ same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The
 `seldon` notes (§3 state reset, §4 snapper) are events and are redacted
-the same way; the snapper note's detail embeds the collector's message,
-which `cursors.json`, `capture --json` and `index.json`
-(`state.collectors`, no event) carry as the collector gave it (WP-099).
+the same way (WP-099). A collector's message (snapper's stderr, for
+example) goes through the same redaction once, before the capture saves
+it in `cursors.json`, prints it (`capture` and `capture --json`) or
+embeds it in the snapper note. A capture also redacts the messages an
+older engine saved in `cursors.json` when it loads the file (a message
+that already holds `‹redacted›` is left as it is, so a user pattern that
+matches across the marker does not grow it on every capture). The index
+build and `doctor` (its `collectors` row) redact each message they read
+from there again, so `index.json` (`state.collectors`), `STATUS.md` and
+`doctor` show none unredacted; `doctor`'s `omarchy` and `snapper` probes,
+whose rows `init` prints too, redact what the program printed the same
+way. While `config.toml` cannot be parsed or a `[redaction] patterns`
+entry is invalid, these show `collectors::MESSAGE_WITHHELD` in place of
+the message instead (WP-105).
 The rules
 (`redact::BUILTIN`, in this order): URLs with userinfo; `--password`
 (also wget's `--http-password` and `--ftp-password`);
@@ -1351,7 +1362,11 @@ its literal triggers (`redact::triggers`), checked on the text in lower
 case with the Kelvin sign and the long s folded onto `k` and `s`, as
 case-insensitive matching folds them (`redact::trigger_text`); a trigger
 may join literals with `+` that must all be present, so a `curl` rule
-needs `curl` and its option (`curl+-x`; WP-084). The option rules
+needs `curl` and its option (`curl+-x`; WP-084), or with `>` that must
+be present in that order (`://>@`: an `@` after `://`). A trigger with
+a capital is checked on the text as written, for a rule whose literals
+are case-sensitive (`curl+-U`, `curl>-E>:`: `curl`, then `-E`, then the
+`:` of the value; WP-108). The option rules
 (`curl -u`/`--user`, `-U`/`--proxy-user`, `-x`/`--proxy`,
 `-b`/`--cookie`, `-E`/`--cert`, `http|xh -a`/`--auth`, `sshpass -p`,
 `docker … login -p`) look for the option within one command: up to an
@@ -1381,7 +1396,10 @@ query `?token=abc` inside a quoted URL stops at the closing quote; a
 double-quoted value may hold `\"` (WP-097).
 An option given twice in one command is masked
 each time (`curl -u a:b … -u c:d`, `-b x … -b y`): the rule scans on
-from the end of its previous match, without a second command word;
+from the end of its previous match, without a second command word,
+and compiles the pattern for that only when the text after the match
+holds the option as written (`-u`, `-U`, `-x`, `-b`, `-E`, `-a`, `-p`,
+or a long form; WP-108);
 `sshpass` masks only its first `-p`, as a later one belongs to the
 command it runs (`ssh -p 2222`) (WP-087). Not masked (WP-097):
 combined short options (`curl -su a:b`, `-sE c.pem:pw`; a trigger is
@@ -1413,12 +1431,15 @@ after `$"pass:…"`, which reads as an unclosed quote. A `pass:…` value
 after an option another rule also masks (`--pass`, `--password=`,
 `--secret-key`, …) is counted under both rules in the import report; the
 earlier rule in the order masks it, `openssl-pass` before `key-option`;
-the output holds one marker (WP-106). `cert-password` compiles on any
-curl line holding `-e` (`set -e`, `sudo -E`), about 0.3 ms per hook
-call; accepted. `openssl-pass` compiles only on a line holding `pass:`,
-about 0.4 ms there; no hook line does; accepted. An e-mail address
-(`email`, WP-093) is a local part, `@`, and a domain of at least two
-labels whose last holds letters only (`example.de`, `müller.example`,
+the output holds one marker (WP-106). `cert-password` compiles only on
+a line holding `curl`, then `-E` as written, then a `:`, or `--cert` or
+`--proxy-cert` and a `:` after it, so neither `set -e` nor a later
+`sudo -E` without a `:` after it compiles it (WP-108; before, any curl
+line holding `-e` did, about 0.3 ms per hook call). `openssl-pass`
+compiles only on a line holding `pass:`, about 0.4 ms there; no hook
+line does; accepted. An e-mail address (`email`, WP-093) is a local
+part, `@`, and a domain of at least two labels whose last holds
+letters only (`example.de`, `müller.example`,
 `.испытание`). The local part is ASCII letters, digits and `._%+-`,
 plus characters beyond ASCII other than the no-break space, general
 punctuation (U+2000–U+206F: `—`, `„`, the quotes of `‹redacted›`), CJK
@@ -1454,7 +1475,9 @@ matcher on any non-ASCII text, the marker of an earlier rule included
 (WP-084: a 16 KB curl line took 5.4 ms, 0.13 ms with ASCII boundaries).
 The `…=` assignment rules have no boundary, so a name that starts with
 `ſ` or `K` still matches. An invalid user pattern is a user error
-(exit 1): Seldon writes nothing rather than unredacted text. `subject` is
+(exit 1): Seldon writes nothing rather than unredacted text; the index
+build and `doctor` still run and withhold every collector message
+(above). `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
 before a rule existed are not rewritten.
 
@@ -1552,7 +1575,9 @@ above the threshold; WP-076; 2026-10-05 after WP-092, load 2 to 3:
 0.6 ms, 2.8 ms and 1.2 ms, and for a curl line whose URL leaves a
 marker 3.9 ms with the rebuild and 2.2 ms above the threshold; with
 WP-093's e-mail rule 4.1 ms for that curl line and 3.6 ms for a line
-with an address). On a disk the sync of §1 comes on top.
+with an address; 2026-10-06 after WP-108, load below 1: 3.9 ms with
+the rebuild for a curl line with `-u`, `set -e`, `sudo -E` and `-am`,
+4.8 ms before). On a disk the sync of §1 comes on top.
 WP-062's redaction is not
 slower than before it: measured 2026-10-03 on a loaded dev host (load
 average 3 to 8), release builds interleaved with a build of the code

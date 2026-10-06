@@ -7,9 +7,11 @@ import "components"
 import "Model.js" as Model
 
 // The Seldon pill (SPEC-PLUGIN §4): the bar glyph (A4) and `A · D`, A =
-// active cases, D = open drift, zero parts hidden. Accent when cases are
-// active, the theme's urgent colour when any drift is in the red zone,
-// dimmed while the status is not ok; the glyph takes the text's colour.
+// active cases, D = the crisis count by default, zero parts hidden; the
+// setting `driftInBar` (ADR-0028 §4a) makes D all open drift (`all`) or
+// hides it (`none`). Accent when cases are active, the theme's urgent
+// colour when any crisis (in every mode), dimmed while the status is not
+// ok; the glyph takes the text's colour.
 // Left click toggles the panel, middle click the Prime Radiant, right click
 // captures.
 //
@@ -41,7 +43,8 @@ BarWidget {
   readonly property string tone: Model.pillTone(counts)
   readonly property bool dimmed: !service || (service.ready && status !== "ok")
   readonly property int captureInterval: Model.clampInterval(setting("captureIntervalMin", Model.CAPTURE_INTERVAL_MIN_DEFAULT))
-  readonly property string pillText: vertical ? "" : Model.pillText(counts)
+  readonly property string driftInBar: Model.driftInBarMode(setting("driftInBar", Model.DRIFT_IN_BAR_DEFAULT))
+  readonly property string pillText: vertical ? "" : Model.pillText(counts, driftInBar)
   readonly property string tooltip: service
     ? Model.tooltipText(status, counts, service.lastCapture, service.nowMs)
     : "Seldon — service not running"
@@ -52,7 +55,9 @@ BarWidget {
   }
 
   function pushSettings() {
-    if (root.service) root.service.setCaptureInterval(root.captureInterval)
+    if (!root.service) return
+    root.service.setCaptureInterval(root.captureInterval)
+    root.service.setDriftInBar(root.driftInBar)
   }
 
   function openOverlay() {
@@ -71,6 +76,7 @@ BarWidget {
       dimmed: button.dimmed,
       tooltip: button.tooltipText,
       status: root.status,
+      driftInBar: root.driftInBar,
       opened: root.opened
     })
   }
@@ -164,6 +170,7 @@ BarWidget {
   onSettingsChanged: root.injectPanel()
   onServiceChanged: { root.pushSettings(); root.injectPanel() }
   onCaptureIntervalChanged: root.pushSettings()
+  onDriftInBarChanged: root.pushSettings()
 
   Timer {
     interval: 1000

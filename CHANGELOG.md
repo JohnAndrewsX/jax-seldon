@@ -98,6 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer leaves the collectors it does not run waiting for a baseline
   the crashed note already recorded, which gave a second reset note
   later (WP-104).
+- A collector's message (snapper's error output, for example) now goes
+  through redaction before `capture` saves it in `cursors.json` or prints
+  it, as the ledger's copy already did; `index.json` (`state.collectors`)
+  and `STATUS.md` show it redacted too, and so do `seldon doctor` and
+  the snapper line of `seldon init`. Messages an earlier release saved
+  in `cursors.json` are redacted by the next capture, and by the index
+  build and `doctor` until then. While a `[redaction] patterns` entry is
+  invalid, the index and `doctor` show a fixed text in place of each
+  collector message (WP-105).
 - Seldon's own plugin and package changes that an earlier capture left
   open (the engine stopped between the two writes, or 0.1.2 and before
   recorded them) are explained by the next capture, as rule 8 explains
@@ -170,6 +179,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   password itself (`pass:…`), so `-passin pass:…` is recorded as
   `-passin ‹redacted›`. A source such as `env:VAR`, `file:path`, `fd:N`
   or `stdin` stays as it is (WP-106).
+- Redaction compiles fewer of its rules for a common curl line: a URL
+  without a user and password in it, `curl -u` (without `-U`), an `-E`
+  with no `:` after it (`set -e`, `curl … | sudo -E bash`) and an option
+  given only once no longer compile the rules that could not match. The
+  agent hook takes about 1 ms less for such a line near 1000 ledger
+  lines. What is masked is unchanged (WP-108).
 
 - **One sentence starts the work (ADR-0027 §6).** `seldon agent start
   --new -- "<what to do>"` creates a case from the sentence (title: its
@@ -206,6 +221,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Quiet surfaces (ADR-0028).** The bar's second number now counts
+  crises only: changes that can affect boot, login or the shell and have
+  no case. Other changes without a case no longer show in the bar; the
+  new setting `driftInBar` (`crisis`, the default; `all`, the behaviour
+  up to 0.1.3; `none`) changes that, e.g. `omarchy bar set jax.seldon
+  driftInBar all`. The bar still turns to the error colour on a crisis in
+  every mode. The tooltip reads "Seldon — 2 active cases, 1 crisis, 7
+  changes without a case, last capture …". The red strip appears only for
+  a crisis and reads "N changes that can affect boot, login or the shell
+  have no case". The Changelog shows a quiet "N changes without a case"
+  line under its header; open rows say "Crisis · no case" or "No case"
+  instead of "Needs a reason" / "Unexplained", and are coloured by
+  whether they are a crisis (urgent) or not (accent), no longer by zone;
+  every other row (resolved, with a case, routine) has a muted stripe
+  whatever its zone. The Today counts and the Changelog's "+N more …"
+  line say "without a case" instead of "open drift"; Today counts the
+  changes without a case that are no crisis.
+  The drift sheet says "RESOLVE A CRISIS" and "<zone> · crisis" for a
+  crisis in any zone and keeps a slot for *Ask agent* above Link /
+  Explain / Dismiss. The Today pictogram no longer changes for changes
+  without a case. Label skew: a plugin up to 0.1.3 with a 0.1.4 engine
+  still says "red zone" where "crisis" is meant (the strip, the tooltip,
+  the sheet); behaviour is the same, only the labels are wrong. Update
+  the plugin with the engine (WP-110).
 - **Run (WP-101).** The Work tab starts a case with one sentence: type
   what to do, Enter or *Run*; the engine makes and starts the case and
   launches your agent, the cursor goes to the new case, and a refusal

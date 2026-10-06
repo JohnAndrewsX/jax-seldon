@@ -1,7 +1,9 @@
 # ADR-0013 — Drift is grouped per pacman transaction; routine upgrades are yellow
 
-**Status:** accepted
+**Status:** accepted; §3 superseded in part by ADR-0028
 **Date:** 2026-10-01
+
+> Superseded in part by [ADR-0028](ADR-0028-attention-by-consequence.md) (2026-10-06): routine is decided by consequence: inside a plain full upgrade `alwaysRed` upgrades are routine and an `omarchy` `update` attributed to it is routine; crisis follows the harm test, not the zone.
 
 ## Context
 SPEC-ENGINE §5 rule 4 makes every caseless event drift and every red-zone
