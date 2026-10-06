@@ -14,6 +14,7 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-130 | guard: stop false positives on text, keep every real block | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
 | WP-118 | wizard, installer and docs texts (UX review) | Engine + Docs | `engine-118` (opus) | `wt/WP-118` · `wp/118-setup-texts` | 2026-10-06 |
 | WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
 
@@ -32,7 +33,7 @@ texts, docs) done. Then the 0.1.4 release preparation
 paths after a real update), WP-113 (plugin trees, toggles, opt-in
 authorized_keys; each item approved separately), WP-114 (pacman.conf;
 needs an AGENTS.md §6 amendment).
-Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
+0.2.0 (ADR-0034 desk, on the integration branch `next` until 0.1.4 is tagged): wave 1 WP-120 (contract v2, ADR-0035), WP-121 (desk shell), WP-113, WP-102a; wave 2 WP-122, WP-123, WP-124a (triage, supersedes WP-095), WP-114; wave 3 WP-125 (graph), WP-124b, WP-119, WP-102b; wave 4 WP-126. WP-130 (guard) on main; no
 Omarchy upstream contribution before 1.0. Then the
 contract v2 bundle for v0.2.0 (a case's risk in the ledger — `meta.risk` on
 case-created/started and a ledger line for `plan set --risk`, so ADR-0029's
