@@ -2222,3 +2222,22 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **`cargo test` stops at the first failing test binary.** Use
   `--no-fail-fast` to see every broken file after a wording change such
   as a rules version bump.
+
+## 2026-10-07 · WP-130 (Engine)
+
+- **The guard parses the command since WP-130.** The substring bullets
+  above (WP-002, WP-007, WP-008, WP-013 …) describe the old grep guard:
+  words in quotes, heredoc bodies, `grep` patterns, `jq` filters and
+  commit messages are data now. What it still blocks without a red-zone
+  action is fail-closed: a computed command name (`$CMD …`; assign it in
+  the same command, `B=…; $B`), a shell reading commands from a pipe
+  (`… | bash`; use a heredoc or `bash -c`), `env -S`, an unterminated
+  quote or heredoc. The message says "fail closed" and why.
+- **A prefix assignment does not move `~`.** `HOME=/tmp/h mkdir
+  ~/.config/x` expands `~` before the assignment applies, so it writes
+  the real `~/.config` and the guard blocks it. Use `export HOME=…;` (or
+  `HOME=$(mktemp -d) && …`) first.
+- **A worktree's hook runs that worktree's guard** (`$CLAUDE_PROJECT_DIR`).
+  Editing `scripts/guard.py` changes the guard of your own session at
+  once; a broken guard blocks every Bash call (fail closed). Fix it with
+  the Edit tool, which the hook does not check.
