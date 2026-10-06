@@ -1734,7 +1734,8 @@ command changes system state.";
             assert!(first("`pkexec") < first("`sudo"), "{language}: {own}");
             let install = section(&agents, "## Installing software");
             assert!(
-                install.find("pkexec pacman -S").unwrap() < install.find("omarchy pkg add").unwrap(),
+                install.find("pkexec pacman -S").unwrap()
+                    < install.find("omarchy pkg add").unwrap(),
                 "{language}"
             );
             assert!(agents.contains("docs/AGENT-GUIDE.md"), "{language}");
