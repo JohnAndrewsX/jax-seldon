@@ -812,12 +812,11 @@ fn working_dir(cwd: Option<&str>, dirs: &Dirs) -> PathBuf {
 fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
     let payload: ToolPayload = serde_json::from_str(stdin)
         .map_err(|e| Error::user(format!("stdin is not a Claude Code hook payload: {e}")))?;
-    if !matches!(
-        payload.hook_event_name.as_deref(),
-        Some("PreToolUse" | "PostToolUse")
-    ) {
-        return Ok(());
-    }
+    let search = match payload.hook_event_name.as_deref() {
+        Some("PreToolUse") => Search::Tail,
+        Some("PostToolUse") => Search::Whole,
+        _ => return Ok(()),
+    };
     let tool = payload.tool_name.as_deref().unwrap_or("");
     let setup = setup(ctx)?;
     if !in_scope(&setup.config, &setup.logbook.root, payload.cwd.as_deref()) {
@@ -855,7 +854,7 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
         actor: CLAUDE_CODE,
         ts: ctx.now,
         case: None,
-        unless_recorded: tool_use_id.as_deref(),
+        unless_recorded: tool_use_id.as_deref().map(|id| (id, search)),
     };
     record(ctx, &setup, ledger, entry, records, &extra)
 }
@@ -1103,13 +1102,33 @@ fn edit_records(setup: &Setup, tool: &str, input: &Value, cwd: &Path) -> Vec<Rec
         .collect()
 }
 
+/// How much of a tool call's history [`already_recorded`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Search {
+    /// The last [`PRE_TAIL`] bytes of each month file: a second
+    /// `PreToolUse` comes moments after the first (ADR-0030 §5).
+    Tail,
+    /// The whole month files: a `PostToolUse` may come long after its
+    /// `PreToolUse`.
+    Whole,
+}
+
+/// The end of a month file a `PreToolUse` searches for its tool call
+/// (about 500 events).
+const PRE_TAIL: u64 = 256 * 1024;
+
 /// Whether the ledger already holds an event of the last day for this
 /// tool call: a PostToolUse after its PreToolUse, or a second PreToolUse
-/// from a second settings file (ADR-0030 §5). Asked for every recorded
-/// call, so the month files are first searched for the id as a JSON
-/// string; only a file that holds it is parsed (the hook's 5 ms budget,
-/// SPEC-ENGINE §1).
-fn already_recorded(ledger: &Ledger, ctx: &Context, tool_use_id: &str) -> Result<bool> {
+/// from a second settings file (ADR-0030 §5). The month files are searched
+/// for the id as a JSON string, and only a line that holds it is parsed:
+/// asked for every recorded call, this keeps the hook within its budget
+/// (SPEC-ENGINE §1).
+fn already_recorded(
+    ledger: &Ledger,
+    ctx: &Context,
+    tool_use_id: &str,
+    search: Search,
+) -> Result<bool> {
     let (from, to) = (
         ctx.now - chrono::Duration::days(1),
         ctx.now + chrono::Duration::days(1),
@@ -1121,26 +1140,55 @@ fn already_recorded(ledger: &Ledger, ctx: &Context, tool_use_id: &str) -> Result
         .format("%Y-%m")
         .to_string();
     let last = (to + chrono::Duration::days(1)).format("%Y-%m").to_string();
+    let tail = (search == Search::Tail).then_some(PRE_TAIL);
     for month in ledger.months()? {
         if month < first || month > last {
             continue;
         }
-        let holds = match std::fs::read(ledger.month_file(&month)) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).contains(&quoted),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-            Err(e) => return Err(anyhow::Error::new(e).into()),
-        };
-        if holds
-            && ledger.read_month(&month)?.events.iter().any(|e| {
-                e.ts >= from
-                    && e.ts <= to
-                    && e.meta.extra.get("toolUseId").and_then(Value::as_str) == Some(tool_use_id)
-            })
-        {
+        let bytes = read_end(&ledger.month_file(&month), tail)?;
+        let text = String::from_utf8_lossy(&bytes);
+        let found = text.match_indices(&quoted).any(|(at, _)| {
+            let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+            let end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+            crate::ledger::parse_line(text[start..end].trim_end_matches('\r').as_bytes())
+                .is_some_and(|e| {
+                    e.ts >= from
+                        && e.ts <= to
+                        && e.meta.extra.get("toolUseId").and_then(Value::as_str)
+                            == Some(tool_use_id)
+                })
+        });
+        if found {
             return Ok(true);
         }
     }
     Ok(false)
+}
+
+/// The bytes of `path` from `tail` bytes before its end on (all of it with
+/// `None`), starting at a line start; nothing when there is no file.
+fn read_end(path: &Path, tail: Option<u64>) -> Result<Vec<u8>> {
+    use std::io::{Seek as _, SeekFrom};
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(anyhow::Error::new(e).into()),
+    };
+    let len = file.metadata().map_err(anyhow::Error::from)?.len();
+    let start = tail.map_or(0, |t| len.saturating_sub(t));
+    file.seek(SeekFrom::Start(start))
+        .map_err(anyhow::Error::from)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(anyhow::Error::from)?;
+    if start > 0 {
+        // the first line is cut: it starts before the tail
+        let cut = bytes
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(bytes.len(), |i| i + 1);
+        bytes.drain(..cut);
+    }
+    Ok(bytes)
 }
 
 /// Takes the state lock, waiting up to [`LOCK_PATIENCE`] for another
@@ -1164,7 +1212,7 @@ struct Entry<'a> {
     actor: &'a str,
     ts: chrono::DateTime<chrono::FixedOffset>,
     case: Option<String>,
-    unless_recorded: Option<&'a str>,
+    unless_recorded: Option<(&'a str, Search)>,
 }
 
 /// Appends one `agent/command` event per record and attaches them to the
@@ -1202,8 +1250,8 @@ fn record(
         }
         Err(e) => return Err(e),
     };
-    if let Some(id) = entry.unless_recorded
-        && already_recorded(&ledger, ctx, id)?
+    if let Some((id, search)) = entry.unless_recorded
+        && already_recorded(&ledger, ctx, id, search)?
     {
         return Ok(());
     }

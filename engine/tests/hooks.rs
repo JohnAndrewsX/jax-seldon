@@ -2413,6 +2413,40 @@ mod post_tool_use {
         assert_eq!(h.commands().len(), 4);
     }
 
+    /// A PreToolUse reads the end of the month file (its pair comes
+    /// moments later); a PostToolUse reads it whole, as before.
+    #[test]
+    fn a_post_tool_use_finds_its_call_behind_many_events() {
+        let h = Hooks::new();
+        let pre = payload("claude-code-mutating.json", "PreToolUse");
+        h.hook("claude-code", &pre);
+        assert_eq!(h.commands().len(), 1);
+        // about 600 KB of later events in the same month file
+        let at = chrono::DateTime::parse_from_rfc3339(NOW).unwrap();
+        let mut text = String::new();
+        for i in 0..1300u128 {
+            let id = ulid::Ulid::from_parts(at.timestamp_millis() as u64, i + 1);
+            text.push_str(&format!(
+                r#"{{"id":"{id}","ts":"{}","source":"manual","kind":"note","subject":"journal","detail":"Filler note {i}, long enough to fill the tail of the month file quickly.","actor":"human"}}"#,
+                at.format("%Y-%m-%dT%H:%M:%S%:z")
+            ));
+            text.push('\n');
+        }
+        let month = h.logbook.join("ledger/2026-10.jsonl");
+        let before = read(&month);
+        std::fs::write(&month, format!("{before}{text}")).unwrap();
+        assert!(text.len() > 256 * 1024);
+
+        h.hook(
+            "claude-code",
+            &payload("claude-code-mutating.json", "PostToolUse"),
+        );
+        assert_eq!(h.commands().len(), 1, "the PostToolUse found it");
+        // a PreToolUse that late is past the tail: recorded again
+        h.hook("claude-code", &pre);
+        assert_eq!(h.commands().len(), 2);
+    }
+
     #[test]
     fn a_lock_held_too_long_is_reported() {
         let h = Hooks::new();
