@@ -1544,7 +1544,7 @@ mod redaction {
             assert!(
                 !triggers(rule)
                     .iter()
-                    .flat_map(|t| t.split('+'))
+                    .flat_map(|t| t.split(['+', '>']))
                     .any(|part| marker.contains(part) || REDACTED.contains(part)),
                 "{rule}"
             );
@@ -1588,6 +1588,51 @@ mod redaction {
                 .iter()
                 .any(|t| holds_trigger(line, &word, t))
         );
+        // `set -e`, curl's `-e` and an `-E` with no `:` after it do not
+        // compile `cert-password` (WP-108): its triggers are `curl` and
+        // `-E` as written, then a `:`
+        for line in [
+            "set -e; curl -fsSL -u bob:x https://h.example/i.sh | sudo -E bash && git commit -am zed",
+            "set -e; curl -e https://ref.example/ -o f https://h.example/f",
+        ] {
+            let lower = trigger_text(line);
+            assert!(
+                !triggers("cert-password")
+                    .iter()
+                    .any(|t| holds_trigger(line, &lower, t)),
+                "`{line}`"
+            );
+        }
+    }
+
+    /// A trigger with a capital is looked for as written, one joined by
+    /// `>` in order (WP-108).
+    #[test]
+    fn triggers_in_order_and_as_written() {
+        let holds = |text: &str, trigger: &str| holds_trigger(text, &trigger_text(text), trigger);
+        for (text, trigger, expected) in [
+            ("curl -E c.pem:pw", "curl>-E>:", true),
+            ("curl -Ec.pem:pw", "curl>-E>:", true),
+            ("curl -e c.pem:pw", "curl>-E>:", false),
+            ("CURL -E c.pem:pw", "curl>-E>:", false),
+            ("curl -E c.pem", "curl>-E>:", false),
+            ("curl x: -E c.pem", "curl>-E>:", false),
+            ("-E a:b curl", "curl>-E>:", false),
+            ("-E a:b; curl -E c:d", "curl>-E>:", true),
+            ("curl -E a -E b:c", "curl>-E>:", true),
+            (":curl", "curl>:", false),
+            ("curl:", "curl>:", true),
+            ("curl", "cur>rl", false),
+            ("curlrl", "cur>rl", true),
+            ("me@h https://h/", "://>@", false),
+            ("HTTPS://u:p@h", "://>@", true),
+            ("curl -U x", "curl+-U", true),
+            ("curl -u x", "curl+-U", false),
+            ("-U x; curl", "curl+-U", true),
+            ("CURL -u x", "curl+-u", true),
+        ] {
+            assert_eq!(holds(text, trigger), expected, "`{text}`, {trigger}");
+        }
     }
 
     #[test]

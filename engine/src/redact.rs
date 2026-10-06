@@ -403,17 +403,31 @@ pub const BUILTIN: [&str; 27] = [
 static BUILTIN_RULES: LazyLock<Vec<Rule>> = LazyLock::new(builtin_rules);
 
 /// Whether `text` holds `trigger`: every one of its literals, which a `+`
-/// joins (`curl+-x`: both `curl` and `-x`, anywhere in the text). A
-/// trigger with an ASCII capital is looked for in `text` as written
-/// (`curl+-U`, for a rule whose `curl` and `-U` are case-sensitive), any
-/// other in `lower`, the text through [`trigger_text`].
+/// joins (`curl+-x`: both `curl` and `-x`, anywhere in the text) or a `>`
+/// joins in order (`curl>-E>:`: `-E` after `curl`, then `:` after
+/// `-E`). A trigger with an ASCII capital is looked for in `text` as
+/// written (`curl>-E>:`, for a rule whose `curl` and `-E` are
+/// case-sensitive), any other in `lower`, the text through
+/// [`trigger_text`].
 pub fn holds_trigger(text: &str, lower: &str, trigger: &str) -> bool {
     let hay = if trigger.bytes().any(|b| b.is_ascii_uppercase()) {
         text
     } else {
         lower
     };
-    trigger.split('+').all(|part| hay.contains(part))
+    if !trigger.contains('>') {
+        return trigger.split('+').all(|part| hay.contains(part));
+    }
+    // the leftmost occurrence of each literal leaves the most text for
+    // the next one
+    let mut rest = hay;
+    trigger.split('>').all(|part| match rest.find(part) {
+        Some(i) => {
+            rest = &rest[i + part.len()..];
+            true
+        }
+        None => false,
+    })
 }
 
 /// Literal text that every match of the built-in rule `name` contains
@@ -470,8 +484,10 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         "proxy-option" => &["curl+-u", "--proxy-"],
         "proxy-userinfo" => &["curl+-x", "proxy"],
         "cookie-option" => &["curl+-b", "curl+--cookie"],
-        // `curl` and `-E` as written: `set -e` holds no trigger
-        "cert-password" => &["curl+-E", "--cert", "--proxy-cert"],
+        // `curl` and `-E` as written, and the `:` of the value after
+        // the option: neither `set -e` nor `curl … | sudo -E bash` holds
+        // one
+        "cert-password" => &["curl>-E>:", "--cert>:", "--proxy-cert>:"],
         // the command word and the white space or `\` after it, as the
         // rule requires them (ASCII, so a match always holds one)
         "httpie-auth" => &[
