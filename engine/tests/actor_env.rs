@@ -20,7 +20,7 @@ const GENERATED_AT: &str = "2026-10-01T17:05:12+02:00";
 /// Open drift items of the fixture logbook (`tests/drift.rs`), all
 /// attention: an agent may not dismiss a crisis (ADR-0028 §3).
 const THEME: &str = "01M3VTGNY0NZG4AY80814WSKGR";
-const MONITORS: &str = "01M3VK2MR06078ZQTPRZCFYHK0";
+const MONITORS: &str = "01M3KVWFR06078ZQTPRZCFYHK0";
 const OLLAMA: &str = "01M3VNFTF8EVHWFFZ687N14Q0C";
 
 /// `seldon --json args…` at `now`, with `SELDON_ACTOR=actor` when given.

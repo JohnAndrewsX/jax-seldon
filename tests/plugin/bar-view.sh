@@ -132,7 +132,7 @@ for theme in tokyo-night catppuccin-latte osaka-jade; do
     check "$name file" "$(field "$name" .file)" "$want_file"
     check "$name box" "$(field "$name" .box)" "$want_box"
     check "$name ready" "$(field "$name" .ready)" true
-    check "$name text" "$(field "$name" .pill.text)" "2 · 4"
+    check "$name text" "$(field "$name" .pill.text)" "2 · 6"
     check "$name glyph" "$(field "$name" .pill.glyph)" "$want_file"
     check "$name tone" "$(field "$name" .pill.tone)" urgent
     # check 4 from the pixels (device px), and the tint: the hinted glyph's
@@ -150,7 +150,7 @@ done
 
 # 2. The other two tones, derived from the sample in the scratch dir: no
 # crisis → accent (2 active cases), no crisis and no active case → the bar
-# foreground (`· 4`). The glyph takes the tone in every theme.
+# foreground (`· 6`). The glyph takes the tone in every theme.
 jq '.summary.crisis = 0' "$fx/index.sample.json" >"$work/index-accent.json"
 jq '.summary.crisis = 0 | .summary.activeCases = 0' "$fx/index.sample.json" >"$work/index-default.json"
 for theme in tokyo-night catppuccin-latte osaka-jade; do
@@ -158,7 +158,7 @@ for theme in tokyo-night catppuccin-latte osaka-jade; do
     name="$theme-$tone"
     run "$name" "$theme" 12 "$work/index-$tone.json"
     check "$name tone" "$(field "$name" .pill.tone)" "$tone"
-    check "$name text" "$(field "$name" .pill.text)" "$([[ $tone == accent ]] && echo "2 · 4" || echo "· 4")"
+    check "$name text" "$(field "$name" .pill.text)" "$([[ $tone == accent ]] && echo "2 · 6" || echo "· 6")"
     glyph=$(ink "$name" glyphRect)
     digits=$(ink "$name" countsRect)
     within "$name centre (pixels)" "$(jq -r .centre <<<"$glyph")" "$(jq -r .centre <<<"$digits")" 1

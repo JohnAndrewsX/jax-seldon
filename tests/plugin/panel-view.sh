@@ -114,7 +114,7 @@ clean_log() {
 
 # 1. The sample: every tab renders its data; the strip is on every tab.
 run sample "$fx/index.sample.json" \
-  "view;tab:changelog;filter:pacman;text:f;filter:all;key:Down;key:Down*32;key:Return;tab:system;key:Down*40"
+  "view;tab:changelog;filter:pacman;text:f;filter:all;key:Down;key:Down*47;key:Return;tab:system;key:Down*40"
 expect sample 1 .view.status ok
 expect sample 1 .view.tab today
 expect sample 1 .view.banner ""
@@ -132,32 +132,32 @@ shows sample 1 "Thursday, 1 Oct 2026"
 shows sample 1 "09:25 · claude-code · C-2026-003"
 shows sample 1 "▸ Yesterday · 1 entry"
 expect sample 2 .view.tab changelog
-expect sample 2 .view.changelog.rows 62
-expect sample 2 '.view.changelog.badges | join(",")' "firefox +2"
+expect sample 2 .view.changelog.rows 72
+expect sample 2 '.view.changelog.badges | join(",")' "mesa +2"
 expect sample 2 .view.changelog.folded 7
 expect sample 2 .view.changelog.snapshots 8
 expect sample 2 '.view.changelog.driftTones | join(",")' \
-  "tokyo-night accent,~/.config/systemd/user/ollama.service urgent,ollama urgent,libinput accent,noto-fonts accent,firefox accent"
+  "tokyo-night accent,~/.config/systemd/user/ollama.service urgent,ollama urgent,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh accent,~/.config/hypr/monitors.conf accent,vulkan-radeon urgent,lib32-mesa urgent,mesa urgent"
 shows sample 2 "2 changes in the red zone need a reason"
-shows sample 2 "62 events · newest first"
+shows sample 2 "72 events · newest first"
 shows sample 2 "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar."
 shows sample 2 "Unexplained · proposed for C-2026-005"
 expect sample 3 .view.changelog.filter pacman
-expect sample 3 .view.changelog.rows 12
-shows sample 3 "12 events from pacman · newest first"
+expect sample 3 .view.changelog.rows 15
+shows sample 3 "15 events from pacman · newest first"
 expect sample 4 .view.changelog.filter snapper
 expect sample 4 .view.changelog.rows 10
-expect sample 5 .view.changelog.rows 62
+expect sample 5 .view.changelog.rows 72
 expect sample 6 .view.cursorActive true
-expect sample 7 .view.cursor 32
-shows sample 7 "firefox"
+expect sample 7 .view.cursor 47
+shows sample 7 "mesa"
 shows sample 7 "+2"
 shows sample 7 "Unexplained"
 expect sample 8 .view.drift.open true
-expect sample 8 .view.drift.subject firefox
+expect sample 8 .view.drift.subject mesa
 expect sample 8 '.view.drift.members | length' 3
 shows sample 8 "3 packages in one transaction:"
-shows sample 8 "· upgrade libinput  1.29.1-1 → 1.29.2-1"
+shows sample 8 "· downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
 expect sample 9 .view.tab system
 expect sample 9 '.view.system | join(",")' "OMARCHY,PACKAGES,PLUGINS,SNAPSHOTS,AREAS,COLLECTORS,SELDON"
 shows sample 9 "33 of 40 enabled"
@@ -272,7 +272,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$fx/index.sample.json" >"$work/after.json"
 mkdir -p "$work/home-live"
 run live "" \
-  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=63;tab:system;text:e;settle" \
+  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=73;tab:system;text:e;settle" \
   HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/live.record"
 expect live 1 .view.status ok
@@ -300,7 +300,7 @@ expect live 19 .view.tab today
 expect live 20 .view.tab changelog
 expect live 22 .view.capturing true
 shows live 22 "Capturing"
-expect live 24 .view.changelog.rows 63
+expect live 24 .view.changelog.rows 73
 shows live 24 "Written by the harness after Capture now · human"
 expect live 24 .view.captureResult "1 new event"
 shows live 24 "Last capture: 1 new event"
@@ -557,9 +557,10 @@ clean_log work-locked
 #     group named by that member, and a click on the red strip opens the
 #     first crisis with the cursor on its row. Nothing can be sent.
 THEME=01M3VTGNY0NZG4AY80814WSKGR UNIT=01M3VNJ9JGZ9169T01XCW16FT0 OLLAMA=01M3VNFTF8EVHWFFZ687N14Q0C
-FIREFOX=01M3SXBQVR7AW8PJQC1YXDCQ14 NOTO=01M3SXBRV0E702XKBM22HEV1B8
+# the sample's open group (ADR-0028: the 09-30 -Syu group is routine history)
+MESA=01M3H6M720FC6BAG7ETNQTXW9K LIB32=01M3H6M8184NVTFDTEGPD71P5H VULKAN=01M3H6M818EPKV6HMJ0GN4PGFG
 run drift-sample "$fx/index.sample.json" \
-  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Escape;resolve:$UNIT;key:Escape;resolve:$OLLAMA;key:Escape;resolve:$FIREFOX;key:Escape;resolve:$NOTO;key:Escape;click:2 changes in the red zone need a reason"
+  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Escape;resolve:$UNIT;key:Escape;resolve:$OLLAMA;key:Escape;resolve:$MESA;key:Escape;resolve:$LIB32;key:Escape;click:2 changes in the red zone need a reason"
 expect drift-sample 3 .view.cursor 4
 shows drift-sample 3 "Resolve…"
 expect drift-sample 4 .view.drift.open true
@@ -589,16 +590,16 @@ shows drift-sample 7 "RESOLVE A RED-ZONE CHANGE"
 shows drift-sample 7 "red · crisis"
 expect drift-sample 9 .view.drift.subject ollama
 expect drift-sample 9 .view.drift.action explain
-expect drift-sample 11 .view.drift.subject firefox
+expect drift-sample 11 .view.drift.subject mesa
 expect drift-sample 11 .view.drift.badge +2
-expect drift-sample 11 .view.drift.zone yellow
+expect drift-sample 11 .view.drift.zone red
 expect drift-sample 11 '.view.drift.members | join(" | ")' \
-  "· upgrade firefox  143.0.1-1 → 143.0.2-1 | · upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1 | · upgrade libinput  1.29.1-1 → 1.29.2-1"
+  "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
 shows drift-sample 11 "All 3"
-shows drift-sample 11 "Only firefox"
-expect drift-sample 13 .view.drift.eventId $NOTO
-expect drift-sample 13 .view.drift.subject firefox
-shows drift-sample 13 "Only noto-fonts"
+shows drift-sample 11 "Only mesa"
+expect drift-sample 13 .view.drift.eventId $LIB32
+expect drift-sample 13 .view.drift.subject mesa
+shows drift-sample 13 "Only lib32-mesa"
 expect drift-sample 15 .view.drift.open true
 expect drift-sample 15 .view.drift.eventId $UNIT
 expect drift-sample 15 .view.cursor 7
@@ -608,8 +609,8 @@ clean_log drift-sample
 # 13. ADR-0020: the index lists fewer drift items than the summary counts.
 jq '.summary.openDrift = 250' "$fx/index.sample.json" >"$work/capped.json"
 run drift-capped "$work/capped.json" "tab:changelog"
-expect drift-capped 1 .view.changelog.more "+246 more open drift items not listed here"
-shows drift-capped 1 "+246 more open drift items not listed here"
+expect drift-capped 1 .view.changelog.more "+244 more open drift items not listed here"
+shows drift-capped 1 "+244 more open drift items not listed here"
 expect drift-capped 1 .view.pill "2 · 250"
 clean_log drift-capped
 
@@ -622,7 +623,7 @@ clean_log drift-capped
 #     the strip follow every index.
 mkdir -p "$work/home-drift"
 run drift-live "" \
-  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;click:2 changes in the red zone need a reason;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:drift.isOpen=false;key:Return;settle;key:Escape;text:3;text:2;key:Down*25;key:Return;key:Backtab;key:Backtab;key:Right;key:Return;key:Tab;key:Tab;type:routine update;key:Return;key:Return;wait:drift.isOpen=false;key:Escape" \
+  "tab:changelog;key:Down;key:Down*4;key:Return;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;click:2 changes in the red zone need a reason;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:drift.isOpen=false;key:Return;settle;key:Escape;text:3;text:2;key:Down*40;key:Return;key:Backtab;key:Backtab;key:Right;key:Return;key:Tab;key:Tab;type:routine update;key:Return;key:Return;wait:drift.isOpen=false;key:Escape" \
   HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_RECORD="$work/drift-live.record"
 expect drift-live 4 .view.drift.caseId C-2026-005
 expect drift-live 4 .view.drift.editing true
@@ -635,7 +636,7 @@ expect drift-live 7 .view.drift.resolution "linked to C-2026-005"
 expect drift-live 7 .view.drift.openCase C-2026-005
 shows drift-live 7 "Resolved: linked to C-2026-005"
 shows drift-live 7 "Open C-2026-005"
-expect drift-live 7 .view.pill "2 · 3"
+expect drift-live 7 .view.pill "2 · 5"
 expect drift-live 7 .view.crisis "2 changes in the red zone need a reason"
 expect drift-live 7 '.view.changelog.resolved | map(select(startswith("tokyo-night"))) | join(",")' "tokyo-night: linked to C-2026-005"
 expect drift-live 8 .view.drift.open false
@@ -653,31 +654,32 @@ expect drift-live 18 .view.drift.hint "Press Enter again: Explain ~/.config/syst
 expect drift-live 20 .view.drift.result "Explained 1 event · created C-2026-009 · new area dev-env"
 expect drift-live 20 .view.drift.resolution "explained · C-2026-009: --help"
 expect drift-live 20 .view.crisis "1 change in the red zone needs a reason"
-expect drift-live 20 .view.pill "2 · 2"
+expect drift-live 20 .view.pill "2 · 4"
 shows drift-live 20 "Open C-2026-009"
 expect drift-live 22 .view.openResult "Opened $work/home-drift/Seldon/work/active/C-2026-009.md in omarchy-launch-editor"
 expect drift-live 23 .view.drift.open false
 expect drift-live 24 .view.tab work
 expect drift-live 24 '.view.work.columns | join(",")' "queued 3,active 3,completed 3"
 expect drift-live 24 '.view.work.ids[2]' "C-2026-009,C-2026-002,C-2026-001"
-expect drift-live 26 .view.cursor 32
-expect drift-live 27 .view.drift.subject firefox
+expect drift-live 26 .view.cursor 47
+expect drift-live 27 .view.drift.subject mesa
 expect drift-live 31 .view.drift.action dismiss
 expect drift-live 34 .view.drift.reason "routine update"
-expect drift-live 35 .view.drift.hint "Press Enter again: Dismiss firefox and 2 more"
+expect drift-live 35 .view.drift.hint "Press Enter again: Dismiss mesa and 2 more"
 expect drift-live 37 .view.drift.result "Dismissed 3 events"
 expect drift-live 37 '.view.changelog.resolved | map(select(endswith("dismissed: routine update"))) | join(",")' \
-  "libinput: dismissed: routine update,noto-fonts: dismissed: routine update,firefox: dismissed: routine update"
-expect drift-live 37 '.view.changelog.driftTones | join(",")' "ollama urgent"
+  "vulkan-radeon: dismissed: routine update,lib32-mesa: dismissed: routine update,mesa: dismissed: routine update"
+expect drift-live 37 '.view.changelog.driftTones | join(",")' \
+  "ollama urgent,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh accent,~/.config/hypr/monitors.conf accent"
 expect drift-live 37 '.view.changelog.badges | length' 0
-expect drift-live 37 .view.pill "2 · 1"
+expect drift-live 37 .view.pill "2 · 3"
 expect drift-live 38 .view.drift.open false
 expect drift-live 38 .view.opened true
 expect drift-live 38 .view.lastError ""
 q() { printf '%q ' "$@"; }
 want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q drift link $THEME C-2026-005 --json)" "$(q drift explain $UNIT --risk R2 --area dev-env --json -- --help)" \
-  "$(q open C-2026-009 --editor --json)" "$(q drift dismiss $FIREFOX --json -- "routine update")")
+  "$(q open C-2026-009 --editor --json)" "$(q drift dismiss $MESA --json -- "routine update")")
 got=$(cat "$work/home-drift/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-live: engine argv"
@@ -693,9 +695,9 @@ clean_log drift-live
 #     whose sheet lists two members.
 mkdir -p "$work/home-drift-only"
 run drift-only "" \
-  "tab:changelog;key:Down;key:Down*32;key:Return;key:Backtab;key:Backtab;key:Left;key:Return;key:Tab;key:Tab;key:Tab;key:Return;key:Backtab;key:Backtab;key:Return;key:Down;key:Down;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;key:Up;key:Return" \
+  "tab:changelog;key:Down;key:Down*47;key:Return;key:Backtab;key:Backtab;key:Left;key:Return;key:Tab;key:Tab;key:Tab;key:Return;key:Backtab;key:Backtab;key:Return;key:Down;key:Down;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Return;key:Return;wait:drift.isOpen=false;key:Escape;key:Up;key:Return" \
   HOME="$work/home-drift-only" FAKE_SELDON_FIXTURE="$fx/index.sample.json"
-expect drift-only 3 .view.cursor 32
+expect drift-only 3 .view.cursor 47
 expect drift-only 8 .view.drift.action link
 expect drift-only 8 .view.drift.caseId ""
 expect drift-only 12 .view.drift.result "Pick a case first"
@@ -704,19 +706,19 @@ shows drift-only 12 "Pick a case first"
 expect drift-only 18 .view.drift.caseId C-2026-004
 expect drift-only 18 .view.drift.result ""
 expect drift-only 21 .view.drift.only true
-shows drift-only 21 "Only firefox"
-expect drift-only 23 .view.drift.hint "Press Enter again: Link firefox only to C-2026-004"
+shows drift-only 21 "Only mesa"
+expect drift-only 23 .view.drift.hint "Press Enter again: Link mesa only to C-2026-004"
 expect drift-only 25 .view.drift.result "Linked 1 event to C-2026-004"
 expect drift-only 25 .view.drift.resolution "linked to C-2026-004"
-expect drift-only 25 '.view.changelog.badges | join(",")' "noto-fonts +1"
-expect drift-only 25 .view.pill "2 · 4"
-expect drift-only 27 .view.cursor 31
-expect drift-only 28 .view.drift.eventId $NOTO
+expect drift-only 25 '.view.changelog.badges | join(",")' "lib32-mesa +1"
+expect drift-only 25 .view.pill "2 · 6"
+expect drift-only 27 .view.cursor 46
+expect drift-only 28 .view.drift.eventId $LIB32
 expect drift-only 28 .view.drift.badge +1
 expect drift-only 28 '.view.drift.members | length' 2
 shows drift-only 28 "2 packages in one transaction:"
 want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
-  "$(q drift link $FIREFOX C-2026-004 --only --json)")
+  "$(q drift link $MESA C-2026-004 --only --json)")
 got=$(cat "$work/home-drift-only/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-only: engine argv"
@@ -736,7 +738,7 @@ expect drift-already 4 .view.drift.result "Already resolved: linked to C-2026-00
 expect drift-already 4 .view.drift.already true
 expect drift-already 4 .view.drift.resultOk true
 expect drift-already 4 .view.drift.isOpen true
-expect drift-already 4 .view.pill "2 · 4"
+expect drift-already 4 .view.pill "2 · 6"
 shows drift-already 4 "Already resolved: linked to C-2026-005"
 clean_log drift-already
 
@@ -762,16 +764,16 @@ clean_log drift-locked
 # 18. A group whose members index.events no longer all lists (CONTRACT.md
 #     rule 4): the sheet shows what the index has, asks `seldon drift show`
 #     and then lists all three.
-jq '.events |= map(select(.id != "01M3SXBRV0E702XKBM22HEV1B8"))' "$fx/index.sample.json" >"$work/members-capped.json"
+jq '.events |= map(select(.id != "'$LIB32'"))' "$fx/index.sample.json" >"$work/members-capped.json"
 mkdir -p "$work/home-drift-show"
-jq '[.events[] | select(.id == "01M3SXBRV0E702XKBM22HEV1B8")]' "$fx/index.sample.json" >"$work/home-drift-show/extra-events.json"
-run drift-show "" "resolve:$FIREFOX;wait:drift.members.1=· upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1" \
+jq '[.events[] | select(.id == "'$LIB32'")]' "$fx/index.sample.json" >"$work/home-drift-show/extra-events.json"
+run drift-show "" "resolve:$MESA;wait:drift.members.1=· downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1" \
   HOME="$work/home-drift-show" FAKE_SELDON_FIXTURE="$work/members-capped.json"
-expect drift-show 1 '.view.drift.members | join(" | ")' "· upgrade firefox  143.0.1-1 → 143.0.2-1 | · upgrade libinput  1.29.1-1 → 1.29.2-1 | … and 1 more"
+expect drift-show 1 '.view.drift.members | join(" | ")' "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1 | … and 1 more"
 expect drift-show 2 '.view.drift.members | length' 3
-expect drift-show 2 '.view.drift.members[2]' "· upgrade libinput  1.29.1-1 → 1.29.2-1"
+expect drift-show 2 '.view.drift.members[2]' "· downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
 want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
-  "$(q drift show $FIREFOX --json)")
+  "$(q drift show $MESA --json)")
 got=$(cat "$work/home-drift-show/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-show: engine argv"
@@ -780,23 +782,22 @@ else
 fi
 clean_log drift-show
 
-# 19. The same from a member row (Enter on libinput): `drift show` is asked
-#     for the group's leader, and its answer fills the sheet opened from the
-#     member.
-LIBINPUT=01M3SXBRV0WPNQ721VWGG2WXZ1
+# 19. The same from a member row (Enter on vulkan-radeon): `drift show` is
+#     asked for the group's leader, and its answer fills the sheet opened
+#     from the member.
 mkdir -p "$work/home-drift-show-member"
 cp "$work/home-drift-show/extra-events.json" "$work/home-drift-show-member/"
 run drift-show-member "" \
-  "tab:changelog;key:Down;key:Down*30;key:Return;wait:drift.members.1=· upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1" \
+  "tab:changelog;key:Down;key:Down*45;key:Return;wait:drift.members.1=· downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1" \
   HOME="$work/home-drift-show-member" FAKE_SELDON_FIXTURE="$work/members-capped.json"
-expect drift-show-member 3 .view.cursor 30
-expect drift-show-member 4 .view.drift.eventId $LIBINPUT
-expect drift-show-member 4 .view.drift.subject firefox
-shows drift-show-member 4 "Only libinput"
+expect drift-show-member 3 .view.cursor 45
+expect drift-show-member 4 .view.drift.eventId $VULKAN
+expect drift-show-member 4 .view.drift.subject mesa
+shows drift-show-member 4 "Only vulkan-radeon"
 expect drift-show-member 5 '.view.drift.members | join(" | ")' \
-  "· upgrade firefox  143.0.1-1 → 143.0.2-1 | · upgrade noto-fonts  1:2026.09.01-1 → 1:2026.09.15-1 | · upgrade libinput  1.29.1-1 → 1.29.2-1"
+  "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
 want=$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
-  "$(q drift show $FIREFOX --json)")
+  "$(q drift show $MESA --json)")
 got=$(cat "$work/home-drift-show-member/argv.log" 2>/dev/null || true)
 if [[ $got == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift-show-member: engine argv"
@@ -1110,11 +1111,11 @@ jq '.events = [
      subject: "journal", detail: "First event above the cursor", zone: "green", actor: "human", case: null}
   ] + .events' "$fx/index.sample.json" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
-run cursor-follow "" "tab:changelog;key:Down;key:Down*4;text:c;wait:changelog.rows=64;key:Return;key:Escape;text:f" \
+run cursor-follow "" "tab:changelog;key:Down;key:Down*4;text:c;wait:changelog.rows=74;key:Return;key:Escape;text:f" \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 3 .view.cursor 4
 expect cursor-follow 3 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
-expect cursor-follow 5 .view.changelog.rows 64
+expect cursor-follow 5 .view.changelog.rows 74
 expect cursor-follow 5 .view.cursor 6
 expect cursor-follow 5 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
 expect cursor-follow 6 .view.drift.open true

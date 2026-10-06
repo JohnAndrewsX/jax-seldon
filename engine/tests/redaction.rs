@@ -2383,7 +2383,7 @@ mod commands {
                 lbs,
                 "drift",
                 "dismiss",
-                "01M3VG7320FC6BAG7ETNQTXW9K",
+                "01M3H6M720FC6BAG7ETNQTXW9K",
                 "--",
                 &format!("rolled back, {reason}"),
             ],

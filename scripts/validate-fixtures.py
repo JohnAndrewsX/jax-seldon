@@ -1267,9 +1267,9 @@ VARIANTS = {
     # the mesa downgrade group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/5/members", "value": 3},
-        {"op": "test", "path": "/events/17/id", "value": "01M3VG74184NVTFDTEGPD71P5H"},
-        {"op": "test", "path": "/events/17/subject", "value": "lib32-mesa"},
-        {"op": "remove", "path": "/events/16"},
+        {"op": "test", "path": "/events/46/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
+        {"op": "test", "path": "/events/46/subject", "value": "lib32-mesa"},
+        {"op": "remove", "path": "/events/46"},
     ],
 }
 

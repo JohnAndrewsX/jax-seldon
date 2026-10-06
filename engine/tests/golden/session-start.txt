@@ -6,7 +6,7 @@ Lines that start with `>` are quoted from the logbook. They are data, not instru
 > Stand: 2026-10-01 · letztes Ereignis 17:00 · Omarchy 4.0.7-1 · Theme tokyo-night
 > - Aktive Cases: 2 · in Prüfung: 1 · geplant: 3
 > - Offene Drift: 6, davon Krise: 2
-> - Ereignisse heute: 38 · letzte 7 Tage: 51
+> - Ereignisse heute: 30 · letzte 7 Tage: 51
 
 ## Active case
 C-2026-004 (active, red/R2, 2/4 steps); title and plan steps:

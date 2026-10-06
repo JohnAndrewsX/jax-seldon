@@ -50,8 +50,8 @@ test("pillTone: crisis beats active beats default", () => {
 test("parseIndex accepts the sample and reads its counts", () => {
   const r = M.parseIndex(sample)
   assert.strictEqual(r.ok, true)
-  same(M.counts(r.index), { active: 2, queued: 3, drift: 4, crisis: 2 })
-  assert.strictEqual(M.pillText(M.counts(r.index)), "2 · 4")
+  same(M.counts(r.index), { active: 2, queued: 3, drift: 6, crisis: 2 })
+  assert.strictEqual(M.pillText(M.counts(r.index)), "2 · 6")
 })
 
 test("parseIndex reports a contract mismatch with the version found", () => {
@@ -283,28 +283,31 @@ test("snapperBanner: Check again is a capture, the hint follows Run in terminal 
   assert.strictEqual(M.snapperBanner(null, true), null)
 })
 
-test("changelogRows: 62 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 72 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 62)
+  assert.strictEqual(rows.length, 72)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
   assert.strictEqual(badged[0].badge, "+2")
-  assert.strictEqual(badged[0].subject, "firefox")
-  assert.strictEqual(badged[0].txId, "tx-20260930T214115")
-  same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["libinput", "noto-fonts"])
+  assert.strictEqual(badged[0].subject, "mesa")
+  assert.strictEqual(badged[0].txId, "tx-20260927T123000")
+  same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["lib32-mesa", "vulkan-radeon"])
   assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 7)
   assert.strictEqual(rows.filter((r) => r.snapshot).length, 8)
-  assert.strictEqual(rows.filter((r) => r.drift).length, 6)
-  same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "install"])
+  assert.strictEqual(rows.filter((r) => r.drift).length, 8)
+  same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "config-add"])
   const theme = rows.find((r) => r.id === EID)
   assert.strictEqual(theme.proposedCase, "C-2026-005")
   assert.strictEqual(M.rowStatus(theme), "Unexplained · proposed for C-2026-005")
-  const tyme = rows.find((r) => r.subject === "io.github.example.tyme")
+  const tyme = rows.find((r) => r.subject === "io.github.example.tyme" && r.kind === "plugin-add")
   assert.strictEqual(M.rowStatus(tyme), "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar.")
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "tailscale")), "linked to C-2026-008")
-  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "libinput")), "In the open firefox group")
-  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "ollama")), "Needs a reason")
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "vulkan-radeon")), "In the open mesa group")
+  // ADR-0028: the 09-30 -Syu group is routine history, not drift
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "libinput")), "")
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "ollama")), "Unexplained")
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.kind === "config-add" && r.crisis)), "Needs a reason")
   assert.strictEqual(M.rowStatus(rows[0]), "")
   assert.strictEqual(rows[0].dayLabel, "Today")
   assert.strictEqual(rows[0].time, "17:00")
@@ -313,13 +316,13 @@ test("changelogRows: 62 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(rows.find((r) => r.subject === "ollama").tone, "urgent")
   assert.strictEqual(theme.tone, "accent")
   assert.strictEqual(rows[0].tone, "")
-  // One colour source per row: open drift by its item's zone, so the routine
-  // group (members red in the ledger) is accent throughout; resolved or
-  // cased events by their own zone.
-  for (const s of ["firefox", "libinput", "noto-fonts"]) {
+  // One colour source per row: open drift by its item's zone (the ledger
+  // zone, ADR-0028 §7), so the group is one tone throughout; resolved,
+  // cased or routine events by their own zone.
+  for (const s of ["mesa", "lib32-mesa", "vulkan-radeon"]) {
     const r = rows.find((x) => x.subject === s)
     assert.strictEqual(r.zone, "red", s + " ledger zone")
-    assert.strictEqual(r.tone, "accent", s)
+    assert.strictEqual(r.tone, "urgent", s)
   }
   assert.strictEqual(rows.find((r) => r.subject === "hyprland").tone, "urgent")
   assert.strictEqual(rows.find((r) => r.subject === "btop").tone, "urgent")
@@ -328,13 +331,13 @@ test("changelogRows: 62 events newest first, one +2 group (3 members), folded re
   noZone.drift.forEach((d) => { delete d.zone })
   const nz = M.changelogRows(noZone, "all")
   assert.strictEqual(nz.find((r) => r.subject === "ollama").tone, "urgent", "crisis without zone")
-  assert.strictEqual(nz.find((r) => r.subject === "firefox").tone, "urgent", "falls back to the event zone")
+  assert.strictEqual(nz.find((r) => r.subject === "mesa").tone, "urgent", "falls back to the event zone")
   assert.strictEqual(M.rowMeta(rows.find((r) => r.subject === "zed")), "0.198.4-1 · claude-code · C-2026-004")
 })
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 62)
+  assert.strictEqual(counts.all, 72)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -342,10 +345,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 62)
-  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 12)
+  assert.strictEqual(total, 72)
+  assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 15)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 62)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 72)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -382,7 +385,7 @@ test("todayView: today's and yesterday's journal and the summary counts", () => 
   assert.strictEqual(t.yesterday.length, 1)
   assert.strictEqual(M.entryMeta(t.entries[0]), "09:25 · claude-code · C-2026-003")
   assert.strictEqual(M.entryMeta(t.entries[2]), "14:40 · human")
-  same(t.stats.map((s) => s.value), [30, 41, 2, 3, 4])
+  same(t.stats.map((s) => s.value), [30, 51, 2, 3, 6])
   const empty = M.todayView(null)
   same([empty.entries.length, empty.yesterday.length, empty.title], [0, 0, "Today"])
 })
@@ -672,6 +675,10 @@ const OLLAMA = "01M3VNFTF8EVHWFFZ687N14Q0C"
 const FIREFOX = "01M3SXBQVR7AW8PJQC1YXDCQ14"
 const LIBINPUT = "01M3SXBRV0WPNQ721VWGG2WXZ1"
 const NOTO = "01M3SXBRV0E702XKBM22HEV1B8"
+// ADR-0028: the open group of the sample (a named downgrade) and its crisis on a hook path
+const MESA = "01M3H6M720FC6BAG7ETNQTXW9K"
+const LIB32 = "01M3H6M8184NVTFDTEGPD71P5H"
+const HOOK = "01M3Q7R0Z08ZD5R76DQA3PHQ1G"
 
 test("validateArgs: drift explain takes --only, --zone, --risk, --area, in that order, each optional", () => {
   const ok = [
@@ -694,7 +701,7 @@ test("validateArgs: drift explain takes --only, --zone, --risk, --area, in that 
   for (const a of bad) assert.notStrictEqual(M.validateArgs(a), "", JSON.stringify(a))
 })
 
-test("driftItemFor: the four sample items, a group member, and events that are not open drift", () => {
+test("driftItemFor: the six sample items, a group member, and events that are not open drift", () => {
   const theme = M.driftItemFor(sampleIndex, THEME)
   assert.strictEqual(theme.subject, "tokyo-night")
   assert.strictEqual(theme.proposedCase, "C-2026-005")
@@ -706,18 +713,24 @@ test("driftItemFor: the four sample items, a group member, and events that are n
   assert.strictEqual(unit.zone, "red")
   assert.strictEqual(M.driftDefaultAction(unit), "explain")
   assert.strictEqual(M.driftItemFor(sampleIndex, OLLAMA).subject, "ollama")
-  const group = M.driftItemFor(sampleIndex, FIREFOX)
+  const hook = M.driftItemFor(sampleIndex, HOOK)
+  assert.strictEqual(hook.crisis, true)
+  assert.strictEqual(hook.zone, "yellow", "the ledger zone (ADR-0028 §7)")
+  const group = M.driftItemFor(sampleIndex, MESA)
   assert.strictEqual(group.grouped, true)
   assert.strictEqual(group.members, 3)
   assert.strictEqual(group.badge, "+2")
-  assert.strictEqual(group.zone, "yellow")
-  same(group.memberList.map((m) => m.subject), ["firefox", "noto-fonts", "libinput"])
+  assert.strictEqual(group.zone, "red")
+  same(group.memberList.map((m) => m.subject), ["mesa", "lib32-mesa", "vulkan-radeon"])
   // Opened from a member row: the group's item, named by that member.
-  const member = M.driftItemFor(sampleIndex, LIBINPUT)
-  assert.strictEqual(member.eventId, LIBINPUT)
-  assert.strictEqual(member.leaderId, FIREFOX)
-  assert.strictEqual(member.namedSubject, "libinput")
-  assert.strictEqual(member.subject, "firefox")
+  const member = M.driftItemFor(sampleIndex, LIB32)
+  assert.strictEqual(member.eventId, LIB32)
+  assert.strictEqual(member.leaderId, MESA)
+  assert.strictEqual(member.namedSubject, "lib32-mesa")
+  assert.strictEqual(member.subject, "mesa")
+  // routine (ADR-0028): history, no drift item
+  assert.strictEqual(M.driftItemFor(sampleIndex, FIREFOX), null)
+  assert.strictEqual(M.driftItemFor(sampleIndex, LIBINPUT), null)
   assert.strictEqual(M.driftItemFor(sampleIndex, "01M3VDBX30F5DH0JNY7S0K95GC"), null) // tailscale, linked
   assert.strictEqual(M.driftItemFor(sampleIndex, "01M1MB2M1GWZYF485HTGVZ1KS3"), null) // btop, explained
   assert.strictEqual(M.driftItemFor(sampleIndex, "not an id"), null)
@@ -761,11 +774,11 @@ test("driftArgs: fixed argv, ids checked, the text one argument after `--`", () 
 })
 
 test("driftSummary names what a call resolves", () => {
-  const group = M.driftItemFor(sampleIndex, LIBINPUT)
+  const group = M.driftItemFor(sampleIndex, LIB32)
   assert.strictEqual(M.driftSummary("link", M.driftItemFor(sampleIndex, THEME), { caseId: "C-2026-005" }),
     "Link tokyo-night to C-2026-005")
-  assert.strictEqual(M.driftSummary("dismiss", group, {}), "Dismiss firefox and 2 more")
-  assert.strictEqual(M.driftSummary("dismiss", group, { only: true }), "Dismiss libinput only")
+  assert.strictEqual(M.driftSummary("dismiss", group, {}), "Dismiss mesa and 2 more")
+  assert.strictEqual(M.driftSummary("dismiss", group, { only: true }), "Dismiss lib32-mesa only")
   assert.strictEqual(M.driftSummary("explain", M.driftItemFor(sampleIndex, OLLAMA), {}), "Explain ollama as a new completed case")
 })
 
@@ -815,8 +828,8 @@ test("folded resolutions: explained · C-… (ADR-0021), the crisis target, +N m
   assert.strictEqual(M.moreDriftText(sampleIndex), "")
   const capped = JSON.parse(sample)
   capped.summary.openDrift = 250
-  assert.strictEqual(M.moreDriftText(capped), "+246 more open drift items not listed here")
-  capped.summary.openDrift = 5
+  assert.strictEqual(M.moreDriftText(capped), "+244 more open drift items not listed here")
+  capped.summary.openDrift = 7
   assert.strictEqual(M.moreDriftText(capped), "+1 more open drift item not listed here")
 })
 
@@ -985,10 +998,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=3,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["57 events", "Explicit 324 → 327", "13 opened · 9 resolved",
+  same(s30.map((s) => s.detail), ["67 events", "Explicit 324 → 327", "11 opened · 6 resolved",
     "R0 1 · R1 3 · R2 4 · R3 0 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "62 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "72 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 4, R3: 0 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1147,8 +1160,8 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 57, activeDays: 12, max: 30, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "57 events on 12 of 30 days · busiest 2026-10-01 (30)")
+  same(h30.numbers, { days: 30, events: 67, activeDays: 14, max: 30, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "67 events on 14 of 30 days · busiest 2026-10-01 (30)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
@@ -1200,8 +1213,9 @@ test("seriesChart: step lines per lane, padded flat lanes, the sample at a day",
 
 test("driftChart: weeks with gaps filled, peak, hover text", () => {
   const d = M.periodTable(ok.index).periods["90"].charts.driftBars
-  same(d.numbers, { weeks: 5, opened: 13, resolved: 9, max: 6, peak: "2026-W40" })
-  assert.strictEqual(d.summary, "13 opened · 9 resolved in 5 weeks · peak 2026-W40")
+  // ADR-0028 §5: routine rows open nothing, their old resolutions count nothing
+  same(d.numbers, { weeks: 5, opened: 11, resolved: 6, max: 6, peak: "2026-W40" })
+  assert.strictEqual(d.summary, "11 opened · 6 resolved in 5 weeks · peak 2026-W40")
   assert.strictEqual(M.driftWeekText(d.weeks[4]), "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2")
   const gaps = M.driftChart([{ week: "2026-W40", opened: 1, resolved: 0 }, { week: "2026-W37", opened: 0, resolved: 2 }])
   same(gaps.weeks.map((w) => w.week + ":" + w.opened + "/" + w.resolved), ["2026-W37:0/2", "2026-W38:0/0", "2026-W39:0/0", "2026-W40:1/0"])

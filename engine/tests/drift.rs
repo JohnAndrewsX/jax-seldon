@@ -18,15 +18,15 @@ const GENERATED_AT: &str = "2026-10-01T17:05:12+02:00";
 /// real clock's, after the log lines).
 const T_SINCE: &str = "2026-10-01T09:00:00+02:00";
 
-/// The six open drift items of the fixture (ADR-0028 §2).
-const HOOK: &str = "01M3VYT0F08ZD5R76DQA3PHQ1G"; // hooks/post-update.d, crisis, yellow zone
+/// The six open drift items of the fixture (ADR-0028 §2), newest first.
 const THEME: &str = "01M3VTGNY0NZG4AY80814WSKGR"; // tokyo-night: routine, proposed C-2026-005
 const UNIT: &str = "01M3VNJ9JGZ9169T01XCW16FT0"; // ollama.service, crisis
 const OLLAMA: &str = "01M3VNFTF8EVHWFFZ687N14Q0C"; // pacman install, attention
-const MONITORS: &str = "01M3VK2MR06078ZQTPRZCFYHK0"; // config-remove, attention
-const MESA: &str = "01M3VG7320FC6BAG7ETNQTXW9K"; // leader of the 10-01 downgrade group
-const LIB32: &str = "01M3VG74184NVTFDTEGPD71P5H"; // group member
-const VULKAN: &str = "01M3VG7418EPKV6HMJ0GN4PGFG"; // group member
+const HOOK: &str = "01M3Q7R0Z08ZD5R76DQA3PHQ1G"; // hooks/post-update.d, crisis, yellow zone
+const MONITORS: &str = "01M3KVWFR06078ZQTPRZCFYHK0"; // config-remove, attention
+const MESA: &str = "01M3H6M720FC6BAG7ETNQTXW9K"; // leader of the 10-01 downgrade group
+const LIB32: &str = "01M3H6M8184NVTFDTEGPD71P5H"; // group member
+const VULKAN: &str = "01M3H6M818EPKV6HMJ0GN4PGFG"; // group member
 /// Routine, history, not drift: the 09-30 `pacman -Syu` group.
 const FIREFOX: &str = "01M3SXBQVR7AW8PJQC1YXDCQ14"; // leader
 const NOTO: &str = "01M3SXBRV0E702XKBM22HEV1B8"; // member
@@ -100,7 +100,7 @@ fn lists_the_six_fixture_items() {
     assert_eq!(json!(plain), sample["drift"], "the index's drift model");
     assert_eq!(
         ids(&v["drift"]),
-        [HOOK, THEME, UNIT, OLLAMA, MONITORS, MESA]
+        [THEME, UNIT, OLLAMA, HOOK, MONITORS, MESA]
     );
     assert_eq!(
         (
@@ -111,24 +111,24 @@ fn lists_the_six_fixture_items() {
         (json!(6), json!(2), json!(6))
     );
     let class = |i: usize| (items[i]["class"].clone(), items[i]["rule"].clone());
-    assert_eq!(class(0), (json!("crisis"), json!("always-red-paths")));
-    assert_eq!(items[0]["zone"], "yellow", "the ledger zone");
     assert_eq!(
-        class(1),
+        class(0),
         (json!("attention"), json!("theme")),
         "routine, but proposed"
     );
-    assert_eq!(items[1]["proposedCase"], "C-2026-005");
-    assert_eq!(class(2), (json!("crisis"), json!("always-red-paths")));
-    assert_eq!(class(3), (json!("attention"), json!("package")));
+    assert_eq!(items[0]["proposedCase"], "C-2026-005");
+    assert_eq!(class(1), (json!("crisis"), json!("always-red-paths")));
+    assert_eq!(class(2), (json!("attention"), json!("package")));
+    assert_eq!(class(3), (json!("crisis"), json!("always-red-paths")));
+    assert_eq!(items[3]["zone"], "yellow", "the ledger zone");
     assert_eq!(class(4), (json!("attention"), json!("config-remove")));
     assert_eq!(class(5), (json!("attention"), json!("package")));
     assert_eq!(items[5]["members"], 3);
     assert_eq!(items[5]["zone"], "red");
-    assert_eq!(items[5]["txId"], "tx-20261001T123000");
+    assert_eq!(items[5]["txId"], "tx-20260927T123000");
 
     let crises = run(&env, &lb, &["drift", "--crisis-only"], 0);
-    assert_eq!(ids(&crises["drift"]), [HOOK, UNIT]);
+    assert_eq!(ids(&crises["drift"]), [UNIT, HOOK]);
     assert_eq!(crises["openDrift"], 6, "totals count every item");
 
     // --all: routine items too, uncapped, newest first
@@ -146,10 +146,10 @@ fn lists_the_six_fixture_items() {
         })
         .collect();
     let want = [
-        ("io.github.example.tyme", "plugin-toggle"),
-        ("~/.config/omarchy/shell.json", "routine-paths"),
-        ("io.github.example.tyme", "plugin-toggle"),
         ("firefox", "sysupgrade"),
+        ("io.github.example.weather-plus", "plugin-toggle"),
+        ("~/.config/omarchy/shell.json", "routine-paths"),
+        ("io.github.example.weather-plus", "plugin-toggle"),
         ("kanagawa", "theme"),
         ("catppuccin", "theme"),
     ];
@@ -161,7 +161,10 @@ fn lists_the_six_fixture_items() {
     let text = common::stdout(&out);
     assert_eq!(text.lines().count(), 7, "{text}");
     assert!(text.contains("mesa (+2 more)"), "{text}");
-    assert!(text.starts_with("CRISIS "), "{text}");
+    assert!(
+        text.lines().nth(1).unwrap().starts_with("CRISIS "),
+        "{text}"
+    );
     assert!(text.ends_with("6 open drift item(s), 2 crisis\n"), "{text}");
     let out = env.at(
         GENERATED_AT,
@@ -194,7 +197,7 @@ fn show_lists_every_open_member_of_a_group() {
     );
     assert_eq!(v["event"]["id"], VULKAN);
     assert_eq!(v["item"]["eventId"], MESA, "the group's row");
-    assert_eq!(v["txId"], "tx-20261001T123000");
+    assert_eq!(v["txId"], "tx-20260927T123000");
     let members: Vec<&str> = v["members"]
         .as_array()
         .unwrap()
@@ -419,7 +422,7 @@ fn a_group_resolves_in_one_write_and_a_rerun_writes_nothing() {
         0,
     );
     assert_eq!(v["resolved"], 3);
-    assert_eq!(v["txId"], "tx-20261001T123000");
+    assert_eq!(v["txId"], "tx-20260927T123000");
     let lines = common::ledger(&lb);
     assert_eq!(lines.len(), before + 3);
     let new = &lines[before..];
@@ -432,7 +435,7 @@ fn a_group_resolves_in_one_write_and_a_rerun_writes_nothing() {
         for key in ["ts", "actor", "detail"] {
             assert_eq!(l[key], new[0][key], "{key}");
         }
-        assert_eq!(l["meta"], json!({ "txId": "tx-20261001T123000" }));
+        assert_eq!(l["meta"], json!({ "txId": "tx-20260927T123000" }));
         assert!(l.get("case").is_none());
     }
     // one write: ledger appended in one go, and series.drift counts it once
@@ -496,10 +499,7 @@ fn only_leaves_the_other_members_open() {
     let events = case(&env, &lb, "C-2026-004")["events"].clone();
     let events = events.as_array().unwrap();
     assert_eq!(events.len(), 8);
-    assert_eq!(
-        events[6], MESA,
-        "12:30, after 10:40 and before the 17:00 note"
-    );
+    assert_eq!(events[0], MESA, "09-27 is before the 10-01 events");
 
     let left = drift(&env, &lb);
     let group = left["drift"]
@@ -518,11 +518,11 @@ fn only_leaves_the_other_members_open() {
     // the rest goes in one write
     let rest = run(&env, &lb, &["drift", "link", LIB32, "C-2026-004"], 0);
     assert_eq!(rest["resolved"], 2);
-    assert_eq!(rest["txId"], "tx-20261001T123000");
+    assert_eq!(rest["txId"], "tx-20260927T123000");
     assert_eq!(drift(&env, &lb)["openDrift"], 5);
     let events = case(&env, &lb, "C-2026-004")["events"].clone();
     assert_eq!(
-        events.as_array().unwrap()[6..9],
+        events.as_array().unwrap()[0..3],
         [json!(MESA), json!(LIB32), json!(VULKAN)]
     );
 }
