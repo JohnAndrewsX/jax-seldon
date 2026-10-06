@@ -2154,3 +2154,21 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
 - **`hooks::robustness::a_panic_exits_zero` fails in the bench
   profile.** Its panic switch is `#[cfg(debug_assertions)]`; run the
   hooks suite in the bench profile only for the ignored timing tests.
+
+## 2026-10-06 · WP-110 (Plugin Dev)
+
+- **The panel harness's `texts` include the dev-mode banner, and that
+  banner names the index file.** A test that asserts a word is *absent*
+  from every visible text (`select(test("crisis"))`) fails on its own
+  scratch file name (`yellow-crisis.json`). Name derived indexes so they
+  cannot match the words a case looks for.
+- **A mutant copy of the tree needs more than `plugin/` and
+  `tests/plugin/`.** `model.test.js` reads `assets/` (copies check) and
+  `engine/Cargo.toml` (engineMin); without them every mutant is
+  "killed" by an unrelated test. Run an unmutated baseline in the same
+  copy first; it must pass.
+- **Zone and class are separate since ADR-0028.** `drift[].zone` is the
+  ledger zone, `crisis` the harm test; a crisis may be yellow, an
+  attention item red (pacman). Colour and labels key on `crisis` only;
+  a fallback such as `crisis ? "red" : …` for a missing zone is now a
+  false statement that Explain would pre-fill into a resolution.

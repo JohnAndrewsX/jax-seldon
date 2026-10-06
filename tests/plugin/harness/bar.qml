@@ -26,6 +26,8 @@ import qs.Ui
 //
 //   HARNESS_PLUGIN_DIR  absolute path of the plugin folder (required)
 //   HARNESS_SHOT        PNG path to save the window to (optional)
+//   HARNESS_SETTINGS    the widget's settings (shell.json's entry) as JSON
+//                       text, e.g. {"driftInBar":"none"} (ADR-0028 §4a)
 //   HARNESS_IPC         config path of this harness: two widgets, as the bar
 //                       builds one per monitor, and the IPC target driven
 //                       through `quickshell ipc` (WP-067). Prints
@@ -84,6 +86,7 @@ ShellRoot {
     var origin = pill.mapToItem(win.contentItem, 0, 0)
     console.log("HARNESS bar " + JSON.stringify({
       pill: JSON.parse(root.widget.pillReadout()),
+      service: { pill: root.service.snapshot().pill, driftInBar: root.service.driftInBar },
       dpr: Screen.devicePixelRatio,
       barSize: Style.bar.sizeHorizontal,
       fontSize: Style.font.body,
@@ -165,7 +168,10 @@ ShellRoot {
 
   Component.onCompleted: {
     root.service = root.load("Service.qml", null, {})
-    root.widget = root.load("BarWidget.qml", slot, { bar: api, moduleName: "jax.seldon" })
+    var settingsJson = Quickshell.env("HARNESS_SETTINGS") || ""
+    var props = { bar: api, moduleName: "jax.seldon" }
+    if (settingsJson !== "") props.settings = JSON.parse(settingsJson)
+    root.widget = root.load("BarWidget.qml", slot, props)
     if (root.widget) root.widget.anchors.fill = slot
     var all = [root.widget]
     if (root.ipcConfig !== "" && root.placeholderMode) {

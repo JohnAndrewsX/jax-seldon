@@ -188,6 +188,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Quiet surfaces (ADR-0028).** The bar's second number now counts
+  crises only: changes that can affect boot, login or the shell and have
+  no case. Other changes without a case no longer show in the bar; the
+  new setting `driftInBar` (`crisis`, the default; `all`, the behaviour
+  up to 0.1.3; `none`) changes that, e.g. `omarchy bar set jax.seldon
+  driftInBar all`. The bar still turns to the error colour on a crisis in
+  every mode. The tooltip reads "Seldon — 2 active cases, 1 crisis, 7
+  changes without a case, last capture …". The red strip appears only for
+  a crisis and reads "N changes that can affect boot, login or the shell
+  have no case". The Changelog shows a quiet "N changes without a case"
+  line under its header; open rows say "Crisis · no case" or "No case"
+  instead of "Needs a reason" / "Unexplained", and are coloured by
+  whether they are a crisis (urgent) or not (accent), no longer by zone;
+  every other row (resolved, with a case, routine) has a muted stripe
+  whatever its zone. The Today counts and the Changelog's "+N more …"
+  line say "without a case" instead of "open drift"; Today counts the
+  changes without a case that are no crisis.
+  The drift sheet says "RESOLVE A CRISIS" and "<zone> · crisis" for a
+  crisis in any zone and keeps a slot for *Ask agent* above Link /
+  Explain / Dismiss. The Today pictogram no longer changes for changes
+  without a case. Label skew: a plugin up to 0.1.3 with a 0.1.4 engine
+  still says "red zone" where "crisis" is meant (the strip, the tooltip,
+  the sheet); behaviour is the same, only the labels are wrong. Update
+  the plugin with the engine (WP-110).
 - After `omarchy plugin update jax.seldon` the shell keeps running the
   old plugin code until it restarts. The panel now notices this: when
   the installed manifest names another version than the code running,

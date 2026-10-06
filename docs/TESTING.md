@@ -645,7 +645,7 @@ Checks: with the sample every tab renders (Today: 4 entries, yesterday
 collapsed and opened with Enter; Changelog: 62 rows, Enter on the "+2"
 group opens its drift sheet with the three members, 7 folded resolution details, 6 highlighted snapshot rows,
 the pacman filter narrows to 12, `f` cycles; System: seven sections), the
-strip "2 changes in the red zone need a reason" on every tab, the keys
+strip "2 changes that can affect boot, login or the shell have no case" on every tab, the keys
 (Tab/Shift-Tab hand over to the bar, ←/→ and h/l switch tabs and wrap over all six, digits fixed per tab id 1–6, ↑/↓, Enter, Esc), the snapper banner on every
 tab, the not-initialised variant, an empty and a sparse `system`, and a log
 free of warnings, `TypeError`s and binding loops. The shell's `Style.qml`
@@ -697,10 +697,22 @@ with the item's zone for the two crises and the group, the group's three
 members and "All 3 / Only firefox", a member row naming its own package,
 and a click on the red strip opening the first crisis with the cursor on
 its row; nothing can be sent. Capped: `summary.openDrift` 250 shows "+246
-more open drift items not listed here". Live, with real keys: Enter,
+more changes without a case not listed here", the pill `2 · 250` with
+`driftInBar` `all` (`HARNESS_SETTINGS`) and the quiet line "248 changes
+without a case". Quiet surfaces (ADR-0028 §4b, WP-110): a crisis in the
+yellow zone on a hook path with attention only around it shows one crisis
+in the strip, the urgent Today pictogram, pill `2 · 1`, "3 changes without
+a case" on the Changelog, rows toned by class (crisis urgent, the red
+ollama install accent), the sheet's "RESOLVE A CRISIS" and "yellow ·
+crisis" with Explain pre-filled yellow, "RESOLVE DRIFT" and no word
+"crisis" for the attention item, the *Ask agent* slot first, hidden and
+0 high, the quiet line in the dim foreground, and a click
+on the strip opening the yellow crisis; attention alone shows no strip,
+the all-clear pictogram (the case-active one with active cases), no D in
+the pill and no word "crisis" anywhere. Live, with real keys: Enter,
 Enter, Enter links the theme item to C-2026-005 (hint "Press Enter again:
 Link tokyo-night to C-2026-005", then `linked to C-2026-005` folded, pill
-`2 · 3`); a click on the strip opens the first crisis, which is
+`2 · 2`: D is the crisis count); a click on the strip opens the first crisis, which is
 explained with the text `--help`, risk R2 (the change disarms) and area
 `dev-env`; the strip drops to "1 change …", *Open C-2026-009* opens the
 new case and Work lists it as completed; the firefox group is dismissed
@@ -847,7 +859,7 @@ theme's `colors.toml`, not live screenshots).
 bar hosts it: `tests/plugin/harness/bar.qml` gives BarWidget.qml the
 shell's own `PluginBarApi` facade, bound to the theme's bar colours and
 font, in a strip one bar tall on the bar background, with Service.qml in
-dev mode on the sample (2 active, 4 open drift, crises: urgent tone) and
+dev mode on the sample (2 active, 4 open drift, 2 crises: urgent tone) and
 the fake engine on PATH. It reports the pill's IPC read-out, the glyph
 file and box (and, for the record only, the centres the widget computes;
 the glyph is placed by that formula, so they cannot disagree), and saves
@@ -860,8 +872,15 @@ base size 12: bar 26, box 16, `a4-bar-glyph-16.svg`), `125` (base size
 a 1.25 output, `QT_SCALE_FACTOR=1.25`: box 16 logical = 20 device px, the
 20 px file); per theme the accent and the default tone at `100` (the
 sample with no crisis, and with no crisis and no active case, derived in
-the scratch dir; the three tones must give three colours); plus the
-not-initialised variant (the glyph alone, dimmed). Checks: file, box,
+the scratch dir, rendered with `driftInBar` `all` so the digits stay;
+the three tones must give three colours); the setting `driftInBar`
+(ADR-0028 §4a, `HARNESS_SETTINGS` as the widget's `shell.json` entry):
+none, `crisis` and an unknown value give `2 · 2`, `all` `2 · 4`, `none`
+`2`, each urgent with the same tooltip and the service's read-out
+following the widget; `none` with a crisis and no active case is the
+urgent glyph alone; attention alone in the default mode is the glyph alone
+in the bar foreground; plus the not-initialised variant (the glyph alone,
+dimmed). Checks: file, box,
 image loaded, text, tone; brief check 4 —
 `|glyph centre − digit centre| ≤ 1` measured in the pixels (device px);
 the tint — the hinted glyph's pixels are exactly the pill's ink colour; a

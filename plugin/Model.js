@@ -24,6 +24,13 @@ var CAPTURE_INTERVAL_MIN_DEFAULT = 15
 var CAPTURE_INTERVAL_MIN_MIN = 5
 var CAPTURE_INTERVAL_MIN_MAX = 120
 
+// ADR-0028 §4a: what the pill's D counts, the bar widget setting
+// `driftInBar`: `crisis` (default; the crisis count), `all` (every open
+// drift item, the behaviour before 0.1.4) or `none` (D hidden). The colour
+// is the same in every mode: urgent while any crisis is open.
+var DRIFT_IN_BAR_MODES = ["crisis", "all", "none"]
+var DRIFT_IN_BAR_DEFAULT = "crisis"
+
 // The service's `status` (named so because `state` clashes with Item.state).
 var STATUSES = ["ok", "engineMissing", "notInitialised", "indexMissing", "indexStale", "contractMismatch"]
 
@@ -163,15 +170,20 @@ function deriveStatus(s) {
   return "ok"
 }
 
-// Counts the pill and tooltip need, or null without an index.
+// Counts the pill and tooltip need, or null without an index. ADR-0028 §7:
+// attention (open drift that is no crisis) is openDrift − crisis; the
+// contract has no field of its own for it.
 function counts(index) {
   if (!index || !isObject(index.summary)) return null
   var summary = index.summary
+  var drift = count(summary.openDrift)
+  var crisis = count(summary.crisis)
   return {
     active: count(summary.activeCases),
     queued: count(summary.queuedCases),
-    drift: count(summary.openDrift),
-    crisis: count(summary.crisis)
+    drift: drift,
+    crisis: crisis,
+    attention: Math.max(0, drift - crisis)
   }
 }
 
@@ -182,12 +194,21 @@ function lastCapture(index) {
 
 // ---- Pill -------------------------------------------------------------------
 
+// The setting `driftInBar` as one of DRIFT_IN_BAR_MODES; anything else
+// (a hand-edited shell.json) is the default.
+function driftInBarMode(value) {
+  return DRIFT_IN_BAR_MODES.indexOf(value) !== -1 ? value : DRIFT_IN_BAR_DEFAULT
+}
+
 // SPEC-PLUGIN §4: the counts after the bar glyph, `A · D`, parts hidden
-// when 0: "", `2`, `· 3`, `2 · 3`. The glyph itself is an image (barGlyph).
-function pillText(c) {
+// when 0: "", `2`, `· 3`, `2 · 3`. D by `mode` (driftInBarMode): the crisis
+// count, all open drift, or never. The glyph itself is an image (barGlyph).
+function pillText(c, mode) {
+  var m = driftInBarMode(mode)
+  var d = !c ? 0 : m === "all" ? c.drift : m === "crisis" ? c.crisis : 0
   var parts = []
   if (c && c.active > 0) parts.push(String(c.active))
-  if (c && c.drift > 0) parts.push("· " + c.drift)
+  if (d > 0) parts.push("· " + d)
   return parts.join(" ")
 }
 
@@ -265,13 +286,13 @@ function statusPictogram(status) {
   return STATUS_PICTOGRAMS[status] !== undefined ? STATUS_PICTOGRAMS[status] : ""
 }
 
-// The Today tab's state pictogram: the most pressing of crisis, open drift
-// and active cases, else all clear; tone as the pill's (pillTone), drift in
-// the accent like an open drift row. null without counts.
+// The Today tab's state pictogram (ADR-0028 §4b): crisis when any crisis,
+// else case active when cases are active, else all clear; tone as the
+// pill's (pillTone). Attention alone changes nothing, so the drift-open
+// pictogram is not shown. null without counts.
 function todayState(c) {
   if (!c) return null
   if (c.crisis > 0) return { id: "crisis", tone: "urgent" }
-  if (c.drift > 0) return { id: "drift-open", tone: "accent" }
   if (c.active > 0) return { id: "case-active", tone: "accent" }
   return { id: "all-clear", tone: "default" }
 }
@@ -343,17 +364,19 @@ function showsCounts(status) {
   return status === "ok" || status === "indexStale" || status === "engineMissing"
 }
 
-// SPEC-PLUGIN §4: "Seldon — 2 active cases, 3 unexplained changes, last
-// capture 4 min ago", with the problem appended when the status is not ok.
+// SPEC-PLUGIN §4, ADR-0028 §4a, in the neutral tone: "Seldon — 2 active
+// cases, 1 crisis, 7 changes without a case, last capture 4 min ago"; the
+// crisis part only while there is one, the changes without a case are the
+// attention count. The problem is appended when the status is not ok. The
+// same text in every `driftInBar` mode.
 function tooltipText(status, c, lastCaptureText, nowMs) {
   var problem = statusPhrase(status)
   if (!c || !showsCounts(status)) return "Seldon — " + (problem !== "" ? problem : "loading")
-  var drift = plural(c.drift, "unexplained change", "unexplained changes")
-  if (c.crisis > 0) drift += " (" + c.crisis + " in the red zone)"
-  var captured = lastCaptureText
-    ? "last capture " + relativeAge(timeMs(lastCaptureText), nowMs)
-    : "never captured"
-  var text = "Seldon — " + plural(c.active, "active case", "active cases") + ", " + drift + ", " + captured
+  var parts = [plural(c.active, "active case", "active cases")]
+  if (c.crisis > 0) parts.push(plural(c.crisis, "crisis", "crises"))
+  parts.push(plural(Math.max(0, c.drift - c.crisis), "change", "changes") + " without a case")
+  parts.push(lastCaptureText ? "last capture " + relativeAge(timeMs(lastCaptureText), nowMs) : "never captured")
+  var text = "Seldon — " + parts.join(", ")
   return problem !== "" ? text + " · " + problem : text
 }
 
@@ -674,12 +697,21 @@ function captureResult(exitCode, stdoutText, stderrText) {
 
 // ---- Panel: strips and banners under the status banner ----------------------
 
-// SPEC-PLUGIN §5: the red strip "N changes in the red zone need a reason".
-// Empty when nothing is in the red zone.
+// SPEC-PLUGIN §5, ADR-0028 §4b: the red strip "N changes that can affect
+// boot, login or the shell have no case". Empty without a crisis.
 function crisisText(index) {
   var c = counts(index)
   if (!c || c.crisis === 0) return ""
-  return plural(c.crisis, "change", "changes") + " in the red zone " + (c.crisis === 1 ? "needs" : "need") + " a reason"
+  return plural(c.crisis, "change", "changes") + " that can affect boot, login or the shell "
+    + (c.crisis === 1 ? "has" : "have") + " no case"
+}
+
+// ADR-0028 §4b: the Changelog header's quiet line "N changes without a
+// case" (the attention count, as in the tooltip). Empty at 0. No badge,
+// no colour.
+function attentionText(index) {
+  var c = counts(index)
+  return c && c.attention > 0 ? plural(c.attention, "change", "changes") + " without a case" : ""
 }
 
 function collectors(index) {
@@ -810,6 +842,14 @@ function sourceGlyph(source) {
   return SOURCE_GLYPHS[source] !== undefined ? SOURCE_GLYPHS[source] : "•"
 }
 
+// The tone of an open drift item (ADR-0028 §4b): the urgent colour is the
+// crisis signal and nothing else, so a crisis is urgent whatever its zone
+// (a hook in the yellow zone) and attention is the accent whatever its zone
+// (a pacman install is red in the ledger, ADR-0014, and still quiet).
+function driftTone(item) {
+  return isObject(item) && item.crisis === true ? "urgent" : "accent"
+}
+
 // Zone colours come from theme tokens only (SPEC-PLUGIN §7): red is the
 // theme's urgent colour, yellow its accent, green the muted colour.
 function zoneTone(zone) {
@@ -860,12 +900,11 @@ function changelogRows(index, filter) {
     var group = !leader && typeof e.txId === "string" && isOpenMember(e, e.txId) ? drift.byTx[e.txId] || null : null
     var item = leader || group
     var grouped = leader !== null && typeof leader.members === "number"
-    // One colour source per row: open drift by its item's computed zone
-    // (ADR-0013 §3: a routine group is yellow although its members are red in
-    // the ledger), anything else by the event's own zone.
-    var zone = item === null ? e.zone
-      : typeof item.zone === "string" ? item.zone
-      : item.crisis === true ? "red" : e.zone
+    // One colour source per row: open drift by its item's class (driftTone:
+    // crisis urgent, attention accent). Every other row is an ordinary
+    // Changelog row (ADR-0028 §4b), quiet whatever its zone: the muted
+    // stripe when it has a zone, none when it has not.
+    var tone = item !== null ? driftTone(item) : ZONES.indexOf(e.zone) !== -1 ? "muted" : ""
     var day = dayOf(e.ts)
     rows.push({
       id: str(e.id),
@@ -880,7 +919,7 @@ function changelogRows(index, filter) {
       actor: actorLabel(e.actor),
       caseId: str(e.case),
       zone: str(e.zone),
-      tone: zoneTone(zone),
+      tone: tone,
       resolution: str(e.resolution),
       resolutionDetail: str(e.resolutionDetail),
       snapshot: e.source === "snapper" && e.kind === "snapshot",
@@ -963,7 +1002,8 @@ function resolutionHead(resolution, caseId) {
   return resolution
 }
 
-// The folded resolution (ADR-0012 §8, §11), or the open-drift note.
+// The folded resolution (ADR-0012 §8, §11), or the open-drift note: it
+// states, it never asks (ADR-0028 §3: a reason is never required).
 function rowStatus(r) {
   if (r.resolution !== "") {
     var head = resolutionHead(r.resolution, r.caseId)
@@ -971,7 +1011,7 @@ function rowStatus(r) {
   }
   if (!r.drift) return ""
   var note = r.groupLeader !== "" ? "In the open " + r.groupSubject + " group"
-    : r.crisis ? "Needs a reason" : "Unexplained"
+    : r.crisis ? "Crisis · no case" : "No case"
   if (r.proposedCase !== "") note += " · proposed for " + r.proposedCase
   return note
 }
@@ -990,6 +1030,9 @@ function journalEntries(list) {
 }
 
 // Today's journal, yesterday's (shown collapsed) and the summary counts.
+// "without a case" is the attention count (openDrift − crisis), the number
+// the tooltip and the Changelog line show; crises are in the strip and the
+// pictogram (ADR-0028 §4b).
 function todayView(index) {
   var today = index && isObject(index.today) ? index.today : {}
   var summary = index && isObject(index.summary) ? index.summary : {}
@@ -1005,7 +1048,7 @@ function todayView(index) {
       { label: "in 7 days", value: count(summary.events7d) },
       { label: "active", value: count(summary.activeCases) },
       { label: "queued", value: count(summary.queuedCases) },
-      { label: "open drift", value: count(summary.openDrift) }
+      { label: "without a case", value: Math.max(0, count(summary.openDrift) - count(summary.crisis)) }
     ]
   }
 }
@@ -1376,7 +1419,8 @@ function driftItemFor(index, eventId) {
     item = drift.byTx[event.txId] || null
   if (!item || typeof item.eventId !== "string" || !EVENT_ID.test(item.eventId)) return null
   var grouped = typeof item.members === "number" && item.members > 1 && typeof item.txId === "string"
-  var zone = typeof item.zone === "string" ? item.zone : item.crisis === true ? "red" : str(event && event.zone)
+  // The ledger zone (ADR-0028 §7); `crisis` no longer implies red.
+  var zone = typeof item.zone === "string" ? item.zone : str(event && event.zone)
   return {
     eventId: id,
     leaderId: item.eventId,
@@ -1389,7 +1433,7 @@ function driftItemFor(index, eventId) {
     detail: str(item.detail),
     actor: actorLabel(item.actor),
     zone: zone,
-    tone: zoneTone(zone),
+    tone: driftTone(item),
     crisis: item.crisis === true,
     proposedCase: typeof item.proposedCase === "string" && CASE_ID.test(item.proposedCase) ? item.proposedCase : "",
     grouped: grouped,
@@ -1424,7 +1468,8 @@ function caseOptionsFor(index, item) {
 }
 
 // The sheet's starting action: Link when the engine proposes a case, else
-// Explain (a crisis "needs a reason").
+// Explain. Neither is required (ADR-0028 §3); this is only where the form
+// starts.
 function driftDefaultAction(item) {
   return item && item.proposedCase !== "" ? "link" : "explain"
 }
@@ -1562,12 +1607,12 @@ function firstCrisis(index) {
 }
 
 // ADR-0020: the index lists the newest 200 open drift items; the summary
-// counts all. "+N more open drift items not listed here", or "".
+// counts all. "+N more changes without a case not listed here", or "".
 function moreDriftText(index) {
   var c = counts(index)
   var listed = index && Array.isArray(index.drift) ? index.drift.length : 0
   var more = c ? c.drift - listed : 0
-  return more > 0 ? "+" + more + " more open drift " + (more === 1 ? "item" : "items") + " not listed here" : ""
+  return more > 0 ? "+" + plural(more, "more change", "more changes") + " without a case not listed here" : ""
 }
 
 // ---- Decisions (WP-023) -----------------------------------------------------

@@ -119,11 +119,20 @@ plugin/
 ## 4. BarWidget.qml
 
 `WidgetButton` showing the bar glyph (A4, the Prime Radiant mark) and the
-counts `A · D`, where A = active cases, D = open drift (hidden parts when
-0: the glyph alone, `2`, `· 3`, `2 · 3`; a vertical bar shows the glyph
-only). Colour: default foreground; accent when A > 0; theme error colour
-when any crisis; the glyph always takes the counts' colour. Tooltip:
-"Seldon — 2 active cases, 3 unexplained changes, last capture 4 min ago".
+counts `A · D`, where A = active cases and D is set by the bar-widget
+setting `driftInBar` (ADR-0028 §4a; manifest `enum`, options `crisis`,
+`all`, `none`, default `crisis`, read with `setting()` from the widget's
+`shell.json` entry, which hot-reloads; an unknown value is the default):
+`crisis` → `summary.crisis`, `all` → `summary.openDrift`, `none` → never.
+Hidden parts when 0: the glyph alone, `2`, `· 1`, `2 · 1`; a vertical bar
+shows the glyph only. Colour: default foreground; accent when A > 0;
+theme error colour when any crisis, in every mode (attention never
+colours the bar); the glyph always takes the counts' colour. Tooltip, the
+same in every mode and in the neutral tone: "Seldon — 2 active cases, 1
+crisis, 7 changes without a case, last capture 4 min ago" (the crisis
+part only while there is one; "changes without a case" counts attention,
+`openDrift − crisis`). The widget pushes the mode to the service
+(`setDriftInBar`), whose IPC read-out reports the same pill.
 Left click toggles Panel; middle click opens Prime Radiant; right click
 runs capture.
 
@@ -183,7 +192,7 @@ actions Link (open cases, the proposed case preselected), Explain (intent
 Dismiss (reason); groups offer *All N* / *Only <package>* (`--only`);
 writes use two-press arming where any change to the form disarms; the
 draft is kept per event; a no-op shows "Already resolved: …"; above the
-list "+N more open drift items not listed here" when `summary.openDrift`
+list "+N more changes without a case not listed here" when `summary.openDrift`
 exceeds `drift.length` (ADR-0020). Folded rows read `linked to C-…`,
 `explained · C-…: <intent>` (ADR-0021), `dismissed: <reason>`. Decisions tab (WP-023, digit 4): newest first by
 id; Enter, `e`, double click or *Open* run `open ADR-NNNN --editor --json`
@@ -212,8 +221,24 @@ it in full); labels never do. Files: one component per tab,
 `NewCaseSheet.qml`, `DriftSheet.qml`, `NewDecisionSheet.qml`. The Changelog source filter has
 one chip per schema source (all nine, including `manual`, `agent`,
 `seldon`). While an event is open drift, its row is coloured by the drift
-item's computed zone (ADR-0013 §3) — stripe, glyph, status and badge from
-one source; once resolved, by the event's own zone.
+item's class (ADR-0028 §4b): a crisis (`crisis: true`) in the urgent
+colour whatever its zone, attention in the accent whatever its zone (a
+pacman item is red in the ledger and still quiet) — stripe, glyph, status
+and badge from one source. Every other row (resolved, linked, with a case,
+routine, never drift) is an ordinary Changelog row and quiet whatever its
+zone: the muted stripe when the event has a zone, none when it has not
+(ADR-0028 §4b; the zone stays text where it is shown, e.g. the sheet). The
+open row's note states, never asks: "Crisis · no case" or "No case"
+(" · proposed for C-…" when the engine proposes a case). Under the
+Changelog header a quiet line "N changes without a case" (attention,
+`openDrift − crisis`; hidden at 0): dim, no badge, no tab-strip colour,
+no action. Drift-sheet labels follow `crisis`, never `zone`: heading
+"RESOLVE A CRISIS" (else "RESOLVE DRIFT"), the card's zone label
+"<zone> · crisis" (the ledger zone, e.g. "yellow · crisis") in the urgent
+colour; Explain pre-fills the ledger zone. Above Link / Explain / Dismiss
+the sheet has an *Ask agent* slot, first because the agent explains with
+evidence and the human never has to (ADR-0028 §3); it stays empty and
+takes no space until WP-095 puts its button there.
 
 | Tab | Content | Actions |
 |---|---|---|
@@ -243,10 +268,12 @@ tone — engine missing → `engine-missing`, not initialised →
 `logbook-not-initialised`, index missing (or unreadable) →
 `index-missing`, index stale → `index-stale`; the contract mismatch and
 the snapper banner have none. The Today tab shows the day's state left of
-the date and the counts, `Style.space(48)`: crisis (urgent) when any
-crisis, else drift open (accent) when open drift, else case active
-(accent) when active cases, else all clear (foreground); none without an
-index.
+the date and the counts (events today, in 7 days, active, queued, and
+"without a case", the attention count `openDrift − crisis`, the number the
+tooltip and the Changelog line show), `Style.space(48)`: crisis (urgent) when any
+crisis, else case active (accent) when active cases, else all clear
+(foreground); none without an index. Attention alone changes nothing
+(ADR-0028 §4b), so the drift-open pictogram is not shown.
 
 Banner states (top of every tab): engine missing → "Install the engine:"
 the GitHub one-liner while the AUR package does not exist (§3,
@@ -279,7 +306,9 @@ shell (§3) → the neutral "Restart the shell to finish the update" above
 the banners, with both versions and one action, *Restart shell*, which
 runs the argv `["omarchy-restart-shell"]` once per service instance
 (a second click could kill the new shell; WP-090); crisis → red strip "N changes
-in the red zone need a reason".
+that can affect boot, login or the shell have no case" ("1 change … has
+no case"), only while `summary.crisis` > 0 (ADR-0028 §4b); a click opens
+the first crisis.
 
 ## 6. Overlay.qml — Prime Radiant
 
