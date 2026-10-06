@@ -416,12 +416,19 @@ System sections with every field optional. The banners' terminal scripts
 runs it, bash parses each, and a hostile index (quotes, `$(…)`, `rm -rf`
 in the snapper message and the contract version) changes none of them.
 `bash tests/plugin/terminal-scripts.sh` runs every script inside the
-presentation launcher's own `omarchy-show-logo; …; omarchy-show-done` line
-with stub `sudo`, `curl`, `seldon`, `omarchy` and `gum` (and once the real
-gum, for its flags), scratch HOME: the green line and the follow-up
-`seldon capture` or `seldon status` only on success, the red line on a
-refused password, a failed download (pipefail) or a failed installer, one
-more capture when the lock is held, and "Done" in every case. For the panel actions (WP-012): the case picker lists
+presentation launcher's own `omarchy-show-logo; …; omarchy-show-done` line,
+in a session of its own (`setsid`), with stub `sudo`, `curl`, `seldon`,
+`omarchy` and `gum` (and the real gum, for its flags), scratch HOME: the
+green line and the follow-up `seldon capture` or `seldon status` only on
+success, the red line on a refused password, a failed download
+(pipefail), a failed installer or an empty USER (no `sudo` call), one more
+capture when the lock is held, "Read access granted" instead of
+"recorded" when both captures fail, and "Done" after each; Ctrl+C (a stub
+sends SIGINT to the process group and dies of it, or catches it and
+exits 1, or it comes during the announce lines) gives the "Cancelled"
+line as the last output, no follow-up, no command started after it, and
+no "Done" (status 130). `terminalArgv` returns the launcher argv only for
+one of the five scripts; a forged banner gets null. For the panel actions (WP-012): the case picker lists
 the open cases only, active first, with ids checked; `logArgs` keeps the
 note one argument after `--` (`--help`, quotes, a newline, `$(…)`) and
 refuses blank text and a malformed case id; `openArgs` takes journal,

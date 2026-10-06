@@ -433,7 +433,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   password once; afterwards it records the snapshots, and the banner
   disappears without *Check again* ("Snapshots are now recorded. The
   panel updates by itself." or "Nothing changed. Snapshots stay off;
-  Seldon works without them."). *Copy* still copies the plain command.
+  Seldon works without them."). A result line never claims more than
+  happened; Ctrl+C says "Cancelled" and closes the window. *Copy* still
+  copies the plain command.
   Banners say one sentence each; the buttons are *Install*, *Create*,
   *Grant* and *Update*; the setup banners read "Install the engine",
   "Create your logbook" and "Read snapshots (optional)", the engine one

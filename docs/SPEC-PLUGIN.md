@@ -356,23 +356,33 @@ logo, the script, "Done!", the theme's gum colours) with the banner's
 script, one of five constants in `Model.js` (`INSTALL_ENGINE_SCRIPT`,
 `UPDATE_ENGINE_SCRIPT`, `UPDATE_PLUGIN_SCRIPT`, `INIT_SCRIPT`,
 `SNAPPER_FIX_SCRIPT`); the service launches nothing else
-(`isTerminalScript`). Each follows Omarchy's own scripts: a bold `gum
+(`Model.terminalArgv`). Each follows Omarchy's own scripts: a bold `gum
 style` line "Seldon: <what>", one paragraph (why; whether it asks for a
 password), the command indented as *Copy* copies it, the command run in
 `(set -o pipefail; …)`, then one line of what changed, green (palette 2)
-on success, red (palette 1) "Nothing changed…" on failure; the script
-ends on that line, so "Done!" always follows. After a successful snapshot
-grant the script runs `seldon capture` (once more if the lock is held),
-which rewrites the index, so the banner goes without a click ("Snapshots
-are now recorded. The panel updates by itself."); after an engine update
-it runs `seldon status`, so the new engine rewrites the index. `seldon
-init` writes the index itself. After an install or update the engine is
-probed only on *Check again*, and the result line says so. The scripts
-are built once from string literals: nothing from the index, the logbook
-or the environment is in them (AGENTS.md §8); `$USER` stays literal in
-the shown command and is expanded only where it runs. ADR-0026 holds: the
-engine never runs the grant, the user's click runs it in the user's
-terminal.
+on success, red (palette 1) on failure. A result line never claims more
+than happened: after a failed install or engine update it says "The
+install (update) did not finish. Run it again; your logbook is
+untouched." (install.sh can stop after it replaced the binary). The
+script then ends with status 0, so the wrapper's "Done!" follows. Ctrl+C
+(or TERM) is trapped: the script skips a command that has not started,
+prints a "Cancelled. …" line (palette 3) and ends with 130, Omarchy's
+"cancelled" status, on which the wrapper prints no "Done!" and the window
+closes, as with Omarchy's own scripts. After a successful snapshot grant
+the script runs `seldon capture` (once more if the lock is held), which
+rewrites the index, so the banner goes without a click; only when a
+capture succeeded does it say "Snapshots are now recorded. The panel
+updates by itself.", else "Read access granted. Seldon records snapshots
+at its next capture." After an engine update it runs `seldon status`, so
+the new engine rewrites the index. `seldon init` writes the index itself.
+After an install or update the engine is probed only on *Check again*,
+and the result line says so. The scripts are built once from string
+literals: nothing from the index, the logbook or the environment is in
+them (AGENTS.md §8); `$USER` stays literal in the shown command and is
+expanded only where it runs, there as `${USER:?}` in the grant, which
+stops before `sudo` when USER is empty (a grant `u::rx` would change the
+owner bits). ADR-0026 holds: the engine never runs the grant, the user's
+click runs it in the user's terminal.
 
 ## 6. Overlay.qml — Prime Radiant
 

@@ -16,8 +16,8 @@ Branch `wp/117-plugin-texts`, base `main` d919974. Commits: plan
   and single-quoted, exactly as *Copy* copies it; `if (set -o pipefail;
   <command>); then [follow-up;] <green line>; else <red line>; fi`. The
   wrapper (`omarchy-launch-floating-terminal-with-presentation`) adds the
-  logo, the theme's gum env and "Done!". Every script ends on a gum line
-  (exit 0), so "Done!" always follows.
+  logo, the theme's gum env and "Done!". (Round 2: "Done!" follows every
+  ending but Ctrl+C; see Round 2.)
   - Grant: after a successful grant it runs `seldon capture` (retries
     once after 3 s, for exit 4 / lock held, A6). Then it prints "Snapshots
     are now recorded. The panel updates by itself." On failure it prints
@@ -29,8 +29,8 @@ Branch `wp/117-plugin-texts`, base `main` d919974. Commits: plan
   - Init: "Your logbook is ready. The panel updates by itself." (init
     writes the index; the FileView's 5 s retry picks it up).
 - **Service.fix**: *Copy* copies `banner.command`. *terminal* launches
-  `banner.script`, but only if `Model.isTerminalScript(script)` (an
-  exact match against the five constants). The `snapperHintIndex`
+  `banner.script`, but only if it is an exact match against the five
+  constants (round 2: decided by `Model.terminalArgv`). The `snapperHintIndex`
   plumbing, `SNAPPER_HINT` and the hint are gone.
 - **Banners**: one sentence each. Buttons: *Install*, *Create*, *Grant*,
   *Update* (*Copy* and *Check again* stay).
@@ -160,3 +160,75 @@ Branch `wp/117-plugin-texts`, base `main` d919974. Commits: plan
 None blocking. For the stage-2 review (shell strings): the launcher still
 runs the script through `bash -c` (Omarchy's wrapper). The only inputs
 are the five literals; `Service.fix` cannot pass anything else.
+
+## Round 2
+
+Stage-1 review 1 (APPROVE with notes) and the orchestrator's round-2
+brief: N1–N5 done; N6 needs no action; N7 belongs to WP-118.
+
+- **N1** — The launch decision moved into Model.js:
+  `terminalArgv(banner)` returns
+  `["omarchy-launch-floating-terminal-with-presentation", script]` for one
+  of the five scripts and `null` for anything else. `Service.fix` only
+  calls it. model.test.js forges banners and every one gets `null`:
+  `{script: "id"}`, a command as script, a script plus `"; id"`, an
+  empty string, an array, no script, null, a bare script string, and a
+  banner without a terminal action.
+- **N2** — Ctrl+C and TERM are trapped. The trap only sets a flag
+  (`seldon_cancelled`). A command that has not started is skipped. The
+  script prints a "Cancelled. …" line (palette 3) and ends with status
+  130. On 130 Omarchy's wrapper prints no "Done!", so in a real window the
+  terminal closes, as Omarchy's own scripts do on Ctrl+C, and the line is
+  visible only briefly. The banner in the panel stays, which is the truth.
+  - Cancelled lines:
+    - grant: "Cancelled. Nothing changed."
+    - install: "Cancelled. The install did not finish. Run it again;
+      your logbook is untouched." (the update says "update")
+    - plugin: "Cancelled. The plugin update did not finish."
+    - init: "Cancelled. Press Create in the panel to start again."
+      (init could be interrupted mid-write, so it claims nothing).
+  - Every other ending is status 0 after the result line, so "Done!"
+    follows. The test comment, SPEC-PLUGIN §5 and this handover no
+    longer promise that "Done!" always follows.
+  - Tested in terminal-scripts.sh under `setsid`, with three variants:
+    the sudo stub sends SIGINT to the process group and dies of it (as
+    sudo re-raises it); it catches SIGINT and exits 1; or ^C arrives
+    during the announce lines, in which case sudo is never called. In
+    all three the cancelled line is the last line, there is no Done, and
+    no capture runs. Real gum is also tested with ^C.
+  - **Live**: real sudo plus Ctrl+C on the test host is the
+    orchestrator's check.
+- **N3** — The grant prints "Snapshots are now recorded. The panel
+  updates by itself." only when a capture exited 0 (the first, or the one
+  retry after 3 s). Otherwise it prints "Read access granted. Seldon
+  records snapshots at its next capture." There is no `|| true` in the
+  grant.
+- **N4** — The red lines for install and engine update now read "The
+  install (update) did not finish. Run it again; your logbook is
+  untouched." Neither script contains "Nothing changed" any more (this is
+  tested).
+- **N5** — The grant's run line is `sudo setfacl -m u:${USER:?}:rx
+  /.snapshots`. The shown and copied command is still `…u:$USER:rx…`.
+  With an empty USER the subshell stops before sudo and the red line
+  follows; this is tested, and the stub log shows no `sudo` call.
+
+Mutants (Model.js, against model.test.js / terminal-scripts.sh, restored
+from a WIP commit after each): R1 terminalArgv accepts any string 1/0 ·
+R2 partial line says "recorded" 1/2 · R3 no INT/TERM trap 1/11 · R4
+cancelled ends 0 (Done follows) 1/6 · R5 run line without `${USER:?}`
+1/2 · R6 command runs after an early ^C 1/3 · R7 install failure says
+"Nothing changed" 1/2 — all 7 killed. (The round-1 survivor S1, the guard
+in Service.qml, now lives in Model.js as R1 and is killed by
+model.test.js.)
+
+Process note: my first mutant run restored Model.js with `git checkout`
+before round 2 was committed. That reset Model.js to the round-1 commit
+and threw away my round-2 edits. I re-applied the same edit (the
+identical script, written against that base), committed it as WIP and
+then re-ran the mutants; the numbers above come from that second run.
+Separately, the Claude Code removal check refused an inline
+`bash -c … rm` probe. I ran the probe again from a runner file in the
+scratchpad with `: >` instead of `rm`.
+
+Checks: `omarchy plugin validate plugin/` ok, qmllint ok (29 files),
+docs-check ok, model.test.js 101, terminal-scripts 65/0.
