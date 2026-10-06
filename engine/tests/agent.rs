@@ -94,7 +94,9 @@ fn launches_the_default_launcher_with_the_prompt_as_one_argument() {
         serde_json::json!(["omarchy", "agent", "prompt", "{prompt}"])
     );
     assert_eq!(v["case"], "C-2026-001");
-    assert_eq!(v["cwd"], root.to_str().unwrap());
+    // called in the test's temp dir: the launcher starts there (ADR-0030 §2)
+    let here = env.tmp.path();
+    assert_eq!(v["cwd"], here.to_str().unwrap());
     assert_eq!(v["previousActiveCase"], "C-2026-003");
 
     assert_eq!(read(&calls), "call\n", "exactly one launch");
@@ -105,10 +107,12 @@ fn launches_the_default_launcher_with_the_prompt_as_one_argument() {
     assert_eq!(
         *prompt,
         format!(
-            "Work case C-2026-001 in the Seldon logbook at {}. First run `seldon hook session-start` \
-             (the logbook context) and `seldon plan show C-2026-001` (the case file). Every \
+            "Work case C-2026-001 in the Seldon logbook at {root}. Use the seldon skill; if your \
+             harness has no skill mechanism, read {root}/AGENTS.md (Seldon's rules) instead. \
+             First run `seldon hook session-start` unless your harness already gave you the \
+             block `# Seldon logbook context`, then `seldon plan show C-2026-001`. Every \
              mutating command is recorded.",
-            root.display()
+            root = root.display()
         )
     );
     // the agent reads the title itself; it is not in the arguments
@@ -116,9 +120,9 @@ fn launches_the_default_launcher_with_the_prompt_as_one_argument() {
     assert!(!env.tmp.path().join("pwned").exists());
     assert!(!root.join("pwned").exists());
 
-    // the case is the active case; the launcher runs in the logbook
+    // the case is the active case; the launcher runs where it was called
     assert_eq!(active_case(&root).as_deref(), Some("C-2026-001"));
-    let canonical = std::fs::canonicalize(&root).unwrap();
+    let canonical = std::fs::canonicalize(here).unwrap();
     assert_eq!(
         read(&vars),
         format!("{}\n{}\n", canonical.display(), root.display())
@@ -241,11 +245,14 @@ fn the_launcher_arguments_hold_no_logbook_text() {
     assert!(all.contains("C-2026-001"), "{all}");
     assert!(all.contains(root.to_str().unwrap()), "{all}");
     assert!(all.contains("seldon hook session-start"), "{all}");
+    // nothing of the logbook, nor of the context block (the prompt names
+    // only the block's title, as fixed text)
     for text in [
         "SENTINEL",
         "Install zed",
         "second line",
-        "Seldon logbook context",
+        "Lines that start with",
+        "## Status",
         "\n",
     ] {
         assert!(!args[2].contains(text), "{text:?} in {:?}", args[2]);
@@ -768,5 +775,130 @@ mod new {
         let out = cmd.output().unwrap();
         assert_eq!(out.status.code(), Some(1));
         assert!(stderr(&out).contains("SELDON_ACTOR"));
+    }
+}
+
+/// ADR-0030 §2, acceptance 1: the launcher starts where `omarchy agent
+/// prompt` would start the agent, with the launch marker `SELDON_CASE`
+/// next to `SELDON_LOGBOOK`, `SELDON_ACTOR` and `SELDON_ATTENDED`.
+mod start_folder {
+    use super::*;
+
+    /// A stub `omarchy` that writes its folder and the four variables, one
+    /// per line, to `<tmp>/omarchy.where`.
+    fn where_stub(env: &Env) -> PathBuf {
+        let out = env.tmp.path().join("omarchy.where");
+        env.stub(
+            "omarchy",
+            &format!(
+                "printf '%s\\n' \"$(pwd -P)\" \"${{SELDON_CASE-unset}}\" \"${{SELDON_LOGBOOK-unset}}\" \
+                 \"${{SELDON_ACTOR-unset}}\" \"${{SELDON_ATTENDED-unset}}\" > '{}'",
+                out.display()
+            ),
+        );
+        out
+    }
+
+    /// `agent start <id> --json` called in `dir`: the folder the stub ran
+    /// in (resolved), and `--json cwd`.
+    fn start_in(env: &Env, dir: &Path, id: &str, out: &Path) -> (PathBuf, String, Vec<String>) {
+        let _ = std::fs::remove_file(out);
+        let o = env
+            .command(&["agent", "start", id, "--json"])
+            .env("SELDON_NOW", T0)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        let cwd = json(&o)["cwd"].as_str().unwrap().to_string();
+        let lines: Vec<String> = read(out).lines().map(String::from).collect();
+        (PathBuf::from(&lines[0]), cwd, lines[1..].to_vec())
+    }
+
+    fn real(p: &Path) -> PathBuf {
+        std::fs::canonicalize(p).unwrap()
+    }
+
+    #[test]
+    fn from_a_project_home_work_and_root() {
+        let env = Env::new(Snapper::Missing);
+        let root = logbook(&env);
+        let out = where_stub(&env);
+        let project = env.home.join("src/project");
+        std::fs::create_dir_all(&project).unwrap();
+
+        // a project folder: that folder; the environment holds the marker
+        let (ran, cwd, vars) = start_in(&env, &project, "C-2026-001", &out);
+        assert_eq!(ran, real(&project));
+        assert_eq!(cwd, project.to_str().unwrap());
+        assert_eq!(
+            vars,
+            ["C-2026-001", root.to_str().unwrap(), "agent:default", "1"]
+        );
+
+        // $HOME without ~/Work: $HOME; `/` without it: $HOME
+        let (ran, cwd, _) = start_in(&env, &env.home, "C-2026-003", &out);
+        assert_eq!(
+            (ran, cwd.as_str()),
+            (real(&env.home), env.home.to_str().unwrap())
+        );
+        let (ran, _, vars) = start_in(&env, Path::new("/"), "C-2026-001", &out);
+        assert_eq!(ran, real(&env.home));
+        assert_eq!(vars[0], "C-2026-001");
+
+        // with ~/Work: from $HOME and from `/` there, a project stays
+        let work = env.home.join("Work");
+        std::fs::create_dir(&work).unwrap();
+        let (ran, cwd, vars) = start_in(&env, &env.home, "C-2026-003", &out);
+        assert_eq!((ran, cwd.as_str()), (real(&work), work.to_str().unwrap()));
+        assert_eq!(vars[0], "C-2026-003");
+        let (ran, cwd, _) = start_in(&env, Path::new("/"), "C-2026-001", &out);
+        assert_eq!((ran, cwd.as_str()), (real(&work), work.to_str().unwrap()));
+        let (ran, _, _) = start_in(&env, &project, "C-2026-001", &out);
+        assert_eq!(ran, real(&project));
+        // the logbook itself is a folder like any other
+        let (ran, _, _) = start_in(&env, &root, "C-2026-001", &out);
+        assert_eq!(ran, real(&root));
+    }
+
+    #[test]
+    fn workdir_logbook_keeps_the_old_folder() {
+        let env = Env::new(Snapper::Missing);
+        let root = logbook(&env);
+        let out = where_stub(&env);
+        std::fs::create_dir(env.home.join("Work")).unwrap();
+        add_config(&env, "[agent]\nworkdir = \"logbook\"");
+        for dir in [env.home.clone(), env.home.join("Work"), PathBuf::from("/")] {
+            let (ran, cwd, vars) = start_in(&env, &dir, "C-2026-001", &out);
+            assert_eq!(ran, real(&root), "{dir:?}");
+            assert_eq!(cwd, root.to_str().unwrap());
+            assert_eq!(vars[0], "C-2026-001");
+        }
+        // a value the engine does not know is the config's error
+        let text = read(&env.config_file()).replace("\"logbook\"\n", "\"/tmp\"\n");
+        std::fs::write(env.config_file(), text).unwrap();
+        let o = env.at(T0, &["agent", "start", "C-2026-001"]);
+        assert_eq!(o.status.code(), Some(1), "{}", stderr(&o));
+    }
+
+    /// `--new` launches the same way, on the new case.
+    #[test]
+    fn the_new_case_is_the_marker() {
+        let env = Env::new(Snapper::Missing);
+        let _root = logbook(&env);
+        let out = where_stub(&env);
+        std::fs::create_dir_all(env.home.join(".config/omarchy/defaults")).unwrap();
+        std::fs::write(env.home.join(".config/omarchy/defaults/agent"), "claude\n").unwrap();
+        let o = env
+            .command(&["agent", "start", "--new", "--json", "--", "Install zed."])
+            .env("SELDON_NOW", T0)
+            .current_dir(&env.home)
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        let lines: Vec<String> = read(&out).lines().map(String::from).collect();
+        assert_eq!(lines[0], real(&env.home).to_str().unwrap());
+        assert_eq!(lines[1], "C-2026-004");
+        assert_eq!(json(&o)["case"], "C-2026-004");
     }
 }

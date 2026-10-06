@@ -772,6 +772,29 @@ pub struct AgentConfig {
     /// More launchers, by name, for `agent start --launcher NAME`.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub launchers: BTreeMap<String, Vec<String>>,
+    /// The folder the launcher starts in (ADR-0030 §2).
+    #[serde(skip_serializing_if = "AgentWorkdir::is_inherit")]
+    pub workdir: AgentWorkdir,
+}
+
+/// `[agent] workdir`: where `agent start` starts the launcher (ADR-0030
+/// §2).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentWorkdir {
+    /// The folder `agent start` was called in, by `omarchy-agent`'s rule:
+    /// from `$HOME`, `/` or a folder that is gone, `~/Work` when it exists,
+    /// else `$HOME`.
+    #[default]
+    Inherit,
+    /// The logbook (the folder before ADR-0030).
+    Logbook,
+}
+
+impl AgentWorkdir {
+    fn is_inherit(&self) -> bool {
+        *self == AgentWorkdir::Inherit
+    }
 }
 
 /// `omarchy agent prompt <prompt>`: Omarchy's default coding agent in a
@@ -784,6 +807,7 @@ impl Default for AgentConfig {
         AgentConfig {
             launcher: DEFAULT_AGENT_LAUNCHER.map(String::from).to_vec(),
             launchers: BTreeMap::new(),
+            workdir: AgentWorkdir::Inherit,
         }
     }
 }
@@ -808,12 +832,15 @@ impl HooksConfig {
 }
 
 /// The sessions whose commands the agent hooks record and which get the
-/// logbook context: the session's directory is the `cwd` of the hook's
-/// payload.
+/// logbook context: the session's directory is `CLAUDE_PROJECT_DIR`, else
+/// the `cwd` of the hook's payload. A session `seldon agent start`
+/// launched (`SELDON_CASE` in the hook's environment) is served under
+/// either scope (ADR-0030 §1).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HookScope {
-    /// Sessions whose directory lies inside the logbook.
+    /// Sessions whose directory lies inside the logbook, and sessions
+    /// `seldon agent start` launched.
     #[default]
     Logbook,
     /// Every session that runs the hooks, wherever it works.
@@ -1166,6 +1193,33 @@ mod tests {
         config.hooks.scope = HookScope::All;
         assert!(
             text(&config).contains("[hooks]\nscope = \"all\""),
+            "{}",
+            text(&config)
+        );
+    }
+
+    #[test]
+    fn agent_workdir() {
+        let parse = |text: &str| toml::from_str::<Config>(text).map(|c| c.agent.workdir);
+        assert_eq!(parse("").unwrap(), AgentWorkdir::Inherit);
+        assert_eq!(
+            parse("[agent]\nworkdir = \"inherit\"\n").unwrap(),
+            AgentWorkdir::Inherit
+        );
+        assert_eq!(
+            parse("[agent]\nworkdir = \"logbook\"\n").unwrap(),
+            AgentWorkdir::Logbook
+        );
+        assert!(parse("[agent]\nworkdir = \"/tmp\"\n").is_err());
+        // the default is not written, and keeps the section default
+        let text = |config: &Config| toml::to_string(config).unwrap();
+        let mut config = Config::default();
+        assert!(!text(&config).contains("workdir"), "{}", text(&config));
+        assert!(config.agent.is_default());
+        config.agent.workdir = AgentWorkdir::Logbook;
+        assert!(!config.agent.is_default());
+        assert!(
+            text(&config).contains("workdir = \"logbook\""),
             "{}",
             text(&config)
         );
