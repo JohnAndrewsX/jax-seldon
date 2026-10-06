@@ -13,8 +13,8 @@ off the user: you do the work, Seldon keeps the record. Keeping to these
 rules is your job.
 
 The measure is the number of steps a case costs the user. The aim: one
-sentence from the user, at most one password prompt, nothing left to do
-at the end (ADR-0027). A rule that adds a step for the user without
+sentence from the user, as few password prompts as the route allows,
+nothing left to do at the end (ADR-0027, ADR-0031). A rule that adds a step for the user without
 adding to the record is wrong; so is saving a step at the cost of the
 snapshot or the R3 stop.
 
@@ -70,10 +70,10 @@ only add limits.
    is unattended: record and report only — read, plan, write the *Log*,
    change nothing on the machine. A cached `sudo` or a passwordless sudo
    rule never makes a session attended. When you start another agent
-   process, a job or a timer, unset `SELDON_ATTENDED` and set
-   `SELDON_ACTOR` to that agent's name (`agent:<name>`); never leave it
-   unset. A sub-agent inside your own session shares your attendance and
-   acts as you; privileged steps stay in your terminal.
+   process, a job or a timer, unset `SELDON_ATTENDED` and `SELDON_CASE`
+   and set `SELDON_ACTOR` to that agent's name (`agent:<name>`); never
+   leave it unset. A sub-agent inside your own session shares your
+   attendance and acts as you; privileged steps stay in your session.
 
 Write in the logbook's language (`language` in `PROJECT.md`). Headings,
 frontmatter keys and enum values stay English in every language.
@@ -231,13 +231,15 @@ commands that already manage privilege elevation themselves (`omarchy
 pkg add`, `omarchy snapshot`, an AUR helper, `makepkg -si`): they ask
 with `sudo` on their own and so need the user's terminal. `pkexec` asks
 every time (Omarchy keeps no polkit grant), so take privileged steps in
-as few commands as the route allows. The user types the password when
-asked. Never ask for a password, never store it, never pass it to a
-command.
+as few commands as the route allows: one program per `pkexec`, never
+privileged commands bundled in `pkexec sh -c`. The user types the
+password when asked. Never ask for a password, never store it, never
+pass it to a command.
 
 Start the case first; then, before the first red change of an R2 or R3
-case, take the snapshot yourself, for each config that
-`snapper --csvout list-configs` lists:
+case, take the snapshot of the `root` config yourself, where packages and
+system files change (another config that `snapper --csvout list-configs`
+lists only when the case changes its files; ADR-0031):
 
 ```sh
 pkexec snapper -c root create -c number -p -d "C-2026-014"
@@ -252,8 +254,8 @@ numbered snapshots.
 Record the `root` config's number as the case's rollback:
 `seldon plan snapshot <ID> <N> --actor agent:<name>`. The engine checks
 that the snapshot exists and lies between the case's start and its first
-red change, and warns when not; it never refuses. Other configs' numbers
-go into a *Log* line `snapshot <N> (<config>) before <step>`. (`plan
+red change, and warns when not; it never refuses. The number of another
+config goes into a *Log* line `snapshot <N> (<config>) before <step>`. (`plan
 start --snapshot N` stays for a person who snapshots before starting a
 case.) Forgot it? With the hooks, the next capture fills the field from
 your recorded `snapper … create`; a snapshot whose description is the
@@ -347,8 +349,12 @@ held — wait a moment and retry.
 ## 6. Hooks: what gets recorded
 
 With the Claude Code harness (`seldon init --harness claude-code`, or
-`seldon hook install claude-code` afterwards) the logbook's
-`.claude/settings.json` has three hooks:
+`seldon hook install claude-code` afterwards) the user-wide
+`~/.claude/settings.json` has three hooks. They serve a session in the
+logbook folder and a session `seldon agent start` launched, wherever it
+works (the launch sets `SELDON_CASE`; the context block then opens with
+`Launched by seldon agent start on <ID>; …`); any other session only
+under `[hooks] scope = "all"`:
 
 | Hook | Runs | Does |
 |---|---|---|
@@ -359,10 +365,10 @@ With the Claude Code harness (`seldon init --harness claude-code`, or
 Other agents call the same commands themselves: before each command pipe
 `{"command": "…", "actor": "agent:<name>", "cwd": "…"}` into
 `seldon hook generic`; run `seldon hook session-start` at the start and
-`seldon hook session-stop --actor agent:<name>` at the end. An agent
-working outside the logbook folder does the same and names the active
-case, unless the user set `[hooks] scope = "all"` and its harness's hooks
-report for it.
+`seldon hook session-stop --actor agent:<name>` at the end. Outside the
+logbook folder such a report records something only in a session
+`seldon agent start` launched (`SELDON_CASE`) or under
+`[hooks] scope = "all"`; name the case with `--case <ID>`.
 
 What a hook records:
 
@@ -483,22 +489,21 @@ pacman -Sp --print-format %n tesseract rust
 
 No hit, so no R3 stop. It runs its commands through its tool, so every
 privileged one is `pkexec`, and each opens Omarchy's password prompt. It
-takes the snapshots, each with the case id as description:
+takes the snapshot of the `root` config, where the packages change, with
+the case id as description (the build in the project folder touches no
+other config's files, so that one is all):
 
 ```sh
-snapper --csvout list-configs
 pkexec snapper -c root create -c number -p -d "C-2026-014"     # prints 118
-pkexec snapper -c home create -c number -p -d "C-2026-014"     # prints 31
 ```
 
-It records the rollback and the second number:
+It records the rollback:
 
 ```sh
 seldon plan snapshot C-2026-014 118 --actor agent:claude-code
 ```
 
-and `snapshot 31 (home) before makepkg` in the case's *Log*, writes the
-preview line into the terminal and the *Log*, and builds:
+writes the preview line into the terminal and the *Log*, and builds:
 
 ```text
 About to: build scanmark from its PKGBUILD (+deps tesseract, leptonica; build dep rust); snapshot 118 first; rollback: pacman -Rns scanmark tesseract leptonica rust
