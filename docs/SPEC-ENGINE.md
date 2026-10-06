@@ -1367,11 +1367,11 @@ After every capture:
    time** — read from the case's own record: the risk of its `created`
    Log line, then each `set … risk A → B` line, to the minute in the local
    time the Log is written in; a change in the event's own minute, or a
-   Log without a `created` line naming a risk, cannot tell it and counts
-   as below R3. Below R3 the event stays drift (a crisis stays a crisis)
-   and `C` gets one advisory Log line, also when closed: for an `alwaysRed`
-   package with a known risk the R3 advisory of the case notes below,
-   otherwise `advisory: not linked: <source> <kind> <subject> at HH:MM:SS
+   Log without a `created` line naming a risk, or one whose last risk is
+   not the frontmatter's `risk` (an inconsistent record, fail-safe),
+   cannot tell it and counts as below R3. Below R3 the event stays drift
+   (a crisis stays a crisis) and `C` gets one advisory Log line, also when
+   closed: `advisory: not linked: <source> <kind> <subject> at HH:MM:SS
    is `alwaysRed` | can affect boot, login or the shell (`[drift]
    alwaysRedPaths`), which only an R3 case takes, and <ID> was R<n> at the
    time | the record of <ID> does not tell its risk at the time (ADR-0027

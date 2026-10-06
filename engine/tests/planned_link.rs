@@ -463,7 +463,7 @@ fn the_harm_guard_and_a_later_line_that_wins() {
     assert!(b.resolutions(&zen["id"]).is_empty());
     assert!(
         b.log_lines(&low).last().unwrap().contains(&format!(
-            "advisory: {low} is R1, but its red change `linux-zen` is R3"
+            "is `alwaysRed`, which only an R3 case takes, and {low} was R1 at the time"
         )),
         "{:?}",
         b.log_lines(&low)
@@ -737,7 +737,8 @@ fn raising_the_risk_afterwards_does_not_link_an_earlier_change() {
     );
     assert!(
         b.log_lines(&id).iter().any(|l| l.contains(&format!(
-            "advisory: {id} is R1, but its red change `linux-zen`"
+            "advisory: not linked: pacman install linux-zen at 13:40:57 is `alwaysRed`, which \
+             only an R3 case takes, and {id} was R1 at the time"
         ))),
         "{:?}",
         b.log_lines(&id)

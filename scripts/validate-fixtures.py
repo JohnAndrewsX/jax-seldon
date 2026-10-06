@@ -1294,21 +1294,20 @@ def planned_links(events, case_files):
             package = always_red(e["subject"])
             crisis = classifier.group([e], e)[0] == "crisis"
             # the Log's local time; the fixture's events carry the same offset
-            risk = risk_at(risk_timeline(by_case[cid]), t.replace(tzinfo=None))
+            timeline = risk_timeline(by_case[cid])
+            # round 3 fail-safe: a timeline that ends elsewhere than the frontmatter tells nothing
+            if timeline and timeline[-1][1] != fm["risk"]:
+                timeline = None
+            risk = risk_at(timeline, t.replace(tzinfo=None))
             if (package or crisis) and risk != "R3":
-                if package and risk:
-                    logs.setdefault(cid, []).append(
-                        f"advisory: {cid} is {risk}, but its red change `{e['subject']}` is R3 "
-                        f"(`[drift] alwaysRed`): an R3 step needs the user's explicit go and a snapshot; "
-                        f"raise it with `seldon plan set {cid} --risk R3` (ADR-0027 §2c)")
-                else:
-                    what = ("is `alwaysRed`" if package
-                            else "can affect boot, login or the shell (`[drift] alwaysRedPaths`)")
-                    was = (f"{cid} was {risk} at the time" if risk
-                           else f"the record of {cid} does not tell its risk at the time")
-                    logs.setdefault(cid, []).append(
-                        f"advisory: not linked: {named(e)} {what}, which only an R3 case takes, and "
-                        f"{was} (ADR-0027 §2c); if this case made it: `seldon drift link {e['id']} {cid}`")
+                # one wording for packages and paths: the risk at the time (round 3)
+                what = ("is `alwaysRed`" if package
+                        else "can affect boot, login or the shell (`[drift] alwaysRedPaths`)")
+                was = (f"{cid} was {risk} at the time" if risk
+                       else f"the record of {cid} does not tell its risk at the time")
+                logs.setdefault(cid, []).append(
+                    f"advisory: not linked: {named(e)} {what}, which only an R3 case takes, and "
+                    f"{was} (ADR-0027 §2c); if this case made it: `seldon drift link {e['id']} {cid}`")
             else:
                 links.append((e, cid))
                 closed = fm["status"] in ("completed", "dropped")
@@ -1755,6 +1754,13 @@ def self_checks(today):
         return [(f, fm, re.sub(r"^## Plan\n", "## Plan\n- [ ] `io.github.example.display-profiles`\n", body, flags=re.M)
                  if fm["id"] == "C-2026-007" else body) for f, fm, body in cases]
 
+    def raised_log_only(cases):
+        # round 3 fail-safe: the Log says R3, the frontmatter R1 — the record tells nothing
+        return [(f, fm, body.replace("· started (snapshot 108) · human\n",
+                                     "· started (snapshot 108) · human\n"
+                                     "- 2026-09-12 09:40 · set risk R1 → R3 · human\n", 1))
+                if fm["id"] == "C-2026-002" else (f, fm, body) for f, fm, body in plan_unit(cases)]
+
     rule9 = [
         ("without its line the link is missed", drop_engine_link, None, "!= what rule 9 writes"),
         ("an unplanned package is not linked", None, unplan, "!= what rule 9 writes"),
@@ -1798,12 +1804,15 @@ def self_checks(today):
          lambda cases: plan_it(without_002(cases)),
          lambda lines, logs: lines == []),
         ("a persistence path links to a case raised to R3 before it", add_unit,
-         lambda cases: [(f, fm, body.replace("· started (snapshot 108) · human\n",
-                                             "· started (snapshot 108) · human\n"
-                                             "- 2026-09-12 09:40 · set risk R1 → R3 · human\n", 1)
-                         if fm["id"] == "C-2026-002" else body) for f, fm, body in plan_unit(cases)],
+         lambda cases: [(f, dict(fm, risk="R3"), body.replace("· started (snapshot 108) · human\n",
+                                                             "· started (snapshot 108) · human\n"
+                                                             "- 2026-09-12 09:40 · set risk R1 → R3 · human\n", 1))
+                        if fm["id"] == "C-2026-002" else (f, fm, body) for f, fm, body in plan_unit(cases)],
          lambda lines, logs: sorted(e["id"] for e, _, _ in lines)
          == ["01M2CZW4J034FDMVAAEWT2G7X8", "01M2CZW4J034FDMVAAEWT2G7X9"]),
+        ("an inconsistent risk record tells nothing", add_unit, raised_log_only,
+         lambda lines, logs: (["01M2CZW4J034FDMVAAEWT2G7X8"] == [e["id"] for e, _, _ in lines]
+                              and any("does not tell its risk" in t for t in logs.get("C-2026-002", [])))),
         ("a Plan comment is no plan", drop_engine_link, commented,
          lambda lines, logs: lines == []),
     ]

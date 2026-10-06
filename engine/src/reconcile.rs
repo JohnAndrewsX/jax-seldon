@@ -46,7 +46,7 @@ use crate::collectors::config::{self, OwnWrites};
 use crate::config::Dirs;
 use crate::error::{Error, Result};
 use crate::index::Built;
-use crate::index::build::{ClassifiedItem, r3_advisory};
+use crate::index::build::ClassifiedItem;
 use crate::index::class::{Class, Classifier, Rules};
 use crate::index::drift::names_token;
 use crate::index::model::IndexEvent;
@@ -507,7 +507,11 @@ impl PlanningCase {
             plan: cases::section(body, "Plan")
                 .map(|r| cases::strip_comments(&body[r]))
                 .unwrap_or_default(),
-            risks: risk_timeline(body),
+            // fail-safe (round 3): a Log whose last risk is not the
+            // frontmatter's was edited by hand or is incomplete; it tells
+            // nothing, so the guard counts the case as below R3
+            risks: risk_timeline(body)
+                .filter(|t| t.last().map(|(_, r)| *r) == Some(file.case.risk)),
             closed: matches!(
                 file.case.status,
                 CaseStatus::Completed | CaseStatus::Dropped
@@ -891,14 +895,11 @@ pub fn planned_links(
     out
 }
 
-/// The Log line of the harm guard: the R3 advisory of the case notes for
-/// an `alwaysRed` package whose case's risk at the time is known (one
-/// line for both, written once), else a line that says why the change was
-/// not linked and how to link it.
+/// The Log line of the harm guard: why the change was not linked — the
+/// case's risk *at the event's time*, or that its record cannot tell —
+/// and how to link it (WP-115 round 3: one wording for packages and
+/// paths, never the case's risk now).
 fn guard_advisory(c: &PlanningCase, risk: Option<Risk>, e: &Event, package: bool) -> String {
-    if let (true, Some(risk)) = (package, risk) {
-        return format!("advisory: {}", r3_advisory(&c.id, risk, &e.subject));
-    }
     let what = if package {
         "is `alwaysRed`"
     } else {
@@ -1392,7 +1393,8 @@ mod tests {
     }
 
     /// Acceptance 6: an `alwaysRed` subject links to an R3 case only;
-    /// below R3 the case gets the R3 advisory.
+    /// below R3 the case gets an advisory with the risk at the time
+    /// (round 3: "was R2 at the time", not the case's risk now).
     #[test]
     fn the_harm_guard_wants_r3() {
         use planned::*;
@@ -1405,11 +1407,13 @@ mod tests {
         assert_eq!(linked(&l), [(10, A.into())]);
         let l = links(&ledger, &[case(A, Risk::R2, "linux-zen")]);
         assert!(l.lines.is_empty());
+        let id = Ulid::from_parts(10, 0);
         assert_eq!(
             l.cases[A].log,
             [format!(
-                "advisory: {}",
-                r3_advisory(A, Risk::R2, "linux-zen")
+                "advisory: not linked: pacman install linux-zen at 10:10:00 is `alwaysRed`, which \
+                 only an R3 case takes, and {A} was R2 at the time (ADR-0027 §2c); if this case \
+                 made it: `seldon drift link {id} {A}`"
             )]
         );
     }
@@ -1602,6 +1606,31 @@ mod tests {
             }],
         );
         assert_eq!(linked(&l), [(11, A.into())]);
+    }
+
+    /// Round 3: a Log whose risk timeline ends elsewhere than the
+    /// frontmatter's `risk` is inconsistent and tells nothing (no link of
+    /// a guarded change); a consistent one is read.
+    #[test]
+    fn an_inconsistent_risk_record_tells_nothing() {
+        let body = "# C\n\n## Plan\n- linux-zen\n\n## Log\n\
+                    - 2026-10-01 09:00 · created (zone yellow, risk R1) · human\n\n## Result\n";
+        let mut file = case_file(&[]);
+        file.doc.body = body.to_string();
+        file.case.risk = Risk::R3;
+        assert_eq!(
+            PlanningCase::of(&file).risks,
+            None,
+            "frontmatter R3, Log R1"
+        );
+        file.case.risk = Risk::R1;
+        let c = PlanningCase::of(&file);
+        assert_eq!(
+            c.risks.as_deref().map(|r| r.len()),
+            Some(1),
+            "consistent: read"
+        );
+        assert_eq!(c.plan, "- linux-zen\n\n");
     }
 
     /// Round 2, B2: a case with a window but no readable file might have
