@@ -22,11 +22,11 @@ pub fn scaled_logbook(fixture: &Path, dst: &Path, factor: usize) -> usize {
 }
 
 /// The scale SPEC-ENGINE §6 states for its budget (WP-076): the ledger
-/// ×141 (10 011 lines), the cases ×38 (304, a copy's events name the
+/// ×124 (10 044 lines), the cases ×38 (304, a copy's events name the
 /// cases of copies 38 and later, which do not exist) and a journal file
 /// for each of the 365 days up to 2026-10-01. Returns the ledger lines.
 pub fn stated_scale(fixture: &Path, dst: &Path) -> usize {
-    let lines = scaled_logbook_with(fixture, dst, 141, 38);
+    let lines = scaled_logbook_with(fixture, dst, 124, 38);
     journal_year(dst, chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap());
     lines
 }

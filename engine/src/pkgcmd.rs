@@ -44,6 +44,14 @@ pub struct PacmanCommand {
     /// stripped; for `-U`, the name from the package file name; not `-`,
     /// which reads them from stdin).
     pub targets: Vec<String>,
+    /// A `-` word: pacman reads more targets from stdin, so the command
+    /// names packages the argv does not show (no plain full upgrade).
+    pub stdin_targets: bool,
+    /// `-U` whose every file lies in a package cache (pacman's
+    /// `/var/cache/pacman/pkg/`, yay's and paru's `~/.cache/yay|paru/`):
+    /// a reinstall or upgrade from what was downloaded before (ADR-0028
+    /// §2 `-U <cache path>`). False for any other operation.
+    pub from_cache: bool,
 }
 
 /// Long options that take the next word as their value (unless written
@@ -92,6 +100,8 @@ pub fn parse_command(argv: &[&str]) -> Option<PacmanCommand> {
         sysupgrade: false,
         query: false,
         targets: Vec::new(),
+        stdin_targets: false,
+        from_cache: false,
     };
     // query letters/long names seen; which count depends on the operation
     let mut flags: Vec<char> = Vec::new();
@@ -188,6 +198,10 @@ pub fn parse_command(argv: &[&str]) -> Option<PacmanCommand> {
             Some(Op::Yay) => !flags.contains(&'c'),
             _ => false,
         };
+    // `-` reads the targets from stdin: no package name here, but names
+    cmd.stdin_targets = words.contains(&"-");
+    cmd.from_cache =
+        cmd.op == Some(Op::Upgrade) && !words.is_empty() && words.iter().all(|w| is_cache_file(w));
     // `-` reads the targets from stdin: no package name
     cmd.targets = words
         .into_iter()
@@ -215,9 +229,10 @@ impl PacmanCommand {
         self.op == Some(Op::Sync) && self.sysupgrade
     }
 
-    /// `-S` with `-u` and no package: the routine class of ADR-0013 §3.
+    /// `-S` with `-u` and no package, none from stdin either: the routine
+    /// class of ADR-0013 §3 and ADR-0028 §2.
     pub fn is_plain_full_upgrade(&self) -> bool {
-        self.is_full_upgrade() && self.targets.is_empty()
+        self.is_full_upgrade() && self.targets.is_empty() && !self.stdin_targets
     }
 
     /// Operations that change packages: `-S`, `-R`, `-U` without a query
@@ -226,6 +241,16 @@ impl PacmanCommand {
     pub fn is_mutating(&self) -> bool {
         matches!(self.op, Some(Op::Sync | Op::Remove | Op::Upgrade | Op::Yay)) && !self.query
     }
+}
+
+/// A package file in a package cache: pacman's `/var/cache/pacman/pkg/`,
+/// or yay's and paru's under a home's `.cache/` (`…/.cache/yay/<pkg>/`).
+fn is_cache_file(word: &str) -> bool {
+    word.contains(".pkg.tar")
+        && !word.contains("/../")
+        && (word.starts_with("/var/cache/pacman/pkg/")
+            || word.contains("/.cache/yay/")
+            || word.contains("/.cache/paru/"))
 }
 
 /// `extra/zed` → `zed`, `foo>=1.2` → `foo`.

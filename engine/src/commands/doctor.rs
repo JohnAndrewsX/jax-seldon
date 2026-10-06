@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::capture::{Binding, PendingReset, pending_reset};
 use super::index::duplicate_cases;
@@ -236,6 +236,13 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     checks.push(check_omarchy(&effective, &shown));
     checks.push(check_snapper(&effective, &shown));
     checks.push(check_git(&effective, logbook.as_ref()));
+    // ADR-0028 §4c, §4d: rows of config.toml, last (earlier rows keep
+    // their places)
+    if let Some(c) = &config {
+        let text = std::fs::read_to_string(&ctx.config_file).ok();
+        checks.push(check_watch_paths(c, text.as_deref()));
+        checks.push(check_drift_rules(c, &omarchy_evidence(ctx)));
+    }
 
     let ok = checks.iter().all(|c| c.status != Status::Error);
     let exit = if not_initialised {
@@ -274,7 +281,12 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
 
     Ok(Output {
         human,
-        json: json!({ "ok": ok, "logbook": known.then_some(root), "checks": checks }),
+        json: json!({
+            "ok": ok,
+            "logbook": known.then_some(root),
+            "checks": checks,
+            "drift": drift_json(&effective),
+        }),
         exit,
     })
 }
@@ -387,6 +399,118 @@ fn check_patterns(config: &Config, shown: String) -> Check {
 /// A case id in two files (WP-057): every command that finds a case by id
 /// refuses it, and `index --check` exits 1. `cases` are `(id, relative
 /// path)` of the case files that parse.
+/// ADR-0028 §4d: the persistence paths are crises only where watched. A
+/// list that is an earlier engine's default gains them at the next
+/// capture; a list the user wrote keeps its own, and this row names the
+/// missing paths with the line to add.
+fn check_watch_paths(config: &Config, text: Option<&str>) -> Check {
+    let missing = config.missing_default_watch_paths();
+    let n = config.watch_paths.len();
+    if missing.is_empty() {
+        return Check::new(
+            "watch",
+            Status::Ok,
+            format!("watchPaths: {n} path(s), every default included"),
+        );
+    }
+    let list = missing.join(", ");
+    let owned: Vec<String> = missing.iter().map(|p| p.to_string()).collect();
+    let editable = text.is_some_and(|t| crate::config::with_added_watch_paths(t, &owned).is_some());
+    if config.has_earlier_default_watch_paths() && editable {
+        return Check::new(
+            "watch",
+            Status::Ok,
+            format!("watchPaths is an earlier default list; the next capture adds {list}"),
+        );
+    }
+    let quoted: Vec<String> = missing.iter().map(|p| format!("\"{p}\"")).collect();
+    let whose = if config.has_earlier_default_watch_paths() {
+        "an earlier default list, but config.toml cannot be extended without changing the rest of it,"
+    } else {
+        "your own list"
+    };
+    Check::new(
+        "watch",
+        Status::Degraded,
+        format!(
+            "watchPaths ({whose}) lacks default paths: {list}; a change there records nothing, and the persistence paths among them cannot raise a crisis (ADR-0028 §4d)"
+        ),
+    )
+    .fix(format!(
+        "add to watchPaths in config.toml: {}",
+        quoted.join(", ")
+    ))
+}
+
+/// Whether the capture takes Omarchy's shipped files as evidence
+/// (`omarchy-default`, WP-109 round 1b), and if not, why.
+fn omarchy_evidence(ctx: &Context) -> String {
+    use crate::collectors::config::{omarchy_trust, trusted_owner};
+    let path = crate::collectors::Sources::from_env().omarchy_path;
+    let shown = ctx.dirs.display(&path);
+    match omarchy_trust(&path, trusted_owner()) {
+        Ok(()) => format!("Omarchy's copies count as evidence ({shown})"),
+        Err(why) => format!(
+            "Omarchy's copies do not count as evidence: {shown} {why} (it must be root's and neither group- nor world-writable)"
+        ),
+    }
+}
+
+/// ADR-0028 §4c, §6: the effective `[drift]` rule set, non-default keys
+/// marked (the config can silence rules; the change is shown, not
+/// refused), and whether `omarchy-default` evidence is taken
+/// (`evidence`). An unknown routine rule id is degraded.
+fn check_drift_rules(config: &Config, evidence: &str) -> Check {
+    let d = &config.drift;
+    let non_default = d.non_default();
+    let message = format!(
+        "attention {} · routine: {} · routinePaths {} · routinePackages {} · alwaysRedPaths {} · alwaysRed {}; {}",
+        d.attention.as_str(),
+        if d.routine.is_empty() {
+            "none".to_string()
+        } else {
+            d.routine.join(", ")
+        },
+        d.routine_paths.len(),
+        d.routine_packages.len(),
+        d.always_red_paths.len(),
+        d.always_red.len(),
+        if non_default.is_empty() {
+            "all defaults".to_string()
+        } else {
+            format!("non-default: {}", non_default.join(", "))
+        }
+    );
+    let message = format!("{message}; {evidence}");
+    let unknown = d.unknown_routine();
+    if unknown.is_empty() {
+        return Check::new("drift", Status::Ok, message);
+    }
+    Check::new(
+        "drift",
+        Status::Degraded,
+        format!("{message}; unknown routine rule(s): {}", unknown.join(", ")),
+    )
+    .fix(format!(
+        "use only these in [drift] routine: {}",
+        crate::config::ROUTINE_RULES.join(", ")
+    ))
+}
+
+/// The effective `[drift]` set for `doctor --json`.
+fn drift_json(config: &Config) -> Value {
+    let d = &config.drift;
+    json!({
+        "attention": d.attention.as_str(),
+        "routine": d.routine,
+        "routinePaths": d.routine_paths,
+        "routinePackages": d.routine_packages,
+        "alwaysRedPaths": d.always_red_paths,
+        "alwaysRed": d.always_red,
+        "nonDefault": d.non_default(),
+    })
+}
+
 fn check_cases(cases: &[(String, String)]) -> Check {
     let twice = duplicate_cases(cases.iter().map(|(i, p)| (i.as_str(), p.as_str())));
     if twice.is_empty() {

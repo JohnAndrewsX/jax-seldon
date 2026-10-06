@@ -290,16 +290,17 @@ fn an_agents_update_of_its_plugin_keeps_the_actor_and_is_no_drift() {
     assert_eq!(m.drift(now), []);
 }
 
-/// One `pacman -Syu` that upgrades the engine's package and another one:
-/// the engine's member is explained, the other is the drift item.
+/// One `pacman -U` from the cache that upgrades the engine's package and
+/// downgrades another one: the engine's member is explained, the other is
+/// the drift item (a named downgrade is attention, ADR-0028 §2).
 #[test]
 fn upgrading_its_own_package_is_no_drift_another_package_is() {
     let m = Machine::new();
     let log = format!(
-        "[2026-10-01T10:03:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+        "[2026-10-01T10:03:00+0200] [PACMAN] Running 'pacman -U /var/cache/pacman/pkg/{OWN_PACKAGE}-0.1.2-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/zed-1.0-1-x86_64.pkg.tar.zst'\n\
          [2026-10-01T10:03:01+0200] [ALPM] transaction started\n\
          [2026-10-01T10:03:02+0200] [ALPM] upgraded {OWN_PACKAGE} (0.1.0-1 -> 0.1.2-1)\n\
-         [2026-10-01T10:03:02+0200] [ALPM] upgraded zed (1.0-1 -> 1.1-1)\n\
+         [2026-10-01T10:03:02+0200] [ALPM] downgraded zed (1.1-1 -> 1.0-1)\n\
          [2026-10-01T10:03:02+0200] [ALPM] transaction completed\n"
     );
     std::fs::write(m.env.tmp.path().join("pacman.log"), &log).unwrap();
@@ -310,9 +311,9 @@ fn upgrading_its_own_package_is_no_drift_another_package_is() {
     let (own, resolutions) = m.event("upgrade", OWN_PACKAGE);
     assert_eq!(own["actor"], "system", "{own}");
     assert_explained_as_own(&own, &resolutions, "seldon's own package");
-    let (zed, _) = m.event("upgrade", "zed");
+    let (zed, _) = m.event("downgrade", "zed");
     assert_eq!(own["txId"], zed["txId"], "one transaction");
-    assert_eq!(m.drift(now), [pair("upgrade", "zed")]);
+    assert_eq!(m.drift(now), [pair("downgrade", "zed")]);
     assert_valid_index(&m.index());
 
     // idempotent
@@ -336,7 +337,7 @@ fn upgrading_its_own_package_is_no_drift_another_package_is() {
     // newest first
     assert_eq!(
         m.drift(now),
-        [pair("remove", OWN_PACKAGE), pair("upgrade", "zed")]
+        [pair("remove", OWN_PACKAGE), pair("downgrade", "zed")]
     );
 }
 
@@ -358,11 +359,13 @@ fn own_changes_left_open_are_explained_by_the_next_capture() {
         "upgrade",
         OWN_PACKAGE,
     );
+    // an own change that is open drift (no command line: attention), so
+    // a dismissal can resolve it; a toggle is routine and cannot be dismissed
     let dismissed = event(
         "2026-10-01T10:02:00+02:00",
-        "plugins",
-        "plugin-enable",
-        OWN_PLUGIN,
+        "pacman",
+        "reinstall",
+        OWN_PACKAGE,
     );
     event(
         "2026-10-01T10:03:00+02:00",
@@ -503,7 +506,7 @@ fn an_own_change_dated_after_the_capture_clock_is_explained_once() {
     m.capture(T0, "plugins"); // baseline
     let later = "2026-11-05T10:00:00+01:00";
     let update = own_event(&m, later, "plugins", "plugin-update", OWN_PLUGIN);
-    let dismissed = own_event(&m, later, "plugins", "plugin-enable", OWN_PLUGIN);
+    let dismissed = own_event(&m, later, "pacman", "reinstall", OWN_PACKAGE);
     m.run(
         "2026-10-01T10:10:00+02:00",
         &["drift", "dismiss", &dismissed, "--", "tried it"],
@@ -516,7 +519,7 @@ fn an_own_change_dated_after_the_capture_clock_is_explained_once() {
     assert_eq!(own["id"], update);
     assert_explained_as_own(&own, &resolutions, "seldon's own plugin");
     assert_eq!(resolutions[0]["ts"], own["ts"], "{resolutions:?}");
-    let (_, kept) = m.event("plugin-enable", OWN_PLUGIN);
+    let (_, kept) = m.event("reinstall", OWN_PACKAGE);
     assert_eq!(kept.len(), 1, "{kept:?}");
     assert_eq!(kept[0]["resolution"], "dismissed", "{kept:?}");
 

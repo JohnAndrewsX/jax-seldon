@@ -93,7 +93,7 @@ expect ok .status ok
 expect ok .pill "2 · 2"
 expect ok .driftInBar crisis
 expect ok .tone urgent
-expect ok .tooltip "Seldon — 2 active cases, 2 crises, 2 changes without a case, last capture just now"
+expect ok .tooltip "Seldon — 2 active cases, 2 crises, 4 changes without a case, last capture just now"
 expect ok .engine present
 expect ok .engineVersion 0.1.0-fake
 expect ok .crisis "2 changes that can affect boot, login or the shell have no case"
@@ -572,29 +572,30 @@ argv_check plan-dev "$(q --version --json)"
 #     result). `drift show` lists a group's members. The fake engine folds
 #     every resolution into the index it writes.
 THEME=01M3VTGNY0NZG4AY80814WSKGR UNIT=01M3VNJ9JGZ9169T01XCW16FT0 OLLAMA=01M3VNFTF8EVHWFFZ687N14Q0C
-FIREFOX=01M3SXBQVR7AW8PJQC1YXDCQ14 LIBINPUT=01M3SXBRV0WPNQ721VWGG2WXZ1
+# the sample's open group (ADR-0028: the -Syu group is routine history)
+MESA=01M3H6M720FC6BAG7ETNQTXW9K LIB32=01M3H6M8184NVTFDTEGPD71P5H VULKAN=01M3H6M818EPKV6HMJ0GN4PGFG
 mkdir -p "$work/home-drift"
 quoted='say "hi"; $(reboot)'
-actions=$(jq -cn --arg t "$THEME" --arg u "$UNIT" --arg o "$OLLAMA" --arg f "$FIREFOX" --arg l "$LIBINPUT" --arg q "$quoted" '[
+actions=$(jq -cn --arg t "$THEME" --arg u "$UNIT" --arg o "$OLLAMA" --arg f "$MESA" --arg l "$LIB32" --arg q "$quoted" '[
   ["driftShow", $f], ["wait"],
   ["drift", "link", {eventId: $t, caseId: "C-2026-005", only: false}], ["wait"],
   ["drift", "explain", {eventId: $u, text: "--help", zone: "red", risk: "R1", area: "", itemZone: "red"}], ["wait"],
   ["drift", "dismiss", {eventId: $l, only: true, text: $q}], ["wait"],
-  ["drift", "explain", {eventId: $f, text: "the rest", zone: "red", risk: "R3", area: "browser", itemZone: "yellow"}], ["wait"],
+  ["drift", "explain", {eventId: $f, text: "the rest", zone: "red", risk: "R3", area: "gpu", itemZone: "yellow"}], ["wait"],
   ["drift", "link", {eventId: $t, caseId: "C-2026-005"}], ["wait"],
   ["drift", "link", {eventId: $o, caseId: "C-2026-999"}]
 ]')
 run drift 3000 PATH="$fake_path" HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$fx/index.sample.json" HARNESS_ACTIONS="$actions"
 argv_check drift "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
-  "$(q drift show $FIREFOX --json)" \
+  "$(q drift show $MESA --json)" \
   "$(q drift link $THEME C-2026-005 --json)" \
   "$(q drift explain $UNIT --json -- --help)" \
-  "$(q drift dismiss $LIBINPUT --only --json -- "$quoted")" \
-  "$(q drift explain $FIREFOX --zone red --risk R3 --area browser --json -- "the rest")" \
+  "$(q drift dismiss $LIB32 --only --json -- "$quoted")" \
+  "$(q drift explain $MESA --zone red --risk R3 --area gpu --json -- "the rest")" \
   "$(q drift link $THEME C-2026-005 --json)" \
   "$(q drift link $OLLAMA C-2026-999 --json)")"
 expect drift '.driftShown.members | length' 3
-expect drift .driftShown.eventId $FIREFOX
+expect drift .driftShown.eventId $MESA
 expect drift .driftResult.text "unknown case C-2026-999"
 expect drift .driftResult.ok false
 expect drift .driftResult.action link
@@ -608,9 +609,9 @@ else
   fail=$((fail + 1)); echo "FAIL drift: $(grep -a 'HARNESS action' "$work/drift.log")"
 fi
 state="$work/home-drift/.local/state/seldon/index.json"
-folded=$(jq -c '[.events[] | select(.id as $i | ["'$THEME'", "'$UNIT'", "'$LIBINPUT'", "'$FIREFOX'", "01M3SXBRV0E702XKBM22HEV1B8"] | index($i))
+folded=$(jq -c '[.events[] | select(.id as $i | ["'$THEME'", "'$UNIT'", "'$LIB32'", "'$MESA'", "'$VULKAN'"] | index($i))
   | [.subject, .resolution, .resolutionDetail, .case]]' "$state" 2>/dev/null || true)
-want='[["tokyo-night","linked",null,"C-2026-005"],["~/.config/systemd/user/ollama.service","explained","--help","C-2026-009"],["libinput","dismissed","say \"hi\"; $(reboot)",null],["noto-fonts","explained","the rest","C-2026-010"],["firefox","explained","the rest","C-2026-010"]]'
+want='[["tokyo-night","linked",null,"C-2026-005"],["~/.config/systemd/user/ollama.service","explained","--help","C-2026-009"],["vulkan-radeon","explained","the rest","C-2026-010"],["lib32-mesa","dismissed","say \"hi\"; $(reboot)",null],["mesa","explained","the rest","C-2026-010"]]'
 if [[ $folded == "$want" ]]; then
   pass=$((pass + 1)); echo "ok   drift: the fake engine folded every resolution"
 else
@@ -625,9 +626,9 @@ expect_index() { # expect_index <jq filter> <value> — the fake engine's index 
     fail=$((fail + 1)); echo "FAIL drift index: $1 = $got (want $2)"
   fi
 }
-expect_index '[.drift[].subject]' '["ollama"]'
-expect_index '[.summary.openDrift, .summary.crisis]' '[1,1]'
-expect_index '[.cases.completed[] | [.id, .zone, .risk, (.area // "")]] | .[0:2]' '[["C-2026-010","red","R3","browser"],["C-2026-009","red","R1",""]]'
+expect_index '[.drift[].subject]' '["ollama","~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh","~/.config/hypr/monitors.conf"]'
+expect_index '[.summary.openDrift, .summary.crisis]' '[3,1]'
+expect_index '[.cases.completed[] | [.id, .zone, .risk, (.area // "")]] | .[0:2]' '[["C-2026-010","red","R3","gpu"],["C-2026-009","red","R1",""]]'
 expect_index '.cases.queued[0].proposedEvents' 'null'
 clean_log drift "jax.seldon: seldon drift exit 1: unknown case C-2026-999$"
 

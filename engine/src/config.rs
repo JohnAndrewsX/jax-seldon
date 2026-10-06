@@ -292,15 +292,83 @@ impl Default for Config {
 
 /// SPEC-ENGINE §4 (config collector). `~/.config/omarchy/plugins/` and
 /// the desktop entries' `mimeinfo.cache` are excluded by the collector;
-/// missing paths are skipped.
-pub const DEFAULT_WATCH_PATHS: [&str; 6] = [
+/// missing paths are skipped. The last six are the persistence paths of
+/// ADR-0028 §4d (`[drift] alwaysRedPaths`).
+pub const DEFAULT_WATCH_PATHS: [&str; 12] = [
     "~/.config/hypr",
     "~/.config/omarchy",
     "~/.config/waybar",
     "~/.bashrc",
     "~/.zshrc",
     "~/.local/share/applications",
+    "~/.config/systemd/user",
+    "~/.config/autostart",
+    "~/.config/environment.d",
+    "~/.config/uwsm",
+    "~/.profile",
+    "~/.bash_profile",
 ];
+
+/// The default `watchPaths` of earlier engines: 0.1.0 to 0.1.3, and the
+/// unreleased list of WP-089. A config whose list still equals one of
+/// them (in any order) gains the current defaults (ADR-0028 §4d).
+pub const EARLIER_DEFAULT_WATCH_PATHS: [&[&str]; 2] = [
+    &[
+        "~/.config/hypr",
+        "~/.config/omarchy",
+        "~/.config/waybar",
+        "~/.bashrc",
+        "~/.zshrc",
+    ],
+    &[
+        "~/.config/hypr",
+        "~/.config/omarchy",
+        "~/.config/waybar",
+        "~/.bashrc",
+        "~/.zshrc",
+        "~/.local/share/applications",
+    ],
+];
+
+impl Config {
+    /// ADR-0028 §4d: when `watchPaths` equals an earlier engine's default
+    /// list, appends the current defaults it lacks and returns them; a
+    /// list the user changed is never widened (empty result).
+    pub fn upgrade_watch_paths(&mut self) -> Vec<String> {
+        if !self.has_earlier_default_watch_paths() {
+            return Vec::new();
+        }
+        let added: Vec<String> = DEFAULT_WATCH_PATHS
+            .iter()
+            .filter(|p| !self.watch_paths.iter().any(|w| w == *p))
+            .map(|p| p.to_string())
+            .collect();
+        self.watch_paths.extend(added.iter().cloned());
+        added
+    }
+
+    /// Whether `watchPaths` equals an earlier engine's default list, in
+    /// any order ([`EARLIER_DEFAULT_WATCH_PATHS`]).
+    pub fn has_earlier_default_watch_paths(&self) -> bool {
+        let mut have: Vec<&str> = self.watch_paths.iter().map(String::as_str).collect();
+        have.sort_unstable();
+        have.dedup();
+        EARLIER_DEFAULT_WATCH_PATHS.iter().any(|list| {
+            let mut list = list.to_vec();
+            list.sort_unstable();
+            list == have
+        })
+    }
+
+    /// The current default `watchPaths` a user-changed list lacks (for
+    /// `doctor`); empty for a list that holds them all.
+    pub fn missing_default_watch_paths(&self) -> Vec<&'static str> {
+        DEFAULT_WATCH_PATHS
+            .into_iter()
+            .filter(|p| !self.watch_paths.iter().any(|w| w == p))
+            .collect()
+    }
+}
 
 /// Harnesses the wizard can set up: Claude Code's hooks
 /// (`.claude/settings.json`) and the Omarchy-Agent kit's guard and skills
@@ -415,19 +483,246 @@ pub const DEFAULT_SKIP_PATHS: [&str; 5] = [
     "~/.config/omarchy/**/*.log",
 ];
 
-/// Drift grouping (ADR-0013).
+/// The text of `config.toml` with `added` appended to its `watchPaths`
+/// array and every other byte as it was (ADR-0028 §4d, WP-109 round 2:
+/// the upgrade keeps comments and order). `None` when that cannot be done
+/// safely: no single top-level `watchPaths = [ … ]` with at least one
+/// string, a nested array, or a result that does not read back as the
+/// same file with exactly these paths added.
+pub fn with_added_watch_paths(text: &str, added: &[String]) -> Option<String> {
+    // the key, once, before the first table header
+    let mut key_at = None;
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[') {
+            break;
+        }
+        if let Some(rest) = trimmed.strip_prefix("watchPaths")
+            && rest.trim_start().starts_with('=')
+        {
+            if key_at.is_some() {
+                return None;
+            }
+            key_at = Some(offset + (line.len() - trimmed.len()));
+        }
+        offset += line.len();
+    }
+    let key_at = key_at?;
+    let eq = key_at + text[key_at..].find('=')?;
+    let open = eq + 1 + text[eq + 1..].find(|c: char| !c.is_whitespace())?;
+    if !text[open..].starts_with('[') {
+        return None;
+    }
+    // to the closing `]`, past strings and comments; the end of the last
+    // string element is where the new ones go
+    let (mut last_end, mut close) = (None, None);
+    let mut chars = text[open + 1..].char_indices();
+    while let Some((i, c)) = chars.next() {
+        let at = open + 1 + i;
+        match c {
+            '"' | '\'' => {
+                let mut escaped = false;
+                let mut end = None;
+                for (j, d) in chars.by_ref() {
+                    if c == '"' && !escaped && d == '\\' {
+                        escaped = true;
+                        continue;
+                    }
+                    if d == c && !escaped {
+                        end = Some(open + 1 + j + 1);
+                        break;
+                    }
+                    if d == '\n' {
+                        return None;
+                    }
+                    escaped = false;
+                }
+                last_end = Some(end?);
+            }
+            '#' => {
+                for (_, d) in chars.by_ref() {
+                    if d == '\n' {
+                        break;
+                    }
+                }
+            }
+            '[' => return None,
+            ']' => {
+                close = Some(at);
+                break;
+            }
+            _ => {}
+        }
+    }
+    close?;
+    let at = last_end?;
+    let mut insert = String::new();
+    for p in added {
+        insert.push_str(", ");
+        insert.push_str(&toml::Value::String(p.clone()).to_string());
+    }
+    let new = format!("{}{insert}{}", &text[..at], &text[at..]);
+    // it must read back as the same file with exactly these paths added
+    let mut old: toml::Table = text.parse().ok()?;
+    let mut got: toml::Table = new.parse().ok()?;
+    let mut want: Vec<toml::Value> = old.get("watchPaths")?.as_array()?.clone();
+    want.extend(added.iter().map(|p| toml::Value::String(p.clone())));
+    let got_paths = got.remove("watchPaths")?;
+    old.remove("watchPaths");
+    (got_paths == toml::Value::Array(want) && got == old).then_some(new)
+}
+
+/// `[drift]`: grouping (ADR-0013) and the classification by consequence
+/// (ADR-0028 §2, §4c), read at index time. The keys ADR-0028 added are
+/// written only when they differ from the default, so a later engine's
+/// new defaults reach a config `init` wrote.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DriftConfig {
     pub always_red: Vec<String>,
+    /// `normal`: the §2 table; `all`: every drift-eligible event without a
+    /// case is open drift, crisis iff red (the derivation before ADR-0028,
+    /// its rollback).
+    #[serde(skip_serializing_if = "AttentionMode::is_default")]
+    pub attention: AttentionMode,
+    /// The routine rule ids that apply ([`ROUTINE_RULES`]); drop one to
+    /// make its events attention again.
+    #[serde(skip_serializing_if = "is_default_routine")]
+    pub routine: Vec<String>,
+    /// `config-*` subjects that are routine (`skipPaths` glob syntax).
+    #[serde(skip_serializing_if = "is_default_routine_paths")]
+    pub routine_paths: Vec<String>,
+    /// Packages whose explicit transactions are routine (`keyring`).
+    #[serde(skip_serializing_if = "is_default_routine_packages")]
+    pub routine_packages: Vec<String>,
+    /// `config-*` subjects that are crises: the persistence paths
+    /// (`skipPaths` glob syntax).
+    #[serde(skip_serializing_if = "is_default_always_red_paths")]
+    pub always_red_paths: Vec<String>,
+}
+
+/// `[drift] attention`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttentionMode {
+    #[default]
+    Normal,
+    All,
+}
+
+impl AttentionMode {
+    fn is_default(&self) -> bool {
+        *self == AttentionMode::default()
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AttentionMode::Normal => "normal",
+            AttentionMode::All => "all",
+        }
+    }
+}
+
+/// The routine rule ids of ADR-0028 §2 (and WP-109's theme rules), the
+/// default of `[drift] routine`.
+pub const ROUTINE_RULES: [&str; 11] = [
+    "sysupgrade",
+    "upgrade",
+    "keyring",
+    "omarchy-update",
+    "plugin-toggle",
+    "theme",
+    "omarchy-default",
+    "system-link",
+    "routine-paths",
+    "theme-assets",
+    "theme-repo",
+];
+
+/// Default `[drift] routinePaths`: the shell's own state file and backups
+/// (`omarchy refresh` writes `<file>.bak.<epoch>`).
+pub const DEFAULT_ROUTINE_PATHS: [&str; 2] = ["~/.config/omarchy/shell.json", "**/*.bak.*"];
+
+/// Default `[drift] routinePackages`.
+pub const DEFAULT_ROUTINE_PACKAGES: [&str; 2] = ["archlinux-keyring", "omarchy-keyring"];
+
+/// Default `[drift] alwaysRedPaths`: code that runs at login or on events
+/// without being configuration (ADR-0028 §2).
+pub const DEFAULT_ALWAYS_RED_PATHS: [&str; 7] = [
+    "~/.config/systemd/user/**",
+    "~/.config/omarchy/hooks/**",
+    "~/.config/autostart/**",
+    "~/.config/environment.d/**",
+    "~/.config/uwsm/**",
+    "~/.profile",
+    "~/.bash_profile",
+];
+
+fn strings(list: &[&str]) -> Vec<String> {
+    list.iter().map(|s| s.to_string()).collect()
+}
+
+fn is_default_routine(v: &Vec<String>) -> bool {
+    *v == strings(&ROUTINE_RULES)
+}
+
+fn is_default_routine_paths(v: &Vec<String>) -> bool {
+    *v == strings(&DEFAULT_ROUTINE_PATHS)
+}
+
+fn is_default_routine_packages(v: &Vec<String>) -> bool {
+    *v == strings(&DEFAULT_ROUTINE_PACKAGES)
+}
+
+fn is_default_always_red_paths(v: &Vec<String>) -> bool {
+    *v == strings(&DEFAULT_ALWAYS_RED_PATHS)
+}
+
+impl DriftConfig {
+    /// The keys whose value differs from the default (`doctor`, ADR-0028
+    /// §6: the config can silence rules, so the change is shown).
+    pub fn non_default(&self) -> Vec<&'static str> {
+        let d = DriftConfig::default();
+        let mut keys = Vec::new();
+        if self.always_red != d.always_red {
+            keys.push("alwaysRed");
+        }
+        if self.attention != d.attention {
+            keys.push("attention");
+        }
+        if self.routine != d.routine {
+            keys.push("routine");
+        }
+        if self.routine_paths != d.routine_paths {
+            keys.push("routinePaths");
+        }
+        if self.routine_packages != d.routine_packages {
+            keys.push("routinePackages");
+        }
+        if self.always_red_paths != d.always_red_paths {
+            keys.push("alwaysRedPaths");
+        }
+        keys
+    }
+
+    /// Entries of `routine` that name no rule ([`ROUTINE_RULES`]).
+    pub fn unknown_routine(&self) -> Vec<&str> {
+        self.routine
+            .iter()
+            .map(String::as_str)
+            .filter(|r| !ROUTINE_RULES.contains(r))
+            .collect()
+    }
 }
 
 impl Default for DriftConfig {
-    /// The R3 subjects of ADR-0023 as package globs (WP-050): the kernels
-    /// (not firmware or headers), systemd, glibc, Hyprland, Omarchy itself,
-    /// the shell, the boot loader and initramfs, the login path (`pam`,
-    /// `sddm`, `uwsm`); `/etc` through `omarchy-settings` (Omarchy's `/etc`
-    /// layer) and `filesystem` (the base `/etc` files).
+    /// `alwaysRed`: the R3 subjects of ADR-0023 as package globs (WP-050):
+    /// the kernels (not firmware or headers), systemd, glibc, Hyprland,
+    /// Omarchy itself, the shell, the boot loader and initramfs, the login
+    /// path (`pam`, `sddm`, `uwsm`); `/etc` through `omarchy-settings`
+    /// (Omarchy's `/etc` layer) and `filesystem` (the base `/etc` files).
+    /// The rest: ADR-0028 §2.
     fn default() -> Self {
         DriftConfig {
             always_red: [
@@ -454,6 +749,11 @@ impl Default for DriftConfig {
             ]
             .map(String::from)
             .to_vec(),
+            attention: AttentionMode::Normal,
+            routine: strings(&ROUTINE_RULES),
+            routine_paths: strings(&DEFAULT_ROUTINE_PATHS),
+            routine_packages: strings(&DEFAULT_ROUTINE_PACKAGES),
+            always_red_paths: strings(&DEFAULT_ALWAYS_RED_PATHS),
         }
     }
 }
@@ -808,6 +1108,42 @@ mod tests {
         assert_eq!(config.agent.launcher, ["x"]);
         assert_eq!(table["logbook"].as_str(), Some("/tmp/lb"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// WP-109 round 2 (N5): the watch-path upgrade changes only the
+    /// `watchPaths` array; comments, order and every other byte stay.
+    #[test]
+    fn watch_paths_are_added_by_a_minimal_edit() {
+        let add =
+            |text: &str| with_added_watch_paths(text, &["~/.profile".into(), "~/a\"b".into()]);
+        let text = "# mine\nlogbook = \"/x\" # here\nwatchPaths = [\"~/.config/hypr\", 'lit'] # tail\n\n[git]\nautocommit = false\n";
+        assert_eq!(
+            add(text).unwrap(),
+            "# mine\nlogbook = \"/x\" # here\nwatchPaths = [\"~/.config/hypr\", 'lit', \"~/.profile\", '~/a\"b'] # tail\n\n[git]\nautocommit = false\n"
+        );
+        // multi-line, a comment after the last element, a trailing comma
+        let text =
+            "watchPaths = [\n  \"~/.config/hypr\", # one\n  \"~/.zshrc\", # two ] [\n] # done\n";
+        assert_eq!(
+            add(text).unwrap(),
+            "watchPaths = [\n  \"~/.config/hypr\", # one\n  \"~/.zshrc\", \"~/.profile\", '~/a\"b', # two ] [\n] # done\n"
+        );
+        // refused: no key, the key only in a table, twice, quoted, empty,
+        // nested, unclosed
+        for text in [
+            "logbook = \"/x\"\n",
+            "[x]\nwatchPaths = [\"a\"]\n",
+            "watchPaths = [\"a\"]\nwatchPaths = [\"b\"]\n",
+            "\"watchPaths\" = [\"a\"]\n",
+            "watchPaths = []\n",
+            "watchPaths = [[\"a\"]]\n",
+            "watchPaths = [\"a\"\n",
+            "watchPaths = \"a\"\n",
+            // the key's text inside a string: only the read-back sees it
+            "logbook = \"\"\"\nwatchPaths = [\"a\"]\n\"\"\"\n",
+        ] {
+            assert_eq!(add(text), None, "{text:?}");
+        }
     }
 
     #[test]

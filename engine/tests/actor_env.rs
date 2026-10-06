@@ -17,9 +17,10 @@ const T0: &str = "2026-10-01T15:30:00+02:00";
 /// The sample index's clock, for the fixture copy (`tests/drift.rs`).
 const GENERATED_AT: &str = "2026-10-01T17:05:12+02:00";
 
-/// Open drift items of the fixture logbook (`tests/drift.rs`).
+/// Open drift items of the fixture logbook (`tests/drift.rs`), all
+/// attention: an agent may not dismiss a crisis (ADR-0028 §3).
 const THEME: &str = "01M3VTGNY0NZG4AY80814WSKGR";
-const UNIT: &str = "01M3VNJ9JGZ9169T01XCW16FT0";
+const MONITORS: &str = "01M3KVWFR06078ZQTPRZCFYHK0";
 const OLLAMA: &str = "01M3VNFTF8EVHWFFZ687N14Q0C";
 
 /// `seldon --json args…` at `now`, with `SELDON_ACTOR=actor` when given.
@@ -256,16 +257,55 @@ fn drift_resolutions_take_the_variable_without_actor() {
     assert_eq!(v["events"][0]["actor"], "agent:codex");
     let v = ok(&at(
         agent,
-        &["drift", "dismiss", UNIT, "--only", "--", "Known"],
+        &["drift", "dismiss", MONITORS, "--only", "--", "Known"],
     ));
     assert_eq!(v["events"][0]["actor"], "agent:codex");
+    // an agent's session cannot resolve as a person (ADR-0028 §3, WP-109
+    // round 2, as WP-101 for `plan done`); another agent's name is a flag
+    // like any other
+    for verb in [
+        &[
+            "drift", "explain", OLLAMA, "--only", "--actor", "human", "--", "Why",
+        ][..],
+        &["drift", "dismiss", OLLAMA, "--actor", "human", "--", "Why"],
+        &["drift", "link", OLLAMA, "C-2026-004", "--actor", "human"],
+    ] {
+        let out = at(agent, verb);
+        assert_eq!(out.status.code(), Some(1), "{verb:?}");
+        assert_eq!(
+            error(&out),
+            format!(
+                "{OLLAMA} is not resolved: `--actor human` in a session of agent:codex \
+                 (SELDON_ACTOR); an agent's resolution is never recorded as human (ADR-0028 \
+                 §3). Resolve it as agent:codex, or from a session of your own (the panel)"
+            )
+        );
+    }
     let v = ok(&at(
         agent,
         &[
-            "drift", "explain", OLLAMA, "--only", "--actor", "human", "--", "Why",
+            "drift",
+            "explain",
+            OLLAMA,
+            "--only",
+            "--actor",
+            "agent:claude-code",
+            "--",
+            "Why",
         ],
     ));
-    assert_eq!(v["events"][0]["actor"], "human", "the flag wins");
+    assert_eq!(
+        v["events"][0]["actor"], "agent:claude-code",
+        "the flag wins"
+    );
+    // a person's own session: the flag is the person
+    let v = ok(&at(
+        None,
+        &[
+            "drift", "dismiss", MONITORS, "--actor", "human", "--", "again",
+        ],
+    ));
+    assert_eq!(v["resolved"], 0, "already resolved above, nothing written");
     assert!(
         common::ledger(&lb)[before..]
             .iter()

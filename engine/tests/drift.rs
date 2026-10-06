@@ -18,13 +18,19 @@ const GENERATED_AT: &str = "2026-10-01T17:05:12+02:00";
 /// real clock's, after the log lines).
 const T_SINCE: &str = "2026-10-01T09:00:00+02:00";
 
-/// The four open drift items of the fixture.
-const THEME: &str = "01M3VTGNY0NZG4AY80814WSKGR"; // tokyo-night, proposed C-2026-005
+/// The six open drift items of the fixture (ADR-0028 §2), newest first.
+const THEME: &str = "01M3VTGNY0NZG4AY80814WSKGR"; // tokyo-night: routine, proposed C-2026-005
 const UNIT: &str = "01M3VNJ9JGZ9169T01XCW16FT0"; // ollama.service, crisis
-const OLLAMA: &str = "01M3VNFTF8EVHWFFZ687N14Q0C"; // pacman install, crisis
-const FIREFOX: &str = "01M3SXBQVR7AW8PJQC1YXDCQ14"; // leader of the 09-30 group
-const NOTO: &str = "01M3SXBRV0E702XKBM22HEV1B8"; // group member
-const LIBINPUT: &str = "01M3SXBRV0WPNQ721VWGG2WXZ1"; // group member
+const OLLAMA: &str = "01M3VNFTF8EVHWFFZ687N14Q0C"; // pacman install, attention
+const HOOK: &str = "01M3Q7R0Z08ZD5R76DQA3PHQ1G"; // hooks/post-update.d, crisis, yellow zone
+const MONITORS: &str = "01M3KVWFR06078ZQTPRZCFYHK0"; // config-remove, attention
+const MESA: &str = "01M3H6M720FC6BAG7ETNQTXW9K"; // leader of the 10-01 downgrade group
+const LIB32: &str = "01M3H6M8184NVTFDTEGPD71P5H"; // group member
+const VULKAN: &str = "01M3H6M818EPKV6HMJ0GN4PGFG"; // group member
+/// Routine, history, not drift: the 09-30 `pacman -Syu` group.
+const FIREFOX: &str = "01M3SXBQVR7AW8PJQC1YXDCQ14"; // leader
+const NOTO: &str = "01M3SXBRV0E702XKBM22HEV1B8"; // member
+const LIBINPUT: &str = "01M3SXBRV0WPNQ721VWGG2WXZ1"; // member
 
 /// A copy of the fixture logbook in `env`.
 fn fixture_copy(env: &Env) -> PathBuf {
@@ -70,8 +76,18 @@ fn case(env: &Env, lb: &Path, id: &str) -> Value {
     run(env, lb, &["plan", "show", id], 0)["case"].clone()
 }
 
+/// A list item without the fields the command adds to the index's
+/// (`class`, `rule`).
+fn as_index_item(item: &Value) -> Value {
+    let mut item = item.clone();
+    let map = item.as_object_mut().unwrap();
+    map.remove("class");
+    map.remove("rule");
+    item
+}
+
 #[test]
-fn lists_the_four_fixture_items() {
+fn lists_the_six_fixture_items() {
     let env = Env::new(Snapper::Missing);
     let lb = fixture_copy(&env);
     let v = drift(&env, &lb);
@@ -79,29 +95,90 @@ fn lists_the_four_fixture_items() {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/index.sample.json"),
     ))
     .unwrap();
-    assert_eq!(v["drift"], sample["drift"], "the index's drift model");
-    assert_eq!(ids(&v["drift"]), [THEME, UNIT, OLLAMA, FIREFOX]);
-    assert_eq!(
-        (v["openDrift"].clone(), v["crisis"].clone()),
-        (json!(4), json!(2))
-    );
     let items = v["drift"].as_array().unwrap();
-    assert_eq!(items.iter().filter(|d| d["crisis"] == true).count(), 2);
+    let plain: Vec<Value> = items.iter().map(as_index_item).collect();
+    assert_eq!(json!(plain), sample["drift"], "the index's drift model");
+    assert_eq!(
+        ids(&v["drift"]),
+        [THEME, UNIT, OLLAMA, HOOK, MONITORS, MESA]
+    );
+    assert_eq!(
+        (
+            v["openDrift"].clone(),
+            v["crisis"].clone(),
+            v["routine"].clone()
+        ),
+        (json!(6), json!(2), json!(6))
+    );
+    let class = |i: usize| (items[i]["class"].clone(), items[i]["rule"].clone());
+    assert_eq!(
+        class(0),
+        (json!("attention"), json!("theme")),
+        "routine, but proposed"
+    );
     assert_eq!(items[0]["proposedCase"], "C-2026-005");
-    assert_eq!(items[3]["members"], 3);
-    assert_eq!(items[3]["zone"], "yellow");
-    assert_eq!(items[3]["txId"], "tx-20260930T214115");
+    assert_eq!(class(1), (json!("crisis"), json!("always-red-paths")));
+    assert_eq!(class(2), (json!("attention"), json!("package")));
+    assert_eq!(class(3), (json!("crisis"), json!("always-red-paths")));
+    assert_eq!(items[3]["zone"], "yellow", "the ledger zone");
+    assert_eq!(class(4), (json!("attention"), json!("config-remove")));
+    assert_eq!(class(5), (json!("attention"), json!("package")));
+    assert_eq!(items[5]["members"], 3);
+    assert_eq!(items[5]["zone"], "red");
+    assert_eq!(items[5]["txId"], "tx-20260927T123000");
 
     let crises = run(&env, &lb, &["drift", "--crisis-only"], 0);
-    assert_eq!(ids(&crises["drift"]), [UNIT, OLLAMA]);
-    assert_eq!(crises["openDrift"], 4, "totals count every item");
+    assert_eq!(ids(&crises["drift"]), [UNIT, HOOK]);
+    assert_eq!(crises["openDrift"], 6, "totals count every item");
+
+    // --all: routine items too, uncapped, newest first
+    let all = run(&env, &lb, &["drift", "--all"], 0);
+    let routine: Vec<(String, String)> = all["drift"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["class"] == "routine")
+        .map(|d| {
+            (
+                d["subject"].as_str().unwrap().to_string(),
+                d["rule"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    let want = [
+        ("firefox", "sysupgrade"),
+        ("io.github.example.weather-plus", "plugin-toggle"),
+        ("~/.config/omarchy/shell.json", "routine-paths"),
+        ("io.github.example.weather-plus", "plugin-toggle"),
+        ("kanagawa", "theme"),
+        ("catppuccin", "theme"),
+    ];
+    assert_eq!(routine, want.map(|(s, r)| (s.to_string(), r.to_string())));
+    assert_eq!(all["drift"].as_array().unwrap().len(), 12);
 
     // human output: one line per item, then the totals
     let out = env.at(GENERATED_AT, &["--logbook", lb.to_str().unwrap(), "drift"]);
     let text = common::stdout(&out);
-    assert_eq!(text.lines().count(), 5, "{text}");
-    assert!(text.contains("firefox (+2 more)"), "{text}");
-    assert!(text.ends_with("4 open drift item(s), 2 crisis\n"), "{text}");
+    assert_eq!(text.lines().count(), 7, "{text}");
+    assert!(text.contains("mesa (+2 more)"), "{text}");
+    assert!(
+        text.lines().nth(1).unwrap().starts_with("CRISIS "),
+        "{text}"
+    );
+    assert!(text.ends_with("6 open drift item(s), 2 crisis\n"), "{text}");
+    let out = env.at(
+        GENERATED_AT,
+        &["--logbook", lb.to_str().unwrap(), "drift", "--all"],
+    );
+    let text = common::stdout(&out);
+    assert!(
+        text.contains("routine    2026-09-30 21:41  pacman/upgrade  firefox (+2 more)"),
+        "{text}"
+    );
+    assert!(
+        text.ends_with("6 open drift item(s), 2 crisis; 6 routine (history, not drift)\n"),
+        "{text}"
+    );
     assert!(
         !env.home.join(".local/state/seldon/index.json").exists(),
         "listing writes no index"
@@ -112,11 +189,15 @@ fn lists_the_four_fixture_items() {
 fn show_lists_every_open_member_of_a_group() {
     let env = Env::new(Snapper::Missing);
     let lb = fixture_copy(&env);
-    let v = run(&env, &lb, &["drift", "show", LIBINPUT], 0);
+    let v = run(&env, &lb, &["drift", "show", VULKAN], 0);
     assert_eq!(v["open"], true);
-    assert_eq!(v["event"]["id"], LIBINPUT);
-    assert_eq!(v["item"]["eventId"], FIREFOX, "the group's row");
-    assert_eq!(v["txId"], "tx-20260930T214115");
+    assert_eq!(
+        (v["class"].clone(), v["rule"].clone()),
+        (json!("attention"), json!("package"))
+    );
+    assert_eq!(v["event"]["id"], VULKAN);
+    assert_eq!(v["item"]["eventId"], MESA, "the group's row");
+    assert_eq!(v["txId"], "tx-20260927T123000");
     let members: Vec<&str> = v["members"]
         .as_array()
         .unwrap()
@@ -125,13 +206,39 @@ fn show_lists_every_open_member_of_a_group() {
         .collect();
     assert_eq!(
         members,
-        ["firefox", "noto-fonts", "libinput"],
+        ["mesa", "lib32-mesa", "vulkan-radeon"],
         "oldest first"
     );
 
     let single = run(&env, &lb, &["drift", "show", OLLAMA], 0);
     assert_eq!(single["members"].as_array().unwrap().len(), 1);
     assert!(single["txId"].is_null(), "a single event is no group");
+    let hook = run(&env, &lb, &["drift", "show", HOOK], 0);
+    assert_eq!(
+        (hook["class"].clone(), hook["item"]["crisis"].clone()),
+        (json!("crisis"), json!(true))
+    );
+
+    // a routine group: not open drift, still linkable, with its rule
+    let routine = run(&env, &lb, &["drift", "show", LIBINPUT], 0);
+    assert_eq!(routine["open"], false);
+    assert_eq!(
+        (routine["class"].clone(), routine["rule"].clone()),
+        (json!("routine"), json!("sysupgrade"))
+    );
+    assert_eq!(routine["item"]["eventId"], FIREFOX);
+    assert_eq!(routine["members"].as_array().unwrap().len(), 3);
+    let out = env.at(
+        GENERATED_AT,
+        &["--logbook", lb.to_str().unwrap(), "drift", "show", NOTO],
+    );
+    assert!(
+        common::stdout(&out).contains(
+            "Routine, history, not drift; `drift link` still takes it (rule sysupgrade):"
+        ),
+        "{}",
+        common::stdout(&out)
+    );
 
     // a resolved event: shown with its resolution, no open members
     let btop = "01M1MB2M1GWZYF485HTGVZ1KS3";
@@ -143,6 +250,7 @@ fn show_lists_every_open_member_of_a_group() {
         "Kleines Monitoring-Tool, bewusst ohne Case."
     );
     assert!(done["item"].is_null());
+    assert!(done["class"].is_null());
 }
 
 #[test]
@@ -204,7 +312,7 @@ fn link_explain_dismiss_append_valid_resolutions_and_the_rows_disappear() {
     let new_case = &explain["case"];
     assert_valid_case(new_case);
     assert_eq!(new_case["status"], "completed");
-    assert_eq!(new_case["zone"], "red", "the item's zone");
+    assert_eq!(new_case["zone"], "red", "the item's (ledger) zone");
     assert_eq!(new_case["risk"], "R2");
     assert_eq!(new_case["title"], "Codex set up ollama for local models");
     assert_eq!(
@@ -262,14 +370,15 @@ fn link_explain_dismiss_append_valid_resolutions_and_the_rows_disappear() {
     }
 
     // each write rebuilt the index; a full rebuild agrees
+    let left = [HOOK, MONITORS, MESA];
     let written = index_file(&env);
     assert_valid_index(&written);
-    assert_eq!(ids(&written["drift"]), [FIREFOX]);
+    assert_eq!(ids(&written["drift"]), left);
     run(&env, &lb, &["index", "--check"], 0);
     let index = index_file(&env);
     assert_valid_index(&index);
-    assert_eq!(ids(&index["drift"]), [FIREFOX]);
-    assert_eq!(ids(&drift(&env, &lb)["drift"]), [FIREFOX]);
+    assert_eq!(ids(&index["drift"]), left);
+    assert_eq!(ids(&drift(&env, &lb)["drift"]), left);
     let event = |id: &str| -> Value {
         index["events"]
             .as_array()
@@ -309,11 +418,11 @@ fn a_group_resolves_in_one_write_and_a_rerun_writes_nothing() {
     let v = run(
         &env,
         &lb,
-        &["drift", "dismiss", LIBINPUT, "--", "Routine upgrade"],
+        &["drift", "dismiss", VULKAN, "--", "GPU driver rolled back"],
         0,
     );
     assert_eq!(v["resolved"], 3);
-    assert_eq!(v["txId"], "tx-20260930T214115");
+    assert_eq!(v["txId"], "tx-20260927T123000");
     let lines = common::ledger(&lb);
     assert_eq!(lines.len(), before + 3);
     let new = &lines[before..];
@@ -321,12 +430,12 @@ fn a_group_resolves_in_one_write_and_a_rerun_writes_nothing() {
         .iter()
         .map(|l| l["refersTo"].as_str().unwrap())
         .collect();
-    assert_eq!(targets, [FIREFOX, NOTO, LIBINPUT]);
+    assert_eq!(targets, [MESA, LIB32, VULKAN]);
     for l in new {
         for key in ["ts", "actor", "detail"] {
             assert_eq!(l[key], new[0][key], "{key}");
         }
-        assert_eq!(l["meta"], json!({ "txId": "tx-20260930T214115" }));
+        assert_eq!(l["meta"], json!({ "txId": "tx-20260927T123000" }));
         assert!(l.get("case").is_none());
     }
     // one write: ledger appended in one go, and series.drift counts it once
@@ -352,7 +461,7 @@ fn a_group_resolves_in_one_write_and_a_rerun_writes_nothing() {
     assert_eq!(resolved, was + 1, "one group write counts once");
 
     // re-runs on any member, with or without --only: nothing open, nothing written
-    for (id, only) in [(LIBINPUT, false), (FIREFOX, false), (NOTO, true)] {
+    for (id, only) in [(VULKAN, false), (MESA, false), (LIB32, true)] {
         let mut args = vec!["drift", "dismiss", id];
         if only {
             args.push("--only");
@@ -362,14 +471,14 @@ fn a_group_resolves_in_one_write_and_a_rerun_writes_nothing() {
         assert_eq!(again["resolved"], 0, "{again}");
         assert_eq!(again["already"]["resolution"], "dismissed");
     }
-    let link = run(&env, &lb, &["drift", "link", FIREFOX, "C-2026-004"], 0);
+    let link = run(&env, &lb, &["drift", "link", MESA, "C-2026-004"], 0);
     assert_eq!(link["resolved"], 0);
     assert_eq!(common::ledger(&lb).len(), before + 3);
     assert!(
         !case(&env, &lb, "C-2026-004")["events"]
             .as_array()
             .unwrap()
-            .contains(&json!(FIREFOX))
+            .contains(&json!(MESA))
     );
 }
 
@@ -380,41 +489,235 @@ fn only_leaves_the_other_members_open() {
     let v = run(
         &env,
         &lb,
-        &["drift", "link", FIREFOX, "C-2026-004", "--only"],
+        &["drift", "link", MESA, "C-2026-004", "--only"],
         0,
     );
     assert_eq!(v["resolved"], 1);
     assert!(v["txId"].is_null());
     assert!(v["events"][0].get("meta").is_none(), "no group write");
-    // the case lists the event, oldest first among its own
+    // the case lists the event in time order among its own
     let events = case(&env, &lb, "C-2026-004")["events"].clone();
-    assert_eq!(events[0], FIREFOX, "09-30 is before the 10-01 events");
-    assert_eq!(events.as_array().unwrap().len(), 8);
+    let events = events.as_array().unwrap();
+    assert_eq!(events.len(), 8);
+    assert_eq!(events[0], MESA, "09-27 is before the 10-01 events");
 
     let left = drift(&env, &lb);
     let group = left["drift"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|d| d["source"] == "pacman" && d["kind"] == "upgrade")
+        .find(|d| d["source"] == "pacman" && d["kind"] == "downgrade")
         .cloned()
         .unwrap();
-    assert_eq!(group["eventId"], NOTO, "the new leader");
+    assert_eq!(group["eventId"], LIB32, "the new leader");
     assert_eq!(group["members"], 2);
-    assert_eq!(left["openDrift"], 4);
-    let show = run(&env, &lb, &["drift", "show", LIBINPUT], 0);
+    assert_eq!(left["openDrift"], 6);
+    let show = run(&env, &lb, &["drift", "show", VULKAN], 0);
     assert_eq!(show["members"].as_array().unwrap().len(), 2);
 
     // the rest goes in one write
-    let rest = run(&env, &lb, &["drift", "link", NOTO, "C-2026-004"], 0);
+    let rest = run(&env, &lb, &["drift", "link", LIB32, "C-2026-004"], 0);
     assert_eq!(rest["resolved"], 2);
-    assert_eq!(rest["txId"], "tx-20260930T214115");
-    assert_eq!(drift(&env, &lb)["openDrift"], 3);
+    assert_eq!(rest["txId"], "tx-20260927T123000");
+    assert_eq!(drift(&env, &lb)["openDrift"], 5);
     let events = case(&env, &lb, "C-2026-004")["events"].clone();
     assert_eq!(
         events.as_array().unwrap()[0..3],
-        [json!(FIREFOX), json!(NOTO), json!(LIBINPUT)]
+        [json!(MESA), json!(LIB32), json!(VULKAN)]
     );
+}
+
+/// ADR-0028 §3, §8: a routine event is history. `link` still ties it to a
+/// case (the whole transaction, or one event with `--only`); `explain` and
+/// `dismiss` exit 1 and write nothing.
+#[test]
+fn routine_events_link_but_never_explain_or_dismiss() {
+    let env = Env::new(Snapper::Missing);
+    let lb = fixture_copy(&env);
+    let before = common::ledger(&lb);
+    for args in [
+        &["drift", "dismiss", NOTO, "--", "routine"][..],
+        &["drift", "explain", FIREFOX, "--", "routine"][..],
+    ] {
+        let v = run(&env, &lb, args, 1);
+        let message = v["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains("is routine (rule `sysupgrade`"),
+            "{message}"
+        );
+        assert!(message.contains("drift link"), "{message}");
+    }
+    assert_eq!(common::ledger(&lb), before, "nothing written");
+
+    let link = run(&env, &lb, &["drift", "link", LIBINPUT, "C-2026-004"], 0);
+    assert_eq!(link["resolved"], 3);
+    assert_eq!(link["txId"], "tx-20260930T214115");
+    let events = case(&env, &lb, "C-2026-004")["events"].clone();
+    assert_eq!(
+        events.as_array().unwrap()[0..3],
+        [json!(FIREFOX), json!(NOTO), json!(LIBINPUT)],
+        "09-30, before the case's own"
+    );
+    // open drift is untouched; the group is linked, no longer linkable
+    let v = drift(&env, &lb);
+    assert_eq!(v["openDrift"], 6);
+    assert_eq!(v["routine"], 5);
+    let again = run(&env, &lb, &["drift", "link", FIREFOX, "C-2026-004"], 0);
+    assert_eq!(again["resolved"], 0);
+    assert_eq!(again["already"]["case"], "C-2026-004");
+}
+
+/// ADR-0028 §3, enforced: an agent may not explain or dismiss a crisis,
+/// links one only to an active case that lists it in `agents`; attention
+/// stays open to agents; a human is never refused. `SELDON_ACTOR` counts
+/// like `--actor`.
+#[test]
+fn an_agent_never_whitewashes_a_crisis() {
+    let env = Env::new(Snapper::Missing);
+    let lb = fixture_copy(&env);
+    let before = common::ledger(&lb);
+    let refused: [(&[&str], &str); 5] = [
+        (
+            &[
+                "drift",
+                "dismiss",
+                UNIT,
+                "--actor",
+                "agent:codex",
+                "--",
+                "fine",
+            ],
+            "may not explain or dismiss",
+        ),
+        (
+            &[
+                "drift",
+                "explain",
+                HOOK,
+                "--actor",
+                "agent:codex",
+                "--",
+                "backup",
+            ],
+            "may not explain or dismiss",
+        ),
+        (
+            &[
+                "drift",
+                "link",
+                UNIT,
+                "C-2026-004",
+                "--actor",
+                "agent:codex",
+            ],
+            "only to an active case that lists agent:codex",
+        ),
+        (
+            // C-2026-002 lists the agent, but it is completed
+            &[
+                "drift",
+                "link",
+                UNIT,
+                "C-2026-002",
+                "--actor",
+                "agent:claude-code",
+            ],
+            "only to an active case",
+        ),
+        (
+            // C-2026-008 lists no agent and is in verification
+            &[
+                "drift",
+                "link",
+                HOOK,
+                "C-2026-008",
+                "--actor",
+                "agent:claude-code",
+            ],
+            "only to an active case",
+        ),
+    ];
+    for (args, message) in refused {
+        let v = run(&env, &lb, args, 1);
+        let got = v["error"]["message"].as_str().unwrap();
+        assert!(got.contains(message), "{args:?}: {got}");
+        assert!(got.contains("crisis (ADR-0028 §3)"), "{got}");
+    }
+    // K13: a case in verification that lists the agent is not active
+    let c8 = find_file(&lb.join("work/active"), "C-2026-008-");
+    let text = read(&c8);
+    std::fs::write(
+        &c8,
+        text.replace("agents: []", "agents: [agent:claude-code]"),
+    )
+    .unwrap();
+    let v = run(
+        &env,
+        &lb,
+        &[
+            "drift",
+            "link",
+            HOOK,
+            "C-2026-008",
+            "--actor",
+            "agent:claude-code",
+        ],
+        1,
+    );
+    let got = v["error"]["message"].as_str().unwrap();
+    assert!(got.contains("only to an active case"), "{got}");
+    std::fs::write(&c8, text).unwrap();
+    let mut all = vec!["--logbook", lb.to_str().unwrap(), "--json"];
+    all.extend(["drift", "dismiss", HOOK, "--", "fine"]);
+    let out = env
+        .command(&all)
+        .env("SELDON_NOW", GENERATED_AT)
+        .env("SELDON_ACTOR", "agent:codex")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert_eq!(common::ledger(&lb), before, "nothing written");
+
+    // attention: an agent may explain it
+    let ok = run(
+        &env,
+        &lb,
+        &[
+            "drift",
+            "explain",
+            OLLAMA,
+            "--actor",
+            "agent:codex",
+            "--",
+            "Local models",
+        ],
+        0,
+    );
+    assert_eq!(ok["resolved"], 1);
+    // its own active case: an agent may link the crisis
+    let ok = run(
+        &env,
+        &lb,
+        &[
+            "drift",
+            "link",
+            UNIT,
+            "C-2026-004",
+            "--actor",
+            "agent:claude-code",
+        ],
+        0,
+    );
+    assert_eq!(ok["resolved"], 1);
+    // a human is never refused
+    let ok = run(
+        &env,
+        &lb,
+        &["drift", "dismiss", HOOK, "--", "my backup hook"],
+        0,
+    );
+    assert_eq!(ok["resolved"], 1);
+    assert_eq!(drift(&env, &lb)["crisis"], 0);
 }
 
 #[test]
@@ -592,8 +895,9 @@ fn a_dependency_of_a_cased_explicit_event_is_linked() {
     assert_eq!(read(&file), text);
 }
 
-/// Without the agent's command the same transaction is one red drift group
-/// (an install is never routine); linking any member links both.
+/// Without the agent's command the same transaction is one drift group:
+/// a package installed by name without a case is quiet attention, not a
+/// crisis (ADR-0028 §4c); linking any member links both.
 #[test]
 fn a_caseless_install_is_one_group_and_links_as_one() {
     let env = Env::new(Snapper::Missing);
@@ -639,7 +943,11 @@ fn a_caseless_install_is_one_group_and_links_as_one() {
         (item["subject"].clone(), item["members"].clone()),
         (json!("zed"), json!(2))
     );
-    assert_eq!(item["crisis"], true);
+    assert_eq!(item["crisis"], false);
+    assert_eq!(
+        (item["class"].clone(), item["rule"].clone()),
+        (json!("attention"), json!("package"))
+    );
     let alsa = run(
         &env,
         &lb,

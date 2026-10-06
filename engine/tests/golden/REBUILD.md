@@ -40,10 +40,11 @@ Alle Repo-Pakete auf einmal (ohne offene): `omarchy pkg add btop tailscale zed`
 Dateien, die vom Omarchy-Standard abweichen. Seldon kennt Pfad und Grund, nicht den Inhalt: übernimm die Dateien aus deinen Dotfiles oder deinem Backup.
 
 - `~/.config/hypr/input.conf` — Tastatur de, Caps als Escape
-- `~/.config/omarchy/shell.json` — Bar: Wetter rechts, Uhr mit Sekunden
+- `~/.config/omarchy/shell.json` — Bar: Wetter rechts, Uhr mit Sekunden · `01M3PY9XZ8JQEWN9G1M309QXRZ`
 - `~/.bashrc` — mise-Aktivierung
-- `~/.config/hypr/monitors.conf` — Dual-WQHD, Skalierung 1.25 · [[C-2026-002]] Hyprland-Monitorlayout für Dual-WQHD · verknüpft · `01M2A9MNTG5XQ4EPAYSBBYJ92N`
+- `~/.config/hypr/monitors.conf` — Datei entfernen — Dual-WQHD, Skalierung 1.25 · [[C-2026-002]] Hyprland-Monitorlayout für Dual-WQHD · **offen**, siehe 7 · `01M3KVWFR06078ZQTPRZCFYHK0`
 - `~/.config/hypr/bindings.conf` — SUPER+E öffnet Zed · [[C-2026-004]] Zed als zweiten Editor installieren · agent:claude-code · `01M3V9XQPG3XSQHDE1KSNTZRQA`
+- `~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh` · **offen**, siehe 7 · `01M3Q7R0Z08ZD5R76DQA3PHQ1G`
 
 ## 4. Plugins
 Plugins außer den Erstanbieter-Plugins (die kommen mit Omarchy).
@@ -70,8 +71,10 @@ Drift, die noch niemand eingeordnet hat. Entscheide vor dem Nachbau: `seldon dri
 
 - theme theme-set `tokyo-night` kanagawa → tokyo-night · human · Vorschlag [[C-2026-005]] · `01M3VTGNY0NZG4AY80814WSKGR`
 - **Krise** config config-add `~/.config/systemd/user/ollama.service` · agent:codex · `01M3VNJ9JGZ9169T01XCW16FT0`
-- **Krise** pacman install `ollama` 0.6.1-1 · agent:codex · `01M3VNFTF8EVHWFFZ687N14Q0C`
-- pacman upgrade `firefox` 143.0.1-1 → 143.0.2-1 · 3 Ereignisse in dieser Transaktion · `01M3SXBQVR7AW8PJQC1YXDCQ14`
+- pacman install `ollama` 0.6.1-1 · agent:codex · `01M3VNFTF8EVHWFFZ687N14Q0C`
+- **Krise** config config-add `~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh` · `01M3Q7R0Z08ZD5R76DQA3PHQ1G`
+- config config-remove `~/.config/hypr/monitors.conf` · `01M3KVWFR06078ZQTPRZCFYHK0`
+- pacman downgrade `mesa` 1:26.2.0-2 → 1:26.1.0-1 · 3 Ereignisse in dieser Transaktion · `01M3H6M720FC6BAG7ETNQTXW9K`
 
 ### Deliberately not reproduced
 Bewusst verworfen; nicht wieder einrichten.

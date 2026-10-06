@@ -12,6 +12,7 @@
 
 pub mod build;
 pub mod check;
+pub mod class;
 pub mod drift;
 pub mod load;
 pub mod model;
@@ -55,7 +56,7 @@ pub fn derive_at(
         machine: logbook.meta.machine_id.clone(),
         git: None,
         state,
-        always_red: config.drift.always_red.clone(),
+        drift: config.drift.clone(),
     };
     Ok(build::build(loaded, &input))
 }

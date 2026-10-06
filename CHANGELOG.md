@@ -218,6 +218,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line in the case and an index warning. The agent rules name the new
   commands; `rules update` rewrites the earlier v2 block without an
   archive (WP-101).
+- **Attention is earned by consequence (ADR-0028).** Every change is
+  still recorded, but only what a wrong one would cost decides whether it
+  needs attention. Each drift-eligible event gets a class at index time:
+  *routine* (a plain full upgrade such as `pacman -Syu`, `-Syyuu`, bare
+  `yay` or `omarchy update`, kernels included; an upgrade of what is
+  installed, also `-U` from the cache; the keyrings; Omarchy's own update;
+  a plugin toggle; a theme switch; Omarchy's own copy of a file;
+  `shell.json`; `<file>.bak.<epoch>` backups; a link into `/usr/`; a
+  theme's colours and backgrounds) is history in the Changelog and no
+  longer drift; *attention* (a package installed, removed or downgraded
+  by name, a third-party plugin added, removed or updated, an override
+  under a watched path, a removed file) stays open drift, quietly;
+  *crisis* is now the harm test, no longer "the zone is red": a named
+  install, removal or downgrade of an `alwaysRed` package, or a new file
+  in a persistence path (`~/.config/systemd/user`, Omarchy's hooks,
+  `~/.config/autostart`, `environment.d`, `uwsm`, `~/.profile`,
+  `~/.bash_profile`). Nothing is written to the ledger: on the first
+  index build, open theme switches, toggles, routine upgrades, `omarchy
+  update` rows and `shell.json` changes leave the drift list. A routine
+  event an open case's Plan names is still shown, with its proposal.
+  `drift[].zone` is now the ledger zone (pacman items are red) and
+  `crisis` the class; contract version 1 is unchanged, only the schema
+  descriptions of `crisis` and `zone` say so (WP-109).
+- `config.toml [drift]` gains `attention` (`"all"` restores the rules
+  before ADR-0028: the rollback), `routine` (the routine rule ids; drop
+  `"theme"` to make theme switches attention again), `routinePaths`,
+  `routinePackages` and `alwaysRedPaths`, written only when changed.
+  `seldon doctor` prints the effective rule set and marks what is not
+  the default (WP-109).
+- `seldon drift --all` lists routine items too; `drift` and `drift show`
+  report each item's `class` and the `rule` that gave it. `drift link`
+  also takes a routine event; `drift explain|dismiss` of one exits 1.
+  An agent may no longer explain or dismiss a crisis, and may link one
+  only to an active case that lists it in `agents`; a human is never
+  refused, but `--actor human` in an agent's session is (WP-109).
+- Six new default `watchPaths`: `~/.config/systemd/user`,
+  `~/.config/autostart`, `~/.config/environment.d`, `~/.config/uwsm`,
+  `~/.profile`, `~/.bash_profile`. A `config.toml` whose list is still the
+  default of an earlier engine gains them at the next capture, which says
+  so once and changes only that list in the file (comments stay); files
+  already there record nothing. A list you wrote yourself
+  is kept, and `seldon doctor` names the paths it lacks with the line to
+  add (WP-109).
+- New config events carry capture-time evidence in `meta.matches`
+  (`omarchy-default`, `system-link`, `theme-repo`; only the fact, never
+  a link target or content). The theme hook and the watcher unit (any
+  `ExecStart` prefix) are recognised by their built-in templates, so a
+  lost state directory or `install.sh --unit` no longer leaves a crisis.
+  Omarchy's own copies count only from a root-owned `$OMARCHY_PATH` that
+  is neither group- nor world-writable; `seldon doctor` says when they
+  do not. A file in a persistence path is a crisis whatever its name: a
+  `*.bak.*` there is routine only when it holds what the file had before
+  (the backup `omarchy refresh` makes), and never in Omarchy's hook
+  directories, where every file not named `*.sample` runs. The watcher unit counts as
+  Seldon's own only when it starts this engine; a theme counts as cloned
+  only with a real `.git` directory; `pacman -Syu -` (targets from stdin)
+  is no plain upgrade; `-U` is an upgrade only from a package cache
+  (WP-109).
+- `series.drift` changes for the past too: a routine change opens
+  nothing, and a resolution counts only when the event it resolves
+  opened an item, so the curve can no longer go negative. Old charts
+  show fewer opened and resolved items (WP-109).
 
 ### Plugin
 

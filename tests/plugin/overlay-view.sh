@@ -145,9 +145,9 @@ clean_log() {
 sample="$fx/index.sample.json"
 plan_s="2 active cases · 6 of 9 steps done"
 risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
-drift_s="13 opened · 9 resolved in 5 weeks · peak 2026-W40"
-s30="57 events on 12 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
-s90="62 events on 13 of 90 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+drift_s="11 opened · 6 resolved in 5 weeks · peak 2026-W40"
+s30="67 events on 14 of 30 days · busiest 2026-10-01 (30) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s90="72 events on 15 of 90 days · busiest 2026-10-01 (30) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s365=${s90/of 90 days/of 365 days}
 sall=${s90/of 90 days/of 366 days}
 
@@ -177,7 +177,7 @@ expect ipc 2 '[.texts[] | select(. == "Releases, snapshots, cases, crises")] | l
 for label in Heatmap Series DriftBars RiskDonut Timeline "The Plan"; do shows ipc 2 "$label"; done
 # Each chart's summary is its caption, in the slot's title row.
 summaries ipc 2 "$s90"
-shows ipc 2 "62 events on 13 of 90 days · busiest 2026-10-01 (30)"
+shows ipc 2 "72 events on 15 of 90 days · busiest 2026-10-01 (30)"
 shows ipc 2 "$risk_s"
 shows ipc 2 "$plan_s"
 # The Plan's cards: id and risk, title, steps and agent.
@@ -191,7 +191,7 @@ fits ipc 2 1920 1080
 counts ipc 3 30 "30,2,5,4,17,2"
 summaries ipc 3 "$s30"
 expect ipc 3 '.view.window.from + " " + .view.window.to' "2026-09-02 2026-10-01"
-shows ipc 3 "57 events on 12 of 30 days · busiest 2026-10-01 (30)"
+shows ipc 3 "67 events on 14 of 30 days · busiest 2026-10-01 (30)"
 shows ipc 3 "30 d · 2026-09-02 – 2026-10-01"
 counts ipc 4 90 "90,3,5,4,18,2"
 counts ipc 5 365 "365,3,5,4,18,2"
@@ -294,7 +294,7 @@ hovered hover 4 series "2026-09-03 · explicit 324 · total 2005"
 hovered hover 5 driftBars "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2"
 hovered hover 6 riskDonut "R0 · 1 case · 13% · all time"
 hovered hover 7 riskDonut "R2 · 3 cases · 38% · all time"
-hovered hover 8 timeline "snapshot · 111 vor Snapshot-Aufräumen · 2026-09-30 19:00"
+hovered hover 8 timeline "crisis · config config-add ~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh · 2026-09-29 20:45"
 hovered hover 9 timeline "case · C-2026-002 Hyprland-Monitorlayout für Dual-WQHD · 2026-09-12 – 2026-09-13"
 hovered hover 10 plan "C-2026-004 · Zed als zweiten Editor installieren · 2/4 steps · agent: claude-code · red R2"
 # A period switch clears the hover of the charts whose data changed; The

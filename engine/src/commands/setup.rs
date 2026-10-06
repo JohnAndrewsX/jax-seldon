@@ -379,7 +379,7 @@ pub fn baseline(ctx: &Context) -> Result<Baseline> {
         if resolved.contains(&e.id) {
             continue;
         }
-        let sel = reconcile::select(&built, &e.id.to_string(), false)?;
+        let sel = reconcile::select(&built, &e.id.to_string(), false, reconcile::Intent::Resolve)?;
         if sel.members.is_empty() {
             continue;
         }
