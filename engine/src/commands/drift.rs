@@ -22,7 +22,9 @@ use chrono::Datelike as _;
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
-use super::event::{actor_or_env, clip, emit, event_json, parse_case_id, parse_person};
+use super::event::{
+    ACTOR_ENV, actor_or_env, clip, emit, env_actor, event_json, parse_case_id, parse_person,
+};
 use super::plan::case_json;
 use super::{Context, Output, autocommit, one_line, write_new};
 use crate::error::{Error, Result};
@@ -397,6 +399,19 @@ fn resolve(
     actor: Option<String>,
     action: Action,
 ) -> Result<Output> {
+    // an agent's session cannot resolve as a person (ADR-0028 §3, as
+    // WP-101 for `plan done`; WP-109 round 2): `--actor human` would go
+    // around the refusal for crises
+    if actor.as_deref() == Some(ACTOR_HUMAN)
+        && let Ok(Some(session)) = env_actor(parse_person)
+        && crate::model::is_agent(&session)
+    {
+        return Err(Error::user(format!(
+            "{id} is not resolved: `--actor human` in a session of {session} ({ACTOR_ENV}); \
+             an agent's resolution is never recorded as human (ADR-0028 §3). Resolve it as \
+             {session}, or from a session of your own (the panel)"
+        )));
+    }
     let actor = &actor_or_env(actor, parse_person, ACTOR_HUMAN)?;
     let (config, logbook) = ctx.open_logbook()?;
     // the new case and the ledger get the redacted intent or reason

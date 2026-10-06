@@ -891,11 +891,15 @@ pub fn evidence(
     {
         return Some(MATCHES_OMARCHY_DEFAULT);
     }
+    // Omarchy's own test (`theme_came_from_a_repo`): the theme directory is
+    // no link and holds a real `.git` directory (not a file, not a link)
     let themes = dirs.home.join(".config/omarchy/themes");
+    let real_dir = |p: &Path| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_dir());
     if let Ok(rest) = path.strip_prefix(&themes)
         && let Some(slug) = rest.components().next()
         && rest.components().count() > 1
-        && themes.join(slug).join(".git").exists()
+        && real_dir(&themes.join(slug))
+        && real_dir(&themes.join(slug).join(".git"))
     {
         return Some(MATCHES_THEME_REPO);
     }
@@ -956,8 +960,49 @@ pub fn builtin_template(dirs: &Dirs, e: &Event) -> Option<&'static str> {
         return None;
     }
     let text = std::fs::read_to_string(&path).ok()?;
-    (sys::sha256_hex(text.as_bytes()) == hash && is_watch_unit(&text))
-        .then_some("installed by install.sh --unit (built-in template)")
+    (sys::sha256_hex(text.as_bytes()) == hash
+        && is_watch_unit(&text)
+        && exec_program(&text, &dirs.home).is_some_and(|p| is_this_engine(&p)))
+    .then_some("installed by install.sh --unit (built-in template)")
+}
+
+/// The program of the unit's `ExecStart=<prefix>/seldon watch`, `%h`
+/// expanded to the home directory.
+fn exec_program(text: &str, home: &Path) -> Option<PathBuf> {
+    let line = text.lines().find(|l| l.starts_with("ExecStart="))?;
+    let program = line.strip_prefix("ExecStart=")?.strip_suffix(" watch")?;
+    Some(match program.strip_prefix("%h/") {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(program),
+    })
+}
+
+/// Whether `program` is the engine that runs now (WP-109 round 2: the
+/// template proves the unit's text, not the binary it starts): the same
+/// file as the running executable, or one with the same content.
+fn is_this_engine(program: &Path) -> bool {
+    let Ok(me) = std::env::current_exe() else {
+        return false;
+    };
+    let canonical = |p: &Path| std::fs::canonicalize(p).ok();
+    if canonical(program).is_some_and(|p| Some(p) == canonical(&me)) {
+        return true;
+    }
+    // same size first: hashing a binary is the slow part
+    let size = |p: &Path| {
+        std::fs::metadata(p)
+            .ok()
+            .filter(|m| m.is_file())
+            .map(|m| m.len())
+    };
+    if size(program).is_none() || size(program) != size(&me) {
+        return false;
+    }
+    static ME: OnceLock<Option<String>> = OnceLock::new();
+    let digest = |p: &Path| std::fs::read(p).ok().map(|b| sys::sha256_hex(&b));
+    ME.get_or_init(|| digest(&me))
+        .as_ref()
+        .is_some_and(|d| digest(program).as_ref() == Some(d))
 }
 
 /// Whether `text` is [`WATCH_UNIT`] with any `ExecStart` that runs a

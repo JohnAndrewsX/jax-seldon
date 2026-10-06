@@ -104,7 +104,7 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
     let mut config = loaded.unwrap_or_default();
     // ADR-0028 §4d: a list that still equals an earlier engine's default
     // gains the new default paths, once (saved below, under the lock)
-    let watch_added = if has_file {
+    let mut watch_added = if has_file {
         config.upgrade_watch_paths()
     } else {
         Vec::new()
@@ -127,11 +127,32 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
 
     let lock = lock::acquire(&ctx.dirs.lock_file())?;
     let mut warnings = Vec::new();
-    if !watch_added.is_empty()
-        && let Err(e) = config.save(&ctx.config_file)
-    {
-        // this capture still watches them; the next one tries again
-        warnings.push(format!("the new default watch paths were not saved: {e:#}"));
+    if !watch_added.is_empty() {
+        // only the `watchPaths` array changes; comments and order stay
+        // (WP-109 round 2); a file that cannot be edited that way stays as
+        // it is, and doctor names the missing paths
+        let edited = std::fs::read_to_string(&ctx.config_file)
+            .ok()
+            .and_then(|text| crate::config::with_added_watch_paths(&text, &watch_added));
+        match edited {
+            Some(text) => {
+                if let Err(e) = crate::sys::write_atomic(&ctx.config_file, text.as_bytes()) {
+                    // this capture still watches them; the next one tries again
+                    warnings.push(format!("the new default watch paths were not saved: {e:#}"));
+                }
+            }
+            None => {
+                config
+                    .watch_paths
+                    .retain(|p| !watch_added.iter().any(|a| a == p));
+                watch_added.clear();
+                warnings.push(
+                    "config.toml was left as it is: its watchPaths cannot be extended without \
+                     changing the rest of the file; `seldon doctor` names the paths to add"
+                        .to_string(),
+                );
+            }
+        }
     }
     let ledger = Ledger::new(
         &logbook,

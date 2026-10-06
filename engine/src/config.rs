@@ -483,6 +483,96 @@ pub const DEFAULT_SKIP_PATHS: [&str; 5] = [
     "~/.config/omarchy/**/*.log",
 ];
 
+/// The text of `config.toml` with `added` appended to its `watchPaths`
+/// array and every other byte as it was (ADR-0028 §4d, WP-109 round 2:
+/// the upgrade keeps comments and order). `None` when that cannot be done
+/// safely: no single top-level `watchPaths = [ … ]` with at least one
+/// string, a nested array, or a result that does not read back as the
+/// same file with exactly these paths added.
+pub fn with_added_watch_paths(text: &str, added: &[String]) -> Option<String> {
+    // the key, once, before the first table header
+    let mut key_at = None;
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[') {
+            break;
+        }
+        if let Some(rest) = trimmed.strip_prefix("watchPaths")
+            && rest.trim_start().starts_with('=')
+        {
+            if key_at.is_some() {
+                return None;
+            }
+            key_at = Some(offset + (line.len() - trimmed.len()));
+        }
+        offset += line.len();
+    }
+    let key_at = key_at?;
+    let eq = key_at + text[key_at..].find('=')?;
+    let open = eq + 1 + text[eq + 1..].find(|c: char| !c.is_whitespace())?;
+    if !text[open..].starts_with('[') {
+        return None;
+    }
+    // to the closing `]`, past strings and comments; the end of the last
+    // string element is where the new ones go
+    let (mut last_end, mut close) = (None, None);
+    let mut chars = text[open + 1..].char_indices();
+    while let Some((i, c)) = chars.next() {
+        let at = open + 1 + i;
+        match c {
+            '"' | '\'' => {
+                let mut escaped = false;
+                let mut end = None;
+                for (j, d) in chars.by_ref() {
+                    if c == '"' && !escaped && d == '\\' {
+                        escaped = true;
+                        continue;
+                    }
+                    if d == c && !escaped {
+                        end = Some(open + 1 + j + 1);
+                        break;
+                    }
+                    if d == '\n' {
+                        return None;
+                    }
+                    escaped = false;
+                }
+                last_end = Some(end?);
+            }
+            '#' => {
+                for (_, d) in chars.by_ref() {
+                    if d == '\n' {
+                        break;
+                    }
+                }
+            }
+            '[' => return None,
+            ']' => {
+                close = Some(at);
+                break;
+            }
+            _ => {}
+        }
+    }
+    close?;
+    let at = last_end?;
+    let mut insert = String::new();
+    for p in added {
+        insert.push_str(", ");
+        insert.push_str(&toml::Value::String(p.clone()).to_string());
+    }
+    let new = format!("{}{insert}{}", &text[..at], &text[at..]);
+    // it must read back as the same file with exactly these paths added
+    let mut old: toml::Table = text.parse().ok()?;
+    let mut got: toml::Table = new.parse().ok()?;
+    let mut want: Vec<toml::Value> = old.get("watchPaths")?.as_array()?.clone();
+    want.extend(added.iter().map(|p| toml::Value::String(p.clone())));
+    let got_paths = got.remove("watchPaths")?;
+    old.remove("watchPaths");
+    (got_paths == toml::Value::Array(want) && got == old).then_some(new)
+}
+
 /// `[drift]`: grouping (ADR-0013) and the classification by consequence
 /// (ADR-0028 §2, §4c), read at index time. The keys ADR-0028 added are
 /// written only when they differ from the default, so a later engine's
@@ -1018,6 +1108,40 @@ mod tests {
         assert_eq!(config.agent.launcher, ["x"]);
         assert_eq!(table["logbook"].as_str(), Some("/tmp/lb"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// WP-109 round 2 (N5): the watch-path upgrade changes only the
+    /// `watchPaths` array; comments, order and every other byte stay.
+    #[test]
+    fn watch_paths_are_added_by_a_minimal_edit() {
+        let add =
+            |text: &str| with_added_watch_paths(text, &["~/.profile".into(), "~/a\"b".into()]);
+        let text = "# mine\nlogbook = \"/x\" # here\nwatchPaths = [\"~/.config/hypr\", 'lit'] # tail\n\n[git]\nautocommit = false\n";
+        assert_eq!(
+            add(text).unwrap(),
+            "# mine\nlogbook = \"/x\" # here\nwatchPaths = [\"~/.config/hypr\", 'lit', \"~/.profile\", '~/a\"b'] # tail\n\n[git]\nautocommit = false\n"
+        );
+        // multi-line, a comment after the last element, a trailing comma
+        let text =
+            "watchPaths = [\n  \"~/.config/hypr\", # one\n  \"~/.zshrc\", # two ] [\n] # done\n";
+        assert_eq!(
+            add(text).unwrap(),
+            "watchPaths = [\n  \"~/.config/hypr\", # one\n  \"~/.zshrc\", \"~/.profile\", '~/a\"b', # two ] [\n] # done\n"
+        );
+        // refused: no key, the key only in a table, twice, quoted, empty,
+        // nested, unclosed
+        for text in [
+            "logbook = \"/x\"\n",
+            "[x]\nwatchPaths = [\"a\"]\n",
+            "watchPaths = [\"a\"]\nwatchPaths = [\"b\"]\n",
+            "\"watchPaths\" = [\"a\"]\n",
+            "watchPaths = []\n",
+            "watchPaths = [[\"a\"]]\n",
+            "watchPaths = [\"a\"\n",
+            "watchPaths = \"a\"\n",
+        ] {
+            assert_eq!(add(text), None, "{text:?}");
+        }
     }
 
     #[test]

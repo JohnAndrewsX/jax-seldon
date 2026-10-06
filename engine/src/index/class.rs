@@ -29,7 +29,7 @@ use ulid::Ulid;
 use super::drift::AlwaysRed;
 use crate::config::{AttentionMode, DriftConfig};
 use crate::model::event::{Event, Kind, Source};
-use crate::pkgcmd::{PacmanCommand, parse_command, split_logged};
+use crate::pkgcmd::{Op, PacmanCommand, parse_command, split_logged};
 
 /// The `meta` key of the capture-time evidence marks (ADR-0028 §5).
 pub const MATCHES_KEY: &str = "matches";
@@ -236,7 +236,7 @@ impl Rules {
             Source::Omarchy => Some(self.omarchy(e, history)),
             Source::Plugins => Some(self.plugins(e)),
             Source::Theme => Some(self.theme(e)),
-            Source::Config => Some(self.config(e)),
+            Source::Config => Some(self.config(e, history)),
             _ => Verdict::attention("other"),
         }
     }
@@ -264,6 +264,9 @@ impl Rules {
             return Some(Verdict::ORPHAN);
         }
         if let Some(c) = cmd
+            && matches!(c.op, Some(Op::Sync | Op::Upgrade))
+            && !c.query
+            && !c.stdin_targets
             && !c.targets.is_empty()
             && c.targets.iter().all(|t| self.routine_packages.contains(t))
             && let Some(v) = self.routine("keyring")
@@ -273,6 +276,13 @@ impl Rules {
         match e.explicit {
             Some(false) => Verdict::FOLLOWS,
             Some(true) => match (e.kind, red) {
+                // `-U` counts as an upgrade of what is installed only from a
+                // package cache; another file is anyone's package
+                (Kind::Upgrade | Kind::Reinstall, false)
+                    if cmd.is_some_and(|c| c.op == Some(Op::Upgrade) && !c.from_cache) =>
+                {
+                    Verdict::attention("package")
+                }
                 (Kind::Upgrade | Kind::Reinstall, false) => {
                     self.routine("upgrade").or(Verdict::attention("upgrade"))
                 }
@@ -322,7 +332,7 @@ impl Rules {
         Verdict::new(Class::Attention, "other")
     }
 
-    fn config(&self, e: &Event) -> Verdict {
+    fn config(&self, e: &Event, history: &History) -> Verdict {
         let mark = e.meta.extra.get(MATCHES_KEY).and_then(|v| v.as_str());
         let removed = e.kind == Kind::ConfigRemove;
         if !removed {
@@ -335,6 +345,18 @@ impl Rules {
             }
         }
         let path = glob_path(&e.subject);
+        // the persistence paths come right after the evidence rows (ADR-0028
+        // §2): a file there runs at login whatever its name, so a backup
+        // is routine only with evidence that it is one (WP-109 round 2)
+        if !removed && self.always_red_paths.matches(&path) && !inert_hook(&e.subject) {
+            if self.routine_paths.matches(&path)
+                && history.holds_base_content(e)
+                && let Some(v) = self.routine("routine-paths")
+            {
+                return v;
+            }
+            return Verdict::new(Class::Crisis, "always-red-paths");
+        }
         if self.routine_paths.matches(&path)
             && let Some(v) = self.routine("routine-paths")
         {
@@ -342,9 +364,6 @@ impl Rules {
         }
         if removed {
             return Verdict::new(Class::Attention, "config-remove");
-        }
-        if self.always_red_paths.matches(&path) && !inert_hook(&e.subject) {
-            return Verdict::new(Class::Crisis, "always-red-paths");
         }
         if let Some(rest) = e.subject.strip_prefix(THEMES_DIR)
             && rest.contains('/')
@@ -399,12 +418,15 @@ pub fn package_shaped(v: &str) -> bool {
 #[derive(Debug, Default)]
 pub struct History<'a> {
     omarchy: Vec<(&'a str, DateTime<FixedOffset>)>,
+    /// The whole ledger, read only for the rare backup in a persistence
+    /// path ([`History::holds_base_content`]).
+    events: &'a [Event],
 }
 
 impl<'a> History<'a> {
-    pub fn new(events: impl IntoIterator<Item = &'a Event>) -> Self {
+    pub fn new(events: &'a [Event]) -> Self {
         let omarchy = events
-            .into_iter()
+            .iter()
             .filter(|e| {
                 e.source == Source::Pacman
                     && matches!(e.subject.as_str(), "omarchy" | "omarchy-dev")
@@ -417,7 +439,46 @@ impl<'a> History<'a> {
             })
             .filter_map(|e| Some((e.version_key()?, e.ts)))
             .collect();
-        History { omarchy }
+        History { omarchy, events }
+    }
+
+    /// Whether the backup event `e` (subject `<base>.bak.<…>`) holds the
+    /// content the ledger last recorded for `<base>` (WP-109 round 2): the
+    /// `hashTo` of the latest config event of `<base>` before `e`, or the
+    /// `hashFrom` of the first one at or after it — the copy `omarchy
+    /// refresh` makes before it puts the default back. Records at the
+    /// backup's own second count as after it. A base the ledger never
+    /// recorded gives no evidence.
+    fn holds_base_content(&self, e: &Event) -> bool {
+        let Some(hash) = e.meta.hash_to.as_deref() else {
+            return false;
+        };
+        let Some(at) = e.subject.rfind(".bak.") else {
+            return false;
+        };
+        let base = &e.subject[..at];
+        if base.is_empty() || base.ends_with('/') || at + 5 == e.subject.len() {
+            return false;
+        }
+        let mut before: Option<&Event> = None;
+        let mut after: Option<&Event> = None;
+        for x in self
+            .events
+            .iter()
+            .filter(|x| x.source == Source::Config && x.subject == base)
+        {
+            // by time only: `omarchy refresh` writes the backup and the
+            // default within a second, and the base sorts first by name
+            if x.ts < e.ts {
+                if before.is_none_or(|b| (b.ts, b.id) < (x.ts, x.id)) {
+                    before = Some(x);
+                }
+            } else if after.is_none_or(|a| (x.ts, x.id) < (a.ts, a.id)) {
+                after = Some(x);
+            }
+        }
+        before.is_some_and(|b| b.meta.hash_to.as_deref() == Some(hash))
+            || after.is_some_and(|a| a.meta.hash_from.as_deref() == Some(hash))
     }
 
     /// Whether a plain full upgrade moved Omarchy's package to `version`
@@ -716,6 +777,66 @@ mod tests {
                 (A, "package"),
             ),
             (
+                "a keyring removed by name (N2)",
+                pac(
+                    Kind::Remove,
+                    "archlinux-keyring",
+                    Some(true),
+                    "pacman -Rdd archlinux-keyring",
+                ),
+                (A, "package"),
+            ),
+            (
+                "-Syu with targets from stdin (B4)",
+                pac(Kind::Install, "linux-zen", Some(false), "pacman -Syu -"),
+                (A, "other"),
+            ),
+            (
+                "-S -u with targets from stdin (B4)",
+                pac(Kind::Install, "evilpkg", Some(false), "pacman -S -u -"),
+                (A, "other"),
+            ),
+            (
+                "-U from outside a cache is an install-like attention (N1)",
+                pac(
+                    Kind::Upgrade,
+                    "sudo",
+                    Some(true),
+                    "pacman -U /tmp/evil/sudo-9.9-1-x86_64.pkg.tar.zst",
+                ),
+                (A, "package"),
+            ),
+            (
+                "-U from yay's cache",
+                pac(
+                    Kind::Upgrade,
+                    "zed-bin",
+                    Some(true),
+                    "pacman -U /home/user/.cache/yay/zed-bin/zed-bin-1.0-1-x86_64.pkg.tar.zst",
+                ),
+                (R, "upgrade"),
+            ),
+            (
+                "-U from paru's cache",
+                pac(
+                    Kind::Reinstall,
+                    "zed-bin",
+                    Some(true),
+                    "pacman -U /home/user/.cache/paru/clone/zed-bin/zed-bin-1.0-1-x86_64.pkg.tar.zst",
+                ),
+                (R, "upgrade"),
+            ),
+            (
+                "-U with one file outside the cache",
+                pac(
+                    Kind::Upgrade,
+                    "firefox",
+                    Some(true),
+                    "pacman -U /var/cache/pacman/pkg/firefox-1-1-x86_64.pkg.tar.zst /tmp/x-1-1-x86_64.pkg.tar.zst",
+                ),
+                (A, "package"),
+            ),
+            (
                 "no command line",
                 {
                     let mut e = pac(Kind::Upgrade, "firefox", None, "x");
@@ -817,6 +938,43 @@ mod tests {
                 "removed shell.json",
                 config(Kind::ConfigRemove, "~/.config/omarchy/shell.json", None),
                 (R, "routine-paths"),
+            ),
+            // B1: a backup name does not make a persistence file harmless
+            (
+                "a .bak. hook (B1)",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/omarchy/hooks/post-update.d/evil.bak.sh",
+                    None,
+                ),
+                (C, "always-red-paths"),
+            ),
+            (
+                "a .bak. user unit (B1)",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/systemd/user/evil.bak.service",
+                    None,
+                ),
+                (C, "always-red-paths"),
+            ),
+            (
+                "a .bak. autostart entry (B1)",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/autostart/evil.bak.desktop",
+                    None,
+                ),
+                (C, "always-red-paths"),
+            ),
+            (
+                "a .bak. environment.d file (B1)",
+                config(
+                    Kind::ConfigAdd,
+                    "~/.config/environment.d/50-evil.bak.conf",
+                    None,
+                ),
+                (C, "always-red-paths"),
             ),
             (
                 "user unit",
@@ -1108,6 +1266,18 @@ mod tests {
             named(Kind::Install, "libnl", false),
         ];
         assert_eq!(verdict(&d, &ledger, &[1, 0]), (A, "package"));
+        // K19: of mixed explicit members the highest counts, also when the
+        // crisis member is no longer in the item (resolved)
+        let mixed = |kind, subject: &str, explicit| {
+            pac(kind, subject, Some(explicit), "pacman -S htop linux")
+        };
+        let ledger = [
+            mixed(Kind::Install, "htop", true),
+            mixed(Kind::Install, "linux", true),
+            mixed(Kind::Install, "kmod", false),
+        ];
+        assert_eq!(verdict(&d, &ledger, &[2]), (C, "always-red"));
+        assert_eq!(verdict(&d, &ledger, &[0, 2]), (C, "always-red"));
         // a dependency whose transaction has no explicit member
         let lone = [pac(
             Kind::Install,
@@ -1116,6 +1286,59 @@ mod tests {
             "pacman -S --asdeps x",
         )];
         assert_eq!(verdict(&d, &lone, &[0]), (A, "other"));
+    }
+
+    /// B1 (WP-109 round 2): a backup in a persistence path is routine only
+    /// with evidence that it is one — it holds the content the ledger last
+    /// recorded for its base file (the copy `omarchy refresh` makes before
+    /// it restores the default); the base, restored to Omarchy's copy,
+    /// carries `omarchy-default`.
+    #[test]
+    fn a_refresh_backup_in_a_persistence_path_needs_its_base() {
+        let d = DriftConfig::default();
+        let at_ts = |e: Event, ts: &str| Event { ts: at(ts), ..e };
+        let mut old = config(Kind::ConfigAdd, "~/.config/uwsm/env", None);
+        old.meta.hash_to = Some("H-old".into());
+        let old = at_ts(old, "2026-09-01T10:00:00+02:00");
+        let mut backup = config(Kind::ConfigAdd, "~/.config/uwsm/env.bak.1786539345", None);
+        backup.meta.hash_to = Some("H-old".into());
+        let mut base = config(
+            Kind::ConfigChange,
+            "~/.config/uwsm/env",
+            Some(MATCHES_OMARCHY_DEFAULT),
+        );
+        base.meta.hash_from = Some("H-old".into());
+        base.meta.hash_to = Some("H-default".into());
+        // the base recorded earlier, the pair in one capture
+        let ledger = [old.clone(), backup.clone(), base.clone()];
+        assert_eq!(verdict(&d, &ledger, &[1]), (R, "routine-paths"));
+        assert_eq!(verdict(&d, &ledger, &[2]), (R, "omarchy-default"));
+        // the base never recorded before: its change's hashFrom is the evidence
+        let ledger = [backup.clone(), base.clone()];
+        assert_eq!(verdict(&d, &ledger, &[0]), (R, "routine-paths"));
+        // the latest record of the base before the backup wins
+        let mut newer = old.clone();
+        newer.kind = Kind::ConfigChange;
+        newer.meta.hash_from = Some("H-old".into());
+        newer.meta.hash_to = Some("H-newer".into());
+        let newer = at_ts(newer, "2026-09-20T10:00:00+02:00");
+        let ledger = [old.clone(), newer, backup.clone()];
+        assert_eq!(verdict(&d, &ledger, &[2]), (C, "always-red-paths"));
+        // other content than the base had, or no base at all: a crisis
+        let mut forged = backup.clone();
+        forged.meta.hash_to = Some("H-evil".into());
+        let ledger = [old.clone(), forged, base.clone()];
+        assert_eq!(verdict(&d, &ledger, &[1]), (C, "always-red-paths"));
+        let ledger = [backup.clone()];
+        assert_eq!(verdict(&d, &ledger, &[0]), (C, "always-red-paths"));
+        // a name that ends in `.bak.` has no epoch part: no base
+        let mut bare = config(Kind::ConfigAdd, "~/.config/uwsm/env.bak.", None);
+        bare.meta.hash_to = Some("H-old".into());
+        let ledger = [old, bare];
+        assert_eq!(verdict(&d, &ledger, &[1]), (C, "always-red-paths"));
+        // outside the persistence paths a backup stays routine without evidence
+        let ledger = [config(Kind::ConfigAdd, "~/.config/hypr/x.lua.bak.1", None)];
+        assert_eq!(verdict(&d, &ledger, &[0]), (R, "routine-paths"));
     }
 
     /// `[drift]`: a routine rule left out of `routine` does not apply (the
@@ -1214,6 +1437,7 @@ mod tests {
                 "~/.config/omarchy/private/",
                 "a.b",
                 "~",
+                "~/.config/a?b",
             ]
             .map(String::from),
         );
@@ -1246,6 +1470,8 @@ mod tests {
             "/x/a.b",
             "/etc/pacman.conf",
             "~",
+            "~/.config/a/b",
+            "~/.config/axb",
         ];
         let ours = PathGlobs::new(&patterns);
         for p in &patterns {

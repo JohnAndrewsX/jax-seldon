@@ -260,13 +260,52 @@ fn drift_resolutions_take_the_variable_without_actor() {
         &["drift", "dismiss", MONITORS, "--only", "--", "Known"],
     ));
     assert_eq!(v["events"][0]["actor"], "agent:codex");
+    // an agent's session cannot resolve as a person (ADR-0028 §3, WP-109
+    // round 2, as WP-101 for `plan done`); another agent's name is a flag
+    // like any other
+    for verb in [
+        &[
+            "drift", "explain", OLLAMA, "--only", "--actor", "human", "--", "Why",
+        ][..],
+        &["drift", "dismiss", OLLAMA, "--actor", "human", "--", "Why"],
+        &["drift", "link", OLLAMA, "C-2026-004", "--actor", "human"],
+    ] {
+        let out = at(agent, verb);
+        assert_eq!(out.status.code(), Some(1), "{verb:?}");
+        assert_eq!(
+            error(&out),
+            format!(
+                "{OLLAMA} is not resolved: `--actor human` in a session of agent:codex \
+                 (SELDON_ACTOR); an agent's resolution is never recorded as human (ADR-0028 \
+                 §3). Resolve it as agent:codex, or from a session of your own (the panel)"
+            )
+        );
+    }
     let v = ok(&at(
         agent,
         &[
-            "drift", "explain", OLLAMA, "--only", "--actor", "human", "--", "Why",
+            "drift",
+            "explain",
+            OLLAMA,
+            "--only",
+            "--actor",
+            "agent:claude-code",
+            "--",
+            "Why",
         ],
     ));
-    assert_eq!(v["events"][0]["actor"], "human", "the flag wins");
+    assert_eq!(
+        v["events"][0]["actor"], "agent:claude-code",
+        "the flag wins"
+    );
+    // a person's own session: the flag is the person
+    let v = ok(&at(
+        None,
+        &[
+            "drift", "dismiss", MONITORS, "--actor", "human", "--", "again",
+        ],
+    ));
+    assert_eq!(v["resolved"], 0, "already resolved above, nothing written");
     assert!(
         common::ledger(&lb)[before..]
             .iter()

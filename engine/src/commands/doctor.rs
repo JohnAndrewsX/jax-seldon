@@ -239,7 +239,8 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
     // ADR-0028 §4c, §4d: rows of config.toml, last (earlier rows keep
     // their places)
     if let Some(c) = &config {
-        checks.push(check_watch_paths(c));
+        let text = std::fs::read_to_string(&ctx.config_file).ok();
+        checks.push(check_watch_paths(c, text.as_deref()));
         checks.push(check_drift_rules(c, &omarchy_evidence(ctx)));
     }
 
@@ -402,7 +403,7 @@ fn check_patterns(config: &Config, shown: String) -> Check {
 /// list that is an earlier engine's default gains them at the next
 /// capture; a list the user wrote keeps its own, and this row names the
 /// missing paths with the line to add.
-fn check_watch_paths(config: &Config) -> Check {
+fn check_watch_paths(config: &Config, text: Option<&str>) -> Check {
     let missing = config.missing_default_watch_paths();
     let n = config.watch_paths.len();
     if missing.is_empty() {
@@ -413,7 +414,9 @@ fn check_watch_paths(config: &Config) -> Check {
         );
     }
     let list = missing.join(", ");
-    if config.has_earlier_default_watch_paths() {
+    let owned: Vec<String> = missing.iter().map(|p| p.to_string()).collect();
+    let editable = text.is_some_and(|t| crate::config::with_added_watch_paths(t, &owned).is_some());
+    if config.has_earlier_default_watch_paths() && editable {
         return Check::new(
             "watch",
             Status::Ok,
@@ -421,11 +424,16 @@ fn check_watch_paths(config: &Config) -> Check {
         );
     }
     let quoted: Vec<String> = missing.iter().map(|p| format!("\"{p}\"")).collect();
+    let whose = if config.has_earlier_default_watch_paths() {
+        "an earlier default list, but config.toml cannot be extended without changing the rest of it,"
+    } else {
+        "your own list"
+    };
     Check::new(
         "watch",
         Status::Degraded,
         format!(
-            "watchPaths (your own list) lacks default paths: {list}; a change there records nothing, and the persistence paths among them cannot raise a crisis (ADR-0028 §4d)"
+            "watchPaths ({whose}) lacks default paths: {list}; a change there records nothing, and the persistence paths among them cannot raise a crisis (ADR-0028 §4d)"
         ),
     )
     .fix(format!(

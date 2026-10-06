@@ -643,6 +643,30 @@ fn an_agent_never_whitewashes_a_crisis() {
         assert!(got.contains(message), "{args:?}: {got}");
         assert!(got.contains("crisis (ADR-0028 §3)"), "{got}");
     }
+    // K13: a case in verification that lists the agent is not active
+    let c8 = find_file(&lb.join("work/active"), "C-2026-008-");
+    let text = read(&c8);
+    std::fs::write(
+        &c8,
+        text.replace("agents: []", "agents: [agent:claude-code]"),
+    )
+    .unwrap();
+    let v = run(
+        &env,
+        &lb,
+        &[
+            "drift",
+            "link",
+            HOOK,
+            "C-2026-008",
+            "--actor",
+            "agent:claude-code",
+        ],
+        1,
+    );
+    let got = v["error"]["message"].as_str().unwrap();
+    assert!(got.contains("only to an active case"), "{got}");
+    std::fs::write(&c8, text).unwrap();
     let mut all = vec!["--logbook", lb.to_str().unwrap(), "--json"];
     all.extend(["drift", "dismiss", HOOK, "--", "fine"]);
     let out = env

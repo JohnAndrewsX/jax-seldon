@@ -310,30 +310,43 @@ fn built_in_templates_explain_without_owned_json() {
     assert!(!owned.exists());
 
     let unit = seldon::collectors::config::WATCH_UNIT;
-    assert!(unit.contains("\nExecStart=%h/.local/bin/seldon watch\n"));
-    let prefixed = unit.replace(
-        "ExecStart=%h/.local/bin/seldon watch",
-        "ExecStart=/opt/tools/bin/seldon watch",
-    );
+    let default = "ExecStart=%h/.local/bin/seldon watch";
+    assert!(unit.contains(&format!("\n{default}\n")));
+    let units = home.join(".config/systemd/user");
+    // this engine, by its own path (`install.sh --unit --prefix …`)
+    let engine = Path::new(env!("CARGO_BIN_EXE_seldon"));
+    let prefix = engine.parent().unwrap().display().to_string();
+    let own = unit.replace(default, &format!("ExecStart={prefix}/seldon watch"));
+    write(&units.join("seldon-watch.service"), &own);
+    // this engine, copied to `~/.local/bin` (same content)
+    let copy = home.join(".local/bin/seldon");
+    std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+    std::fs::copy(engine, &copy).unwrap();
     write(
-        &home.join(".config/systemd/user/seldon-watch.service"),
-        &prefixed,
+        &units.join("default.target.wants/seldon-watch.service"),
+        unit,
     );
-    let tampered = unit.replace(
-        "ExecStart=%h/.local/bin/seldon watch",
-        "ExecStartPre=/tmp/x\nExecStart=%h/.local/bin/seldon watch",
-    );
+    // a foreign `seldon` the template would otherwise vouch for
+    write(&home.join(".cache/evil/seldon"), "#!/bin/sh\nexec miner\n");
+    let foreign = unit.replace(default, "ExecStart=%h/.cache/evil/seldon watch");
     write(
-        &home.join(".config/systemd/user/other.target.wants/seldon-watch.service"),
+        &units.join("evil.target.wants/seldon-watch.service"),
+        &foreign,
+    );
+    let tampered = unit.replace(default, &format!("ExecStartPre=/tmp/x\n{default}"));
+    write(
+        &units.join("other.target.wants/seldon-watch.service"),
         &tampered,
     );
-    let spaced = unit.replace(
-        "ExecStart=%h/.local/bin/seldon watch",
-        "ExecStart=/bin/sh -c x; /seldon watch",
-    );
+    let spaced = unit.replace(default, "ExecStart=/bin/sh -c x; /seldon watch");
     write(
-        &home.join(".config/systemd/user/third.target.wants/seldon-watch.service"),
+        &units.join("third.target.wants/seldon-watch.service"),
         &spaced,
+    );
+    // the template with a line appended
+    write(
+        &units.join("fourth.target.wants/seldon-watch.service"),
+        &format!("{unit}ExecStartPost=/tmp/x\n"),
     );
     write(
         &home.join(".config/omarchy/hooks/theme-set.d/seldon-theme-set.sh"),
@@ -346,7 +359,7 @@ fn built_in_templates_explain_without_owned_json() {
     );
 
     let c = capture_config(&env);
-    assert_eq!(c["explainedOwn"], 2, "{c}");
+    assert_eq!(c["explainedOwn"], 3, "{c}");
     let events = config_events(&env.tmp.path().join("logbook"));
     let res = |s: &str| find(&events, s).2.clone();
     assert_eq!(
@@ -363,9 +376,18 @@ fn built_in_templates_explain_without_owned_json() {
             "installed by seldon init --theme-hook (built-in template)"
         ])
     );
+    assert_eq!(
+        res("~/.config/systemd/user/default.target.wants/seldon-watch.service"),
+        json!([
+            "explained",
+            "installed by install.sh --unit (built-in template)"
+        ])
+    );
     for s in [
+        "~/.config/systemd/user/evil.target.wants/seldon-watch.service",
         "~/.config/systemd/user/other.target.wants/seldon-watch.service",
         "~/.config/systemd/user/third.target.wants/seldon-watch.service",
+        "~/.config/systemd/user/fourth.target.wants/seldon-watch.service",
         "~/.config/omarchy/hooks/theme-set.d/copy.sh",
     ] {
         assert_eq!(res(s), Value::Null, "{s}");
@@ -375,7 +397,7 @@ fn built_in_templates_explain_without_owned_json() {
         .filter(|i| i.1 == "crisis")
         .map(|i| i.0)
         .collect();
-    assert_eq!(crises.len(), 3, "{crises:?}");
+    assert_eq!(crises.len(), 5, "{crises:?}");
     assert!(!owned.exists(), "nothing recorded, nothing left behind");
 }
 
@@ -465,6 +487,17 @@ fn default_watch_paths_and_their_upgrade() {
         "{text}"
     );
 
+    // K15: an earlier default plus a path of the user's own is the user's
+    let mut t = config();
+    let mut superset: Vec<toml::Value> = seldon::config::EARLIER_DEFAULT_WATCH_PATHS[1]
+        .iter()
+        .map(|p| toml::Value::String(p.to_string()))
+        .collect();
+    superset.push(toml::Value::String("~/dotfiles".into()));
+    t["watchPaths"] = toml::Value::Array(superset);
+    std::fs::write(env.config_file(), toml::to_string(&t).unwrap()).unwrap();
+    assert_eq!(capture_config(&env)["watchPathsAdded"], json!([]));
+    assert_eq!(watch(&config()).len(), 7, "never widened");
     // a list of the user's own: kept, and doctor says what it lacks
     let mut t = config();
     t["watchPaths"] = toml::Value::Array(vec![
@@ -692,5 +725,146 @@ fn omarchy_path_counts_only_when_trusted() {
     assert!(
         !open.contains(&"~/.config/hypr/h1.lua".to_string()),
         "{open:?}"
+    );
+}
+
+/// WP-109 round 2, B1 and B2 through a capture: a file named like a
+/// backup in a persistence path is a crisis; a real `omarchy refresh`
+/// pair there (backup = the old content, base = Omarchy's default) is
+/// routine on both sides; a theme with a `.git` file or a `.git` link is
+/// no cloned theme.
+#[test]
+fn persistence_backups_need_evidence_and_theme_repos_a_real_git() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let home = &env.home;
+    let omarchy = env.tmp.path().join("omarchy");
+    write(&home.join(".config/uwsm/env"), "export OLD=1\n");
+    write(&omarchy.join("config/uwsm/env"), "export DEFAULT=1\n");
+    trust(&omarchy, 0o755);
+    capture_config(&env); // baseline
+
+    // `omarchy refresh config uwsm/env`
+    write(
+        &home.join(".config/uwsm/env.bak.1786539345"),
+        "export OLD=1\n",
+    );
+    write(&home.join(".config/uwsm/env"), "export DEFAULT=1\n");
+    // the reviewer's probes: backups nothing vouches for, all loaded
+    for p in [
+        ".config/omarchy/hooks/post-update.d/evil.bak.sh",
+        ".config/systemd/user/evil.bak.service",
+        ".config/autostart/evil.bak.desktop",
+        ".config/environment.d/50-evil.bak.conf",
+    ] {
+        write(&home.join(p), "evil\n");
+    }
+    // B2: a `.git` file and a `.git` link are no clone
+    write(
+        &home.join(".config/omarchy/themes/fake/.git"),
+        "gitdir: x\n",
+    );
+    write(
+        &home.join(".config/omarchy/themes/fake/hyprland.lua"),
+        "-- theme\n",
+    );
+    std::fs::create_dir_all(env.tmp.path().join("realgit")).unwrap();
+    std::fs::create_dir_all(home.join(".config/omarchy/themes/linked")).unwrap();
+    std::os::unix::fs::symlink(
+        env.tmp.path().join("realgit"),
+        home.join(".config/omarchy/themes/linked/.git"),
+    )
+    .unwrap();
+    write(
+        &home.join(".config/omarchy/themes/linked/hyprland.lua"),
+        "-- theme\n",
+    );
+    capture_config(&env);
+
+    let all = items(&env, true);
+    let class = |s: &str| -> String {
+        all.iter()
+            .find(|i| i.0 == s)
+            .map(|i| format!("{} {}", i.1, i.2))
+            .unwrap_or_else(|| panic!("{s} in {all:?}"))
+    };
+    assert_eq!(class("~/.config/uwsm/env"), "routine omarchy-default");
+    assert_eq!(
+        class("~/.config/uwsm/env.bak.1786539345"),
+        "routine routine-paths"
+    );
+    for p in [
+        "~/.config/omarchy/hooks/post-update.d/evil.bak.sh",
+        "~/.config/systemd/user/evil.bak.service",
+        "~/.config/autostart/evil.bak.desktop",
+        "~/.config/environment.d/50-evil.bak.conf",
+    ] {
+        assert_eq!(class(p), "crisis always-red-paths", "{p}");
+    }
+    assert_eq!(
+        class("~/.config/omarchy/themes/fake/hyprland.lua"),
+        "attention config"
+    );
+    assert_eq!(
+        class("~/.config/omarchy/themes/linked/hyprland.lua"),
+        "attention config"
+    );
+}
+
+/// WP-109 round 2 (N5): the watch-path upgrade keeps `config.toml` as the
+/// user wrote it, comments and order included, except for the added
+/// paths; a file it cannot extend that way stays untouched, the capture
+/// says so, and doctor names the paths.
+#[test]
+fn the_watch_path_upgrade_keeps_the_file() {
+    let env = Env::new(Snapper::Missing);
+    env.init_logbook();
+    let generated = read(&env.config_file());
+    let earlier: Vec<String> = seldon::config::EARLIER_DEFAULT_WATCH_PATHS[1]
+        .iter()
+        .map(|p| format!("\"{p}\""))
+        .collect();
+    let mut t: toml::Table = generated.parse().unwrap();
+    t.remove("watchPaths");
+    let rest = toml::to_string(&t).unwrap();
+    let text = format!(
+        "# my comment\nwatchPaths = [\n  {},\n] # keep\n{rest}",
+        earlier.join(", # x\n  ")
+    );
+    std::fs::write(env.config_file(), &text).unwrap();
+    let c = capture_config(&env);
+    let added = seldon::config::DEFAULT_WATCH_PATHS[6..].to_vec();
+    assert_eq!(c["watchPathsAdded"], json!(added));
+    let quoted: Vec<String> = added.iter().map(|p| format!(", \"{p}\"")).collect();
+    let last = earlier.last().unwrap();
+    let want = text.replacen(
+        &format!("{last},\n]"),
+        &format!("{last}{},\n]", quoted.concat()),
+        1,
+    );
+    assert_eq!(read(&env.config_file()), want);
+
+    // a quoted key: not edited, nothing watched beyond the list, doctor says it
+    let text = format!("\"watchPaths\" = [{}]\n{rest}", earlier.join(", "));
+    std::fs::write(env.config_file(), &text).unwrap();
+    let c = capture_config(&env);
+    assert_eq!(c["watchPathsAdded"], json!([]));
+    assert!(
+        c["warnings"].as_array().unwrap().iter().any(|w| w
+            .as_str()
+            .unwrap()
+            .starts_with("config.toml was left as it is")),
+        "{c}"
+    );
+    assert_eq!(read(&env.config_file()), text);
+    let d = ok(&env, &["doctor", "--json"]);
+    let r = row(&d, "watch");
+    assert_eq!(r["status"], "degraded", "{r}");
+    assert!(
+        r["message"]
+            .as_str()
+            .unwrap()
+            .contains("an earlier default list, but config.toml cannot be extended"),
+        "{r}"
     );
 }
