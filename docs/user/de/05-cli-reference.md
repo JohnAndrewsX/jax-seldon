@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ e852f0c -->
+<!-- source: en/05-cli-reference.md @ a592655 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -149,6 +149,8 @@ Zustandsdateien, Omarchy, Snapper und git. Es liest nur. Jede Zeile sagt
 Befehl, der sie behebt. Exit 0, wenn nichts ein Fehler ist, 1, wenn eine
 Prüfung ein Fehler ist (auch, wenn `config.toml` nicht gelesen oder
 geparst werden kann), 3, wenn das Logbuch nicht angelegt ist.
+`--only rules` prüft nur die Agentenregeln in `AGENTS.md` und startet
+kein anderes Programm; das Panel fragt das, wenn es sich öffnet.
 
 <!-- help: seldon doctor -->
 ```text
