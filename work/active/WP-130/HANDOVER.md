@@ -148,9 +148,15 @@ Every command below was **allowed** before:
 - **Text sent to another agent or pane is data**
   (`herdr agent prompt`, as the WP says); the receiving session's guard
   decides.
-- **Omarchy commands outside the old route list stay allowed**, e.g.
-  `omarchy plugin enable|disable` (it changes `shell.json`). See open
-  questions.
+- **Omarchy commands outside the route list stay allowed.** Round 2
+  added `plugin enable|disable`, `hook`, `branch`, `channel set`; any
+  other system-changing Omarchy command needs its own route.
+- **Big or heavy commands are blocked, not checked** (round 2). Hook
+  input over 256 KB, more than 256 variables, or more than 3 s of
+  checking fails closed. That is a usability limit, not a hole.
+- **`scripts/deploy-test-host.sh` still honours `GUARD_HOSTS_FILE`**
+  without `SELDON_TEST_GUARD` (its own refusal gate, not the hook). See
+  round 2, open question.
 
 ## How it was verified
 
@@ -200,3 +206,109 @@ handover file is the only later change): `check: ok`, exit 0, including
 unset, i.e. `engine/target` in the worktree on disk. `shellcheck` is not
 installed on this dev host, so the shellcheck step was skipped locally;
 CI's container has it.
+
+## Round 2
+
+Review 1 (stage 1): SEND BACK on N1. The brief decided Q2 and Q3; N3 and
+N4 needed no code.
+
+### N1 — fail closed before the hook timeout
+
+- **Size cap.** `main()` reads at most 256 KB + 1 byte of hook input and
+  blocks anything over 256 KB before parsing, with a message to write
+  big files with the Write/Edit tools. Rows: an input of exactly 262 144
+  bytes passes, 262 145 is blocked (`echo x;` repeated, the label
+  instead of the text in the output).
+- **The cap alone was not enough.** Inside the cap I found a quadratic
+  path: every simple command copied the variable scope. 27 000 distinct
+  assignments (`v1=1; v2=1; …`, 255 KB) took **244 s**, and `|| v=1`
+  chains 155 s. A hook that times out does not block, so both were fail
+  open. Fixed in two layers:
+  - **At most 256 distinct variables** per command, then fail closed. A
+    scope copy is now bounded, and `&&`/`||` chains merge
+    incrementally, so the walk is linear. The same inputs now take
+    0.3 s and 1.2 s (blocked). Rows: 256 variables pass, 257 are
+    blocked.
+  - **A 3 s time budget** (`signal.setitimer`) fails closed on any slow
+    path not foreseen. Rows: a 40 KB input with the budget shortened to
+    0.01 s is blocked. The same input passes when `GUARD_TIME_BUDGET` is
+    set without `SELDON_TEST_GUARD`: the variable can only shorten the
+    budget, and only for the test table.
+- **Largest allowed input, measured.** Hook inputs at the cap
+  (262 144 bytes or just under), best of 3, this dev host at load
+  average 5.6 (several agents and cargo running):
+
+  | Shape | Time |
+  |---|---|
+  | `$(echo x)` repeated (worst) | **1.29 s** |
+  | `x=$(mktemp -d); cd $x` repeated | 1.04 s |
+  | `echo x;` repeated | 0.83 s |
+  | `a=1 &&` chain | 0.39 s |
+  | unquoted heredoc | 0.14 s |
+  | quoted heredoc to a file | 0.04 s |
+  | one long quoted argument | 0.03–0.07 s |
+
+  Also probed: 32 000-element `&&`/`||` chains 0.55 s, 23 000 `cd`s
+  0.65 s, 8 000 `for` loops 0.55 s, 2 000-deep `$(` nesting blocked in
+  0.03 s. The 3 s budget leaves about 3.7 s of margin to the 5 s hook
+  timeout for the worst allowed shape; a heavier host hits the budget
+  (blocked), not the timeout.
+
+### Q2 — `GUARD_HOSTS_FILE` only for tests
+
+`read_hosts()` reads the fixed `scripts/guard-hosts.local`.
+`GUARD_HOSTS_FILE` replaces it only when `SELDON_TEST_GUARD` is non-empty.
+`guard-test.sh` exports `SELDON_TEST_GUARD=1`. Rows: with
+`SELDON_TEST_GUARD=''` and `GUARD_HOSTS_FILE` pointing at the table's
+list, `ssh test-host omarchy plugin update jax.seldon` and `timeout 60
+ssh test-host sudo pacman -Syu` are blocked; with the flag they pass. The
+guard has no other env override of its own paths. `HOME`, `TMPDIR`,
+`OMARCHY_PATH` and the rest are read as the session's values for
+expanding the command, as the brief says for `HOME`.
+
+### Q3 — more Omarchy routes blocked
+
+Routes `omarchy plugin enable|disable`, `omarchy hook` (with or without
+a name; `omarchy hook` runs the hooks under `~/.config/omarchy/hooks/`),
+`omarchy branch …` and `omarchy channel set …`, and the binaries
+`omarchy-plugin-enable|disable`, `omarchy-hook`, `omarchy-branch*` and
+`omarchy-channel-set`. On this install `omarchy branch` has a group
+description but no binary; it is blocked anyway. Allowed, with rows:
+`omarchy version`, `omarchy plugin list`, `omarchy channel current`,
+`omarchy-channel-current`, `omarchy-plugin-list`, `omarchy hook --help`,
+`omarchy plugin enable --help` (and the earlier `omarchy commands`,
+`omarchy plugin validate`). Over ssh to an unlisted host, `omarchy
+plugin enable` is blocked; to a listed test host it passes as before
+(docs/HERDR-SETUP.md §5 uses it there).
+
+### N3, N4
+
+- N3: `shellcheck` is still not installed here; `check-guard` runs it
+  when present, and CI's container has it.
+- N4: "Known limits" above is current for round 2 and belongs next to
+  the table when the operator sees it.
+
+### Mutants and table
+
+- 8 new mutants, 33 in all: size cap, variable cap, time budget,
+  `GUARD_HOSTS_FILE` gate, plugin enable/disable, hook, branch/channel
+  set, the round-2 binaries. All 33 are caught.
+- Table: 277 rows (27 new), all green.
+- The two scratch sweeps were re-run unchanged: 82 everyday commands,
+  none blocked; 104 bypass shapes, none allowed.
+
+### Open question (round 2)
+
+- `scripts/deploy-test-host.sh` reads `GUARD_HOSTS_FILE` unconditionally
+  for its own "host must be listed" refusal (line 124; its test suite
+  sets it). It is not the hook, so I left it. Should it get the same
+  `SELDON_TEST_GUARD` gate? That would be a change to the deploy script
+  and its tests (WP-098).
+
+### just check (round 2)
+
+`flock /tmp/seldon-check.lock just check` on 9c54f42 (the code; only
+this handover changed after it): `check: ok`, exit 0, including
+`check-guard` (`rows: 277`, `mutants: 33`, none survived). Same target
+dir (`engine/target` in the worktree); `shellcheck` skipped locally (not
+installed).
