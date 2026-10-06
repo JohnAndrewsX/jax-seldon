@@ -797,6 +797,16 @@ mod tests {
                 (A, "other"),
             ),
             (
+                "a keyring transaction with targets from stdin",
+                pac(
+                    Kind::Install,
+                    "evilpkg",
+                    Some(false),
+                    "pacman -S archlinux-keyring -",
+                ),
+                (A, "other"),
+            ),
+            (
                 "-U from outside a cache is an install-like attention (N1)",
                 pac(
                     Kind::Upgrade,

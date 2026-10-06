@@ -1382,6 +1382,41 @@ impl Collector for ConfigFiles {
 mod tests {
     use super::*;
 
+    /// WP-109 round 2 (B2): `theme-repo` follows Omarchy's own test — the
+    /// theme directory is no link and holds a real `.git` directory. (The
+    /// walker never enters a linked directory, so a capture cannot show
+    /// the first half; `evidence` is asked directly.)
+    #[test]
+    fn theme_repo_needs_a_real_directory_and_a_real_git() {
+        let tmp = std::env::temp_dir().join(format!("seldon-theme-repo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let home = tmp.join("home");
+        let themes = home.join(".config/omarchy/themes");
+        let dirs = Dirs {
+            home: home.clone(),
+            xdg_config_home: home.join(".config"),
+            state_dir: home.join(".local/state/seldon"),
+        };
+        let theme = |name: &str| {
+            std::fs::create_dir_all(themes.join(name)).unwrap();
+            std::fs::write(themes.join(name).join("hyprland.lua"), "-- x\n").unwrap();
+        };
+        theme("cloned");
+        std::fs::create_dir_all(themes.join("cloned/.git")).unwrap();
+        // a link to a cloned theme is no cloned theme
+        std::os::unix::fs::symlink(themes.join("cloned"), themes.join("linked")).unwrap();
+        theme("filegit");
+        std::fs::write(themes.join("filegit/.git"), "gitdir: x\n").unwrap();
+        let key = |t: &str| format!("~/.config/omarchy/themes/{t}/hyprland.lua");
+        assert_eq!(
+            evidence(&dirs, None, &key("cloned"), None),
+            Some(MATCHES_THEME_REPO)
+        );
+        assert_eq!(evidence(&dirs, None, &key("linked"), None), None);
+        assert_eq!(evidence(&dirs, None, &key("filegit"), None), None);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
     /// WP-109 round 1b: Omarchy's tree is evidence only when it is root's
     /// and neither group- nor world-writable. A temp dir owned by the user
     /// running the tests never counts as root's; with `SELDON_TEST_GUARD`

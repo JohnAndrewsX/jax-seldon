@@ -1139,6 +1139,8 @@ mod tests {
             "watchPaths = [[\"a\"]]\n",
             "watchPaths = [\"a\"\n",
             "watchPaths = \"a\"\n",
+            // the key's text inside a string: only the read-back sees it
+            "logbook = \"\"\"\nwatchPaths = [\"a\"]\n\"\"\"\n",
         ] {
             assert_eq!(add(text), None, "{text:?}");
         }
