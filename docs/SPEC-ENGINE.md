@@ -73,7 +73,22 @@ seldon event <source> <kind> --subject S [--detail D] [--case ID] [--actor A] [-
 # be refused (WP-066) fails the command before the ledger or the journal changes
 # (exit 1; a hook records nothing and says so on stderr) (WP-077)
 seldon plan new "<title>" [--zone Z] [--risk R] [--area A] [--priority P]
-seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A]
+seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor A] [--no-capture]
+# ADR-0029 §2 (WP-115): `plan verify` and `plan done` run a default `seldon
+# capture` first — a complete capture under its own lock hold (waiting for a
+# held lock up to 8 s, as a hook does), released, then the step under its own
+# lock — so what the user did by hand inside the case is recorded, and linked
+# by §5 rule 9, while the case is still open. Only a step the case allows
+# captures. A capture that fails (an error, or the lock still held after the
+# wait) is a warning in the step's `warnings` (`the capture before the step
+# did not run: …`), never a refusal; a degraded collector is no warning here
+# (`seldon doctor` reports it; orchestrator ruling, WP-115 round 2);
+# `--no-capture` skips it (`verify` and `done` only); `plan drop` and `plan
+# start` never capture. `--json` adds `capture`: `{ok, written,
+# linkedPlanned}` of that capture, `null` when skipped or failed. Cost: one
+# incremental capture per step (pacman from its cursor, the config hashes);
+# measured on the test host in the live check (ADR-0029 §5 item 10; the
+# number goes here).
 # --snapshot: `plan start` only (WP-049: the other steps do not offer it; clap
 # refuses it, exit 1). Starting an R2 or R3 case with no snapshot
 # (no --snapshot, no snapshotBefore) prints a warning and never refuses
@@ -534,6 +549,14 @@ shape is not part of `schema/`. The plugin runs `doctor --only rules
 process, no probes); every other banner comes from `index.json`, its `seldon
 --version --json` probe and the results of its engine calls.
 
+`planned` (WP-115 round 2, §5 rule 9), only when it applies: changes
+without a case whose time lies in the window of a case whose file does not
+parse (or lies outside the status folders) are never linked by rule 9,
+because the engine cannot read that case's Plan: `degraded`, "N change(s)
+not linked to the case that planned them, because a case file does not
+load: K in the window of C-…", fix: repair the case file (the `logbook`
+row names it) or put it back in `work/`; the next capture links.
+
 `rollbacks` (WP-101, ADR-0027 §3): a case (not dropped) whose
 `snapshotBefore` N the snapper collector saw deleted — a `snapshot-delete`
 of subject N on or after the case's creation day — has lost its rollback:
@@ -667,13 +690,15 @@ world-writable).
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
                           "sinceIgnored":[…],"explainedOwn":N,"explainedSelf":N,
-                          "watchPathsAdded":[…],"rulesUpdated":{"from":"vN","version":3}|null,
+                          "linkedPlanned":N,"watchPathsAdded":[…],
+                          "rulesUpdated":{"from":"vN","version":3}|null,
                           "skillsUpdated":["~/.claude/skills",…],"warnings":[…]}
                                                                     # explainedOwn: §5 rule 7;
                                                                     # watchPathsAdded: §4 config;
                                                                     # rulesUpdated, skillsUpdated:
                                                                     # the silent upgrade (§3, WP-111);
                                                                     # explainedSelf: §5 rule 8;
+                                                                    # linkedPlanned: §5 rule 9;
                                                                     # warnings: the state reset (WP-081)
                          exit 0 also when a collector is degraded (ok:false + fix, ADR-0026);
                          1 unknown source or --source with --all; 3 not initialised; 4 lock held
@@ -681,8 +706,10 @@ seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["l
 
 `log`, `event`, `plan *`, `open` with `--json` return `{"event":
 <ledger line>, "git": {...}}` plus, for plan steps, `from`, `to`,
-`movedFrom`, `activeCase`, `journal` (WP-006) and `warnings` (a list of
-strings, empty unless `plan start` warned; WP-050); `decide --json` returns
+`movedFrom`, `activeCase`, `journal` (WP-006), `warnings` (a list of
+strings, empty unless `plan start` warned or the capture of `plan
+verify|done` did; WP-050, WP-115) and, for `plan verify|done`, `capture`
+(above); `decide --json` returns
 `{"decision": {id, title, status, date, cases, path}, "editor", "git",
 "warnings"}` (`warnings`: the `decisions.index` fill, WP-050)
 (no ledger event). `plan new` defaults:
@@ -1215,7 +1242,11 @@ After every capture:
 3. If an **open** case (queued, active, verification) lists the event's
    subject as a whole-word token in its `## Plan` section, propose (not
    link) — stored as `proposedCase` in the index for one-click
-   confirmation; the lowest case id wins (ADR-0012 §7, §13).
+   confirmation; the lowest case id wins (ADR-0012 §7, §13). HTML
+   comments in the Plan do not count (a template placeholder is no plan;
+   WP-115 round 2). An event
+   rule 9 (below) links is no longer proposed: rule 9 acts after rule 2
+   and before this one in effect, at capture time.
 4. Otherwise, if the event is drift-eligible (only `pacman`, `omarchy`,
    `plugins`, `theme` and `config` events can be; snapshots, notes, hook
    `command` events and case events never are, ADR-0012 §6), it is
@@ -1367,6 +1398,61 @@ After every capture:
    default watch path since ADR-0028 §4d: rule 7's built-in template
    explains that unit.
 
+9. **The planned-and-active link (ADR-0029 §1, WP-115).** An event without
+   `case` and without any resolution line, of a drift-eligible source and
+   by **any actor** (`human`, `system`, an agent without a served hook), is
+   linked to case `C` when, at the event's `ts`: (a) `C`'s *window* holds
+   it — from a `case-started` to the next `case-completed`/`case-dropped`
+   of `C` in the ledger, both ends included (active or verification at
+   that instant), read from the ledger's case events only, never from the
+   case file's status or dates nor from `.seldon/active-case`, which keeps
+   no history; a queued case has no window; (b) `C`'s `## Plan`, as it is
+   when the rule runs and without its HTML comments, names the event's
+   subject as a whole-word token (rule 3's test); (c) `C` is the **only**
+   case for which (a) and (b) hold — and since the engine cannot read the
+   Plan of a case whose file does not load (or lies outside the status
+   folders), an event in such a case's window is not linked at all: the
+   capture warns and `doctor` names it (`planned`, §3); (d) **harm guard
+   (ADR-0028 §1 test 1, orchestrator decision WP-115 round 2):** a
+   subject `[drift] alwaysRed` matches, or an event the classifier makes a
+   crisis (a persistence path under `[drift] alwaysRedPaths`, rule
+   `always-red-paths`), links only when `C` was **R3 at the event's
+   time** — read from the case's own record: the risk of its `created`
+   Log line, then each `set … risk A → B` line, to the minute in the local
+   time the Log is written in; a change in the event's own minute, or a
+   Log without a `created` line naming a risk, or one whose last risk is
+   not the frontmatter's `risk` (an inconsistent record, fail-safe),
+   cannot tell it and counts as below R3. Below R3 the event stays drift
+   (a crisis stays a crisis) and `C` gets one advisory Log line, also when
+   closed: `advisory: not linked: <source> <kind> <subject> at HH:MM:SS
+   is `alwaysRed` | can affect boot, login or the shell (`[drift]
+   alwaysRedPaths`), which only an R3 case takes, and <ID> was R<n> at the
+   time | the record of <ID> does not tell its risk at the time (ADR-0027
+   §2c); if this case made it: `seldon drift link <EVENT> <ID>``. A later
+   `plan set --risk R3` does not link an earlier change. With two or more such cases nothing is
+   linked: each gets the Log line `not linked: <source> <kind> <subject>
+   at HH:MM:SS is planned here and in <IDs>, both|all active at the time;
+   `seldon drift link <EVENT> <CASE>` links it`, and rule 3 proposes as
+   ever while one is open. A pacman event of a transaction that has an
+   explicit member is tested only when it is explicit; its non-explicit
+   members follow the case their explicit members were linked to (when
+   that is one case), one line each, `meta.txId` on every line of a
+   transaction with two or more (as `drift link` fans out). Written right
+   after rule 8, under the capture's lock, on the same whole-ledger read
+   (rule 7's and rule 8's lines included): one `resolution` line per
+   linked event — `source: seldon`, actor `system`, `resolution: linked`,
+   `case: C`, `refersTo`, detail `planned by C; active at the time`, `ts` =
+   capture time or the event's, whichever is later — then `C`'s `events:`
+   (oldest first) and one Log line by `system`, `linked after the fact:
+   <source> <kind> <subject> at HH:MM:SS (planned here)`, with `, no
+   capture ran before the close` inside the parentheses when `C` is closed
+   now (the time is the event's, in its own offset). Every Log line is
+   written once. The event line keeps its actor. Because the rule reads
+   the whole ledger, events recorded before 0.1.4 are linked by the first
+   capture after the upgrade; a second capture writes nothing.
+   `linkedPlanned` counts the lines. This is not the token-only link
+   ADR-0027's H2 rejected: all three facts must hold and exactly one case.
+
    Events explained by rule 7 or 8 count in the weekly drift trend
    (`series.drift`, §6) like any resolved item whose event opened one:
    opened in the week of the event, resolved in the week of the capture,
@@ -1385,6 +1471,18 @@ is a new item with its own leader and the old id resolves nothing (exit
 0, `resolved: 0`). `drift link` accepts a completed or dropped case as
 target (retro-links). `drift explain` creates a completed retroactive
 case and the index folds its `case` onto the explained event (ADR-0021).
+**Re-resolvable engine lines (ADR-0029 §3, WP-115):** an event whose
+folded resolution the engine wrote (actor `system`: rules 7, 8 and 9) is
+linkable as well: `drift link|explain|dismiss` by a human or an agent
+writes a later line that wins (ADR-0012 §8), with the same refusals as
+for open drift (an agent may not explain or dismiss a crisis, ADR-0028
+§3). Such an event is never open drift and `drift --all` does not list it;
+`drift show` says it was resolved by the engine. When the engine had
+linked it to a case and the new line names another case or none, that
+case's `events:` drops the id and its Log gets `no longer linked here:
+<ids> (<verb> [to <case>] by <actor>; the engine had linked it)`. The
+engine never writes over a human's or an agent's line, only onto events
+with none.
 
 **Case notes after a capture (WP-101, ADR-0027 §2c, §3).** After the
 append and the case `events:` bookkeeping, the capture tells the cases
@@ -1490,7 +1588,7 @@ Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
 build in-process on the fixture logbook scaled ×10 and prints ×150 (10 650
 ledger lines, 1 200 cases); `just check-perf` (opt-in, quiet host) asserts
-×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 044 ledger
+×150 too (`SELDON_BENCH_X150=1`) and `seldon status` at 10 292 ledger
 lines, 304 cases and 365 journal files, median wall time of 11 runs,
 process start included. A median over budget is measured once more before
 a check fails (release, 2026-10-04 on the dev host: ×150 build 80 ms,
@@ -2043,4 +2141,9 @@ English keys and headings in every language, prose per language
 - Schema: every emitted JSON validated with `jsonschema` in tests.
 - Idempotency: run every collector twice on the same fixtures; second run
   yields zero events.
+- Rule 9 (WP-115): unit tests of the window, uniqueness, actor, harm-guard
+  and fan-out rules (`reconcile.rs`), the ADR-0029 §5 acceptance 1–9 end to
+  end (`tests/planned_link.rs`), and `scripts/validate-fixtures.py`'s port,
+  which holds the sample logbook to the state after a capture (every
+  engine link is what rule 9 writes, nothing it would write is missing).
 - Bench: index build on scaled fixtures, asserted < 100 ms in CI (release).

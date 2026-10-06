@@ -135,14 +135,14 @@ shows sample 1 "Thursday, 1 Oct 2026"
 shows sample 1 "09:25 · claude-code · C-2026-003"
 shows sample 1 "▸ Yesterday · 1 entry"
 expect sample 2 .view.tab changelog
-expect sample 2 .view.changelog.rows 72
+expect sample 2 .view.changelog.rows 73
 expect sample 2 '.view.changelog.badges | join(",")' "mesa +2"
-expect sample 2 .view.changelog.folded 7
+expect sample 2 .view.changelog.folded 8
 expect sample 2 .view.changelog.snapshots 8
 expect sample 2 '.view.changelog.driftTones | join(",")' \
   "tokyo-night accent,~/.config/systemd/user/ollama.service urgent,ollama accent,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh urgent,~/.config/hypr/monitors.conf accent,vulkan-radeon accent,lib32-mesa accent,mesa accent"
 shows sample 2 "2 changes that can affect boot, login or the shell have no case"
-shows sample 2 "72 events · newest first"
+shows sample 2 "73 events · newest first"
 shows sample 2 "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar."
 shows sample 2 "No case · proposed for C-2026-005"
 expect sample 3 .view.changelog.filter pacman
@@ -150,7 +150,7 @@ expect sample 3 .view.changelog.rows 15
 shows sample 3 "15 events from pacman · newest first"
 expect sample 4 .view.changelog.filter snapper
 expect sample 4 .view.changelog.rows 10
-expect sample 5 .view.changelog.rows 72
+expect sample 5 .view.changelog.rows 73
 expect sample 6 .view.cursorActive true
 expect sample 7 .view.cursor 47
 shows sample 7 "mesa"
@@ -275,7 +275,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$fx/index.sample.json" >"$work/after.json"
 mkdir -p "$work/home-live"
 run live "" \
-  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=73;tab:system;text:e;settle" \
+  "view;text:n;type:--help;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;tab:changelog;text:e;text:c;view;wait:changelog.rows=74;tab:system;text:e;settle" \
   HOME="$work/home-live" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/live.record"
 expect live 1 .view.status ok
@@ -303,7 +303,7 @@ expect live 19 .view.tab today
 expect live 20 .view.tab changelog
 expect live 22 .view.capturing true
 shows live 22 "Capturing"
-expect live 24 .view.changelog.rows 73
+expect live 24 .view.changelog.rows 74
 shows live 24 "Written by the harness after Capture now · human"
 expect live 24 .view.captureResult "1 new event"
 shows live 24 "Last capture: 1 new event"
@@ -1201,11 +1201,11 @@ jq '.events = [
      subject: "journal", detail: "First event above the cursor", zone: "green", actor: "human", case: null}
   ] + .events' "$fx/index.sample.json" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
-run cursor-follow "" "tab:changelog;key:Down;key:Down*4;text:c;wait:changelog.rows=74;key:Return;key:Escape;text:f" \
+run cursor-follow "" "tab:changelog;key:Down;key:Down*4;text:c;wait:changelog.rows=75;key:Return;key:Escape;text:f" \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 3 .view.cursor 4
 expect cursor-follow 3 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
-expect cursor-follow 5 .view.changelog.rows 74
+expect cursor-follow 5 .view.changelog.rows 75
 expect cursor-follow 5 .view.cursor 6
 expect cursor-follow 5 .view.changelog.selected 01M3VTGNY0NZG4AY80814WSKGR
 expect cursor-follow 6 .view.drift.open true

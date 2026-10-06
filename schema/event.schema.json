@@ -24,7 +24,7 @@
     "explicit": { "type": "boolean", "description": "pacman: named on the command line" },
     "txId":    { "type": "string", "minLength": 1, "description": "pacman: opaque transaction id, shared by all lines of one transaction" },
     "refersTo": { "$ref": "#/$defs/ulid", "description": "resolution/correction target" },
-    "resolution": { "enum": ["linked", "explained", "dismissed"], "description": "ledger: only on kind resolution; index: folded onto the target event" },
+    "resolution": { "enum": ["linked", "explained", "dismissed"], "description": "ledger: only on kind resolution; index: folded onto the target event. `linked` by `system`: SPEC-ENGINE §5 rule 9" },
     "resolutionDetail": { "type": "string", "maxLength": 4096, "description": "index only (ADR-0012 §11): the detail of the winning resolution, folded onto its target next to resolution; never in a ledger line (a resolution line carries it as detail)" },
     "meta":    {
       "type": "object",

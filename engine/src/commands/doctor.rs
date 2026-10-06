@@ -219,6 +219,7 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             checks.push(check_fences(logbook));
             checks.push(check_rules(ctx, logbook));
             checks.push(check_rollbacks(logbook));
+            checks.extend(check_planned(logbook, &cases));
             checks.push(check_collectors(ctx, &effective, logbook, &shown));
             checks.extend(check_reset(ctx, logbook));
             checks.extend(check_pending_reset(ctx, &effective, logbook, source));
@@ -524,6 +525,45 @@ fn check_cases(cases: &[(String, String)]) -> Check {
     }
     Check::new("cases", Status::Error, twice.join("; "))
         .fix("delete the stale copy of each case and keep the file in the folder of its status")
+}
+
+/// Rule 9 held back (SPEC-ENGINE §5, ADR-0029, WP-115 round 2): changes
+/// without a case whose time lies in the window of a case whose file does
+/// not load (or lies outside the status folders) are never linked, since
+/// the engine cannot read that case's Plan. A row only when there are
+/// some; `cases` are the `(id, path)` of the case files that parse.
+fn check_planned(logbook: &Logbook, cases: &[(String, String)]) -> Option<Check> {
+    let ledger = Ledger::new(logbook, Redactor::builtin());
+    let events = ledger.read_all().ok()?;
+    let known: std::collections::HashSet<&str> = cases.iter().map(|(id, _)| id.as_str()).collect();
+    let held = crate::reconcile::unreadable_windows(&events, &known);
+    if held.is_empty() {
+        return None;
+    }
+    let mut by_case: std::collections::BTreeMap<&str, usize> = Default::default();
+    for (_, case) in &held {
+        *by_case.entry(case.as_str()).or_default() += 1;
+    }
+    let names: Vec<String> = by_case
+        .iter()
+        .map(|(case, n)| format!("{n} in the window of {case}"))
+        .collect();
+    Some(
+        Check::new(
+            "planned",
+            Status::Degraded,
+            format!(
+                "{} change(s) not linked to the case that planned them, because a case file \
+                 does not load: {}",
+                held.len(),
+                names.join(", ")
+            ),
+        )
+        .fix(
+            "repair the case file (the `logbook` row names it) or put it back in work/; the \
+             next `seldon capture` links what it planned",
+        ),
+    )
 }
 
 /// The rollback snapshots of the cases (ADR-0027 §3, WP-101): a case

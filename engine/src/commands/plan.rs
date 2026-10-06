@@ -42,10 +42,12 @@ pub enum PlanCommand {
     New(NewArgs),
     /// Start a case: queued → active; it becomes the active case
     Start(StartArgs),
-    /// Hand an active case to verification: active → verification
-    Verify(StepArgs),
-    /// Complete a verified case: verification → completed
-    Done(StepArgs),
+    /// Hand an active case to verification: active → verification (runs a
+    /// capture first)
+    Verify(CloseArgs),
+    /// Complete a verified case: verification → completed (runs a capture
+    /// first)
+    Done(CloseArgs),
     /// Drop a case that is queued, active or in verification
     Drop(StepArgs),
     /// Change an open case's zone, risk or area, e.g. raise it to R3 before
@@ -123,6 +125,17 @@ pub struct StepArgs {
     pub actor: Option<String>,
 }
 
+/// `plan verify|done`: a step that captures first (ADR-0029 §2).
+#[derive(Debug, Clone, Args)]
+pub struct CloseArgs {
+    #[command(flatten)]
+    pub step: StepArgs,
+
+    /// Do not run `seldon capture` before the step
+    #[arg(long)]
+    pub no_capture: bool,
+}
+
 /// `plan set`: at least one of zone, risk and area.
 #[derive(Debug, Clone, Args)]
 #[command(group(clap::ArgGroup::new("change").required(true).multiple(true).args(["zone", "risk", "area"])))]
@@ -191,10 +204,10 @@ pub struct ListArgs {
 pub fn run(ctx: &Context, args: PlanArgs) -> Result<Output> {
     match args.command {
         PlanCommand::New(a) => new(ctx, a),
-        PlanCommand::Start(a) => step(ctx, Transition::Start, a.step, a.snapshot),
-        PlanCommand::Verify(a) => step(ctx, Transition::Verify, a, None),
-        PlanCommand::Done(a) => step(ctx, Transition::Done, a, None),
-        PlanCommand::Drop(a) => step(ctx, Transition::Drop, a, None),
+        PlanCommand::Start(a) => step(ctx, Transition::Start, a.step, a.snapshot, false),
+        PlanCommand::Verify(a) => step(ctx, Transition::Verify, a.step, None, !a.no_capture),
+        PlanCommand::Done(a) => step(ctx, Transition::Done, a.step, None, !a.no_capture),
+        PlanCommand::Drop(a) => step(ctx, Transition::Drop, a, None, false),
         PlanCommand::Set(a) => set(ctx, a),
         PlanCommand::Snapshot(a) => record_snapshot(ctx, a),
         PlanCommand::Reopen(a) => reopen(ctx, a),
@@ -389,12 +402,18 @@ pub(crate) fn create(
 }
 
 /// One step; `snapshot` only comes with `plan start` (clap has no
-/// `--snapshot` on the other steps).
+/// `--snapshot` on the other steps). With `capture` (`plan verify|done`
+/// without `--no-capture`, ADR-0029 §2), a step the case allows runs a
+/// default capture first, under the capture's own lock, released before
+/// the step takes its own: what the user did by hand inside the case is
+/// recorded, and linked by rule 9, while the case is still open. A failed
+/// or degraded capture is a warning; the step goes on.
 fn step(
     ctx: &Context,
     transition: Transition,
     args: StepArgs,
     snapshot: Option<u64>,
+    capture: bool,
 ) -> Result<Output> {
     let reason = args
         .reason
@@ -419,6 +438,11 @@ fn step(
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
     let reason = reason.map(|r| redactor.redact(&r));
+    // only a step the case allows captures; the checks run again below,
+    // under the step's lock
+    let captured = (capture
+        && cases::find(&logbook, &args.id).is_ok_and(|f| transition.target(f.case.status).is_ok()))
+    .then(|| capture_first(ctx));
     let lock = ctx.lock()?;
     let mut file = cases::find(&logbook, &args.id)?;
     let from = file.case.status;
@@ -531,6 +555,10 @@ fn step(
         .into_iter()
         .collect();
     warnings.extend(snapshot_checks);
+    let capture = captured.map(|(summary, problems)| {
+        warnings.extend(problems);
+        summary
+    });
     human.push_str(&super::index::warnings_human(&warnings));
     human.push_str(&commit.human());
     Ok(Output::ok(
@@ -543,10 +571,46 @@ fn step(
             "activeCase": active_case,
             "journal": journal_entry,
             "event": event_json(&event),
+            "capture": capture,
             "git": commit.json(),
             "warnings": warnings,
         }),
     ))
+}
+
+/// The capture before `plan verify|done` (ADR-0029 §2): a default `seldon
+/// capture`, waiting for a held lock as a hook does. Returns its summary
+/// for `--json` (`null` when it failed) and the warning when it failed (an
+/// error, or the lock still held after the wait). A degraded collector is
+/// no warning here: `seldon doctor` reports it (orchestrator ruling, WP-115
+/// round 2).
+fn capture_first(ctx: &Context) -> (Value, Vec<String>) {
+    let start = std::time::Instant::now();
+    let out = loop {
+        match super::capture::run(ctx, super::capture::CaptureArgs::default()) {
+            Err(Error::LockHeld(_)) if start.elapsed() < super::hook::LOCK_PATIENCE => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            other => break other,
+        }
+    };
+    match out {
+        Ok(out) => (
+            json!({
+                "ok": out.json["ok"],
+                "written": out.json["written"],
+                "linkedPlanned": out.json["linkedPlanned"],
+            }),
+            Vec::new(),
+        ),
+        Err(e) => (
+            Value::Null,
+            vec![format!(
+                "the capture before the step did not run: {e}; the step went on \
+                 (`seldon capture` records what it missed)"
+            )],
+        ),
+    }
 }
 
 /// The advice for a case started without a snapshot (ADR-0023): R2 and R3

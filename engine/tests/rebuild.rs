@@ -78,7 +78,7 @@ fn the_fixture_document_is_golden_and_traces_every_package() {
     let out = rebuild(&env, &lb);
     assert_eq!(
         out["sections"],
-        json!({"packages": 4, "deviations": 6, "plugins": 3, "units": 2, "open": 6}),
+        json!({"packages": 4, "deviations": 6, "plugins": 4, "units": 2, "open": 6}),
         "{out}"
     );
     assert_eq!(out["files"], json!(["outputs/REBUILD.md"]));

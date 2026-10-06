@@ -12,7 +12,7 @@ started: 2026-09-12
 closed: 2026-09-13
 snapshotBefore: 108
 agents: [agent:claude-code]
-events: [01M2A9MNTG5XQ4EPAYSBBYJ92N, 01M2ACN5Q043TW9W44NJEZ4K9S, 01M2ADMJK8H2NCRVDF2RA9WA56]
+events: [01M2A9MNTG5XQ4EPAYSBBYJ92N, 01M2ACN5Q043TW9W44NJEZ4K9S, 01M2ADMJK8H2NCRVDF2RA9WA56, 01M2CZW4J034FDMVAAEWT2G7X8]
 tags: [closed-by-agent]
 ---
 # C-2026-002 — Hyprland-Monitorlayout für Dual-WQHD
@@ -26,6 +26,7 @@ Zweiter WQHD-Monitor: sauberes Layout statt Auto-Erkennung.
   - [x] Snapshot vorher (`snapper create -t pre`)
   - [x] `monitors.conf` neu schreiben
   - [x] Neustart und prüfen
+  - [x] Plugin `io.github.example.display-profiles` für die Profile hinzufügen
 - Affected paths:
   - `~/.config/hypr/monitors.conf`
 - Rollback: Snapshot 108 oder alte `monitors.conf` aus Git.
@@ -38,6 +39,7 @@ Zweiter WQHD-Monitor: sauberes Layout statt Auto-Erkennung.
 - 2026-09-12 10:02 · linked drift `~/.config/hypr/monitors.conf` · human
 - 2026-09-13 10:58 · verification · agent:claude-code
 - 2026-09-13 11:00 · completed · agent:claude-code
+- 2026-09-13 11:04 · linked after the fact: plugins plugin-add io.github.example.display-profiles at 10:59:20 (planned here, no capture ran before the close) · system
 
 ## Result
 Layout steht, Skalierung 1.25. Abweichung in `system/deviations.md` eingetragen.
