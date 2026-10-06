@@ -230,6 +230,23 @@ mod snapshot_before {
         assert_eq!(b.case("C-2026-001")["snapshotBefore"], Value::Null);
     }
 
+    /// The ledger read for two snapshots spans both windows; a command in
+    /// it belongs to the snapshot whose window holds it, here none.
+    #[test]
+    fn a_command_outside_each_snapshots_window_fills_nothing() {
+        let b = Bench::new();
+        b.hook(
+            "sudo snapper -c root create -d between",
+            "2026-10-01T10:15:00+02:00",
+        );
+        // 10:00 and 10:30 local: the command is 15 min after the first
+        // (not before it) and 15 min before the second (outside its 10)
+        b.snapshot(42, "2026-10-01 08:00:00", "single", "first");
+        b.snapshot(43, "2026-10-01 08:30:00", "single", "second");
+        b.capture("2026-10-01T10:40:00+02:00", "snapper");
+        assert_eq!(b.case("C-2026-001")["snapshotBefore"], Value::Null);
+    }
+
     #[test]
     fn a_recorded_number_is_never_replaced() {
         let b = Bench::new();
@@ -280,6 +297,30 @@ mod pruned {
                 .contains("C-2026-001: snapshot 42 pruned"),
             "{row}"
         );
+    }
+
+    /// snapper used number 42 again: the capture records the old 42's
+    /// delete at the new one's date. A case made after that date that
+    /// recorded 42 holds the new snapshot: its rollback is not pruned.
+    #[test]
+    fn a_reused_number_is_not_the_rollback_of_a_later_case() {
+        let b = Bench::new();
+        b.snapshot(42, "2026-10-01 06:00:00", "single", "old");
+        b.capture("2026-10-01T10:10:00+02:00", "snapper");
+        // deleted and made again before the next capture, at 12:00 local
+        b.snapshot(42, "2026-10-01 10:00:00", "single", "new");
+        let next = "2026-10-02T09:00:00+02:00";
+        b.run(next, &["plan", "new", "--", "Later"], None);
+        b.run(next, &["plan", "start", "C-2026-002"], None);
+        b.run(next, &["plan", "snapshot", "C-2026-002", "42"], None);
+        b.capture("2026-10-02T09:10:00+02:00", "snapper");
+        let deletes: Vec<Value> = common::ledger(&b.logbook)
+            .into_iter()
+            .filter(|e| e["kind"] == "snapshot-delete")
+            .collect();
+        assert_eq!(deletes.len(), 1, "{deletes:?}");
+        assert_eq!(deletes[0]["ts"], "2026-10-01T12:00:00+02:00");
+        assert!(!b.log("C-2026-002").iter().any(|l| l.contains("pruned")));
     }
 
     #[test]
@@ -356,6 +397,29 @@ mod r3_advisory {
             "{}",
             common::stdout(&out)
         );
+        // a later change of the same package: no second line
+        b.hook("sudo pacman -S linux", "2026-10-01T10:14:00+02:00");
+        let again = "[2026-10-01T10:14:30+0200] [PACMAN] Running 'pacman -S linux'\n\
+                     [2026-10-01T10:14:31+0200] [ALPM] transaction started\n\
+                     [2026-10-01T10:14:32+0200] [ALPM] reinstalled linux (1.0-1)\n\
+                     [2026-10-01T10:14:32+0200] [ALPM] transaction completed\n";
+        std::fs::write(
+            b.env.tmp.path().join("pacman.log"),
+            format!("{}{again}", install("linux")),
+        )
+        .unwrap();
+        b.capture("2026-10-01T10:16:00+02:00", "pacman");
+        let pkg = common::ledger(&b.logbook)
+            .into_iter()
+            .filter(|e| e["source"] == "pacman" && e["case"] == "C-2026-001")
+            .count();
+        assert_eq!(pkg, 2, "the second change is recorded with the case");
+        let advisories = b
+            .log("C-2026-001")
+            .iter()
+            .filter(|l| l.contains("advisory:"))
+            .count();
+        assert_eq!(advisories, 1);
         // raised to R3: no warning any more
         b.run(
             "2026-10-01T10:20:00+02:00",
@@ -363,6 +427,24 @@ mod r3_advisory {
             None,
         );
         let out = b.run("2026-10-01T10:21:00+02:00", &["index"], None);
+        assert!(
+            !common::stdout(&out).contains("alwaysRed"),
+            "{}",
+            common::stdout(&out)
+        );
+    }
+
+    /// The index warns while the case is open; a closed case is history.
+    #[test]
+    fn a_closed_case_is_no_longer_warned_about() {
+        let b = Bench::new();
+        installed(&b, "linux");
+        let at = "2026-10-01T10:20:00+02:00";
+        let out = b.run(at, &["index"], None);
+        assert!(common::stdout(&out).contains("alwaysRed"));
+        b.run(at, &["plan", "verify", "C-2026-001"], None);
+        b.run(at, &["plan", "done", "C-2026-001"], None);
+        let out = b.run(at, &["index"], None);
         assert!(
             !common::stdout(&out).contains("alwaysRed"),
             "{}",

@@ -2095,3 +2095,29 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   ledger folder** (`read_dir` fails with EACCES); skip the test when
   `read_dir` still works (root ignores the mode), and put the mode back
   before asserting, or the scratch folder cannot be removed.
+
+## 2026-10-06 · WP-101 (Engine + Plugin Dev)
+
+- **A new case in `fixtures/logbook/` moves every list the plugin
+  harness walks by keys.** One more active case broke ~40 panel and
+  service expectations (cursor positions after `key:Down*N`, column
+  counts, the pill, WIP). State the plugin only renders goes into an
+  index variant overlay (`case-reopened`, like `drift-explained-case`);
+  a change the logbook must carry (a tag, a risk) is cheaper when it adds
+  no ledger line and no case.
+- **A build warning of the index reaches every command that rebuilds.**
+  The R3 advisory on the fixture's R2 Omarchy-update case put two
+  warnings into `dossier --json` and failed seven fixture-based tests;
+  the fixture case became R3 (true under ADR-0027) instead.
+- **`key:Down*7` is one harness step**, not seven: the report numbers in
+  `panel-view.sh` count the `;`-separated specs.
+- **The ledger read can be the window.** A filter by time inside a range
+  read that already spans only one snapshot's window survives its
+  mutant; a test needs two snapshots in one capture so the read spans
+  more than the window.
+- **A `snapshot-delete` carries the capture time, except for a reused
+  number** (then the new snapshot's date). A guard "on or after the
+  case's creation day" only matters there; its test needs the old 42
+  known, a new 42 dated before a later case that records 42.
+- **`model.test.js` prints its summary as a plain statement**: tests
+  appended after it run but are not counted. Keep the summary line last.

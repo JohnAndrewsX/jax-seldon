@@ -1,5 +1,9 @@
 //! `seldon agent start <caseId> [--launcher NAME]` (WP-022): sends an agent
-//! to work an active case.
+//! to work an active case. `seldon agent start --new -- "<intent>"`
+//! (WP-101, ADR-0027 §6) first creates and starts the case from one
+//! sentence ([`title_of`], [`super::plan::create`]) under the same lock
+//! hold; the built-in launcher without an Omarchy default agent is refused
+//! before anything is written ([`check_default_agent`]).
 //!
 //! The case becomes the active case (`.seldon/active-case`), so the agent's
 //! recorded commands land on it. The prompt holds no logbook text: it
