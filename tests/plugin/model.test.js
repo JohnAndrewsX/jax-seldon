@@ -1590,6 +1590,11 @@ test("WP-101: the answers of agent start --new and plan reopen", () => {
   same(M.planResult(0, reopened, ""), { ok: true, text: "Reopened C-2026-002 as C-2026-010 (active) · reopened before as C-2026-009", caseId: "C-2026-010" })
   same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009" }, reopens: "C-2026-002", earlier: [] }), "").text,
     "Reopened C-2026-002 as C-2026-009 (active)")
+  // round 2: the active case an agent works stays
+  same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009" }, reopens: "C-2026-002", earlier: [], activeCase: { kept: "C-2026-004" } }), "").text,
+    "Reopened C-2026-002 as C-2026-009 (active) · the active case stays C-2026-004")
+  same(M.planResult(0, JSON.stringify({ case: { id: "C-2026-009" }, reopens: "C-2026-002", earlier: [], activeCase: { kept: "x; rm" } }), "").text,
+    "Reopened C-2026-002 as C-2026-009 (active)")
 })
 
 test("WP-101: closed-by-agent marker, the Completed filter, reopens in the meta line", () => {

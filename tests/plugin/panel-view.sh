@@ -1326,7 +1326,8 @@ expect work-reopen 5 '.view.work.columns | join(",")' "queued 3,active 4,complet
 shows work-reopen 5 "reopens C-2026-002 · hyprland · priority normal · 0/0 steps"
 expect work-reopen 6 .view.work.result "Reopened C-2026-002 as C-2026-009 (active)"
 expect work-reopen 7 .view.work.cursor C-2026-002
-expect work-reopen 10 .view.work.result "Reopened C-2026-002 as C-2026-010 (active) · reopened before as C-2026-009"
+# the first reopen took the free marker; the second leaves it there
+expect work-reopen 10 .view.work.result "Reopened C-2026-002 as C-2026-010 (active) · reopened before as C-2026-009 · the active case stays C-2026-009"
 expect work-reopen 10 .view.work.card.id C-2026-010
 expect work-reopen 10 .view.work.card.status active
 got=$(grep '^plan' "$work/home-reopen/argv.log" 2>/dev/null || true)
@@ -1364,6 +1365,21 @@ expect rules-damaged 1 '.view.rules.actions | length' 0
 shows rules-damaged 1 "Fix in a terminal: seldon rules update --replace (archives the file)"
 clean_log rules-damaged
 expect sample 1 .view.rules null
+# The throttle: closed and opened again within 10 minutes, the panel does
+# not ask doctor again (the forced check after an update is above).
+mkdir -p "$work/home-rules-throttle"
+run rules-throttle "" "wait:rules.title=The logbook's agent rules are outdated (v1);close;open;view" \
+  HOME="$work/home-rules-throttle" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_RULES=outdated
+expect rules-throttle 2 .view.opened false
+expect rules-throttle 3 .view.opened true
+expect rules-throttle 4 .view.rules.title "The logbook's agent rules are outdated (v1)"
+sleep 1
+if [[ $(grep -c . "$work/home-rules-throttle/doctor.log" 2>/dev/null) == 1 ]]; then
+  pass=$((pass + 1)); echo "ok   rules-throttle: one doctor call for two opens within 10 minutes"
+else
+  fail=$((fail + 1)); echo "FAIL rules-throttle: doctor calls $(grep -c . "$work/home-rules-throttle/doctor.log" 2>/dev/null)"
+fi
+clean_log rules-throttle
 
 real_home_check panel-view
 

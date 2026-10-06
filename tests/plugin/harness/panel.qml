@@ -32,6 +32,7 @@ import qs.Commons
 //                                          is <text> (a banner's tooltip)
 //                       shot:<name>        save the window as
 //                                          $HARNESS_SHOTS/<name>.png
+//                       close / open       close or open the panel again
 //                       view               no action, just report
 //                       settle             wait (up to 15 s) until no engine
 //                                          call is queued or running
@@ -160,6 +161,10 @@ ShellRoot {
       var over = root.findText(win.contentItem, arg)
       if (over) driver.mouseMove(over)
       else console.log("HARNESS nothing to hover: " + arg)
+    } else if (verb === "close") {
+      root.panel.close()
+    } else if (verb === "open") {
+      root.panel.open()
     } else if (verb === "shot") {
       var dir = Quickshell.env("HARNESS_SHOTS") || ""
       if (dir !== "") win.contentItem.grabToImage(function(result) { result.saveToFile(dir + "/" + arg + ".png") })

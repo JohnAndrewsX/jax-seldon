@@ -1366,7 +1366,11 @@ function planResult(exitCode, stdoutText, stderrText) {
   if (data && typeof data.reopens === "string" && CASE_ID.test(data.reopens)) {
     var earlier = Array.isArray(data.earlier) ? data.earlier.filter(function(e) { return CASE_ID.test(String(e)) }) : []
     var again = earlier.length > 0 ? " · reopened before as " + earlier.join(", ") : ""
-    return { ok: true, text: "Reopened " + data.reopens + " as " + name + " (active)" + again, caseId: id }
+    // the engine leaves the active-case marker on an open case an agent
+    // may be working (WP-101 round 2)
+    var kept = isObject(data.activeCase) && typeof data.activeCase.kept === "string" && CASE_ID.test(data.activeCase.kept)
+      ? " · the active case stays " + data.activeCase.kept : ""
+    return { ok: true, text: "Reopened " + data.reopens + " as " + name + " (active)" + again + kept, caseId: id }
   }
   if (data && typeof data.from === "string" && typeof data.to === "string") {
     var text = name + ": " + data.from + " → " + data.to

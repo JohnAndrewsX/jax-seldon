@@ -80,7 +80,8 @@
 # state index (title: the text up to its first ". ", at most 72 characters)
 # and answers like `agent start` plus `created`. `plan reopen <id>` (a
 # completed case only) adds an active "Reopen: <title>" case with the tag
-# `reopens:<id>` and answers with `reopens` and `earlier`. `doctor --json`
+# `reopens:<id>` and answers with `reopens` and `earlier`; it takes
+# $HOME/active-case only when that names no open case (else `kept`). `doctor --json`
 # reports one `rules` row and is logged to $HOME/doctor.log only (it runs in
 # its own process, beside the queue, so it is kept out of calls.log and
 # argv.log); `rules update --json` sets the rules current.
@@ -460,13 +461,18 @@ plan_reopen() { # plan_reopen <id>
   old=$(jq -c --arg id "$id" '[.cases[][] | select(.id == $id)][0]' "$index")
   earlier=$(jq -c --arg tag "reopens:$id" '[.cases[][] | select((.tags // []) | index($tag)) | .id]' "$index")
   new=$(next_id)
+  local held="" held_status=""
+  [[ -f $HOME/active-case ]] && held=$(<"$HOME/active-case")
+  [[ -n $held ]] && held_status=$(case_status "$held")
+  [[ $held_status == queued || $held_status == active || $held_status == verification ]] || held=""
   set_status "$new" active
   new_case "$new" active "Reopen: $(jq -r .title <<<"$old")" "$(jq -r .zone <<<"$old")" "$(jq -r .risk <<<"$old")" \
     "$(jq -r '.area // ""' <<<"$old")" "$(jq -r '.priority // "normal"' <<<"$old")" "[\"reopens:$id\"]"
-  echo "$new" >"$HOME/active-case"
-  jq -cn --arg id "$new" --arg old "$id" --argjson earlier "$earlier" '{
+  [[ -z $held ]] && echo "$new" >"$HOME/active-case"
+  jq -cn --arg id "$new" --arg old "$id" --argjson earlier "$earlier" --arg held "$held" '{
     case: {id: $id, status: "active", tags: ["reopens:" + $old]}, reopens: $old, earlier: $earlier,
-    events: [], activeCase: {set: $id}, git: {committed: true, message: ($old + " reopened as " + $id)}}'
+    events: [], activeCase: (if $held == "" then {set: $id} else {kept: $held} end),
+    git: {committed: true, message: ($old + " reopened as " + $id)}}'
 }
 
 agent_start() { # agent_start <id> — the engine's checks and answer, no launch
