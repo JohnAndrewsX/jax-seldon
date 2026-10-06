@@ -236,6 +236,23 @@ EOF'
 check A 'cat > x.txt <<'"'"'EOF'"'"'
 $(sudo ls)
 EOF'
+check B 'sudoedit /etc/pacman.conf'
+check B "script -qc 'sudo ls' /dev/null"
+check B 's=sudo; $s ls'
+check B '/usr/bin/pacma? -Syu'
+check A '[ -f x ] && echo yes || echo no'
+check A 'if [ "$(id -u)" = 0 ]; then echo root; fi'
+check A 'git commit -m "$(cat <<'"'"'EOF'"'"'
+engine: note the sudo pacman -Syu line
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"'
+check A 'gh pr create --title x --body "$(cat <<'"'"'EOF'"'"'
+## Summary
+omarchy update and systemctl enable are text here
+EOF
+)"'
 check A 'B=engine/target/debug/seldon; $B --json doctor'
 check A '"$root/engine/target/debug/seldon" --version'
 check A 'flock /tmp/seldon-check.lock just check'

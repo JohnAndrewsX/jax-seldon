@@ -801,7 +801,8 @@ BRACE_RE = re.compile(r"\{[^{}\s]*(?:,|\.\.)[^{}\s]*\}")
 
 def globmark(text):
     text = BRACE_RE.sub("*", text)
-    return text.replace("*", STAR).replace("?", QMARK).replace("[", LBRACK)
+    text = re.sub(r"\[(?=.*\])", LBRACK, text)  # a `[` without a later `]` is literal (`[ -f x ]`)
+    return text.replace("*", STAR).replace("?", QMARK)
 
 
 def dedupe(values):
@@ -936,7 +937,7 @@ def operands(args, short_arg="", long_arg=()):
 # --------------------------------------------------------------------------
 # Rules
 
-PRIVILEGE = {"sudo", "doas", "su", "pkexec", "run0", "runuser"}
+PRIVILEGE = {"sudo", "sudoedit", "doas", "su", "pkexec", "run0", "runuser"}
 PACKAGE = {"pacman", "yay", "paru", "makepkg", "pacstrap"}
 SERVICE = {"systemctl", "loginctl", "reboot", "shutdown", "poweroff", "halt", "mkinitcpio", "systemd-run"}
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "mksh", "rbash", "ash", "yash", "fish"}
@@ -1458,6 +1459,15 @@ class Guard:
                 return wrapped(args[i:])
             return self.run_script(" ".join(args[i:]), dict(scope), ctx.but(stdin=stdin), "watch") \
                 if args[i:] else None
+        if name == "script":
+            ops, opts = operands(args, "cBEIOTm", ("--command", "--log-in", "--log-out", "--log-io",
+                                                  "--log-timing", "--echo", "--logging-format", "--output-limit"))
+            for opt, val in opts:
+                if opt in ("-c", "--command"):
+                    self.run_script(val, dict(scope), ctx.but(stdin=stdin), "script -c")
+            for p in ops[:1]:
+                self.check_write(p, scope, ctx, False, node, False)  # the typescript file
+            return None
         if name == "busybox":
             if args and plain(args[0]) in SHELLS:
                 return self.w_shell(args[1:], scope, ctx, stdin, plain(args[0]))
