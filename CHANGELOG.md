@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
+and the package does not exist yet. Update the plugin first:
+`omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
+`Update jax.seldon?`; answer yes), then `omarchy-restart-shell`.
+
 ### Engine
 
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
@@ -448,6 +453,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collector is not: `seldon doctor` shows it), `--no-capture` skips it,
   and the panel's *Done* takes a moment longer (WP-115).
 
+- **Setup texts (WP-118).** `seldon init` ends with six aligned rows
+  (Logbook, Config, Recording, Agents, History, Snapshots), then "Next
+  steps:" only when something is left to do, else "Seldon is recording.
+  Nothing else to do."; the optional snapshot grant comes last with what
+  it grants. No machine id, file count, hook counts or ADR numbers, and
+  no `seldon doctor` on a clean run; `--json` keeps every key and adds
+  `optionalSteps`. In the wizard the backfill note no longer promises a
+  red pill (most older changes are routine history, ADR-0028); the theme
+  hook question is short, with its explanation on the line above, so it
+  is no longer printed twice in a narrow terminal; the Omarchy-Agent kit
+  is offered only when its directory exists, as "Omarchy-Agent kit
+  (private template)"; the agent items read "Claude Code hooks
+  (user-wide)" and "Seldon agent skill (into the agent skill folders
+  that exist)".
 ### Plugin
 
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts
@@ -526,6 +545,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back to a release. Productive machines keep running releases only
   (WP-098).
 
+- **install.sh says what it does (WP-118).** It starts with one line:
+  where it installs the engine, as your user, without a password, and
+  that the download is checked first. Its next steps follow what is
+  there: no `seldon init` when Seldon's `config.toml` exists, no plugin
+  line when the plugin is installed, and "Your logbook is already set
+  up; nothing else to do." when nothing is left. The user guides follow:
+  the wizard's questions and result in Getting started (which now
+  suggests a backfill of about three months with the baseline), the
+  panel's new banner titles and buttons in Troubleshooting, and in
+  Update and uninstall what Omarchy's plugin update shows and the way
+  out for a plugin 0.1.0 panel.
 ## [0.1.3] - 2026-10-05
 
 ### Engine

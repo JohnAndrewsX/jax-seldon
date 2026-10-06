@@ -21,7 +21,11 @@ and refuses on a mismatch. With the GitHub CLI (`gh`) installed and
 logged in it also verifies the build provenance (`gh attestation
 verify`): the download must come from the project's release workflow for
 that release's tag, or nothing is installed. Without `gh` one note says
-that only the checksum was checked.
+that only the checksum was checked. When your logbook is set up and the
+plugin is installed, it ends with "Your logbook is already set up;
+nothing else to do." Update the plugin too
+([Update the plugin](#update-the-plugin)): it cannot see by itself that a
+newer one exists.
 
 It also installs the man page (`man seldon`) and the Tab completions for
 bash, zsh and fish, each for a shell that is installed on your machine.
@@ -58,6 +62,15 @@ Claude Code hooks from the logbook's `.claude/settings.json` to
 omarchy plugin update jax.seldon
 omarchy-restart-shell
 ```
+
+Omarchy shows every changed line of the plugin and asks
+`Update jax.seldon?`; answer yes. The list is long when many files
+changed; that is Omarchy's normal check, not an error.
+
+Does the panel of plugin 0.1.0 offer `omarchy pkg aur add jax-seldon`?
+That package does not exist yet, so the command fails. Update the plugin
+first, with the two commands above; the new plugin installs the engine
+from the GitHub release instead.
 
 The update fetches the new plugin files and asks the shell to reload its
 plugins, but the shell keeps running the plugin code it loaded first
