@@ -52,10 +52,11 @@ tool, a `curl … | sh` — is outside the *Intent*: ask first. When it offers a
 choice, in this order:
 
 1. a repository package, all packages in one command (the transaction you
-   resolved above): through your tool `pkexec pacman -S --needed --noconfirm
-   <package>…`; where the user's terminal shows the prompt `omarchy pkg add
-   <package>…` (idempotent, non-interactive; it runs `sudo` itself, never
-   wrap it). The same transaction;
+   resolved above): through your tool
+   `pkexec pacman -S --needed --noconfirm <package>…`; where the user's
+   terminal shows the prompt `omarchy pkg add <package>…` (idempotent,
+   non-interactive; it runs `sudo` itself, never wrap it). The same
+   transaction;
 2. the AUR: build with `makepkg` (its repository dependencies first, with
    `pkexec pacman -S --needed --noconfirm --asdeps …`) and install the built
    package with `pkexec pacman -U --noconfirm <file>`; where the user's

@@ -240,8 +240,8 @@ dieser Reihenfolge:
 2. das AUR: mit `makepkg` bauen (seine Repository-Abhängigkeiten zuerst,
    mit `pkexec pacman -S --needed --noconfirm --asdeps …`) und das
    gebaute Paket mit `pkexec pacman -U --noconfirm <datei>`
-   installieren; wo das Terminal des Nutzers die Abfrage zeigt, `omarchy
-   pkg aur add <paket>` oder der installierte Helfer;
+   installieren; wo das Terminal des Nutzers die Abfrage zeigt,
+   `omarchy pkg aur add <paket>` oder der installierte Helfer;
 3. das PKGBUILD des Projekts: lies es, dann bauen und installieren wie
    in 2 (`makepkg -si`, wo das Terminal des Nutzers die Abfrage zeigt);
 4. ein Binary des Projekts unter `~/.local`, nur wenn es nichts
