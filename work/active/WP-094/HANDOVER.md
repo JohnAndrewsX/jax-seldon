@@ -442,3 +442,43 @@ command lines)`, `plugin-validate: ok`, `qmllint: ok (29 files)`,
 `plugin-test: ok` (bar-view 194). This host has `bash` and `jq` and
 does not run as root, so the recipe and permission tests ran (their
 "skipped" branch did not). `CARGO_TARGET_DIR` unset: `engine/target`.
+
+## Merge with main
+
+Stage 2 (Fable) approved at 5419ede. Main was c7dabb3 (WP-109 merged)
+and is now merged into the branch: merge commit 0b04cca, followed by
+f15ed3f, which updates the de guide 05 source line.
+
+- **Conflicts.** Only `docs/SPEC-ENGINE.md` conflicted, in the
+  `seldon doctor` synopsis line. Both sides are kept in one line: the
+  rows are now "…, state, skills, omarchy, snapper, git, watch, drift
+  checks", followed by the WP-094 note on the skills row.
+- **CHANGELOG.** Main's entries come first. The WP-094 entry moved to the
+  end of *Unreleased › Engine*, after WP-109's entries.
+- **Auto-merged, both sides kept.** `doctor.rs`: the `skills` row stays
+  after `state`, and main's `watch` and `drift` rows stay at the end.
+  `setup.rs` and `config.rs` merged without conflict.
+- **`memory/pitfalls.md`.** This branch never touched it, so main's
+  version is the one in the tree.
+- **Guide 05 de.** Both sides changed en and de, so the merged de page
+  matches the merged en page. Its source line now points to the merge
+  (f15ed3f).
+- **`drift.md` "the engine refuses an agent that tries".** This is true
+  on main now. WP-109's `an_agent_never_whitewashes_a_crisis`
+  (`engine/tests/drift.rs`) covers an agent's explain and dismiss of a
+  crisis (exit 1, "may not explain or dismiss") and link only to its own
+  active case. The skill's rule ("link a crisis only to your own active
+  case …") matches that.
+- **Skill tests against the merged CLI.** Run before the gate, then
+  again in it: `every_command_in_the_skill_is_one_this_engine_has`,
+  `every_read_only_command_in_the_skill_runs_as_written`, the
+  rules-words test and the shape test all pass. `skills` has 23 tests,
+  `init` 39, `doctor` 32, lib 242. `drift --crisis-only` still exists
+  next to WP-109's `--all`.
+- **Gate.** `flock /tmp/seldon-check.lock just check` at f15ed3f: **exit
+  0, `check: ok`**. Engine tests: 1830 passed, 0 failed, 8 ignored.
+  `check-packaging: ok` (shellcheck is not installed, so `bash -n` only),
+  `check-srcinfo: ok`, `docs-check: ok (437 links, 14 translated pages,
+  45 commands, 550 command lines)`, `plugin-validate: ok`, `qmllint: ok
+  (29 files)`, bar-view 194 passed. `CARGO_TARGET_DIR` unset:
+  `engine/target`.
