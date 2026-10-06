@@ -104,6 +104,10 @@ pub enum HookCommand {
         /// Settings file (default: <logbook>/.claude/settings.json; claude-code only)
         #[arg(long, value_name = "FILE")]
         settings: Option<PathBuf>,
+        /// skills only: where you changed the skill, archive your copy to the
+        /// logbook's archive/ and install it as shipped
+        #[arg(long)]
+        replace: bool,
     },
     /// Remove Seldon's hooks from an agent harness's settings, keeping the rest;
     /// `skills`: remove the Seldon agent skill, keeping files changed by hand
@@ -148,14 +152,21 @@ impl HookCommand {
 /// command).
 pub fn run(ctx: &Context, args: HookArgs) -> Result<Output> {
     match args.command {
-        HookCommand::Install { harness, settings } if harness == SKILLS => {
+        HookCommand::Install {
+            harness,
+            settings,
+            replace,
+        } if harness == SKILLS => {
             no_settings(settings)?;
-            super::skills::install(ctx)
+            super::skills::install(ctx, replace)
         }
         HookCommand::Uninstall { harness, settings } if harness == SKILLS => {
             no_settings(settings)?;
             super::skills::uninstall(ctx)
         }
+        HookCommand::Install { replace: true, .. } => Err(Error::user(
+            "--replace is for skills; `seldon hook install claude-code` keeps the rest of the settings file anyway",
+        )),
         HookCommand::Install { settings, .. } => install(ctx, settings),
         HookCommand::Uninstall { settings, .. } => uninstall(ctx, settings),
         _ => Err(Error::user("this hook is run by an agent harness")),

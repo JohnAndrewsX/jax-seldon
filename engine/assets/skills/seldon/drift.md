@@ -13,6 +13,10 @@ wrong one would cost:
 - **crisis**: it can break boot, login, the shell or security, and nobody
   asked for it in a case. `seldon drift --crisis-only` lists these.
 
+The session context (the `# Seldon logbook context` block) lists the open
+crises and attention items of the last 7 days, each as a quoted line with
+its event id. All of them, and one in full:
+
 ```bash
 seldon drift --json
 seldon drift show <EVENT> --json

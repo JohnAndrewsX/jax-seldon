@@ -56,6 +56,16 @@
 //! so the next capture does not report it again.
 //! `doctor` predicts the reset before the capture with the same gate and
 //! ledger rule ([`pending_reset`], WP-083), while a restore prevents it.
+//!
+//! An unchanged default is upgraded, the user's own text is kept (ADR-0028
+//! §4d, WP-111): before the collectors run, a rules block in `AGENTS.md`
+//! that an earlier engine shipped word for word gets this engine's block
+//! ([`crate::logbook::rules::silent_upgrade`]), and the agent skill gets
+//! this engine's files in every agent skill folder where it is outdated
+//! and nobody touched it ([`super::skills::upgrade_unedited_under`]). One
+//! note line each; an edited block or skill is left to `doctor` and its
+//! fix, a missing one stays missing. Never as root. Not committed: the
+//! next engine commit carries the file.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -154,6 +164,8 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
             }
         }
     }
+    let upgraded = upgrade_defaults(&lock, ctx, &config, &logbook);
+    warnings.extend(upgraded.warnings.iter().cloned());
     let ledger = Ledger::new(
         &logbook,
         Redactor::with_patterns(&config.redaction.patterns)?,
@@ -366,9 +378,66 @@ pub fn run(ctx: &Context, args: CaptureArgs) -> Result<Output> {
         &reports,
         &since_ignored,
         (explained, explained_self, linked_planned),
-        &watch_added,
+        (&watch_added, &upgraded),
         &warnings,
     ))
+}
+
+/// What a capture upgraded without asking ([`upgrade_defaults`]).
+#[derive(Debug, Clone, Default)]
+struct Upgraded {
+    /// The rules version `AGENTS.md` had before its unedited block was
+    /// replaced (`1`: a released file from before the block).
+    rules_from: Option<u32>,
+    /// The agent skill folders whose unedited skill was updated.
+    skills: Vec<String>,
+    warnings: Vec<String>,
+}
+
+/// ADR-0028 §4d, WP-111: an unchanged default is upgraded, the user's own
+/// text is kept. The rules block of `AGENTS.md` when it is one an earlier
+/// engine shipped, and the agent skill where it is outdated and unedited.
+/// Under the capture's lock; a failure is a warning, never the capture's.
+/// Nothing as root, nor when the user cannot be told (a warning then):
+/// the files are the user's.
+fn upgrade_defaults(
+    lock: &lock::Lock,
+    ctx: &Context,
+    config: &Config,
+    logbook: &Logbook,
+) -> Upgraded {
+    let mut out = Upgraded::default();
+    match crate::sys::runner() {
+        crate::sys::Runner::User => {}
+        crate::sys::Runner::Root => return out,
+        // fail closed: no write into files that may not be this user's
+        crate::sys::Runner::Unknown(why) => {
+            out.warnings.push(format!(
+                "Seldon's agent rules and skill were not checked for an update: cannot tell which user runs this capture ({why})"
+            ));
+            return out;
+        }
+    }
+    let rules = crate::logbook::rules::FILE;
+    let text = super::rules::read(logbook)
+        .ok()
+        .flatten()
+        .and_then(|bytes| String::from_utf8(bytes).ok());
+    if let Some(old) = text {
+        let template = super::rules::template(logbook, ctx.now.date_naive());
+        if let Some(plan) = crate::logbook::rules::silent_upgrade(&old, &template) {
+            match crate::sys::write_atomic(&logbook.path(rules), plan.text.as_bytes()) {
+                Ok(()) => out.rules_from = plan.from,
+                Err(e) => out.warnings.push(format!(
+                    "{rules}: Seldon's agent rules were not updated: {e:#}"
+                )),
+            }
+        }
+    }
+    let skills = super::skills::upgrade_unedited_under(lock, ctx, config);
+    out.skills = skills.updated;
+    out.warnings.extend(skills.warnings);
+    out
 }
 
 /// What `cursors.json` was bound to before this capture bound it to the
@@ -979,7 +1048,7 @@ fn render(
     reports: &[CollectorReport],
     since_ignored: &[&str],
     (explained, explained_self, linked_planned): (usize, usize, usize),
-    watch_added: &[String],
+    (watch_added, upgraded): (&[String], &Upgraded),
     warnings: &[String],
 ) -> Output {
     let ok = reports.iter().all(|r| r.ok);
@@ -1014,6 +1083,11 @@ fn render(
         "explainedSelf": explained_self,
         "linkedPlanned": linked_planned,
         "watchPathsAdded": watch_added,
+        "rulesUpdated": upgraded.rules_from.map(|from| json!({
+            "from": format!("v{from}"),
+            "version": crate::logbook::rules::VERSION,
+        })),
+        "skillsUpdated": upgraded.skills,
         "warnings": warnings,
     });
 
@@ -1053,6 +1127,21 @@ fn render(
             human,
             "\nnote: config.toml now also watches {} (new defaults of this engine; files already there record nothing)",
             watch_added.join(", ")
+        );
+    }
+    if let Some(from) = upgraded.rules_from {
+        let _ = write!(
+            human,
+            "\nnote: {}: Seldon's agent rules updated from v{from} to v{} (Seldon's text was unedited; your own rules are kept)",
+            crate::logbook::rules::FILE,
+            crate::logbook::rules::VERSION
+        );
+    }
+    if !upgraded.skills.is_empty() {
+        let _ = write!(
+            human,
+            "\nnote: the Seldon agent skill updated in {} (it was unedited)",
+            upgraded.skills.join(", ")
         );
     }
     if !since_ignored.is_empty() {

@@ -1501,7 +1501,10 @@ fn only_rules_starts_no_program() {
     std::fs::write(root.join("AGENTS.md"), "# AGENTS.md\n\nold rules\n").unwrap();
     let v = json(&env.seldon(&["doctor", "--only", "rules", "--json"]));
     assert_eq!(check(&v, "rules")["status"], "degraded");
-    assert_eq!(check(&v, "rules")["fix"], "seldon rules update");
+    assert_eq!(
+        check(&v, "rules")["fix"],
+        "seldon rules update (archives your copy)"
+    );
     // an unknown check: clap's usage error, exit 1; no logbook: exit 3
     let out = env.seldon(&["doctor", "--only", "probes", "--json"]);
     assert_eq!(out.status.code(), Some(1));
@@ -1515,4 +1518,19 @@ fn only_rules_starts_no_program() {
         "--json",
     ]);
     assert_eq!(out.status.code(), Some(3));
+}
+
+/// The skill asks for a command report from outside the logbook only when
+/// the hooks record there (WP-111): doctor names the scope.
+#[test]
+fn doctor_names_the_hook_scope() {
+    let env = Env::new(Snapper::Allowed);
+    env.init_logbook();
+    let v = json(&env.seldon(&["doctor", "--json"]));
+    assert_eq!(v["hooks"], serde_json::json!({ "scope": "logbook" }));
+    let config = env.config_file();
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, format!("{text}\n[hooks]\nscope = \"all\"\n")).unwrap();
+    let v = json(&env.seldon(&["doctor", "--json"]));
+    assert_eq!(v["hooks"], serde_json::json!({ "scope": "all" }));
 }

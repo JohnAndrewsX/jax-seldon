@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ e852f0c -->
+<!-- source: en/03-daily-use.md @ e3463b2 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
@@ -10,14 +10,16 @@ Version englisch; diese Seite nennt sie so, wie du sie siehst.
 
 ## Ein Tag mit Seldon
 
-- Morgens ein Blick auf die Pill. Das Zeichen, dann `2 · 3`, heißt: zwei
-  aktive Cases und drei unerklärte Änderungen.
+- Morgens ein Blick auf die Pill. Das Zeichen, dann `2 · 1`, heißt: zwei
+  aktive Cases und eine Krise. Ohne Krise fällt die zweite Zahl weg.
 - Vor einer Änderung legst du einen Case an (`+` im Panel) und startest
   ihn.
 - Während der Arbeit schreibst du eine Notiz, wenn du etwas lernst (`n`
   im Panel).
-- Zeigt die Pill Drift, öffnest du den Changelog und löst sie auf:
-  verknüpfen, erklären oder verwerfen.
+- Nimmt die Pill die Fehlerfarbe deines Themes an, öffnest du das Panel
+  und liest die rote Zeile. Nur darauf sollst du schauen. Andere
+  Änderungen ohne Case warten leise im Changelog; lös sie auf, wann du
+  willst, oder lass es einen Agenten tun.
 - Am Ende eines Case prüfst du ihn und schließt ihn im Tab Work ab.
 - Einmal pro Woche öffnest du den Prime Radiant und schaust dir das Bild
   an.
@@ -27,13 +29,16 @@ Version englisch; diese Seite nennt sie so, wie du sie siehst.
 Die Pill sitzt rechts in der Bar.
 
 - Das Seldon-Zeichen, dann `A · D`: A ist die Zahl der aktiven Cases, D
-  die Zahl der offenen Drift-Einträge. Teile, die null sind, fallen weg:
-  das Zeichen allein, `2`, `· 3`. Das Zeichen nimmt die Farbe der Pill.
+  die Zahl der Krisen. Teile, die null sind, fallen weg: das Zeichen
+  allein, `2`, `· 1`. Das Zeichen nimmt die Farbe der Pill. Änderungen
+  ohne Case, die keine Krise sind, zählt sie nicht; die Einstellung
+  `driftInBar` ändert das (siehe [Konfiguration](06-configuration.md#drift)).
 - Sie nimmt die Akzentfarbe deines Themes, solange Cases aktiv sind, die
   Warnfarbe des Themes bei einer Krise und wird blasser, solange etwas
   repariert werden muss.
-- Der Tooltip sagt, was die Zahlen bedeuten und wann die Engine zuletzt
-  erfasst hat.
+- Der Tooltip sagt, was die Zahlen bedeuten, wie viele Änderungen keinen
+  Case haben und wann die Engine zuletzt erfasst hat: „Seldon — 2 active
+  cases, 1 crisis, 7 changes without a case, last capture 4 min ago“.
 
 | Klick | Wirkung |
 |---|---|
@@ -46,9 +51,10 @@ Die Pill sitzt rechts in der Bar.
 Das Panel öffnet sich unter der Pill. Es hat sechs Tabs, jeder mit einer
 festen Zifferntaste. Über jedem Tab kann ein Banner stehen (etwas muss
 repariert werden, siehe
-[Fehlersuche](10-troubleshooting.md#banner-im-panel)) und eine rote
-Zeile „N changes in the red zone need a reason“. Ein Klick auf die rote
-Zeile löst die erste Krise auf.
+[Fehlersuche](10-troubleshooting.md#banner-im-panel)) und, nur solange
+es eine Krise gibt, eine rote Zeile „N changes that can affect boot,
+login or the shell have no case“. Ein Klick auf die rote Zeile zeigt die
+erste.
 
 Die Bilder auf dieser Seite sind Renderings des Beispiel-Logbuchs im
 Theme Tokyo Night. Dein Panel nimmt dein Theme und zeigt deine Daten.
@@ -60,7 +66,7 @@ Theme Tokyo Night. Dein Panel nimmt dein Theme und zeigt deine Daten.
 *Beispieldaten.*
 
 Today zeigt das Datum und die Zahlen des Tages: Ereignisse heute und in
-sieben Tagen, aktive und geplante Cases, offene Drift. Darunter liegt das
+sieben Tagen, aktive und geplante Cases, Änderungen ohne Case. Darunter liegt das
 Notizfeld: Notiz tippen, Enter drücken, und sie landet über `seldon log`
 im heutigen Journal. Wähl unter dem Feld einen offenen Case, um die
 Notiz unter ihm abzulegen. Das Feld leert sich erst, wenn die Notiz
@@ -76,15 +82,20 @@ Journal-Datei.
 
 Der Changelog listet jedes Ereignis, das neueste zuerst, nach Tagen
 gruppiert. Die Chips oben filtern nach Quelle; jeder zeigt seine Zahl.
-Snapshot-Zeilen sind hervorgehoben. Drift-Zeilen sind in der Farbe ihrer
-Zone markiert und tragen einen Knopf *Resolve…*.
+Snapshot-Zeilen sind hervorgehoben. Eine leise Zeile unter dem Kopf sagt
+„N changes without a case“. Ihre Zeilen lauten „No case“, eine Krise
+„Crisis · no case“ in der Warnfarbe deines Themes; beide tragen einen
+Knopf *Resolve…*. Routine-Änderungen (ein Theme-Wechsel, ein Schalter,
+ein einfaches Upgrade) sind gewöhnliche Zeilen: Geschichte, nichts
+aufzulösen.
 
 *Capture now* startet eine Erfassung; die Zeile darunter sagt, was sie
 gefunden hat. *Ledger* öffnet die Ledger-Ansicht des Monats in deinem
 Editor.
 
 Um Drift aufzulösen, drück Enter auf einer Drift-Zeile, klick
-*Resolve…* oder klick auf die rote Zeile. Der Drift-Dialog zeigt, was
+*Resolve…* oder klick auf die rote Zeile. Du darfst; du musst nie. Der
+Drift-Dialog zeigt, was
 sich geändert hat, wer es war, wann, die Zone, den vorgeschlagenen Case
 und jedes Paket einer Transaktion. Wähl eine Aktion:
 

@@ -61,7 +61,9 @@ them in the page language where it helps.
 | zone (green, yellow, red) | Zone (grün, gelb, rot) | the value in code stays English: `--zone red` |
 | risk (R0–R3) | Risiko (R0–R3) | |
 | drift | Drift (die Drift) | a change without a case and without a resolution |
-| crisis | Krise | drift in the red zone |
+| routine | Routine | a change without a case that is history, not drift (ADR-0028) |
+| attention | zur Kenntnis (Punkt zur Kenntnis) | drift listed quietly (ADR-0028) |
+| crisis | Krise | a change without a case that can break boot, login, the shell or security (ADR-0028); no longer "drift in the red zone" |
 | baseline | Baseline | the pre-Seldon baseline after a backfill |
 | backfill | Nacherfassung | `init --since` |
 | link, explain, dismiss | verknüpfen, erklären, verwerfen | the three drift actions |

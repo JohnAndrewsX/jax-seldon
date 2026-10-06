@@ -2198,3 +2198,27 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   known, a new 42 dated before a later case that records 42.
 - **`model.test.js` prints its summary as a plain statement**: tests
   appended after it run but are not counted. Keep the summary line last.
+
+## 2026-10-06 · WP-111 (Engine Dev + Docs)
+
+- **Every rendering of a rules block that was ever on `main` is a block
+  Seldon shipped.** The test host carried WP-101's v2 text, not
+  WP-100's; `RELEASED_BLOCKS` had only WP-100's, so doctor called an
+  unedited block "its text differs". Hash every rendering
+  (`git show <c>:engine/templates/<l>/AGENTS.md | awk` from the begin to
+  the end marker line, LF) and keep the files under `templates/rules-vN/`
+  so a test pins list and files together.
+- **`archive/` exists in every logbook** (layout, `.gitkeep`). "Nothing
+  was archived" is an empty folder, not a missing one.
+- **A capture-time rewrite before the collectors cancels out.** When the
+  capture restores a file to the content of the last baseline before
+  the config collector runs, the collector sees no change at all; a test
+  of "recorded as Seldon's own write" needs a write the collector
+  actually sees.
+- **The hook records a command without its heredoc bodies** (SPEC-ENGINE
+  §7). A recipe test that compares `meta.command` with the sent text must
+  expect the bodies cut out; a delimiter line at the very end of the text
+  (no newline after it) is dropped with the body.
+- **`cargo test` stops at the first failing test binary.** Use
+  `--no-fail-fast` to see every broken file after a wording change such
+  as a rules version bump.

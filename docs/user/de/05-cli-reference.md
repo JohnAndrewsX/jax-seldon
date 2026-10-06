@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 62e6048 -->
+<!-- source: en/05-cli-reference.md @ 83651b1 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -850,7 +850,7 @@ Options:
 ### seldon rules update
 
 Bringt Seldons Block in `AGENTS.md`, zwischen den Zeilen
-`<!-- seldon:begin rules v2 -->` und `<!-- seldon:end -->`, auf die
+`<!-- seldon:begin rules v3 -->` und `<!-- seldon:end -->`, auf die
 Regeln dieser Version und behält den Rest der Datei; einen Block, den
 du bearbeitet hast, archiviert er zuerst. Eine Datei aus einer früheren
 Version hat keinen Block: Ist sie nicht genau die Datei, die jene
@@ -861,7 +861,9 @@ archiviert die ganze alte Datei und schreibt nur die neuen Regeln. Der Befehl gi
 und committet sie als `seldon: rules update`; ein zweiter Aufruf ändert
 nichts. Einen beschädigten Block oder einen aus einer neueren
 Seldon-Version weist er ab (Exit 1) und lässt die Datei, wie sie ist.
-`seldon doctor` nennt diesen Befehl, wenn die Regeln nicht aktuell sind;
+Ein Block, den niemand bearbeitet hat, braucht keinen Befehl: Jede
+Erfassung bringt ihn auf den neuen Stand. `seldon doctor` nennt diesen
+Befehl, wenn die Regeln nicht aktuell sind;
 siehe
 [Mit Agenten arbeiten](04-working-with-agents.md#die-regeln-eines-älteren-logbuchs-erneuern).
 
@@ -919,7 +921,11 @@ Skill-Ordner eines Agenten, den es gibt: `~/.agents/skills`,
 Omarchy seine eigenen Skills verlinkt. Es legt keinen davon an. Der Skill
 kommt nach `<Ordner>/seldon/`; ein `seldon` dort, das Seldon nicht
 geschrieben hat, oder eine Datei darin, die du geändert hast, bleibt, wie
-es ist, und der Bericht nennt es. Ein älterer Skill wird aktualisiert.
+es ist, und der Bericht nennt es. Ein älterer Skill wird aktualisiert
+(das tut eine Erfassung von selbst, wo du nichts geändert hast).
+`--replace` ersetzt auch einen Skill, den du geändert hast: Deine
+geänderten Dateien werden zuerst nach `archive/skill-<datum>/` im
+Logbuch kopiert.
 Ein Ordner, in den es nicht schreiben kann, scheitert allein: Die anderen
 werden trotzdem installiert, der Bericht nennt den gescheiterten, und der
 Befehl endet mit 1. Ein zweiter Aufruf ändert nichts. Siehe
@@ -936,6 +942,7 @@ Arguments:
 
 Options:
       --settings <FILE>  Settings file (default: <logbook>/.claude/settings.json; claude-code only)
+      --replace          skills only: where you changed the skill, archive your copy to the logbook's archive/ and install it as shipped
 ```
 <!-- /help -->
 

@@ -20,6 +20,13 @@
 //!   deletion is recorded as the engine's own (SPEC-ENGINE §5 rule 7) where
 //!   the config collector watches the path. Running either command again
 //!   changes nothing.
+//! - **Upgrades.** A skill nobody edited (every file its manifest names is
+//!   there as Seldon wrote it) is brought up to this engine's by the next
+//!   `seldon capture` ([`upgrade_unedited_under`], WP-111; ADR-0028 §4d),
+//!   as the user, never from a package hook. A folder without the skill
+//!   stays without it. A skill changed by hand keeps its files; `doctor`
+//!   names `seldon hook install skills --replace`, which copies the
+//!   changed files into the logbook's `archive/` first.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -78,6 +85,9 @@ pub const SKILL_DIRS: [&str; 5] = [
 
 /// The command `hook install skills` records its writes with.
 pub const INSTALL_BY: &str = "seldon hook install skills";
+
+/// What a capture's update of an unedited skill is recorded as (WP-111).
+pub const CAPTURE_BY: &str = "seldon capture";
 
 /// The command `hook uninstall skills` records its deletions with.
 pub const UNINSTALL_BY: &str = "seldon hook uninstall skills";
@@ -268,21 +278,50 @@ pub fn state(folder: &Path) -> State {
     }
 }
 
+/// Whether Seldon's skill in `folder` is outdated and nobody touched it:
+/// every file its manifest names is there, a regular file, as that
+/// manifest or this engine names it. Only then does a capture update it
+/// without asking ([`upgrade_unedited_under`]); a file the user deleted
+/// counts as a change.
+pub fn unedited(folder: &Path) -> bool {
+    if state(folder) != State::Outdated {
+        return false;
+    }
+    let target = folder.join(SKILL_NAME);
+    let Some(manifest) = read_manifest(&target) else {
+        return false;
+    };
+    manifest.files.iter().all(|(name, hash)| {
+        plain_name(name)
+            && matches!(
+                file_state(&target.join(name), shipped(name), Some(hash)),
+                FileState::Shipped | FileState::Written
+            )
+    })
+}
+
 /// What install or uninstall did in one folder.
 #[derive(Debug, Clone, Default)]
 struct DirReport {
     folder: PathBuf,
     before: &'static str,
-    /// `installed`, `updated`, `unchanged`, `kept`, `removed`, `absent`,
-    /// `failed`.
+    /// `installed`, `updated`, `replaced`, `unchanged`, `kept`, `removed`,
+    /// `absent`, `failed`.
     action: &'static str,
     written: Vec<String>,
     removed: Vec<String>,
     kept: Vec<String>,
     own: Vec<String>,
     own_errors: Vec<String>,
+    /// `--replace`: where the changed files were copied, relative to the
+    /// logbook, and their names.
+    archived: Option<String>,
+    archived_files: Vec<String>,
     /// Why this folder failed (`action: failed`); the other folders go on.
     error: Option<String>,
+    /// The command the own writes are recorded with ([`INSTALL_BY`],
+    /// [`CAPTURE_BY`], [`UNINSTALL_BY`]).
+    by: &'static str,
 }
 
 impl DirReport {
@@ -295,6 +334,8 @@ impl DirReport {
             "written": self.written,
             "removed": self.removed,
             "kept": self.kept,
+            "archived": self.archived,
+            "archivedFiles": self.archived_files,
             "error": self.error,
         })
     }
@@ -310,14 +351,8 @@ fn own_record(
     if paths.is_empty() {
         return;
     }
-    match super::setup::record_own_writes_under(
-        lock,
-        ctx,
-        config,
-        paths,
-        INSTALL_BY,
-        OwnOp::Install,
-    ) {
+    match super::setup::record_own_writes_under(lock, ctx, config, paths, report.by, OwnOp::Install)
+    {
         Ok(p) => report.own.extend(p),
         Err(e) => report.own_errors.push(e),
     }
@@ -363,18 +398,123 @@ fn write_step(path: &Path, bytes: &[u8], written: &mut Vec<PathBuf>) -> Result<(
     Ok(())
 }
 
+/// Where `hook install skills --replace` copies the files of a skill that
+/// were changed by hand: one folder `archive/skill-<date>[-N]/` of the
+/// logbook per run, made with the first copy, never one that exists.
+pub struct Archive {
+    root: PathBuf,
+    today: chrono::NaiveDate,
+    /// The folder, relative to the logbook, once made.
+    rel: Option<String>,
+}
+
+impl Archive {
+    pub fn new(root: &Path, today: chrono::NaiveDate) -> Self {
+        Archive {
+            root: root.to_path_buf(),
+            today,
+            rel: None,
+        }
+    }
+
+    /// The run's folder, made on first use.
+    fn dir(&mut self) -> Result<String> {
+        if let Some(rel) = &self.rel {
+            return Ok(rel.clone());
+        }
+        let parent = self.root.join("archive");
+        sys::create_dir_private(&parent)
+            .map_err(|e| anyhow::anyhow!("cannot create {}: {e}", parent.display()))?;
+        let mut n = 1u32;
+        loop {
+            let rel = match n {
+                1 => format!("archive/skill-{}", self.today),
+                n => format!("archive/skill-{}-{n}", self.today),
+            };
+            match std::fs::create_dir(self.root.join(&rel)) {
+                Ok(()) => {
+                    self.rel = Some(rel.clone());
+                    return Ok(rel);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("cannot create {}: {e}", rel).into());
+                }
+            }
+        }
+    }
+
+    /// Copies `bytes` as `<run folder>/<label>/<name>`; returns
+    /// `<run folder>/<label>`.
+    fn copy(&mut self, label: &str, name: &str, bytes: &[u8]) -> Result<String> {
+        let rel = format!("{}/{label}", self.dir()?);
+        let dir = self.root.join(&rel);
+        sys::create_dir_private(&dir).map_err(|e| anyhow::anyhow!("cannot create {rel}: {e}"))?;
+        let mut file = sys::create_new_private(&dir.join(name))
+            .map_err(|e| anyhow::anyhow!("cannot write {rel}/{name}: {e}"))?;
+        std::io::Write::write_all(&mut file, bytes)
+            .map_err(|e| anyhow::anyhow!("cannot write {rel}/{name}: {e}"))?;
+        Ok(rel)
+    }
+
+    /// Whether anything was copied.
+    pub fn used(&self) -> bool {
+        self.rel.is_some()
+    }
+}
+
+/// The archive's name for an agent skill folder: its path below the home
+/// directory, each part without its leading dots, joined by `-`
+/// (`~/.claude/skills` → `claude-skills`).
+fn archive_label(home: &Path, folder: &Path) -> String {
+    let rel = folder.strip_prefix(home).unwrap_or(folder);
+    let parts: Vec<String> = rel
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => {
+                Some(s.to_string_lossy().trim_start_matches('.').to_string())
+            }
+            _ => None,
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+    if parts.is_empty() {
+        "skills".to_string()
+    } else {
+        parts.join("-")
+    }
+}
+
 /// Installs or updates the skill in `folder` (which exists), under the
-/// caller's state lock. A failure is this folder's result (`failed`, with
-/// the error); what was written before it is recorded all the same.
-fn install_into(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) -> DirReport {
+/// caller's state lock. With `archive` (`--replace`), a skill changed by
+/// hand has its changed files copied there and is then installed as
+/// shipped. A failure is this folder's result (`failed`, with the error);
+/// what was written before it is recorded all the same.
+fn install_into(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    folder: &Path,
+    archive: Option<&mut Archive>,
+    by: &'static str,
+) -> DirReport {
     let before = state(folder);
     let mut report = DirReport {
         folder: folder.to_path_buf(),
         before: before.as_str(),
+        by,
         ..DirReport::default()
     };
     let mut written = Vec::new();
-    if let Err(e) = install_steps(lock, ctx, config, &before, &mut report, &mut written) {
+    if let Err(e) = install_steps(
+        lock,
+        ctx,
+        config,
+        &before,
+        archive,
+        &mut report,
+        &mut written,
+    ) {
         report.action = "failed";
         report.error = Some(e.to_string());
     }
@@ -387,10 +527,13 @@ fn install_steps(
     ctx: &Context,
     config: &Config,
     before: &State,
+    archive: Option<&mut Archive>,
     report: &mut DirReport,
     written: &mut Vec<PathBuf>,
 ) -> Result<()> {
     let target = report.folder.join(SKILL_NAME);
+    // the changed files `--replace` archived: no longer the user's here
+    let mut archived: Vec<String> = Vec::new();
     match before {
         State::Current => {
             report.action = "unchanged";
@@ -401,9 +544,25 @@ fn install_steps(
             return Ok(());
         }
         State::Changed(files) => {
-            report.action = "kept";
-            report.kept = files.clone();
-            return Ok(());
+            // only regular files can be copied; anything else stays as it is
+            let copyable = files
+                .iter()
+                .all(|n| plain_file(&target.join(n)) == Some(true));
+            let Some(archive) = archive.filter(|_| copyable) else {
+                report.action = "kept";
+                report.kept = files.clone();
+                return Ok(());
+            };
+            let label = archive_label(&ctx.dirs.home, &report.folder);
+            for name in files {
+                let bytes = std::fs::read(target.join(name)).map_err(|e| {
+                    anyhow::anyhow!("cannot read {}: {e}", ctx.dirs.display(&target.join(name)))
+                })?;
+                report.archived = Some(archive.copy(&label, name, &bytes)?);
+            }
+            archived = files.clone();
+            report.archived_files = files.clone();
+            report.action = "replaced";
         }
         State::Missing => {
             // the skill's own folder, never the agent's: `folder` exists
@@ -443,12 +602,15 @@ fn install_steps(
         write_step(&path, text.as_bytes(), written)?;
         report.written.push(name.to_string());
     }
-    // files an older skill had and this one does not, if still as written,
-    // before the new manifest forgets them
+    // files an older skill had and this one does not, if still as written
+    // (or archived just now), before the new manifest forgets them
     for name in names(&old).into_iter().filter(|n| shipped(n).is_none()) {
         let path = target.join(&name);
-        if file_state(&path, None, old.files.get(&name)) == FileState::Written {
-            delete_own(lock, ctx, config, &path, INSTALL_BY, report)?;
+        if file_state(&path, None, old.files.get(&name)) == FileState::Written
+            || archived.contains(&name)
+        {
+            let by = report.by;
+            delete_own(lock, ctx, config, &path, by, report)?;
             report.removed.push(name);
         }
     }
@@ -465,6 +627,7 @@ fn uninstall_from(lock: &Lock, ctx: &Context, config: &Config, folder: &Path) ->
     let mut report = DirReport {
         folder: folder.to_path_buf(),
         before: before.as_str(),
+        by: UNINSTALL_BY,
         ..DirReport::default()
     };
     if let Err(e) = uninstall_steps(lock, ctx, config, before, &mut report) {
@@ -530,7 +693,10 @@ fn uninstall_steps(
 /// The `skills` row of `seldon doctor` (read-only): the state of the
 /// skill in every agent skill folder that exists. Installed everywhere, or
 /// no folder: ok. Missing somewhere: ok, the skill is optional, with the
-/// fix. Outdated, changed by hand or foreign: degraded, with the fix.
+/// fix. Outdated and unedited: ok, the next capture updates it (WP-111).
+/// Outdated otherwise, changed by hand or foreign: degraded, with the fix;
+/// a skill changed by hand reads "outdated" and its fix is the one command
+/// that archives the user's copy ([`REPLACE_FIX`]).
 pub fn doctor_row(dirs: &Dirs) -> (super::doctor::Status, String, Option<String>) {
     use super::doctor::Status;
     let (present, absent) = skill_dirs(&dirs.home);
@@ -545,17 +711,26 @@ pub fn doctor_row(dirs: &Dirs) -> (super::doctor::Status, String, Option<String>
             None,
         );
     }
+    // key → folders as shown; a changed folder carries its files
     let mut by: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
     for folder in &present {
-        by.entry(state(folder).as_str())
-            .or_default()
-            .push(dirs.display(folder));
+        let shown = dirs.display(folder);
+        let (key, shown) = match state(folder) {
+            State::Outdated if unedited(folder) => ("pending", shown),
+            State::Changed(files) => (
+                "changed",
+                format!("{shown} (changed by hand: {})", files.join(", ")),
+            ),
+            s => (s.as_str(), shown),
+        };
+        by.entry(key).or_default().push(shown);
     }
     let label = |key: &str, word: &str| by.get(key).map(|v| format!("{word} in {}", v.join(", ")));
     let message = [
         label("current", "installed"),
+        label("pending", "updated at the next capture"),
         label("outdated", "outdated"),
-        label("changed", "changed by hand"),
+        label("changed", "outdated"),
         label("foreign", "another skill named seldon"),
         label("missing", "not installed"),
     ]
@@ -563,23 +738,29 @@ pub fn doctor_row(dirs: &Dirs) -> (super::doctor::Status, String, Option<String>
     .flatten()
     .collect::<Vec<_>>()
     .join("; ");
-    let status = if by.contains_key("outdated")
-        || by.contains_key("changed")
-        || by.contains_key("foreign")
+    let status = if ["outdated", "changed", "foreign"]
+        .iter()
+        .any(|k| by.contains_key(k))
     {
         Status::Degraded
     } else {
         Status::Ok
     };
-    let fix = if by.contains_key("changed") || by.contains_key("foreign") {
-        Some(format!(
-            "move the folder named seldon away where it is changed or not seldon's, then {INSTALL_BY}"
-        ))
-    } else if by.contains_key("outdated") || by.contains_key("missing") {
-        Some(INSTALL_BY.to_string())
-    } else {
-        None
-    };
+    let mut fixes = Vec::new();
+    if by.contains_key("foreign") {
+        fixes.push(format!(
+            "move the folder named seldon away where it is not seldon's, then {INSTALL_BY}"
+        ));
+    }
+    if by.contains_key("changed") {
+        fixes.push(REPLACE_FIX.to_string());
+    } else if (by.contains_key("outdated") || by.contains_key("missing"))
+        && !by.contains_key("foreign")
+    {
+        // the foreign fix ends in the same command
+        fixes.push(INSTALL_BY.to_string());
+    }
+    let fix = (!fixes.is_empty()).then(|| fixes.join("; "));
     (status, format!("seldon agent skill: {message}"), fix)
 }
 
@@ -642,14 +823,80 @@ fn own_json(reports: &[DirReport]) -> Value {
 }
 
 /// Installs the skill into every agent skill folder that exists, under the
-/// caller's state lock.
-pub fn install_under(lock: &Lock, ctx: &Context, config: &Config) -> Result<Installed> {
+/// caller's state lock; with `archive` (`--replace`) only where Seldon's
+/// skill is today, also where it was changed by hand: a folder without the
+/// skill (the user removed it, or never had it) stays without it
+/// (`absent`, WP-111 round 2).
+pub fn install_under(
+    lock: &Lock,
+    ctx: &Context,
+    config: &Config,
+    mut archive: Option<&mut Archive>,
+) -> Result<Installed> {
     let (present, absent) = skill_dirs(&ctx.dirs.home);
     let reports = present
         .iter()
-        .map(|folder| install_into(lock, ctx, config, folder))
+        .map(|folder| {
+            if archive.is_some() && state(folder) == State::Missing {
+                return DirReport {
+                    folder: folder.clone(),
+                    before: State::Missing.as_str(),
+                    action: "absent",
+                    by: INSTALL_BY,
+                    ..DirReport::default()
+                };
+            }
+            install_into(
+                lock,
+                ctx,
+                config,
+                folder,
+                archive.as_deref_mut(),
+                INSTALL_BY,
+            )
+        })
         .collect();
     Ok(Installed { reports, absent })
+}
+
+/// What a capture's upgrade of unedited skills did ([`upgrade_unedited_under`]).
+#[derive(Debug, Clone, Default)]
+pub struct Upgraded {
+    /// The folders whose skill was updated, as `doctor` shows them.
+    pub updated: Vec<String>,
+    /// One line per folder that failed, and per own-write record that
+    /// failed.
+    pub warnings: Vec<String>,
+}
+
+/// The capture's part (WP-111): updates the skill in every agent skill
+/// folder where it is outdated and unedited ([`unedited`]), under the
+/// caller's state lock. Nothing else: no folder gets a skill it does not
+/// have, a skill changed by hand or not Seldon's is left as it is. Only
+/// as a user that is not root ([`sys::runner`], failing closed): a root
+/// process's home is not the user's.
+pub fn upgrade_unedited_under(lock: &Lock, ctx: &Context, config: &Config) -> Upgraded {
+    let mut out = Upgraded::default();
+    if sys::runner() != sys::Runner::User {
+        return out;
+    }
+    let (present, _) = skill_dirs(&ctx.dirs.home);
+    for folder in present.iter().filter(|f| unedited(f)) {
+        let report = install_into(lock, ctx, config, folder, None, CAPTURE_BY);
+        let shown = ctx.dirs.display(&folder.join(SKILL_NAME));
+        match report.action {
+            "updated" => out.updated.push(ctx.dirs.display(folder)),
+            "failed" => out.warnings.push(format!(
+                "the agent skill in {shown} was not updated: {}",
+                report.error.as_deref().unwrap_or_default()
+            )),
+            _ => {}
+        }
+        for e in &report.own_errors {
+            out.warnings.push(super::setup::own_writes_warning(e));
+        }
+    }
+    out
 }
 
 fn config_of(ctx: &Context) -> Config {
@@ -661,18 +908,50 @@ fn kept_fix(dirs: &Dirs, r: &DirReport) -> String {
     let path = dirs.display(&r.folder.join(SKILL_NAME));
     match r.before {
         "foreign" => format!("{path} was not written by seldon; left alone"),
+        _ if r
+            .kept
+            .iter()
+            .any(|n| plain_file(&r.folder.join(SKILL_NAME).join(n)) != Some(true)) =>
+        {
+            format!(
+                "{path}: {} changed by hand and not a plain file; kept (fix: move {path} away, then {INSTALL_BY})",
+                r.kept.join(", ")
+            )
+        }
         _ => format!(
-            "{path}: {} changed by hand; kept (fix: move {path} away, then {INSTALL_BY})",
+            "{path}: {} changed by hand; kept (fix: {REPLACE_FIX})",
             r.kept.join(", ")
         ),
     }
 }
 
-/// `seldon hook install skills`.
-pub fn install(ctx: &Context) -> Result<Output> {
-    let config = config_of(ctx);
+/// The one-command fix for a skill changed by hand.
+pub const REPLACE_FIX: &str = "seldon hook install skills --replace (archives your copy; a folder without the skill stays without it)";
+
+/// `seldon hook install skills [--replace]`. `--replace` copies the files
+/// of a skill changed by hand into the logbook's `archive/` and installs
+/// the skill as shipped there too; it commits when it copied anything.
+pub fn install(ctx: &Context, replace: bool) -> Result<Output> {
+    let (config, logbook) = if replace {
+        let (config, logbook) = ctx.open_logbook()?;
+        (config, Some(logbook))
+    } else {
+        (config_of(ctx), None)
+    };
+    let mut archive = logbook
+        .as_ref()
+        .map(|l| Archive::new(&l.root, ctx.now.date_naive()));
     let lock = ctx.lock()?;
-    let installed = install_under(&lock, ctx, &config)?;
+    let installed = install_under(&lock, ctx, &config, archive.as_mut())?;
+    let commit = match (&logbook, &archive) {
+        (Some(logbook), Some(a)) if a.used() => Some(super::autocommit(
+            ctx,
+            &config,
+            logbook,
+            "hook install skills --replace",
+        )),
+        _ => None,
+    };
     drop(lock);
     let dirs = &ctx.dirs;
     let mut human = if installed.reports.is_empty() {
@@ -696,6 +975,20 @@ pub fn install(ctx: &Context) -> Result<Output> {
                     r.error.as_deref().unwrap_or_default()
                 );
             }
+            "absent" => {
+                let _ = write!(
+                    human,
+                    "\n  absent     {path}: no skill here; --replace installs none"
+                );
+            }
+            "replaced" => {
+                let _ = write!(
+                    human,
+                    "\n  replaced   {path}; your copy of {} is in {}",
+                    r.archived_files.join(", "),
+                    r.archived.as_deref().unwrap_or_default()
+                );
+            }
             action => {
                 let _ = write!(human, "\n  {action:<10} {path}");
             }
@@ -711,11 +1004,12 @@ pub fn install(ctx: &Context) -> Result<Output> {
     for e in installed.reports.iter().flat_map(|r| &r.own_errors) {
         let _ = write!(human, "\n{}", super::setup::own_writes_warning(e));
     }
-    Ok(with_failures(
-        human,
-        installed.json(dirs),
-        &installed.reports,
-    ))
+    let mut json = installed.json(dirs);
+    if let Some(commit) = &commit {
+        human.push_str(&commit.human());
+        json["git"] = commit.json();
+    }
+    Ok(with_failures(human, json, &installed.reports))
 }
 
 /// `seldon hook uninstall skills`.

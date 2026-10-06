@@ -1436,12 +1436,17 @@ clean_log work-reopen
 #     goes. A damaged block is shown without the click. Dev mode asks
 #     nothing.
 mkdir -p "$work/home-rules"
-run rules-outdated "" "wait:rules.title=The logbook's agent rules are outdated (v1);click:Update rules;settle;wait:rules=null;view" \
+run rules-outdated "" "wait:rules.title=The logbook's agent rules are outdated (v1);click:Update rules;settle;wait:rules=null;view;close;open;view" \
   HOME="$work/home-rules" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_RULES=outdated
 expect rules-outdated 1 .view.rules.title "The logbook's agent rules are outdated (v1)"
 expect rules-outdated 1 '.view.rules.actions | join(",")' "Update rules"
+expect rules-outdated 1 .view.rulesNotice ""
 shows rules-outdated 1 "Agents read AGENTS.md. Update rewrites only Seldon's block; your own rules stay, an edited block is archived first."
 expect rules-outdated 5 .view.rules null
+# WP-111: the click gets one line in the notice style; opened again, it is gone
+expect rules-outdated 5 .view.rulesNotice "Agent rules updated to v3; your old copy is in archive/AGENTS-2026-10-06.md"
+shows rules-outdated 5 "Agent rules updated to v3; your old copy is in archive/AGENTS-2026-10-06.md"
+expect rules-outdated 8 .view.rulesNotice ""
 if grep -qx "$(q rules update --json)" "$work/home-rules/argv.log" && [[ $(grep -c . "$work/home-rules/doctor.log") == 2 ]] \
   && [[ $(sort -u "$work/home-rules/doctor.log") == "$(q doctor --only rules --json)" ]] \
   && ! grep -q '^doctor' "$work/home-rules/argv.log"; then
@@ -1457,6 +1462,15 @@ expect rules-damaged 1 '.view.rules.actions | length' 0
 shows rules-damaged 1 "Fix in a terminal: seldon rules update --replace (archives the file)"
 clean_log rules-damaged
 expect sample 1 .view.rules null
+# WP-111: a refused update says what failed, under the banner, which stays.
+mkdir -p "$work/home-rules-fail"
+echo "AGENTS.md is not UTF-8 text" >"$work/home-rules-fail/rules-fail"
+run rules-fail "" "wait:rules.title=The logbook's agent rules are outdated (v1);click:Update rules;settle;view" \
+  HOME="$work/home-rules-fail" FAKE_SELDON_FIXTURE="$fx/index.sample.json" FAKE_SELDON_RULES=outdated
+expect rules-fail 4 .view.rules.hint "Updating the agent rules failed: AGENTS.md is not UTF-8 text"
+expect rules-fail 4 '.view.rules.actions | join(",")' "Update rules"
+expect rules-fail 4 .view.rulesNotice ""
+clean_log rules-fail 'rules exit 1: AGENTS\.md is not UTF-8 text$'
 # The throttle: closed and opened again within 10 minutes, the panel does
 # not ask doctor again (the forced check after an update is above).
 mkdir -p "$work/home-rules-throttle"

@@ -14,8 +14,8 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-116 | the Seldon agent starts like the Omarchy agent; rules v4 (ADR-0030, ADR-0031) | Engine + Docs | `engine-116` (opus) | `wt/WP-116` · `wp/116-start-like-omarchy` | 2026-10-06 |
 | WP-115 | link a change to the one case that planned it; capture before close (ADR-0029) | Engine | `engine-115` (opus) | `wt/WP-115` · `wp/115-planned-link` | 2026-10-06 |
-| WP-111 | agent texts and docs for quiet drift; rules v3; silent upgrades (ADR-0028) | Engine + Docs | `engine-111` (opus) | `wt/WP-111` · `wp/111-agent-texts` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -27,14 +27,16 @@ machine unbootable need the user's go) — WP-100 and WP-096 done, WP-101
 done (it quotes `plan snapshot` and the agent-close refusal).
 ADR-0028 (attention by consequence) ships in 0.1.4: WP-109 (engine
 classification) and WP-110 (plugin quiet surfaces) done, WP-111 (agent
-texts, docs, live check) active. Then the 0.1.4 release preparation
+texts, docs) done. Then the 0.1.4 release preparation
 (tag on the operator's go). Later from ADR-0028: WP-112 (measured routine
 paths after a real update), WP-113 (plugin trees, toggles, opt-in
 authorized_keys; each item approved separately), WP-114 (pacman.conf;
 needs an AGENTS.md §6 amendment).
 Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
 Omarchy upstream contribution before 1.0. Then the
-contract v2 bundle for v0.2.0 (autocommit result in the index,
+contract v2 bundle for v0.2.0 (a case's risk in the ledger — `meta.risk` on
+case-created/started and a ledger line for `plan set --risk`, so ADR-0029's
+harm guard reads only engine-written records (WP-115 stage 2); autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
 account: WP-033 (update-impact, option C) and WP-042 (marketplace
 submission). (see `work/queued/`)
@@ -50,6 +52,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-111 agents explain drift only with evidence and never a
+  crisis; the session-start context lists open crises and items "zur
+  Kenntnis" as quoted data; rules v3 quote Omarchy's privilege wording; an
+  unedited rules block or installed skill is upgraded silently (shipped-
+  hash list, never a user's words, never as root); the panel's Update
+  rules click gives one line of feedback; docs en/de; Opus review, one
+  round, Fable stage 2; merged (wording follow-ups ride on WP-116's v4).
 - 2026-10-06 WP-094 the Seldon agent skill ships with the engine
   (`seldon hook install skills`): every agent Omarchy supports finds or
   opens its case, acts inside the Intent, snapshots and closes itself,
@@ -537,13 +546,18 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- ADR-0031 accepted: password prompts follow Omarchy (sudo in the user's
+  terminal, pkexec otherwise, one program per pkexec); the target is "as
+  few as the route allows" (replaces ADR-0027's "at most one"); the
+  agent snapshots `root` only. No polkit rule, no root helper.
 - ADR-0029 accepted (from the live test): a change made while exactly
   one case was active and named it in its Plan is that case's, whoever
   typed it; `alwaysRed` subjects only for an R3 case; `plan verify`/`done`
   capture first. WP-115 in 0.1.4.
-- The Seldon agent starts like Omarchy's agent (from ~/Work); ADR-0030
-  drafted (hooks user-wide, scope by a launch marker), awaiting the
-  operator's confirmation.
+- ADR-0030 accepted: the Seldon agent starts like Omarchy's agent (from
+  ~/Work); Seldon's Claude Code hooks move to the user-wide settings and
+  serve only sessions Seldon launched (`SELDON_CASE`) or inside the
+  logbook. WP-116 in 0.1.4, after WP-111.
 - Test host: reinstalled fresh after 2026-10-07 10:00 (variant 1) and
   kept free of personal settings; a snapper baseline "fresh" is the reset
   point for live and release tests. Until then the lived-in host gives

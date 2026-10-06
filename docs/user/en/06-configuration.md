@@ -31,7 +31,7 @@ holds your own path.
 harnesses = ["claude-code"]
 language = "en"
 logbook = "/home/you/Seldon"
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
 
 [collectors]
 config = true
@@ -67,7 +67,10 @@ launcher = ["omarchy", "agent", "prompt", "{prompt}"]
 | `[git] autocommit` | `true` | commit the logbook after every command that writes; `seldon init --no-git` writes `false` |
 | `[redaction] patterns` | `[]` | your own secret patterns, see [Redaction](#redaction) |
 | `[redaction] skipPaths` | plugin state files | files the engine never opens or names, see [Redaction](#redaction) |
-| `[drift] alwaysRed` | six names | packages whose upgrade is always a crisis, see [Drift](#drift) |
+| `[drift] alwaysRed` | six names | packages that can break boot, login or the shell, see [Drift](#drift) |
+| `[drift] attention` | `"normal"` | `"all"` makes every change without a case drift again, see [Drift](#drift) |
+| `[drift] routine` | every rule | the routine rules that apply, see [Drift](#drift) |
+| `[drift] routinePaths`, `routinePackages`, `alwaysRedPaths` | see [Drift](#drift) | paths and packages that are routine, and the persistence paths |
 | `[agent] launcher` | `omarchy agent prompt` | what `seldon agent start` runs, see [Agent launcher](#agent-launcher) |
 | `[agent.launchers]` | none | more launchers by name |
 
@@ -129,20 +132,26 @@ removed. It records the path and two short hashes, never the content.
 
 Defaults: `~/.config/hypr`, `~/.config/omarchy`, `~/.config/waybar`,
 `~/.bashrc`, `~/.zshrc`, `~/.local/share/applications` (the desktop
-entries of your web apps and TUIs). Missing paths are skipped. A relative
-path such as `.config/nvim` means `~/.config/nvim`; the wizard stores the
-paths you type in that form. Add your own, for example:
+entries of your web apps and TUIs), and the persistence paths
+`~/.config/systemd/user`, `~/.config/autostart`,
+`~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
+`~/.bash_profile` (files that run at login; a new one there is a crisis,
+see [Drift](#drift)). Missing paths are skipped. A relative path such as
+`.config/nvim` means `~/.config/nvim`; the wizard stores the paths you
+type in that form. Add your own, for example:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/nvim", "~/.config/systemd/user"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.config/nvim"]
 ```
 
-The wizard writes the list into `config.toml`, so a file it wrote before
-0.1.4 keeps its own list and does not watch the desktop entries. To
-watch them, add the path to your `watchPaths`:
+The wizard writes the list into `config.toml`. A list that is still the
+default of an earlier release gains the new defaults at the next capture,
+which says so once in a `note:` line; only the `watchPaths` line of the
+file changes. A list you changed yourself is kept as it is: `seldon
+doctor` names the paths it lacks, and you add them the same way:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
 ```
 
 The files already there when the path enters the list are taken as they
@@ -170,7 +179,8 @@ same as at the last capture is not read again. The change time catches
 an edit whose modification time was put back (`touch -r`).
 
 Unit files under `~/.config/systemd/` are red zone. Everything else here
-is yellow.
+is yellow. The zone says where a change acts; whether a change without a
+case is a crisis is decided by [Drift](#drift).
 
 Changing what is watched is not a change of files. When you add a path,
 or take a pattern out of `skipPaths`, the next capture takes the files
@@ -281,19 +291,46 @@ secret into a note, a case or a command line if you can avoid it.
 
 ## Drift
 
-`[drift] alwaysRed` lists package names whose routine upgrade is still
-a crisis. A routine upgrade is a transaction that only upgrades packages
-from a full system upgrade (`omarchy update` does one). It opens yellow
-drift, so it does not raise an alarm. A package on this list makes the
-whole transaction red.
+Every change is recorded. `[drift]` decides which changes without a case
+are drift, and which of those are a crisis (see
+[Concepts](02-concepts.md#drift)). The defaults are quiet: routine changes
+are history, packages and overrides are listed without a demand, and
+only what can break boot, login or the shell is a crisis.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `alwaysRed` | `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell` | packages that can break boot, login or the shell: installed or removed by name outside a case, a crisis; upgraded with the system, routine |
+| `attention` | `"normal"` | `"all"`: every change without a case is drift, a crisis when its zone is red (the behaviour up to 0.1.3) |
+| `routine` | all rules | the routine rules that apply: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo` |
+| `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | config files whose changes are routine |
+| `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | packages whose own transactions are routine |
+| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile` | persistence paths: a change there without a case is a crisis |
+
+Want more? A few examples:
 
 ```toml
 [drift]
+# theme switches are drift again
+routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+# a kernel from NVIDIA counts too
 alwaysRed = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell", "nvidia*"]
 ```
 
-`*` matches any ending. Keep the defaults: these packages can break boot,
-login or the shell.
+```toml
+[drift]
+# everything without a case is drift, as up to 0.1.3
+attention = "all"
+```
+
+`*` matches any ending. Keep the `alwaysRed` defaults: these packages can
+break boot, login or the shell. The engine writes these keys into the
+file only when you change them, and `seldon doctor` prints the rules in
+use and marks what is not the default. `seldon drift --all` also lists the
+routine changes.
+
+The bar counts crises only. To count every change without a case, or
+nothing, set the plugin's `driftInBar` (see
+[Plugin settings](#plugin-settings)).
 
 ## Agent launcher
 
@@ -365,6 +402,7 @@ Change them in Omarchy's settings (Setup, Plugins, Seldon) or with
 |---|---|---|
 | `captureIntervalMin` | `15` | minutes between captures while the shell runs (5 to 120) |
 | `wipLimit` | `3` | active cases the Work tab compares against (1 to 20); it warns, never blocks |
+| `driftInBar` | `crisis` | what the bar's second number counts: `crisis`, `all` (every change without a case, as up to 0.1.3) or `none`; the bar turns to the error colour on a crisis in every mode |
 
 ```sh
 omarchy bar set jax.seldon captureIntervalMin 30 --json

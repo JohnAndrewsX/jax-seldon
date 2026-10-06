@@ -10,7 +10,8 @@ import "Model.js" as Model
 //
 // Top to bottom: title, tab strip, the restart notice after a plugin
 // update (WP-090), the status banner (WP-010), the snapper-degraded banner
-// (ADR-0026), the outdated-rules banner (WP-101), the capture-warning
+// (ADR-0026), the outdated-rules banner (WP-101) and what its click did
+// (WP-111), the capture-warning
 // notice (WP-085), the red crisis strip,
 // then the current tab. The banners and the strip sit
 // above the tabs, so every tab shows them.
@@ -191,6 +192,7 @@ Panel {
         actions: root.service.rulesBanner.actions.map(function(a) { return a.label }),
         hint: root.service.rulesBanner.hint
       } : null,
+      rulesNotice: rulesNotice.visible && root.service.rulesNotice ? root.service.rulesNotice.title : "",
       captureNotice: {
         title: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.title : "",
         detail: captureNotice.visible && root.service.captureNotice ? root.service.captureNotice.detail : "",
@@ -355,6 +357,7 @@ Panel {
   }
 
   onOpenedChanged: if (opened) {
+    if (root.service) root.service.clearRulesResult()
     if (root.service) root.service.checkRules(false)
     root.cursorActive = false
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -510,6 +513,17 @@ Panel {
           urgent: root.urgent
           fontFamily: root.fontFamily
           onActionRequested: function(actionId) { if (root.service) root.service.fix(actionId, "rules") }
+        }
+
+        // What the *Update rules* click did, in one line (WP-111): neutral,
+        // no action, until the panel opens again.
+        Banner {
+          id: rulesNotice
+          width: parent.width
+          banner: root.service ? root.service.rulesNotice : null
+          foreground: root.foreground
+          urgent: root.urgent
+          fontFamily: root.fontFamily
         }
 
         // The last capture's warnings (WP-085): neutral, no action, until a

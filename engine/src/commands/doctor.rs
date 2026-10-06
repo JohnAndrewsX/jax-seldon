@@ -289,6 +289,10 @@ pub fn run(ctx: &Context, path: Option<&Path>) -> Result<Output> {
             "logbook": known.then_some(root),
             "checks": checks,
             "drift": drift_json(&effective),
+            // which sessions the hooks record (`[hooks] scope`): the agent
+            // skill reports commands from outside the logbook only with
+            // `all` (WP-111)
+            "hooks": { "scope": effective.hooks.scope },
         }),
         exit,
     })
@@ -744,8 +748,10 @@ fn check_skills(ctx: &Context) -> Check {
 }
 
 /// The rules block of `AGENTS.md` against this engine's (ADR-0027,
-/// WP-100): ok when current, else degraded with the fix the panel and the
-/// user run (`seldon rules update`, or `--replace` for a damaged block).
+/// WP-100): ok when current, and when it is a block an earlier engine
+/// shipped that nobody edited (the next capture upgrades it, WP-111);
+/// else degraded with the fix the panel and the user run (`seldon rules
+/// update`, or `--replace` for a damaged block).
 fn check_rules(ctx: &Context, logbook: &Logbook) -> Check {
     use crate::logbook::rules::{self, State};
     let template = super::rules::template(logbook, ctx.now.date_naive());
@@ -762,7 +768,7 @@ fn check_rules(ctx: &Context, logbook: &Logbook) -> Check {
     };
     let label = state.label();
     match state {
-        State::Current => Check::new("rules", Status::Ok, label),
+        State::Current | State::Unedited(_) => Check::new("rules", Status::Ok, label),
         State::Newer(_) => Check::new("rules", Status::Degraded, label)
             .fix("update seldon (the rules come with it)"),
         State::Damaged(_) => Check::new("rules", Status::Degraded, label).fix(
@@ -770,11 +776,9 @@ fn check_rules(ctx: &Context, logbook: &Logbook) -> Check {
         ),
         State::NotUtf8 => Check::new("rules", Status::Degraded, label)
             .fix("seldon rules update --replace (archives the file)"),
-        State::Changed => Check::new("rules", Status::Degraded, label)
+        State::Changed | State::Outdated(_) => Check::new("rules", Status::Degraded, label)
             .fix("seldon rules update (archives your copy)"),
-        State::Outdated(_) | State::Missing => {
-            Check::new("rules", Status::Degraded, label).fix("seldon rules update")
-        }
+        State::Missing => Check::new("rules", Status::Degraded, label).fix("seldon rules update"),
     }
 }
 

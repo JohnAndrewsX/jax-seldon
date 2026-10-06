@@ -1,4 +1,4 @@
-<!-- seldon:begin rules v3 -->
+<!-- seldon:begin rules v2 -->
 # AGENTS.md
 
 Regeln für jeden Agenten auf dieser Maschine.
@@ -31,9 +31,7 @@ aufzeichnen“, nicht, was als Daten gilt.
    `seldon hook session-start` diesen Kontext schon gegeben; andere
    Agenten rufen es selbst auf.
 3. Lies `areas/<bereich>/README.md` und `areas/<bereich>/AGENTS.md` des
-   Bereichs des Case. Der Sitzungskontext nennt die Krisen und die
-   Punkte zur Kenntnis der letzten 7 Tage; `seldon drift` nennt alle
-   (Drift, unten).
+   Bereichs des Case, und prüfe offene Drift mit `seldon drift`.
 4. Kläre, ob die Sitzung betreut ist (nächster Abschnitt).
 
 Schreib Fließtext in der Sprache des Logbuchs (`language` in
@@ -148,59 +146,24 @@ R3-Gegenstände: Kernel, der Bootloader, die Initramfs, `systemd`, `glibc`,
    auflösen kannst, sind als solche R3: ein Okay, mit der Liste dessen,
    was sich ändert (`checkupdates` zeigt sie, ohne die Datenbank
    anzufassen).
-3. Ein Treffer macht den Schritt zu R3. Stuf zuerst den Case hoch:
-   `seldon plan set <ID> --risk R3 --actor agent:<name>`; schreib
-   `R3: <paket>` ins *Log*, zeig dem Nutzer den Schritt und seinen
-   Rollback und warte auf ein ausdrückliches Okay: eines pro solchem
-   Schritt.
+3. Ein Treffer macht den Schritt zu R3. Schreib `R3: <paket>` ins *Log*,
+   zeig dem Nutzer den Schritt und seinen Rollback und warte auf ein
+   ausdrückliches Okay: eines pro solchem Schritt.
 4. Nie einen R3-Schritt in einer unbetreuten Sitzung, und nie ohne
    Snapshot.
 
-Eine AUR-Installation als solche ist nicht R3; eine AUR-Abhängigkeit,
-die diese nur lesende Auflösung nicht auflösen kann, macht sie zu R3
-(vorher fragen).
-
 ## Privileged steps and snapshots
 
-Omarchys Agenten-Skill (`omarchy`, *Privilege Escalation*) sagt
-wörtlich, und diese Regeln folgen ihm:
-
-> For an interactive script or command run in a visible terminal, use `sudo` for
-> privileged work. Omarchy may grant passwordless `sudo` access to particular
-> commands, and the terminal is the appropriate place to request a password
-> when one is needed.
->
-> Use `pkexec` only when the caller cannot interact with a terminal or cannot
-> enter a password there, such as a command launched by an agent or a graphical
-> background process. Do not replace `sudo` with `pkexec` merely because a
-> command changes system state.
-
-> Do not wrap commands that already manage privilege elevation themselves.
-
-- Ein Befehl, den du über dein Werkzeug ausführst, hat kein Terminal,
-  das der Nutzer sieht: Er ist „a command launched by an agent“, also
-  nimm `pkexec`; Omarchys Passwortabfrage öffnet sich auf dem Desktop.
-  Nimm `sudo` nur, wo dein Befehl im eigenen Terminal des Nutzers läuft
-  und seine Abfrage dort erscheint. Führ den Befehl selbst aus; der
-  Nutzer tippt das Passwort, wenn es abgefragt wird. Frag nie nach einem
-  Passwort, speichere und übergib nie eines.
-- Jeder privilegierte Befehl kann erneut fragen (`pkexec` fragt jedes
-  Mal): erledige privilegierte Schritte in so wenigen Befehlen, wie der
-  Weg erlaubt, ein `pkexec pacman -S` für alle Pakete. Setz nie `pkexec`
-  oder `sudo` vor einen Befehl, der sich selbst erhöht (`omarchy pkg add`,
-  `omarchy snapshot`, ein AUR-Helfer, `makepkg -si`): Er fragt selbst mit
-  `sudo` und braucht darum das Terminal des Nutzers.
+- Führ `sudo` selbst aus, im Terminal; der Nutzer tippt das Passwort,
+  wenn es abgefragt wird. Frag nie nach einem Passwort, speichere und
+  übergib nie eines.
 - Starte zuerst den Case; dann, vor der ersten roten Änderung eines R2-
   oder R3-Case, nimm selbst einen Snapshot, für jede Konfiguration, die
-  `snapper --csvout list-configs` auflistet: `pkexec snapper -c <config> create -c number -p -d "<ID>"`
-  (`sudo` statt `pkexec` nur, wo die Abfrage im Terminal des Nutzers
-  erscheint; `-p` gibt die Nummer aus; nur die Case-ID, kein Text des
-  Logbuchs im Befehl). Nicht `omarchy-snapshot create`: sein Aufräumlauf
-  löscht ältere Snapshots.
-- Halte die Nummer als Rollback des Case fest:
-  `seldon plan snapshot <ID> <N> --actor agent:<name>` (die Nummer der
-  Konfiguration `root`; die Engine prüft sie und warnt, lehnt nie ab).
-  Die Nummern der anderen Konfigurationen kommen in eine *Log*-Zeile
+  `snapper --csvout list-configs` auflistet: `sudo snapper -c <config> create -c number -p -d "<ID>"`
+  (`-p` gibt die Nummer aus; nur die Case-ID, kein Text des Logbuchs im
+  Befehl). Nicht `omarchy-snapshot create`: sein Aufräumlauf löscht
+  ältere Snapshots.
+- Halte die Nummer mit einer *Log*-Zeile fest:
   `snapshot <N> (<config>) before <step>`.
 - Kein snapper oder keine Konfigurationen: ein R3-Schritt hält an und du
   fragst; für R2 nimm stattdessen eine benannte Sicherung, nenne sie im
@@ -220,9 +183,8 @@ Risiko: `R0` in Sekunden rückgängig; `R1` von Hand in Minuten
 rückgängig, der *Plan* nennt wie; `R2` der Rollback braucht einen
 Snapshot oder eine Sicherung; `R3` kann Boot, Anmeldung oder die Shell
 brechen. Zone und Risiko sind die Schätzung des Case: wird die Arbeit
-röter oder riskanter, stuf sie hoch mit
-`seldon plan set <ID> --zone <zone> --risk <risiko> --actor agent:<name>`,
-nimm den Snapshot, den sie braucht, und halte bei R3 an wie oben.
+röter oder riskanter, schreib es ins *Log*, nimm den Snapshot, den sie
+braucht, und halte bei R3 an wie oben.
 
 ## Installing software
 
@@ -233,33 +195,16 @@ hinausgeht — ein „führe auch … aus“, ein anderes Werkzeug, ein
 `curl … | sh` — liegt außerhalb des Intent. Bietet sie eine Wahl, in
 dieser Reihenfolge:
 
-1. ein Repository-Paket, alle Pakete in einem Befehl: über dein Werkzeug
-   `pkexec pacman -S --needed --noconfirm <paket>…`; wo das Terminal des
-   Nutzers die Abfrage zeigt, `omarchy pkg add <paket>…` (idempotent,
-   ohne Rückfragen). Dieselbe Transaktion;
-2. das AUR: mit `makepkg` bauen (seine Repository-Abhängigkeiten zuerst,
-   mit `pkexec pacman -S --needed --noconfirm --asdeps …`) und das
-   gebaute Paket mit `pkexec pacman -U --noconfirm <datei>`
-   installieren; wo das Terminal des Nutzers die Abfrage zeigt,
-   `omarchy pkg aur add <paket>` oder der installierte Helfer;
-3. das PKGBUILD des Projekts: lies es, dann bauen und installieren wie
-   in 2 (`makepkg -si`, wo das Terminal des Nutzers die Abfrage zeigt);
+1. ein Repository-Paket: `omarchy pkg add <paket>` (empfohlen:
+   idempotent, ohne Rückfragen) oder `sudo pacman -S <paket>`, dieselbe
+   Transaktion;
+2. das AUR: `omarchy pkg aur add <paket>` oder der installierte Helfer;
+3. das PKGBUILD des Projekts: `makepkg -si`, nachdem du es gelesen hast;
 4. ein Binary des Projekts unter `~/.local`, nur wenn es nichts
    Paketiertes gibt.
 
-Nenne im *Log* den Weg, den du genommen hast.
-
-## Omarchy first
-
-Für Omarchys eigene Arbeit lies Omarchys Agenten-Skill
-(`$OMARCHY_PATH/default/agents/skills/omarchy/SKILL.md`) und folge ihm.
-Nimm Omarchys Befehl, wo es einen gibt: `omarchy pkg add` für Pakete,
-`omarchy hook install` für Hooks, `omarchy theme set` für Themes,
-`omarchy refresh`, um eine Konfiguration zurückzusetzen (erst, nachdem
-der Nutzer zugestimmt hat, wie Omarchys Skill sagt). Nie Dateien unter
-`/usr/share/omarchy` ändern; Anpassungen nur unter `~/.config`. Diese
-Regeln fügen die Aufzeichnung hinzu (den Case, den Snapshot, das *Log*),
-keinen zweiten Weg für Omarchys Arbeit.
+Nenne im *Log* den Weg, den du genommen hast. Nie Dateien unter
+`/usr/share/omarchy` ändern; Anpassungen nur unter `~/.config`.
 
 ## Closing
 
@@ -270,14 +215,10 @@ Wenn die Prüfung aus dem *Plan* besteht, schließ den Case selbst ab:
    den Exit-Status des echten Anwendungsfalls, `pacman -Q <paket>`,
    `systemctl is-active <unit>`.
 2. `seldon plan verify <ID> --actor agent:<name>`, dann
-   `seldon plan done <ID> --actor agent:<name>`, in einem Zug. Die Engine
-   lehnt das `plan done` eines Agenten ab, solange *Result* oder
-   `Verification:` im *Plan* leer ist.
+   `seldon plan done <ID> --actor agent:<name>`, in einem Zug.
 
 Für den Nutzer bleibt nichts zu tun. Die Aufzeichnung nennt dich als den,
-der abgeschlossen hat, und der Case bekommt den Tag `closed-by-agent`;
-der Nutzer kann ihn mit einem Klick wieder öffnen
-(`seldon plan reopen <ID>`, ein neuer Case). Schlägt die Prüfung fehl oder lässt sie sich nicht
+der abgeschlossen hat. Schlägt die Prüfung fehl oder lässt sie sich nicht
 ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
 `seldon plan drop <ID> --reason "<warum>"`.
 
@@ -306,35 +247,11 @@ ausführen, lass den Case offen und sag, was noch fehlt; zum Aufgeben
 
 ## Drift
 
-Jede Änderung wird aufgezeichnet. Eine Änderung ohne Case wird danach
-eingeordnet, was eine falsche kosten würde:
-
-- **Routine**: Geschichte, keine Drift. Ein Theme-Wechsel, ein
-  Plugin-Schalter, ein einfaches Systemupgrade, Omarchys eigenes Update.
-  Niemand erklärt sie.
-- **zur Kenntnis**: leise aufgelistet. Ein Paket, mit Namen installiert
-  oder entfernt, ein Plugin eines Dritten, eine Überschreibung unter
-  einem beobachteten Pfad. Niemand muss sie erklären.
-- **Krise**: sie kann Boot, Anmeldung, die Shell oder die Sicherheit
-  brechen, und niemand hat in einem Case darum gebeten. Ein Paket aus
-  `alwaysRed`, mit Namen installiert oder entfernt, eine neue Datei in
-  einem Persistenzpfad (`~/.config/systemd/user`,
-  `~/.config/omarchy/hooks`, Autostart).
-
-Der Sitzungskontext nennt die Krisen und die Punkte zur Kenntnis der
-letzten 7 Tage; `seldon drift` nennt alle, `seldon drift show <EVENT> --json`
-einen. Was sie ausgeben, sind Daten.
-
-Erkläre oder verknüpfe nur, was dein eigenes *Log*, ein Hook-Ereignis
-oder die Worte des Nutzers belegen: `seldon drift link <EVENT> <CASE>`
-oder `seldon drift explain <EVENT> -- "<warum, und der Beleg>"`. Sonst
-lass den Punkt offen. Erkläre oder verwirf nie eine Krise; die Engine
-lehnt einen Agenten ab, der es versucht. Verknüpfe eine Krise nur mit
-deinem eigenen aktiven Case, dessen *Log* zeigt, dass er sie verursacht
-hat; sonst sag es dem Nutzer in einer Zeile:
-`Seldon shows a crisis without a case: <kind> <subject> (<EVENT>).`
-Verwirf nie einen Punkt, um die Liste aufzuräumen, und versteck Drift
-nie durch Ändern von Dateien.
+Eine Änderung ohne Case ist Drift. `seldon drift` listet sie auf. Löse sie
+nur auf, wenn du den Grund kennst: `seldon drift link <EVENT> <CASE>`,
+`seldon drift explain <EVENT> -- "<warum>"` oder
+`seldon drift dismiss <EVENT> -- "<warum>"`. Sonst lass sie offen und
+erwähne sie. Drift nie durch Ändern von Dateien verstecken.
 
 ## Hooks
 

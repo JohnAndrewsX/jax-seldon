@@ -363,8 +363,21 @@ seldon hook install skills | uninstall skills  # WP-094, ADR-0027 §8: the Seldo
                                                # rule 7). No logbook needed; --settings is refused.
                                                # A folder that fails (action "failed", its error) does
                                                # not stop the others; exit 1 then, after the report.
+                                               # install --replace (WP-111): a changed folder's edited
+                                               # files (regular files only; anything else keeps the
+                                               # folder) are copied to the logbook's archive/skill-<date>
+                                               # [-N]/<folder>/ (folder: its path below ~, leading dots
+                                               # dropped, `/` → `-`, e.g. claude-skills), then the skill
+                                               # is installed as shipped (action "replaced"); foreign
+                                               # stays; a folder without the skill stays so (action
+                                               # "absent", round 2); needs the logbook (exit 3); autocommit
+                                               # `seldon: hook install skills --replace` when it copied
+                                               # anything. --replace with claude-code: exit 1.
+                                               # Every capture updates an outdated skill whose manifest
+                                               # files are all there as written (§3 capture).
                                                # --json → {skill, dirs: [{dir, path, state, action,
-                                               # written, removed, kept, error}], absent, ownWrites}
+                                               # written, removed, kept, archived, archivedFiles,
+                                               # error}], absent, ownWrites, git?}
 seldon hook claude-code                        # stdin: Claude Code hook JSON
 seldon hook generic                            # stdin: {"command":"…","actor":"…"?,"cwd":"…"}
 seldon hook session-start | session-stop       # context print / journal stub
@@ -386,10 +399,14 @@ seldon watch [--interval SECS] [--json]        # feature "watch" (off by default
                                                # engine/systemd/ (WP-034); the Phase 4 package ships the feature.
 seldon doctor                                  # engine, config, logbook, cases, ledger, fences, rules,
                                                # rollbacks, collectors, state, skills, omarchy, snapper,
-                                               # git, watch, drift checks (read-only). skills (WP-094):
-                                               # installed or no folder → ok; missing → ok, fix `seldon
-                                               # hook install skills`; outdated, changed, foreign →
-                                               # degraded, fix
+                                               # git, watch, drift checks (read-only). skills (WP-094,
+                                               # WP-111): installed or no folder → ok; missing → ok, fix
+                                               # `seldon hook install skills`; outdated and unedited →
+                                               # ok, "updated at the next capture"; outdated otherwise
+                                               # (a file gone) → degraded, fix install; changed → degraded,
+                                               # "outdated in <dir> (changed by hand: <files>)", fix
+                                               # `seldon hook install skills --replace (archives your
+                                               # copy)`; foreign → degraded, fix: move it away, install
 seldon doctor --only rules                     # WP-101 round 3: the engine and rules rows only; starts no
                                                # program (no omarchy, snapper or git probe), reads no collector
                                                # state, takes no lock; exit 3 without a logbook, 1 when the
@@ -397,7 +414,7 @@ seldon doctor --only rules                     # WP-101 round 3: the engine and 
                                                # panel's call (SPEC-PLUGIN §3)
 seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules block of the logbook's AGENTS.md
                                                # (`<!-- seldon:begin rules vN -->` … `<!-- seldon:end -->`,
-                                               # marker lines as whole lines) becomes this engine's v2 block.
+                                               # marker lines as whole lines) becomes this engine's v3 block.
                                                # Fenced file: the block is rewritten, every byte outside it
                                                # kept (a CRLF block keeps CRLF); a block that is no block
                                                # Seldon wrote (this engine's in any language, or a released
@@ -415,7 +432,7 @@ seldon rules update [--replace] [--json]       # WP-100, ADR-0027: the rules blo
                                                # taken; never overwritten); a blank file is not archived.
                                                # Refused, file untouched (exit 1): a damaged block
                                                # (no end marker line, a marker inside it, a begin marker
-                                               # without a version), a block newer than v2, a file that is not
+                                               # without a version), a block newer than v3, a file that is not
                                                # UTF-8 (all three: --replace takes them). Prints a `-U0` diff;
                                                # autocommit `seldon: rules update`; a current file is "nothing
                                                # changed" (exit 0, no write, no commit). Never runs on its own.
@@ -464,8 +481,36 @@ stays the human's (snapshot before the start). The agent raises a case
 with `seldon plan set <ID> --risk R3` before an R3 step. Every `seldon …`
 the templates name is checked against `--help` by `tests/init.rs`. A
 change of the block's text keeps the old block's hash in `RELEASED_BLOCKS`
-(`engine/templates/rules-v2/` holds WP-100's), so `rules update` rewrites
-such a block without an archive.
+(`engine/templates/rules-v2/` holds every v2 rendering that was on
+`main`: WP-100 rounds 1 and 2, WP-100 as merged, WP-101), so `rules
+update` rewrites such a block without an archive, and every capture does
+it on its own (WP-111, below). Rules v3 (WP-111) quote Omarchy's agent
+skill on privileges word for word (*Privilege Escalation*, and "Do not
+wrap commands that already manage privilege elevation themselves.";
+`tests/init.rs` pins the text, and on a host with Omarchy that the skill
+still holds it), name Omarchy's own commands (*Omarchy first*), and
+sort drift by consequence with the evidence rule of ADR-0028 §3.
+
+**Silent upgrade (WP-111, ADR-0028 §4d's principle: an unchanged default
+is upgraded, the user's own text is kept).** Every `seldon capture`,
+under its lock and before the collectors run, (a) rewrites the rules
+block of `AGENTS.md` when it is one an earlier engine shipped word for
+word (`RELEASED_BLOCKS`), or replaces a released v1 file whole
+(`RELEASED_V1`); the text outside the block stays byte for byte, nothing
+is archived, nothing is committed (the next engine commit carries it);
+(b) updates the agent skill in every agent skill folder where it is
+outdated and every file its manifest names is there as written or as
+shipped. Nothing else: an edited block or skill keeps its files (doctor
+and its fix), a missing `AGENTS.md` or a folder without the skill stays
+so, a damaged or newer block is left. A released block in the other
+language becomes this engine's block in the logbook's language (the
+logbook's language is the user's choice). A CRLF copy of a released v1
+file counts as that file. Skipped when the process runs as root (the
+owner of `/proc/self` is 0), and, failing closed, when that owner cannot
+be read (one `warnings` line); the package has no install
+script (`just check-packaging` pins it), so no package hook runs it. One
+`note:` line each in the human output; `--json` `rulesUpdated` and
+`skillsUpdated`. A failure is a `warnings` line, never the capture's.
 
 Help texts (WP-049): every command's `--help` starts with one sentence;
 values are named by what they are (`<ID>` a case id, `<EVENT>` an event
@@ -493,7 +538,8 @@ any user error with --json       → {"error":{"code":1,"message":"<detail>"}}  
 seldon doctor --json             → {"ok":bool,"logbook":"<path>"|null,
                                      "checks":[{"name","status":"ok|degraded|error","message","fix"?}],
                                      "drift":{"attention","routine","routinePaths","routinePackages",
-                                              "alwaysRedPaths","alwaysRed","nonDefault"}}
+                                              "alwaysRedPaths","alwaysRed","nonDefault"},
+                                     "hooks":{"scope":"logbook|all"}}       # hooks: WP-111, for the skill
                                     exit 0 (no error), 1 (a check is error), 3 (not initialised)
 ```
 
@@ -537,10 +583,13 @@ case id in two files (error, the `index --check` rule); `ledger`, lines
 that are not events, per month with the count and the first line
 numbers (degraded: every reader skips them); `rules` (WP-100), the
 rules block of `AGENTS.md` against this engine's in the logbook's
-language: `current (v2)` ok; `outdated (v1)` (no block, a file from
-before ADR-0027), `outdated (vN)`, `outdated (v2, its text differs …)`
-and `missing`, degraded with the fix `seldon rules update` (for the
-changed v2 block: "(archives your copy)"); `invalid (not UTF-8)`,
+language: `current (v3)` ok; `vN as Seldon wrote it; the next capture
+updates it to v3` ok (a shipped block or a released v1 file nobody
+edited, WP-111: no panel banner); `outdated (v1)` (no block and not a
+released file), `outdated (vN)` (an edited older block) and `outdated
+(v3, its text differs …)`, degraded with the fix `seldon rules update
+(archives your copy)`; `missing`, degraded, fix `seldon rules update`;
+`invalid (not UTF-8)`,
 degraded, fix `seldon rules update --replace`; a damaged block degraded
 with the fix to restore the marker lines or run
 `seldon rules update --replace`; a newer block degraded, fix: update
@@ -641,9 +690,13 @@ world-writable).
 seldon capture --json  → {"ok":true,"logbook":"<path>","written":N,"files":["ledger/2026-10.jsonl"],
                           "collectors":[{"name","enabled","ran","ok","events","message"?,"fix"?}],
                           "sinceIgnored":[…],"explainedOwn":N,"explainedSelf":N,
-                          "linkedPlanned":N,"watchPathsAdded":[…],"warnings":[…]}
+                          "linkedPlanned":N,"watchPathsAdded":[…],
+                          "rulesUpdated":{"from":"vN","version":3}|null,
+                          "skillsUpdated":["~/.claude/skills",…],"warnings":[…]}
                                                                     # explainedOwn: §5 rule 7;
                                                                     # watchPathsAdded: §4 config;
+                                                                    # rulesUpdated, skillsUpdated:
+                                                                    # the silent upgrade (§3, WP-111);
                                                                     # explainedSelf: §5 rule 8;
                                                                     # linkedPlanned: §5 rule 9;
                                                                     # warnings: the state reset (WP-081)
@@ -1948,7 +2001,14 @@ holds the lock they change nothing and exit 4.
 
 `seldon hook session-start` prints a compact context block to stdout
 (nothing for a session outside the session scope above):
-STATUS summary, active case (id, title, plan steps), last 5 journal lines
+STATUS summary, active case (id, title, plan steps), the drift of the
+last 7 days (WP-111, ADR-0028 §3b: `## Drift (last 7 days)`, a count line
+"N crisis|crises, M for attention" — "; the first 10" when more — then
+one quoted line per open crisis or attention item whose event lies
+within 7 days of now, crises first, then newest first, at most 10:
+`> CRISIS|attention <EVENT> <source>/<kind> <subject, 80 chars> (+N
+more)`, then one fixed line with the evidence rule; "No crisis, nothing
+for attention." when there is none; routine items never), last 5 journal lines
 (of the latest day file `journal/YYYY/YYYY-MM-DD.md` up to today; other
 file names are skipped), `memory/lessons.md` headings. Claude Code adds it
 to the session's context. Under the title one fixed line says that lines
@@ -1959,7 +2019,9 @@ one as a bare `>`); each line
 break in it (`\n`, `\r`, vertical tab, form feed, NEL, U+2028, U+2029)
 starts a new quoted line, and other control characters become U+FFFD.
 Seldon's own lines (the title, the note, the `## ` headings, the case's
-id/status line and the fixed texts) never start with `>`, so logbook text
+id/status line, the drift count line and the fixed texts) never start
+with `>`; a drift item's id, source, kind and subject come from the
+ledger and are quoted like any logbook text, so logbook text
 cannot take their form (WP-058). The framing keeps the structure
 unambiguous; it does not guarantee that a model reads quoted text only as
 data.
@@ -2054,12 +2116,12 @@ keys preserved. Empty layout directories get a `.gitkeep`.
 
 The wizard writes templates from `engine/templates/{en,de}/` into the
 logbook: `AGENTS.md` (the rules for agents, the short form of
-`docs/AGENT-GUIDE.md`, ADR-0027 v2: session start, attended or not,
+`docs/AGENT-GUIDE.md`, ADR-0027 v3: session start, attended or not,
 instructions and data, engine is the only writer, work in cases, when to
 ask first, R3, privileged steps and snapshots, zones and risk,
-installing software, closing, commands, journal and memory, drift,
-hooks, ending a session, never; all inside the block
-`<!-- seldon:begin rules v2 -->` … `<!-- seldon:end -->`, which holds no
+installing software, Omarchy first, closing, commands, journal and
+memory, drift, hooks, ending a session, never; all inside the block
+`<!-- seldon:begin rules v3 -->` … `<!-- seldon:end -->`, which holds no
 marker text of its own, then `## Your rules` for the user; no
 `CLAUDE.md`, WP-047, WP-100; an existing logbook gets the block with
 `seldon rules update`, §3), `PROJECT.md`, `STATUS.md`,
