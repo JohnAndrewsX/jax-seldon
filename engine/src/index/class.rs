@@ -637,6 +637,16 @@ mod tests {
                 (R, "keyring"),
             ),
             (
+                "the keyring and another package",
+                pac(
+                    Kind::Install,
+                    "htop",
+                    Some(true),
+                    "pacman -Sy --noconfirm archlinux-keyring htop",
+                ),
+                (A, "package"),
+            ),
+            (
                 "no command line",
                 {
                     let mut e = pac(Kind::Upgrade, "firefox", None, "x");
