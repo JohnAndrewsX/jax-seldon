@@ -143,6 +143,13 @@ garbage line without a timestamp
 [2026-10-01T11:40:12+0200] [ALPM] installed tailscale (1.102.3-1)
 [2026-10-01T11:40:12+0200] [ALPM] transaction completed
 [2026-10-01T11:40:12+0200] [ALPM] running '30-systemd-daemon-reload-system.hook'...
+[2026-10-01T12:29:58+0200] [PACMAN] Running 'pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst'
+[2026-10-01T12:30:00+0200] [ALPM] running '10-limine-snapper-lock.hook'...
+[2026-10-01T12:30:00+0200] [ALPM] transaction started
+[2026-10-01T12:30:00+0200] [ALPM] downgraded mesa (1:26.2.0-2 -> 1:26.1.0-1)
+[2026-10-01T12:30:01+0200] [ALPM] downgraded vulkan-radeon (1:26.2.0-2 -> 1:26.1.0-1)
+[2026-10-01T12:30:01+0200] [ALPM] downgraded lib32-mesa (1:26.2.0-2 -> 1:26.1.0-1)
+[2026-10-01T12:30:01+0200] [ALPM] transaction completed
 [2026-10-01T14:02:05+0200] [PACMAN] Running 'pacman -S --noconfirm ollama'
 [2026-10-01T14:02:09+0200] [ALPM] running '10-limine-snapper-lock.hook'...
 [2026-10-01T14:02:09+0200] [ALPM] transaction started

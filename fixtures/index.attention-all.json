@@ -56,8 +56,8 @@
   "summary": {
     "activeCases": 2,
     "queuedCases": 3,
-    "openDrift": 6,
-    "crisis": 2,
+    "openDrift": 12,
+    "crisis": 3,
     "eventsToday": 38,
     "events7d": 51
   },
@@ -995,8 +995,7 @@
       "meta": {
         "command": "pacman -S btop",
         "version": "1.4.5-1"
-      },
-      "case": "C-2026-002"
+      }
     },
     {
       "id": "01M1F1FJ107DNM0BRPWM9FMAVF",
@@ -1056,7 +1055,43 @@
       "detail": "sha256 — → 27d5c56a",
       "actor": "system",
       "zone": "yellow",
-      "crisis": true,
+      "crisis": false,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3VXC7M0PHFTWZ10BFQWAY6R",
+      "ts": "2026-10-01T16:20:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-disable",
+      "subject": "io.github.example.tyme",
+      "detail": "1.1.0",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3VWXKV8JQEWN9G1M309QXRZ",
+      "ts": "2026-10-01T16:12:01+02:00",
+      "source": "config",
+      "kind": "config-change",
+      "subject": "~/.config/omarchy/shell.json",
+      "detail": "sha256 cd7e59a7 → d333b1b4",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3VWXJW0BS00S6B97XBQJ9J3",
+      "ts": "2026-10-01T16:12:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-enable",
+      "subject": "io.github.example.tyme",
+      "detail": "1.1.0",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": false,
       "proposedCase": null
     },
     {
@@ -1092,7 +1127,7 @@
       "detail": "0.6.1-1",
       "actor": "agent:codex",
       "zone": "red",
-      "crisis": false,
+      "crisis": true,
       "proposedCase": null
     },
     {
@@ -1116,10 +1151,48 @@
       "detail": "1:26.2.0-2 → 1:26.1.0-1",
       "actor": "system",
       "zone": "red",
-      "crisis": false,
+      "crisis": true,
       "proposedCase": null,
       "txId": "tx-20261001T123000",
       "members": 3
+    },
+    {
+      "eventId": "01M3SXBQVR7AW8PJQC1YXDCQ14",
+      "ts": "2026-09-30T21:41:15+02:00",
+      "source": "pacman",
+      "kind": "upgrade",
+      "subject": "firefox",
+      "detail": "143.0.1-1 → 143.0.2-1",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": null,
+      "txId": "tx-20260930T214115",
+      "members": 3
+    },
+    {
+      "eventId": "01M3CRD49GM72DN67HHC1715KC",
+      "ts": "2026-09-25T19:04:30+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "kanagawa",
+      "detail": "catppuccin → kanagawa",
+      "actor": "human",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3CR4WM083GP1DFYWR7Y370C",
+      "ts": "2026-09-25T19:00:00+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "catppuccin",
+      "detail": "kanagawa → catppuccin",
+      "actor": "human",
+      "zone": "yellow",
+      "crisis": false,
+      "proposedCase": null
     }
   ],
   "cases": {
@@ -3027,17 +3100,17 @@
       },
       {
         "week": "2026-W38",
-        "opened": 0,
-        "resolved": 0
+        "opened": 3,
+        "resolved": 2
       },
       {
         "week": "2026-W39",
-        "opened": 1,
-        "resolved": 1
+        "opened": 3,
+        "resolved": 2
       },
       {
         "week": "2026-W40",
-        "opened": 7,
+        "opened": 12,
         "resolved": 2
       }
     ],
@@ -3136,6 +3209,18 @@
       },
       {
         "kind": "crisis",
+        "ts": "2026-10-01T12:30:00+02:00",
+        "label": "pacman downgrade mesa",
+        "ref": "01M3VG7320FC6BAG7ETNQTXW9K"
+      },
+      {
+        "kind": "crisis",
+        "ts": "2026-10-01T14:02:09+02:00",
+        "label": "pacman install ollama",
+        "ref": "01M3VNFTF8EVHWFFZ687N14Q0C"
+      },
+      {
+        "kind": "crisis",
         "ts": "2026-10-01T14:03:30+02:00",
         "label": "config config-add ~/.config/systemd/user/ollama.service",
         "ref": "01M3VNJ9JGZ9169T01XCW16FT0"
@@ -3157,12 +3242,6 @@
         "ts": "2026-10-01T16:30:04+02:00",
         "label": "115 tailscale: MagicDNS",
         "ref": "115"
-      },
-      {
-        "kind": "crisis",
-        "ts": "2026-10-01T16:45:00+02:00",
-        "label": "config config-add ~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
-        "ref": "01M3VYT0F08ZD5R76DQA3PHQ1G"
       }
     ]
   }

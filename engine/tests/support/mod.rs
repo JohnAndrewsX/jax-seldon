@@ -309,7 +309,7 @@ pub fn story() -> Bench {
     assert!(out.ok, "{:?}", out.message);
     assert_eq!(
         out.events.len(),
-        12,
+        15,
         "fixtures/README.md: the ledger's pacman events, got {:?}",
         subjects(&out.events)
     );

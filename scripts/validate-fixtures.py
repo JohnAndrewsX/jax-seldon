@@ -41,6 +41,9 @@ SCHEMA_DIR = os.path.join(ROOT, "schema")
 FIX = os.path.join(ROOT, "fixtures")
 LOGBOOK = os.path.join(FIX, "logbook")
 SAMPLE = os.path.join(FIX, "index.sample.json")
+# ADR-0028 §5: the sample logbook indexed with `[drift] attention = "all"` (the rollback, the drift
+# derivation before ADR-0028); the engine's golden test holds `seldon index` to it.
+ATTENTION_ALL = os.path.join(FIX, "index.attention-all.json")
 ID = "https://github.com/JohnAndrewsX/jax-seldon/schema/"
 
 EVENT, CASE, INDEX = ID + "event.schema.json", ID + "case.schema.json", ID + "index.schema.json"
@@ -136,6 +139,225 @@ def routine(e):
     """ADR-0013 §3: a group member that keeps the group yellow."""
     return (e["kind"] in ("upgrade", "reinstall") and e.get("explicit") is False
             and full_upgrade_argv(e.get("meta", {}).get("command")) and not always_red(e["subject"]))
+# ADR-0028 §2 (WP-109): the class of a drift-eligible event, routine < attention < crisis. Keep in
+# step with engine/src/index/class.rs and the [drift] defaults of engine/src/config.rs.
+ROUTINE_RULES = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "theme",
+                 "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+ROUTINE_PATHS = ["~/.config/omarchy/shell.json", "**/*.bak.*"]
+ROUTINE_PACKAGES = ["archlinux-keyring", "omarchy-keyring"]
+ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
+                    "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile"]
+CLASS_ORDER = {"routine": 0, "attention": 1, "crisis": 2}
+THEME_CODE = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
+OMARCHY_LOOKBACK = dt.timedelta(days=31)
+
+
+def glob_path(subject):
+    """A `~`-path as the path globs read it: `~/x` is `/~/x` (engine: class.rs glob_path)."""
+    if subject == "~" or subject.startswith("~/"):
+        return "/~" + subject[1:]
+    return subject
+
+
+def path_globs(patterns):
+    """`[redaction] skipPaths` glob semantics (engine: collectors/config.rs SkipPaths) with the home
+    directory as `/~`: a pattern with a `/` matches the whole path, at a directory boundary when it
+    is not absolute; one without matches a name; `*`/`?` within a component, `**` across; a match
+    on a directory covers everything below it."""
+    def rx(p):
+        out = ""
+        i = 0
+        while i < len(p):
+            if p.startswith("**", i):
+                out += ".*"
+                i += 2
+                continue
+            out += {"*": "[^/]*", "?": "[^/]"}.get(p[i], re.escape(p[i]))
+            i += 1
+        return out
+    globs = []
+    for p in (p.strip() for p in patterns):
+        if not p:
+            continue
+        p = p.rstrip("/")
+        if "/" not in p and p != "~":
+            globs.append(("name", re.compile("^" + rx(p) + "$")))
+            continue
+        p = glob_path(p)
+        globs.append(("path", re.compile(("^" if p.startswith("/") else "(?:^|/)") + rx(p) + "(?:/.*)?$")))
+    return globs
+
+
+def path_match(globs, subject):
+    path = glob_path(subject)
+    name = path.rsplit("/", 1)[-1]
+    return any(r.search(path if kind == "path" else name) for kind, r in globs)
+
+
+def parse_pacman(command):
+    """The pacman-like command line as argv (engine: pkgcmd::parse_command): program, the last
+    operation letter, sysupgrade, target names. None for another program."""
+    argv = (command or "").split()
+    if not argv or os.path.basename(argv[0]) not in ("pacman", "yay", "paru"):
+        return None
+    prog = os.path.basename(argv[0])
+    op, sysupgrade, prints_only, words = None, False, False, []
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        i += 1
+        if a == "--":
+            words += argv[i:]
+            break
+        if a.startswith("--"):
+            name = a[2:].split("=", 1)[0]
+            ops = {"sync": "S", "remove": "R", "upgrade": "U", "database": "D", "query": "Q",
+                   "deptest": "T", "files": "F", "yay": "Y", "show": "P", "getpkgbuild": "G"}
+            if name in ops:
+                op = ops[name]
+            elif name in ("help", "version"):
+                prints_only = True
+            elif name == "sysupgrade":
+                sysupgrade = True
+            elif "--" + name in PACMAN_LONG_WITH_ARG and "=" not in a:
+                i += 1
+        elif a.startswith("-") and a != "-":
+            for j, ch in enumerate(a[1:], 2):
+                if ch in "SRUDQTFYPG":
+                    op = ch
+                elif ch in "hV":
+                    prints_only = True
+                elif ch == "u":
+                    sysupgrade = True
+                elif ch in PACMAN_SHORT_WITH_ARG:
+                    if j == len(a):
+                        i += 1
+                    break
+        else:
+            words.append(a)
+    if op is None and prog != "pacman" and not prints_only:
+        op, sysupgrade = "S", sysupgrade or not words
+
+    def name(w):
+        if op == "U" and ".pkg.tar" in w:
+            f = w.rsplit("/", 1)[-1]
+            f = f[:f.index(".pkg.tar")]
+            parts = f.rsplit("-", 3)
+            return parts[0] if len(parts) == 4 else f
+        return re.split(r"[<>=]", w.rsplit("/", 1)[-1])[0]
+    targets = [n for n in (name(w) for w in words if w != "-") if n]
+    return {"program": prog, "op": op, "sysupgrade": sysupgrade and op == "S" and not prints_only,
+            "targets": targets}
+
+
+def plain_full_upgrade(cmd):
+    return cmd is not None and cmd["op"] == "S" and cmd["sysupgrade"] and not cmd["targets"]
+
+
+def package_shaped(v):
+    """`N…-N` (engine: class.rs package_shaped)."""
+    if not isinstance(v, str) or "-" not in v:
+        return False
+    ver, rel_ = v.rsplit("-", 1)
+    parts = rel_.split(".")
+    return (bool(rel_) and len(parts) <= 2 and all(p.isdigit() and p.isascii() for p in parts)
+            and ver[:1].isdigit() and ver[:1].isascii() and not re.search(r"[\s-]", ver))
+
+
+class Classifier:
+    """engine: class.rs Rules + Classifier with the default [drift] config."""
+    def __init__(self, events):
+        self.routine_paths = path_globs(ROUTINE_PATHS)
+        self.red_paths = path_globs(ALWAYS_RED_PATHS)
+        self.explicit = {}
+        self.omarchy = []
+        for e in events:
+            if e["source"] == "pacman" and e.get("explicit") is True and e.get("txId"):
+                self.explicit.setdefault(e["txId"], []).append(e)
+            if (e["source"] == "pacman" and e["subject"] in ("omarchy", "omarchy-dev")
+                    and e["kind"] in ("install", "upgrade")
+                    and plain_full_upgrade(parse_pacman(e.get("meta", {}).get("command")))):
+                v = e.get("meta", {}).get("to") or e.get("meta", {}).get("version")
+                if v:
+                    self.omarchy.append((v, instant(e["ts"])))
+
+    def event(self, e, cmd):
+        """(class, rule), or None for a dependency of a named transaction (it follows)."""
+        src, kind, subject = e["source"], e["kind"], e["subject"]
+        meta = e.get("meta", {})
+        if src == "pacman":
+            red = always_red(subject)
+            if plain_full_upgrade(cmd):
+                if kind in ("upgrade", "reinstall", "install") or (kind == "remove" and not red):
+                    return ("routine", "sysupgrade")
+                if red and kind in ("downgrade", "remove"):
+                    return ("attention", "sysupgrade-red")
+                return ("attention", "downgrade") if kind == "downgrade" else ("attention", "other")
+            if cmd and cmd["targets"] and all(t in ROUTINE_PACKAGES for t in cmd["targets"]):
+                return ("routine", "keyring")
+            if e.get("explicit") is False:
+                return None
+            if e.get("explicit") is True:
+                if kind in ("upgrade", "reinstall"):
+                    return ("attention", "upgrade-red") if red else ("routine", "upgrade")
+                if kind in ("install", "remove", "downgrade"):
+                    return ("crisis", "always-red") if red else ("attention", "package")
+            return ("attention", "other")
+        if src == "omarchy":
+            to, at = meta.get("to"), instant(e["ts"])
+            if (kind == "update" and package_shaped(meta.get("from")) and package_shaped(to)
+                    and any(v == to and at - OMARCHY_LOOKBACK <= ts <= at for v, ts in self.omarchy)):
+                return ("routine", "omarchy-update")
+            return ("attention", "omarchy-other")
+        if src == "plugins":
+            return ("routine", "plugin-toggle") if kind in ("plugin-enable", "plugin-disable") else ("attention", "plugin")
+        if src == "theme":
+            return ("routine", "theme") if kind == "theme-set" else ("attention", "other")
+        if src == "config":
+            mark = meta.get("matches")
+            removed = kind == "config-remove"
+            if not removed and mark in ("omarchy-default", "system-link"):
+                return ("routine", mark)
+            if path_match(self.routine_paths, subject):
+                return ("routine", "routine-paths")
+            if removed:
+                return ("attention", "config-remove")
+            inert = subject.startswith("~/.config/omarchy/hooks/") and subject.endswith(".sample")
+            if path_match(self.red_paths, subject) and not inert:
+                return ("crisis", "always-red-paths")
+            theme = "~/.config/omarchy/themes/"
+            if subject.startswith(theme) and "/" in subject[len(theme):]:
+                if mark == "theme-repo":
+                    return ("routine", "theme-repo")
+                name = subject.rsplit("/", 1)[-1]
+                if not name.endswith(".lua") and name not in THEME_CODE:
+                    return ("routine", "theme-assets")
+            if subject.startswith("~/.config/omarchy/backgrounds/"):
+                return ("routine", "theme-assets")
+            return ("attention", "config")
+        return ("attention", "other")
+
+    def follow(self, dep, cmd):
+        vs = [v for v in (self.event(x, cmd) for x in self.explicit.get(dep.get("txId"), [])) if v]
+        return max(vs, key=lambda v: CLASS_ORDER[v[0]]) if vs else ("attention", "other")
+
+    def group(self, members, lead):
+        """The highest class of the members; the rule of the lead, else of the lowest id with it."""
+        cmd = parse_pacman(lead.get("meta", {}).get("command")) if lead["source"] == "pacman" else None
+        best = None
+        for m in members:
+            v = self.event(m, cmd) or self.follow(m, cmd)
+            key = (CLASS_ORDER[v[0]], m["id"] == lead["id"], [-ord(c) for c in m["id"]])
+            if best is None or key > best[0]:
+                best = (key, v)
+        return best[1]
+
+
+def group_lead(members):
+    explicit = [m for m in members if m.get("explicit") is True]
+    return min(explicit or members, key=lambda m: m["id"])
+
+
 CASE_KEYS = ["id", "title", "status", "zone", "risk", "priority", "area", "created", "started", "closed",
              "snapshotBefore", "agents", "events", "tags", "path", "steps", "proposedEvents"]
 
@@ -573,7 +795,9 @@ def load_logbook(lb, problems, mutate=None, mutate_cases=None):
     return ledger, cases
 
 
-def derive(lb, today, problems, mutate=None, mutate_cases=None):
+def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
+    """The index parts that come from the logbook. `legacy`: `[drift] attention = "all"`, the drift
+    derivation before ADR-0028 (computed pacman zone, crisis iff red, every caseless event open)."""
     ledger, case_files = load_logbook(lb, problems, mutate, mutate_cases)
     events = [e for _, e in ledger]
     by_id = {}
@@ -646,7 +870,9 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None):
                 return cid
         return None
 
-    # open drift; caseless pacman events of one transaction form one item (ADR-0013 §1-§3)
+    # linkable events (drift eligible, no case, no resolution); caseless pacman events of one
+    # transaction form one item (ADR-0013 §1); its class is the highest of its members (ADR-0028 §2)
+    classifier = Classifier(events)
     items, by_tx = [], {}
     for e in folded:
         if e["source"] in DRIFT_SOURCES and "case" not in e and "resolution" not in e:
@@ -659,18 +885,25 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None):
                 items.append([e])
     drift = []
     for members in items:
-        explicit = [m for m in members if m.get("explicit") is True]
-        lead = min(explicit or members, key=lambda m: m["id"])
+        lead = group_lead(members)
         d = {"eventId": lead["id"], "ts": lead["ts"], "source": lead["source"], "kind": lead["kind"],
              "subject": lead["subject"], "detail": lead.get("detail"), "actor": lead["actor"]}
         if d["detail"] is not None:
             d["detail"] = clip(d["detail"])
-        if lead["source"] == "pacman":
-            d["zone"] = "yellow" if all(routine(m) for m in members) else "red"
-        elif "zone" in lead:
-            d["zone"] = lead["zone"]
-        d["crisis"] = d.get("zone") == "red"
         d["proposedCase"] = proposed(lead["subject"])
+        if legacy:
+            if lead["source"] == "pacman":
+                d["zone"] = "yellow" if all(routine(m) for m in members) else "red"
+            elif "zone" in lead:
+                d["zone"] = lead["zone"]
+            d["crisis"] = d.get("zone") == "red"
+        else:
+            cls, _ = classifier.group(members, lead)
+            if cls == "routine" and d["proposedCase"] is None:
+                continue  # history, not drift (ADR-0028 §3)
+            if "zone" in lead:
+                d["zone"] = lead["zone"]  # the ledger zone (ADR-0028 §7)
+            d["crisis"] = cls == "crisis"
         if len(members) > 1:
             d["txId"], d["members"] = lead["txId"], len(members)
         drift.append({k: d[k] for k in DRIFT_KEYS if d.get(k) is not None or k == "proposedCase"})
@@ -806,12 +1039,24 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None):
             d += dt.timedelta(days=7)
     # ADR-0013 §4: drift items, not lines. A caseless pacman transaction opens one item (in the
     # week of its earliest line); the resolution lines of one group write (same meta.txId, ts and
-    # actor) count as one.
+    # actor) count as one. ADR-0028 §5: a routine group opens nothing (proposals aside), and a
+    # resolution counts only when its target opened an item.
+    sgroups, gby = [], {}
+    for e in sorted(events, key=lambda e: (instant(e["ts"]), e["id"])):
+        if e["source"] in DRIFT_SOURCES and "case" not in e and e["kind"] != "resolution":
+            k = ("tx", e["txId"]) if e["source"] == "pacman" and e.get("txId") else e["id"]
+            if k not in gby:
+                gby[k] = []
+                sgroups.append(gby[k])
+            gby[k].append(e)
+    opened_ids = {m["id"] for g in sgroups
+                  if legacy or classifier.group(g, group_lead(g))[0] != "routine" for m in g}
     first = {}
     for e in sorted(events, key=lambda e: (instant(e["ts"]), e["id"])):
-        if e["source"] in DRIFT_SOURCES and "case" not in e:
-            first.setdefault(("tx", e["txId"]) if e["source"] == "pacman" and e.get("txId") else e["id"], e)
-        elif e["kind"] == "resolution":
+        if e["source"] in DRIFT_SOURCES and "case" not in e and e["kind"] != "resolution":
+            if e["id"] in opened_ids:
+                first.setdefault(("tx", e["txId"]) if e["source"] == "pacman" and e.get("txId") else e["id"], e)
+        elif e["kind"] == "resolution" and e.get("refersTo") in opened_ids:
             tx = e.get("meta", {}).get("txId")
             first.setdefault(("res", tx, e["ts"], e["actor"]) if tx else e["id"], e)
     opened = [week(day(e)) for e in first.values() if e["kind"] != "resolution"]
@@ -1008,23 +1253,23 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/56/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/56/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/56/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/66/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/66/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/66/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
-    # list stays the sample's four, so the plugin shows "+246 more open drift items not listed here".
+    # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
     "drift-capped": [
-        {"op": "test", "path": "/summary/openDrift", "value": 4},
+        {"op": "test", "path": "/summary/openDrift", "value": 6},
         {"op": "replace", "path": "/summary/openDrift", "value": 250},
     ],
-    # CONTRACT.md rule 4: index.events may omit members of an open group. noto-fonts leaves events,
-    # the firefox group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
+    # CONTRACT.md rule 4: index.events may omit members of an open group. lib32-mesa leaves events,
+    # the mesa downgrade group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
-        {"op": "test", "path": "/drift/3/members", "value": 3},
-        {"op": "test", "path": "/events/31/id", "value": "01M3SXBRV0E702XKBM22HEV1B8"},
-        {"op": "test", "path": "/events/31/subject", "value": "noto-fonts"},
-        {"op": "remove", "path": "/events/31"},
+        {"op": "test", "path": "/drift/5/members", "value": 3},
+        {"op": "test", "path": "/events/17/id", "value": "01M3VG74184NVTFDTEGPD71P5H"},
+        {"op": "test", "path": "/events/17/subject", "value": "lib32-mesa"},
+        {"op": "remove", "path": "/events/16"},
     ],
 }
 
@@ -1113,6 +1358,7 @@ def self_checks(today):
         w = [s for s in derived["series"]["drift"] if s["week"] == "2026-W40"][0]
         return None if g is None and w["resolved"] == 3 else f"group {g}, W40 resolved {w['resolved']} (want gone, 3)"
 
+    # ADR-0013 §3: the group rules of the rollback (`attention = "all"`)
     cases = [
         ("unchanged", None, zone("yellow", False)),
         ("one member explicit", set_on_first(explicit=True), zone("red", True)),
@@ -1136,10 +1382,45 @@ def self_checks(today):
         ("--only resolves one member", resolve(1, False), zone("yellow", False, 2)),
         ("fan-out resolves the group, counted once", resolve(3, True), resolved_once),
     ]
+    cases = [(f"all: {label}", m, x, True) for label, m, x in cases]
+
+    # ADR-0028 §2: the same group under the default rules; gone = routine, history, not drift
+    def gone(g, _):
+        return None if g is None else f"group {g}, want none (routine)"
+
+    def both(*ms):
+        def m(ledger):
+            for f in ms:
+                f(ledger)
+        return m
+
+    cases += [(f"normal: {label}", m, x, False) for label, m, x in [
+        ("plain -Syu is routine", None, gone),
+        ("plain -Syu with a kernel upgrade is routine", set_on_first(subject="linux"), gone),
+        ("plain -Syu with an install is routine", set_on_first(kind="install"), gone),
+        ("plain -Syyuu is routine", set_command("pacman -Syyuu"), gone),
+        ("plain -Su is routine", set_command("pacman -Su"), gone),
+        ("bare yay is routine", set_command("yay"), gone),
+        ("Omarchy's update line is routine", set_command("pacman -Syu --noconfirm --overwrite /usr/share/omarchy/*"), gone),
+        ("a :: Replace removal is routine", set_on_first(kind="remove"), gone),
+        ("a downgrade in a full upgrade is attention", set_on_first(kind="downgrade"), zone("red", False)),
+        ("a kernel removal in a full upgrade is attention", both(set_on_first(subject="linux"), set_on_first(kind="remove")),
+         zone("red", False)),
+        ("a full upgrade naming a package is attention", set_command("pacman -Syu ollama"), zone("red", False)),
+        ("a named upgrade is routine", both(set_command("pacman -S firefox"), set_on_first(explicit=True)), gone),
+        ("a named kernel install is a crisis", both(set_command("pacman -S linux"), set_on_first(explicit=True),
+                                                    set_on_first(subject="linux"), set_on_first(kind="install")),
+         zone("red", True)),
+        ("a named kernel upgrade is attention", both(set_command("pacman -S linux"), set_on_first(explicit=True),
+                                                     set_on_first(subject="linux")), zone("red", False)),
+        ("a keyring transaction is routine", both(set_command("pacman -Sy --noconfirm archlinux-keyring"),
+                                                  set_on_first(explicit=True), set_on_first(kind="install"),
+                                                  set_on_first(subject="archlinux-keyring")), gone),
+    ]]
     out = []
-    for label, mutate, expect in cases:
+    for label, mutate, expect, legacy in cases:
         problems = []
-        derived, _, _ = derive(LOGBOOK, today, problems, mutate)
+        derived, _, _ = derive(LOGBOOK, today, problems, mutate, legacy=legacy)
         tx_items = [d for d in derived["drift"] if d.get("txId") == GROUP_TX
                     or (d["source"] == "pacman" and d["ts"].startswith("2026-09-30"))]
         err = problems[:1] or ([f"{len(tx_items)} items for the group"] if len(tx_items) > 1 else [])
@@ -1149,14 +1430,14 @@ def self_checks(today):
             err = [e] if e else []
         out += [f"self-check '{label}': {e}" for e in err]
 
-    # ADR-0015 §4 token rule, end to end: an open caseless `zed` upgrade, every open case's Plan
+    # ADR-0015 §4 token rule, end to end: an open caseless `zed` install, every open case's Plan
     # replaced by a neutral one (the sample's Plans name zed in other forms), and one Plan line
     # in C-2026-007.
     def add_zed(ledger):
         ledger.append(("<self-check>:zed", {
-            "id": "7" + "Z" * 23 + "ZD", "ts": "2026-10-01T16:55:00+02:00", "source": "pacman", "kind": "upgrade",
-            "subject": "zed", "detail": "0.198.4-1 → 0.198.5-1", "actor": "system", "zone": "red", "explicit": False,
-            "txId": "tx-20261001T165500", "meta": {"command": "pacman -Syu", "from": "0.198.4-1", "to": "0.198.5-1"}}))
+            "id": "7" + "Z" * 23 + "ZD", "ts": "2026-10-01T16:55:00+02:00", "source": "pacman", "kind": "install",
+            "subject": "zed", "detail": "0.198.5-1", "actor": "system", "zone": "red", "explicit": True,
+            "txId": "tx-20261001T165500", "meta": {"command": "pacman -S zed", "version": "0.198.5-1"}}))
 
     def plan_line(line):
         def m(cases):
@@ -1279,7 +1560,7 @@ def collect_instances():
             continue
         with open(f, encoding="utf-8") as fh:
             inst = json.load(fh)
-        if r == "index.sample.json" or re.fullmatch(r"index-variants/[a-z0-9-]+\.json", r):
+        if r in ("index.sample.json", "index.attention-all.json") or re.fullmatch(r"index-variants/[a-z0-9-]+\.json", r):
             sid, bad = INDEX, False
         elif re.fullmatch(r"logs/snapper(-[a-z0-9-]+)?\.json", r):
             sid, bad = EXT["snapper"], False
@@ -1330,17 +1611,25 @@ def main():
     today = dt.date.fromisoformat(sample["generatedAt"][:10])
     derived, ledger, case_files = derive(LOGBOOK, today, problems)
 
-    if a.write_index:
+    derived_all, _, _ = derive(LOGBOOK, today, problems, legacy=True)
+
+    def as_sample(d):
         out = {k: sample[k] for k in ("contractVersion", "generatedAt", "engineVersion")}
-        out["logbook"] = {"path": sample["logbook"]["path"], **derived["logbook"]}
+        out["logbook"] = {"path": sample["logbook"]["path"], **d["logbook"]}
         if "git" in sample["logbook"]:
             out["logbook"]["git"] = sample["logbook"]["git"]
         out["state"] = sample["state"]
         for k in ("summary", "today", "events", "drift", "cases", "decisions", "system", "memory", "series"):
-            out[k] = derived[k]
+            out[k] = d[k]
+        return out
+
+    if a.write_index:
+        out = as_sample(derived)
         dump_json(SAMPLE, out)
         sample = out
         print(f"wrote {rel(SAMPLE)}")
+        dump_json(ATTENTION_ALL, as_sample(derived_all))
+        print(f"wrote {rel(ATTENTION_ALL)}")
         for name, ops in VARIANTS.items():
             path = os.path.join(FIX, "index-variants", f"{name}.json")
             try:
@@ -1375,6 +1664,15 @@ def main():
             problems.append(f"index.sample.json /logbook/{k}: != PROJECT.md")
     problems += check_case_logs(ledger, case_files)
     problems += check_times(sample, "index.sample.json")
+
+    # 2b. the `attention = "all"` index is the sample logbook's legacy derivation
+    if not os.path.exists(ATTENTION_ALL):
+        problems.append(f"{rel(ATTENTION_ALL)}: missing; run with --write-index")
+    else:
+        with open(ATTENTION_ALL, encoding="utf-8") as f:
+            have = json.load(f)
+        problems += [f"{rel(ATTENTION_ALL)} {d} (regenerate with --write-index)"
+                     for d in diff(have, as_sample(derived_all))]
 
     # 3. every index variant is the sample plus its overlay
     variant_files = {os.path.basename(f)[:-5] for f in glob.glob(os.path.join(FIX, "index-variants", "*.json"))}

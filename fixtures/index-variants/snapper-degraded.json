@@ -57,10 +57,10 @@
   "summary": {
     "activeCases": 2,
     "queuedCases": 3,
-    "openDrift": 4,
+    "openDrift": 6,
     "crisis": 2,
-    "eventsToday": 30,
-    "events7d": 41
+    "eventsToday": 38,
+    "events7d": 51
   },
   "today": {
     "date": "2026-10-01",
@@ -112,6 +112,19 @@
       "case": "C-2026-004"
     },
     {
+      "id": "01M3VYT0F08ZD5R76DQA3PHQ1G",
+      "ts": "2026-10-01T16:45:00+02:00",
+      "source": "config",
+      "kind": "config-add",
+      "subject": "~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
+      "detail": "sha256 — → 27d5c56a",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "hashTo": "27d5c56abb19bbe46eea34a2d7ec4ba47da20c86498d05ba0e202fb0e7b47829"
+      }
+    },
+    {
       "id": "01M3VXYNF0XTBDWFTZP1412REN",
       "ts": "2026-10-01T16:30:04+02:00",
       "source": "snapper",
@@ -136,6 +149,48 @@
       "meta": {
         "type": "pre",
         "cleanup": ""
+      }
+    },
+    {
+      "id": "01M3VXC7M0PHFTWZ10BFQWAY6R",
+      "ts": "2026-10-01T16:20:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-disable",
+      "subject": "io.github.example.tyme",
+      "detail": "1.1.0",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "version": "1.1.0",
+        "enabled": false
+      }
+    },
+    {
+      "id": "01M3VWXKV8JQEWN9G1M309QXRZ",
+      "ts": "2026-10-01T16:12:01+02:00",
+      "source": "config",
+      "kind": "config-change",
+      "subject": "~/.config/omarchy/shell.json",
+      "detail": "sha256 cd7e59a7 → d333b1b4",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "hashFrom": "cd7e59a7ea970e4d737d72c98eebb6263e547f4d62b0dba5064b7175d8bbc641",
+        "hashTo": "d333b1b4780b8d235d520b25b4b4121fa2285e3a4532203abaeb5dd5ecb61d48"
+      }
+    },
+    {
+      "id": "01M3VWXJW0BS00S6B97XBQJ9J3",
+      "ts": "2026-10-01T16:12:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-enable",
+      "subject": "io.github.example.tyme",
+      "detail": "1.1.0",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "version": "1.1.0",
+        "enabled": true
       }
     },
     {
@@ -241,6 +296,70 @@
       "zone": "red",
       "meta": {
         "command": "sudo pacman -S --noconfirm ollama"
+      }
+    },
+    {
+      "id": "01M3VK2MR06078ZQTPRZCFYHK0",
+      "ts": "2026-10-01T13:20:00+02:00",
+      "source": "config",
+      "kind": "config-remove",
+      "subject": "~/.config/hypr/monitors.conf",
+      "detail": "sha256 6d81c412 → —",
+      "actor": "system",
+      "zone": "yellow",
+      "meta": {
+        "hashFrom": "6d81c41202034fff47fdb480400142b8472fcfed536bab61a1fd785d6315c272"
+      }
+    },
+    {
+      "id": "01M3VG7418EPKV6HMJ0GN4PGFG",
+      "ts": "2026-10-01T12:30:01+02:00",
+      "source": "pacman",
+      "kind": "downgrade",
+      "subject": "vulkan-radeon",
+      "detail": "1:26.2.0-2 → 1:26.1.0-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20261001T123000",
+      "meta": {
+        "command": "pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst",
+        "from": "1:26.2.0-2",
+        "to": "1:26.1.0-1"
+      }
+    },
+    {
+      "id": "01M3VG74184NVTFDTEGPD71P5H",
+      "ts": "2026-10-01T12:30:01+02:00",
+      "source": "pacman",
+      "kind": "downgrade",
+      "subject": "lib32-mesa",
+      "detail": "1:26.2.0-2 → 1:26.1.0-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20261001T123000",
+      "meta": {
+        "command": "pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst",
+        "from": "1:26.2.0-2",
+        "to": "1:26.1.0-1"
+      }
+    },
+    {
+      "id": "01M3VG7320FC6BAG7ETNQTXW9K",
+      "ts": "2026-10-01T12:30:00+02:00",
+      "source": "pacman",
+      "kind": "downgrade",
+      "subject": "mesa",
+      "detail": "1:26.2.0-2 → 1:26.1.0-1",
+      "actor": "system",
+      "zone": "red",
+      "explicit": true,
+      "txId": "tx-20261001T123000",
+      "meta": {
+        "command": "pacman -U /var/cache/pacman/pkg/mesa-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/vulkan-radeon-1:26.1.0-1-x86_64.pkg.tar.zst /var/cache/pacman/pkg/lib32-mesa-1:26.1.0-1-x86_64.pkg.tar.zst",
+        "from": "1:26.2.0-2",
+        "to": "1:26.1.0-1"
       }
     },
     {
@@ -637,6 +756,34 @@
       "case": "C-2026-003"
     },
     {
+      "id": "01M3CRD49GM72DN67HHC1715KC",
+      "ts": "2026-09-25T19:04:30+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "kanagawa",
+      "detail": "catppuccin → kanagawa",
+      "actor": "human",
+      "zone": "yellow",
+      "meta": {
+        "from": "catppuccin",
+        "to": "kanagawa"
+      }
+    },
+    {
+      "id": "01M3CR4WM083GP1DFYWR7Y370C",
+      "ts": "2026-09-25T19:00:00+02:00",
+      "source": "theme",
+      "kind": "theme-set",
+      "subject": "catppuccin",
+      "detail": "kanagawa → catppuccin",
+      "actor": "human",
+      "zone": "yellow",
+      "meta": {
+        "from": "kanagawa",
+        "to": "catppuccin"
+      }
+    },
+    {
       "id": "01M3A5RK9GGCM0KRRCQ47NGCN0",
       "ts": "2026-09-24T19:00:14+02:00",
       "source": "plugins",
@@ -901,6 +1048,18 @@
   ],
   "drift": [
     {
+      "eventId": "01M3VYT0F08ZD5R76DQA3PHQ1G",
+      "ts": "2026-10-01T16:45:00+02:00",
+      "source": "config",
+      "kind": "config-add",
+      "subject": "~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
+      "detail": "sha256 — → 27d5c56a",
+      "actor": "system",
+      "zone": "yellow",
+      "crisis": true,
+      "proposedCase": null
+    },
+    {
       "eventId": "01M3VTGNY0NZG4AY80814WSKGR",
       "ts": "2026-10-01T15:30:00+02:00",
       "source": "theme",
@@ -933,21 +1092,33 @@
       "detail": "0.6.1-1",
       "actor": "agent:codex",
       "zone": "red",
-      "crisis": true,
+      "crisis": false,
       "proposedCase": null
     },
     {
-      "eventId": "01M3SXBQVR7AW8PJQC1YXDCQ14",
-      "ts": "2026-09-30T21:41:15+02:00",
-      "source": "pacman",
-      "kind": "upgrade",
-      "subject": "firefox",
-      "detail": "143.0.1-1 → 143.0.2-1",
+      "eventId": "01M3VK2MR06078ZQTPRZCFYHK0",
+      "ts": "2026-10-01T13:20:00+02:00",
+      "source": "config",
+      "kind": "config-remove",
+      "subject": "~/.config/hypr/monitors.conf",
+      "detail": "sha256 6d81c412 → —",
       "actor": "system",
       "zone": "yellow",
       "crisis": false,
+      "proposedCase": null
+    },
+    {
+      "eventId": "01M3VG7320FC6BAG7ETNQTXW9K",
+      "ts": "2026-10-01T12:30:00+02:00",
+      "source": "pacman",
+      "kind": "downgrade",
+      "subject": "mesa",
+      "detail": "1:26.2.0-2 → 1:26.1.0-1",
+      "actor": "system",
+      "zone": "red",
+      "crisis": false,
       "proposedCase": null,
-      "txId": "tx-20260930T214115",
+      "txId": "tx-20261001T123000",
       "members": 3
     }
   ],
@@ -2770,7 +2941,10 @@
       },
       {
         "date": "2026-09-25",
-        "total": 0
+        "total": 2,
+        "bySource": {
+          "theme": 2
+        }
       },
       {
         "date": "2026-09-26",
@@ -2809,14 +2983,14 @@
       },
       {
         "date": "2026-10-01",
-        "total": 30,
+        "total": 38,
         "bySource": {
           "agent": 6,
-          "config": 2,
+          "config": 5,
           "manual": 2,
           "omarchy": 1,
-          "pacman": 7,
-          "plugins": 1,
+          "pacman": 10,
+          "plugins": 3,
           "seldon": 6,
           "snapper": 4,
           "theme": 1
@@ -2853,17 +3027,17 @@
       },
       {
         "week": "2026-W38",
-        "opened": 3,
-        "resolved": 2
+        "opened": 0,
+        "resolved": 0
       },
       {
         "week": "2026-W39",
         "opened": 1,
-        "resolved": 2
+        "resolved": 1
       },
       {
         "week": "2026-W40",
-        "opened": 6,
+        "opened": 7,
         "resolved": 2
       }
     ],
@@ -2962,12 +3136,6 @@
       },
       {
         "kind": "crisis",
-        "ts": "2026-10-01T14:02:09+02:00",
-        "label": "pacman install ollama",
-        "ref": "01M3VNFTF8EVHWFFZ687N14Q0C"
-      },
-      {
-        "kind": "crisis",
         "ts": "2026-10-01T14:03:30+02:00",
         "label": "config config-add ~/.config/systemd/user/ollama.service",
         "ref": "01M3VNJ9JGZ9169T01XCW16FT0"
@@ -2989,6 +3157,12 @@
         "ts": "2026-10-01T16:30:04+02:00",
         "label": "115 tailscale: MagicDNS",
         "ref": "115"
+      },
+      {
+        "kind": "crisis",
+        "ts": "2026-10-01T16:45:00+02:00",
+        "label": "config config-add ~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh",
+        "ref": "01M3VYT0F08ZD5R76DQA3PHQ1G"
       }
     ]
   }
