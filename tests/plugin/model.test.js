@@ -341,9 +341,9 @@ test("snapperBanner: Check again is a capture, the hint follows Run in terminal 
   assert.strictEqual(M.snapperBanner(null, true), null)
 })
 
-test("changelogRows: 72 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 73 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 72)
+  assert.strictEqual(rows.length, 73)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -351,7 +351,7 @@ test("changelogRows: 72 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(badged[0].subject, "mesa")
   assert.strictEqual(badged[0].txId, "tx-20260927T123000")
   same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["lib32-mesa", "vulkan-radeon"])
-  assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 7)
+  assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 8)
   assert.strictEqual(rows.filter((r) => r.snapshot).length, 8)
   assert.strictEqual(rows.filter((r) => r.drift).length, 8)
   same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "config-add"])
@@ -361,6 +361,9 @@ test("changelogRows: 72 events newest first, one +2 group (3 members), folded re
   const tyme = rows.find((r) => r.subject === "io.github.example.tyme" && r.kind === "plugin-add")
   assert.strictEqual(M.rowStatus(tyme), "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar.")
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "tailscale")), "linked to C-2026-008")
+  // ADR-0029 rule 9: the engine's link reads like any other
+  assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "io.github.example.display-profiles")),
+    "linked to C-2026-002: planned by C-2026-002; active at the time")
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "vulkan-radeon")), "In the open mesa group")
   // ADR-0028: the 09-30 -Syu group is routine history, not drift
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "libinput")), "")
@@ -415,7 +418,7 @@ test("changelogRows: 72 events newest first, one +2 group (3 members), folded re
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 72)
+  assert.strictEqual(counts.all, 73)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -423,10 +426,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 72)
+  assert.strictEqual(total, 73)
   assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 15)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 72)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 73)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -1111,10 +1114,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["67 events", "Explicit 324 → 327", "11 opened · 6 resolved",
+  same(s30.map((s) => s.detail), ["68 events", "Explicit 324 → 327", "12 opened · 7 resolved",
     "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "72 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "73 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1273,8 +1276,8 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 67, activeDays: 14, max: 30, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "67 events on 14 of 30 days · busiest 2026-10-01 (30)")
+  same(h30.numbers, { days: 30, events: 68, activeDays: 14, max: 30, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "68 events on 14 of 30 days · busiest 2026-10-01 (30)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
@@ -1327,8 +1330,8 @@ test("seriesChart: step lines per lane, padded flat lanes, the sample at a day",
 test("driftChart: weeks with gaps filled, peak, hover text", () => {
   const d = M.periodTable(ok.index).periods["90"].charts.driftBars
   // ADR-0028 §5: routine rows open nothing, their old resolutions count nothing
-  same(d.numbers, { weeks: 5, opened: 11, resolved: 6, max: 6, peak: "2026-W40" })
-  assert.strictEqual(d.summary, "11 opened · 6 resolved in 5 weeks · peak 2026-W40")
+  same(d.numbers, { weeks: 5, opened: 12, resolved: 7, max: 6, peak: "2026-W40" })
+  assert.strictEqual(d.summary, "12 opened · 7 resolved in 5 weeks · peak 2026-W40")
   assert.strictEqual(M.driftWeekText(d.weeks[4]), "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2")
   const gaps = M.driftChart([{ week: "2026-W40", opened: 1, resolved: 0 }, { week: "2026-W37", opened: 0, resolved: 2 }])
   same(gaps.weeks.map((w) => w.week + ":" + w.opened + "/" + w.resolved), ["2026-W37:0/2", "2026-W38:0/0", "2026-W39:0/0", "2026-W40:1/0"])
