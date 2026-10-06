@@ -422,6 +422,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PWD` for the folder it starts in. The rules and the skill hand-down
   name servers and multiplexers; the guides say never to set the
   variable by hand. The wizard names `~/.claude/settings.json`.
+- **A change the one open case planned is that case's (ADR-0029,
+  WP-115).** When you install a package (or add a plugin, change a
+  watched file) by hand while a case whose *Plan* names it is open, and
+  no other case open at the time names it, the next capture links it to
+  that case — whoever typed the
+  command — instead of leaving it as drift. The ledger gets one `linked`
+  line by `system` (`planned by <ID>; active at the time`), the case
+  lists the event and its *Log* says `linked after the fact: …`. A
+  package's dependencies come along. Anything that can affect boot,
+  login or the shell — an `alwaysRed` package (kernel, bootloader, …) or
+  a file on a persistence path (`alwaysRedPaths`: user units, autostart,
+  Omarchy hooks, …) — links only to a case that was R3 at the time;
+  otherwise it stays a crisis and the case's *Log* says why. Two cases
+  that both planned it link nothing and each says so in its *Log*; a case
+  file that does not load blocks the link (`seldon doctor` names it). An
+  HTML comment in a *Plan* no longer counts as planning (also for the
+  proposals). Changes recorded before
+  this release are linked by the first capture after the upgrade. A link
+  the engine made yields to anyone's later `seldon drift link|explain|
+  dismiss` (`seldon capture --json` counts `linkedPlanned`).
+- `seldon plan verify` and `seldon plan done` run a capture first, so a
+  step done by hand inside the case is recorded and linked before the
+  case changes state; a capture that fails is a warning (a degraded
+  collector is not: `seldon doctor` shows it), `--no-capture` skips it,
+  and the panel's *Done* takes a moment longer (WP-115).
 
 ### Plugin
 

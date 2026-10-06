@@ -476,7 +476,7 @@ mod tests {
                 n += 1;
             }
         }
-        assert_eq!(n, 81, "fixtures/README.md: 81 ledger lines");
+        assert_eq!(n, 83, "fixtures/README.md: 83 ledger lines");
     }
 
     #[test]

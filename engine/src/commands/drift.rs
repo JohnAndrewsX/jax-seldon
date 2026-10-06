@@ -309,6 +309,16 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
     let mut human = format!("{}  {}\n", e.id, e);
     match item {
         None => human.push_str(&not_open(event)),
+        Some(_) if reconcile::engine_resolved(&built, e) => {
+            let _ = writeln!(
+                human,
+                "{} by the engine (SPEC-ENGINE §5); `seldon drift link|explain|dismiss` replaces it:",
+                not_open(event)
+            );
+            for m in &members {
+                let _ = writeln!(human, "  {}  {}", m.id, m);
+            }
+        }
         Some(i) => {
             let d = &i.item;
             let _ = writeln!(
@@ -473,6 +483,21 @@ fn resolve(
     events.extend(case_events.next());
     events.extend(lines);
     events.extend(case_events);
+    // ADR-0029 §3: an event the engine linked to another case leaves that
+    // case's `events:` when someone resolves it otherwise
+    let mut moved: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for m in sel
+        .members
+        .iter()
+        .filter(|m| reconcile::engine_resolved(&built, m))
+    {
+        if let Some(before) = m.case.as_deref().filter(|c| Some(*c) != case_id.as_deref()) {
+            moved
+                .entry(before.to_string())
+                .or_default()
+                .push(m.id.to_string());
+        }
+    }
     let ts = reconcile::ts_index(&built.ledger);
     let attach = |file: &mut CaseFile| {
         reconcile::attach(file, &sel.members, |id| ts.get(id).copied());
@@ -509,6 +534,28 @@ fn resolve(
         Resolution::Explained => "explained",
         Resolution::Dismissed => "dismissed",
     };
+    for (before, ids) in &moved {
+        let instead = match &case_id {
+            Some(c) => format!("{verb} to {c}"),
+            None => verb.to_string(),
+        };
+        let unlinked = cases::find(&logbook, before).and_then(|mut file| {
+            file.case.events.retain(|id| !ids.contains(id));
+            file.log(
+                &ctx.now,
+                &format!(
+                    "no longer linked here: {} ({instead} by {actor}; the engine had linked it)",
+                    ids.join(", ")
+                ),
+                actor,
+            );
+            file.save(&logbook).map(drop)
+        });
+        // the ledger line is written and wins; the case file follows
+        if let Err(e) = unlinked {
+            eprintln!("seldon: warning: {before}: case file not updated: {e}");
+        }
+    }
     // never the subject: free text must not reach a command line
     let summary = match &case_id {
         Some(c) => format!("drift {verb}: {resolved} event(s), {c}"),

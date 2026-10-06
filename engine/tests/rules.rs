@@ -547,6 +547,7 @@ fn a_capture_that_cannot_tell_the_user_changes_nothing() {
     // a probe this user owns: a user, so the upgrade runs
     let mine = env.tmp.path().join("probe");
     std::fs::write(&mine, "").unwrap();
+    common::user_owned(&mine);
     let v = json(&capture_with(
         &env,
         true,

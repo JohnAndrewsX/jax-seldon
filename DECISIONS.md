@@ -34,5 +34,6 @@
 | ADR-0030 | The Seldon agent starts like the Omarchy agent: from the caller's folder, hooks user-wide, served by a launch marker | accepted; §1 clause (b), §3 and §5 amended in part by ADR-0032 |
 | ADR-0031 | Password prompts follow Omarchy: as few as the route allows; snapshot `root` only | accepted |
 | ADR-0032 | The launch marker serves a session only while its case is open; existing installs' hooks go user-wide once | accepted |
+| ADR-0033 | A new logbook looks back 90 days and marks that history "before Seldon", without asking | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

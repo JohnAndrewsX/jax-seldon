@@ -14,8 +14,8 @@ decisions).
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
+| WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
 | WP-116 | the Seldon agent starts like the Omarchy agent; rules v4 (ADR-0030, ADR-0031) | Engine + Docs | `engine-116` (opus) | `wt/WP-116` · `wp/116-start-like-omarchy` | 2026-10-06 |
-| WP-115 | link a change to the one case that planned it; capture before close (ADR-0029) | Engine | `engine-115` (opus) | `wt/WP-115` · `wp/115-planned-link` | 2026-10-06 |
 
 ## Queued (next up)
 
@@ -34,7 +34,9 @@ authorized_keys; each item approved separately), WP-114 (pacman.conf;
 needs an AGENTS.md §6 amendment).
 Later: WP-095 (Ask agent), WP-102 (import Markdown task files as cases); no
 Omarchy upstream contribution before 1.0. Then the
-contract v2 bundle for v0.2.0 (autocommit result in the index,
+contract v2 bundle for v0.2.0 (a case's risk in the ledger — `meta.risk` on
+case-created/started and a ledger line for `plan set --risk`, so ADR-0029's
+harm guard reads only engine-written records (WP-115 stage 2); autocommit result in the index,
 `meta.truncated`, state-loss event kind; ADR first). Waiting for the AUR
 account: WP-033 (update-impact, option C) and WP-042 (marketplace
 submission). (see `work/queued/`)
@@ -50,6 +52,13 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-06 WP-115 a change made while exactly one case was open and
+  named it in its Plan is linked to that case, whoever typed it (rule 9,
+  ADR-0029); a subject that fails the harm test (`alwaysRed` packages or
+  paths) links only to a case that was R3 at the time; an unreadable
+  case file or an inconsistent risk record links nothing; `plan
+  verify|done` capture first and warn only when that fails; engine links
+  are re-resolvable; Opus review, three rounds, Fable stage 2; merged.
 - 2026-10-06 WP-111 agents explain drift only with evidence and never a
   crisis; the session-start context lists open crises and items "zur
   Kenntnis" as quoted data; rules v3 quote Omarchy's privilege wording; an
@@ -544,6 +553,16 @@ submission). (see `work/queued/`)
   → ADR-0011.
 
 ## Decided 2026-10-06
+- First setup of the release on a productive laptop (operator, 2026-10-06):
+  works end to end but does not feel like Omarchy; UX review taken. In
+  0.1.4: WP-117 (plugin texts; every terminal the panel opens says what,
+  shows the command, says what changed) and WP-118 (wizard, installer,
+  docs texts; after WP-116). In 0.1.5: WP-119 (one guided setup card,
+  zero-question `init --defaults`). ADR-0033 accepted: 90-day backfill
+  dismissed as "before Seldon", no question (lands with WP-119).
+- ADR-0032 accepted (the launch marker serves only an open case); the
+  hook migration to the user-wide settings runs once automatically,
+  except with `[agent] workdir = "logbook"` (amends ADR-0030 §5).
 - ADR-0031 accepted: password prompts follow Omarchy (sudo in the user's
   terminal, pkexec otherwise, one program per pkexec); the target is "as
   few as the route allows" (replaces ADR-0027's "at most one"); the

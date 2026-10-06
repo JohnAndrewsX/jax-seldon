@@ -99,8 +99,10 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
             .and_then(|t| model::parse::<Case>(&t).map_err(|e| format!("invalid case: {e}")))
         {
             Ok((case, doc)) => {
+                // a template placeholder in a comment is no plan (rule 3
+                // and rule 9 alike, WP-115 round 2)
                 let plan = cases::section(&doc.body, "Plan")
-                    .map(|r| doc.body[r].to_string())
+                    .map(|r| cases::strip_comments(&doc.body[r]))
                     .unwrap_or_default();
                 out.cases.push(LoadedCase {
                     steps: cases::plan_steps(&doc.body),

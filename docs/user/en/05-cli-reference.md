@@ -360,8 +360,8 @@ Usage: seldon plan [OPTIONS] <COMMAND>
 Commands:
   new       Create a case in work/queued/
   start     Start a case: queued → active; it becomes the active case
-  verify    Hand an active case to verification: active → verification
-  done      Complete a verified case: verification → completed
+  verify    Hand an active case to verification: active → verification (runs a capture first)
+  done      Complete a verified case: verification → completed (runs a capture first)
   drop      Drop a case that is queued, active or in verification
   set       Change an open case's zone, risk or area, e.g. raise it to R3 before a step that can break boot
   snapshot  Record the snapper snapshot taken before the case's first red change as its rollback (checked, never refused)
@@ -426,7 +426,7 @@ your check.
 
 <!-- help: seldon plan verify -->
 ```text
-Hand an active case to verification: active → verification
+Hand an active case to verification: active → verification (runs a capture first)
 
 Usage: seldon plan verify [OPTIONS] <ID>
 
@@ -436,6 +436,7 @@ Arguments:
 Options:
       --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
       --actor <ACTOR>  Who takes the step: human or agent:NAME (default: $SELDON_ACTOR, else human)
+      --no-capture     Do not run `seldon capture` before the step
 ```
 <!-- /help -->
 
@@ -451,7 +452,7 @@ an agent's close is never recorded as a person's.
 
 <!-- help: seldon plan done -->
 ```text
-Complete a verified case: verification → completed
+Complete a verified case: verification → completed (runs a capture first)
 
 Usage: seldon plan done [OPTIONS] <ID>
 
@@ -461,6 +462,7 @@ Arguments:
 Options:
       --reason <TEXT>  Why, in one line; goes into the Log line and the event detail
       --actor <ACTOR>  Who takes the step: human or agent:NAME (default: $SELDON_ACTOR, else human)
+      --no-capture     Do not run `seldon capture` before the step
 ```
 <!-- /help -->
 
