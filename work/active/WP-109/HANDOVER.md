@@ -346,3 +346,62 @@ worktree's default (on disk).
    16). If the orchestrator wants old unmarked copies routine, that needs
    a by-content check at index time (reading `$OMARCHY_PATH` from the
    index build), which I did not add.
+
+## Round 1b (merge with main, OMARCHY_PATH trust)
+
+**Merge.** main `994015a` (WP-101 since 23371c2) merged as `1780233`.
+Conflicts and how they were resolved:
+
+- `engine/src/index/build.rs`: WP-101's `r3_advisories` kept; it is fed
+  the classifier's compiled `alwaysRed` globs (`rules.always_red`), so
+  the index build compiles them once.
+- `scripts/validate-fixtures.py`: WP-101's `case-reopened` variant kept
+  beside this WP's mesa `drift-members-capped`; the variant regenerated
+  from the merged sample (the only fixture output that changed;
+  `index.sample.json`, the views and STATUS.md were already consistent).
+- `docs/SPEC-ENGINE.md`: the doctor line lists WP-101's `rollbacks` and
+  this WP's `watch` and `drift` rows; WP-101's `doctor --only rules` kept.
+- `fixtures/README.md`: both story rows and both variant rows kept.
+- `tests/plugin/model.test.js`, `overlay-view.sh`: WP-101's risk counts
+  (R2 3, R3 1, "R2 · 3 cases · 38%") with this fixture's event counts,
+  series and timeline hover. No other harness value moved.
+- CHANGELOG: main's entries first in each section (this WP's Engine
+  block moved after WP-101's); `memory/pitfalls.md` merged by git.
+
+**Open question 1, decided (operator): `$OMARCHY_PATH` trust**
+(`5886082`). `omarchy-default` evidence comes from `$OMARCHY_PATH` only
+when the directory is owned by root and neither group- nor
+world-writable, and the same holds for every directory below it on the
+way to the compared copy and for the copy itself (`trusted_entry`,
+`copy_trusted` in `collectors/config.rs`). Under `SELDON_TEST_GUARD` the
+guard directory's owner stands in for root (`trusted_owner`); without
+the guard the owner must be uid 0. `system-link` and `theme-repo` do not
+read `$OMARCHY_PATH` and are unchanged. `doctor`'s `drift` row ends with
+"Omarchy's copies count as evidence (<path>)" or "… do not count as
+evidence: <path> does not exist | is owned by uid N, not root | is
+group-writable | is world-writable (it must be root's and neither
+group- nor world-writable)". SPEC-ENGINE §4 and the doctor paragraph,
+CHANGELOG updated.
+
+Tests: `collectors::config::tests::omarchy_trust_needs_root_and_no_write_bits`
+(a temp dir owned by the test user is not root's; with the guard's
+owner standing in, 0755 counts, 0775 and 0757 do not, a missing tree
+does not; a 0777 directory on the way and a 0666 copy do not);
+`drift_classes::omarchy_path_counts_only_when_trusted` (CLI: trusted →
+`omarchy-default`; group-writable tree → no mark, attention; a
+world-writable directory on the way → no mark; doctor's row for the
+trusted and the group-writable case); `doctor_shows_the_drift_rules`
+(missing tree named).
+
+Mutants: M34 (owner check off), M35 (mode check off), M37 (no-guard
+owner not root): killed by the unit test. M36 (per-copy check off):
+killed by `omarchy_path_counts_only_when_trusted` (run by hand; the
+runner's name filter had hidden that binary, so its first report
+"survived" was a runner fault, not a test gap).
+
+OQ3 (`theme-assets`/`theme-repo` stand), OQ4 (translation → WP-111),
+OQ5 (old copies by path): accepted as decided.
+
+Check: `flock /tmp/seldon-check.lock just check` at `5886082`: **0**
+(model 96, service-states 316/0, panel-view 900/0, overlay-view 326/0,
+bar-view 194/0).
