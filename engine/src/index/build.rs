@@ -475,11 +475,19 @@ fn drift_items(
     classifier: &Classifier,
 ) -> Vec<ClassifiedItem> {
     let open_cases: Vec<&LoadedCase> = cases.iter().filter(|c| c.case.status.is_open()).collect();
-    let proposed = |subject: &str| {
-        open_cases
+    // one scan of the open Plans per subject: routine items need their
+    // proposal too, and subjects repeat (themes, packages, config files)
+    let mut proposals: HashMap<String, Option<String>> = HashMap::new();
+    let mut proposed = |subject: &str| -> Option<String> {
+        if let Some(p) = proposals.get(subject) {
+            return p.clone();
+        }
+        let p = open_cases
             .iter()
             .find(|c| names_token(&c.plan, subject))
-            .map(|c| c.case.id.clone())
+            .map(|c| c.case.id.clone());
+        proposals.insert(subject.to_string(), p.clone());
+        p
     };
     let rules = classifier.rules;
     let legacy = rules.attention == AttentionMode::All;
