@@ -129,15 +129,16 @@ pub const CREDENTIAL_LONG: usize = 16;
 /// around [`REDACTED`]. With `check`, a match counts only when its group
 /// `v` passes it. With `next`, the rule is an option of a command and
 /// finds the option again in the same command ([`Rule::matches`]). The
-/// regexes are compiled on first use; a text whose ASCII lower case holds
-/// none of `triggers` cannot match (empty: always try; see
-/// [`holds_trigger`] for `+`); `next` is compiled only for a rest of the
-/// command that holds one of `again` ([`Rule::again`]). A match in which one of the groups in
-/// `unless` takes part is left as it is: such a group stands for context
-/// that the `regex` crate cannot look behind or ahead for, so the pattern
-/// matches it and the rule then keeps the match. A group in
-/// `unless_followed` does so only for what follows the match
-/// ([`Rule::kept`]).
+/// regexes are compiled on first use; a text that holds none of
+/// `triggers` as [`holds_trigger`] reads them (in lower case, or as
+/// written for one with a capital; `+` and the `>` order) cannot match
+/// (empty: always try); `next` is compiled only for a rest of the
+/// command that holds one of `again` ([`Rule::again`]). A match in
+/// which one of the groups in `unless` takes part is left as it is:
+/// such a group stands for context that the `regex` crate cannot look
+/// behind or ahead for, so the pattern matches it and the rule then
+/// keeps the match. A group in `unless_followed` does so only for what
+/// follows the match ([`Rule::kept`]).
 #[derive(Debug, Clone)]
 struct Rule {
     name: &'static str,
@@ -999,6 +1000,18 @@ mod tests {
             (
                 "registry-login-password",
                 "docker login -p fakeG1 r.example -p fakeG2",
+            ),
+            // the repeated option glued to its value: a literal is the
+            // option alone, not the option and a space (WP-108 round 2)
+            ("curl-user", "curl -u a:fakeA1 h -ub:fakeA2"),
+            ("proxy-option", "curl -U a:fakeB1 h -Ub:fakeB2"),
+            ("proxy-userinfo", "curl -x a:fakeC1@p h -xb:fakeC2@q"),
+            ("cookie-option", "curl -b s=fakeD1 h -bt=fakeD2"),
+            ("cert-password", "curl -E c.pem:fakeE1 h -Ed.pem:fakeE2"),
+            ("httpie-auth", "http -a a:fakeF1 h -ab:fakeF2"),
+            (
+                "registry-login-password",
+                "docker login -p fakeG1 r -pfakeG2",
             ),
         ] {
             let rules = builtin_rules();
