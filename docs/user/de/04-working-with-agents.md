@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 1bae1cd -->
+<!-- source: en/04-working-with-agents.md @ 9c3a7c4 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -22,8 +22,9 @@ hinterher, was der Agent getan hat, in welchem Case und warum.
 Seldon soll dir Arbeit abnehmen. Du gibst dem Agenten einen Satz; der
 Agent erledigt die Arbeit, nimmt den Snapshot, prüft und schließt den
 Case ab; Seldon führt die Aufzeichnung. Du tippst dein Passwort, wenn
-`sudo` im Terminal danach fragt oder im Passwortdialog von Omarchy, und
-siehst dir das Ergebnis an, wann du willst. Du musst es nie.
+der Passwortdialog von Omarchy danach fragt (oder `sudo`, wenn der Agent
+in deinem eigenen Terminal arbeitet), und siehst dir das Ergebnis an,
+wann du willst. Du musst es nie.
 
 ## Die Regeln, die Agenten lesen
 
@@ -39,10 +40,11 @@ Logbuchs. Die Datei sagt jedem Agenten, wie er dort arbeitet:
   Anmeldung oder die Shell brechen kann (R3); jeder R3-Schritt braucht
   dein ausdrückliches Okay;
 - er führt privilegierte Befehle selbst aus, so wie Omarchys eigener
-  Agenten-Skill es sagt, Wort für Wort: `sudo`, wo die Passwortabfrage
-  dich in einem Terminal erreicht, sonst `pkexec`, das Omarchys
-  Passwortdialog öffnet; auf anderem Weg fragt er nie nach deinem
-  Passwort;
+  Agenten-Skill es sagt, Wort für Wort: Ein Befehl, den ein Agent
+  ausführt, hat kein Terminal von dir, also nimmt er `pkexec`, das
+  Omarchys Passwortdialog öffnet (einmal pro Befehl); `sudo` nur, wo die
+  Abfrage in deinem eigenen Terminal erscheint; auf anderem Weg fragt er
+  nie nach deinem Passwort;
 - vor einer riskanten roten Änderung nimmt er selbst einen
   snapper-Snapshot und hält die Nummer im Case fest;
 - er installiert so, wie die Software es dokumentiert, paketierte Wege
@@ -459,9 +461,10 @@ seldon hook install skills --replace
 
 Er kopiert deine geänderten Dateien nach `archive/skill-<datum>/<ordner>/`
 im Logbuch (zum Beispiel `archive/skill-2026-10-06/claude-skills/case.md`),
-installiert den Skill wie ausgeliefert und committet das Archiv. Einen
-Ordner namens `seldon`, den Seldon nicht geschrieben hat, lässt er in
-Ruhe. `seldon hook uninstall skills` entfernt, was Seldon geschrieben
+installiert den Skill wie ausgeliefert und committet das Archiv. Er
+wirkt nur dort, wo heute Seldons Skill liegt: Ein Ordner, aus dem du den
+Skill entfernt hast, bleibt ohne ihn, und einen Ordner namens `seldon`,
+den Seldon nicht geschrieben hat, lässt er in Ruhe. `seldon hook uninstall skills` entfernt, was Seldon geschrieben
 hat, und behält, was du geändert oder hinzugefügt hast.
 
 ## Das Omarchy-Agent-Kit
