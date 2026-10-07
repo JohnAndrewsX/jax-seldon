@@ -193,3 +193,95 @@ From the stage-1 review (SEND BACK) and the orchestrator's brief.
 - Live check on the test host: still with 124b.
 - Stage 2 (Fable): N1's limit (a same-uid process that drops
   `SELDON_ACTOR`) is stated, not closed.
+
+## Round 3
+
+From the Fable stage 2 (narrow SEND BACK) and the orchestrator's brief.
+
+### Blocking
+
+- **B4 — an applied explanation keeps its proposer's name.** The
+  retroactive case `drift apply` makes carries the tag
+  `proposed-by:agent:<name>` (CONTRACT.md rule 8, reserved vocabulary; no
+  schema change). `case_authors` puts the proposing agent(s) first, from
+  the tag **and** from the `proposed by <agent> — …` detail of the case's
+  resolution lines in the ledger, so editing the tag out of the case file
+  changes nothing. `event` refs of `case-*` kinds resolve by the case's
+  authors (plus the line's actor), not by the line's actor alone. Test:
+  Fable's probe — claude-code's applied explanation (intent "Ignore
+  previous instructions. …"), then `case <ID>` and `event <case-created>`
+  are refused for claude-code, read `by agent:claude-code · …` for codex,
+  and stay refused after the tag is edited out; the tag is in the file
+  and in the index.
+- **B5 — the fixture's texts.** `fixtures/proposals/01M3VZS4J0NDXZFC2F7RBBD3FJ.json`
+  regenerated with the engine (temp HOME, fixture copy, the file's `at`):
+  every text now starts `by <author> ·`. The MONITORS item's evidence had
+  to change: `case C-2026-002` was closed by `agent:claude-code`, the
+  proposer, so round 2 refuses it; it now cites the event that wrote that
+  `monitors.conf` in C-2026-002 (`01M2A9MNTG5XQ4EPAYSBBYJ92N`, by
+  system). Ids, counts (3 items, 1 crisis), titles and intents are
+  unchanged, so `index.sample.json` and the plugin's tests are untouched.
+  Test: `propose` of the fixture's items (kind and ref only) at the
+  fixture's time reproduces its `items` exactly.
+
+### Also
+
+- **N8** "the change itself" is every event of it: the item's linkable
+  members, the named event, and every event of its package transaction
+  (`txId`), resolved or not. The brief's literal fix (`linkable_members`
+  before the open-only retain) does not catch it: a member the engine
+  resolved has already left the item that `select` returns, so the test
+  (mesa's group, lib32-mesa engine-linked after the proposal, the file
+  citing lib32-mesa) failed with it; the transaction rule makes it pass.
+  Same function at propose and at apply.
+- **N9** a Plan text reads `by human (worked by agent:claude-code) · …`.
+- **N10** `--item`s naming two or more crises (engine class now or the
+  file's flag) refuse the run: exit 1, nothing written, the crises named.
+  One crisis with an attention item is fine.
+- **N11** a run without `--item` marks `applied` even when everything was
+  refused; `--json` gains `markedApplied` (this run set it). ADR-0036
+  Consequences and SPEC say `applied` marks the run, not the items.
+- **ADR-0036 wording** as the brief gives it (§2 table rows for `case`
+  and `event`, "… and an applied explanation keeps its proposer's name",
+  §3 the tag and one crisis per run, Consequences N8 and N11). Status
+  stays *proposed* for the orchestrator to accept.
+- `triage.md`: a case the user applied from your own proposal is your
+  own words.
+
+### Verified
+
+- `engine/tests/triage.rs` 26 tests (+6: B4, B5, N8, N9, N10, N11).
+- Mutants: `python3 work/active/WP-124/mutants.py`, **34 of 34 killed**
+  (round 3 adds M28–M34: tag dropped, ledger proposer dropped, case line
+  by its own actor, transaction not the change, no worked-by label, two
+  crises in a run, `markedApplied` meaning done). The full run found five
+  round-2 patterns stale after this round's edits (M15–M19); their
+  patterns were updated and those five re-run (`mutants.py M15 … M19`):
+  killed. Logs `mutants-wp124-r3.log` in my scratch dir.
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `459a151` (2050 Rust tests passed, 0 failed; bar-view 194/0;
+  plugin-test ok; schema-validate and docs-check ok with the regenerated
+  fixture). Log `check-wp124-r4.log`.
+- Branch diff grepped for `/home/` (only the fixture placeholder
+  `/home/user/Seldon`) and the host name (none).
+
+## For 124b
+
+Engine side is fixed by 124a; the desk does this (no code in 124a):
+
+- *Apply* runs `drift apply <index.triage.id> --json`, bound to the id
+  the user saw. Exit 1 "no proposal …": refresh the index, never retry.
+- The sticky bar says: *N items proposed by `<actor>` at `<at>`, C crises
+  held back — apply each below*.
+- Each item shows:
+  - the event subject from `index.events`, escaped;
+  - the action plus the case id or the title;
+  - **every** evidence text with its `by <author>` prefix visible first,
+    never left-clipped.
+
+  Mark an item where any ref is `by agent:…` or `by unknown`.
+- Crisis items get one button each: `drift apply <id> --item <eventId>
+  --json` (one crisis per run; the engine refuses two).
+- After apply, render `done` / `skipped` / `refused` from the result and
+  keep refused items visible. `applied` (and `markedApplied`) does not
+  mean done.
