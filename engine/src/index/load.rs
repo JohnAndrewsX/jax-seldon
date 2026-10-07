@@ -12,6 +12,8 @@ use std::path::Path;
 
 use chrono::{Duration, NaiveDate};
 
+use crate::commands::import::task::{PROVENANCE_END, PROVENANCE_START};
+use crate::commands::plan::TAG_IMPORTED;
 use crate::frontmatter::{Document, printable};
 use crate::ledger::Ledger;
 use crate::logbook::{Logbook, cases};
@@ -29,6 +31,11 @@ pub struct LoadedCase {
     pub plan: String,
     /// `## Plan` checkboxes: (total, done).
     pub steps: (usize, usize),
+    /// The first paragraph of `## Intent` (after an imported case's
+    /// provenance line) and of `## Result`, as written: the build
+    /// redacts and clips them (ADR-0038 §2).
+    pub intent: Option<String>,
+    pub result: Option<String>,
 }
 
 /// One journal entry heading `## HH:MM · actor · case?` and its text.
@@ -59,8 +66,9 @@ pub struct Loaded {
     pub today: Option<NaiveDate>,
     pub journal_today: Vec<Entry>,
     pub journal_yesterday: Vec<Entry>,
-    /// `(relative path, decision)`, in file order.
-    pub decisions: Vec<(String, Decision)>,
+    /// `(relative path, decision, the first paragraph of its ##
+    /// Decision as written)`, in file order.
+    pub decisions: Vec<(String, Decision, Option<String>)>,
     /// `<!-- seldon:begin NAME -->` fences of `system/*.md` by name.
     pub fences: BTreeMap<String, String>,
     /// `## ` headings of `memory/lessons.md`; `None` without the file.
@@ -106,6 +114,8 @@ pub fn load(logbook: &Logbook, today: NaiveDate) -> anyhow::Result<Loaded> {
                     .unwrap_or_default();
                 out.cases.push(LoadedCase {
                     steps: cases::plan_steps(&doc.body),
+                    intent: intent(&case, &doc.body),
+                    result: cases::first_paragraph(&doc.body, "Result"),
                     path: rel,
                     case,
                     plan,
@@ -246,19 +256,46 @@ pub fn journal_entries(text: &str) -> Vec<Entry> {
         .collect()
 }
 
-/// `(relative path, decision)` of every `decisions/ADR-*.md`, in file
-/// order; an unreadable or invalid file is a warning and skipped.
+/// The first paragraph of a case's `## Intent` (ADR-0038 §2). An imported
+/// case's Intent begins with the engine's provenance line (WP-102); when
+/// that line is the whole first paragraph, the next one is the intent:
+/// the index carries the source in `source`.
+fn intent(case: &Case, body: &str) -> Option<String> {
+    let section = cases::section(body, "Intent")?;
+    let mut paragraphs = cases::paragraphs(&cases::strip_comments(&body[section])).into_iter();
+    let first = paragraphs.next()?;
+    let imported = case.tags.iter().any(|t| t == TAG_IMPORTED);
+    if imported && is_provenance(&first) {
+        return paragraphs.next();
+    }
+    Some(first)
+}
+
+/// `Imported from <source> — read before you start this case.` on one
+/// line (`commands::import::task::provenance`).
+fn is_provenance(paragraph: &str) -> bool {
+    !paragraph.contains('\n')
+        && paragraph.starts_with(PROVENANCE_START)
+        && paragraph.ends_with(PROVENANCE_END)
+}
+
+/// `(relative path, decision, lead)` of every `decisions/ADR-*.md`, in
+/// file order, the lead the first paragraph of its `## Decision` (ADR-0038
+/// §2); an unreadable or invalid file is a warning and skipped.
 pub fn decisions(
     logbook: &Logbook,
     warnings: &mut Vec<String>,
-) -> anyhow::Result<Vec<(String, Decision)>> {
+) -> anyhow::Result<Vec<(String, Decision, Option<String>)>> {
     let mut out = Vec::new();
     for path in logbook.decision_files()? {
         let rel = cases::relative(logbook, &path);
         match read(&path).and_then(|t| {
             model::parse::<Decision>(&t).map_err(|e| format!("invalid decision: {e}"))
         }) {
-            Ok((d, _)) => out.push((rel, d)),
+            Ok((d, doc)) => {
+                let lead = cases::first_paragraph(&doc.body, "Decision");
+                out.push((rel, d, lead));
+            }
             Err(e) => warnings.push(format!("{rel}: {e}; skipped")),
         }
     }

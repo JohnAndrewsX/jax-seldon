@@ -474,6 +474,45 @@ pub fn strip_comments(text: &str) -> String {
     out
 }
 
+/// The first paragraph of section `name` (ADR-0038 §2): its text without
+/// HTML comments, blank and heading lines before it skipped, then every
+/// line up to the next blank one, each trimmed at the end, joined by
+/// `\n`. `None` without the section or without such a line.
+pub fn first_paragraph(body: &str, name: &str) -> Option<String> {
+    let text = strip_comments(&body[section(body, name)?]);
+    paragraphs(&text).into_iter().next()
+}
+
+/// The paragraphs of `text` as [`first_paragraph`] reads them: blocks of
+/// non-blank lines; a heading line (`#` to `######` and a space) ends one
+/// and is no paragraph text.
+pub fn paragraphs(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut lines: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.trim().is_empty() || is_heading(line.trim_start()) {
+            if !lines.is_empty() {
+                out.push(lines.join("\n").trim_start().to_string());
+                lines.clear();
+            }
+            continue;
+        }
+        lines.push(line);
+    }
+    if !lines.is_empty() {
+        out.push(lines.join("\n").trim_start().to_string());
+    }
+    out
+}
+
+/// An ATX heading line: `#` to `######` followed by a space or nothing.
+fn is_heading(line: &str) -> bool {
+    let rest = line.trim_start_matches('#');
+    let level = line.len() - rest.len();
+    (1..=6).contains(&level) && (rest.is_empty() || rest.starts_with([' ', '\t']))
+}
+
 /// What an agent's close lacks (ADR-0027 §5): the *Result* has no text,
 /// and *Plan › Verification* — the `Verification:` item of the Plan with
 /// its indented continuation lines — has none. Text is [`has_text`]: a
@@ -948,5 +987,32 @@ mod tests {
             "# C-1 — {{id}} {{other}}"
         );
         assert_eq!(fill("{{unclosed", &[("unclosed", "x")]), "{{unclosed");
+    }
+
+    #[test]
+    fn first_paragraph_reads_one_block_of_a_section() {
+        let body = "# C — t\n\n## Intent\n<!-- Why? -->\n\n  First line \nsecond line\n\nlater\n\n## Plan\n- x\n\n## Result\n";
+        assert_eq!(
+            first_paragraph(body, "Intent").as_deref(),
+            Some("First line\nsecond line")
+        );
+        // an empty section, a comment only, no section at all
+        assert_eq!(first_paragraph(body, "Result"), None);
+        assert_eq!(
+            first_paragraph("## Intent\n<!-- a\n\nb -->\n", "Intent"),
+            None
+        );
+        assert_eq!(first_paragraph(body, "Log"), None);
+        // a heading is no text; a `#` word is
+        assert_eq!(
+            first_paragraph("## Result\n### Done\n#3 merged\n", "Result").as_deref(),
+            Some("#3 merged")
+        );
+        // CRLF lines lose their `\r`
+        assert_eq!(
+            first_paragraph("## Result\r\nok\r\n\r\nmore\r\n", "Result").as_deref(),
+            Some("ok")
+        );
+        assert_eq!(paragraphs("a\n\n\nb\nc\n"), ["a", "b\nc"]);
     }
 }

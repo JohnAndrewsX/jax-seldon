@@ -32,6 +32,46 @@ pub fn marker_path(source: &str) -> String {
     format!(".seldon/imports/{source}.json")
 }
 
+/// A character a path may not hold: a control character, one that turns
+/// the direction of the text around it, or an invisible format character
+/// (zero-width space, joiners, word joiner, BOM): a path is shown in the
+/// Log, the report and the desk (WP-102, ADR-0038 §3).
+pub fn bad_path_char(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+        )
+}
+
+/// The most characters of a case's `source` (ADR-0038 §3).
+pub const SOURCE_MAX: usize = 512;
+
+/// `source` as `import task` writes it into a case's frontmatter: as it
+/// is when it has at most [`SOURCE_MAX`] characters, else `~/…` and its
+/// last characters, so the file name and the line survive.
+pub fn case_source(source: &str) -> String {
+    let n = source.chars().count();
+    if n <= SOURCE_MAX {
+        return source.to_string();
+    }
+    let keep = SOURCE_MAX - "~/…".chars().count();
+    let tail: String = source.chars().skip(n - keep).collect();
+    format!("~/…{tail}")
+}
+
+/// Whether `source` has the shape a case's `source` must have (ADR-0038
+/// §3): `~/…`, at most [`SOURCE_MAX`] characters, no [`bad_path_char`].
+pub fn is_case_source(source: &str) -> bool {
+    source.starts_with("~/")
+        && source.chars().count() <= SOURCE_MAX
+        && !source.chars().any(bad_path_char)
+}
+
 /// One redacted line of a source file (the report names the rule, never
 /// the text).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -348,6 +388,32 @@ pub fn cell(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_case_source_keeps_its_end_and_is_checked() {
+        assert_eq!(case_source("~/a/b.md#3"), "~/a/b.md#3");
+        let long = format!("~/{}/todo.md#12", "x".repeat(600));
+        let short = case_source(&long);
+        assert_eq!(short.chars().count(), SOURCE_MAX);
+        assert!(short.starts_with("~/…xx") && short.ends_with("x/todo.md#12"));
+        assert!(is_case_source(&short));
+        // characters count, not bytes
+        let wide = format!("~/{}", "ä".repeat(510));
+        assert_eq!(case_source(&wide), wide);
+        assert!(is_case_source(&wide));
+        for bad in [
+            "/etc/x",
+            "~x/y",
+            "~/a\u{202E}b",
+            "~/a\u{FEFF}",
+            "~/a\tb",
+            "~/a\u{85}b",
+        ] {
+            assert!(!is_case_source(bad), "{bad:?}");
+        }
+        assert!(!is_case_source(&format!("~/{}", "a".repeat(511))));
+    }
+
     use super::*;
 
     #[test]

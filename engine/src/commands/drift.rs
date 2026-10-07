@@ -671,6 +671,7 @@ fn retroactive_case(
         } else {
             Vec::new()
         },
+        source: None,
     };
     let body = cases::new_body(logbook, &id, intent)?;
     let body = reconcile::append_to_section(&body, "Intent", intent);

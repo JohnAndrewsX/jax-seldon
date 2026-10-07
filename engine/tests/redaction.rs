@@ -2319,6 +2319,67 @@ mod commands {
         }
     }
 
+    /// ADR-0038: a case's Intent and Result, a decision's lead and an
+    /// imported case's source reach the index through the logbook's
+    /// redaction (the built-in rules and `[redaction] patterns`), whatever
+    /// a hand edit put into the files.
+    #[test]
+    fn the_index_masks_intent_result_lead_and_source() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let config = env.config_file();
+        let text = read(&config).replace("patterns = []", "patterns = [\"Geheimprojekt\\\\w*\"]");
+        assert!(text.contains("Geheimprojekt"));
+        std::fs::write(&config, text).unwrap();
+        run(&env, &["plan", "new", "--", "Zed"]);
+        run(&env, &["decide", "--no-edit", "--", "Zed statt VS Code"]);
+        let (intent, result, lead, path) =
+            (token("int"), token("res"), token("lead"), token("src"));
+        let case = find_file(&root.join("work/queued"), "C-2026-001");
+        let body = read(&case)
+            .replace(
+                "## Intent\n",
+                &format!("## Intent\nZed für Geheimprojekt7, token {intent}.\n"),
+            )
+            .replace(
+                "## Result\n",
+                &format!("## Result\nfertig, bob@example.org {result}\n"),
+            )
+            .replace(
+                "tags: []\n",
+                &format!("tags: []\nsource: \"~/notes/{path}/todo.md#3\"\n"),
+            );
+        std::fs::write(&case, body).unwrap();
+        let adr = find_file(&root.join("decisions"), "ADR-0001");
+        let body = read(&adr).replace(
+            "## Decision\n",
+            &format!("## Decision\nZed, Schlüssel {lead}.\n"),
+        );
+        std::fs::write(&adr, body).unwrap();
+
+        run(&env, &["status"]);
+        let index: Value =
+            serde_json::from_str(&read(&env.home.join(".local/state/seldon/index.json"))).unwrap();
+        let c = &index["cases"]["queued"][0];
+        assert_eq!(
+            c["intent"],
+            format!("Zed für {REDACTED}, token {REDACTED}.")
+        );
+        assert_eq!(
+            c["result"],
+            format!("fertig, {REDACTED}@example.org {REDACTED}")
+        );
+        assert_eq!(c["source"], format!("~/notes/{REDACTED}/todo.md#3"));
+        assert_eq!(
+            index["decisions"][0]["lead"],
+            format!("Zed, Schlüssel {REDACTED}.")
+        );
+        let text = read(&env.home.join(".local/state/seldon/index.json"));
+        for secret in [&intent, &result, &lead, &path, "Geheimprojekt", "bob@"] {
+            assert!(!text.contains(secret), "{secret} in the index");
+        }
+    }
+
     fn last_ledger_line(logbook: &Path) -> Value {
         let text = read(&logbook.join("ledger/2026-10.jsonl"));
         serde_json::from_str(text.lines().last().unwrap()).unwrap()

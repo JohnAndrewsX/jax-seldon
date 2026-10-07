@@ -375,6 +375,7 @@ fn input() -> Input {
             collectors: Vec::new(),
         },
         drift: Config::default().drift,
+        redactor: Some(seldon::redact::Redactor::builtin()),
     }
 }
 
@@ -1923,4 +1924,247 @@ fn status_at_10_000_ledger_lines_is_under_100_ms() {
         let out = env.at(GENERATED_AT, &args);
         assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
     });
+}
+
+// --------------------------------------------------------------------------
+// ADR-0038: what the desk's details show — the drift rule, a case's intent,
+// result and source, a decision's lead.
+// --------------------------------------------------------------------------
+
+fn find_case<'a>(ix: &'a model::Index, id: &str) -> &'a model::IndexCase {
+    ix.cases.all().find(|c| c.id == id).unwrap()
+}
+
+#[test]
+fn case_and_decision_texts_are_clipped_with_the_file_marker() {
+    let long = "Ä".repeat(300);
+    let ix = derive(|l| {
+        let c1 = l
+            .cases
+            .iter_mut()
+            .find(|c| c.case.id == "C-2026-001")
+            .unwrap();
+        c1.intent = Some(long.clone());
+        c1.result = Some("a\u{1b}[31mb\u{7}c\r\nzwei\tdrei".into());
+        let adr = l
+            .decisions
+            .iter_mut()
+            .find(|d| d.1.id == "ADR-0003")
+            .unwrap();
+        adr.2 = Some(format!("{}\n{}", "x".repeat(200), "y".repeat(100)));
+    });
+    let c1 = find_case(&ix, "C-2026-001");
+    let intent = c1.intent.as_deref().unwrap();
+    assert!(intent.starts_with("ÄÄ"), "{intent}");
+    assert!(
+        intent.ends_with(" more characters in the file)"),
+        "{intent}"
+    );
+    assert!(json_bytes(intent) <= build::TEXT_MAX, "{intent}");
+    let shown = intent.chars().take_while(|c| *c == 'Ä').count();
+    assert_eq!(
+        intent,
+        format!(
+            "{}… ({} more characters in the file)",
+            "Ä".repeat(shown),
+            300 - shown
+        )
+    );
+    // control characters other than a line break or a tab are spaces
+    assert_eq!(c1.result.as_deref(), Some("a [31mb c \nzwei\tdrei"));
+    let lead = ix.decisions.iter().find(|d| d.id == "ADR-0003").unwrap();
+    let lead = lead.lead.as_deref().unwrap();
+    let (head, marker) = lead.split_once('…').unwrap();
+    let left: usize = marker
+        .strip_prefix(" (")
+        .and_then(|m| m.strip_suffix(" more characters in the file)"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(head.chars().count() + left, 301, "{lead}");
+    assert!(
+        head.starts_with(&"x".repeat(200)) && head.ends_with('y'),
+        "{lead}"
+    );
+    assert!(json_bytes(lead) <= build::TEXT_MAX);
+    // nothing else changed: the other cases keep the fixture's texts
+    assert_eq!(
+        find_case(&ix, "C-2026-004").intent.as_deref(),
+        Some("Zed als zweiter Editor neben Neovim, für größere Refactorings.")
+    );
+}
+
+#[test]
+fn an_imported_cases_intent_is_the_paragraph_after_its_provenance() {
+    let ix = derive(|_| {});
+    let c7 = find_case(&ix, "C-2026-007");
+    assert_eq!(c7.tags, ["imported"]);
+    assert_eq!(c7.source.as_deref(), Some("~/Notizen/aufgaben.md#4"));
+    assert!(
+        c7.intent
+            .as_deref()
+            .unwrap()
+            .starts_with("Herdr-Orchestrator als Default-Agent registrieren — "),
+        "{:?}",
+        c7.intent
+    );
+    // the same text without the tag is the user's own first paragraph
+    let dir = TempDir::new("wp127-provenance");
+    copy_dir(&fixture_logbook(), dir.path());
+    let file = dir
+        .path()
+        .join("work/queued/C-2026-007-herdr-default-agent.md");
+    std::fs::write(&file, read(&file).replace("tags: [imported]", "tags: []")).unwrap();
+    let own = load::load(&Logbook::open(dir.path()).unwrap(), now().date_naive()).unwrap();
+    let own = own
+        .cases
+        .iter()
+        .find(|c| c.case.id == "C-2026-007")
+        .unwrap();
+    assert_eq!(
+        own.intent.as_deref(),
+        Some("Imported from ~/Notizen/aufgaben.md#4 — read before you start this case.")
+    );
+}
+
+#[test]
+fn without_a_redaction_the_texts_are_withheld() {
+    let built = build::build(
+        fixture_loaded(),
+        &Input {
+            redactor: None,
+            ..input()
+        },
+    );
+    let ix = built.index;
+    assert!(
+        ix.cases
+            .all()
+            .all(|c| c.intent.is_none() && c.result.is_none() && c.source.is_none())
+    );
+    assert!(ix.decisions.iter().all(|d| d.lead.is_none()));
+    // the rule is the engine's own, never withheld
+    assert!(ix.drift.iter().all(|d| d.rule.is_some()));
+}
+
+#[test]
+fn a_source_out_of_shape_is_dropped_with_a_warning() {
+    let long = format!("~/{}.md", "a".repeat(510));
+    for bad in [
+        "/etc/passwd",
+        "notes/todo.md#1",
+        "~/a\u{202E}dm.exe",
+        "~/a\u{200B}b.md",
+        "~/a\nb.md",
+        long.as_str(),
+    ] {
+        let mut loaded = fixture_loaded();
+        loaded
+            .cases
+            .iter_mut()
+            .find(|c| c.case.id == "C-2026-007")
+            .unwrap()
+            .case
+            .source = Some(bad.to_string());
+        let built = build::build(loaded, &input());
+        assert_eq!(
+            find_case(&built.index, "C-2026-007").source,
+            None,
+            "{bad:?}"
+        );
+        assert!(
+            built
+                .warnings
+                .iter()
+                .any(|w| w.starts_with("C-2026-007: its source is not a ~/ path")),
+            "{bad:?}: {:?}",
+            built.warnings
+        );
+    }
+    // 512 characters are still a source
+    let fits = format!("~/{}", "a".repeat(510));
+    let mut loaded = fixture_loaded();
+    loaded
+        .cases
+        .iter_mut()
+        .find(|c| c.case.id == "C-2026-007")
+        .unwrap()
+        .case
+        .source = Some(fits.clone());
+    let built = build::build(loaded, &input());
+    assert_eq!(
+        find_case(&built.index, "C-2026-007").source.as_deref(),
+        Some(fits.as_str())
+    );
+    assert!(built.warnings.is_empty(), "{:?}", built.warnings);
+}
+
+#[test]
+fn the_rule_follows_the_attention_mode() {
+    let ix = derive(|_| {});
+    let rules: Vec<_> = ix.drift.iter().map(|d| d.rule.clone().unwrap()).collect();
+    assert_eq!(
+        rules,
+        [
+            "theme",
+            "always-red-paths",
+            "package",
+            "always-red-paths",
+            "config-remove",
+            "package"
+        ]
+    );
+    let all = derive_all(|_| {});
+    assert!(!all.drift.is_empty());
+    assert!(
+        all.drift
+            .iter()
+            .all(|d| d.rule.as_deref() == Some("attention-all"))
+    );
+}
+
+/// The four fields are optional (an index of an earlier contract-2 build
+/// has none) and closed in shape.
+#[test]
+fn the_new_fields_are_optional_and_checked() {
+    let v = check::Validator::new();
+    let sample = json_file(&repo("fixtures/index.sample.json"));
+    let mut bare = sample.clone();
+    for d in bare["drift"].as_array_mut().unwrap() {
+        d.as_object_mut().unwrap().remove("rule");
+    }
+    for group in ["queued", "active", "verification", "completed"] {
+        for c in bare["cases"][group].as_array_mut().unwrap() {
+            let c = c.as_object_mut().unwrap();
+            for k in ["intent", "result", "source"] {
+                c.remove(k);
+            }
+        }
+    }
+    for d in bare["decisions"].as_array_mut().unwrap() {
+        d.as_object_mut().unwrap().remove("lead");
+    }
+    assert_ne!(bare, sample, "the sample shows the fields");
+    assert_eq!(v.validate(&bare, "index.schema.json"), Vec::<String>::new());
+    assert!(common::index_errors(&bare).is_empty());
+    let bad: [(&str, Value); 6] = [
+        ("/drift/0/rule", json!("Always Red")),
+        ("/cases/queued/2/source", json!("/etc/passwd")),
+        ("/cases/queued/2/source", json!("~/a\u{202E}b")),
+        (
+            "/cases/queued/2/source",
+            json!(format!("~/{}", "a".repeat(511))),
+        ),
+        ("/cases/queued/0/intent", json!("x".repeat(257))),
+        ("/decisions/0/lead", json!("")),
+    ];
+    for (at, value) in bad {
+        let mut x = sample.clone();
+        *x.pointer_mut(at).unwrap() = value.clone();
+        assert!(
+            !v.validate(&x, "index.schema.json").is_empty(),
+            "{at} = {value}"
+        );
+        assert!(!common::index_errors(&x).is_empty(), "{at} = {value}");
+    }
 }

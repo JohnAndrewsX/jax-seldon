@@ -142,6 +142,11 @@ fn open_items_become_queued_cases_and_the_file_is_only_read() {
         first.contains("· created (zone yellow, risk R1): imported from ~/proj/TODO.md#8 · human"),
         "{first}"
     );
+    // ADR-0038 §3: the case says where it came from
+    assert!(
+        first.contains("\nsource: \"~/proj/TODO.md#8\"\n"),
+        "{first}"
+    );
     let second = case_text(&root, "queued", "C-2026-002");
     assert!(second.contains("Section: Later"), "{second}");
 
@@ -173,6 +178,13 @@ fn open_items_become_queued_cases_and_the_file_is_only_read() {
             .iter()
             .all(|c| c["tags"] == serde_json::json!(["imported"]))
     );
+    // ADR-0038: the source, and the intent after the provenance line
+    assert_eq!(queued[0]["source"], "~/proj/TODO.md#8");
+    assert_eq!(
+        queued[0]["intent"],
+        "Fix the bar flicker. It happens on the second monitor.\nOnly after resume."
+    );
+    assert_eq!(queued[1]["source"], "~/proj/TODO.md#14");
 
     // the source is untouched
     assert_eq!(read(&file), TODO);
@@ -209,6 +221,10 @@ fn a_file_without_items_is_one_case_titled_by_its_heading_or_name() {
         "{text}"
     );
     assert_eq!(text.matches("\n## Log\n").count(), 1, "{text}");
+    assert!(text.contains("\nsource: \"~/proj/backup.md\"\n"), "{text}");
+    let queued = index(&env)["cases"]["queued"].clone();
+    assert_eq!(queued[0]["source"], "~/proj/backup.md");
+    assert_eq!(queued[0]["intent"], "Notes first.");
     let out = env.at(LATER, &["plan", "start", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let text = case_text(&root, "active", "C-2026-001");
@@ -840,4 +856,59 @@ fn start_other(env: &Env, id: &str) -> std::process::Output {
     .env("SELDON_NOW", LATER)
     .output()
     .unwrap()
+}
+
+/// ADR-0038 §3: `source` is display only; the marker stays the only
+/// idempotency key, so an edited or removed `source` imports nothing again.
+#[test]
+fn the_marker_not_the_source_keeps_an_import_idempotent() {
+    let (env, root) = setup();
+    task_file(&env, "TODO.md", TODO);
+    ok(&import(&env, NOW, &["~/TODO.md"]));
+    let first = find_file(&root.join("work/queued"), "C-2026-001");
+    std::fs::write(
+        &first,
+        read(&first).replace("source: \"~/TODO.md#8\"", "source: \"~/elsewhere.md#1\""),
+    )
+    .unwrap();
+    let second = find_file(&root.join("work/queued"), "C-2026-002");
+    std::fs::write(
+        &second,
+        read(&second).replace("source: \"~/TODO.md#14\"\n", ""),
+    )
+    .unwrap();
+    let report = ok(&import(&env, LATER, &["~/TODO.md"]));
+    assert_eq!(report["created"], serde_json::json!([]), "{report}");
+    // nothing changed, so nothing rebuilt the index: `status` does
+    assert_eq!(env.at(LATER, &["status", "--json"]).status.code(), Some(0));
+    let queued = index(&env)["cases"]["queued"].clone();
+    assert_eq!(queued[0]["source"], "~/elsewhere.md#1");
+    assert_eq!(queued[1].get("source"), None);
+}
+
+/// A path of more than 512 characters keeps `~/…` and its end: the file
+/// name and the line (ADR-0038 §3).
+#[test]
+fn a_long_source_keeps_its_end() {
+    let (env, root) = setup();
+    let deep = format!(
+        "{}/{}/{}",
+        "a".repeat(200),
+        "b".repeat(200),
+        "c".repeat(200)
+    );
+    task_file(&env, &format!("{deep}/todo.md"), "- [ ] Long way\n");
+    ok(&import(&env, NOW, &[&format!("~/{deep}/todo.md")]));
+    let text = case_text(&root, "queued", "C-2026-001");
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("source: "))
+        .unwrap_or_else(|| panic!("{text}"));
+    let source: String = serde_json::from_str(line.trim_start_matches("source: ")).unwrap();
+    assert_eq!(source.chars().count(), 512, "{source}");
+    assert!(
+        source.starts_with("~/…a") && source.contains("/bbb") && source.ends_with("ccc/todo.md#1"),
+        "{source}"
+    );
+    assert_eq!(index(&env)["cases"]["queued"][0]["source"], source);
 }
