@@ -1765,6 +1765,20 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
             .open(&month)
             .unwrap();
         std::io::Write::write_all(&mut file, lines.as_bytes()).unwrap();
+        // ADR-0038: a case's Intent and Result and a decision's Decision
+        // hold long texts too, clipped with `in the file`
+        for (rel, section, probe) in [
+            ("work/queued/C-2026-005-tokyo-night.md", "## Intent\n", 3),
+            ("work/queued/C-2026-006-snapper-retention.md", "## Result\n", 10),
+            ("work/completed/C-2026-001-init.md", "## Intent\n", 17),
+            ("work/completed/C-2026-001-init.md", "## Result\n", 24),
+            ("decisions/ADR-0002-snapshots.md", "## Decision\n", 38),
+            ("decisions/ADR-0003-zed.md", "## Decision\n", 0),
+        ] {
+            let path = lb.join(rel);
+            let text = read(&path).replacen(section, &format!("{section}{}\n\n", probes[probe]), 1);
+            std::fs::write(&path, text).unwrap();
+        }
     });
     for risk in ["R1", "banana"] {
         let note = index["events"]
@@ -1796,6 +1810,30 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
     let mut d = Vec::new();
     diff(&derived["events"], &index["events"], "/events", &mut d);
     diff(&derived["drift"], &index["drift"], "/drift", &mut d);
+    diff(&derived["cases"], &index["cases"], "/cases", &mut d);
+    diff(&derived["decisions"], &index["decisions"], "/decisions", &mut d);
+    let marked_in_file = |t: &Value| {
+        t.as_str()
+            .is_some_and(|t| t.ends_with(" more characters in the file)"))
+    };
+    let c = |g: &str, id: &str| {
+        index["cases"][g]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    for t in [
+        c("queued", "C-2026-005")["intent"].clone(),
+        c("completed", "C-2026-001")["intent"].clone(),
+        c("completed", "C-2026-001")["result"].clone(),
+        index["decisions"][2]["lead"].clone(),
+        index["decisions"][1]["lead"].clone(),
+    ] {
+        assert!(marked_in_file(&t), "{t}");
+    }
     assert!(
         d.is_empty(),
         "reference (fixture side) vs engine: {} difference(s):\n{}",
