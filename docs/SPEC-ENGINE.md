@@ -2281,7 +2281,9 @@ sub-commands inside the XDG config home or the logbook, a snapshot command
 (`snapper [-c CONFIG] … create`, `omarchy-snapshot create`, `omarchy
 snapshot create`: green, subject `snapper`, recorded only with a case;
 the capture after it fills the case's `snapshotBefore` when it is empty,
-§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
+§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed; a
+shell reserved word before a command (`do`, `if`, `!`, `{`; also `then`,
+`elif`, `else`, `while`, `until`) is read past. Limits of this reading: the
 commands inside `$(…)`, backticks and `<(…)` are not classified (their
 words count only for `skipPaths`); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like
@@ -2296,7 +2298,35 @@ line stays when commands follow it, so the record reads as the same
 commands; `<<` inside `((…))`, `$((…))` and `$[…]` is a shift, not a
 heredoc (WP-071). Redaction runs before the
 4096-character cut. Green events per ADR-0019 only while a case is set.
-Non-mutating commands produce no event. A command line that names a path
+Non-mutating commands produce no event, except privileged commands
+(below).
+**Privileged commands (ADR-0039, WP-129):** a simple command that runs
+under `sudo`, `doas`, `pkexec` or `run0` — its own wrapper, or the one of
+the `sh -c`/`eval` it was opened from (`pkexec sh -c 'lpadmin …'`) — a
+program that is no probe is recorded even when no class above names it.
+Probes record nothing: the wrappers' own (`sudo -l|-v|-K|-V`, `pkexec
+--version|--help`, `run0 --help`, `doas -C|-L`, `command -v|-V`) and
+`true`, `false`, `:`, `id`, `whoami`, `test`, `[` (`sudo -n true`). No
+privileged record when a class records the command by itself (a record
+that needs no case, or a snapshot command); a green record that would
+need a case (`sudo tee /etc/x`) gives way to it. One per line, for its
+first privileged command, beside the line's class record when another
+command has one (`pkexec pacman -S cups && pkexec lpadmin …`: two events
+of one tool call). The record: `agent/command`, subject the program's
+last path component (`lpadmin`), zone red, `meta.command` the redacted
+line as above, `detail` the same after `asked to run: ` (the hook runs
+at PreToolUse, before the password prompt: a refused or cancelled prompt
+still leaves the record; nothing confirms that the command ran),
+`meta.wrapper` the first wrapper it runs under (only privileged records
+carry the key); with or without a case, linked to the active one. A line
+in which any command has sudo read the password from stdin (`-S`,
+`--stdin` or an abbreviation of it, also in a cluster such as `-Su` and
+beside a probe: `echo PW | sudo -S …`) is recorded as `<program>
+‹redacted›`, every record of it, as for `skipPaths` below; `doas`,
+`pkexec` and `run0` read no password from stdin. A privileged `snapper`
+command is no snapshot command for §5's case notes. It is not drift in
+contract 2: `drift[].source` admits no `agent`; the system change it
+makes is drift through its own collector (ADR-0039 §3). A command line that names a path
 `[redaction] skipPaths` matches (§7) is recorded as `<program>
 ‹redacted›` (the event's subject), as an `Edit` of such a file is
 recorded as `Edit ‹redacted›`; the line is read for such paths more

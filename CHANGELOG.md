@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- The agent hooks record every command an agent runs with `sudo`,
+  `doas`, `pkexec` or `run0`, also a program Seldon does not know: an
+  agent's `pkexec lpadmin …` printer setup is now one red `agent/command`
+  event with `meta.wrapper: pkexec` and `asked to run: <the redacted
+  line>` as its text, on the active case or without one. A command
+  another hook class records (`pkexec pacman -S x`) is recorded once, as
+  before; probes (`sudo -l`, `sudo -n true`, `pkexec --version`, `command
+  -v sudo`) record nothing; a wrapper of `sh -c '…'` holds for the
+  commands inside; a line that pipes a password into `sudo -S` is
+  recorded as `<program> ‹redacted›`. These records are events, not
+  drift; the change they make is drift through its own collector
+  (ADR-0039; WP-129).
 - **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
   only, never content).** A third-party plugin edited in place is now one
   `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
