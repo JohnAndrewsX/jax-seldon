@@ -635,7 +635,8 @@ minimum heights do not fit (`↑`/`↓` scroll it then).
 
 - Row 1: "Prime Radiant", the period's window ("90 d · 2026-07-04 –
   2026-10-01", "All · everything in the index") and the period selector
-  (30 / 90 / 365 days / All; WP-030). 90 d on every entry of the section,
+  (30 / 90 / 365 days / All; WP-030) with the hint "←/→ period" beside it
+  while the row has room. 90 d on every entry of the section,
   unless the payload names a period (a summon of the open desk at section
   7 sets it at once). `←`/`→` and `h`/`l` walk the periods and wrap; the
   digits are the desk's sections (the overlay's `1`–`4` are gone); a chip
@@ -648,7 +649,8 @@ minimum heights do not fit (`↑`/`↓` scroll it then).
   sample in the period no line is drawn but the hover reads out that
   first sample) · **DriftBars** drift opened vs resolved per ISO week
   (the peak is the week with the most opened) · **RiskDonut** cases by
-  risk, all time.
+  risk, all time (the count in the centre, "all time" under it only where
+  the hole holds it; the caption always says it).
 - Row 4 (full width): **Timeline** — Omarchy releases, snapshots and
   crisis markers on one band; cases as spans from created to closed
   (open cases run to today), packed in lanes. Marker shapes (A12, WP-051;
@@ -727,7 +729,9 @@ loaded. Routes the plugin honours:
   "unknown section"), `select <id>` selects in the current section ("ok"
   / "not found"). The Prime Radiant keeps the 0.1 overlay's names:
   `setPeriod <30|90|365|all>` shows section 7 with that period and
-  returns the period now selected (an unknown id changes nothing);
+  returns the period now selected; an unknown id changes nothing — not
+  the section either — and returns section 7's period ("" before its
+  first visit);
   `hover "<slot> <x>,<y>"` (x and y fractions of the chart's plot) returns
   `{ slot, hover }`, the read-out at that point, and `hover ""` clears
   every chart's hover — while section 7 is shown, else `{ error }`; a

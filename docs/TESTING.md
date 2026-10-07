@@ -691,17 +691,21 @@ stacked Esc order; and the notices under the header with their fixes
 (snapper, not initialised and the chip, the restart notice and its one
 launch, the rules update live with doctor beside the queue, capture
 warnings and `c`). The Prime Radiant (WP-123, the old `overlay-view.sh`
-scenarios): periods with ←/→, h/l and chip clicks, 90 d on every entry,
-`setPeriod` from another section, `hover` only while shown; entering
+scenarios): periods with ←/→, h/l and chip clicks, the "←/→ period"
+hint, 90 d on every entry, `setPeriod` from another section and an
+unknown id that changes nothing, `hover` only while shown; entering
 from closed aggregates nothing on the first frame, has painted nothing
 then and every chart once by frame 2, a period switch repaints only the
 charts with a period (`2,2,2,1,2,1`), a hover nothing, a resize each once;
 hover read-outs from mouse moves and `call hover` with every malformed
 argument; the grid at 2560×1440, 1.25-scaled outputs and
-`QT_SCALE_FACTOR=1.25`, at 50 % (medium) and under 960 px (narrow,
-scrolling) with no text outside its slot; not initialised; every index
+`QT_SCALE_FACTOR=1.25`, at 50 % (medium; the RiskDonut drops "all time"
+from its centre there) and under 960 px (narrow, scrolling) with no text
+outside its slot; not initialised; every index
 variant. Decisions, System, Memory (WP-123, the old panel's scenarios
-5–7 and 20–23): the sample's rows, details and sticky bars, the search,
+5–7 and 20–23): the sample's rows, details and sticky bars, the search
+in all three (Decisions by title, System by lead and value, Memory by
+title and path; the first `j` after a search hid the selection),
 `select`, decision cases when the index carries them, the new-decision
 form live against the fake engine (Enter arms, a change disarms, the
 exact argv and editor paths of decide, Accept, `e`, Open in editor on
