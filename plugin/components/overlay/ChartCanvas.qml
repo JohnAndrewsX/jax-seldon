@@ -34,6 +34,9 @@ Item {
   // ms (the chart's own drawing calls, for the profile note).
   property int paints: 0
   property real paintMs: 0
+  // What a chart decided about its own drawing, for view() and the tests
+  // (RiskDonut: { centreLabel }); null when there is nothing to say.
+  property var readout: null
   // Appended to the summary in the caption (e.g. what did not fit).
   property string captionSuffix: ""
   // The caption line: the hovered item's read-out, else the summary.
