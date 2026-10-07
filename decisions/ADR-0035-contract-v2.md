@@ -1,6 +1,10 @@
 # ADR-0035 — Contract v2: the case's risk in the ledger, the autocommit result, a cut marker, the state-loss kind, a decision's cases and the triage proposal
 
-**Status:** proposed
+**Status:** accepted (2026-10-07, by the orchestrator under the operator's
+decisions of 2026-10-06 — "contract v2 in 0.2.0, ADR first" and free rein
+for 0.2.0 — after an Opus review in two rounds and a Fable stage 2 that
+advised acceptance with the wording now in §6; the operator may revisit it
+before 0.2.0 is tagged)
 **Date:** 2026-10-06
 
 > Implements the contract v2 bundle decided on 2026-10-04 (STATUS.md,
