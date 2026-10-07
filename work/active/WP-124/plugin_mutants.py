@@ -49,6 +49,8 @@ M = [
      "", "node"),
     ("P11 no size limit", MJ,
      "  if (raw.length > PROPOSAL_TEXT_MAX) return null\n", "", "node"),
+    ("P13 lengths in UTF-16 units", MJ,
+     "  var n = Array.from(value).length\n", "  var n = value.length\n", "node"),
     ("P12 the items built while hidden", TD,
      "      active: root.shown && !!root.proposal\n", "      active: !!root.proposal\n", "desk"),
 ]

@@ -2926,6 +2926,13 @@ test("parseProposal follows proposal.schema.json (WP-124b round 2, R1)", () => {
   ]) assert.strictEqual(bad(change), null, why)
   assert.ok(bad((d) => { d.applied = "2026-10-01T17:10:00+02:00" }))
   assert.ok(bad((d) => { d.items[0].evidence[0].text = "x".repeat(256) }))
+  // lengths count code points, as the engine and JSON Schema do: one astral
+  // character (two UTF-16 units) in a 256-character text still parses
+  const astral = "by human · " + "\u{1F600}" + "x".repeat(256 - 12)
+  assert.strictEqual(Array.from(astral).length, 256)
+  assert.strictEqual(astral.length, 257)
+  assert.ok(bad((d) => { d.items[0].evidence[0].text = astral }), "256 code points with one emoji")
+  assert.strictEqual(bad((d) => { d.items[0].evidence[0].text = astral + "x" }), null, "257 code points")
   // larger than the engine reads: not even parsed
   assert.strictEqual(M.parseProposal(proposalFile + " ".repeat(4 * 1024 * 1024), ix.triage), null)
 })

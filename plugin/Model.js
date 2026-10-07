@@ -3800,8 +3800,12 @@ function onlyKeys(obj, keys) {
   return true
 }
 
+// A string of `min`..`max` characters counted as the engine and JSON
+// Schema count them: code points, not UTF-16 units (an emoji is one).
 function textUpTo(value, max, min) {
-  return typeof value === "string" && value.length >= (min || 0) && value.length <= max
+  if (typeof value !== "string") return false
+  var n = Array.from(value).length
+  return n >= (min || 0) && n <= max
 }
 
 function parseProposal(text, triage) {
