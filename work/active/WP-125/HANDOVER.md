@@ -303,3 +303,22 @@ needed a second run; the busy index's slowest tick 4 ms), bar-view 194).
 Only this handover changed after that commit. The test host was not
 touched this round (the changes are a build trigger, a guard, labels and
 a still-picture branch, all measured in the harness).
+
+## Merge of next
+
+`origin/next` (109d02e: WP-102a, import of Markdown task files as cases,
+engine) merged into this branch in 723ad84. One conflict: the German
+guide 05's source line, which both sides had moved (this WP's graph
+note under `seldon index`, WP-102a's `seldon import task`). The German
+text merged on its own and carries both; the source line was taken from
+`next` for the merge and then pointed at the merge in dc3bcaf, where the
+English page holds both changes. No plugin, test or engine file
+conflicted; WP-102a touches no plugin file.
+
+Verified: `flock /tmp/seldon-check.lock just check` on dc3bcaf (log
+`check-wp125-merge1.log`, disk cargo target): **exit 0** (`check: ok`;
+engine tests ok, install.test 209, deploy-test-host 190, docs-check ok
+(465 links, 46 commands), qmllint ok 46 files, model.test.js 140,
+model.bench ok, real-home-guard 11, service-states 328, desk-view 1447
+(no case needed a second run; the busy index's slowest tick 5 ms),
+bar-view 194). Only this handover changed after that commit.
