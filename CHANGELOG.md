@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- **Bulk triage and Ask agent (ADR-0036).** `seldon agent ask triage`
+  starts your agent to sort the open changes; `agent ask drift <EVENT>`
+  and `agent ask case <ID>` ask it about one change or one case. The
+  prompt names only ids, the logbook and the skill's guide, never
+  logbook text, and hands the agent no case to work. The agent stores a
+  proposal with `seldon drift propose` (JSON on stdin): every item needs
+  evidence the engine looks up itself (a journal entry, an event, a
+  snapshot, a case, a case's Plan line), or the proposal is refused.
+  `seldon drift apply <PROPOSAL>` applies it as you, checking every item
+  again, with `proposed by agent:<name> — <evidence>` in the ledger; a
+  crisis only one by one with `--item`; a second run changes nothing.
+  `seldon drift discard` throws a proposal away. The skill gains
+  `triage.md` (WP-124).
+
 - `seldon import task <FILE>…` turns your own Markdown task files into
   cases: one queued case per open `- [ ]` item (title from its first
   sentence, Intent from the item, its indented lines and its heading),
@@ -33,7 +47,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like a note; a second run creates nothing, a reworded item makes a new
   case that names the earlier one; `--include-done`, `--dry-run`,
   `--zone`, `--risk`, `--area`. Files outside your home or inside the
-  logbook are refused (WP-102).
+  logbook are refused (WP-102). Each imported case records its task as
+  `source: "~/…/file.md#line"` in its frontmatter, which the index
+  carries for the desk (WP-127).
+- The index carries what the desk's details show, all optional within
+  contract 2 (ADR-0038): each open change's `rule` (what `seldon drift
+  show` reports), the first paragraph of a case's Intent and Result and
+  of a decision's Decision (redacted on every build, clipped at 256
+  bytes with "… (N more characters in the file)"), and an imported
+  case's `source` (WP-127).
+
 - The harm guard of the planned-and-active link (ADR-0029) reads a
   case's risk from its ledger lines, to the second, for every case this
   engine creates; an edited Log no longer changes the answer. Cases from
@@ -486,6 +509,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- The desk's "Why loud?" callout reads the rule from the index: selecting
+  a crisis in the Changelog no longer runs `seldon drift show` (it still
+  does against an engine whose index has no rule). Work's case detail
+  shows the first paragraph of Intent and Result and where an imported
+  case came from; the Decisions detail shows the first paragraph of the
+  decision. *Open in editor* stays for the rest (WP-127).
 - **Quiet surfaces (ADR-0028).** The bar's second number now counts
   crises only: changes that can affect boot, login or the shell and have
   no case. Other changes without a case no longer show in the bar; the

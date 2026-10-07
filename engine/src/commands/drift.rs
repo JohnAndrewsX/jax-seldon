@@ -66,6 +66,59 @@ pub enum DriftCommand {
         #[arg(value_name = "EVENT", value_parser = parse_event_id)]
         id: String,
     },
+    /// Store an agent's triage proposal (JSON on stdin) for the user to
+    /// apply; every item needs evidence the engine can resolve
+    Propose(ProposeArgs),
+    /// Apply a stored triage proposal as the user: link and explain its
+    /// items; a crisis only when named by --item
+    Apply(ApplyArgs),
+    /// Remove a stored triage proposal; the logbook is not touched
+    Discard(DiscardArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(after_help = "Input (stdin):
+  {\"items\": [{\"eventId\": \"<EVENT>\", \"action\": \"link\", \"caseId\": \"<CASE>\",
+              \"evidence\": [{\"kind\": \"plan\", \"ref\": \"<CASE>\"}]}]}
+  action explain takes \"title\" and \"intent\" instead of \"caseId\"; evidence kinds:
+  journal (YYYY-MM-DD HH:MM), event (<EVENT>), snapshot (<N>), case (<CASE>),
+  plan (<CASE>: a line of its Plan that names the change)")]
+pub struct ProposeArgs {
+    /// Read the proposal from FILE instead of stdin
+    #[arg(long, value_name = "FILE")]
+    pub file: Option<std::path::PathBuf>,
+
+    /// Who proposes: agent:NAME (default: $SELDON_ACTOR)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ApplyArgs {
+    /// The proposal id, as `seldon drift propose` and index.json's triage name it
+    #[arg(value_name = "PROPOSAL", value_parser = super::triage::parse_proposal_id)]
+    pub id: String,
+
+    /// Apply only this item (repeatable); the only way to apply a crisis
+    #[arg(long = "item", value_name = "EVENT", value_parser = parse_event_id)]
+    pub items: Vec<String>,
+
+    /// Who applies it: human (default: $SELDON_ACTOR, else human); an agent
+    /// is refused
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct DiscardArgs {
+    /// The proposal id
+    #[arg(value_name = "PROPOSAL", value_parser = super::triage::parse_proposal_id)]
+    pub id: String,
+
+    /// Who discards it: human (default: $SELDON_ACTOR, else human); an
+    /// agent is refused
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -172,6 +225,8 @@ pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
                 )));
             }
             let action = Action::Explain(Explain {
+                title: None,
+                proposed_by: None,
                 intent,
                 zone: a.zone,
                 risk: a.risk,
@@ -183,6 +238,12 @@ pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
             let reason = one_line("the reason", &a.reason)?;
             resolve(ctx, &a.id, a.only, a.actor, Action::Dismiss { reason })
         }
+        Some(DriftCommand::Propose(a)) => super::triage::propose(ctx, a.file.as_deref(), a.actor),
+        Some(DriftCommand::Apply(mut a)) => {
+            a.items.dedup();
+            super::triage::apply(ctx, &a.id, &a.items, a.actor)
+        }
+        Some(DriftCommand::Discard(a)) => super::triage::discard(ctx, &a.id, a.actor),
     }
 }
 
@@ -364,15 +425,20 @@ fn show(ctx: &Context, id: &str) -> Result<Output> {
 }
 
 /// `drift explain`'s options for the new case.
-struct Explain {
-    intent: String,
-    zone: Option<Zone>,
-    risk: Risk,
-    area: Option<String>,
+pub(super) struct Explain {
+    /// The case's title; `None`: the intent (`drift explain`).
+    pub title: Option<String>,
+    pub intent: String,
+    pub zone: Option<Zone>,
+    pub risk: Risk,
+    pub area: Option<String>,
+    /// `drift apply`: the agent whose proposal this is; the case gets the
+    /// tag `proposed-by:<agent>` (WP-124 round 3, B4).
+    pub proposed_by: Option<String>,
 }
 
 /// What a resolving command does besides the resolution lines.
-enum Action {
+pub(super) enum Action {
     Link { case: String },
     Explain(Explain),
     Dismiss { reason: String },
@@ -380,10 +446,11 @@ enum Action {
 
 impl Action {
     /// The action with its free text (intent, reason) through `redactor`.
-    fn redacted(self, redactor: &Redactor) -> Action {
+    pub(super) fn redacted(self, redactor: &Redactor) -> Action {
         match self {
             Action::Link { case } => Action::Link { case },
             Action::Explain(explain) => Action::Explain(Explain {
+                title: explain.title.as_deref().map(|t| redactor.redact(t)),
                 intent: redactor.redact(&explain.intent),
                 ..explain
             }),
@@ -393,7 +460,15 @@ impl Action {
         }
     }
 
-    fn resolution(&self) -> Resolution {
+    /// What the selection may take: `link` routine events too.
+    pub(super) fn intent(&self) -> reconcile::Intent {
+        match self {
+            Action::Link { .. } => reconcile::Intent::Link,
+            _ => reconcile::Intent::Resolve,
+        }
+    }
+
+    pub(super) fn resolution(&self) -> Resolution {
         match self {
             Action::Link { .. } => Resolution::Linked,
             Action::Explain(_) => Resolution::Explained,
@@ -430,29 +505,131 @@ fn resolve(
     let built = index::derive(ctx, &config, &logbook)?;
     warn(&built);
     // a link names an existing case, also when there is nothing to resolve
-    let mut case_file = match &action {
+    let case_file = match &action {
         Action::Link { case } => Some(cases::find(&logbook, case)?),
         _ => None,
     };
-    let intent = match &action {
-        Action::Link { .. } => reconcile::Intent::Link,
-        _ => reconcile::Intent::Resolve,
-    };
-    let sel = reconcile::select(&built, id, only, intent)?;
+    let sel = reconcile::select(&built, id, only, action.intent())?;
     refuse_agent(actor, &sel, &action, case_file.as_ref())?;
     let resolution = action.resolution();
     if sel.members.is_empty() {
         drop(lock);
         return Ok(nothing_to_do(&sel, resolution));
     }
+    let done = write_resolution(
+        ctx, &config, &logbook, &lock, &built, &sel, actor, &action, None, case_file,
+    )?;
+    // never the subject: free text must not reach a command line
+    let summary = match &done.case_id {
+        Some(c) => format!("drift {}: {} event(s), {c}", done.verb(), done.resolved),
+        None => format!("drift {}: {} event(s)", done.verb(), done.resolved),
+    };
+    let commit = autocommit(ctx, &config, &logbook, &summary);
+    crate::index::rebuild_if_initialised(ctx);
+    drop(lock);
+    if let Some(e) = &done.case_error {
+        return Err(Error::user(format!(
+            "{} {} event(s) in the ledger, but the case file did not follow: {e}",
+            capitalise(done.verb()),
+            done.resolved
+        )));
+    }
 
+    let mut human = format!(
+        "{} {} event(s){}",
+        capitalise(done.verb()),
+        done.resolved,
+        match (&action, &done.case_id) {
+            (Action::Link { .. }, Some(c)) => format!(" to {c}"),
+            (Action::Explain(_), Some(c)) => format!(" with the new completed case {c}"),
+            _ => String::new(),
+        }
+    );
+    if let Some(tx) = &done.group {
+        let _ = write!(human, " (transaction {tx})");
+    }
+    if let (Some(file), Action::Explain(_)) = (&done.case, &action) {
+        let _ = write!(human, "\nCase: {}", file.relative(&logbook));
+    }
+    if let Some(area) = &done.area_created {
+        let _ = write!(human, "\nNew area: {area}");
+    }
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "eventId": done.event_id,
+            "resolution": resolution,
+            "only": only,
+            "txId": done.group,
+            "resolved": done.resolved,
+            "events": done.written.iter().map(event_json).collect::<Vec<_>>(),
+            "case": done.case.as_ref().map(|f| case_json(&logbook, f)),
+            "areaCreated": done.area_created,
+            "git": commit.json(),
+        }),
+    ))
+}
+
+/// What one resolving write did ([`write_resolution`]).
+pub(super) struct Resolved {
+    /// The named event.
+    pub event_id: String,
+    pub resolution: Resolution,
+    /// `meta.txId` of the lines when the write fanned out over a group.
+    pub group: Option<String>,
+    /// How many `resolution` lines were written.
+    pub resolved: usize,
+    /// Every ledger line written: (case-created,) the resolutions (,
+    /// case-completed).
+    pub written: Vec<Event>,
+    /// The linked case, or the retroactive one `explain` made.
+    pub case: Option<CaseFile>,
+    pub case_id: Option<String>,
+    pub area_created: Option<String>,
+    /// The case file could not follow the ledger lines, which are written
+    /// (the caller still commits and rebuilds, then reports it).
+    pub case_error: Option<Error>,
+}
+
+impl Resolved {
+    pub fn verb(&self) -> &'static str {
+        match self.resolution {
+            Resolution::Linked => "linked",
+            Resolution::Explained => "explained",
+            Resolution::Dismissed => "dismissed",
+        }
+    }
+}
+
+/// The write of `drift link|explain|dismiss` on a selection with members,
+/// under `lock`, from `built` (derived under that lock): one ledger write
+/// ((case-created,) one `resolution` line per member (, case-completed)),
+/// then the case files. `detail` replaces the resolution lines' detail
+/// (`drift apply`'s "proposed by …"); without it a link has none, an
+/// explanation its intent, a dismissal its reason. No autocommit and no
+/// index rebuild: the caller does both once.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn write_resolution(
+    ctx: &Context,
+    config: &crate::config::Config,
+    logbook: &crate::logbook::Logbook,
+    lock: &crate::logbook::lock::Lock,
+    built: &Built,
+    sel: &Selection,
+    actor: &str,
+    action: &Action,
+    detail: Option<String>,
+    mut case_file: Option<CaseFile>,
+) -> Result<Resolved> {
+    let resolution = action.resolution();
     let mut area_created = None;
-    let (case_id, detail, case_events) = match &action {
-        Action::Link { case } => (Some(case.clone()), None, Vec::new()),
-        Action::Dismiss { reason } => (None, Some(reason.clone()), Vec::new()),
+    let (case_id, detail, case_events) = match action {
+        Action::Link { case } => (Some(case.clone()), detail, Vec::new()),
+        Action::Dismiss { reason } => (None, detail.or_else(|| Some(reason.clone())), Vec::new()),
         Action::Explain(explain) => {
             let intent = &explain.intent;
-            let file = retroactive_case(ctx, &logbook, &built, &sel, explain, actor)?;
+            let file = retroactive_case(ctx, logbook, built, sel, explain, actor)?;
             let id = file.case.id.clone();
             let created = Event::new(ctx.now, Source::Seldon, Kind::CaseCreated, &id)
                 .detail(intent.clone())
@@ -463,11 +640,15 @@ fn resolve(
                 .actor(actor)
                 .case(Some(id.clone()));
             case_file = Some(file);
-            (Some(id), Some(intent.clone()), vec![created, completed])
+            (
+                Some(id),
+                detail.or_else(|| Some(intent.clone())),
+                vec![created, completed],
+            )
         }
     };
     let lines = reconcile::resolutions(
-        &sel,
+        sel,
         &Resolve {
             resolution,
             ts: ctx.now,
@@ -490,7 +671,7 @@ fn resolve(
     for m in sel
         .members
         .iter()
-        .filter(|m| reconcile::engine_resolved(&built, m))
+        .filter(|m| reconcile::engine_resolved(built, m))
     {
         if let Some(before) = m.case.as_deref().filter(|c| Some(*c) != case_id.as_deref()) {
             moved
@@ -506,41 +687,55 @@ fn resolve(
     };
     // a linked case its save would refuse fails before the ledger changes
     // (WP-077); `explain` writes a new file, whole
-    if let (Action::Link { .. }, Some(file)) = (&action, &case_file) {
-        file.prepare(&logbook, attach)?;
+    if let (Action::Link { .. }, Some(file)) = (action, &case_file) {
+        file.prepare(logbook, attach)?;
     }
-    let written = emit(&lock, &config, &logbook, events)?;
+    let written = emit(lock, config, logbook, events)?;
 
-    if let Some(file) = case_file.as_mut() {
-        attach(file);
-        match &action {
-            Action::Explain(explain) => {
-                area_created = explain
-                    .area
-                    .as_deref()
-                    .map(|a| cases::ensure_area(&logbook, a))
-                    .transpose()?
-                    .flatten();
-                let text = crate::model::render_new(&file.case, &file.doc.body);
-                write_new(&file.path, &text)?;
-            }
-            _ => {
-                file.save(&logbook)?;
+    // the ledger lines are written and win; a case file that cannot follow
+    // is reported with them, never as "nothing written" (WP-124 round 2)
+    let mut after = || -> Result<()> {
+        fail_after_ledger()?;
+        if let Some(file) = case_file.as_mut() {
+            attach(file);
+            match action {
+                Action::Explain(explain) => {
+                    area_created = explain
+                        .area
+                        .as_deref()
+                        .map(|a| cases::ensure_area(logbook, a))
+                        .transpose()?
+                        .flatten();
+                    let text = crate::model::render_new(&file.case, &file.doc.body);
+                    write_new(&file.path, &text)?;
+                }
+                _ => {
+                    file.save(logbook)?;
+                }
             }
         }
-    }
-
-    let verb = match resolution {
-        Resolution::Linked => "linked",
-        Resolution::Explained => "explained",
-        Resolution::Dismissed => "dismissed",
+        Ok(())
     };
+    let case_error = after().err();
+
+    let done = Resolved {
+        event_id: sel.event.event.id.to_string(),
+        resolution,
+        group: sel.group.map(String::from),
+        resolved,
+        written,
+        case: case_file,
+        case_id,
+        area_created,
+        case_error,
+    };
+    let verb = done.verb();
     for (before, ids) in &moved {
-        let instead = match &case_id {
+        let instead = match &done.case_id {
             Some(c) => format!("{verb} to {c}"),
             None => verb.to_string(),
         };
-        let unlinked = cases::find(&logbook, before).and_then(|mut file| {
+        let unlinked = cases::find(logbook, before).and_then(|mut file| {
             file.case.events.retain(|id| !ids.contains(id));
             file.log(
                 &ctx.now,
@@ -550,61 +745,31 @@ fn resolve(
                 ),
                 actor,
             );
-            file.save(&logbook).map(drop)
+            file.save(logbook).map(drop)
         });
         // the ledger line is written and wins; the case file follows
         if let Err(e) = unlinked {
             eprintln!("seldon: warning: {before}: case file not updated: {e}");
         }
     }
-    // never the subject: free text must not reach a command line
-    let summary = match &case_id {
-        Some(c) => format!("drift {verb}: {resolved} event(s), {c}"),
-        None => format!("drift {verb}: {resolved} event(s)"),
-    };
-    let commit = autocommit(ctx, &config, &logbook, &summary);
-    crate::index::rebuild_if_initialised(ctx);
-    drop(lock);
+    Ok(done)
+}
 
-    let mut human = format!(
-        "{} {resolved} event(s){}",
-        capitalise(verb),
-        match (&action, &case_id) {
-            (Action::Link { .. }, Some(c)) => format!(" to {c}"),
-            (Action::Explain(_), Some(c)) => format!(" with the new completed case {c}"),
-            _ => String::new(),
-        }
-    );
-    if let Some(tx) = sel.group {
-        let _ = write!(human, " (transaction {tx})");
+/// Debug builds only: `SELDON_TEST_DRIFT_FAIL_AFTER_LEDGER=1` fails a
+/// resolving write right after its ledger lines, as a case file that
+/// cannot be written would (the tests of that path).
+fn fail_after_ledger() -> Result<()> {
+    #[cfg(debug_assertions)]
+    if std::env::var("SELDON_TEST_DRIFT_FAIL_AFTER_LEDGER").is_ok_and(|v| v == "1") {
+        return Err(anyhow::anyhow!("the case file was not written (test)").into());
     }
-    if let (Some(file), Action::Explain(_)) = (&case_file, &action) {
-        let _ = write!(human, "\nCase: {}", file.relative(&logbook));
-    }
-    if let Some(area) = &area_created {
-        let _ = write!(human, "\nNew area: {area}");
-    }
-    human.push_str(&commit.human());
-    Ok(Output::ok(
-        human,
-        json!({
-            "eventId": sel.event.event.id.to_string(),
-            "resolution": resolution,
-            "only": only,
-            "txId": sel.group,
-            "resolved": resolved,
-            "events": written.iter().map(event_json).collect::<Vec<_>>(),
-            "case": case_file.as_ref().map(|f| case_json(&logbook, f)),
-            "areaCreated": area_created,
-            "git": commit.json(),
-        }),
-    ))
+    Ok(())
 }
 
 /// ADR-0028 §3, enforced: an agent actor may not explain or dismiss a
 /// crisis, and may link one only to an active case that lists it in
 /// `agents`. A human is never refused. Exit 1 before any write.
-fn refuse_agent(
+pub(super) fn refuse_agent(
     actor: &str,
     sel: &Selection,
     action: &Action,
@@ -650,10 +815,11 @@ fn retroactive_case(
     let zone = explain.zone.unwrap_or_else(|| item_zone(built, sel));
     let risk = explain.risk;
     let intent = explain.intent.as_str();
+    let title = explain.title.as_deref().unwrap_or(intent);
     let id = cases::next_id(logbook, ctx.now.year())?;
     let case = Case {
         id: id.clone(),
-        title: intent.to_string(),
+        title: title.to_string(),
         status: CaseStatus::Completed,
         zone,
         risk,
@@ -666,18 +832,24 @@ fn retroactive_case(
         agents: Vec::new(),
         events: Vec::new(),
         // an agent's explanation closes a case too (ADR-0027 §5, WP-101)
-        tags: if crate::model::is_agent(actor) {
-            vec![super::plan::TAG_CLOSED_BY_AGENT.to_string()]
-        } else {
-            Vec::new()
+        tags: {
+            let mut tags = Vec::new();
+            if crate::model::is_agent(actor) {
+                tags.push(super::plan::TAG_CLOSED_BY_AGENT.to_string());
+            }
+            if let Some(agent) = &explain.proposed_by {
+                tags.push(format!("{}{agent}", super::triage::PROPOSED_BY));
+            }
+            tags
         },
+        source: None,
     };
-    let body = cases::new_body(logbook, &id, intent)?;
+    let body = cases::new_body(logbook, &id, title)?;
     let body = reconcile::append_to_section(&body, "Intent", intent);
     let path = logbook
         .path("work")
         .join(CaseStatus::Completed.folder())
-        .join(case.file_name(&cases::slug(intent, "case")));
+        .join(case.file_name(&cases::slug(title, "case")));
     let mut file = CaseFile {
         path,
         case,
@@ -724,7 +896,7 @@ fn item_zone(built: &Built, sel: &Selection) -> Zone {
 }
 
 /// Exit 0, nothing written: the named event is not open drift.
-fn nothing_to_do(sel: &Selection, resolution: Resolution) -> Output {
+pub(super) fn nothing_to_do(sel: &Selection, resolution: Resolution) -> Output {
     let e = &sel.event.event;
     Output::ok(
         format!("Nothing to resolve: {}", not_open(sel.event)),
@@ -742,7 +914,7 @@ fn nothing_to_do(sel: &Selection, resolution: Resolution) -> Output {
 }
 
 /// Why an event is not open drift.
-fn not_open(event: &crate::index::model::IndexEvent) -> String {
+pub(super) fn not_open(event: &crate::index::model::IndexEvent) -> String {
     let e = &event.event;
     match (e.resolution, e.case.as_deref()) {
         (Some(r), Some(c)) => format!("{} is already {r} ({c})", e.id),
@@ -753,7 +925,7 @@ fn not_open(event: &crate::index::model::IndexEvent) -> String {
 }
 
 /// Load warnings of the index model, on stderr (like the rebuild's).
-fn warn(built: &Built) {
+pub(super) fn warn(built: &Built) {
     for w in &built.warnings {
         eprintln!("seldon: warning: {w}");
     }

@@ -177,7 +177,7 @@ qmllint:
     #   uncreatable-type  Quickshell's qmltypes mark PanelWindow isCreatable: false
     # Everything else must be warning-free.
     shopt -s nullglob
-    files=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/sections/*.qml)
+    files=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/components/graph/*.qml plugin/sections/*.qml)
     "$lint" --max-warnings 0 --missing-property info --uncreatable-type info \
       -I "$root" -I "$shell_dir" "${files[@]}"
     # The demoted missing-property makes qmllint blind to token typos

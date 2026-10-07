@@ -61,7 +61,7 @@ DRIFT_SOURCES = {"pacman", "omarchy", "plugins", "theme", "config"}
 EVENT_KEYS = ["id", "ts", "source", "kind", "subject", "detail", "actor", "case", "zone",
               "explicit", "txId", "refersTo", "resolution", "resolutionDetail", "meta"]
 DRIFT_KEYS = ["eventId", "ts", "source", "kind", "subject", "detail", "actor", "zone", "crisis",
-              "proposedCase", "txId", "members", "truncated"]
+              "proposedCase", "txId", "members", "truncated", "rule"]
 
 # ADR-0013 §3, ADR-0023 (WP-050): default of config.toml [drift] alwaysRed (fnmatch globs,
 # case-sensitive); keep in step with engine/src/config.rs DriftConfig::default.
@@ -394,7 +394,8 @@ def group_lead(members):
 
 
 CASE_KEYS = ["id", "title", "status", "zone", "risk", "priority", "area", "created", "started", "closed",
-             "snapshotBefore", "agents", "events", "tags", "path", "steps", "proposedEvents"]
+             "snapshotBefore", "agents", "events", "tags", "path", "steps", "proposedEvents",
+             "intent", "result", "source"]
 
 
 class Fail(Exception):
@@ -836,15 +837,16 @@ def json_len(c):
     return len(c.encode("utf-8"))
 
 
-def clip(text):
+def clip(text, place="in the ledger"):
     """`text` as the index carries it (ADR-0025): unchanged when it takes at most TEXT_MAX bytes
     in JSON, else its start, cut on a character boundary and stripped of trailing white space,
-    followed by `… (N more characters in the ledger)`, N the characters left out."""
+    followed by `… (N more characters in the ledger)`, N the characters left out. A case's or
+    decision's text names `in the file` instead (ADR-0038 §2)."""
     if sum(json_len(c) for c in text) <= TEXT_MAX:
         return text
 
     def marker(left):
-        return f"… ({left} more {'character' if left == 1 else 'characters'} in the ledger)"
+        return f"… ({left} more {'character' if left == 1 else 'characters'} {place})"
     # the marker for every character is at least as long as the real one
     room = TEXT_MAX - len(marker(len(text)).encode("utf-8"))
     used, end = 0, 0
@@ -855,6 +857,78 @@ def clip(text):
         end = i + 1
     head = text[:end].rstrip(WHITE_SPACE)
     return head + marker(len(text) - len(head))
+
+
+def is_heading(line):
+    """engine: cases::is_heading — `#` to `######` followed by a space, a tab or nothing."""
+    rest = line.lstrip("#")
+    return 1 <= len(line) - len(rest) <= 6 and (rest == "" or rest[0] in " \t")
+
+
+def paragraphs(text):
+    """engine: cases::paragraphs — blocks of non-blank lines, each line trimmed at the end; a
+    heading line ends a block and is no text."""
+    out, lines = [], []
+    for line in text.split("\n"):
+        line = line.rstrip(WHITE_SPACE)
+        if line.strip(WHITE_SPACE) == "" or is_heading(line.lstrip(WHITE_SPACE)):
+            if lines:
+                out.append("\n".join(lines).lstrip(WHITE_SPACE))
+                lines = []
+            continue
+        lines.append(line)
+    if lines:
+        out.append("\n".join(lines).lstrip(WHITE_SPACE))
+    return out
+
+
+def section_paragraphs(body, name):
+    """The paragraphs of `## <name>` without HTML comments (engine: cases::first_paragraph)."""
+    m = re.search(rf"^## {re.escape(name)}[ \t]*\r?\n(.*?)(?=^## |^# |^##?\r?$|\Z)", body, re.S | re.M)
+    return paragraphs(strip_comments(m.group(1))) if m else []
+
+
+PROVENANCE = re.compile(r"Imported from [^\n]* — read before you start this case\.")
+
+
+def case_intent(fm, body):
+    """ADR-0038 §2: the first paragraph of ## Intent; an imported case's provenance line, when it
+    is the whole first paragraph, gives way to the next one."""
+    ps = section_paragraphs(body, "Intent")
+    if ps and "imported" in (fm.get("tags") or []) and PROVENANCE.fullmatch(ps[0]):
+        ps = ps[1:]
+    return ps[0] if ps else None
+
+
+DIRECTION_OR_FORMAT = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+
+
+def shown_text(text):
+    """engine: build::shown_text without the redaction (the fixture holds no secret in these
+    texts; the engine's golden test redacts with the built-in rules and must agree): direction
+    and format characters dropped, control characters other than line breaks and tabs as spaces,
+    clipped with `in the file`."""
+    if text is None:
+        return None
+    text = DIRECTION_OR_FORMAT.sub("", text)
+    text = "".join(" " if (ord(c) < 0x20 or 0x7f <= ord(c) <= 0x9f) and c not in "\n\t" else c for c in text)
+    text = clip(text, "in the file")
+    return text if text.strip(WHITE_SPACE) else None
+
+
+BAD_PATH = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]")
+
+
+def case_source(fm, problems, where):
+    """ADR-0038 §3: the frontmatter's `source` while it is a ~/ path of at most 512 bytes (UTF-8)
+    without control, direction or format characters; a non-string is no source."""
+    s = fm.get("source")
+    if not isinstance(s, str):
+        return None
+    if s.startswith("~/") and len(s.encode("utf-8")) <= 512 and not BAD_PATH.search(s):
+        return s
+    problems.append(f"{where}: source {s!r} is not shown")
+    return None
 
 
 def clipped(e):
@@ -1018,8 +1092,9 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
             elif "zone" in lead:
                 d["zone"] = lead["zone"]
             d["crisis"] = d.get("zone") == "red"
+            d["rule"] = "attention-all"
         else:
-            cls, _ = classifier.group(members, lead)
+            cls, d["rule"] = classifier.group(members, lead)
             if cls == "routine" and d["proposedCase"] is None:
                 continue  # history, not drift (ADR-0028 §3)
             if "zone" in lead:
@@ -1050,6 +1125,13 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
         prop = [d["eventId"] for d in drift if d["proposedCase"] == cid]
         if prop:
             c["proposedEvents"] = prop
+        # ADR-0038 §2, §3
+        c.pop("source", None)
+        for k, v in (("intent", shown_text(case_intent(fm, body))),
+                     ("result", shown_text(next(iter(section_paragraphs(body, "Result")), None))),
+                     ("source", case_source(fm, problems, r))):
+            if v is not None:
+                c[k] = v
         c = {k: c[k] for k in CASE_KEYS if k in c}
         g = "completed" if fm["status"] in ("completed", "dropped") else fm["status"]
         groups[g].append(c)
@@ -1078,13 +1160,17 @@ def derive(lb, today, problems, mutate=None, mutate_cases=None, legacy=False):
     # decisions
     decisions = []
     for f in sorted(glob.glob(os.path.join(lb, "decisions", "ADR-*.md")), reverse=True):
-        fm, _ = frontmatter(f)
+        fm, body = frontmatter(f)
         cases = []
         for c in fm.get("cases") or []:  # as written, without repeats (ADR-0035 §5)
             if c not in cases:
                 cases.append(c)
-        decisions.append({"id": fm["id"], "title": fm["title"], "status": fm["status"], "date": fm["date"],
-                          "path": os.path.relpath(f, lb).replace(os.sep, "/"), "cases": cases})
+        row = {"id": fm["id"], "title": fm["title"], "status": fm["status"], "date": fm["date"],
+               "path": os.path.relpath(f, lb).replace(os.sep, "/"), "cases": cases}
+        lead = shown_text(next(iter(section_paragraphs(body, "Decision")), None))  # ADR-0038 §2
+        if lead is not None:
+            row["lead"] = lead
+        decisions.append(row)
 
     # system
     sysdir = os.path.join(lb, "system")

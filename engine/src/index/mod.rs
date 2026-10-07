@@ -59,6 +59,7 @@ pub fn derive_at(
         git: None,
         state,
         drift: config.drift.clone(),
+        redactor: crate::redact::Redactor::for_config(config).ok(),
     };
     let mut built = build::build(loaded, &input);
     built.index.triage = triage::read(dirs, &logbook.root, &mut built.warnings);

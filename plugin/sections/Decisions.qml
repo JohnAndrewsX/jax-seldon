@@ -12,8 +12,10 @@ import "../Model.js" as Model
 // it the count and *New decision*. The detail of the selected decision:
 // its title, status, date and file, and — when the index is contract v2 —
 // the cases it names (`decisions[].cases`; a click goes to the case in
-// Work); the index has no body, so the text is one click away in the
-// editor. The sticky bar: *Accept* while it is proposed, *Open in editor*.
+// Work); the first paragraph of its Decision as plain text when the index
+// carries it (`decisions[].lead`, ADR-0038), the whole text one click away
+// in the editor. The sticky bar: *Accept* while it is proposed, *Open in
+// editor*.
 //
 // Accept is the existing path (WP-123 Decisions 2): the engine accepts no
 // decision itself; the user sets `status: accepted` in the frontmatter, so
@@ -96,6 +98,7 @@ ReadingSection {
     v.result = resultLine.visible ? resultLine.text : ""
     v.openResult = root.openResult ? root.openResult.text : ""
     v.cases = root.cases === null ? null : root.cases.map(function(c) { return c.id })
+    v.text = root.decision ? root.decision.text : ""
     v.form = { open: root.formOpen, editing: form.editing, title: form.title, armed: form.armed, hint: form.hint, result: form.resultText }
     return v
   }
@@ -208,6 +211,19 @@ ReadingSection {
       wrapMode: Text.Wrap
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
+    }
+
+    // The first paragraph of its Decision (ADR-0038 §2), plain text;
+    // hidden when the index has none.
+    Text {
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      text: root.decision ? root.decision.text : ""
+      color: Color.popups.text
+      wrapMode: Text.Wrap
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
     }
 
     KeyValues {

@@ -265,6 +265,7 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
             start: false,
             point: false,
             done: None,
+            source: None,
         },
     )?;
     let id = created.file.case.id.clone();
@@ -314,6 +315,8 @@ pub(crate) struct Spec {
     /// `case-created` and `case-completed` in one ledger write, `done` the
     /// completed Log line's text. Never with `start`.
     pub done: Option<String>,
+    /// The frontmatter's `source` (`import task` only, ADR-0038 §3).
+    pub source: Option<String>,
 }
 
 /// What [`create`] wrote: the case file, its ledger events (created, then
@@ -366,6 +369,7 @@ pub(crate) fn create(
         agents: Vec::new(),
         events: Vec::new(),
         tags: spec.tags.clone(),
+        source: spec.source.clone(),
     };
     let mut body = cases::new_body(logbook, &id, &spec.title)?;
     if let Some(intent) = &spec.intent {
@@ -943,6 +947,7 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             start: true,
             point: holder.is_none(),
             done: None,
+            source: None,
         },
     )?;
     let id = created.file.case.id.clone();
@@ -1087,6 +1092,14 @@ pub fn case_json(logbook: &Logbook, file: &CaseFile) -> Value {
     }
     if let Some(a) = &c.area {
         v["area"] = json!(a);
+    }
+    // the frontmatter's `source` while it has the schema's shape (ADR-0038 §3)
+    if let Some(s) = c
+        .source
+        .as_deref()
+        .filter(|s| crate::import::is_case_source(s))
+    {
+        v["source"] = json!(s);
     }
     v
 }

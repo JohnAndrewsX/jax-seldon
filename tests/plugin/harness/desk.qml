@@ -74,6 +74,15 @@ import qs.Ui
 //                       hoverItem:<slot>:<i>  move the pointer to item i of
 //                                        the Prime Radiant chart in that slot
 //                                        (chart.locate(i))
+//                       graphPlay        the graph's Play (Space)
+//                       graphCut:<day>   the graph's cut-off day (days
+//                                        since its first)
+//                       graphHover:<id>  move the pointer onto graph node id
+//                       graphDrag:<id|empty>:<dx>,<dy>  press on node id (or
+//                                        a point with no node: a pan), move
+//                                        by dx,dy in four steps, release;
+//                                        `call` holds { from, to }, the
+//                                        node's window point after
 //                       leave            move the pointer to the window corner
 //                       settle           wait (up to 15 s) until no engine
 //                                        call is queued or running
@@ -271,6 +280,11 @@ ShellRoot {
     return root.desk ? root.desk.sectionItem("radiant") : null
   }
 
+  // The graph section (desk section 8), null before its first visit.
+  function graph() {
+    return root.desk ? root.desk.sectionItem("graph") : null
+  }
+
   function chartFor(id) {
     var r = root.radiant()
     return r ? r.chartFor(id) : null
@@ -313,6 +327,9 @@ ShellRoot {
     console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
       view: root.viewObject(), calls: fakeShell.calls, writes: fakeShell.writes, entry: root.entry,
       call: root.lastCall, bare: root.bare, firstFrame: root.firstFrame,
+      graphBuilds: root.service ? root.service.graphBuilds : null,
+      graphDirty: root.service ? root.service.graphDirty : null,
+      graphNodes: root.service && root.service.graph ? root.service.graph.nodes.length : null,
       pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined)
@@ -347,6 +364,37 @@ ShellRoot {
       var point = chart ? chart.locate(Number(hi[1])) : null
       if (point) driver.mouseMove(chart.plot, point.x, point.y)
       else console.log("HARNESS nothing to hover: " + arg)
+    } else if (verb === "graphPlay") {
+      var gp = root.graph()
+      if (gp) gp.play()
+      else console.log("HARNESS nothing to play")
+    } else if (verb === "graphCut") {
+      var gc = root.graph()
+      if (gc) gc.setCut(Number(arg))
+      else console.log("HARNESS nothing to cut")
+    } else if (verb === "graphHover") {
+      var gh = root.graph()
+      var hp = gh ? gh.nodePoint(arg) : null
+      if (hp) driver.mouseMove(win.contentItem, hp.x, hp.y)
+      else console.log("HARNESS nothing to hover: " + arg)
+    } else if (verb === "graphDrag") {
+      // The id may hold ":" (area:<name>, fold:…): the delta is after the last.
+      var gcut = arg.lastIndexOf(":")
+      var gparts = [arg.slice(0, gcut), arg.slice(gcut + 1)]
+      var gd = root.graph()
+      var from = !gd ? null : gparts[0] === "empty" ? gd.emptyPoint() : gd.nodePoint(gparts[0])
+      if (!from) {
+        console.log("HARNESS nothing to drag: " + gparts[0])
+        return
+      }
+      var delta = gparts[1].split(",").map(Number)
+      driver.mousePress(win.contentItem, from.x, from.y)
+      for (var gs = 1; gs <= 4; gs++)
+        driver.mouseMove(win.contentItem, from.x + delta[0] * gs / 4, from.y + delta[1] * gs / 4)
+      driver.mouseRelease(win.contentItem, from.x + delta[0], from.y + delta[1])
+      var to = gparts[0] === "empty" ? null : gd.nodePoint(gparts[0])
+      root.lastCall = JSON.stringify({ from: { x: Math.round(from.x), y: Math.round(from.y) },
+        to: to ? { x: Math.round(to.x), y: Math.round(to.y) } : null })
     } else if (verb === "leave") {
       driver.mouseMove(win.contentItem, 0, 0)
     } else if (verb === "hide") {

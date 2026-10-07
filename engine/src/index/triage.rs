@@ -38,6 +38,14 @@ struct Item {
 /// `None` when there is none.
 pub fn read(dirs: &Dirs, root: &Path, warnings: &mut Vec<String>) -> Option<Triage> {
     let dir = dirs.state_dir.join(DIR);
+    // the engine's own folder only, never through a link (WP-124 round 2)
+    if std::fs::symlink_metadata(&dir).is_ok_and(|m| !m.file_type().is_dir()) {
+        warnings.push(format!(
+            "{}: not a directory (a symbolic link?), so no proposal is read",
+            dirs.display(&dir).escape_debug()
+        ));
+        return None;
+    }
     let entries = std::fs::read_dir(&dir).ok()?;
     let mut ids: Vec<String> = Vec::new();
     let mut misnamed: Vec<String> = Vec::new();
