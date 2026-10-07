@@ -30,8 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that pacman reports in `/var/log/pacman.log` is now recorded: a pacman
   `note` named after the file, its transaction in `meta.transaction`. It
   is its own item, never part of its transaction's group: quiet
-  attention (rule `pacnew`), a crisis beside a boot, login or security
-  file — mkinitcpio, Limine, systemd, PAM (rule `pacnew-red`). Seldon
+  attention (rule `pacnew`), a crisis beside a boot or login file —
+  mkinitcpio, Limine, PAM (rule `pacnew-red`, ADR-0042). Seldon
   does not read `/etc`, so it cannot tell whether you merged it since.
 - **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
   only, never content).** A third-party plugin edited in place is now one

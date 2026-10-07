@@ -1198,8 +1198,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   **Files pacman left (WP-141).** `[ALPM] warning: <file> installed as
   <file>.pacnew` (the package's new default was not applied; the user's
   file stays in use) and `[ALPM] warning: <file> saved as
-  <file>.pacsave` (removal) or `<file>.pacorig` (an untracked file moved
-  aside for the package's own) — only when the left path is the file plus
+  <file>.pacsave` (the package was removed, or an upgrade no longer ships
+  the file, and the user had changed it: the user's file was moved aside
+  and nothing is left in its place; the log always names `.pacsave`,
+  whatever number pacman gives an older one) or `<file>.pacorig` (an
+  untracked file was moved aside and the package's own installed in its
+  place) — only when the left path is the file plus
   the suffix the verb leaves, and only under the `ALPM` tag — become one
   event each: `source: pacman`, `kind: note`, `subject` the file pacman
   left (`/etc/x.pacnew`), `detail` pacman's words without `warning: `
@@ -1592,17 +1596,20 @@ After every capture:
    dependency follows the highest class of its transaction's explicit
    members (also when they are resolved); a transaction without a command
    line is attention `other`. A file pacman left (pacman `note`, §4,
-   WP-141), whatever its transaction: never routine — the new default was
-   not applied or the user's file was moved aside, a state a rebuild would
-   reproduce wrongly and nothing but a merge changes (reason test) —
-   attention `pacnew`; **crisis** `pacnew-red` when the file (the subject
-   without `.pacnew`, `.pacsave`, `.pacorig`) is a boot, login or security
-   file — `/etc/mkinitcpio.conf`, `/etc/mkinitcpio.conf.d/`,
-   `/etc/mkinitcpio.d/`, `/etc/default/limine`, `/etc/limine*`,
-   `/boot/limine*`, `/etc/systemd/`, `/etc/pam.d/`, `/etc/security/`
-   (built in, not a `[drift]` key; a directory covers what lies below
-   it): an unmerged default there can stop the next boot or login (harm
-   test). A path under another root (`pacman -r /mnt`) is attention. Omarchy `update`: routine `omarchy-update`
+   WP-141, ADR-0042), whatever its transaction: never routine — the new
+   default was not applied, or the user's file was moved aside, a state a
+   rebuild would reproduce wrongly and nothing but a merge or a restore
+   changes (reason test) — attention `pacnew`; **crisis** `pacnew-red`
+   when the file (the subject without `.pacnew`, `.pacsave`, `.pacorig`)
+   is a boot or login file — `/etc/mkinitcpio.conf`,
+   `/etc/mkinitcpio.conf.d/`, `/etc/mkinitcpio.d/`, `/etc/default/limine`,
+   `/etc/limine*`, `/boot/limine*`, `/etc/pam.d/` (built in, not a
+   `[drift]` key; a directory covers what lies below it): an unmerged
+   default there can stop the next boot or every login (harm test).
+   `/etc/systemd/` (Omarchy uses drop-ins), `/etc/security/` (Omarchy
+   overrides `pam`'s files there), `fstab`, `crypttab`, `sudoers` and a
+   path under another root (`pacman -r /mnt`) are attention: the file in
+   use keeps working. Omarchy `update`: routine `omarchy-update`
    when both versions are package-shaped (`N…-N`) and a plain full
    upgrade moved `omarchy` or `omarchy-dev` (install or upgrade) to the
    new version at most 31 days before; else attention `omarchy-other`
