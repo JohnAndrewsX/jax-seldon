@@ -1,6 +1,6 @@
 # ADR-0038 — The index carries what the desk's details show: the drift rule, a case's intent, result and source, a decision's lead
 
-**Status:** proposed
+**Status:** accepted (operator decision 2026-10-07, after Opus ×2 and Fable stage 2)
 **Date:** 2026-10-07
 
 > Adds four **optional** fields to contract 2 under ADR-0035 §6, before
@@ -99,7 +99,9 @@ click in the Changelog starts no process.
   frontmatter: the task's place as the import names it, `~/…/file.md#N`
   for an item (N its line) or `~/…/file.md` for a file imported whole —
   the same redacted text as the Log line and the report. The key is
-  written only on import; any other case has none.
+  written only on import; any other case has none. A hand-written source
+  on any case is shown the same way: it is the user's own file, and the
+  field moves nothing.
 - **Not derived from the marker.** The marker is engine state for
   idempotency; the index would depend on a second file and on its
   settle rules, and a case whose marker entry is gone (a reset logbook
