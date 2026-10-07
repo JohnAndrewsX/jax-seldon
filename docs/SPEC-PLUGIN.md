@@ -372,8 +372,16 @@ resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
 
 #### Changelog (2)
 
-The list: the slot of "Agent sorts N open changes" (`triageSlot`, empty
-until WP-124b), the chips **open · crisis · attention · routine · in
+The list: the triage slot (`triageSlot`, WP-124b; ADR-0034 §6,
+ADR-0036) — **Agent sorts N open changes** (N = the open changes, a group
+once) while something is open and the engine can write
+(`Service.triageButton`; whether a default agent exists only the engine
+knows, so a refusal names the fix under the button): `agent ask triage
+--json`, "Starting an agent…" with a spinner while it runs, then the
+engine's answer or refusal; and, while the index names a proposal
+(`index.triage`), its row "Proposal · N items proposed by <actor> at <at>,
+C crises held back — apply each below", which shows the proposal in the
+detail (below). Then the chips **open · crisis · attention · routine · in
 case · all** with their counts (`f` / `F` the next / previous; default
 open). A row's class: open drift with `crisis` → crisis; other open drift,
 group members included → attention; else with a case → in case; else
@@ -399,9 +407,38 @@ it was. The shim's `filter <source>` and a payload `filter` that is a
 source name show "all" with the source in the sidebar search; a chip id
 selects that chip.
 
+The proposal (`TriageDetail.qml`, WP-124b): the file `index.triage.path`
+names, next to `index.json` (CONTRACT.md rule 1; exactly
+`proposals/<id>.json`, `Model.triagePath`), read by a FileView and checked
+like its schema (`Model.parseProposal`; a file off in any part is not
+shown: "could not be read as the engine writes it"). The sticky bar:
+*Apply proposals (N)* (N the items Apply takes that are still open; one
+click, `drift apply <index.triage.id> --json`; enabled also with nothing
+open, so a second run says what it skipped) and *Discard* (one click,
+`drift discard <id> --json`; nothing in the logbook changes). Apply and
+Discard name the id the detail shows, and the service refuses the call
+when the index names another proposal by then. Under the bar the line
+"N items proposed by <actor> at <at>, C crises held back — apply each
+below", the state ("<actor> · proposal, nothing written yet", or "Applied
+<at>. That marks the run, not every item: what is still open shows
+below."), the last run's answer ("Applied N · skipped S · refused R"; a
+gone proposal: "… The proposal is gone; the list shows what is open now"
+— refresh, never retry); then **CRISES — EACH ON ITS OWN**: every item
+that is a crisis by the file's flag or the index's class, with *Apply this
+crisis* (`drift apply <id> --item <eventId> --json`, one per run); then
+**WHAT APPLY TAKES**. Each item: the change's subject (from
+`index.events`), "Link to C-…" or "Explain: <title>" with the intent, the
+outcome of the last run (Done, Skipped: <reason>, Refused: <reason>, the
+engine's words) or "No longer open: nothing to apply.", and every evidence
+ref — its kind and ref, then the engine's text with "by <author> ·" first,
+wrapped, never clipped; an item with evidence by an agent, by `unknown`,
+or a Plan "worked by agent:…" is marked "Read twice: …" and that text in
+the accent colour. Every text is plain text (CONTRACT.md rule 6).
+
 The detail (`EventDetail.qml`; prototype `eventDetail`): the sticky bar
-(`Model.eventActions`) — open drift: *Ask agent* first once the engine has
-`agent ask` (WP-124b; `Service.askAgentAvailable`, false until then),
+(`Model.eventActions`) — open drift: *Ask agent* first while the engine can
+write (WP-124b; `agent ask drift <id> --json`, one click; the engine's
+answer or refusal under the title),
 *Link to case…* (*Link to C-… …* when the engine proposes one), *Explain…*,
 *Dismiss…*, and for attention *Hide* / *Show*; an event with a case: *Open
 case* (Work with the case selected; for a case the index no longer lists
@@ -472,7 +509,10 @@ The detail: the sticky bar by status (`Model.caseDeskActions`) — queued:
 *Start*, *Drop*; active: *Hand to agent* (`agent start <id> --json`), *To
 verification*, *Drop*; verification: *Complete*, *Drop*; completed:
 *Reopen* (`plan reopen <id> --json`); every case *Open in editor* (`e`,
-`open <id> --editor --json`), last; id · risk at the right. Every writing
+`open <id> --editor --json`), then *Ask agent* while the engine can write
+(WP-124b; `agent ask case <id> --json`, one click, any status; the agent
+gets no case to work; the answer or refusal under the title); id · risk at
+the right. Every writing
 action but Reopen arms on the first press or click and runs on the second
 (`Arm.qml`; the button reads "Confirm …", the bar's hint names the key:
 "Hand to agent C-2026-003? Press a again or click Confirm.", "To

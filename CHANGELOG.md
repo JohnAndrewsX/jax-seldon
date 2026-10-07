@@ -537,6 +537,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Plugin
 
+- **Agent sorts N open changes.** The Changelog's head asks your
+  agent to sort the open changes; its proposal shows as a row and a
+  detail: every item with the change, the link or explanation, and every
+  piece of evidence with who wrote it first; evidence by an agent or of
+  unknown authorship is marked. *Apply proposals* applies it as you in
+  one click, crises never with the rest: each has its own button. The
+  result says what was done, skipped or refused; a second Apply changes
+  nothing. *Discard* throws a proposal away. *Ask agent* on an open
+  change and on a case asks your agent about it (WP-124).
+
 - The desk's "Why loud?" callout reads the rule from the index: selecting
   a crisis in the Changelog no longer runs `seldon drift show` (it still
   does against an engine whose index has no rule). Work's case detail

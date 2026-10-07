@@ -457,6 +457,18 @@ reads the `decide --json` shape and passes on only an id matching
 decision id (not `ADR-4`, `adr-0004`, a padded id, a path or `memory`);
 `memoryRows` gives the sample's three lessons and two topics (path and
 `updated`), every part optional, all opening the fixed target `logbook`.
+For bulk triage (WP-124b): `validateArgs` takes `agent ask triage|drift
+<eventId>|case <caseId> --json`, `drift apply <proposalId> [--item
+<eventId>] --json` and `drift discard <proposalId> --json`, and refuses
+`propose`, two `--item`s, an `--actor`, free text and ids of the wrong
+kind; `askArgs`, `applyArgs`, `discardArgs`; `triageButton` (open changes
+and write access); `triagePath` (only `proposals/<id>.json` next to the
+index); `parseProposal` (every schema part, the file off → null);
+`triageView` (the bar's line, the state, regular and crisis items — the
+index's crisis counts whatever the file says —, the authors, the marks,
+the outcomes of this proposal's last run, applied ≠ done); `askResult`,
+`applyResult` (done/skipped/refused, `markedApplied`, `gone`),
+`discardResult`.
 For the desk's sections 4–6 (WP-123): `deskFilter` (every word, any
 field, case-insensitive); `decisionDetail` (Accept only while proposed,
 nothing enabled for a malformed id, the notes); `decisionCases` (the
@@ -757,7 +769,13 @@ Esc hides it, the shim's `filter` and `resolve`, Hide and Show, "+N
 more"), the quiet surfaces (a crisis in the yellow zone, attention alone),
 and live link / explain / dismiss, `--only` with a refusal in the plugin,
 an already resolved re-run, a lock refusal with per-event drafts, `drift
-show` from the leader and a member; Work on the sample (groups, the case
+show` from the leader and a member; bulk triage live (WP-124b: the
+button and `agent ask triage`, the proposal row and detail with every
+evidence text author first, Apply → done/done and the crisis skipped, the
+crisis by its own button, a second Apply that skips all three, exact argv;
+a refused launch and a refused item shown; Ask agent on an event and a
+case and Discard; no button with nothing open; dev mode read-only with
+the marks for an agent's and an unknown author's evidence); Work on the sample (groups, the case
 detail, the bar by status, dev mode's refusal, By agent, a reopen) and
 live (the new-case sheet by keys, start → to verification → complete,
 each armed then run, Open in editor, the engine's refusal, `x x`, hand to
