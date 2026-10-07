@@ -493,7 +493,11 @@ fn tasks_of(source: &Source) -> Vec<Task> {
             })
             .collect(),
         Tasks::Whole(whole) => {
-            let title = title_of(whole.title.as_deref().unwrap_or(&source.stem));
+            // an empty file is no task: no title, so it is skipped as empty
+            let title = match (&whole.title, whole.text.trim().is_empty()) {
+                (None, true) => String::new(),
+                (title, _) => title_of(title.as_deref().unwrap_or(&source.stem)),
+            };
             vec![Task {
                 file: source.shown.clone(),
                 line: None,

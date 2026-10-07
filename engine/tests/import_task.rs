@@ -310,6 +310,24 @@ fn the_same_item_twice_is_imported_once() {
 }
 
 #[test]
+fn an_empty_file_is_skipped() {
+    let (env, root) = setup();
+    task_file(&env, "empty.md", "---\nx: 1\n---\n\n  \n");
+    task_file(&env, "items.md", "- [ ] .\n- [ ]\n");
+    let report = ok(&import(&env, NOW, &["~/empty.md", "~/items.md"]));
+    assert_eq!(report["created"], serde_json::json!([]));
+    assert_eq!(
+        report["skipped"],
+        serde_json::json!([
+            {"source": "~/empty.md", "reason": "empty", "case": null},
+            {"source": "~/items.md#1", "reason": "empty", "case": null},
+            {"source": "~/items.md#2", "reason": "empty", "case": null},
+        ])
+    );
+    assert!(!root.join(MARKER).exists());
+}
+
+#[test]
 fn include_done_makes_completed_cases_but_not_for_an_agent() {
     let (env, root) = setup();
     task_file(&env, "TODO.md", TODO);
