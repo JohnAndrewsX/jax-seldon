@@ -91,7 +91,14 @@ PACMAN_LONG_OPS = {"--sync": "S", "--database": "D", "--files": "F", "--query": 
                    "--deptest": "T", "--upgrade": "U", "--version": "V"}
 PACMAN_LONG_WITH_ARG = {"--arch", "--ask", "--assume-installed", "--cachedir", "--color", "--config",
                         "--dbpath", "--gpgdir", "--hookdir", "--ignore", "--ignoregroup", "--logfile",
-                        "--overwrite", "--print-format", "--root", "--sysroot"}
+                        "--overwrite", "--print-format", "--root", "--sysroot",
+                        # yay and paru (WP-113; engine/src/pkgcmd.rs LONG_WITH_ARG)
+                        "--aururl", "--aurrpcurl", "--builddir", "--editor", "--editorflags", "--makepkg",
+                        "--pacman", "--git", "--gitflags", "--gpg", "--gpgflags", "--makepkgconf",
+                        "--requestsplitn", "--completioninterval", "--sortby", "--searchby",
+                        "--answerclean", "--answerdiff", "--answeredit", "--answerupgrade", "--mflags",
+                        "--sudo", "--sudoflags", "--clonedir", "--pacman-conf", "--fm", "--fmflags",
+                        "--bat", "--batflags", "--limit"}
 PACMAN_SHORT_WITH_ARG = "br"  # -b/--dbpath, -r/--root
 
 
@@ -146,7 +153,8 @@ ROUTINE_RULES = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-t
 ROUTINE_PATHS = ["~/.config/omarchy/shell.json", "**/*.bak.*"]
 ROUTINE_PACKAGES = ["archlinux-keyring", "omarchy-keyring"]
 ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
-                    "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile"]
+                    "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile",
+                    "~/.ssh/authorized_keys"]
 CLASS_ORDER = {"routine": 0, "attention": 1, "crisis": 2}
 THEME_CODE = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
 OMARCHY_LOOKBACK = dt.timedelta(days=31)
