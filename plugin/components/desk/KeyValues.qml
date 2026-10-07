@@ -4,7 +4,8 @@ import QtQuick
 import qs.Commons
 
 // Key/value rows of a detail (prototype `.kv`): the key muted in a fixed
-// column, the value wrapped (anywhere: paths) beside it. `rows`: [[key,
+// column, the value wrapped beside it (at word boundaries; a token longer
+// than the line, a path or an id, breaks anywhere). `rows`: [[key,
 // value], …], plain text.
 Column {
   id: root
@@ -33,7 +34,7 @@ Column {
         textFormat: Text.PlainText
         text: kvRow.modelData[0]
         color: Color.muted
-        wrapMode: Text.WrapAnywhere
+        wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
       }
@@ -45,7 +46,7 @@ Column {
         textFormat: Text.PlainText
         text: kvRow.modelData[1]
         color: root.foreground
-        wrapMode: Text.WrapAnywhere
+        wrapMode: Text.Wrap
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
       }

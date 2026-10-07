@@ -35,8 +35,9 @@ import "../Model.js" as Model
 // the selection follows it by id, or goes to the case a Run, a reopen or
 // the sheet made.
 //
-// Keys: ↑/↓ j/k move, Enter the primary action (twice), `a` Hand to agent
-// (twice), `x` Drop (twice), `r` Reopen, `e` Open in editor, `i` the intent
+// Keys: ↑/↓ j/k move, Enter the first action that launches nothing (twice;
+// on an active case To verification — Enter never starts an agent), `a`
+// Hand to agent (twice), `x` Drop (twice), `r` Reopen, `e` Open in editor, `i` the intent
 // field, `+` the new-case sheet; Esc leaves a field or closes the sheet
 // (its draft kept). Any other key, a new selection or a new index disarms.
 Section {
@@ -114,8 +115,9 @@ Section {
       if (root.desk) root.desk.showDetail()
       return true
     }
-    if (root.sheetOpen || root.caseActions.length === 0) return false
-    return root.press(root.caseActions[0].id) || true
+    var enter = Model.caseEnterAction(root.current)
+    if (root.sheetOpen || !enter) return false
+    return root.press(enter.id) || true
   }
 
   function runIntent() {
