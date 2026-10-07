@@ -113,7 +113,10 @@ Each collector only reads. Turn one off with `false`;
 A shell plugin you added with `omarchy plugin add` is a git clone. Its
 update names the commits: how many a pull brought in or a rollback took
 out, and up to 20 of their subjects, which the desk shows with the
-change. Seldon only reads the clone with `git`; it never fetches.
+change. Seldon only reads the clone with `git`; it never fetches. A
+clone whose repository points outside the plugin folder (a linked
+`.git`, shared objects, an included config) is not read, and the
+change says so.
 
 A collector that cannot read its source is `degraded`: the capture goes
 on, and `seldon doctor` names the fix. Two cases are normal:

@@ -1241,31 +1241,51 @@ git itself is killed, with the same bounded pipe wait. Rules:
   theme and config, so the ADR-0017 window can match the agent's command;
   `plugin-remove|enable|disable` get the capture time (the attribution
   window below reaches back to the last check for them). A third-party
-  plugin whose directory is its own git clone (`<dir>/.git`; never a
-  repository further up) keeps its full HEAD in the cursor (WP-136): its
+  plugin whose directory is its own git clone keeps its full HEAD in the
+  cursor (WP-136). Its own clone: `<dir>/.git` is a real directory (not a
+  link, not a `gitdir:` file) whose repository stays inside it — no
+  `objects/info/alternates`, no `commondir`, no `include`/`includeIf`
+  section in `config` or `config.worktree` (a plain scan; an unreadable,
+  linked or non-UTF-8 config counts as one); never a repository further
+  up. Any other `.git` is not read at all (no HEAD, no git version): its
+  `plugin-update` keeps the version step and adds `commit history not read
+  (the repository points outside the plugin folder)`. A clone's
   `plugin-add` has `meta.git: clone` and the detail `<version>, installed
   by git clone`; its `plugin-update` whose HEAD moved names the commits —
   `pull` (the old HEAD is an ancestor of the new one) and `reset`
   (another history) the ones that came in, `rollback` (the new HEAD is an
   ancestor) the ones that left — as `meta.git`, `meta.commits` (at most
-  20 subjects, newest first, one per line; control characters → spaces,
-  direction and invisible format characters dropped, redacted (§7), then
-  clipped to 100 characters with `…`; an empty one `(no subject)`) and the
-  detail `<from> → <to>, pulled N commits: <newest> …` (`rolled back N
-  commits: …`, `reset: N commits in, M out: …`; no `…` for one commit).
-  git runs read-only: fixed argv, `-C <clone>`, `--no-pager`,
-  `--no-replace-objects`, `core.hooksPath=/dev/null`,
-  `core.fsmonitor=false`, `protocol.allow=never`,
-  `log.showSignature=false`, `color.ui=false`; `GIT_CONFIG_NOSYSTEM=1`,
-  `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`,
-  `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`, the repository variables
-  removed and the clone's parent as `GIT_CEILING_DIRECTORIES`; own process
-  group, 2 s per call. The HEAD is read from the clone's files without a
+  20 subjects, newest first, one per line; control characters and
+  U+2028/U+2029 → spaces, direction and invisible format characters
+  dropped, redacted (§7), then clipped to 100 characters with `…`; an
+  empty one `(no subject)`) and the detail `<from> → <to>, pulled N
+  commits: <newest> …` (`rolled back N commits: …`, `reset: N commits
+  in, M out: …`; no `…` for one commit).
+  git runs read-only with a fixed argv and `-C <clone>`. What each setting
+  stops: `--no-pager` a pager; `--no-lazy-fetch` and
+  `GIT_NO_LAZY_FETCH=1` the fetch of an object a partial clone lacks
+  (git 2.44 or later; an older git refuses the option, and the query
+  names nothing); `GIT_ALLOW_PROTOCOL=none` every transport, overriding
+  the clone's own `protocol.<name>.allow` (`-c protocol.allow=never` is
+  only the default for protocols the config does not name, so a clone's
+  `protocol.ext.allow=always` beats it); `--no-replace-objects` replace
+  refs; `GIT_GRAFT_FILE=/dev/null` the clone's `info/grafts` (fake parents,
+  and a line of stderr per bad line); `core.hooksPath=/dev/null` hooks;
+  `core.fsmonitor=false` a monitor program; `log.showSignature=false`
+  gpg; `color.ui=false` colour; `i18n.logOutputEncoding=UTF-8` a log in
+  another encoding (UTF-16 puts NULs into `-z` output); output that is not
+  UTF-8 is read lossily; `GIT_CONFIG_NOSYSTEM=1` and
+  `GIT_CONFIG_GLOBAL=/dev/null` the system and the user's config;
+  `GIT_TERMINAL_PROMPT=0` a prompt; `GIT_OPTIONAL_LOCKS=0` an index
+  refresh lock; the repository variables (`GIT_DIR` …) removed and the
+  clone's parent as `GIT_CEILING_DIRECTORIES` another repository. Own
+  process group, killed whole at 2 s per call; at most 64 KiB kept of
+  each output pipe, the rest read and dropped (`sys::run_command_capped`),
+  and a cut stdout is no answer. The HEAD is read from the clone's files without a
   process (`.git/HEAD`, a plain `refs/heads/…` loose or in `packed-refs`;
-  a `.git` file, a link, reftable or any other ref name: git's `rev-parse
-  HEAD --short HEAD`, which also gives the short version fallback); per
-  moved update a `rev-list --left-right --count` and a `log
-  --max-count=20`. A HEAD in
+  reftable or any other ref name: git's `rev-parse HEAD --short HEAD`,
+  which also gives the short version fallback); per moved update a
+  `rev-list --left-right --count` and a `log --max-count=20`. A HEAD in
   the cursor that is not an object name never reaches git. git missing,
   failing or timing out: the same event without `meta.git`/`meta.commits`.
   The index clips `meta.commits` like every meta string (ADR-0025). Events the

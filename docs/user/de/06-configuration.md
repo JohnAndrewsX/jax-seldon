@@ -121,7 +121,10 @@ Ein Shell-Plugin, das du mit `omarchy plugin add` hinzugefügt hast, ist
 ein git-Klon. Seine Aktualisierung nennt die Commits: wie viele ein Pull
 gebracht oder ein Zurücksetzen entfernt hat, und bis zu 20 ihrer
 Betreffzeilen, die der Desk mit der Änderung zeigt. Seldon liest den Klon
-mit `git` nur; es holt nie etwas aus dem Netz.
+mit `git` nur; es holt nie etwas aus dem Netz. Einen Klon, dessen
+Repository aus dem Plugin-Ordner hinausweist (ein verlinktes `.git`,
+geteilte Objekte, eine eingebundene Konfiguration), liest Seldon nicht,
+und die Änderung sagt das.
 
 Ein Collector, der seine Quelle nicht lesen kann, ist `degraded`: Die
 Erfassung läuft weiter, und `seldon doctor` nennt die Abhilfe. Zwei Fälle
