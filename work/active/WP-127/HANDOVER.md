@@ -223,3 +223,112 @@ delegate used `modelData` unqualified. aa3d9d37 fixes that.
 
 Logs on the dev host, not committed: `engine/target/check-wp127-r2.log` and
 `check-wp127-r1.log`.
+
+## Round 2
+
+Brief: `WP-127-round-2-brief.md`. Packet: `WP-127-review-1.md`, a SEND BACK on
+2e0fe7d6 for B1 and N1–N5, plus a byte cap for `source`.
+
+### Fixed
+
+- **B1: redaction before the clip is now pinned.**
+  `redaction.rs::a_secret_at_the_cut_or_over_lines_is_masked_before_the_clip`.
+  - A `ghp_` token straddles the 256-byte cut in intent, result and lead.
+    Each text is clipped and holds `‹redacted›`; no `ghp_` reaches the index.
+  - In a second case, two multi-line secrets are masked: a `mysql … \`
+    continued `-p…` in the Intent, and a JSON `"password":` with its value on
+    the next line in the Result.
+  - The same Result holds a token split by U+200B (N4). It is masked as well.
+  - The swap mutant ("clip before redaction") is killed by this test.
+- **N1:** the ADR-0038 size line now gives per-object figures:
+  - about 74 B per drift item, 1.06 KB per case, 0.27 KB per decision;
+  - about 68 KB at the caps of rule 4;
+  - about 320 KB more for 300 full open cases, which the ADR-0025 warning
+    names;
+  - a note that JSON escaping of `"` or `\` in `source` can double its bytes.
+- **N2:** CONTRACT.md rule 5 now reads "Cases, decisions and memory topics
+  are not cut, except a case's `intent` and `result` and a decision's
+  `lead`".
+- **N3:**
+  - R2 is killed by `import_task.rs::plan_show_carries_only_a_source_in_shape`:
+    `plan show --json` leaves out a hand-edited `source` with U+202E, outside
+    `~/`, or without `~/`.
+  - R3 is killed in `index.rs::case_and_decision_texts_are_clipped_with_the_file_marker`:
+    a Result made only of control and format characters gives no field.
+- **N4** (orchestrator's decision): `shown_text` drops direction and format
+  characters before the control-to-space step and before the redaction. These
+  are U+200B–U+200F, U+202A–U+202E, U+2060, U+2066–U+2069 and U+FEFF
+  (`import::is_direction_or_format`, which `bad_path_char` now shares).
+  - Test: `x‮evil​zw\u7bell⁦﻿‏!` becomes `xevilzw bell!`.
+  - Updated: ADR-0038 §2, CONTRACT rule 9, SPEC-ENGINE §6, the schema
+    descriptions and the reference derive (`DIRECTION_OR_FORMAT`).
+- **N5:** `cases::paragraphs(text, max)` now streams.
+  - It leaves comments out as `strip_comments` does, also across line breaks
+    and when unclosed. It stops after `max` paragraphs and copies only those.
+  - `first_paragraph` asks for 1; an imported Intent for 2.
+  - Equivalence test: `paragraphs_leave_comments_out_as_strip_comments_does`,
+    which compares against the old two-step read for every `max` on nine edge
+    cases.
+  - Timing line in `just check-perf`:
+    `the_first_paragraphs_of_a_large_intent_cost_what_they_hold`. Two
+    paragraphs of a 1 MiB Intent take a median of 261 ns against a budget of
+    50 µs. The mutant that reads on is killed by it.
+- **`source` cap:** 512 **bytes** (UTF-8), which also caps it at 512
+  characters.
+  - `is_case_source` checks bytes, so a 302-character, 602-byte path is
+    dropped with a warning.
+  - `case_source` keeps `~/…` and as many of the last characters as fit in
+    507 bytes, never splitting a character. Unit tests use `ä` and `🚀`.
+  - The import test now expects 512 bytes.
+  - Updated: ADR §3, CONTRACT, SPEC-ENGINE, SPEC-LOGBOOK, the schema
+    description and the Python check.
+
+### Verification
+
+- `python3 work/active/WP-127/mutants.py` runs in its own target
+  (`engine/target/mutants-wp127`). Log: `engine/target/wp127/mutants-r3.log`.
+  - **32 of 32 killed**: 26 engine and 6 plugin mutants.
+  - New in round 2: clip before redaction, `plan show`'s filter, a blank
+    text, direction characters kept, the cap counted in characters, a split
+    character, reading past the paragraphs needed. The last one runs against
+    the bench-profile timing test.
+- `flock /tmp/seldon-check.lock just check`: see "Check (round 2)".
+- `grep /home/` over the diff: no new hits.
+
+### Not here (brief)
+
+- `seldon decide accept` (E7) is a separate WP.
+- A PEM / private-key redaction rule is a separate redaction item.
+- check-rss already fails on `next`. The reviewer measured base and branch
+  the same (10 788 kB), so it is not a WP-127 delta.
+
+### Correction to round 1
+
+The "Not done / open" note says open cases add "up to about 0.8 KB" each.
+Since the byte cap, the figure is about 1.06 KB (ADR-0038, Consequences).
+
+### Check (round 2)
+
+`flock /tmp/seldon-check.lock just check` on b9ee5e98 (the last code and
+docs commit; this section adds only text) gives **exit 0, `check: ok`**.
+
+- install 209, deploy 190.
+- docs-check: 465 links.
+- `omarchy plugin validate`; qmllint (46 files).
+- Plugin tests: model 127, service-states 328, desk-view 1376, bar-view 194.
+- Engine: fmt, clippy and all tests, with the default and `watch` features.
+- shellcheck is not installed: `bash -n` only.
+
+Log: `engine/target/check-wp127-r3.log` (dev host, not committed).
+
+`just check-perf` (log `engine/target/wp127/perf-r2.log`):
+
+- ×150 index build: median 68 ms.
+- N5 line: 261 ns.
+- One hook timing, `recorded curl line with a marker, 900 lines`, missed its
+  5 ms budget at load average 10.9 (5.30 / 5.44 ms).
+- At load ≈ 2.6 I re-measured. Base 109d02eb (temporary worktree, removed)
+  gave 4.42 / 4.48 ms; this branch gave 4.47 / 4.48 / 4.55 / 4.42 ms. That is
+  no measurable delta, so the miss was the busy host.
+- The budget leaves little room on this host. That is for the orchestrator,
+  not this WP.
