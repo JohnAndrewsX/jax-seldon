@@ -260,7 +260,7 @@ DetailPane {
 
     Line {
       visible: !!root.proposal && root.proposal.readable
-      text: "Apply re-reads every reference; what it writes may differ from this text if the file was changed."
+      text: "Apply re-reads the file and every reference. If the file was changed since you opened it, what Apply writes can differ from what is shown here."
       color: Color.muted
       font.pixelSize: Style.font.caption
     }

@@ -436,8 +436,9 @@ proposal, nothing written yet", or "Applied <at>. That marks the run, not
 every item: what is still open shows below."), the last run's answer
 ("Applied N · skipped S · refused R"; a gone proposal: "… The proposal is
 gone; the list shows what is open now" — refresh, never retry), the line
-"Apply re-reads every reference; what it writes may differ from this
-text if the file was changed."; then **CRISES — EACH ON ITS OWN**: every
+"Apply re-reads the file and every reference. If the file was changed
+since you opened it, what Apply writes can differ from what is shown
+here."; then **CRISES — EACH ON ITS OWN**: every
 item that is a crisis by the file's flag or the index's class, with
 *Apply this crisis* (`drift apply <id> --item <eventId> --json`, one per
 run); then **WHAT APPLY TAKES**. The items are built only while the pane
