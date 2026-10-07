@@ -110,7 +110,7 @@ included); merges into `next`.
   service-states 328/0, desk-view 1346/0, bar-view 194/0, model.test.js
   124; qmllint ok (46 files), docs-check ok, plugin-test ok. The commits
   after it add only this handover.
-- `git diff 109d02eb..HEAD` holds no `/home/`, user or host name.
+- `git diff 109d02eb..HEAD` holds no home path, user name or host name (grepped).
 
 ## Not done / open
 
