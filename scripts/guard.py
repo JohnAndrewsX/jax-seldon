@@ -22,6 +22,7 @@ import os
 import pwd
 import re
 import signal
+import socket
 import sys
 
 UNK = ""  # text the guard cannot know: an unknown variable, a command's output
@@ -331,7 +332,7 @@ class Parser:
                 self.i += 1
                 self.expect(")")
             self.skip_newlines()
-            cmd = Compound("func", body=self.parse_command())
+            cmd = Compound("func", name=m.group(), body=self.parse_command())
         elif r == "[[":
             cmd = self.parse_cond()
         elif r == "coproc":
@@ -446,7 +447,9 @@ class Parser:
                     self.i += 1
                     self.expect(")")
                     self.skip_newlines()
-                    return Compound("func", body=self.parse_command())
+                    w = cmd.words[0]
+                    name = "".join(p for _, p, _ in w) if all(k == "lit" for k, _, _ in w) else None
+                    return Compound("func", name=name, body=self.parse_command())
                 raise ParseError(f"unexpected '(' at {self.describe()}")
             w = self.read_word()
             if w is None:
@@ -685,6 +688,9 @@ class Parser:
                 self.i += 1
         m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(:?[-=].*)?", text, re.S)
         if not m:
+            op = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)[%#/:^,+?@].*", text, re.S)
+            if op:  # ${HOME%/} and the like: NAME's value or something else
+                return [("varop", op.group(1), in_dq)] + ([("nest", nested, in_dq)] if nested else [])
             return [("unk", nested, in_dq)]
         out = [("var", m.group(1), in_dq)]
         if nested:
@@ -964,6 +970,37 @@ OMARCHY_BIN_SYSTEM = ("pkg-add", "pkg-aur", "pkg-drop", "pkg-install", "pkg-remo
                       "channel-set")
 AGENT_VERBS = ("prompt", "launch", "start", "run", "chat", "ask")
 
+LOGINCTL_READ = ("list-", "show-", "session-status", "user-status", "seat-status")
+LOCAL_HOSTS = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback", "::1", "0.0.0.0", "0",
+               "0:0:0:0:0:0:0:1"}
+TERMINALS = {"foot", "footclient", "alacritty", "ghostty", "kitty", "xterm", "wezterm", "konsole", "gnome-terminal",
+             "kgx", "st", "urxvt", "xfce4-terminal", "terminator", "tilix"}
+# git settings that make git run a program (`git -c`, `git clone -c`)
+GIT_EXEC_CONFIG = re.compile(r"(alias\..*|core\.(pager|editor|sshcommand|fsmonitor|hookspath|askpass|gitproxy)"
+                             r"|credential\..*|sequence\.editor|gpg\..*program|diff\..*|merge\..*|filter\..*"
+                             r"|pager\..*|protocol\..*|uploadpack\..*|receive\..*|ssh\..*|include.*)", re.I)
+GIT_PROGRAM_VARS = {"GIT_PAGER", "PAGER", "GIT_EDITOR", "EDITOR", "VISUAL", "GIT_SEQUENCE_EDITOR",
+                    "GIT_SSH_COMMAND", "GIT_SSH", "GIT_ASKPASS", "SSH_ASKPASS", "GIT_EXTERNAL_DIFF",
+                    "GIT_PROXY_COMMAND", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR"}
+SAFE_PROGRAMS = {"", "cat", "less", "more", "true", "false", ":", "head", "tail", "/bin/true", "/usr/bin/true",
+                 "/bin/cat", "/usr/bin/cat"}
+GIT_MUTATING = {"checkout", "switch", "restore", "reset", "clean", "stash", "pull", "merge", "rebase", "apply", "am",
+                "rm", "mv", "add", "commit", "cherry-pick", "revert", "worktree"}
+# Programs whose arguments are data (or checked elsewhere): the net below
+# does not fire for them.
+DATA_SINKS = {"echo", "printf", "grep", "egrep", "fgrep", "rg", "cat", "bat", "less", "more", "head", "tail", "man",
+              "info", "whatis", "apropos", "which", "type", "whereis", "command", "hash", "stat", "ls", "file", "diff",
+              "cmp", "wc", "sort", "uniq", "cut", "tr", "jq", "yq", "git", "gh", "herdr", "tee", "awk", "sed", "nl",
+              "column", "fold", "fmt", "paste", "join", "comm", "tac", "rev", "md5sum", "sha256sum", "sha1sum",
+              "b2sum", "base64", "xxd", "od", "hexdump", "strings", "readlink", "realpath", "basename", "dirname",
+              "test", "[", "true", "false", ":", "printenv", "pgrep", "ps", "id", "getent", "cargo", "rustc",
+              "rustup", "just", "python3", "python", "node", "seldon", "qmllint", "journalctl", "systemd-analyze",
+              "du", "df", "find", "locate", "fd", "tldr", "date", "sleep", "kill", "wait", "export", "declare",
+              "local", "readonly", "unset", "set", "read", "mapfile", "readarray", "cd", "pushd", "popd", "mkdir",
+              "touch", "rm", "rmdir", "cp", "mv", "ln", "chmod", "chown", "notify-send", "wl-copy", "xdg-open",
+              "tar", "bsdtar", "zip", "unzip", "gzip", "gunzip", "xz", "zstd", "bzip2", "curl", "wget", "rsync",
+              "scp", "patch", "pkill", "killall", "pidof", "truncate", "dd", "install", "shred", "unlink"}
+
 SYSTEM_DIRS = [["etc"], ["usr"], ["boot"], ["var"]]
 PLUGIN_DIR = ["omarchy", "plugins", "jax.seldon"]
 
@@ -996,6 +1033,32 @@ def pacman_read_only(args):
         return True
     return (ops == {"S"} and ("p" in flags or "--print" in longs) and not flags & set("ycuw")
             and not longs & {"--refresh", "--clean", "--sysupgrade", "--downloadonly"})
+
+
+def loginctl_read_only(args):
+    ops, _ = operands(args, "psnoHM", ("--property", "--signal", "--lines", "--output", "--host", "--machine",
+                                      "--kill-whom"))
+    return bool(ops) and plain(ops[0]).startswith(LOGINCTL_READ)
+
+
+def join_path(base, p):
+    return p if p.startswith(("/", UNK)) else base.rstrip("/") + "/" + p
+
+
+def local_names():
+    names = set(LOCAL_HOSTS)
+    try:
+        names.add(socket.gethostname().lower())
+    except OSError:
+        pass
+    try:
+        with open("/etc/hostname", encoding="utf-8") as f:
+            names.add(f.read().strip().lower())
+    except OSError:
+        pass
+    names.update({n.split(".", 1)[0] for n in list(names) if n and not n[0].isdigit() and ":" not in n})
+    names.discard("")
+    return names
 
 
 def systemctl_read_only(args):
@@ -1044,6 +1107,23 @@ def merge(scopes):
     return out
 
 
+def succeeded(scope):
+    if ".cdfail" not in scope:
+        return scope
+    out = dict(scope)
+    del out[".cdfail"]
+    return out
+
+
+def settle(scope):
+    if ".cdfail" not in scope:
+        return scope
+    out = dict(scope)
+    old = [v for v in out.pop(".cdfail") if v is not None]
+    out[".cwd"] = dedupe(list(out.get(".cwd", [UNK])) + old)
+    return out
+
+
 def host_regex(host):
     # The test-host rule as before WP-130 (operator decision 2026-10-05),
     # matched against the whole command, which must be one line.
@@ -1084,6 +1164,9 @@ class Guard:
         self.home_comps = normalize(self.home)
         self.hosts = read_hosts()
         self.host_gate = False
+        self.functions = {}  # name → body, defined in this command
+        self.namerefs = {}  # declare -n NAME=TARGET; None = unknown target
+        self.links = {}  # tuple(link components) → target components (ln, ln -s in this command)
 
     def run(self):
         whole = self.command.strip(" \t\n")
@@ -1109,14 +1192,16 @@ class Guard:
     def walk_andor(self, ao, scope, ctx):
         # The first pipeline always runs; each later one may not, so what it
         # assigns is one candidate among the values before it.
+        # A `cd` that fails leaves the old directory: after `&&` it succeeded,
+        # anywhere else the old one stays a candidate (`.cdfail`).
         merged, cur, all_and = None, scope, True
         for k, pl in enumerate(ao.pipelines):
             if k > 0 and ao.ops[k - 1] == "||":
                 all_and = False
-            entry = scope if k == 0 else (cur if all_and else merged)
+            entry = scope if k == 0 else (succeeded(cur) if all_and else settle(merged))
             cur = self.walk_pipeline(pl, entry, ctx)
             merged = cur if merged is None else merge([merged, cur])  # running merge: linear in the chain
-        return merged
+        return settle(merged)
 
     def walk_pipeline(self, pl, scope, ctx):
         if len(pl.cmds) == 1:
@@ -1150,7 +1235,7 @@ class Guard:
                 for fields in self.expand(w, scope, ctx):
                     values.extend(fields)
             if cmd.var:
-                body_scope[cmd.var] = dedupe(values) if cmd.words else [UNK]
+                self.set_var(body_scope, cmd.var, dedupe(values) if cmd.words else [UNK])
                 self.bounded(body_scope)
             return merge([scope, self.walk_list(cmd.body, body_scope, inner)])
         if kind == "case":
@@ -1169,6 +1254,8 @@ class Guard:
                 self.walk_parts(w, scope, ctx)
             return scope
         if kind == "func":
+            if cmd.name:
+                self.functions[cmd.name] = cmd.body
             self.walk_command(cmd.body, dict(scope), ctx.but(stdin=None), False)
             return scope
         raise Unsure(f"unknown construct {kind}")
@@ -1182,7 +1269,7 @@ class Guard:
                 self.walk_parts(payload, scope, ctx)
 
     def bounded(self, scope):
-        if len(scope) - (".cwd" in scope) > MAX_VARS:
+        if sum(1 for k in scope if not k.startswith(".")) > MAX_VARS:
             raise Unsure(f"more than {MAX_VARS} variables in one command; split it")
         return scope
 
@@ -1192,9 +1279,12 @@ class Guard:
         own = self.redirs(cmd.redirs, scope, ctx, cmd)
         stdin = own or (("pipe",) if piped else ctx.stdin)
         env = dict(scope)
+        w0 = cmd.words[0] if cmd.words else None
+        reader = w0 is not None and all(k == "lit" for k, _, _ in w0) and \
+            "".join(p for _, p, _ in w0) in ("read", "mapfile", "readarray")
         for w in cmd.assigns:
             name, values = self.assignment(w, env, ctx)
-            env[name] = values
+            self.set_var(env, name, values, ifs_ok=reader)
         if not cmd.words:
             return self.bounded(env)
         after = None
@@ -1234,8 +1324,24 @@ class Guard:
                     self.check_write(f, scope, ctx, False, node, True)
         return stdin
 
+    def set_var(self, scope, name, values, ifs_ok=False):
+        for _ in range(8):
+            if name not in self.namerefs:
+                break
+            name = self.namerefs[name]
+            if name is None:
+                return  # a nameref with an unknown target: its value stays unknown
+        if name == "IFS" and not ifs_ok:
+            raise Unsure("IFS changed; word splitting cannot be modelled")
+        scope[name] = values
+
     # -- expansion
-    def lookup(self, name, scope, ctx):
+    def lookup(self, name, scope, ctx, _hops=0):
+        if name in self.namerefs:
+            target = self.namerefs[name]
+            return [UNK] if target is None or _hops > 8 else self.lookup(target, scope, ctx, _hops + 1)
+        if name == "OLDPWD" and name not in scope and not ctx.remote:
+            return [os.environ.get("OLDPWD") or UNK]
         if name == "PWD" and name not in scope:
             return list(scope.get(".cwd", [UNK]))
         out = []
@@ -1312,11 +1418,13 @@ class Guard:
                 elif payload == "+":
                     opts.append(list(scope.get(".cwd", [UNK])))
                 elif payload == "-":
-                    opts.append([UNK])
+                    opts.append(self.lookup("OLDPWD", scope, ctx))
                 else:
                     opts.append(["/root" if payload == "root" else "/home/" + payload])
             elif kind == "var":
                 opts.append(self.lookup(payload, scope, ctx))
+            elif kind == "varop":  # ${HOME%/}: maybe the value itself
+                opts.append(dedupe(self.lookup(payload, scope, ctx) + [UNK]))
             elif kind == "cmd":
                 opts.append(self.cmd_value(payload, scope, ctx))
             elif kind == "proc":
@@ -1392,27 +1500,45 @@ class Guard:
             return new
         name = "".join(p for _, p, _ in w0)
         argvs = self.expand_words(cmd.words, scope, ctx)
+        old = list(scope.get(".cwd", [UNK]))
         if name in ("cd", "pushd"):
             values = []
             for argv in argvs:
                 args = [a for a in argv[1:] if a == "-" or not a.startswith("-")]
-                targets = self.lookup("HOME", scope, ctx) if not args else ([UNK] if args[0] == "-" else [args[0]])
+                if not args:
+                    targets = self.lookup("HOME", scope, ctx)
+                elif args[0] == "-":
+                    targets = self.lookup("OLDPWD", scope, ctx)
+                else:
+                    targets = [args[0]]
                 for t in targets:
-                    for base in scope.get(".cwd", [UNK]):
-                        values.append(t if t.startswith("/") or t.startswith(UNK) else base.rstrip("/") + "/" + t)
+                    for base in old:
+                        values.append(join_path(base, t))
             new[".cwd"] = dedupe(values) or [UNK]
+            new["OLDPWD"] = old
+            new[".cdfail"] = old  # if the cd fails, the old directory stays
         elif name == "popd":
-            new[".cwd"] = [UNK]
+            new[".cwd"] = dedupe(old + [UNK])
+            new["OLDPWD"] = old
         elif name in ("export", "declare", "typeset", "local", "readonly"):
+            nameref = any(all(k == "lit" for k, _, _ in w) and "".join(p for _, p, _ in w)[:1] == "-"
+                          and "n" in "".join(p for _, p, _ in w) for w in cmd.words[1:])
             for w in cmd.words[1:]:
+                text = "".join(p for _, p, _ in w) if all(k == "lit" for k, _, _ in w) else None
                 if is_assignment(w):
                     n, v = self.assignment(w, new, ctx)
-                    new[n] = v
+                    if nameref:
+                        target = v[0] if len(v) == 1 and NAME_RE.fullmatch(v[0]) else None
+                        self.namerefs[n] = target
+                    else:
+                        self.set_var(new, n, v)
+                elif nameref and text and NAME_RE.fullmatch(text):
+                    self.namerefs[text] = None
         elif name in ("read", "mapfile", "readarray"):
             for argv in argvs:
                 for a in argv[1:]:
                     if NAME_RE.fullmatch(a):
-                        new[a] = [UNK]
+                        self.set_var(new, a, [UNK])
         elif name == "unset":
             for argv in argvs:
                 for a in argv[1:]:
@@ -1420,7 +1546,7 @@ class Guard:
         elif name == "printf":
             for argv in argvs:
                 if "-v" in argv[1:-1]:
-                    new[argv[argv.index("-v") + 1]] = [UNK]
+                    self.set_var(new, argv[argv.index("-v") + 1], [UNK])
         return new
 
     # -- the command position
@@ -1432,14 +1558,26 @@ class Guard:
             raise Unsure("the command name is computed (a variable, $(…) or a glob); write it literally")
         return field.rsplit("/", 1)[-1]
 
-    def check_argv(self, argv, scope, ctx, stdin, direct, node):
+    def check_argv(self, argv, scope, ctx, stdin, direct, node, links=True):
         """Check one command with its expanded arguments. Returns a scope when
-        the command changes the shell's variables (eval)."""
+        the command changes the shell's variables (eval, a function call)."""
         if not argv:
             return None
         name = self.cmd_name(argv[0])
         args = argv[1:]
         wrapped = lambda rest, sc=scope: self.check_argv(rest, sc, ctx, stdin, False, node)  # noqa: E731
+
+        first = plain(argv[0])
+        if "/" in first:
+            if links:  # a link made earlier in this command: check what it points to as well
+                for alt in self.paths(first, scope)[1:]:
+                    self.check_argv(["/" + "/".join(alt)] + args, scope, ctx, stdin, False, node, links=False)
+            if self.is_omarchy_path(first, scope, ctx) and not name.startswith("omarchy"):
+                raise Blocked(f"runs an Omarchy script ({first})")
+        elif name in self.functions:  # a function defined in this command runs here
+            if ctx.depth >= MAX_DEPTH:
+                raise Unsure("function calls nested too deep")
+            return self.walk_command(self.functions[name], scope, ctx.but(depth=ctx.depth + 1, stdin=stdin), False)
 
         if name in PRIVILEGE:
             raise Blocked(f"privileged or package command: {name}")
@@ -1491,6 +1629,8 @@ class Guard:
                     self.run_script(val, dict(scope), ctx.but(stdin=stdin), "script -c")
             for p in ops[:1]:
                 self.check_write(p, scope, ctx, False, node, False)  # the typescript file
+            if not any(opt in ("-c", "--command") for opt, _ in opts):
+                self.stdin_script(stdin, dict(scope), ctx, "script")  # its shell reads stdin
             return None
         if name == "busybox":
             if args and plain(args[0]) in SHELLS:
@@ -1502,10 +1642,13 @@ class Guard:
         if name in SHELLS:
             return self.w_shell(args, scope, ctx, stdin, name)
         if name == "eval":
+            if direct and self.is_ssh_agent_eval(node):
+                return None  # eval "$(ssh-agent -s)": the output is variable assignments
             return self.run_script(" ".join(args), scope, ctx.but(stdin=stdin), "eval")
         if name == "trap":
-            if len(args) >= 2 and not plain(args[0]).startswith("-"):
-                self.run_script(args[0], dict(scope), ctx.but(stdin=None), "trap")
+            targs = args[1:] if args and plain(args[0]) == "--" else args
+            if len(targs) >= 2 and not plain(targs[0]).startswith("-"):
+                self.run_script(targs[0], dict(scope), ctx.but(stdin=None), "trap")
             return None
         if name in ("source", "."):
             if args:
@@ -1513,6 +1656,14 @@ class Guard:
             return None
         if name == "ssh":
             return self.w_ssh(args, scope, ctx, stdin, direct, node)
+        if name in ("alias", "shopt"):
+            if (name == "alias" and any("=" in a for a in args)) or \
+                    (name == "shopt" and "expand_aliases" in [plain(a) for a in args] and "-u" not in args):
+                raise Unsure("aliases change what a command name runs; the guard does not model them")
+            return None
+        handled, res = self.wrappers(name, args, scope, ctx, stdin, node)
+        if handled:
+            return res
         # rules
         if name in PACKAGE:
             if name == "pacman" and pacman_read_only(args):
@@ -1521,6 +1672,8 @@ class Guard:
         if name in SERVICE or name.startswith("grub-"):
             if name == "systemctl" and systemctl_read_only(args):
                 return None
+            if name == "loginctl" and loginctl_read_only(args):
+                return None
             raise Blocked(f"service or boot command: {name}")
         if name == "omarchy":
             self.r_omarchy([plain(a) for a in args], ctx)
@@ -1528,9 +1681,385 @@ class Guard:
         if name.startswith("omarchy-"):
             self.r_omarchy_bin(name[len("omarchy-"):], ctx)
             return None
+        if name == "git":
+            self.r_git(args, scope, ctx, node)
         for path, recursive in self.write_targets(name, args):
             self.check_write(path, scope, ctx, recursive, node, direct)
+        if name in ("ln", "cp"):  # after the check: making the link is not a write through it
+            self.record_links(name, args, scope, ctx)
+        if name not in DATA_SINKS:
+            self.net(name, args)
         return None
+
+    def net(self, name, args):
+        """An unknown program whose arguments name a red-zone command may run
+        it (an exec wrapper the guard does not know): fail closed."""
+        for k, a in enumerate(args):
+            base = plain(a).rsplit("/", 1)[-1]
+            red = base in PRIVILEGE or base in PACKAGE or base in SERVICE or base == "omarchy" or \
+                base.startswith(("omarchy-", "grub-"))
+            shell_c = base in SHELLS and k + 1 < len(args) and re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", plain(args[k + 1]))
+            if red or shell_c:
+                raise Unsure(f"{name} is not known to the guard and its arguments name {base}")
+
+    def is_ssh_agent_eval(self, node):
+        if node is None or len(node.words) != 2:
+            return False
+        parts = [p for p in node.words[1] if not (p[0] == "lit" and p[1] == "")]
+        if len(parts) != 1 or parts[0][0] != "cmd":
+            return False
+        c = first_simple(parts[0][1]) if is_single(parts[0][1]) else None
+        if c is None or c.assigns or c.redirs or not c.words:
+            return False
+        texts = []
+        for w in c.words:
+            if not all(k == "lit" for k, _, _ in w):
+                return False
+            texts.append("".join(p for _, p, _ in w))
+        return texts[0].rsplit("/", 1)[-1] == "ssh-agent" and all(t in ("-s", "-c", "-k", "-D") for t in texts[1:])
+
+    # -- exec wrappers beyond the shell's own (round 3)
+    def wrappers(self, name, args, scope, ctx, stdin, node):
+        """(handled, result) for programs that run another program."""
+        wrapped = lambda rest: self.check_argv(rest, scope, ctx, stdin, False, node)  # noqa: E731
+        script = lambda text, what: self.run_script(text, dict(scope), ctx.but(stdin=stdin), what)  # noqa: E731
+        p = [plain(a) for a in args]
+        if name == "taskset":
+            if any(a in ("-p", "--pid") or (a.startswith("-") and not a.startswith("--") and "p" in a) for a in p):
+                return True, None
+            return True, wrapped(args[first_operand(args) + 1:])
+        if name == "chrt":
+            if any(a in ("-p", "--pid", "-m", "--max") for a in p):
+                return True, None
+            return True, wrapped(args[first_operand(args, "TPD", ("--sched-runtime", "--sched-period",
+                                                                  "--sched-deadline")) + 1:])
+        if name == "systemd-inhibit":
+            if "--list" in p:
+                return True, None
+            return True, wrapped(args[first_operand(args, "", ("--what", "--who", "--why", "--mode")):])
+        if name == "systemd-cat":
+            return True, wrapped(args[first_operand(args, "tp", ("--identifier", "--priority", "--stderr-priority",
+                                                                  "--level-prefix", "--namespace")):])
+        if name == "ssh-agent":
+            return True, wrapped(args[first_operand(args, "aEtPO"):])
+        if name in ("dbus-run-session", "dbus-launch"):
+            return True, wrapped(args[first_operand(args, "", ("--config-file", "--dbus-daemon")):])
+        if name == "unbuffer":
+            return True, wrapped(args[first_operand(args):])
+        if name == "uwsm":
+            if p[:1] in (["app"], ["start"]):
+                rest = args[1:]
+                if "--" in [plain(a) for a in rest]:
+                    rest = rest[[plain(a) for a in rest].index("--") + 1:]
+                else:
+                    rest = rest[first_operand(rest, "saudtTSp"):]
+                return True, wrapped(rest)
+            return True, None
+        if name == "gdb":
+            if "--args" in p:
+                return True, wrapped(args[p.index("--args") + 1:])
+            if any(a in ("-ex", "--ex", "-iex", "-x", "-ix", "--command", "--init-command", "-batch", "--batch",
+                         "--eval-command", "--init-eval-command") or a.startswith(("--eval-command=", "--command="))
+                   for a in p):
+                raise Unsure("gdb runs commands the guard cannot check")
+            return True, None
+        if name in ("bwrap", "parallel", "firejail", "unshare", "nsenter", "chroot"):
+            if args:
+                raise Unsure(f"{name} runs a command the guard does not model")
+            return True, None
+        if name == "socat":
+            if any(a.upper().startswith(("EXEC:", "SYSTEM:")) or ",EXEC" in a.upper() for a in p):
+                raise Unsure("socat runs a program (EXEC:/SYSTEM:)")
+            return True, None
+        if name == "sg":
+            rest = args[1:]
+            if rest and plain(rest[0]) == "-c":
+                rest = rest[1:]
+            if rest:
+                script(" ".join(rest), "sg")
+            return True, None
+        if name == "hyprctl":
+            return True, self.w_hyprctl(args, scope, ctx, stdin, node)
+        if name == "tmux":
+            return True, self.w_tmux(args, scope, ctx, stdin, node)
+        if name in TERMINALS:
+            for k, a in enumerate(p):
+                if a in ("-e", "--command", "-x", "--"):
+                    return True, wrapped(args[k + 1:])
+            for k, a in enumerate(p):  # a trailing command: check every operand suffix
+                if not a.startswith("-"):
+                    wrapped(args[k:])
+            return True, None
+        if name in ("rsync", "scp", "sftp"):
+            self.w_copy(name, args)
+            return False, None  # the write targets follow
+        if name in ("tar", "bsdtar"):
+            for a in p:
+                if a.startswith(("--use-compress-program", "--to-command", "--checkpoint-action", "--info-script",
+                                 "--new-volume-script", "--rsh-command", "--rmt-command")) or \
+                        (a.startswith("-") and not a.startswith("--") and ("I" in a or "F" in a)):
+                    raise Unsure(f"tar option {a} runs a program")
+            if p and not p[0].startswith("-") and ("I" in p[0] or "F" in p[0]):
+                raise Unsure(f"tar option {p[0]} runs a program")
+            return False, None
+        if name == "rg":
+            if any(a == "--pre" or a.startswith("--pre=") for a in p):
+                raise Unsure("rg --pre runs a program")
+            return False, None
+        return False, None
+
+    def w_hyprctl(self, args, scope, ctx, stdin, node):
+        p = [plain(a) for a in args]
+        i = 0
+        while i < len(p) and p[i].startswith("-"):
+            if p[i] in ("--batch",):
+                for piece in " ".join(p[i + 1:]).split(";"):
+                    words = piece.split()
+                    if words:
+                        self.w_hyprctl(words, scope, ctx, stdin, node)
+                return None
+            i += 2 if p[i] in ("-i", "--instance") else 1
+        rest = p[i:]
+        if rest[:1] == ["dispatch"] and len(rest) > 1 and rest[1].startswith("exec"):
+            text = " ".join(rest[2:])
+            text = re.sub(r"^\s*\[[^\]]*\]\s*", "", text)  # window rules: [float] cmd
+            if text.strip():
+                self.run_script(text, dict(scope), ctx.but(stdin=None), "hyprctl dispatch exec")
+        elif rest[:1] == ["keyword"] and len(rest) > 1 and ("exec" in rest[1] or rest[1].startswith("bind")):
+            raise Unsure("hyprctl keyword can make Hyprland run a command")
+        return None
+
+    TMUX_CMD_OPTS = {"new-session": "cefFnstxy", "new": "cefFnstxy", "new-window": "ceFnt", "neww": "ceFnt",
+                     "split-window": "celtF", "splitw": "celtF", "respawn-pane": "cet", "respawnp": "cet",
+                     "respawn-window": "cet", "respawnw": "cet", "display-popup": "bcdehsStTwxy",
+                     "popup": "bcdehsStTwxy", "run-shell": "cdt", "run": "cdt", "pipe-pane": "t", "pipep": "t",
+                     "if-shell": "t", "if": "t"}
+
+    def w_tmux(self, args, scope, ctx, stdin, node):
+        p = [plain(a) for a in args]
+        i = 0
+        while i < len(p) and p[i].startswith("-"):
+            if p[i] == "-c" and i + 1 < len(p):
+                self.run_script(p[i + 1], dict(scope), ctx.but(stdin=None), "tmux -c")
+            i += 2 if p[i] in ("-c", "-f", "-L", "-S", "-T") else 1
+        cmds, cur = [], []
+        for a in p[i:]:
+            if a == ";" or a.endswith("\\;"):
+                cmds.append(cur)
+                cur = []
+            else:
+                cur.append(a)
+        cmds.append(cur)
+        for c in cmds:
+            if not c:
+                continue
+            verb, rest = c[0], c[1:]
+            if verb in ("send-keys", "send"):
+                keys = rest[first_operand(rest, "cNt"):]
+                text = " ".join("\n" if k in ("Enter", "C-m", "C-j", "KPEnter") else k for k in keys)
+                if text.strip():
+                    self.run_script(text, dict(scope), ctx.but(stdin=None), "tmux send-keys")
+            elif verb in self.TMUX_CMD_OPTS:
+                ops = rest[first_operand(rest, self.TMUX_CMD_OPTS[verb]):]
+                if verb in ("if-shell", "if"):
+                    ops = ops[:1]
+                if ops:
+                    self.run_script(" ".join(ops), dict(scope), ctx.but(stdin=None), f"tmux {verb}")
+        return None
+
+    def w_copy(self, name, args):
+        """rsync -e and scp/sftp -S/-o name the transport that runs locally."""
+        p = [plain(a) for a in args]
+        for k, a in enumerate(p):
+            val = None
+            if name == "rsync" and a in ("-e", "--rsh") and k + 1 < len(p):
+                val = p[k + 1]
+            elif name == "rsync" and a.startswith("--rsh="):
+                val = a.split("=", 1)[1]
+            elif name == "rsync" and a.startswith("-e") and not a.startswith("--") and len(a) > 2:
+                val = a[2:]
+            elif name in ("scp", "sftp") and a == "-S" and k + 1 < len(p):
+                val = p[k + 1]
+            elif name == "sftp" and a == "-b":
+                raise Unsure("sftp -b runs a batch file the guard cannot check")
+            elif name in ("scp", "sftp") and a == "-o" and k + 1 < len(p):
+                self.ssh_option(p[k + 1])
+            elif name in ("scp", "sftp") and a.startswith("-o") and len(a) > 2:
+                self.ssh_option(a[2:])
+            if val is not None:
+                words = val.split()
+                if not words or words[0].rsplit("/", 1)[-1] != "ssh":
+                    raise Unsure(f"{name} runs {val!r} as its transport")
+                for j, w in enumerate(words):
+                    if w == "-o" and j + 1 < len(words):
+                        self.ssh_option(words[j + 1])
+                    elif w.startswith("-o") and len(w) > 2:
+                        self.ssh_option(w[2:])
+
+    @staticmethod
+    def ssh_option(val):
+        key = re.split(r"[\s=]", val.strip(), maxsplit=1)[0].lower()
+        if key in ("proxycommand", "localcommand", "knownhostscommand"):
+            raise Blocked(f"ssh option {key} runs a local command")
+
+    def r_git(self, args, scope, ctx, node):
+        for k in scope:  # variables set in this command that name a program git runs
+            if k in GIT_PROGRAM_VARS or k.startswith("GIT_CONFIG"):
+                vals = self.lookup(k, scope, ctx)
+                if k.startswith("GIT_CONFIG") or any(v.strip() not in SAFE_PROGRAMS for v in vals):
+                    raise Unsure(f"git with {k} set in the command can run a program")
+        p = [plain(a) for a in args]
+        i, base, work_tree = 0, ".", None
+        while i < len(p):
+            a = p[i]
+            if a == "-C" and i + 1 < len(p):
+                base = join_path(base, args[i + 1])
+                i += 2
+            elif a == "-c" and i + 1 < len(p):
+                self.git_config(p[i + 1])
+                i += 2
+            elif a.startswith("--config-env"):
+                raise Unsure("git --config-env can make git run a program")
+            elif a.startswith("--exec-path="):
+                raise Unsure("git --exec-path changes which programs git runs")
+            elif a == "--work-tree" and i + 1 < len(p):
+                work_tree = args[i + 1]
+                i += 2
+            elif a.startswith("--work-tree="):
+                work_tree = args[i].split("=", 1)[1]
+                i += 1
+            elif a in ("--git-dir", "--namespace", "--super-prefix") and i + 1 < len(p):
+                i += 2
+            elif a.startswith("-"):
+                i += 1
+            else:
+                break
+        if i >= len(p):
+            return
+        verb, rest, prest = p[i], args[i + 1:], p[i + 1:]
+        for k, a in enumerate(prest):
+            if a.startswith("ext::") or a in ("--upload-pack", "-u", "--receive-pack", "--exec") or \
+                    a.startswith(("--upload-pack=", "--receive-pack=", "--exec=", "--template")):
+                if not (verb not in ("clone", "fetch", "pull", "ls-remote", "push", "archive", "init", "submodule")
+                        and a == "-u"):
+                    raise Unsure(f"git {verb} {a} can run a program")
+            if a in ("-c", "--config") and k + 1 < len(prest) and verb in ("clone", "submodule"):
+                self.git_config(prest[k + 1])
+            if a.startswith("--config=") and verb == "clone":
+                self.git_config(a.split("=", 1)[1])
+        wt = join_path(base, work_tree) if work_tree else base
+        if verb == "clone":
+            ops, opts = operands(rest, "bocj", ("--branch", "--origin", "--upload-pack", "--reference",
+                                                "--reference-if-able", "--separate-git-dir", "--depth",
+                                                "--shallow-since", "--shallow-exclude", "--template", "--config",
+                                                "--jobs", "--filter", "--server-option", "--bundle-uri"))
+            if ops:
+                dest = ops[1] if len(ops) > 1 else re.sub(r"\.git$", "", plain(ops[0]).rstrip("/").rsplit("/", 1)[-1]
+                                                           .rsplit(":", 1)[-1])
+                self.check_write(join_path(base, dest), scope, ctx, False, node, False)
+            for o, v in opts:
+                if o == "--separate-git-dir":
+                    self.check_write(join_path(base, v), scope, ctx, False, node, False)
+        elif verb == "init":
+            ops, _ = operands(rest, "b", ("--template", "--separate-git-dir", "--initial-branch",
+                                          "--object-format", "--ref-format"))
+            self.check_write(join_path(base, ops[0]) if ops else base + "/" + UNK, scope, ctx, False, node, False)
+        elif verb == "worktree" and prest[:1] == ["add"]:
+            ops, _ = operands(rest[1:], "bB", ("--reason",))
+            if ops:
+                self.check_write(join_path(base, ops[0]), scope, ctx, False, node, False)
+        elif verb in GIT_MUTATING:
+            self.check_write(wt.rstrip("/") + "/" + UNK, scope, ctx, False, node, False)
+
+    @staticmethod
+    def git_config(kv):
+        key = kv.split("=", 1)[0]
+        if GIT_EXEC_CONFIG.fullmatch(key):
+            raise Unsure(f"git -c {key} can make git run a program")
+
+    # -- symlinks and hard links made in this command
+    def record_links(self, name, args, scope, ctx):
+        if name == "cp" and not any(plain(a) in ("-s", "--symbolic-link") or
+                                    (plain(a).startswith("-") and not plain(a).startswith("--") and "s" in plain(a))
+                                    for a in args):
+            return
+        ops, opts = operands(args, "tS", ("--target-directory", "--suffix"))
+        tdir = [v for o, v in opts if o in ("-t", "--target-directory")]
+        rel = any(o in ("-r", "--relative") for o, _ in opts)
+        pairs = []
+        if tdir:
+            pairs = [(t, tdir[0].rstrip("/") + "/" + plain(t).rstrip("/").rsplit("/", 1)[-1]) for t in ops]
+        elif len(ops) == 1:
+            pairs = [(ops[0], plain(ops[0]).rstrip("/").rsplit("/", 1)[-1])]
+        elif len(ops) >= 2:
+            dest = ops[-1]
+            for t in ops[:-1]:
+                pairs.append((t, dest.rstrip("/") + "/" + plain(t).rstrip("/").rsplit("/", 1)[-1]))
+            if len(ops) == 2:
+                pairs.append((ops[0], dest))
+        for target, link in pairs:
+            for lc in self.absolute(link, scope):
+                if target.startswith(UNK):
+                    tcands = [[UNK]]
+                elif target.startswith("/"):
+                    tcands = [normalize(target)]
+                elif rel:
+                    tcands = self.absolute(target, scope)
+                else:  # a relative target is relative to the link's directory
+                    tcands = [normalize("/" + "/".join(lc[:-1]) + "/" + target)]
+                for tc in tcands:
+                    if any(wild(c) for c in lc):
+                        if self.protected_like(tc):
+                            raise Unsure("a link to a protected directory at a path the guard cannot know")
+                        continue
+                    if len(self.links) >= 64:
+                        raise Unsure("too many links made in one command")
+                    self.links[tuple(lc)] = tc
+
+    def protected_like(self, comps):
+        roots = SYSTEM_DIRS + [self.home_comps + [".config"], ["home", "*", ".config"], ["root", ".config"],
+                               self.home_comps + ["Seldon"], self.home_comps + [".local", "state", "seldon"]]
+        return any(could_be_inside(comps, r) or could_be_ancestor(comps, r) for r in roots)
+
+    def absolute(self, path, scope):
+        """A path → normalized components for each working-directory candidate."""
+        if not path or path.startswith(UNK):
+            return []
+        if path.startswith("/"):
+            return [normalize(path)]
+        return [normalize(c.rstrip("/") + "/" + path) for c in scope.get(".cwd", [UNK]) if not c.startswith(UNK)]
+
+    def via_links(self, comps):
+        out, frontier = [comps], [comps]
+        for _ in range(8):
+            new = []
+            for c in frontier:
+                for link, target in self.links.items():
+                    if len(c) >= len(link) and all(comp_match(c[k], link[k]) for k in range(len(link))):
+                        r = list(target) + c[len(link):]
+                        if r not in out:
+                            out.append(r)
+                            new.append(r)
+            frontier = new
+            if not new or len(out) > 64:
+                break
+        return out[:64]
+
+    def paths(self, path, scope):
+        """All component lists a path may name: itself, then through links."""
+        out = []
+        for comps in self.absolute(path, scope):
+            for c in self.via_links(comps):
+                if c not in out:
+                    out.append(c)
+        return out
+
+    def is_omarchy_path(self, path, scope, ctx):
+        roots = [["usr", "share", "omarchy"]]
+        for v in self.lookup("OMARCHY_PATH", scope, ctx):
+            if v.startswith("/"):
+                roots.append(normalize(v))
+        return any(could_be_inside(c, r) for c in self.paths(path, scope) for r in roots)
 
     def w_env(self, args, scope, ctx, stdin, node):
         env = dict(scope)
@@ -1563,7 +2092,7 @@ class Guard:
                 break
         while i < len(args) and ASSIGN_RE.match(args[i]):
             n, _, v = args[i].partition("=")
-            env[n.rstrip("+")] = [v]
+            self.set_var(env, n.rstrip("+"), [v])
             i += 1
         if i >= len(args):
             return None
@@ -1588,7 +2117,7 @@ class Guard:
         return self.check_argv(rest, scope, ctx, stdin, False, node)
 
     def w_shell(self, args, scope, ctx, stdin, name):
-        i, cmode, smode = 0, False, False
+        i, cmode, smode, noexec = 0, False, False, False
         while i < len(args):
             a = plain(args[i])
             if a in ("--", "-"):
@@ -1604,12 +2133,16 @@ class Guard:
                         cmode = True
                     elif ch == "s":
                         smode = True
+                    elif ch == "n" and a[0] == "-":
+                        noexec = True  # bash -n: syntax check, nothing runs
                     elif ch in "oO":
                         take += 1
                 i += 1 + take
                 continue
             break
         rest = args[i:]
+        if noexec and not cmode:
+            return None
         if cmode:
             if not rest:
                 raise Unsure(f"{name} -c without a command string")
@@ -1624,6 +2157,8 @@ class Guard:
     def sourced(self, path, scope, ctx, stdin, name):
         """A script file run by a shell or `source`: not inspected, unless it is
         stdin or generated."""
+        if self.is_omarchy_path(path, scope, ctx):
+            raise Blocked(f"runs an Omarchy script ({path})")
         if path in ("/dev/stdin", "/proc/self/fd/0", "-"):
             self.stdin_script(stdin, dict(scope), ctx, name)
         elif path.startswith("/dev/fd/") or UNK in path.rsplit("/", 1)[-1]:
@@ -1666,9 +2201,7 @@ class Guard:
                     else:
                         val = a[j + 1:]
                     if a[j] == "o":
-                        key = re.split(r"[\s=]", val.strip(), maxsplit=1)[0].lower()
-                        if key in ("proxycommand", "localcommand", "knownhostscommand"):
-                            raise Blocked(f"ssh option {key} runs a local command")
+                        self.ssh_option(val)
                     break
             i += 1
         if i >= len(args):
@@ -1678,6 +2211,11 @@ class Guard:
             return None  # a test host the operator released (scripts/guard-hosts.local)
         first = direct and node is ctx.top_first and ctx.depth == 0 and not ctx.remote
         rctx = ctx.but(remote=True, stdin=stdin, ssh_first=first, ssh_single=first and ctx.top_single)
+        h = host.rsplit("@", 1)[-1].strip("[]").lower()
+        if wild(h) or h in local_names() or h.startswith("127."):
+            # this machine (or a host the guard cannot know): the local rules, no remote exceptions
+            rctx = ctx.but(remote=False, stdin=stdin, ssh_first=False, ssh_single=False, r_first=None,
+                           r_single=False)
         rscope = {"HOME": [self.home], ".cwd": [self.home]}
         if rest:
             self.run_script(" ".join(rest), rscope, rctx, "ssh remote command", remote_top=True)
@@ -1739,7 +2277,7 @@ class Guard:
     def write_targets(self, name, args):
         """(path, recursive) pairs a file command writes, removes or changes."""
         if name in ("rm", "rmdir", "unlink", "shred", "tee"):
-            ops, opts = operands(args, "nsu" if name == "shred" else "")
+            ops, opts = operands(args, "ns" if name == "shred" else "")
             rec = name == "rm" and any(o in ("-r", "-R", "--recursive") for o, _ in opts)
             return [(p, rec) for p in ops]
         if name in ("truncate", "touch", "mkdir", "setfacl"):
@@ -1771,12 +2309,96 @@ class Guard:
             return [(p, False) for p in self.sed_files(args)]
         if name == "dd":
             return [(a[3:], False) for a in args if a.startswith("of=")]
+        if name == "patch":
+            ops, opts = operands(args, "dioprDFBVYzg", ("--directory", "--input", "--output", "--strip",
+                                                       "--reject-file", "--ifdef", "--fuzz", "--prefix",
+                                                       "--version-control", "--basename-prefix", "--suffix",
+                                                       "--get", "--quoting-style"))
+            d = next((v for o, v in reversed(opts) if o in ("-d", "--directory")), ".")
+            out = [(join_path(d, v), False) for o, v in opts if o in ("-o", "--output", "-r", "--reject-file")
+                   and plain(v) != "-"]
+            out.append((join_path(d, ops[0]), False) if ops else (d.rstrip("/") + "/" + UNK, False))
+            return out
+        if name in ("tar", "bsdtar"):
+            return self.tar_targets(args)
+        if name == "unzip":
+            ops, opts = operands(args, "dxP", ())
+            if any(o in ("-l", "-t", "-p", "-v", "-Z", "-z") for o, _ in opts):
+                return []
+            d = next((v for o, v in opts if o == "-d"), ".")
+            return [(d.rstrip("/") + "/" + UNK, False)]
+        if name == "curl":
+            ops, opts = operands(args, "AbcCdDeEFHKmoPrTuUwxXyYzQt",
+                                 ("--output", "--output-dir", "--dump-header", "--cookie-jar", "--trace",
+                                  "--trace-ascii", "--stderr", "--etag-save", "--data", "--header", "--url",
+                                  "--user-agent", "--config", "--user", "--request", "--form", "--cookie"))
+            d = next((v for o, v in opts if o == "--output-dir"), ".")
+            out = []
+            for o, v in opts:
+                if o in ("-o", "--output") and plain(v) != "-":
+                    out.append((join_path(d, v), False))
+                elif o in ("-O", "--remote-name", "--remote-name-all", "-J"):
+                    out.append((d.rstrip("/") + "/" + UNK, False))
+                elif o in ("-D", "--dump-header", "-c", "--cookie-jar", "--trace", "--trace-ascii", "--stderr",
+                           "--etag-save") and v is not None and plain(v) != "-":
+                    out.append((v, False))
+            return out
+        if name == "wget":
+            ops, opts = operands(args, "OoaPeiBtTwlQUDARIX", ("--output-document", "--directory-prefix",
+                                                               "--output-file", "--append-output"))
+            d = next((v for o, v in opts if o in ("-P", "--directory-prefix")), ".")
+            out = [(v, False) for o, v in opts if o in ("-o", "--output-file", "-a", "--append-output")]
+            docs = [v for o, v in opts if o in ("-O", "--output-document")]
+            if docs:
+                out += [(join_path(d, v), False) for v in docs if plain(v) != "-"]
+            elif ops:
+                out.append((d.rstrip("/") + "/" + UNK, False))
+            return out
         if name in ("rsync", "scp"):
             ops = [a for a in args if not a.startswith("-")]
             dest = ops[-1] if len(ops) >= 2 else None
             if dest and not re.match(r"[^/]*:", dest) and not dest.startswith("rsync://"):
                 return [(dest, False)]
         return []
+
+    @staticmethod
+    def tar_targets(args):
+        p = [plain(a) for a in args]
+        old_style = bool(p) and not p[0].startswith("-")
+        letters = p[0] if old_style else ""
+        extract = "x" in letters or any(a in ("--extract", "--get") or
+                                        (a.startswith("-") and not a.startswith("--") and "x" in a) for a in p)
+        create = any(c in letters for c in "cruA") or any(
+            a in ("--create", "--append", "--update", "--catenate", "--concatenate") or
+            (a.startswith("-") and not a.startswith("--") and any(c in a for c in "cruA")) for a in p)
+        dirs, files = [], []
+        if old_style:  # `tar xzfC a.tgz dir`: arg-taking letters consume the next words in order
+            k = 1
+            for c in letters:
+                if c in "fbCTXgKLNV" and k < len(args):
+                    (files if c == "f" else dirs if c == "C" else []).append(args[k])
+                    k += 1
+        for k, a in enumerate(p):
+            if a in ("-C", "--directory") and k + 1 < len(p):
+                dirs.append(args[k + 1])
+            elif a.startswith("--directory="):
+                dirs.append(args[k].split("=", 1)[1])
+            elif a in ("-f", "--file") and k + 1 < len(p):
+                files.append(args[k + 1])
+            elif a.startswith("--file="):
+                files.append(args[k].split("=", 1)[1])
+            elif a.startswith("-") and not a.startswith("--") and len(a) > 2:
+                for j, c in enumerate(a[1:], 1):
+                    if c in "Cf":
+                        val = a[j + 1:] or (args[k + 1] if k + 1 < len(args) else "")
+                        (dirs if c == "C" else files).append(val)
+                        break
+        out = []
+        if extract:
+            out += [(d.rstrip("/") + "/" + UNK, False) for d in (dirs or ["."])]
+        if create:
+            out += [(f, False) for f in files if plain(f) != "-"]
+        return out
 
     @staticmethod
     def sed_files(args):
@@ -1815,8 +2437,7 @@ class Guard:
             fulls = [path]
         else:
             fulls = [c.rstrip("/") + "/" + path for c in scope.get(".cwd", [UNK]) if not c.startswith(UNK)]
-        for full in fulls:
-            comps = normalize(full)
+        for comps in [c for full in fulls for c in self.via_links(normalize(full))]:
             for base in SYSTEM_DIRS:
                 if could_be_inside(comps, base) or (recursive and could_be_ancestor(comps, base)):
                     raise Blocked("write under /etc, /usr, /boot or /var")

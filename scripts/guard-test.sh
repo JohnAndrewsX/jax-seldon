@@ -369,16 +369,206 @@ check A 'omarchy-plugin-list --json'
 cap=$((256 * 1024))
 over=$(printf '{"tool_input":{"command":""},"cwd":"%s"}' "$cwd" | wc -c)
 big=$(yes 'echo x;' | head -c $((cap - over)) | tr '\n' ' ')
-check A "$big" "(echo x; repeated: hook input of exactly $cap bytes)"
 check B "${big}x" "(echo x; repeated: hook input of $((cap + 1)) bytes)"
+# the allowed row at the cap is cheap to parse (one long word), so its time
+# never depends on the host's load
+long=": $(head -c $((cap - over - 2)) /dev/zero | tr '\0' x)"
+check A "$long" "(one long word: hook input of exactly $cap bytes)"
 # WP-130 round 2: work bounds inside the cap (a hook that times out does not
 # block): at most 256 variables per command, and a 3 s time budget that the
 # test table may shorten (never lengthen) with SELDON_TEST_GUARD set
 vars=$(for i in $(seq 0 255); do printf 'v%d=1; ' "$i"; done)
 check A "${vars}echo ok" "(256 distinct variables)"
 check B "${vars}v256=1; echo ok" "(257 distinct variables)"
-mid=$(yes 'echo x;' | head -c 40000 | tr '\n' ' ')
-GUARD_TIME_BUDGET=0.01 check B "$mid" "(40 KB of echo x; with a 0.01 s budget)"
-SELDON_TEST_GUARD='' GUARD_TIME_BUDGET=0.01 check A "$mid" "(the same, budget variable without SELDON_TEST_GUARD)"
+mid=$(yes 'echo x;' | head -c 10000 | tr '\n' ' ')
+GUARD_TIME_BUDGET=0.001 check B "$mid" "(10 KB of echo x; with a 0.001 s budget)"
+SELDON_TEST_GUARD='' GUARD_TIME_BUDGET=0.001 check A "$mid" "(the same, budget variable without SELDON_TEST_GUARD)"
+# WP-130 round 3 (stage-2 sweep), A1: trap --
+check B "trap -- 'sudo ls' EXIT"
+check A 't=$(mktemp -d); trap -- '"'"'rm -rf "$t"'"'"' EXIT'
+# A2: shred's options with an argument are -n and -s, not -u
+check B 'shred -u ~/Seldon/x'
+check B 'shred -n 3 -u ~/.config/hypr/x'
+# A3: IFS changes word splitting; only `IFS=… read` passes
+check B 'IFS=,; c=sudo,ls; $c'
+check B 'IFS=/; c=sudo/ls; $c'
+check B 'IFS=, c=sudo,ls; $c'
+check B 'export IFS=,; c=sudo,ls; $c'
+check A 'IFS=, read -r a b <<< "x,y"'
+check A 'while IFS= read -r l; do echo "$l"; done < notes.md'
+# A4: namerefs
+check B 'declare -n r=A; A=sudo; $r ls'
+check B 'local -n r=X; X=pacman; $r -Syu'
+check B 'typeset -n r=HOME; rm -rf $r/.config/hypr'
+# A5: ${HOME…} with an operator may still be the home
+check B 'rm -rf ${HOME%/}/.config/hypr'
+check B 'echo x > ${HOME#x}/.config/hypr/x'
+check B 'rm -rf ${HOME/x/y}/Seldon'
+check B 'rm -rf ${HOME:0}/.local/state/seldon'
+# A6: the working directory: a cd may fail, cd -, ~-, $OLDPWD, popd, functions
+check B 'cd ~/.config && cd /nonexistent; echo hi > hypr/x'
+check B 'cd ~/.config; cd /nonexistent; echo hi > hypr/x'
+check B 'cd ~/.config && cd /tmp && cd - && echo hi > hypr/x'
+check B 'cd ~/.config; cd /tmp; cd -; echo hi > hypr/x'
+check B 'cd ~/.config; popd; echo hi > hypr/x'
+check B 'cd ~/Seldon; cd /tmp; rm -rf ~-'
+check B 'cd ~/.config; cd /tmp; rm -rf $OLDPWD/hypr'
+check B 'f() { cd ~/.config; }; f; echo hi > x'
+check B 'g() { sudo ls; }; g'
+check A 'cd /tmp && echo hi > x'
+check A 'cd target; echo hi > x'
+check A 'f() { echo "$1"; }; f a; f b'
+# A7: links made earlier in the same command
+check B 'ln -s ~/.config ~/cfg; echo hi > ~/cfg/hypr/x'
+check B 'ln -s ~/Seldon /tmp/s; rm -rf /tmp/s/'
+check B 'ln -s /usr/bin/sudo /tmp/s; /tmp/s ls'
+check B 'ln -s ~/.config/hypr /tmp/h; echo hi > /tmp/h/x'
+check B 'ln ~/.config/hypr/hyprland.conf /tmp/hl; echo x >> /tmp/hl'
+check A 'ln -s /tmp/a /tmp/b; echo hi > /tmp/b/x'
+check A 'ln -sf /home/tester/repo/engine/target/debug/seldon /tmp/seldon && /tmp/seldon --version'
+# A8: ssh to this machine runs the local rules
+check B 'ssh localhost omarchy agent prompt "work the case"'
+check B 'ssh 127.0.0.1 omarchy-launch-tui claude'
+check B "ssh ::1 'omarchy launch floating-terminal-with-presentation claude'"
+check B 'ssh localhost omarchy theme set tokyo-night'
+check B 'ssh user@127.0.0.1 "omarchy theme set tokyo-night"'
+check B 'ssh localhost rm -rf ~/.config/seldon'
+check B 'ssh -p 22 127.0.0.2 rm -rf ~/.config/seldon'
+check B 'ssh $HOSTNAME omarchy agent prompt "work the case"'
+check B 'ssh $(hostname) rm -rf ~/.config/seldon'
+check A 'ssh localhost ls /tmp'
+# A9: Omarchy's own scripts do not run
+check B 'bash /usr/share/omarchy/install.sh'
+check B 'bash $OMARCHY_PATH/install.sh'
+check B 'source $OMARCHY_PATH/install/preflight/guard.sh'
+check B '. /usr/share/omarchy/migrations/1751134560.sh'
+check B '/usr/share/omarchy/install.sh'
+check B '"$OMARCHY_PATH/migrations/1751134560.sh"'
+check B 'bash -c "$OMARCHY_PATH/install.sh"'
+check B "env OMARCHY_PATH=/opt/om bash -c '\$OMARCHY_PATH/install.sh'"
+check B 'for f in $OMARCHY_PATH/migrations/*.sh; do bash "$f"; done'
+check B 'sh /usr/share/omarchy/install/config/all.sh'
+check B 'ln -s /usr/share/omarchy/install.sh /tmp/i; bash /tmp/i'
+check B '/usr/share/omarchy/bin/omarchy-update'
+check A 'grep -n sudo $OMARCHY_PATH/install.sh'
+check A 'cat /usr/share/omarchy/migrations/1751134560.sh'
+check A 'head -20 "$OMARCHY_PATH/install.sh"'
+check A 'bash -n $OMARCHY_PATH/install.sh'
+check A '/usr/share/omarchy/bin/omarchy-version'
+# A10: more write paths: patch, tar, unzip, curl, wget, git
+check B 'patch ~/.config/hypr/hyprland.conf fix.diff'
+check B 'patch -d ~/.config/hypr -p1 < fix.diff'
+check B 'cd ~/.config && patch -p1 -i fix.diff'
+check B 'tar -xzf a.tgz -C ~/.config'
+check B 'tar xzf a.tgz -C ~/Seldon'
+check B 'tar -C ~/.config -xf a.tar'
+check B 'cd ~/.config && tar xf a.tar'
+check B 'unzip a.zip -d ~/.config/hypr'
+check B 'curl -o ~/.config/hypr/x https://example.org/x'
+check B 'curl -sSLo ~/.config/x https://example.org/x'
+check B 'cd ~/.config && curl -O https://example.org/x'
+check B 'wget -O ~/.config/x https://example.org/x'
+check B 'wget -P ~/.config https://example.org/x'
+check B 'git clone https://example.org/foo ~/.config/omarchy/plugins/foo'
+check B 'git clone https://example.org/s ~/Seldon'
+check B 'git -C ~/.config/hypr checkout .'
+check B 'git -C ~/Seldon commit -am x'
+check B 'cd ~/.config/hypr && git reset --hard'
+check B 'git init ~/.config/x'
+check B 'git worktree add ~/.config/x'
+check B 'git --work-tree ~/.config/hypr checkout .'
+check A 'patch -p1 < fix.diff'
+check A 'tar -czf /tmp/x.tgz ~/.config/hypr'
+check A 'tar -tzf a.tgz'
+check A 'tar -xzf a.tgz -C /tmp/x'
+check A 'unzip -l a.zip'
+check A 'curl -s https://example.org/x | jq .'
+check A 'curl -o /tmp/x https://example.org/x'
+check A 'wget -qO- https://example.org/x'
+check A 'git clone https://example.org/jax-seldon-plugin ~/.config/omarchy/plugins/jax.seldon'
+check A 'git clone https://example.org/foo /tmp/foo'
+check A 'git status --short && git add scripts && git commit -m x'
+check A 'GIT_PAGER=cat git log -3'
+check A 'GIT_EDITOR=true git rebase --continue'
+# A11: script without -c reads its shell's commands from stdin
+check B "printf 'sudo ls\\n' | script -q /dev/null"
+check B 'script -q /dev/null <<'"'"'EOF'"'"'
+sudo ls
+EOF'
+check A "script -q -c 'ls' /dev/null"
+# A12: aliases
+check B "alias ls=sudo; ls"
+check B "shopt -s expand_aliases; alias x='sudo ls'; x"
+check A 'alias'
+check A 'unalias ll 2>/dev/null; ls'
+# A13a: exec wrappers (the stage-2 regression)
+check B 'hyprctl dispatch exec omarchy-update'
+check B 'hyprctl dispatch exec "[float] omarchy update"'
+check B 'hyprctl --batch "dispatch exec sudo ls ; keyword general:gaps_in 5"'
+check B 'hyprctl keyword exec-once sudo ls'
+check B "tmux new -d 'sudo ls'"
+check B 'tmux new-session -d -s x sudo ls'
+check B "tmux run-shell 'pacman -Syu'"
+check B "tmux send-keys -t x 'sudo ls' Enter"
+check B 'foot -e sudo ls'
+check B 'alacritty -e sudo ls'
+check B 'ghostty -e omarchy update'
+check B 'kitty sudo ls'
+check B 'taskset -c 0 sudo ls'
+check B 'chrt -f 99 sudo ls'
+check B 'systemd-inhibit sudo ls'
+check B 'systemd-cat -t x sudo ls'
+check B 'ssh-agent sudo ls'
+check B 'dbus-run-session sudo ls'
+check B 'dbus-launch sudo ls'
+check B 'uwsm app -- sudo ls'
+check B 'unbuffer sudo ls'
+check B 'gdb --args sudo ls'
+check B "gdb -ex 'shell sudo ls'"
+check B 'bwrap --bind / / sudo ls'
+check B "socat - EXEC:'sudo ls'"
+check B "sg wheel -c 'sudo ls'"
+check B 'parallel sudo ::: ls'
+check B "rsync -e 'sh -c \"sudo ls\"' a host:b"
+check B "rsync --rsh='ssh -o ProxyCommand=sudo' a host:b"
+check B 'scp -S /tmp/evil a host:b'
+check B 'scp -o ProxyCommand=x a host:b'
+check B "tar -I 'sh -c sudo' -xf a.tar"
+check B "tar --to-command='sudo sh' -xf a.tar"
+check B 'rg --pre ./x pattern'
+check B "git -c core.pager='sudo less' log"
+check B "git -c alias.x='!sudo ls' x"
+check B "git -c core.sshCommand='sh -c sudo' fetch"
+check B "GIT_SSH_COMMAND='sudo ssh' git fetch"
+check B "EDITOR='sudo vi' git commit"
+check B 'foot -e rm -rf ~/.config/hypr'
+check B 'taskset -c 0 rm -rf ~/Seldon'
+check A 'hyprctl dispatch workspace 2'
+check A 'hyprctl clients -j'
+check A 'tmux ls'
+check A "tmux new -d -s x 'cargo test'"
+check A 'foot -e htop'
+check A 'taskset -c 0 cargo test'
+check A 'rsync -e ssh -a x host:y'
+check A "rsync -e 'ssh -p 2222' a host:b"
+check A 'scp -o BatchMode=yes a host:b'
+check A 'git -c user.name=x commit -m y'
+check A 'git -c color.ui=never log'
+# A13b: the net: an unknown program whose arguments name a red-zone command
+check B 'myrunner sudo ls'
+check B 'strace -f pacman -Syu'
+check B 'catchsegv omarchy-update'
+check B "xyz bash -c 'ls'"
+check A 'man sudo'
+check A 'which sudo'
+check A 'stat /usr/bin/sudo'
+check A 'herdr agent prompt engine-130 "use sudo"'
+check A 'cargo test pacman'
+# round 3: the two false positives of the sweep
+check A 'eval "$(ssh-agent -s)"'
+check A 'loginctl list-sessions'
+check A 'loginctl show-session 2'
+check B 'loginctl terminate-session 2'
+check B 'loginctl kill-user tester'
 echo "rows: $rows"
 exit $fail
