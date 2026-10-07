@@ -619,6 +619,7 @@ fn start(ctx: &Context, target: Target, name: Option<&str>) -> Result<Output> {
             start: true,
             point: true,
             done: None,
+            source: None,
         },
     )?;
     let id = created.file.case.id.clone();

@@ -26,12 +26,14 @@ DetailPane {
   readonly property var service: root.section ? root.section.service : null
   readonly property var indexData: root.section ? root.section.index : null
   readonly property var prepared: root.service ? root.service.deskChangelog : null
-  // The item's rule comes from `seldon drift show` (the index has none),
-  // asked for a selected crisis — for a group, of its leader — once per
-  // index; until it answers the callout says only what the index proves.
+  // The item's rule is the index's (`drift[].rule`, ADR-0038 §1; for a
+  // group, its leader's): no process. An index without it (an earlier
+  // contract-2 engine) asks `seldon drift show` for a selected crisis,
+  // once per index; until it answers the callout says only what the index
+  // proves.
   readonly property string ruleId: form.item ? form.item.leaderId : root.eventId
   readonly property var ruleInfo: Model.driftRuleInfo(root.service ? root.service.driftRules : null,
-    root.service ? root.service.driftShown : null, root.ruleId)
+    root.service ? root.service.driftShown : null, root.ruleId, root.indexData)
   property string ruleAsked: ""
   // Open case named a case Work does not list (the index keeps the last 50
   // completed cases): its id, for the line under the bar.

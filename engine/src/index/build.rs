@@ -14,8 +14,10 @@ use super::drift::{AlwaysRed, is_routine, names_token};
 use super::load::{Entry, Loaded, LoadedCase, fence_kv, fence_table};
 use super::model::*;
 use crate::config::{AttentionMode, DriftConfig};
+use crate::import::{is_case_source, is_direction_or_format};
 use crate::model::event::{ACTOR_SYSTEM, Event, Kind, Source, TRUNCATED, format_ts};
 use crate::model::{Case, CaseStatus, Decision, Journal, Risk, Zone};
+use crate::redact::Redactor;
 
 /// Most events the index lists (CONTRACT.md rule 4).
 pub const MAX_EVENTS: usize = 500;
@@ -49,6 +51,10 @@ pub struct Input {
     pub state: State,
     /// `config.toml [drift]` (ADR-0013, ADR-0028).
     pub drift: DriftConfig,
+    /// The logbook's redaction (`config.toml [redaction]`) for the texts
+    /// of cases and decisions (ADR-0038); `None` when its patterns do not
+    /// compile, which withholds those texts.
+    pub redactor: Option<Redactor>,
 }
 
 /// The index and what the generated Markdown views need besides it.
@@ -126,7 +132,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         .collect();
     let (drift_total, crisis_total) = (drift.len(), drift.iter().filter(|d| d.crisis).count());
     let drift = cap_drift(drift);
-    let groups = case_groups(&cases, &drift);
+    let groups = case_groups(&cases, &drift, input.redactor.as_ref(), &mut warnings);
     let all_cases: Vec<&IndexCase> = groups.all().collect();
 
     let summary = Summary {
@@ -148,7 +154,7 @@ pub fn build(loaded: Loaded, input: &Input) -> Built {
         yesterday: Some(rows(journal_yesterday)),
     };
 
-    let decision_rows = decision_rows(decisions);
+    let decision_rows = decision_rows(decisions, |lead| shown_text(input.redactor.as_ref(), lead));
 
     let snapshots = snapshots(&events);
     let system = System {
@@ -327,11 +333,15 @@ pub fn r3_advisory(id: &str, risk: Risk, subject: &str) -> String {
 }
 
 /// The `decisions` rows of the index, newest id first (also the rows of
-/// the logbook's `DECISIONS.md` table, [`super::views::decisions_index`]).
-pub fn decision_rows(decisions: Vec<(String, Decision)>) -> Vec<DecisionRow> {
+/// the logbook's `DECISIONS.md` table, [`super::views::decisions_index`]);
+/// `lead` makes a row's `lead` from the paragraph as written.
+pub fn decision_rows(
+    decisions: Vec<(String, Decision, Option<String>)>,
+    lead: impl Fn(&str) -> Option<String>,
+) -> Vec<DecisionRow> {
     let mut rows: Vec<DecisionRow> = decisions
         .into_iter()
-        .map(|(path, d)| {
+        .map(|(path, d, written)| {
             let mut cases: Vec<String> = Vec::with_capacity(d.cases.len());
             for c in d.cases {
                 if !cases.contains(&c) {
@@ -345,6 +355,7 @@ pub fn decision_rows(decisions: Vec<(String, Decision)>) -> Vec<DecisionRow> {
                 date: d.date.to_string(),
                 path,
                 cases,
+                lead: written.as_deref().and_then(&lead),
             }
         })
         .collect();
@@ -415,6 +426,15 @@ fn fold(events: &[Event]) -> (Vec<IndexEvent>, HashSet<Ulid>) {
 /// marker, `… (3744 more characters in the ledger)` (CONTRACT.md rule 5).
 /// The cut falls on a character boundary.
 pub fn clip(text: &str) -> Cow<'_, str> {
+    clip_with(text, "in the ledger")
+}
+
+/// Where the rest of a case's or decision's text is (ADR-0038 §2).
+pub const IN_THE_FILE: &str = "in the file";
+
+/// [`clip`] with the marker naming `place`: `… (N more characters
+/// {place})`.
+pub fn clip_with<'a>(text: &'a str, place: &str) -> Cow<'a, str> {
     // bytes of one character in JSON (serde_json escapes only these)
     let json_len = |c: char| match c {
         '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
@@ -426,7 +446,7 @@ pub fn clip(text: &str) -> Cow<'_, str> {
     }
     let marker = |left: usize| {
         let unit = if left == 1 { "character" } else { "characters" };
-        format!("… ({left} more {unit} in the ledger)")
+        format!("… ({left} more {unit} {place})")
     };
     let total = text.chars().count();
     // the marker for every character is at least as long as the real one
@@ -677,6 +697,7 @@ fn drift_items(
                 proposed_case,
                 tx_id: group.then(|| lead.tx_id.clone()).flatten(),
                 members: group.then_some(members.len()),
+                rule: Some(rule.to_string()),
             };
             let classified = ClassifiedItem {
                 item,
@@ -716,9 +737,57 @@ fn cap_drift(drift: Vec<DriftItem>) -> Vec<DriftItem> {
         .collect()
 }
 
+/// A case's or decision's text as the index carries it (ADR-0038 §2):
+/// control characters other than line breaks and tabs as spaces, direction
+/// and format characters dropped (so a zero-width space cannot split a
+/// secret from its rule either), then redacted, then [`clip_with`] the
+/// file marker: redaction first, so a cut never leaves a secret's prefix.
+/// `None` without a redactor (withheld) or without text.
+pub fn shown_text(redactor: Option<&Redactor>, text: &str) -> Option<String> {
+    let redactor = redactor?;
+    let plain: String = text
+        .chars()
+        .filter(|c| !is_direction_or_format(*c))
+        .map(|c| {
+            if c.is_control() && c != '\n' && c != '\t' {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let redacted = redactor.redact(&plain);
+    let shown = clip_with(&redacted, IN_THE_FILE).into_owned();
+    (!shown.trim().is_empty()).then_some(shown)
+}
+
+/// An imported case's `source` as the index carries it (ADR-0038 §3):
+/// redacted once more, then copied only while it is a clean `~/` path of
+/// at most 512 bytes; otherwise a warning and no field.
+fn shown_source(
+    redactor: Option<&Redactor>,
+    case: &Case,
+    warnings: &mut Vec<String>,
+) -> Option<String> {
+    let source = redactor?.redact(case.source.as_deref()?);
+    if is_case_source(&source) {
+        return Some(source);
+    }
+    warnings.push(format!(
+        "{}: its source is not a ~/ path of at most 512 bytes without control or direction characters; not shown",
+        case.id
+    ));
+    None
+}
+
 /// `index.cases` (ADR-0012 §9): open groups by id, completed and dropped
 /// together, newest `closed` first, at most [`MAX_COMPLETED`].
-fn case_groups(cases: &[LoadedCase], drift: &[DriftItem]) -> Cases {
+fn case_groups(
+    cases: &[LoadedCase],
+    drift: &[DriftItem],
+    redactor: Option<&Redactor>,
+    warnings: &mut Vec<String>,
+) -> Cases {
     let mut groups = Cases::default();
     for lc in cases {
         let c = &lc.case;
@@ -747,6 +816,9 @@ fn case_groups(cases: &[LoadedCase], drift: &[DriftItem]) -> Cases {
                 .filter(|d| d.proposed_case.as_deref() == Some(c.id.as_str()))
                 .map(|d| d.event_id.clone())
                 .collect(),
+            intent: lc.intent.as_deref().and_then(|t| shown_text(redactor, t)),
+            result: lc.result.as_deref().and_then(|t| shown_text(redactor, t)),
+            source: shown_source(redactor, c, warnings),
         };
         match c.status {
             CaseStatus::Queued => groups.queued.push(row),

@@ -31,6 +31,20 @@ pub struct Case {
     pub events: Vec<String>,
     #[serde(default, deserialize_with = "null_as_empty")]
     pub tags: Vec<String>,
+    /// An imported case's task, `~/…/file.md#line` (ADR-0038 §3): written
+    /// by `seldon import task` only, display only, never an argument.
+    #[serde(default, deserialize_with = "string_only")]
+    pub source: Option<String>,
+}
+
+/// A string, or nothing for any other value: `source` is display only, so
+/// a hand-written number or list never makes the case unreadable (and is
+/// left in the file as written, since an absent `source` writes nothing).
+fn string_only<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    Ok(match serde_yaml::Value::deserialize(d)? {
+        serde_yaml::Value::String(s) => Some(s),
+        _ => None,
+    })
 }
 
 impl Record for Case {
@@ -51,10 +65,11 @@ impl Record for Case {
         "agents",
         "events",
         "tags",
+        "source",
     ];
 
     fn to_values(&self) -> Vec<(&'static str, FmValue)> {
-        vec![
+        let mut values = vec![
             ("id", FmValue::str(&self.id)),
             ("type", FmValue::str("case")),
             ("title", FmValue::text(&self.title)),
@@ -77,7 +92,13 @@ impl Record for Case {
             ("agents", FmValue::list(&self.agents)),
             ("events", FmValue::list(&self.events)),
             ("tags", FmValue::list(&self.tags)),
-        ]
+        ];
+        // only an imported case has the key (ADR-0038 §3): no empty
+        // `source:` line in every other case file
+        if let Some(source) = &self.source {
+            values.push(("source", FmValue::text(source)));
+        }
+        values
     }
 
     fn validate(&self) -> Result<(), FrontmatterError> {
@@ -257,6 +278,26 @@ mod tests {
         ] {
             let text = TEXT.replace(from, to);
             assert!(parse::<Case>(&text).is_err(), "{to:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn source_is_written_only_when_present_and_read_leniently() {
+        let (mut case, _) = parse::<Case>(TEXT).unwrap();
+        assert_eq!(case.source, None);
+        assert!(!render_new(&case, "").contains("source"));
+        case.source = Some("~/a/TODO.md#3".into());
+        let text = render_new(&case, "");
+        assert!(
+            text.contains("tags: []\nsource: \"~/a/TODO.md#3\"\n---\n"),
+            "{text}"
+        );
+        assert_eq!(parse::<Case>(&text).unwrap().0, case);
+        // a hand-written number or list is no source, and no reason to
+        // skip the case
+        for v in ["12", "[a, b]", ""] {
+            let text = TEXT.replace("tags: []\n", &format!("tags: []\nsource: {v}\n"));
+            assert_eq!(parse::<Case>(&text).unwrap().0.source, None, "{v}");
         }
     }
 

@@ -1122,7 +1122,8 @@
       "actor": "human",
       "zone": "yellow",
       "crisis": false,
-      "proposedCase": "C-2026-005"
+      "proposedCase": "C-2026-005",
+      "rule": "theme"
     },
     {
       "eventId": "01M3VNJ9JGZ9169T01XCW16FT0",
@@ -1134,7 +1135,8 @@
       "actor": "agent:codex",
       "zone": "red",
       "crisis": true,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "always-red-paths"
     },
     {
       "eventId": "01M3VNFTF8EVHWFFZ687N14Q0C",
@@ -1146,7 +1148,8 @@
       "actor": "agent:codex",
       "zone": "red",
       "crisis": false,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "package"
     },
     {
       "eventId": "01M3Q7R0Z08ZD5R76DQA3PHQ1G",
@@ -1158,7 +1161,8 @@
       "actor": "system",
       "zone": "yellow",
       "crisis": true,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "always-red-paths"
     },
     {
       "eventId": "01M3KVWFR06078ZQTPRZCFYHK0",
@@ -1170,7 +1174,8 @@
       "actor": "system",
       "zone": "yellow",
       "crisis": false,
-      "proposedCase": null
+      "proposedCase": null,
+      "rule": "config-remove"
     },
     {
       "eventId": "01M3H6M720FC6BAG7ETNQTXW9K",
@@ -1184,7 +1189,8 @@
       "crisis": false,
       "proposedCase": null,
       "txId": "tx-20260927T123000",
-      "members": 3
+      "members": 3,
+      "rule": "package"
     }
   ],
   "cases": {
@@ -1211,7 +1217,8 @@
         },
         "proposedEvents": [
           "01M3VTGNY0NZG4AY80814WSKGR"
-        ]
+        ],
+        "intent": "Ein Theme überall: Omarchy, Zed und Neovim in Tokyo Night."
       },
       {
         "id": "C-2026-006",
@@ -1232,7 +1239,8 @@
         "steps": {
           "total": 3,
           "done": 0
-        }
+        },
+        "intent": "Snapshots sollen nicht unbegrenzt wachsen; 14 Tage reichen."
       },
       {
         "id": "C-2026-007",
@@ -1248,12 +1256,16 @@
         "snapshotBefore": null,
         "agents": [],
         "events": [],
-        "tags": [],
+        "tags": [
+          "imported"
+        ],
         "path": "work/queued/C-2026-007-herdr-default-agent.md",
         "steps": {
           "total": 5,
           "done": 0
-        }
+        },
+        "intent": "Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.",
+        "source": "~/Notizen/aufgaben.md#4"
       }
     ],
     "active": [
@@ -1286,7 +1298,8 @@
         "steps": {
           "total": 5,
           "done": 4
-        }
+        },
+        "intent": "Omarchy 4.0.7 einspielen, ohne die eigenen Hyprland-Bindings zu verlieren."
       },
       {
         "id": "C-2026-004",
@@ -1317,7 +1330,8 @@
         "steps": {
           "total": 4,
           "done": 2
-        }
+        },
+        "intent": "Zed als zweiter Editor neben Neovim, für größere Refactorings."
       }
     ],
     "verification": [
@@ -1342,7 +1356,8 @@
         "steps": {
           "total": 4,
           "done": 3
-        }
+        },
+        "intent": "Vom Laptop aus auf die Workstation zugreifen, ohne Ports zu öffnen."
       }
     ],
     "completed": [
@@ -1374,7 +1389,9 @@
         "steps": {
           "total": 4,
           "done": 4
-        }
+        },
+        "intent": "Zweiter WQHD-Monitor: sauberes Layout statt Auto-Erkennung.",
+        "result": "Layout steht, Skalierung 1.25. Abweichung in `system/deviations.md` eingetragen."
       },
       {
         "id": "C-2026-001",
@@ -1399,7 +1416,9 @@
         "steps": {
           "total": 2,
           "done": 2
-        }
+        },
+        "intent": "Ein Logbuch für diese Maschine, damit jede Änderung einen Grund hat.",
+        "result": "Logbuch läuft, Baseline erfasst, `seldon doctor` ohne Befund."
       }
     ]
   },
@@ -1410,7 +1429,8 @@
       "status": "proposed",
       "date": "2026-10-01",
       "path": "decisions/ADR-0004-ollama-user-service.md",
-      "cases": []
+      "cases": [],
+      "lead": "Lokale Modelle nur über einen Case; ollama läuft, wenn überhaupt, als User-Service ohne Autostart."
     },
     {
       "id": "ADR-0003",
@@ -1421,7 +1441,8 @@
       "cases": [
         "C-2026-004",
         "C-2026-005"
-      ]
+      ],
+      "lead": "Zed wird Zweiteditor, Neovim bleibt Standard."
     },
     {
       "id": "ADR-0002",
@@ -1429,7 +1450,8 @@
       "status": "accepted",
       "date": "2026-09-02",
       "path": "decisions/ADR-0002-snapshots.md",
-      "cases": []
+      "cases": [],
+      "lead": "Vor jedem Case in der Red Zone gibt es einen Snapper-Snapshot; die Nummer steht als `snapshotBefore` im Case."
     },
     {
       "id": "ADR-0001",
@@ -1439,7 +1461,8 @@
       "path": "decisions/ADR-0001-language.md",
       "cases": [
         "C-2026-001"
-      ]
+      ],
+      "lead": "Prosa auf Deutsch. Dateinamen, YAML-Schlüssel und Enum-Werte auf Englisch."
     }
   ],
   "system": {

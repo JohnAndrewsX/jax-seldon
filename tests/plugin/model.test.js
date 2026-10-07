@@ -2267,6 +2267,67 @@ test("free text goes exactly as typed, surrounding blanks included (N3)", () => 
   }
 })
 
+// ADR-0038: what the desk's details show — the index's own rule, a case's
+// intent, result and source, a decision's lead; each optional.
+const bare = (() => {
+  const x = JSON.parse(sample)
+  for (const d of x.drift) delete d.rule
+  for (const g of Object.keys(x.cases)) for (const c of x.cases[g]) { delete c.intent; delete c.result; delete c.source }
+  for (const d of x.decisions) delete d.lead
+  return x
+})()
+
+test("driftRuleInfo: the index's rule first, no engine call; drift show only without it (ADR-0038 §1)", () => {
+  const idx = M.parseIndex(sample).index
+  same(M.driftRuleInfo(null, null, UNIT, idx), { state: "known", rule: "always-red-paths", cls: "crisis" })
+  same(M.driftRuleInfo(null, null, MESA, idx), { state: "known", rule: "package", cls: "attention" })
+  // the index wins over an answer of drift show for the same item
+  same(M.driftRuleInfo({ [UNIT]: { rule: "other", cls: "crisis" } }, null, UNIT, idx).rule, "always-red-paths")
+  // without the field: the drift show path, unchanged
+  same(M.driftRuleInfo(null, null, UNIT, bare), { state: "unknown", rule: "", cls: "" })
+  same(M.driftRuleInfo(null, { eventId: UNIT, pending: true }, UNIT, bare).state, "pending")
+  same(M.driftRuleInfo({ [UNIT]: { rule: "always-red-paths", cls: "crisis" } }, null, UNIT, bare).rule, "always-red-paths")
+  same(M.driftRuleInfo(null, null, UNIT, undefined).state, "unknown")
+  // a rule out of the schema's shape is no rule
+  for (const bad of ["", "Always-Red", "a b", "x".repeat(65), 7, null]) {
+    const x = JSON.parse(sample)
+    x.drift.find(d => d.eventId === UNIT).rule = bad
+    same(M.driftRuleInfo(null, null, UNIT, x).state, "unknown")
+  }
+  // the callout from the index's rule
+  const d = M.eventDetail(idx, M.deskChangelog(idx), UNIT, M.driftRuleInfo(null, null, UNIT, idx))
+  assert.ok(d.whyLoud.startsWith("The path matches your crisis list"), d.whyLoud)
+})
+
+test("caseDetail: intent, result and an imported case's source when the index has them (ADR-0038)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskWork(idx)
+  const c7 = M.caseDetail(idx, p, "C-2026-007")
+  assert.ok(c7.intent.startsWith("Herdr-Orchestrator als Default-Agent registrieren — "), c7.intent)
+  same(c7.result, "")
+  same(c7.kv.filter(r => r[0] === "Imported from"), [["Imported from", "~/Notizen/aufgaben.md#4"]])
+  const c1 = M.caseDetail(idx, p, "C-2026-001")
+  same(c1.result, "Logbuch läuft, Baseline erfasst, `seldon doctor` ohne Befund.")
+  same(c1.kv.filter(r => r[0] === "Imported from"), [])
+  // an index without the fields: nothing shown, nothing broken
+  const b = M.caseDetail(bare, M.deskWork(bare), "C-2026-007")
+  same([b.intent, b.result, b.kv.some(r => r[0] === "Imported from")], ["", "", false])
+  // a non-string is no text
+  const odd = JSON.parse(sample)
+  Object.assign(odd.cases.queued.find(c => c.id === "C-2026-007"), { intent: 7, result: ["x"], source: {} })
+  const o = M.caseDetail(odd, M.deskWork(odd), "C-2026-007")
+  same([o.intent, o.result, o.kv.some(r => r[0] === "Imported from")], ["", "", false])
+})
+
+test("decisionDetail: the lead as text when the index has it (ADR-0038 §2)", () => {
+  const rows = M.decisionRows(sampleIndex)
+  const d3 = M.decisionDetail(rows.find(r => r.id === "ADR-0003"))
+  same(d3.text, "Zed wird Zweiteditor, Neovim bleibt Standard.")
+  same(d3.lead, "The whole text is in the file; Open in editor shows it.")
+  const b = M.decisionDetail(M.decisionRows(bare).find(r => r.id === "ADR-0003"))
+  same([b.text, b.lead], ["", "The text is in the file; Open in editor shows it."])
+})
+
 // ---- The graph (WP-125, ADR-0034 §5) --------------------------------------
 
 const graphSample = M.parseIndex(sample).index

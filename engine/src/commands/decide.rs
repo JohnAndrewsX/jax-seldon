@@ -92,7 +92,7 @@ pub fn run(ctx: &Context, args: DecideArgs) -> Result<Output> {
 fn fill_index(logbook: &Logbook) -> Vec<String> {
     let mut warnings = Vec::new();
     let rows = match load::decisions(logbook, &mut warnings) {
-        Ok(d) => build::decision_rows(d),
+        Ok(d) => build::decision_rows(d, |_| None),
         Err(e) => {
             warnings.push(format!("DECISIONS.md not updated: {e:#}"));
             return warnings;

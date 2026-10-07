@@ -476,9 +476,10 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # title, status, source, path (null in a dry run), replaces}], skipped:
                                                # [{source, reason: done|empty|already-imported|duplicate, case}],
                                                # redactedLines, areaCreated, files, marker (null when nothing was written),
-                                               # git}. The index carries no source field (contract 2 unchanged; the optional
-                                               # `cases[].source` is WP-127's): the source is in the Log line, the Intent's
-                                               # first line and the marker. Debug builds: `SELDON_TEST_IMPORT_CRASH=after-create:<n>`
+                                               # git}. Each new case's frontmatter gets `source: "~/…#line"` (ADR-0038 §3; a
+                                               # path of more than 512 bytes as `~/…` and its end), which the index
+                                               # copies as `cases[].source`; the marker stays the only idempotency key (an
+                                               # edited or removed `source` imports nothing again). Debug builds: `SELDON_TEST_IMPORT_CRASH=after-create:<n>`
                                                # exits 99 after the n-th case, before its entry is settled (tests).
 seldon hook install claude-code [--settings FILE]
                                                # ADR-0030 (WP-116): default the user-wide
@@ -1848,8 +1849,9 @@ to about 520 KB. Beside a cut the index says so (contract 2, ADR-0035 §3):
 an event with any clipped text has `meta.truncated: true`, a drift item
 with a clipped `detail` has `truncated: true`; an uncut one has neither.
 `truncated` is index-only: the ledger refuses it on write, and one a
-hand-edited line carries is dropped. Open cases, decisions and
-memory topics are not capped: an index of 1 000 000 bytes or more makes
+hand-edited line carries is dropped. A case's `intent` and `result` and a
+decision's `lead` are clipped the same way, with `in the file` (below).
+Open cases, decisions and memory topics are not capped: an index of 1 000 000 bytes or more makes
 `index` and `status` warn (`warnings`, stderr) and name the largest
 section. The R3 advisory (WP-101, §5) is a build warning too, in the same
 channel: every command that rebuilds the index prints it (`seldon:
@@ -1875,6 +1877,27 @@ relative to the directory of `index.json`, `counts` as proposed; a
 is skipped with a build warning, another logbook's silently (other
 files pass silently); no proposal, no field. `index --check` validates against the
 schemas compiled into the binary, `proposal.schema.json` included.
+
+The desk's details (ADR-0038, optional fields within contract 2):
+`drift[].rule` is the rule `drift show` reports for the item (the group's;
+`attention-all` under `attention = "all"`). `cases[].intent` and
+`cases[].result` are the first paragraph of the case's `## Intent` and
+`## Result`, `decisions[].lead` of the decision's `## Decision`: the
+section without HTML comments, blank and heading lines before it skipped,
+the lines up to the next blank one, each trimmed at the end. An imported
+case (tag `imported`) whose first paragraph is exactly its `Imported from
+… — read before you start this case.` line takes the next paragraph. Each
+text: control characters other than `\n` and `\t` become spaces and
+direction and format characters (U+200B–U+200F, U+202A–U+202E, U+2060,
+U+2066–U+2069, U+FEFF) are dropped, then the logbook's redaction (before
+the clip, so a secret at the cut is masked whole) (`[redaction] patterns` included; patterns that do not
+compile withhold all four fields), then the clip of rule 5 with `… (N more
+characters in the file)`; no text, no field. The section is read only up
+to the paragraphs needed (one; two for an imported Intent). `cases[].source` is the
+frontmatter's `source` (a non-string counts as none) after the redaction,
+kept while it starts with `~/`, has at most 512 bytes and holds no
+control, bidi or format character; otherwise it is left out with a build
+warning naming the case, which still loads.
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
 warm. `cargo bench --bench index` (`just bench`, CI) asserts the index
