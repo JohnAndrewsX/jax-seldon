@@ -359,3 +359,25 @@ Log: `engine/target/check-wp127-r3.log` (dev host, not committed).
   - Engine: fmt, clippy, and all tests with the default and `watch` features.
   - shellcheck is not installed: `bash -n` only.
   - Log: `engine/target/check-wp127-merge.log` (dev host, not committed).
+
+## Merge of next (2)
+
+- `git fetch`, then `origin/next` (afc7a586, WP-124a bulk triage, ADR-0036
+  accepted) was merged into this branch as 260c61bf.
+- Two conflicts, both resolved by keeping both sides:
+  - `DECISIONS.md`: the ADR-0036 row, then the ADR-0038 row.
+  - `CHANGELOG.md`: the WP-127 lines under `import task` and the ADR-0038
+    bullet, with next's blank line after them.
+- CONTRACT.md, the index build and the fixtures merged on their own.
+  - `validate-fixtures.py` passes on the merge.
+  - Both sides touched the fixtures, so I regenerated them with
+    `--write-index`. That changed nothing: the merged sample already equals
+    the derive, the triage proposal and the ADR-0038 fields together.
+- `flock /tmp/seldon-check.lock just check` on 260c61bf: **exit 0, `check: ok`**.
+  - validate-fixtures ok; docs-check 465 links and 53 commands; install 209;
+    deploy 190.
+  - `omarchy plugin validate`; qmllint (46 files).
+  - Plugin tests: model 143, service-states 328, desk-view 1478, bar-view 194.
+  - Engine: fmt, clippy, and all tests with the default and `watch` features.
+  - shellcheck is not installed: `bash -n` only.
+  - Log: `engine/target/check-wp127-merge2.log` (dev host, not committed).
