@@ -366,7 +366,8 @@ progress, "2/4 steps · claude-code"; a click opens the case in Work) and
 **New case**: one sentence → `seldon agent start --new --json --
 <intent>` (`i` focuses it; the call and the result line Work's *Run*
 shares; the field keeps its text until the engine has made the case). A
-selected crisis shows the event (`EventDetail.qml`, as in the Changelog).
+selected crisis shows the event (`EventDetail.qml`, as in the Changelog);
+resolved here, it leaves NEEDS YOU and stays shown with the engine's answer.
 
 #### Changelog (2)
 
