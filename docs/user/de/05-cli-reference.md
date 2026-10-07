@@ -1,6 +1,6 @@
 # Befehlsreferenz
 
-<!-- source: en/05-cli-reference.md @ 5364df0 -->
+<!-- source: en/05-cli-reference.md @ ecdb430 -->
 
 Diese Seite listet jeden Befehl von `seldon` mit jeder Option, nach
 Aufgaben gruppiert. Die Hilfeblöcke sind die eigene `--help`-Ausgabe der
@@ -321,6 +321,11 @@ Options:
 Baut den Index und die Ansichten des Ledgers neu, ohne `STATUS.md` und
 ohne Commit. `--check` weigert sich, einen Index zu schreiben, der nicht
 zum Format passt (Exit 2).
+
+Der Graph des Desks (Abschnitt 8) entsteht aus diesem Index. Er zeigt
+deshalb die neuesten 500 Ereignisse und 50 abgeschlossenen Cases, nicht
+das ganze Logbuch. Einen Befehl, der das ganze Logbuch als Graph
+zeichnet, gibt es noch nicht.
 
 <!-- help: seldon index -->
 ```text
