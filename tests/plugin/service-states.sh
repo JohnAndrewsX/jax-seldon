@@ -194,10 +194,14 @@ mkdir -p "$old_plugin"
 if git -C "$root" rev-parse -q --verify "refs/tags/v0.1.3" >/dev/null; then
   git -C "$root" archive v0.1.3 plugin | tar -x -C "$old_plugin" --strip-components=1
   old_label="v0.1.3"
+  # the 0.1.3 plugin's own wording
+  old_detail="The index uses contract v2, this plugin reads v1. Update the plugin."
 else
   cp -r "$plugin/." "$old_plugin/"
   sed -i 's/^var CONTRACT_VERSION = 2$/var CONTRACT_VERSION = 1/' "$old_plugin/Model.js"
   old_label="this plugin at contract 1 (no v0.1.3 tag here)"
+  # this plugin's wording (WP-117), with its contract set back to 1
+  old_detail="The index uses contract v2 and this plugin reads v1: update the plugin."
 fi
 grep -q '^var CONTRACT_VERSION = 1$' "$old_plugin/Model.js" || { echo "service-states: $old_label does not read contract 1" >&2; exit 1; }
 echo "     0.1.x plugin: $old_label"
@@ -206,7 +210,7 @@ expect old-plugin .status contractMismatch
 expect old-plugin .indexContractVersion 2
 expect old-plugin .pluginContractVersion 1
 expect old-plugin .banner "Index format mismatch"
-expect old-plugin .bannerDetail "The index uses contract v2, this plugin reads v1. Update the plugin."
+expect old-plugin .bannerDetail "$old_detail"
 expect old-plugin .pill ""
 
 # 8. A relative SELDON_INDEX resolves against the shell's working directory.
