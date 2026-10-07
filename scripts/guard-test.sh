@@ -5,18 +5,31 @@
 #   GUARD_SH=<path>        test another copy of guard.sh (scripts/guard-mutants.sh)
 #   GUARD_TEST_FAILFAST=1  stop at the first failing row
 #   GUARD_TEST_QUIET=1     print only failing rows and the summary
+#   GUARD_TEST_REPORT=<f>  append one JSON line per row (section, verdict, guard
+#                          message) to <f>; scripts/guard-table.py uses it
 G=${GUARD_SH:-"$(dirname "$0")/guard.sh"}
 # SELDON_TEST_GUARD lets GUARD_HOSTS_FILE replace the git-ignored hosts file.
 export HOME=/home/tester OMARCHY_PATH=/usr/share/omarchy SELDON_TEST_GUARD=1
 unset TMPDIR
 cwd=/home/tester/repo
-fail=0 rows=0
+fail=0 rows=0 sec=
+# section TITLE: the theme of the rows that follow (scripts/guard-table.py groups by it)
+section() { sec=$1; }
 check() {
-  local want=$1 cmd=$2 label=${3:-$2}
+  local want=$1 cmd=$2 label=${3:-$2} err
   rows=$((rows + 1))
-  printf '{"tool_input":{"command":%s},"cwd":"%s"}' "$(printf '%s' "$cmd" | jq -Rs .)" "$cwd" | bash "$G" >/dev/null 2>&1
+  err=$(printf '{"tool_input":{"command":%s},"cwd":"%s"}' "$(printf '%s' "$cmd" | jq -Rs .)" "$cwd" | bash "$G" 2>&1 >/dev/null)
   local rc=$?
   local got=?; [ $rc -eq 0 ] && got=A; [ $rc -eq 2 ] && got=B
+  if [ -n "${GUARD_TEST_REPORT:-}" ]; then
+    local context=
+    if [ -z "${SELDON_TEST_GUARD:-}" ]; then context="SELDON_TEST_GUARD unset"
+    elif [ "${GUARD_HOSTS_FILE:-}" = /nonexistent ]; then context="no hosts file"
+    elif [ -n "${GUARD_HOSTS_FILE:-}" ]; then context="test-host listed"; fi
+    [ -n "${GUARD_TIME_BUDGET:-}" ] && context="${context:+$context, }time budget ${GUARD_TIME_BUDGET} s"
+    jq -cn --arg section "$sec" --arg want "$want" --arg got "$got" --arg input "$label" --arg reason "$err" \
+      --arg context "$context" '$ARGS.named' >> "$GUARD_TEST_REPORT"
+  fi
   if [ "$got" != "$want" ]; then
     echo "FAIL want=$want got=$got :: $label"; fail=1
     [ -n "${GUARD_TEST_FAILFAST:-}" ] && exit 1
@@ -25,6 +38,7 @@ check() {
   fi
   return 0
 }
+section 'The original table (before WP-130)'
 check B 'sudo ls'
 check B 'pacman -Syu'
 check B 'cd /x && pacman -S zed'
@@ -122,7 +136,7 @@ check A 'herdr agent prompt x "never run systemctl enable on this host"'
 check A 'systemctl --user status seldon-watch'
 check B 'cd /x && systemctl --user enable seldon-watch'
 check B 'env FOO=1 systemctl daemon-reload'
-# WP-130: read-only package queries
+section 'Read-only package queries'  # WP-130: read-only package queries
 check A 'pacman -Q'
 check A 'pacman -Qq'
 check A 'pacman -Qi linux'
@@ -143,7 +157,7 @@ check B '/usr/bin/pacman -Syu'
 check B 'yay -Syu'
 check B 'yay -Q'
 check B 'paru -S foo'
-# WP-130: the words only as text (echo/printf, heredoc to a file, grep/rg
+section 'Red-zone words only as text: echo, printf, a heredoc to a file, grep/rg patterns, commit messages, herdr prompts, jq filters'  # WP-130: the words only as text (echo/printf, heredoc to a file, grep/rg
 # patterns, commit messages, herdr prompts, jq filters)
 check A 'echo "run sudo pacman -Syu"'
 check A 'echo sudo pacman -Syu'
@@ -160,7 +174,7 @@ check A 'git commit -m "docs: example; pacman -Syu && omarchy update"'
 check A 'herdr agent prompt engine-130 "then run: sudo pacman -Syu; omarchy update"'
 check A "jq '.events[] | select(.command == \"pacman -Syu\")' fixtures/index.sample.json"
 check A "jq -r '.cases[] | \"sudo \" + .title' x.json"
-# WP-130: Omarchy command names as text; help and the command list
+section 'Omarchy command names as text; help and the command list'  # WP-130: Omarchy command names as text; help and the command list
 check A 'echo "omarchy update"'
 check A 'grep -n "omarchy plugin add" docs/*.md'
 check A 'git commit -m "docs: omarchy plugin add and omarchy update"'
@@ -176,7 +190,7 @@ check B 'omarchy update -- --help'
 check B 'echo x && omarchy update'
 check B 'omarchy-update'
 check B 'omarchy-pkg-add foo'
-# WP-130: a scratch HOME (a prefix assignment does not change the expansion
+section 'A scratch HOME'  # WP-130: a scratch HOME (a prefix assignment does not change the expansion
 # in its own command, so that one still writes the real ~/.config)
 check A 'export HOME=/tmp/seldon-t; mkdir -p "$HOME/.config/seldon"'
 check A 'HOME=$(mktemp -d) && mkdir -p "$HOME/.config/omarchy" && touch ~/.config/omarchy/shell.json'
@@ -191,17 +205,17 @@ check B 'false && export HOME=/tmp/h; mkdir -p ~/.config/x'
 check B 'export HOME=$X; mkdir -p ~/.config/x'
 check B "HOME=/tmp/h sh -c 'true'; mkdir -p ~/.config/x"
 check B '(HOME=/tmp/h); mkdir -p ~/.config/x'
-# WP-130: sudo setfacl in a test file's text
+section "sudo setfacl in a test file's text"  # WP-130: sudo setfacl in a test file's text
 check A 'cat >> engine/tests/snapper.rs <<'"'"'EOF'"'"'
 // the operator grants: sudo setfacl -m u:me:rx /.snapshots
 EOF'
 check A 'printf "%s\n" "sudo setfacl -m u:me:rx /.snapshots" > fixtures/logs/grant.txt'
 check B 'sudo setfacl -m u:me:rx /.snapshots'
-# WP-130: read-only greps over the Omarchy tree
+section 'Read-only greps over the Omarchy tree'  # WP-130: read-only greps over the Omarchy tree
 check A 'grep -rn "pacman" "$OMARCHY_PATH/migrations"'
 check A 'grep -n "sudo\|systemctl enable" $OMARCHY_PATH/install.sh'
 check A 'rg -l "omarchy update" /usr/share/omarchy/migrations | head'
-# WP-130: the command position, wherever it is
+section 'The command position, wherever it is'  # WP-130: the command position, wherever it is
 check B 'pkexec ls'
 check B 'run0 ls'
 check B 'echo x | sudo tee /etc/x'
@@ -259,7 +273,7 @@ EOF
 check A 'B=engine/target/debug/seldon; $B --json doctor'
 check A '"$root/engine/target/debug/seldon" --version'
 check A 'flock /tmp/seldon-check.lock just check'
-# WP-130: services
+section 'Services'  # WP-130: services
 check B 'systemctl start foo'
 check B 'systemctl stop foo'
 check B 'systemctl --user start seldon-watch'
@@ -267,7 +281,7 @@ check B 'systemctl --user stop seldon-watch'
 check B 'systemctl --user enable --now seldon-watch'
 check A 'systemctl --user is-active seldon-watch'
 check A 'systemctl list-timers'
-# WP-130: writes under the real ~/.config, ~/Seldon, ~/.local/state/seldon
+section 'Writes under the real ~/.config, ~/Seldon, ~/.local/state/seldon'  # WP-130: writes under the real ~/.config, ~/Seldon, ~/.local/state/seldon
 check B 'touch ~/.config/hypr/x'
 check B 'echo x >> ~/.config/hypr/hyprland.conf'
 check B 'cp x $HOME/.config/omarchy/shell.json'
@@ -296,7 +310,7 @@ check A 't=$(mktemp -d); trap '"'"'rm -rf "$t"'"'"' EXIT; cp -r fixtures "$t"'
 check A 'echo hi > /dev/null 2>&1'
 check A "sed -i 's|/etc/x|y|' notes.md"
 check B "sed -i 's/a/b/' /etc/pacman.conf"
-# WP-130: fail closed
+section 'Fail closed'  # WP-130: fail closed
 check B 'echo "unterminated'
 check B 'cat <<EOF
 no end'
@@ -304,7 +318,7 @@ check B '$CMD -Syu'
 check B 'eval "$X"'
 check B 'env -S "sudo ls"'
 check B 'echo ok; )'
-# WP-130: ssh to a host that is not a listed test host runs the same rules
+section 'ssh to a host that is not a listed test host'  # WP-130: ssh to a host that is not a listed test host runs the same rules
 check B 'ssh -o ProxyCommand="sudo nc %h %p" test-host ls'
 check B 'ssh other-host sudo pacman -Syu'
 check B 'printf "sudo ls\n" | ssh other-host'
@@ -313,7 +327,7 @@ check B "ssh other-host 'ls; rm -rf ~/.config/seldon'"
 check A "ssh other-host 'systemctl --user status seldon-watch'"
 check B "ssh testhost 'cd /tmp/seldon-pkg && makepkg -f'
 sudo pacman -Syu"
-# test hosts (scripts/guard-hosts.local; the table uses its own file)
+section 'Test hosts (scripts/guard-hosts.local)'  # test hosts (scripts/guard-hosts.local; the table uses its own file)
 hosts=$(mktemp); printf '# test subjects\ntest-host\n' > "$hosts"
 trap 'rm -f "$hosts"' EXIT
 checkh() { GUARD_HOSTS_FILE=$hosts check "$@"; }
@@ -328,7 +342,7 @@ checkh B 'ssh other-host omarchy plugin update jax.seldon'
 checkh B 'ssh test-hostx omarchy plugin update jax.seldon'
 checkh B 'sudo ssh test-host ls'
 GUARD_HOSTS_FILE=/nonexistent check B 'ssh test-host omarchy plugin update jax.seldon'
-# WP-130: holes of the line-based grep guard; nothing may run locally
+section 'Holes of the old line-based guard: nothing may run locally'  # WP-130: holes of the line-based grep guard; nothing may run locally
 checkh B 'ssh test-host ls
 sudo pacman -Syu'
 checkh B 'ssh test-host "$(sudo pacman -Syu)"'
@@ -339,12 +353,12 @@ checkh B 'ssh test-host true
 ssh test-host sudo pacman -Syu'
 checkh A 'ssh test-host journalctl --user -n 50 > /tmp/test-host.log'
 checkh A "ssh test-host 'echo \$(sudo pacman -Q)'"
-# WP-130 round 2: GUARD_HOSTS_FILE counts only with SELDON_TEST_GUARD set
+section 'GUARD_HOSTS_FILE counts only with SELDON_TEST_GUARD set'  # WP-130 round 2: GUARD_HOSTS_FILE counts only with SELDON_TEST_GUARD set
 # (the test table); otherwise the fixed git-ignored file is read
 checkx() { SELDON_TEST_GUARD='' GUARD_HOSTS_FILE=$hosts check "$@"; }
 checkx B 'ssh test-host omarchy plugin update jax.seldon'
 checkx B 'timeout 60 ssh test-host sudo pacman -Syu'
-# WP-130 round 2: Omarchy routes that change the system, as routes and binaries
+section 'Omarchy routes that change the system'  # WP-130 round 2: Omarchy routes that change the system, as routes and binaries
 check B 'omarchy plugin enable jax.seldon'
 check B 'omarchy plugin disable jax.seldon'
 check B 'omarchy hook post-update'
@@ -364,7 +378,7 @@ check A 'omarchy-channel-current'
 check A 'omarchy hook --help'
 check A 'omarchy plugin enable --help'
 check A 'omarchy-plugin-list --json'
-# WP-130 round 2: the size cap, 256 KB of hook input, checked before parsing
+section 'The size cap: 256 KB of hook input'  # WP-130 round 2: the size cap, 256 KB of hook input, checked before parsing
 # (the hook has 5 s). Exactly at the cap passes, one byte more is blocked.
 cap=$((256 * 1024))
 over=$(printf '{"tool_input":{"command":""},"cwd":"%s"}' "$cwd" | wc -c)
@@ -374,7 +388,7 @@ check B "${big}x" "(echo x; repeated: hook input of $((cap + 1)) bytes)"
 # never depends on the host's load
 long=": $(head -c $((cap - over - 2)) /dev/zero | tr '\0' x)"
 check A "$long" "(one long word: hook input of exactly $cap bytes)"
-# WP-130 round 2: work bounds inside the cap (a hook that times out does not
+section 'Work bounds: 256 variables per command, a 3 s time budget'  # WP-130 round 2: work bounds inside the cap (a hook that times out does not
 # block): at most 256 variables per command, and a 3 s time budget that the
 # test table may shorten (never lengthen) with SELDON_TEST_GUARD set
 vars=$(for i in $(seq 0 255); do printf 'v%d=1; ' "$i"; done)
@@ -383,29 +397,29 @@ check B "${vars}v256=1; echo ok" "(257 distinct variables)"
 mid=$(yes 'echo x;' | head -c 10000 | tr '\n' ' ')
 GUARD_TIME_BUDGET=0.001 check B "$mid" "(10 KB of echo x; with a 0.001 s budget)"
 SELDON_TEST_GUARD='' GUARD_TIME_BUDGET=0.001 check A "$mid" "(the same, budget variable without SELDON_TEST_GUARD)"
-# WP-130 round 3 (stage-2 sweep), A1: trap --
+section 'trap --'  # WP-130 round 3 (stage-2 sweep), A1: trap --
 check B "trap -- 'sudo ls' EXIT"
 check A 't=$(mktemp -d); trap -- '"'"'rm -rf "$t"'"'"' EXIT'
-# A2: shred's options with an argument are -n and -s, not -u
+section 'shred options'  # A2: shred's options with an argument are -n and -s, not -u
 check B 'shred -u ~/Seldon/x'
 check B 'shred -n 3 -u ~/.config/hypr/x'
-# A3: IFS changes word splitting; only `IFS=… read` passes
+section 'IFS'  # A3: IFS changes word splitting; only `IFS=… read` passes
 check B 'IFS=,; c=sudo,ls; $c'
 check B 'IFS=/; c=sudo/ls; $c'
 check B 'IFS=, c=sudo,ls; $c'
 check B 'export IFS=,; c=sudo,ls; $c'
 check A 'IFS=, read -r a b <<< "x,y"'
 check A 'while IFS= read -r l; do echo "$l"; done < notes.md'
-# A4: namerefs
+section 'Namerefs'  # A4: namerefs
 check B 'declare -n r=A; A=sudo; $r ls'
 check B 'local -n r=X; X=pacman; $r -Syu'
 check B 'typeset -n r=HOME; rm -rf $r/.config/hypr'
-# A5: ${HOME…} with an operator may still be the home
+section '${HOME…} with an operator'  # A5: ${HOME…} with an operator may still be the home
 check B 'rm -rf ${HOME%/}/.config/hypr'
 check B 'echo x > ${HOME#x}/.config/hypr/x'
 check B 'rm -rf ${HOME/x/y}/Seldon'
 check B 'rm -rf ${HOME:0}/.local/state/seldon'
-# A6: the working directory: a cd may fail, cd -, ~-, $OLDPWD, popd, functions
+section 'The working directory: a failed cd, cd -, ~-, $OLDPWD, popd, functions'  # A6: the working directory: a cd may fail, cd -, ~-, $OLDPWD, popd, functions
 check B 'cd ~/.config && cd /nonexistent; echo hi > hypr/x'
 check B 'cd ~/.config; cd /nonexistent; echo hi > hypr/x'
 check B 'cd ~/.config && cd /tmp && cd - && echo hi > hypr/x'
@@ -418,7 +432,7 @@ check B 'g() { sudo ls; }; g'
 check A 'cd /tmp && echo hi > x'
 check A 'cd target; echo hi > x'
 check A 'f() { echo "$1"; }; f a; f b'
-# A7: links made earlier in the same command
+section 'Links made earlier in the command'  # A7: links made earlier in the same command
 check B 'ln -s ~/.config ~/cfg; echo hi > ~/cfg/hypr/x'
 check B 'ln -s ~/Seldon /tmp/s; rm -rf /tmp/s/'
 check B 'ln -s /usr/bin/sudo /tmp/s; /tmp/s ls'
@@ -426,7 +440,7 @@ check B 'ln -s ~/.config/hypr /tmp/h; echo hi > /tmp/h/x'
 check B 'ln ~/.config/hypr/hyprland.conf /tmp/hl; echo x >> /tmp/hl'
 check A 'ln -s /tmp/a /tmp/b; echo hi > /tmp/b/x'
 check A 'ln -sf /home/tester/repo/engine/target/debug/seldon /tmp/seldon && /tmp/seldon --version'
-# A8: ssh to this machine runs the local rules
+section 'ssh to this machine'  # A8: ssh to this machine runs the local rules
 check B 'ssh localhost omarchy agent prompt "work the case"'
 check B 'ssh 127.0.0.1 omarchy-launch-tui claude'
 check B "ssh ::1 'omarchy launch floating-terminal-with-presentation claude'"
@@ -437,7 +451,7 @@ check B 'ssh -p 22 127.0.0.2 rm -rf ~/.config/seldon'
 check B 'ssh $HOSTNAME omarchy agent prompt "work the case"'
 check B 'ssh $(hostname) rm -rf ~/.config/seldon'
 check A 'ssh localhost ls /tmp'
-# A9: Omarchy's own scripts do not run
+section "Omarchy's own scripts"  # A9: Omarchy's own scripts do not run
 check B 'bash /usr/share/omarchy/install.sh'
 check B 'bash $OMARCHY_PATH/install.sh'
 check B 'source $OMARCHY_PATH/install/preflight/guard.sh'
@@ -455,7 +469,7 @@ check A 'cat /usr/share/omarchy/migrations/1751134560.sh'
 check A 'head -20 "$OMARCHY_PATH/install.sh"'
 check A 'bash -n $OMARCHY_PATH/install.sh'
 check A '/usr/share/omarchy/bin/omarchy-version'
-# A10: more write paths: patch, tar, unzip, curl, wget, git
+section 'More write paths: patch, tar, unzip, curl, wget, git'  # A10: more write paths: patch, tar, unzip, curl, wget, git
 check B 'patch ~/.config/hypr/hyprland.conf fix.diff'
 check B 'patch -d ~/.config/hypr -p1 < fix.diff'
 check B 'cd ~/.config && patch -p1 -i fix.diff'
@@ -490,18 +504,18 @@ check A 'git clone https://example.org/foo /tmp/foo'
 check A 'git status --short && git add scripts && git commit -m x'
 check A 'GIT_PAGER=cat git log -3'
 check A 'GIT_EDITOR=true git rebase --continue'
-# A11: script without -c reads its shell's commands from stdin
+section 'script without -c'  # A11: script without -c reads its shell's commands from stdin
 check B "printf 'sudo ls\\n' | script -q /dev/null"
 check B 'script -q /dev/null <<'"'"'EOF'"'"'
 sudo ls
 EOF'
 check A "script -q -c 'ls' /dev/null"
-# A12: aliases
+section 'Aliases'  # A12: aliases
 check B "alias ls=sudo; ls"
 check B "shopt -s expand_aliases; alias x='sudo ls'; x"
 check A 'alias'
 check A 'unalias ll 2>/dev/null; ls'
-# A13a: exec wrappers (the stage-2 regression)
+section 'Exec wrappers'  # A13a: exec wrappers (the stage-2 regression)
 check B 'hyprctl dispatch exec omarchy-update'
 check B 'hyprctl dispatch exec "[float] omarchy update"'
 check B 'hyprctl --batch "dispatch exec sudo ls ; keyword general:gaps_in 5"'
@@ -556,7 +570,7 @@ check A "rsync -e 'ssh -p 2222' a host:b"
 check A 'scp -o BatchMode=yes a host:b'
 check A 'git -c user.name=x commit -m y'
 check A 'git -c color.ui=never log'
-# A13b: the net: an unknown program whose arguments name a red-zone command
+section 'The net: an unknown program whose arguments name a red-zone command'  # A13b: the net: an unknown program whose arguments name a red-zone command
 check B 'myrunner sudo ls'
 check B 'strace -f pacman -Syu'
 check B 'catchsegv omarchy-update'
@@ -566,18 +580,18 @@ check A 'which sudo'
 check A 'stat /usr/bin/sudo'
 check A 'herdr agent prompt engine-130 "use sudo"'
 check A 'cargo test pacman'
-# round 3: the two false positives of the sweep
+section 'False positives of the stage-2 sweep'  # round 3: the two false positives of the sweep
 check A 'eval "$(ssh-agent -s)"'
 check A 'loginctl list-sessions'
 check A 'loginctl show-session 2'
 check B 'loginctl terminate-session 2'
 check B 'loginctl kill-user tester'
-# WP-130 round 4 (stage-2 re-look), 1: the work tree and repository as variables
+section 'git: the work tree and repository as variables'  # WP-130 round 4 (stage-2 re-look), 1: the work tree and repository as variables
 check B 'GIT_WORK_TREE=$HOME/.config/hypr git checkout .'
 check B 'GIT_DIR=$HOME/.config/hypr/.git git checkout .'
 check B 'git --git-dir=$HOME/.config/hypr/.git fetch'
 check A 'GIT_DIR=/tmp/r/.git git status'
-# 2: exec wrappers among the data sinks
+section 'Exec wrappers among the data sinks'  # 2: exec wrappers among the data sinks
 check B 'fd . -x sudo ls'
 check B 'fd -X sudo ls'
 check B 'fd . -x {}'
@@ -591,10 +605,10 @@ check A 'fd -e rs -x wc -l'
 check A 'rustup run stable cargo build'
 check A 'man -P cat ls'
 check A 'sort -u f'
-# 3: hash -p maps a name like an alias
+section 'hash -p'  # 3: hash -p maps a name like an alias
 check B 'hash -p /usr/bin/sudo ls; ls'
 check A 'hash -r'
-# 4: hyprctl joins its arguments; tmux sends keys one after another
+section 'hyprctl and tmux string forms'  # 4: hyprctl joins its arguments; tmux sends keys one after another
 check B "hyprctl dispatch 'exec sudo ls'"
 check B "hyprctl 'dispatch exec sudo ls'"
 check B 'tmux send-keys -t x omarchy Space update Enter'
@@ -603,16 +617,16 @@ check B 'tmux send-keys -H 73 75 Enter'
 check B 'tmux send-keys -t x Up Enter'
 check A 'tmux send-keys -t x C-c'
 check A "tmux send-keys -t x 'cargo test' Enter"
-# 5: xargs: the replstr or the appended stdin items are unknown
+section 'xargs items'  # 5: xargs: the replstr or the appended stdin items are unknown
 check B 'echo sudo | xargs -I{} {} ls'
 check B "echo 'sudo ls' | xargs -I{} sh -c {}"
 check B 'echo sudo | xargs env'
 check A 'ls | xargs -I{} echo {}'
 check A 'git ls-files | xargs wc -l'
-# 6: minor write paths
+section 'Minor write paths'  # 6: minor write paths
 check B 'tar -xzf a.tgz --one-top-level=$HOME/.config'
 check B 'git init --separate-git-dir=$HOME/.config/x /tmp/y'
-# false positives of the re-look: harmless git -c and GIT_CONFIG_* forms
+section 'Harmless git -c and GIT_CONFIG_* forms'  # false positives of the re-look: harmless git -c and GIT_CONFIG_* forms
 check A 'git -c core.pager=cat log -1'
 check A 'git -c core.editor=true rebase --continue'
 check A 'git -c diff.noprefix=true diff'
@@ -628,7 +642,7 @@ check B 'GIT_CONFIG_GLOBAL=/tmp/evil.cfg git log'
 check B 'git -c diff.x.textconv=sudo diff'
 check B 'git -c protocol.ext.allow=always fetch'
 check B 'git -c filter.x.smudge=sudo checkout .'
-# the net, widened: shells and Omarchy scripts among an unknown program's
+section 'The net, widened'  # the net, widened: shells and Omarchy scripts among an unknown program's
 # arguments, and arguments that start with a known file command
 check B 'strace -f sed -i s/a/b/ /etc/x'
 check B 'myrunner bash /usr/share/omarchy/install.sh'

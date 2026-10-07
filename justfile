@@ -135,7 +135,7 @@ check-guard:
     #!/usr/bin/env bash
     set -euo pipefail
     bash -n scripts/guard.sh scripts/guard-test.sh
-    python3 -c 'import ast, sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]' scripts/guard.py scripts/guard-mutants.py
+    python3 -c 'import ast, sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]' scripts/guard.py scripts/guard-mutants.py scripts/guard-table.py
     if command -v shellcheck >/dev/null; then shellcheck scripts/guard.sh scripts/guard-test.sh; fi
     GUARD_TEST_QUIET=1 bash scripts/guard-test.sh
     python3 scripts/guard-mutants.py
