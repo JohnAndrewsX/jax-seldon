@@ -440,7 +440,7 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # [{source, reason: done|empty|already-imported|duplicate, case}],
                                                # redactedLines, areaCreated, files, marker (null when nothing was written),
                                                # git}. Each new case's frontmatter gets `source: "~/…#line"` (ADR-0038 §3; a
-                                               # path of more than 512 characters as `~/…` and its end), which the index
+                                               # path of more than 512 bytes as `~/…` and its end), which the index
                                                # copies as `cases[].source`; the marker stays the only idempotency key (an
                                                # edited or removed `source` imports nothing again). Debug builds: `SELDON_TEST_IMPORT_CRASH=after-create:<n>`
                                                # exits 99 after the n-th case, before its entry is settled (tests).
@@ -1778,12 +1778,15 @@ section without HTML comments, blank and heading lines before it skipped,
 the lines up to the next blank one, each trimmed at the end. An imported
 case (tag `imported`) whose first paragraph is exactly its `Imported from
 … — read before you start this case.` line takes the next paragraph. Each
-text: control characters other than `\n` and `\t` become spaces, then the
-logbook's redaction (`[redaction] patterns` included; patterns that do not
+text: control characters other than `\n` and `\t` become spaces and
+direction and format characters (U+200B–U+200F, U+202A–U+202E, U+2060,
+U+2066–U+2069, U+FEFF) are dropped, then the logbook's redaction (before
+the clip, so a secret at the cut is masked whole) (`[redaction] patterns` included; patterns that do not
 compile withhold all four fields), then the clip of rule 5 with `… (N more
-characters in the file)`; no text, no field. `cases[].source` is the
+characters in the file)`; no text, no field. The section is read only up
+to the paragraphs needed (one; two for an imported Intent). `cases[].source` is the
 frontmatter's `source` (a non-string counts as none) after the redaction,
-kept while it starts with `~/`, has at most 512 characters and holds no
+kept while it starts with `~/`, has at most 512 bytes and holds no
 control, bidi or format character; otherwise it is left out with a build
 warning naming the case, which still loads.
 

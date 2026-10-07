@@ -64,7 +64,7 @@
     "decisions": { "type": "array", "items": { "type": "object", "required": ["id", "title", "status", "date", "cases"], "additionalProperties": false,
       "properties": { "id": { "type": "string", "pattern": "^ADR-[0-9]{4}$" }, "title": { "type": "string" }, "status": { "enum": ["proposed", "accepted", "superseded"] }, "date": { "type": "string", "format": "date" }, "path": { "type": "string" },
         "cases": { "type": "array", "items": { "$ref": "event.schema.json#/$defs/caseId" }, "description": "the frontmatter's cases, as written, without repeats; may name a case the index does not list (ADR-0035 §5)" },
-        "lead": { "type": "string", "minLength": 1, "maxLength": 256, "description": "the first paragraph of the decision's ## Decision, redacted, clipped to 256 bytes of JSON with the marker '… (N more characters in the file)'; absent without one (ADR-0038 §2)" } } } },
+        "lead": { "type": "string", "minLength": 1, "maxLength": 256, "description": "the first paragraph of the decision's ## Decision, without direction and format characters, redacted, clipped to 256 bytes of JSON with the marker '… (N more characters in the file)'; absent without one (ADR-0038 §2)" } } } },
     "triage": { "type": "object", "required": ["id", "at", "actor", "counts", "path", "applied"], "additionalProperties": false,
       "description": "the newest triage proposal of this logbook (ADR-0034 §6, ADR-0035 §6); absent when there is none",
       "properties": {

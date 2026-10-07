@@ -162,7 +162,7 @@ this case.` and then the task's redacted text (headings and fences
 escaped with a `\`), a first Log line that names the source as
 `~/…#<line>`, and the frontmatter key `source: "~/…#<line>"` (`~/…` for a
 file imported whole; written by the import only, after `tags`; at most 512
-characters, a longer path kept as `~/…` and its end; display only — the
+bytes, a longer path kept as `~/…` and its end; display only — the
 index copies it as `cases[].source`, ADR-0038 §3; editing it changes
 nothing in a later import). Until the user starts such a case, an agent reads its
 Intent as fetched text, not as the user's own words (ADR-0027 §2(a)). The source file stays where

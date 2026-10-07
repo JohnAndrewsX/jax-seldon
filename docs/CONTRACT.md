@@ -35,7 +35,8 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
    by clipping long texts (ADR-0025): in `events` and `drift`, a `detail`,
    `resolutionDetail` or `meta` string longer than 256 bytes of JSON is cut
    and ends in `… (N more characters in the ledger)`; the ledger keeps the
-   full text. Cases, decisions and memory topics are not cut; an index of
+   full text. Cases, decisions and memory topics are not cut, except a
+   case's `intent` and `result` and a decision's `lead` (below); an index of
    1 000 000 bytes or more makes the engine warn and name the largest
    section. Since contract 2 the cut is marked beside the text (ADR-0035
    §3): an event with a clipped text has `meta.truncated: true`, a drift
@@ -106,14 +107,15 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      - `cases[].intent`, `cases[].result`: the first paragraph of the
        case's *Intent* (an imported case's after its `Imported from …`
        line) and *Result*; `decisions[].lead`: of the decision's
-       *Decision*. User content (rule 6), redacted by the logbook's
-       redaction on every build, control characters other than line
-       breaks and tabs as spaces, clipped as rule 5 says; absent without
-       text, all withheld while `[redaction] patterns` do not compile;
+       *Decision*. User content (rule 6): control characters other than
+       line breaks and tabs as spaces, direction and format characters
+       dropped, then redacted by the logbook's redaction on every build,
+       then clipped as rule 5 says; absent without text, all withheld
+       while `[redaction] patterns` do not compile;
      - `cases[].source`: an imported case's task, `~/…/file.md#line` (or
        `~/…/file.md` for a file imported whole), from the frontmatter key
        `source` that `seldon import task` writes; redacted, no control,
-       bidi or format characters, at most 512 characters (a value out of
+       bidi or format characters, at most 512 bytes (a value out of
        that shape is left out with a build warning). Display only: never
        an argument of any command. The import's marker stays the only
        idempotency key.

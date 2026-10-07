@@ -27,8 +27,8 @@
                   "properties": { "total": { "type": "integer", "minimum": 0 }, "done": { "type": "integer", "minimum": 0 } },
                   "description": "index only: checkboxes in the case's ## Plan section" },
     "proposedEvents": { "type": "array", "items": { "$ref": "event.schema.json#/$defs/ulid" }, "description": "index only: open drift events the engine thinks belong here" },
-    "intent":   { "type": "string", "minLength": 1, "maxLength": 256, "description": "index only: the first paragraph of ## Intent (after an imported case's provenance line), redacted, clipped to 256 bytes of JSON with the marker '… (N more characters in the file)' (ADR-0038 §2)" },
+    "intent":   { "type": "string", "minLength": 1, "maxLength": 256, "description": "index only: the first paragraph of ## Intent (after an imported case's provenance line), without direction and format characters, redacted, clipped to 256 bytes of JSON with the marker '… (N more characters in the file)' (ADR-0038 §2)" },
     "result":   { "type": "string", "minLength": 1, "maxLength": 256, "description": "index only: the first paragraph of ## Result, as intent (ADR-0038 §2)" },
-    "source":   { "type": "string", "maxLength": 512, "pattern": "^~/[^\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$", "description": "an imported case's task: ~/…/file.md#line or ~/…/file.md, redacted; written by `seldon import task` into the frontmatter and copied to the index; display only, never an argument (ADR-0038 §3)" }
+    "source":   { "type": "string", "maxLength": 512, "pattern": "^~/[^\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2060\\u2066-\\u2069\\ufeff]*$", "description": "an imported case's task: ~/…/file.md#line or ~/…/file.md, redacted, at most 512 bytes (UTF-8) as well; written by `seldon import task` into the frontmatter and copied to the index; display only, never an argument (ADR-0038 §3)" }
   }
 }

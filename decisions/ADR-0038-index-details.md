@@ -74,7 +74,18 @@ click in the Changelog starts no process.
   and nothing redacted them before. A `[redaction] patterns` entry that
   does not compile withholds all three fields (and `source`): the engine
   does not know what to hide.
-- **Control characters** other than line breaks and tabs become spaces.
+- **Control characters** other than line breaks and tabs become spaces;
+  **direction and format characters** (U+200E, U+200F, U+202A–U+202E,
+  U+2066–U+2069; U+200B–U+200D, U+2060, U+FEFF) are dropped
+  (orchestrator's decision, WP-127 round 2): the texts are shown in the
+  shell process, a reordered line can mislead, and a zero-width space
+  inside a token would hide it from its redaction rule. Both happen
+  before the redaction.
+- **Redaction before the clip:** a secret at the cut is masked whole,
+  never cut into a prefix its rule no longer knows.
+- **Only what is shown is read:** the build stops reading a section after
+  the paragraphs it needs (two for an imported Intent), so a whole task
+  file imported as an Intent costs no more than its first paragraphs.
 - **Clipped** as ADR-0025 clips an event's detail — at most 256 bytes of
   JSON, on a character boundary, marker included — with the marker `…
   (N more characters in the file)`: the case or decision file has the
@@ -97,9 +108,10 @@ click in the Changelog starts no process.
 - **The marker stays the only idempotency key.** Editing or removing
   `source` changes nothing in a later import.
 - **Shape:** starts with `~/`; no control, bidi or format characters (the
-  set the import refuses in a path); at most 512 characters. A path of
-  more is written as `~/…` followed by its last 509 characters, so the
-  file name and line survive.
+  set the import refuses in a path); at most 512 bytes in UTF-8, hence at
+  most 512 characters. A longer path is written as `~/…` followed by as
+  many of its last characters as fit (507 bytes), so the file name and
+  line survive.
 - **The index copies it** after the logbook's redaction once more (a
   hand edit is possible). A string that then breaks the shape is dropped
   with a build warning; a value that is not a string counts as no
@@ -121,11 +133,15 @@ gains "except `intent`, `result` and `lead`". An index without the fields
 
 ## Consequences
 
-- Size: at the caps of CONTRACT.md rule 4, about 25 KB more — 200 rules of
-  at most 64 bytes, and at most about 0.8 KB per listed case and 0.3 KB
-  per decision. Open cases are not capped; a logbook with 300 open cases
-  adds about 240 KB in the worst case, which the over-budget warning of
-  ADR-0025 names.
+- Size, per object at most: a drift item about 74 bytes (`rule` and its
+  key), a case about 1.06 KB (`intent` and `result` 256 bytes of JSON each,
+  `source` 512 bytes, the keys), a decision about 0.27 KB. At the caps of
+  CONTRACT.md rule 4 (200 drift items, 50 completed cases) that is about
+  68 KB, plus about 1.06 KB per open case and 0.27 KB per decision, which
+  are not capped: 300 open cases with every field full add about 320 KB,
+  which the over-budget warning of ADR-0025 names. (A `source` of
+  characters JSON escapes, `"` or `\`, can take up to twice its bytes;
+  real paths hold few.)
 - The build reads each case's and decision's body once more for its
   sections (it reads the files already) and runs three short texts per
   case through the redaction; `check-perf` covers the build.
