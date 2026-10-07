@@ -384,3 +384,75 @@ and P7. Commit 918c0de7.
   killed, and the same 2 survivors by design.
 - **Verification:** `flock /tmp/seldon-check.lock just check` on 918c0de7 —
   `check: ok`, exit 0 (log `check-wp136-r3.log`, outside the repository). `git diff` added lines grep'd for `/home/`: none.
+
+## Merge of next
+
+I ran `git merge next` at 2ad42a43, which holds WP-113 among 109 other
+commits. Merge commit 09b86895.
+
+**Conflicts and how they were resolved:**
+
+- **`engine/src/collectors/plugins.rs`:** both behaviours are kept side
+  by side.
+  - `PluginState` carries WP-113's `tree` and `partial` and WP-136's
+    `head`.
+  - The collect loop runs WP-113's tree hash, stat cache and
+    unreadable/cut notes on `<plugins dir>/<id>`, next to WP-136's
+    `GitDir` check and HEAD-from-files. WP-136's directory is now named
+    `clone_dir` (the manifest's directory, else the plugin directory) so
+    it does not clash with WP-113's `dir`. `touched` is WP-113's: the
+    manifest's mtime, or the tree's newest file if later.
+  - The update branch is WP-113's: one `plugin-update` for a version
+    change, a tree change, or both, with `hashFrom`/`hashTo`, `partial`
+    and `hashBasis`. On that event WP-136 appends either the "outside"
+    note or the commits.
+  - **New effect:** a pull that leaves the manifest's version as it is
+    now fires through the tree hash and names its commits. This settles
+    round 1's open question 3. The new test
+    `a_pull_without_a_version_bump_names_its_commits` shows it: detail
+    `files changed (sha256 … → …), pulled 2 commits: …`, `meta.git` and
+    `meta.commits`, the tree hashes, and no `from`/`to`.
+  - WP-113 leaves `.git` out of the tree; the HEAD sits in the cursor
+    next to it. Module doc and SPEC §4 now say "a version or a tree
+    change".
+- **`engine/tests/collectors_user.rs`:** `enable_disable_remove_and_update`
+  now uses WP-113's `assert_matches_line` (the fixture's 09-24 line).
+  - It compares the detail only when git is there, because the clone
+    makes it `1.2.0 → 1.3.0, pulled 3 commits: …`, exactly the fixture.
+  - It checks `meta.git` and `meta.commits` against the fixture, and
+    keeps WP-113's checks on `from`/`to` and the tree hashes.
+- **Fixtures:** `fixtures/logbook/ledger/2026-09.jsonl` keeps WP-113's
+  09-22 in-place edit and its resolution, plus WP-136's 09-24 pull. The
+  `fixtures/README.md` story keeps both rows. The index fixtures were
+  regenerated with `scripts/validate-fixtures.py --write-index` (ok,
+  133 instances, 87 ledger events traced).
+- **`docs/TESTING.md`:** next's `import_task.rs` row and WP-136's
+  `collectors_user.rs` row are both kept. SPEC-ENGINE, the guide,
+  `plugin/Model.js` and `tests/plugin/model.test.js` merged without
+  conflict.
+
+**Capture cost after the merge:**
+
+| plugins capture | median |
+|---|---|
+| 8 plugins, no clone | 21.39 ms |
+| 8 plugins, 8 clones | 21.41 ms |
+| one update with commits | 42.4 ms |
+
+The clone delta (+16 µs per capture) is now inside the noise of WP-113's
+tree work in the same capture.
+
+**Checks:**
+
+- Engine: all tests pass (`--no-fail-fast`).
+- Plugin model tests: 144 passed.
+- `flock /tmp/seldon-check.lock just check` on 09b86895:
+  `check: ok`, exit 0 (log `check-wp136-merge.log`, outside the repository).
+- `git diff` added lines grep'd for `/home/`: none.
+
+**Still open:**
+
+- Round 1 questions 1 and 2: the index clip of `meta.commits`, and the
+  schema description of `git`/`commits`. ADR-0038 is on `next` now and
+  does not name them.
+- Round 2 question 1: `git>=2.44` in the PKGBUILD.
