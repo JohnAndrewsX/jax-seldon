@@ -133,7 +133,8 @@ pub struct Generation {
     pub hash: String,
     /// `~`-path → SHA-256 of every hashed file.
     pub files: BTreeMap<String, String>,
-    /// Files seen but not hashed: binary, larger than 1 MB, or unreadable.
+    /// Files seen but not hashed: binary, larger than 1 MB, or unreadable
+    /// (under a persistence path only an unreadable one never hashed).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub skipped: BTreeSet<String>,
     /// The scope the files were collected in; absent in a manifest written

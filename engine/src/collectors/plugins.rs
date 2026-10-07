@@ -35,9 +35,13 @@
 //! `meta.hashFrom`/`hashTo`; with the version change when both moved), so
 //! an in-place edit of a plugin's QML is seen. A tree whose files' size,
 //! modification and change times and inodes are as the cursor's
-//! fingerprint has them is not read again; a tree that cannot be read
-//! this time keeps the last hash, and a plugin seen without one (a cursor
-//! from before WP-113, a new plugin) takes it without an event.
+//! fingerprint has them is not read again; a plugin seen without a tree
+//! hash (a cursor from before WP-113, a new plugin) takes it without an
+//! event. WP-113 round 2: an entry that cannot be read counts by its
+//! size, time and mode, a file over 64 MiB by its size, time and inode,
+//! and a tree past [`TREE_ENTRIES`] is cut off; such a tree is `partial`
+//! (cursor and event meta). Only an unreadable plugin directory keeps the
+//! last hash.
 //!
 //! The cursor is the snapshot `{id: {enabled, version, tree}}`, its SHA-256,
 //! the trees' fingerprints and the time of the last check. Without a cursor the collector takes a baseline
