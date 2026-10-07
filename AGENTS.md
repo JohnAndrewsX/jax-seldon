@@ -94,7 +94,9 @@ dev agents in parallel on independent WPs.
   install of the plugin), no systemd changes. Collectors only *read*
   `/var/log/pacman.log`, snapper, `omarchy` CLI output, and (hashes only,
   operator decision 2026-10-06, WP-114) `/etc/pacman.conf` and
-  `/etc/pacman.d/*.conf`.
+  `/etc/pacman.d/*.conf`, and (hashes only, operator decision
+  2026-10-07, WP-131) `/etc/cups/printers.conf`, `/etc/cups/classes.conf`,
+  `/etc/cups/ppd/*` and `~/.cups/lpoptions`.
 
 ## 7. Engineering rules
 

@@ -9,14 +9,16 @@ Open: WP-042 marketplace submission (after the operator's release setup),
 WP-038 (engine attributes its own installs), WP-033 and WP-043 (operator
 decisions).
 **Contract version:** 1 (draft)
-**Last updated:** 2026-10-06 (tick 110)
+**Last updated:** 2026-10-07 (tick 113)
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-130 | guard: stop false positives on text, keep every real block | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
-| WP-118 | wizard, installer and docs texts (UX review) | Engine + Docs | `engine-118` (opus) | `wt/WP-118` · `wp/118-setup-texts` | 2026-10-06 |
-| WP-117 | plugin texts and the privileged-step terminal (UX review) | Plugin | `plugin-117` (opus) | `wt/WP-117` · `wp/117-plugin-texts` | 2026-10-06 |
+| WP-130 | guard: stop false positives on text, keep every real block — Fable approved; waits for the operator's look at the table | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
+| WP-113 | code the collectors cannot see, target `next` — three review rounds done; waits for the operator's acceptance of ADR-0037 | Engine | `engine-113` (opus) | `wt/WP-113` · `wp/113-collector-hashes` | 2026-10-07 |
+| WP-124 | bulk triage, stage 124a (engine: agent ask, drift propose/apply, ADR-0036), target `next` | Engine | `engine-124` (opus) | `wt/WP-124` · `wp/124-triage` | 2026-10-07 |
+| WP-102 | import Markdown task files as cases, stage 102a (engine), target `next` | Engine | `engine-102` (opus) | `wt/WP-102` · `wp/102-import` | 2026-10-07 |
+| WP-125 | the graph (desk section 8), target `next` | Plugin | `plugin-125` (opus) | `wt/WP-125` · `wp/125-graph` | 2026-10-07 |
 
 ## Queued (next up)
 
@@ -53,6 +55,41 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-07 On `next` (0.2.0): WP-120 contract v2 (ADR-0035 accepted by
+  the orchestrator under the operator's 2026-10-06 decisions; Opus ×2,
+  Fable stage 2 with a round 3: state files only as regular files ≤ 4 MiB,
+  the engine decides a crisis at apply time; WP-127 filed for optional
+  desk fields), WP-122 desk sections Today, Changelog, Work (why loud from
+  the engine's rule, one count, Enter never launches an agent), WP-123
+  sections Decisions, System, Memory and the Prime Radiant in the desk.
+  Each gated on an archive copy (gate-120/122/123 exit 0).
+- 2026-10-07 0.1.4 gates green on main: main check 145, CI, release dry
+  run (fixes 16e889d fake engine version, 2cd9f3a release.yml rsync,
+  3e3aa2c workflow-pins mutation). The tag waits for the fresh-host live
+  test.
+- 2026-10-07 WP-121 (on `next`) the desk shell: an overlay surface on
+  the focused monitor, width 50–100 % of the screen (default 100) written
+  to the plugin's own shell.json entry only on release, sidebar 1–8 and
+  `,`, the `jax.seldon.panel` IPC shim, the pill unchanged; desk-view
+  harness with a COVERAGE gate; Opus review, two rounds; merged into
+  `next` (38a9103), draft PR #7 runs CI on `next`.
+- 2026-10-07 0.1.4 prepared on main (65f8c87, 3e4b826, 16e889d): CHANGELOG,
+  versions 0.1.4, `engineMin` 0.1.4; main check 143 green, CI green, test
+  host on 0.1.4+main.16e889d. Tag after the fresh-host live test
+  (operator decision 2026-10-06).
+- 2026-10-07 WP-118 the first setup's terminal side says what it does:
+  install.sh announces first and names only the next steps still left;
+  the init wizard no longer promises a red pill, its prompts fit 70
+  columns, the private agent kit is hidden unless present, the summary is
+  six rows; guides 01/10/11 en/de (update the plugin first when coming
+  from 0.1.0; Omarchy shows the plugin diff); Opus review, one round,
+  Fable stage 2, CI shellcheck on PR #6; merged.
+- 2026-10-07 WP-117 every terminal the panel opens (engine install and
+  update, logbook setup, snapshot grant, plugin update) says what it will
+  do, shows the command and reports only what happened (failures, a
+  cancelled password prompt and a partial grant included); banners one
+  sentence with step titles; Opus review, one round, Fable stage 2;
+  merged.
 - 2026-10-06 WP-116 the Seldon agent starts like Omarchy's agent (the
   caller's folder, `~/Work` from home; `[agent] workdir`); Seldon's Claude
   Code hooks live in the user-wide settings and serve only sessions Seldon
@@ -562,6 +599,28 @@ submission). (see `work/queued/`)
   `jax-seldon-plugin` via subtree split → ADR-0009.
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
+
+## Decided 2026-10-07 (operator, all as recommended)
+- E1 WP-130 guard merged into main after the table review. E2 Omarchy
+  routes by a read-only allow-list → WP-132. E3 the guard also checks
+  Write/Edit by path → WP-133.
+- E4 ADR-0037 accepted (toggles routine, bounded link walk, authorized_keys
+  opt-in) → WP-113 merges into `next`. E5 ADR-0035 (contract v2) confirmed.
+  E13 ADR-0036 accepted (bulk triage) → WP-124a merges into `next`.
+- E6 the desk's Enter never launches an agent. E11 an imported case is
+  started only by the user (the engine refuses an agent). E12 "only a human
+  applies" is a speed bump, stated honestly — enough for 0.2.0.
+- E7 `seldon decide accept` in 0.2.0, with WP-127. E8 `check-rss` bound
+  11 MB (8bdfbbc).
+- E9 guardrails: the R3 ask yes, default off until a test week shows ≈ 0
+  asks, honest recovery card; posture card later → WP-134.
+- E10 recipes (0.3): own machines first; backgrounds by reference; the
+  "why" left out by default; Lua and hooks per-file approval, never in the
+  community tier; REBUILD.md becomes the recipe's rendering; organisation
+  tier by git signatures; the user clones, the engine stays offline.
+- E14 printers: (a) the hook records an agent's privileged commands → WP-129
+  (running); (b) printer configuration hashes after (a) → WP-131, AGENTS.md
+  §6 amended (4def856).
 
 ## Decided 2026-10-06
 - Operator, 2026-10-06 night ("all as recommended"): (1) v0.1.4 may be

@@ -35,6 +35,16 @@ fake_path="$work/bin-fake:$base_path"
 pass=0
 fail=0
 
+# model_const <NAME>: a string constant of plugin/Model.js (the terminal
+# scripts are built there, at load).
+model_const() {
+  node -e '
+    const fs = require("fs"), vm = require("vm"), M = {}
+    vm.createContext(M)
+    vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+    process.stdout.write(M[process.argv[2]])' "$plugin/Model.js" "$1"
+}
+
 # run <case> <ms> [VAR=value ...] — one harness run; the final snapshot lands
 # in $work/<case>.json, the whole log in $work/<case>.log. HOME is
 # $work/home-<case> unless the case names one (HOME=… among the variables);
@@ -95,22 +105,41 @@ expect ok .driftInBar crisis
 expect ok .tone urgent
 expect ok .tooltip "Seldon — 2 active cases, 2 crises, 4 changes without a case, last capture just now"
 expect ok .engine present
-expect ok .engineVersion 0.1.0-fake
+expect ok .engineVersion 99.0.0-fake
 expect ok .crisis "2 changes that can affect boot, login or the shell have no case"
 expect ok .snapper ""
 clean_log ok
 
-# 2. Same index, no seldon on PATH.
+# 2. Same index, no seldon on PATH: the engine was there and is gone, so
+#    the banner is urgent (WP-117).
+engine_actions="terminal:Install,copy:Copy,recheck:Check again"
+engine_detail="Downloads seldon from the Seldon release on GitHub into ~/.local/bin and checks it; runs as your user, no password."
 run engine-missing 2500 PATH="$base_path" SELDON_INDEX="$fx/index.sample.json"
 expect engine-missing .status engineMissing
 expect engine-missing .pill "2 · 2"
-expect engine-missing .banner "Seldon engine not installed"
+expect engine-missing .banner "Seldon engine missing"
+expect engine-missing .bannerTone urgent
+expect engine-missing .bannerDetail "$engine_detail"
+expect engine-missing '.bannerActions | join(",")' "$engine_actions"
 clean_log engine-missing
+
+# 2b. A fresh machine: no index, no seldon. The first setup step, in the
+#     accent tone (WP-117).
+run engine-fresh 2500 PATH="$base_path"
+expect engine-fresh .status engineMissing
+expect engine-fresh .fileState missing
+expect engine-fresh .banner "Install the engine"
+expect engine-fresh .bannerTone accent
+expect engine-fresh .bannerDetail "$engine_detail"
+expect engine-fresh '.bannerActions | join(",")' "$engine_actions"
+clean_log engine-fresh
 
 # 3. Engine reports an uninitialised logbook through the index.
 run not-initialised 2500 PATH="$fake_path" SELDON_INDEX="$fx/index-variants/not-initialised.json"
 expect not-initialised .status notInitialised
-expect not-initialised .banner "Logbook not initialised"
+expect not-initialised .banner "Create your logbook"
+expect not-initialised .bannerTone accent
+expect not-initialised '.bannerActions | join(",")' "terminal:Create,copy:Copy,recheck:Check again"
 expect not-initialised .pill ""
 
 # 4. No index file.
@@ -147,14 +176,14 @@ expect contract-mismatch .status contractMismatch
 expect contract-mismatch .indexContractVersion 3
 expect contract-mismatch .pluginContractVersion 2
 expect contract-mismatch .banner "Index format mismatch"
-expect contract-mismatch .bannerDetail "The index uses contract v3, this plugin reads v2. Update the plugin."
+expect contract-mismatch .bannerDetail "The index uses contract v3 and this plugin reads v2: update the plugin."
 expect contract-mismatch .pill ""
 clean_log contract-mismatch
 jq '.contractVersion = 1' "$fx/index.sample.json" >"$work/index.contract-v1.json"
 run contract-older 2500 PATH="$fake_path" SELDON_INDEX="$work/index.contract-v1.json"
 expect contract-older .status contractMismatch
 expect contract-older .indexContractVersion 1
-expect contract-older .bannerDetail "The index uses contract v1, this plugin reads v2. Update the engine."
+expect contract-older .bannerDetail "The index uses contract v1 and this plugin reads v2: update the engine."
 clean_log contract-older
 
 # 7b. WP-120 (ADR-0035): a 0.1.x plugin against a contract-2 index shows the
@@ -227,9 +256,11 @@ clean_log live
 mkdir -p "$work/home-uninit"
 run live-uninit 4000 HARNESS_UNTIL=status=notInitialised PATH="$fake_path" HOME="$work/home-uninit" FAKE_SELDON_MODE=uninit
 expect live-uninit .status notInitialised
-expect live-uninit .banner "Logbook not initialised"
+expect live-uninit .banner "Create your logbook"
 
-# 13b. The user runs `seldon init`; "Check again" clears the banner.
+# 13b. The user runs `seldon init` outside the panel; "Check again" clears
+#      the banner. (Create's script writes the index, which the FileView
+#      picks up by itself: 10 and 14h.)
 mkdir -p "$work/home-init"
 echo uninit >"$work/home-init/mode"
 (sleep 1.5; echo ok >"$work/home-init/mode") &
@@ -279,36 +310,56 @@ argv_check() {
 q() { printf '%q ' "$@"; }
 run fix-engine 3000 PATH="$work/bin-tools:$base_path" SELDON_INDEX="$fx/index.sample.json" \
   HARNESS_FIX=copy,terminal HARNESS_RECORD="$work/fix-engine.record"
+# Copy copies the plain command; the terminal gets the banner's script
+# (WP-117), compared verbatim with Model.js's constant (model.test.js pins
+# its text).
 install_engine="curl -fsSL https://github.com/JohnAndrewsX/jax-seldon/releases/latest/download/install.sh | bash"
 record_check fix-engine "$(printf '%s\n' wl-copy -- "$install_engine" -- \
-  omarchy-launch-floating-terminal-with-presentation "$install_engine" --)"
+  omarchy-launch-floating-terminal-with-presentation "$(model_const INSTALL_ENGINE_SCRIPT)" --)"
 run fix-contract 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/invalid/index.contract-v3.json" \
-  HARNESS_FIX=copy HARNESS_RECORD="$work/fix-contract.record"
-record_check fix-contract "$(printf '%s\n' wl-copy -- "omarchy plugin update jax.seldon" --)"
+  HARNESS_FIX=copy,terminal HARNESS_RECORD="$work/fix-contract.record"
+record_check fix-contract "$(printf '%s\n' wl-copy -- "omarchy plugin update jax.seldon" -- \
+  omarchy-launch-floating-terminal-with-presentation "$(model_const UPDATE_PLUGIN_SCRIPT)" --)"
 run fix-init 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-variants/not-initialised.json" \
   HARNESS_FIX=terminal HARNESS_RECORD="$work/fix-init.record"
-record_check fix-init "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "seldon init" --)"
+record_check fix-init "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$(model_const INIT_SCRIPT)" --)"
 
-# 14b. Snapper without permissions (ADR-0026): its banner, with the constant
-#      fix behind Copy and Run in terminal, and Check again (WP-054). After
-#      Run in terminal the hint shows, and a reload of the unchanged index
-#      ("Check again" on the status banner, at 1.5 s) keeps it.
+# 14b. Snapper without permissions (ADR-0026): its banner, Copy with the
+#      plain grant, Grant with the terminal script that captures afterwards
+#      (WP-117), and Check again (WP-054). The detail is one sentence; the
+#      engine's message and what the grant gives are the hover text.
 run snapper-degraded 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$fx/index-variants/snapper-degraded.json" \
-  HARNESS_FIX=snapper:copy,snapper:terminal HARNESS_RECHECK_MS=1500 HARNESS_RECORD="$work/snapper-degraded.record"
+  HARNESS_FIX=snapper:copy,snapper:terminal HARNESS_RECORD="$work/snapper-degraded.record"
+snapper_title="Read snapshots (optional)"
 expect snapper-degraded .status ok
-expect snapper-degraded .snapper "Snapshots not readable"
+expect snapper-degraded .snapper "$snapper_title"
 expect snapper-degraded .crisis "2 changes that can affect boot, login or the shell have no case"
-snapper_actions="terminal:Run in terminal,copy:Copy,capture:Check again"
-snapper_hint="When the command has finished, press Check again"
+snapper_actions="terminal:Grant,copy:Copy,capture:Check again"
 expect snapper-degraded '.snapperActions | join(",")' "$snapper_actions"
+snapper_detail="A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it."
 snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
 snapper_grants="The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
-expect snapper-degraded .snapperDetail "$snapper_message"$'\n'"$snapper_grants"
-expect snapper-degraded .snapperHint "$snapper_hint"
+expect snapper-degraded .snapperDetail "$snapper_detail"
+expect snapper-degraded .snapperFull "$snapper_message"$'\n'"$snapper_grants"
 snapper_fix='sudo setfacl -m u:$USER:rx /.snapshots'
+snapper_script=$(model_const SNAPPER_FIX_SCRIPT)
 record_check snapper-degraded "$(printf '%s\n' wl-copy -- "$snapper_fix" -- \
-  omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
+  omarchy-launch-floating-terminal-with-presentation "$snapper_script" --)"
 clean_log snapper-degraded
+
+# 14h. Grant, then the script's capture rewrites the index: the banner goes
+#      without another click and without an engine call of the plugin's
+#      (dev mode runs none). Here a copy of the index is replaced after
+#      the click, as the script's `seldon capture` would.
+cp "$fx/index-variants/snapper-degraded.json" "$work/grant.json"
+(sleep 1.5; cp "$fx/index.sample.json" "$work/grant.json.tmp"; mv "$work/grant.json.tmp" "$work/grant.json") &
+run snapper-self 3000 PATH="$work/bin-tools:$fake_path" SELDON_INDEX="$work/grant.json" \
+  HARNESS_FIX=snapper:terminal HARNESS_RECORD="$work/snapper-self.record" HARNESS_UNTIL=snapper=
+wait
+expect snapper-self .status ok
+expect snapper-self .snapper ""
+record_check snapper-self "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$snapper_script" --)"
+clean_log snapper-self
 
 # 14g. A plugin updated under a running shell (WP-090): the shell injects the
 #      manifest it re-read from disk, but runs the code it compiled first.
@@ -354,44 +405,42 @@ record_check restart-updated "$(printf '%s\n' omarchy-restart-shell --)"
 clean_log restart-updated
 
 # 14f. Issue #2, live: the engine reports snapper failing until the user's
-#      fix. Run in terminal shows the hint (no engine call); Check again runs
-#      the same capture-then-status as Capture now; the fake's index after
-#      the second capture has snapper ok, so banner and hint are gone.
+#      fix. Grant opens the terminal (no engine call of the plugin's, no
+#      hint, WP-117); Check again runs the same capture-then-status as
+#      Capture now; the fake's index after the second capture has snapper
+#      ok, so the banner is gone.
 mkdir -p "$work/home-snapper-live"
 actions='[["snapshot"], ["fix", "terminal", "snapper"], ["snapshot"], ["fix", "capture", "snapper"], ["wait"]]'
 run snapper-live 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-live" \
   FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" FAKE_SELDON_FIXTURE_AFTER="$fx/index.sample.json" \
   HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-live.record" HARNESS_UNTIL=snapper=
 snaps=$(sed 's/\x1b\[[0-9;]*m//g' "$work/snapper-live.log" | grep -a "HARNESS snapshot " | sed 's/.*HARNESS snapshot //' \
-  | jq -r -s 'map([.snapper, (.snapperActions | join(",")), .snapperHint] | join(" | ")) | .[]' 2>/dev/null || true)
-want_snaps=$(printf '%s\n' "Snapshots not readable | $snapper_actions | " \
-  "Snapshots not readable | $snapper_actions | $snapper_hint")
+  | jq -r -s 'map([.snapper, (.snapperActions | join(","))] | join(" | ")) | .[]' 2>/dev/null || true)
+want_snaps=$(printf '%s\n' "$snapper_title | $snapper_actions" "$snapper_title | $snapper_actions")
 if [[ $snaps == "$want_snaps" ]]; then
-  pass=$((pass + 1)); echo "ok   snapper-live: banner, then the hint after Run in terminal"
+  pass=$((pass + 1)); echo "ok   snapper-live: the banner, unchanged by Grant"
 else
   fail=$((fail + 1)); echo "FAIL snapper-live: snapshots were:"; echo "$snaps" | sed 's/^/     /'
 fi
 expect snapper-live .status ok
 expect snapper-live .snapper ""
-expect snapper-live .snapperHint ""
 expect snapper-live .lastError ""
 argv_check snapper-live "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q capture --all --json --quiet)" "$(q status --json)")"
-record_check snapper-live "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$snapper_fix" --)"
+record_check snapper-live "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$snapper_script" --)"
 clean_log snapper-live
 #      Check again before the fix took: the capture's new index still has
 #      snapper failing (another message, so the index differs even when
 #      both writes fall in the same second), so the banner stays, with the
-#      new message and without the hint.
+#      new message on hover.
 mkdir -p "$work/home-snapper-still"
 jq '(.state.collectors[] | select(.name == "snapper") | .message) = "Still no permission."' \
   "$fx/index-variants/snapper-degraded.json" >"$work/snapper-still.json"
 run snapper-still 3000 PATH="$work/bin-tools:$fake_path" HOME="$work/home-snapper-still" \
   FAKE_SELDON_FIXTURE="$fx/index-variants/snapper-degraded.json" FAKE_SELDON_FIXTURE_AFTER="$work/snapper-still.json" \
-  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-still.record" HARNESS_UNTIL=snapperHint=
-expect snapper-still .snapper "Snapshots not readable"
-expect snapper-still .snapperDetail "Still no permission."$'\n'"$snapper_grants"
-expect snapper-still .snapperHint ""
+  HARNESS_ACTIONS="$actions" HARNESS_RECORD="$work/snapper-still.record" HARNESS_UNTIL="snapperFull=Still no permission."$'\n'"$snapper_grants"
+expect snapper-still .snapper "$snapper_title"
+expect snapper-still .snapperFull "Still no permission."$'\n'"$snapper_grants"
 argv_check snapper-still "$(printf '%s\n' "$(q --version --json)" "$(q capture --all --json --quiet)" "$(q status --json)" \
   "$(q capture --all --json --quiet)" "$(q status --json)")"
 clean_log snapper-still

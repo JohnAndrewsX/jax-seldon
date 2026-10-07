@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "jax.seldon",
   "name": "JAX Seldon",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "author": "JohnAndrewsX",
   "license": "MIT",
   "description": "The memory of your Omarchy machine, for you and your agents: ledger, journal, cases, drift and the Prime Radiant in one desk.",
@@ -34,5 +34,5 @@
       { "key": "deskSidebar", "type": "enum", "label": "Desk sidebar", "options": ["open", "collapsed"], "defaultValue": "open", "description": "open: section names and counts. collapsed: icons only. On a desk narrower than 960 px the sidebar always shows icons only." }
     ]
   },
-  "seldon": { "contractVersion": 2, "engineMin": "0.1.0" }
+  "seldon": { "contractVersion": 2, "engineMin": "0.1.4" }
 }

@@ -155,8 +155,9 @@ as two subagents; both are allowed for this bounded fan-out.
 - A command the guard hook blocks is reported to the orchestrator (under
   "Decisions needed" or as a question), never worked around — not by
   copying a script elsewhere, not by rephrasing the command. The guard's
-  false positives are fixed in `scripts/guard.sh` (with a row in
-  `scripts/guard-test.sh`), not bypassed.
+  false positives are fixed in `scripts/guard.py` (with a row in
+  `scripts/guard-test.sh`; a new rule also gets a mutant in
+  `scripts/guard-mutants.py`), not bypassed.
 - Before driving a live shell with keys (`wtype`) or screenshots
   (`grim`), a worker checks `omarchy-shell lock status` and stops when
   `locked` or `secure` is true: keys typed into a lock screen are failed
