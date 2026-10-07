@@ -322,3 +322,39 @@ engine tests ok, install.test 209, deploy-test-host 190, docs-check ok
 model.bench ok, real-home-guard 11, service-states 328, desk-view 1447
 (no case needed a second run; the busy index's slowest tick 5 ms),
 bar-view 194). Only this handover changed after that commit.
+
+## Gate fix
+
+gate-125 on 4900689 failed on a host loaded by other checks: `graph-many`
+#5–#7 "drawMs ≤ 8" (each paint of the 2022-node still picture); `ticks
+0` and `timer false` held. Commit 2892e5b:
+
+- `graph_time_ok <case> <condition> <step>…` is now the one timing gate
+  in section 11: a miss runs the case once more (`graph_run` keeps its
+  arguments), and the condition must hold then. `graph_tick_ok` and the
+  busy index's "at most 5 of 200 ticks over" (`graph-big`, which had no
+  second run before) go through it.
+- The still picture's draw bound is `graph_time_min`: the fastest of its
+  three paints ≤ 8 ms (the same 2022 nodes each time, so load makes some
+  paints slower but never the fastest one faster than the work; about
+  4 ms idle), once more on a miss. "No tick" and "no Timer" stay strict
+  at every step.
+- Seen while fixing it, under a sustained load of about 6: single paints
+  of 23–28 ms and ticks at 13 ms of step; in that window `graph-many`
+  and `graph-big` also missed their second run. That is the limit of a
+  wall-clock gate on a shared host; the minimum is the bound that holds
+  there.
+- Mutants (a copy outside the repository, removed afterwards): a paint
+  20 ms slower → `graph-many` runs once more and fails ("fastest … 28");
+  a still picture that wakes → `graph-many` #5–#7 fail on the Timer at
+  once, without a second run.
+- TESTING.md says so.
+
+Verified: section 11 on its own 102 passed. `flock
+/tmp/seldon-check.lock just check` on 2892e5b (log
+`check-wp125-gatefix1.log`, disk cargo target): **exit 0** (`check: ok`;
+cargo 2040 passed, install.test 209, deploy-test-host 190, docs-check
+ok, qmllint ok, model.test.js 140, real-home-guard 11, service-states
+328, desk-view 1448 (the still picture's fastest paint 4 ms, no case
+needed a second run), bar-view 194). Only this handover changed after
+that commit.
