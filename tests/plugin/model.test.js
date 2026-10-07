@@ -1916,4 +1916,160 @@ test("deskWidthPreview and preset labels", () => {
   same(M.DESK_WIDTH_PRESETS.map(M.deskPresetLabel), ["50 %", "67 %", "75 %", "Full"])
 })
 
+// ---- Desk sections Today, Changelog, Work (WP-122)
+
+
+test("deskChangelog: every event once, by class, with title, meta, age and stripe", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  assert.strictEqual(p.rows.length, 73)
+  const byCls = {}
+  for (const r of p.rows) byCls[r.cls] = (byCls[r.cls] || 0) + 1
+  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 36", "crisis 2", "routine 29"])
+  const unit = M.changelogRow(p, UNIT)
+  same([unit.title, unit.listMeta, unit.age, unit.stripe, unit.cls], ["ollama.service", "config · config-add", "14:03", "crisis", "crisis"])
+  const mesa = M.changelogRow(p, MESA)
+  same([mesa.title, mesa.age, mesa.stripe, mesa.hideKey], ["mesa +2", "27 Sep 12:30", "attention", MESA])
+  // a group member hides with its leader
+  assert.strictEqual(M.changelogRow(p, LIB32).hideKey, MESA)
+  assert.strictEqual(M.changelogRow(p, "nope"), null)
+  same(M.deskChangelog(null).rows, [])
+})
+
+test("rowAge: the time today, else day and month (the year when it differs)", () => {
+  assert.strictEqual(M.rowAge("2026-10-01", "17:00", "2026-10-01"), "17:00")
+  assert.strictEqual(M.rowAge("2026-09-30", "08:15", "2026-10-01"), "30 Sep 08:15")
+  assert.strictEqual(M.rowAge("2025-12-31", "23:59", "2026-01-01"), "31 Dec 2025 23:59")
+  assert.strictEqual(M.rowAge("", "", "2026-10-01"), "")
+})
+
+test("changelogView and changelogChips: chips, search, Hide (attention only)", () => {
+  const p = M.deskChangelog(M.parseIndex(sample).index)
+  same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
+    ["open 8", "crisis 2", "attention 6", "routine 29", "case 36", "all 73"])
+  assert.strictEqual(M.changelogView(p, "open", {}, "").length, 8)
+  assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 8)
+  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 73)
+  // the search matches subject, meta, detail and actor, case-insensitive
+  same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
+  same(M.changelogView(p, "crisis", {}, "codex").map(r => r.id), [UNIT])
+  // Hide keeps attention out of open and attention, never a crisis
+  const hidden = { [MESA]: true, [UNIT]: true }
+  assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
+  assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
+  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 73)
+  assert.strictEqual(M.hiddenCount(p, hidden), 3)
+  same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
+})
+
+test("cycleChip wraps both ways", () => {
+  assert.strictEqual(M.cycleChip("open", 1), "crisis")
+  assert.strictEqual(M.cycleChip("all", 1), "open")
+  assert.strictEqual(M.cycleChip("open", -1), "all")
+  assert.strictEqual(M.cycleChip("bogus", 1), "crisis")
+})
+
+test("eventDetail: heading, class, why loud and the key/values", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const theme = M.eventDetail(idx, p, THEME)
+  same([theme.heading, theme.title, theme.cls, theme.open, theme.proposedCase, theme.whyLoud],
+    ["theme · theme-set", "tokyo-night", "attention", true, "C-2026-005", ""])
+  same(theme.kv.map(r => r[0]), ["When", "Who", "What", "Case", "Rule", "Source", "Zone", "Event"])
+  same(theme.kv[3], ["Case", "proposed: C-2026-005"])
+  const unit = M.eventDetail(idx, p, UNIT)
+  assert.strictEqual(unit.whyLoud, "The path runs code at login, at boot or from a hook, and no open case planned the change.")
+  same(unit.kv[0], ["When", "2026-10-01 14:03"])
+  // a member shows the group's proposal and rule
+  assert.ok(M.eventDetail(idx, p, LIB32).kv[4][1].indexOf("one pacman transaction (ADR-0013)") !== -1)
+  assert.strictEqual(M.eventDetail(idx, p, "nope"), null)
+  // a resolved event says how
+  const folded = p.rows.find(r => r.resolution !== "")
+  assert.ok(M.eventDetail(idx, p, folded.id).kv.some(r => r[0] === "Resolved"))
+  // why loud by source
+  same([M.whyLoud({ cls: "crisis", source: "pacman" }), M.whyLoud({ cls: "crisis", source: "plugins" }), M.whyLoud({ cls: "attention", source: "config" })],
+    ["A package that can stop boot or login changed by name, and no open case planned it.",
+     "It can affect boot, login or the shell, and no open case planned it.", ""])
+})
+
+test("eventActions: open drift, Hide only for attention, Open case, routine none; Ask agent first when there", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const labels = (id, opts) => M.eventActions(M.eventDetail(idx, p, id), opts).map(a => a.label + (a.primary ? "*" : ""))
+  same(labels(THEME, {}), ["Link to C-2026-005…*", "Explain…", "Dismiss…", "Hide"])
+  same(labels(THEME, { hidden: true }).slice(-1), ["Show"])
+  same(labels(UNIT, {}), ["Link to case…*", "Explain…", "Dismiss…"])
+  same(labels(UNIT, { askAgent: true }), ["Ask agent*", "Link to case…", "Explain…", "Dismiss…"])
+  const inCase = p.rows.find(r => r.cls === "case")
+  same(labels(inCase.id, {}), ["Open case*"])
+  const routine = p.rows.find(r => r.cls === "routine")
+  same(labels(routine.id, {}), [])
+  same(M.eventActions(null, {}), [])
+})
+
+test("deskToday and todayRows: needs you, journal, yesterday, the overview", () => {
+  const idx = M.parseIndex(sample).index
+  const t = M.deskToday(idx, M.deskChangelog(idx))
+  same([t.title, t.state.id, t.headline], ["Thursday, 1 Oct 2026", "crisis", "Seldon is recording. 2 changes need you."])
+  same(t.tiles.map(x => x.label + " " + x.value), ["events today 30", "7 days 51"])
+  same(t.needs.map(r => r.id), [UNIT, HOOK])
+  same(t.cases.map(c => c.id + " " + c.text), ["C-2026-003 4/5 steps · claude-code", "C-2026-004 2/4 steps · claude-code"])
+  same(M.todayRows(t, false).map(r => r.type), ["crisis", "crisis", "entry", "entry", "entry", "entry", "toggle"])
+  same(M.todayRows(t, true).map(r => r.id).slice(-2), ["toggle", "yesterday:0"])
+  assert.strictEqual(M.todayRows(t, false)[6].title, "▸ Yesterday · 1 entry")
+  const none = M.deskToday(null, null)
+  same([none.headline, none.tiles, none.needs, none.state], ["No index to show", [], [], null])
+  same(M.todayRows(none, false).map(r => r.id), ["empty"])
+})
+
+test("deskWork and workView: groups in order, labels, the By agent filter, search", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskWork(idx)
+  const v = M.workView(p, "", "")
+  same(v.rows.map(r => r.id), ["C-2026-003", "C-2026-004", "C-2026-008", "C-2026-005", "C-2026-006", "C-2026-007", "C-2026-002", "C-2026-001"])
+  same(v.labels, { active: "ACTIVE · 2", verification: "VERIFICATION · 1", queued: "QUEUED · 3", completed: "COMPLETED · 2" })
+  same(v.rows.find(r => r.id === "C-2026-005").listMeta, "C-2026-005 · R1 · themes · 1 proposed")
+  same(v.rows.find(r => r.id === "C-2026-002").listMeta, "C-2026-002 · R1 · hyprland · closed by agent")
+  const agent = M.workView(p, "agent", "")
+  assert.strictEqual(agent.labels.completed, "COMPLETED · 1 / 2")
+  same(M.workView(p, "", "ZWEITEN").rows.map(r => r.id), ["C-2026-004"])
+  same(M.workView(M.deskWork(null), "", "").rows, [])
+})
+
+test("caseDeskActions by status; hints and verbs", () => {
+  const ids = st => M.caseDeskActions({ status: st, actionable: true }).map(a => a.id + (a.arm ? "!" : "") + (a.primary ? "*" : ""))
+  same(ids("queued"), ["start!*", "drop!", "open"])
+  same(ids("active"), ["agent!*", "verify!", "drop!", "open"])
+  same(ids("verification"), ["done!*", "drop!", "open"])
+  same(ids("completed"), ["reopen*", "open"])
+  same(ids("dropped"), ["open*"])
+  same(M.caseDeskActions({ status: "active", actionable: false }), [])
+  const active = { status: "active", actionable: true }
+  assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "agent"), "C-2026-003"), "Hand to agent C-2026-003? Press a or Enter again or click Confirm.")
+  assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "drop"), "C-2026-003"), "Drop C-2026-003? Press x again or click Confirm. This is final.")
+  assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "verify"), "C-2026-003"), "To verification C-2026-003? Click Confirm.")
+  same(["start", "verify", "done", "drop", "reopen", "agent", "open"].map(M.caseActionVerb), ["start", "verify", "done", "drop", "reopen", "", ""])
+  // every verb still builds a CONTRACT.md argv
+  for (const verb of ["start", "verify", "done", "drop", "reopen"])
+    assert.strictEqual(M.validateArgs(M.planArgs(verb, "C-2026-003").args), "", verb)
+})
+
+test("caseDetail: key/values, plan, log and linked changes from the index", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskWork(idx)
+  const d = M.caseDetail(idx, p, "C-2026-004")
+  same([d.heading, d.meta, d.plan.text], ["C-2026-004 · active", "C-2026-004 · R2", "2 of 4 steps done"])
+  same(d.kv.map(r => r[0]), ["Status", "Risk", "Zone", "Area", "Priority", "Agent", "Rollback", "Dates", "File"])
+  same(d.log.map(r => r[1]), [
+    "note · human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.",
+    "case-started · human", "case-created · human"].slice(0, d.log.length))
+  assert.ok(d.linked.length >= 1 && d.linkedMore === "")
+  // ids the index no longer lists are counted
+  const copy = JSON.parse(sample)
+  copy.cases.active[1].events.push("01M3ZZZZZZZZZZZZZZZZZZZZZZ")
+  const d2 = M.caseDetail(copy, M.deskWork(copy), "C-2026-004")
+  assert.strictEqual(d2.linkedMore, "+1 older change the index no longer lists")
+  assert.strictEqual(M.caseDetail(idx, p, "C-2026-999"), null)
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
