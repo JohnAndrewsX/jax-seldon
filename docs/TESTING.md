@@ -770,11 +770,17 @@ every Open in editor, *Run in terminal*), a refusal keeps it open with
 the text; an active case an agent works on shows Focus in place of Hand
 to agent ("agent working" on its row and in the bar); a stale desk heals
 from the engine's "already working" and "no agent is working" refusals
-(`FAKE_SELDON_SESSIONS_LATE`, `FAKE_SELDON_FOCUS_GONE`); `a` four times
-and `e` three times send one call each, busy labels while in flight; the
-same open within 2 s sends nothing, after 2 s it is sent; an editor the
-engine focused (`FAKE_SELDON_OPEN_FOCUSED`) launches nothing. The fake
-engine keeps the live sessions in `$HOME/sessions` and logs `agent
+(`FAKE_SELDON_SESSIONS_LATE`, `FAKE_SELDON_FOCUS_GONE`); an index change
+while the desk is open asks for the sessions again (`aside-index`);
+without Hyprland the engine tracks nothing and a second hand-off launches
+(`FAKE_SELDON_NO_TRACKING`, `aside-nowindow`); `a` four times and `e`
+three times send one call each, busy labels while in flight (the fake
+holds each open until the step `touch:release-open`,
+`FAKE_SELDON_HOLD_OPEN`, so "in flight" is a state, not a race); the same
+open within 2 s sends nothing, after 2 s it is sent, and a failed open
+does not start the 2 s (`aside-openfail`); an editor window the engine
+focused (`FAKE_SELDON_OPEN_FOCUSED`) launches nothing. The fake engine
+keeps the open agent windows in `$HOME/sessions` and logs `agent
 sessions` (its own process) to `sessions.log`, not `argv.log`; a section
 change gives the keys back from a field and keeps its
 draft; the Changelog's selection follows its event across an index update

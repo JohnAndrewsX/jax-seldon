@@ -203,7 +203,7 @@ Prime Radiant overlay (`Overlay.qml`) in WP-121.
 **The desk steps aside for what it opens (WP-156).** A window the desk
 starts would appear under the overlay. After the engine answers a call
 that opened or focused a window — `agent start` (also `--new`), `agent
-focus`, `open … --editor` (launched, focused or still opening; also the
+focus` (also "starting"), `open … --editor` (launched or focused; also the
 editor a new decision opens), and `agent ask` once the plugin runs it —
 the service closes the desk through the facade, as Esc does
 (`Service.stepAside`, `Model.opensWindow`); the notices' *Run in
@@ -517,15 +517,18 @@ contract 2) and
 LINKED CHANGES · N (the case's `events` the index still lists, "+N older
 changes the index no longer lists").
 
-One agent per case (WP-156): the service knows which cases an agent works
-on now (`agent sessions --json`, its own process beside the queue, like
-`doctor`; asked when the desk opens, after every agent or open answer,
-when the index changes and every 15 s while the desk is open,
-`Model.SESSIONS_POLL_MS`). On such an active case the bar shows **Focus**
-(`agent focus <id> --json`; key `a`; runs at once, writes nothing; Enter
-still never takes it) in place of *Hand to agent*, "agent working" before
-id · risk, the Agent row reads "working now · <actor> · pid <n>", and the
-case's row says "agent working". A stale answer heals itself: the
+One agent per case (WP-156, ADR-0041): the service knows which cases have
+an agent window open, or an agent starting (`agent sessions --json`, its
+own process beside the queue, like `doctor`; asked when the desk opens,
+after every `agent` or `open` answer, when the index changes and every 15 s
+while the desk is open, `Model.SESSIONS_POLL_MS`). On such an active case
+the bar shows **Focus** (`agent focus <id> --json`; key `a`; runs at once,
+writes nothing; Enter still never takes it) in place of *Hand to agent*,
+"agent working" before id · risk, the Agent row reads "working now ·
+<actor> · workspace <n>" (or "starting · its window is not open yet"), and
+the case's row says "agent working". Without Hyprland the engine tracks
+nothing: the desk keeps *Hand to agent*, and the busy state and the 2 s
+floor are what stop a double launch. A stale answer heals itself: the
 engine's "already working" refusal and its "no agent is working" both ask
 again. While a call is in flight its button is busy and disabled
 (*Starting…*, *Focusing…*, *Opening…*), as Run and Capture are; an open

@@ -875,7 +875,7 @@ Commands:
   start     Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
   ask       Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
   focus     Bring the window of the agent `agent start` launched on a case to the front (Hyprland)
-  sessions  List the agents `agent start` launched that still run, one per case
+  sessions  List the agents `agent start` launched whose window is open, one per case (Hyprland)
   help      Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1001,13 +1001,15 @@ Options:
 ```
 <!-- /help -->
 
-**Ein Agent pro Case.** `agent start <ID>` lehnt ab, solange ein Agent,
-den es auf dem Case gestartet hat, noch läuft, und nennt `seldon agent
-focus <ID>`; `--again` startet trotzdem einen weiteren. `agent focus` holt
-das Fenster dieses Agenten nach vorn (Hyprland); `agent sessions` listet
-die noch laufenden Agenten, einen pro Case. Die Engine erkennt sie an den
-Variablen `SELDON_CASE` und `SELDON_LOGBOOK` in ihrer Umgebung; nichts
-wird gespeichert.
+**Ein Agent pro Case.** `agent start <ID>` lehnt ab, solange das Fenster
+eines Agenten, den es auf dem Case gestartet hat, offen ist (oder 10
+Sekunden nach einem Start, während das Fenster aufgeht), und nennt
+`seldon agent focus <ID>`; `--again` startet trotzdem einen weiteren.
+`agent focus` holt dieses Fenster nach vorn; `agent sessions` listet die
+offenen, eines pro Case. Die Engine schaut auf die Agent-Fenster, die
+Hyprland listet, und erkennt den Case an der Umgebung ihrer Prozesse
+(`SELDON_CASE`, `SELDON_LOGBOOK`); wer das Fenster schließt, gibt den Case
+frei. Ohne Hyprland wird nichts verfolgt und nichts abgelehnt.
 
 <!-- help: seldon agent focus -->
 ```text
@@ -1027,7 +1029,7 @@ Example:
 
 <!-- help: seldon agent sessions -->
 ```text
-List the agents `agent start` launched that still run, one per case
+List the agents `agent start` launched whose window is open, one per case (Hyprland)
 
 Usage: seldon agent sessions [OPTIONS]
 

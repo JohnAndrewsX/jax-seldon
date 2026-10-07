@@ -25,15 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
-- **One agent per case (WP-156).** `seldon agent start <ID>` refuses
-  (exit 1, nothing launched) while an agent it launched on the case still
-  runs, and names `seldon agent focus <ID>`, which brings that agent's
-  window to the front (Hyprland); `--again` starts another anyway. `seldon
-  agent sessions` lists the running ones. The engine finds them by the
-  `SELDON_CASE`/`SELDON_LOGBOOK` marker in their environment (the user's
-  own processes, only those keys); nothing is stored. `seldon open
-  --editor` from the desk focuses the editor it already opened on the same
-  file instead of starting a second one.
+- **One agent per case (WP-156, ADR-0041).** `seldon agent start <ID>`
+  refuses (exit 1, nothing launched) while the window of an agent it
+  launched on the case is open, or for 10 s after a launch while that
+  window is still coming up, and names `seldon agent focus <ID>`, which
+  brings that window to the front (Hyprland); `--again` starts another
+  anyway. `seldon agent sessions` lists the open ones. A session is an
+  `org.omarchy.agent` window whose process or a descendant carries the
+  `SELDON_CASE`/`SELDON_LOGBOOK` marker; the engine reads the environment
+  of those windows' processes only (only those keys). Closing the window
+  frees the case, even if the agent left a background process behind.
+  Without Hyprland nothing is tracked. `seldon open --editor` from the desk
+  focuses the terminal window it already opened on the same file instead
+  of starting a second editor.
 - **Code the collectors could not see (WP-113, ADR-0028 WP-E; hashes
   only, never content).** A third-party plugin edited in place is now one
   `plugin-update` (detail `files changed (sha256 … → …)`): the plugins
