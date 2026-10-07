@@ -1479,6 +1479,25 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeHq06",
         "{\\\"Authorization\\\": ‹redacted›}\"",
     ),
+    // round 2 (N4): text glued after the closing quote, a Python f-string
+    (
+        "authorization-header",
+        "Authorization: \"Bearer \"fakeHq11 next",
+        "fakeHq11",
+        "Authorization: ‹redacted› next",
+    ),
+    (
+        "authorization-header",
+        "{'Authorization': f'Bearer {fakeHq12}', 'Accept': 'x'}",
+        "fakeHq12",
+        "{'Authorization': ‹redacted›, 'Accept': 'x'}",
+    ),
+    (
+        "secret-header",
+        "x-api-key: rb'fakeHq13'; next",
+        "fakeHq13",
+        "x-api-key: ‹redacted›; next",
+    ),
     (
         "secret-header",
         "x-api-key: \"fakeHq07 with \\\"quotes\\\"\"",
@@ -1641,6 +1660,9 @@ const CLEAR: &[&str] = &[
     "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQ==\n-----END PUBLIC KEY-----",
     "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIU\n-----END CERTIFICATE-----",
     "the private key stays in ~/.ssh/id_ed25519, see -----BEGIN-----",
+    // round 2 (R1): a public block in a text that says "private key"
+    "keep the private key; the public one:\n-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----\nok",
+    "-----BEGIN RSA PUBLIC KEY-----\nMIIBCgKCAQEA\n-----END RSA PUBLIC KEY-----, not a private key",
     // no header value: a search for the name
     "grep -ri 'authorization:' /var/log/app.log",
     "rg -n \"X-Api-Key:\" src",
@@ -2054,6 +2076,13 @@ mod redaction {
             assert_eq!(r.redact(text), text);
             assert!(r.matching_rules(text).is_empty(), "{text}");
         }
+        // round 2 (N3): where it does not hold. Text glued after the gap
+        // a user pattern masked joins the value on the second pass, which
+        // masks it too (more, never less)
+        let semi = Redactor::with_patterns(&[";".into()]).unwrap();
+        let once = semi.redact("tool --password fakeMm10;tail");
+        assert_eq!(once, "tool --password ‹redacted›‹redacted›tail");
+        assert_eq!(semi.redact(&once), "tool --password ‹redacted›");
         // a marker with anything else is masked again
         assert_eq!(
             r.redact("tool --password ‹redacted›fakeMm09"),
@@ -2978,14 +3007,22 @@ mod commands {
     }
 
     /// WP-140: every code point of the widened set is dropped before the
-    /// redaction, so none hides a `token=` from its rule; a PEM private
-    /// key in a Result is masked whole.
+    /// redaction, so none hides a `token=` from its rule (half of them in a
+    /// case's Intent, half in a decision's lead, each under the clip); a
+    /// PEM private key in a Result is masked whole.
     #[test]
     fn the_index_drops_every_format_character_before_the_redaction() {
         let env = Env::new(Snapper::Missing);
         let root = env.init_logbook();
         run(&env, &["plan", "new", "--", "Split"]);
+        run(&env, &["decide", "--no-edit", "--", "Split"]);
         let splitters = [
+            '\u{0600}',
+            '\u{0605}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D17A}',
             '\u{00AD}',
             '\u{061C}',
             '\u{180E}',
@@ -2998,11 +3035,19 @@ mod commands {
             '\u{E0001}',
             '\u{E007F}',
         ];
-        let intent: Vec<String> = splitters
+        let tokens: Vec<String> = splitters
             .iter()
             .enumerate()
             .map(|(i, c)| format!("to{c}ken=fmtSecret{i:02}"))
             .collect();
+        let (intent, lead) = tokens.split_at(9);
+        let adr = find_file(&root.join("decisions"), "ADR-0001");
+        let text = read(&adr).replacen(
+            "## Decision\n",
+            &format!("## Decision\n{}\n", lead.join(" ")),
+            1,
+        );
+        std::fs::write(&adr, text).unwrap();
         let path = find_file(&root.join("work/queued"), "C-2026-001");
         let text = read(&path)
             .replacen("## Intent\n", &format!("## Intent\n{}\n", intent.join(" ")), 1)
@@ -3018,7 +3063,9 @@ mod commands {
         let index: Value = serde_json::from_str(&text).unwrap();
         let case = &index["cases"]["queued"][0];
         let intent = case["intent"].as_str().unwrap();
-        assert_eq!(intent.matches("token=‹redacted›").count(), 11, "{intent}");
+        assert_eq!(intent.matches("token=‹redacted›").count(), 9, "{intent}");
+        let lead = index["decisions"][0]["lead"].as_str().unwrap();
+        assert_eq!(lead.matches("token=‹redacted›").count(), 8, "{lead}");
         let result = case["result"].as_str().unwrap();
         assert!(
             result.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----‹redacted›"),

@@ -42,8 +42,9 @@ pub fn bad_path_char(c: char) -> bool {
 
 /// A character that turns the direction of the text around it (U+061C,
 /// U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible format
-/// character (U+00AD, U+180E, U+200B–U+200D, U+2060–U+2064, U+206A–U+206F,
-/// U+FEFF, U+FFF9–U+FFFB, the tags U+E0000–U+E007F). The index drops them
+/// character (U+00AD, U+0600–U+0605, U+180E, U+200B–U+200D, U+2060–U+2064,
+/// U+206A–U+206F, U+FEFF, U+FFF9–U+FFFB, U+1BCA0–U+1BCA3, U+1D173–U+1D17A,
+/// the tags U+E0000–U+E007F). The index drops them
 /// from the texts it shows (ADR-0038 §2): a reordered or split line can
 /// mislead, and one inside a token would hide it from its redaction rule
 /// (WP-140 added U+00AD and the rest beyond the WP-127 set).
@@ -51,6 +52,7 @@ pub fn is_direction_or_format(c: char) -> bool {
     matches!(
         c,
         '\u{00AD}'
+            | '\u{0600}'..='\u{0605}'
             | '\u{061C}'
             | '\u{180E}'
             | '\u{200B}'..='\u{200F}'
@@ -59,6 +61,8 @@ pub fn is_direction_or_format(c: char) -> bool {
             | '\u{2066}'..='\u{206F}'
             | '\u{FEFF}'
             | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
             | '\u{E0000}'..='\u{E007F}'
     )
 }
@@ -491,6 +495,14 @@ mod tests {
     fn the_direction_and_format_set_holds_each_code_point() {
         for c in [
             '\u{00AD}',
+            '\u{0600}',
+            '\u{0603}',
+            '\u{0605}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D177}',
+            '\u{1D17A}',
             '\u{061C}',
             '\u{180E}',
             '\u{200B}',
@@ -527,6 +539,12 @@ mod tests {
         }
         for c in [
             '\u{00AC}',
+            '\u{05FF}',
+            '\u{0606}',
+            '\u{1BC9F}',
+            '\u{1BCA4}',
+            '\u{1D172}',
+            '\u{1D17B}',
             '\u{00AE}',
             '\u{061B}',
             '\u{061D}',

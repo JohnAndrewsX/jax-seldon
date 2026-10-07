@@ -1679,6 +1679,39 @@ mod tests {
         assert_eq!(step("pull", 2, 0, &[]).summary(), "pulled 2 commits");
     }
 
+    /// WP-140: each code point of the widened set is dropped before the
+    /// redaction, so none hides a token in a commit subject from its rule.
+    #[test]
+    fn a_subject_drops_every_format_character_before_the_redaction() {
+        let r = Redactor::builtin();
+        for c in [
+            '\u{00AD}',
+            '\u{0600}',
+            '\u{0605}',
+            '\u{061C}',
+            '\u{180E}',
+            '\u{2061}',
+            '\u{2064}',
+            '\u{206A}',
+            '\u{206F}',
+            '\u{FFF9}',
+            '\u{FFFB}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D17A}',
+            '\u{E0001}',
+            '\u{E007F}',
+        ] {
+            assert_eq!(
+                commit_subject(&format!("Fix to{c}ken=abc{c}def here"), &r),
+                "Fix token=‹redacted› here",
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
     #[test]
     fn a_subject_is_clean_and_short() {
         let r = Redactor::builtin();

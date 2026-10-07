@@ -918,8 +918,8 @@ def case_intent(fm, body):
 
 # engine: import::is_direction_or_format (ADR-0038 §2, the set WP-140 widened)
 FORMAT_SET = (
-    "\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff"
-    "\ufff9-\ufffb\U000e0000-\U000e007f"
+    "\u00ad\u0600-\u0605\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f"
+    "\ufeff\ufff9-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e007f"
 )
 DIRECTION_OR_FORMAT = re.compile(f"[{FORMAT_SET}]")
 

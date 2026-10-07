@@ -132,9 +132,12 @@ const COMMAND_REST: &str = r#"(?:[^\n;&|]*?|(?:\$'(?:[^'\\]|\\(?s:.))*'|[^\n;&|'
 
 /// A quoted header value (`Authorization: "Bearer x"`, WP-140): a string
 /// closed on its line, `"…"` with `\"` inside, `\"…\"` inside a shell
-/// string, or `'…'`. A quote the line does not close starts no value.
-const HEADER_QUOTED: &str =
-    r#"(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|\\"(?:[^"\\\r\n]|\\[^"\r\n])*\\"|'[^'\r\n]*')"#;
+/// string, or `'…'`, after a Python string prefix (`f'Bearer {t}'`, `r`,
+/// `b`, `u`, two of them), with the text glued after its closing quote up
+/// to white space, a quote, a backslash, `,`, `;`, a closing bracket or a
+/// marker (`"Bearer "SECRET`; round 2). A quote the line does not close
+/// starts no value.
+const HEADER_QUOTED: &str = r#"(?:[rRbBuUfF]{1,2})?(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|\\"(?:[^"\\\r\n]|\\[^"\r\n])*\\"|'[^'\r\n]*')[^\s'"\\,;)\]}‹]*"#;
 
 /// A bare header value: the rest of the line up to a quote, whose last
 /// character is no `\r`, so a CRLF line end reads as an LF one (WP-128).
