@@ -174,3 +174,32 @@ is **proposed** (the orchestrator accepts it), review stage 1 Opus, stage
   10-01 (75 rows, the heatmap's 10-01 cell 32), so its new `desk-view.sh`
   counts should start from these numbers; `panel-view.sh` and
   `overlay-view.sh` here already carry them.
+
+## Merge of next
+
+`origin/next` @ 38a9103 (WP-121, the desk shell) merged into this branch.
+
+- Conflicts: `docs/SPEC-PLUGIN.md` §1 manifest — next's desk manifest
+  (`Desk.qml`, `deskWidth`, `deskSidebar`) with this WP's `contractVersion`
+  2. `tests/plugin/panel-view.sh` and `overlay-view.sh` (modify/delete) —
+  next's side, deleted (orchestrator decision; `COVERAGE.md` maps them to
+  `desk-view.sh`). This WP's changes there were count and cursor shifts
+  only (two more 10-01 events, 23 lines); no contract-2 row was lost: the
+  contract-2 cases (v3 index, v1 index, the `v0.1.3` plugin against the v2
+  sample, `bannerDetail`, `pluginContractVersion`) live in
+  `service-states.sh` and the harness `shell.qml`, both kept.
+- Auto-merged and checked: `plugin/Model.js` `CONTRACT_VERSION = 2`,
+  `manifest.json` `seldon.contractVersion: 2`, justfile `plugin-test` runs
+  `desk-view.sh`.
+- WP-121 expectation brought to the v2 sample: `model.test.js` "deskKpis
+  and deskCounts on the sample" — today's KPI 30 → 32. `desk-view.sh`
+  needed no change (its scenarios assert no row or day counts of the
+  sample); it passes on the v2 fixture.
+- `flock /tmp/seldon-check.lock just check` on the merge state: **exit 0**,
+  `check: ok`. Rust 1970 passed, 0 failed, 10 ignored; `validate-fixtures:
+  ok` (130 instances, 85 ledger events, 9 variants, 54 self-checks);
+  `docs-check: ok`; `plugin-validate: ok`; `qmllint: ok` (49 files); model
+  108, service-states 328, desk-view 373, bar-view 194, real-home-guard 11.
+  (The run started before the two `git rm`s; neither file is run by the
+  justfile on next.)
+- `check-rss`: unchanged, goes to the operator as its own question.

@@ -5,12 +5,12 @@
   "version": "0.1.3",
   "author": "JohnAndrewsX",
   "license": "MIT",
-  "description": "Flight recorder and planning desk for your Omarchy system: ledger, journal, cases, drift, and the Prime Radiant overlay.",
+  "description": "The memory of your Omarchy machine, for you and your agents: ledger, journal, cases, drift and the Prime Radiant in one desk.",
   "kinds": ["service", "bar-widget", "overlay"],
   "entryPoints": {
     "service": "Service.qml",
     "barWidget": "BarWidget.qml",
-    "overlay": "Overlay.qml"
+    "overlay": "Desk.qml"
   },
   "barWidget": {
     "displayName": "Seldon",
@@ -22,12 +22,16 @@
     "defaults": {
       "captureIntervalMin": 15,
       "wipLimit": 3,
-      "driftInBar": "crisis"
+      "driftInBar": "crisis",
+      "deskWidth": 100,
+      "deskSidebar": "open"
     },
     "schema": [
       { "key": "captureIntervalMin", "type": "integer", "label": "Capture interval (minutes)", "min": 5, "max": 120, "step": 5, "defaultValue": 15, "description": "How often the engine captures system changes while the shell runs." },
       { "key": "wipLimit", "type": "integer", "label": "Active cases limit", "min": 1, "max": 20, "step": 1, "defaultValue": 3, "description": "The Work tab shows active cases against this limit (\"2 / 3 active\"); it warns, it does not block." },
-      { "key": "driftInBar", "type": "enum", "label": "Changes counted in the bar", "options": ["crisis", "all", "none"], "defaultValue": "crisis", "description": "crisis: changes that can affect boot, login or the shell and have no case. all: every change without a case. none: no count. The bar turns to the error colour on a crisis in every mode." }
+      { "key": "driftInBar", "type": "enum", "label": "Changes counted in the bar", "options": ["crisis", "all", "none"], "defaultValue": "crisis", "description": "crisis: changes that can affect boot, login or the shell and have no case. all: every change without a case. none: no count. The bar turns to the error colour on a crisis in every mode." },
+      { "key": "deskWidth", "type": "integer", "label": "Desk width (% of the screen)", "min": 50, "max": 100, "step": 1, "defaultValue": 100, "description": "How wide the Seldon desk opens, in per cent of the screen's width; never narrower than 960 px unless the screen is. Also set in the desk under Settings › Appearance." },
+      { "key": "deskSidebar", "type": "enum", "label": "Desk sidebar", "options": ["open", "collapsed"], "defaultValue": "open", "description": "open: section names and counts. collapsed: icons only. On a desk narrower than 960 px the sidebar always shows icons only." }
     ]
   },
   "seldon": { "contractVersion": 2, "engineMin": "0.1.0" }

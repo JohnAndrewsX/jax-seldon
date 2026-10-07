@@ -1,0 +1,87 @@
+import QtQuick
+import qs.Commons
+
+// The desk's list column (ADR-0034 §2): a small-capitals title, whatever
+// the section puts above the list (chips, a field: the default property),
+// then a ListView of the section's rows (delegates from Model.js row
+// functions), or `emptyText` when there are none. The cursor row is
+// `currentIndex`; the view keeps it in sight.
+Item {
+  id: root
+
+  property string title: ""
+  property string emptyText: ""
+  property alias model: list.model
+  property alias delegate: list.delegate
+  property alias currentIndex: list.currentIndex
+  property color foreground: Color.popups.text
+  property string fontFamily: Style.font.family
+  // Draw the hairline at the right (not in the stacked layout).
+  property bool divider: true
+  default property alias head: headColumn.data
+
+  readonly property ListView view: list
+
+  Rectangle {
+    visible: root.divider
+    anchors.right: parent.right
+    width: Style.spacing.hairline
+    height: parent.height
+    color: Util.alpha(root.foreground, 0.12)
+  }
+
+  Column {
+    id: top
+    x: Style.spacing.xxl
+    y: Style.spacing.xxl
+    width: parent.width - Style.spacing.xxl * 2
+    spacing: Style.spacing.lg
+
+    Text {
+      width: parent.width
+      textFormat: Text.PlainText
+      text: root.title.toUpperCase()
+      color: Color.muted
+      elide: Text.ElideRight
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.letterSpacing: Style.space(1)
+      font.bold: true
+    }
+
+    Column {
+      id: headColumn
+      width: parent.width
+      spacing: Style.spacing.md
+    }
+  }
+
+  ListView {
+    id: list
+    x: Style.spacing.xxl
+    anchors.top: top.bottom
+    anchors.topMargin: Style.spacing.lg
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: Style.spacing.xxl
+    width: parent.width - Style.spacing.xxl * 2
+    clip: true
+    spacing: Style.spacing.md
+    boundsBehavior: Flickable.StopAtBounds
+    highlightFollowsCurrentItem: false
+    currentIndex: -1
+    onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+  }
+
+  Text {
+    visible: list.count === 0 && root.emptyText !== ""
+    x: Style.spacing.xxl
+    anchors.top: list.top
+    width: parent.width - Style.spacing.xxl * 2
+    textFormat: Text.PlainText
+    text: root.emptyText
+    color: Color.muted
+    wrapMode: Text.Wrap
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+  }
+}

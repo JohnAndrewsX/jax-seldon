@@ -3,7 +3,7 @@
 //
 // Nothing here touches Qt, files or processes, so the same file runs under
 // node (tests/plugin/model.test.js). Service.qml owns all I/O; BarWidget.qml,
-// Panel.qml and components/ only render what these functions return,
+// Desk.qml and components/ only render what these functions return,
 // including the rows of the Today, Changelog and System tabs.
 
 var CONTRACT_VERSION = 2
@@ -3082,3 +3082,232 @@ function captureWarningNotice(warnings) {
     hint: ""
   }
 }
+
+// ---- Desk (ADR-0034) ----------------------------------------------------------
+
+// The desk's nine targets in sidebar order: eight sections with their fixed
+// digit, then Settings on `,`. `wp` names the work package that fills a
+// section the shell (WP-121) only stubs; `solo` sections have no list column
+// (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
+// (components/desk/NavIcon.qml), from the approved prototype.
+var DESK_SECTIONS = [
+  { id: "today", label: "Today", key: "1", wp: "WP-122", solo: false,
+    icon: "M4 5h16v15H4zM4 9h16M9 3v4M15 3v4" },
+  { id: "changelog", label: "Changelog", key: "2", wp: "WP-122", solo: false,
+    icon: "M5 6h14M5 12h14M5 18h9" },
+  { id: "work", label: "Work", key: "3", wp: "WP-122", solo: false,
+    icon: "M4 8h16v11H4zM9 8V5h6v3" },
+  { id: "decisions", label: "Decisions", key: "4", wp: "WP-123", solo: false,
+    icon: "M6 4h9l4 4v12H6zM14 4v5h5" },
+  { id: "system", label: "System", key: "5", wp: "WP-123", solo: false,
+    icon: "M4 5h16v11H4zM8 20h8M12 16v4" },
+  { id: "memory", label: "Memory", key: "6", wp: "WP-123", solo: false,
+    icon: "M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2z" },
+  { id: "radiant", label: "Prime Radiant", key: "7", wp: "WP-123", solo: true,
+    icon: "M12 2l2 7 7 3-7 3-2 7-2-7-7-3 7-3z" },
+  { id: "graph", label: "Graph", key: "8", wp: "WP-125", solo: true,
+    icon: "M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M16 7a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M7 8l4 7M17 9l-4 6M8 6h8" },
+  { id: "settings", label: "Settings", key: ",", wp: "", solo: false,
+    icon: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" }
+]
+var DESK_SECTION_DEFAULT = "today"
+// The sidebar's fold button.
+var DESK_COLLAPSE_ICON = "M15 6l-6 6 6 6"
+var DESK_EXPAND_ICON = "M9 6l6 6-6 6"
+
+// The bar-widget settings of the desk (manifest barWidget.defaults/schema).
+var DESK_WIDTH_DEFAULT = 100
+var DESK_WIDTH_MIN = 50
+var DESK_WIDTH_MAX = 100
+var DESK_WIDTH_PRESETS = [50, 67, 75, 100]
+var DESK_SIDEBAR_MODES = ["open", "collapsed"]
+var DESK_SIDEBAR_DEFAULT = "open"
+// §1: never narrower than this (unless the screen is); below it the sidebar
+// shows icons only, below DESK_STACK_WIDTH list and detail stack.
+var DESK_MIN_WIDTH = 960
+var DESK_STACK_WIDTH = 760
+var DESK_REFUSED_TEXT = "Change it in Omarchy's bar settings (Seldon widget)."
+// The plugin is enabled but not in the bar: the shell has no entry to keep
+// the desk's settings in (Service.entryKnown).
+var DESK_NO_ENTRY_TEXT = "Add Seldon to the bar to keep this setting; until then it holds until the shell restarts."
+
+function deskSection(id) {
+  for (var i = 0; i < DESK_SECTIONS.length; i++)
+    if (DESK_SECTIONS[i].id === id) return DESK_SECTIONS[i]
+  return null
+}
+
+function deskSectionIndex(id) {
+  for (var i = 0; i < DESK_SECTIONS.length; i++)
+    if (DESK_SECTIONS[i].id === id) return i
+  return -1
+}
+
+// The section a typed character selects ("1"–"8", ","), or "".
+function deskSectionForKey(text) {
+  for (var i = 0; i < DESK_SECTIONS.length; i++)
+    if (DESK_SECTIONS[i].key === text) return DESK_SECTIONS[i].id
+  return ""
+}
+
+// Alt+↑/↓: the previous or next of the nine targets, wrapping.
+function deskCycle(id, delta) {
+  var n = DESK_SECTIONS.length
+  var i = deskSectionIndex(id)
+  if (i === -1) i = 0
+  return DESK_SECTIONS[(((i + delta) % n) + n) % n].id
+}
+
+// The setting `deskWidth` as an integer per cent in 50–100; anything else
+// (missing, a hand-edited shell.json) is the default.
+function clampDeskWidth(value) {
+  if (value === null || value === undefined || value === "") return DESK_WIDTH_DEFAULT
+  var n = Math.round(Number(value))
+  if (!isFinite(n)) return DESK_WIDTH_DEFAULT
+  return Math.max(DESK_WIDTH_MIN, Math.min(DESK_WIDTH_MAX, n))
+}
+
+function deskSidebarMode(value) {
+  return DESK_SIDEBAR_MODES.indexOf(value) !== -1 ? value : DESK_SIDEBAR_DEFAULT
+}
+
+// The desk inside its window (ADR-0034 §1). The window covers the screen's
+// usable area; `gap` is Style.gapsOut on every side. The width is
+// clamp(round(avail × pct / 100), min(960, avail), avail), centred; at
+// 100 % it fills the row like a left/right-anchored surface.
+function deskGeometry(windowWidth, windowHeight, pct, gap) {
+  var g = Math.max(0, Math.round(Number(gap) || 0))
+  var availW = Math.max(0, Math.floor(Number(windowWidth) || 0) - 2 * g)
+  var availH = Math.max(0, Math.floor(Number(windowHeight) || 0) - 2 * g)
+  var want = Math.round(availW * clampDeskWidth(pct) / 100)
+  var w = Math.max(Math.min(DESK_MIN_WIDTH, availW), Math.min(availW, want))
+  return { x: g + Math.floor((availW - w) / 2), y: g, w: w, h: availH, avail: availW }
+}
+
+// The columns at a desk width. `sizes`: { sidebar, icons, listMin, listMax }
+// in pixels (Style.space of the prototype's 210 / 56 / 260 / 360).
+// The thresholds are pixels of the desk itself.
+function deskLayout(width, sidebarPref, solo, sizes) {
+  var w = Math.max(0, Number(width) || 0)
+  var forced = w < DESK_MIN_WIDTH
+  var icons = forced || deskSidebarMode(sidebarPref) === "collapsed"
+  var stacked = !solo && w < DESK_STACK_WIDTH
+  var sidebarW = icons ? sizes.icons : sizes.sidebar
+  var rest = Math.max(0, w - sidebarW)
+  var listW = solo ? 0 : stacked ? rest : Math.max(sizes.listMin, Math.min(sizes.listMax, Math.round(rest * 0.3)))
+  return {
+    sidebar: icons ? "icons" : "open",
+    forced: forced,
+    stacked: stacked,
+    solo: !!solo,
+    sidebarW: sidebarW,
+    listW: listW,
+    detailW: solo ? rest : stacked ? rest : Math.max(0, rest - listW)
+  }
+}
+
+// The desk's open(payloadJson) (§4, §7): {"section": id, "select": id,
+// "filter": source, "period": p}. A `period` without a section implies the
+// Prime Radiant (the old overlay payload). Unknown sections are dropped.
+function deskPayload(payloadJson) {
+  var data = parseJson(payloadJson) || {}
+  var out = { section: "", select: "", filter: "", period: "" }
+  if (deskSection(data.section)) out.section = data.section
+  if (isPeriod(data.period)) out.period = data.period
+  if (out.section === "" && out.period !== "") out.section = "radiant"
+  if (typeof data.select === "string") out.select = data.select
+  if (typeof data.filter === "string") out.filter = data.filter
+  return out
+}
+
+// The header's KPI strip (§2): active · verification · queued · crises ·
+// attention. `tone`: "accent" for active cases, "urgent" for crises, ""
+// otherwise. Empty before an index is shown.
+function deskKpis(index) {
+  if (!index) return []
+  var c = counts(index) || { active: 0, queued: 0, crisis: 0, attention: 0 }
+  var cases = isObject(index.cases) ? index.cases : {}
+  var verification = Array.isArray(cases.verification) ? cases.verification.length : 0
+  return [
+    { id: "active", label: "active", value: c.active, tone: c.active > 0 ? "accent" : "" },
+    { id: "verification", label: "verification", value: verification, tone: "" },
+    { id: "queued", label: "queued", value: c.queued, tone: "" },
+    { id: "crises", label: "crises", value: c.crisis, tone: c.crisis > 0 ? "urgent" : "" },
+    { id: "attention", label: "attention", value: c.attention, tone: "" }
+  ]
+}
+
+// The counts at the right of the sidebar rows: { <section id>: { text,
+// tone } }. Today: events today; Changelog: open changes (urgent with a
+// crisis); Work: active · verification · queued; Decisions: proposed;
+// Memory: lessons and topics. Empty text hides the count.
+function deskCounts(index) {
+  var out = {}
+  for (var i = 0; i < DESK_SECTIONS.length; i++) out[DESK_SECTIONS[i].id] = { text: "", tone: "" }
+  if (!index) return out
+  var summary = isObject(index.summary) ? index.summary : {}
+  var c = counts(index) || { active: 0, queued: 0, drift: 0, crisis: 0 }
+  out.today = { text: String(count(summary.eventsToday)), tone: "" }
+  if (c.drift > 0) out.changelog = { text: String(c.drift), tone: c.crisis > 0 ? "urgent" : "" }
+  var cases = isObject(index.cases) ? index.cases : {}
+  var verification = Array.isArray(cases.verification) ? cases.verification.length : 0
+  if (c.active + verification + c.queued > 0)
+    out.work = { text: c.active + " · " + verification + " · " + c.queued, tone: "" }
+  var proposed = (Array.isArray(index.decisions) ? index.decisions : []).filter(function(d) {
+    return isObject(d) && d.status === "proposed"
+  }).length
+  if (proposed > 0) out.decisions = { text: proposed + " new", tone: "" }
+  var memory = isObject(index.memory) ? index.memory : {}
+  var notes = (Array.isArray(memory.lessons) ? memory.lessons.length : 0) + (Array.isArray(memory.topics) ? memory.topics.length : 0)
+  if (notes > 0) out.memory = { text: String(notes), tone: "" }
+  return out
+}
+
+// The header's second line: machine · Omarchy version · captured N ago.
+function deskSubline(index, lastCaptureText, nowMs) {
+  var parts = []
+  if (index) {
+    var logbook = isObject(index.logbook) ? index.logbook : {}
+    if (hasText(logbook.machine)) parts.push(logbook.machine)
+    var omarchy = isObject(index.system) && isObject(index.system.omarchy) ? index.system.omarchy : {}
+    if (hasText(omarchy.version)) parts.push("Omarchy " + omarchy.version)
+  }
+  if (hasText(lastCaptureText)) parts.push("captured " + relativeAge(timeMs(lastCaptureText), nowMs))
+  return parts.join(" · ")
+}
+
+// The settings the desk writes through the shell facade's
+// updateEntryInline, which replaces the plugin's shell.json entry with
+// { id } + settings: every key of the current entry (unknown ones too, the
+// id left out) and the one that changes. null when the value is already
+// stored (the facade would report "nothing changed" as false, which the
+// desk must not read as a refusal).
+function deskSettingsWrite(entry, key, value) {
+  var next = {}
+  var current = isObject(entry) ? entry : {}
+  for (var k in current) if (k !== "id") next[k] = current[k]
+  if (next[key] === value) return null
+  next[key] = value
+  return next
+}
+
+// The screen the desk opens on: the index in `names` of Hyprland's focused
+// monitor, else 0 (the first screen).
+function pickScreen(names, focused) {
+  var list = Array.isArray(names) ? names : []
+  var i = hasText(focused) ? list.indexOf(focused) : -1
+  return i === -1 ? 0 : i
+}
+
+// Settings › Appearance: "1728 px on this screen".
+function deskWidthPreview(windowWidth, pct, gap) {
+  return deskGeometry(windowWidth, 0, pct, gap).w + " px on this screen"
+}
+
+// The label of a width preset chip.
+function deskPresetLabel(pct) {
+  return pct === 100 ? "Full" : pct + " %"
+}
+
+// The old `jax.seldon.panel` tab names and their sections (the shim, §7).
+var PANEL_TABS = ["today", "changelog", "work", "decisions", "system", "memory"]

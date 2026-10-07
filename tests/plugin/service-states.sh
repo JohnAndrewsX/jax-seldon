@@ -949,7 +949,7 @@ else
 fi
 
 # 35. The sheets (WP-068), in a headless window against the installed
-#     shell's Commons/ and Ui/ (copied, as panel-view.sh does) and the fake
+#     shell's Commons/ and Ui/ (copied, as desk-view.sh does) and the fake
 #     engine. A small harness written here drives NewCaseSheet, DriftSheet
 #     and NewDecisionSheet through their own functions and prints each step.
 #       busy    a pending `plan start`, then Create in the new-case sheet; a
@@ -969,7 +969,6 @@ if [[ -d $shell_dir/Commons && -d $shell_dir/Ui ]]; then
   mkdir -p "$sheets/Commons" "$sheets/Ui"
   cp "$shell_dir"/Commons/* "$sheets/Commons/"
   cp "$shell_dir"/Ui/* "$sheets/Ui/"
-  cp "$root/tests/plugin/harness/KeyboardPanel.qml" "$sheets/Ui/KeyboardPanel.qml"
   # The shell's Style.qml asks Hyprland and fontconfig; outside Hyprland it
   # keeps its defaults when they fail.
   printf '#!/bin/sh\nexit 1\n' >"$work/bin-base/hyprctl"

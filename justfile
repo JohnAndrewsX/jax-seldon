@@ -177,7 +177,7 @@ qmllint:
     #   uncreatable-type  Quickshell's qmltypes mark PanelWindow isCreatable: false
     # Everything else must be warning-free.
     shopt -s nullglob
-    files=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml)
+    files=(plugin/*.qml plugin/components/*.qml plugin/components/overlay/*.qml plugin/components/desk/*.qml plugin/sections/*.qml)
     "$lint" --max-warnings 0 --missing-property info --uncreatable-type info \
       -I "$root" -I "$shell_dir" "${files[@]}"
     # The demoted missing-property makes qmllint blind to token typos
@@ -186,7 +186,7 @@ qmllint:
     python3 tests/plugin/check-tokens.py "$shell_dir" "${files[@]}"
     echo "qmllint: ok (${#files[@]} files)"
 
-# Plugin logic: Model.js under node; Service.qml states, Panel.qml tabs, keys and banners, Overlay.qml and the pill (BarWidget.qml) in a private headless Quickshell (host only).
+# Plugin logic: Model.js under node; Service.qml states, the desk (Desk.qml: width, layout, keys, settings writes, notices, IPC) and the pill (BarWidget.qml) in a private headless Quickshell (host only).
 plugin-test:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -199,8 +199,7 @@ plugin-test:
     node tests/plugin/model.bench.js
     bash tests/plugin/real-home-guard.test.sh
     bash tests/plugin/service-states.sh
-    bash tests/plugin/panel-view.sh
-    bash tests/plugin/overlay-view.sh
+    bash tests/plugin/desk-view.sh
     bash tests/plugin/bar-view.sh
     echo "plugin-test: ok"
 

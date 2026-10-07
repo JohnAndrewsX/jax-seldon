@@ -12,8 +12,8 @@ import "Model.js" as Model
 // hides it (`none`). Accent when cases are active, the theme's urgent
 // colour when any crisis (in every mode), dimmed while the status is not
 // ok; the glyph takes the text's colour.
-// Left click toggles the panel, middle click the Prime Radiant, right click
-// captures.
+// Left click toggles the desk (ADR-0034), middle click opens it at the
+// Prime Radiant, right click captures.
 //
 // The glyph box is the shell's icon canvas (Style.bar.iconCanvas: 16 px at
 // scale 1.0, 20 at 1.25), 2 px before the counts; the hinted file when the
@@ -23,12 +23,13 @@ import "Model.js" as Model
 // so the hinted grid stays crisp (brief check 4: within 1 px).
 //
 // Routing (SPEC-PLUGIN §8): the manifest declares `overlay`, so the shell
-// hands jax.seldon to its panel loader. `omarchy-shell shell summon|hide|
-// toggle jax.seldon` therefore opens Overlay.qml and never reaches this
-// widget. The bar panel has its own IPC target, `jax.seldon.panel`, below.
-// open/close/opened on this root are still read by the bar itself: Tab
-// between panels (Bar.panelNavigationSlots) and the popout coordinator
-// (closeForPopoutSwitch) look for them on the widget in the slot.
+// hands jax.seldon to its panel loader: `omarchy-shell shell summon|hide|
+// toggle jax.seldon` opens Desk.qml and never reaches this widget, and the
+// widget's clicks go the same way, through the scoped facade (`bar.shell`).
+// The widget has no popup of its own any more, so it offers the bar no
+// open/close: Tab between bar panels passes it by.
+// `jax.seldon.panel`, the 0.1.x panel's IPC target, stays one minor
+// release as a shim to the desk (ADR-0034 §7; removed in 0.3.0).
 BarWidget {
   id: root
   moduleName: "jax.seldon"
@@ -58,12 +59,33 @@ BarWidget {
     if (!root.service) return
     root.service.setCaptureInterval(root.captureInterval)
     root.service.setDriftInBar(root.driftInBar)
+    root.service.setDeskSettings(root.settings)
   }
 
-  function openOverlay() {
-    root.close()
+  // ---- The desk, through the facade (summon / hide / toggle jax.seldon).
+  readonly property bool deskOpened: !!root.service && !!root.service.desk && root.service.desk.opened === true
+  // Calls this instance forwarded to the desk (the bar harness checks that
+  // the IPC owner is the one that acts).
+  property int deskCalls: 0
+
+  function shellCall(method, payload) {
     var shell = root.bar ? root.bar.shell : null
-    if (shell && typeof shell.toggle === "function") shell.toggle(root.moduleName, "")
+    if (!shell || typeof shell[method] !== "function") return false
+    root.deskCalls++
+    return method === "hide" ? shell.hide(root.moduleName) === true : shell[method](root.moduleName, payload || "") === true
+  }
+
+  function toggleDesk() {
+    return root.shellCall("toggle", "")
+  }
+
+  // Open the desk (or re-target an open one) with a payload.
+  function summonDesk(payload) {
+    return root.shellCall("summon", JSON.stringify(payload || {}))
+  }
+
+  function hideDesk() {
+    return root.shellCall("hide", "")
   }
 
   // The pill's read-out: IPC `pill` and the bar harness.
@@ -77,43 +99,12 @@ BarWidget {
       tooltip: button.tooltipText,
       status: root.status,
       driftInBar: root.driftInBar,
-      opened: root.opened
+      opened: root.deskOpened
     })
   }
 
   function captureNow() {
     if (root.service) root.service.captureNow()
-  }
-
-  // ---- Panel lifecycle, forwarded to Panel.qml (see the clock widget).
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
-  readonly property real openPanelIndicatorWidth: pill.width
-
-  function open() {
-    if (panelLoader.item) panelLoader.item.open()
-  }
-
-  function close() {
-    if (panelLoader.item) panelLoader.item.close()
-  }
-
-  function togglePanel() {
-    if (panelLoader.item) panelLoader.item.toggle()
-  }
-
-  function closeForPopoutSwitch() {
-    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
-  }
-
-  function injectPanel() {
-    var target = panelLoader.item
-    if (!target) return
-    target.bar = root.bar
-    target.settings = root.settings
-    target.anchorItem = button
-    target.hostWidget = root
-    target.service = root.service
   }
 
   // ---- One handler for `jax.seldon.panel` (WP-067). The bar builds this
@@ -166,9 +157,9 @@ BarWidget {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  onBarChanged: { root.findService(); root.injectPanel(); Qt.callLater(root.reclaimIpc, null) }
-  onSettingsChanged: root.injectPanel()
-  onServiceChanged: { root.pushSettings(); root.injectPanel() }
+  onBarChanged: { root.findService(); Qt.callLater(root.reclaimIpc, null) }
+  onSettingsChanged: root.pushSettings()
+  onServiceChanged: root.pushSettings()
   onCaptureIntervalChanged: root.pushSettings()
   onDriftInBarChanged: root.pushSettings()
 
@@ -180,47 +171,41 @@ BarWidget {
     onTriggered: root.findService()
   }
 
-  Loader {
-    id: panelLoader
-    active: true
-    source: Qt.resolvedUrl("Panel.qml")
-    visible: false
-    onLoaded: {
-      root.injectPanel()
-      Qt.callLater(root.injectPanel)
-    }
-  }
-
+  // The shim (ADR-0034 §7): the 0.1.x panel's methods, forwarded to the
+  // desk. `tab <name>` and `resolve <target>` open the desk at a section
+  // (and an event); `view` reports the desk while it is loaded. None runs
+  // the engine.
   IpcHandler {
     target: "jax.seldon.panel"
     enabled: root.ipcOwner
 
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.togglePanel() }
+    function open(): void { root.summonDesk({}) }
+    function close(): void { root.hideDesk() }
+    function show(): void { root.summonDesk({}) }
+    function hide(): void { root.hideDesk() }
+    function toggle(): void { root.toggleDesk() }
     // What the pill shows right now, for smoke tests (docs/TESTING.md).
     function pill(): string { return root.pillReadout() }
-    // What the panel shows (tab, rows, banners, strip), for smoke tests.
+    // What the desk shows (Desk.view), or {"opened":false} while unloaded.
     function view(): string {
-      return JSON.stringify(panelLoader.item ? panelLoader.item.view() : null)
+      var desk = root.service ? root.service.desk : null
+      return desk ? desk.view("") : JSON.stringify({ opened: false })
     }
-    // Show one tab: today | changelog | work | decisions | system | memory.
+    // The 0.1.x tabs are desk sections of the same name.
     function tab(name: string): string {
-      return panelLoader.item && panelLoader.item.selectTabById(name) ? "ok" : "unknown tab"
+      if (Model.PANEL_TABS.indexOf(name) === -1) return "unknown tab"
+      return root.summonDesk({ section: name }) ? "ok" : "unknown tab"
     }
-    // Open the Changelog's drift sheet: `crisis` (the red strip's target) or
-    // an event id. Navigation only; the sheet's actions need a key or click.
+    // The Changelog at an event (or its crisis filter); navigation only.
     function resolve(target: string): string {
-      if (!panelLoader.item || (target !== "crisis" && !Model.EVENT_ID.test(target))) return "unknown target"
-      return panelLoader.item.resolve(target) ? "ok" : "not open drift"
+      if (target === "crisis") return root.summonDesk({ section: "changelog", filter: "crisis" }) ? "ok" : "unknown target"
+      if (!Model.EVENT_ID.test(target)) return "unknown target"
+      return root.summonDesk({ section: "changelog", select: target }) ? "ok" : "unknown target"
     }
-    // Set the Changelog source filter: all | pacman | snapper | …
+    // The Changelog with a source filter: all | pacman | snapper | …
     function filter(source: string): string {
-      if (!panelLoader.item || (source !== "all" && Model.SOURCES.indexOf(source) === -1)) return "unknown source"
-      panelLoader.item.setFilter(source)
-      return "ok"
+      if (source !== "all" && Model.SOURCES.indexOf(source) === -1) return "unknown source"
+      return root.summonDesk({ section: "changelog", filter: source }) ? "ok" : "unknown source"
     }
   }
 
@@ -241,8 +226,8 @@ BarWidget {
 
     onPressed: function(b) {
       if (b === Qt.RightButton) root.captureNow()
-      else if (b === Qt.MiddleButton) root.openOverlay()
-      else root.togglePanel()
+      else if (b === Qt.MiddleButton) root.summonDesk({ section: "radiant" })
+      else root.toggleDesk()
     }
 
     Item {
