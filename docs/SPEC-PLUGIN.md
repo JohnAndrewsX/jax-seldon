@@ -426,7 +426,9 @@ case is linked." — the Case row ("proposed: C-…") and the Rule row
 ("crisis · rule … · planned by C-…, not linked" or "· no case") say the
 same. The key/values When · Who · What · Case · Rule · Source · Zone ·
 Resolved · Event (values wrap at word boundaries; a longer token breaks
-anywhere), a
+anywhere; a detail the index clipped — the event's `meta.truncated` or the
+drift item's `truncated`, contract 2 — reads "(clipped in the index; the
+ledger has it in full)"), a
 group's members (`seldon drift show` for those the index no longer lists),
 "proposed for C-…", and "None of this is required. An agent explains only
 what it can prove." The bar's Link, Explain and Dismiss only open the
@@ -489,7 +491,9 @@ key/values Status · Risk (R3: "every step that can break boot needs your
 go") · Zone · Area · Priority · Agent · Rollback (the snapshot) · Dates ·
 Reopens · Proposed · File, PLAN (the steps' progress; "The steps, the
 Intent and the Result are in the case file." with *Open in editor*), LOG
-(this case's lifecycle events and notes in the index, newest first) and
+(this case's lifecycle events and notes in the index, newest first, with
+the risk a `case-created`/`case-started`/`case-updated` line carries,
+contract 2) and
 LINKED CHANGES · N (the case's `events` the index still lists, "+N older
 changes the index no longer lists"). *New case* puts the 0.1 sheet in the
 detail (`NewCaseSheet.qml`: title, zone, risk, priority, an optional area

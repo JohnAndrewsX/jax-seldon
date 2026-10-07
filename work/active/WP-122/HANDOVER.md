@@ -249,3 +249,42 @@ Round 2 final check: `flock /tmp/seldon-check.lock just check` on a4e808d
 docs-check ok, qmllint ok 48 files, model.test 120, real-home-guard 11,
 service-states 316, desk-view 819, bar-view 194). Only this handover
 changed after that commit.
+
+## Merge of next
+
+`origin/next` at aab1d26 (WP-120, contract v2) merged into this branch:
+e60db45, the merge alone; git merged it without a conflict (`Model.js`
+`CONTRACT_VERSION` 2 and `manifest.json` from next; `model.test.js`,
+`service-states.sh`, SPEC-PLUGIN, TESTING merged cleanly, both sides kept).
+
+Then 3139526 brought WP-122 to the v2 sample and its fields:
+
+- Expectations moved, as the review packet listed: Today tiles 30/51 →
+  32/53 (`today`), 73 → 75 events (chips routine 30, in case 37, all 75 in
+  `changelog`, `today-live` 76 after its capture, `cursor-follow` 77),
+  C-2026-003's log 2 → 3 (`work`: the new `case-updated` line). The open,
+  crisis and attention counts did not move (6/2/4): the two new events
+  (`case-updated`, `state-loss`) are no drift; `state-loss` shows as a
+  routine row.
+- `meta.truncated` / a drift item's `truncated`: the event detail's What
+  row says "(clipped in the index; the ledger has it in full)". Tests:
+  model.test (the sample's clipped note, a truncated drift item),
+  desk-view `clipped`, `why-loud-truncated` (live: the truncated crisis
+  still gets its rule from `drift show`).
+- The case log names the risk a `case-*` line carries (`meta.risk`):
+  "case-started · human · R3", "case-updated · human · R3".
+- why-loud / `drift show` with v2: the fake and the real engine agree. The
+  real engine (`engine/target/debug/seldon`, this branch) on a copy of the
+  v2 fixture logbook in a scratch HOME (runner script, removed after):
+  `contractVersion` 2; `drift show` on both crises answers `{open: true,
+  class: "crisis", rule: "always-red-paths", item: {…, proposedCase:
+  null}}` — the fields `Model.driftShowResult` reads; the desk's
+  `why-loud*` cases pass on the v2 sample.
+- The `triage` object of v2 is not read here (WP-124b; the slot is empty).
+
+Check: `flock /tmp/seldon-check.lock just check` on 3139526 (log
+`check-wp122-merge-next.log`): **exit 0** (`check: ok`; docs-check ok,
+qmllint ok 48 files, model.test 121, real-home-guard 11, service-states
+328, desk-view 824, bar-view 194). After it: SPEC-PLUGIN §5.4 got two
+lines for the clipped detail and the log's risk (`docs-check` ok again)
+and this handover.
