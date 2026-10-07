@@ -520,3 +520,28 @@ checked before its message was amended).
   ADR is not edited).
 - Host note (unchanged): the global git identity reads `t
   <t@example.com>`; my commits name `JohnAndrewsX` per command.
+
+## 124b round 3
+
+Fable stage 2 approved 124b at `2bed8a3` on two small edits.
+
+- **Lengths in code points**: `Model.textUpTo` counts `Array.from(value)`
+  (code points), as the engine and JSON Schema count, not UTF-16 units.
+  `model.test.js`: a 256-code-point evidence text with one astral
+  character (257 UTF-16 units) parses; 257 code points do not. Mutant P13
+  (`value.length` back) killed.
+- **The residual line**, in `TriageDetail.qml` and SPEC-PLUGIN §5.4:
+  "Apply re-reads the file and every reference. If the file was changed
+  since you opened it, what Apply writes can differ from what is shown
+  here."
+- **Confirmed**: `drift propose` removes this logbook's earlier proposal
+  file when it stores a new one, applied or not (`triage.rs` `store`:
+  the new file first, then `remove_file` for each earlier one; a failed
+  removal is a warning and the index still points at the newest);
+  `a_new_proposal_replaces_the_unapplied_one_and_says_so` asserts the
+  first file is gone and another logbook's file stays; mutant M14 kills
+  a kept file.
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `a4c78ab` (2264 Rust tests passed, 0 failed; model.test.js 154;
+  service-states 328/0; desk-view 1541/0; bar-view 194/0; docs-check
+  ok). Log `check-wp124b-r5.log`.
