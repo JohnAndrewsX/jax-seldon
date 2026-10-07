@@ -327,6 +327,8 @@ ShellRoot {
     console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
       view: root.viewObject(), calls: fakeShell.calls, writes: fakeShell.writes, entry: root.entry,
       call: root.lastCall, bare: root.bare, firstFrame: root.firstFrame,
+      graphWanted: root.service ? root.service.graphWanted : null,
+      graphNodes: root.service && root.service.graph ? root.service.graph.nodes.length : null,
       pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
       texts: texts(win.contentItem, []), overflow: overflow(win.contentItem, null, [], undefined)

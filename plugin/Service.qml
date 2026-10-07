@@ -117,7 +117,13 @@ Item {
   readonly property var deskWork: Model.deskWork(root.indexShown ? root.index : null)
   // The graph (section 8, ADR-0034 §5, WP-125): nodes, edges, day index and
   // folding, built when the index changes; the section only lays it out.
-  readonly property var graph: Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP)
+  // Only once the graph has been opened in this shell session
+  // (`graphWanted`, set by its canvas): the build takes about 5 ms of the
+  // shell thread on 500 events, which a user who never opens it should not
+  // pay on every capture.
+  property bool graphWanted: false
+  readonly property var graph: root.graphWanted
+    ? Model.graphBuild(root.indexShown ? root.index : null, Model.GRAPH_CAP) : Model.graphEmpty()
   // The graph's layout (Model.graphState), kept here so a reopened desk
   // shows the settled layout; written by components/graph/GraphCanvas.qml.
   property var graphLayout: null

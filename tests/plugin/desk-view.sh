@@ -1804,7 +1804,8 @@ done
 #     Model.graphStep on a Timer. On the sample: it settles and sleeps
 #     within the budget (every tick's tickMs ≤ 8, step plus drawing calls on
 #     the shell thread), nothing ticks while another section is shown or
-#     the desk is closed, a reopened desk keeps the settled layout; the
+#     the desk is closed, a reopened desk keeps the settled layout, the
+#     service builds the graph only once the section was opened; the
 #     replay adds nodes monotonically; hover, the card and Open case; drag
 #     wakes the layout, pan and zoom only repaint; `select` keeps a card.
 #     A busy index (tests/plugin/graph-index.js, 400 nodes after folding)
@@ -1849,6 +1850,9 @@ clean_log graph-settle
 #      reopened desk (the loader makes a new one) shows the settled layout
 #      from the service without a tick.
 run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
+# The service builds the graph only once section 8 has been opened.
+expect graph-hidden 1 '[.graphWanted, .graphNodes, .view.graph] | map(tostring) | join(",")' "false,0,null"
+expect graph-hidden 2 '[.graphWanted, .graphNodes] | map(tostring) | join(",")' "true,67"
 t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
 expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
 expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"

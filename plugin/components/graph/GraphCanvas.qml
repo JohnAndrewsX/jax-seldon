@@ -476,7 +476,10 @@ Item {
   }
 
   onBuildChanged: root.rebuild()
-  onServiceChanged: root.rebuild()
+  onServiceChanged: {
+    if (root.service) root.service.graphWanted = true
+    root.rebuild()
+  }
   onRunningChanged: {
     if (!root.running) {
       root.playing = false
@@ -492,7 +495,10 @@ Item {
   onCanvasFontChanged: root.repaint()
   onWidthChanged: root.repaint()
   onHeightChanged: root.repaint()
-  Component.onCompleted: root.rebuild()
+  Component.onCompleted: {
+    if (root.service) root.service.graphWanted = true
+    root.rebuild()
+  }
 
   // At most 30 Hz, only while shown and awake.
   Timer {

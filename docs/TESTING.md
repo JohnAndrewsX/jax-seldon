@@ -792,7 +792,8 @@ them: the dev host compiles other work packages at the same time and
 preempts a tick now and then; the sample's ticks take 1–3 ms); a switch
 to another section stops the ticks at once and coming back resumes
 them; a closed and reopened desk shows the settled layout from the
-service without a tick; the replay from day 0 grows monotonically to all
+service without a tick; the service builds no graph before section 8
+was opened (the report's `graphWanted`, `graphNodes`); the replay from day 0 grows monotonically to all
 67 nodes, `graphCut`, ←/→, Space and Esc; hover (the card, its line,
 *Open case* into Work with the case selected after the pointer left the
 node), `select` and Esc; a node dragged by 160,90 px lands there and

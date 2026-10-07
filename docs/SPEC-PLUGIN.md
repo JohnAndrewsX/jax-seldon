@@ -572,7 +572,9 @@ network, from the index alone; `sections/Graph.qml` with
 
 - **Data.** `Service.graph` = `Model.graphBuild(index, GRAPH_CAP)`, built
   when the index changes (empty while the index means nothing in the
-  status). Nodes: the logbook's areas (`system.areas`, and any area a case
+  status) — once section 8 has been opened in this shell session
+  (`graphWanted`, set by its canvas; about 5 ms of QV4 on 500 events,
+  which a user who never opens the graph does not pay per capture). Nodes: the logbook's areas (`system.areas`, and any area a case
   names that the list lacks), the cases of all four lists, the decisions,
   and the events whose kind is a change (`Model.GRAPH_CHANGE_KINDS` and
   `plugin-*`; not case lifecycle, notes, corrections, resolutions, state
