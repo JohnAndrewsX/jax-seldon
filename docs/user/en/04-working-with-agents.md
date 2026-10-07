@@ -400,7 +400,10 @@ evidence: a journal entry by its time (`2026-10-01 14:40`), another
 event, a snapshot number, a case, or a case whose *Plan* names the
 change. The engine looks up every piece of evidence itself and refuses a
 proposal with an item it cannot back, so a change nobody can explain
-stays open. Nothing is written to the logbook yet. The agent ends by
+stays open. Each piece of evidence shows who wrote it (`by human`,
+`by agent:codex`), and the engine refuses evidence the proposing agent
+wrote itself: its own notes, events, cases or Plans. Nothing is written to
+the logbook yet. The agent ends by
 telling you the proposal's id.
 
 You apply it, as yourself:
@@ -421,7 +424,11 @@ seldon drift apply <PROPOSAL> --item <EVENT>
 
 Running `apply` again changes nothing. A new proposal replaces the old
 one; `seldon drift discard <PROPOSAL>` throws one away. Only you apply or
-discard: the engine refuses an agent.
+discard: the engine refuses an agent that names itself, as an agent
+Seldon started does (`SELDON_ACTOR`). That is a guard against a mistake,
+not a lock: any program you run as yourself can drop the variable, as it
+could resolve drift directly; the desk's *Apply* runs from the shell,
+never from an agent's session.
 
 To ask about one change or one case instead:
 
@@ -578,7 +585,8 @@ seeing it shows up there.
   `seldon rules update` unless you ask for exactly that. The logbook's
   `AGENTS.md` says the same.
 - `seldon drift apply` and `seldon drift discard` are yours: an agent
-  only proposes, and the engine refuses an agent that applies.
+  only proposes, and the engine refuses an agent that applies under its
+  own name.
 - Add your own limits under `## Your rules` in `AGENTS.md`, for example
   "never install from the AUR".
 - Read a case's *Result* and its trace when you want to check the agent's
