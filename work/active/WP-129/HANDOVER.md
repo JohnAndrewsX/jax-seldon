@@ -319,3 +319,17 @@ files WP-140..148). Merged as b67b3ae3; one conflict, DECISIONS.md
 - `check-perf` not re-run: the change adds a 9-entry slice lookup for
   each word the wrapper loop of `unwrap_command` looks at; round 2's numbers (worst 4.73 ms)
   stand.
+
+## Accepted and merged next
+
+- **ADR-0039 accepted** by the operator on 2026-10-07 (E16), after Opus
+  and Fable stage 2. The ADR's status line and DECISIONS.md row say so
+  (b01cfd0c); the CHANGELOG entry no longer says "proposed".
+- **Merged next b5e20c13** (WP-113, WP-124a, WP-127; `origin/next` was
+  the same commit after `git fetch`) as a115c25c. One conflict:
+  CHANGELOG.md, both entries kept. WP-113's `pkgcmd.rs` change (yay's and
+  paru's long options with a value in `LONG_WITH_ARG`) merged without a
+  conflict beside this WP's wrapper code; `hook.rs` was not touched by
+  next. This WP touches no fixture, so no `--write-index` was needed.
+- `flock /tmp/seldon-check.lock just check` on a115c25c: `check: ok`
+  (exit 0; log `target/check-wp129-accepted-1.log`).
