@@ -1,18 +1,19 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "../Model.js" as Model
+import "../../Model.js" as Model
 
-// QuickEntry on the Today tab (SPEC-PLUGIN §5): a note for today's journal,
-// optionally for one open case. Enter sends `seldon log [--case <id>] --json
-// -- <text>` through Service.log(); the text is one argument after `--`,
-// exactly as typed. Blank text is refused here. The line under the field
-// shows the event id or the engine's error. The field empties only once the
-// engine has saved the note, so a refused note is never lost.
+// Today's journal field (desk section 1, SPEC-PLUGIN §5.4; the 0.1
+// QuickEntry): a note for today's journal, optionally for one open case.
+// Enter sends `seldon log [--case <id>] --json -- <text>` through
+// Service.log(); the text is one argument after `--`, exactly as typed.
+// Blank text is refused here. The line under the field shows the event id
+// or the engine's error. The field empties only once the engine has saved
+// the note, so a refused note is never lost.
 //
-// Keyboard: `n` on the Today tab focuses the field (Panel.qml). While the
-// field or the case picker has focus, Panel.qml blocks its own keys
-// (`editing`); Tab moves from the field to the picker, Esc leaves. A
+// Keyboard: `n` focuses the field (Today.textKey). While the field or the
+// case picker has focus the section is `editing` and the desk keeps out of
+// the keys; Tab moves from the field to the picker, Esc leaves. A
 // FocusScope, so `activeFocus` covers the picker's inner trigger too.
 FocusScope {
   id: root
@@ -27,7 +28,7 @@ FocusScope {
   // The text of the note being saved, until the engine answers.
   property string sentText: ""
 
-  // Keys belong to the field or the picker, not to the panel.
+  // Keys belong to the field or the picker, not to the desk.
   readonly property bool editing: root.activeFocus || picker.popupOpen
   readonly property bool enabledHere: !!service && service.canWrite
   readonly property var options: Model.caseOptions(indexData)
@@ -37,7 +38,7 @@ FocusScope {
   readonly property color dim: Util.alpha(foreground, 0.65)
   property alias text: field.text
 
-  // Asked to give the keys back to the panel (Esc).
+  // Asked to give the keys back to the desk (Esc).
   signal leaveRequested()
 
   function focusField() {

@@ -1,9 +1,10 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "../Model.js" as Model
+import "../../Model.js" as Model
 
-// The new-case sheet on the Work tab (SPEC-PLUGIN §5, WP-020): title, zone,
+// The new-case sheet in the Work section's detail (desk section 3,
+// SPEC-PLUGIN §5.4; WP-020), the hand-made case: title, zone,
 // risk, priority and an optional area. Enter in a text field (or *Create*)
 // sends `seldon plan new --zone <z> --risk <r> [--area <a>] [--priority <p>]
 // --json -- <title>` through Service.plan(); the title is one argument after
@@ -14,8 +15,8 @@ import "../Model.js" as Model
 // lost (the QuickEntry pattern); then the sheet empties and reports
 // `created(caseId)`.
 //
-// Keyboard: while anything in the sheet has focus, Panel.qml blocks its own
-// keys (`editing`). Tab walks title → zone → risk → priority → area →
+// Keyboard: while anything in the sheet has focus the section is `editing`
+// and the desk keeps out of the keys. Tab walks title → zone → risk → priority → area →
 // Create → Cancel; in a picker h/l or ←/→ move and Enter or Space picks;
 // Esc closes the sheet and gives the keys back.
 FocusScope {
@@ -43,7 +44,7 @@ FocusScope {
   readonly property bool enabledHere: !!service && service.canWrite
   readonly property var result: service && service.planResult && service.planResult.action === "new" ? service.planResult : null
   readonly property bool pending: !!result && result.pending
-  // A created case is reported on the tab; the sheet shows progress and
+  // A created case is reported in the Work list; the sheet shows progress and
   // refusals, and the busy notice in place of either.
   readonly property string resultText: root.notice !== "" ? root.notice
     : result && (result.pending || !result.ok) ? result.text : ""
@@ -130,12 +131,6 @@ FocusScope {
     id: column
     width: parent.width
     spacing: Style.spacing.md
-
-    PanelSectionHeader {
-      text: "NEW CASE"
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-    }
 
     TextField {
       id: titleField
