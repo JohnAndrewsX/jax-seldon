@@ -1644,6 +1644,7 @@ const CLEAR: &[&str] = &[
     // no header value: a search for the name
     "grep -ri 'authorization:' /var/log/app.log",
     "rg -n \"X-Api-Key:\" src",
+    "curl -H 'Authorization:' -H 'X-Trace: on' https://h.example",
     // no nmcli secret: the key management, a flag, a listing
     "nmcli con mod Home wifi-sec.key-mgmt wpa-psk wifi-sec.psk-flags 1",
     "nmcli dev wifi list --rescan yes && nmcli -f NAME,UUID con show",
@@ -2447,6 +2448,25 @@ mod redaction {
                 "openssl rsa -passin pass:fakeT1 ",
                 "-passin env:A -passout file:b -twopass -k pass:c ",
             ),
+            // a private key's label without a block, and a run of base64
+            // with no END after it: `private-key` scans the whole text;
+            // nmcli lines with properties that name no secret, every
+            // header with a quote after it (WP-140)
+            (
+                "private key mentions",
+                "the private key -----BEGIN-----\n",
+                "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC private key\n",
+            ),
+            (
+                "nmcli properties",
+                "nmcli con mod Home ",
+                "wifi-sec.key-mgmt wpa-psk ipv4.dns 'a;b' wifi-sec.psk-flags 1 pin ",
+            ),
+            (
+                "quoted headers",
+                "curl ",
+                "-H 'Authorization:' \"X-Api-Key:\" ",
+            ),
         ] {
             for (kb, budget) in [(16, 1), (64, 2)] {
                 let line = filled(head, word, kb * 1024);
@@ -2519,6 +2539,25 @@ mod redaction {
                 "openssl options",
                 "openssl pkcs12 ",
                 "-passin pass:a -passout 'pass:b' -twopass ",
+                Some(20),
+            ),
+            // private keys, nmcli secrets and quoted header values (WP-140)
+            (
+                "private keys",
+                "keys ",
+                "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\n",
+                Some(20),
+            ),
+            (
+                "nmcli secrets",
+                "nmcli con mod Home ",
+                "wifi-sec.psk a 802-1x.password 'b c' ",
+                Some(20),
+            ),
+            (
+                "quoted header values",
+                "curl ",
+                "-H 'Authorization: \"Bearer a\"' -H \"X-Api-Key: 'b'\" ",
                 Some(20),
             ),
         ] {

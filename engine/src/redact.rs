@@ -127,20 +127,33 @@ const GAP: &str = r"(?:\s|\\\r?\n)";
 /// every command the plain form reaches is still reached.
 const COMMAND_REST: &str = r#"(?:[^\n;&|]*?|(?:\$'(?:[^'\\]|\\(?s:.))*'|[^\n;&|'"\\]|\\(?:\r\n|(?s:.))|[<>]&|&>|>\||'[^']*'|"(?:[^"\\]|\\(?s:.))*")*?(?:['"][^\n;&|'"]*?)?)"#;
 
-/// The value of a header (`Authorization:`, `X-Api-Key:`): a quoted
-/// string closed on its line, `"…"` with `\"` inside, `\"…\"` inside a
-/// shell string or `'…'` (WP-140); else the rest of the line up to a
-/// quote, whose last character is no `\r`, so a CRLF line end reads as an
-/// LF one (WP-128). A quote the line does not close starts no value, nor
-/// does white space (an empty value) or a [`REDACTED`] marker: after
-/// `"Authorization": "x", "Accept": …` is masked, a second pass must not
-/// take the marker and the text after it for a new value.
-const HEADER_VALUE: &str = r#"(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|\\"(?:[^"\\\r\n]|\\[^"\r\n])*\\"|'[^'\r\n]*'|[^'"\s‹](?:[^'"\n]*[^'"\r\n])?)"#;
+/// A quoted header value (`Authorization: "Bearer x"`, WP-140): a string
+/// closed on its line, `"…"` with `\"` inside, `\"…\"` inside a shell
+/// string, or `'…'`. A quote the line does not close starts no value.
+const HEADER_QUOTED: &str =
+    r#"(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|\\"(?:[^"\\\r\n]|\\[^"\r\n])*\\"|'[^'\r\n]*')"#;
 
-/// The quote that may close the name `Authorization` written as a JSON or
-/// dict key (`"Authorization": …`, `\"Authorization\": …`,
-/// `'Authorization': …`). A quoted `"X-Api-Key"` is `json-secret`'s.
-const KEY_QUOTE: &str = r#"(?:\\?"|')?"#;
+/// A bare header value: the rest of the line up to a quote, whose last
+/// character is no `\r`, so a CRLF line end reads as an LF one (WP-128).
+/// It starts at no white space (an empty value is none) and no
+/// [`REDACTED`] marker: after `"Authorization": "x", "Accept": …` is
+/// masked, a second pass must not take the marker and the text after it
+/// for a new value (WP-140).
+const HEADER_BARE: &str = r#"[^'"\s‹](?:[^'"\n]*[^'"\r\n])?"#;
+
+/// The header `name` (a regex) and its value as group 1 or 2 and the rest
+/// ([`KEEP_EITHER`]): a quoted value ([`HEADER_QUOTED`]) after white space,
+/// or, with `key_quote`, right after a name written as a quoted JSON or
+/// dict key (`"Authorization":"x"`, `\"Authorization\": …`,
+/// `'Authorization': …`); else a bare one ([`HEADER_BARE`]). A quote right
+/// after the colon of a bare name closes the shell word around it (`curl
+/// -H 'Authorization:'`, `grep 'authorization:'`) and starts no value.
+fn header(name: &str, key_quote: bool) -> String {
+    let quoted_name = if key_quote { r#"(?:\\?"|'):\s*|"# } else { "" };
+    format!(
+        r"(?i)({name}(?:{quoted_name}:\s+))(?:{HEADER_QUOTED}|{HEADER_BARE})|({name}:){HEADER_BARE}"
+    )
+}
 
 /// The label of a PEM private key: `PRIVATE KEY` after any words (`RSA`,
 /// `EC`, `DSA`, `OPENSSH`, `ENCRYPTED`, …), and PGP's `PRIVATE KEY
@@ -480,6 +493,8 @@ pub fn looks_like_credential(value: &str) -> bool {
 
 /// Keep group 1, redact the rest of the match.
 const KEEP_PREFIX: &str = "${1}‹redacted›";
+/// Keep group 1 or group 2 (whichever took part), redact the rest.
+const KEEP_EITHER: &str = "${1}${2}‹redacted›";
 /// Redact the whole match.
 const WHOLE: &str = "‹redacted›";
 
@@ -848,23 +863,24 @@ fn builtin_rules() -> Vec<Rule> {
             r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api[_-]?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
             has_json_value,
         ),
-        // the header value ([`HEADER_VALUE`]): a quoted string, or up to a
+        // the header value ([`header`]): a quoted string, or up to a
         // closing quote or the end of the line; also after the name as a
         // quoted key (`"Authorization": "Bearer x"`)
         rule(
             "authorization-header",
-            &format!(r"(?i)(authorization{KEY_QUOTE}:\s*){HEADER_VALUE}"),
-            KEEP_PREFIX,
+            &header("authorization", true),
+            KEEP_EITHER,
         ),
         // header names that end in a credential word: `X-Api-Key`,
         // `X-Auth-Token`, `X-Auth`, `Api-Key`, `Private-Token`; not
         // `X-Author`
         rule(
             "secret-header",
-            &format!(
-                r"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*){HEADER_VALUE}"
+            &header(
+                r"(?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*",
+                false,
             ),
-            KEEP_PREFIX,
+            KEEP_EITHER,
         ),
         // `Cookie: a=b; c=d`, `Set-Cookie: …`: a value that starts with a
         // cookie pair `name=` (RFC 6265), up to a closing quote or the end
@@ -987,8 +1003,8 @@ fn builtin_rules() -> Vec<Rule> {
             KEEP_PREFIX,
         ),
         // nmcli's secrets given as arguments: the keyword `password`
-        // (`dev wifi connect`, `hotspot`), `psk` and `pin`, and a property
-        // that names one (`wifi-sec.psk`, `802-1x.password`,
+        // (`dev wifi connect`, `hotspot`, `con add type gsm`) and a
+        // property that names one (`wifi-sec.psk`, `802-1x.password`,
         // `802-1x.private-key-password`, `vpn.secrets`,
         // `wifi-sec.wep-key0`, `wireguard.private-key`, `gsm.pin`; also
         // with `+`/`-` before it): the value, within one command, every
@@ -997,7 +1013,7 @@ fn builtin_rules() -> Vec<Rule> {
             "nmcli-secret",
             &command(r"(?-u:\b)nmcli(?-u:\b)"),
             &format!(
-                r"\s[+-]?(?:password|psk|pin|(?:[a-z0-9-]+\.)+[a-z0-9-]*(?:password|password-raw|psk|secrets|wep-key[0-3]|private-key|preshared-key|pin)){GAP}+"
+                r"\s[+-]?(?:password|(?:[a-z0-9-]+\.)+[a-z0-9-]*(?:password|password-raw|psk|secrets|wep-key[0-3]|private-key|preshared-key|pin)){GAP}+"
             ),
             "",
             &format!("(?:{WORD})"),
