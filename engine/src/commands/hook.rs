@@ -26,6 +26,10 @@
 //!   other change (a file written outside `watchPaths` and the logbook, a
 //!   foreign package manager's install, `git` outside `~/.config`) is green
 //!   and recorded only while a case is set (ADR-0019).
+//! - Privileged commands (ADR-0039): a program run under `sudo`, `doas`,
+//!   `pkexec` or `run0` that no class records by itself is recorded red,
+//!   with or without a case, with `meta.wrapper` and the line as `detail`
+//!   ([`mutations`]).
 //! - `hook generic` reads `{"command","actor"?,"cwd","startedAt"?,"case"?}`
 //!   (`--case` wins over the field, either over `.seldon/active-case`;
 //!   without `actor`, `$SELDON_ACTOR`): the same classification for any
