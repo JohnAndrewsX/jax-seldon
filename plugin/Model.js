@@ -573,7 +573,10 @@ function validateArgs(args) {
   case "rules":
     return !withText && n === 2 && a[1] === "update" && json ? "" : "rules must be: rules update --json"
   case "decide":
-    return withText && n === 2 && a[1] === "--no-edit" ? "" : "decide must be: decide --no-edit -- <title>"
+    if (withText && n === 2 && a[1] === "--no-edit") return ""
+    // WP-135, ADR-0040: the user accepts a proposed decision
+    if (!withText && n === 3 && a[1] === "accept" && DECISION_ID.test(a[2]) && json) return ""
+    return "decide must be: decide --no-edit -- <title> | decide accept <ADR id> --json"
   case "open":
     return !withText && n === 3 && (matches(OPEN_TARGETS, a[1]) || CASE_ID.test(a[1]) || DECISION_ID.test(a[1]))
       && a[2] === "--editor" ? "" : "open must be: open journal|ledger|status|logbook|<caseId>|<ADR id> --editor"
@@ -1845,6 +1848,35 @@ function decideResult(exitCode, stdoutText, stderrText) {
   return { ok: true, text: text, decisionId: id }
 }
 
+// `seldon decide accept <ADR-NNNN> --json` (WP-135, ADR-0040): the user
+// accepts a proposed decision; the engine refuses one that is not proposed
+// and an agent. Returns { args } or { error }; the id must match the
+// schema pattern, it goes into an argument list.
+function acceptArgs(decisionId) {
+  var id = String(decisionId || "")
+  if (!DECISION_ID.test(id)) return { error: "Not a decision id: " + id }
+  return { args: ["decide", "accept", id, "--json"] }
+}
+
+// `seldon decide accept --json` → {"decision": {id, title, status, date,
+// cases, path}, "already", "event", "git", "warnings"}. Returns { ok, text,
+// decisionId, already }; decisionId is "" unless it matches the pattern.
+function acceptResult(exitCode, stdoutText, stderrText) {
+  if (exitCode !== 0) return { ok: false, text: engineError(stdoutText, stderrText, exitCode), decisionId: "", already: false }
+  var data = parseJson(stdoutText)
+  var d = data && isObject(data.decision) ? data.decision : null
+  var id = d && typeof d.id === "string" && DECISION_ID.test(d.id) ? d.id : ""
+  var already = !!data && data.already === true
+  var text = already ? (id !== "" ? id : "The decision") + " is accepted already"
+    : "Accepted " + (id !== "" ? id : "the decision") + (d && typeof d.title === "string" && d.title !== "" ? " · " + d.title : "")
+  return { ok: true, text: text, decisionId: id, already: already }
+}
+
+// The sticky bar's hint while Accept is armed.
+function acceptArmHint(decisionId) {
+  return "Accept " + decisionId + "? Click Confirm: it becomes accepted with today's date."
+}
+
 // ---- Memory (WP-023) --------------------------------------------------------
 
 // What the Memory tab opens. The engine's `seldon open` has no memory target
@@ -1930,10 +1962,9 @@ function decisionCases(index, decisionId) {
 
 // What a decision's detail shows besides its title: `text`, the first
 // paragraph of its Decision when the index carries it (ADR-0038 §2; plain
-// text, "" otherwise), the rest is in the file. `actions` for the sticky bar: Accept while it
-// is proposed — the engine accepts nothing itself, the user sets the
-// status in the frontmatter, so Accept opens the file like Open in editor —
-// then Open in editor. Neither writes, so neither arms.
+// text, "" otherwise), the rest is in the file. `actions` for the sticky
+// bar: Accept while it is proposed — `seldon decide accept` (WP-135,
+// ADR-0040), a write, so it arms (`write`) — then Open in editor.
 function decisionDetail(row) {
   if (!row) return null
   var rows = []
@@ -1941,14 +1972,14 @@ function decisionDetail(row) {
   if (row.date !== "") rows.push(["Date", row.date])
   if (row.path !== "") rows.push(["File", row.path])
   var actions = []
-  if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable })
-  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable })
+  if (row.status === "proposed") actions.push({ id: "accept", label: "Accept", primary: true, enabled: row.actionable, write: true })
+  actions.push({ id: "open", label: "Open in editor", primary: false, enabled: row.actionable, write: false })
   return {
     heading: [row.id, row.status, row.date].filter(function(p) { return p !== "" }).join(" · "),
     rows: rows,
     actions: actions,
     note: row.status === "proposed"
-      ? "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture."
+      ? "Proposed: it waits for your decision. Accept marks it accepted with today's date and notes it in the ledger; Open in editor shows the whole text."
       : row.status === "superseded" ? "Superseded by a later decision; kept for the record." : "",
     text: str(row.lead),
     lead: !row.actionable ? "This id does not match ADR-NNNN; Seldon does not open it."

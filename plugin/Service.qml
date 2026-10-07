@@ -214,7 +214,8 @@ Item {
   // the result is about), the drift sheet (`drift`;
   // also `action`, `eventId`, `caseId` — the linked or created case — and
   // `already` for a no-op re-run), the new-decision sheet (`decide`; also
-  // `decisionId`, the created decision, which is then opened in the editor).
+  // `decisionId`, the created decision, which is then opened in the editor),
+  // Accept on a decision (`decide accept`; also `decisionId` and `already`).
   property var logResult: null
   property var openResult: null
   property var captureResult: null
@@ -237,6 +238,7 @@ Item {
   readonly property var rulesNotice: Model.rulesNotice(root.rulesResult)
   property var driftResult: null
   property var decideResult: null
+  property var acceptResult: null
   // The drift form's `seldon drift show` answer: { eventId, pending, ok,
   // text, members, rule, cls } — a group's members beyond what index.events
   // lists, and the item's rule (WP-122: the "why loud" callout).
@@ -519,6 +521,25 @@ Item {
     return true
   }
 
+  // Accept on a proposed decision (WP-135, ADR-0040): `seldon decide accept
+  // <ADR-NNNN> --json`, the id checked against the schema pattern. One
+  // accept at a time; the accepted decision arrives with the index.
+  function acceptDecision(decisionId) {
+    var id = String(decisionId || "")
+    if (root.acceptResult && root.acceptResult.pending) return root.refuseBusy("accept", "accept", "", "")
+    var built = Model.acceptArgs(id)
+    if (built.error) {
+      root.acceptResult = { ok: false, pending: false, text: built.error, decisionId: id, already: false }
+      return false
+    }
+    if (!root.canWrite || !root.run(built.args)) {
+      root.acceptResult = { ok: false, pending: false, text: root.writeBlocker || root.lastError, decisionId: id, already: false }
+      return false
+    }
+    root.acceptResult = { ok: true, pending: true, text: "Accepting " + id + "…", decisionId: id, already: false }
+    return true
+  }
+
   // `seldon drift show <id> --json`: the full member list of a group whose
   // members index.events no longer lists all of (ADR-0013 §2). Read-only.
   function driftShow(eventId) {
@@ -554,6 +575,10 @@ Item {
         root.driftRules = rules
       }
       root.driftShown = result
+    } else if (args[0] === "decide" && args[1] === "accept") {
+      if (result.decisionId === undefined || result.decisionId === "") result.decisionId = args[2]
+      if (result.already === undefined) result.already = false
+      root.acceptResult = result
     } else if (args[0] === "decide") {
       if (result.decisionId === undefined) result.decisionId = ""
       root.decideResult = result
@@ -609,6 +634,7 @@ Item {
       : args[0] === "agent" ? Model.agentResult(exitCode, out, err)
       : args[0] === "drift" && args[1] === "show" ? Model.driftShowResult(exitCode, out, err)
       : args[0] === "drift" ? Model.driftResult(args[1], exitCode, out, err)
+      : args[0] === "decide" && args[1] === "accept" ? Model.acceptResult(exitCode, out, err)
       : args[0] === "decide" ? Model.decideResult(exitCode, out, err)
       : args[0] === "rules" ? Model.rulesUpdateResult(exitCode, out, err)
       : null
@@ -629,14 +655,14 @@ Item {
     } else if (args[0] !== "log" && args[0] !== "plan" && args[0] !== "agent" && args[0] !== "drift" && args[0] !== "decide"
         && args[0] !== "rules") {
       // QuickEntry, the Work tab (case actions, Start agent), the drift sheet
-      // and the new-decision sheet show their own errors in place.
+      // and the new-decision sheet and Accept show their own errors in place.
       root.lastError = "seldon " + args[0] + ": " + Model.engineError(out, err, exitCode)
     }
     // The engine rewrites index.json atomically; reload in case the watch
     // missed the rename.
     indexFile.reload()
     // A created decision opens in the editor (the id is checked).
-    if (args[0] === "decide" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
+    if (args[0] === "decide" && args[1] !== "accept" && result && result.ok && result.decisionId !== "") root.openInEditor(result.decisionId)
     // Updated rules: ask doctor again, so the banner goes.
     if (args[0] === "rules") root.checkRules(true)
     root.finished(args, exitCode, out)
@@ -793,6 +819,7 @@ Item {
       driftResult: root.driftResult,
       driftShown: root.driftShown,
       decideResult: root.decideResult,
+      acceptResult: root.acceptResult,
       pill: Model.pillText(root.counts, root.driftInBar),
       driftInBar: root.driftInBar,
       deskWidth: root.deskWidth,
