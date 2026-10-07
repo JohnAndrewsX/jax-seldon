@@ -276,6 +276,9 @@ mod tests {
             // passwd fed from the line (B2)
             "printf 'pw\\npw' | sudo passwd alice",
             "sudo passwd alice <<< $'pw\\npw'",
+            // its options alone, the line feeding nothing
+            "sudo passwd -s alice < pw.txt",
+            "sudo passwd --stdin alice < pw.txt",
             // the long option and its getopt prefixes (N1)
             "sudo useradd -m --password '$6$x' alice",
             "sudo usermod --passw=x alice",
