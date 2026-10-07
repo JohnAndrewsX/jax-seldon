@@ -1171,7 +1171,7 @@ mod plugin_commits {
     fn a_repository_pointing_outside_names_no_commits() {
         /// Makes the clone's `.git` point outside the plugin folder.
         type PointOutside = fn(&Clone);
-        let cases: [(&str, PointOutside); 6] = [
+        let cases: [(&str, PointOutside); 8] = [
             ("link", |c| {
                 let elsewhere = c.p.b.path("elsewhere.git");
                 std::fs::rename(c.dir.join(".git"), &elsewhere).unwrap();
@@ -1197,6 +1197,21 @@ mod plugin_commits {
             }),
             ("include", |c| {
                 c.git(&["config", "include.path", "/dev/null"]).unwrap();
+            }),
+            ("bom", |c| {
+                // git skips a byte order mark and reads the section after it
+                let config = c.dir.join(".git/config");
+                let text = std::fs::read_to_string(&config).unwrap();
+                write(
+                    &config,
+                    format!("\u{FEFF}[include]\n\tpath = /dev/null\n{text}"),
+                );
+            }),
+            ("linked-objects", |c| {
+                let objects = c.dir.join(".git/objects");
+                let elsewhere = c.p.b.path("elsewhere-objects");
+                std::fs::rename(&objects, &elsewhere).unwrap();
+                std::os::unix::fs::symlink(&elsewhere, &objects).unwrap();
             }),
             ("includeIf", |c| {
                 c.git(&["config", "includeIf.gitdir:/nowhere/.path", "/dev/null"])

@@ -51,6 +51,13 @@ MUTANTS = [
     ("R2-N4 isolates kept (R7)", [("| '\\u{2060}' | '\\u{2066}'..='\\u{2069}' |", "| '\\u{2060}' |")], F),
     ("R2-N4 separators kept", [("c.is_control() || matches!(c, '\\u{2028}' | '\\u{2029}')", "c.is_control()")], F),
     ("R2-N4 log encoding of the clone", [('\n    "i18n.logOutputEncoding=UTF-8",\n', '\n    "core.unused=0",\n')], F),
+    # round 3
+    ("R3-S1 the round 2 line scan", [(
+        "    config.to_ascii_lowercase().contains(\"[include\")\n",
+        "    config\n"
+        "        .lines()\n"
+        "        .any(|l| l.trim_start().to_ascii_lowercase().starts_with(\"[include\"))\n")], F),
+    ("R3-P7 links in .git not checked", [("        .any(linked)\n", "        .any(|_: &str| false)\n")], F),
 ]
 env = dict(os.environ, CARGO_TARGET_DIR=TARGET)
 results = []

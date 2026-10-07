@@ -1243,11 +1243,18 @@ git itself is killed, with the same bounded pipe wait. Rules:
   window below reaches back to the last check for them). A third-party
   plugin whose directory is its own git clone keeps its full HEAD in the
   cursor (WP-136). Its own clone: `<dir>/.git` is a real directory (not a
-  link, not a `gitdir:` file) whose repository stays inside it — no
+  link, not a `gitdir:` file) whose repository stays inside it — no link
+  at `.git/objects`, `.git/refs`, `.git/packed-refs` or `.git/HEAD`, no
   `objects/info/alternates`, no `commondir`, no `include`/`includeIf`
-  section in `config` or `config.worktree` (a plain scan; an unreadable,
-  linked or non-UTF-8 config counts as one); never a repository further
-  up. Any other `.git` is not read at all (no HEAD, no git version): its
+  section in `config` or `config.worktree` (an unreadable, linked or
+  non-UTF-8 config counts as one); never a repository further up. The
+  include scan looks for `[include` anywhere in the text,
+  case-insensitive, not at line starts, because git's parser reads a
+  section header where a line scan would not: after a UTF-8 byte order
+  mark (git skips EF BB BF), after a lone CR (white space to git, no line
+  end to a line scan) or another header on the same line, and on the
+  line after a value continued with a backslash; `[include` in a comment
+  or a value refuses a clone it need not, never the other way round. Any other `.git` is not read at all (no HEAD, no git version): its
   `plugin-update` keeps the version step and adds `commit history not read
   (the repository points outside the plugin folder)`. A clone's
   `plugin-add` has `meta.git: clone` and the detail `<version>, installed

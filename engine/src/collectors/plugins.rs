@@ -490,6 +490,16 @@ fn git_dir(dir: &Path) -> GitDir {
     if !meta.is_dir() {
         return GitDir::Outside;
     }
+    // a link where git keeps objects, refs or the HEAD leads elsewhere
+    let linked = |rel: &str| {
+        std::fs::symlink_metadata(git.join(rel)).is_ok_and(|m| m.file_type().is_symlink())
+    };
+    if ["objects", "refs", "packed-refs", "HEAD"]
+        .into_iter()
+        .any(linked)
+    {
+        return GitDir::Outside;
+    }
     let exists = |rel: &str| std::fs::symlink_metadata(git.join(rel)).is_ok();
     if exists("objects/info/alternates") || exists("commondir") {
         return GitDir::Outside;
@@ -504,12 +514,18 @@ fn git_dir(dir: &Path) -> GitDir {
     GitDir::Contained
 }
 
-/// Whether a git config text has an `include` or `includeIf` section
-/// (section names are case-insensitive).
+/// Whether a git config text may have an `include` or `includeIf`
+/// section: `[include` anywhere in it, case-insensitive (section names
+/// are). A scan by line start would miss what git's parser reads as a
+/// section header (WP-136 round 3): after a byte order mark (git skips
+/// EF BB BF; `trim_start` does not), after a lone CR (git takes it for
+/// white space; `lines` does not end a line there), after another header
+/// on the same line (`[core] [include]`), or on the line after a value
+/// continued with a backslash. The whole-text scan needs no case of its
+/// own for any of them; `[include` in a comment or a value refuses a
+/// clone it need not (no commit list), never the other way round.
 fn includes(config: &str) -> bool {
-    config
-        .lines()
-        .any(|l| l.trim_start().to_ascii_lowercase().starts_with("[include"))
+    config.to_ascii_lowercase().contains("[include")
 }
 
 /// The HEAD of a plugin's clone.
@@ -1129,6 +1145,15 @@ mod tests {
                 "[core]\n  [includeIf \"gitdir:/x/\"]\n\tpath = y\n",
             ),
             ("config", "[Include]\n\tpath = y\n"),
+            // round 3: what a scan by line would miss
+            ("config", "\u{FEFF}[include]\n\tpath = y\n"),
+            ("config", "[core]\r[include]\n\tpath = y\n"),
+            ("config", "[core]\r\n[include]\r\n\tpath = y\r\n"),
+            ("config", "[core] [include]\n\tpath = y\n"),
+            (
+                "config",
+                "[core]\n\tbare = false \\\n[include]\n\tpath = y\n",
+            ),
             ("config.worktree", "[include]\n\tpath = y\n"),
         ] {
             let path = write(rel, text);
@@ -1137,6 +1162,24 @@ mod tests {
                 write("config", config);
             } else {
                 std::fs::remove_file(path).unwrap();
+            }
+            assert_eq!(git_dir(&dir), GitDir::Contained, "{rel} undone");
+        }
+        // a link where git keeps objects, refs or the HEAD (round 3)
+        for rel in ["objects", "refs", "packed-refs", "HEAD"] {
+            let path = git.join(rel);
+            let aside = s.0.join(format!("aside-{rel}"));
+            let moved = path.exists() && std::fs::rename(&path, &aside).is_ok();
+            if !moved {
+                std::fs::write(&aside, "").unwrap();
+            }
+            std::os::unix::fs::symlink(&aside, &path).unwrap();
+            assert_eq!(git_dir(&dir), GitDir::Outside, "a linked {rel}");
+            std::fs::remove_file(&path).unwrap();
+            if moved {
+                std::fs::rename(&aside, &path).unwrap();
+            } else {
+                std::fs::remove_file(&aside).unwrap();
             }
             assert_eq!(git_dir(&dir), GitDir::Contained, "{rel} undone");
         }
