@@ -160,7 +160,11 @@ item imported with `--include-done`), tag `imported`, *Intent* opening
 with the engine's line `Imported from <source> — read before you start
 this case.` and then the task's redacted text (headings and fences
 escaped with a `\`), a first Log line that names the source as
-`~/…#<line>`. Until the user starts such a case, an agent reads its
+`~/…#<line>`, and the frontmatter key `source: "~/…#<line>"` (`~/…` for a
+file imported whole; written by the import only, after `tags`; at most 512
+characters, a longer path kept as `~/…` and its end; display only — the
+index copies it as `cases[].source`, ADR-0038 §3; editing it changes
+nothing in a later import). Until the user starts such a case, an agent reads its
 Intent as fetched text, not as the user's own words (ADR-0027 §2(a)). The source file stays where
 it is, unchanged. `.seldon/imports/tasks.json` is the import's marker
 (file, line, hash of the redacted text, case, `pending` while its case is
@@ -189,7 +193,10 @@ with broken frontmatter is a user error and is left untouched (WP-057).
 ### Decision (`decisions/ADR-NNNN-slug.md`)
 
 Frontmatter `id, type: decision, title, status (proposed|accepted|superseded),
-date, supersedes, cases`. Body: Context / Decision / Consequences.
+date, supersedes, cases`. Body: Context / Decision / Consequences; the first
+paragraph of *Decision* is the index's `decisions[].lead` (ADR-0038), as the
+first paragraphs of a case's *Intent* and *Result* are its `intent` and
+`result`.
 
 ### Area (`areas/<area>/README.md`)
 
