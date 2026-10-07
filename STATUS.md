@@ -600,6 +600,18 @@ submission). (see `work/queued/`)
 - Snapper collector degraded by default, user opts in with one command
   → ADR-0011.
 
+## Decided 2026-10-07, afternoon (operator)
+- E15 ADR-0038 accepted (optional index fields; WP-127 merged into `next`).
+- E16 ADR-0039 accepted (the hook records an agent's privileged commands;
+  WP-129). E17 0.2.0 is tagged only with WP-140 merged (plain-argument
+  secrets on privileged lines).
+- "What changed" ideas W1–W4 for 0.2.0 → WP-136..139. Predecessor studies
+  (private): Omar P1–P5 → WP-141..143, WP-033 additions, recipes notes;
+  JARVIS J1–J5 → WP-144 (0.2.0), WP-143 additions, WP-145..148 (0.2.x).
+  omarchy-troubleshooter / omarchy-setup S1–S5 → WP-149..153 (0.2.x).
+- The test host's reinstall moved to 2026-10-08 morning; until then it runs
+  `next` for live tests.
+
 ## Decided 2026-10-07 (operator, all as recommended)
 - E1 WP-130 guard merged into main after the table review. E2 Omarchy
   routes by a read-only allow-list → WP-132. E3 the guard also checks
