@@ -686,7 +686,7 @@ expect changelog 1 "$tv.selected" "$THEME"
 expect changelog 1 "$tv.stripes | join(\",\")" \
   "tokyo-night attention,~/.config/systemd/user/ollama.service crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh crisis,~/.config/hypr/monitors.conf attention,mesa attention"
 expect changelog 1 "$tv.badges | join(\",\")" "mesa +2"
-expect changelog 1 "[$tv.attention, $tv.attentionDim, $tv.triageSlot] | map(tostring) | join(\",\")" "4 changes without a case,true,false"
+expect changelog 1 "[$tv.attention, $tv.attentionDim, $tv.triageSlot] | map(tostring) | join(\",\")" "4 changes without a case,true,true"
 expect changelog 1 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Hide"
 expect changelog 1 "[$td.heading, $td.cls, $td.whyLoud] | join(\",\")" "theme · theme-set,attention,"
 expect changelog 1 "$td.kv | join(\" | \")" \
@@ -950,10 +950,10 @@ expect work-live 22 "[$tc.armed, $tc.hint] | join(\",\")" "start,Start C-2026-00
 shows work-live 22 "Confirm start"
 expect work-live 25 "[$tv.result, $tv.selected, ($tv.groups | join(\"+\")), $tv.wip] | join(\",\")" "C-2026-005: queued → active,C-2026-005,active 3+verification 1+queued 3+completed 2,3 / 3 active"
 shows work-live 25 "3 / 3 active · at the limit"
-expect work-live 25 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor"
-expect work-live 26 "[$tc.armed, ($tc.actions | join(\"+\"))] | join(\",\")" "verify,Hand to agent+Confirm to verification+Drop+Open in editor"
+expect work-live 25 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor,Ask agent"
+expect work-live 26 "[$tc.armed, ($tc.actions | join(\"+\"))] | join(\",\")" "verify,Hand to agent+Confirm to verification+Drop+Open in editor+Ask agent"
 expect work-live 29 "$tv.result" "C-2026-005: active → verification"
-expect work-live 33 "[$tv.result, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md,Reopen+Open in editor"
+expect work-live 33 "[$tv.result, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-005: verification → completed · journal journal/2026/2026-10-01.md,Reopen+Open in editor+Ask agent"
 expect work-live 33 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
 expect work-live 37 "$tc.armed" done
 expect work-live 38 "$tc.armed" ""
@@ -963,7 +963,7 @@ expect work-live 41 "[$tv.result, $tv.resultOk, $tv.selected, .view.lastError] |
 shows work-live 41 "$refusal"
 expect work-live 43 "[$tc.armed, $tc.hint] | join(\",\")" "drop,Drop C-2026-004? Press x again or click Confirm. This is final."
 shows work-live 43 "Confirm drop"
-expect work-live 46 "[$tv.result, $tv.wip, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-004: active → dropped,1 / 3 active,Open in editor"
+expect work-live 46 "[$tv.result, $tv.wip, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-004: active → dropped,1 / 3 active,Open in editor+Ask agent"
 expect work-live 46 "$tv.groups | join(\",\")" "active 1,verification 1,queued 3,completed 4"
 argv_check work-live "$work/home-work" "$(printf '%s\n' "$startup" \
   "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- " --help")" \
@@ -1186,7 +1186,7 @@ run why-loud-planned "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.r
   HOME="$work/home-why-planned" FAKE_SELDON_FIXTURE="$work/planned-crisis.json"
 expect why-loud-planned 2 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). C-2026-003 plans it (its plan names this change); nothing has linked it yet."
 expect why-loud-planned 2 "[$td.kv[] | select(startswith(\"Case\") or startswith(\"Rule\"))] | join(\" | \")" "Case: proposed: C-2026-003 | Rule: crisis · rule always-red-paths · planned by C-2026-003, not linked"
-expect why-loud-planned 2 "$td.actions[0]" "Link to C-2026-003…"
+expect why-loud-planned 2 "$td.actions[0:2] | join(\"+\")" "Ask agent+Link to C-2026-003…"
 clean_log why-loud-planned
 
 # … under `[drift] attention = "all"`: a crisis is a red-zone change (the
@@ -2113,46 +2113,49 @@ ttd="$tt.detail"
 head='3 items proposed by agent:claude-code at 2026-10-01 17:02, 1 crisis held back — apply each below'
 mkdir -p "$work/home-triage"
 run triage "" 1920x1080 \
-  "summon:$cl;view;clickName:triageAsk;settle;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;click:Apply this crisis;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:Apply proposals;wait:sectionView.triage.detail.result=Applied 0 · skipped 3 · refused 0;view" \
+  "summon:$cl;view;clickName:triageAsk;settle;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 2 · skipped 1 · refused 0;click:Apply this crisis;wait:sectionView.triage.detail.result=Applied 1 · skipped 0 · refused 0;click:Apply proposals;wait:sectionView.triage.detail.result=Applied 0 · skipped 3 · refused 0;view" \
   HOME="$work/home-triage" FAKE_SELDON_FIXTURE="$sample"
 expect triage 2 "[$tt.button, $tt.row, $tt.shown] | map(tostring) | join(\",\")" "Agent sorts 6 open changes,Proposal · $head,false"
 expect triage 4 "[$tt.ask, $tt.askOk] | map(tostring) | join(\",\")" \
   "Agent started to sort 6 open changes; its proposal shows here · launcher default (omarchy),true"
-expect triage 6 "[$tt.shown, $ttd.head, $ttd.state, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
+expect triage 7 "[$tt.shown, $ttd.head, $ttd.state, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
   "true,$head,agent:claude-code · proposal, nothing written yet,Apply proposals (2)+Discard"
-expect triage 6 "[$ttd.crises[].id] | join(\",\")" "$UNIT"
-expect triage 6 "[$ttd.regular[].id] | join(\",\")" "$THEME,$MONITORS"
-expect triage 6 "$ttd.regular[0].evidence | join(\" | \")" \
+expect triage 7 "[$ttd.crises[].id] | join(\",\")" "$UNIT"
+expect triage 7 "[$ttd.regular[].id] | join(\",\")" "$THEME,$MONITORS"
+expect triage 7 "$ttd.regular[0].evidence | join(\" | \")" \
   'Plan of C-2026-005: by human · - [ ] `omarchy theme set tokyo-night` | Journal 2026-10-01 17:00: by human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.'
-expect triage 6 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "false,false,false"
-shows triage 6 "$head"
-shows triage 6 'by human · - [ ] `omarchy theme set tokyo-night`'
-shows triage 6 "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
-shows triage 6 "Apply this crisis"
-shows triage 6 "CRISES — EACH ON ITS OWN"
-expect triage 8 "[$ttd.regular[].outcome] | join(\",\")" "done,done"
-expect triage 8 "$ttd.crises[0].outcome" "skipped: crisis: applied only one by one (\`--item\`), never with the rest"
-expect triage 10 "$ttd.crises[0].outcome" "done"
-expect triage 12 "[$ttd.result, $ttd.resultOk, ([$ttd.regular[].outcome] | join(\"+\"))] | map(tostring) | join(\",\")" \
+expect triage 7 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "false,false,false"
+shows triage 7 "$head"
+shows triage 7 'by human · - [ ] `omarchy theme set tokyo-night`'
+shows triage 7 "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
+shows triage 7 "Apply this crisis"
+shows triage 7 "CRISES — EACH ON ITS OWN"
+expect triage 9 "[$ttd.regular[].outcome] | join(\",\")" "done,done"
+expect triage 9 "$ttd.crises[0].outcome" "skipped: crisis: applied only one by one (\`--item\`), never with the rest"
+expect triage 11 "$ttd.crises[0].outcome" "done"
+expect triage 13 "[$ttd.result, $ttd.resultOk, ([$ttd.regular[].outcome] | join(\"+\"))] | map(tostring) | join(\",\")" \
   "Applied 0 · skipped 3 · refused 0,true,skipped: no longer open drift: $THEME is already resolved+skipped: no longer open drift: $MONITORS is already resolved"
-expect triage 13 "$ttd.state | startswith(\"Applied \")" true
-shows triage 13 "Skipped: no longer open drift: $THEME is already resolved"
+expect triage 14 "$ttd.state | startswith(\"Applied \")" true
+shows triage 14 "Skipped: no longer open drift: $THEME is already resolved"
 argv_check triage "$work/home-triage" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)" \
   "$(q drift apply $PROPOSAL --json)" "$(q drift apply $PROPOSAL --item $UNIT --json)" "$(q drift apply $PROPOSAL --json)")"
 clean_log triage
+
+# (The hover moves the pointer off the button: the harness clicks without
+# moving it, so the button's tooltip would open and take the next click.)
 
 # The engine refuses the launch (no default agent) and one item (its
 # evidence is gone): both shown, in the urgent colour, nothing else run.
 mkdir -p "$work/home-triage-refused"
 run triage-refused "" 1920x1080 \
-  "summon:$cl;clickName:triageAsk;settle;view;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 1 · skipped 1 · refused 1;view" \
+  "summon:$cl;clickName:triageAsk;settle;view;hover:6 changes · newest first;clickName:proposalRow;pause:300;click:Apply proposals (2);wait:sectionView.triage.detail.result=Applied 1 · skipped 1 · refused 1;view" \
   HOME="$work/home-triage-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_DEFAULT_AGENT=1 FAKE_SELDON_APPLY_REFUSED="$THEME"
 refusal='no default agent: Omarchy has none set, so `omarchy agent prompt` cannot start one; nothing was launched. Fix: `omarchy default agent <name>` (e.g. claude), or set `[agent] launcher` in ~/.config/seldon/config.toml'
 expect triage-refused 4 "[$tt.ask, $tt.askOk, $tt.button] | map(tostring) | join(\",\")" "$refusal,false,Agent sorts 6 open changes"
 shows triage-refused 4 "$refusal"
-expect triage-refused 9 "$ttd.regular[0].outcome" \
+expect triage-refused 10 "$ttd.regular[0].outcome" \
   'refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
-shows triage-refused 9 'Refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
+shows triage-refused 10 'Refused: evidence journal `2026-10-01 14:40` no longer resolves (no journal entry at 2026-10-01 14:40)'
 argv_check triage-refused "$work/home-triage-refused" "$(printf '%s\n' "$startup" "$(q agent ask triage --json)" "$(q drift apply $PROPOSAL --json)")"
 clean_log triage-refused "jax\\.seldon: seldon agent exit 1: no default agent"
 
