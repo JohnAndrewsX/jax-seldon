@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-07
+
+**Highlights.** Seldon stays quiet: routine changes (theme, plugin
+toggles, Omarchy's updates, a plain full upgrade) are history, not drift,
+and the bar only counts what can break boot, login or the shell
+(ADR-0028). One click and one sentence start an agent on a case; the
+agent snapshots, verifies and closes it itself, and a change you make
+yourself during the case is linked to it (ADR-0027, ADR-0029). The agent
+starts like Omarchy's own agent, from `~/Work`, with Seldon's rules in a
+skill every Omarchy agent reads (ADR-0030, WP-094); privileged steps
+follow Omarchy's wording and ask for as few passwords as the route allows
+(ADR-0031). Every terminal the panel opens says what it does and what
+happened. More secrets are redacted, and collector messages too.
+
+**Update engine and plugin together.** Plugin 0.1.4 needs engine 0.1.4
+(`engineMin`); with an older engine the panel shows its "Engine outdated"
+banner with the one-click update.
+
 **Panel says `omarchy pkg aur add jax-seldon`?** That is plugin 0.1.0,
 and the package does not exist yet. Update the plugin first:
 `omarchy plugin update jax.seldon` (Omarchy shows the changes and asks
@@ -1160,7 +1178,8 @@ plugin `jax.seldon` (published from `plugin/` as `jax-seldon-plugin`).
 - Specs (engine, plugin, logbook, contract), 22 ADRs, plugin README with
   security section, keybinding docs, preview image.
 
-[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/JohnAndrewsX/jax-seldon/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.4
 [0.1.3]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.3
 [0.1.2]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.2
 [0.1.1]: https://github.com/JohnAndrewsX/jax-seldon/releases/tag/v0.1.1
