@@ -226,3 +226,166 @@ and 1b91d62.
 ok`; docs-check ok, qmllint ok 46 files, model.test.js 149,
 real-home-guard 11, service-states 328, desk-view 1542, bar-view 194).
 Only this handover changed after that commit.
+
+## Round 2
+
+Brief: `WP-156-round-2-brief.md` (stage 1 SEND BACK; the orchestrator's
+decision "a session is a window, not a process"). Commits 1abfef0
+(engine), 3da0ef8 and 47de2df (ADR-0041, docs), f52133d (plugin, tests),
+f1ee05f (test for E15). PLAN.md's D1 ("any marked process") is
+superseded by ADR-0041 §1; the other decisions stand.
+
+### B1 — an orphan locked the case: a session is a window now
+
+- `engine/src/sessions.rs` was rewritten around windows. The engine asks
+  `hyprctl clients -j` first. A session is a window of class
+  `org.omarchy.agent` whose process or one of its descendants carries
+  `SELDON_CASE=<ID>` with this logbook's `SELDON_LOGBOOK`.
+- `/proc` is read only for those windows:
+  - descendants come from `/proc/<pid>/task/*/children`, at most 256
+    processes per window;
+  - each `environ` is read up to 64 KiB, and only the asked keys are
+    compared or kept;
+  - the engine's own process is skipped;
+  - "oldest" is by start time (`stat` field 22);
+  - the whole process table is never read.
+- **Launch grace:** `<state>/launches.json` holds `[{case, logbook, at}]`.
+  It is written under the lock after a successful launch (also `--new`),
+  and records older than 10 s are dropped on write. A launch counts as a
+  session for 10 s while no window of it is found.
+- **Without hyprctl** (or when it fails) nothing is tracked and nothing is
+  refused:
+  - `agent sessions` says `tracking: false` / "Not tracked: <why>";
+  - `agent focus` exits 1 naming why.
+- **Refusal texts** name the window ("(window <A> on workspace <W>)") or
+  the starting launch ("started N s ago and its window is not open
+  yet"). Both end with the focus hint and `--again`.
+- **Focus within the grace** answers `{focused: false, starting: true}`
+  with exit 0. The desk steps aside; the window comes up when it maps.
+  The "no window" error is gone.
+- **N1, editor:** focus applies only to `org.omarchy.*` terminal windows
+  (not `org.omarchy.agent`); a GUI editor launches as before. The
+  `running` answer of `open --editor` is gone, in the engine, the plugin
+  and the docs.
+
+### B2 — ADR-0041 (proposed)
+
+`decisions/ADR-0041-agent-sessions-are-windows.md` covers:
+- the two plugin commands, `--again`, the `focused` shape;
+- the window-based session identity and the launch grace;
+- the narrowed `/proc` read (§3, for the operator's acknowledgement);
+- the `hl.dsp.focus` / `focuswindow` dispatch;
+- known limits: a terminal server with one pid for many windows, and an
+  environment above 64 KiB, which fails open.
+
+DECISIONS.md lists it as proposed. CONTRACT.md cites it.
+
+### N2–N5
+
+- **N2:** the service asks for sessions after every `agent` **or `open`**
+  answer, on an index change, when the desk opens, and every 15 s while
+  it is open. SPEC-PLUGIN §5.4 says the same.
+  - Note: every engine answer reloads the index, and that reload counts
+    as an index change. The `open` clause therefore adds no call of its
+    own, and a mutant that removes it is equivalent (not run).
+- **N3, mutants now killed:**
+  - E4 (own pid): `the_engine_itself_is_no_session`. The stub hyprctl
+    lists the engine's own pid (`$PPID`) as an agent window, and the
+    engine runs with the marker.
+  - E5 (case-id filter): `only_this_logbooks_case_markers_count`.
+  - P1 (index refresh): harness `aside-index`. The first sessions answer
+    is empty, a capture rewrites the index, and the second answer shows
+    Focus.
+  - P5 (`lastOpen` only on success): harness `aside-openfail`. A failed
+    open is retried at once, so argv shows two opens.
+- **N4:** `aside-double` is deterministic now.
+  - With `FAKE_SELDON_HOLD_OPEN`, the fake engine's open waits until
+    `$HOME/release-open` exists.
+  - The new harness step `touch:<name>` creates that file.
+  - "Opening…" and the pending state are now states of the case, not a
+    race.
+- **N5:** the engine reports an actor only if it reads as `agent:<slug>`
+  (else null). The plugin already checked this. The environ cap and the
+  start-time order are above.
+- **Tests asked for:**
+  - `a_marked_process_without_an_agent_window_is_no_session`: an orphan
+    with the marker and no window, plus a marked `foot` window, give no
+    session, and `agent start` launches;
+  - `a_marked_descendant_makes_the_window_a_session`: the window's own
+    process is unmarked and its child is marked; this is refused;
+  - `a_launch_counts_for_ten_seconds_without_a_window`: T0 launch, T5
+    refused with the starting text, sessions `starting`, focus
+    `starting`, another case not held up, T11 launches; a T20 write drops
+    the record that is past the grace;
+  - harness `aside-nowindow` (`FAKE_SELDON_NO_TRACKING`): Hand to agent
+    stays, and two hand-offs make two launches;
+  - also `without_hyprctl_nothing_is_tracked`, and unit tests for the
+    tree, the cap, the start time and the class filter.
+
+### Verification (round 2)
+
+- **Engine:**
+  - `tests/one_agent_per_case.rs`: 12 tests. The windows are real
+    processes the test starts (own process groups, killed by PID through
+    `Live`), listed by a stub `hyprctl` from `clients.json`.
+  - `sessions.rs` unit tests: 6.
+  - full `cargo test` green; `cargo clippy --all-targets -D warnings`
+    clean; no stub process left behind.
+- **Plugin:** `model.test.js` 149; `omarchy plugin validate`; `just
+  qmllint` (46 files, 0 warnings).
+- **Harness:** desk-view 1555 passed, 0 failed (the new cases are
+  `aside-nowindow`, `aside-index` and `aside-openfail`); service-states
+  328.
+- **Mutants** (scratch copy, own target dir, removed afterwards) — 20 of
+  20 caught:
+  - **Engine:**
+    - E1 refusal off;
+    - E2 logbook key dropped;
+    - E3 legacy dispatch off;
+    - E4 own pid kept;
+    - E5 case-id filter off;
+    - E6 any window class;
+    - E7 no grace;
+    - E8 no descendant walk;
+    - E9 any actor;
+    - E10 editor focus for any class;
+    - E11 oldest by pid;
+    - E12 no environ cap;
+    - E13 no editor focus;
+    - E14 grace forever;
+    - E15 no pruning on write (it first **survived**; the T20 step was
+      added to kill it).
+  - **Plugin:**
+    - P1 no index refresh;
+    - P5 `lastOpen` on a failure;
+    - P6 no step aside;
+    - P7 no one-open guard;
+    - P8 no session in the detail.
+- **Live, test host** (same private-instance setup as round 1: this
+  branch's release engine and plugin, a scratch config, state and logbook,
+  the stand-in launcher; the installed build and the operator's windows on
+  workspaces 1 and 10 untouched; workspace 2 used, then restored; the
+  scratch removed; my processes ended by PID):
+  1. `a a` → the desk was gone, and the stand-in agent terminal was the
+     active window.
+  2. 0.3 s later `seldon agent sessions` listed the window. Its tree's
+     marked pids were the Alacritty process and its `tail` child.
+  3. The CLI `agent start` refused, naming the window and workspace.
+  4. The desk then showed Focus, "working now · agent:default ·
+     workspace 2".
+  5. **B1 live:** I started a marked orphan (`setsid sleep`, no window)
+     and closed the agent window (SIGTERM to its pid). After the grace,
+     `agent sessions` said "No window … is open" with the orphan still
+     alive. The desk showed *Hand to agent*, and `a a` launched a new
+     terminal, which came up in front.
+  6. The agent window the operator has open on workspace 1 is one the
+     engine now looks at by design: it is an `org.omarchy.agent` window.
+     Its processes' environments were read for the three keys only. Its
+     `SELDON_LOGBOOK` is another logbook, so it was not counted.
+
+### Final check (round 2)
+
+`flock /tmp/seldon-check.lock just check` on **f1ee05f: exit 0** (`check:
+ok`; docs-check ok, qmllint ok 46 files, model.test.js 149,
+real-home-guard 11, service-states 328, desk-view 1555, bar-view 194).
+Only this handover changed after that commit.
