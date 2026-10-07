@@ -14,7 +14,7 @@ var CONTRACT_VERSION = 1
 // manifest from disk on every rescan but keeps running the plugin code it
 // compiled first (WP-090), so a manifest that says otherwise means the
 // plugin was updated under a running shell (restartShellNotice).
-var PLUGIN_VERSION = "0.1.3"
+var PLUGIN_VERSION = "0.1.4"
 
 // SPEC-PLUGIN §3: an index older than two hours is stale.
 var STALE_AFTER_MS = 2 * 60 * 60 * 1000
