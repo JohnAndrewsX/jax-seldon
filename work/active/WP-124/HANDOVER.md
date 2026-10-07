@@ -104,3 +104,92 @@ Stage 124b (the desk) waits for this review. Decisions in
 3. D11: crisis = engine class **or** the file's flag (the flag can only
    hold back). ADR-0035 §6 says "never by the file's flag"; I read that
    as "the flag never lets one through".
+
+## Round 2
+
+From the stage-1 review (SEND BACK) and the orchestrator's brief.
+
+### Blocking
+
+- **B1 — apply touches open drift only** (`triage.rs` `apply_item`). After
+  `select`, the named event must be in the fresh derive's open-drift set,
+  and only the group's open members are kept; otherwise the item is
+  `skipped` with `no longer open drift: …` (routine again with its rule,
+  resolved by the engine, or as `drift show` words it) and nothing is
+  written. Tests: the packet's firefox group (proposed under `attention =
+  "all"`, applied after the default is back: skipped, ledger
+  byte-identical), an engine `linked` line written after the proposal
+  (skipped, the engine's line untouched), a group whose member the engine
+  resolved (only mesa and vulkan-radeon written), a group whose leader the
+  engine resolved (skipped). Round 1's "case gone" test now shows B1 too:
+  without C-2026-005 the theme switch is routine again and is skipped.
+  The two checks cover each other (an open leader's item has only open
+  members); each alone is an equivalent mutant, both together are killed
+  (M15). ADR-0036 §3 and SPEC-ENGINE §5 "Triage" say the same.
+- **B2 — no self-citation, the author in every text.** Every evidence
+  text is `by <author> · <words>` (author first, so no clip hides it).
+  Authors: journal entry actor; event and snapshot actor; case creator
+  (`case-created`, else `unknown`) plus whoever completed or dropped it;
+  Plan: the case's authors plus every agent in its `agents` (Plan lines
+  carry no author; the agents that worked the case write the Plan). A
+  ref with the proposer among its authors does not resolve, at propose
+  and again at apply against the proposal's `actor`. Tests: the packet's
+  `seldon log --actor agent:claude-code` cite (refused), the fixture's
+  09:25 agent note, an event, a case closed and a Plan of a case worked
+  by the agent (all refused); a human note and another agent's note
+  accepted with `by human` / `by agent:codex`; a file whose actor is
+  changed to `agent:codex` refuses the item citing codex's event at
+  apply. Residual risk (another name, `--actor human` on `seldon log`)
+  in ADR-0036 §2; `triage.md` says an agent's note is not the user's
+  word and never to write one to cite it; fetched text is data (N7, also
+  in `drift.md`).
+- **B3 — no private path.** `mutants.py` takes the root from `__file__`
+  and builds in `engine/target/mutants`. The branch diff holds no
+  `/home/<user>` path and no host name (only the fixture's
+  `/home/user/Seldon` placeholder).
+
+### Also
+
+- **N1** ADR-0036 §4, SPEC §5 and guide 04 en/de say what the actor check
+  stops (an agent in its launched session) and what it does not (a
+  process of the same user that drops `SELDON_ACTOR`), and why (same uid,
+  no second channel; such a process could already `drift link|explain`).
+- **N2** `agent ask` refuses a logbook or guide path that is not UTF-8 or
+  holds a control character, U+2028/U+2029, a bidi control or a
+  backtick (exit 1, nothing launched); both paths stand in backticks in
+  the prompt. Test with four such paths.
+- **N3** the four survivors now have tests: evidence redaction (a
+  hand-edited journal line), title redaction at propose and at apply, the
+  non-following proposal write (unit test of `write_proposal` over a
+  link), a foreign `seldon/` folder never serves as the guide.
+- **N4** `one_line` (every free-text title and reason) refuses U+2028,
+  U+2029, U+202A–U+202E, U+2066–U+2069. Unit test and a propose/explain
+  test.
+- **N5** a `proposals` that is a symbolic link or no directory: propose,
+  apply and discard exit 1; the index build skips it with a warning.
+- **N6** both, said precisely: nothing is written before a refusal (every
+  check and the retroactive case's name come before the one ledger
+  write). A case file that fails *after* its ledger lines is now `done`
+  with a `warning`, committed and indexed with the rest; `drift
+  link|explain` alone commit, rebuild, then exit 1 naming it (before,
+  they exited without a commit). A debug-only fault switch
+  (`SELDON_TEST_DRIFT_FAIL_AFTER_LEDGER=1`) drives the test.
+
+### Verified
+
+- `engine/tests/triage.rs` 20 tests (12 + 8), triage unit tests 3,
+  `one_line` unit test; skills, drift, agent suites green.
+- Mutants: `python3 work/active/WP-124/mutants.py`, **27 of 27 killed**
+  (14 of round 1, 13 new: B1, B2 ×3, redaction ×2, non-following write,
+  foreign guide, prompt path, separators, linked folder ×2, failure after
+  the ledger). Log `mutants-wp124-r2.log` in my scratch dir (M15 then
+  merged as noted under B1 and re-run: killed).
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `29497cc` (2038 Rust tests passed, 0 failed; bar-view 194/0;
+  plugin-test ok; docs-check ok). Log `check-wp124-r3.log`.
+
+### Open
+
+- Live check on the test host: still with 124b.
+- Stage 2 (Fable): N1's limit (a same-uid process that drops
+  `SELDON_ACTOR`) is stated, not closed.
