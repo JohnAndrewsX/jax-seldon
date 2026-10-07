@@ -1,6 +1,6 @@
 # Mit Agenten arbeiten
 
-<!-- source: en/04-working-with-agents.md @ 5d68748 -->
+<!-- source: en/04-working-with-agents.md @ 943cdb5 -->
 
 Diese Seite zeigt, wie ein KI-Agent einen Case bearbeitet, während
 Seldon aufzeichnet, was er tut: Claude Code, Omarchys Standard-Agent und
@@ -418,6 +418,66 @@ Scheitert der Launcher, steht sein Fehler in
 `agent start` lehnt einen Case ab, der nicht aktiv ist. Starte ihn
 vorher.
 
+## Einen Agenten die offenen Änderungen sortieren lassen
+
+Änderungen ohne Case warten im Changelog. Erklären musst du sie nie,
+aber ein Agent kann sie für dich sortieren, mit Belegen, und du wendest
+das Ergebnis mit einem Klick an. *Agent sorts N open changes* im Panel
+führt aus:
+
+```sh
+seldon agent ask triage
+```
+
+Die Engine startet deinen Agenten wie `agent start`, mit einem Prompt,
+der nur das Logbuch und die `triage.md` des Skills nennt: kein Text aus
+deinem Logbuch und kein Case zum Bearbeiten. Der Agent liest die offenen
+Änderungen, deine Cases, das Journal und das Ledger und legt einen
+**Vorschlag** ab. Für jede Änderung, die er belegen kann, schlägt er eine
+Verknüpfung mit einem Case oder eine Erklärung vor (ein neuer
+abgeschlossener Case mit Titel und Grund) und nennt die Belege: einen
+Journal-Eintrag mit seiner Uhrzeit (`2026-10-01 14:40`), ein anderes
+Ereignis, eine Snapshot-Nummer, einen Case oder einen Case, dessen
+*Plan* die Änderung nennt. Die Engine schlägt jeden Beleg selbst nach und
+lehnt einen Vorschlag mit einem Eintrag ab, den sie nicht belegen kann;
+eine Änderung, die niemand erklären kann, bleibt also offen. Ins Logbuch
+wird noch nichts geschrieben. Am Ende nennt dir der Agent die Id des
+Vorschlags.
+
+Du wendest ihn an, als du selbst:
+
+```sh
+seldon drift apply <PROPOSAL>
+```
+
+Vorher wird jeder Eintrag noch einmal gegen das Logbuch geprüft; ein
+Eintrag, dessen Beleg verschwunden ist, wird abgelehnt, einer, der schon
+aufgelöst ist, übersprungen. Jede Auflösung im Ledger lautet
+`proposed by agent:<name> — <Belege>`. Eine Krise wird nie mit dem Rest
+angewendet: Lies ihre Belege und wende sie dann einzeln an:
+
+```sh
+seldon drift apply <PROPOSAL> --item <EVENT>
+```
+
+Ein zweites `apply` ändert nichts. Ein neuer Vorschlag ersetzt den alten;
+`seldon drift discard <PROPOSAL>` verwirft einen. Anwenden und verwerfen
+darfst nur du: Einen Agenten lehnt die Engine ab.
+
+Um stattdessen nach einer einzelnen Änderung oder einem Case zu fragen:
+
+```sh
+seldon agent ask drift <EVENT>
+seldon agent ask case C-2026-003
+```
+
+Der Agent sagt dir in seinem Fenster, was die Aufzeichnung zeigt und was
+er vorschlägt; er löst nichts auf, solange du es ihm dort nicht sagst.
+Eine Frage gibt dem Agenten nie einen Case zum Bearbeiten: Das tut
+`agent start`. Ohne Omarchy-Standard-Agent oder ohne den Skill `seldon`
+(`seldon hook install skills`) startet nichts, und die Meldung nennt die
+Lösung.
+
 ## Andere Agenten
 
 Ein Agent, der außerhalb des Logbuch-Ordners startet, liest die
@@ -500,6 +560,9 @@ ausführlich sagt:
   nur aufzeichnen“;
 - Drift nur mit Belegen erklären und dir eine Krise in einer Zeile
   melden;
+- die offenen Änderungen auf deinen Wunsch zu einem Vorschlag sortieren,
+  den du anwendest, mit Belegen, die die Engine nachschlagen kann
+  (`triage.md`);
 - für Omarchy selbst (Hyprland, die Leiste, Themes) Omarchys eigenem
   Skill folgen.
 
@@ -568,6 +631,9 @@ haben, erscheint dort.
   `seldon import … --apply`, `seldon agent start` oder
   `seldon rules update` nur ausführen, wenn du genau das verlangst. Die
   `AGENTS.md` des Logbuchs sagt dasselbe.
+- `seldon drift apply` und `seldon drift discard` gehören dir: Ein
+  Agent schlägt nur vor, und die Engine lehnt einen Agenten ab, der
+  anwendet.
 - Schreib eigene Grenzen unter `## Your rules` in `AGENTS.md`, zum
   Beispiel „nie aus dem AUR installieren“.
 - Lies das *Result* eines Case und seine Spur, wenn du die Arbeit des
