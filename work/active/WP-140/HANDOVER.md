@@ -154,3 +154,91 @@ ran from a script file.
   `/home/user` and `/home/alice` placeholders; no user or host name.
 - No schema, fixture or plugin change; the index fixture is unchanged
   (its texts hold none of the new code points).
+
+## Round 2
+
+Brief: the orchestrator's round-2 brief from the Opus stage-1 review
+(SEND BACK for B1 and B2, plus N1–N4, more programs and code points).
+`next` had not moved (ac5bc9f9), so nothing was merged.
+
+### Fixed
+
+- **B1 — a key file the line writes.** `secret_args::fed` (new) counts a
+  file that any command of the line writes as feeding it, beside `|`,
+  `<<<` and `<(`: `printf PW > k; sudo cryptsetup open … -d k` is
+  `cryptsetup ‹redacted›`. A write to `/dev/null`, `/dev/stdout` or
+  `/dev/stderr` feeds nothing, so `cryptsetup open … 2>/dev/null` stays
+  whole (hooks row and unit rows, both ways).
+- **B2 — `passwd` fed from the line.** New `Feed::OptionsOrFed`:
+  `passwd` counts through `-s`/`--stdin` or when the line feeds it
+  (`printf 'PW\nPW' | sudo passwd alice`, `sudo passwd alice <<< $'…'`).
+  `sudo passwd -S alice` stays whole, also with `2>/dev/null`. New unit
+  rows `passwd -s`/`--stdin alice < pw.txt` keep the options tested on a
+  line that feeds nothing (the first mutant run showed both surviving
+  without them).
+- **N1:** `long: &["--password"]` for `useradd`, `usermod`, `groupadd`,
+  `groupmod`: `--passw=…`, `--pass x` and `--password $(openssl passwd
+  -6 PW)` are `<program> ‹redacted›`; `usermod --login bob` stays.
+- **More programs:** `openssl passwd` (a new `subcommand` field; `openssl
+  rand`, `openssl req … -passin env:PW` stay) and `wpa_passphrase`, both
+  always.
+- **N2:** R1 — two `CLEAR` rows, a PUBLIC block in a text that says
+  "private key" and an `RSA PUBLIC KEY` block. R3 —
+  `collectors::plugins::tests::a_subject_drops_every_format_character_before_the_redaction`
+  (a `token=` split by each code point in a commit subject). R4 —
+  `index.rs` `the_reference_drops_the_engines_format_characters`: the
+  sets `DIRECTION_OR_FORMAT` and `BAD_PATH` (without the controls) of
+  `scripts/validate-fixtures.py` equal `import::is_direction_or_format`
+  over every code point (python `-I -B`, so no `__pycache__`; skipped
+  without `python3`, like the reference test).
+- **N3:** SPEC §7 now says exactly when two passes give the same text
+  with user patterns: a gap at the end of a value (followed by white
+  space, a line end or the end) merges nothing; text glued after the
+  masked gap joins the value on the second pass and is masked too
+  (`--password x;tail` with a pattern for `;` → `‹redacted›‹redacted›tail`
+  → `‹redacted›`; more, never less); a pattern across a marker's edge is
+  applied as written. Pinned in `a_match_of_markers_only_is_left_as_it_is`.
+- **N4 (cheap, done):** a quoted header value takes the text glued after
+  its closing quote up to white space, a quote, a backslash, `,`, `;`, a
+  closing bracket or a marker (`Authorization: "Bearer "SECRET next` →
+  `Authorization: ‹redacted› next`), and a Python string prefix (`f`,
+  `r`, `b`, `u`, two of them: `{'Authorization': f'Bearer {t}', …}`,
+  `x-api-key: rb'…'`). JSON keeps its `,` and `}`.
+- **More code points:** U+0600–U+0605, U+1BCA0–U+1BCA3, U+1D173–U+1D17A
+  in Rust and Python, with unit, index, commit-subject and reference-set
+  tests.
+- **Docs:** SPEC-ENGINE §3/§6/§7/§8, the ADR-0038 and ADR-0039 amendment
+  notes, CONTRACT rule 9, CHANGELOG, guide 04 en/de (de source line
+  set), TESTING.
+
+### Accepted as documented
+
+A BEGIN with no END masks the rest of the text, the rest of a vault file
+on import included (over-masks rather than leaks; SPEC §7).
+
+### How it was verified
+
+- **`flock /tmp/seldon-check.lock just check` on b0c20275: exit 0**
+  (`check: ok`; log `engine/target/check-wp140-r2b.log`): 90 test
+  binaries, 2282 passed, 0 failed. (A first round-2 run, queued on
+  022962e2, was stopped by its own PID before it got the lock, because
+  b0c20275 followed; log `check-wp140-r2.log`, exit 143.)
+- **`flock /tmp/seldon-check.lock just check-perf` on b0c20275: exit 0**
+  (log `engine/target/perf-wp140-r2.log`), every budget on the first
+  attempt: redaction 64 KB without a masked value 0.40–0.67 ms (budget
+  2 ms); 128 KB with many: private keys 2.81 ms, nmcli secrets 4.86 ms,
+  quoted header values 2.90 ms (20 ms), two option kinds 10.3 ms (20 ms),
+  password and token 4.87 ms (10 ms). Hook, 10 000 lines: 0.79 / 1.70 /
+  3.01 / 2.67 ms; 900 lines with the rebuild: 0.75 / 3.08 / 4.49 /
+  4.24 ms (5 ms); unrelated session 0.71–0.88 ms (1 ms). Index ×10
+  5.5 ms, ×150 65.5 ms; status 49.0 ms.
+- **Mutants:** `work/active/WP-140/mutants.py`, now 65 (round 2 adds the
+  written file, `/dev/null`, `passwd` fed, the four `--password` longs,
+  `openssl passwd` and its subcommand, `wpa_passphrase`, the three new
+  ranges in Rust and one in Python, the string prefix, the glued tail and
+  its `,` stop; the runner also runs the reference-set test of `--test
+  index`). Run from a copy of the tree with its own target
+  `engine/target/mutants-wp140`: 63/65 killed at 022962e2; the two
+  survivors (`passwd -s`, `passwd --stdin`) were killed after the unit
+  rows above (b0c20275): **65/65 killed**.
+- `git diff 3b5592ab..HEAD`: no added home path, user or host name.
