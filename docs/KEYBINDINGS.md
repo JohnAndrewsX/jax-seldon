@@ -30,11 +30,16 @@ the checks in `tests/plugin/desk-view.sh` together.
 | `r` | Work: reopen a completed case (once) |
 | `d` | Decisions: the new-decision form (Enter twice creates) |
 | `←`/`→`, `h`/`l` | Prime Radiant: the previous / next period (30 d, 90 d, 365 d, All; wrapping) |
+| `←`/`→` | Graph: the cut-off day one back / on |
+| `Space`, `Enter`, `p` | Graph: play the growth from the first day (on from the cut when it is earlier), again: pause |
+| `0`, `-`, `=` | Graph: fit the view, zoom out, zoom in |
 
 Decisions (`4`): *Accept* on a proposed decision opens it in the editor,
 as `e` does: set `status: accepted` there. The Prime Radiant (`7`) starts
 on 90 d every time you enter it; its 0.1 keys `1`–`4` are the sections
-now.
+now. The graph (`8`) takes the mouse: drag a node or the background,
+the wheel zooms, a hover shows the card with *Open case*; Esc pauses the
+replay, then lets a kept card go, then closes.
 
 ↑/↓ move the selection; the detail follows. A text field keeps every key
 while it has the focus; Esc in it gives the keys back and keeps the text.
@@ -59,7 +64,7 @@ Tab and Shift-Tab do nothing: the desk is not a bar popup.
 | `omarchy-shell shell call jax.seldon view ""` | what the desk shows, as JSON (while it is open) |
 | `omarchy-shell shell call jax.seldon section <id>` | show a section |
 | `omarchy-shell shell summon jax.seldon '{"section":"changelog","filter":"crisis"}'` | the Changelog at a chip (`open`, `crisis`, `attention`, `routine`, `case`, `all`); `"select":"<eventId>"` selects an event |
-| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …) |
+| `omarchy-shell shell call jax.seldon select <id>` | select an item of the current section (an event, a case, a decision id, …; the graph: keep that node's card) |
 | `omarchy-shell shell call jax.seldon setPeriod 30` | show the Prime Radiant on a period (`30`, `90`, `365`, `all`); an unknown id changes nothing |
 | `omarchy-shell shell call jax.seldon hover "heatmap 0.5,0.5"` | the read-out at that point of a Prime Radiant chart (fractions of its plot; `""` clears), while it is shown |
 | `omarchy-shell jax.seldon.panel open\|close\|toggle\|tab <name>\|resolve <eventId\|crisis>\|filter <source>\|view\|pill` | the 0.1 panel's target, forwarded to the desk until 0.3.0 |

@@ -486,6 +486,23 @@ an angle; the drift peak is the week with the most opened (a
 non-monotonic series, ties to the later week); timeline markers, spans clipped to the window, lanes, months
 and the hit test; the plan's cards and columns; empty charts without an
 index; `aggregationCount` counts exactly the table's passes.
+The graph (WP-125): `graphBuild` on the sample (67 nodes: 6 areas, 8
+cases, 4 decisions, 47 changes, 2 crises; only change kinds; crises from
+`drift[]`), its edges (event → case, case → area, decision → case, the
+proposed case dashed; a contract-1 index without `decisions[].cases`
+loses only those), the day index (event date, case created, decision
+date, an area at its earliest neighbour, alone at day 0; an area only a
+case names; a drift item older than the events), no index; folding on
+`tests/plugin/graph-index.js`'s busy index (exactly 400 nodes, every
+change a node or in one cluster, crises, areas, cases and decisions
+never, no unfolded group bigger than a folded one, coarser levels for a
+tighter cap) and `graphFold` level by level; `graphState` (deterministic,
+positions kept by id, a new node beside its case, the cut kept
+mid-replay), `graphSetCut` (visible = day ≤ cut, monotonic over every
+day), `graphStep` (200 ticks then asleep, nothing overlaps, links
+shorter than the mean, a pinned node held, its neighbours following),
+Barnes–Hut within 5 % of the exact repulsion, `graphPick`, `graphInfo`,
+`graphFit`, `graphShape`.
 
 `node tests/plugin/model.bench.js` times `periodTable` (what the service
 does on every index write) on the sample, the sample ×10 and 7000 timeline
@@ -494,6 +511,11 @@ Model.js; slow global lookups, about 8× slower and load-sensitive, so only
 reported), against the WP-030 cut. It fails when the fastest of 31 plain
 runs on ×10 takes more than 10 ms (idle about 1.9 ms, about 4 ms with the
 host fully loaded).
+It also times one `graphStep` at 400 nodes (the cap, on the busy index
+of `tests/plugin/graph-index.js`) and fails over 8 ms (fastest of 31
+plain runs; about 0.25 ms under node — the shell's QV4 is about ten
+times slower, which `desk-view.sh` and the live run below measure), and
+reports `graphBuild` (the service's work per index, about 0.7 ms).
 
 ### 2. `Service.qml` in a private headless Quickshell
 
@@ -670,7 +692,11 @@ summon a new one, as the loader does from closed; the report's
 `firstFrame` holds the aggregation passes and paints sampled on its first
 swapped frames and the frame by which every chart has painted),
 `hoverItem:<slot>:<i>` (the pointer onto item i of that chart,
-`chart.locate`) and `leave`; `HARNESS_NO_PILL` runs without the pill (the
+`chart.locate`) and `leave`; for the graph (WP-125) `graphPlay`,
+`graphCut:<day>`, `graphHover:<id>` (the pointer onto that node) and
+`graphDrag:<id|empty>:<dx>,<dy>` (press on a node, or on a point with
+no node near, move, release; `call` holds the node's window point
+before and after); `HARNESS_NO_PILL` runs without the pill (the
 plugin not in the bar). The facade stand-in answers `false` when the
 entry would not change, as `shell.qml` does. After each it prints
 `Desk.view()` (with the current section's own `view()` as
@@ -756,7 +782,25 @@ log free of warnings, `TypeError`s and binding loops. `DESK_SHOTS=<dir>`
 also renders the desk in Tokyo Night, Kanagawa and Catppuccin Latte
 (Today at 100 % and 50 %, Settings, the Changelog, Work, Decisions,
 System, Memory, the Prime Radiant at 100 % and 50 % and with a hover,
-not initialised).
+the graph settled, with a hover, at 50 % and in a replay at day 12, not
+initialised).
+
+The graph (WP-125, section 11): on the sample it settles and sleeps
+(200 ticks, the Timer off, no tick and no paint after), each reported
+`tickMs` ≤ 8 and at most 2 of the ticks over it (`slowTicks` names
+them: the dev host compiles other work packages at the same time and
+preempts a tick now and then; the sample's ticks take 1–3 ms); a switch
+to another section stops the ticks at once and coming back resumes
+them; a closed and reopened desk shows the settled layout from the
+service without a tick; the replay from day 0 grows monotonically to all
+67 nodes, `graphCut`, ←/→, Space and Esc; hover (the card, its line,
+*Open case* into Work with the case selected after the pointer left the
+node), `select` and Esc; a node dragged by 160,90 px lands there and
+wakes the layout, which sleeps again; a pan and a wheel zoom only
+repaint; `0` fits. On the busy index: 400 nodes, 295 changes folded into
+99, the legend's *Folded*, a folded group's card, at most 5 of 200 ticks
+over the budget (its ticks print). Not initialised, nothing to draw, and
+50 % on 1366 and a 700 px window without a text outside its box.
 
 ### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
 
@@ -826,6 +870,37 @@ since WP-039) and the bottom of the journal's last entry at the default
 font. The framed panel is 500×578, placed 22 px right of the overlay with
 36 px to spare, so the canvas is 2480×1080. Re-check both if the panel's
 layout changes. The image must stay under 1 MB (it is about 150 KB).
+
+### 3d. The graph live on a session (WP-125)
+
+`bash tests/plugin/graph-live.sh <index.json>` runs the real desk in its
+real layer-shell window on the Hyprland session it is started in (read
+only: `SELDON_INDEX`, a scratch config root, its own Quickshell; neither
+the running shell nor `~/.config` is touched), opens section 8 and
+prints `GRAPH-LIVE` lines after the layout settles, after a replay from
+day 0, after a cut to the middle day and after a switch to Today: the
+graph's read-out (ticks, `tickMs`, `tickMsMax`, `slowTicks`,
+`stepMsMax`, `drawMs`, `paintMs`, the replay counts) and an event-loop
+probe (a 1 ms Timer on the shell thread; its largest gap). Not in `just
+check`: it needs a session and shows the desk (with the keyboard) for
+about half a minute.
+
+Measured on the test host (2026-10-07, Omarchy 4.0.4, Quickshell 0.3.1,
+6 cores, one 1920×1080 screen at scale 1.25, the desk 1528×830): on a
+scratch logbook backfilled 90 days (ADR-0033; `--since`, `--baseline`;
+2267 events, the index's newest 500, which fold one upgrade day of 355
+changes into one node: 152 nodes) `tickMsMax` 3 ms over 659 ticks; on
+the busy index of `graph-index.js` (400 nodes, 229 edges) 7 ms over 691
+ticks (step ≤ 6 ms, drawing ≤ 2 ms), none over 8. Both replays grew
+monotonically to every node; switching to Today stopped the ticks. The
+probe's gaps of 16–20 ms are frames, not work: Qt's threaded render loop
+holds the shell thread to the display's frames while a QML animation
+runs (a bare layer-shell window with one `Behavior` shows the same, a
+Timer-moved rectangle does not); the GUI thread's own share of a frame
+(polish, sync) stayed at 0–1 ms (`QSG_RENDER_TIMING`). The first live
+run found two things fixed since: the first tick ran interpreted (8 ms;
+`graphWarm`), and the slider's knob animation ran through the whole
+replay (266 such gaps; the knob now holds still while playing).
 
 ### 4. Runtime smoke test in the shell
 
