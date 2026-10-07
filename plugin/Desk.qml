@@ -368,11 +368,13 @@ Item {
   // ---- The Prime Radiant's IPC (the 0.1 overlay's names, SPEC-PLUGIN §8)
 
   // `setPeriod <id>`: shows section 7 with that period; returns the period
-  // now selected (an unknown id changes nothing).
+  // now selected. An unknown id changes nothing — not the section either —
+  // and returns section 7's period ("" before its first visit).
   function setPeriod(id) {
-    root.section("radiant")
+    var value = String(id)
+    if (Model.isPeriod(value)) root.section("radiant")
     var radiant = root.sectionItem("radiant") as Radiant
-    return radiant ? radiant.setPeriod(id) : ""
+    return radiant ? radiant.setPeriod(value) : ""
   }
 
   // `hover "<slot> <x>,<y>"` (fractions of the chart's plot) or "" (clear),

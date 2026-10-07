@@ -56,7 +56,9 @@ Section {
 
   function move(dy) {
     if (root.rows.length === 0) return true
-    var from = root.cursor === -1 ? (dy > 0 ? -1 : 0) : root.cursor
+    // From the row the detail shows: the first when the selection is gone
+    // or filtered out (`current`), so the first ↓ moves on from it.
+    var from = Math.max(0, root.cursor)
     var i = Math.max(0, Math.min(root.rows.length - 1, from + dy))
     root.selectedId = root.rows[i].id
     return true

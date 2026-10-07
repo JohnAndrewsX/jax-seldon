@@ -6,8 +6,9 @@ import "../../Model.js" as Model
 // clockwise from 12 o'clock, the case count in the centre, a legend with
 // counts and shares beside it. R0–R2 are steps of the theme accent, R3 the
 // theme's urgent colour. series.risk has no dates, so the donut is all time
-// whatever the period, and says so. Hover (ring or legend): the class, its
-// count and share. Data: Model.riskChart.
+// whatever the period, and says so ("all time" under the count where the
+// hole holds it; the caption always). Hover (ring or legend): the class,
+// its count and share. Data: Model.riskChart.
 ChartCanvas {
   id: root
 
@@ -25,6 +26,22 @@ ChartCanvas {
   readonly property real legendX: root.ringArea + Style.spacing.md
   readonly property real legendY: root.cy - 2 * root.legendRowH
   readonly property var partColors: [Util.alpha(root.accent, 0.3), Util.alpha(root.accent, 0.6), root.accent, root.urgent]
+  // "all time" under the count only where it stays inside the hole (a small
+  // ring in a narrow slot: the caption says it anyway). Its box runs from
+  // cy + xs to cy + xs + its height; the hole's half-width at that lower
+  // edge must hold half the label and a margin.
+  readonly property real labelBottom: Style.spacing.xs + allTime.height
+  readonly property bool labelFits: root.labelBottom < root.inner
+    && allTime.advanceWidth / 2 + Style.spacing.xs <= Math.sqrt(root.inner * root.inner - root.labelBottom * root.labelBottom)
+
+  readout: ({ centreLabel: root.labelFits })
+
+  TextMetrics {
+    id: allTime
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+    text: "all time"
+  }
 
   onPaintRequested: function(ctx, w, h) {
     var parts = root.chart.parts
@@ -46,9 +63,11 @@ ChartCanvas {
     ctx.font = Style.font.title + "px \"" + root.fontFamily + "\""
     ctx.fillText(String(root.chart.total), root.cx, root.cy + Style.spacing.xs)
     ctx.font = root.canvasFont
-    ctx.textBaseline = "top"
-    ctx.fillStyle = root.muted
-    ctx.fillText("all time", root.cx, root.cy + Style.spacing.xs)
+    if (root.labelFits) {
+      ctx.textBaseline = "top"
+      ctx.fillStyle = root.muted
+      ctx.fillText("all time", root.cx, root.cy + Style.spacing.xs)
+    }
     ctx.textAlign = "left"
 
     if (!root.legendBeside) return

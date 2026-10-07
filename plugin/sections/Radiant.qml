@@ -24,8 +24,8 @@ import "../Model.js" as Model
 // frame, one paint per chart per data or size change (the harness counts
 // both through view()).
 //
-// Keys: ←/→ and h/l the previous / next period (wrapping); the digits are
-// the desk's sections. IPC through the desk: `setPeriod <id>`, `hover
+// Keys: ←/→ and h/l the previous / next period (wrapping; "←/→ period"
+// beside the chips says so); the digits are the desk's sections. IPC through the desk: `setPeriod <id>`, `hover
 // "<slot> <x>,<y>"` (Desk.qml).
 Section {
   id: root
@@ -139,7 +139,7 @@ Section {
   // The section's read-out (Desk.view's sectionView): period and window,
   // grid mode, aggregation passes, and each slot's counts, geometry in
   // window coordinates and chart (summary, numbers, empty, hover, paints,
-  // paintMs, plot size).
+  // paintMs, plot size, readout).
   function view() {
     var slots = []
     for (var i = 0; i < slotRepeater.count; i++) {
@@ -151,13 +151,14 @@ Section {
       slots.push({ id: s.id, title: s.title, rows: s.rows, count: s.count, detail: s.detail, windowed: s.windowed,
         x: Math.round(at.x), y: Math.round(at.y), w: Math.round(item.width), h: Math.round(item.height),
         chart: c ? { summary: c.summary, numbers: c.numbers, empty: c.empty, hover: c.hoverText, paints: c.paints, paintMs: c.paintMs,
-          w: Math.round(c.plot.width), h: Math.round(c.plot.height) } : null })
+          w: Math.round(c.plot.width), h: Math.round(c.plot.height), readout: c.readout } : null })
     }
     var origin = gridArea.mapToItem(null, 0, 0)
     return {
       period: root.period,
       window: root.periodData.window,
       caption: caption.text,
+      keyHint: keyHint.visible ? keyHint.text : "",
       mode: root.grid.mode,
       scrolls: gridArea.contentHeight > gridArea.height,
       area: { x: Math.round(origin.x), y: Math.round(origin.y), w: Math.round(gridArea.width), h: Math.round(gridArea.height) },
@@ -211,7 +212,8 @@ Section {
 
     Text {
       id: titleText
-      width: Math.max(0, parent.width - periods.implicitWidth - Style.spacing.panelGap)
+      width: Math.max(0, parent.width - periods.implicitWidth - Style.spacing.panelGap
+        - (keyHint.visible ? keyHint.implicitWidth + Style.spacing.panelGap : 0))
       textFormat: Text.PlainText
       text: "Prime Radiant"
       color: root.foreground
@@ -231,6 +233,21 @@ Section {
       elide: Text.ElideRight
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
+    }
+
+    // The keys of the periods, beside the chips while there is room for
+    // the title too.
+    Text {
+      id: keyHint
+      anchors.right: periods.left
+      anchors.rightMargin: Style.spacing.panelGap
+      anchors.verticalCenter: periods.verticalCenter
+      visible: parent.width >= titleText.implicitWidth + implicitWidth + periods.implicitWidth + Style.spacing.panelGap * 2
+      textFormat: Text.PlainText
+      text: "←/→ period"
+      color: Color.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
     }
 
     ButtonGroup {
