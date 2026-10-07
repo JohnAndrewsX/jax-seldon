@@ -1,8 +1,6 @@
 # ADR-0036 — Agent prompts carry identifiers, never logbook text; proposals are evidence or nothing
 
-**Status:** proposed (WP-124 stage 124a; on the operator's word of
-2026-10-06 that ADR-0034 §6 ships in 0.2.0 — "all as recommended" — to be
-accepted by the orchestrator after the stage-2 review)
+**Status:** accepted (operator decision 2026-10-07, after Opus ×2 and Fable stage 2)
 **Date:** 2026-10-07 (round 2 after the stage-1 review: §1 paths, §2
 authors, §3 open drift only, §4 the limit stated; round 3 after the
 stage-2 review: an applied explanation keeps its proposer's name, one
