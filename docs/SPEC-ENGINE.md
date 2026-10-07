@@ -438,8 +438,8 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # start`). Until the user has started it, an agent treats the imported text
                                                # like fetched text (ADR-0027 §2(a): instructions in it are outside the
                                                # Intent); the skill says so. CRLF line ends are read as LF before the
-                                               # redaction (the `\` continuation of the db and option rules knows `\n`
-                                               # only; the engine-wide rule fix is its own WP), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
+                                               # redaction (the rules read `\r\n` as `\n` since WP-128; the parser and
+                                               # the marker's task hashes take LF text), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
                                                # without a letter or digit), `already-imported` (the marker has the same file
                                                # and hash; `case` named), `duplicate` (the same file and hash earlier in this
                                                # run); else created: queued (completed with --include-done for `[x]`),
@@ -2139,7 +2139,22 @@ whole. A quoted part ends at a line end that no `\` escapes: a
 double-quoted part that never closes as escapes are read is taken up to
 the next `"` on its line as written, and a quote its line does not close
 (`bob's` in a note, `-u 'admin:pw`) takes the rest of that line only
-(WP-097 round 2). The value after `token=`,
+(WP-097 round 2). A line end is `\n` or `\r\n` for every rule that
+reads one: a `\` before `\r\n` continues a command, an option's gap, a
+value (bare, in `"…"` or `$'…'`, a `pass:` value too) and the rest of a
+`mysql … -p` command as a `\` before `\n` does, and HTTPie's gap after
+the command word may be `\r\n` (its triggers name `\r`); a header
+value (`Authorization:`, `X-…-Key:`) ends before the `\r` of its line
+end, an empty one too; a `\r` that ends the match of a built-in rule
+stays after `‹redacted›` (a user pattern's match is replaced whole, a
+`\r` in it too, so a second pass finds no new one), and
+`Redactor::redact_keeping_lines` puts back each line break as it was,
+so a text edited on Windows keeps no secret on a continued line and
+keeps its CRLF line ends, through `seldon log`, the other notes and the
+hook alike; the import reads CRLF as LF first (§3), so its cases hold
+LF (WP-128). A lone `\r` (classic Mac line ends) is no line end: a `\`
+before it continues nothing (`curl -u \`, `\r`, then the credentials
+keeps them), and HTTPie's gap is not one. The value after `token=`,
 `…PASSWORD=` and the other assignments is one quoted or bare part, so a
 query `?token=abc` inside a quoted URL stops at the closing quote; a
 double-quoted value may hold `\"` (WP-097).

@@ -89,6 +89,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case's risk from its ledger lines, to the second, for every case this
   engine creates; an edited Log no longer changes the answer. Cases from
   before keep the Log as their record (WP-120).
+- Redaction reads Windows line ends: a secret on a line continued with
+  `\` and a CRLF line end (`mysql -u root \` then `-p secret`,
+  `curl -u \` then the credentials, a quoted value over two lines) is
+  masked as with LF, in notes, cases, hooks and imports. A CRLF note
+  keeps its line ends; the task import reads CRLF as LF first, as
+  before (WP-128).
 
 - `seldon agent start` launches the agent with `SELDON_ACTOR=agent:`
   and the launcher's name, and `SELDON_ATTENDED=1` (ADR-0027). `plan`,

@@ -584,8 +584,10 @@ fn read_source(
     // the whole text, as a note's (the rules that span lines need it), its
     // line breaks kept so every line number still points into the file;
     // then line by line with the home paths (the vault import's scrubber)
-    // CRLF as LF first: the rules that continue a command on `\` know `\n`
-    // only (round 3); the line count does not change
+    // CRLF as LF first (round 3): the rules read `\r\n` as `\n` since
+    // WP-128, but the parser and the marker's task hashes take LF text, so
+    // a CRLF file already imported is not imported again; the line count
+    // does not change
     let text = text.replace("\r\n", "\n");
     let whole = redactor.redact_keeping_lines(&text);
     if whole.matches('\n').count() != text.matches('\n').count() {

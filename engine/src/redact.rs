@@ -57,6 +57,11 @@
 //! after `\` or inside quotes do not end it) and find it again when the
 //! command gives it twice ([`Rule::matches`]). The value of an option is
 //! one shell word ([`WORD`]), so `-u admin:'p w'` is masked whole.
+//!
+//! A line end is `\n` or `\r\n`: every rule that continues over a `\`
+//! before a line end ([`GAP`], [`WORD`], [`PASS_ARG`], [`COMMAND_REST`],
+//! [`HTTPIE_GAP`], `db-client-password`) reads both, so a text edited on
+//! Windows keeps no secret on a continued line (WP-128).
 
 use std::sync::{LazyLock, OnceLock};
 
@@ -68,6 +73,9 @@ use crate::error::{Error, Result};
 /// What a secret is replaced with.
 pub const REDACTED: &str = "‹redacted›";
 
+/// The name of every rule from `config.toml [redaction] patterns`.
+const USER_PATTERN: &str = "user-pattern";
+
 /// A quoted or bare value after a key (`token=`, `PASSWORD=`); a double
 /// quoted value may hold `\"`. A bare value does not start at a
 /// [`REDACTED`] marker: after `TOKEN="a"bob@example.com` is masked to
@@ -78,12 +86,12 @@ const VALUE: &str = r#"(?:"(?:[^"\\]|\\.)*"|"[^"]*"|'[^']*'|[^\s'"&;|‹][^\s'"&
 /// The value after an option of a command (`--password`, `curl -u`): one
 /// shell word, which may join quoted and bare parts (`admin:'p w'`,
 /// `"$U":pw`) and hold `$'…'`, `\"` inside double quotes and backslash
-/// escapes (`\;`, `\` before a line end). A quoted part ends at a line end
-/// that no `\` escapes: a double-quoted part that never closes as escapes
-/// are read is taken up to the next `"` on its line as written, and a
-/// quote that the line does not close (`bob's` in a note, `'admin:pw`)
-/// takes the rest of the line, so a later line stays.
-const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")+(?:['"][^\n]*)?|['"][^\n]*)"#;
+/// escapes (`\;`, `\` before a `\n` or `\r\n` line end). A quoted part
+/// ends at a line end that no `\` escapes: a double-quoted part that never
+/// closes as escapes are read is taken up to the next `"` on its line as
+/// written, and a quote that the line does not close (`bob's` in a note,
+/// `'admin:pw`) takes the rest of the line, so a later line stays.
+const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?:\r\n|(?s:.)))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?:\r\n|(?s:.)))*'|\\(?:\r\n|(?s:.))|[^\s'"\\&;|]|"[^"\n]*")+(?:['"][^\n]*)?|['"][^\n]*)"#;
 
 /// The value of an openssl pass phrase option that gives the secret
 /// itself: a [`WORD`] whose first part starts with `pass:`, bare or inside
@@ -93,18 +101,19 @@ const WORD: &str = r#"(?:(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\
 /// is and are no match; nor is a flag (`-twopass`) before the option,
 /// since the value must hold `pass:` (a check on a [`WORD`] would take the
 /// next option as the flag's value and miss its `pass:`).
-const PASS_ARG: &str = r#"(?:(?:"pass:(?:[^"\\\n]|\\(?s:.))*"|'pass:[^'\n]*'|\$'pass:(?:[^'\\\n]|\\(?s:.))*'|pass:|"pass:[^"\n]*")(?:"(?:[^"\\\n]|\\(?s:.))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?s:.))*'|\\(?s:.)|[^\s'"\\&;|]|"[^"\n]*")*(?:['"][^\n]*)?|\$?['"]pass:[^\n]*)"#;
+const PASS_ARG: &str = r#"(?:(?:"pass:(?:[^"\\\n]|\\(?:\r\n|(?s:.)))*"|'pass:[^'\n]*'|\$'pass:(?:[^'\\\n]|\\(?:\r\n|(?s:.)))*'|pass:|"pass:[^"\n]*")(?:"(?:[^"\\\n]|\\(?:\r\n|(?s:.)))*"|'[^'\n]*'|\$'(?:[^'\\\n]|\\(?:\r\n|(?s:.)))*'|\\(?:\r\n|(?s:.))|[^\s'"\\&;|]|"[^"\n]*")*(?:['"][^\n]*)?|\$?['"]pass:[^\n]*)"#;
 
 /// White space between an option and its value, or a line continuation
-/// (`\` before a line end).
-const GAP: &str = r"(?:\s|\\\n)";
+/// (`\` before a line end, `\n` or `\r\n`).
+const GAP: &str = r"(?:\s|\\\r?\n)";
 
 /// The rest of one command after its command word (`curl`, `sshpass`,
 /// `docker login`), up to an option: anything but a line end or an
 /// unquoted `;`, `&` or `|`. A quoted string (`'a&b'`, `"x;y"`, with `\"`
 /// inside double quotes, also over several lines), an ANSI-C string
 /// (`$'a;b\''`), a backslash escape outside quotes (`\;`, and `\` before
-/// a line end, which continues the command on the next line) and a
+/// a `\n` or `\r\n` line end, which continues the command on the next
+/// line; inside quotes any line end belongs to the string) and a
 /// redirection (`2>&1`, `&>file`, `>|file`) belong to the command. A
 /// quote that the text never closes (`curl's -u …` in a note) is an
 /// ordinary character, after which no quote, separator or line end may
@@ -116,7 +125,7 @@ const GAP: &str = r"(?:\s|\\\n)";
 /// therefore the union with the plain form, any characters but a line
 /// end, `;`, `&` or `|`: a match needs only one of the two readings, so
 /// every command the plain form reaches is still reached.
-const COMMAND_REST: &str = r#"(?:[^\n;&|]*?|(?:\$'(?:[^'\\]|\\(?s:.))*'|[^\n;&|'"\\]|\\(?s:.)|[<>]&|&>|>\||'[^']*'|"(?:[^"\\]|\\(?s:.))*")*?(?:['"][^\n;&|'"]*?)?)"#;
+const COMMAND_REST: &str = r#"(?:[^\n;&|]*?|(?:\$'(?:[^'\\]|\\(?s:.))*'|[^\n;&|'"\\]|\\(?:\r\n|(?s:.))|[<>]&|&>|>\||'[^']*'|"(?:[^"\\]|\\(?s:.))*")*?(?:['"][^\n;&|'"]*?)?)"#;
 
 /// The shortest value that counts as a credential when it mixes at least
 /// two character classes (lower case, upper case, digits, other).
@@ -292,7 +301,13 @@ impl Rule {
 
     /// [`Rule::replace`]; with `keep_lines`, every line break a replaced
     /// match held (a continued command's `\` line end) is put back after
-    /// the replacement, so the text keeps its number of lines.
+    /// the replacement, as it was (`\n` or `\r\n`), so the text keeps its
+    /// number of lines. A `\r` that ends the match of a built-in rule (one
+    /// that takes the rest of a CRLF line) is put back after the
+    /// replacement either way, so a CRLF line keeps its line end (WP-128).
+    /// A user pattern's match is replaced whole, a `\r` in it too: a
+    /// pattern that matches a bare `\r` would otherwise find it again in
+    /// the second pass of a note (the command's, then the ledger's).
     fn replace_with(&self, text: &str, keep_lines: bool) -> String {
         let markers = markers(text);
         let mut out = String::with_capacity(text.len());
@@ -304,10 +319,22 @@ impl Rule {
             if self.applies(found, all.get(i + 1), text, &markers) {
                 let at = out.len();
                 found.caps.expand(&self.replacement, &mut out);
+                let matched = &text[start..end];
                 if keep_lines {
-                    let lost = text[start..end].matches('\n').count();
+                    // the replacement keeps a prefix of the match (group
+                    // 1), so the breaks it holds are the match's first ones
                     let kept = out[at..].matches('\n').count();
-                    out.extend(std::iter::repeat_n('\n', lost.saturating_sub(kept)));
+                    for (j, _) in matched.match_indices('\n').skip(kept) {
+                        out.push_str(if matched[..j].ends_with('\r') {
+                            "\r\n"
+                        } else {
+                            "\n"
+                        });
+                    }
+                }
+                // no built-in replacement ends in `\r`
+                if matched.ends_with('\r') && self.name != USER_PATTERN {
+                    out.push('\r');
                 }
             } else {
                 out.push_str(&text[start..end]);
@@ -526,23 +553,28 @@ pub fn triggers(name: &str) -> &'static [&'static str] {
         // one
         "cert-password" => &["curl>-E>:", "--cert>:", "--proxy-cert>:"],
         // the command word and the white space or `\` after it, as the
-        // rule requires them (ASCII, so a match always holds one)
+        // rule requires them (ASCII, so a match always holds one; `\r` for
+        // a CRLF line end)
         "httpie-auth" => &[
             "http +-a",
             "http\t+-a",
             "http\n+-a",
+            "http\r+-a",
             "http\\+-a",
             "https +-a",
             "https\t+-a",
             "https\n+-a",
+            "https\r+-a",
             "https\\+-a",
             "xh +-a",
             "xh\t+-a",
             "xh\n+-a",
+            "xh\r+-a",
             "xh\\+-a",
             "xhs +-a",
             "xhs\t+-a",
             "xhs\n+-a",
+            "xhs\r+-a",
             "xhs\\+-a",
         ],
         "sshpass-password" => &["sshpass"],
@@ -635,8 +667,9 @@ fn again(name: &str) -> &'static [&'static str] {
 const NOT_NO: &str = r"(?:[a-mo-z0-9][a-z0-9]*|n(?:[a-np-z0-9][a-z0-9]*)?|no[a-z0-9]+)";
 
 /// The white space after HTTPie's command word: the characters its
-/// triggers name ([`triggers`]), not every `\s`.
-const HTTPIE_GAP: &str = r"(?:[ \t\n]|\\\n)";
+/// triggers name ([`triggers`]), not every `\s`; a line end is `\n` or
+/// `\r\n`.
+const HTTPIE_GAP: &str = r"(?:[ \t]|\r?\n|\\\r?\n)";
 
 /// The command word `curl`.
 const CURL: &str = r"(?-u:\b)curl(?-u:\b)";
@@ -720,10 +753,12 @@ fn builtin_rules() -> Vec<Rule> {
             r#"(?i)(\\?"[a-z0-9_-]*(?:password|passwd|passphrase|secret|token|api_?key)\\?"\s*:\s*)(?P<v>"(?:[^"\\\n]|\\.)*"|\\"[^"\n]*?\\")"#,
             has_json_value,
         ),
-        // the header value up to a closing quote or the end of the line
+        // the header value up to a closing quote or the end of the line;
+        // its last character is no `\r`, so an empty value before a CRLF
+        // line end reads as before an LF one (WP-128)
         rule(
             "authorization-header",
-            r#"(?i)(authorization:\s*)[^'"\n]+"#,
+            r#"(?i)(authorization:\s*)[^'"\n]*[^'"\r\n]"#,
             KEEP_PREFIX,
         ),
         // header names that end in a credential word: `X-Api-Key`,
@@ -731,7 +766,7 @@ fn builtin_rules() -> Vec<Rule> {
         // `X-Author`
         rule(
             "secret-header",
-            r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]+"#,
+            r#"(?i)((?-u:\b)(?:x-(?:[a-z0-9]+-)*(?:api-?key|key|token|secret|auth)|api-?key|private-token)\s*:\s*)[^'"\n]*[^'"\r\n]"#,
             KEEP_PREFIX,
         ),
         // `Cookie: a=b; c=d`, `Set-Cookie: …`: a value that starts with a
@@ -757,11 +792,11 @@ fn builtin_rules() -> Vec<Rule> {
         // name such as `task-…` is not cut
         rule("sk-key", r"(?-u:\b)sk[-_][A-Za-z0-9_-]{20,}", WHOLE),
         // `mysql … -p secret …`, `-psecret`: everything after -p, up to
-        // the end of the command's last continued line (`\` before a line
-        // end continues it)
+        // the end of the command's last continued line (`\` before a `\n`
+        // or `\r\n` line end continues it)
         rule(
             "db-client-password",
-            r"(?m)((?-u:\b)(?:mysql|psql|smbclient)(?-u:\b)(?:\\\n|[^\n])*?\s-p ?)\S(?:\\\n|[^\n])*",
+            r"(?m)((?-u:\b)(?:mysql|psql|smbclient)(?-u:\b)(?:\\\r?\n|[^\n])*?\s-p ?)\S(?:\\\r?\n|[^\n])*",
             KEEP_PREFIX,
         ),
         // `curl -u user:pass`, `-uuser:pass`, `--user user:pass`,
@@ -927,7 +962,7 @@ impl Redactor {
                 ))
             })?;
             redactor.user.push(Rule {
-                name: "user-pattern",
+                name: USER_PATTERN,
                 pattern: p.clone(),
                 re: OnceLock::from(re),
                 next: None,
