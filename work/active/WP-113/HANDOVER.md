@@ -211,3 +211,23 @@ Brief: `WP-113-round-3-brief.md` (Fable stage 2: SEND BACK for a small round; B2
 - **Process note:** one probe this round put an inline `rm -f` into a
   command (the brief asks for runner scripts); the later probe used a
   runner script in the scratchpad.
+
+## Merge of next (2)
+
+- **Merged `origin/next` at `d95b7da3`** (WP-124a, then WP-127: index
+  fields and fixtures) once, as `b9c1c1c6`.
+- **Conflicts:** only `CHANGELOG.md` (both entries kept) and
+  `DECISIONS.md` (rows in order ADR-0036, ADR-0037, ADR-0038).
+- **Fixtures:** the two WP-113 ledger lines of 09-22 and their view lines
+  merged cleanly, so there was nothing to re-insert (87 ledger lines).
+  `python3 scripts/validate-fixtures.py --write-index` re-derived every
+  index file with no change: 76 index events, 9 with `resolutionDetail`,
+  the `drift-explained-case` overlay still at index 70; the validator
+  reports ok (133 instances, 87 ledger events traced, 54 self-checks).
+- **Plugin pins:** none moved. `model.test.js` 143 passed and `desk-view`
+  1481 passed / 0 failed against the merged fixture, so no harness file
+  changed in this merge.
+- **Gate:** `flock /tmp/seldon-check.lock just check` at `b9c1c1c6` →
+  **exit 0** (`check-wp113-merge2.log`: `check: ok`; 90 test binaries ok,
+  `qmllint: ok (46 files)`). `check-perf` not rerun: the merge does not
+  touch the walk or the collectors.
