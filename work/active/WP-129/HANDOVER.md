@@ -179,3 +179,95 @@ No engine conflict.
 - `check-perf` was not re-run after the merge: next's engine changes
   (triage) do not touch the hook path; the r2 numbers above are on
   ce401bd4.
+
+## Round 2
+
+Brief: the orchestrator's round-2 brief from the stage-1 review (SEND
+BACK for B1, plus N2–N4 and decisions 1–5).
+
+### Fixed
+
+- **B1 — a password piped into `sudo -S`.** `unwrap_command` reports
+  `Unwrapped::password_on_stdin`: sudo's `-S`, alone or in a cluster
+  (`-Su root`, `-kS`), `--stdin` and the abbreviations getopt takes
+  (`--st`, `--std`, `--stdi`; `--s` is ambiguous in sudo and is not
+  taken). It is read also when the wrapper only probes (`echo PW | sudo
+  -S -v && sudo pacman -S x`, `sudo -vS`): a probe now reads the rest of
+  its options before it returns, so a later `-S` is seen. `-uS` stays the
+  user `S`. The hook records every record of a line in which any command
+  has it (`sh -c` opened) as `<program> ‹redacted›`, the skipPaths form.
+  Hook-local; `redact.rs` untouched.
+  - **Other wrappers:** `doas` (OpenBSD and opendoas: `-a -C -L -n -s -u`)
+    asks on the terminal and has no stdin option; `pkexec` and `run0`
+    authenticate through the polkit agent and have none. Only sudo's
+    `-S` is in the rule. `sudo -A` (askpass) runs a program and puts no
+    password on the line.
+  - Tests: `pkgcmd::a_password_on_stdin_is_seen` (10 positive, 9
+    negative forms); `hooks::privileged::a_password_on_the_wrappers_stdin_is_never_recorded`
+    (six lines, also `<<<` and a probe beside a package command): no
+    `hunter2` in the ledger, `detail`, `meta.command` or `index.json`.
+- **N2:** `privileged::without_a_case_only_the_privileged_command_of_the_line`
+  — `sudo lpadmin -x X; echo done > /tmp/log`, no case → one `lpadmin`.
+- **N3:** SPEC-ENGINE §8 "Non-mutating commands produce no event, except
+  privileged commands (below)." Guide 04 en "known secret forms
+  removed", de "bekannte Geheimnis-Formen entfernt".
+- **N4:** ADR-0039 Consequences. Checked in the code and pinned by
+  `privileged::an_always_red_subject_raises_the_r3_advisory`: `sudo
+  mkinitcpio -P` in an R1 case raises the **index build's** R3 warning
+  (`status --json` warnings). The case's advisory *Log line* is written
+  by a capture only for the events that capture writes, so a hook record
+  gets the warning, not the Log line; the ADR says so.
+
+### Decisions applied
+
+1. **No `agent` drift source in 0.2.0.** ADR-0039 §3 rewritten as
+   option (b), decided by the orchestrator: an event in the Changelog,
+   red, on the case; the change itself is drift through its collector
+   (WP-131 for the printer configuration); contract 3 if the live week
+   shows a need. SPEC §8, guide 04, CHANGELOG and DECISIONS.md say the
+   same.
+2. B1 hook-local (above).
+3. **Plain-argument secrets → WP-140.** Forms seen while reading
+   `redact.rs` and the commands an agent uses with a wrapper: `nmcli dev
+   wifi connect X password PW`, `nmcli con modify X wifi-sec.psk PW`
+   (also `802-1x.password`, `vpn.secrets`), `htpasswd -b FILE USER PW`,
+   `usermod -p HASH` / `useradd -p HASH` (a hash, still a secret),
+   `smbpasswd`/`chpasswd` only via stdin (covered when piped into
+   `sudo -S`, not when piped into the program itself: `echo u:pw | sudo
+   chpasswd` keeps `u:pw` in the line). No rule names any of them.
+4. **N1 accepted noise:** ADR-0039 Consequences: a privileged read counts
+   as the case's first red change; rare, each asked for with a password.
+5. **PreToolUse:** nothing in the hook confirms success (a PostToolUse
+   for a recorded `tool_use_id` writes nothing; `tool_response` is never
+   read). So the privileged record's `detail` is `asked to run: <line>`
+   (`hook::ASKED_TO_RUN`; `meta.command` stays the bare line, which
+   attribution and the dossier parse); SPEC, ADR and guide say "asked to
+   run", and that a cancelled prompt still leaves the record. If "the
+   detail" in the brief meant only the ADR's description and not the
+   event's `detail`, the prefix is one line in `record()` to drop.
+
+### Mutants
+
+Separate target `target/mutants-wp129`, runner outside the repo: 7/7
+killed — the hook's use of the flag, the probe path dropping it, cluster
+detection, the abbreviation rule (prefix, minimum length), a probe letter
+ending the cluster scan, the `asked to run` prefix. Round 1's 8 stay
+killed (their tests unchanged but for the `detail` prefix).
+
+### Merge of next
+
+`next` moved to cdb45963 (one work file, WP-140): merged without
+conflicts.
+
+### Check (round 2)
+
+- `flock /tmp/seldon-check.lock just check` on 3df8bfe4: `check: ok`
+  (exit 0; log `target/check-wp129-r2-1.log`).
+- `flock /tmp/seldon-check.lock just check-perf` on 3df8bfe4: exit 0.
+  Hook medians, bench profile, tmpfs, shared dev host: 10 000 lines —
+  recorded 1.67 ms, curl with a marker 3.17 ms, `sudo -E bash` line
+  2.55 ms; 900 lines with the rebuild — 3.25 ms, 4.40 ms, 4.73 ms (worst,
+  budget 5 ms; r1's 4.37 ms, the line now also runs the stdin check);
+  unrelated session 0.87–0.89 ms (budget 1 ms).
+- `git diff c1ee5d27 HEAD`: no added `/home/` but the `/home/user`
+  fixture placeholder.
