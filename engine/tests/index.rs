@@ -1747,6 +1747,17 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
                 lines.push_str(&format!("{r}\n"));
             }
         }
+        // ADR-0035 §1 (WP-120 round 2, B1): 0.1.x notes with a user
+        // `meta.risk`; both sides drop it from the index, the line stays
+        for (n, risk) in [(90, "R1"), (91, "banana")] {
+            let note = json!({
+                "id": ulid::Ulid::from_parts(1_800_000_000_000, 1000 + n).to_string(),
+                "ts": "2026-10-01T17:04:00+02:00", "source": "manual",
+                "kind": "note", "subject": "journal", "detail": format!("risk {risk}"),
+                "actor": "human", "meta": { "risk": risk, "mine": "kept" },
+            });
+            lines.push_str(&format!("{note}\n"));
+        }
         let month = lb.join("ledger/2026-10.jsonl");
         let mut file = std::fs::OpenOptions::new()
             .append(true)
@@ -1754,6 +1765,15 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
             .unwrap();
         std::io::Write::write_all(&mut file, lines.as_bytes()).unwrap();
     });
+    for risk in ["R1", "banana"] {
+        let note = index["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["detail"] == json!(format!("risk {risk}")))
+            .unwrap_or_else(|| panic!("the {risk} note is listed"));
+        assert_eq!(note["meta"], json!({ "mine": "kept" }), "{note}");
+    }
 
     let out = std::process::Command::new(python)
         .arg(repo("scripts/validate-fixtures.py"))

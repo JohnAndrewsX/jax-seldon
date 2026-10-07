@@ -55,7 +55,7 @@
     { "if": { "properties": { "kind": { "const": "case-updated" } }, "required": ["kind"] },
       "then": { "required": ["meta", "case"], "properties": { "source": { "const": "seldon" }, "meta": { "required": ["risk"] } } } },
     { "if": { "properties": { "kind": { "const": "state-loss" } }, "required": ["kind"] },
-      "then": { "properties": { "source": { "const": "seldon" } } } }
+      "then": { "properties": { "source": { "const": "seldon" }, "subject": { "const": "state-reset" } } } }
   ],
   "$defs": {
     "ulid":   { "type": "string", "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$", "description": "ULID (Crockford base32, 26 chars)" },

@@ -63,7 +63,10 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      subject `state-reset`, `meta.sources`, `meta.files`). A ledger from
      before contract 2 has a `note` `state-reset` instead;
    - `meta.risk` on `case-created`, `case-started` and `case-updated`
-     (absent on lines written before contract 2: append-only);
+     (absent on lines written before contract 2: append-only). A
+     `meta.risk` on another kind, or written by hand before v2 (0.1.x
+     `seldon event --meta risk=…`), is ignored on read and dropped from the
+     index;
    - `logbook.git.autocommit` `{ok, at, message}`: the last autocommit
      attempted (absent while `[git] autocommit` is off, without a
      repository, or before the first attempt);

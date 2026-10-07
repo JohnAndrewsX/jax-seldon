@@ -134,9 +134,18 @@ fn every_new_case_line_carries_its_risk() {
 fn event_refuses_the_v2_kinds_and_keys() {
     let env = Env::new(Snapper::Missing);
     env.init_logbook();
-    for kind in ["case-updated", "state-loss"] {
+    // N1: the refusal names the command that writes the kind
+    for (kind, writer) in [
+        ("case-updated", "`seldon plan`"),
+        ("state-loss", "`seldon capture`"),
+        ("case-created", "`seldon plan`"),
+        ("resolution", "`seldon drift`"),
+    ] {
         let m = refused(&env, &["event", "manual", kind, "--subject", "x"]);
-        assert!(m.contains("not by `seldon event`"), "{m}");
+        assert!(
+            m.contains(&format!("written by {writer}, not by `seldon event`")),
+            "{m}"
+        );
     }
     let m = refused(
         &env,
@@ -262,6 +271,8 @@ fn triage_points_at_the_newest_proposal_of_this_logbook() {
     broken["items"][0]["evidence"] = json!([]);
     write(BROKEN, &broken).unwrap();
     std::fs::write(dir.join("notes.json"), "{}").unwrap();
+    std::fs::write(dir.join(format!("{}.json", MINE.to_lowercase())), "{}").unwrap();
+    std::fs::write(dir.join("README"), "not json").unwrap();
 
     let ix = ok(&env, T1, &["index", "--check"]);
     assert_eq!(ix["valid"], json!(true), "{ix}");
@@ -271,6 +282,16 @@ fn triage_points_at_the_newest_proposal_of_this_logbook() {
         "{warnings}"
     );
     assert!(!warnings.contains(OTHER), "{warnings}");
+    // N2: a `.json` not named `<ULID>.json` is named, other files are not
+    assert!(
+        warnings.contains("notes.json: not named <ULID>.json"),
+        "{warnings}"
+    );
+    assert!(
+        warnings.contains(&format!("{}.json: not named", MINE.to_lowercase())),
+        "{warnings}"
+    );
+    assert!(!warnings.contains("README"), "{warnings}");
     assert_eq!(
         index(&env)["triage"],
         json!({
@@ -341,4 +362,121 @@ fn index_is_idempotent_with_every_v2_field() {
     assert_eq!(v["contractVersion"], json!(2));
     assert!(v["logbook"]["git"]["autocommit"].is_object(), "{v}");
     assert!(v["triage"].is_object());
+}
+
+/// WP-120 round 2, B1 (ADR-0035 §1): 0.1.x let `seldon event --meta
+/// risk=…` write any value on any kind. Such a ledger still loads whole
+/// (no line skipped), indexes valid (`--check` exit 0) without the user's
+/// `risk` and `truncated` in the index, and doctor's ledger row stays ok.
+#[test]
+fn a_contract_1_ledger_with_a_user_risk_still_indexes() {
+    let env = Env::new(Snapper::Missing);
+    let root = env.init_logbook();
+    let mut lines = String::new();
+    for (n, meta) in [
+        (1, json!({ "risk": "R1" })),
+        (2, json!({ "risk": "banana" })),
+        (
+            3,
+            json!({ "risk": "high", "truncated": "yes", "mine": "kept" }),
+        ),
+    ] {
+        let note = json!({
+            "id": format!("01K6Y00000000000000000000{n}"),
+            "ts": format!("2026-10-06T09:0{n}:00+02:00"),
+            "source": "manual", "kind": "note", "subject": "journal",
+            "detail": format!("v1 note {n}"), "actor": "human", "meta": meta,
+        });
+        lines.push_str(&format!("{note}\n"));
+    }
+    let month = root.join("ledger/2026-10.jsonl");
+    let mut text = std::fs::read_to_string(&month).unwrap_or_default();
+    text.push_str(&lines);
+    std::fs::write(&month, text).unwrap();
+
+    let ix = ok(&env, T0, &["index", "--check"]);
+    assert_eq!(ix["valid"], json!(true), "{ix}");
+    assert_eq!(ix["warnings"], json!([]), "no line skipped: {ix}");
+    let v = index(&env);
+    common::assert_valid_index(&v);
+    let notes: Vec<&Value> = v["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| {
+            e["detail"]
+                .as_str()
+                .is_some_and(|d| d.starts_with("v1 note"))
+        })
+        .collect();
+    assert_eq!(notes.len(), 3, "{v}");
+    for n in &notes {
+        assert!(n["meta"].get("risk").is_none(), "{n}");
+        assert!(n["meta"].get("truncated").is_none(), "{n}");
+    }
+    assert!(notes.iter().any(|n| n["meta"] == json!({ "mine": "kept" })));
+
+    let doctor = json(&run(&env, T0, &["doctor"]));
+    let row = doctor["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "ledger")
+        .cloned()
+        .unwrap_or_else(|| panic!("no ledger row: {doctor}"));
+    assert_eq!(row["status"], json!("ok"), "{row}");
+}
+
+/// WP-120 round 2, B2 and N6: a failed autocommit whose git error carries
+/// secrets (a refusing pre-commit hook prints them) shows them nowhere:
+/// not on stderr, not in `--json` `git.error`, not in `autocommit.json`,
+/// not in `logbook.git.autocommit`; the index's message is one line of at
+/// most 256 characters. A record planted unredacted (an older engine, a
+/// hand edit) is redacted again when the index is built.
+#[test]
+fn a_failed_autocommit_is_redacted_everywhere() {
+    const SECRETS: [&str; 3] = ["geheim", "abc123geheim", "hunter2"];
+    let env = Env::new(Snapper::Missing);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    let padding = "x".repeat(300);
+    common::write_executable(
+        &root.join(".git/hooks/pre-commit"),
+        &format!(
+            "#!/bin/sh\necho 'refused: https://user:geheim@example.org token=abc123geheim \
+             --password hunter2 {padding}' >&2\nexit 1\n"
+        ),
+    );
+    let out = run(&env, T0, &["log", "--", "behind the hook"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let j = json(&out);
+    let error = j["git"]["error"].as_str().unwrap().to_string();
+    let record = read(&state(&env).join("autocommit.json"));
+    let a = index(&env)["logbook"]["git"]["autocommit"].clone();
+    let message = a["message"].as_str().unwrap().to_string();
+    for (what, text) in [
+        ("stderr", stderr(&out)),
+        ("--json git.error", error.clone()),
+        ("autocommit.json", record.clone()),
+        ("index", message.clone()),
+    ] {
+        for secret in SECRETS {
+            assert!(!text.contains(secret), "{what} shows {secret}: {text}");
+        }
+        assert!(text.contains("‹redacted›"), "{what}: {text}");
+    }
+    assert_eq!(a["ok"], json!(false));
+    assert!(message.chars().count() <= 256, "{message}");
+    assert!(message.ends_with('…'), "{message}");
+    assert!(!message.contains('\n'));
+
+    // a record written unredacted is redacted at build time
+    let mut planted: Value = serde_json::from_str(&record).unwrap();
+    planted["message"] = json!("not committed: token=abc123geheim");
+    std::fs::write(state(&env).join("autocommit.json"), planted.to_string()).unwrap();
+    ok(&env, T1, &["index"]);
+    let m = index(&env)["logbook"]["git"]["autocommit"]["message"].clone();
+    assert_eq!(m, json!("not committed: token=‹redacted›"), "{m}");
 }

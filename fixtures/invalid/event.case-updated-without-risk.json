@@ -6,5 +6,8 @@
   "subject": "C-2026-003",
   "detail": "zone yellow → red",
   "actor": "human",
-  "case": "C-2026-003"
+  "case": "C-2026-003",
+  "meta": {
+    "zone": "red"
+  }
 }

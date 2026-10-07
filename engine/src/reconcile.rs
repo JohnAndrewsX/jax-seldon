@@ -1704,6 +1704,39 @@ mod tests {
         assert_eq!(c.plan, "- linux-zen\n\n");
     }
 
+    /// WP-120 round 2, B1: only the engine's own case lines tell the risk
+    /// — `source: seldon`, kind `case-created|started|updated`. A `meta.risk`
+    /// on a note (0.1.x `seldon event --meta risk=R3`), on a hand-written
+    /// line of another source, or on `case-verified` counts for nothing.
+    #[test]
+    fn only_the_engines_case_lines_tell_the_risk() {
+        use planned::*;
+        let id = "C-2026-001";
+        let mut created = step(1, "09:00", Kind::CaseCreated, id);
+        created.meta.risk = Some(Risk::R1);
+        let mut foreign = Vec::new();
+        for (n, source, kind) in [
+            (2, Source::Manual, Kind::Note),
+            (3, Source::Manual, Kind::CaseUpdated),
+            (4, Source::Agent, Kind::CaseCreated),
+            (5, Source::Seldon, Kind::CaseVerified),
+            (6, Source::Seldon, Kind::Note),
+        ] {
+            let mut e = Event::new(at("09:30"), source, kind, id).case(Some(id.into()));
+            e.id = Ulid::from_parts(n, 0);
+            e.meta.risk = Some(Risk::R3);
+            foreign.push(e);
+        }
+        let mut events = vec![created.clone()];
+        events.extend(foreign.iter().cloned());
+        assert_eq!(
+            ledger_risks(&events, id),
+            Some(vec![(at("09:00"), Risk::R1)])
+        );
+        // without the engine's creation line there is no ledger record at all
+        assert_eq!(ledger_risks(&foreign, id), None);
+    }
+
     /// ADR-0035 §1: a case whose `case-created` line carries `meta.risk`
     /// is told by its ledger lines, to the second, whatever its Log says;
     /// one without is told by its Log (an old ledger), never by a mix.

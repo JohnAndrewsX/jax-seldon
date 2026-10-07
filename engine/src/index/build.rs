@@ -445,11 +445,21 @@ pub fn clip(text: &str) -> Cow<'_, str> {
 
 /// An event as `index.events` lists it: every free text [`clip`]ped, and
 /// `meta.truncated: true` when one was (ADR-0035 §3; index-only, so one
-/// a hand-edited ledger line carries is dropped).
+/// a hand-edited ledger line carries is dropped); `meta.risk` only on the
+/// engine's case lines (ADR-0035 §1).
 fn clipped(f: &IndexEvent) -> IndexEvent {
     let mut f = f.clone();
     let mut cut = false;
+    // ADR-0035 §1: `meta.risk` belongs to the engine's case lines; one a
+    // 0.1.x `seldon event --meta risk=…` wrote on another kind is dropped
+    let risked = matches!(
+        f.event.kind,
+        Kind::CaseCreated | Kind::CaseStarted | Kind::CaseUpdated
+    ) && f.event.source == Source::Seldon;
     let meta = &mut f.event.meta;
+    if !risked {
+        meta.risk = None;
+    }
     meta.extra.remove(TRUNCATED);
     let texts = [
         &mut f.event.detail,

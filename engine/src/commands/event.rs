@@ -65,6 +65,22 @@ pub fn is_engine_only(kind: Kind) -> bool {
     )
 }
 
+/// The command that writes `kind` (the refusal names it; WP-120 N1);
+/// any other kind with `source: seldon` is the engine's own record.
+fn writer(kind: Kind) -> &'static str {
+    match kind {
+        Kind::CaseCreated
+        | Kind::CaseStarted
+        | Kind::CaseVerified
+        | Kind::CaseCompleted
+        | Kind::CaseDropped
+        | Kind::CaseUpdated => "`seldon plan`",
+        Kind::Resolution | Kind::Correction => "`seldon drift`",
+        Kind::StateLoss => "`seldon capture`",
+        _ => "the engine's own commands",
+    }
+}
+
 /// The first `max` characters of `s`, with `…` when it was longer (for
 /// human output; the ledger cuts `detail` itself).
 pub fn clip(s: &str, max: usize) -> String {
@@ -189,8 +205,10 @@ pub struct EventArgs {
 pub fn run(ctx: &Context, args: EventArgs) -> Result<Output> {
     if args.source == Source::Seldon || is_engine_only(args.kind) {
         return Err(Error::user(format!(
-            "{}/{} events are written by `seldon plan` and `seldon drift`, not by `seldon event`",
-            args.source, args.kind
+            "{}/{} events are written by {}, not by `seldon event`",
+            args.source,
+            args.kind,
+            writer(args.kind)
         )));
     }
     let subject = args.subject.trim();

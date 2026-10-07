@@ -121,7 +121,7 @@ impl Lost {
 /// Subject of the `seldon` `state-loss` line a capture writes when
 /// collectors lost their state although the ledger holds their events
 /// (WP-081; a `note` before contract 2, ADR-0035 §4).
-pub const STATE_RESET: &str = "state-reset";
+pub const STATE_RESET: &str = crate::model::event::STATE_LOSS_SUBJECT;
 
 /// Whether `e` records a state loss: a `state-loss` line, or the `note`
 /// with subject [`STATE_RESET`] an engine before contract 2 wrote. Old

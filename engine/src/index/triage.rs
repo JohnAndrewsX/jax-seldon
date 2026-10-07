@@ -31,21 +31,37 @@ struct Item {
     crisis: bool,
 }
 
-/// The newest valid proposal of `root`, by id. A file that fails its
-/// schema, whose name is not its id, or that cannot be read is skipped
-/// with a warning; one of another logbook is skipped silently (it is not
-/// this logbook's business). `None` when there is none.
+/// The newest valid proposal of `root`, by id. A `.json` file not named
+/// `<ULID>.json`, a file that fails its schema, whose name is not its id,
+/// or that cannot be read is skipped with a warning; one of another
+/// logbook is skipped silently (it is not this logbook's business).
+/// `None` when there is none.
 pub fn read(dirs: &Dirs, root: &Path, warnings: &mut Vec<String>) -> Option<Triage> {
     let dir = dirs.state_dir.join(DIR);
     let entries = std::fs::read_dir(&dir).ok()?;
-    let mut ids: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name().into_string().ok()?;
-            let id = name.strip_suffix(".json")?;
-            is_ulid(id).then(|| id.to_string())
-        })
-        .collect();
+    let mut ids: Vec<String> = Vec::new();
+    let mut misnamed: Vec<String> = Vec::new();
+    for entry in entries.filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // a `.json` file not named `<ULID>.json` is no proposal (WP-120
+        // round 2, N2): say so; the engine's own temp files (`.name.tmp-…`)
+        // and other files are not proposals and pass silently
+        let Some(id) = name.strip_suffix(".json") else {
+            continue;
+        };
+        if is_ulid(id) {
+            ids.push(id.to_string());
+        } else if !name.starts_with('.') {
+            misnamed.push(name);
+        }
+    }
+    misnamed.sort();
+    for name in misnamed {
+        warnings.push(format!(
+            "{}: not named <ULID>.json, so not a proposal; the index skips it",
+            dirs.display(&dir.join(&name)).escape_debug()
+        ));
+    }
     if ids.is_empty() {
         return None;
     }

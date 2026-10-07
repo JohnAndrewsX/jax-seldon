@@ -203,6 +203,57 @@ mod set {
         );
     }
 
+    /// WP-120 round 2, N5: a new area whose README cannot be written
+    /// fails `plan set` before the ledger: no `case-updated` line, the
+    /// case file as it was; a rerun after the fix writes one line.
+    #[test]
+    fn an_area_that_cannot_be_made_writes_nothing() {
+        let env = Env::new(Snapper::Missing);
+        let root = logbook(&env);
+        let before = ledger(&root).len();
+        let file = read(&case_path(&root, "C-2026-001"));
+        // `areas/boot` is a file, so `areas/boot/README.md` cannot be made
+        std::fs::create_dir_all(root.join("areas")).unwrap();
+        std::fs::write(root.join("areas/boot"), "not a folder").unwrap();
+        let out = run(
+            &env,
+            T1,
+            None,
+            &[
+                "plan",
+                "set",
+                "C-2026-001",
+                "--risk",
+                "R2",
+                "--area",
+                "boot",
+            ],
+        );
+        assert_ne!(out.status.code(), Some(0), "{}", stdout(&out));
+        assert_eq!(ledger(&root).len(), before, "no case-updated line");
+        assert_eq!(read(&case_path(&root, "C-2026-001")), file);
+
+        std::fs::remove_file(root.join("areas/boot")).unwrap();
+        let v = ok(&run(
+            &env,
+            T2,
+            None,
+            &[
+                "plan",
+                "set",
+                "C-2026-001",
+                "--risk",
+                "R2",
+                "--area",
+                "boot",
+            ],
+        ));
+        assert_eq!(v["areaCreated"], "areas/boot/README.md");
+        let lines = ledger(&root);
+        assert_eq!(lines.len(), before + 1);
+        assert_eq!(lines.last().unwrap()["kind"], "case-updated");
+    }
+
     #[test]
     fn refusals() {
         let env = Env::new(Snapper::Missing);

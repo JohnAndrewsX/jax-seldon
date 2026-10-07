@@ -110,6 +110,38 @@ fn canonical(root: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// WP-120 round 2, B2: what [`record`] writes is redacted, whatever
+    /// the caller passed (the commands redact a git error first; a commit
+    /// subject is the engine's own text, but the record does not rely on
+    /// either).
+    #[test]
+    fn the_record_is_redacted_when_written() {
+        let tmp = std::env::temp_dir().join(format!("seldon-autocommit-{}", std::process::id()));
+        let dirs = Dirs {
+            home: tmp.clone(),
+            xdg_config_home: tmp.join("config"),
+            state_dir: tmp.join("state"),
+        };
+        let root = tmp.join("logbook");
+        std::fs::create_dir_all(&root).unwrap();
+        let at = DateTime::parse_from_rfc3339("2026-10-06T10:00:00+02:00").unwrap();
+        record(
+            &dirs,
+            &Config::default(),
+            &root,
+            at,
+            false,
+            "refused: https://user:geheim@example.org token=abc123geheim\nsecond line",
+        );
+        let text = std::fs::read_to_string(file(&dirs)).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+        let r: Record = serde_json::from_str(&text).unwrap();
+        assert!(!r.message.contains("geheim"), "{}", r.message);
+        assert!(r.message.contains("‹redacted›"), "{}", r.message);
+        assert!(!r.message.contains("second line"));
+        assert_eq!(r.at, "2026-10-06T10:00:00+02:00");
+    }
+
     #[test]
     fn one_line_clipped() {
         let config = Config::default();

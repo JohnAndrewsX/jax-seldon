@@ -128,7 +128,9 @@ seldon plan set <ID> (--zone Z | --risk R | --area A)… [--actor A]
 # area gets its README); one Log line `set risk R1 → R3, zone yellow → red`
 # and, before it, one ledger line `case-updated` (ADR-0035 §1, contract 2:
 # `source: seldon`, subject and `case` the id, detail the Log line's words,
-# `meta.risk` the case's risk after it, also when only zone or area changed);
+# `meta.risk` the case's risk after it, also when only zone or area changed;
+# a new area's README is written before the line, so a failure there writes
+# nothing);
 # a value equal to the current one is no change, and with nothing changed
 # nothing is written (exit 0, `changed: []`, `event: null`). A completed or
 # dropped case: exit 1 (a completed one names `plan reopen`). R2/R3 without
@@ -1659,7 +1661,10 @@ warning: …` on stderr; `index`, `status` and `dossier` also in their
 `warnings`), once per open case below R3 and red `alwaysRed` subject, no
 index field (no contract change).
 
-Contract 2 (ADR-0035): `decisions[].cases` is the frontmatter's `cases`
+Contract 2 (ADR-0035): `meta.risk` stays only on the engine's
+`case-created|started|updated` lines; one a 0.1.x `seldon event --meta
+risk=…` wrote on another kind, or any value not R0–R3 (read as none, the
+line still loads), is dropped from `index.events`. `decisions[].cases` is the frontmatter's `cases`
 as written without repeats (`[]` when it names none; ids are copied, not
 resolved). `logbook.git.autocommit` is `{ok, at, message}` of the last
 autocommit the engine attempted in this logbook, from
@@ -1668,10 +1673,11 @@ autocommit` is on and the record is this logbook's; `message` is one
 line, redacted again at build time, at most 256 characters. `triage`
 points at the newest valid proposal of this logbook in `proposals/` (§2),
 by id: `{id, at, actor, counts: {items, crises}, path, applied}`, `path`
-relative to the directory of `index.json`, `counts` as proposed; a file
-that fails `proposal.schema.json`, whose name is not its id, or that
-cannot be read is skipped with a build warning, another logbook's
-silently; no proposal, no field. `index --check` validates against the
+relative to the directory of `index.json`, `counts` as proposed; a
+`.json` file not named `<ULID>.json`, a file that fails
+`proposal.schema.json`, whose name is not its id, or that cannot be read
+is skipped with a build warning, another logbook's silently (other
+files pass silently); no proposal, no field. `index --check` validates against the
 schemas compiled into the binary, `proposal.schema.json` included.
 
 Performance budget: 10 000 events, 300 cases, 365 journal files → < 100 ms
@@ -1694,7 +1700,10 @@ same redaction before
 the first write, so the ledger, the journal, case and decision files,
 `STATUS.md` and the index hold the same redacted text (WP-062). The
 `seldon` notes (§3 state reset, §4 snapper) are events and are redacted
-the same way (WP-099). A collector's message (snapper's stderr, for
+the same way (WP-099). A failed autocommit's git error goes through the
+logbook's redaction before the engine shows it anywhere: the stderr
+warning, `--json` `git.error` and `autocommit.json` (whose message the
+index build redacts once more; WP-120 round 2). A collector's message (snapper's stderr, for
 example) goes through the same redaction once, before the capture saves
 it in `cursors.json`, prints it (`capture` and `capture --json`) or
 embeds it in the snapper note. A capture also redacts the messages an

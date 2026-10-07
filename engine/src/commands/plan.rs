@@ -717,17 +717,20 @@ fn set(ctx: &Context, args: SetArgs) -> Result<Output> {
     file.add_agent(&actor);
     file.log(&ctx.now, &format!("set {}", words.join(", ")), &actor);
     file.prepare(&logbook, |_| {})?;
-    // the ledger first: if it cannot be written, the case file stays
+    // a new area's README first (WP-120 round 2, N5): a failure there
+    // leaves the ledger and the case file as they were; an area left
+    // behind by a later failure is harmless (the next set finds it)
+    let area_created = match &file.case.area {
+        Some(a) if changed.iter().any(|c| c["key"] == "area") => cases::ensure_area(&logbook, a)?,
+        _ => None,
+    };
+    // then the ledger: if it cannot be written, the case file stays
     let event = Event::new(ctx.now, Source::Seldon, Kind::CaseUpdated, &args.id)
         .detail(words.join(", "))
         .actor(&actor)
         .case(Some(args.id.clone()))
         .risk(file.case.risk);
     let event = emit_one(&lock, &config, &logbook, event)?;
-    let area_created = match &file.case.area {
-        Some(a) if changed.iter().any(|c| c["key"] == "area") => cases::ensure_area(&logbook, a)?,
-        _ => None,
-    };
     file.save(&logbook)?;
     let commit = autocommit(
         ctx,

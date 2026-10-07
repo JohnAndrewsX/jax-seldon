@@ -788,15 +788,23 @@ def risk_at(risks, at):
     return values[0] if values and all(v == values[0] for v in values) else None
 
 
+RISKS = ("R0", "R1", "R2", "R3")
+RISK_KINDS = ("case-created", "case-started", "case-updated")
+
+
+def risk_line(e):
+    """A line whose meta.risk counts (ADR-0035 §1): the engine's case-created|started|updated."""
+    return e["source"] == "seldon" and e["kind"] in RISK_KINDS
+
+
 def ledger_risks(events, cid):
     """engine: reconcile::ledger_risks — [(instant, risk)] of the case's case-created|started|updated
     lines with meta.risk, oldest first; None unless its case-created line carries one."""
-    lines = sorted((e for e in events if e["source"] == "seldon" and e["subject"] == cid
-                    and e["kind"] in ("case-created", "case-started", "case-updated")),
+    lines = sorted((e for e in events if risk_line(e) and e["subject"] == cid),
                    key=lambda e: (instant(e["ts"]), e["id"]))
-    if not any(e["kind"] == "case-created" and "risk" in e.get("meta", {}) for e in lines):
+    if not any(e["kind"] == "case-created" and e.get("meta", {}).get("risk") in RISKS for e in lines):
         return None
-    return [(instant(e["ts"]), e["meta"]["risk"]) for e in lines if "risk" in e.get("meta", {})]
+    return [(instant(e["ts"]), e["meta"]["risk"]) for e in lines if e.get("meta", {}).get("risk") in RISKS]
 
 
 def told(risks, at):
@@ -856,6 +864,12 @@ def clipped(e):
     cut = False
     if "meta" in e:
         e["meta"].pop("truncated", None)
+        # ADR-0035 §1: meta.risk only on the engine's case lines and only R0-R3; 0.1.x let
+        # `seldon event --meta risk=…` write any value on any kind (the engine reads it leniently)
+        if not (risk_line(e) and e["meta"].get("risk") in RISKS):
+            e["meta"].pop("risk", None)
+        if not e["meta"]:
+            del e["meta"]
     for k in ("detail", "resolutionDetail"):
         if isinstance(e.get(k), str):
             short = clip(e[k])

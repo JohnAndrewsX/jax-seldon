@@ -61,6 +61,13 @@ checked by `seldon index --check` and shown in `fixtures/index.sample.json`.
 - **Append-only.** Old lines are never rewritten: a case created before
   v2 has no `meta.risk` in its `case-created`, and an index of such a
   ledger is valid and complete (the field is optional).
+- **A `meta.risk` the engine did not write counts for nothing.** 0.1.x let
+  `seldon event --meta risk=…` put any value on any kind. A `meta.risk` on
+  another kind, or written by hand before v2, is ignored on read and
+  dropped from the index: such a line still loads (a value that is not
+  R0–R3 reads as none, the line is never skipped), and only the engine's
+  `case-created`, `case-started` and `case-updated` lines (`source:
+  seldon`) tell a case's risk. New lines are checked strictly on write.
 - **The harm guard** (ADR-0029 §1(d), SPEC-ENGINE §5 rule 9) reads the
   risk at the change's time from the ledger when the case's
   `case-created` line carries `meta.risk`: the last `meta.risk` of the
@@ -78,7 +85,9 @@ checked by `seldon index --check` and shown in `fixtures/index.sample.json`.
 engine *attempted* in this logbook. `ok` true: committed, `message` the
 commit subject (`seldon: …`). `ok` false: not committed, `message` the
 git error. `at` is when it ran. One line, at most 256 characters, through
-the logbook's redaction like a collector message. Skips (`--no-commit`,
+the logbook's redaction like a collector message — when written and again
+when the index is built; the git error on stderr and in `--json`
+`git.error` goes through the same redaction. Skips (`--no-commit`,
 `git.autocommit = false`, no repository) are no attempt and change
 nothing. The engine keeps the record in its state directory
 (`autocommit.json`, bound to the logbook's path like `cursors.json`); the
@@ -99,7 +108,8 @@ The 256-byte budget of ADR-0025 is unchanged.
 
 ### 4. The state-loss kind
 
-New event kind **`state-loss`**, `source: seldon`, subject `state-reset`,
+New event kind **`state-loss`**, `source: seldon`, subject always
+`state-reset` (schema and engine refuse another),
 with WP-081's `detail` and `meta.sources`/`meta.files`: what `capture`
 writes when it re-baselines collectors after a lost state directory.
 Engine-only. Old `note` lines with subject `state-reset` stay what they
@@ -122,9 +132,10 @@ relative to the directory of `index.json` (`proposals/<id>.json`), so
 the plugin reads it next to the index, also in its `SELDON_INDEX` dev
 mode. `counts` are the file's items and the items it marks `crisis`, as
 proposed. `applied` is `null` until `seldon drift apply` marks it, then
-its time. A file that fails its schema, whose name is not its id, or
-that cannot be read is skipped with a build warning; one that belongs to
-another logbook is skipped silently (it is not this logbook's).
+its time. A `.json` file not named `<ULID>.json`, a file that fails its
+schema, whose name is not its id, or that cannot be read is skipped with
+a build warning; one that belongs to another logbook is skipped silently
+(it is not this logbook's).
 
 The file is contract too, since the plugin reads it:
 **`schema/proposal.schema.json`** — `{id, at, actor, logbook, applied,

@@ -214,6 +214,7 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     let commit = match git::commit_all(&logbook.root, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
         Err(e) => {
+            let e = redacted_git_error(config, &e);
             // not eprintln!: a closed stderr must not abort the command
             let _ = writeln!(
                 std::io::stderr(),
@@ -224,6 +225,14 @@ pub fn autocommit(ctx: &Context, config: &Config, logbook: &Logbook, summary: &s
     };
     commit.record(ctx, config, logbook);
     commit
+}
+
+/// A git error as the engine shows it — on stderr, in `--json` `git.error`
+/// and in `autocommit.json` — through the logbook's redaction (SPEC-ENGINE
+/// §7; WP-120 round 2, N6): a hook's output or a remote URL may carry a
+/// secret. An invalid `[redaction] patterns` entry withholds it.
+fn redacted_git_error(config: &Config, error: &str) -> String {
+    crate::collectors::ShownMessages::new(Some(config)).show(error)
 }
 
 /// [`autocommit`] of `paths` alone (relative to the logbook): a commit of
@@ -247,6 +256,7 @@ pub fn autocommit_paths(
     let commit = match git::commit_paths(&logbook.root, paths, summary) {
         Ok(()) => Commit::Committed(format!("seldon: {summary}")),
         Err(e) => {
+            let e = redacted_git_error(config, &e);
             let _ = writeln!(
                 std::io::stderr(),
                 "seldon: warning: git: not committed: {e}"

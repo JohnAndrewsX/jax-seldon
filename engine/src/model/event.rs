@@ -27,6 +27,9 @@ pub const SUBJECT_MAX: usize = 512;
 pub const DETAIL_MAX: usize = 4096;
 /// The index-only `meta` key that marks a clipped text (ADR-0035 §3).
 pub const TRUNCATED: &str = "truncated";
+/// The subject of every `state-loss` line (ADR-0035 §4;
+/// `collectors::STATE_RESET`).
+pub const STATE_LOSS_SUBJECT: &str = "state-reset";
 
 str_enum!(
     /// Who produced the event (`event.schema.json#/properties/source`).
@@ -162,11 +165,28 @@ pub struct Meta {
     pub tx_id: Option<String>,
     /// case-created, case-started, case-updated: the case's risk after the
     /// event (ADR-0035 §1); absent on lines written before contract 2.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Read leniently: 0.1.x let `seldon event --meta risk=…` write any
+    /// value on any kind, and such a line must still load; a value that is
+    /// not R0–R3 reads as none (the line is never rewritten), and the index
+    /// drops one on another kind (`index::build::clipped`).
+    #[serde(
+        default,
+        deserialize_with = "lenient_risk",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub risk: Option<Risk>,
     /// Any other scalar key.
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
+}
+
+/// `meta.risk` as a line holds it: `R0`–`R3`, else none (ADR-0035 §1).
+fn lenient_risk<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Risk>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(value
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .and_then(|s| s.parse().ok()))
 }
 
 impl Meta {
@@ -337,6 +357,11 @@ impl Event {
         if matches!(self.kind, Kind::CaseUpdated | Kind::StateLoss) && self.source != Source::Seldon
         {
             return Err(format!("{} is written by seldon only", self.kind));
+        }
+        if self.kind == Kind::StateLoss && self.subject != STATE_LOSS_SUBJECT {
+            return Err(format!(
+                "a state-loss line has the subject `{STATE_LOSS_SUBJECT}`"
+            ));
         }
         if self.meta.extra.contains_key(TRUNCATED) {
             return Err("meta.truncated is index-only (ADR-0035 §3)".into());
@@ -511,6 +536,30 @@ mod tests {
         assert_eq!(n, 85, "fixtures/README.md: 85 ledger lines");
     }
 
+    /// WP-120 round 2, B1: a 0.1.x line with a user `meta.risk` loads;
+    /// a value that is not R0–R3 reads as none, the line keeps its other
+    /// keys.
+    #[test]
+    fn a_user_risk_reads_leniently() {
+        let line = |risk: &str| {
+            format!(
+                r#"{{"id":"01K6Y00000000000000000000A","ts":"2026-10-06T09:00:00+02:00","source":"manual","kind":"note","subject":"journal","actor":"human","meta":{{"risk":{risk},"mine":"kept"}}}}"#
+            )
+        };
+        for (risk, want) in [
+            ("\"R1\"", Some(Risk::R1)),
+            ("\"banana\"", None),
+            ("\"high\"", None),
+            ("3", None),
+            ("null", None),
+        ] {
+            let e: Event =
+                serde_json::from_str(&line(risk)).unwrap_or_else(|e| panic!("{risk}: {e}"));
+            assert_eq!(e.meta.risk, want, "{risk}");
+            assert_eq!(e.meta.extra["mine"], "kept");
+        }
+    }
+
     #[test]
     fn builder_defaults() {
         let ts = DateTime::parse_from_rfc3339("2026-09-03T21:14:06+02:00").unwrap();
@@ -566,6 +615,27 @@ mod tests {
         assert!(e.validate().unwrap_err().contains("case"));
         e.case = Some("C-2026-001".into());
         e.validate().unwrap();
+        // ADR-0035 §4 (WP-120 round 2, N4): a state-loss line is seldon's,
+        // subject `state-reset`
+        assert!(
+            ok(Event::new(
+                ts,
+                Source::Seldon,
+                Kind::StateLoss,
+                "state-reset"
+            ))
+            .validate()
+            .is_ok()
+        );
+        let e = ok(Event::new(ts, Source::Seldon, Kind::StateLoss, "config"));
+        assert!(e.validate().unwrap_err().contains("state-reset"));
+        let e = ok(Event::new(
+            ts,
+            Source::Manual,
+            Kind::StateLoss,
+            "state-reset",
+        ));
+        assert!(e.validate().is_err());
         let e = ok(Event::new(ts, Source::Pacman, Kind::Install, "x").actor("agent:Claude"));
         assert!(e.validate().is_err());
         let e = ok(Event::new(ts, Source::Pacman, Kind::Install, ""));
