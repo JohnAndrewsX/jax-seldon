@@ -1420,7 +1420,7 @@ After every capture:
    `-disable` routine `plugin-toggle`; `-add`/`-remove`/`-update`
    attention `plugin`. `theme-set` routine `theme`. Config, in this order
    (ADR-0028 §2; WP-109 round 2): under `~/.local/state/omarchy/toggles/`
-   (ADR-0037 §1, proposed) an event whose content — `hashTo`, for a
+   (ADR-0037 §1) an event whose content — `hashTo`, for a
    removal `hashFrom` — is empty routine `toggle-flag`, a removal with
    `meta.matches` `omarchy-default` routine `omarchy-default`; then
    `meta.matches` `omarchy-default`/`system-link` routine (not for a

@@ -29,13 +29,13 @@
 | ADR-0025 | The index clips long texts of events and drift items with a visible marker (extends ADR-0020); the reference clip followed in WP-077 | accepted |
 | ADR-0026 | Snapper access by a read grant on the snapshot directory; doctor prints the revert of the old opt-in (supersedes ADR-0011) | accepted |
 | ADR-0027 | Act, then account: a case the user started authorises the agent; the agent verifies and closes; only steps that can make the machine unbootable need the user's go | accepted; H2 amended in part by ADR-0029, §1 prompt target by ADR-0031 |
-| ADR-0028 | Attention is earned by consequence: routine changes are history, not drift; crisis by the harm test | accepted; three §2 rows amended by ADR-0037 (proposed) |
+| ADR-0028 | Attention is earned by consequence: routine changes are history, not drift; crisis by the harm test | accepted; four §2 rows amended by ADR-0037 |
 | ADR-0029 | A change made while exactly one case planned it is that case's; a case captures before it closes | accepted |
 | ADR-0030 | The Seldon agent starts like the Omarchy agent: from the caller's folder, hooks user-wide, served by a launch marker | accepted; §1 clause (b), §3 and §5 amended in part by ADR-0032 |
 | ADR-0031 | Password prompts follow Omarchy: as few as the route allows; snapshot `root` only | accepted |
 | ADR-0032 | The launch marker serves a session only while its case is open; existing installs' hooks go user-wide once | accepted |
 | ADR-0033 | A new logbook looks back 90 days and marks that history "before Seldon", without asking | accepted |
 | ADR-0034 | The plugin is a desk: one wide panel with sidebar, list and detail; Prime Radiant and the graph live inside | accepted |
-| ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | proposed |
+| ADR-0037 | ADR-0028 amended: toggles are routine both ways, `system-link` narrowed, the `authorized_keys` files default persistence paths | accepted |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.

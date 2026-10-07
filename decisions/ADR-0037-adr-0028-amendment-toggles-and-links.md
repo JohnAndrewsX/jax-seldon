@@ -1,13 +1,11 @@
 # ADR-0037 — ADR-0028 amended: toggles are routine both ways, `system-link` is narrowed, the `authorized_keys` files are default persistence paths
 
-**Status:** proposed (orchestrator, 2026-10-07, from WP-113 round 2; the
-operator decides). §1 and §3 are implemented on branch
-`wp/113-collector-hashes`, which is not merged into `next` before this
-ADR is accepted. §2 is decided here and implemented by a follow-up WP
+**Status:** accepted (operator decision 2026-10-07, after Opus and Fable stage 2).
+§1 and §3 are implemented by WP-113; §2 is implemented by a follow-up WP
 once its evidence item is checked.
 **Date:** 2026-10-07
 
-> Amends [ADR-0028](ADR-0028-attention-by-consequence.md) §2 (three rows,
+> Amends [ADR-0028](ADR-0028-attention-by-consequence.md) §2 (four rows,
 > named below) and its §4d/§8 WP-E scope note. ADR-0028 stays accepted
 > and unedited; its other rows, the three tests of §1 and §5–§7 stand.
 
