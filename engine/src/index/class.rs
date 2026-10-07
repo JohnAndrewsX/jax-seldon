@@ -65,21 +65,20 @@ const THEME_CODE: [&str; 5] = [
     "vscode.json",
 ];
 
-/// The boot, login and security files a `.pacnew`, `.pacsave` or `.pacorig`
-/// beside is a crisis (WP-141): mkinitcpio, Limine (the paths Omarchy's
-/// tree writes: `/etc/default/limine`, `/etc/limine-entry-tool.d/`),
-/// systemd, PAM. In the [`PathGlobs`] syntax; a directory covers what lies
-/// below it.
-const PACNEW_RED: [&str; 9] = [
+/// The boot and login files a `.pacnew`, `.pacsave` or `.pacorig` beside
+/// is a crisis (ADR-0042, WP-141): mkinitcpio, Limine (the paths Omarchy's
+/// tree writes: `/etc/default/limine`, `/etc/limine-entry-tool.d/`), PAM.
+/// Not `/etc/systemd` (Omarchy uses drop-ins) or `/etc/security` (Omarchy
+/// overrides `pam`'s files there): the file in use keeps working. In the
+/// [`PathGlobs`] syntax; a directory covers what lies below it.
+const PACNEW_RED: [&str; 7] = [
     "/etc/mkinitcpio.conf",
     "/etc/mkinitcpio.conf.d",
     "/etc/mkinitcpio.d",
     "/etc/default/limine",
     "/etc/limine*",
     "/boot/limine*",
-    "/etc/systemd",
     "/etc/pam.d",
-    "/etc/security",
 ];
 
 /// The suffixes of the files pacman leaves (`collectors::pacman`).
@@ -333,7 +332,7 @@ impl Rules {
     /// A file pacman left beside a configuration file (WP-141): never
     /// routine — the new default was not applied, or the user's file was
     /// moved aside, and nothing but a merge changes that; a crisis beside a
-    /// boot, login or security file ([`PACNEW_RED`]). Its own item, never
+    /// boot or login file ([`PACNEW_RED`], ADR-0042). Its own item, never
     /// its transaction's: it carries no `txId`.
     fn pacnew(&self, subject: &str) -> Verdict {
         let file = PACNEW_SUFFIXES
@@ -1312,9 +1311,9 @@ mod tests {
                 (C, "pacnew-red"),
             ),
             (
-                ".pacnew of a systemd file",
+                ".pacnew of a systemd file (Omarchy uses drop-ins)",
                 left("/etc/systemd/logind.conf.pacnew", "pacman -Syu"),
-                (C, "pacnew-red"),
+                (A, "pacnew"),
             ),
             (
                 ".pacorig in pam.d",
@@ -1322,14 +1321,34 @@ mod tests {
                 (C, "pacnew-red"),
             ),
             (
-                ".pacnew in /etc/security",
+                ".pacnew in /etc/security (Omarchy overrides pam's files)",
                 left("/etc/security/faillock.conf.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of fstab",
+                left("/etc/fstab.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of crypttab",
+                left("/etc/crypttab.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacnew of sudoers",
+                left("/etc/sudoers.pacnew", "pacman -Syu"),
+                (A, "pacnew"),
+            ),
+            (
+                ".pacsave in pam.d",
+                left("/etc/pam.d/sudo.pacsave", "pacman -Rns sudo"),
                 (C, "pacnew-red"),
             ),
             (
                 ".pacnew without a command line",
                 {
-                    let mut e = left("/etc/systemd/system.conf.pacnew", "");
+                    let mut e = left("/etc/pam.d/system-auth.pacnew", "");
                     e.meta.command = None;
                     e
                 },
@@ -1337,7 +1356,7 @@ mod tests {
             ),
             (
                 "a look-alike of a system path",
-                left("/etc/systemdx.conf.pacnew", "pacman -Syu"),
+                left("/etc/pam.dx/a.pacnew", "pacman -Syu"),
                 (A, "pacnew"),
             ),
             (
