@@ -13,6 +13,7 @@
 
 pub mod omarchy_agent;
 pub mod report;
+pub mod task;
 
 use std::collections::BTreeMap;
 
