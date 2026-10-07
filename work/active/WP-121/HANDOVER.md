@@ -173,3 +173,60 @@ nothing above it except the header comment's file name.
 ok`; docs-check ok, qmllint ok 49 files, service-states 316, desk-view
 346, bar-view 194, plugin-test ok). HANDOVER.md is the only change after
 that commit.
+
+## Round 2
+
+Review 1 (stage 1): SEND BACK on B1 and B2; brief
+`WP-121-round-2-brief.md`. Commits 0b0e525 (plugin, harness) and
+e0b6f08 (docs).
+
+- **B1 — wheel writes.** `PanelSlider` turns every wheel event into
+  `moved` + `released` without a press. The slider now marks a move that
+  comes without `dragging` as a wheel move (`fromWheel`) and ignores its
+  `released`; `Desk.previewWheel` previews and restarts a 600 ms timer,
+  which writes once with the last value. A release or preset click in
+  the meantime takes its place (the timer stops); closing the desk
+  flushes a pending value, since the user saw that width. New case
+  `settings-wheel`: three notches → 0 writes and preview 70 at once, 1
+  write of 70 after the pause; a notch then a preset click → only the
+  preset's write, nothing after 900 ms; a notch then Esc → one write of
+  the notch's value as the desk closes.
+- **B2 — the stored-value rule tested.** The harness's facade stand-in
+  now answers `false` when the entry would not change, as `shell.qml
+  updateEntryInline` does. New case `settings-stored`: a slider click at
+  the stored value writes nothing and shows no refusal, once with no
+  `deskWidth` in the entry (default 100) and once with `deskWidth: 50`.
+  The old "same preset again" assertion is reworded: `ButtonGroup` emits
+  only a change, so it never tested the guard. Both guards stay.
+  Mutants, run on a copy (scratchpad `mutants.sh`):
+  - `Desk.writeSetting` guard removed → `settings-stored` #4, #7 fail
+    (1 write each);
+  - `Model.deskSettingsWrite` guard removed → `model.test.js` "…null when
+    stored" fails (desk-view passes there, because the Desk guard comes
+    first);
+  - wheel writing on `released` → `settings-wheel` #3–#6 fail;
+  - re-target only from closed (N3) → `ipc` #13 fails.
+- **N1.** SPEC-PLUGIN §5.1: ADR-0034 §1's `screen.width` is read as the
+  usable width minus Omarchy's outer gaps (90 % of 1920 = 1719, not 1728).
+- **N2.** `Service.entryKnown` (an entry was pushed by a pill). Without
+  it the desk writes nothing, keeps the change in `Service.localEntry`
+  until the shell restarts, and says "Add Seldon to the bar to keep this
+  setting; until then it holds until the shell restarts." — no refusal.
+  Case `settings-no-pill` (`HARNESS_NO_PILL`): 0 writes, width and
+  sidebar kept across a hide, the sentence, no refusal text.
+- **N3.** `open()` re-targets on every call, so a summon of the open desk
+  (the keybinding, the pill on another monitor) moves it to the focused
+  monitor. It does not follow the focus while open; SPEC §5.1 says why
+  (focus follows the mouse: the desk would move away under a pointer
+  crossing monitors). Case `ipc` #12/#13 (the stand-in's screen name
+  counts re-targets).
+- **N4.** README: no other setting changes, but the shell writes the
+  whole file back in its own formatting, as with its bar settings.
+- TESTING.md: the new steps (`wheel:`, `pause:`), `HARNESS_NO_PILL`, the
+  stand-in's `false`.
+
+Verified: `omarchy plugin validate plugin/` ok; `just qmllint` ok (49
+files); `model.test.js` 107; `desk-view.sh` 373 passed, 0 failed.
+`flock /tmp/seldon-check.lock just check` on e0b6f08: **exit 0** (`check:
+ok`; docs-check ok, qmllint ok 49 files, service-states 316, desk-view
+373, bar-view 194). Only this handover changed after that commit.
