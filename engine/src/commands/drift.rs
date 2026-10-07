@@ -226,6 +226,7 @@ pub fn run(ctx: &Context, args: DriftArgs) -> Result<Output> {
             }
             let action = Action::Explain(Explain {
                 title: None,
+                proposed_by: None,
                 intent,
                 zone: a.zone,
                 risk: a.risk,
@@ -431,6 +432,9 @@ pub(super) struct Explain {
     pub zone: Option<Zone>,
     pub risk: Risk,
     pub area: Option<String>,
+    /// `drift apply`: the agent whose proposal this is; the case gets the
+    /// tag `proposed-by:<agent>` (WP-124 round 3, B4).
+    pub proposed_by: Option<String>,
 }
 
 /// What a resolving command does besides the resolution lines.
@@ -828,10 +832,15 @@ fn retroactive_case(
         agents: Vec::new(),
         events: Vec::new(),
         // an agent's explanation closes a case too (ADR-0027 §5, WP-101)
-        tags: if crate::model::is_agent(actor) {
-            vec![super::plan::TAG_CLOSED_BY_AGENT.to_string()]
-        } else {
-            Vec::new()
+        tags: {
+            let mut tags = Vec::new();
+            if crate::model::is_agent(actor) {
+                tags.push(super::plan::TAG_CLOSED_BY_AGENT.to_string());
+            }
+            if let Some(agent) = &explain.proposed_by {
+                tags.push(format!("{}{agent}", super::triage::PROPOSED_BY));
+            }
+            tags
         },
     };
     let body = cases::new_body(logbook, &id, title)?;

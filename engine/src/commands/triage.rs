@@ -200,6 +200,33 @@ pub struct Evidencer<'a> {
 /// ledger kept its creation, an imported case).
 const UNKNOWN_AUTHOR: &str = "unknown";
 
+/// The tag of a case `drift apply` made from an agent's explanation:
+/// `proposed-by:agent:<name>` (CONTRACT.md rule 8).
+pub const PROPOSED_BY: &str = "proposed-by:";
+
+/// What a ref resolved to: every author (the proposer among them refuses
+/// it), the author shown in its text, and the words.
+struct Found {
+    authors: Vec<String>,
+    label: String,
+    words: String,
+}
+
+impl Found {
+    /// Authors and words; the first author is the one shown.
+    fn by((authors, words): (Vec<String>, String)) -> Found {
+        let label = authors
+            .first()
+            .cloned()
+            .unwrap_or_else(|| UNKNOWN_AUTHOR.to_string());
+        Found {
+            authors,
+            label,
+            words,
+        }
+    }
+}
+
 impl Evidencer<'_> {
     /// The text `kind ref` resolves to for an item of `members`; `Err`:
     /// why it does not resolve.
@@ -212,37 +239,64 @@ impl Evidencer<'_> {
         if r.chars().count() > REF_MAX {
             return Err(format!("longer than {REF_MAX} characters"));
         }
-        let (authors, raw) = match kind {
-            RefKind::Journal => self.journal(r)?,
+        let found = match kind {
+            RefKind::Journal => Found::by(self.journal(r)?),
             RefKind::Event => self.event(r, members)?,
-            RefKind::Snapshot => self.snapshot(r)?,
+            RefKind::Snapshot => Found::by(self.snapshot(r)?),
             RefKind::Case => {
                 let file = self.case(r)?;
-                (self.case_authors(r, &file, false), file.case.title)
+                Found::by((self.case_authors(r, Some(&file)), file.case.title))
             }
             RefKind::Plan => self.plan(r, members)?,
         };
-        if authors.iter().any(|a| a == self.proposer) {
+        if found.authors.iter().any(|a| a == self.proposer) {
             return Err(format!(
                 "{} wrote it; an agent's own text is no evidence for its proposal",
                 self.proposer
             ));
         }
-        let words = one_line_text(&self.redactor.redact(&raw));
+        let words = one_line_text(&self.redactor.redact(&found.words));
         if words.is_empty() {
             return Err("it holds no text".to_string());
         }
-        let author = authors
-            .first()
-            .map_or(UNKNOWN_AUTHOR, String::as_str)
-            .to_string();
-        Ok(clip(&format!("by {author} · {words}"), TEXT_MAX))
+        Ok(clip(&format!("by {} · {words}", found.label), TEXT_MAX))
     }
 
-    /// Who stands behind a case: its creator first (`case-created` in the
-    /// ledger, else [`UNKNOWN_AUTHOR`]), then whoever closed it, and with
-    /// `workers` the agents its file lists (they write its *Plan*).
-    fn case_authors(&self, id: &str, file: &cases::CaseFile, workers: bool) -> Vec<String> {
+    /// Who stands behind a case, first named first: the agents whose
+    /// proposal `drift apply` made it from (its tag `proposed-by:<agent>`,
+    /// and the `proposed by <agent> — …` detail of its resolution lines in
+    /// the ledger, which a file edit cannot remove), then its creator
+    /// (`case-created`, else [`UNKNOWN_AUTHOR`]), then whoever completed or
+    /// dropped it. An applied explanation keeps its proposer's name (WP-124
+    /// round 3, B4).
+    fn case_authors(&self, id: &str, file: Option<&cases::CaseFile>) -> Vec<String> {
+        fn add(a: String, out: &mut Vec<String>) {
+            if !out.contains(&a) {
+                out.push(a);
+            }
+        }
+        let mut out: Vec<String> = Vec::new();
+        for tag in file.map_or(&[][..], |f| &f.case.tags[..]) {
+            if let Some(agent) = tag.strip_prefix(PROPOSED_BY).filter(|a| is_agent(a)) {
+                add(agent.to_string(), &mut out);
+            }
+        }
+        for e in self.built.ledger.iter().filter(|e| {
+            e.kind == Kind::Resolution
+                && e.source == Source::Seldon
+                && e.case.as_deref() == Some(id)
+        }) {
+            if let Some(agent) = e
+                .detail
+                .as_deref()
+                .and_then(|d| d.strip_prefix("proposed by "))
+                .and_then(|d| d.split_once(" — "))
+                .map(|(a, _)| a)
+                .filter(|a| is_agent(a))
+            {
+                add(agent.to_string(), &mut out);
+            }
+        }
         let actor_of = |kind: Kind| {
             self.built
                 .ledger
@@ -250,12 +304,14 @@ impl Evidencer<'_> {
                 .find(|e| e.source == Source::Seldon && e.kind == kind && e.subject == id)
                 .map(|e| e.actor.clone())
         };
-        let mut out =
-            vec![actor_of(Kind::CaseCreated).unwrap_or_else(|| UNKNOWN_AUTHOR.to_string())];
-        out.extend(actor_of(Kind::CaseCompleted));
-        out.extend(actor_of(Kind::CaseDropped));
-        if workers {
-            out.extend(file.case.agents.iter().cloned());
+        add(
+            actor_of(Kind::CaseCreated).unwrap_or_else(|| UNKNOWN_AUTHOR.to_string()),
+            &mut out,
+        );
+        for kind in [Kind::CaseCompleted, Kind::CaseDropped] {
+            if let Some(a) = actor_of(kind) {
+                add(a, &mut out);
+            }
         }
         out
     }
@@ -281,11 +337,7 @@ impl Evidencer<'_> {
 
     /// A ledger event that is no resolution and not the item's own: its
     /// actor, and `kind subject: detail`.
-    fn event(
-        &self,
-        r: &str,
-        members: &[&Event],
-    ) -> std::result::Result<(Vec<String>, String), String> {
+    fn event(&self, r: &str, members: &[&Event]) -> std::result::Result<Found, String> {
         let id: Ulid = is_ulid(r)
             .then(|| r.parse().ok())
             .flatten()
@@ -310,7 +362,17 @@ impl Evidencer<'_> {
         if let Some(d) = e.detail.as_deref().filter(|d| !d.trim().is_empty()) {
             let _ = write!(text, ": {d}");
         }
-        Ok((vec![e.actor.clone()], text))
+        // a case's line stands for the case: its authors, the proposer of
+        // an applied explanation first (B4)
+        if e.kind.as_str().starts_with("case-") {
+            let file = cases::find(self.logbook, &e.subject).ok();
+            let mut authors = self.case_authors(&e.subject, file.as_ref());
+            if !authors.contains(&e.actor) {
+                authors.push(e.actor.clone());
+            }
+            return Ok(Found::by((authors, text)));
+        }
+        Ok(Found::by((vec![e.actor.clone()], text)))
     }
 
     /// The newest snapper snapshot event with that number.
@@ -344,11 +406,7 @@ impl Evidencer<'_> {
     /// as a whole word (ADR-0015 §4). A Plan line carries no author: the
     /// case's creator is shown, and the agents that worked the case (who
     /// write its Plan) count as its authors.
-    fn plan(
-        &self,
-        r: &str,
-        members: &[&Event],
-    ) -> std::result::Result<(Vec<String>, String), String> {
+    fn plan(&self, r: &str, members: &[&Event]) -> std::result::Result<Found, String> {
         let file = self.case(r)?;
         let body = &file.doc.body;
         let range = cases::section(body, "Plan").ok_or_else(|| format!("{r} has no Plan"))?;
@@ -359,7 +417,22 @@ impl Evidencer<'_> {
             .find(|l| members.iter().any(|m| names_token(l, &m.subject)))
             .map(str::to_string)
             .ok_or_else(|| format!("the Plan of {r} names none of the change's subjects"))?;
-        Ok((self.case_authors(r, &file, true), line))
+        let mut authors = self.case_authors(r, Some(&file));
+        let mut label = authors[0].clone();
+        let workers = &file.case.agents;
+        if !workers.is_empty() {
+            label = format!("{label} (worked by {})", workers.join(", "));
+        }
+        for a in workers {
+            if !authors.contains(a) {
+                authors.push(a.clone());
+            }
+        }
+        Ok(Found {
+            authors,
+            label,
+            words: line,
+        })
     }
 }
 
@@ -715,7 +788,7 @@ fn check_item(
     if !seen.insert(leader.clone()) {
         return Err(format!("its change ({leader}) is already an item"));
     }
-    let members = crate::reconcile::linkable_members(built, e);
+    let members = the_change(built, e);
     let (case_id, title, intent) = match item.action {
         Proposed::Link => {
             if item.title.is_some() || item.intent.is_some() {
@@ -819,6 +892,23 @@ pub fn apply(ctx: &Context, id: &str, named: &[String], actor: Option<String>) -
         .filter(|i| named.is_empty() || named.contains(&i.event_id))
         .cloned()
         .collect();
+    // a crisis one by one: one per run, read on its own (N10)
+    if named.len() > 1 {
+        let built = index::derive(ctx, &config, &logbook)?;
+        let crises: Vec<&str> = selected
+            .iter()
+            .filter(|i| i.crisis || is_crisis_now(&built, &i.event_id))
+            .map(|i| i.event_id.as_str())
+            .collect();
+        if crises.len() > 1 {
+            return Err(Error::user(format!(
+                "--item names {} crises ({}); a crisis is applied one by one, one per run, \
+                 after its evidence was read; nothing was applied",
+                crises.len(),
+                crises.join(", ")
+            )));
+        }
+    }
 
     let mut done = Vec::new();
     let mut skipped = Vec::new();
@@ -921,6 +1011,7 @@ pub fn apply(ctx: &Context, id: &str, named: &[String], actor: Option<String>) -
         json!({
             "proposal": id,
             "applied": proposal.applied,
+            "markedApplied": first,
             "done": done.iter().map(|(item, r)| json!({
                 "eventId": item.event_id,
                 "action": item.action,
@@ -963,6 +1054,7 @@ fn apply_item(
             match (title, intent) {
                 (Ok(title), Ok(intent)) => Action::Explain(Explain {
                     title: Some(title),
+                    proposed_by: Some(proposer.to_string()),
                     intent,
                     zone: None,
                     risk: Risk::R1,
@@ -982,6 +1074,9 @@ fn apply_item(
     if !built.open_drift.contains(&sel.event.event.id) {
         return Outcome::Skipped(closed_reason(built, sel.event));
     }
+    // the change itself is no evidence: every event of it counts, also a
+    // member the open-only filter drops or the engine resolved (N8)
+    let linkable = the_change(built, &sel.event.event);
     sel.members.retain(|m| built.open_drift.contains(&m.id));
     if sel.members.len() < 2 {
         sel.group = None;
@@ -1006,7 +1101,7 @@ fn apply_item(
     };
     let mut resolved = Vec::with_capacity(item.evidence.len());
     for r in &item.evidence {
-        match evidencer.resolve(r.kind, &r.reference, &sel.members) {
+        match evidencer.resolve(r.kind, &r.reference, &linkable) {
             Ok(text) => resolved.push((r.kind, r.reference.clone(), text)),
             Err(why) => {
                 return Outcome::Refused(format!(
@@ -1040,6 +1135,32 @@ fn apply_item(
         Ok(r) => Outcome::Done(Box::new(r)),
         Err(e) => Outcome::Refused(e.to_string()),
     }
+}
+
+/// Every event of the change `e` belongs to, for "the change itself is no
+/// evidence": its item's linkable members and, for a package transaction,
+/// every event with its `txId`, resolved or not (WP-124 round 3, N8).
+fn the_change<'a>(built: &'a Built, e: &'a Event) -> Vec<&'a Event> {
+    let mut out = crate::reconcile::linkable_members(built, e);
+    if !out.iter().any(|m| m.id == e.id) {
+        out.push(e);
+    }
+    if let Some(tx) = e.tx_id.as_deref() {
+        for f in built.folded.iter().map(|f| &f.event) {
+            if f.tx_id.as_deref() == Some(tx) && !out.iter().any(|m| m.id == f.id) {
+                out.push(f);
+            }
+        }
+    }
+    out
+}
+
+/// Whether `id` names an event whose item the engine classifies as a
+/// crisis now.
+fn is_crisis_now(built: &Built, id: &str) -> bool {
+    crate::reconcile::find(built, id).is_ok_and(|e| {
+        crate::reconcile::item_of(built, &e.event).is_some_and(|i| i.class == Class::Crisis)
+    })
 }
 
 /// Why an item's event is no longer open drift, for `skipped`.
