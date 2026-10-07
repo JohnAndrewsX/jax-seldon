@@ -203,3 +203,83 @@ is **proposed** (the orchestrator accepts it), review stage 1 Opus, stage
   (The run started before the two `git rm`s; neither file is run by the
   justfile on next.)
 - `check-rss`: unchanged, goes to the operator as its own question.
+
+## Round 2
+
+Stage-1 review (Opus, SEND BACK) and the orchestrator's brief; code at
+54c998e. Nothing new merged from `next`.
+
+- **B1** (a contract-1 ledger with a user `meta.risk`): `Meta.risk` is read
+  leniently (`lenient_risk`: R0–R3 or none; the line always loads);
+  `index::build::clipped` drops `meta.risk` unless the line is the engine's
+  `case-created|started|updated` (`source: seldon`); the same in
+  `validate-fixtures.py` (`risk_line`, `RISKS`; its `ledger_risks` takes only
+  valid values). The guard already read only `source: seldon` case lines;
+  now pinned. ADR-0035 §1 and CONTRACT.md rule 9 carry the sentence ("a
+  `meta.risk` on another kind, or written by hand before v2, is ignored on
+  read and dropped from the index"), SPEC-ENGINE §6 too. Tests:
+  `contract_v2::a_contract_1_ledger_with_a_user_risk_still_indexes` (notes
+  with `R1`, `banana`, `high` + `truncated: "yes"`: `index --check` exit 0,
+  `valid`, no warning, all three listed without `risk`/`truncated`, a user
+  key kept, doctor `ledger` ok); `planned_link::a_hand_written_risk_does_
+  not_fool_the_guard` (a 0.1.x note `risk: R3` on an R1 case: not linked,
+  "was R1 at the time", the note listed); `reconcile::only_the_engines_
+  case_lines_tell_the_risk` (note, manual `case-updated`, agent
+  `case-created`, seldon `case-verified` and note with R3 count for
+  nothing); `event::a_user_risk_reads_leniently`; the reference parity test
+  (`index::the_reference_derive_clips_texts_as_the_engine_does`) now also
+  carries two such notes, engine = Python derive.
+- **B2** (autocommit redaction untested): `contract_v2::a_failed_autocommit_
+  is_redacted_everywhere` (a refusing pre-commit hook prints
+  `https://user:geheim@…`, `token=abc123geheim`, `--password hunter2` and
+  300 characters: none of the secrets on stderr, in `--json` `git.error`,
+  in `autocommit.json` or in the index; `‹redacted›` in each; the index
+  message ≤ 256 characters, ends in `…`, one line; a planted unredacted
+  record is redacted at build); `index::autocommit::tests::the_record_is_
+  redacted_when_written`.
+- **N1**: `seldon event` names the writer per kind (`writer()`): case kinds
+  → `seldon plan`, resolution/correction → `seldon drift`, `state-loss` →
+  `seldon capture`. Test: `contract_v2::event_refuses_the_v2_kinds_and_keys`.
+- **N2**: chose **warn**: a `.json` in `proposals/` not named `<ULID>.json`
+  (also a lowercase ULID) gets "not named <ULID>.json, so not a proposal";
+  dotfiles and non-JSON files pass silently. ADR §6, SPEC §6 say so. Test:
+  `contract_v2::triage_points_at_the_newest_proposal_of_this_logbook`.
+- **N3**: `invalid/event.case-updated-without-risk.json` has `meta:
+  {zone: red}`; it fails for the missing `risk` (schema mutant below).
+- **N4**: `state-loss` requires subject `state-reset` — schema allOf and
+  `Event::validate` (`STATE_LOSS_SUBJECT`, `collectors::STATE_RESET` is
+  it); must-fail `invalid/event.state-loss-other-subject.json`; unit test in
+  `event::tests::validation_rules`.
+- **N5**: `plan set` writes a new area's README before the `case-updated`
+  line. Test: `close_path::set::an_area_that_cannot_be_made_writes_nothing`
+  (`areas/boot` a file: exit ≠ 0, no line, case file unchanged; after the
+  fix one line).
+- **N6**: `commands::redacted_git_error` puts the git error of
+  `autocommit`/`autocommit_paths` through the logbook's redaction before
+  the stderr warning, `--json` `git.error` and the record. SPEC-ENGINE §7.
+  Test: the B2 e2e.
+
+Mutants (applied, the named tests run, restored from HEAD; all killed):
+M9 both `shown()` raw → `the_record_is_redacted_when_written`; M9a record
+raw → same; M9b build raw → `a_failed_autocommit_is_redacted_everywhere`;
+M10 git error raw (N6) → same; M11 strict `meta.risk` read →
+`a_user_risk_reads_leniently`; M12 index keeps a foreign `risk` →
+`a_contract_1_ledger_with_a_user_risk_still_indexes`; M13 guard takes any
+source → `only_the_engines_case_lines_tell_the_risk`; M14 `state-loss` any
+subject → `validation_rules`; M15 misnamed proposals silent → `triage_…`;
+M16 `state-loss` refusal names `seldon plan` → `event_refuses_…`. Schema
+mutants: `case-updated` without `meta.required: [risk]` and `state-loss`
+without the subject const each let their must-fail fixture pass →
+`validate-fixtures` fails.
+
+`flock /tmp/seldon-check.lock just check` at 54c998e: **exit 0**, `check:
+ok`. Rust 1984 passed, 0 failed, 10 ignored; `validate-fixtures: ok` (131
+instances incl. 13 expected failures, 85 ledger events, 9 variants, 54
+self-checks); `docs-check: ok`; `plugin-validate: ok`; `qmllint: ok` (49
+files); model 108, service-states 328, desk-view 373, bar-view 194,
+real-home-guard 11.
+
+Open for the orchestrator, from the packet: the review's question 1 (drop
+vs. rename a v1 user `risk`) — this round drops it, as the brief says;
+questions 2 (ADR §6 last sentence) and 4 (`check-rss`) unchanged; N6 is
+fixed here, not a WP of its own.
