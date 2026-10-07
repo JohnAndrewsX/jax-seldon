@@ -37,8 +37,8 @@ Commands:
   index             Rebuild index.json and the ledger/*.md views; --check validates
   status            Regenerate STATUS.md, the ledger views and index.json; print a summary
   hook              Agent hooks: record commands, print session context, install into or uninstall from a harness
-  drift             List open drift; link, explain, dismiss or show a drift event
-  agent             Start an agent on an active case
+  drift             List open drift; link, explain, dismiss or show a drift event; propose, apply or discard a triage proposal
+  agent             Start an agent on an active case, or ask one about the open changes, a change or a case
   rebuild           Write outputs/REBUILD.md: the steps to rebuild this machine
   watch             Rebuild index.json when the logbook changes (feature "watch")
   dossier           Refresh the generated fences of system/*.md from read-only queries
@@ -648,7 +648,7 @@ list is cut.
 
 <!-- help: seldon drift -->
 ```text
-List open drift; link, explain, dismiss or show a drift event
+List open drift; link, explain, dismiss or show a drift event; propose, apply or discard a triage proposal
 
 Usage: seldon drift [OPTIONS]
        seldon drift <COMMAND>
@@ -658,6 +658,9 @@ Commands:
   explain  Explain a drift event with a new retroactive, completed case
   dismiss  Dismiss a drift event with a reason
   show     Show a drift event and every open member of its group
+  propose  Store an agent's triage proposal (JSON on stdin) for the user to apply; every item needs evidence the engine can resolve
+  apply    Apply a stored triage proposal as the user: link and explain its items; a crisis only when named by --item
+  discard  Remove a stored triage proposal; the logbook is not touched
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -761,18 +764,90 @@ All three resolving commands write one resolution per open member of the
 group in one step. `--only` resolves the named event alone. Running the
 same command again writes nothing and exits 0.
 
+### seldon drift propose
+
+The agent's command (ADR-0036): stores a triage proposal for you to
+apply, from JSON on stdin. Every item names an open change, a link to a
+case or an explanation (title and intent), and evidence the engine
+looks up itself: a journal time, an event id, a snapshot number, a case,
+or a case whose *Plan* names the change. One item that does not hold up
+refuses the whole proposal, naming the item. A new proposal replaces the
+earlier one. A person is refused: link or explain directly.
+
+<!-- help: seldon drift propose -->
+```text
+Store an agent's triage proposal (JSON on stdin) for the user to apply; every item needs evidence the engine can resolve
+
+Usage: seldon drift propose [OPTIONS]
+
+Options:
+      --file <FILE>    Read the proposal from FILE instead of stdin
+      --actor <ACTOR>  Who proposes: agent:NAME (default: $SELDON_ACTOR)
+
+Input (stdin):
+  {"items": [{"eventId": "<EVENT>", "action": "link", "caseId": "<CASE>",
+              "evidence": [{"kind": "plan", "ref": "<CASE>"}]}]}
+  action explain takes "title" and "intent" instead of "caseId"; evidence kinds:
+  journal (YYYY-MM-DD HH:MM), event (<EVENT>), snapshot (<N>), case (<CASE>),
+  plan (<CASE>: a line of its Plan that names the change)
+```
+<!-- /help -->
+
+### seldon drift apply
+
+Applies a proposal as you (`human`): each item is checked again against
+the logbook, then linked or explained like `drift link` and `drift
+explain`, with the resolution detail `proposed by agent:<name> —
+<evidence>`. Items already resolved are skipped; a crisis is applied only
+when you name it with `--item`. Running it again changes nothing. An
+agent is refused.
+
+<!-- help: seldon drift apply -->
+```text
+Apply a stored triage proposal as the user: link and explain its items; a crisis only when named by --item
+
+Usage: seldon drift apply [OPTIONS] <PROPOSAL>
+
+Arguments:
+  <PROPOSAL>  The proposal id, as `seldon drift propose` and index.json's triage name it
+
+Options:
+      --item <EVENT>   Apply only this item (repeatable); the only way to apply a crisis
+      --actor <ACTOR>  Who applies it: human (default: $SELDON_ACTOR, else human); an agent is refused
+```
+<!-- /help -->
+
+### seldon drift discard
+
+Removes a proposal without applying it. The logbook is not touched.
+
+<!-- help: seldon drift discard -->
+```text
+Remove a stored triage proposal; the logbook is not touched
+
+Usage: seldon drift discard [OPTIONS] <PROPOSAL>
+
+Arguments:
+  <PROPOSAL>  The proposal id
+
+Options:
+      --actor <ACTOR>  Who discards it: human (default: $SELDON_ACTOR, else human); an agent is refused
+```
+<!-- /help -->
+
 ## Agents and hooks
 
 ### seldon agent
 
 <!-- help: seldon agent -->
 ```text
-Start an agent on an active case
+Start an agent on an active case, or ask one about the open changes, a change or a case
 
 Usage: seldon agent [OPTIONS] <COMMAND>
 
 Commands:
   start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
+  ask    Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
   help   Print this message or the help of the given subcommand(s)
 
 Options:
@@ -821,6 +896,79 @@ Options:
 Examples:
   seldon agent start C-2026-004
   seldon agent start --new -- "Install zed as a second editor"
+```
+<!-- /help -->
+
+### seldon agent ask
+
+Starts an agent the way `agent start` does, to look at something and
+answer you: `triage` sorts the open changes into a proposal (`drift
+propose`), `drift <EVENT>` looks at one open change, `case <ID>` at one
+case. The prompt names the logbook, the id and the skill's guide
+(`triage.md`, `drift.md`, `case.md`); it holds no logbook text. The
+agent gets no case to work on (no `SELDON_CASE`) and the active case
+stays as it is. Nothing starts without an Omarchy default agent (with
+the built-in launcher), without the `seldon` skill installed, or when
+`triage` finds nothing open; the message names the fix.
+
+<!-- help: seldon agent ask -->
+```text
+Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
+
+Usage: seldon agent ask [OPTIONS] <COMMAND>
+
+Commands:
+  triage  Sort the open changes: the agent stores a proposal with evidence (`seldon drift propose`) for the user to apply
+  drift   One open change (attention or crisis)
+  case    One case, any status
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+
+Examples:
+  seldon agent ask triage
+  seldon agent ask drift 01M3VNJ9JGZ9169T01XCW16FT0
+  seldon agent ask case C-2026-004
+```
+<!-- /help -->
+
+<!-- help: seldon agent ask triage -->
+```text
+Sort the open changes: the agent stores a proposal with evidence (`seldon drift propose`) for the user to apply
+
+Usage: seldon agent ask triage [OPTIONS]
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+<!-- help: seldon agent ask drift -->
+```text
+One open change (attention or crisis)
+
+Usage: seldon agent ask drift [OPTIONS] <EVENT>
+
+Arguments:
+  <EVENT>  The drift event id, as `seldon drift` prints it
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+<!-- help: seldon agent ask case -->
+```text
+One case, any status
+
+Usage: seldon agent ask case [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The case id
+
+Options:
+      --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
 ```
 <!-- /help -->
 
