@@ -29,22 +29,29 @@ MUTANTS = [
     ("duplicate check off", "if !taken.insert((&t.file, &t.hash)) {", "if false && !taken.insert((&t.file, &t.hash)) {"),
     ("extension check off", ".is_some_and(|e| e.eq_ignore_ascii_case(\"md\"))", ".is_some_and(|_| true)"),
     ("size cap off", "if bytes.len() as u64 > MAX_FILE_BYTES {", "if false {"),
+    # round 3
+    ("CRLF normalisation off", "let text = text.replace(\"\\r\\n\", \"\\n\");", "let text = text.clone();"),
+    ("format characters allowed in paths", "            '\\u{200B}'..='\\u{200F}'\n", "            '\\u{200E}'..='\\u{200F}'\n"),
+    ("plan start of an imported case by an agent allowed", "        refuse_agent_start_of_imported(&file, &actor)?;\n", "\n", "engine/src/commands/plan.rs"),
+    ("session part of the imported-start refusal off", "        .or(session.as_deref().filter(|s| is_agent(s)));", "        .or(None::<&str>);", "engine/src/commands/plan.rs"),
+    ("agent start on a queued imported case: plain hint", "            super::plan::refuse_agent_start_of_imported(&file, actor)?;\n", "\n", "engine/src/commands/agent.rs"),
 ]
 env = dict(os.environ, CARGO_TARGET_DIR=TARGET)
-path = os.path.join(WT, F)
-orig = open(path).read()
 results = []
-try:
-    for name, a, b in MUTANTS:
-        if orig.count(a) != 1:
-            results.append((name, f"PATTERN COUNT {orig.count(a)}")); continue
+for mutant in MUTANTS:
+    name, a, b = mutant[:3]
+    path = os.path.join(WT, mutant[3] if len(mutant) > 3 else F)
+    orig = open(path).read()
+    if orig.count(a) != 1:
+        results.append((name, f"PATTERN COUNT {orig.count(a)}")); continue
+    try:
         open(path, "w").write(orig.replace(a, b))
         r = subprocess.run(["cargo", "test", "--manifest-path", "engine/Cargo.toml", "--test", "import_task"],
                            cwd=WT, env=env, capture_output=True, text=True)
-        failed = [l.split()[1] for l in r.stdout.splitlines() if l.startswith("test ") and l.endswith("FAILED")]
-        results.append((name, ("killed by " + ", ".join(failed)) if r.returncode != 0 and failed else
-                        ("SURVIVED" if r.returncode == 0 else "build error:\n" + r.stderr[-800:])))
-finally:
-    open(path, "w").write(orig)
+    finally:
+        open(path, "w").write(orig)
+    failed = [l.split()[1] for l in r.stdout.splitlines() if l.startswith("test ") and l.endswith("FAILED")]
+    results.append((name, ("killed by " + ", ".join(failed)) if r.returncode != 0 and failed else
+                    ("SURVIVED" if r.returncode == 0 else "build error:\n" + r.stderr[-800:])))
 for n, r in results:
     print(f"{n}: {r}")

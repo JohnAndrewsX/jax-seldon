@@ -42,7 +42,7 @@ use crate::redact::Redactor;
 use crate::sys;
 
 /// The tag of an imported case (CONTRACT.md rule 8).
-pub const TAG_IMPORTED: &str = "imported";
+pub use crate::commands::plan::TAG_IMPORTED;
 
 /// The marker's source name: `.seldon/imports/tasks.json`.
 const MARKER: &str = "tasks";
@@ -80,12 +80,20 @@ fn crash_point(point: &str) {
 #[cfg(not(debug_assertions))]
 fn crash_point(_: &str) {}
 
-/// A character a path may not hold: a control character, or one that
-/// turns the direction of the text around it (a path is shown in the Log,
-/// the report and later the desk).
+/// A character a path may not hold: a control character, one that turns
+/// the direction of the text around it, or an invisible format character
+/// (zero-width space, joiners, word joiner, BOM): a path is shown in the
+/// Log, the report and later the desk.
 fn bad_path_char(c: char) -> bool {
     c.is_control()
-        || matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+        || matches!(
+            c,
+            '\u{200B}'..='\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+        )
 }
 
 #[derive(Debug, Clone, Args)]
@@ -506,7 +514,7 @@ fn report(head: &str, created: &[Value], skipped: &[Value]) -> String {
 fn resolve(ctx: &Context, logbook: &Logbook, arg: &Path) -> Result<PathBuf> {
     let refuse_chars = || {
         Error::user(
-            "a task file's path has a control or text-direction character; rename the file or its folder"
+            "a task file's path has a control, text-direction or invisible format character; rename the file or its folder"
                 .to_string(),
         )
     };
@@ -584,6 +592,9 @@ fn read_source(
     // the whole text, as a note's (the rules that span lines need it), its
     // line breaks kept so every line number still points into the file;
     // then line by line with the home paths (the vault import's scrubber)
+    // CRLF as LF first: the rules that continue a command on `\` know `\n`
+    // only (round 3); the line count does not change
+    let text = text.replace("\r\n", "\n");
     let whole = redactor.redact_keeping_lines(&text);
     if whole.matches('\n').count() != text.matches('\n').count() {
         return Err(Error::from(anyhow::anyhow!(

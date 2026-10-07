@@ -30,6 +30,30 @@ pub const TAG_CLOSED_BY_AGENT: &str = "closed-by-agent";
 /// The tag prefix of a case `plan reopen` made: `reopens:<ID>`.
 pub const TAG_REOPENS: &str = "reopens:";
 
+/// The tag of a case `seldon import task` made (WP-102).
+pub const TAG_IMPORTED: &str = "imported";
+
+/// An imported case is started by the user (WP-102 round 3, orchestrator
+/// decision; ADR-0027 §2(a)): its Intent is text from a file, which becomes
+/// an agent's authorisation only by the user's start. Refused when `actor`
+/// or the session (`$SELDON_ACTOR`) is an agent, whatever `--actor` says.
+pub(crate) fn refuse_agent_start_of_imported(file: &CaseFile, actor: &str) -> Result<()> {
+    if !file.case.tags.iter().any(|t| t == TAG_IMPORTED) {
+        return Ok(());
+    }
+    let session = env_actor(parse_person).ok().flatten();
+    let agent = Some(actor)
+        .filter(|a| is_agent(a))
+        .or(session.as_deref().filter(|s| is_agent(s)));
+    match agent {
+        Some(agent) => Err(Error::user(format!(
+            "{} is not started: an imported case is started by the user (ADR-0027 §2a); ask them to start it ({agent}'s session)",
+            file.case.id
+        ))),
+        None => Ok(()),
+    }
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct PlanArgs {
     #[command(subcommand)]
@@ -468,6 +492,9 @@ fn step(
     let to = transition
         .target(from)
         .map_err(|e| Error::user(format!("{} {e}", args.id)))?;
+    if transition == Transition::Start {
+        refuse_agent_start_of_imported(&file, &actor)?;
+    }
 
     // an agent closes only with evidence (ADR-0027 §5); the resolved
     // actor counts, so `SELDON_ACTOR` cannot go around it

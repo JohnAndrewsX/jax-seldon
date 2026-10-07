@@ -609,6 +609,9 @@ fn launch_on(
     match file.case.status {
         CaseStatus::Active => {}
         CaseStatus::Queued => {
+            // an imported case is started by the user, never on an
+            // agent's launch (WP-102 round 3)
+            super::plan::refuse_agent_start_of_imported(&file, actor)?;
             return Err(Error::user(format!(
                 "{id} is queued; start it first: `seldon plan start {id}`"
             )));
