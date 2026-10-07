@@ -56,8 +56,11 @@ pub struct PacmanCommand {
 
 /// Long options that take the next word as their value (unless written
 /// `--opt=value`). An unknown option is assumed to take none, so its value
-/// counts as a target — that errs towards red (ADR-0013 §3).
-const LONG_WITH_ARG: [&str; 16] = [
+/// counts as a target — that errs towards red (ADR-0013 §3). pacman's,
+/// then yay's (`man 8 yay`) and paru's (WP-113: `yay -Syu --answerdiff
+/// None` names no package). Options whose value is optional (paru's
+/// `--chroot`, `--localrepo`, `--sign`) take it only as `--opt=value`.
+const LONG_WITH_ARG: [&str; 46] = [
     "dbpath",
     "root",
     "cachedir",
@@ -74,6 +77,38 @@ const LONG_WITH_ARG: [&str; 16] = [
     "ignoregroup",
     "assume-installed",
     "print-format",
+    // yay
+    "aururl",
+    "aurrpcurl",
+    "builddir",
+    "editor",
+    "editorflags",
+    "makepkg",
+    "pacman",
+    "git",
+    "gitflags",
+    "gpg",
+    "gpgflags",
+    "makepkgconf",
+    "requestsplitn",
+    "completioninterval",
+    "sortby",
+    "searchby",
+    "answerclean",
+    "answerdiff",
+    "answeredit",
+    "answerupgrade",
+    "mflags",
+    "sudo",
+    "sudoflags",
+    // paru
+    "clonedir",
+    "pacman-conf",
+    "fm",
+    "fmflags",
+    "bat",
+    "batflags",
+    "limit",
 ];
 
 /// Short options with a value: `-b` (dbpath), `-r` (root).
@@ -1927,6 +1962,29 @@ mod tests {
         assert!(cmd("yay").is_plain_full_upgrade());
         assert_eq!(cmd("yay -G zed").op, Some(Op::GetPkgbuild));
         assert_eq!(cmd("yay -Ps").op, Some(Op::Show));
+    }
+
+    /// WP-109 stage 2: yay's and paru's options with a value consume it,
+    /// so a full upgrade with them names no package (`omarchy update`'s
+    /// AUR step and a user's `yay -Syu --answerdiff None` are routine).
+    #[test]
+    fn helper_options_with_a_value() {
+        let cmd = |line: &str| parse_command(&split_logged(line)).unwrap();
+        for line in [
+            "yay -Syu --answerdiff None --answerclean None",
+            "yay -Sua --noconfirm --answerupgrade None --mflags --skippgpcheck",
+            "yay --editor vim --sudo doas -Syu",
+            "yay -Syu --aururl https://aur.example.org --builddir /tmp/b",
+            "paru -Syu --fm vifm --clonedir /tmp/c --limit 5",
+            "paru -Syu --pacman-conf /etc/pacman.conf --bat bat --batflags -p",
+            "paru -Syu --chroot=/tmp/root",
+        ] {
+            let c = cmd(line);
+            assert!(c.is_plain_full_upgrade(), "{line}: {:?}", c.targets);
+        }
+        assert_eq!(cmd("yay -S --editor vim zed").targets, ["zed"]);
+        // an unknown option still takes no value: its word is a target
+        assert_eq!(cmd("yay -S --frobnicate x").targets, ["x"]);
     }
 
     /// F-530: the intent is read with the hook's parser.

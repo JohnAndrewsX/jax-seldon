@@ -1133,7 +1133,7 @@ fn index_build_on_x10_fixtures_is_fast() {
     let tmp = TempDir::new("x10");
     let root = tmp.path().join("logbook");
     let lines = common::scale::scaled_logbook(&fixture_logbook(), &root, 10);
-    assert_eq!(lines, 850, "85 ledger lines ×10");
+    assert_eq!(lines, 870, "87 ledger lines ×10");
     let logbook = Logbook::open(&root).unwrap();
     let dirs = Dirs {
         home: tmp.path().into(),
@@ -1934,7 +1934,7 @@ fn a_ledger_truncated_mark_is_dropped() {
 // --------------------------------------------------------------------------
 
 /// `seldon status` at the scale of the budget (`scale::stated_scale`:
-/// 10 540 ledger lines, 304 cases, 365 journal files): median wall time of
+/// 10 788 ledger lines, 304 cases, 365 journal files): median wall time of
 /// 11 runs, process start included, < 100 ms (`assert_within_budget`).
 #[test]
 #[ignore = "release timing at scale: `just check-perf`"]
@@ -1944,7 +1944,7 @@ fn status_at_10_000_ledger_lines_is_under_100_ms() {
     let env = Env::new(Snapper::Missing);
     let root = env.tmp.path().join("logbook");
     let lines = common::scale::stated_scale(&fixture_logbook(), &root);
-    assert_eq!(lines, 10_540);
+    assert_eq!(lines, 10_788);
     let args = ["--logbook", root.to_str().unwrap(), "status", "--json"];
     let out = env.at(GENERATED_AT, &args);
     assert_eq!(out.status.code(), Some(0), "{}", common::stderr(&out));
