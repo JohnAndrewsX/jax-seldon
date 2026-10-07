@@ -333,3 +333,7 @@ files WP-140..148). Merged as b67b3ae3; one conflict, DECISIONS.md
   next. This WP touches no fixture, so no `--write-index` was needed.
 - `flock /tmp/seldon-check.lock just check` on a115c25c: `check: ok`
   (exit 0; log `target/check-wp129-accepted-1.log`).
+- `next` moved during that check to d747daa8 (work/queued WP-154..156
+  only, three Markdown files); merged without conflict. `just check` was
+  not re-run for it: no engine, plugin, schema, fixture or doc page
+  changed (docs-check ok).
