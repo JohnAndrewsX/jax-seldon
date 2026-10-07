@@ -2136,8 +2136,11 @@ a backslash, `,`, `;`, a closing bracket or a marker (`"Bearer "SECRET`;
 round 2), after white
 space or after a quoted name (`"Authorization":"Bearer x"`), else the
 rest of the line up to a quote; a quote right after the colon of a
-bare name closes the shell word around it (`curl -H 'Authorization:'`,
-`grep 'authorization:'`) and starts no value, and neither white space
+bare name opens a value when no white space follows it (HTTPie's and
+xh's `Authorization:'Bearer x'`, `X-Api-Key:"k"`; round 3), and with
+white space after it closes the shell word around it (`curl -H
+'Authorization:' -H 'X: y'`, `grep -i 'authorization:' f 'x'`) and
+starts no value, and neither white space
 alone (an empty value; WP-128 masked it) nor a `‹redacted›` starts one;
 a
 `Cookie:` or `Set-Cookie:` value on the same line that starts with a
@@ -2293,8 +2296,9 @@ rather than as `pass:…` (`openssl enc -k`, `-srppass`, keytool's
 `\pass:x`), or an option name in quotes; the glued `-passpass:…`,
 which openssl rejects. Not masked (WP-140): a quoted header value that
 its line does not close (`Authorization: "Bearer x` at the line end);
-a quoted value right after the colon of a bare header name
-(`X-Api-Key:"x"`, read as the end of a shell word); a header name in
+a quoted value right after the colon of a bare header name that starts
+with white space (`Authorization:' Bearer x'`, read as the end of a
+shell word and the start of the next); a header name in
 quotes other than `Authorization` and the JSON keys above (`"X-Auth":
 "x"`); a PEM private key whose BEGIN or END line is written otherwise
 (fewer dashes, two spaces); an nmcli secret in a file (`passwd-file`)
@@ -2370,7 +2374,14 @@ The `…=` assignment rules have no boundary, so a name that starts with
 build and `doctor` still run and withhold every collector message
 (above). `subject` is
 cut at 512 and `detail` at 4096 characters after redaction. Files written
-before a rule existed are not rewritten.
+before a rule existed are not rewritten. Direction and format characters
+(the set of §6, `import::is_direction_or_format`) are dropped before the
+redaction from a hook's command line (round 3: a shell line has no use
+for them, and `tok<U+200B>en=` would hide its value), from the index's
+case and decision texts and `source` (§6) and from plugin commit subjects
+(§4); they stay in a note, a case or decision file, the journal and an
+event's other texts, where a zero-width joiner or non-joiner belongs to
+its words, so a secret split by one there is not masked.
 
 `[redaction] skipPaths` (config collector and the hook, ADR-0014 §4): a
 pattern with `/` matches the full path (`~/` = home), as a file or as a

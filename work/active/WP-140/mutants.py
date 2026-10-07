@@ -102,8 +102,12 @@ MUTANTS = [
     ("set: no U+1D173-U+1D17A", IMPORT, plain("            | '\\u{1D173}'..='\\u{1D17A}'\n", "")),
     ("python set: no U+1D173-U+1D17A", "scripts/validate-fixtures.py", plain("\\U0001d173-\\U0001d17a", "")),
     ("header: no string prefix (N4)", REDACT, plain("r#\"(?:[rRbBuUfF]{1,2})?(?:", "r#\"(?:")),
-    ("header: no glued tail (N4)", REDACT, plain(r'''[^\s'"\\,;)\]}‹]*"#;''', r'''"#;''')),
-    ("header: glued tail takes a comma", REDACT, plain(r'''[^\s'"\\,;)\]}‹]*"#;''', r'''[^\s'"\\;)\]}‹]*"#;''')),
+    ("header: no glued tail (N4)", REDACT, plain(r'''|'[^'\r\n]*')[^\s'"\\,;)\]}‹]*"#;''', r'''|'[^'\r\n]*')"#;''')),
+    ("header: glued tail takes a comma", REDACT, plain(r'''|'[^'\r\n]*')[^\s'"\\,;)\]}‹]*"#;''', r'''|'[^'\r\n]*')[^\s'"\\;)\]}‹]*"#;''')),
+    # round 3
+    ("header: no glued quoted value (HTTPie)", REDACT, plain("|({name}:){HEADER_BARE}|({name}:){HEADER_GLUED}", "|({name}:){HEADER_BARE}")),
+    ("header: glued value may start with white space", REDACT, plain("r#\"(?:'[^'\\s][^'\\r\\n]*'", "r#\"(?:'[^'][^'\\r\\n]*'")),
+    ("hook: format characters kept on a command line", HOOK, plain("        .filter(|c| !crate::import::is_direction_or_format(*c))\n", "")),
     # nmcli-secret
     ("nmcli: no keyword password", REDACT, plain(r"\s[+-]?(?:password|(?:[a-z0-9-]+\.)+", r"\s[+-]?(?:(?:[a-z0-9-]+\.)+")),
     ("nmcli: no psk", REDACT, plain("password-raw|psk|secrets", "password-raw|secrets")),

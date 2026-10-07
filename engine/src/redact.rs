@@ -147,19 +147,29 @@ const HEADER_QUOTED: &str = r#"(?:[rRbBuUfF]{1,2})?(?:"(?:[^"\\\r\n]|\\[^\r\n])*
 /// for a new value (WP-140).
 const HEADER_BARE: &str = r#"[^'"\s‹](?:[^'"\n]*[^'"\r\n])?"#;
 
-/// The header `name` (a regex) and its value as group 1 or 2 and the rest
-/// ([`KEEP_EITHER`]): a quoted value ([`HEADER_QUOTED`]) after white space,
-/// or, with `key_quote`, right after a name written as a quoted JSON or
-/// dict key (`"Authorization":"x"`, `\"Authorization\": …`,
+/// The header `name` (a regex) and its value as group 1, 2 or 3 and the
+/// rest ([`KEEP_EITHER`]): a quoted value ([`HEADER_QUOTED`]) after white
+/// space, or, with `key_quote`, right after a name written as a quoted JSON
+/// or dict key (`"Authorization":"x"`, `\"Authorization\": …`,
 /// `'Authorization': …`); else a bare one ([`HEADER_BARE`]). A quote right
-/// after the colon of a bare name closes the shell word around it (`curl
-/// -H 'Authorization:'`, `grep 'authorization:'`) and starts no value.
+/// after the colon of a bare name opens a value when white space does not
+/// follow it ([`HEADER_GLUED`]: HTTPie's and xh's `Authorization:'Bearer
+/// x'`, round 3); followed by white space it closes the shell word around
+/// it (`curl -H 'Authorization:'`, `grep 'authorization:' f 'x'`) and
+/// starts no value.
 fn header(name: &str, key_quote: bool) -> String {
     let quoted_name = if key_quote { r#"(?:\\?"|'):\s*|"# } else { "" };
     format!(
-        r"(?i)({name}(?:{quoted_name}:\s+))(?:{HEADER_QUOTED}|{HEADER_BARE})|({name}:){HEADER_BARE}"
+        r"(?i)({name}(?:{quoted_name}:\s+))(?:{HEADER_QUOTED}|{HEADER_BARE})|({name}:){HEADER_BARE}|({name}:){HEADER_GLUED}"
     )
 }
+
+/// A quoted header value right after the colon of a bare name, as HTTPie
+/// and xh take a header (`http POST u Authorization:'Bearer x'`,
+/// `X-Api-Key:"k"`): its first character is no white space, with the text
+/// glued after its closing quote as for [`HEADER_QUOTED`] (WP-140 round 3).
+const HEADER_GLUED: &str =
+    r#"(?:'[^'\s][^'\r\n]*'|"[^"\\\s](?:[^"\\\r\n]|\\[^\r\n])*")[^\s'"\\,;)\]}‹]*"#;
 
 /// The label of a PEM private key: `PRIVATE KEY` after any words (`RSA`,
 /// `EC`, `DSA`, `OPENSSH`, `ENCRYPTED`, …), and PGP's `PRIVATE KEY
@@ -499,8 +509,8 @@ pub fn looks_like_credential(value: &str) -> bool {
 
 /// Keep group 1, redact the rest of the match.
 const KEEP_PREFIX: &str = "${1}‹redacted›";
-/// Keep group 1 or group 2 (whichever took part), redact the rest.
-const KEEP_EITHER: &str = "${1}${2}‹redacted›";
+/// Keep group 1, 2 or 3 (whichever took part), redact the rest.
+const KEEP_EITHER: &str = "${1}${2}${3}‹redacted›";
 /// Redact the whole match.
 const WHOLE: &str = "‹redacted›";
 

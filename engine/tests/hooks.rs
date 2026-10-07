@@ -3247,6 +3247,47 @@ mod privileged {
         assert!(!index.contains("hunter2"), "{index}");
     }
 
+    /// WP-140 round 3: a command line's direction and format characters
+    /// are dropped before it is read and recorded, so a zero-width space
+    /// inside `token=` or `Authorization:` hides no secret; a note keeps a
+    /// zero-width joiner.
+    #[test]
+    fn format_characters_hide_no_secret_on_a_command_line() {
+        let h = Hooks::new();
+        bash(
+            &h,
+            "sudo lpadmin -x Office tok\u{200B}en=hunter2abc",
+            "toolu_fmt_1",
+        );
+        bash(
+            &h,
+            "sudo lpadmin -p Office -v 'ipp://h.example/p?x=\u{2060}1' -o 'Autho\u{200B}rization:\u{00AD} Bearer hunter2xyz'",
+            "toolu_fmt_2",
+        );
+        let events = h.commands();
+        let got: Vec<&str> = events
+            .iter()
+            .map(|e| e["meta"]["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            got,
+            [
+                "sudo lpadmin -x Office token=‹redacted›",
+                "sudo lpadmin -p Office -v 'ipp://h.example/p?x=1' -o 'Authorization: ‹redacted›'",
+            ]
+        );
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+        for c in ['\u{200B}', '\u{2060}', '\u{00AD}'] {
+            assert!(!ledger.contains(c), "U+{:04X} in the ledger", c as u32);
+        }
+        // a note is no command line: its joiner stays
+        let out = h.run(&["log", "--", "क्\u{200D}ष note"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(ledger.contains("क्\u{200D}ष note"), "{ledger}");
+    }
+
     /// Round 2, B1: a password piped into `sudo -S` is somewhere in the
     /// line, in a form no redaction rule knows: the line is recorded as
     /// `<program> ‹redacted›`, every record of it, as for skipPaths.

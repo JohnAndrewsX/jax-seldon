@@ -1479,6 +1479,26 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "fakeHq06",
         "{\\\"Authorization\\\": ‹redacted›}\"",
     ),
+    // round 3: HTTPie and xh take a header with its quoted value glued to
+    // the colon
+    (
+        "authorization-header",
+        "http POST https://h.example/x Authorization:'Bearer tokABC123' a=1",
+        "tokABC123",
+        "Authorization:‹redacted› a=1",
+    ),
+    (
+        "authorization-header",
+        "https -A bearer h.example Authorization:\"Bearer tokDEF456\" -v",
+        "tokDEF456",
+        "Authorization:‹redacted› -v",
+    ),
+    (
+        "secret-header",
+        "xh GET h.example/y X-Api-Key:'keyABC123xyz' Accept:json",
+        "keyABC123xyz",
+        "X-Api-Key:‹redacted› Accept:json",
+    ),
     // round 2 (N4): text glued after the closing quote, a Python f-string
     (
         "authorization-header",
@@ -1667,6 +1687,9 @@ const CLEAR: &[&str] = &[
     "grep -ri 'authorization:' /var/log/app.log",
     "rg -n \"X-Api-Key:\" src",
     "curl -H 'Authorization:' -H 'X-Trace: on' https://h.example",
+    "curl -H 'Authorization:' -H 'X: y' https://h.example",
+    "grep -i 'authorization:' f 'x'",
+    "grep -i \"x-api-key:\" f \"y\"",
     // no nmcli secret: the key management, a flag, a listing
     "nmcli con mod Home wifi-sec.key-mgmt wpa-psk wifi-sec.psk-flags 1",
     "nmcli dev wifi list --rescan yes && nmcli -f NAME,UUID con show",
@@ -2581,6 +2604,12 @@ mod redaction {
                 "nmcli secrets",
                 "nmcli con mod Home ",
                 "wifi-sec.psk a 802-1x.password 'b c' ",
+                Some(20),
+            ),
+            (
+                "glued header values",
+                "http POST h.example ",
+                "Authorization:'Bearer a' X-Api-Key:\"b\" ",
                 Some(20),
             ),
             (
