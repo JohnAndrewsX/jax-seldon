@@ -800,6 +800,22 @@
       }
     },
     {
+      "id": "01M354YX603T291Y52TPXV4J4Z",
+      "ts": "2026-09-22T20:10:00+02:00",
+      "source": "plugins",
+      "kind": "plugin-update",
+      "subject": "io.github.example.weather-plus",
+      "detail": "files changed (sha256 62cd48f3 → 97ce30cb)",
+      "actor": "system",
+      "zone": "yellow",
+      "resolution": "explained",
+      "resolutionDetail": "Vorhersage-Panel selbst angepasst (größere Schrift).",
+      "meta": {
+        "hashFrom": "62cd48f3d1ae14492c37f771c018686c815f923e4109d80518203815169e448b",
+        "hashTo": "97ce30cb3a9efe04e925d5baf7bfa552331a6bd57518155fa0b5a29665e72cb9"
+      }
+    },
+    {
       "id": "01M30363YR87Y4YKAVFT0SPZPX",
       "ts": "2026-09-20T21:02:47+02:00",
       "source": "theme",
@@ -2947,7 +2963,10 @@
       },
       {
         "date": "2026-09-22",
-        "total": 0
+        "total": 1,
+        "bySource": {
+          "plugins": 1
+        }
       },
       {
         "date": "2026-09-23",
@@ -3059,8 +3078,8 @@
       },
       {
         "week": "2026-W39",
-        "opened": 2,
-        "resolved": 1
+        "opened": 3,
+        "resolved": 2
       },
       {
         "week": "2026-W40",

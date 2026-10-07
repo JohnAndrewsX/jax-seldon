@@ -1466,9 +1466,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/67/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/67/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/67/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/68/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/68/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/68/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".

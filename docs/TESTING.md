@@ -31,7 +31,7 @@ runs `cargo bench --bench index` with `SELDON_BENCH_X150=1` (the index
 build ×10 and ×150 < 100 ms; `just bench` in CI asserts ×10 only and
 prints ×150), then the ignored tests of `tests/index.rs`,
 `tests/hooks.rs` and `tests/redaction.rs` one at a time: `status` at
-10 292 ledger lines, 304 cases and 365 journal files < 100 ms,
+10 540 ledger lines, 304 cases and 365 journal files < 100 ms,
 `hook claude-code` at 10 000 lines and at 950 lines (with the index
 rebuild) < 5 ms, for a call it does not record and a recorded one, with
 the temp dir on tmpfs, and the redaction of long lines (16 KB < 1 ms and

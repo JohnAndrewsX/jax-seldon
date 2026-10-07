@@ -31,6 +31,7 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-13 (WP-115) | during C-2026-002's verification the human adds the plugin `io.github.example.display-profiles`, which its Plan names, from Omarchy's menu (`actor: system`, no hook saw it); Claude closes the case without a capture; the next capture links it to the case (SPEC-ENGINE §5 rule 9, ADR-0029) | `linked` by `system` (`planned by C-2026-002; active at the time`), the case's Log line `linked after the fact: …` |
 | 09-15 | `omarchy update` 4.0.5 → 4.0.6 without a case → two drift items → *explained* | snapshot by `omarchy update`, release marker |
 | 09-20/21 | theme `kanagawa` tried → *dismissed* | `dismissed` |
+| 09-22 (WP-113) | the human edits `weather-plus`'s forecast panel in place (no version change) → one `plugin-update` `files changed (sha256 … → …)` with the tree hashes → *explained* | plugin tree hashing (ADR-0028 WP-E): an in-place edit of a third-party plugin, attention until explained |
 | 09-24 | plugin update → *explained* | plugin-update |
 | 09-26…30 | cases 003–006 created; snapshot 111; snapshots 108/109 deleted | snapshot-delete |
 | 09-25 | theme `catppuccin` tried and back to `kanagawa` | two **routine** theme switches (ADR-0028): history, no drift |
@@ -41,7 +42,7 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (the install quiet **attention**, the unit a **crisis**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
 | 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5: its verify and done by `agent:claude-code`); C-2026-003 was raised to R3 before the `omarchy update` (Omarchy itself is R3, ADR-0027 §2c; as R2 the update would raise the R3 advisory). The reopen of C-2026-002 lives in the variant `case-reopened` (index only) | `closed-by-agent` marker |
 
-Result: 83 ledger lines (10 resolutions), 73 index events (8 with
+Result: 85 ledger lines (11 resolutions), 74 index events (9 with
 `resolutionDetail`; 1 with `zone: green`), 6 snapshots in `system.snapshots`
 (1 pre/post pair), 6 open drift items — 5 single (2 crises: the user unit
 and the hook) and 1 attention group of 3 (the mesa downgrade) —, 6 routine

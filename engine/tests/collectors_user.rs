@@ -82,8 +82,14 @@ fn assert_schema_valid(event: &Event) {
     );
 }
 
-/// The ledger line of the fixture logbook with this kind and subject.
+/// The first ledger line of the fixture logbook with this kind and subject.
 fn fixture_event(kind: &str, subject: &str) -> Value {
+    fixture_event_where(kind, subject, |_| true)
+}
+
+/// The first ledger line of the fixture logbook with this kind and subject
+/// for which `pick` holds.
+fn fixture_event_where(kind: &str, subject: &str, pick: impl Fn(&Value) -> bool) -> Value {
     for entry in std::fs::read_dir(fixture("logbook/ledger")).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_none_or(|e| e != "jsonl") {
@@ -91,7 +97,7 @@ fn fixture_event(kind: &str, subject: &str) -> Value {
         }
         for line in std::fs::read_to_string(&path).unwrap().lines() {
             let v: Value = serde_json::from_str(line).unwrap();
-            if v["kind"] == kind && v["subject"] == subject {
+            if v["kind"] == kind && v["subject"] == subject && pick(&v) {
                 return v;
             }
         }
@@ -102,8 +108,12 @@ fn fixture_event(kind: &str, subject: &str) -> Value {
 /// `event` and the fixture line without what differs by design: `id`, `ts`
 /// and, for hook-recorded lines, `actor`.
 fn assert_matches_fixture(event: &Event, kind: &str, subject: &str, keys: &[&str]) {
+    assert_matches_line(event, &fixture_event(kind, subject), keys);
+}
+
+/// `event` and the fixture line `theirs` in `keys`.
+fn assert_matches_line(event: &Event, theirs: &Value, keys: &[&str]) {
     let ours = serde_json::to_value(event).unwrap();
-    let theirs = fixture_event(kind, subject);
     for key in keys {
         assert_eq!(ours[key], theirs[key], "{key} of {}", event.to_line());
     }
@@ -390,15 +400,17 @@ mod plugins {
             ]
         );
         let update = &p.b.written[0];
-        assert_matches_fixture(
+        // the version step of 09-24 (09-22 is an in-place edit, WP-113)
+        let theirs = fixture_event_where("plugin-update", "io.github.example.weather-plus", |v| {
+            v["meta"]["from"].is_string()
+        });
+        assert_matches_line(
             update,
-            "plugin-update",
-            "io.github.example.weather-plus",
+            &theirs,
             &["ts", "source", "kind", "subject", "detail", "actor", "zone"],
         );
         // the fixture line is from before WP-113: the version step as
         // there, plus the tree's hashes (the manifest is part of the tree)
-        let theirs = fixture_event("plugin-update", "io.github.example.weather-plus");
         assert_eq!(update.meta.from.as_deref(), theirs["meta"]["from"].as_str());
         assert_eq!(update.meta.to.as_deref(), theirs["meta"]["to"].as_str());
         assert!(update.meta.hash_from.is_some() && update.meta.hash_to.is_some());
