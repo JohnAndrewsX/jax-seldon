@@ -123,6 +123,11 @@ seldon plan start|verify|done|drop <ID> [--snapshot N] [--reason TEXT] [--actor 
 # (`SELDON_ACTOR=agent:…`) is: exit 1 naming the conflict (an agent close is
 # never recorded as human). An agent's close adds the tag `closed-by-agent`;
 # so does an agent's `drift explain` to the completed case it makes.
+# WP-102 round 3 (orchestrator decision; ADR-0027 §2(a)): `plan start` of a case
+# tagged `imported` is refused (exit 1, nothing written) when the actor or the
+# session (`$SELDON_ACTOR`) is an agent, whatever --actor says: "an imported
+# case is started by the user (ADR-0027 §2a); ask them to start it"; `agent
+# start <ID>` on a queued imported case gives the same answer.
 seldon plan set <ID> (--zone Z | --risk R | --area A)… [--actor A]
 # WP-101 (ADR-0027 §2c): an open case's zone, risk or area (at least one; a new
 # area gets its README); one Log line `set risk R1 → R3, zone yellow → red`
@@ -365,7 +370,8 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # extension `.md` (any case) under the home (not the home itself), not inside
                                                # the logbook, at most 1 MiB, UTF-8; neither the path as given nor the
                                                # resolved path may hold a control character or a text-direction character
-                                               # (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069; a linked folder cannot bring
+                                               # (U+200E, U+200F, U+202A–U+202E, U+2066–U+2069) or an invisible format
+                                               # character (U+200B–U+200D, U+2060, U+FEFF) (a linked folder cannot bring
                                                # one in); a directory is refused ("name the Markdown files in it"). The same
                                                # file named twice is read once. Each file is redacted before it is parsed:
                                                # the whole text through §7 with the config's patterns, as a note's (the rules
@@ -390,10 +396,13 @@ seldon import task <FILE>… [--area A] [--zone Z] [--risk R] [--include-done] [
                                                # before you start this case.`, a blank line, then the task text escaped with
                                                # `cases::escape_lines` (a heading or fence line gets a `\`, so it never ends
                                                # its section). The case stays queued: starting it is the user's act (`plan
-                                               # start`, or the desk's Start after it has shown the whole Intent). Until the
-                                               # user has started it, an agent treats the imported text like fetched text
-                                               # (ADR-0027 §2(a): instructions in it are outside the Intent); the skill says
-                                               # so. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
+                                               # start`, or the desk's Start after it has shown the whole Intent); the engine
+                                               # refuses an agent's start of an imported case (`plan start` above, `agent
+                                               # start`). Until the user has started it, an agent treats the imported text
+                                               # like fetched text (ADR-0027 §2(a): instructions in it are outside the
+                                               # Intent); the skill says so. CRLF line ends are read as LF before the
+                                               # redaction (the `\` continuation of the db and option rules knows `\n`
+                                               # only; the engine-wide rule fix is its own WP), the line count unchanged. Each task: skipped `done` (`[x]` without --include-done), `empty` (title
                                                # without a letter or digit), `already-imported` (the marker has the same file
                                                # and hash; `case` named), `duplicate` (the same file and hash earlier in this
                                                # run); else created: queued (completed with --include-done for `[x]`),

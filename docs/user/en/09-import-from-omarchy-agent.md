@@ -163,8 +163,8 @@ Imported cases stay queued. Each *Intent* starts with `Imported from
 <file> — read before you start this case.` Read it before you start the
 case: once you start a case, an agent may act on its *Intent* without
 asking, and the text came from a file, not from you. Until you start
-it, an agent treats that text like a web page it fetched and never
-starts the case itself.
+it, an agent treats that text like a web page it fetched. Seldon refuses
+an agent's start of an imported case: only you start it.
 
 Running the import again is safe. Seldon remembers each item in
 `.seldon/imports/tasks.json` and skips what it already imported (the
