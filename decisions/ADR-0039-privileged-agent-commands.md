@@ -1,8 +1,9 @@
 # ADR-0039 — The hook records an agent's privileged commands
 
-**Status:** proposed (WP-129; operator decision 2026-10-07 E14 a: "ja,
-als kleines Paket für 0.2.0"). §1 and §2 are implemented by WP-129;
-§3 is option (b), the orchestrator's decision of 2026-10-07 for 0.2.0.
+**Status:** accepted (operator decision 2026-10-07, after Opus and Fable
+stage 2; E16). WP-129 (operator decision 2026-10-07 E14 a: "ja, als
+kleines Paket für 0.2.0") implements §1 and §2; §3 is option (b), the
+orchestrator's decision of 2026-10-07 for 0.2.0.
 **Date:** 2026-10-07
 
 > Amends SPEC-ENGINE §8 (a new hook record class), ADR-0019 §1 (a green
