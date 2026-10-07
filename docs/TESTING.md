@@ -802,7 +802,8 @@ form live against the fake engine (Enter arms, a change disarms, the
 exact argv and editor paths of decide, `e`, Open in editor on
 all three) and its refusals (title kept); Accept (WP-135,
 `decisions-accept`): the first click arms it (*Confirm accept*, the
-hint), a key and a new selection disarm, the second click runs `decide
+hint), a key, a click on another decision and a new index (a capture
+from the pill, `decisions-accept-index`) disarm, the second click runs `decide
 accept ADR-0004 --json` once and no `open`, the decision arrives
 accepted without Accept; the engine's refusal and a held lock show in
 place (`decisions-accept-refused`, `-locked`); in dev mode Accept is

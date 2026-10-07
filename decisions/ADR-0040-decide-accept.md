@@ -35,7 +35,11 @@ inside an agent's session does not get around it.
    decision's `status: accepted` and its `date` to the day of the
    acceptance (only these two frontmatter keys change; the body and
    every other byte stay), refreshes `DECISIONS.md`'s index fence,
-   commits (`seldon: ADR-NNNN accepted`) and rebuilds the index.
+   commits (`seldon: ADR-NNNN accepted`) and rebuilds the index. The
+   ledger line is written first, as in a plan step: a ledger that cannot
+   be written leaves the decision proposed; a file write that fails after
+   it leaves the `accepted:` note with the decision still proposed, and a
+   re-run adds a second note. The file stays the truth.
 2. **The ledger record is a `seldon` `note`**, subject the decision id,
    detail `accepted: <title>`, actor `human`, no `case`. A `seldon` note
    is the engine's own record where no kind fits (the agent skill
@@ -48,8 +52,10 @@ inside an agent's session does not get around it.
    unknown id, a file whose frontmatter does not read or names another
    id: exit 1, nothing written.
 4. **The user's act.** An agent `--actor`, an agent `$SELDON_ACTOR`
-   without `--actor`, and `--actor human` in an agent's session are
-   refused with exit 1 before anything is read; each message names the
+   without `--actor`, `--actor human` in an agent's session, and a
+   `$SELDON_ACTOR` that is set but does not read (with any `--actor`: the
+   session may be an agent's; `drift apply|discard` follow the same rule)
+   are refused with exit 1 before anything is read; each message names the
    conflict and the way out (the desk, or the user's own terminal).
 5. **The plugin** runs exactly `seldon decide accept <ADR-NNNN> --json`
    (id checked against `^ADR-[0-9]{4}$`) after the button is pressed

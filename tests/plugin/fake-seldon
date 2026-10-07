@@ -421,7 +421,7 @@ decide() { # decide --no-edit [--json] -- <title>
 
 decide_accept() { # decide accept <ADR-NNNN> --json
   local id=${1:-} index status
-  [[ $id =~ ^ADR-[0-9]{4}$ ]] || user_error "invalid value '$id' for '<ID>'"
+  [[ $id =~ ^ADR-[0-9]{4}$ ]] || user_error "invalid value '$id' for '<ID>': \`$id\` is not a decision id (ADR-NNNN)"
   [[ -z ${FAKE_SELDON_ACCEPT_REFUSE:-} ]] || user_error "$FAKE_SELDON_ACCEPT_REFUSE"
   index=$(state_index)
   status=$(jq -r --arg id "$id" '[.decisions[] | select(.id == $id) | .status][0] // ""' "$index")

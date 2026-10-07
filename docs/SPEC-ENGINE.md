@@ -209,8 +209,9 @@ seldon drift discard <PROPOSAL> [--actor A] [--json]       # removes the proposa
 # --json → {proposal: {id, at, actor, path, counts: {items, crises}}, items,
 # replaced: [{id, applied}]}; the human output says "Replaced the unapplied
 # proposal <id>." when one was unapplied.
-# apply, discard: the user's (actor human: an agent actor, and `--actor human`
-# in an agent's session, exit 1). apply --json → {proposal, applied,
+# apply, discard: the user's (actor human: an agent actor, `--actor human`
+# in an agent's session, and a SELDON_ACTOR that is set but does not read,
+# exit 1; WP-135 round 2). apply --json → {proposal, applied,
 # markedApplied (this run set `applied`; it marks the run, not the items),
 # done: [{eventId, action, resolved, case, events, warning}], skipped:
 # [{eventId, reason}], refused: [{eventId, reason}], git}; exit 0 when the
@@ -239,14 +240,19 @@ seldon decide accept <ADR-NNNN> [--actor A]    # WP-135, ADR-0040: a proposed de
 # and `date` today (only these two frontmatter keys change; read back before
 # anything is written), one ledger line `source: seldon`, `kind: note`,
 # `subject` the id, `detail` `accepted: <title>`, actor human, no case (the
-# ledger first, then the file, as a plan step); the `decisions.index` fence of
+# ledger first, then the file, as a plan step: a ledger that cannot be written
+# leaves the decision proposed; a file write that fails after the ledger line
+# leaves the `accepted:` note with the decision still proposed, and a re-run
+# adds a second note — the plan step's pattern); the `decisions.index` fence of
 # DECISIONS.md, autocommit `seldon: ADR-NNNN accepted`, index rebuilt.
 # Accepted already: exit 0, nothing written (`already: true`). Superseded, an
 # unknown id, a file that does not read or whose frontmatter names another id:
 # exit 1, nothing written. The user's act (as `drift apply`, WP-124, and an
 # imported case's start, WP-102): an agent `--actor`, an agent SELDON_ACTOR
-# without `--actor`, and `--actor human` in an agent's session are exit 1,
-# before anything is read; `system` is refused by the parser
+# without `--actor`, `--actor human` in an agent's session, and a SELDON_ACTOR
+# that is set but does not read (whatever `--actor` says: the session may be
+# an agent's; WP-135 round 2) are exit 1, before anything is read; `system` is
+# refused by the parser
 seldon status                                  # regenerates STATUS.md + index
 # decide and status (WP-050) fill the `decisions.index` fence of the logbook's
 # DECISIONS.md from decisions/*.md frontmatter: `| [[id]] | title | status |
@@ -1767,7 +1773,8 @@ through a link); the index is rebuilt when anything changed. `propose`,
 `apply` and `discard` refuse a `proposals` folder that is a symbolic link
 or no directory (exit 1); the index build skips it with a warning.
 `apply` and `discard` refuse an agent actor (`--actor`, else
-`SELDON_ACTOR`): that stops an agent in its launched session, not a
+`SELDON_ACTOR`) and, with any `--actor`, a `SELDON_ACTOR` that is set but
+does not read (WP-135 round 2): that stops an agent in its launched session, not a
 process of the same user that drops the variable (ADR-0036 §4).
 
 **Case notes after a capture (WP-101, ADR-0027 §2c, §3).** After the

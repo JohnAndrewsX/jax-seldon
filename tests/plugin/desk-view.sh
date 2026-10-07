@@ -1732,7 +1732,8 @@ for i in 3 10; do expect decisions-accept $i '.overflow | join(" | ")' ""; done
 argv_check decisions-accept "$work/home-decisions-accept" "$(printf '%s\n' "$startup" "$(q decide accept ADR-0004 --json)")"
 clean_log decisions-accept
 
-refusal="ADR-0004 is not accepted: agent:claude-code may propose a decision, only the user accepts one (ADR-0040)"
+# the engine's own text for an agent session (decide.rs user_actor)
+refusal='ADR-0004 is not accepted: agent:claude-code may propose a decision (`seldon decide`), only the user accepts one (ADR-0040); ask them to accept it in the desk or in their own terminal'
 mkdir -p "$work/home-decisions-accept-refused"
 run decisions-accept-refused "" 1920x1080 "summon;text:4;click:Accept;click:Confirm accept;settle" \
   HOME="$work/home-decisions-accept-refused" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_ACCEPT_REFUSE="$refusal"
@@ -1743,6 +1744,24 @@ shows decisions-accept-refused 5 "4 decisions · 1 proposed"
 expect decisions-accept-refused 5 '.view.lastError' ""
 argv_check decisions-accept-refused "$work/home-decisions-accept-refused" "$(printf '%s\n' "$startup" "$(q decide accept ADR-0004 --json)")"
 clean_log decisions-accept-refused 'jax\.seldon: seldon decide exit 1: ADR-0004 is not accepted: '
+
+# A new index disarms Accept (Decisions.qml onAllRowsChanged; round 2,
+# N4): armed, then a capture from the pill's right click — no key, no click
+# in the desk — makes the fake engine write an index with one more
+# decision (ADR-0005, proposed); Accept is no longer armed, nothing ran.
+jq '.decisions = [{id: "ADR-0005", title: "Neuer Vorschlag", status: "proposed", date: "2026-10-07", cases: [],
+    path: "decisions/ADR-0005-neuer-vorschlag.md"}] + .decisions' "$sample" >"$work/decisions-after.json"
+mkdir -p "$work/home-decisions-accept-index"
+run decisions-accept-index "" 1920x1080 \
+  "summon;text:4;click:Accept;pill:right;wait:sectionView.summary=5 decisions · 2 proposed" \
+  HOME="$work/home-decisions-accept-index" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/decisions-after.json"
+expect decisions-accept-index 3 "[.view.sectionView.cursor, $ta.armed] | map(tostring) | join(\"|\")" "ADR-0004|true"
+expect decisions-accept-index 5 "[.view.section, .view.sectionView.cursor, $ta.armed, .view.arm.armed] | map(tostring) | join(\"|\")" \
+  "decisions|ADR-0004|false|"
+expect decisions-accept-index 5 '.view.sectionView.actions | join(",")' "Accept,Open in editor"
+argv_check decisions-accept-index "$work/home-decisions-accept-index" \
+  "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log decisions-accept-index
 
 mkdir -p "$work/home-decisions-accept-locked"
 run decisions-accept-locked "" 1920x1080 "summon;text:4;click:Accept;click:Confirm accept;settle" \

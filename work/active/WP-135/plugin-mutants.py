@@ -27,6 +27,7 @@ M = [
   "label: a.id === \"accept\" && root.armed ? \"Confirm accept\" : a.label,", "label: a.label,", H),
  ("P11 a key keeps it armed", "plugin/Desk.qml",
   "            if (!root.arm.touched) root.arm.disarm()\n", "", H),
+ ("P12 a new index keeps it armed (round 2, N4)", DQ, "  onAllRowsChanged: root.disarm()\n", "", H),
 ]
 surv = []
 for name, path, old, new, cmd in M:
