@@ -164,3 +164,18 @@ one is active.
   r1 before the bench change, one event fewer); unrelated session
   0.70/0.91/0.90 ms (budget 1 ms). r1 failed only on the bench's event
   count (above), every timing within budget.
+
+## Merge of next
+
+`next` moved to afc7a586 (WP-124a, WP-125, WP-135, WP-136..140 work
+files) after the branch point. Merged it into the branch (dc02b665):
+conflicts only in CHANGELOG.md (both entries kept), DECISIONS.md (ADR-0036
+row, then ADR-0039) and the guide 04 de source line (set to the merge
+commit in 9aa6cbe0; the English page holds both changes, docs-check ok).
+No engine conflict.
+
+- `flock /tmp/seldon-check.lock just check` on 9aa6cbe0: `check: ok`
+  (exit 0; log `target/check-wp129-r3.log`).
+- `check-perf` was not re-run after the merge: next's engine changes
+  (triage) do not touch the hook path; the r2 numbers above are on
+  ce401bd4.
