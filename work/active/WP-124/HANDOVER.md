@@ -316,3 +316,109 @@ Engine side is fixed by 124a; the desk does this (no code in 124a):
   `check-wp124-merge2.log`.
 - 124b waits for the orchestrator's word that this branch is merged
   into `next`.
+
+## 124b
+
+The desk side, on `wp/124-triage` after `next` at `2ad42a43` (WP-113,
+WP-127 with `drift[].rule`, WP-128) was merged in (`600d035`; the branch
+also keeps `75651f65`, the duplicate of next's `afc7a586` merge from the
+fast-forward amend, by the orchestrator's choice).
+
+### Done
+
+- **Model.js**: `validateArgs` takes `agent ask triage --json`, `agent ask
+  drift <eventId> --json`, `agent ask case <caseId> --json`, `drift apply
+  <proposalId> [--item <eventId>] --json`, `drift discard <proposalId>
+  --json` — never `propose`, never two `--item`s, no `--actor`, no free
+  text. `askArgs`, `applyArgs`, `discardArgs`; `triageButton`,
+  `triagePath` (only `proposals/<id>.json` next to the index),
+  `parseProposal` (checked like `proposal.schema.json`; a file off in any
+  part is not shown), `evidenceAuthor` / `evidenceFlagged`, `itemOutcome`,
+  `triageView`, `askResult`, `applyResult` (`gone` for "no proposal …"),
+  `discardResult`.
+- **Service.qml**: a FileView on the proposal `index.triage.path` names
+  (re-read with every index); `askAgent`, `applyProposal(id, eventId)`,
+  `discardProposal(id)`; apply and discard name the id the detail shows
+  and are refused when the index names another proposal by then; results
+  `askResult` and `triageResult`; every call reloads the index, a gone
+  proposal is never retried.
+- **Changelog**: the triage slot — *Agent sorts N open changes* (spinner
+  while the ask runs, the engine's answer or refusal under it) and the
+  proposal's row, which opens **TriageDetail.qml**: the sticky bar *Apply
+  proposals (N)* / *Discard*; the line "N items proposed by <actor> at
+  <at>, C crises held back — apply each below"; the state (applied marks
+  the run, not the items); the last run's answer; CRISES — EACH ON ITS
+  OWN with *Apply this crisis* (`--item`); WHAT APPLY TAKES; per item the
+  subject, the action, the intent, the outcome (Done / Skipped / Refused
+  with the engine's reason) or "No longer open", and every evidence text
+  with "by <author> ·" first, wrapped, never clipped; the "Read twice"
+  mark. All logbook and agent text is `Text.PlainText`.
+- **Ask agent** in the event detail (open drift; `agent ask drift <id>`)
+  and in the case detail (any status; `agent ask case <id>`), each with
+  the engine's answer or refusal under the title.
+- **Tests**: `model.test.js` +6 (argv forms good and bad, button,
+  path, parse, view, results); `desk-view.sh` five scenarios (triage,
+  triage-refused, triage-ask, triage-none, triage-dev) with exact argv;
+  the fake engine answers `agent ask`, `drift apply`, `drift discard` and
+  puts the fixture's proposal next to the state index.
+- **Docs**: SPEC-PLUGIN §5.4 (slot, proposal detail, Ask agent in both
+  details), TESTING, CHANGELOG (Plugin).
+
+### Decisions
+
+- **The button's condition** is open changes and an engine that can
+  write. "An agent exists" is not in the index, and the plugin reads
+  nothing else (AGENTS.md §3): the engine's refusal ("no default agent …
+  Fix: `omarchy default agent <name>`") shows under the button.
+- **One click** for *Apply proposals*, *Apply this crisis* and *Discard*
+  (no arming): the WP's "one click applies"; the detail is the review;
+  Discard writes nothing to the logbook. *Apply proposals* stays enabled
+  with nothing open, so a second run shows what it skipped (the WP's
+  harness row).
+- **The mark** also covers a Plan text "by human (worked by agent:…)"
+  (the Plan an agent worked on), beside `by agent:` and `by unknown`.
+- **The bar's actions are rebuilt only when what they show changes**
+  (not on every index reload): a cheap guard against buttons recreated
+  under a click. It was my first guess for a lost click in the harness and
+  did not cure it; the cause was the harness: it clicks without moving the
+  pointer, so *Agent sorts …* kept "the mouse" and opened its tooltip
+  (400 ms), and the next click elsewhere only closed the tooltip. The
+  scenarios now move the pointer off with `hover:` (a person's mouse does
+  that), and wait 300 ms after opening the detail. Six runs in a row
+  green after that.
+
+### Verified
+
+- `node tests/plugin/model.test.js`: 149 passed.
+- The triage scenarios alone (a trimmed copy of `desk-view.sh` in my
+  scratch dir): 186 passed, 0 failed, six runs in a row after the hover
+  fix above.
+- The full gate's first run (`check-wp124b-r1.log`, at `ecde029`): exit 1,
+  desk-view 1506 passed / 13 failed — the lost click above, and six
+  expectations of earlier scenarios that this WP changes on purpose (the
+  triage slot is no longer empty; Work's bar ends with *Ask agent*; the
+  event bar starts with it). Fixed in the next commit.
+- `omarchy plugin validate plugin/` ok, `just qmllint` (with the token
+  check) exit 0 before each plugin commit.
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `21d4e64` (2188 Rust tests passed, 0 failed; model.test.js 149;
+  service-states 328/0; desk-view 1519/0; bar-view 194/0; docs-check
+  ok). Log `check-wp124b-r2.log`. `next` had nothing new to merge before
+  the run (fetched at `21d4e64`).
+
+### Not done / open
+
+- **Live check on the test host** (the WP's acceptance: a lived-in
+  logbook with ≥ 5 open items and 1 crisis, one click, the proposal, one
+  click applies, the crisis still open, clicks and prompts counted): not
+  run. `scripts/deploy-test-host.sh` deploys only from `main`; WP-155
+  (deploy for `next`) is queued.
+- Apply bound to the id: the guard is `Service.triageCall`; the harness
+  cannot provoke the race (a new proposal between render and click), so
+  it is checked by reading, not by a scenario.
+- **Host note for the orchestrator**: the dev host's global git identity
+  (`~/.config/git/config`, `[user]`) reads `t <t@example.com>` since
+  2026-10-07 08:56 — every commit on `next` since then carries it. Not
+  this session's doing; red zone, not touched. My commits use
+  `JohnAndrewsX` per command (`git -c user.name=… -c user.email=…`), as
+  the branch's earlier ones.
