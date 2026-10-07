@@ -2914,3 +2914,214 @@ mod migration {
         assert!(!marker(&h).exists());
     }
 }
+
+/// ADR-0039 (WP-129): a program an agent runs under `sudo`, `doas`,
+/// `pkexec` or `run0` is recorded even when Seldon does not know it, once,
+/// with the wrapper in `meta.wrapper` and the line in `detail`.
+mod privileged {
+    use super::*;
+
+    /// The printer setup of 2026-10-07, which Seldon did not record.
+    const PRINTER: &str =
+        "pkexec lpadmin -p Office -v ipp://printer.local/ipp/print -m everywhere -E";
+
+    fn bash(h: &Hooks, command: &str, id: &str) {
+        h.hook(
+            "claude-code",
+            &tool_call("Bash", json!({ "command": command }), id),
+        );
+    }
+
+    #[test]
+    fn a_printer_added_with_pkexec_is_one_event_on_the_case() {
+        let h = Hooks::new();
+        let case = h.active_case();
+        bash(&h, PRINTER, "toolu_printer");
+        let events = h.commands();
+        assert_eq!(events.len(), 1, "{events:?}");
+        let e = &events[0];
+        assert_eq!(e["source"], "agent");
+        assert_eq!(e["kind"], "command");
+        assert_eq!(e["subject"], "lpadmin");
+        assert_eq!(e["zone"], "red");
+        assert_eq!(e["actor"], "agent:claude-code");
+        assert_eq!(e["case"], case.as_str());
+        assert_eq!(e["ts"], NOW);
+        assert_eq!(e["meta"]["wrapper"], "pkexec");
+        assert_eq!(e["meta"]["command"], PRINTER);
+        assert_eq!(e["detail"], PRINTER);
+        assert_eq!(e["meta"]["toolUseId"], "toolu_printer");
+        let file = h.case_file(&case);
+        assert!(file.contains(e["id"].as_str().unwrap()), "{file}");
+
+        // the same payload again, and its PostToolUse: nothing new
+        bash(&h, PRINTER, "toolu_printer");
+        let mut post: Value = serde_json::from_str(&tool_call(
+            "Bash",
+            json!({ "command": PRINTER }),
+            "toolu_printer",
+        ))
+        .unwrap();
+        post["hook_event_name"] = json!("PostToolUse");
+        h.hook("claude-code", &post.to_string());
+        assert_eq!(h.commands().len(), 1, "{:?}", h.commands());
+    }
+
+    /// Recorded without a case too (it is red, ADR-0019 does not drop it).
+    /// Not drift yet: `drift[].source` admits no `agent` (ADR-0039 §3, a
+    /// contract question); the event is in the index's events.
+    #[test]
+    fn recorded_without_a_case() {
+        let h = Hooks::new();
+        bash(&h, "sudo nmcli con up x", "toolu_nmcli");
+        let events = h.commands();
+        assert_eq!(events.len(), 1, "{events:?}");
+        let e = &events[0];
+        assert_eq!(e["subject"], "nmcli");
+        assert_eq!(e["meta"]["wrapper"], "sudo");
+        assert_eq!(e["zone"], "red");
+        assert!(e.get("case").is_none(), "{e}");
+        let index: Value =
+            serde_json::from_str(&read(&h.home().join(".local/state/seldon/index.json"))).unwrap();
+        let id = e["id"].as_str().unwrap();
+        assert!(
+            index["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|x| x["id"] == id && x["meta"]["wrapper"] == "sudo"),
+            "{index}"
+        );
+        assert!(
+            !index["drift"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["eventId"] == id),
+            "{index}"
+        );
+    }
+
+    /// A command its own class records is not recorded a second time.
+    #[test]
+    fn a_package_command_is_recorded_once() {
+        let h = Hooks::new();
+        h.active_case();
+        bash(&h, "pkexec pacman -S x", "toolu_pacman");
+        let events = h.commands();
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0]["subject"], "pacman");
+        assert!(events[0]["meta"].get("wrapper").is_none());
+        assert!(events[0].get("detail").is_none());
+
+        // two classes in one line: one event each, one tool call
+        bash(
+            &h,
+            "pkexec pacman -S cups && pkexec lpadmin -p Office -E",
+            "toolu_both",
+        );
+        let both: Vec<Value> = h
+            .commands()
+            .into_iter()
+            .filter(|e| e["meta"]["toolUseId"] == "toolu_both")
+            .collect();
+        let subjects: Vec<&str> = both
+            .iter()
+            .map(|e| e["subject"].as_str().unwrap())
+            .collect();
+        assert_eq!(subjects, ["pacman", "lpadmin"], "{both:?}");
+        assert_eq!(both[1]["meta"]["wrapper"], "pkexec");
+    }
+
+    #[test]
+    fn probes_record_nothing() {
+        let h = Hooks::new();
+        h.active_case();
+        for (n, probe) in [
+            "sudo -l",
+            "sudo -v",
+            "sudo -n true",
+            "pkexec --version",
+            "command -v sudo",
+            "command -v pkexec && echo yes",
+            "pkexec whoami",
+        ]
+        .iter()
+        .enumerate()
+        {
+            bash(&h, probe, &format!("toolu_probe_{n}"));
+        }
+        assert_eq!(h.commands(), Vec::<Value>::new());
+    }
+
+    #[test]
+    fn inside_a_shell_and_after_and() {
+        let h = Hooks::new();
+        bash(&h, "bash -c 'pkexec lpadmin -x Office'", "toolu_shell");
+        bash(
+            &h,
+            "lpstat -p Office && sudo lpadmin -x Office",
+            "toolu_and",
+        );
+        bash(
+            &h,
+            "sudo sh -c 'cupsdisable Office; lpadmin -x Office'",
+            "toolu_sudo_sh",
+        );
+        let got: Vec<(String, String)> = h
+            .commands()
+            .iter()
+            .map(|e| {
+                (
+                    e["subject"].as_str().unwrap().to_string(),
+                    e["meta"]["wrapper"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        let row = |s: &str, w: &str| (s.to_string(), w.to_string());
+        assert_eq!(
+            got,
+            [
+                row("lpadmin", "pkexec"),
+                row("lpadmin", "sudo"),
+                row("cupsdisable", "sudo")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_secret_in_the_arguments_is_redacted() {
+        let h = Hooks::new();
+        bash(
+            &h,
+            "pkexec lpadmin -p Office -v ipp://scan:hunter2@printer.local/ipp/print -E",
+            "toolu_secret",
+        );
+        let events = h.commands();
+        assert_eq!(events.len(), 1, "{events:?}");
+        let redacted = "pkexec lpadmin -p Office -v ipp://‹redacted›@printer.local/ipp/print -E";
+        assert_eq!(events[0]["meta"]["command"], redacted);
+        assert_eq!(events[0]["detail"], redacted);
+        let ledger = read(&h.logbook.join("ledger/2026-10.jsonl"));
+        assert!(!ledger.contains("hunter2"), "{ledger}");
+    }
+
+    #[test]
+    fn the_generic_hook_too() {
+        let h = Hooks::new();
+        h.hook(
+            "generic",
+            &json!({
+                "command": "doas lpadmin -d Office",
+                "actor": "agent:codex",
+                "cwd": FIXTURE_CWD,
+            })
+            .to_string(),
+        );
+        let events = h.commands();
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0]["actor"], "agent:codex");
+        assert_eq!(events[0]["subject"], "lpadmin");
+        assert_eq!(events[0]["meta"]["wrapper"], "doas");
+    }
+}

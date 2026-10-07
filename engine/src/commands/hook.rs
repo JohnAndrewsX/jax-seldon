@@ -75,7 +75,7 @@ use crate::logbook::cases::{self, CaseFile};
 use crate::logbook::lock::{self, Lock};
 use crate::logbook::{Logbook, journal};
 use crate::model::CaseStatus;
-use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, Source, Zone, zone_for};
+use crate::model::event::{DETAIL_MAX, Event, Kind, Meta, SUBJECT_MAX, Source, Zone, zone_for};
 use crate::model::is_agent;
 use crate::pkgcmd::{
     ShellLine, Target, Word, Workdir, globs_overlap, line_vars, omarchy_route, parse_command,
@@ -249,14 +249,24 @@ fn read_stdin() -> String {
 // ---------------------------------------------------------------------------
 
 /// What a mutating command records: the program word, the zone of what it
-/// would change (ADR-0014 §2, ADR-0019), and whether it is recorded only
-/// while a case is set (ADR-0019 §1: green commands no collector tracks).
+/// would change (ADR-0014 §2, ADR-0019), whether it is recorded only
+/// while a case is set (ADR-0019 §1: green commands no collector tracks),
+/// and for a privileged command (ADR-0039) the wrapper it ran under.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mutation {
     pub subject: String,
     pub zone: Option<Zone>,
     pub needs_case: bool,
+    pub wrapper: Option<&'static str>,
 }
+
+/// The `meta` key of a privileged command's wrapper (ADR-0039); only
+/// privileged command records carry it.
+pub const WRAPPER_KEY: &str = "wrapper";
+
+/// Programs that only test the privilege they run under (`sudo -n true`)
+/// and change nothing: no privileged command record (ADR-0039).
+const PRIVILEGE_PROBES: [&str; 7] = ["true", "false", ":", "id", "whoami", "test", "["];
 
 impl Mutation {
     /// The order in which a line's mutations compete: the more severe zone,
@@ -382,23 +392,65 @@ impl Scope {
 
 /// Whether `line`, run in `cwd`, changes anything (SPEC-ENGINE §8,
 /// ADR-0019), and what it records: the first of its most severe mutating
-/// commands. `sh -c '…'` and `eval '…'` are read as the commands inside;
-/// `cd`, `pushd` and `popd` change the directory for the commands after
-/// them, and a program's `-C DIR` or a wrapper's `env -C DIR` its own
-/// ([`workdirs`]).
+/// commands ([`mutations`] without the privileged record).
 pub fn classify(line: &ShellLine, scope: &Scope, cwd: &Path) -> Option<Mutation> {
+    mutations(line, scope, cwd)
+        .into_iter()
+        .find(|m| m.wrapper.is_none())
+}
+
+/// What `line`, run in `cwd`, records (SPEC-ENGINE §8): the first of its
+/// most severe mutating commands, then the first privileged command
+/// (ADR-0039) that no class records by itself — at most one of each.
+/// `sh -c '…'` and `eval '…'` are read as the commands inside (a wrapper
+/// of the shell holds for them); `cd`, `pushd` and `popd` change the
+/// directory for the commands after them, and a program's `-C DIR` or a
+/// wrapper's `env -C DIR` its own ([`workdirs`]).
+///
+/// A privileged command is one that runs under `sudo`, `doas`, `pkexec`
+/// or `run0` ([`crate::pkgcmd::Segment::privilege`]) a program that is no
+/// probe ([`PRIVILEGE_PROBES`]; a wrapper's own probes, `sudo -l`, run
+/// nothing). A class records it by itself when its record needs no case,
+/// and a snapshot command always: then there is no privileged record. A
+/// green record that would need a case (ADR-0019: `sudo tee /etc/x`)
+/// gives way to the privileged one, so a command is never recorded twice.
+pub fn mutations(line: &ShellLine, scope: &Scope, cwd: &Path) -> Vec<Mutation> {
     let segments = simple_commands(line);
     let dirs = workdirs(&segments, cwd, &scope.home, |w, d| scope.resolve(w, d));
     let mut found: Option<Mutation> = None;
+    let mut privileged: Option<Mutation> = None;
     for (segment, dirs) in segments.iter().zip(&dirs) {
-        let mutation = classify_segment(segment.argv(), &segment.writes, scope, dirs);
+        let argv = segment.argv();
+        let mutation = classify_segment(argv, &segment.writes, scope, dirs);
+        let own_class = mutation.as_ref().is_some_and(|m| !m.needs_case)
+            || argv
+                .first()
+                .is_some_and(|w| is_snapshot_create(program_name(w), argv));
+        if !own_class
+            && let Some(wrapper) = segment.privilege()
+            && let Some(program) = argv.first().map(|w| program_name(w))
+            && !PRIVILEGE_PROBES.contains(&program)
+        {
+            privileged.get_or_insert_with(|| Mutation {
+                subject: clip(program, SUBJECT_MAX),
+                zone: Some(Zone::Red),
+                needs_case: false,
+                wrapper: Some(wrapper),
+            });
+            continue;
+        }
         if let Some(m) = mutation
             && found.as_ref().is_none_or(|f| m.rank() > f.rank())
         {
             found = Some(m);
         }
     }
-    found
+    found.into_iter().chain(privileged).collect()
+}
+
+/// The program of a command word: its last path component.
+fn program_name(word: &str) -> &str {
+    word.rsplit('/').next().unwrap_or(word)
 }
 
 /// One simple command: pacman-like programs (every mutating operation is
@@ -412,8 +464,7 @@ fn classify_segment(
     scope: &Scope,
     dirs: &Workdir,
 ) -> Option<Mutation> {
-    let word = argv.first().map(String::as_str).unwrap_or("");
-    let program = word.rsplit('/').next().unwrap_or(word);
+    let program = program_name(argv.first().map(String::as_str).unwrap_or(""));
     let args = argv.get(1..).unwrap_or_default();
     // a snapshot an agent takes (ADR-0027 §3): recorded with its case, so
     // the capture after it can fill the case's `snapshotBefore` when the
@@ -431,6 +482,7 @@ fn classify_segment(
         subject: subject.to_string(),
         zone,
         needs_case,
+        wrapper: None,
     };
 
     let argv_str: Vec<&str> = argv.iter().map(String::as_str).collect();
@@ -866,9 +918,7 @@ fn claude_code(ctx: &Context, stdin: &str) -> Result<()> {
             let Some(command) = payload.tool_input.get("command").and_then(Value::as_str) else {
                 return Ok(());
             };
-            bash_record(command, &setup, &cwd)
-                .into_iter()
-                .collect::<Vec<_>>()
+            bash_records(command, &setup, &cwd)
         }
         "Edit" | "Write" | "MultiEdit" => edit_records(&setup, tool, &payload.tool_input, &cwd),
         _ => Vec::new(),
@@ -929,9 +979,10 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
     };
     let setup = setup(ctx, served);
     let cwd = working_dir(payload.cwd.as_deref(), &ctx.dirs);
-    let Some(rec) = bash_record(&payload.command, &setup, &cwd) else {
+    let records = bash_records(&payload.command, &setup, &cwd);
+    if records.is_empty() {
         return Ok(());
-    };
+    }
     let ledger = Ledger::new(
         &setup.logbook,
         Redactor::with_patterns(&setup.config.redaction.patterns)?,
@@ -942,22 +993,32 @@ fn generic(ctx: &Context, stdin: &str, case_flag: Option<String>) -> Result<()> 
         case,
         unless_recorded: None,
     };
-    record(ctx, &setup, ledger, entry, vec![rec], &[])
+    record(ctx, &setup, ledger, entry, records, &[])
 }
 
-/// A shell command line as a record, if it is mutating. A line that names
-/// a path `[redaction] skipPaths` matches is recorded as `<program>
+/// A shell command line as records ([`mutations`]: its class, its
+/// privileged command), none when it changes nothing. A line that names a
+/// path `[redaction] skipPaths` matches is recorded as `<program>
 /// ‹redacted›` (the program of [`Mutation::subject`]), as an `Edit` of such
 /// a file is recorded as `Edit ‹redacted›`.
-fn bash_record(command: &str, setup: &Setup, cwd: &Path) -> Option<Record> {
+fn bash_records(command: &str, setup: &Setup, cwd: &Path) -> Vec<Record> {
     let line = parse_shell(command);
-    let mutation = classify(&line, &setup.scope, cwd)?;
-    let command = if names_skipped_path(&line, setup, cwd) {
-        format!("{} {REDACTED}", mutation.subject)
-    } else {
-        line.text
-    };
-    Some(Record { mutation, command })
+    let found = mutations(&line, &setup.scope, cwd);
+    if found.is_empty() {
+        return Vec::new();
+    }
+    let skipped = names_skipped_path(&line, setup, cwd);
+    found
+        .into_iter()
+        .map(|mutation| Record {
+            command: if skipped {
+                format!("{} {REDACTED}", mutation.subject)
+            } else {
+                line.text.clone()
+            },
+            mutation,
+        })
+        .collect()
 }
 
 /// Whether `line` names a path that `[redaction] skipPaths` matches. Read
@@ -1133,6 +1194,7 @@ fn edit_records(setup: &Setup, tool: &str, input: &Value, cwd: &Path) -> Vec<Rec
                     subject: tool.to_lowercase(),
                     zone,
                     needs_case,
+                    wrapper: None,
                 },
                 command: format!("{tool} {shown}"),
             })
@@ -1318,17 +1380,26 @@ fn record(
         .map(|r| {
             let command = clip(&ledger.redactor().redact(&r.command), DETAIL_MAX);
             let mut meta = Meta {
-                command: Some(command),
+                command: Some(command.clone()),
                 ..Meta::default()
             };
             for (k, v) in extra {
                 meta.extra
                     .insert((*k).to_string(), Value::String(v.clone()));
             }
+            if let Some(wrapper) = r.mutation.wrapper {
+                meta.extra
+                    .insert(WRAPPER_KEY.to_string(), Value::String(wrapper.to_string()));
+            }
             let mut e = Event::new(ts, Source::Agent, Kind::Command, r.mutation.subject)
                 .actor(actor)
                 .case(case_file.as_ref().map(|f| f.case.id.clone()))
                 .meta(meta);
+            // a privileged command shows its line where an event shows its
+            // text (ADR-0039; the index clips it, ADR-0025)
+            if r.mutation.wrapper.is_some() {
+                e = e.detail(command);
+            }
             e.zone = r.mutation.zone;
             e
         })
@@ -2385,5 +2456,127 @@ mod tests {
         ] {
             assert_eq!(class(q), None, "{q}");
         }
+    }
+
+    /// Every record of `line` (cwd = the logbook): subject, zone, whether
+    /// it needs a case, wrapper.
+    fn records(line: &str) -> Vec<(String, Option<Zone>, bool, Option<&'static str>)> {
+        mutations(&parse_shell(line), &scope(), Path::new("/home/user/Seldon"))
+            .into_iter()
+            .map(|m| (m.subject, m.zone, m.needs_case, m.wrapper))
+            .collect()
+    }
+
+    fn privileged(
+        subject: &str,
+        wrapper: &'static str,
+    ) -> (String, Option<Zone>, bool, Option<&'static str>) {
+        (subject.to_string(), Some(Zone::Red), false, Some(wrapper))
+    }
+
+    /// ADR-0039: a program run under a privilege wrapper is recorded, red
+    /// and without a case, unless a class records it by itself.
+    #[test]
+    fn privileged_commands() {
+        for (line, subject, wrapper) in [
+            (
+                "pkexec lpadmin -p X -v ipp://printer.local/ipp/print -m everywhere -E",
+                "lpadmin",
+                "pkexec",
+            ),
+            ("sudo nmcli con up x", "nmcli", "sudo"),
+            ("doas /usr/bin/lpadmin -x X", "lpadmin", "doas"),
+            ("run0 --user=root nmcli con up x", "nmcli", "run0"),
+            ("sudo -u nobody touch /srv/x", "touch", "sudo"),
+            // inside `bash -c '…'`, after `&&`, under another wrapper
+            ("bash -c 'pkexec lpadmin -x X'", "lpadmin", "pkexec"),
+            ("lpstat -p && sudo lpadmin -x X", "lpadmin", "sudo"),
+            (
+                "pkexec sh -c 'lpadmin -x X; cupsenable Y'",
+                "lpadmin",
+                "pkexec",
+            ),
+            ("env LANG=C nice sudo lpadmin -x X", "lpadmin", "sudo"),
+            // reads are in the record too: they ran as root
+            ("sudo cat /etc/cups/printers.conf", "cat", "sudo"),
+            // a foreign install as root is no longer green-with-a-case
+            ("sudo npm install -g x", "npm", "sudo"),
+            // a write outside the watched paths: the privileged record only
+            ("echo x | sudo tee /etc/cups/x.conf", "tee", "sudo"),
+            ("sudo snapper -c root delete 5", "snapper", "sudo"),
+        ] {
+            assert_eq!(records(line), [privileged(subject, wrapper)], "{line}");
+        }
+    }
+
+    /// ADR-0039: a command a class records is not recorded twice; probes
+    /// and unwrapped commands are not privileged.
+    #[test]
+    fn privileged_commands_are_recorded_once() {
+        // the package command alone (its class needs no case)
+        for line in [
+            "pkexec pacman -S x",
+            "sudo systemctl enable --now cups",
+            "sudo omarchy-pkg-add zed",
+            "echo x | sudo tee -a ~/.config/hypr/a.conf",
+            "sudo sh -c 'pacman -S x'",
+        ] {
+            let found = records(line);
+            assert_eq!(found.len(), 1, "{line}: {found:?}");
+            assert_eq!(found[0].3, None, "{line}");
+        }
+        // a snapshot command stays its own class (green, with a case)
+        assert_eq!(
+            records("pkexec snapper -c root create -d C-2026-001"),
+            [("snapper".into(), Some(Zone::Green), true, None)]
+        );
+        // two commands of two classes: one record each
+        assert_eq!(
+            records("pkexec pacman -S cups && pkexec lpadmin -p X -E"),
+            [
+                ("pacman".into(), Some(Zone::Red), false, None),
+                privileged("lpadmin", "pkexec")
+            ]
+        );
+        // one privileged record per line: the first program
+        assert_eq!(
+            records("sudo lpadmin -p X -E && sudo cupsenable X && sudo cupsaccept X"),
+            [privileged("lpadmin", "sudo")]
+        );
+        // a green write elsewhere in the line stays, with a case
+        assert_eq!(
+            records("sudo lpadmin -x X; echo done > /tmp/log"),
+            [
+                ("echo".into(), Some(Zone::Green), true, None),
+                privileged("lpadmin", "sudo")
+            ]
+        );
+        for line in [
+            "sudo -l",
+            "sudo -v",
+            "sudo -n true",
+            "sudo -n true 2>/dev/null && echo ok",
+            "pkexec --version",
+            "command -v sudo",
+            "command -v pkexec && echo yes",
+            "type sudo",
+            "which pkexec",
+            "sudo id -u",
+            "pkexec whoami",
+            "sudo test -r /etc/cups/printers.conf",
+            "lpadmin -p X -E",
+            "nmcli con up x",
+            "echo sudo lpadmin",
+            "sudo",
+            "pkexec",
+        ] {
+            assert_eq!(records(line), [], "{line}");
+        }
+        // `classify` keeps the class record only
+        assert_eq!(class("sudo nmcli con up x"), None);
+        assert_eq!(
+            class("pkexec pacman -S cups && pkexec lpadmin -p X -E"),
+            red("pacman")
+        );
     }
 }

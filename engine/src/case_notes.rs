@@ -26,7 +26,7 @@ use chrono::{DateTime, Duration, FixedOffset};
 
 use crate::attribution::ATTRIBUTION_WINDOW;
 use crate::collectors::Sources;
-use crate::commands::hook::SNAPSHOT_SUBJECT;
+use crate::commands::hook::{SNAPSHOT_SUBJECT, WRAPPER_KEY};
 use crate::commands::plan::snapshot::warnings as snapshot_checks;
 use crate::index::build::r3_advisory;
 use crate::index::drift::AlwaysRed;
@@ -75,6 +75,9 @@ pub fn after_capture(
                     .into_iter()
                     .filter(|c| c.source == Source::Agent && c.kind == Kind::Command)
                     .filter(|c| c.subject == SNAPSHOT_SUBJECT && c.case.is_some())
+                    // `sudo snapper delete 5` is a privileged command, not a
+                    // snapshot command (ADR-0039)
+                    .filter(|c| !c.meta.extra.contains_key(WRAPPER_KEY))
                     .collect(),
                 Err(e) => {
                     warnings.push(format!("snapshots not matched to cases: {e:#}"));
