@@ -1164,15 +1164,15 @@ fn is_omarchy_copy(dirs: &Dirs, omarchy: &Path, owner: u32, path: &Path, hash: &
 }
 
 /// Omarchy's toggle state directory relative to `$HOME`
-/// (`omarchy-hyprland-toggle` copies a flag there and deletes it to turn
-/// it off; Hyprland loads every `.lua` under `hypr/`).
+/// (`omarchy-toggle` touches and removes empty flag files there;
+/// `omarchy-hyprland-toggle` copies a flag into `hypr/` and deletes it to
+/// turn it off; Hyprland loads every `.lua` under `hypr/`).
 pub const TOGGLES_DIR: &str = ".local/state/omarchy/toggles";
 
 /// WP-113: the capture-time evidence of a `config-remove` in the toggles
 /// directory whose removed content (`hash`) is Omarchy's shipped flag — a
-/// toggle turned off. Recorded as `omarchy-default` because the ledger
-/// cannot gain it later; the classifier reads marks on removals only once
-/// ADR-0028's row allows it (WP-113 proposed amendment B).
+/// toggle turned off, routine by ADR-0037 §1 (the classifier reads a mark
+/// on a removal only there).
 fn removed_toggle(
     dirs: &Dirs,
     omarchy: Option<(&Path, u32)>,

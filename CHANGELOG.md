@@ -16,16 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `~/.config/omarchy/plugins/` as one whole and skips reading an
   unchanged one. Omarchy's toggle folder
   `~/.local/state/omarchy/toggles` joins the default `watchPaths` (a list
-  that is still 0.1.4's default gains it at the next capture); a flag
-  turned on through `omarchy-hyprland-toggle` is routine by evidence,
-  other Lua there is quiet attention, and turning a flag off is quiet
-  attention for now. `~/.ssh/authorized_keys` joins the default
+  that is still 0.1.4's default gains it at the next capture); turning a
+  switch of Omarchy's *Toggle* menu or a Hyprland flag on or off is
+  routine (new rule `toggle-flag`, ADR-0037), anything else there is
+  quiet attention. `~/.ssh/authorized_keys` joins the default
   `alwaysRedPaths`: add it to `watchPaths` and a change to it without a
   case is a crisis. Under the persistence paths the config collector now
   hashes every file — a hook with a NUL byte after its first line or
-  over 1 MiB used to be skipped — and follows a linked hook folder (at
-  most 1024 files below one link, no loops); the first capture after the
-  upgrade records nothing for files that were skipped before.
+  over 1 MiB used to be skipped — and follows a linked hook folder (each
+  folder once, at most 4096 entries below links; a link with more is a
+  crisis of its own; links into the logbook or Seldon's folders are not
+  followed); a file over 64 MiB is hashed from its size, time and inode,
+  and an unreadable one keeps its last hash. A plugin tree counts an
+  unreadable file by its size, time and mode and holds at most 10 000
+  entries. The first capture after the upgrade records nothing for files
+  that were skipped before.
 - A full upgrade with a yay or paru option that takes a value
   (`--answerdiff None`, `--mflags …`, `--editor …`) no longer counts the
   value as a package: it is routine like any plain full upgrade
