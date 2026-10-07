@@ -1,0 +1,598 @@
+//! `seldon import task <FILE>… [--area A] [--zone Z] [--risk R]
+//! [--include-done] [--dry-run]` (SPEC-ENGINE §3, WP-102, ADR-0027 §7):
+//! the user's own Markdown task files become queued cases, one per open
+//! `- [ ]` item, or one per file without checklist items.
+//!
+//! A task file is untrusted text: it is read, never written, moved or run;
+//! its words go through the logbook's redaction (SPEC-ENGINE §7) before
+//! anything is planned, and land as escaped text in the case's *Intent*.
+//! Every path is checked before the first write: a regular `.md` file of
+//! at most 1 MiB under the home, never inside the logbook. The marker
+//! `.seldon/imports/tasks.json` remembers what was imported (file, line,
+//! hash of the redacted text, case), so a second run creates nothing.
+
+use std::collections::BTreeSet;
+use std::io::Read as _;
+use std::path::{Path, PathBuf};
+
+use clap::Args;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use crate::commands::agent::title_of;
+use crate::commands::event::{ACTOR_ENV, actor_or_env, parse_person};
+use crate::commands::plan::{Spec, case_json, create};
+use crate::commands::{Commit, Context, Output, autocommit};
+use crate::error::{Error, Result};
+use crate::import::task::{Tasks, parse};
+use crate::import::{Scrubber, marker_path};
+use crate::logbook::Logbook;
+use crate::logbook::cases;
+use crate::model::event::ACTOR_HUMAN;
+use crate::model::{Priority, Risk, Zone, is_agent, is_slug};
+use crate::redact::Redactor;
+use crate::sys;
+
+/// The tag of an imported case (CONTRACT.md rule 8).
+pub const TAG_IMPORTED: &str = "imported";
+
+/// The marker's source name: `.seldon/imports/tasks.json`.
+const MARKER: &str = "tasks";
+
+/// The largest task file read, in bytes.
+pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
+
+/// The most cases one run creates.
+pub const MAX_CASES: usize = 200;
+
+/// The completed Log line of a `- [x]` item imported with `--include-done`.
+const DONE_LINE: &str = "completed: imported as done";
+
+#[derive(Debug, Clone, Args)]
+pub struct TaskArgs {
+    /// Markdown task files under your home: one case per open `- [ ]`
+    /// item; a file without checklist items is one case
+    #[arg(value_name = "FILE", required = true)]
+    pub files: Vec<PathBuf>,
+
+    /// Area slug of the new cases; created under areas/ on first use
+    #[arg(long, value_name = "AREA")]
+    pub area: Option<String>,
+
+    /// green, yellow or red
+    #[arg(long, value_name = "ZONE", default_value = "yellow")]
+    pub zone: Zone,
+
+    /// R0 to R3
+    #[arg(long, value_name = "RISK", default_value = "R1")]
+    pub risk: Risk,
+
+    /// Also import `- [x]` items, as completed cases
+    #[arg(long)]
+    pub include_done: bool,
+
+    /// List what would be created; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Who imports: human or agent:NAME (default: $SELDON_ACTOR, else
+    /// human)
+    #[arg(long, value_name = "ACTOR", value_parser = parse_person)]
+    pub actor: Option<String>,
+}
+
+/// `.seldon/imports/tasks.json`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Marker {
+    version: u32,
+    items: Vec<Entry>,
+}
+
+/// One imported task.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Entry {
+    /// The file as `~/…`.
+    file: String,
+    /// The item's line; `None` for a file imported whole.
+    line: Option<usize>,
+    /// SHA-256 of the task's redacted text (checkbox state left out).
+    hash: String,
+    case: String,
+    imported_at: String,
+}
+
+/// A task file, read and redacted.
+struct Source {
+    /// `~/…`, redacted.
+    shown: String,
+    tasks: Tasks,
+    /// The file name without `.md` (redacted), the title of a file
+    /// without a heading.
+    stem: String,
+}
+
+/// A task found in a file.
+struct Task {
+    file: String,
+    line: Option<usize>,
+    done: bool,
+    title: String,
+    /// Redacted, not escaped yet.
+    intent: String,
+    hash: String,
+}
+
+impl Task {
+    fn source(&self) -> String {
+        match self.line {
+            Some(n) => format!("{}#{n}", self.file),
+            None => self.file.clone(),
+        }
+    }
+}
+
+/// What happens to a task.
+enum Fate {
+    Create {
+        replaces: Option<String>,
+    },
+    Skip {
+        reason: &'static str,
+        case: Option<String>,
+    },
+}
+
+pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
+    let actor = actor_or_env(args.actor.clone(), parse_person, ACTOR_HUMAN)?;
+    if args.include_done && is_agent(&actor) {
+        return Err(Error::user(format!(
+            "--include-done makes completed cases, and an agent closes a case only with a Result (ADR-0027 §5); import the done items as a person (without --actor {actor} or ${ACTOR_ENV})"
+        )));
+    }
+    if let Some(area) = args.area.as_deref()
+        && !is_slug(area)
+    {
+        return Err(Error::user(format!(
+            "area `{area}` is not a lowercase slug ([a-z0-9][a-z0-9-]*)"
+        )));
+    }
+    let (config, logbook) = ctx.open_logbook()?;
+    let redactor = Redactor::for_config(&config)?;
+    let mut scrubber = Scrubber::new(redactor.clone());
+
+    // every path is read and checked before anything is planned or written
+    let mut seen = BTreeSet::new();
+    let mut sources = Vec::new();
+    for arg in &args.files {
+        let path = resolve(ctx, &logbook, arg)?;
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        sources.push(read_source(ctx, &redactor, &mut scrubber, &path)?);
+    }
+    let tasks: Vec<Task> = sources.iter().flat_map(tasks_of).collect();
+
+    let lock = if args.dry_run {
+        None
+    } else {
+        Some(ctx.lock()?)
+    };
+    let marker_rel = marker_path(MARKER);
+    let mut marker = read_marker(&logbook.path(&marker_rel))?;
+    let fates = decide(&tasks, &marker, args.include_done);
+    let planned = fates
+        .iter()
+        .filter(|f| matches!(f, Fate::Create { .. }))
+        .count();
+    if planned > MAX_CASES {
+        return Err(Error::user(format!(
+            "{planned} cases to create; one import makes at most {MAX_CASES}: split the file or import fewer files at once"
+        )));
+    }
+    let skipped: Vec<Value> = tasks
+        .iter()
+        .zip(&fates)
+        .filter_map(|(t, f)| match f {
+            Fate::Skip { reason, case } => {
+                Some(json!({"source": t.source(), "reason": reason, "case": case}))
+            }
+            Fate::Create { .. } => None,
+        })
+        .collect();
+    let status_of = |t: &Task| if t.done { "completed" } else { "queued" };
+
+    let Some(lock) = lock else {
+        let created: Vec<Value> = tasks
+            .iter()
+            .zip(&fates)
+            .filter_map(|(t, f)| match f {
+                Fate::Create { replaces } => Some(json!({
+                    "id": null,
+                    "title": t.title,
+                    "status": status_of(t),
+                    "source": t.source(),
+                    "path": null,
+                    "replaces": replaces,
+                })),
+                Fate::Skip { .. } => None,
+            })
+            .collect();
+        let human = report("Dry run: would create", &created, &skipped);
+        return Ok(Output::ok(
+            human,
+            json!({
+                "mode": "dry-run",
+                "created": created,
+                "skipped": skipped,
+                "redactedLines": redacted_lines(&scrubber),
+                "areaCreated": null,
+                "files": [],
+                "marker": null,
+                "git": Commit::Skipped("dry run").json(),
+            }),
+        ));
+    };
+
+    let mut created = Vec::new();
+    let mut files = Vec::new();
+    let mut area_created = None;
+    let mut failure = None;
+    for (task, fate) in tasks.iter().zip(&fates) {
+        let Fate::Create { replaces } = fate else {
+            continue;
+        };
+        let mut note = format!("imported from {}", task.source());
+        if let Some(earlier) = replaces {
+            note.push_str(&format!(", changed since {earlier}"));
+        }
+        let intent = cases::escape_lines(&task.intent);
+        let spec = Spec {
+            title: task.title.clone(),
+            zone: args.zone,
+            risk: args.risk,
+            area: args.area.clone(),
+            priority: Priority::Normal,
+            actor: actor.clone(),
+            intent: (!intent.trim().is_empty()).then_some(intent),
+            tags: vec![TAG_IMPORTED.to_string()],
+            note: Some(note),
+            start: false,
+            point: false,
+            done: task.done.then(|| DONE_LINE.to_string()),
+        };
+        let made = match create(ctx, &config, &logbook, &lock, spec) {
+            Ok(made) => made,
+            Err(e) => {
+                failure = Some(e);
+                break;
+            }
+        };
+        let id = made.file.case.id.clone();
+        area_created = area_created.or(made.area_created.clone());
+        marker.items.push(Entry {
+            file: task.file.clone(),
+            line: task.line,
+            hash: task.hash.clone(),
+            case: id.clone(),
+            imported_at: crate::model::event::format_ts(&ctx.now),
+        });
+        // after every case: a failure further on never makes it again
+        if let Err(e) = write_marker(&logbook.path(&marker_rel), &marker) {
+            failure = Some(e);
+        }
+        let case = case_json(&logbook, &made.file);
+        files.push(case["path"].clone());
+        created.push(json!({
+            "id": id,
+            "title": case["title"],
+            "status": case["status"],
+            "source": task.source(),
+            "path": case["path"],
+            "replaces": replaces,
+        }));
+        if failure.is_some() {
+            break;
+        }
+    }
+    let commit = if created.is_empty() {
+        Commit::Skipped("nothing changed")
+    } else {
+        files.push(Value::String(marker_rel.clone()));
+        let commit = autocommit(ctx, &config, &logbook, "import task");
+        crate::index::rebuild_if_initialised(ctx);
+        commit
+    };
+    drop(lock);
+    if let Some(e) = failure {
+        let made = created
+            .iter()
+            .filter_map(|c| c["id"].as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if made.is_empty() {
+            return Err(e);
+        }
+        let more = format!("created before the failure, and kept: {made}; a second run skips them");
+        return Err(match e {
+            Error::User(m) => Error::user(format!("{m} ({more})")),
+            other => Error::from(anyhow::anyhow!("{other} ({more})")),
+        });
+    }
+    let mut human = if created.is_empty() {
+        report("Nothing imported", &created, &skipped)
+    } else {
+        report("Imported", &created, &skipped)
+    };
+    human.push_str(&commit.human());
+    Ok(Output::ok(
+        human,
+        json!({
+            "mode": "apply",
+            "created": created,
+            "skipped": skipped,
+            "redactedLines": redacted_lines(&scrubber),
+            "areaCreated": area_created,
+            "files": files,
+            "marker": (!created.is_empty()).then_some(marker_rel),
+            "git": commit.json(),
+        }),
+    ))
+}
+
+/// Lines with at least one redaction, over every file read.
+fn redacted_lines(scrubber: &Scrubber) -> usize {
+    scrubber
+        .hits
+        .iter()
+        .map(|h| (&h.file, h.line))
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+/// The human report: what was (or would be) created, then what was
+/// skipped and why.
+fn report(head: &str, created: &[Value], skipped: &[Value]) -> String {
+    let mut out = if created.is_empty() {
+        format!("{head}: no new tasks.")
+    } else {
+        format!("{head} {} case(s):", created.len())
+    };
+    for c in created {
+        let id = c["id"]
+            .as_str()
+            .map_or(String::new(), |id| format!("{id} "));
+        out.push_str(&format!(
+            "\n  {id}\"{}\" ({}) from {}",
+            c["title"].as_str().unwrap_or_default(),
+            c["status"].as_str().unwrap_or_default(),
+            c["source"].as_str().unwrap_or_default()
+        ));
+    }
+    if !skipped.is_empty() {
+        out.push_str(&format!("\nSkipped {}:", skipped.len()));
+        for s in skipped {
+            let case = s["case"]
+                .as_str()
+                .map_or(String::new(), |c| format!(" as {c}"));
+            out.push_str(&format!(
+                "\n  {} ({}{case})",
+                s["source"].as_str().unwrap_or_default(),
+                s["reason"].as_str().unwrap_or_default()
+            ));
+        }
+    }
+    out
+}
+
+/// The file `arg` names, resolved with its symbolic links, checked: under
+/// the home, outside the logbook, a regular `.md` file.
+fn resolve(ctx: &Context, logbook: &Logbook, arg: &Path) -> Result<PathBuf> {
+    let given = arg.to_string_lossy();
+    if given.chars().any(char::is_control) {
+        return Err(Error::user(
+            "a task file's path has a control character; rename the file".to_string(),
+        ));
+    }
+    let path = match arg.strip_prefix("~") {
+        Ok(rest) => ctx.dirs.home.join(rest),
+        Err(_) => std::path::absolute(arg).unwrap_or_else(|_| arg.to_path_buf()),
+    };
+    let shown = ctx.dirs.display(&path);
+    let real = std::fs::canonicalize(&path)
+        .map_err(|e| Error::user(format!("{shown}: cannot read the task file: {e}")))?;
+    let home = std::fs::canonicalize(&ctx.dirs.home).unwrap_or_else(|_| ctx.dirs.home.clone());
+    if real == home || !real.starts_with(&home) {
+        return Err(Error::user(format!(
+            "{shown} is outside your home directory; import reads task files under {} only",
+            ctx.dirs.display(&ctx.dirs.home)
+        )));
+    }
+    let root = std::fs::canonicalize(&logbook.root).unwrap_or_else(|_| logbook.root.clone());
+    if real.starts_with(&root) {
+        return Err(Error::user(format!(
+            "{shown} is inside the logbook; import reads your own task files, never the logbook"
+        )));
+    }
+    let meta = std::fs::metadata(&real)
+        .map_err(|e| Error::user(format!("{shown}: cannot read the task file: {e}")))?;
+    if meta.is_dir() {
+        return Err(Error::user(format!(
+            "{shown} is a directory; name the Markdown files in it"
+        )));
+    }
+    if !meta.is_file() {
+        return Err(Error::user(format!("{shown} is not a regular file")));
+    }
+    if !real
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+    {
+        return Err(Error::user(format!("{shown} is not a Markdown file (.md)")));
+    }
+    Ok(real)
+}
+
+/// Reads and redacts the checked file `path` (at most [`MAX_FILE_BYTES`],
+/// UTF-8).
+fn read_source(
+    ctx: &Context,
+    redactor: &Redactor,
+    scrubber: &mut Scrubber,
+    path: &Path,
+) -> Result<Source> {
+    let home = std::fs::canonicalize(&ctx.dirs.home).unwrap_or_else(|_| ctx.dirs.home.clone());
+    let rest = path.strip_prefix(&home).unwrap_or(path);
+    let shown = redactor.redact(&format!("~/{}", rest.to_string_lossy()));
+    let file = std::fs::File::open(path)
+        .map_err(|e| Error::user(format!("{shown}: cannot read the task file: {e}")))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| Error::user(format!("{shown}: cannot read the task file: {e}")))?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(Error::user(format!(
+            "{shown} is larger than {} KiB; a task file is smaller",
+            MAX_FILE_BYTES / 1024
+        )));
+    }
+    let text =
+        String::from_utf8(bytes).map_err(|_| Error::user(format!("{shown} is not UTF-8 text")))?;
+    let text = scrubber.text(&shown, &text);
+    let stem = path
+        .file_stem()
+        .map(|s| redactor.redact(&s.to_string_lossy()))
+        .unwrap_or_default();
+    Ok(Source {
+        shown,
+        tasks: parse(&text),
+        stem,
+    })
+}
+
+/// The tasks of one file.
+fn tasks_of(source: &Source) -> Vec<Task> {
+    let hash = |kind: &str, text: &str| sys::sha256_hex(format!("{kind}\n{text}").as_bytes());
+    match &source.tasks {
+        Tasks::Items(items) => items
+            .iter()
+            .map(|item| {
+                let mut intent = item.text.clone();
+                if let Some(section) = &item.section {
+                    intent.push_str(&format!("\n\nSection: {section}"));
+                }
+                Task {
+                    file: source.shown.clone(),
+                    line: Some(item.line),
+                    done: item.done,
+                    title: title_of(&item.text),
+                    intent,
+                    hash: hash("item", &item.text),
+                }
+            })
+            .collect(),
+        Tasks::Whole(whole) => {
+            let title = title_of(whole.title.as_deref().unwrap_or(&source.stem));
+            vec![Task {
+                file: source.shown.clone(),
+                line: None,
+                done: false,
+                hash: hash("file", &format!("{title}\n{}", whole.text)),
+                title,
+                intent: whole.text.clone(),
+            }]
+        }
+    }
+}
+
+/// What happens to each task, in order.
+fn decide(tasks: &[Task], marker: &Marker, include_done: bool) -> Vec<Fate> {
+    let mut taken: BTreeSet<(&str, &str)> = BTreeSet::new();
+    tasks
+        .iter()
+        .map(|t| {
+            if t.done && !include_done {
+                return Fate::Skip {
+                    reason: "done",
+                    case: None,
+                };
+            }
+            if !t.title.chars().any(char::is_alphanumeric) {
+                return Fate::Skip {
+                    reason: "empty",
+                    case: None,
+                };
+            }
+            if let Some(e) = marker
+                .items
+                .iter()
+                .find(|e| e.file == t.file && e.hash == t.hash)
+            {
+                return Fate::Skip {
+                    reason: "already-imported",
+                    case: Some(e.case.clone()),
+                };
+            }
+            if !taken.insert((&t.file, &t.hash)) {
+                return Fate::Skip {
+                    reason: "duplicate",
+                    case: None,
+                };
+            }
+            // the earlier task at this place whose text is gone from the
+            // file: this one is its changed form
+            let replaces = marker
+                .items
+                .iter()
+                .rev()
+                .find(|e| {
+                    e.file == t.file
+                        && e.line == t.line
+                        && !tasks.iter().any(|o| o.file == e.file && o.hash == e.hash)
+                })
+                .map(|e| e.case.clone());
+            Fate::Create { replaces }
+        })
+        .collect()
+}
+
+/// The marker, or an empty one when there is none yet; one that cannot
+/// be read is a user error (nothing is written).
+fn read_marker(path: &Path) -> Result<Marker> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Marker {
+                version: 1,
+                items: Vec::new(),
+            });
+        }
+        Err(e) => {
+            return Err(Error::user(format!(
+                "{}: cannot read the import marker: {e}",
+                path.display()
+            )));
+        }
+    };
+    let marker: Marker = serde_json::from_str(&text).map_err(|e| {
+        Error::user(format!(
+            "{} is not a valid import marker ({e}); restore it from the logbook's git history, nothing was imported",
+            path.display()
+        ))
+    })?;
+    if marker.version != 1 {
+        return Err(Error::user(format!(
+            "{} has version {}; this engine knows version 1",
+            path.display(),
+            marker.version
+        )));
+    }
+    Ok(marker)
+}
+
+fn write_marker(path: &Path, marker: &Marker) -> Result<()> {
+    let text = serde_json::to_string_pretty(marker).expect("json");
+    sys::write_atomic(path, format!("{text}\n").as_bytes())?;
+    Ok(())
+}

@@ -240,6 +240,7 @@ fn new(ctx: &Context, args: NewArgs) -> Result<Output> {
             note: None,
             start: false,
             point: false,
+            done: None,
         },
     )?;
     let id = created.file.case.id.clone();
@@ -285,6 +286,10 @@ pub(crate) struct Spec {
     /// With `start`: the new case becomes `.seldon/active-case`, which the
     /// hooks attribute an agent's commands by.
     pub point: bool,
+    /// Created completed in one go (`import task --include-done`, WP-102):
+    /// `case-created` and `case-completed` in one ledger write, `done` the
+    /// completed Log line's text. Never with `start`.
+    pub done: Option<String>,
 }
 
 /// What [`create`] wrote: the case file, its ledger events (created, then
@@ -315,7 +320,9 @@ pub(crate) fn create(
     }
     let today = ctx.now.date_naive();
     let id = cases::next_id(logbook, ctx.now.year())?;
-    let status = if spec.start {
+    let status = if spec.done.is_some() {
+        CaseStatus::Completed
+    } else if spec.start {
         CaseStatus::Active
     } else {
         CaseStatus::Queued
@@ -329,8 +336,8 @@ pub(crate) fn create(
         priority: Some(spec.priority),
         area: spec.area.clone(),
         created: today,
-        started: spec.start.then_some(today),
-        closed: None,
+        started: (spec.start || spec.done.is_some()).then_some(today),
+        closed: spec.done.is_some().then_some(today),
         snapshot_before: None,
         agents: Vec::new(),
         events: Vec::new(),
@@ -361,6 +368,9 @@ pub(crate) fn create(
     if spec.start {
         file.log(&ctx.now, Transition::Start.log_word(), &spec.actor);
     }
+    if let Some(done) = &spec.done {
+        file.log(&ctx.now, done, &spec.actor);
+    }
     let text = crate::model::render_new(&file.case, &file.doc.body);
     if file.path.exists() {
         return Err(Error::user(format!(
@@ -383,6 +393,13 @@ pub(crate) fn create(
                 .actor(&spec.actor)
                 .case(Some(id.clone()))
                 .risk(spec.risk),
+        );
+    }
+    if spec.done.is_some() {
+        events.push(
+            Event::new(ctx.now, Source::Seldon, Kind::CaseCompleted, &id)
+                .actor(&spec.actor)
+                .case(Some(id.clone())),
         );
     }
     let events = emit(lock, config, logbook, events)?;
@@ -898,6 +915,7 @@ fn reopen(ctx: &Context, args: ReopenArgs) -> Result<Output> {
             note: Some(format!("reopens {}", args.id)),
             start: true,
             point: holder.is_none(),
+            done: None,
         },
     )?;
     let id = created.file.case.id.clone();
