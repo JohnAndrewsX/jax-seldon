@@ -2253,3 +2253,8 @@ Append-only. One bullet per pitfall: what happened, how to avoid it.
   name `sudo`/`pacman`/`systemctl`/`omarchy` fails closed too (`man`,
   `which`, `stat`, `cargo test pacman` pass). Omarchy's own scripts never
   run (`bash -n` on them passes). `GIT_PAGER=cat`/`GIT_EDITOR=true` pass.
+- **Round 4 of the guard (WP-130).** `git -c core.pager=cat` and
+  `GIT_CONFIG_GLOBAL=/dev/null` pass; `GIT_DIR`/`GIT_WORK_TREE` count as
+  the repository and work tree. An unknown program with a shell name or
+  an Omarchy script among its arguments fails closed; `shellcheck -s bash`
+  passes (data sink). `tmux send-keys` keys are joined without spaces.

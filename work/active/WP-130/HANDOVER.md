@@ -469,3 +469,96 @@ this handover and `memory/pitfalls.md` changed after it): `check: ok`,
 exit 0, including `check-guard` (`rows: 447`, `mutants: 62`, none
 survived), on a host at load average ~10. `shellcheck` still skipped
 locally (not installed).
+
+## Round 4
+
+Stage 2 re-looked round 3 (54518fd):
+- all A items closed;
+- generated sweep of 7 001 bypass shapes: allowed 4 499 → 156;
+- one short round asked.
+
+Everything in the brief is done. Each item is table rows, fed as text
+only.
+
+### Must fix
+
+| # | Change | Rows |
+|---|---|---|
+| 1 | `GIT_WORK_TREE`, `GIT_DIR` (set in the command or in the session) and `--git-dir`: the work tree is checked for changing verbs; the repository dir for changing verbs and `fetch`/`gc`/`config`/`tag`/`branch`/… | 3 B, 1 A |
+| 2 | `fd -x/-X` unwrapped (placeholders → unknown, else the path is appended); `rustup run <toolchain> cmd` unwrapped; `man -P`/`--pager=` must be a harmless pager, `man -H` and an unsafe `MANPAGER`/`PAGER`/`BROWSER` set in the command fail closed; `sort --compress-program` and `wget --use-askpass` (also via `-e`) fail closed | 7 B, 6 A (`man sudo`, `fd pattern` kept) |
+| 3 | `hash -p` fails closed | 1 B, 1 A |
+| 4 | hyprctl joins its arguments into one request (`--batch` splits on `;`). tmux `send-keys` joins keys without spaces: Space, Tab and Enter are mapped, `C-c`/`C-u` drop the line, `-l` is literal, `-H` and every other key name (Up, BSpace, F1, M-x, …) fail closed. | 6 B, 2 A |
+| 5 | xargs: the replstr (`-I R`, `-i`, `--replace`) becomes unknown in the wrapped argv; without one the stdin items are appended as unknown (`xargs env` → computed name) | 3 B, 2 A |
+| 6 | `tar --one-top-level=DIR`; `git init --separate-git-dir=DIR` | 2 B |
+
+### False positives → allow rows
+
+- **`git -c` with a harmless value.** A key that names a program now
+  passes with a harmless value (the same `SAFE_PROGRAMS` the variables
+  use): `core.pager=cat`, `core.editor=true`.
+- **Narrowed key set.** core.pager/editor/sshCommand/fsmonitor/
+  hooksPath/askPass/gitProxy, credential.*, sequence.editor,
+  diff.external, merge.tool, uploadpack.*hook, pager.*, gpg.*program
+  and any `*.cmd|command|driver|textconv|helper|program|clean|smudge|
+  process`. Two kinds fail closed whatever the value: `alias.*` and
+  `include*`. `protocol.allow` and `protocol.ext.*` fail closed unless
+  the value is `never`. So `diff.noprefix`,
+  `merge.conflictstyle`, `protocol.file.allow` and
+  `receive.denyCurrentBranch` pass.
+- **`GIT_CONFIG_*`.** `GIT_CONFIG_NOSYSTEM` passes. `GIT_CONFIG_GLOBAL`,
+  `GIT_CONFIG_SYSTEM` and `GIT_CONFIG` pass only as `/dev/null`. Every
+  other `GIT_CONFIG*` (PARAMETERS, COUNT, KEY_n, VALUE_n) fails closed.
+- **Rows:** 9 A, 6 B.
+
+### Known limits: the net, widened
+
+The brief's widening is implemented: a shell basename (any of the
+guard's shells) or a path under `/usr/share/omarchy`/`$OMARCHY_PATH`
+among an unknown program's arguments fails closed.
+
+**One addition beyond the brief.** The brief's first row, `strace -f
+sed -i s/a/b/ /etc/x`, names neither a shell nor an Omarchy path, so the
+widening alone does not block it. The net therefore also checks every
+argument suffix that starts with a known file command or wrapper (rm,
+cp, mv, sed, tee, git, tar, curl, find, xargs, env, ssh, …) as that
+command. Rows:
+- block: `strace -f sed -i s/a/b/ /etc/x`, `myrunner bash
+  /usr/share/omarchy/install.sh`, `myrunner bash script.sh`, `myrunner
+  /usr/share/omarchy/install.sh`, `myrunner rm -rf ~/.config/hypr`;
+- pass: `strace -f ls`, `myrunner build`.
+
+**False positive found and fixed.** The everyday sweep found one:
+`shellcheck -s bash …`. `shellcheck` and `shfmt` are data sinks now,
+with an allow row.
+
+Known limits now has one line for what is left, an unknown program's
+own write options (`strace -o ~/.config/x ls`). The files-a-shell-runs
+line now names `bash < cmds.txt` and `script /dev/null < cmds.txt`, and
+GNU `sed`'s `e` command joins the interpreter line.
+
+### Mutants and table
+
+- **Table:** 506 rows (59 new), all green.
+- **Mutants:** 85 (23 new), every one killed by its intended row; two
+  runs are identical. Three round-3 mutants were updated to the changed
+  code.
+- **Survivors found and handled.** Two wrapper mutants (terminal `-e`,
+  taskset) survived at first, because the wider net now also catches
+  their old rows. Defense in depth, not a hole. New rows (`foot -e
+  "$CMD"`, `taskset -c 0 "$CMD"`) show what only the wrapper rule
+  catches: a computed command behind the wrapper. The narrowed-key
+  mutant (back to `diff.*`) survived because `diff.noprefix=true` is a
+  harmless value either way; `git -c diff.colorMoved=zebra diff` (allow)
+  now separates the two.
+- **Sweeps:** 82 everyday commands, none blocked; 104 bypass shapes,
+  none allowed. 42 further everyday commands: one false positive
+  (shellcheck), fixed.
+- **Timing at the cap:** worst allowed shape 1.45 s, load average ~5.
+
+### just check (round 4)
+
+`flock /tmp/seldon-check.lock just check` on 3bd3981 (the code is
+361e1a5; later commits change only this handover and
+`memory/pitfalls.md`): `check: ok`, exit 0, including `check-guard`
+(`rows: 506`, `mutants: 85`, none survived). `shellcheck` still skipped
+locally (not installed).
