@@ -218,3 +218,54 @@ desk-view sections to 9 and 10; take all three form moves in
 `service-states.sh`; `decision-cases` step 5 can then also expect
 `.view.selected == "C-2026-003"`; consider WP-122's `takeKeys()` in
 Decisions' `closeForm`. Full `just check` on the merged `next`.
+
+## Merge of next
+
+`origin/next` (a1198b2: WP-120 contract v2, WP-122 sections 1–3) merged
+into this branch in 4357414. The conflicts were the seven docs/test
+files the review's trial merge predicted; no plugin code conflicted
+(`Desk.qml`, `Model.js`, `Section.qml` merged on their own). Both sides
+kept:
+
+- `harness/desk.qml`: WP-122's clip-aware `overflow(item, box, out,
+  clipBox)` and `intersect()` with WP-123's Prime Radiant `slot` box as a
+  fifth parameter; the texts inside a scrolled chart grid now count only
+  where the clip shows them, so `rfits` dropped its "if the grid scrolls,
+  only @slot" exemption and checks the plain overflow list.
+- `desk-view.sh`: WP-122 keeps section 8; WP-123's become 9 (Prime
+  Radiant, 9a–9g) and 10 (Decisions, System, Memory, 10a–10i); one
+  offscreen-render header for both.
+- `service-states.sh` scenario 35 loads all three moved forms
+  (`desk/NewCaseSheet`, `desk/DriftForm`, `desk/NewDecisionForm`).
+- SPEC-PLUGIN: the file tree lists both sections' parts (no 0.1 tab
+  components left); §5.3's keys row and §5.4's table name both; §5.4
+  holds WP-122's Today/Changelog/Work and WP-123's "Decisions, System,
+  Memory (4–6; WP-123)" (was §5.4.1); the Enter row says sections 4–6
+  have no first action (theirs open the editor, `e`); §5.7 is superseded
+  for every section and kept as the 0.1 record. KEYBINDINGS, TESTING and
+  COVERAGE.md take both rows and paragraphs.
+
+Then to the contract-2 sample and WP-122's sections:
+
+- The sample's `decisions[].cases` is present: Decisions shows the CASES
+  block for every decision (ADR-0004 "CASES · 0 / This decision names no
+  case.", ADR-0003 C-2026-004 and C-2026-005); `decisions` expects it,
+  the new `decision-nocases` case checks that an index without the field
+  hides the block; the `decisionCases` unit test reads the sample.
+- Two more events today: the Prime Radiant's heatmap summaries ("75
+  events on 15 of 90 days · busiest 2026-10-01 (32)", "70 … of 30 days …
+  (32)") and the 2026-10-01 hover read-out ("32 events · seldon 8 · …").
+  The other counters (rows per slot, paints, aggregation) are unchanged.
+- Work is real now: `decision-cases` #5 expects the case selected there
+  (`.view.selected == "C-2026-003"`).
+- Decisions' `closeForm` hands the keys back with WP-122's
+  `Desk.takeKeys()`.
+
+Verified: `omarchy plugin validate plugin/` ok; `just qmllint` ok (46
+files); `model.test.js` 124; `desk-view.sh` 1364 passed with
+`DESK_SHOTS` (the Kanagawa Decisions render shows the CASES block),
+1346 without. `flock /tmp/seldon-check.lock just check` on 4357414:
+**exit 0** (`check: ok`; install.test 209, deploy-test-host 190,
+docs-check ok, qmllint ok 46 files, model.test.js 124, real-home-guard
+11, service-states 328, desk-view 1346, bar-view 194). Only this
+handover changed after that commit.
