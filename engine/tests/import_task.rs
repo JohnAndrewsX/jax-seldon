@@ -545,3 +545,18 @@ fn an_unreadable_marker_stops_the_import() {
     assert!(why.contains("not a valid import marker"), "{why}");
     assert!(!ledger(&root).iter().any(|e| e["kind"] == "case-created"));
 }
+
+#[test]
+fn a_path_after_double_dash_may_start_with_a_dash() {
+    // the desk passes the path as one argument after `--` (fixed argv)
+    let (env, _root) = setup();
+    task_file(&env, "-notes.md", "- [ ] From a dashed name\n");
+    let out = env
+        .command(&["import", "task", "--json", "--dry-run", "--", "-notes.md"])
+        .env("SELDON_NOW", NOW)
+        .current_dir(&env.home)
+        .output()
+        .unwrap();
+    let report = ok(&out);
+    assert_eq!(report["created"][0]["source"], "~/-notes.md#1");
+}
