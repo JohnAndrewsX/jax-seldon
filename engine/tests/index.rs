@@ -1769,7 +1769,11 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
         // hold long texts too, clipped with `in the file`
         for (rel, section, probe) in [
             ("work/queued/C-2026-005-tokyo-night.md", "## Intent\n", 3),
-            ("work/queued/C-2026-006-snapper-retention.md", "## Result\n", 10),
+            (
+                "work/queued/C-2026-006-snapper-retention.md",
+                "## Result\n",
+                10,
+            ),
             ("work/completed/C-2026-001-init.md", "## Intent\n", 17),
             ("work/completed/C-2026-001-init.md", "## Result\n", 24),
             ("decisions/ADR-0002-snapshots.md", "## Decision\n", 38),
@@ -1811,7 +1815,12 @@ fn the_reference_derive_clips_texts_as_the_engine_does() {
     diff(&derived["events"], &index["events"], "/events", &mut d);
     diff(&derived["drift"], &index["drift"], "/drift", &mut d);
     diff(&derived["cases"], &index["cases"], "/cases", &mut d);
-    diff(&derived["decisions"], &index["decisions"], "/decisions", &mut d);
+    diff(
+        &derived["decisions"],
+        &index["decisions"],
+        "/decisions",
+        &mut d,
+    );
     let marked_in_file = |t: &Value| {
         t.as_str()
             .is_some_and(|t| t.ends_with(" more characters in the file)"))
