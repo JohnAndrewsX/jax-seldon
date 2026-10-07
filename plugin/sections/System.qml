@@ -20,7 +20,7 @@ ReadingSection {
 
   readonly property var openResult: root.service ? root.service.openResult : null
 
-  allRows: Model.systemTiles(root.index, root.service ? root.service.nowMs : Date.now())
+  allRows: root.index ? Model.systemTiles(root.index, root.service ? root.service.nowMs : Date.now()) : []
   searchFields: ["title", "meta", "lead"]
   emptyText: root.index ? "No tile matches the search." : "No index to show"
   detailTitle: root.current ? root.current.title : ""

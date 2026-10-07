@@ -46,6 +46,8 @@ Section {
   readonly property var current: root.rows.length === 0 ? null : root.rows[Math.max(0, root.cursor)]
 
   signal actionTriggered(string id)
+  // A click on a row of the list (after it was selected).
+  signal rowClicked(string id)
 
   function rowIndex(id) {
     for (var i = 0; i < root.rows.length; i++) if (root.rows[i].id === id) return i
@@ -120,6 +122,7 @@ Section {
       cursor: root.cursor === index
       onClicked: {
         root.selectedId = modelData.id
+        root.rowClicked(modelData.id)
         if (root.desk) {
           root.desk.showDetail()
           root.desk.giveKeys()

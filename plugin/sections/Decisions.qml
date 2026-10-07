@@ -24,8 +24,8 @@ import "../Model.js" as Model
 // New decision (`d` or the button) shows NewDecisionForm in the detail
 // pane: Enter twice (or a click on Create) runs `seldon decide --no-edit
 // --json -- <title>`; the service then opens the new decision, and the
-// selection follows it once the index lists it. Esc leaves the form and
-// keeps the title; `d` brings it back.
+// selection follows it once the index lists it. Esc or a click on a
+// decision leaves the form and keeps the title; `d` brings it back.
 //
 // Keys: ↑/↓ j/k move, Enter shows the detail (stacked layout), `e` opens
 // the selected decision in the editor (Accept's path too), `d` new
@@ -100,6 +100,8 @@ ReadingSection {
     return v
   }
 
+  // A click on a decision shows it: the form gives way, its title kept.
+  onRowClicked: if (root.formOpen) root.closeForm()
   onActionTriggered: function(id) {
     if (id === "accept" || id === "open") root.openCurrent()
   }
