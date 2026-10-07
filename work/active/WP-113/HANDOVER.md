@@ -2,8 +2,7 @@
 
 Branch `wp/113-collector-hashes`, from `next` at 38a9103 (`next` has not
 moved since); merge into `next`. Plan and decisions D1–D10:
-`work/active/WP-113/PLAN.md`. Proposed ADR-0028 amendment (items A, B;
-C recorded): `work/active/WP-113/ADR-0028-AMENDMENT-PROPOSED.md`.
+`work/active/WP-113/PLAN.md`. The amending ADR (round 2): `decisions/ADR-0037-adr-0028-amendment-toggles-and-links.md` (proposed); the round-1 note it replaced is removed.
 
 ## What was done
 
@@ -117,3 +116,29 @@ budget. Exit 0.
    case (attribution proves `plugin-update` only by `omarchy plugin
    update`). A follow-up could attribute hook-recorded file writes under
    the plugins directory.
+
+## Round 2
+
+Brief: `WP-113-round-2-brief.md` with the stage-1 packet `WP-113-review-1.md` (SEND BACK: B1–B3, N1–N7); D1/D2 agreed. Round-2 commits: `ebecb59` … HEAD.
+
+| Item | Fix | Tests (new or changed) | Mutants |
+|---|---|---|---|
+| **B1** link walk | One walk-wide set of directories walked (device + inode): a link to one of them is not followed, and below a link no directory is walked twice (outside links the tree has no loops of its own). One walk-wide budget, `LINKED_ENTRIES` = 4096 entries (files, directories, links) read below links. A link whose walk runs out of it is **cut off**: what was read below it is dropped, the files the manifest had below it keep their last hashes, and the link itself becomes one manifest entry (hash of `CUT_OFF`): event detail `linked directory cut off: …`, `meta.cutOff: true`, any evidence mark dropped. **Class: crisis** — the entry lies on its persistence path (the existing `alwaysRedPaths` row), and a persistence directory nobody can see into is the harm test's case: decoys must not hide a payload. When it fits again: `linked directory watched in full again` (a removal, attention) plus the real changes made meanwhile. | `collector_hashes.rs`: `a_back_link_to_an_ancestor_is_not_followed` (no outer link), `a_two_link_cycle_is_walked_once` (A→B→A outside HOME), `below_links_no_directory_is_walked_twice`, `a_diamond_of_links_is_linear` (the reviewer's probe: 2 links/level, 17 levels, < 1 s, manifest < 64 KiB; measured ≈ 40 ms debug), `a_link_past_the_budget_is_cut_off_and_a_crisis` (4096 decoys + a payload + a change to a known file: one crisis on the link, idempotent, manifest bounded; decoys gone → payload add + the change + the link's removal) | guard on link targets off → 4 tests fail (back-link, cycle, diamond, budget); guard on directories below links off → `below_links_no_directory_is_walked_twice` fails (both halves of the guard caught, cf. M1a/M1b) |
+| **B2** menu toggles | ADR-0037 §1 (proposed, one amending ADR with A and C): under `~/.local/state/omarchy/toggles/` an event whose content (`hashTo`, removal `hashFrom`) is empty is routine `toggle-flag`; a removal with `omarchy-default` evidence is routine `omarchy-default`; anything else there stays attention. `toggle-flag` joins `[drift] routine` defaults; the fixture validator ports the rule. Verified on the dev host: `omarchy-toggle` `touch`es / `rm`s the flag. `work/active/WP-113/ADR-0028-AMENDMENT-PROPOSED.md` removed; DECISIONS.md row added (ADR-0028's row notes the proposed amendment). | `toggles_are_routine_both_ways` (menu flags on and off, Hyprland copy on and off, foreign Lua attention, a flag that gains content attention; only those are open items; idempotent) | M3d (toggle-off mark dropped) → fails `toggles_are_routine_both_ways` (mark assertion) |
+| **B3** unreadable plugin entry | An entry that cannot be read (file not openable, directory not listable) is the line `<rel> NUL unreadable <sha256 of size, mtime, mode>` (directory `<rel>/`), so the tree changes once and the rest is still hashed; `partial: true` in the cursor and the event meta; the collector's message counts unreadable entries. Only an unreadable plugin directory keeps the last hash. | `collectors_user.rs`: `an_unreadable_entry_does_not_freeze_the_tree` (the reviewer's `chmod 000` + QML edit → one event, `partial`; further edit → one event; idempotent; unreadable directory; readable again; unreadable plugin directory keeps the hash). The old `…_kept_when_unreadable` became `a_tree_is_taken_without_an_event`. Skipped as root (CI): root opens every file. | — |
+| **N2** caps | Where every file is hashed (persistence paths, plugin trees) a file over `STAT_HASH_ABOVE` = 64 MiB is not read: SHA-256 of `stat <size> <mtime ns> <inode>`, `meta.hashBasis = "stat"` (config event; plugin event when the tree has such a file). Plugin trees: sorted walk, `TREE_ENTRIES` = 10 000 entries, cut off past them (`NUL cut` line, `partial`, counted). Omarchy copies over 64 MiB are never evidence. | `a_huge_hook_is_hashed_by_its_metadata` (2 GiB sparse hook < 2 s, `hashBasis`, the fingerprint recomputed), `a_tree_is_capped_and_huge_files_count_by_metadata` (2 GiB sparse plugin file; a touch is one event with `hashBasis`; 10 000-entry cap: `partial`, message, an edit inside the cut shows, past it not) | — |
+| **N3** (review N4) links into Seldon | No link — to a file or a directory — whose canonical target lies in the logbook, the state directory or `~/.config/seldon` is followed; counted in the message. | `a_link_into_the_logbook_is_not_followed` (dir link to `ledger/`, dir link to the state dir, file link to `STATUS.md`: four captures, 0 events) | — |
+| **N4** (review N5) stat-cache test | — | `the_tree_fingerprint_is_reused_but_not_fooled`: mtimes set into the past → the cursor keeps the fingerprint; an edit with the same size and the mtime put back → one event | M3c (fingerprint always reused) → fails this test |
+| **N1** unreadable round trip | Done (small): an unreadable file under a persistence path keeps its last hash (no stat entry), so the content it has when readable again is compared; a file never read is `skipped` as before; counted in the message. | `an_unreadable_round_trip_is_seen` (`chmod 200`, edit, `chmod 755` → one `config-change`, crisis). Skipped as root. | — |
+| **N5** (review N6) paru | SPEC §5 says paru's option list is unchecked (paru not installed on the dev host). | — | — |
+| **N7 / C** | In ADR-0037 §3 with A (§2, decided there, implemented by a follow-up WP after the evidence check) and B (§1). The ADR names the four ADR-0028 §2 rows it changes. | — | — |
+
+**Not merged:** per the brief, this branch waits for the operator's acceptance of ADR-0037.
+
+**Capture cost after round 2** (`just check-perf`, exit 0): config warm 1.11 / 1.15 / 1.26 / 1.33 ms and cold 2.16 / 2.20 / 25.7 / 24.7 ms (earlier defaults / + toggles / + hook blobs / + `authorized_keys`); plugins warm 22.8 ms (+0.7 ms: every file is opened once to tell an unreadable one), cold trees 89.2 ms. Index ×10 9.1 ms, ×150 68.3 ms (first attempt 115 ms on a busy host, second within budget, as the recipe allows), `status` 44.1 ms, hooks ≤ 4.4 ms.
+
+**Gate:** `flock /tmp/seldon-check.lock just check` → **exit 0** at `03ce1b5` (`check: ok`; 84 test binaries ok, `qmllint: ok (49 files)`, `model.test.js` 107 passed, plugin harness ok); only this handover followed (log `check-wp113-r2.log`).
+
+**Process note (review §5 Q6):** my logs this round have unique names (`perf-wp113-r2.log`, `check-wp113-r2.log`); round 1 used `scratchpad/check.log` in this session's own scratchpad.
+
+**Open:** ADR-0037 acceptance (operator); §2's evidence item (WP-D, test host) and its implementation; the agent-edit attribution follow-up (round 1, open question 3).
