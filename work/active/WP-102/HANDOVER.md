@@ -240,3 +240,88 @@ clippy `-D warnings`, all engine tests (default and `watch`), packaging
 schema-validate, docs-check (465 links, 14 translated pages, 46 commands),
 `omarchy plugin validate`, qmllint (48 files), plugin tests. `import_task`:
 18 tests. Log: `engine/target/check-wp102-r2.log` (dev host, not committed).
+
+## Round 3
+
+Brief: `WP-102-round-3-brief.md` (Fable stage 2: small SEND BACK).
+
+### Fixed
+
+1. **A CRLF continued line leaked a secret.** `read_source` now turns
+   `\r\n` into `\n` before `redact_keeping_lines`. The line count does not
+   change. `multi_line_secrets_are_redacted_like_a_note` now also imports
+   both multi-line forms (`mysql … \` / `-p …`, and JSON `"password":` with
+   the value on the next line) with CRLF endings. The secrets are absent
+   from the case, ledger, index, marker and `git log -p`, and the line
+   numbers hold. Mutant "CRLF normalisation off" is killed. The engine-wide
+   rule fix (`\\\r?\n` in the db rule and in WP-097's option-rule
+   continuation) is the orchestrator's separate WP and is not touched here.
+2. **The engine refuses an agent's start of an imported case.**
+   `plan::refuse_agent_start_of_imported`: a case tagged `imported`, with
+   the actor **or** the session (`$SELDON_ACTOR`) an agent, whatever
+   `--actor` says (the B2 pattern) → exit 1 "C-… is not started: an
+   imported case is started by the user (ADR-0027 §2a); ask them to start
+   it (agent:…'s session)". It is called in `plan.rs` `step()` for
+   `Transition::Start` (under the lock, after the transition check) and in
+   `agent.rs` `launch_on` for a queued case (before the plain "start it
+   first" hint). `TAG_IMPORTED` now lives in `plan.rs`, and
+   `import/task.rs` re-exports it. Test `an_agent_cannot_start_an_imported_case`:
+   - `--actor agent:…`, `$SELDON_ACTOR=agent:…` and `--actor human` inside
+     an agent session are all refused, with the ledger unchanged;
+   - `agent start` gives the same answer and launches nothing (stub
+     `omarchy` never runs);
+   - the user's own start goes through, and an agent may start a case that
+     is not imported.
+
+   Three mutants are killed: the refusal in `step()`, its session part, and
+   the refusal in `agent start`. One sentence each was added to SPEC-ENGINE
+   §3 (`plan start` and `import task`). The skill now says "The engine
+   refuses an agent's start of an imported case: ask the user to start
+   it." Guide 09 en/de says it too.
+3. **Optional item, done.** `bad_path_char` also refuses U+200B–U+200D,
+   U+2060 and U+FEFF. The linked-folder test was extended to five names,
+   and a mutant is killed.
+
+A note for the orchestrator: `plan reopen` of a completed imported case
+makes a new active case with the same Intent, tagged `reopens:<ID>` and
+not `imported`. That case was started by the user once before (or
+imported as done), so I left reopen as it is.
+
+### Mutants
+
+`python3 work/active/WP-102/mutants.py` takes a file per mutant and uses
+its own target `engine/target/mutants`. **27 mutants: all killed.**
+
+### For 102b (no code in 102a)
+
+- **Start** on an `imported` card never fires from the card. It opens the
+  detail first, which shows:
+  - the **whole Intent as plain monospace text** (never rendered
+    Markdown);
+  - the provenance line;
+  - `source` (WP-127);
+  - the line count.
+  Cards carry an "Imported" marker from the tag.
+- **Fixed argv:** `seldon import task --json [--dry-run] -- <path>`, with
+  the path as one argument (a path starting with `-` is tested). The
+  dry-run list comes first, then one click imports.
+- **Live check** on the test host with a ten-item file that holds one
+  `## Result` line and one CRLF secret.
+- **`cases[].source` (WP-127)** is an engine-written optional frontmatter
+  key that the index copies:
+  - `~/`-relative and redacted;
+  - no control, bidi or format characters;
+  - at most 512 characters;
+  - display only, never an argv.
+  The marker stays the only idempotency key.
+
+### Check (round 3)
+
+`flock /tmp/seldon-check.lock just check` on 1cf45a0 (the last code and
+docs commit; this handover adds only this file): **exit 0, `check: ok`** —
+fmt, clippy `-D warnings`, all engine tests (default and `watch`),
+packaging, install, deploy, schema-validate, docs-check (465 links, 14
+translated pages, 46 commands), `omarchy plugin validate`, qmllint (48
+files), plugin tests. `import_task`: 19 tests. The branch diff holds no
+private path (`/home/` only as `/home/alice` and `/home/<user>`). Log:
+`engine/target/check-wp102-r3.log` (dev host, not committed).
