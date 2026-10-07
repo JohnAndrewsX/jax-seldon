@@ -245,11 +245,14 @@ redacted value reads `‹redacted›`. The built-in rules cover:
   digits and other characters (so `sort --key=2` and `hotkey=Super` stay
   as they are);
 - `Authorization:`, `X-Api-Key:`, `Private-Token:` and other headers
-  whose name ends in Key, Token, Secret or Auth, and the cookies after
+  whose name ends in Key, Token, Secret or Auth, also a value in quotes
+  (`Authorization: "Bearer …"`, `"Authorization": "…"` in JSON), and the
+  cookies after
   `Cookie:` and `Set-Cookie:` (a `name=value`; `cookie: banner fixed`
   stays);
 - the value of a JSON key such as `"password"`, `"passwd"`,
-  `"client_secret"`, `"access_token"`, `"api_key"` or `"apiKey"` in
+  `"client_secret"`, `"access_token"`, `"api_key"`, `"x-api-key"` or
+  `"apiKey"` in
   inline JSON (`curl -d '{"password": "…"}'`); `"password_hint"` stays;
 - AWS access keys (`AKIA…`, `ASIA…`), GitHub tokens (`ghp_…`, `gho_…`,
   `github_pat_…` and the other `gh…_` forms), GitLab tokens (`glpat-…`),
@@ -265,6 +268,11 @@ redacted value reads `‹redacted›`. The built-in rules cover:
 - proxy credentials: after `curl -U`, `--proxy-user` and
   `--proxy-password`, and `user:pass@` in the proxy after `curl -x`,
   `--proxy` or in `https_proxy=`;
+- a PEM private key (`-----BEGIN OPENSSH PRIVATE KEY-----` and the
+  other `… PRIVATE KEY` blocks): everything between its BEGIN and END
+  lines becomes one `‹redacted›`;
+- nmcli's passwords and keys: the value after `password`, `wifi-sec.psk`,
+  `802-1x.password`, `vpn.secrets` and the other secret properties;
 - the user and password in a URL (`https://user:secret@host`), also
   when the password contains `/`, `?`, `#` or `:`.
 - the part before the `@` of an e-mail address: `me@example.com` reads

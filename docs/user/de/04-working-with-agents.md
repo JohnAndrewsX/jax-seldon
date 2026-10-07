@@ -317,7 +317,10 @@ aufgezeichnet. Prüfungen, die nichts ändern (`sudo -l`, `sudo -n true`,
 läuft vor dem Befehl, deshalb sagt der Eintrag „asked to run“: Er steht
 auch dann da, wenn du den Passwortdialog abbrichst. Eine Zeile, die ein
 Passwort an `sudo -S` weiterreicht, wird nur als Programm und
-`‹redacted›` aufgezeichnet. Ein solcher Eintrag steht im Case und im
+`‹redacted›` aufgezeichnet, ebenso eine Zeile, die ein Passwort als
+einfaches Argument angibt oder es an das Programm weiterreicht
+(`htpasswd -b`, `echo user:pw | chpasswd`, `usermod -p`, `smbpasswd -s`,
+`passwd --stdin`, ein Schlüssel, der an `cryptsetup` geht). Ein solcher Eintrag steht im Case und im
 Changelog; als Drift wird er nicht gelistet (die Änderung, die er
 bewirkt, schon, durch den Collector, der sie sieht).
 

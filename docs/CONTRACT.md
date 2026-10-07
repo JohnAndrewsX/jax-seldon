@@ -112,7 +112,10 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
        line) and *Result*; `decisions[].lead`: of the decision's
        *Decision*. User content (rule 6): control characters other than
        line breaks and tabs as spaces, direction and format characters
-       dropped, then redacted by the logbook's redaction on every build,
+       dropped (the set of SPEC-ENGINE §6, ADR-0038 as amended by
+       WP-140: also U+00AD, U+061C, U+180E, U+2061–U+2064,
+       U+206A–U+206F, U+FFF9–U+FFFB and the tags U+E0000–U+E007F),
+       then redacted by the logbook's redaction on every build,
        then clipped as rule 5 says; absent without text, all withheld
        while `[redaction] patterns` do not compile;
      - `cases[].source`: an imported case's task, `~/…/file.md#line` (or

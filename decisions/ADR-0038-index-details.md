@@ -167,3 +167,18 @@ gains "except `intent`, `result` and `lead`". An index without the fields
   would key nothing off it.
 - *`lead` as the first paragraph of the body:* that is the Context, not
   the decision.
+
+## Amendment note (WP-140, 2026-10-07)
+
+A wording follow-up, not a new decision. The set of §2's dropped
+**direction and format characters** — and of §3's refused `source`
+characters — is `import::is_direction_or_format`, which WP-140 widened
+(the WP-127 stage-1 review and Fable stage 2): besides U+200B–U+200F,
+U+202A–U+202E, U+2060, U+2066–U+2069 and U+FEFF it now holds U+00AD
+(soft hyphen), U+061C (Arabic letter mark), U+180E (Mongolian vowel
+separator), U+2061–U+2064 (invisible operators), U+206A–U+206F
+(deprecated format characters), U+FFF9–U+FFFB (interlinear annotation)
+and U+E0000–U+E007F (tags). Each of them can split a token from its
+redaction rule without showing. The commit subjects of ADR-0036's plugin
+updates use the same set. The contract is unchanged (contract 2): the
+fields only hold fewer invisible characters.

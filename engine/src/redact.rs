@@ -4,11 +4,12 @@
 //! `meta` of every event, and by the commands that write free text into
 //! the logbook (`log`, `plan`, `decide`, `drift explain|dismiss`) before
 //! anything is written, through [`Redactor::for_config`]. Built-in rules:
-//! URLs with userinfo, `--password` (also wget's `--http-password`),
+//! the body of a PEM private key, URLs with userinfo, `--password` (also wget's `--http-password`),
 //! `--token`/`--api-key`/`--secret`/`--pass`/`--oauth2-bearer`-style
 //! options, the `pass:…` value of openssl's `-pass`/`-passin`/`-passout`-style
 //! options, `token=` and `…KEY=`/`…TOKEN=`/`…SECRET=`/`…PASSWORD=`-style
-//! assignments, `Authorization:` and `X-…-Key:`-style headers, AWS access
+//! assignments, `Authorization:` and `X-…-Key:`-style headers (a quoted
+//! value too), AWS access
 //! keys, GitHub, GitLab and Slack tokens, `sk-`/`sk_` keys, anything after
 //! `-p` for `mysql|psql|smbclient`, the credentials after `curl -u`, the
 //! password after `sshpass -p` and `docker|podman … login -p`, proxy
@@ -17,7 +18,7 @@
 //! `"…token"`-style keys, `Cookie:`/`Set-Cookie:` header values and the
 //! cookies after `curl -b`/`--cookie`, a client certificate with its
 //! password after `curl -E`/`--cert`, the value after `http|xh -a`/`--auth`,
-//! the local part of an e-mail address (the domain stays); plus the
+//! nmcli's secret properties (`wifi-sec.psk X`, `password X`), the local part of an e-mail address (the domain stays); plus the
 //! user's regexes from `config.toml [redaction] patterns`, each of which
 //! replaces its whole match. The replacement is always [`REDACTED`].
 //!
@@ -30,9 +31,11 @@
 //! `hotkey=Super` stay as they are.
 //!
 //! Redacting twice gives the same text for the built-in rules: a match
-//! that lies inside an existing [`REDACTED`] marker is left alone, so text
-//! redacted by a command and again by the ledger reads the same in both
-//! places.
+//! that lies inside an existing [`REDACTED`] marker is left alone, and so
+//! is one whose masked part holds only markers ([`Rule::masks_only_markers`],
+//! WP-140), so text redacted by a command and again by the ledger reads the
+//! same in both places, also after a user pattern masked a gap next to a
+//! marker.
 //!
 //! Word boundaries are ASCII (`(?-u:\b)`): with a Unicode `\b` a regex
 //! leaves its fast matcher on any non-ASCII text, the marker of an
