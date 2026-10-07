@@ -491,37 +491,93 @@ pub fn slugify(s: &str) -> String {
 }
 
 /// SHA-256 (FIPS 180-4) of `bytes`. Implemented here because no hashing
-/// crate is on the allowed list (AGENTS.md §7); the config collector hashes
-/// files of at most 1 MB, so a plain one-shot implementation is enough. The
-/// whole blocks are hashed in place; only the last one or two, with the
-/// padding, are copied.
+/// crate is on the allowed list (AGENTS.md §7). The whole blocks are
+/// hashed in place; only the last one or two, with the padding, are
+/// copied. [`Sha256`] hashes a stream (a file of any size, WP-113).
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-    let (blocks, rest) = bytes.as_chunks::<64>();
-    for block in blocks {
-        sha256_block(&mut h, block);
+    let mut s = Sha256::new();
+    s.update(bytes);
+    s.finish()
+}
+
+/// SHA-256 over bytes that arrive in pieces: [`Sha256::update`] as often
+/// as needed, then [`Sha256::finish`].
+#[derive(Debug, Clone)]
+pub struct Sha256 {
+    h: [u32; 8],
+    /// A block begun by an earlier update.
+    buf: [u8; 64],
+    buffered: usize,
+    len: u64,
+}
+
+impl Default for Sha256 {
+    fn default() -> Self {
+        Sha256::new()
     }
-    // the rest + 0x80 + zero padding + 64-bit big-endian bit length: one
-    // block, or two when the rest leaves less than 9 bytes
-    let mut tail = [0u8; 128];
-    tail[..rest.len()].copy_from_slice(rest);
-    tail[rest.len()] = 0x80;
-    let end = if rest.len() < 56 { 64 } else { 128 };
-    tail[end - 8..end].copy_from_slice(&((bytes.len() as u64).wrapping_mul(8)).to_be_bytes());
-    let (blocks, _) = tail[..end].as_chunks::<64>();
-    for block in blocks {
-        sha256_block(&mut h, block);
+}
+
+impl Sha256 {
+    pub fn new() -> Self {
+        Sha256 {
+            h: [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
+                0x1f83d9ab, 0x5be0cd19,
+            ],
+            buf: [0; 64],
+            buffered: 0,
+            len: 0,
+        }
     }
 
-    let mut out = [0u8; 32];
-    let (chunks, _) = out.as_chunks_mut::<4>();
-    for (chunk, word) in chunks.iter_mut().zip(h) {
-        *chunk = word.to_be_bytes();
+    pub fn update(&mut self, mut bytes: &[u8]) {
+        self.len = self.len.wrapping_add(bytes.len() as u64);
+        if self.buffered > 0 {
+            let take = (64 - self.buffered).min(bytes.len());
+            self.buf[self.buffered..self.buffered + take].copy_from_slice(&bytes[..take]);
+            self.buffered += take;
+            bytes = &bytes[take..];
+            if self.buffered < 64 {
+                return;
+            }
+            let block = self.buf;
+            sha256_block(&mut self.h, &block);
+            self.buffered = 0;
+        }
+        let (blocks, rest) = bytes.as_chunks::<64>();
+        for block in blocks {
+            sha256_block(&mut self.h, block);
+        }
+        self.buf[..rest.len()].copy_from_slice(rest);
+        self.buffered = rest.len();
     }
-    out
+
+    pub fn finish(mut self) -> [u8; 32] {
+        // the rest + 0x80 + zero padding + 64-bit big-endian bit length: one
+        // block, or two when the rest leaves less than 9 bytes
+        let rest = self.buffered;
+        let mut tail = [0u8; 128];
+        tail[..rest].copy_from_slice(&self.buf[..rest]);
+        tail[rest] = 0x80;
+        let end = if rest < 56 { 64 } else { 128 };
+        tail[end - 8..end].copy_from_slice(&self.len.wrapping_mul(8).to_be_bytes());
+        let (blocks, _) = tail[..end].as_chunks::<64>();
+        for block in blocks {
+            sha256_block(&mut self.h, block);
+        }
+
+        let mut out = [0u8; 32];
+        let (chunks, _) = out.as_chunks_mut::<4>();
+        for (chunk, word) in chunks.iter_mut().zip(self.h) {
+            *chunk = word.to_be_bytes();
+        }
+        out
+    }
+
+    /// [`Sha256::finish`] as 64 lowercase hex digits.
+    pub fn finish_hex(self) -> String {
+        hex(&self.finish())
+    }
 }
 
 /// One SHA-256 compression step: `h` after the 64-byte `block`.
@@ -579,7 +635,11 @@ fn sha256_block(h: &mut [u32; 8], block: &[u8; 64]) {
 
 /// [`sha256`] as 64 lowercase hex digits.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    sha256(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    hex(&sha256(bytes))
+}
+
+fn hex(digest: &[u8; 32]) -> String {
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
@@ -696,5 +756,27 @@ mod tests {
             sha256_hex(&[0u8; 64]),
             "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b"
         );
+    }
+
+    /// WP-113: the stream gives the one-shot digest wherever the pieces
+    /// are cut (inside a block, at its edge, empty pieces).
+    #[test]
+    fn sha256_stream_equals_one_shot() {
+        let bytes: Vec<u8> = (0..1000u32).map(|i| (i * 7 % 256) as u8).collect();
+        for cut in [0, 1, 55, 63, 64, 65, 127, 128, 500, 999, 1000] {
+            for step in [1, 3, 64, 100, 1000] {
+                let mut s = Sha256::new();
+                s.update(&bytes[..cut]);
+                s.update(&[]);
+                for piece in bytes[cut..].chunks(step) {
+                    s.update(piece);
+                }
+                assert_eq!(
+                    s.finish_hex(),
+                    sha256_hex(&bytes),
+                    "cut {cut}, step {step}"
+                );
+            }
+        }
     }
 }
