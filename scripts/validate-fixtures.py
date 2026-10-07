@@ -159,9 +159,9 @@ EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
                     "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile",
                     "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
-# WP-141: a file pacman left beside one of these is a crisis (engine: class.rs PACNEW_RED)
+# WP-141, ADR-0042: a file pacman left beside one of these is a crisis (engine: class.rs PACNEW_RED)
 PACNEW_RED = ["/etc/mkinitcpio.conf", "/etc/mkinitcpio.conf.d", "/etc/mkinitcpio.d", "/etc/default/limine",
-              "/etc/limine*", "/boot/limine*", "/etc/systemd", "/etc/pam.d", "/etc/security"]
+              "/etc/limine*", "/boot/limine*", "/etc/pam.d"]
 PACNEW_SUFFIXES = (".pacnew", ".pacsave", ".pacorig")
 CLASS_ORDER = {"routine": 0, "attention": 1, "crisis": 2}
 THEME_CODE = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
@@ -2107,7 +2107,30 @@ def self_checks(today):
         lines, logs = planned_links([e for _, e in ledger], case_files)
         if not ok(lines, logs):
             out.append(f"self-check 'rule 9: {label}': lines {[(e['id'], c) for e, c, _ in lines]}, logs {logs}")
-    return out, len(cases) + len(proposals) + 5 + len(rule9) + len(round2)
+
+    # WP-141, ADR-0042: a caseless file pacman left is its own item, never its transaction's;
+    # beside a PAM file a crisis, beside a pam-owned file Omarchy overrides attention.
+    def add_left(subject):
+        def m(ledger):
+            ledger.append(("<self-check>:pacnew", {
+                "id": "7" + "Z" * 23 + "PN", "ts": "2026-10-01T16:56:00+02:00", "source": "pacman", "kind": "note",
+                "subject": subject, "detail": subject.rsplit(".", 1)[0] + " installed as " + subject,
+                "actor": "system", "zone": "red",
+                "meta": {"command": "pacman -Syu", "transaction": "tx-20261001T165600"}}))
+        return m
+
+    pacnew = [
+        ("a .pacnew beside a PAM file is a crisis", "/etc/pam.d/system-auth.pacnew", (True, "pacnew-red")),
+        ("a .pacnew in /etc/security is attention", "/etc/security/faillock.conf.pacnew", (False, "pacnew")),
+    ]
+    for label, subject, want in pacnew:
+        problems = []
+        derived, _, _ = derive(LOGBOOK, today, problems, add_left(subject))
+        got = [(d["crisis"], d.get("rule"), d.get("txId"), d.get("members")) for d in derived["drift"]
+               if d["subject"] == subject]
+        err = problems[:1] or ([] if got == [want + (None, None)] else [f"items {got}, want [{want + (None, None)}]"])
+        out += [f"self-check '{label}': {e}" for e in err]
+    return out, len(cases) + len(proposals) + 5 + len(rule9) + len(round2) + len(pacnew)
 
 
 # --------------------------------------------------------------------------- snapshot info files
