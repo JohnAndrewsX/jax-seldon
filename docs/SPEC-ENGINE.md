@@ -1260,9 +1260,12 @@ git itself is killed, with the same bounded pipe wait. Rules:
   `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`,
   `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`, the repository variables
   removed and the clone's parent as `GIT_CEILING_DIRECTORIES`; own process
-  group, 2 s per call. Per capture one `rev-parse HEAD --short HEAD` per
-  clone (it also gives the short version fallback); per moved update a
-  `rev-list --left-right --count` and a `log --max-count=20`. A HEAD in
+  group, 2 s per call. The HEAD is read from the clone's files without a
+  process (`.git/HEAD`, a plain `refs/heads/…` loose or in `packed-refs`;
+  a `.git` file, a link, reftable or any other ref name: git's `rev-parse
+  HEAD --short HEAD`, which also gives the short version fallback); per
+  moved update a `rev-list --left-right --count` and a `log
+  --max-count=20`. A HEAD in
   the cursor that is not an object name never reaches git. git missing,
   failing or timing out: the same event without `meta.git`/`meta.commits`.
   The index clips `meta.commits` like every meta string (ADR-0025). Events the

@@ -277,7 +277,7 @@ mod plugins {
             }
         }
 
-        fn list(&self, json: &str) {
+        pub(super) fn list(&self, json: &str) {
             write(&self.b.path("list.json"), json);
         }
 
@@ -885,9 +885,17 @@ mod plugin_commits {
             )
         );
 
-        // one commit: no ellipsis; more than 20: the count, 20 subjects
+        // one commit: no ellipsis (the refs packed, the HEAD detached:
+        // read from the files all the same); more than 20: the count, 20
+        // subjects
         c.commit("Only one");
+        c.git(&["pack-refs", "--all"]).unwrap();
+        assert!(!c.dir.join(".git/refs/heads/main").exists());
         let e = c.update("2026-10-02T13:00:00+02:00");
+        assert_eq!(
+            c.p.b.cursors["plugins"]["plugins"][WEATHER]["head"],
+            c.head()
+        );
         assert!(
             e.detail
                 .as_deref()
@@ -896,10 +904,15 @@ mod plugin_commits {
             "{:?}",
             e.detail
         );
+        c.git(&["checkout", "-q", "--detach"]).unwrap();
         for k in 1..=25 {
             c.commit(&format!("Step {k}"));
         }
         let e = c.update("2026-10-02T14:00:00+02:00");
+        assert_eq!(
+            c.p.b.cursors["plugins"]["plugins"][WEATHER]["head"],
+            c.head()
+        );
         let commits: Vec<&str> = extra(&e, "commits").unwrap().split('\n').collect();
         assert_eq!(commits.len(), seldon::collectors::plugins::COMMITS_MAX);
         assert_eq!((commits[0], commits[19]), ("Step 25", "Step 6"));
@@ -921,10 +934,14 @@ mod plugin_commits {
         c.commit("evil \u{202E}txt.exe\u{202C} and to\u{200B}ken=ghp_EXAMPLEsecret123 here");
         c.commit(&format!("token=ghp_EXAMPLEsecret456 {long}"));
         c.commit(&format!("{} token=ghp_EXAMPLEsecret789", "y".repeat(95)));
+        // a bare GitHub token across the cut: clipped first, its prefix
+        // would match no rule
+        let token = format!("ghp_EXAMPLE{}", "0".repeat(29));
+        c.commit(&format!("{} {token} tail", "z".repeat(80)));
         let e = c.update("2026-10-02T10:00:00+02:00");
         let commits = extra(&e, "commits").unwrap();
         let lines: Vec<&str> = commits.split('\n').collect();
-        assert_eq!(lines.len(), 4, "{commits:?}");
+        assert_eq!(lines.len(), 5, "{commits:?}");
         for line in &lines {
             assert!(!line.chars().any(char::is_control), "{line:?}");
             assert!(
@@ -934,6 +951,8 @@ mod plugin_commits {
             assert!(!line.contains("ghp_EXAMPLE"), "{line:?}");
         }
         // redacted before the clip: a secret at the cut is masked whole
+        assert_eq!(lines[0], format!("{} ‹redacted› tail", "z".repeat(80)));
+        let lines = &lines[1..];
         assert_eq!(
             lines[0],
             format!("{} token=‹redacted›", "y".repeat(95))
@@ -988,6 +1007,16 @@ mod plugin_commits {
         let e = c.update("2026-10-02T11:00:00+02:00");
         assert_eq!(extra(&e, "commits"), Some("After"));
 
+        // a HEAD unreadable for one capture keeps the last one
+        let (head, aside) = (c.dir.join(".git/HEAD"), c.dir.join(".git/HEAD.aside"));
+        std::fs::rename(&head, &aside).unwrap();
+        let out = c.p.run("2026-10-02T11:10:00+02:00");
+        assert!(out.ok && out.events.is_empty(), "{:?}", out.events);
+        std::fs::rename(&aside, &head).unwrap();
+        c.commit("After the gap");
+        let e = c.update("2026-10-02T11:20:00+02:00");
+        assert_eq!(extra(&e, "commits"), Some("After the gap"));
+
         // a head git no longer has, or one shaped like an option: the
         // event without the list, and git never sees it as an option
         for bad in ["0123456789abcdef0123456789abcdef01234567", "--output=pwned"] {
@@ -998,6 +1027,86 @@ mod plugin_commits {
             assert!(e.meta.extra.is_empty(), "{bad}: {:?}", e.meta.extra);
             assert!(!c.dir.join("pwned").exists());
         }
+    }
+
+    /// The capture cost of WP-136 (not part of `check`; run with
+    /// `--ignored --nocapture`, best in the bench profile): 8 third-party
+    /// plugins with a manifest version, without and with their own clone
+    /// (one `rev-parse` each per capture), and an update whose HEAD moved
+    /// (two more queries). Prints medians; asserts only generous ceilings.
+    #[test]
+    #[ignore]
+    fn capture_cost_of_clone_heads() {
+        const RUNS: usize = 31;
+        let mut p = plugins::story_in("commits-cost");
+        let home = p.b.dirs.home.clone();
+        let ids: Vec<String> = (0..8).map(|k| format!("io.github.example.p{k}")).collect();
+        let list: Vec<Value> = ids
+            .iter()
+            .map(|id| json!({"id": id, "enabled": true, "firstParty": false}))
+            .collect();
+        p.list(&serde_json::to_string(&list).unwrap());
+        for id in &ids {
+            p.manifest(id, Some("1.0.0"));
+        }
+        let median = |p: &mut plugins::PluginBench, what: &str| {
+            let mut times = Vec::new();
+            for _ in 0..RUNS {
+                let start = std::time::Instant::now();
+                assert!(p.run("2026-10-02T09:00:00+02:00").ok);
+                times.push(start.elapsed());
+            }
+            times.sort();
+            eprintln!("plugins capture, {what}: median {:?}", times[RUNS / 2]);
+            times[RUNS / 2]
+        };
+        p.run("2026-10-02T08:00:00+02:00");
+        let plain = median(&mut p, "8 plugins, no clone");
+        for id in &ids {
+            let dir = p.plugins_dir.join(id);
+            for args in [
+                &["init", "-q"][..],
+                &["add", "."],
+                &["commit", "-q", "-m", "one"],
+            ] {
+                let Some(out) = git_in(&home, &dir, args) else {
+                    return;
+                };
+                assert!(out.status.success());
+            }
+        }
+        p.run("2026-10-02T08:30:00+02:00");
+        let clones = median(&mut p, "8 plugins, 8 clones");
+        eprintln!(
+            "delta: {:?} per capture, {:?} per clone",
+            clones.saturating_sub(plain),
+            clones.saturating_sub(plain) / 8
+        );
+        // an update with a moved HEAD: the version bump and a commit
+        // between captures (not timed)
+        let dir = p.plugins_dir.join(&ids[0]);
+        let mut times = Vec::new();
+        for k in 0..11 {
+            p.manifest(&ids[0], Some(&format!("1.0.{}", k + 1)));
+            let out = git_in(&home, &dir, &["commit", "-q", "-am", &format!("Step {k}")]).unwrap();
+            assert!(out.status.success());
+            let start = std::time::Instant::now();
+            let out = p.run(&format!("2026-10-02T10:{k:02}:00+02:00"));
+            times.push(start.elapsed());
+            assert_eq!(out.events.len(), 1);
+            assert!(out.events[0].meta.extra.contains_key("commits"));
+        }
+        times.sort();
+        eprintln!(
+            "plugins capture, 8 clones, one update with commits: median {:?}",
+            times[5]
+        );
+        assert!(clones < std::time::Duration::from_millis(500), "{clones:?}");
+        assert!(
+            times[5] < std::time::Duration::from_millis(500),
+            "{:?}",
+            times[5]
+        );
     }
 
     #[test]

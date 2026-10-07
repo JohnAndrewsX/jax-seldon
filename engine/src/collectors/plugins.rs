@@ -28,8 +28,9 @@
 //! [`COMMITS_MAX`] subjects, newest first, one per line in `meta.commits`,
 //! each cleaned of control and direction characters, redacted and clipped
 //! ([`commit_subject`]); the detail has the count and the newest subject.
-//! git runs read-only with a fixed argv ([`Git`]); when it fails or times
-//! out the event is the same without the commits.
+//! The HEAD is read from the clone's files ([`head_from_files`]), else
+//! from git; git runs read-only with a fixed argv ([`Git`]); when it fails
+//! or times out the event is the same without the commits.
 //!
 //! `plugin-add` and `plugin-update` are timed by the later mtime of the
 //! plugin directory and its manifest, clamped to `[last check, now]`, so
@@ -214,14 +215,8 @@ impl Plugins {
         let manifests = catalog(omarchy);
         let mut snapshot = BTreeMap::new();
         let mut seen = BTreeMap::new();
-        // one `rev-parse` per clone and capture
+        // at most one `rev-parse` per clone and capture
         let mut heads: BTreeMap<PathBuf, Option<Head>> = BTreeMap::new();
-        let mut head_of = |dir: &Path| {
-            heads
-                .entry(dir.to_path_buf())
-                .or_insert_with(|| head(GIT, dir))
-                .clone()
-        };
         for p in listed {
             if p.id.is_empty() || p.id.chars().count() > SUBJECT_MAX {
                 continue;
@@ -235,7 +230,8 @@ impl Plugins {
             // the manifest's `version`, else the short HEAD of its
             // directory's own clone
             let found = candidates.iter().find_map(|m| {
-                let version = manifest_version(m).or_else(|| Some(head_of(m.parent()?)?.short))?;
+                let version =
+                    manifest_version(m).or_else(|| Some(asked(&mut heads, m.parent()?)?.short))?;
                 Some((version, *m))
             });
             // the manifest that answered, else the first one that exists
@@ -256,8 +252,14 @@ impl Plugins {
                 .map_or_else(|| plugins_dir.join(&p.id), Path::to_path_buf);
             let repo = (!p.first_party && is_clone(&dir)).then_some(dir);
             let head = repo.as_deref().and_then(|dir| {
-                // unreadable this time: keep the last one seen
-                head_of(dir).map(|h| h.full).or_else(|| last?.head.clone())
+                // from the clone's files (no process), else from git
+                // (asked already when the version came from it); unreadable
+                // this time: keep the last one seen
+                let known = heads.get(dir).cloned().flatten().map(|h| h.full);
+                known
+                    .or_else(|| head_from_files(dir))
+                    .or_else(|| asked(&mut heads, dir).map(|h| h.full))
+                    .or_else(|| last?.head.clone())
             });
             seen.insert(
                 p.id.clone(),
@@ -410,6 +412,14 @@ fn manifest_version(manifest: &Path) -> Option<String> {
     (!version.is_empty()).then(|| version.chars().take(VERSION_MAX).collect())
 }
 
+/// [`head`] of `dir`, asked once per capture.
+fn asked(heads: &mut BTreeMap<PathBuf, Option<Head>>, dir: &Path) -> Option<Head> {
+    heads
+        .entry(dir.to_path_buf())
+        .or_insert_with(|| head(GIT, dir))
+        .clone()
+}
+
 /// Whether `dir` is a git clone of its own: only the plugin's own clone,
 /// never a repository further up (a dotfiles repo in ~/.config would
 /// answer for every plugin).
@@ -439,6 +449,50 @@ fn head(git: Git, dir: &Path) -> Option<Head> {
         full: full.to_string(),
         short: short.to_string(),
     })
+}
+
+/// Largest `packed-refs` read by [`head_from_files`]; a larger one is
+/// left to git.
+const PACKED_REFS_MAX: u64 = 1024 * 1024;
+
+/// The full HEAD of the clone at `dir` read from its files, without a
+/// process (a capture runs on every agent command; one git process costs
+/// about 10 ms there): `.git/HEAD` holds the object name, or `ref:
+/// refs/…` whose object name is in `.git/<ref>` or `.git/packed-refs`.
+/// `None` for anything else — a `.git` file (a linked work tree), a
+/// symbolic link (`sys::read_small_file` refuses them), the reftable
+/// format, an unborn branch, a ref name that is not plain — and git
+/// answers instead.
+fn head_from_files(dir: &Path) -> Option<String> {
+    let git_dir = dir.join(".git");
+    let read = |rel: &str, max: u64| sys::read_small_file(&git_dir.join(rel), max).ok()?;
+    let head = read("HEAD", 4096)?;
+    let head = head.trim_end_matches('\n');
+    let full = |s: &str| (is_hash(s) && matches!(s.len(), 40 | 64)).then(|| s.to_string());
+    let Some(name) = head.strip_prefix("ref: ") else {
+        return full(head); // a detached HEAD
+    };
+    let plain = name.starts_with("refs/heads/")
+        && name.split('/').all(|part| {
+            !part.is_empty()
+                && !part.starts_with('.')
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-_.+@".contains(c))
+        });
+    if !plain || name.contains("..") || name.ends_with(".lock") {
+        return None;
+    }
+    if let Some(loose) = read(name, 4096) {
+        return full(loose.trim_end_matches('\n'));
+    }
+    read("packed-refs", PACKED_REFS_MAX)?
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with('^'))
+        .find_map(|l| match l.split_once(' ') {
+            Some((hash, n)) if n == name => full(hash),
+            _ => None,
+        })
 }
 
 /// A hexadecimal object name of 4 to 64 digits.
@@ -806,8 +860,25 @@ mod tests {
         let cmd = GIT.command(dir, &["rev-parse", "HEAD"]);
         assert_eq!(cmd.get_program(), "git");
         let args: Vec<&OsStr> = cmd.get_args().collect();
-        let mut want: Vec<&OsStr> = GIT_OPTIONS.iter().map(OsStr::new).collect();
-        want.extend(["-C", "/plugins/p", "rev-parse", "HEAD"].map(OsStr::new));
+        let want = [
+            "--no-pager",
+            "--no-replace-objects",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "protocol.allow=never",
+            "-c",
+            "log.showSignature=false",
+            "-c",
+            "color.ui=false",
+            "-C",
+            "/plugins/p",
+            "rev-parse",
+            "HEAD",
+        ]
+        .map(OsStr::new);
         assert_eq!(args, want);
         let envs: BTreeMap<&OsStr, Option<&OsStr>> = cmd.get_envs().collect();
         for var in REPOSITORY_VARS {
@@ -815,8 +886,14 @@ mod tests {
                 assert_eq!(envs.get(OsStr::new(var)), Some(&None), "{var} removed");
             }
         }
-        for (k, v) in GIT_ENV {
-            assert_eq!(envs[OsStr::new(k)], Some(OsStr::new(v)));
+        for (k, v) in [
+            ("GIT_CONFIG_NOSYSTEM", "1"),
+            ("GIT_CONFIG_GLOBAL", "/dev/null"),
+            ("GIT_TERMINAL_PROMPT", "0"),
+            ("GIT_OPTIONAL_LOCKS", "0"),
+            ("GIT_NO_LAZY_FETCH", "1"),
+        ] {
+            assert_eq!(envs[OsStr::new(k)], Some(OsStr::new(v)), "{k}");
         }
         assert_eq!(
             envs[OsStr::new("GIT_CEILING_DIRECTORIES")],
@@ -896,6 +973,69 @@ mod tests {
                 assert_eq!((h.full.as_str(), h.short.as_str()), (full, "0123456"));
             }
         }
+    }
+
+    #[test]
+    fn a_head_is_read_from_the_clones_files() {
+        let s = Scratch::new("files");
+        let dir = s.clone_dir();
+        let git = |rel: &str, text: &str| {
+            let path = dir.join(".git").join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        let (a, b) = ("a".repeat(40), "b".repeat(64));
+        // detached
+        git("HEAD", &format!("{a}\n"));
+        assert_eq!(head_from_files(&dir), Some(a.clone()));
+        // a branch: loose, then packed (a sha256 clone)
+        git("HEAD", "ref: refs/heads/main\n");
+        assert_eq!(head_from_files(&dir), None, "unborn");
+        git(
+            "packed-refs",
+            &format!(
+                "# pack-refs with: peeled fully-peeled sorted\n{a} refs/heads/mainline\n{b} refs/heads/main\n^{a}\n"
+            ),
+        );
+        assert_eq!(head_from_files(&dir), Some(b.clone()));
+        git("refs/heads/main", &format!("{a}\n"));
+        assert_eq!(head_from_files(&dir), Some(a.clone()), "a loose ref wins");
+        // anything else is git's to answer, even where a file answers
+        for rel in [
+            "refs/heads/.invalid",
+            "outside",
+            "refs/heads/main.lock",
+            "refs/tags/main",
+        ] {
+            git(rel, &format!("{a}\n"));
+        }
+        for head in [
+            "ref: refs/heads/../../outside\n",
+            "ref: refs/heads/.invalid\n", // reftable
+            "ref: refs/heads/../../../etc\n",
+            "ref: refs/tags/main\n",
+            "ref: refs/heads/a b\n",
+            "ref: refs/heads/main.lock\n",
+            "ref: refs/heads/a..b\n",
+            "0123\n",
+            "",
+        ] {
+            git("HEAD", head);
+            assert_eq!(head_from_files(&dir), None, "{head:?}");
+        }
+        git("HEAD", "ref: refs/heads/main\n");
+        assert_eq!(head_from_files(&dir), Some(a.clone()));
+        git("refs/heads/main", "not a hash\n");
+        assert_eq!(head_from_files(&dir), None);
+        // a `.git` file (a linked work tree) or a linked HEAD
+        std::fs::remove_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(dir.join(".git"), "gitdir: /elsewhere\n").unwrap();
+        assert_eq!(head_from_files(&dir), None);
+        std::fs::remove_file(dir.join(".git")).unwrap();
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(s.0.join("head"), format!("{a}\n")).unwrap();
+        std::os::unix::fs::symlink(s.0.join("head"), dir.join(".git/HEAD")).unwrap();
+        assert_eq!(head_from_files(&dir), None);
     }
 
     #[test]
