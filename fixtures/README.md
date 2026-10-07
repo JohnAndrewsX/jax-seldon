@@ -42,6 +42,7 @@ every secret is a documented fake (`AKIAIOSFODNN7EXAMPLE`, `ghp_EXAMPLE…`, `sk
 | 09-30 | human runs a plain `pacman -Syu` without a case (firefox, libinput, noto-fonts upgraded) → stays without a resolution (WP-014) | a plain full upgrade: **routine** history since ADR-0028 (with `attention = "all"`: one yellow drift group, ADR-0013) |
 | 10-01 | C-2026-003: Claude runs `omarchy update` (keyring reinstall, -Syu, snapshot 112). C-2026-004: Claude installs zed via yay, writes `~/.config/zed/settings.json` via `tee` (no collector watches it: **green**, WP-015) and edits `bindings.conf` via `sed -i`. C-2026-008: human installs tailscale → proposal → *linked* → verification. Codex installs ollama + a user unit without a case (the install quiet **attention**, the unit a **crisis**). Snapshot 113. Theme `tokyo-night` (open drift, proposed for queued C-2026-005). Plugin `tyme` added → *explained*. For C-2026-008 (still in verification) the human turns on Tailscale MagicDNS inside `snapper create --command`: **pre/post pair 114/115** (WP-015). | everything the plugin renders |
 | 10-01 (WP-120) | The engine speaks contract 2 from the start of the day (ADR-0035): at 08:55 a capture finds `owned.json` unreadable and re-baselines the config collector (`state-loss`); at 09:00 the human raises C-2026-003 to R3 (`case-updated`, `meta.risk: R3`; its Log's `set risk R2 → R3`); every case line of the day carries `meta.risk`, the older ones do not (C-2026-003 was created on 09-26, so the harm guard reads its Log). The proposal of 17:02 (`proposals/`), the autocommit of the 17:00 note (`logbook.git.autocommit`, sample only), ADR-0003 naming C-2026-004 and C-2026-005, and the long note of 09-12 (the one clipped text, `meta.truncated`) complete the v2 surfaces | `case-updated`, `state-loss`, `meta.risk`, `meta.truncated`, `decisions[].cases`, `triage` |
+| 10-01 (WP-127) | At 11:00 the human imports one item of `~/Notizen/aufgaben.md` (`seldon import task`): C-2026-007, tag `imported`, frontmatter `source`, its Intent opening with the `Imported from …` line; the Plan was written later by hand. Every case with Intent or Result text and every decision with a Decision section shows its first paragraph; every open drift item names its rule (ADR-0038) | `cases[].intent`/`result`/`source`, `decisions[].lead`, `drift[].rule` |
 | 10-01 (WP-101) | C-2026-002 had been closed by Claude (`closed-by-agent`, ADR-0027 §5: its verify and done by `agent:claude-code`); C-2026-003 was raised to R3 before the `omarchy update` (Omarchy itself is R3, ADR-0027 §2c; as R2 the update would raise the R3 advisory). The reopen of C-2026-002 lives in the variant `case-reopened` (index only) | `closed-by-agent` marker |
 
 Result: 87 ledger lines (11 resolutions), 76 index events (9 with
@@ -50,8 +51,8 @@ Result: 87 ledger lines (11 resolutions), 76 index events (9 with
 and the hook) and 1 attention group of 3 (the mesa downgrade) —, 6 routine
 items (`drift --all`: the `-Syu` group, the two theme switches, the two
 toggles, `shell.json`), 8 cases (3 queued, 2 active, 1 verification, 2
-completed), 4 decisions (1 proposed; ADR-0003 names two cases), 1 triage
-proposal (3 items, 1 crisis).
+completed; C-2026-007 imported), 4 decisions (1 proposed; ADR-0003 names two
+cases; each with a lead), 1 triage proposal (3 items, 1 crisis).
 
 ## How the index derives from the logbook
 
@@ -67,6 +68,12 @@ Rules the fixture check implements beyond the plain field copies:
   `resolutionDetail` (the resolution's `detail`, when it has one; index only,
   never in a ledger line) and `case` when linked; the latest resolution wins
   (ADR-0012 §8, §11).
+- **The desk's details** (ADR-0038): `drift[].rule` is the class's rule (`attention-all` under
+  `attention = "all"`); `cases[].intent`/`result` and `decisions[].lead` are the first paragraph
+  of `## Intent`/`## Result`/`## Decision` (comments left out; an imported case's provenance line
+  gives way to the next paragraph), control characters as spaces, clipped with `in the file`; the
+  script does not redact (no fixture text holds a secret; the engine's golden test redacts and
+  must agree); `cases[].source` is the frontmatter's `source` while it has its shape.
 - **Proposals** (ADR-0012 §7; token rule ADR-0015 §4, which supersedes
   ADR-0012 §13): the event's subject must occur in an open case's `## Plan`
   section as a whole word, case-sensitive, where word characters are

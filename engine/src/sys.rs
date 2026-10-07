@@ -131,6 +131,13 @@ pub fn write_atomic_mode(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result
     write_atomic_with(path, bytes, Some(mode), true)
 }
 
+/// [`write_atomic_mode`] that never follows a symbolic link at `path`: the
+/// rename replaces the link itself (state files others can write next to,
+/// such as `proposals/<id>.json`; WP-124).
+pub fn write_atomic_replace(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
+    write_atomic_at(path.to_path_buf(), bytes, Some(mode), true)
+}
+
 /// [`write_atomic`] without the syncs, for files the engine rebuilds from
 /// the ledger and the logbook (`index.json`, `STATUS.md`, the ledger
 /// views, `outputs/REBUILD.md`): after a crash the next build writes them
@@ -147,6 +154,15 @@ fn write_atomic_with(
 ) -> anyhow::Result<()> {
     let target =
         resolve_links(path).with_context(|| format!("cannot resolve {}", path.display()))?;
+    write_atomic_at(target, bytes, mode, sync)
+}
+
+fn write_atomic_at(
+    target: PathBuf,
+    bytes: &[u8],
+    mode: Option<u32>,
+    sync: bool,
+) -> anyhow::Result<()> {
     let dir = target
         .parent()
         .with_context(|| format!("{} has no parent directory", target.display()))?;
