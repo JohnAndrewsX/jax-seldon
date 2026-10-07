@@ -3194,28 +3194,26 @@ function captureWarningNotice(warnings) {
 // ---- Desk (ADR-0034) ----------------------------------------------------------
 
 // The desk's nine targets in sidebar order: eight sections with their fixed
-// digit, then Settings on `,`. `wp` names the work package that fills a
-// section the shell (WP-121) only stubs; `solo` sections have no list column
-// (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
+// digit, then Settings on `,`. `solo` sections have no list column (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
 // (components/desk/NavIcon.qml), from the approved prototype.
 var DESK_SECTIONS = [
-  { id: "today", label: "Today", key: "1", wp: "WP-122", solo: false,
+  { id: "today", label: "Today", key: "1", solo: false,
     icon: "M4 5h16v15H4zM4 9h16M9 3v4M15 3v4" },
-  { id: "changelog", label: "Changelog", key: "2", wp: "WP-122", solo: false,
+  { id: "changelog", label: "Changelog", key: "2", solo: false,
     icon: "M5 6h14M5 12h14M5 18h9" },
-  { id: "work", label: "Work", key: "3", wp: "WP-122", solo: false,
+  { id: "work", label: "Work", key: "3", solo: false,
     icon: "M4 8h16v11H4zM9 8V5h6v3" },
-  { id: "decisions", label: "Decisions", key: "4", wp: "WP-123", solo: false,
+  { id: "decisions", label: "Decisions", key: "4", solo: false,
     icon: "M6 4h9l4 4v12H6zM14 4v5h5" },
-  { id: "system", label: "System", key: "5", wp: "WP-123", solo: false,
+  { id: "system", label: "System", key: "5", solo: false,
     icon: "M4 5h16v11H4zM8 20h8M12 16v4" },
-  { id: "memory", label: "Memory", key: "6", wp: "WP-123", solo: false,
+  { id: "memory", label: "Memory", key: "6", solo: false,
     icon: "M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2z" },
-  { id: "radiant", label: "Prime Radiant", key: "7", wp: "WP-123", solo: true,
+  { id: "radiant", label: "Prime Radiant", key: "7", solo: true,
     icon: "M12 2l2 7 7 3-7 3-2 7-2-7-7-3 7-3z" },
-  { id: "graph", label: "Graph", key: "8", wp: "WP-125", solo: true,
+  { id: "graph", label: "Graph", key: "8", solo: true,
     icon: "M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M16 7a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M7 8l4 7M17 9l-4 6M8 6h8" },
-  { id: "settings", label: "Settings", key: ",", wp: "", solo: false,
+  { id: "settings", label: "Settings", key: ",", solo: false,
     icon: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" }
 ]
 var DESK_SECTION_DEFAULT = "today"
@@ -4081,7 +4079,7 @@ function graphIsChange(kind) {
 
 // The empty graph (no index, or nothing in it).
 function graphEmpty() {
-  return { nodes: [], edges: [], deg: [], first: 0, last: 0, span: 0, empty: true, foldLevel: "",
+  return { nodes: [], edges: [], deg: [], first: 0, last: 0, span: 0, empty: true, still: false, foldLevel: "",
     numbers: { nodes: 0, edges: 0, areas: 0, cases: 0, decisions: 0, changes: 0, crises: 0, clusters: 0, folded: 0,
       events: 0, completed: 0 },
     footer: "" }
@@ -4162,7 +4160,9 @@ function graphBuild(index, cap) {
   var limit = count(cap) || GRAPH_CAP
   var today = dayNumber(todayDate(index))
   var nodes = []
-  var byId = {}
+  // Maps without a prototype: an id such as "constructor" or "__proto__"
+  // from a foreign index must not find an inherited member.
+  var byId = Object.create(null)
   var abs = []
   var links = []
   function add(node, day) {
@@ -4218,30 +4218,30 @@ function graphBuild(index, cap) {
     add({ id: dec.id, kind: "decision", label: dec.id, title: dec.id + " " + str(dec.title), sub: str(dec.status),
       caseId: "", done: false }, dayOr(dec.date, today))
     var named = Array.isArray(dec.cases) ? dec.cases : []
-    for (var n = 0; n < named.length; n++) if (typeof named[n] === "string") links.push([dec.id, named[n], false])
+    for (var n = 0; n < named.length; n++) if (typeof named[n] === "string" && CASE_ID.test(named[n])) links.push([dec.id, named[n], false])
   }
   var fixed = nodes.length
 
   // Changes: the index's events, then open drift items older than them.
   var drift = Array.isArray(index.drift) ? index.drift : []
-  var crisisIds = {}
-  var proposed = {}
+  var crisisIds = Object.create(null)
+  var proposed = Object.create(null)
   for (var k = 0; k < drift.length; k++) {
     var item = drift[k]
     if (!isObject(item) || typeof item.eventId !== "string") continue
     if (item.crisis === true) crisisIds[item.eventId] = true
-    if (typeof item.proposedCase === "string") proposed[item.eventId] = item.proposedCase
+    if (typeof item.proposedCase === "string" && CASE_ID.test(item.proposedCase)) proposed[item.eventId] = item.proposedCase
   }
   var events = Array.isArray(index.events) ? index.events : []
   var evs = []
-  var seen = {}
+  var seen = Object.create(null)
   function addChange(e, id) {
     if (!isObject(e) || !graphIsChange(e.kind) || seen[id]) return
     var day = dayNumber(dayOf(e.ts))
     if (isNaN(day)) return
     seen[id] = true
     evs.push({ id: id, day: day, ts: str(e.ts), source: str(e.source), kind: e.kind, subject: str(e.subject),
-      crisis: crisisIds[id] === true, case: typeof e.case === "string" ? e.case : "",
+      crisis: crisisIds[id] === true, case: typeof e.case === "string" && CASE_ID.test(e.case) ? e.case : "",
       proposed: typeof proposed[id] === "string" ? proposed[id] : "" })
   }
   for (var ev = 0; ev < events.length; ev++) if (isObject(events[ev])) addChange(events[ev], str(events[ev].id))
@@ -4250,7 +4250,7 @@ function graphBuild(index, cap) {
   evs.sort(function(x, y) { return x.day - y.day || (x.ts < y.ts ? -1 : x.ts > y.ts ? 1 : 0) })
 
   var fold = graphFold(evs, Math.max(0, limit - fixed))
-  var clusterOf = {}
+  var clusterOf = Object.create(null)
   for (var g = 0; g < fold.groups.length; g++) for (var m = 0; m < fold.groups[g].length; m++) clusterOf[fold.groups[g][m]] = g
   var clusterNode = []
   var folded = 0
@@ -4290,7 +4290,7 @@ function graphBuild(index, cap) {
 
   // Edges between nodes that exist, once each (a solid one wins).
   var edges = []
-  var edgeAt = {}
+  var edgeAt = Object.create(null)
   for (var l = 0; l < links.length; l++) {
     var ia = byId[links[l][0]]
     var ib = byId[links[l][1]]
@@ -4345,8 +4345,12 @@ function graphBuild(index, cap) {
     (completed === 1 ? "case" : "cases") + " in the index"
   if (events.length >= GRAPH_EVENTS_MAX || completed >= GRAPH_COMPLETED_MAX) footer += " · older ones are only in the logbook"
   if (folded > 0) footer += " · " + plural(folded, "change", "changes") + " folded into " + fold.groups.length
+  // More nodes that never fold (areas, cases, decisions, crises) than the
+  // cap: the layout would not keep its budget, so the graph is a still
+  // picture in node order (ADR-0034 §5's static escalation; no tick).
+  var still = numbers.areas + numbers.cases + numbers.decisions + numbers.crises > limit
   return { nodes: nodes, edges: edges, deg: deg, first: lo, last: hi, span: hi - lo, empty: nodes.length === 0,
-    foldLevel: fold.level, numbers: numbers, footer: footer }
+    still: still, foldLevel: fold.level, numbers: numbers, footer: footer }
 }
 
 // A stable pseudo-random number in [0, 1) from a text (FNV-1a), so the
@@ -4398,13 +4402,13 @@ function graphState(build, prev) {
   var n = build.nodes.length
   var m = build.edges.length
   var s = {
-    n: n, ids: build.nodes.map(function(node) { return node.id }), at: {},
+    n: n, ids: build.nodes.map(function(node) { return node.id }), at: Object.create(null),
     x: graphFill(n), y: graphFill(n), vx: graphFill(n), vy: graphFill(n), r: graphFill(n), day: graphFill(n),
     vis: graphFill(n), visList: graphFill(n), visCount: 0,
     ea: graphFill(m), eb: graphFill(m), adjStart: graphFill(n + 1), adj: graphFill(2 * m),
     first: build.first, span: build.span, cut: build.span,
     alpha: 1, ticks: 0, total: 0, sleeping: false, pinned: -1, px: 0, py: 0, lastMs: 0, maxMs: 0, over: 0,
-    added: 0, removed: 0, tree: null
+    added: 0, removed: 0, tree: null, still: build.still === true, treeSteps: 0, exactSteps: 0
   }
   for (var i = 0; i < n; i++) {
     s.at[s.ids[i]] = i
@@ -4464,6 +4468,10 @@ function graphState(build, prev) {
     s.sleeping = s.added + s.removed === 0 && prev.sleeping
     s.total = prev.total
   }
+  if (s.still) {
+    s.alpha = 0
+    s.sleeping = true
+  }
   graphSetCut(s, s.cut, false)
   return s
 }
@@ -4501,8 +4509,10 @@ function graphSetCut(s, cut, grow) {
   return shown
 }
 
-// Wake the layout: alpha at least `alpha`, the tick count from zero.
+// Wake the layout: alpha at least `alpha`, the tick count from zero; a
+// still picture (build.still) never wakes.
 function graphWake(s, alpha) {
+  if (s.still) return
   s.alpha = Math.max(s.alpha, Math.min(1, Number(alpha) || 0.3))
   s.ticks = 0
   s.sleeping = s.visCount === 0
@@ -4739,8 +4749,14 @@ function graphStep(s, budgetMs) {
   var list = s.visList
   var m = s.visCount
   var a = s.alpha
-  if (m <= GRAPH_EXACT_MAX) graphRepelExact(s, GRAPH_CHARGE * a)
-  else graphRepelTree(s, GRAPH_CHARGE * a)
+  // Which repulsion ran is counted (a test holds the tree to 400 nodes).
+  if (m <= GRAPH_EXACT_MAX) {
+    graphRepelExact(s, GRAPH_CHARGE * a)
+    s.exactSteps++
+  } else {
+    graphRepelTree(s, GRAPH_CHARGE * a)
+    s.treeSteps++
+  }
   var gravity = GRAPH_GRAVITY * a
   for (var p = 0; p < m; p++) {
     var i = list[p]

@@ -72,6 +72,8 @@ Item {
   readonly property var info: root.cardNode >= 0 ? Model.graphInfo(root.build, root.cardNode) : null
   // Ticks whose tickMs went over the budget.
   property int ticksOver: 0
+  // Labels the last paint drew left of their node (the right edge).
+  property int flipped: 0
 
   // View: screen = world × viewK + (width / 2 + viewX, height / 2 + viewY).
   property real viewX: 0
@@ -323,6 +325,7 @@ Item {
       tickSamples: root.tickSamples,
       slowTicks: root.slowTicks,
       ticksOver: root.ticksOver,
+      flipped: root.flipped,
       over: s ? s.over : 0,
       stepMsMax: s ? s.maxMs : 0,
       paints: root.paints,
@@ -417,6 +420,9 @@ Item {
     var texts = root.labelTexts
     ctx.font = root.canvasFont
     ctx.textBaseline = "middle"
+    ctx.textAlign = "left"
+    var half = root.labelSize / 2 + 1
+    root.flipped = 0
     var order = root.labelOrder
     // The focus and its neighbours first (lit), then by priority.
     for (var pass = 0; pass < 2; pass++) {
@@ -436,7 +442,20 @@ Item {
         marks[i] = stamp
         ctx.globalAlpha = near === null || pass === 0 ? 1 : 0.35
         ctx.fillStyle = node.kind === "change" && !focus ? root.muted : root.foreground
-        ctx.fillText(focus ? node.label : texts[i], ox + s.x[i] * k + root.screenR(i) * k + root.unit * 4, oy + s.y[i] * k)
+        var text = focus ? node.label : texts[i]
+        var gap = root.screenR(i) * k + root.unit * 4
+        var lx = ox + s.x[i] * k + gap
+        var ly = Math.max(half, Math.min(root.height - half, oy + s.y[i] * k))
+        // Near the right edge the label goes to the left of its node
+        // (measured only where a rough width says it may not fit: measureText costs).
+        if (lx + text.length * root.labelSize * 0.75 > root.width && lx + ctx.measureText(text).width > root.width) {
+          ctx.textAlign = "right"
+          ctx.fillText(text, lx - 2 * gap, ly)
+          ctx.textAlign = "left"
+          root.flipped++
+        } else {
+          ctx.fillText(text, lx, ly)
+        }
       }
     }
     ctx.globalAlpha = 1
@@ -476,10 +495,7 @@ Item {
   }
 
   onBuildChanged: root.rebuild()
-  onServiceChanged: {
-    if (root.service) root.service.graphWanted = true
-    root.rebuild()
-  }
+  onServiceChanged: root.rebuild()
   onRunningChanged: {
     if (!root.running) {
       root.playing = false
@@ -495,10 +511,7 @@ Item {
   onCanvasFontChanged: root.repaint()
   onWidthChanged: root.repaint()
   onHeightChanged: root.repaint()
-  Component.onCompleted: {
-    if (root.service) root.service.graphWanted = true
-    root.rebuild()
-  }
+  Component.onCompleted: root.rebuild()
 
   // At most 30 Hz, only while shown and awake.
   Timer {

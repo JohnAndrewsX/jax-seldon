@@ -93,6 +93,19 @@ Section {
     return canvas.view()
   }
 
+  // The service builds the graph only for a shown section 8, and again
+  // when the index changes while it is shown.
+  function refresh() {
+    if (root.active && root.service) root.service.graphRefresh()
+  }
+  onActiveChanged: root.refresh()
+  onServiceChanged: root.refresh()
+  Connections {
+    target: root.service
+    // After the index's other bindings (indexShown) have settled.
+    function onGraphDirtyChanged() { Qt.callLater(root.refresh) }
+  }
+
   function nodePoint(id) {
     var p = canvas.nodePoint(id)
     return p ? canvas.mapToItem(null, p.x, p.y) : null
@@ -108,6 +121,8 @@ Section {
       graph: canvas.view(),
       date: root.dateText,
       footer: footer.text,
+      caption: caption.text,
+      still: root.hasGraph && root.build.still,
       legend: root.legend.map(function(e) { return e.label }),
       empty: emptyText.visible ? emptyText.text : ""
     }
@@ -138,7 +153,12 @@ Section {
       y: titleText.implicitHeight + Style.spacing.xs
       width: titleText.width
       textFormat: Text.PlainText
-      text: "This machine since its logbook began · cases, changes, decisions, areas"
+      // A still picture (Model.graphBuild's `still`) says why.
+      text: root.hasGraph && root.build.still
+        ? "A still picture: " + (root.build.numbers.areas + root.build.numbers.cases + root.build.numbers.decisions
+          + root.build.numbers.crises) + " areas, cases, decisions and crises are more than the "
+          + Model.GRAPH_CAP + " nodes the layout moves"
+        : "This machine since its logbook began · cases, changes, decisions, areas"
       color: Color.muted
       elide: Text.ElideRight
       font.family: root.fontFamily
