@@ -31,7 +31,7 @@ holds your own path.
 harnesses = ["claude-code"]
 language = "en"
 logbook = "/home/you/Seldon"
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles"]
 
 [collectors]
 config = true
@@ -145,12 +145,15 @@ entries of your web apps and TUIs), and the persistence paths
 `~/.config/systemd/user`, `~/.config/autostart`,
 `~/.config/environment.d`, `~/.config/uwsm`, `~/.profile`,
 `~/.bash_profile` (files that run at login; a new one there is a crisis,
-see [Drift](#drift)). Missing paths are skipped. A relative path such as
+see [Drift](#drift)), and Omarchy's toggle folder
+`~/.local/state/omarchy/toggles` (the switches of Omarchy's *Toggle*
+menu and Hyprland's flags; turning one on or off is routine, anything
+else there is listed). Missing paths are skipped. A relative path such as
 `.config/nvim` means `~/.config/nvim`; the wizard stores the paths you
 type in that form. Add your own, for example:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.config/nvim"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.config/nvim"]
 ```
 
 The wizard writes the list into `config.toml`. A list that is still the
@@ -160,20 +163,42 @@ file changes. A list you changed yourself is kept as it is: `seldon
 doctor` names the paths it lacks, and you add them the same way:
 
 ```toml
-watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile"]
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles"]
 ```
 
 The files already there when the path enters the list are taken as they
 are: the next capture records no addition for them, and says
 `watch scope changed: 0 file(s) left it, N entered it`.
 
+`~/.ssh/authorized_keys` and `~/.ssh/authorized_keys2` (the two files
+sshd reads by default) are not watched unless you add them; add both
+lines. Once they are in the list, a change to either without a case is a
+crisis (both are in the default `alwaysRedPaths`); only their hashes are
+recorded:
+
+```toml
+watchPaths = ["~/.config/hypr", "~/.config/omarchy", "~/.config/waybar", "~/.bashrc", "~/.zshrc", "~/.local/share/applications", "~/.config/systemd/user", "~/.config/autostart", "~/.config/environment.d", "~/.config/uwsm", "~/.profile", "~/.bash_profile", "~/.local/state/omarchy/toggles", "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
+```
+
 Always left out:
 
-- `~/.config/omarchy/plugins/` (the plugins collector covers it);
+- `~/.config/omarchy/plugins/` (the plugins collector covers it: it
+  hashes each third-party plugin's folder as one whole and records an
+  edit as one plugin update);
 - `~/.local/share/applications/mimeinfo.cache`: a cache built from the
   desktop entries, rewritten on many package updates;
-- `.git` folders, and folders reached through a symlink;
-- binary files and files over 1 MiB (listed as skipped, without a hash);
+- `.git` folders, and folders reached through a symlink — except in the
+  persistence paths (`alwaysRedPaths`), where a linked folder is followed:
+  each folder once, at most 4096 entries below links per capture. A link
+  with more is recorded as cut off, which is a crisis: nobody can see
+  what runs from it. Links into your logbook or Seldon's own folders are
+  never followed;
+- binary files and files over 1 MiB (listed as skipped, without a hash) —
+  except in the persistence paths, where every file is hashed: a hook
+  runs whatever it holds. A file there over 64 MiB is hashed from its
+  size, times and inode instead of being read, and one that cannot be
+  read keeps its last hash until it can. Every file in the toggle folder
+  is hashed the same way;
 - files whose name holds a control character, or whose path is longer
   than 512 characters: the capture counts them in a warning;
 - everything in `[redaction] skipPaths`. Its default holds the files that
@@ -310,17 +335,17 @@ only what can break boot, login or the shell is a crisis.
 |---|---|---|
 | `alwaysRed` | `linux*`, `systemd`, `glibc`, `hyprland`, `omarchy`, `quickshell` | packages that can break boot, login or the shell: installed or removed by name outside a case, a crisis; upgraded with the system, routine |
 | `attention` | `"normal"` | `"all"`: every change without a case is drift, a crisis when its zone is red (the behaviour up to 0.1.3) |
-| `routine` | all rules | the routine rules that apply: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo` |
+| `routine` | all rules | the routine rules that apply: `sysupgrade`, `upgrade`, `keyring`, `omarchy-update`, `plugin-toggle`, `theme`, `omarchy-default`, `system-link`, `routine-paths`, `theme-assets`, `theme-repo`, `toggle-flag` |
 | `routinePaths` | `~/.config/omarchy/shell.json`, `**/*.bak.*` | config files whose changes are routine |
 | `routinePackages` | `archlinux-keyring`, `omarchy-keyring` | packages whose own transactions are routine |
-| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile` | persistence paths: a change there without a case is a crisis |
+| `alwaysRedPaths` | `~/.config/systemd/user/**`, `~/.config/omarchy/hooks/**`, `~/.config/autostart/**`, `~/.config/environment.d/**`, `~/.config/uwsm/**`, `~/.profile`, `~/.bash_profile`, `~/.ssh/authorized_keys`, `~/.ssh/authorized_keys2` | persistence paths: a change there without a case is a crisis (the `authorized_keys` files only once you watch them) |
 
 Want more? A few examples:
 
 ```toml
 [drift]
 # theme switches are drift again
-routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo"]
+routine = ["sysupgrade", "upgrade", "keyring", "omarchy-update", "plugin-toggle", "omarchy-default", "system-link", "routine-paths", "theme-assets", "theme-repo", "toggle-flag"]
 # a kernel from NVIDIA counts too
 alwaysRed = ["linux*", "systemd", "glibc", "hyprland", "omarchy", "quickshell", "nvidia*"]
 ```

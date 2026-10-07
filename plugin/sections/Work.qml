@@ -21,10 +21,11 @@ import "../Model.js" as Model
 // The detail: the selected case with its sticky bar by status
 // (Model.caseDeskActions: Start / Hand to agent / To verification /
 // Complete / Drop / Reopen / Open in editor; id · risk at the right), then
-// what the index carries (Model.caseDetail): key/values, the plan's
-// progress, the log, the linked changes; Intent and Result are in the case
-// file, which *Open in editor* shows (the plugin never reads Markdown,
-// AGENTS.md §3).
+// what the index carries (Model.caseDetail): key/values (an imported
+// case's source among them), the first paragraph of Intent and Result as
+// plain text (ADR-0038), the plan's progress, the log, the linked changes;
+// the rest is in the case file, which *Open in editor* shows (the plugin
+// never reads Markdown, AGENTS.md §3).
 //
 // Writing actions arm on the first press or click and run on the second
 // (the desk's Arm.qml; the bar reads "Confirm …" and shows the hint);
@@ -234,7 +235,9 @@ Section {
         plan: root.detailData.plan.text,
         log: root.detailData.log.length,
         linked: root.detailData.linked.length,
-        linkedMore: root.detailData.linkedMore
+        linkedMore: root.detailData.linkedMore,
+        intent: root.detailData.intent,
+        result: root.detailData.result
       } : null,
       sheet: {
         open: root.sheetOpen,
@@ -510,6 +513,40 @@ Section {
         foreground: root.foreground
       }
 
+      // The first paragraph of Intent and Result (ADR-0038 §2), plain
+      // text; each hidden when the index has none.
+      Repeater {
+        model: root.detailData ? [["INTENT", root.detailData.intent], ["RESULT", root.detailData.result]]
+          .filter(function(p) { return p[1] !== "" }) : []
+
+        Column {
+          id: block
+          required property var modelData
+          width: parent.width
+          spacing: Style.spacing.sm
+
+          Text {
+            textFormat: Text.PlainText
+            text: block.modelData[0]
+            color: Color.muted
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.letterSpacing: Style.space(1)
+            font.bold: true
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: block.modelData[1]
+            color: root.foreground
+            wrapMode: Text.Wrap
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+          }
+        }
+      }
+
       Column {
         width: parent.width
         spacing: Style.spacing.md
@@ -534,7 +571,10 @@ Section {
         Text {
           width: parent.width
           textFormat: Text.PlainText
-          text: root.detailData ? root.detailData.plan.text + ". The steps, the Intent and the Result are in the case file." : ""
+          text: !root.detailData ? ""
+            : root.detailData.plan.text + (root.detailData.intent !== "" || root.detailData.result !== ""
+              ? ". The steps and the full Intent and Result are in the case file."
+              : ". The steps, the Intent and the Result are in the case file.")
           color: root.dim
           wrapMode: Text.Wrap
           font.family: Style.font.family

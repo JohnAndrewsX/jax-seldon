@@ -663,6 +663,7 @@ fn build_case(
         agents: Vec::new(),
         events: Vec::new(),
         tags,
+        source: None,
     };
     let mut log = format!(
         "imported from {SOURCE} {} (status {} → {})",

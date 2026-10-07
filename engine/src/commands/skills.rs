@@ -1,7 +1,7 @@
 //! The Seldon agent skill (WP-094; ADR-0027 §8): `seldon hook install
 //! skills` and `hook uninstall skills`, and the `skills` row of `doctor`.
 //!
-//! - **The skill.** Five Markdown files under `engine/assets/skills/seldon/`,
+//! - **The skill.** Six Markdown files under `engine/assets/skills/seldon/`,
 //!   compiled in ([`FILES`]). Shaped like Omarchy's own agent skills
 //!   (`$OMARCHY_PATH/default/agents/skills/`), which point at it for the
 //!   record and which it points at for Omarchy work.
@@ -49,7 +49,7 @@ pub const SKILL_NAME: &str = "seldon";
 pub const MANIFEST: &str = ".seldon-skill.json";
 
 /// The skill's files: name, content.
-pub const FILES: [(&str, &str); 5] = [
+pub const FILES: [(&str, &str); 6] = [
     (
         "SKILL.md",
         include_str!("../../assets/skills/seldon/SKILL.md"),
@@ -69,6 +69,10 @@ pub const FILES: [(&str, &str); 5] = [
     (
         "update.md",
         include_str!("../../assets/skills/seldon/update.md"),
+    ),
+    (
+        "triage.md",
+        include_str!("../../assets/skills/seldon/triage.md"),
     ),
 ];
 
@@ -1097,7 +1101,8 @@ mod tests {
                 "case.md",
                 "drift.md",
                 "snapshot.md",
-                "update.md"
+                "update.md",
+                "triage.md"
             ]
         );
         let skill = FILES[0].1;

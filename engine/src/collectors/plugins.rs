@@ -21,8 +21,8 @@
 //!
 //! A third-party plugin whose directory is its own git clone keeps its
 //! full HEAD in the cursor (WP-136). Its `plugin-add` says it came by
-//! `git clone` (`meta.git: clone`); its `plugin-update` with a moved HEAD
-//! names the commits: `pull` (the old HEAD is an ancestor of the new one)
+//! `git clone` (`meta.git: clone`); its `plugin-update` (a version or a
+//! tree change) with a moved HEAD names the commits: `pull` (the old HEAD is an ancestor of the new one)
 //! and `reset` (another history) list the subjects that came in,
 //! `rollback` (the new HEAD is an ancestor) the ones that left. At most
 //! [`COMMITS_MAX`] subjects, newest first, one per line in `meta.commits`,
@@ -40,8 +40,27 @@
 //! attribution (ADR-0017) can match the agent command that cloned or
 //! pulled it. Removal, enabling and disabling get the capture time.
 //!
-//! The cursor is the snapshot `{id: {enabled, version}}`, its SHA-256 and the
-//! time of the last check. Without a cursor the collector takes a baseline
+//! Third-party plugin trees (WP-113, ADR-0028 §8 WP-E; operator decision
+//! 2026-10-06: hashes only): the directory `<plugins dir>/<id>/` of every
+//! listed plugin with `firstParty: false` is hashed as one tree
+//! ([`tree`]): every regular file at any size and content, `.git` left
+//! out (the HEAD is the version), `[redaction] skipPaths` honoured, links
+//! to files followed; any other link counts by its target as written (not
+//! walked: Omarchy refuses links inside a plugin folder). The plugin
+//! directory itself may be a link (`omarchy plugin` links a checkout). A tree-hash change is one `plugin-update` (with
+//! `meta.hashFrom`/`hashTo`; with the version change when both moved), so
+//! an in-place edit of a plugin's QML is seen. A tree whose files' size,
+//! modification and change times and inodes are as the cursor's
+//! fingerprint has them is not read again; a plugin seen without a tree
+//! hash (a cursor from before WP-113, a new plugin) takes it without an
+//! event. WP-113 round 2: an entry that cannot be read counts by its
+//! size, time and mode, a file over 64 MiB by its size, time and inode,
+//! and a tree past [`TREE_ENTRIES`] is cut off; such a tree is `partial`
+//! (cursor and event meta). Only an unreadable plugin directory keeps the
+//! last hash.
+//!
+//! The cursor is the snapshot `{id: {enabled, version, tree, head}}`, its SHA-256,
+//! the trees' fingerprints and the time of the last check. Without a cursor the collector takes a baseline
 //! (no events). Events the ledger already holds since the last check (same
 //! kind, id, version, enabled state, update step) are dropped: a capture
 //! whose cursor save failed after its ledger write left the old snapshot in
@@ -57,7 +76,9 @@ use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::config::changed_at;
+use super::config::{
+    FileStat, HASH_BASIS_KEY, STAT_HASH_ABOVE, SkipPaths, changed_at, persistent_hash,
+};
 use super::{Collector, Ctx, Lost, Outcome, RUN_TIMEOUT, Sources, to_cursor, typed_cursor};
 use crate::logbook::git::REPOSITORY_VARS;
 use crate::model::event::{Event, Kind, Meta, SUBJECT_MAX, Source};
@@ -171,6 +192,13 @@ struct PluginState {
     enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     version: Option<String>,
+    /// SHA-256 of the plugin's tree (third-party plugins, WP-113).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tree: Option<String>,
+    /// The tree counts some entries by their metadata only ([`Tree`]:
+    /// unreadable, or cut off).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    partial: bool,
     /// The full HEAD of a third-party plugin's own git clone (WP-136).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     head: Option<String>,
@@ -186,16 +214,245 @@ struct PluginsCursor {
     /// capture time is used then).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     checked: Option<DateTime<FixedOffset>>,
+    /// id → fingerprint of the tree's files ([`Tree::stat`]); not part of
+    /// `hash`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    stats: BTreeMap<String, String>,
 }
 
 impl PluginsCursor {
-    fn new(plugins: BTreeMap<String, PluginState>, checked: DateTime<FixedOffset>) -> Self {
+    fn new(
+        plugins: BTreeMap<String, PluginState>,
+        stats: BTreeMap<String, String>,
+        checked: DateTime<FixedOffset>,
+    ) -> Self {
         let body = serde_json::to_vec(&plugins).expect("a snapshot always serialises");
         PluginsCursor {
             hash: sys::sha256_hex(&body),
             plugins,
             checked: Some(checked),
+            stats,
         }
+    }
+}
+
+/// A plugin's tree as one capture saw it.
+#[derive(Debug)]
+struct Tree {
+    /// SHA-256 over the sorted lines `<relative path> NUL <entry> LF`: the
+    /// file's SHA-256, `stat <hash>` for a file over
+    /// [`STAT_HASH_ABOVE`], `link <sha256 of the target>` for a link that
+    /// is not to a file, `unreadable <hash>` for an entry that cannot be
+    /// read, and a last line `NUL cut` when the tree has more than
+    /// [`TREE_ENTRIES`] entries.
+    hash: String,
+    /// SHA-256 over every entry's relative path and [`FileStat`]; `None`
+    /// when a file changed too recently to trust it (the next capture
+    /// reads the tree again).
+    stat: Option<String>,
+    /// The latest modification time of a file in it.
+    newest: Option<SystemTime>,
+    /// Entries that could not be read.
+    unreadable: usize,
+    /// Cut off at [`TREE_ENTRIES`].
+    cut: bool,
+    /// A file hashed by [`stat_hash`].
+    stat_hashed: bool,
+}
+
+impl Tree {
+    /// Some entries count by their metadata only: unreadable, or past
+    /// the cut.
+    fn partial(&self) -> bool {
+        self.unreadable > 0 || self.cut
+    }
+}
+
+/// Directory depth below a plugin's directory; deeper trees are not walked.
+const TREE_DEPTH: usize = 32;
+
+/// Entries one plugin tree walk reads; the rest is cut off (WP-113 round
+/// 2): the tree is hashed from the first ones in walk order and marked
+/// partial.
+pub const TREE_ENTRIES: usize = 10_000;
+
+/// One entry of a plugin's tree.
+enum Entry {
+    /// A regular file, or a link to one (counted with its target's content).
+    File(PathBuf, std::fs::Metadata),
+    /// Any other link: SHA-256 of its target as written. Omarchy refuses
+    /// links inside a plugin folder (`omarchy-plugin-validate`), so a link
+    /// to a directory is not walked; its arrival changes the tree.
+    Link(String),
+    /// A file that cannot be opened or a directory that cannot be read:
+    /// counted by its size, modification time and mode, so it changes the
+    /// tree once and visibly and the rest is still seen.
+    Unreadable(std::fs::Metadata),
+}
+
+/// SHA-256 of an unreadable entry's size, modification time (ns), change
+/// time and mode: an in-place write with the modification time put back
+/// changes it (WP-113 round 3), and so does a `chmod` round trip.
+fn unreadable_hash(meta: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt as _;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    sys::sha256_hex(
+        format!(
+            "{} {} {} {} {:o}\n",
+            meta.len(),
+            mtime,
+            meta.ctime(),
+            meta.ctime_nsec(),
+            meta.mode()
+        )
+        .as_bytes(),
+    )
+}
+
+/// The tree of the plugin directory `dir` ([`Tree`]); `known` is the last
+/// fingerprint and hash, reused while the fingerprint holds. `None` when
+/// the plugin directory itself cannot be read (the caller keeps the last
+/// hash).
+fn tree(
+    dir: &Path,
+    skip: &SkipPaths,
+    known: Option<(&str, &str)>,
+    started: SystemTime,
+) -> Option<Tree> {
+    let mut entries = Vec::new();
+    let mut left = TREE_ENTRIES;
+    std::fs::read_dir(dir).ok()?;
+    let cut = !walk_tree(dir, Path::new(""), skip, 0, &mut left, &mut entries);
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let newest = entries
+        .iter()
+        .filter_map(|(_, e)| match e {
+            Entry::File(_, meta) => meta.modified().ok(),
+            _ => None,
+        })
+        .max();
+    let unreadable = entries
+        .iter()
+        .filter(|(_, e)| matches!(e, Entry::Unreadable(_)))
+        .count();
+    let stat_hashed = entries
+        .iter()
+        .any(|(_, e)| matches!(e, Entry::File(_, m) if m.len() > STAT_HASH_ABOVE));
+    let stat = entries
+        .iter()
+        .map(|(rel, e)| {
+            Some(match e {
+                Entry::File(_, meta) | Entry::Unreadable(meta) => {
+                    (rel.as_str(), Some(FileStat::of(meta, started)?), None)
+                }
+                Entry::Link(hash) => (rel.as_str(), None, Some(hash.as_str())),
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(|stats| sys::sha256_hex(&serde_json::to_vec(&(stats, cut)).expect("stats serialise")));
+    let reuse = match (&stat, known) {
+        (Some(stat), Some((known_stat, known_hash))) if stat == known_stat => {
+            Some(known_hash.to_string())
+        }
+        _ => None,
+    };
+    let hash = reuse.unwrap_or_else(|| {
+        let mut lines = sys::Sha256::new();
+        for (rel, e) in &entries {
+            let hash = match e {
+                Entry::File(path, meta) => match persistent_hash(path, meta) {
+                    Some(h) if meta.len() > STAT_HASH_ABOVE => format!("stat {h}"),
+                    Some(h) => h,
+                    // opened a moment ago, unreadable now
+                    None => format!("unreadable {}", unreadable_hash(meta)),
+                },
+                Entry::Link(hash) => format!("link {hash}"),
+                Entry::Unreadable(meta) => format!("unreadable {}", unreadable_hash(meta)),
+            };
+            lines.update(rel.as_bytes());
+            lines.update(b"\0");
+            lines.update(hash.as_bytes());
+            lines.update(b"\n");
+        }
+        if cut {
+            lines.update(b"\0cut\n");
+        }
+        lines.finish_hex()
+    });
+    Some(Tree {
+        hash,
+        stat,
+        newest,
+        unreadable,
+        cut,
+        stat_hashed,
+    })
+}
+
+/// Collects the entries below `dir` (relative path `rel`), in sorted
+/// order; `false` when the budget `left` ran out (the tree is cut off).
+fn walk_tree(
+    dir: &Path,
+    rel: &Path,
+    skip: &SkipPaths,
+    depth: usize,
+    left: &mut usize,
+    entries: &mut Vec<(String, Entry)>,
+) -> bool {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return true;
+    };
+    let mut paths: Vec<PathBuf> = read.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    paths.sort();
+    for path in paths {
+        let Some(name) = path.file_name().map(|n| n.to_os_string()) else {
+            continue;
+        };
+        if name == ".git" || skip.matches(&path) {
+            continue;
+        }
+        if *left == 0 {
+            return false;
+        }
+        *left -= 1;
+        let rel = rel.join(&name);
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        let key = || rel.to_string_lossy().into_owned();
+        if meta.file_type().is_symlink() {
+            match std::fs::metadata(&path) {
+                Ok(target) if target.is_file() => entries.push(file_entry(key(), path, target)),
+                _ => {
+                    let target = std::fs::read_link(&path).unwrap_or_default();
+                    let hash = sys::sha256_hex(target.as_os_str().as_encoded_bytes());
+                    entries.push((key(), Entry::Link(hash)));
+                }
+            }
+        } else if meta.is_file() {
+            entries.push(file_entry(key(), path, meta));
+        } else if meta.is_dir() && depth < TREE_DEPTH {
+            if std::fs::read_dir(&path).is_err() {
+                entries.push((format!("{}/", key()), Entry::Unreadable(meta)));
+            } else if !walk_tree(&path, &rel, skip, depth + 1, left, entries) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// A file of a tree: [`Entry::File`], or [`Entry::Unreadable`] when it
+/// cannot be opened.
+fn file_entry(key: String, path: PathBuf, meta: std::fs::Metadata) -> (String, Entry) {
+    if std::fs::File::open(&path).is_ok() {
+        (key, Entry::File(path, meta))
+    } else {
+        (key, Entry::Unreadable(meta))
     }
 }
 
@@ -203,7 +460,10 @@ impl PluginsCursor {
 #[derive(Debug, Clone, Default)]
 struct Seen {
     first_party: bool,
-    /// Later mtime of the plugin directory and its manifest.
+    /// The tree has a file hashed by its metadata ([`Tree::stat_hashed`]).
+    stat_hashed: bool,
+    /// Later mtime of the plugin directory and its manifest, and of the
+    /// files of its tree.
     touched: Option<SystemTime>,
     /// The plugin's directory when it is a third-party plugin's own git
     /// clone ([`GitDir::Contained`]).
@@ -243,8 +503,12 @@ impl Plugins {
         }
 
         let manifests = catalog(omarchy);
+        let skip = SkipPaths::new(&ctx.dirs.home, &ctx.config.redaction.skip_paths);
+        let started = SystemTime::now();
         let mut snapshot = BTreeMap::new();
+        let mut stats = BTreeMap::new();
         let mut seen = BTreeMap::new();
+        let (mut unreadable, mut cut) = (0, 0);
         // at most one `rev-parse` per clone and capture
         let mut heads: BTreeMap<PathBuf, Option<Head>> = BTreeMap::new();
         for p in listed {
@@ -269,20 +533,19 @@ impl Plugins {
                 .as_ref()
                 .map(|(_, m)| *m)
                 .or_else(|| candidates.iter().copied().find(|m| m.exists()));
-            let touched = manifest.and_then(|m| touched(m));
-            let last = prev.as_ref().and_then(|prev| prev.plugins.get(&p.id));
+            let last = prev.as_ref().and_then(|c| c.plugins.get(&p.id));
             let version = found.map(|(v, _)| v).or_else(|| {
                 // unreadable this time: keep the last one seen
                 last?.version.clone()
             });
-            // a third-party plugin's own clone: the manifest's directory,
-            // else the plugin directory
-            let dir = manifest
+            // a third-party plugin's own clone (WP-136): the manifest's
+            // directory, else the plugin directory
+            let clone_dir = manifest
                 .and_then(|m| m.parent())
                 .map_or_else(|| plugins_dir.join(&p.id), Path::to_path_buf);
-            let git_dir = git_dir(&dir);
+            let git_dir = git_dir(&clone_dir);
             let outside = !p.first_party && git_dir == GitDir::Outside;
-            let repo = (!p.first_party && git_dir == GitDir::Contained).then_some(dir);
+            let repo = (!p.first_party && git_dir == GitDir::Contained).then_some(clone_dir);
             let head = repo.as_deref().and_then(|dir| {
                 // from the clone's files (no process), else from git
                 // (asked already when the version came from it); unreadable
@@ -293,10 +556,43 @@ impl Plugins {
                     .or_else(|| asked(&mut heads, dir).map(|h| h.full))
                     .or_else(|| last?.head.clone())
             });
+            // third-party trees only: first-party plugins ship with Omarchy
+            let dir = plugins_dir.join(&p.id);
+            let tree = (!p.first_party && dir.is_dir())
+                .then(|| {
+                    let known = prev
+                        .as_ref()
+                        .and_then(|c| Some((c.stats.get(&p.id)?.as_str(), last?.tree.as_deref()?)));
+                    tree(&dir, &skip, known, started)
+                })
+                .flatten();
+            let touched = manifest
+                .and_then(|m| touched(m))
+                .max(tree.as_ref().and_then(|t| t.newest));
+            if let Some(stat) = tree.as_ref().and_then(|t| t.stat.clone()) {
+                stats.insert(p.id.clone(), stat);
+            }
+            if let Some(t) = &tree {
+                unreadable += t.unreadable;
+                cut += usize::from(t.cut);
+            }
+            let stat_hashed = tree.as_ref().is_some_and(|t| t.stat_hashed);
+            let (tree, partial) = match tree {
+                Some(t) => (Some(t.hash.clone()), t.partial()),
+                // the plugin directory cannot be read: keep the last one
+                // (a tree that is gone is a removed plugin, which the list
+                // tells)
+                None if !p.first_party => (
+                    last.and_then(|l| l.tree.clone()),
+                    last.is_some_and(|l| l.partial),
+                ),
+                None => (None, false),
+            };
             seen.insert(
                 p.id.clone(),
                 Seen {
                     first_party: p.first_party,
+                    stat_hashed,
                     touched,
                     repo,
                     outside,
@@ -307,11 +603,13 @@ impl Plugins {
                 PluginState {
                     enabled: p.enabled,
                     version,
+                    tree,
+                    partial,
                     head,
                 },
             );
         }
-        let next = PluginsCursor::new(snapshot, ctx.now);
+        let next = PluginsCursor::new(snapshot, stats, ctx.now);
 
         let (events, since) = match &prev {
             Some(prev) if prev.hash != next.hash => {
@@ -326,8 +624,20 @@ impl Plugins {
             }
             _ => (Vec::new(), None), // baseline, or nothing changed
         };
+        let mut notes = Vec::new();
+        if unreadable > 0 {
+            notes.push(format!(
+                "{unreadable} entr(ies) of plugin trees could not be read; counted by size, time and mode"
+            ));
+        }
+        if cut > 0 {
+            notes.push(format!(
+                "{cut} plugin tree(s) cut off at {TREE_ENTRIES} entries"
+            ));
+        }
         Outcome {
             since,
+            message: (!notes.is_empty()).then(|| notes.join("; ")),
             ..Outcome::ok(events, to_cursor(&next))
         }
         .baseline(prev.is_none().then_some(Lost::Cursor))
@@ -371,6 +681,8 @@ fn unrecorded(
                     && same(&r.meta.version, &e.meta.version)
                     && same(&r.meta.from, &e.meta.from)
                     && same(&r.meta.to, &e.meta.to)
+                    && r.meta.hash_from == e.meta.hash_from
+                    && r.meta.hash_to == e.meta.hash_to
             })
         })
         .collect())
@@ -856,25 +1168,52 @@ fn diff(
             )),
             (Some(o), Some(n)) => {
                 // first-party versions belong to the omarchy package (ADR-0018)
-                if let (Some(from), Some(to)) = (&o.version, &n.version)
-                    && from != to
-                    && !seen_of(id).first_party
-                {
-                    let mut detail = format!("{from} → {to}");
+                let third_party = !seen_of(id).first_party;
+                let moved = |a: &Option<String>, b: &Option<String>| match (a, b) {
+                    (Some(a), Some(b)) if a != b => Some((a.clone(), b.clone())),
+                    _ => None,
+                };
+                let version = moved(&o.version, &n.version);
+                // WP-113: the tree, seen in both snapshots
+                let tree = moved(&o.tree, &n.tree);
+                if third_party && (version.is_some() || tree.is_some()) {
+                    let mut detail = match (&version, &tree) {
+                        (Some((from, to)), _) => format!("{from} → {to}"),
+                        (None, Some((from, to))) => {
+                            let short = |h: &str| h.chars().take(8).collect::<String>();
+                            format!("files changed (sha256 {} → {})", short(from), short(to))
+                        }
+                        (None, None) => unreachable!("one of them moved"),
+                    };
+                    let (from, to) = version.unzip();
+                    let (hash_from, hash_to) = tree.unzip();
                     let mut meta = Meta {
-                        from: Some(from.clone()),
-                        to: Some(to.clone()),
+                        from,
+                        to,
+                        hash_from,
+                        hash_to,
                         ..Meta::default()
                     };
-                    // the commits, when the plugin's clone moved (WP-136)
-                    let moved = match (&seen_of(id).repo, &o.head, &n.head) {
-                        (Some(dir), Some(old), Some(new)) => step(GIT, redactor, dir, old, new),
-                        _ => None,
-                    };
+                    // WP-113 round 2: how far the tree hash rests on
+                    // metadata
+                    if n.partial {
+                        meta.extra.insert("partial".into(), Value::Bool(true));
+                    }
+                    if seen_of(id).stat_hashed {
+                        meta.extra
+                            .insert(HASH_BASIS_KEY.into(), Value::String("stat".into()));
+                    }
+                    // WP-136: why the commits are missing, or the commits,
+                    // when the plugin's clone moved (a pull without a
+                    // version bump fires through the tree)
                     if seen_of(id).outside {
                         detail = format!("{detail}, {OUTSIDE}");
                     }
-                    if let Some(step) = moved {
+                    let step = match (&seen_of(id).repo, &o.head, &n.head) {
+                        (Some(dir), Some(old), Some(new)) => step(GIT, redactor, dir, old, new),
+                        _ => None,
+                    };
+                    if let Some(step) = step {
                         detail = format!("{detail}, {}", step.summary());
                         meta.extra.insert("git".into(), step.how.into());
                         meta.extra

@@ -572,7 +572,8 @@ done
 expect today 2 "[$tv.selected, $tv.shown, $tv.detail.cls] | join(\",\")" "$UNIT,event,crisis"
 expect today 2 "$tv.detail.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 shows today 2 "Why loud?"
-shows today 2 "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+# the rule is the index's (ADR-0038 §1): known in dev mode too, no engine call
+shows today 2 "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
 shows today 2 "~/.config/systemd/user/ollama.service"
 expect today 3 "$tv.selected" "$HOOK_EVENT"
 expect today 4 "[$tv.cursor, $tv.selected, $tv.shown] | map(tostring) | join(\",\")" "6,toggle,overview"
@@ -592,7 +593,7 @@ run today-resolve "" 1920x1080 "summon;key:Down;key:Return;type:hook test;key:Re
 expect today-resolve 3 "[$tv.detail.form.shown, $tv.detail.form.action, .view.keys] | map(tostring) | join(\",\")" "true,explain,false"
 expect today-resolve 8 "[$tv.selected, $tv.shown, ($tv.needs | join(\"+\")), $tv.headline] | join(\",\")" "$UNIT,event,$HOOK_EVENT,Seldon is recording. 1 change needs you."
 expect today-resolve 8 "[$tv.detail.form.result, ($tv.detail.actions | join(\"+\")), .view.keys] | map(tostring) | join(\",\")" "Explained 1 event · created C-2026-009,Open case,true"
-argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift explain $UNIT --json -- "hook test")")"
+argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift explain $UNIT --json -- "hook test")")"
 clean_log today-resolve
 
 # The sidebar search filters Today's crises and entries (yesterday's too).
@@ -674,7 +675,7 @@ clean_log today-new
 run changelog "$sample" 1920x1080 \
   "summon:$cl;text:f;text:F;text:F;select:$MESA;key:Return;key:Escape;shim:filter:pacman;key:Escape;shim:resolve:$LIB32;key:Return;key:Escape;shim:resolve:crisis;select:$THEME;click:Hide;text:f;click:Show"
 expect changelog 1 "[.view.section, $tv.chip] | join(\",\")" "changelog,open"
-expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 30,case 37,all 75"
+expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
 expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "6,0"
 # One count everywhere (B2): the open chip = the sidebar's Changelog count,
 # crisis = the header's crises, attention = the header's attention = the
@@ -698,7 +699,7 @@ for text in "6 changes · newest first" "4 changes without a case" "proposed for
 done
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
 expect changelog 3 "$tv.chip" open
-expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,75"
+expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,76"
 expect changelog 5 "[.call, $tv.selected, $tf.subject, $tf.badge] | join(\",\")" "ok,$MESA,mesa,+2"
 expect changelog 5 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
@@ -709,12 +710,12 @@ shows changelog 6 "Only mesa"
 shows changelog 6 "EXPLAIN"
 expect changelog 7 "[$tf.shown, $tf.editing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,false,true,true"
 expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,16"
-expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",75,true"
+expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",76,true"
 expect changelog 10 "[$tv.selected, $tf.eventId, $tf.subject] | join(\",\")" "$LIB32,$LIB32,mesa"
 shows changelog 11 "Only lib32-mesa"
 expect changelog 13 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "crisis,2"
 expect changelog 14 "[.call, $tv.chip, $tv.selected] | join(\",\")" "ok,all,$THEME"
-expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,75"
+expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,76"
 expect changelog 15 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Show"
 shows changelog 15 "attention · hidden this session"
 expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,5,$UNIT"
@@ -755,7 +756,7 @@ expect quiet-crisis 2 "[$tv.attention, $tv.attentionDim] | map(tostring) | join(
 expect quiet-crisis 2 "$tv.stripes | join(\",\")" \
   "tokyo-night attention,$HOOK crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh attention,~/.config/hypr/monitors.conf attention,mesa attention"
 expect quiet-crisis 3 "[$td.cls, $tf.crisis, $tf.zone, $tf.explainZone] | map(tostring) | join(\",\")" "crisis,true,yellow,yellow"
-expect quiet-crisis 3 "$td.whyLoud" "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+expect quiet-crisis 3 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
 expect quiet-crisis 3 "$td.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 expect quiet-crisis 4 "[$td.cls, $tf.crisis, $tf.zone, $td.whyLoud] | map(tostring) | join(\",\")" "attention,false,red,"
 expect quiet-crisis 4 '[.texts[] | select(. == "Why loud?")] | length' 0
@@ -814,7 +815,7 @@ expect drift-live 29 "[($tv.badges | length), ($td.actions | length), .pill.text
 expect drift-live 30 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
 expect drift-live 30 "$tv.ids | index(\"C-2026-009\") >= 6" true
 argv_check drift-live "$work/home-drift" "$(printf '%s\n' "$startup" \
-  "$(q drift link $THEME C-2026-005 --json)" "$(q drift show $UNIT --json)" \
+  "$(q drift link $THEME C-2026-005 --json)" \
   "$(q drift explain $UNIT --risk R2 --area dev-env --json -- " --help ")" \
   "$(q drift dismiss $MESA --json -- "routine update  ")")"
 clean_log drift-live
@@ -898,7 +899,8 @@ expect work 1 "$tc.kv | join(\" | \")" \
 expect work 1 "[$tc.plan, $tc.log, $tc.linked, $tc.hint] | map(tostring) | join(\",\")" "4 of 5 steps done,3,5,Dev mode is read-only"
 for text in "ACTIVE · 2" "VERIFICATION · 1" "QUEUED · 3" "COMPLETED · 2" "2 / 3 active" "C-2026-005 · R1 · themes · 1 proposed" \
   "4/5" "Run" "New case" "By agent" "Dev mode is read-only" "PLAN" "LOG" "LINKED CHANGES · 5" "C-2026-003 · R3" \
-  "4 of 5 steps done. The steps, the Intent and the Result are in the case file." "case-started · human · R3" "case-updated · human · R3" \
+  "4 of 5 steps done. The steps and the full Intent and Result are in the case file." "case-started · human · R3" "case-updated · human · R3" \
+  "INTENT" "Omarchy 4.0.7 einspielen, ohne die eigenen Hyprland-Bindings zu verlieren." \
   "Omarchy auf 4.0.7 aktualisieren" "Hand to agent" "To verification"; do
   shows work 1 "$text"
 done
@@ -1058,7 +1060,7 @@ expect tab-focus 14 "$tv.cursor" 1
 expect tab-focus 16 "[.view.section, $tv.sheet.open, $tv.sheet.title, $tv.result] | map(tostring) | join(\",\")" "work,true,xyz,"
 expect tab-focus 18 "$tv.journal.editing" true
 expect tab-focus 21 "[.view.section, .view.keys, .view.editing] | map(tostring) | join(\",\")" "work,true,false"
-argv_check tab-focus "$work/home-tab-focus" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)")"
+argv_check tab-focus "$work/home-tab-focus" "$startup"
 clean_log tab-focus
 
 jq '.events = [
@@ -1069,11 +1071,11 @@ jq '.events = [
   ] + .events' "$sample" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
 run cursor-follow "" 1920x1080 \
-  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=77;key:Return;key:Escape;text:F' \
+  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=78;key:Return;key:Escape;text:F' \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 1 "[$tv.chip, $tv.cursor] | map(tostring) | join(\",\")" "all,0"
 expect cursor-follow 2 "[$tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "4,$THEME"
-expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "77,6,$THEME"
+expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "78,6,$THEME"
 expect cursor-follow 5 "[$tv.detail.form.shown, $tv.detail.form.eventId] | map(tostring) | join(\",\")" "true,$THEME"
 expect cursor-follow 7 "[$tv.chip, $tv.cursor, $tv.selected != \"$THEME\"] | map(tostring) | join(\",\")" "case,0,true"
 clean_log cursor-follow
@@ -1147,7 +1149,8 @@ clean_log sections-uninit
 #     lists; key/values wrap at word boundaries at 50 %.
 expected_warnings="$expected_warnings|jax\\.seldon: seldon open exit 1: unknown case C-2026-001\$"
 
-# B1: the callout from the engine's rule (`drift show`), live.
+# B1: the callout from the engine's rule, live: the index's own (ADR-0038
+# §1), so no click starts a process.
 mkdir -p "$work/home-why"
 run why-loud "" 1920x1080 \
   "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths;select:$HOOK_EVENT;wait:sectionView.detail.rule=known always-red-paths;text:1;key:Down" \
@@ -1157,8 +1160,23 @@ expect why-loud 2 "[$td.kv[] | select(startswith(\"Case\") or startswith(\"Rule\
 shows why-loud 2 "Why loud?"
 expect why-loud 4 "[$td.id, $td.rule] | join(\",\")" "$HOOK_EVENT,known always-red-paths"
 expect why-loud 6 "[$tv.shown, $tv.detail.rule] | join(\",\")" "event,known always-red-paths"
-argv_check why-loud "$work/home-why" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift show $HOOK_EVENT --json)")"
+argv_check why-loud "$work/home-why" "$startup"
 clean_log why-loud
+
+# … an index without `rule` (an earlier contract-2 engine): `drift show`
+# names it, once per selected crisis — the fallback, unchanged.
+jq 'del(.drift[].rule)' "$sample" >"$work/no-rule.json"
+mkdir -p "$work/home-why-bare"
+run why-loud-bare "" 1920x1080 \
+  "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths;select:$HOOK_EVENT;wait:sectionView.detail.rule=known always-red-paths;text:1;key:Down" \
+  HOME="$work/home-why-bare" FAKE_SELDON_FIXTURE="$work/no-rule.json"
+expect why-loud-bare 2 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
+expect why-loud-bare 4 "[$td.id, $td.rule] | join(\",\")" "$HOOK_EVENT,known always-red-paths"
+argv_check why-loud-bare "$work/home-why-bare" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift show $HOOK_EVENT --json)")"
+clean_log why-loud-bare
+run why-loud-bare-dev "$work/no-rule.json" 1920x1080 "summon:$(sel $UNIT)"
+expect why-loud-bare-dev 1 "$td.whyLoud" "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
+clean_log why-loud-bare-dev
 
 # … when an open case's plan names the crisis: the callout, the Case and
 # the Rule rows say the same.
@@ -1171,15 +1189,16 @@ expect why-loud-planned 2 "[$td.kv[] | select(startswith(\"Case\") or startswith
 expect why-loud-planned 2 "$td.actions[0]" "Link to C-2026-003…"
 clean_log why-loud-planned
 
-# … under `[drift] attention = "all"`: a crisis is a red-zone change.
+# … under `[drift] attention = "all"`: a crisis is a red-zone change (the
+# fallback's answer).
 mkdir -p "$work/home-why-all"
 run why-loud-all "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.rule=known attention-all" \
-  HOME="$work/home-why-all" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_ATTENTION_ALL=1
+  HOME="$work/home-why-all" FAKE_SELDON_FIXTURE="$work/no-rule.json" FAKE_SELDON_ATTENTION_ALL=1
 expect why-loud-all 2 "$td.whyLoud" "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone. No open case plans it, and no case is linked."
 clean_log why-loud-all
 
 # … a pacman group in crisis, from a member: the leader's rule.
-jq --arg m "$MESA" '.summary.crisis = 3 | .drift |= map(if .eventId == $m then .crisis = true else . end)' "$sample" >"$work/group-crisis.json"
+jq --arg m "$MESA" '.summary.crisis = 3 | .drift |= map(if .eventId == $m then .crisis = true else . end)' "$work/no-rule.json" >"$work/group-crisis.json"
 mkdir -p "$work/home-why-group"
 run why-loud-group "" 1920x1080 "summon:$(sel $LIB32);wait:sectionView.detail.rule=known always-red" \
   HOME="$work/home-why-group" FAKE_SELDON_FIXTURE="$work/group-crisis.json"
@@ -1227,6 +1246,36 @@ expect kv-wrap 2 '.overflow | join(" | ")' ""
 expect kv-wrap 2 "[.texts[] | select(startswith(\"R3 · every step\"))] | length" 1
 clean_log kv-wrap
 
+# ADR-0038: the details show what the index carries — an imported case's
+# intent (after its provenance line) and source, a completed case's
+# result, a decision's lead, each as plain text with Open in editor kept;
+# an index without the four fields renders as before.
+run details "$sample" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};call:select:C-2026-001;text:4;call:select:ADR-0003"
+expect details 1 "[$tc.id, $tc.intent, $tc.result] | join(\"|\")" \
+  "C-2026-007|Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben.|"
+expect details 1 "[$tc.kv[] | select(startswith(\"Imported from\"))] | join(\",\")" "Imported from: ~/Notizen/aufgaben.md#4"
+for text in "INTENT" "Herdr-Orchestrator als Default-Agent registrieren — Agenten sollen über Herdr starten, damit Sitzungen sichtbar bleiben." \
+  "~/Notizen/aufgaben.md#4" "Open in editor"; do
+  shows details 1 "$text"
+done
+expect details 1 '[.texts[] | select(. == "RESULT")] | length' 0
+expect details 2 "[$tc.id, $tc.result] | join(\"|\")" "C-2026-001|Logbuch läuft, Baseline erfasst, \`seldon doctor\` ohne Befund."
+shows details 2 "RESULT"
+expect details 4 "[.view.selected, $tv.text] | join(\"|\")" "ADR-0003|Zed wird Zweiteditor, Neovim bleibt Standard."
+shows details 4 "Zed wird Zweiteditor, Neovim bleibt Standard."
+for i in 1 2 4; do expect details $i '.overflow | join(" | ")' ""; done
+clean_log details
+jq 'del(.drift[].rule) | .cases[][] |= del(.intent, .result, .source) | .decisions[] |= del(.lead)' "$sample" >"$work/bare.json"
+run details-bare "$work/bare.json" 1920x1080 \
+  "summon:{\"section\":\"work\",\"select\":\"C-2026-007\"};text:4;call:select:ADR-0003"
+expect details-bare 1 "[$tc.id, $tc.intent, $tc.result, ([$tc.kv[] | select(startswith(\"Imported from\"))] | length)] | map(tostring) | join(\"|\")" "C-2026-007|||0"
+shows details-bare 1 "0 of 5 steps done. The steps, the Intent and the Result are in the case file."
+expect details-bare 1 '[.texts[] | select(. == "INTENT" or . == "RESULT")] | length' 0
+expect details-bare 3 "[.view.selected, $tv.text] | join(\"|\")" "ADR-0003|"
+shows details-bare 3 "The text is in the file; Open in editor shows it."
+clean_log details-bare
+
 # ---------------------------------------------------------------------------
 # 9. The Prime Radiant, section 7 (ADR-0034 §4, SPEC-PLUGIN §6; WP-123): the
 #    0.1 overlay's scenarios (overlay-view.sh, COVERAGE.md) on the desk.
@@ -1268,9 +1317,9 @@ rpaints() {
 
 plan_s="2 active cases · 6 of 9 steps done"
 risk_s="8 cases · R0 1 · R1 3 · R2 3 · R3 1 · all time"
-drift_s="12 opened · 7 resolved in 5 weeks · peak 2026-W40"
-s30="70 events on 14 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
-s90="75 events on 15 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+drift_s="13 opened · 8 resolved in 5 weeks · peak 2026-W40"
+s30="71 events on 15 of 30 days · busiest 2026-10-01 (32) | explicit 324 → 327 · total 2005 → 2009 · 2 samples | $drift_s | $risk_s | 7 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
+s90="76 events on 16 of 90 days · busiest 2026-10-01 (32) | explicit 323 → 327 · total 2004 → 2009 · 3 samples | $drift_s | $risk_s | 8 cases (6 open) · 2 releases · 6 snapshots · 2 crises | $plan_s"
 s365=${s90/of 90 days/of 365 days}
 sall=${s90/of 90 days/of 366 days}
 radiant='{"section":"radiant"}'
@@ -1291,7 +1340,7 @@ expect radiant-ipc 1 '.view.sectionView.window.from + " " + .view.sectionView.wi
 expect radiant-ipc 1 .view.sectionView.caption "90 d · 2026-07-04 – 2026-10-01"
 for text in "Prime Radiant" "90 d · 2026-07-04 – 2026-10-01" "30 d" "90 d" "365 d" "All" \
   Heatmap Series DriftBars RiskDonut Timeline "The Plan" releases snapshots cases crises \
-  "75 events on 15 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
+  "76 events on 16 of 90 days · busiest 2026-10-01 (32)" "$risk_s" "$plan_s" \
   "C-2026-003 · R3" "Omarchy auf 4.0.7 aktualisieren" "4/5 steps · agent: claude-code" "2/4 steps · agent: claude-code"; do
   shows radiant-ipc 1 "$text"
 done
@@ -1537,7 +1586,8 @@ for text in "DECISIONS" "4 decisions · 1 proposed" "New decision" "Ollama nur a
   "2026-10-01" "Logbuch-Sprache Deutsch, Struktur Englisch" "ADR-0001 · accepted" "2026-09-01" \
   "ADR-0004 · PROPOSED · 2026-10-01" "Accept" "Open in editor" "decisions/ADR-0004-ollama-user-service.md" \
   "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture." \
-  "The text is in the file; Open in editor shows it."; do
+  "Lokale Modelle nur über einen Case; ollama läuft, wenn überhaupt, als User-Service ohne Autostart." \
+  "The whole text is in the file; Open in editor shows it."; do
   shows decisions 2 "$text"
 done
 shows decisions 2 "CASES · 0"
@@ -1873,7 +1923,7 @@ graph_tick_ok() {
 #      and no paint after that; the legend, the date, the footer.
 graph_run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
 expect graph-settle 2 .view.section graph
-expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "67,26,67,0"
+expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "68,26,68,0"
 expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
 expect graph-settle 3 '[.view.graph.sleeping, .view.graph.timer, .view.graph.ticks, .view.graph.run] | map(tostring) | join(",")' "true,false,200,200"
 expect graph-settle 3 '.view.graph.tickSamples > 150' true
@@ -1881,8 +1931,8 @@ graph_tick_ok graph-settle 3
 expect graph-settle 5 '[.view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "200,false"
 # (the last tick's paint may still be pending at step 3: compare 4 and 5)
 check "graph-settle: no paint while asleep" "$(sed -n 5p "$work/graph-settle.steps" | jq .view.graph.paints)" "$(sed -n 4p "$work/graph-settle.steps" | jq .view.graph.paints)"
-for t in "Graph" "Play growth" "2026-10-01 · 67 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
-  "Newest 75 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
+for t in "Graph" "Play growth" "2026-10-01 · 68 nodes" "Case" "Area" "Decision" "Change" "Crisis" \
+  "Newest 76 events · 2 completed cases in the index" "←/→ day · Space play · drag, scroll · 0 fit"; do
   shows graph-settle 3 "$t"
 done
 expect graph-settle 3 '.view.sectionView.legend | join(",")' "Case,Area,Decision,Change,Crisis"
@@ -1896,7 +1946,7 @@ clean_log graph-settle
 graph_run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
 # The service builds the graph only for a shown section 8.
 expect graph-hidden 1 '[.graphBuilds, .graphNodes, .view.graph] | map(tostring) | join(",")' "0,0,null"
-expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,67"
+expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,68"
 t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
 expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
 expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"
@@ -1921,7 +1971,7 @@ run graph-dirty "" 1920x1080 "summon;settle;text:8;wait:graph.sleeping=true;text
 expect graph-dirty 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "0,0"
 expect graph-dirty 4 '[.graphBuilds, .graphDirty, .view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "1,false,true,200"
 expect graph-dirty 11 '[.view.section, .graphBuilds, .graphDirty] | map(tostring) | join(",")' "radiant,1,true"
-expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,67"
+expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,68"
 expect graph-dirty 12 '[.view.graph.sleeping, .view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "true,200,false"
 clean_log graph-dirty
 
@@ -1929,9 +1979,9 @@ clean_log graph-dirty
 #      ends with all of them; the slider's day (graphCut) and ←/→; Space.
 graph_run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
 expect graph-replay 4 '[.view.graph.playing, .view.graph.cut] | map(tostring) | join(",")' "true,0"
-expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 67)' true
-expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,67"
-expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 67"
+expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 68)' true
+expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,68"
+expect graph-replay 6 '[.view.graph.cut, .view.graph.date, .view.sectionView.date] | map(tostring) | join(",")' "0,2026-09-01,2026-09-01 · 4 nodes of 68"
 expect graph-replay 7 '[.view.graph.cut, .view.graph.sleeping] | map(tostring) | join(",")' "1,false"
 expect graph-replay 8 .view.graph.playing true
 expect graph-replay 9 '.view.graph.cut > 1' true
@@ -2016,10 +2066,16 @@ graph_run graph-narrow "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sle
 expect graph-narrow 4 '.overflow | join(" | ")' ""
 expect graph-narrow 6 '.overflow | join(" | ")' ""
 graph_tick_ok graph-narrow 4
-# A label at the right edge goes to the left of its node (the sample's
-# backup-dotfiles.sh crisis at 50 %), not past the canvas.
-expect graph-narrow 4 '.view.graph.flipped >= 1' true
 clean_log graph-narrow
+# A label at the right edge goes to the left of its node, not past the
+# canvas. The settled layout of the sample decides which node lies there
+# (before WP-113's fixture event the backup-dotfiles.sh crisis did at
+# 50 %), so the case drags a case node past the right edge itself.
+graph_run graph-flip "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sleeping=true;graphDrag:C-2026-004:600,0;wait:graph.sleeping=true"
+expect graph-flip 4 '.view.graph.flipped' 0
+expect graph-flip 6 '.view.graph.flipped >= 1' true
+expect graph-flip 6 '.overflow | join(" | ")' ""
+clean_log graph-flip
 
 # 11i. More fixed nodes than the cap (2000 more areas: 2022 nodes): a still
 #      picture in node order — no tick, ever (no Timer; a cut and a drag do

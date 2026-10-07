@@ -1792,6 +1792,7 @@ function decisionRows(index) {
       status: status,
       date: str(d.date),
       path: str(d.path),
+      lead: str(d.lead),
       tone: status === "proposed" ? "accent" : status === "superseded" ? "muted" : "",
       actionable: DECISION_ID.test(id)
     })
@@ -1927,8 +1928,9 @@ function decisionCases(index, decisionId) {
   return out
 }
 
-// What a decision's detail shows besides its title (the index has no body:
-// the text is in the file). `actions` for the sticky bar: Accept while it
+// What a decision's detail shows besides its title: `text`, the first
+// paragraph of its Decision when the index carries it (ADR-0038 §2; plain
+// text, "" otherwise), the rest is in the file. `actions` for the sticky bar: Accept while it
 // is proposed — the engine accepts nothing itself, the user sets the
 // status in the frontmatter, so Accept opens the file like Open in editor —
 // then Open in editor. Neither writes, so neither arms.
@@ -1948,7 +1950,10 @@ function decisionDetail(row) {
     note: row.status === "proposed"
       ? "Proposed: it waits for your decision. Accept opens it in the editor; set status: accepted in its frontmatter, and the index follows on the next capture."
       : row.status === "superseded" ? "Superseded by a later decision; kept for the record." : "",
-    lead: row.actionable ? "The text is in the file; Open in editor shows it." : "This id does not match ADR-NNNN; Seldon does not open it."
+    text: str(row.lead),
+    lead: !row.actionable ? "This id does not match ADR-NNNN; Seldon does not open it."
+      : str(row.lead) !== "" ? "The whole text is in the file; Open in editor shows it."
+      : "The text is in the file; Open in editor shows it."
   }
 }
 
@@ -3578,14 +3583,26 @@ var SOURCE_TEXTS = {
   seldon: "Seldon itself"
 }
 
-// The engine's rule for an open drift item, from `seldon drift show <id>
-// --json` (`rule`, `class`; engine/src/commands/drift.rs), which the
-// index does not carry. `rules`: Service.driftRules ({ <id>: { rule,
-// cls } }, the answers for this index); `shown`: Service.driftShown (the
-// call in flight). { state: "known", rule, cls }, or state "pending"
-// (asked, no answer yet) or "unknown" (not asked, or not answerable: dev
-// mode, no engine, a refusal).
-function driftRuleInfo(rules, shown, eventId) {
+// A rule id as the schema has it (`drift[].rule`): a lowercase slug of at
+// most 64 characters.
+var RULE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+// The engine's rule for an open drift item: the item's own `rule` in the
+// index (ADR-0038 §1; no process), else the answer of `seldon drift show
+// <id> --json` (`rule`, `class`; engine/src/commands/drift.rs) for an
+// index of an earlier contract-2 build. `index`: the index (its drift
+// item by `eventId`, a group's leader); `rules`: Service.driftRules ({
+// <id>: { rule, cls } }, the answers for this index); `shown`:
+// Service.driftShown (the call in flight). { state: "known", rule, cls },
+// or state "pending" (asked, no answer yet) or "unknown" (not asked, or
+// not answerable: dev mode, no engine, a refusal).
+function driftRuleInfo(rules, shown, eventId, index) {
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  for (var i = 0; i < list.length; i++) {
+    var d = list[i]
+    if (isObject(d) && d.eventId === eventId && typeof d.rule === "string" && RULE_ID.test(d.rule))
+      return { state: "known", rule: d.rule, cls: d.crisis === true ? "crisis" : "attention" }
+  }
   var known = isObject(rules) && isObject(rules[eventId]) ? rules[eventId] : null
   if (known && str(known.rule) !== "") return { state: "known", rule: str(known.rule), cls: str(known.cls) }
   if (isObject(shown) && shown.eventId === eventId && shown.pending) return { state: "pending", rule: "", cls: "" }
@@ -3943,8 +3960,10 @@ function caseActionVerb(id) {
 // (AGENTS.md §3): key/values, the plan's progress, the log (this case's
 // lifecycle events and notes in the index, newest first), the linked
 // changes (its `events` the index still lists, and how many it no longer
-// does). Intent and Result live in the case file, which the plugin never
-// reads. null when the index has no such case.
+// does), and the first paragraph of Intent and Result and an imported
+// case's source when the index carries them (ADR-0038; plain text, the
+// rest is in the case file, which the plugin never reads). null when the
+// index has no such case.
 function caseDetail(index, prepared, id) {
   var wc = findWorkRow(prepared, id)
   if (!wc) return null
@@ -3972,6 +3991,8 @@ function caseDetail(index, prepared, id) {
   if (wc.reopens !== "") kv.push(["Reopens", wc.reopens])
   if (wc.proposed > 0) kv.push(["Proposed", plural(wc.proposed, "open change", "open changes") + " the engine thinks belong here"])
   if (wc.path !== "") kv.push(["File", wc.path])
+  // display only: never an argument (ADR-0038 §3)
+  if (str(raw.source) !== "") kv.push(["Imported from", str(raw.source)])
   var all = events(index)
   var log = []
   var byId = {}
@@ -4013,6 +4034,8 @@ function caseDetail(index, prepared, id) {
     log: log,
     linked: linked,
     linkedMore: missing > 0 ? "+" + plural(missing, "older change", "older changes") + " the index no longer lists" : "",
+    intent: str(raw.intent),
+    result: str(raw.result),
     row: wc
   }
 }

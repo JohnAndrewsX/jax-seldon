@@ -83,8 +83,14 @@ fn assert_schema_valid(event: &Event) {
     );
 }
 
-/// The ledger line of the fixture logbook with this kind and subject.
+/// The first ledger line of the fixture logbook with this kind and subject.
 fn fixture_event(kind: &str, subject: &str) -> Value {
+    fixture_event_where(kind, subject, |_| true)
+}
+
+/// The first ledger line of the fixture logbook with this kind and subject
+/// for which `pick` holds.
+fn fixture_event_where(kind: &str, subject: &str, pick: impl Fn(&Value) -> bool) -> Value {
     for entry in std::fs::read_dir(fixture("logbook/ledger")).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_none_or(|e| e != "jsonl") {
@@ -92,7 +98,7 @@ fn fixture_event(kind: &str, subject: &str) -> Value {
         }
         for line in std::fs::read_to_string(&path).unwrap().lines() {
             let v: Value = serde_json::from_str(line).unwrap();
-            if v["kind"] == kind && v["subject"] == subject {
+            if v["kind"] == kind && v["subject"] == subject && pick(&v) {
                 return v;
             }
         }
@@ -103,8 +109,12 @@ fn fixture_event(kind: &str, subject: &str) -> Value {
 /// `event` and the fixture line without what differs by design: `id`, `ts`
 /// and, for hook-recorded lines, `actor`.
 fn assert_matches_fixture(event: &Event, kind: &str, subject: &str, keys: &[&str]) {
+    assert_matches_line(event, &fixture_event(kind, subject), keys);
+}
+
+/// `event` and the fixture line `theirs` in `keys`.
+fn assert_matches_line(event: &Event, theirs: &Value, keys: &[&str]) {
     let ours = serde_json::to_value(event).unwrap();
-    let theirs = fixture_event(kind, subject);
     for key in keys {
         assert_eq!(ours[key], theirs[key], "{key} of {}", event.to_line());
     }
@@ -440,20 +450,28 @@ mod plugins {
             ]
         );
         let update = &p.b.written[0];
+        // the version step of 09-24 (09-22 is an in-place edit, WP-113);
+        // the clone's commits as there (WP-136), the detail only with git
+        let theirs = fixture_event_where("plugin-update", "io.github.example.weather-plus", |v| {
+            v["meta"]["from"].is_string()
+        });
         let keys: &[&str] = if cloned.is_some() {
-            &[
-                "ts", "source", "kind", "subject", "detail", "actor", "zone", "meta",
-            ]
+            &["ts", "source", "kind", "subject", "detail", "actor", "zone"]
         } else {
-            eprintln!("no git on this host: the update's detail and meta not compared");
+            eprintln!("no git on this host: the update's detail and commits not compared");
             &["ts", "source", "kind", "subject", "actor", "zone"]
         };
-        assert_matches_fixture(
-            update,
-            "plugin-update",
-            "io.github.example.weather-plus",
-            keys,
-        );
+        assert_matches_line(update, &theirs, keys);
+        // the fixture line is from before WP-113: the version step as
+        // there, plus the tree's hashes (the manifest is part of the tree)
+        assert_eq!(update.meta.from.as_deref(), theirs["meta"]["from"].as_str());
+        assert_eq!(update.meta.to.as_deref(), theirs["meta"]["to"].as_str());
+        assert!(update.meta.hash_from.is_some() && update.meta.hash_to.is_some());
+        if cloned.is_some() {
+            for key in ["git", "commits"] {
+                assert_eq!(update.meta.extra.get(key), theirs["meta"].get(key), "{key}");
+            }
+        }
         // first-party versions come from the catalog's manifestPath, which
         // does not exist here: no version, but still the enabled state
         let disable = &p.b.written[1];
@@ -735,6 +753,339 @@ mod plugins {
             p.b.cursors["plugins"]["plugins"]["user.clock"]["version"], "1.0.0",
             "kept from the last readable manifest"
         );
+    }
+
+    /// The fixture story's plugins with a few more files each.
+    fn trees() -> PluginBench {
+        let p = story();
+        for id in ["io.github.example.weather-plus", "io.github.example.tyme"] {
+            let dir = p.plugins_dir.join(id);
+            write(&dir.join("Widget.qml"), "import QtQuick\nItem {}\n");
+            write(&dir.join("assets/icon.png"), b"\x89PNG\0\0\x01");
+        }
+        p.list_fixture("logs/plugin-list-after.json");
+        p
+    }
+
+    fn short(h: &Option<String>) -> String {
+        h.as_deref().unwrap().chars().take(8).collect()
+    }
+
+    /// WP-113: an in-place edit of a third-party plugin (no version
+    /// change, no git) is one `plugin-update` carrying the tree's hashes;
+    /// a second capture writes nothing.
+    #[test]
+    fn an_in_place_edit_of_a_plugin_is_one_update() {
+        let mut p = trees();
+        assert!(p.run("2026-10-07T10:00:00+02:00").events.is_empty());
+        let cursor = &p.b.cursors["plugins"]["plugins"];
+        assert!(
+            cursor["io.github.example.tyme"]["tree"].is_string(),
+            "{cursor}"
+        );
+        assert!(
+            cursor["omarchy.clock"].get("tree").is_none(),
+            "first-party plugins have no tree: {cursor}"
+        );
+
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        write(
+            &dir.join("Widget.qml"),
+            "import QtQuick\nItem { Component.onCompleted: run() }\n",
+        );
+        write(&dir.join("lib/helper.so"), b"\x7fELF\0\0");
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(
+            out.events.len(),
+            1,
+            "one event per tree, not per file: {:?}",
+            out.events
+        );
+        let e = &out.events[0];
+        assert_eq!(
+            (e.kind, e.subject.as_str()),
+            (Kind::PluginUpdate, "io.github.example.tyme")
+        );
+        assert_eq!((e.meta.from.as_ref(), e.meta.to.as_ref()), (None, None));
+        assert_ne!(e.meta.hash_from, e.meta.hash_to);
+        assert_eq!(
+            e.detail.as_deref().unwrap(),
+            format!(
+                "files changed (sha256 {} → {})",
+                short(&e.meta.hash_from),
+                short(&e.meta.hash_to)
+            )
+        );
+        assert!(
+            p.run("2026-10-07T10:20:00+02:00").events.is_empty(),
+            "idempotent"
+        );
+
+        // a version bump with its files: still one event, with both steps
+        p.manifest("io.github.example.tyme", Some("1.2.0"));
+        write(&dir.join("Widget.qml"), "import QtQuick\nItem {}\n");
+        let out = p.run("2026-10-07T10:30:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        let e = &out.events[0];
+        assert_eq!(e.detail.as_deref(), Some("1.1.0 → 1.2.0"));
+        assert!(e.meta.hash_from.is_some() && e.meta.hash_to.is_some());
+        assert!(p.run("2026-10-07T10:40:00+02:00").events.is_empty());
+    }
+
+    /// `.git` and `[redaction] skipPaths` are not part of a tree; a link
+    /// that is not to a file counts by its target, not walked.
+    #[test]
+    fn what_a_tree_holds() {
+        let mut p = trees();
+        let dir = p.plugins_dir.join("io.github.example.weather-plus");
+        write(&dir.join(".git/HEAD"), "ref: refs/heads/main\n");
+        p.run("2026-10-07T10:00:00+02:00");
+        write(&dir.join(".git/FETCH_HEAD"), "x\n");
+        // a default skipPaths pattern (`~/.config/omarchy/**/state.json`)
+        write(&dir.join("state.json"), "{}\n");
+        assert!(p.run("2026-10-07T10:10:00+02:00").events.is_empty());
+
+        let elsewhere = p.b.path("elsewhere");
+        write(&elsewhere.join("Evil.qml"), "Item {}\n");
+        std::os::unix::fs::symlink(&elsewhere, dir.join("extra")).unwrap();
+        let out = p.run("2026-10-07T10:20:00+02:00");
+        assert_eq!(out.events.len(), 1, "a link arrived: {:?}", out.events);
+        write(&elsewhere.join("Evil.qml"), "Item { x: 1 }\n");
+        assert!(
+            p.run("2026-10-07T10:30:00+02:00").events.is_empty(),
+            "a linked directory is not walked"
+        );
+        std::fs::remove_file(dir.join("extra")).unwrap();
+        std::os::unix::fs::symlink(p.b.path("other"), dir.join("extra")).unwrap();
+        assert_eq!(
+            p.run("2026-10-07T10:40:00+02:00").events.len(),
+            1,
+            "a new target"
+        );
+    }
+
+    /// A cursor from before WP-113 has no tree: the first capture takes it
+    /// without an event.
+    #[test]
+    fn a_tree_is_taken_without_an_event() {
+        let mut p = trees();
+        p.run("2026-10-07T10:00:00+02:00");
+        let mut old = p.b.cursors["plugins"].clone();
+        old.as_object_mut().unwrap().remove("stats");
+        for (_, plugin) in old["plugins"].as_object_mut().unwrap() {
+            plugin.as_object_mut().unwrap().remove("tree");
+        }
+        p.b.cursors.insert("plugins", old);
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        write(&dir.join("Widget.qml"), "Item { y: 2 }\n");
+        assert!(p.run("2026-10-07T10:10:00+02:00").events.is_empty());
+        let tree = &p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"];
+        assert!(tree.is_string());
+    }
+
+    /// Whether the tests run as root (CI): root reads a file whatever its
+    /// mode, so the unreadable halves are skipped there.
+    fn root() -> bool {
+        use std::os::unix::fs::MetadataExt as _;
+        std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0)
+    }
+
+    /// WP-113 round 2 (B3), the reviewer's probe: one unreadable file must
+    /// not freeze the tree. It counts by its size, time and mode (the tree
+    /// changes once, `partial`), and an edit elsewhere is still one
+    /// `plugin-update`. An unreadable plugin directory keeps the last hash.
+    #[test]
+    fn an_unreadable_entry_does_not_freeze_the_tree() {
+        if root() {
+            eprintln!("skipped: root reads every file");
+            return;
+        }
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = |p: &Path, m: u32| {
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap()
+        };
+        let mut p = trees();
+        p.run("2026-10-07T10:00:00+02:00");
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        write(&dir.join("junk"), "x\n");
+        p.run("2026-10-07T10:05:00+02:00");
+        mode(&dir.join("junk"), 0o000);
+        write(&dir.join("Widget.qml"), "Item { visible: false }\n");
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        assert_eq!(out.events[0].meta.extra["partial"], true);
+        assert!(
+            out.message
+                .as_deref()
+                .unwrap()
+                .contains("1 entr(ies) of plugin trees could not be read")
+        );
+        assert_eq!(
+            p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["partial"],
+            true
+        );
+        // still unreadable: an edit elsewhere is one more event
+        write(&dir.join("Widget.qml"), "Item { visible: true }\n");
+        assert_eq!(p.run("2026-10-07T10:20:00+02:00").events.len(), 1);
+        assert!(
+            p.run("2026-10-07T10:25:00+02:00").events.is_empty(),
+            "idempotent"
+        );
+        // an unreadable directory counts the same way
+        mode(&dir.join("assets"), 0o000);
+        assert_eq!(p.run("2026-10-07T10:30:00+02:00").events.len(), 1);
+        mode(&dir.join("assets"), 0o755);
+        mode(&dir.join("junk"), 0o644);
+        let out = p.run("2026-10-07T10:40:00+02:00");
+        assert_eq!(out.events.len(), 1, "readable again: one step back");
+        assert!(!out.events[0].meta.extra.contains_key("partial"));
+
+        // round 3: an unreadable file written in place with its
+        // modification time put back (`touch -d`) — the change time shows it
+        let junk = dir.join("junk");
+        mode(&junk, 0o200);
+        assert_eq!(p.run("2026-10-07T10:42:00+02:00").events.len(), 1);
+        let before = std::fs::metadata(&junk).unwrap();
+        {
+            use std::io::Write as _;
+            let mut f = std::fs::File::options().write(true).open(&junk).unwrap();
+            f.write_all(b"y\n").unwrap();
+            f.set_modified(before.modified().unwrap()).unwrap();
+        }
+        let after = std::fs::metadata(&junk).unwrap();
+        assert_eq!(
+            (after.len(), after.modified().unwrap()),
+            (before.len(), before.modified().unwrap())
+        );
+        let out = p.run("2026-10-07T10:44:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        assert_eq!(out.events[0].meta.extra["partial"], true);
+        mode(&junk, 0o644);
+        p.run("2026-10-07T10:46:00+02:00");
+
+        // the plugin directory itself unreadable: the last hash is kept
+        let tree = p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"].clone();
+        mode(&dir, 0o000);
+        let out = p.run("2026-10-07T10:50:00+02:00");
+        mode(&dir, 0o755);
+        assert!(out.events.is_empty(), "{:?}", out.events);
+        assert_eq!(
+            p.b.cursors["plugins"]["plugins"]["io.github.example.tyme"]["tree"],
+            tree
+        );
+    }
+
+    /// N2: a tree holds at most `TREE_ENTRIES` entries; past them it is cut
+    /// off (hashed from the first ones in walk order, `partial`, counted).
+    /// A file over 64 MiB counts by its metadata — the reviewer's 2 GiB
+    /// sparse file returns at once.
+    #[test]
+    fn a_tree_is_capped_and_huge_files_count_by_metadata() {
+        let mut p = trees();
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        let huge = dir.join("assets/huge.bin");
+        std::fs::File::create(&huge)
+            .unwrap()
+            .set_len(2 << 30)
+            .unwrap();
+        let start = std::time::Instant::now();
+        p.run("2026-10-07T10:00:00+02:00");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            start.elapsed()
+        );
+        let t: SystemTime = ts("2026-10-01T10:00:00+02:00").into();
+        std::fs::File::options()
+            .write(true)
+            .open(&huge)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(out.events.len(), 1, "a touch changes the fingerprint");
+        assert_eq!(out.events[0].meta.extra["hashBasis"], "stat");
+        std::fs::remove_file(&huge).unwrap();
+        p.run("2026-10-07T10:15:00+02:00");
+
+        let cap = seldon::collectors::plugins::TREE_ENTRIES;
+        for i in 0..cap {
+            write(&dir.join(format!("many/{i:05}")), "");
+        }
+        let out = p.run("2026-10-07T10:20:00+02:00");
+        assert_eq!(out.events.len(), 1, "{:?}", out.events);
+        assert_eq!(out.events[0].meta.extra["partial"], true);
+        assert!(
+            out.message
+                .as_deref()
+                .unwrap()
+                .contains("1 plugin tree(s) cut off at 10000 entries")
+        );
+        // within the cut an edit shows; past it (sorted walk order) not
+        write(&dir.join("Widget.qml"), "Item { opacity: 0 }\n");
+        assert_eq!(p.run("2026-10-07T10:30:00+02:00").events.len(), 1);
+        write(&dir.join("many/09999"), "late\n");
+        assert!(p.run("2026-10-07T10:40:00+02:00").events.is_empty());
+    }
+
+    /// N4: the stat fingerprint is used — and it does not hide an edit
+    /// that keeps the size and puts the modification time back (the
+    /// change time and inode catch it; the review's mutant "always reuse"
+    /// fails here).
+    #[test]
+    fn the_tree_fingerprint_is_reused_but_not_fooled() {
+        let mut p = trees();
+        let dir = p.plugins_dir.join("io.github.example.tyme");
+        let past: SystemTime = ts("2026-10-01T10:00:00+02:00").into();
+        let backdate = |path: &Path| {
+            std::fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(past)
+                .unwrap()
+        };
+        for f in ["manifest.json", "Widget.qml", "assets/icon.png"] {
+            backdate(&dir.join(f));
+        }
+        p.run("2026-10-07T10:00:00+02:00");
+        let stats = &p.b.cursors["plugins"]["stats"];
+        assert!(
+            stats["io.github.example.tyme"].is_string(),
+            "fingerprint kept: {stats}"
+        );
+        assert!(p.run("2026-10-07T10:05:00+02:00").events.is_empty());
+
+        let widget = dir.join("Widget.qml");
+        let before = std::fs::read(&widget).unwrap();
+        let mut after = before.clone();
+        after[0] = after[0].to_ascii_uppercase();
+        assert_ne!(before, after);
+        std::fs::write(&widget, &after).unwrap();
+        backdate(&widget);
+        let out = p.run("2026-10-07T10:10:00+02:00");
+        assert_eq!(
+            out.events.len(),
+            1,
+            "same size, same mtime: {:?}",
+            out.events
+        );
+    }
+
+    /// A capture whose cursor save failed after its ledger write repeats
+    /// no tree update (the ledger holds it).
+    #[test]
+    fn a_lost_cursor_save_repeats_no_tree_update() {
+        let mut p = trees();
+        p.run("2026-10-07T10:00:00+02:00");
+        let before = p.b.cursors["plugins"].clone();
+        write(
+            &p.plugins_dir.join("io.github.example.tyme/Widget.qml"),
+            "Item { z: 3 }\n",
+        );
+        assert_eq!(p.run("2026-10-07T10:10:00+02:00").events.len(), 1);
+        p.b.cursors.insert("plugins", before);
+        assert!(p.run("2026-10-07T10:20:00+02:00").events.is_empty());
     }
 }
 
@@ -1106,6 +1457,35 @@ mod plugin_commits {
             times[5] < std::time::Duration::from_millis(500),
             "{:?}",
             times[5]
+        );
+    }
+
+    /// The merge with WP-113: a pull that leaves the manifest's version as
+    /// it is fires through the tree hash, and that update names its
+    /// commits too.
+    #[test]
+    fn a_pull_without_a_version_bump_names_its_commits() {
+        let Some(mut c) = Clone::new("commits-tree") else {
+            return;
+        };
+        c.p.manifest(WEATHER, Some("1.0.0"));
+        c.commit("Pin the version");
+        c.update("2026-10-02T09:30:00+02:00");
+        c.commit("Fix the radar colours");
+        c.commit("Tidy the panel");
+        let e = c.update("2026-10-02T10:00:00+02:00");
+        assert_eq!((e.meta.from.as_deref(), e.meta.to.as_deref()), (None, None));
+        assert!(e.meta.hash_from.is_some() && e.meta.hash_to.is_some());
+        assert_eq!(extra(&e, "git"), Some("pull"));
+        assert_eq!(
+            extra(&e, "commits"),
+            Some("Tidy the panel\nFix the radar colours")
+        );
+        let detail = e.detail.as_deref().unwrap();
+        assert!(
+            detail.starts_with("files changed (sha256 ")
+                && detail.ends_with("), pulled 2 commits: Tidy the panel …"),
+            "{detail}"
         );
     }
 

@@ -33,7 +33,7 @@ use crate::commands::plan::{Spec, case_json, create};
 use crate::commands::{Commit, Context, Output, autocommit};
 use crate::error::{Error, Result};
 use crate::import::task::{Tasks, parse};
-use crate::import::{Scrubber, marker_path};
+use crate::import::{Scrubber, bad_path_char, case_source, marker_path};
 use crate::logbook::Logbook;
 use crate::logbook::cases;
 use crate::model::event::ACTOR_HUMAN;
@@ -58,8 +58,13 @@ const DONE_LINE: &str = "completed: imported as done";
 
 /// The first line of an imported case's *Intent* (WP-102 round 2, N4).
 fn provenance(source: &str) -> String {
-    format!("Imported from {source} — read before you start this case.")
+    format!("{PROVENANCE_START}{source}{PROVENANCE_END}")
 }
+
+/// The start and the end of [`provenance`]'s line, which the index skips
+/// to find the intent (ADR-0038 §2).
+pub const PROVENANCE_START: &str = "Imported from ";
+pub const PROVENANCE_END: &str = " — read before you start this case.";
 
 /// `SELDON_TEST_IMPORT_CRASH=after-create:<n>`: exit with
 /// [`CRASH_EXIT`] after the n-th case of the run is created, before its
@@ -79,22 +84,6 @@ fn crash_point(point: &str) {
 
 #[cfg(not(debug_assertions))]
 fn crash_point(_: &str) {}
-
-/// A character a path may not hold: a control character, one that turns
-/// the direction of the text around it, or an invisible format character
-/// (zero-width space, joiners, word joiner, BOM): a path is shown in the
-/// Log, the report and later the desk.
-fn bad_path_char(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{200B}'..='\u{200F}'
-                | '\u{202A}'..='\u{202E}'
-                | '\u{2060}'
-                | '\u{2066}'..='\u{2069}'
-                | '\u{FEFF}'
-        )
-}
 
 #[derive(Debug, Clone, Args)]
 pub struct TaskArgs {
@@ -366,6 +355,9 @@ pub fn run(ctx: &Context, args: TaskArgs) -> Result<Output> {
             start: false,
             point: false,
             done: task.done.then(|| DONE_LINE.to_string()),
+            // the case says where it came from (ADR-0038 §3); the marker
+            // stays the only idempotency key
+            source: Some(case_source(&task.source())),
         };
         let made = match create(ctx, &config, &logbook, &lock, spec) {
             Ok(made) => made,
@@ -592,8 +584,10 @@ fn read_source(
     // the whole text, as a note's (the rules that span lines need it), its
     // line breaks kept so every line number still points into the file;
     // then line by line with the home paths (the vault import's scrubber)
-    // CRLF as LF first: the rules that continue a command on `\` know `\n`
-    // only (round 3); the line count does not change
+    // CRLF as LF first (round 3): the rules read `\r\n` as `\n` since
+    // WP-128, but the parser and the marker's task hashes take LF text, so
+    // a CRLF file already imported is not imported again; the line count
+    // does not change
     let text = text.replace("\r\n", "\n");
     let whole = redactor.redact_keeping_lines(&text);
     if whole.matches('\n').count() != text.matches('\n').count() {

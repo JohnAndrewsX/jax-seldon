@@ -409,18 +409,20 @@ case* (Work with the case selected; for a case the index no longer lists
 editor*, whose engine answer replaces the line: only the engine can tell
 whether the file is still there); routine: none; the class at the right.
 Then "source · kind", the full subject, its class, for a crisis the **Why
-loud?** callout from the engine's rule: the index has none, so the detail
-asks `seldon drift show <id> --json` (in CONTRACT.md's table, read-only;
-for a group its leader) once for a selected crisis and keeps the answer
-while the item stays a crisis (`Service.driftRules`). `always-red` → "A
+loud?** callout from the engine's rule: the drift item's `rule` (for a
+group its leader's; ADR-0038 §1), so a click starts no process; an index
+without it (an earlier contract-2 engine) makes the detail ask `seldon
+drift show <id> --json` (in CONTRACT.md's table, read-only; for a group
+its leader) once for a selected crisis and keep the answer while the item
+stays a crisis (`Service.driftRules`). `always-red` → "A
 package on your crisis list ([drift] alwaysRed in
 ~/.config/seldon/config.toml) was installed, removed or downgraded by name
 in this transaction."; `always-red-paths` → "The path matches your crisis
 list ([drift] alwaysRedPaths …)."; `attention-all` → "[drift] attention =
 "all" is set: every change without a case is open drift, and a crisis is
 a change in the red zone."; another rule is named as it is. Until the
-answer (and in dev mode, without an engine) it says only what the index
-proves: "The engine classed this <source> change as a crisis" and how to
+answer (and in dev mode, without an engine, when the index has no rule)
+it says only what the index proves: "The engine classed this <source> change as a crisis" and how to
 ask for the rule. Then, from `proposedCase`, "C-… plans it (its plan names
 this change); nothing has linked it yet." or "No open case plans it, and no
 case is linked." — the Case row ("proposed: C-…") and the Rule row
@@ -493,8 +495,12 @@ index carries (`Model.caseDetail`; the plugin never reads the case file,
 AGENTS.md §3): the title, "completed by agent" / "reopens C-…", the
 key/values Status · Risk (R3: "every step that can break boot needs your
 go") · Zone · Area · Priority · Agent · Rollback (the snapshot) · Dates ·
-Reopens · Proposed · File, PLAN (the steps' progress; "The steps, the
-Intent and the Result are in the case file." with *Open in editor*), LOG
+Reopens · Proposed · File · Imported from (an imported case's `source`,
+text only, ADR-0038 §3), INTENT and RESULT (the index's `intent` and
+`result`, the sections' first paragraphs, plain text; each hidden without
+it), PLAN (the steps' progress; "The steps, the Intent and the Result are
+in the case file.", or "The steps and the full Intent and Result are in
+the case file." when either text is shown, with *Open in editor*), LOG
 (this case's lifecycle events and notes in the index, newest first, with
 the risk a `case-created`/`case-started`/`case-updated` line carries,
 contract 2) and
@@ -528,6 +534,9 @@ and no action runs.
   accent stripe); above them the count ("4 decisions · 1 proposed") and
   *New decision*. The detail: "ADR-NNNN · status · date", the title (a
   superseded one struck through), for a proposed one what Accept means,
+  the first paragraph of its *Decision* as plain text (`decisions[].lead`,
+  ADR-0038; hidden without it, and the closing line then reads "The text
+  is in the file; …" instead of "The whole text is in the file; …"),
   Status / Date / File, and a CASES · N block from `decisions[].cases`
   (contract 2, ADR-0034 §5) with each case's title and status from the
   case lists (a case the index no longer lists by its id; a click goes to
