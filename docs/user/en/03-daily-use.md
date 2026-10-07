@@ -262,6 +262,31 @@ and The Plan ignore the period.
 A click on the dimmed area or on *Close* closes it too. The Prime Radiant
 only shows; it never runs the engine.
 
+## The graph
+
+From 0.2.0, section 8 of the desk draws your machine's memory as a
+network: areas, cases, decisions and changes, linked the way the logbook
+links them. A change hangs on its case, a case on its area, a decision on
+the cases it names. A dashed line runs from a change to the case Seldon
+proposes for it. Crises are red. *Play growth* replays the network from
+the first day; the slider picks a day.
+
+| Do | How |
+|---|---|
+| move a node | drag it |
+| move the view | drag the background |
+| zoom | the mouse wheel, `-` and `=`; `0` fits the view |
+| see a node's card | point at it; a click keeps the card |
+| open a case | *Open case* on its card: Work shows it |
+| replay | *Play growth*, Space or `p`; ← and → move one day |
+| Esc | pause the replay, let a kept card go, then close |
+
+The graph is drawn from the index, so it holds what the index holds: the
+newest 500 events and 50 completed cases. The footer says how many there
+are. Beyond 400 nodes, the changes of one day and source become one node
+("+12"); its card lists them. The layout moves only while the section is
+on screen, and stops after a few seconds.
+
 ## From the terminal
 
 Everything in the panel has a command. The panel runs the same commands,

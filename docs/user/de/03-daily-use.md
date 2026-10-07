@@ -1,6 +1,6 @@
 # Alltag
 
-<!-- source: en/03-daily-use.md @ e3463b2 -->
+<!-- source: en/03-daily-use.md @ ecdb430 -->
 
 Diese Seite behandelt die Teile von Seldon, die du jeden Tag siehst: die
 Pill in der Bar, das Panel mit seinen sechs Tabs, die Tasten und das
@@ -278,6 +278,33 @@ Plan beachten den Zeitraum nicht.
 
 Ein Klick auf die abgedunkelte Fläche oder auf *Close* schließt ihn auch.
 Der Prime Radiant zeigt nur; er startet nie die Engine.
+
+## Der Graph
+
+Ab 0.2.0 zeichnet Abschnitt 8 des Desks das Gedächtnis deiner Maschine
+als Netz: Bereiche, Cases, Entscheidungen und Änderungen, verbunden so,
+wie das Logbuch sie verbindet. Eine Änderung hängt an ihrem Case, ein
+Case an seinem Bereich, eine Entscheidung an den Cases, die sie nennt.
+Eine gestrichelte Linie führt von einer Änderung zu dem Case, den Seldon
+für sie vorschlägt. Krisen sind rot. *Play growth* spielt das Netz vom
+ersten Tag an ab; der Schieberegler wählt einen Tag.
+
+| Tun | Wie |
+|---|---|
+| einen Knoten bewegen | ziehen |
+| die Ansicht verschieben | den Hintergrund ziehen |
+| zoomen | das Mausrad, `-` und `=`; `0` passt die Ansicht ein |
+| die Karte eines Knotens sehen | darauf zeigen; ein Klick hält die Karte |
+| einen Case öffnen | *Open case* auf seiner Karte: Work zeigt ihn |
+| abspielen | *Play growth*, Leertaste oder `p`; ← und → gehen einen Tag |
+| Esc | das Abspielen anhalten, eine gehaltene Karte loslassen, dann schließen |
+
+Der Graph entsteht aus dem Index und enthält deshalb, was der Index
+enthält: die neuesten 500 Ereignisse und 50 abgeschlossenen Cases. Die
+Fußzeile nennt die Zahlen. Über 400 Knoten werden die Änderungen eines
+Tages und einer Quelle zu einem Knoten („+12“); seine Karte zählt sie
+auf. Das Layout bewegt sich nur, solange der Abschnitt zu sehen ist, und
+hält nach wenigen Sekunden an.
 
 ## Vom Terminal aus
 

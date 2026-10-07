@@ -3194,28 +3194,26 @@ function captureWarningNotice(warnings) {
 // ---- Desk (ADR-0034) ----------------------------------------------------------
 
 // The desk's nine targets in sidebar order: eight sections with their fixed
-// digit, then Settings on `,`. `wp` names the work package that fills a
-// section the shell (WP-121) only stubs; `solo` sections have no list column
-// (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
+// digit, then Settings on `,`. `solo` sections have no list column (§2). `icon` is a 24-unit SVG path, drawn in the theme colour
 // (components/desk/NavIcon.qml), from the approved prototype.
 var DESK_SECTIONS = [
-  { id: "today", label: "Today", key: "1", wp: "WP-122", solo: false,
+  { id: "today", label: "Today", key: "1", solo: false,
     icon: "M4 5h16v15H4zM4 9h16M9 3v4M15 3v4" },
-  { id: "changelog", label: "Changelog", key: "2", wp: "WP-122", solo: false,
+  { id: "changelog", label: "Changelog", key: "2", solo: false,
     icon: "M5 6h14M5 12h14M5 18h9" },
-  { id: "work", label: "Work", key: "3", wp: "WP-122", solo: false,
+  { id: "work", label: "Work", key: "3", solo: false,
     icon: "M4 8h16v11H4zM9 8V5h6v3" },
-  { id: "decisions", label: "Decisions", key: "4", wp: "WP-123", solo: false,
+  { id: "decisions", label: "Decisions", key: "4", solo: false,
     icon: "M6 4h9l4 4v12H6zM14 4v5h5" },
-  { id: "system", label: "System", key: "5", wp: "WP-123", solo: false,
+  { id: "system", label: "System", key: "5", solo: false,
     icon: "M4 5h16v11H4zM8 20h8M12 16v4" },
-  { id: "memory", label: "Memory", key: "6", wp: "WP-123", solo: false,
+  { id: "memory", label: "Memory", key: "6", solo: false,
     icon: "M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2z" },
-  { id: "radiant", label: "Prime Radiant", key: "7", wp: "WP-123", solo: true,
+  { id: "radiant", label: "Prime Radiant", key: "7", solo: true,
     icon: "M12 2l2 7 7 3-7 3-2 7-2-7-7-3 7-3z" },
-  { id: "graph", label: "Graph", key: "8", wp: "WP-125", solo: true,
+  { id: "graph", label: "Graph", key: "8", solo: true,
     icon: "M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M16 7a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M10 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M7 8l4 7M17 9l-4 6M8 6h8" },
-  { id: "settings", label: "Settings", key: ",", wp: "", solo: false,
+  { id: "settings", label: "Settings", key: ",", solo: false,
     icon: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" }
 ]
 var DESK_SECTION_DEFAULT = "today"
@@ -4011,5 +4009,916 @@ function caseDetail(index, prepared, id) {
     linked: linked,
     linkedMore: missing > 0 ? "+" + plural(missing, "older change", "older changes") + " the index no longer lists" : "",
     row: wc
+  }
+}
+
+// ---- The graph, desk section 8 (ADR-0034 §5, WP-125) -----------------------
+//
+// The machine's memory as a network, from the index alone. Nodes: the
+// logbook's areas, the cases of all four lists, the decisions, and the
+// events whose kind is a change (GRAPH_CHANGE_KINDS; not case lifecycle,
+// notes, corrections or resolutions). A change is a crisis when its event
+// id is in drift[] with crisis: true. Edges: event.case → case, case.area →
+// area, decision.cases → case (contract 2), and drift.proposedCase → case
+// dashed. Day index: event ts, case created, decision date; an area is as
+// old as the earliest node attached to it.
+//
+// The service builds the graph when the index changes (graphBuild); the
+// section keeps only the layout (graphState: typed arrays, positions kept by
+// id across index updates) and steps it on a Timer (graphStep, one force
+// iteration per tick, at most GRAPH_TICKS_MAX ticks after each wake). Beyond
+// GRAPH_CAP nodes, changes fold into cluster nodes ("+N"): those of one day
+// and source first, then of one day, one ISO week, one month, the biggest
+// groups first and only as many as the cap needs; areas, cases, decisions
+// and crises never fold.
+
+var GRAPH_CAP = 400
+// schema/index.schema.json: events maxItems, cases.completed maxItems.
+var GRAPH_EVENTS_MAX = 500
+var GRAPH_COMPLETED_MAX = 50
+var GRAPH_CHANGE_KINDS = ["install", "remove", "upgrade", "downgrade", "reinstall", "snapshot", "snapshot-delete",
+  "update", "theme-set", "config-change", "config-add", "config-remove", "command"]
+var GRAPH_KIND_LABELS = { area: "Area", case: "Case", decision: "Decision", change: "Change", crisis: "Crisis",
+  cluster: "Folded changes" }
+// The legend in drawing order (the cluster entry only when something folded).
+var GRAPH_LEGEND = [
+  { kind: "case", label: "Case" },
+  { kind: "area", label: "Area" },
+  { kind: "decision", label: "Decision" },
+  { kind: "change", label: "Change" },
+  { kind: "crisis", label: "Crisis" },
+  { kind: "cluster", label: "Folded" }
+]
+var GRAPH_FOLD_LEVELS = ["day-source", "day", "week", "month"]
+// Layout: at most this many ticks after a wake, alpha decaying from 1 to
+// GRAPH_ALPHA_MIN over them; a tick over the budget is counted.
+var GRAPH_TICKS_MAX = 200
+var GRAPH_ALPHA_MIN = 0.001
+var GRAPH_ALPHA_DECAY = 1 - Math.pow(GRAPH_ALPHA_MIN, 1 / GRAPH_TICKS_MAX)
+var GRAPH_TICK_BUDGET_MS = 8
+// Labels drawn at most per paint besides the focus and its neighbours.
+var GRAPH_LABELS_MAX = 40
+// … and while the layout moves (areas and crises only).
+var GRAPH_LABELS_MOVING = 16
+// Forces (the prototype's, scaled by alpha): repulsion CHARGE / distance,
+// a pull to the centre, springs of rest length LINK + both radii.
+var GRAPH_CHARGE = 150
+var GRAPH_GRAVITY = 0.02
+var GRAPH_SPRING = 0.1
+var GRAPH_LINK = 30
+var GRAPH_DAMPING = 0.6
+var GRAPH_MAX_SPEED = 12
+// Repulsion: exact pairs up to this many visible nodes, a quadtree above
+// (Barnes–Hut, opening angle θ = 0.9 as d3-force's default).
+var GRAPH_EXACT_MAX = 160
+var GRAPH_THETA2 = 0.81
+
+function graphIsChange(kind) {
+  return typeof kind === "string" && (GRAPH_CHANGE_KINDS.indexOf(kind) !== -1 || kind.indexOf("plugin-") === 0)
+}
+
+// The empty graph (no index, or nothing in it).
+function graphEmpty() {
+  return { nodes: [], edges: [], deg: [], first: 0, last: 0, span: 0, empty: true, still: false, foldLevel: "",
+    numbers: { nodes: 0, edges: 0, areas: 0, cases: 0, decisions: 0, changes: 0, crises: 0, clusters: 0, folded: 0,
+      events: 0, completed: 0 },
+    footer: "" }
+}
+
+// The last path segment of a subject ("~/.config/hypr/input.conf" →
+// "input.conf"), the whole subject when it has none.
+function graphShortLabel(subject) {
+  var s = str(subject)
+  var parts = s.split("/").filter(function(p) { return p !== "" })
+  return parts.length > 0 ? parts[parts.length - 1] : s
+}
+
+// The smallest radius a node of `kind` is drawn with, in screen pixels
+// (zoomed far out, the graph keeps its shapes).
+function graphMinRadius(kind) {
+  return kind === "area" ? 5 : kind === "case" || kind === "crisis" ? 4 : kind === "decision" ? 3.5 : kind === "cluster" ? 3 : 2
+}
+
+function graphRadius(kind, deg, members) {
+  if (kind === "area") return 9
+  if (kind === "case") return 7
+  if (kind === "decision" || kind === "crisis") return 6
+  if (kind === "cluster") return 4 + Math.min(6, Math.sqrt(members) * 1.2)
+  return 3.5 + Math.min(3, deg * 0.6)
+}
+
+// Which changes fold (graphBuild): `evs` is the list of change entries
+// ({ day, source, crisis }), `budget` how many nodes they may take. Returns
+// { level, groups: [[entry index…]…], count } — the groups that fold (two
+// or more entries each), at the finest level that brings the count within
+// the budget (the coarsest when none does), biggest first.
+function graphFold(evs, budget) {
+  if (evs.length <= budget) return { level: "", groups: [], count: evs.length }
+  var best = null
+  for (var l = 0; l < GRAPH_FOLD_LEVELS.length; l++) {
+    var level = GRAPH_FOLD_LEVELS[l]
+    var byKey = {}
+    var keys = []
+    for (var i = 0; i < evs.length; i++) {
+      var e = evs[i]
+      if (e.crisis) continue
+      var key = level === "day-source" ? e.day + "/" + e.source
+        : level === "day" ? String(e.day)
+        : level === "week" ? String(e.day - weekdayOfDay(e.day))
+        : dateOfDay(e.day).slice(0, 7)
+      if (!byKey[key]) {
+        byKey[key] = []
+        keys.push(key)
+      }
+      byKey[key].push(i)
+    }
+    var groups = keys.map(function(k) { return byKey[k] }).filter(function(g) { return g.length > 1 })
+    groups.sort(function(a, b) { return b.length - a.length || evs[a[0]].day - evs[b[0]].day })
+    var n = evs.length
+    var chosen = []
+    for (var g = 0; g < groups.length && n > budget; g++) {
+      chosen.push(groups[g])
+      n -= groups[g].length - 1
+    }
+    best = { level: level, groups: chosen, count: n }
+    if (n <= budget) return best
+  }
+  return best
+}
+
+// The graph of an index: { nodes, edges, deg, first, last, span, empty,
+// foldLevel, numbers, footer }. A node: { id, kind (area, case, decision,
+// change, crisis, cluster), label (drawn beside it), title, sub, day (days
+// since `first`), date, r (radius at zoom 1), caseId (the case "Open case"
+// goes to, "" none), done (a closed case), count and members (a cluster's
+// changes, newest first, at most 12; `more` the rest) }. An edge: { a, b,
+// dashed } (node indices). Nodes come in the order areas, cases,
+// decisions, changes by day; `cap` (GRAPH_CAP when missing) bounds them
+// unless the fixed nodes alone exceed it.
+function graphBuild(index, cap) {
+  if (!isObject(index)) return graphEmpty()
+  var limit = count(cap) || GRAPH_CAP
+  var today = dayNumber(todayDate(index))
+  var nodes = []
+  // Maps without a prototype: an id such as "constructor" or "__proto__"
+  // from a foreign index must not find an inherited member.
+  var byId = Object.create(null)
+  var abs = []
+  var links = []
+  function add(node, day) {
+    if (byId[node.id] !== undefined) return byId[node.id]
+    byId[node.id] = nodes.length
+    nodes.push(node)
+    abs.push(day)
+    return nodes.length - 1
+  }
+  function dayOr(text, fallback) {
+    var d = dayNumber(dayOf(text))
+    return isNaN(d) ? fallback : d
+  }
+
+  // Areas: the logbook's, then any a case names that the list lacks.
+  var sys = isObject(index.system) ? index.system : {}
+  var areas = Array.isArray(sys.areas) ? sys.areas : []
+  function addArea(name) {
+    return add({ id: "area:" + name, kind: "area", label: name, title: name, sub: "", caseId: "", done: false }, NaN)
+  }
+  for (var a = 0; a < areas.length; a++)
+    if (isObject(areas[a]) && typeof areas[a].name === "string" && AREA.test(areas[a].name)) addArea(areas[a].name)
+
+  // Cases, all four lists (a case listed twice counts once).
+  var groups = isObject(index.cases) ? index.cases : {}
+  var completed = 0
+  var caseList = []
+  ;["queued", "active", "verification", "completed"].forEach(function(group) {
+    var list = Array.isArray(groups[group]) ? groups[group] : []
+    if (group === "completed") completed = list.length
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i]
+      if (!isObject(c) || typeof c.id !== "string" || !CASE_ID.test(c.id) || byId[c.id] !== undefined) continue
+      var day = dayOr(c.created, dayOr(c.started, dayOr(c.closed, today)))
+      var status = str(c.status) || group
+      add({ id: c.id, kind: "case", label: c.id, title: c.id + " " + str(c.title),
+        sub: [status, RISKS.indexOf(c.risk) !== -1 ? c.risk : "", hasText(c.area) ? c.area : ""]
+          .filter(function(p) { return p !== "" }).join(" · "),
+        caseId: c.id, done: group === "completed" }, day)
+      caseList.push(c)
+    }
+  })
+  for (var ci = 0; ci < caseList.length; ci++) {
+    var area = caseList[ci].area
+    if (typeof area === "string" && AREA.test(area)) links.push([caseList[ci].id, addArea(area) >= 0 ? "area:" + area : "", false])
+  }
+
+  // Decisions and the cases they name.
+  var decisions = Array.isArray(index.decisions) ? index.decisions : []
+  for (var d = 0; d < decisions.length; d++) {
+    var dec = decisions[d]
+    if (!isObject(dec) || typeof dec.id !== "string" || !DECISION_ID.test(dec.id)) continue
+    add({ id: dec.id, kind: "decision", label: dec.id, title: dec.id + " " + str(dec.title), sub: str(dec.status),
+      caseId: "", done: false }, dayOr(dec.date, today))
+    var named = Array.isArray(dec.cases) ? dec.cases : []
+    for (var n = 0; n < named.length; n++) if (typeof named[n] === "string" && CASE_ID.test(named[n])) links.push([dec.id, named[n], false])
+  }
+  var fixed = nodes.length
+
+  // Changes: the index's events, then open drift items older than them.
+  var drift = Array.isArray(index.drift) ? index.drift : []
+  var crisisIds = Object.create(null)
+  var proposed = Object.create(null)
+  for (var k = 0; k < drift.length; k++) {
+    var item = drift[k]
+    if (!isObject(item) || typeof item.eventId !== "string") continue
+    if (item.crisis === true) crisisIds[item.eventId] = true
+    if (typeof item.proposedCase === "string" && CASE_ID.test(item.proposedCase)) proposed[item.eventId] = item.proposedCase
+  }
+  var events = Array.isArray(index.events) ? index.events : []
+  var evs = []
+  var seen = Object.create(null)
+  function addChange(e, id) {
+    if (!isObject(e) || !graphIsChange(e.kind) || seen[id]) return
+    var day = dayNumber(dayOf(e.ts))
+    if (isNaN(day)) return
+    seen[id] = true
+    evs.push({ id: id, day: day, ts: str(e.ts), source: str(e.source), kind: e.kind, subject: str(e.subject),
+      crisis: crisisIds[id] === true, case: typeof e.case === "string" && CASE_ID.test(e.case) ? e.case : "",
+      proposed: typeof proposed[id] === "string" ? proposed[id] : "" })
+  }
+  for (var ev = 0; ev < events.length; ev++) if (isObject(events[ev])) addChange(events[ev], str(events[ev].id))
+  for (var dr = 0; dr < drift.length; dr++) if (isObject(drift[dr])) addChange(drift[dr], str(drift[dr].eventId))
+  // Oldest first, so the replay and the start layout grow outwards.
+  evs.sort(function(x, y) { return x.day - y.day || (x.ts < y.ts ? -1 : x.ts > y.ts ? 1 : 0) })
+
+  var fold = graphFold(evs, Math.max(0, limit - fixed))
+  var clusterOf = Object.create(null)
+  for (var g = 0; g < fold.groups.length; g++) for (var m = 0; m < fold.groups[g].length; m++) clusterOf[fold.groups[g][m]] = g
+  var clusterNode = []
+  var folded = 0
+  for (var e2 = 0; e2 < evs.length; e2++) {
+    var c2 = evs[e2]
+    var target
+    var gi = clusterOf[e2]
+    if (gi === undefined) {
+      var kind = c2.crisis ? "crisis" : "change"
+      target = c2.id
+      add({ id: c2.id, kind: kind, label: graphShortLabel(c2.subject), title: c2.subject,
+        sub: c2.source + " · " + c2.kind, caseId: byId[c2.case] !== undefined ? c2.case : "", done: false }, c2.day)
+    } else {
+      var members = fold.groups[gi]
+      if (clusterNode[gi] === undefined) {
+        var first = evs[members[0]]
+        var key = fold.level === "day-source" ? dateOfDay(first.day) + " · " + first.source
+          : fold.level === "day" ? dateOfDay(first.day)
+          : fold.level === "week" ? "week of " + dateOfDay(first.day - weekdayOfDay(first.day))
+          : dateOfDay(first.day).slice(0, 7)
+        var texts = []
+        for (var mm = members.length - 1; mm >= 0 && texts.length < 12; mm--) {
+          var me = evs[members[mm]]
+          texts.push(me.kind + " " + me.subject)
+        }
+        clusterNode[gi] = "fold:" + fold.level + ":" + key
+        add({ id: clusterNode[gi], kind: "cluster", label: "+" + members.length,
+          title: plural(members.length, "change", "changes") + " · " + key, sub: "folded: the graph shows at most " + limit + " nodes",
+          caseId: "", done: false, count: members.length, members: texts, more: Math.max(0, members.length - texts.length) }, first.day)
+        folded += members.length
+      }
+      target = clusterNode[gi]
+    }
+    if (c2.case !== "") links.push([target, c2.case, false])
+    if (c2.proposed !== "" && c2.proposed !== c2.case) links.push([target, c2.proposed, true])
+  }
+
+  // Edges between nodes that exist, once each (a solid one wins).
+  var edges = []
+  var edgeAt = Object.create(null)
+  for (var l = 0; l < links.length; l++) {
+    var ia = byId[links[l][0]]
+    var ib = byId[links[l][1]]
+    if (ia === undefined || ib === undefined || ia === ib) continue
+    var ek = ia < ib ? ia + ":" + ib : ib + ":" + ia
+    if (edgeAt[ek] !== undefined) {
+      if (!links[l][2]) edges[edgeAt[ek]].dashed = false
+      continue
+    }
+    edgeAt[ek] = edges.length
+    edges.push({ a: ia, b: ib, dashed: links[l][2] })
+  }
+  var deg = nodes.map(function() { return 0 })
+  for (var de = 0; de < edges.length; de++) {
+    deg[edges[de].a]++
+    deg[edges[de].b]++
+  }
+
+  // Day index: the first day of anything dated; an area at its earliest
+  // neighbour, an area without one at the first day.
+  var lo = Infinity
+  var hi = -Infinity
+  for (var t = 0; t < abs.length; t++) if (!isNaN(abs[t])) {
+    lo = Math.min(lo, abs[t])
+    hi = Math.max(hi, abs[t])
+  }
+  if (lo === Infinity) lo = hi = isNaN(today) ? 0 : today
+  for (var ae = 0; ae < edges.length; ae++) {
+    var ed = edges[ae]
+    var pairs = [[ed.a, ed.b], [ed.b, ed.a]]
+    for (var p = 0; p < 2; p++) {
+      var x = pairs[p][0]
+      var y = pairs[p][1]
+      if (nodes[x].kind === "area" && !isNaN(abs[y]) && (isNaN(abs[x]) || abs[y] < abs[x])) abs[x] = abs[y]
+    }
+  }
+  var numbers = { nodes: nodes.length, edges: edges.length, areas: 0, cases: 0, decisions: 0, changes: 0, crises: 0,
+    clusters: fold.groups.length, folded: folded, events: events.length, completed: completed }
+  for (var q = 0; q < nodes.length; q++) {
+    var node = nodes[q]
+    var day0 = isNaN(abs[q]) ? lo : abs[q]
+    node.day = day0 - lo
+    node.date = dateOfDay(day0)
+    node.r = graphRadius(node.kind, deg[q], node.count || 0)
+    if (node.kind === "area") numbers.areas++
+    else if (node.kind === "case") numbers.cases++
+    else if (node.kind === "decision") numbers.decisions++
+    else if (node.kind === "crisis") numbers.crises++
+    else if (node.kind === "change") numbers.changes++
+  }
+  var footer = "Newest " + plural(events.length, "event", "events") + " · " + completed + " completed " +
+    (completed === 1 ? "case" : "cases") + " in the index"
+  if (events.length >= GRAPH_EVENTS_MAX || completed >= GRAPH_COMPLETED_MAX) footer += " · older ones are only in the logbook"
+  if (folded > 0) footer += " · " + plural(folded, "change", "changes") + " folded into " + fold.groups.length
+  // More nodes that never fold (areas, cases, decisions, crises) than the
+  // cap: the layout would not keep its budget, so the graph is a still
+  // picture in node order (ADR-0034 §5's static escalation; no tick).
+  var still = numbers.areas + numbers.cases + numbers.decisions + numbers.crises > limit
+  return { nodes: nodes, edges: edges, deg: deg, first: lo, last: hi, span: hi - lo, empty: nodes.length === 0,
+    still: still, foldLevel: fold.level, numbers: numbers, footer: footer }
+}
+
+// A stable pseudo-random number in [0, 1) from a text (FNV-1a), so the
+// start layout is the same on every build of the same index.
+function graphHash(text) {
+  var h = 2166136261
+  for (var i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0) / 4294967296
+}
+
+// An array of n zeros. Plain arrays, not typed ones: the shell's JS engine
+// (QV4) reads and writes them about 1.7 times faster (measured, WP-125).
+function graphFill(n) {
+  var a = new Array(n)
+  for (var i = 0; i < n; i++) a[i] = 0
+  return a
+}
+
+// Run the layout's functions a few times on a six-node graph, once per
+// Model.js instance: QV4 compiles a function only after a few calls, so
+// without this the first real ticks ran interpreted (the first tick of a
+// 400-node layout took 8 ms on the test host, the later ones half of it).
+var graphWarmed = false
+function graphWarm() {
+  if (graphWarmed) return
+  graphWarmed = true
+  var b = { nodes: [], edges: [{ a: 0, b: 1 }, { a: 1, b: 2 }], first: 0, span: 0 }
+  for (var i = 0; i < 6; i++) b.nodes.push({ id: "warm" + i, r: 4, day: 0 })
+  var s = graphState(b, null)
+  for (var k = 0; k < 4; k++) {
+    graphRepelExact(s, 1)
+    graphRepelTree(s, 1)
+    s.sleeping = false
+    graphStep(s, 1000)
+  }
+}
+
+// The layout state of a build: positions, velocities and radii in arrays, the edges as index pairs, the visible set (day ≤ cut), alpha and
+// the tick counters. Positions of nodes `prev` already had (same id) are
+// kept; a new node starts beside a placed neighbour, else on a sunflower
+// spiral by its order. `prev`'s cut is kept when it was not on its last
+// day (a replay in progress), else the new last day. `added` counts the
+// nodes `prev` did not have, `removed` those it had that are gone.
+function graphState(build, prev) {
+  graphWarm()
+  var n = build.nodes.length
+  var m = build.edges.length
+  var s = {
+    n: n, ids: build.nodes.map(function(node) { return node.id }), at: Object.create(null),
+    x: graphFill(n), y: graphFill(n), vx: graphFill(n), vy: graphFill(n), r: graphFill(n), day: graphFill(n),
+    vis: graphFill(n), visList: graphFill(n), visCount: 0,
+    ea: graphFill(m), eb: graphFill(m), adjStart: graphFill(n + 1), adj: graphFill(2 * m),
+    first: build.first, span: build.span, cut: build.span,
+    alpha: 1, ticks: 0, total: 0, sleeping: false, pinned: -1, px: 0, py: 0, lastMs: 0, maxMs: 0, over: 0,
+    added: 0, removed: 0, tree: null, still: build.still === true, treeSteps: 0, exactSteps: 0
+  }
+  for (var i = 0; i < n; i++) {
+    s.at[s.ids[i]] = i
+    s.r[i] = build.nodes[i].r
+    s.day[i] = build.nodes[i].day
+  }
+  for (var e = 0; e < m; e++) {
+    s.ea[e] = build.edges[e].a
+    s.eb[e] = build.edges[e].b
+    s.adjStart[s.ea[e] + 1]++
+    s.adjStart[s.eb[e] + 1]++
+  }
+  for (var k = 0; k < n; k++) s.adjStart[k + 1] += s.adjStart[k]
+  var fill = s.adjStart.slice(0, n)
+  for (var e2 = 0; e2 < m; e2++) {
+    s.adj[fill[s.ea[e2]]++] = s.eb[e2]
+    s.adj[fill[s.eb[e2]]++] = s.ea[e2]
+  }
+  var placed = graphFill(n)
+  var kept = 0
+  for (var p = 0; p < n; p++) {
+    var old = prev ? prev.at[s.ids[p]] : undefined
+    if (old !== undefined) {
+      s.x[p] = prev.x[old]
+      s.y[p] = prev.y[old]
+      placed[p] = 1
+      kept++
+    }
+  }
+  var spiral = 0
+  for (var q = 0; q < n; q++) {
+    if (placed[q]) continue
+    var h = graphHash(s.ids[q])
+    var near = -1
+    for (var a = s.adjStart[q]; a < s.adjStart[q + 1]; a++) if (placed[s.adj[a]]) {
+      near = s.adj[a]
+      break
+    }
+    if (near >= 0) {
+      var dist = s.r[near] + s.r[q] + GRAPH_LINK * (0.6 + 0.4 * h)
+      s.x[q] = s.x[near] + dist * Math.cos(h * 2 * Math.PI)
+      s.y[q] = s.y[near] + dist * Math.sin(h * 2 * Math.PI)
+    } else {
+      var rad = 24 * Math.sqrt(0.5 + spiral)
+      var ang = spiral * Math.PI * (3 - Math.sqrt(5))
+      s.x[q] = rad * Math.cos(ang)
+      s.y[q] = rad * Math.sin(ang)
+      spiral++
+    }
+    placed[q] = 1
+  }
+  if (prev) {
+    s.added = n - kept
+    s.removed = prev.n - kept
+    if (prev.cut < prev.span) s.cut = Math.max(0, Math.min(s.span, prev.first + prev.cut - s.first))
+    s.alpha = s.added + s.removed > 0 ? Math.max(prev.sleeping ? 0 : prev.alpha, 0.3) : prev.alpha
+    s.sleeping = s.added + s.removed === 0 && prev.sleeping
+    s.total = prev.total
+  }
+  if (s.still) {
+    s.alpha = 0
+    s.sleeping = true
+  }
+  graphSetCut(s, s.cut, false)
+  return s
+}
+
+// Show the nodes of day ≤ cut (days since the build's first day, clamped).
+// With `grow`, a node that becomes visible starts beside a visible
+// neighbour (the replay's growth). Returns how many became visible.
+function graphSetCut(s, cut, grow) {
+  var c = Math.max(0, Math.min(s.span, Math.round(Number(cut) || 0)))
+  s.cut = c
+  var shown = 0
+  var count = 0
+  for (var i = 0; i < s.n; i++) {
+    var v = s.day[i] <= c ? 1 : 0
+    if (v && !s.vis[i]) {
+      shown++
+      if (grow) {
+        for (var a = s.adjStart[i]; a < s.adjStart[i + 1]; a++) {
+          var j = s.adj[a]
+          if (!s.vis[j] || s.day[j] > c) continue
+          var h = graphHash(s.ids[i] + "#" + s.total)
+          s.x[i] = s.x[j] + (s.r[j] + s.r[i] + 4) * Math.cos(h * 2 * Math.PI)
+          s.y[i] = s.y[j] + (s.r[j] + s.r[i] + 4) * Math.sin(h * 2 * Math.PI)
+          s.vx[i] = 0
+          s.vy[i] = 0
+          break
+        }
+      }
+    }
+    s.vis[i] = v
+    if (v) s.visList[count++] = i
+  }
+  s.visCount = count
+  if (s.pinned >= 0 && !s.vis[s.pinned]) s.pinned = -1
+  return shown
+}
+
+// Wake the layout: alpha at least `alpha`, the tick count from zero; a
+// still picture (build.still) never wakes.
+function graphWake(s, alpha) {
+  if (s.still) return
+  s.alpha = Math.max(s.alpha, Math.min(1, Number(alpha) || 0.3))
+  s.ticks = 0
+  s.sleeping = s.visCount === 0
+}
+
+// Hold node i at (x, y) while it is dragged, there at once (-1: let go,
+// the node stays where it was put).
+function graphPin(s, i, x, y) {
+  s.pinned = i >= 0 && i < s.n && s.vis[i] ? i : -1
+  s.px = x
+  s.py = y
+  if (s.pinned < 0) return
+  s.x[i] = x
+  s.y[i] = y
+  s.vx[i] = 0
+  s.vy[i] = 0
+}
+
+// Repulsion between every pair of visible nodes, exactly (each pair once).
+function graphRepelExact(s, charge) {
+  var x = s.x
+  var y = s.y
+  var vx = s.vx
+  var vy = s.vy
+  var list = s.visList
+  var m = s.visCount
+  for (var p = 0; p < m; p++) {
+    var i = list[p]
+    var xi = x[i]
+    var yi = y[i]
+    var fx = 0
+    var fy = 0
+    for (var q = p + 1; q < m; q++) {
+      var j = list[q]
+      var dx = xi - x[j]
+      var dy = yi - y[j]
+      var d2 = dx * dx + dy * dy
+      if (d2 < 0.01) {
+        dx = ((i * 7 + j) % 5) - 2 || 1
+        dy = ((i + j * 3) % 5) - 2 || 1
+        d2 = dx * dx + dy * dy
+      }
+      var f = charge / d2
+      dx *= f
+      dy *= f
+      fx += dx
+      fy += dy
+      vx[j] -= dx
+      vy[j] -= dy
+    }
+    vx[i] += fx
+    vy[i] += fy
+  }
+}
+
+// Repulsion through a quadtree (Barnes–Hut): a far cell acts with its
+// whole mass from its centre when its size² < GRAPH_THETA2 × distance²;
+// near nodes act one by one. The tree lives in flat arrays on the state,
+// rebuilt on every call. About 4× fewer interactions than the exact pairs
+// at 400 nodes.
+function graphRepelTree(s, charge) {
+  var x = s.x
+  var y = s.y
+  var list = s.visList
+  var m = s.visCount
+  var t = s.tree
+  if (!t) t = s.tree = { count: 0, mass: [], cx: [], cy: [], x0: [], y0: [], size: [], open: [], body: [], child: [], stack: [] }
+  var x0 = Infinity
+  var y0 = Infinity
+  var x1 = -Infinity
+  var y1 = -Infinity
+  for (var p = 0; p < m; p++) {
+    var b = list[p]
+    if (x[b] < x0) x0 = x[b]
+    if (x[b] > x1) x1 = x[b]
+    if (y[b] < y0) y0 = y[b]
+    if (y[b] > y1) y1 = y[b]
+  }
+  t.count = 1
+  t.mass[0] = 0
+  t.body[0] = -1
+  t.x0[0] = x0 - 1
+  t.y0[0] = y0 - 1
+  t.size[0] = Math.max(x1 - x0, y1 - y0) + 2
+  t.child[0] = t.child[1] = t.child[2] = t.child[3] = -1
+  for (var q = 0; q < m; q++) graphTreeInsert(t, x, y, list[q])
+  for (var c = 0; c < t.count; c++) if (t.mass[c] > 1) {
+    t.cx[c] /= t.mass[c]
+    t.cy[c] /= t.mass[c]
+  }
+  // A cell opens while its size² / θ² is at least the distance².
+  var tOpen = t.open
+  for (var o = 0; o < t.count; o++) tOpen[o] = t.size[o] * t.size[o] / GRAPH_THETA2
+  for (var u = 0; u < m; u++) graphTreeForce(t, x, y, s.vx, s.vy, list[u], charge)
+}
+
+// The tree's push on body i, added to its velocity. A function of its own,
+// called once per body: QV4 compiles a function after a few calls, so the
+// first tick already runs this loop compiled (as one loop over all bodies
+// it ran interpreted on the first ticks: 8 ms against 2–3, test host).
+function graphTreeForce(t, x, y, vx, vy, i, charge) {
+  // Locals, not t.<name>[k]: a property lookup per read costs QV4 more
+  // than the arithmetic.
+  var tMass = t.mass
+  var tBody = t.body
+  var tCx = t.cx
+  var tCy = t.cy
+  var tChild = t.child
+  var tOpen = t.open
+  var stack = t.stack
+  var xi = x[i]
+  var yi = y[i]
+  var fx = 0
+  var fy = 0
+  var sp = 0
+  stack[sp++] = 0
+  while (sp > 0) {
+    var k = stack[--sp]
+    var body = tBody[k]
+    if (body === i) continue
+    var dx = xi - tCx[k]
+    var dy = yi - tCy[k]
+    var d2 = dx * dx + dy * dy
+    if (body < 0 && tOpen[k] >= d2) {
+      var ch = 4 * k
+      var c0 = tChild[ch]
+      var c1 = tChild[ch + 1]
+      var c2 = tChild[ch + 2]
+      var c3 = tChild[ch + 3]
+      if (c0 >= 0) stack[sp++] = c0
+      if (c1 >= 0) stack[sp++] = c1
+      if (c2 >= 0) stack[sp++] = c2
+      if (c3 >= 0) stack[sp++] = c3
+      continue
+    }
+    if (d2 < 0.01) {
+      dx = ((i * 7 + k) % 5) - 2 || 1
+      dy = ((i + k * 3) % 5) - 2 || 1
+      d2 = dx * dx + dy * dy
+    }
+    var f = charge * tMass[k] / d2
+    fx += dx * f
+    fy += dy * f
+  }
+  vx[i] += fx
+  vy[i] += fy
+}
+
+// Add body i to the quadtree `t` (cells in flat arrays; masses as sums of
+// positions until graphRepelTree divides them). Bodies closer than the
+// depth limit share a leaf: the second one moves half a unit, so the next
+// tick separates them.
+function graphTreeInsert(t, x, y, i) {
+  var mass = t.mass
+  var cx = t.cx
+  var cy = t.cy
+  var body = t.body
+  var child = t.child
+  var x0 = t.x0
+  var y0 = t.y0
+  var size = t.size
+  var k = 0
+  var depth = 0
+  var px = x[i]
+  var py = y[i]
+  for (;;) {
+    if (mass[k] === 0) {
+      mass[k] = 1
+      cx[k] = px
+      cy[k] = py
+      body[k] = i
+      return
+    }
+    var b = body[k]
+    if (b >= 0) {
+      if (depth >= 24) {
+        x[i] = px + 0.5
+        mass[k]++
+        cx[k] += px + 0.5
+        cy[k] += py
+        return
+      }
+      // Move the leaf's body one level down.
+      body[k] = -1
+      var hb = size[k] / 2
+      var qb = (x[b] >= x0[k] + hb ? 1 : 0) + (y[b] >= y0[k] + hb ? 2 : 0)
+      var cb = t.count++
+      child[4 * k + qb] = cb
+      mass[cb] = 1
+      cx[cb] = x[b]
+      cy[cb] = y[b]
+      body[cb] = b
+      x0[cb] = x0[k] + (qb & 1) * hb
+      y0[cb] = y0[k] + (qb >> 1) * hb
+      size[cb] = hb
+      child[4 * cb] = child[4 * cb + 1] = child[4 * cb + 2] = child[4 * cb + 3] = -1
+    }
+    mass[k]++
+    cx[k] += px
+    cy[k] += py
+    var half = size[k] / 2
+    var q = (px >= x0[k] + half ? 1 : 0) + (py >= y0[k] + half ? 2 : 0)
+    var next = child[4 * k + q]
+    if (next < 0) {
+      next = t.count++
+      child[4 * k + q] = next
+      mass[next] = 0
+      body[next] = -1
+      x0[next] = x0[k] + (q & 1) * half
+      y0[next] = y0[k] + (q >> 1) * half
+      size[next] = half
+      child[4 * next] = child[4 * next + 1] = child[4 * next + 2] = child[4 * next + 3] = -1
+    }
+    k = next
+    depth++
+  }
+}
+
+// One force iteration over the visible nodes: repulsion between every
+// pair (graphRepelExact up to GRAPH_EXACT_MAX nodes, graphRepelTree
+// above), a pull to the centre, springs along the edges, all scaled by
+// alpha; damping and a speed limit; the pinned node stays where it is held.
+// Then alpha decays; after GRAPH_TICKS_MAX ticks since the last wake, or
+// below GRAPH_ALPHA_MIN, the layout sleeps. Returns false when it already
+// slept. `budgetMs` (GRAPH_TICK_BUDGET_MS when missing): a tick that took
+// longer is counted in `over`; `lastMs` and `maxMs` keep the times.
+function graphStep(s, budgetMs) {
+  if (s.sleeping) return false
+  var started = Date.now()
+  var x = s.x
+  var y = s.y
+  var vx = s.vx
+  var vy = s.vy
+  var list = s.visList
+  var m = s.visCount
+  var a = s.alpha
+  // Which repulsion ran is counted (a test holds the tree to 400 nodes).
+  if (m <= GRAPH_EXACT_MAX) {
+    graphRepelExact(s, GRAPH_CHARGE * a)
+    s.exactSteps++
+  } else {
+    graphRepelTree(s, GRAPH_CHARGE * a)
+    s.treeSteps++
+  }
+  var gravity = GRAPH_GRAVITY * a
+  for (var p = 0; p < m; p++) {
+    var i = list[p]
+    vx[i] -= x[i] * gravity
+    vy[i] -= y[i] * gravity
+  }
+  var r = s.r
+  var vis = s.vis
+  var k = GRAPH_SPRING * a
+  for (var e = 0; e < s.ea.length; e++) {
+    var u = s.ea[e]
+    var w = s.eb[e]
+    if (!vis[u] || !vis[w]) continue
+    var ex = x[w] - x[u]
+    var ey = y[w] - y[u]
+    var d = Math.sqrt(ex * ex + ey * ey) || 0.01
+    var g = (d - GRAPH_LINK - r[u] - r[w]) * k / d
+    ex *= g
+    ey *= g
+    vx[u] += ex
+    vy[u] += ey
+    vx[w] -= ex
+    vy[w] -= ey
+  }
+  var limit = GRAPH_MAX_SPEED
+  for (var t = 0; t < m; t++) {
+    var n = list[t]
+    if (n === s.pinned) {
+      x[n] = s.px
+      y[n] = s.py
+      vx[n] = 0
+      vy[n] = 0
+      continue
+    }
+    var sx = vx[n] * GRAPH_DAMPING
+    var sy = vy[n] * GRAPH_DAMPING
+    var sp = sx * sx + sy * sy
+    if (sp > limit * limit) {
+      var c = limit / Math.sqrt(sp)
+      sx *= c
+      sy *= c
+    }
+    vx[n] = sx
+    vy[n] = sy
+    x[n] += sx
+    y[n] += sy
+  }
+  s.alpha = a * (1 - GRAPH_ALPHA_DECAY)
+  s.ticks++
+  s.total++
+  if (s.ticks >= GRAPH_TICKS_MAX || s.alpha < GRAPH_ALPHA_MIN || m === 0) s.sleeping = true
+  s.lastMs = Date.now() - started
+  s.maxMs = Math.max(s.maxMs, s.lastMs)
+  if (s.lastMs > (Number(budgetMs) > 0 ? Number(budgetMs) : GRAPH_TICK_BUDGET_MS)) s.over++
+  return true
+}
+
+// The visible node at world point (wx, wy): the nearest whose disc, grown
+// by `slack`, holds the point; -1 none.
+function graphPick(s, wx, wy, slack) {
+  var best = -1
+  var bestD = Infinity
+  var extra = Number(slack) || 0
+  for (var p = 0; p < s.visCount; p++) {
+    var i = s.visList[p]
+    var dx = s.x[i] - wx
+    var dy = s.y[i] - wy
+    var d2 = dx * dx + dy * dy
+    var rr = s.r[i] + extra
+    if (d2 <= rr * rr && d2 < bestD) {
+      bestD = d2
+      best = i
+    }
+  }
+  return best
+}
+
+// The neighbours of node i ({ <index>: true }), for the hover's highlight.
+function graphNeighbours(s, i) {
+  var out = {}
+  if (i < 0 || i >= s.n) return out
+  for (var a = s.adjStart[i]; a < s.adjStart[i + 1]; a++) out[s.adj[a]] = true
+  return out
+}
+
+// The hover card of node i: { id, kind, kindLabel, title, sub, line,
+// date, day, links, caseId, members, more }; null for no node.
+function graphInfo(build, i) {
+  if (!build || i < 0 || i >= build.nodes.length) return null
+  var node = build.nodes[i]
+  var links = build.deg[i]
+  var line = GRAPH_KIND_LABELS[node.kind] + " · since " + node.date + " · day " + node.day + " · " +
+    plural(links, "link", "links")
+  return { id: node.id, kind: node.kind, kindLabel: GRAPH_KIND_LABELS[node.kind], title: node.title, sub: node.sub,
+    line: line, date: node.date, day: node.day, links: links, caseId: node.caseId,
+    members: node.members || [], more: node.more || 0 }
+}
+
+// The box around the visible nodes (with their radii), null when none;
+// filled into `out` when given (the canvas reuses one per paint).
+function graphBounds(s, out) {
+  if (s.visCount === 0) return null
+  var b = out || {}
+  b.x0 = Infinity
+  b.y0 = Infinity
+  b.x1 = -Infinity
+  b.y1 = -Infinity
+  for (var p = 0; p < s.visCount; p++) {
+    var i = s.visList[p]
+    b.x0 = Math.min(b.x0, s.x[i] - s.r[i])
+    b.y0 = Math.min(b.y0, s.y[i] - s.r[i])
+    b.x1 = Math.max(b.x1, s.x[i] + s.r[i])
+    b.y1 = Math.max(b.y1, s.y[i] + s.r[i])
+  }
+  return b
+}
+
+// The view { x, y, k } that fits `bounds` into a w × h canvas with `pad`
+// on every side, zoom at most kMax (the view's origin is the canvas
+// centre: screen = world × k + (w / 2 + x, h / 2 + y)); into `out` when
+// given.
+function graphFit(bounds, w, h, pad, kMax, out) {
+  var v = out || {}
+  if (!bounds || w <= 0 || h <= 0) {
+    v.x = 0
+    v.y = 0
+    v.k = 1
+    return v
+  }
+  var bw = Math.max(1, bounds.x1 - bounds.x0)
+  var bh = Math.max(1, bounds.y1 - bounds.y0)
+  var k = Math.min(Math.max(1, w - 2 * pad) / bw, Math.max(1, h - 2 * pad) / bh, kMax || 2)
+  v.x = -(bounds.x0 + bounds.x1) / 2 * k
+  v.y = -(bounds.y0 + bounds.y1) / 2 * k
+  v.k = k
+  return v
+}
+
+// Add the shape of a node of `kind` at (x, y), radius r, to ctx's current
+// path (the canvas fills or strokes the batch): a disc for cases, changes,
+// clusters and areas (an area is filled light and ringed), a square for
+// decisions, the concave spindle of A12's crisis marker for crises.
+function graphShape(ctx, kind, x, y, r) {
+  if (kind === "decision") {
+    var h = r * 0.85
+    ctx.moveTo(x - h, y - h)
+    ctx.lineTo(x + h, y - h)
+    ctx.lineTo(x + h, y + h)
+    ctx.lineTo(x - h, y + h)
+    ctx.closePath()
+  } else if (kind === "crisis") {
+    var t = r * 1.35
+    var w = r * 0.75
+    var c = r * 0.12
+    ctx.moveTo(x, y - t)
+    ctx.quadraticCurveTo(x + c, y - c, x + w, y)
+    ctx.quadraticCurveTo(x + c, y + c, x, y + t)
+    ctx.quadraticCurveTo(x - c, y + c, x - w, y)
+    ctx.quadraticCurveTo(x - c, y - c, x, y - t)
+    ctx.closePath()
+  } else {
+    ctx.moveTo(x + r, y)
+    ctx.arc(x, y, r, 0, 2 * Math.PI, false)
   }
 }
