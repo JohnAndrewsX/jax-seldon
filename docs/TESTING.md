@@ -824,8 +824,12 @@ repaint; `0` fits. On the busy index: 400 nodes, 295 changes folded into
 over the budget (its ticks print). Not initialised, nothing to draw, and
 50 % on 1366 (the right-edge crisis label goes left of its node) and a
 700 px window without a text outside its box. 2000 more areas: a still
-picture (2022 nodes) with its caption, no tick after a cut or a drag,
-the dragged node exactly where it was put, drawing ≤ 8 ms.
+picture (2022 nodes) with its caption, no tick and no Timer after a cut
+or a drag (strict), the dragged node exactly where it was put, and the
+fastest of its three paints ≤ 8 ms (the same picture each time, so the
+fastest is its cost, about 4 ms; a timing gate, once more on a miss).
+The busy index's "at most 5 of 200 ticks over" runs once more on a miss
+too.
 
 ### 3c. The pill (`BarWidget.qml`) in a private headless Quickshell
 
