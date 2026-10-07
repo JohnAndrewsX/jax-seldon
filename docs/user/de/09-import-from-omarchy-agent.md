@@ -1,6 +1,6 @@
 # Import aus omarchy-agent
 
-<!-- source: en/09-import-from-omarchy-agent.md @ bcdae06 -->
+<!-- source: en/09-import-from-omarchy-agent.md @ f919feb -->
 
 Diese Seite ist für dich, wenn du vor Seldon ein Logbuch mit dem
 omarchy-agent-Kit geführt hast: einen Obsidian-Vault mit `pipeline/`,
@@ -179,8 +179,8 @@ Importierte Cases bleiben in queued. Jeder *Intent* beginnt mit
 bevor du den Case startest: Ist ein Case gestartet, darf ein Agent ohne
 Rückfrage nach seinem *Intent* handeln, und der Text kam aus einer
 Datei, nicht von dir. Bis du ihn startest, behandelt ein Agent diesen
-Text wie eine Webseite, die er abgerufen hat, und startet den Case nie
-selbst.
+Text wie eine Webseite, die er abgerufen hat. Seldon verweigert einem
+Agenten den Start eines importierten Case: Nur du startest ihn.
 
 Den Import noch einmal laufen zu lassen ist sicher. Seldon merkt sich
 jeden Punkt in `.seldon/imports/tasks.json` und überspringt, was schon
