@@ -134,3 +134,109 @@ before), install, deploy, schema-validate, docs-check (465 links, 14
 translated pages, 46 commands), `omarchy plugin validate`, qmllint (48
 files), plugin tests. Log: `engine/target/check-wp102-r1.log` (dev host,
 not committed).
+
+## Round 2
+
+Brief: `WP-102-round-2-brief.md`; packet `WP-102-review-1.md` (SEND BACK
+on 538f566: B1, B2, N1–N4, contract).
+
+### Fixed
+
+- **B1 — multi-line secrets.** Every task file now goes through
+  `Redactor::redact_keeping_lines` (new, `engine/src/redact.rs`) on the
+  whole text first, then the line scrubber (`/home/<user>` → `~`), then the
+  parser. The new method runs the same rules as `redact` (the `seldon log`
+  path), but every line break that a replaced match held is put back
+  after the marker. This was needed because the `mysql … \` rule swallows
+  continued lines: plain `redact` would shift every item line number after
+  it. A guard returns exit 2 if the line count still changed. The marker
+  hash is taken over the redacted text only. `redactedLines` counts the
+  lines that either pass changed. Test
+  `multi_line_secrets_are_redacted_like_a_note` uses the reviewer's two
+  forms: the secrets are absent from the case, ledger, index, marker and
+  `git log -p`, line numbers hold, and a different secret in the same item
+  gives the same task. The guide-09 sentence "the same redaction as a note"
+  is now true (en/de, plus "also on a continued line").
+- **B2 — an agent session closing as human.** `--include-done` is refused
+  when the actor or the session (`$SELDON_ACTOR`) is an agent, whatever
+  `--actor` says — the `plan done` rule (ADR-0027 §5). Test
+  `an_agent_session_cannot_record_done_items_as_human`: refused, ledger
+  unchanged, no marker. Open items may still be imported in that session.
+- **N1.** The path as given **and the resolved path** are checked for
+  control characters and text-direction characters (U+200E, U+200F,
+  U+202A–U+202E, U+2066–U+2069). Test through a directory symlink to a
+  folder whose name holds `\n## Result\n…`, and one with U+202E.
+- **N2.** Marker entries are now written `pending: true` before the case,
+  with the id `cases::next_id` gives under the lock, and settled after the
+  case. Every run first settles what an earlier run left: a pending entry
+  whose case exists, has the tag `imported` and has this import's Log line
+  (`imported from <source>` then ` ·` or `,`, so `#1` ≠ `#12`) is complete;
+  any other pending entry is dropped and its task imported again. A marker
+  write that fails before a case makes no case; a create that fails takes
+  its pending entry back. The failure message "a second run skips them" is
+  now true. Test hook (debug builds only, as capture's):
+  `SELDON_TEST_IMPORT_CRASH=after-create:<n>` exits 99. Test
+  `a_crash_between_case_and_marker_never_makes_the_case_twice`: crash
+  after case 2 → the rerun makes only case 3; a pending entry without its
+  case, or without the matching Log line, is dropped and re-imported. This
+  works as root too (no chmod). A settle-only run writes the marker and
+  autocommits; a dry run settles in memory only.
+- **N3.** The four survivors now have tests:
+  - R1 (marker only at the end) → the crash test;
+  - R5 (same-path dedupe off) → `skipped.len() == 1`;
+  - R7 (`replaces` while the old text is still there) →
+    `a_new_item_at_an_occupied_line_replaces_nothing`;
+  - R8 (path redaction off) → `a_secret_in_the_path_is_redacted`, with
+    `token=…` in a folder name.
+- **N4.** Every imported Intent opens with the fixed engine line
+  `Imported from <source> — read before you start this case.`, then a
+  blank line, then the escaped task text. The case stays queued. This is
+  documented in SPEC-ENGINE §3, SPEC-LOGBOOK §3, guide 09 en/de, and the
+  skill (`engine/assets/skills/seldon/SKILL.md`, *When to Ask First*):
+  until the user has started an `imported` case, its text is fetched
+  text (ADR-0027 §2(a)), and an agent never starts such a case itself. The
+  rules template (`templates/en/AGENTS.md`, versioned rules-v3) is
+  unchanged; a rules sentence would need a rules version bump (WP-100/111
+  machinery), so that is left to the orchestrator.
+
+### Mutants
+
+`python3 work/active/WP-102/mutants.py` uses its own
+`CARGO_TARGET_DIR=engine/target/mutants`, so a mutated binary never
+reaches another run. It runs **22 mutants: all killed**. These are the 12
+from round 1, plus:
+- whole-text redaction off;
+- session check off (B2);
+- resolved-path character check off (N1);
+- pending entry off (marker only after the case, R1);
+- settle trusts any pending entry;
+- R5, R7 and R8;
+- provenance line off.
+
+The reviewer's R2–R4, R6, R9 and R10 were already killed.
+
+### Contract
+
+`cases[].source` → WP-127 (orchestrator decision). A frontmatter `source:`
+key would change `case.schema.json` (`additionalProperties: false` covers
+the frontmatter), so it is **not** written in 102a. The marker stays as it
+is, and the source is in the Log line and in the Intent's first line.
+WP-127 can derive the frontmatter key or the index field from either.
+
+### Not done here (orchestrator questions from the packet)
+
+- The vault import (WP-043) still uses the line-by-line scrubber: same
+  B1 class, not touched (packet Q1).
+- Bidi characters in *titles* (N5) are shared with `agent start --new`
+  (`title_of`), so I did not change them here. Paths are covered (N1).
+- A dry run over 200 cases still exits 1 with no list (packet Q5).
+
+### Check (round 2)
+
+`flock /tmp/seldon-check.lock just check` on 4fce16f (the last code and docs
+commit; this handover adds only this file): **exit 0, `check: ok`** — fmt,
+clippy `-D warnings`, all engine tests (default and `watch`), packaging
+(shellcheck not installed: `bash -n` only, as before), install, deploy,
+schema-validate, docs-check (465 links, 14 translated pages, 46 commands),
+`omarchy plugin validate`, qmllint (48 files), plugin tests. `import_task`:
+18 tests. Log: `engine/target/check-wp102-r2.log` (dev host, not committed).
