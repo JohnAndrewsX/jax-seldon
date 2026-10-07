@@ -332,3 +332,30 @@ Log: `engine/target/check-wp127-r3.log` (dev host, not committed).
   no measurable delta, so the miss was the busy host.
 - The budget leaves little room on this host. That is for the orchestrator,
   not this WP.
+
+## Accepted and merged next
+
+- The operator accepted **ADR-0038** on 2026-10-07 (E15), after Fable's
+  stage 2 approved 2a9dc3d5.
+  - The ADR's status reads "accepted (operator decision 2026-10-07, after
+    Opus ×2 and Fable stage 2)".
+  - The DECISIONS.md row reads accepted.
+  - §3 gained Fable's sentence: "A hand-written source on any case is shown
+    the same way: it is the user's own file, and the field moves nothing."
+  - Commit 63756c1b.
+- `git fetch`, then `origin/next` (d4a01867) was merged into this branch as
+  d828aa8d. It brings in WP-125 (the graph) and the work files of WP-129,
+  WP-131 and WP-135 to WP-140.
+- Two conflicts, both resolved by keeping both sides:
+  - `tests/plugin/model.test.js`: the ADR-0038 tests and the graph tests.
+  - `docs/TESTING.md`: the ADR-0038 sentence and the graph paragraph in the
+    Model.js section.
+  - The rest merged on its own. The graph's sample counts hold with the
+    imported C-2026-007.
+- `flock /tmp/seldon-check.lock just check` on d828aa8d: **exit 0, `check: ok`**.
+  - validate-fixtures ok; docs-check 465 links; install 209; deploy 190.
+  - `omarchy plugin validate`; qmllint (46 files).
+  - Plugin tests: model 143, service-states 328, desk-view 1478, bar-view 194.
+  - Engine: fmt, clippy, and all tests with the default and `watch` features.
+  - shellcheck is not installed: `bash -n` only.
+  - Log: `engine/target/check-wp127-merge.log` (dev host, not committed).
