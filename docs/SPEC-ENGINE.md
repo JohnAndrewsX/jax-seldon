@@ -2153,7 +2153,9 @@ sub-commands inside the XDG config home or the logbook, a snapshot command
 (`snapper [-c CONFIG] … create`, `omarchy-snapshot create`, `omarchy
 snapshot create`: green, subject `snapper`, recorded only with a case;
 the capture after it fills the case's `snapshotBefore` when it is empty,
-§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed. Limits of this reading: the
+§5, WP-101); the string of `bash|sh|zsh -c` and `eval` is re-parsed; a
+shell reserved word before a command (`do`, `if`, `!`, `{`; also `then`,
+`elif`, `else`, `while`, `until`) is read past. Limits of this reading: the
 commands inside `$(…)`, backticks and `<(…)` are not classified (their
 words count only for `skipPaths`); the string of `env -S` is not opened
 as a command line; a heredoc fed to a shell (`bash <<EOF`) is stdin like

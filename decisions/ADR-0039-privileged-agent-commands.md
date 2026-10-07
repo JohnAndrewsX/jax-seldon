@@ -59,6 +59,13 @@ beside it when another command of the line has one (`pkexec pacman -S
 cups && pkexec lpadmin …`: a `pacman` record and an `lpadmin` record, one
 tool call).
 
+**Limits.** The hook reads the command text with SPEC-ENGINE §8's parser
+and nothing else. A privileged command inside `$(…)`, backticks or `env
+-S`, in a script file, an interpreter, `xargs`, `find -exec`, a shell
+function or alias is not seen; `su`, `sudoedit` and `systemd-run` are not
+wrappers of this class. The record serves honest agents; it is not an
+enforcement boundary (AGENTS.md §6 stays the rule).
+
 ### 2. What the record holds
 
 - `source: agent`, `kind: command` — the kind every hook record has (a new
@@ -79,7 +86,8 @@ tool call).
   form no §7 rule knows. Every record of that line is `<program>
   ‹redacted›`, as for `skipPaths`. `doas` asks on the terminal, `pkexec`
   and `run0` through the polkit agent: none of them reads a password from
-  stdin.
+  stdin. The check reads the same commands as the classification: a
+  `sudo -S` inside `$(…)` is not seen.
 - `meta.wrapper`: `sudo`, `doas`, `pkexec` or `run0` — the first one the
   command runs under.
 - `zone: red`: the command acts on the system as another user, root by
