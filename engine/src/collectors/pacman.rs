@@ -4,6 +4,14 @@
 //! `[ALPM] installed|removed|upgraded|downgraded|reinstalled` lines into
 //! events.
 //!
+//! - **Files pacman left** (WP-141). `[ALPM] warning: <file> installed as
+//!   <file>.pacnew` (the new default was not applied) and `… saved as
+//!   <file>.pacsave|.pacorig` (the user's file was moved aside) become a
+//!   `note` whose subject is the file pacman left. Its transaction is in
+//!   `meta.transaction`, not in `txId`: `txId` is the drift group of the
+//!   transaction's packages (ADR-0013 §1), and a merge still to do is no
+//!   member of "I wanted that package". `/etc` is never read: whether the
+//!   file was merged later is not known.
 //! - **Lines.** The line grammar is a table ([`LINE_RULES`]): a new log edge
 //!   case is a new row or a fixture line, not a new code path. A line that
 //!   matches no row is ignored (malformed, unknown tag, scriptlet output).
@@ -171,6 +179,29 @@ pub enum Line {
         from: Option<String>,
         to: String,
     },
+    /// `[ALPM] warning: <file> installed as <file>.pacnew` or `saved as
+    /// <file>.pacsave|.pacorig`: the file pacman left beside `file`.
+    Left { file: String, left: String },
+}
+
+/// The suffixes of the files pacman leaves beside a configuration file,
+/// with the verb its log line uses.
+const LEFT: [(&str, &str); 3] = [
+    ("installed", ".pacnew"),
+    ("saved", ".pacsave"),
+    ("saved", ".pacorig"),
+];
+
+/// A `warning: <file> <verb> as <left>` line whose `left` is `file` with
+/// the suffix the verb leaves; anything else is no such line.
+fn left_line(c: &regex::Captures) -> Option<Line> {
+    let (file, verb, left) = (&c[1], &c[2], &c[3]);
+    LEFT.iter()
+        .any(|(v, suffix)| *v == verb && left.strip_suffix(suffix) == Some(file))
+        .then(|| Line::Left {
+            file: file.to_string(),
+            left: left.to_string(),
+        })
 }
 
 type Build = fn(&regex::Captures) -> Option<Line>;
@@ -222,6 +253,11 @@ pub static LINE_RULES: LazyLock<Vec<(&'static str, Regex, Build)>> = LazyLock::n
                 })
             },
         ),
+        (
+            "ALPM",
+            re(r"^warning: (/.+?) (installed|saved) as (/.+)$"),
+            left_line,
+        ),
     ]
 });
 
@@ -268,6 +304,21 @@ pub struct PkgLine {
     pub to: String,
 }
 
+/// One file pacman left beside a configuration file (`.pacnew`,
+/// `.pacsave`, `.pacorig`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftLine {
+    pub ts: DateTime<FixedOffset>,
+    /// The configuration file.
+    pub file: String,
+    /// The file pacman left: `file` and the suffix.
+    pub left: String,
+}
+
+/// The `meta` key of a left file's transaction id (WP-141): its `txId`
+/// would make it a member of the transaction's drift group.
+pub const TRANSACTION_KEY: &str = "transaction";
+
 /// A transaction (or a package line outside any, from old logs).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tx {
@@ -278,11 +329,37 @@ pub struct Tx {
     /// Time of the Running line, else of `transaction started`.
     pub began: DateTime<FixedOffset>,
     pub lines: Vec<PkgLine>,
+    /// The files it left, in log order.
+    pub left: Vec<LeftLine>,
 }
 
 impl Tx {
-    /// The events of this transaction, unattributed (`actor: system`).
+    /// The events of this transaction, unattributed (`actor: system`): its
+    /// packages, then the files it left.
     pub fn events(&self) -> Vec<Event> {
+        let mut events = self.package_events();
+        events.extend(self.left.iter().map(|l| {
+            let verb = if l.left.ends_with(".pacnew") {
+                "installed"
+            } else {
+                "saved"
+            };
+            let mut meta = Meta {
+                command: self.command.clone(),
+                ..Meta::default()
+            };
+            if let Some(tx) = &self.tx_id {
+                meta.extra
+                    .insert(TRANSACTION_KEY.into(), Value::String(tx.clone()));
+            }
+            Event::new(l.ts, Source::Pacman, Kind::Note, &l.left)
+                .detail(format!("{} {verb} as {}", l.file, l.left))
+                .meta(meta)
+        }));
+        events
+    }
+
+    fn package_events(&self) -> Vec<Event> {
         let cmd = self
             .command
             .as_deref()
@@ -364,6 +441,7 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
                         command: cmd,
                         began,
                         lines: Vec::new(),
+                        left: Vec::new(),
                     },
                     rewind,
                 });
@@ -393,6 +471,20 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
                         command: None,
                         began: ts,
                         lines: vec![line],
+                        left: Vec::new(),
+                    }),
+                }
+            }
+            Line::Left { file, left } => {
+                let line = LeftLine { ts, file, left };
+                match &mut open {
+                    Some(o) => o.tx.left.push(line),
+                    None => txs.push(Tx {
+                        tx_id: None,
+                        command: None,
+                        began: ts,
+                        lines: Vec::new(),
+                        left: vec![line],
                     }),
                 }
             }
@@ -412,7 +504,7 @@ pub fn parse(bytes: &[u8], base: u64, lock_present: bool, tz: Tz) -> Parsed {
         }
         None => {}
     }
-    txs.retain(|t| !t.lines.is_empty());
+    txs.retain(|t| !t.lines.is_empty() || !t.left.is_empty());
     Parsed { txs, resume }
 }
 
@@ -456,20 +548,30 @@ fn tx_is_full_upgrade(command: Option<&str>) -> bool {
     command.is_none_or(|c| parse_command(&split_logged(c)).is_some_and(|p| p.is_full_upgrade()))
 }
 
+/// The transaction of a pacman event: its `txId`, or for a file it left
+/// `meta.transaction` ([`TRANSACTION_KEY`]).
+pub fn transaction(e: &Event) -> Option<&str> {
+    e.tx_id.as_deref().or_else(|| {
+        (e.kind == Kind::Note)
+            .then(|| e.meta.extra.get(TRANSACTION_KEY)?.as_str())
+            .flatten()
+    })
+}
+
 /// Sets `actor`/`case` from the hook command that caused each event
 /// (ADR-0014 §1, ADR-0017 §2 §3). `began` maps a txId to the time its
 /// pacman invocation began (the Running line, else `transaction started`);
 /// an event outside a transaction begins at its own `ts`. A member without
 /// a cause of its own inherits from an attributed member of its
-/// transaction, explicit ones first.
+/// transaction, explicit ones first; so does a file it left
+/// ([`transaction`]).
 pub fn attribute(
     ctx: &Ctx,
     mut events: Vec<Event>,
     began: &HashMap<String, DateTime<FixedOffset>>,
 ) -> anyhow::Result<Vec<Event>> {
     let start = |e: &Event| {
-        e.tx_id
-            .as_ref()
+        transaction(e)
             .and_then(|t| began.get(t))
             .map_or(e.ts, |b| (*b).min(e.ts))
     };
@@ -496,8 +598,10 @@ pub fn attribute(
         .collect();
     // every member of an attributed transaction inherits (ADR-0017 §2)
     for i in 0..events.len() {
-        if found[i].is_none() && events[i].tx_id.is_some() {
-            let same_tx = |j: &usize| events[*j].tx_id == events[i].tx_id && found[*j].is_some();
+        if found[i].is_none() && transaction(&events[i]).is_some() {
+            let same_tx = |j: &usize| {
+                transaction(&events[*j]) == transaction(&events[i]) && found[*j].is_some()
+            };
             found[i] = (0..events.len())
                 .filter(same_tx)
                 .find(|&j| events[j].explicit == Some(true))
@@ -565,6 +669,103 @@ mod tests {
         // pre-5.2 format, local zone
         let (ts, _) = parse_line("[2019-01-01 12:00] [ALPM] installed a (1-1)", tz()).unwrap();
         assert_eq!(ts.to_rfc3339(), "2019-01-01T12:00:00+02:00");
+    }
+
+    /// WP-141: the three forms of a file pacman leaves; a line whose left
+    /// file is not the configuration file and the verb's suffix is none.
+    #[test]
+    fn left_file_lines() {
+        let l = |s: &str| parse_line(s, tz()).map(|(_, l)| l);
+        let left = |file: &str, left: &str| {
+            Some(Line::Left {
+                file: file.into(),
+                left: left.into(),
+            })
+        };
+        assert_eq!(
+            l("[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/pacman.conf installed as /etc/pacman.conf.pacnew"),
+            left("/etc/pacman.conf", "/etc/pacman.conf.pacnew")
+        );
+        assert_eq!(
+            l("[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/ssh/sshd_config saved as /etc/ssh/sshd_config.pacsave"),
+            left("/etc/ssh/sshd_config", "/etc/ssh/sshd_config.pacsave")
+        );
+        assert_eq!(
+            l("[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/my file.conf saved as /etc/my file.conf.pacorig\r"),
+            left("/etc/my file.conf", "/etc/my file.conf.pacorig"),
+            "a space in the path, a CRLF ending"
+        );
+        for bad in [
+            "[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/a installed as /etc/b.pacnew",
+            "[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/a saved as /etc/a.pacnew",
+            "[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/a installed as /etc/a.pacsave",
+            "[2026-10-01T09:13:58+0200] [ALPM] warning: /etc/a installed as /etc/a.pacnew.1",
+            "[2026-10-01T09:13:58+0200] [ALPM] warning: etc/a installed as etc/a.pacnew",
+            "[2026-10-01T09:13:58+0200] [ALPM] warning: directory permissions differ on /etc/x/",
+            "[2026-10-01T09:13:58+0200] [ALPM-SCRIPTLET] warning: /etc/a installed as /etc/a.pacnew",
+            "[2026-10-01T09:13:58+0200] [PACMAN] warning: /etc/a installed as /etc/a.pacnew",
+            "[2026-10-01T09:13:58+0200] [ALPM] /etc/a installed as /etc/a.pacnew",
+        ] {
+            assert_eq!(l(bad), None, "{bad}");
+        }
+    }
+
+    /// WP-141: a left file is a `note` of its transaction, its id in
+    /// `meta.transaction` (never `txId`), after the packages; outside a
+    /// transaction it has neither.
+    #[test]
+    fn left_files_are_notes_of_their_transaction() {
+        let log = lines(
+            "[2026-10-01T10:00:00+0200] [PACMAN] Running 'pacman -Syu'\n\
+             [2026-10-01T10:00:01+0200] [ALPM] transaction started\n\
+             [2026-10-01T10:00:02+0200] [ALPM] warning: /etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew\n\
+             [2026-10-01T10:00:02+0200] [ALPM] upgraded mkinitcpio (40-1 -> 41-1)\n\
+             [2026-10-01T10:00:03+0200] [ALPM] warning: /etc/foo.conf saved as /etc/foo.conf.pacsave\n\
+             [2026-10-01T10:00:03+0200] [ALPM] removed foo (1-1)\n\
+             [2026-10-01T10:00:03+0200] [ALPM] transaction completed\n\
+             [2019-01-01 12:00] [ALPM] warning: /etc/old saved as /etc/old.pacorig\n",
+        );
+        let p = parse(&log, 0, false, tz());
+        assert_eq!(p.txs.len(), 2);
+        let events = p.txs[0].events();
+        let kinds: Vec<(Kind, &str)> = events
+            .iter()
+            .map(|e| (e.kind, e.subject.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                (Kind::Upgrade, "mkinitcpio"),
+                (Kind::Remove, "foo"),
+                (Kind::Note, "/etc/mkinitcpio.conf.pacnew"),
+                (Kind::Note, "/etc/foo.conf.pacsave"),
+            ]
+        );
+        let note = &events[2];
+        assert_eq!(note.source, Source::Pacman);
+        assert_eq!(note.tx_id, None, "no member of the package group");
+        assert_eq!(note.explicit, None);
+        assert_eq!(
+            note.meta.extra.get(TRANSACTION_KEY),
+            Some(&Value::String("tx-20261001T100001".into()))
+        );
+        assert_eq!(transaction(note), Some("tx-20261001T100001"));
+        assert_eq!(note.meta.command.as_deref(), Some("pacman -Syu"));
+        assert_eq!(
+            note.detail.as_deref(),
+            Some("/etc/mkinitcpio.conf installed as /etc/mkinitcpio.conf.pacnew")
+        );
+        assert_eq!(
+            events[3].detail.as_deref(),
+            Some("/etc/foo.conf saved as /etc/foo.conf.pacsave")
+        );
+        assert_eq!(note.zone, Some(crate::model::Zone::Red), "ADR-0014");
+        assert_eq!(note.ts.to_rfc3339(), "2026-10-01T10:00:02+02:00");
+        let lone = p.txs[1].events();
+        assert_eq!(lone.len(), 1);
+        assert_eq!(lone[0].subject, "/etc/old.pacorig");
+        assert_eq!(transaction(&lone[0]), None);
+        assert!(lone[0].meta.extra.is_empty());
     }
 
     #[test]
