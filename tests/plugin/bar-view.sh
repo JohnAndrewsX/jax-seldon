@@ -38,8 +38,6 @@ config="$work/config"
 mkdir -p "$config/Commons" "$config/Ui" "$work/bin"
 cp "$shell_dir"/Commons/* "$config/Commons/"
 cp "$shell_dir"/Ui/* "$config/Ui/"
-# BarWidget.qml loads Panel.qml, whose KeyboardPanel is a layer-shell window.
-cp "$root/tests/plugin/harness/KeyboardPanel.qml" "$config/Ui/KeyboardPanel.qml"
 cp "$root/tests/plugin/harness/bar.qml" "$config/shell.qml"
 
 # The fake engine, so the dev-mode service reports ok; never a real seldon.
@@ -232,7 +230,8 @@ clean_log uninit
 # 4. Two monitors, two widgets (WP-067): the bar builds the widget once per
 # monitor, and `jax.seldon.panel` takes one handler. Exactly one widget
 # registers it (no "another handler is registered" warning), an IPC `open`
-# opens that widget's panel, and once its monitor is gone the other widget
+# reaches that widget (it forwards to the desk, the shim of ADR-0034 §7),
+# and once its monitor is gone the other widget
 # takes the target over. The IPC socket needs a short runtime dir (a unix
 # socket path has at most 107 bytes; a long TMPDIR fails "Failed to start
 # IPC server").
@@ -244,13 +243,13 @@ sed 's/\x1b\[[0-9;]*m//g' "$work/ipc.log" | grep -a "HARNESS ipc " | sed 's/.*HA
 check "ipc owners" "$(field ipc '.owners | map(tostring) | join(",")')" "true,false"
 check "ipc open exit" "$(field ipc .open.exit)" 0
 check "ipc open output" "$(field ipc .open.out)" ""
-check "ipc open reaches the owner" "$(field ipc '.opened | map(tostring) | join(",")')" "true,false"
-check "ipc close" "$(field ipc '.closed | map(tostring) | join(",")')" "false,false"
+check "ipc open reaches the owner" "$(field ipc '.calls | map(tostring) | join(",")')" "1,0"
+check "ipc close" "$(field ipc '.callsClosed | map(tostring) | join(",")')" "2,0"
 check "ipc owners after" "$(field ipc '.ownersAfter | map(tostring) | join(",")')" "null,true"
 check "ipc open after exit" "$(field ipc .openAfter.exit)" 0
 # "Target not found." (still exit 0) when nobody took the target over
 check "ipc open after output" "$(field ipc .openAfter.out)" ""
-check "ipc open after reaches the new owner" "$(field ipc '.openedAfter | map(tostring) | join(",")')" "null,true"
+check "ipc open after reaches the new owner" "$(field ipc '.callsAfter | map(tostring) | join(",")')" "null,1"
 check "ipc one handler" "$(grep -a -c 'another handler is registered' "$work/ipc.log" || true)" 0
 clean_log ipc
 
@@ -268,14 +267,14 @@ rm -rf "$ipc_rt"
 sed 's/\x1b\[[0-9;]*m//g' "$work/ipc-placeholder.log" | grep -a "HARNESS ipc " | sed 's/.*HARNESS ipc //' >"$work/ipc-placeholder.json" || true
 check "ipc-placeholder owners" "$(field ipc-placeholder '.owners | map(tostring) | join(",")')" "false,true"
 check "ipc-placeholder open output" "$(field ipc-placeholder .open.out)" ""
-check "ipc-placeholder open reaches the drawn one" "$(field ipc-placeholder '.opened | map(tostring) | join(",")')" "false,true"
-check "ipc-placeholder close" "$(field ipc-placeholder '.closed | map(tostring) | join(",")')" "false,false"
+check "ipc-placeholder open reaches the drawn one" "$(field ipc-placeholder '.calls | map(tostring) | join(",")')" "0,1"
+check "ipc-placeholder close" "$(field ipc-placeholder '.callsClosed | map(tostring) | join(",")')" "0,2"
 check "ipc-placeholder owners swapped" "$(field ipc-placeholder '.ownersSwapped | map(tostring) | join(",")')" "true,false"
 check "ipc-placeholder open swapped output" "$(field ipc-placeholder .openSwapped.out)" ""
-check "ipc-placeholder open swapped reaches the drawn one" "$(field ipc-placeholder '.openedSwapped | map(tostring) | join(",")')" "true,false"
+check "ipc-placeholder open swapped reaches the drawn one" "$(field ipc-placeholder '.callsSwapped | map(tostring) | join(",")')" "1,2"
 check "ipc-placeholder owners after" "$(field ipc-placeholder '.ownersAfter | map(tostring) | join(",")')" "null,true"
 check "ipc-placeholder open after output" "$(field ipc-placeholder .openAfter.out)" ""
-check "ipc-placeholder open after reaches the last one" "$(field ipc-placeholder '.openedAfter | map(tostring) | join(",")')" "null,true"
+check "ipc-placeholder open after reaches the last one" "$(field ipc-placeholder '.callsAfter | map(tostring) | join(",")')" "null,3"
 check "ipc-placeholder one handler" "$(grep -a -c 'another handler is registered' "$work/ipc-placeholder.log" || true)" 0
 clean_log ipc-placeholder
 

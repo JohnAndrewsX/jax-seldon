@@ -606,3 +606,28 @@ Verified in the shell source and live on the test host.
 - **`omarchy plugin update` needs a git checkout** (`fetch origin HEAD`,
   `merge --ff-only`); a plain copy fails with "not a git checkout". A
   clone at a tag (detached HEAD) still fast-forwards.
+
+## WP-121 findings (2026-10-07, Omarchy 4.0.x shell tree, quickshell 0.3.x)
+
+- **The facade's settings write is `shell.updateEntryInline(id, settings)`**
+  (`services/PluginShellApi.qml`, backed by `_updateSettings`, which
+  `shell.qml createScopedPluginShell` scopes to the caller's own id —
+  overlay-kind callers included; the bar widget's `bar.shell` is the same
+  kind of facade). It replaces the entry with `{ id } + settings` and
+  returns `false` both when refused **and when nothing changed**, so a
+  caller must not send unchanged values and then read `false` as refusal.
+- **Centring a layer-shell surface**: Omarchy's menu anchors its
+  `PanelWindow` on all four edges, transparent, and centres a card inside;
+  the rest of the surface is the click-catcher. With
+  `ExclusionMode.Normal` and `exclusiveZone: 0` the surface starts below
+  the bar (`hyprctl layers -j`: y = the bar's reserved 26 px) and the bar
+  stays clickable. Measured on the dev host (2560×1440) and the test host
+  (1920×1080 at 1.25).
+- **`escape` is not a legal QML method name** ("Illegal method name"): it
+  is a JS global. The component fails to load.
+- **A layer surface can be tried on a live session without the running
+  shell**: a private `quickshell -p <scratch root>` with copies of
+  `shell/Commons` and `Ui` shows a real `PanelWindow`; it needs the
+  session's `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE` (over ssh:
+  `ls -t $XDG_RUNTIME_DIR/hypr | head -1`). A locked session shows only the
+  lock screen to `grim`.

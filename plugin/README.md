@@ -34,7 +34,8 @@ explain unexpected changes from the panel; the engine does the writing.
   one-click fix ([States](#states)).
 
 It follows your Omarchy theme, runs every program without a shell and
-never writes a file itself ([Security](#security-privacy-privileges)).
+writes no file itself; only its own settings, through the shell
+([Security](#security-privacy-privileges)).
 
 [Install](#install) · [Usage](#usage) · [Keys](#keys) ·
 [Configure](#configure) · [Troubleshooting](#troubleshooting) ·
@@ -449,6 +450,15 @@ shell plugin. This is everything it does outside its own window:
   of a command line other than as one validated argument.
 - **Writes nothing itself.** Notes, cases, drift resolutions and decisions
   are written by the engine, into your logbook, on your Enter or click.
+  The one thing the plugin changes is its own settings: the desk's width
+  and sidebar (Settings › Appearance, or the sidebar's fold button) are
+  stored by Omarchy's shell in the plugin's own entry of
+  `~/.config/omarchy/shell.json`, through the shell's plugin interface,
+  once per click or slider release (a scroll over the slider writes once,
+  after it stops) — the same entry Omarchy's bar settings edit. No other
+  setting in that file changes; as with Omarchy's own bar settings, the
+  shell writes the whole file back in its own formatting (indentation,
+  key order), so hand formatting there is normalised.
 - **No network.** No sockets, no downloads, no update checks. The one
   exception is yours to click: *Install in terminal* on the
   engine-missing banner runs the `curl … | bash` install in a terminal

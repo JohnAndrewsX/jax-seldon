@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fake `seldon` for the plugin harnesses (tests/plugin/service-states.sh,
-# panel-view.sh). Speaks just enough of the CLI (SPEC-ENGINE §3) for the
+# desk-view.sh). Speaks just enough of the CLI (SPEC-ENGINE §3) for the
 # plugin: --version, capture, status, log, open, plan new|start|verify|done|drop,
 # drift link|explain|dismiss|show, decide, agent start.
 # Every call is logged to $HOME/calls.log as "start <cmd>" / "end <cmd>" so

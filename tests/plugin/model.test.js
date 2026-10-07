@@ -1789,4 +1789,131 @@ test("WP-111: one line for the Update rules click", () => {
     assert.strictEqual(M.rulesNotice(quiet), null)
 })
 
+// ---- The desk (ADR-0034, WP-121)
+
+test("DESK_SECTIONS: nine targets, digits 1–8 and `,`, wrap with deskCycle", () => {
+  same(M.DESK_SECTIONS.map(s => s.id), ["today", "changelog", "work", "decisions", "system", "memory", "radiant", "graph", "settings"])
+  same(M.DESK_SECTIONS.map(s => s.key).join(""), "12345678,")
+  same(M.DESK_SECTIONS.filter(s => s.solo).map(s => s.id), ["radiant", "graph"])
+  for (let i = 1; i <= 8; i++) assert.strictEqual(M.deskSectionForKey(String(i)), M.DESK_SECTIONS[i - 1].id)
+  assert.strictEqual(M.deskSectionForKey(","), "settings")
+  for (const t of ["0", "9", "a", "", ".", "/"]) assert.strictEqual(M.deskSectionForKey(t), "")
+  assert.strictEqual(M.deskCycle("today", -1), "settings")
+  assert.strictEqual(M.deskCycle("settings", 1), "today")
+  assert.strictEqual(M.deskCycle("graph", 1), "settings")
+  assert.strictEqual(M.deskCycle("bogus", 1), "changelog")
+  let id = "today"
+  for (let i = 0; i < 9; i++) id = M.deskCycle(id, 1)
+  assert.strictEqual(id, "today")
+  for (const s of M.DESK_SECTIONS) assert.ok(/^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]+$/.test(s.icon), s.id)
+})
+
+test("clampDeskWidth and deskSidebarMode take bad shell.json values to the defaults", () => {
+  for (const [v, want] of [[undefined, 100], [null, 100], ["", 100], ["x", 100], [NaN, 100], [49, 50], [10, 50], [50, 50],
+    [67, 67], [74.6, 75], ["80", 80], [100, 100], [150, 100]])
+    assert.strictEqual(M.clampDeskWidth(v), want, String(v))
+  for (const [v, want] of [["open", "open"], ["collapsed", "collapsed"], ["Collapsed", "open"], [undefined, "open"], [1, "open"]])
+    assert.strictEqual(M.deskSidebarMode(v), want, String(v))
+})
+
+test("deskGeometry: the clamp of ADR-0034 §1, centred, inside the gaps", () => {
+  const g = (W, pct) => M.deskGeometry(W, 1000, pct, 5)
+  // avail = W - 10
+  same(g(1920, 100), { x: 5, y: 5, w: 1910, h: 990, avail: 1910 })
+  same(g(1920, 50), { x: 5 + Math.floor((1910 - 960) / 2), y: 5, w: 960, h: 990, avail: 1910 })
+  assert.strictEqual(g(1920, 67).w, 1280)
+  assert.strictEqual(g(1920, 75).w, 1433)
+  assert.strictEqual(g(2560, 50).w, 1275)
+  assert.strictEqual(g(3840, 67).w, 2566)
+  // narrower than 960 + gaps: the whole width at any setting
+  assert.strictEqual(g(1366, 50).w, 960)
+  assert.strictEqual(g(900, 50).w, 890)
+  assert.strictEqual(g(900, 100).w, 890)
+  for (const W of [800, 1366, 1920, 2560, 3840]) for (const p of [50, 67, 75, 100]) {
+    const r = g(W, p)
+    assert.ok(r.x >= 5 && r.x + r.w <= W - 5, W + " " + p)
+    assert.ok(Math.abs((r.x - 5) - (W - 5 - r.x - r.w)) <= 1, "centred " + W + " " + p)
+  }
+  same(M.deskGeometry(0, 0, 100, 5), { x: 5, y: 5, w: 0, h: 0, avail: 0 })
+})
+
+test("deskLayout: icons under 960 or collapsed, stacked under 760, solo has no list", () => {
+  const sizes = { sidebar: 210, icons: 56, listMin: 260, listMax: 360 }
+  const l = (w, pref, solo) => M.deskLayout(w, pref, solo, sizes)
+  same(l(1910, "open", false), { sidebar: "open", forced: false, stacked: false, solo: false, sidebarW: 210, listW: 360, detailW: 1340 })
+  same(l(960, "open", false), { sidebar: "open", forced: false, stacked: false, solo: false, sidebarW: 210, listW: 260, detailW: 490 })
+  assert.strictEqual(l(959, "open", false).sidebar, "icons")
+  assert.strictEqual(l(959, "open", false).forced, true)
+  assert.strictEqual(l(959, "open", false).stacked, false)
+  assert.strictEqual(l(1910, "collapsed", false).sidebar, "icons")
+  assert.strictEqual(l(1910, "collapsed", false).forced, false)
+  assert.strictEqual(l(760, "open", false).stacked, false)
+  same(l(759, "open", false), { sidebar: "icons", forced: true, stacked: true, solo: false, sidebarW: 56, listW: 703, detailW: 703 })
+  same(l(1910, "open", true), { sidebar: "open", forced: false, stacked: false, solo: true, sidebarW: 210, listW: 0, detailW: 1700 })
+  assert.strictEqual(l(600, "open", true).stacked, false)
+})
+
+test("deskPayload: section, select, filter; a period alone means the Prime Radiant", () => {
+  same(M.deskPayload(""), { section: "", select: "", filter: "", period: "" })
+  same(M.deskPayload("{}"), { section: "", select: "", filter: "", period: "" })
+  same(M.deskPayload("not json"), { section: "", select: "", filter: "", period: "" })
+  same(M.deskPayload('{"section":"work"}').section, "work")
+  same(M.deskPayload('{"section":"nope"}').section, "")
+  same(M.deskPayload('{"period":"30"}'), { section: "radiant", select: "", filter: "", period: "30" })
+  same(M.deskPayload('{"section":"radiant","period":"30"}'), { section: "radiant", select: "", filter: "", period: "30" })
+  same(M.deskPayload('{"section":"today","period":"30"}').section, "today")
+  same(M.deskPayload('{"period":"7"}').section, "")
+  same(M.deskPayload('{"section":"changelog","select":"01J","filter":"pacman"}'), { section: "changelog", select: "01J", filter: "pacman", period: "" })
+  same(M.deskPayload('{"select":5}').select, "")
+})
+
+test("deskKpis and deskCounts on the sample; nothing without an index", () => {
+  const idx = M.parseIndex(sample).index
+  same(M.deskKpis(idx).map(k => k.id + " " + k.value + " " + k.tone),
+    ["active 2 accent", "verification 1 ", "queued 3 ", "crises 2 urgent", "attention 4 "])
+  same(M.deskKpis(null), [])
+  const c = M.deskCounts(idx)
+  same(Object.keys(c), M.DESK_SECTIONS.map(s => s.id))
+  same(c.today, { text: "30", tone: "" })
+  same(c.changelog, { text: "6", tone: "urgent" })
+  same(c.work, { text: "2 · 1 · 3", tone: "" })
+  same(c.decisions, { text: "1 new", tone: "" })
+  same(c.memory, { text: "5", tone: "" })
+  same(c.system, { text: "", tone: "" })
+  same(c.radiant, { text: "", tone: "" })
+  for (const v of Object.values(M.deskCounts(null))) same(v, { text: "", tone: "" })
+})
+
+test("deskSubline: machine · Omarchy · captured", () => {
+  const idx = M.parseIndex(sample).index
+  assert.strictEqual(M.deskSubline(idx, "2026-10-01T17:05:00+02:00", gen),
+    "workstation-7f3a · Omarchy 4.0.7-1 · captured just now")
+  assert.strictEqual(M.deskSubline(idx, "", gen), "workstation-7f3a · Omarchy 4.0.7-1")
+  assert.strictEqual(M.deskSubline(null, "", gen), "")
+})
+
+test("deskSettingsWrite carries every key of the entry and the change, null when stored", () => {
+  const entry = { id: "jax.seldon", captureIntervalMin: 30, driftInBar: "all", future: [1] }
+  same(M.deskSettingsWrite(entry, "deskWidth", 67), { captureIntervalMin: 30, driftInBar: "all", future: [1], deskWidth: 67 })
+  same(M.deskSettingsWrite({ deskWidth: 67 }, "deskWidth", 67), null)
+  same(M.deskSettingsWrite({ deskWidth: 67, deskSidebar: "open" }, "deskSidebar", "collapsed"), { deskWidth: 67, deskSidebar: "collapsed" })
+  same(M.deskSettingsWrite(null, "deskWidth", 50), { deskWidth: 50 })
+  // the input is not changed
+  same(entry, { id: "jax.seldon", captureIntervalMin: 30, driftInBar: "all", future: [1] })
+})
+
+test("pickScreen: the focused monitor, else the first", () => {
+  assert.strictEqual(M.pickScreen(["DP-1", "DP-2"], "DP-2"), 1)
+  assert.strictEqual(M.pickScreen(["DP-1", "DP-2"], "HDMI-A-1"), 0)
+  assert.strictEqual(M.pickScreen(["DP-1"], ""), 0)
+  assert.strictEqual(M.pickScreen([], "DP-1"), 0)
+  assert.strictEqual(M.pickScreen(null, null), 0)
+})
+
+test("deskWidthPreview and preset labels", () => {
+  assert.strictEqual(M.deskWidthPreview(1920, 67, 5), "1280 px on this screen")
+  assert.strictEqual(M.deskWidthPreview(1366, 50, 5), "960 px on this screen")
+  same(M.DESK_WIDTH_PRESETS.map(M.deskPresetLabel), ["50 %", "67 %", "75 %", "Full"])
+})
+
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
