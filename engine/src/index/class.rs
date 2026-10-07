@@ -51,6 +51,11 @@ const THEMES_DIR: &str = "~/.config/omarchy/themes/";
 const BACKGROUNDS_DIR: &str = "~/.config/omarchy/backgrounds/";
 /// Omarchy's hook directory; `omarchy-hook` skips `*.sample`.
 const HOOKS_DIR: &str = "~/.config/omarchy/hooks/";
+/// Omarchy's toggle state directory (`omarchy-toggle` touches and removes
+/// empty flag files; `omarchy-hyprland-toggle` copies Omarchy's flags).
+const TOGGLES_DIR: &str = "~/.local/state/omarchy/toggles/";
+/// SHA-256 of no bytes: an empty flag file.
+const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 /// Theme files that run code: what `omarchy theme install` strips.
 const THEME_CODE: [&str; 5] = [
     "alacritty.toml",
@@ -335,6 +340,27 @@ impl Rules {
     fn config(&self, e: &Event, history: &History) -> Verdict {
         let mark = e.meta.extra.get(MATCHES_KEY).and_then(|v| v.as_str());
         let removed = e.kind == Kind::ConfigRemove;
+        // ADR-0037 §1: a toggle is routine both ways — a flag file (empty,
+        // or Omarchy's shipped copy by capture evidence) created, changed
+        // to or removed in the toggles directory
+        if e.subject.starts_with(TOGGLES_DIR) {
+            let hash = if removed {
+                e.meta.hash_from.as_deref()
+            } else {
+                e.meta.hash_to.as_deref()
+            };
+            if hash == Some(EMPTY_SHA256)
+                && let Some(v) = self.routine("toggle-flag")
+            {
+                return v;
+            }
+            if removed
+                && mark == Some(MATCHES_OMARCHY_DEFAULT)
+                && let Some(v) = self.routine(MATCHES_OMARCHY_DEFAULT)
+            {
+                return v;
+            }
+        }
         if !removed {
             for id in [MATCHES_OMARCHY_DEFAULT, MATCHES_SYSTEM_LINK] {
                 if mark == Some(id)

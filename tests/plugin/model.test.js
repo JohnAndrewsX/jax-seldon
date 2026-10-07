@@ -372,9 +372,9 @@ test("snapperBanner: Check again is a capture, the hint follows Run in terminal 
   assert.strictEqual(M.snapperBanner(null, true), null)
 })
 
-test("changelogRows: 75 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
+test("changelogRows: 76 events newest first, one +2 group (3 members), folded resolutions, snapshots", () => {
   const rows = M.changelogRows(sampleIndex, "all")
-  assert.strictEqual(rows.length, 75)
+  assert.strictEqual(rows.length, 76)
   same(rows.map((r) => r.id), sampleIndex.events.map((e) => e.id))
   const badged = rows.filter((r) => r.badge !== "")
   assert.strictEqual(badged.length, 1)
@@ -382,7 +382,7 @@ test("changelogRows: 75 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(badged[0].subject, "mesa")
   assert.strictEqual(badged[0].txId, "tx-20260927T123000")
   same(rows.filter((r) => r.groupLeader !== "").map((r) => r.subject).sort(), ["lib32-mesa", "vulkan-radeon"])
-  assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 8)
+  assert.strictEqual(rows.filter((r) => r.resolutionDetail !== "").length, 9)
   assert.strictEqual(rows.filter((r) => r.snapshot).length, 8)
   assert.strictEqual(rows.filter((r) => r.drift).length, 8)
   same(rows.filter((r) => r.crisis).map((r) => r.kind), ["config-add", "config-add"])
@@ -391,6 +391,11 @@ test("changelogRows: 75 events newest first, one +2 group (3 members), folded re
   assert.strictEqual(M.rowStatus(theme), "No case · proposed for C-2026-005")
   const tyme = rows.find((r) => r.subject === "io.github.example.tyme" && r.kind === "plugin-add")
   assert.strictEqual(M.rowStatus(tyme), "explained: Zeiterfassung nur zum Testen, noch nicht in der Bar.")
+  // WP-113: an in-place edit of a third-party plugin, explained: a quiet row
+  const edited = rows.find((r) => r.kind === "plugin-update" && r.detail.startsWith("files changed"))
+  assert.strictEqual(edited.subject, "io.github.example.weather-plus")
+  assert.strictEqual(M.rowStatus(edited), "explained: Vorhersage-Panel selbst angepasst (größere Schrift).")
+  assert.strictEqual(edited.tone, "muted")
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "tailscale")), "linked to C-2026-008")
   // ADR-0029 rule 9: the engine's link reads like any other
   assert.strictEqual(M.rowStatus(rows.find((r) => r.subject === "io.github.example.display-profiles")),
@@ -449,7 +454,7 @@ test("changelogRows: 75 events newest first, one +2 group (3 members), folded re
 
 test("changelogRows: the source filter narrows the list", () => {
   const counts = M.sourceCounts(sampleIndex)
-  assert.strictEqual(counts.all, 75)
+  assert.strictEqual(counts.all, 76)
   let total = 0
   for (const s of M.SOURCES) {
     const rows = M.changelogRows(sampleIndex, s)
@@ -457,10 +462,10 @@ test("changelogRows: the source filter narrows the list", () => {
     assert.ok(rows.every((r) => r.source === s), s)
     total += rows.length
   }
-  assert.strictEqual(total, 75)
+  assert.strictEqual(total, 76)
   assert.strictEqual(M.changelogRows(sampleIndex, "pacman").length, 15)
   assert.strictEqual(M.changelogRows(sampleIndex, "snapper").length, 10)
-  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 75)
+  assert.strictEqual(M.changelogRows(sampleIndex, "").length, 76)
   same(M.filterChips(sampleIndex).map((c) => c.id), ["all"].concat(Array.from(M.SOURCES)))
   assert.strictEqual(M.cycleFilter("all", 1), "pacman")
   assert.strictEqual(M.cycleFilter("seldon", 1), "all")
@@ -1225,10 +1230,10 @@ test("periodTable: the sample's counts per period", () => {
   assert.strictEqual(rows("all"), "heatmap=366,series=3,driftBars=5,riskDonut=4,timeline=18,plan=2")
   const s30 = table.periods["30"].slots
   same(s30.map((s) => s.count), ["30 days", "2 samples", "5 weeks", "8 cases", "17 entries", "2 active cases"])
-  same(s30.map((s) => s.detail), ["70 events", "Explicit 324 → 327", "12 opened · 7 resolved",
+  same(s30.map((s) => s.detail), ["71 events", "Explicit 324 → 327", "13 opened · 8 resolved",
     "R0 1 · R1 3 · R2 3 · R3 1 · all time", "7 cases · 2 releases · 6 snapshots · 2 crises", "6 of 9 steps done"])
   same(s30.map((s) => s.windowed), [true, true, true, false, true, false])
-  assert.strictEqual(table.periods["90"].slots[0].detail, "75 events")
+  assert.strictEqual(table.periods["90"].slots[0].detail, "76 events")
   same(table.periods["30"].series.risk, { R0: 1, R1: 3, R2: 3, R3: 1 })
   assert.strictEqual(table.periods["30"].series.packages[0].date, "2026-09-03")
   // periodView picks a period, the default one for an unknown id.
@@ -1374,8 +1379,8 @@ test("heatmapChart: weeks × weekdays, steps, months, hover text, layout and hit
   const table = M.periodTable(ok.index)
   const h30 = table.periods["30"].charts.heatmap
   assert.strictEqual(h30.empty, false)
-  same(h30.numbers, { days: 30, events: 70, activeDays: 14, max: 32, busiest: "2026-10-01" })
-  assert.strictEqual(h30.summary, "70 events on 14 of 30 days · busiest 2026-10-01 (32)")
+  same(h30.numbers, { days: 30, events: 71, activeDays: 15, max: 32, busiest: "2026-10-01" })
+  assert.strictEqual(h30.summary, "71 events on 15 of 30 days · busiest 2026-10-01 (32)")
   // 2026-09-02 is a Wednesday: the first column starts at row 2.
   same([h30.offset, h30.weeks, h30.cells.length], [2, 5, 30])
   same([h30.cells[0].date, h30.cells[0].col, h30.cells[0].row], ["2026-09-02", 0, 2])
@@ -1428,8 +1433,8 @@ test("seriesChart: step lines per lane, padded flat lanes, the sample at a day",
 test("driftChart: weeks with gaps filled, peak, hover text", () => {
   const d = M.periodTable(ok.index).periods["90"].charts.driftBars
   // ADR-0028 §5: routine rows open nothing, their old resolutions count nothing
-  same(d.numbers, { weeks: 5, opened: 12, resolved: 7, max: 6, peak: "2026-W40" })
-  assert.strictEqual(d.summary, "12 opened · 7 resolved in 5 weeks · peak 2026-W40")
+  same(d.numbers, { weeks: 5, opened: 13, resolved: 8, max: 6, peak: "2026-W40" })
+  assert.strictEqual(d.summary, "13 opened · 8 resolved in 5 weeks · peak 2026-W40")
   assert.strictEqual(M.driftWeekText(d.weeks[4]), "2026-W40 · 28 Sep – 4 Oct · opened 6 · resolved 2")
   const gaps = M.driftChart([{ week: "2026-W40", opened: 1, resolved: 0 }, { week: "2026-W37", opened: 0, resolved: 2 }])
   same(gaps.weeks.map((w) => w.week + ":" + w.opened + "/" + w.resolved), ["2026-W37:0/2", "2026-W38:0/0", "2026-W39:0/0", "2026-W40:1/0"])
@@ -2020,10 +2025,10 @@ test("deskWidthPreview and preset labels", () => {
 test("deskChangelog: every event once, by class, with title, meta, age and stripe", () => {
   const idx = M.parseIndex(sample).index
   const p = M.deskChangelog(idx)
-  assert.strictEqual(p.rows.length, 75)
+  assert.strictEqual(p.rows.length, 76)
   const byCls = {}
   for (const r of p.rows) byCls[r.cls] = (byCls[r.cls] || 0) + 1
-  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 30"])
+  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 31"])
   const unit = M.changelogRow(p, UNIT)
   same([unit.title, unit.listMeta, unit.age, unit.stripe, unit.cls], ["ollama.service", "config · config-add", "14:03", "crisis", "crisis"])
   const mesa = M.changelogRow(p, MESA)
@@ -2044,12 +2049,12 @@ test("rowAge: the time today, else day and month (the year when it differs)", ()
 test("changelogView and changelogChips: chips, search, Hide (attention only), a group once", () => {
   const p = M.deskChangelog(M.parseIndex(sample).index)
   same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
-    ["open 6", "crisis 2", "attention 4", "routine 30", "case 37", "all 75"])
+    ["open 6", "crisis 2", "attention 4", "routine 31", "case 37", "all 76"])
   // the drift chips list a group as its leader; "all" lists every event
   same(M.changelogView(p, "open", {}, "").map(r => r.title).slice(-1), ["mesa +2"])
   assert.strictEqual(M.changelogView(p, "open", {}, "").length, 6)
   assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 6)
-  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 75)
+  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 76)
   assert.ok(M.changelogView(p, "all", {}, "").some(r => r.id === LIB32))
   // the search matches subject, meta, detail and actor, case-insensitive
   same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
@@ -2058,7 +2063,7 @@ test("changelogView and changelogChips: chips, search, Hide (attention only), a 
   const hidden = { [MESA]: true, [UNIT]: true }
   assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
   assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
-  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 75)
+  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 76)
   assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
 })
@@ -2338,8 +2343,8 @@ const edgeIds = (b) => b.edges.map((e) => b.nodes[e.a].id + (e.dashed ? " ~ " : 
 
 test("graphBuild: nodes from the index, changes only, crises from drift", () => {
   const b = M.graphBuild(graphSample, 400)
-  same(b.numbers, { nodes: 67, edges: 26, areas: 6, cases: 8, decisions: 4, changes: 47, crises: 2, clusters: 0,
-    folded: 0, events: 75, completed: 2 })
+  same(b.numbers, { nodes: 68, edges: 26, areas: 6, cases: 8, decisions: 4, changes: 48, crises: 2, clusters: 0,
+    folded: 0, events: 76, completed: 2 })
   // order: areas, cases, decisions, changes by day
   const kinds = b.nodes.map((n) => (n.kind === "crisis" ? "change" : n.kind))
   same([...new Set(kinds)], ["area", "case", "decision", "change"])
@@ -2357,7 +2362,7 @@ test("graphBuild: nodes from the index, changes only, crises from drift", () => 
   assert.strictEqual(nodeOf(b, "C-2026-001").done, true)
   assert.strictEqual(nodeOf(b, "C-2026-003").sub, "active · R3 · shell")
   assert.strictEqual(nodeOf(b, "C-2026-003").caseId, "C-2026-003")
-  assert.strictEqual(b.footer, "Newest 75 events · 2 completed cases in the index")
+  assert.strictEqual(b.footer, "Newest 76 events · 2 completed cases in the index")
 })
 
 test("graphBuild: edges event→case, case→area, decision→case, proposedCase dashed", () => {
@@ -2414,7 +2419,7 @@ test("graphBuild: nothing to draw without an index", () => {
     assert.strictEqual(b.empty, true)
     assert.strictEqual(b.nodes.length, 0)
   }
-  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 67)
+  assert.strictEqual(M.graphBuild(graphSample).nodes.length, 68)
 })
 
 test("graphBuild: beyond the cap, changes fold by day and source; areas, cases, decisions, crises never", () => {
@@ -2482,7 +2487,7 @@ test("graphState: start layout deterministic, positions kept by id, cut kept mid
   const s1 = M.graphState(b, null)
   const s2 = M.graphState(b, null)
   same(Array.from(s1.x), Array.from(s2.x))
-  assert.strictEqual(s1.visCount, 67)
+  assert.strictEqual(s1.visCount, 68)
   assert.strictEqual(s1.cut, b.span)
   assert.strictEqual(s1.alpha, 1)
   for (let i = 0; i < 30; i++) M.graphStep(s1, 8)
