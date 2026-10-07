@@ -44,7 +44,7 @@ use crate::index::drift::names_token;
 use crate::index::{self, Built};
 use crate::logbook::lock::Lock;
 use crate::logbook::{Logbook, cases};
-use crate::model::event::{ACTOR_HUMAN, ACTOR_SYSTEM, Event, Kind, Source, format_ts};
+use crate::model::event::{ACTOR_HUMAN, Event, Kind, Source, format_ts};
 use crate::model::{Journal, Risk, is_agent, is_case_id, is_ulid};
 use crate::redact::Redactor;
 use crate::sys;
@@ -185,13 +185,20 @@ pub struct Evidence {
 // ---------------------------------------------------------------------------
 
 /// Resolves evidence refs against the logbook as it is now (ADR-0036 §2).
-/// The text is the logbook's own (user content), redacted, one line, at
-/// most [`TEXT_MAX`] characters.
+/// The text is `by <author> · ` and the logbook's own words (user content),
+/// redacted, one line, at most [`TEXT_MAX`] characters. A ref the proposer
+/// wrote itself is no evidence (WP-124 round 2).
 pub struct Evidencer<'a> {
     pub logbook: &'a Logbook,
     pub built: &'a Built,
     pub redactor: &'a Redactor,
+    /// The agent that proposes (or proposed) the item.
+    pub proposer: &'a str,
 }
+
+/// The author shown when the ledger names none (a case from before the
+/// ledger kept its creation, an imported case).
+const UNKNOWN_AUTHOR: &str = "unknown";
 
 impl Evidencer<'_> {
     /// The text `kind ref` resolves to for an item of `members`; `Err`:
@@ -205,22 +212,56 @@ impl Evidencer<'_> {
         if r.chars().count() > REF_MAX {
             return Err(format!("longer than {REF_MAX} characters"));
         }
-        let raw = match kind {
+        let (authors, raw) = match kind {
             RefKind::Journal => self.journal(r)?,
             RefKind::Event => self.event(r, members)?,
             RefKind::Snapshot => self.snapshot(r)?,
-            RefKind::Case => self.case(r)?.case.title,
+            RefKind::Case => {
+                let file = self.case(r)?;
+                (self.case_authors(r, &file, false), file.case.title)
+            }
             RefKind::Plan => self.plan(r, members)?,
         };
-        let text = clip(&one_line_text(&self.redactor.redact(&raw)), TEXT_MAX);
-        if text.is_empty() {
+        if authors.iter().any(|a| a == self.proposer) {
+            return Err(format!(
+                "{} wrote it; an agent's own text is no evidence for its proposal",
+                self.proposer
+            ));
+        }
+        let words = one_line_text(&self.redactor.redact(&raw));
+        if words.is_empty() {
             return Err("it holds no text".to_string());
         }
-        Ok(text)
+        let author = authors
+            .first()
+            .map_or(UNKNOWN_AUTHOR, String::as_str)
+            .to_string();
+        Ok(clip(&format!("by {author} · {words}"), TEXT_MAX))
     }
 
-    /// The text of the journal entry headed `HH:MM` on that day.
-    fn journal(&self, r: &str) -> std::result::Result<String, String> {
+    /// Who stands behind a case: its creator first (`case-created` in the
+    /// ledger, else [`UNKNOWN_AUTHOR`]), then whoever closed it, and with
+    /// `workers` the agents its file lists (they write its *Plan*).
+    fn case_authors(&self, id: &str, file: &cases::CaseFile, workers: bool) -> Vec<String> {
+        let actor_of = |kind: Kind| {
+            self.built
+                .ledger
+                .iter()
+                .find(|e| e.source == Source::Seldon && e.kind == kind && e.subject == id)
+                .map(|e| e.actor.clone())
+        };
+        let mut out =
+            vec![actor_of(Kind::CaseCreated).unwrap_or_else(|| UNKNOWN_AUTHOR.to_string())];
+        out.extend(actor_of(Kind::CaseCompleted));
+        out.extend(actor_of(Kind::CaseDropped));
+        if workers {
+            out.extend(file.case.agents.iter().cloned());
+        }
+        out
+    }
+
+    /// The journal entry headed `HH:MM` on that day: its actor and text.
+    fn journal(&self, r: &str) -> std::result::Result<(Vec<String>, String), String> {
         let at = NaiveDateTime::parse_from_str(r, "%Y-%m-%d %H:%M")
             .ok()
             .filter(|_| r.len() == 16)
@@ -235,11 +276,16 @@ impl Evidencer<'_> {
             .iter()
             .find(|e| e.time == time && !e.text.trim().is_empty())
             .ok_or_else(|| format!("no journal entry at {r}"))?;
-        Ok(entry.text.clone())
+        Ok((vec![entry.actor.clone()], entry.text.clone()))
     }
 
-    /// A ledger event that is no resolution and not the item's own.
-    fn event(&self, r: &str, members: &[&Event]) -> std::result::Result<String, String> {
+    /// A ledger event that is no resolution and not the item's own: its
+    /// actor, and `kind subject: detail`.
+    fn event(
+        &self,
+        r: &str,
+        members: &[&Event],
+    ) -> std::result::Result<(Vec<String>, String), String> {
         let id: Ulid = is_ulid(r)
             .then(|| r.parse().ok())
             .flatten()
@@ -261,17 +307,14 @@ impl Evidencer<'_> {
             });
         };
         let mut text = format!("{} {}", e.kind, e.subject);
-        if e.actor != ACTOR_SYSTEM {
-            let _ = write!(text, " by {}", e.actor);
-        }
         if let Some(d) = e.detail.as_deref().filter(|d| !d.trim().is_empty()) {
             let _ = write!(text, ": {d}");
         }
-        Ok(text)
+        Ok((vec![e.actor.clone()], text))
     }
 
     /// The newest snapper snapshot event with that number.
-    fn snapshot(&self, r: &str) -> std::result::Result<String, String> {
+    fn snapshot(&self, r: &str) -> std::result::Result<(Vec<String>, String), String> {
         if r.is_empty() || r.len() > 10 || !r.bytes().all(|b| b.is_ascii_digit()) {
             return Err("not a snapshot number".to_string());
         }
@@ -282,10 +325,12 @@ impl Evidencer<'_> {
             .rev()
             .find(|e| e.source == Source::Snapper && e.kind == Kind::Snapshot && e.subject == r)
             .ok_or_else(|| format!("the ledger records no snapshot {r}"))?;
-        Ok(e.detail
+        let text = e
+            .detail
             .clone()
             .filter(|d| !d.trim().is_empty())
-            .unwrap_or_else(|| format!("snapshot {r}")))
+            .unwrap_or_else(|| format!("snapshot {r}"));
+        Ok((vec![e.actor.clone()], text))
     }
 
     fn case(&self, r: &str) -> std::result::Result<cases::CaseFile, String> {
@@ -296,18 +341,25 @@ impl Evidencer<'_> {
     }
 
     /// The first line of the case's *Plan* that names a member's subject
-    /// as a whole word (ADR-0015 §4).
-    fn plan(&self, r: &str, members: &[&Event]) -> std::result::Result<String, String> {
+    /// as a whole word (ADR-0015 §4). A Plan line carries no author: the
+    /// case's creator is shown, and the agents that worked the case (who
+    /// write its Plan) count as its authors.
+    fn plan(
+        &self,
+        r: &str,
+        members: &[&Event],
+    ) -> std::result::Result<(Vec<String>, String), String> {
         let file = self.case(r)?;
         let body = &file.doc.body;
         let range = cases::section(body, "Plan").ok_or_else(|| format!("{r} has no Plan"))?;
-        body[range]
+        let line = body[range]
             .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty())
             .find(|l| members.iter().any(|m| names_token(l, &m.subject)))
             .map(str::to_string)
-            .ok_or_else(|| format!("the Plan of {r} names none of the change's subjects"))
+            .ok_or_else(|| format!("the Plan of {r} names none of the change's subjects"))?;
+        Ok((self.case_authors(r, &file, true), line))
     }
 }
 
@@ -343,6 +395,37 @@ pub fn detail_line(actor: &str, evidence: &[(RefKind, String, String)]) -> Strin
 /// `<state>/proposals/`.
 pub fn dir(dirs: &Dirs) -> PathBuf {
     dirs.state_dir.join(DIR)
+}
+
+/// [`dir`], refused when it is a symbolic link or no directory (WP-124
+/// round 2, N5): the engine reads and writes proposals only in its own
+/// folder. A folder that does not exist yet is fine.
+fn checked_dir(dirs: &Dirs) -> Result<PathBuf> {
+    let dir = dir(dirs);
+    match std::fs::symlink_metadata(&dir) {
+        Ok(m) if m.file_type().is_dir() => Ok(dir),
+        Ok(m) => Err(Error::user(format!(
+            "{} is {}, not the engine's folder; remove it and run the command again",
+            dirs.display(&dir),
+            if m.file_type().is_symlink() {
+                "a symbolic link"
+            } else {
+                "no directory"
+            }
+        ))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(dir),
+        Err(e) => Err(anyhow::anyhow!("{}: {e}", dir.display()).into()),
+    }
+}
+
+/// Writes `p` to `path` as JSON, 0600, through a temp file and a rename
+/// that replaces a link at `path` instead of following it.
+fn write_proposal(path: &Path, p: &Proposal) -> Result<()> {
+    let value = serde_json::to_value(p).map_err(anyhow::Error::from)?;
+    let mut text = serde_json::to_string_pretty(&value).map_err(anyhow::Error::from)?;
+    text.push('\n');
+    sys::write_atomic_replace(path, text.as_bytes(), sys::NEW_FILE_MODE)?;
+    Ok(())
 }
 
 /// The logbook as a proposal names it: its canonical path.
@@ -393,16 +476,10 @@ fn store(dirs: &Dirs, p: &Proposal) -> Result<Vec<(String, Option<String>)>> {
     {
         return Err(anyhow::anyhow!("refusing to store an invalid proposal: {e}").into());
     }
-    let dir = dir(dirs);
+    let dir = checked_dir(dirs)?;
     sys::create_dir_private(&dir)
         .map_err(|e| anyhow::anyhow!("cannot create {}: {e}", dir.display()))?;
-    let mut text = serde_json::to_string_pretty(&value).map_err(anyhow::Error::from)?;
-    text.push('\n');
-    sys::write_atomic_replace(
-        &dir.join(format!("{}.json", p.id)),
-        text.as_bytes(),
-        sys::NEW_FILE_MODE,
-    )?;
+    write_proposal(&dir.join(format!("{}.json", p.id)), p)?;
     let replaced = proposals_of(&dir, &p.logbook, &p.id);
     for (id, _) in &replaced {
         if let Err(e) = std::fs::remove_file(dir.join(format!("{id}.json"))) {
@@ -416,7 +493,7 @@ fn store(dirs: &Dirs, p: &Proposal) -> Result<Vec<(String, Option<String>)>> {
 /// regular file of at most 4 MiB, its schema, its name its id); exit 1
 /// otherwise.
 fn load(dirs: &Dirs, logbook: &Logbook, id: &str) -> Result<(PathBuf, Proposal)> {
-    let path = dir(dirs).join(format!("{id}.json"));
+    let path = checked_dir(dirs)?.join(format!("{id}.json"));
     let text = sys::read_small_file(&path, sys::STATE_FILE_MAX)
         .map_err(|e| Error::user(format!("proposal {id} is not read: {e}")))?
         .ok_or_else(|| Error::user(format!("no proposal {id}")))?;
@@ -514,6 +591,7 @@ pub fn propose(ctx: &Context, file: Option<&Path>, actor: Option<String>) -> Res
 
     let (config, logbook) = ctx.open_logbook()?;
     let redactor = Redactor::for_config(&config)?;
+    checked_dir(&ctx.dirs)?;
     let lock = ctx.lock()?;
     let built = index::derive(ctx, &config, &logbook)?;
     warn(&built);
@@ -521,6 +599,7 @@ pub fn propose(ctx: &Context, file: Option<&Path>, actor: Option<String>) -> Res
         logbook: &logbook,
         built: &built,
         redactor: &redactor,
+        proposer: &actor,
     };
     let mut seen = HashSet::new();
     let mut items = Vec::with_capacity(input.items.len());
@@ -777,21 +856,17 @@ pub fn apply(ctx: &Context, id: &str, named: &[String], actor: Option<String>) -
                 done.push((item, r));
             }
             Outcome::Skipped(why) => skipped.push((id, why)),
-            Outcome::Refused(why) => {
-                // a failed write may have changed the logbook
-                built = None;
-                refused.push((id, why));
-            }
+            // nothing is written before a refusal: every check and the
+            // retroactive case's file name come before the ledger write;
+            // what fails after it is `done` with a warning (N6)
+            Outcome::Refused(why) => refused.push((id, why)),
         }
     }
 
     let first = named.is_empty() && proposal.applied.is_none();
     if first {
         proposal.applied = Some(format_ts(&ctx.now));
-        let value = serde_json::to_value(&proposal).map_err(anyhow::Error::from)?;
-        let mut text = serde_json::to_string_pretty(&value).map_err(anyhow::Error::from)?;
-        text.push('\n');
-        sys::write_atomic_replace(&path, text.as_bytes(), sys::NEW_FILE_MODE)?;
+        write_proposal(&path, &proposal)?;
     }
     let events: usize = done.iter().map(|(_, r)| r.resolved).sum();
     let commit = if done.is_empty() {
@@ -830,6 +905,9 @@ pub fn apply(ctx: &Context, id: &str, named: &[String], actor: Option<String>) -
                 .map(|c| format!(", {c}"))
                 .unwrap_or_default()
         );
+        if let Some(e) = &r.case_error {
+            let _ = write!(human, " (the case file did not follow the ledger: {e})");
+        }
     }
     for (eid, why) in &skipped {
         let _ = write!(human, "\n  {eid} skipped: {why}");
@@ -849,6 +927,7 @@ pub fn apply(ctx: &Context, id: &str, named: &[String], actor: Option<String>) -
                 "resolved": r.resolved,
                 "case": r.case_id,
                 "events": r.written.iter().map(super::event::event_json).collect::<Vec<_>>(),
+                "warning": r.case_error.as_ref().map(|e| format!("the case file did not follow the ledger: {e}")),
             })).collect::<Vec<_>>(),
             "skipped": skipped.iter().map(|(eid, why)| json!({ "eventId": eid, "reason": why })).collect::<Vec<_>>(),
             "refused": refused.iter().map(|(eid, why)| json!({ "eventId": eid, "reason": why })).collect::<Vec<_>>(),
@@ -894,12 +973,21 @@ fn apply_item(
         }
     }
     .redacted(redactor);
-    let sel = match crate::reconcile::select(built, &item.event_id, false, action.intent()) {
+    let mut sel = match crate::reconcile::select(built, &item.event_id, false, action.intent()) {
         Ok(sel) => sel,
         Err(e) => return Outcome::Refused(e.to_string()),
     };
+    // open drift only (ADR-0036 §3): `select` also takes routine events (a
+    // link) and the engine's resolutions; a proposal touches neither
+    if !built.open_drift.contains(&sel.event.event.id) {
+        return Outcome::Skipped(closed_reason(built, sel.event));
+    }
+    sel.members.retain(|m| built.open_drift.contains(&m.id));
+    if sel.members.len() < 2 {
+        sel.group = None;
+    }
     if sel.members.is_empty() {
-        return Outcome::Skipped(not_open(sel.event));
+        return Outcome::Skipped(closed_reason(built, sel.event));
     }
     // the engine's class now, or the file's flag: the flag can hold an item
     // back, never let one through (ADR-0035 §6, ADR-0028 §3)
@@ -914,6 +1002,7 @@ fn apply_item(
         logbook,
         built,
         redactor,
+        proposer,
     };
     let mut resolved = Vec::with_capacity(item.evidence.len());
     for r in &item.evidence {
@@ -951,6 +1040,25 @@ fn apply_item(
         Ok(r) => Outcome::Done(Box::new(r)),
         Err(e) => Outcome::Refused(e.to_string()),
     }
+}
+
+/// Why an item's event is no longer open drift, for `skipped`.
+fn closed_reason(built: &Built, event: &crate::index::model::IndexEvent) -> String {
+    let e = &event.event;
+    if crate::reconcile::engine_resolved(built, e) {
+        return format!(
+            "no longer open drift: the engine resolved {} ({})",
+            e.id,
+            not_open(event)
+        );
+    }
+    if let Some(i) = crate::reconcile::item_of(built, e).filter(|i| i.class == Class::Routine) {
+        return format!(
+            "no longer open drift: {} is routine (rule `{}`, ADR-0028)",
+            e.id, i.rule
+        );
+    }
+    format!("no longer open drift: {}", not_open(event))
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,6 +1117,38 @@ mod tests {
             .map(|i| (RefKind::Case, format!("C-2026-{i:03}"), "y".repeat(200)))
             .collect();
         assert_eq!(detail_line("agent:x", &long).chars().count(), DETAIL_MAX);
+    }
+
+    /// A link where the proposal goes is replaced, never followed (N3).
+    #[test]
+    fn a_proposal_is_written_over_a_link_not_through_it() {
+        let base = std::env::temp_dir().join(format!("seldon-proposal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let target = base.join("target.json");
+        std::fs::write(&target, "keep\n").unwrap();
+        let path = base.join("01M3VZS4J0NDXZFC2F7RBBD3FJ.json");
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        let p = Proposal {
+            id: "01M3VZS4J0NDXZFC2F7RBBD3FJ".into(),
+            at: "2026-10-01T17:02:00+02:00".into(),
+            actor: "agent:claude-code".into(),
+            logbook: "/l".into(),
+            applied: None,
+            items: Vec::new(),
+        };
+        write_proposal(&path, &p).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep\n");
+        let meta = std::fs::symlink_metadata(&path).unwrap();
+        assert!(meta.file_type().is_file());
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("\"applied\": null")
+        );
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
