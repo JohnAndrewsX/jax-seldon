@@ -285,3 +285,15 @@ Engine side is fixed by 124a; the desk does this (no code in 124a):
 - After apply, render `done` / `skipped` / `refused` from the result and
   keep refused items visible. `applied` (and `markedApplied`) does not
   mean done.
+
+## Merge of next
+
+- `git fetch`; `git merge origin/next` (at `5fb3911`) into
+  `wp/124-triage`: merge commit `82e415c`, no conflicts. In: WP-123 (desk
+  sections Decisions, System, Memory, Prime Radiant), the WP-127 and
+  WP-128 work packages. WP-102's import was not on `next` yet.
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `82e415c` (2050 Rust tests passed, 0 failed; desk-view 1346/0;
+  bar-view 194/0; plugin-test ok; docs-check ok). Log
+  `check-wp124-merge1.log`.
+- 124b not started.
