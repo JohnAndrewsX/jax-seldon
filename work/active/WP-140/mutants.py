@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """WP-140 manual mutants: each one undoes one rule of the WP in the engine;
-the unit tests, `--test redaction` or `--test hooks privileged` must fail
+the unit tests, `--test redaction`, `--test hooks privileged` or the
+reference-set test of `--test index` must fail
 for every one. Names given as arguments run only the mutants whose name
 contains one of them."""
 import os
@@ -46,7 +47,7 @@ MUTANTS = [
     ("pem: label words only RSA", REDACT, plain(r'const PEM_LABEL: &str = r"(?:[A-Z0-9]+ )*', r'const PEM_LABEL: &str = r"(?:RSA )?')),
     ("pem: trigger never", REDACT, plain('"private-key" => &["private key"],', '"private-key" => &["private  key"],')),
     # 2. the invisible set
-    ("set: no U+00AD", IMPORT, plain("        '\\u{00AD}'\n            | '\\u{061C}'", "        '\\u{061C}'")),
+    ("set: no U+00AD", IMPORT, plain("        '\\u{00AD}'\n            | '\\u{0600}'", "        '\\u{0600}'")),
     ("set: no U+061C", IMPORT, plain("            | '\\u{061C}'\n", "")),
     ("set: no U+180E", IMPORT, plain("            | '\\u{180E}'\n", "")),
     ("set: no U+2061-U+2064", IMPORT, plain("'\\u{2060}'..='\\u{2064}'", "'\\u{2060}'")),
@@ -54,9 +55,9 @@ MUTANTS = [
     ("set: no U+FFF9-U+FFFB", IMPORT, plain("            | '\\u{FFF9}'..='\\u{FFFB}'\n", "")),
     ("set: no tags", IMPORT, plain("            | '\\u{E0000}'..='\\u{E007F}'\n", "")),
     # 3. quoted header values
-    ("header: no \"…\"", REDACT, plain(r'''    r#"(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|\\"''', r'''    r#"(?:\\"''')),
-    ("header: no \\\"…\\\"", REDACT, plain(r'''|\\"(?:[^"\\\r\n]|\\[^"\r\n])*\\"|'[^'\r\n]*')"#;''', r'''|'[^'\r\n]*')"#;''')),
-    ("header: no '…'", REDACT, plain(r'''|'[^'\r\n]*')"#;''', r''')"#;''')),
+    ("header: no \"…\"", REDACT, plain(r'''(?:[rRbBuUfF]{1,2})?(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|\\"''', r'''(?:[rRbBuUfF]{1,2})?(?:\\"''')),
+    ("header: no \\\"…\\\"", REDACT, plain(r'''|\\"(?:[^"\\\r\n]|\\[^"\r\n])*\\"|'[^'\r\n]*')[''', r'''|'[^'\r\n]*')[''')),
+    ("header: no '…'", REDACT, plain(r'''|'[^'\r\n]*')[^\s''', r''')[^\s''')),
     ("header: no quoted name", REDACT, plain('&header("authorization", true)', '&header("authorization", false)')),
     ("header: quoted value right after the colon", REDACT, plain(r'r"(?i)({name}(?:{quoted_name}:\s+))', r'r"(?i)({name}(?:{quoted_name}:\s*))')),
     ("header: bare value may start at a marker", REDACT, plain(r'''const HEADER_BARE: &str = r#"[^'"\s‹]''', r'''const HEADER_BARE: &str = r#"[^'"\s]''')),
@@ -85,6 +86,24 @@ MUTANTS = [
     ("args: no process substitution", ARGS, plain('["|", "<<<", "<("]', '["|", "<<<"]')),
     ("args: a value word is read as options", ARGS, plain("                        words.next();\n", "")),
     ("args: long options exact", ARGS, plain("self.long.iter().any(|l| l[2..].starts_with(name))", "self.long.iter().any(|l| l[2..] == *name)")),
+    # round 2
+    ("args: a written file feeds nothing (B1)", ARGS, plain("            .any(|w| !NO_FILE.contains(&w.as_str()))", "            .any(|_| false)")),
+    ("args: /dev/null feeds", ARGS, plain('const NO_FILE: [&str; 3] = ["/dev/null", "/dev/stdout", "/dev/stderr"];', 'const NO_FILE: [&str; 0] = [];')),
+    ("args: passwd only through options (B2)", ARGS, entry("passwd", "feed", "Feed::Options")),
+    ("args: useradd --password", ARGS, entry("useradd", "long", "&[]")),
+    ("args: usermod --password", ARGS, entry("usermod", "long", "&[]")),
+    ("args: groupadd --password", ARGS, entry("groupadd", "long", "&[]")),
+    ("args: groupmod --password", ARGS, entry("groupmod", "long", "&[]")),
+    ("args: openssl passwd", ARGS, entry("openssl", "feed", "Feed::Options")),
+    ("args: openssl any subcommand", ARGS, entry("openssl", "subcommand", '""')),
+    ("args: wpa_passphrase", ARGS, entry("wpa_passphrase", "feed", "Feed::Options")),
+    ("set: no U+0600-U+0605", IMPORT, plain("            | '\\u{0600}'..='\\u{0605}'\n", "")),
+    ("set: no U+1BCA0-U+1BCA3", IMPORT, plain("            | '\\u{1BCA0}'..='\\u{1BCA3}'\n", "")),
+    ("set: no U+1D173-U+1D17A", IMPORT, plain("            | '\\u{1D173}'..='\\u{1D17A}'\n", "")),
+    ("python set: no U+1D173-U+1D17A", "scripts/validate-fixtures.py", plain("\\U0001d173-\\U0001d17a", "")),
+    ("header: no string prefix (N4)", REDACT, plain("r#\"(?:[rRbBuUfF]{1,2})?(?:", "r#\"(?:")),
+    ("header: no glued tail (N4)", REDACT, plain(r'''[^\s'"\\,;)\]}‹]*"#;''', r'''"#;''')),
+    ("header: glued tail takes a comma", REDACT, plain(r'''[^\s'"\\,;)\]}‹]*"#;''', r'''[^\s'"\\;)\]}‹]*"#;''')),
     # nmcli-secret
     ("nmcli: no keyword password", REDACT, plain(r"\s[+-]?(?:password|(?:[a-z0-9-]+\.)+", r"\s[+-]?(?:(?:[a-z0-9-]+\.)+")),
     ("nmcli: no psk", REDACT, plain("password-raw|psk|secrets", "password-raw|secrets")),
@@ -104,6 +123,7 @@ runs = [
     cargo + ["--lib", "--", "--test-threads=4"],
     cargo + ["--test", "redaction", "--", "--test-threads=4"],
     cargo + ["--test", "hooks", "--", "privileged", "--test-threads=4"],
+    cargo + ["--test", "index", "--", "the_reference_drops", "--test-threads=4"],
 ]
 results = []
 for name, file, mutate in MUTANTS:
