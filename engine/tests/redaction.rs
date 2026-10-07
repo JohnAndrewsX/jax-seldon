@@ -1503,6 +1503,135 @@ const CLEAR: &[&str] = &[
     "Bild icon@2x",
 ];
 
+/// (rule, text with `\n` line ends, secrets): one row for each place where
+/// a rule reads a line end, the `\` continuations first. Each row is also
+/// checked with `\r\n` line ends, which must give the same text with
+/// `\r\n` (WP-128).
+const CONTINUED: &[(&str, &str, &[&str])] = &[
+    // `\` between an option and its value (`GAP`)
+    (
+        "password-option",
+        "tool --password \\\n  fakeCr01 --verbose",
+        &["fakeCr01"],
+    ),
+    ("curl-user", "curl -u \\\n  a:fakeCr02", &["fakeCr02"]),
+    (
+        "sshpass-password",
+        "sshpass -p \\\n  fakeCr03 ssh me@host",
+        &["fakeCr03"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin \\\n  pass:fakeCr04",
+        &["fakeCr04"],
+    ),
+    // `\` inside an option value (`WORD`): bare, in `"…"`, in `$'…'`
+    (
+        "curl-user",
+        "curl -u admin:fake\\\nCr05 https://h.example",
+        &["Cr05"],
+    ),
+    (
+        "password-option",
+        "tool --password \"ab\\\nfakeCr06\" --verbose",
+        &["fakeCr06"],
+    ),
+    (
+        "password-option",
+        "tool --password $'ab\\\nfakeCr07' --verbose",
+        &["fakeCr07"],
+    ),
+    // … and inside a `pass:` value (`PASS_ARG`), each of its forms
+    (
+        "openssl-pass",
+        "openssl rsa -passin \"pass:ab\\\nfakeCr08\" -in k.pem",
+        &["fakeCr08"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin $'pass:ab\\\nfakeCr09' -in k.pem",
+        &["fakeCr09"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:\"ab\\\nfakeCr10\" -in k.pem",
+        &["fakeCr10"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:$'ab\\\nfakeCr11' -in k.pem",
+        &["fakeCr11"],
+    ),
+    (
+        "openssl-pass",
+        "openssl rsa -passin pass:ab\\\nfakeCr12 -in k.pem",
+        &["fakeCr12"],
+    ),
+    // `\` between the command word and the option (`COMMAND_REST`)
+    (
+        "curl-user",
+        "curl -sS \\\n  -H 'Accept: a;b' \\\n  -u admin:fakeCr13 https://h.example",
+        &["fakeCr13"],
+    ),
+    (
+        "registry-login-password",
+        "docker login \\\n  -p fakeCr14 r.example",
+        &["fakeCr14"],
+    ),
+    (
+        "sshpass-password",
+        "sshpass \\\n  -p fakeCr15 ssh me@host",
+        &["fakeCr15"],
+    ),
+    // HTTPie's gap after the command word (`HTTPIE_GAP`)
+    ("httpie-auth", "http \\\n  -a a:fakeCr16", &["fakeCr16"]),
+    ("httpie-auth", "http\\\n  -a a:fakeCr17", &["fakeCr17"]),
+    ("httpie-auth", "xh\n-a a:fakeCr18", &["fakeCr18"]),
+    // `mysql … \`: before `-p` and after its value
+    (
+        "db-client-password",
+        "mysql -u root \\\n  -pfakeCr19 shop",
+        &["fakeCr19"],
+    ),
+    (
+        "db-client-password",
+        "mysql -u root -pfakeCr20a \\\n  shop --init-command=fakeCr20b\nnext",
+        &["fakeCr20a", "fakeCr20b"],
+    ),
+    // line ends inside quotes and around a JSON `:`, and rules that take
+    // the rest of a line, whose `\r` stays
+    (
+        "proxy-option",
+        "curl -X POST -d '{\n  \"a\": 1\n}' -U bob:fakeCr21 https://h.example",
+        &["fakeCr21"],
+    ),
+    (
+        "cookie-option",
+        "curl -d \"line 1\nline 2\" -b 'sid=fakeCr22' https://h.example",
+        &["fakeCr22"],
+    ),
+    (
+        "json-secret",
+        "{\"password\":\n  \"fakeCr23\"}\nnext",
+        &["fakeCr23"],
+    ),
+    (
+        "authorization-header",
+        "Authorization: Bearer fakeCr24\nnext",
+        &["fakeCr24"],
+    ),
+    (
+        "password-option",
+        "tool --password 'fakeCr25\nnext",
+        &["fakeCr25"],
+    ),
+    // a header value ends before the `\r` of a CRLF line end, also an
+    // empty one (round 2)
+    ("secret-header", "X-Api-Key: fakeCr26\nnext", &["fakeCr26"]),
+    ("authorization-header", "a\nAuthorization: \n", &[]),
+    ("secret-header", "x-api-key: \t\n\n", &[]),
+];
+
 mod redaction {
     use super::*;
 
@@ -1859,14 +1988,78 @@ mod redaction {
             assert_eq!(r.redact(&out), out, "`{input}`");
         }
         // each HTTPie command word with each gap its triggers name
-        // (WP-097 round 2)
+        // (WP-097 round 2), the CRLF line ends too (WP-128)
         for word in ["http", "https", "xh", "xhs"] {
-            for gap in [" ", "\t", "\n", "\\\n"] {
+            for gap in [" ", "\t", "\n", "\\\n", "\r\n", "\\\r\n"] {
                 let input = format!("{word}{gap}-a a:fakeGap2");
                 let out = r.redact(&input);
                 assert_eq!(out, format!("{word}{gap}-a {REDACTED}"), "`{input}`");
                 assert_eq!(r.matching_rules(&input), vec!["httpie-auth"]);
             }
+        }
+    }
+
+    /// WP-128: a rule that reads a line end reads `\r\n` as it reads `\n`.
+    /// Each row of [`CONTINUED`] with CRLF line ends loses its secrets,
+    /// matches the same rules and gives the text of the LF row with CRLF
+    /// line ends, through `redact` and `redact_keeping_lines`; the latter
+    /// keeps the number of lines, and a second pass changes nothing.
+    #[test]
+    fn crlf_line_ends_continue_as_lf_line_ends_do() {
+        let r = Redactor::builtin();
+        for (rule, lf, secrets) in CONTINUED {
+            let crlf = lf.replace('\n', "\r\n");
+            assert!(r.matching_rules(lf).contains(rule), "{rule}: `{lf}`");
+            assert_eq!(r.matching_rules(&crlf), r.matching_rules(lf), "`{lf}`");
+            for (how, f) in [
+                ("redact", Redactor::redact as fn(&Redactor, &str) -> String),
+                ("redact_keeping_lines", Redactor::redact_keeping_lines),
+            ] {
+                let from_lf = f(&r, lf);
+                let from_crlf = f(&r, &crlf);
+                for text in [&from_lf, &from_crlf] {
+                    for secret in *secrets {
+                        assert!(!text.contains(secret), "{rule} {how}: `{text:?}`");
+                    }
+                }
+                assert_eq!(
+                    from_crlf,
+                    from_lf.replace('\n', "\r\n"),
+                    "{rule} {how}: `{lf}`"
+                );
+                assert_eq!(f(&r, &from_crlf), from_crlf, "{rule} {how}: `{lf}`");
+            }
+            let kept = r.redact_keeping_lines(&crlf);
+            assert_eq!(kept.matches("\r\n").count(), crlf.matches("\r\n").count());
+            assert_eq!(kept.matches('\n').count(), crlf.matches('\n').count());
+        }
+    }
+
+    /// WP-128 round 2: a user pattern's match is replaced whole, a `\r` in
+    /// it too, so a pattern that matches a bare `\r` gives the same text
+    /// on a second pass (`seldon log` redacts a note, then the ledger
+    /// does).
+    #[test]
+    fn a_user_pattern_that_matches_a_cr_is_stable() {
+        for pattern in ["\r", "[ \t\r]+"] {
+            let r = Redactor::with_patterns(&[pattern.into()]).unwrap();
+            for text in ["a token: abc\r\nb \r\n", "x\r\n\r\ny\r"] {
+                let once = r.redact(text);
+                assert!(!once.contains('\r'), "{pattern}: {once:?}");
+                assert_eq!(r.redact(&once), once, "{pattern}: {text:?}");
+            }
+        }
+    }
+
+    /// WP-128 round 2: a lone `\r` (classic Mac line ends) is no line end:
+    /// HTTPie's gap after the command word is not one.
+    #[test]
+    fn a_lone_cr_is_no_line_end() {
+        let r = Redactor::builtin();
+        for word in ["http", "https", "xh", "xhs"] {
+            let input = format!("{word}\r-a a:b");
+            assert_eq!(r.redact(&input), input);
+            assert!(r.matching_rules(&input).is_empty(), "{input:?}");
         }
     }
 
@@ -2513,6 +2706,31 @@ mod commands {
         let day = read(&root.join("journal/2026/2026-10-03.md"));
         assert!(day.contains(&masked), "{day}");
         assert_nowhere(&env, &root, &[&secret]);
+    }
+
+    /// WP-128: a person's note over several lines, with `\n` and with
+    /// `\r\n` line ends, loses the secrets of every row of `CONTINUED`;
+    /// the ledger holds the note as the redaction gives it.
+    #[test]
+    fn log_masks_continued_lines_with_lf_and_crlf_line_ends() {
+        let env = Env::new(Snapper::Missing);
+        let root = env.init_logbook();
+        let r = super::Redactor::builtin();
+        let mut all = Vec::new();
+        for (rule, lf, secrets) in super::CONTINUED {
+            for text in [lf.to_string(), lf.replace('\n', "\r\n")] {
+                let v = run(&env, &["log", "--", &text]);
+                // `log` trims the note first
+                assert_eq!(
+                    v["event"]["detail"],
+                    r.redact(text.trim()).as_str(),
+                    "{rule}"
+                );
+                assert_eq!(last_ledger_line(&root)["detail"], v["event"]["detail"]);
+            }
+            all.extend_from_slice(secrets);
+        }
+        assert_nowhere(&env, &root, &all);
     }
 
     #[test]
