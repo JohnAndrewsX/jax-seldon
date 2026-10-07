@@ -49,7 +49,12 @@ MUTANTS = [
     ("PASS_ARG: escape in a later \"…\"", nth("const PASS_ARG", 2)),
     ("PASS_ARG: escape in a later $'…'", nth("const PASS_ARG", 3)),
     ("PASS_ARG: bare escape", nth("const PASS_ARG", 4)),
-    ("trailing \\r not put back", plain("if matched.ends_with('\\r') && !out.ends_with('\\r') {", "if false {")),
+    ("trailing \\r not put back", plain("if matched.ends_with('\\r') && self.name != USER_PATTERN {", "if false {")),
+    # round 2
+    ("trailing \\r put back for user patterns too (N1)", plain("&& self.name != USER_PATTERN {", "{")),
+    ("authorization-header value may end in \\r (N4)", plain(r"""(authorization:\s*)[^'"\n]*[^'"\r\n]""", r"""(authorization:\s*)[^'"\n]+""")),
+    ("secret-header value may end in \\r (N4)", plain(r"""private-token)\s*:\s*)[^'"\n]*[^'"\r\n]""", r"""private-token)\s*:\s*)[^'"\n]+""")),
+    ("HTTPIE_GAP takes a lone \\r (N4)", plain(r'r"(?:[ \t]|\r?\n|\\\r?\n)"', r'r"(?:[ \t\r]|\r?\n|\\\r?\n)"')),
     ("lost breaks put back as LF", plain("if matched[..j].ends_with('\\r') {", "if false {")),
 ]
 

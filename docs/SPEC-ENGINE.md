@@ -1921,12 +1921,18 @@ the next `"` on its line as written, and a quote its line does not close
 reads one: a `\` before `\r\n` continues a command, an option's gap, a
 value (bare, in `"…"` or `$'…'`, a `pass:` value too) and the rest of a
 `mysql … -p` command as a `\` before `\n` does, and HTTPie's gap after
-the command word may be `\r\n` (its triggers name `\r`); a `\r` that
-ends a masked match stays after `‹redacted›`, and
+the command word may be `\r\n` (its triggers name `\r`); a header
+value (`Authorization:`, `X-…-Key:`) ends before the `\r` of its line
+end, an empty one too; a `\r` that ends the match of a built-in rule
+stays after `‹redacted›` (a user pattern's match is replaced whole, a
+`\r` in it too, so a second pass finds no new one), and
 `Redactor::redact_keeping_lines` puts back each line break as it was,
 so a text edited on Windows keeps no secret on a continued line and
-keeps its CRLF line ends, through `seldon log`, the other notes, the
-hook and the import alike (WP-128). The value after `token=`,
+keeps its CRLF line ends, through `seldon log`, the other notes and the
+hook alike; the import reads CRLF as LF first (§3), so its cases hold
+LF (WP-128). A lone `\r` (classic Mac line ends) is no line end: a `\`
+before it continues nothing (`curl -u \`, `\r`, then the credentials
+keeps them), and HTTPie's gap is not one. The value after `token=`,
 `…PASSWORD=` and the other assignments is one quoted or bare part, so a
 query `?token=abc` inside a quoted URL stops at the closing quote; a
 double-quoted value may hold `\"` (WP-097).
