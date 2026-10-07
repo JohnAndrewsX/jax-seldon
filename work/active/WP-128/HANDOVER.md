@@ -120,3 +120,106 @@ included); merges into `next`.
   none was added for these tests.
 - No live check on the test host. Redaction is pure, and `seldon log`
   is covered end to end in a temp HOME.
+
+## Round 2
+
+The stage-1 review approved round 1 (4da0fbfc) with four non-blocking
+findings. The orchestrator asked for N1–N4 before stage 2.
+
+### What was done
+
+- **N1, the `\r` comes back only after a built-in rule.** A user
+  pattern's match is replaced whole, `\r` included, as on base. The new
+  test `redaction::a_user_pattern_that_matches_a_cr_is_stable` uses the
+  patterns `\r` and `[ \t\r]+` on the review's text
+  `a token: abc\r\nb \r\n` and on `x\r\n\r\ny\r`. One pass leaves no
+  `\r`, and a second pass gives the same text. This is the `seldon log`
+  path: the command redacts the note, then the ledger redacts it again.
+  Round 1's decision 3 said "applies to user patterns too … the second
+  pass still gives the same text". That is withdrawn; it was false for
+  these patterns.
+- **N2, the dead guard is gone.** `&& !out.ends_with('\r')` could never
+  trigger, because no built-in replacement ends in `\r`. The check is
+  now `matched.ends_with('\r') && self.name != USER_PATTERN`, with a
+  one-line comment. `USER_PATTERN` is a new constant that
+  `with_patterns` uses as well.
+- **N3, the docs.** SPEC-ENGINE §7 now says that CRLF line ends are kept
+  "through `seldon log`, the other notes and the hook alike; the import
+  reads CRLF as LF first (§3), so its cases hold LF". The CHANGELOG says
+  "A CRLF note keeps its line ends; the task import reads CRLF as LF
+  first, as before".
+- **N4, lone CR and empty header values.**
+  - `redaction::a_lone_cr_is_no_line_end` covers all four HTTPie words:
+    `http\r-a a:b` stays as it is and matches no rule. This kills the
+    review's mutant M8.
+  - SPEC §7 now documents classic Mac line ends: a `\` before a lone
+    `\r` continues nothing, and `curl -u \`, `\r`, then the credentials
+    keeps them. This is the same as base and outside `\\\r?\n`.
+  - `authorization-header` and `secret-header` now end their value with
+    `[^'"\n]*[^'"\r\n]` instead of `[^'"\n]+`. For text without `\r`
+    this is the same set of matches, so LF output does not change. An
+    empty value before CRLF now gives what LF gives:
+    `Authorization:‹redacted›\r\n` and `x-api-key: ‹redacted›\r\n\r\n`.
+  - Three rows were added to `CONTINUED`: `X-Api-Key: fakeCr26`, an
+    empty `Authorization:` at the end, and `x-api-key: \t` before a
+    blank line.
+  - `cookie-header` is unchanged. Its tail `[^'"\n]*` may take the
+    `\r`, but the built-in put-back already gives the LF result, so a
+    change there would be an equivalent mutant.
+- The `seldon log` test now compares the event detail with the
+  redaction of the trimmed note, because `log` trims the note first.
+  The new empty-value rows showed this.
+
+### Decisions
+
+5. **Glued markers on a second pass are not changed in this round.**
+   The case is a built-in marker followed directly by a `\r` that a
+   user pattern masks. An example is `Authorization: Bearer x` + CRLF
+   with the pattern `\r`. Pass 1 gives `Authorization:
+   ‹redacted›‹redacted›\n`. Pass 2 merges the two markers into one,
+   because the header value takes both.
+   - On base this text was stable, because the header value swallowed
+     the `\r`. With round 1 and with round 2 it is not.
+   - The class itself is older than WP-128. On base,
+     `tool --password a` + CRLF with the pattern `\r` merges the same
+     way, because WORD stops before `\r`. So does `--password a;` with
+     the pattern `;`.
+   - SPEC §7 promises idempotence for the built-in rules only ("a user
+     pattern … is applied as written"). Nothing leaks: pass 2 only
+     merges markers.
+   - A general fix would leave a built-in match alone when the part it
+     masks consists only of markers. That would change
+     `matching_rules`, which the import's per-line hits call on text
+     that is already redacted, and so WP-102's report counts. This is
+     beyond a round-2 nit. **Proposed follow-up:** "a built-in match
+     whose masked part is only markers is left as it is", with the
+     import's counts checked.
+6. **The bench gets no CRLF row** (review question 4). The orchestrator
+   did not ask for one. The review's 1 MiB and 4 MiB CRLF runs show
+   linear time at about LF cost.
+
+### How it was verified
+
+- `cargo test --test redaction`: 31 tests, 30 run, 1 ignored (timing),
+  all green. clippy `-D warnings` and fmt are clean.
+  `scripts/docs-check.sh` reports ok.
+- **Mutants:** `work/active/WP-128/mutants.py` now runs 21 mutants: the
+  17 from round 1, with the trailing-`\r` mutant updated to the new
+  condition, plus four new ones. The new ones put the `\r` back for user
+  patterns too (N1), let either header value end in `\r` (N4, two
+  mutants), and let `HTTPIE_GAP` take a lone `\r` (N4, the review's
+  M8). **All 21 are killed.** N1 is killed by
+  `a_user_pattern_that_matches_a_cr_is_stable`, the two header mutants
+  by the `CONTINUED` parity test, and the lone-CR mutant by
+  `a_lone_cr_is_no_line_end`.
+- `just check-perf` was not run again. The brief asks for `just check`,
+  and the regex change is limited to two header rules whose language is
+  unchanged for text without `\r`.
+- **`flock /tmp/seldon-check.lock just check` at `431f0287`: exit 0**
+  (`check: ok`; log `check-wp128-r2.log`). 84 test binaries `ok`;
+  install 209/0, deploy-test-host 190/0, real-home-guard 11/0,
+  service-states 328/0, desk-view 1346/0, bar-view 194/0, model.test.js
+  124; qmllint ok (46 files), docs-check ok. The commit after it adds
+  only this section.
+- `git diff 109d02eb..HEAD` holds no home path, user name or host name
+  (grepped).
