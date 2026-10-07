@@ -325,3 +325,28 @@ translated pages, 46 commands), `omarchy plugin validate`, qmllint (48
 files), plugin tests. `import_task`: 19 tests. The branch diff holds no
 private path (`/home/` only as `/home/alice` and `/home/<user>`). Log:
 `engine/target/check-wp102-r3.log` (dev host, not committed).
+
+## Merge of next
+
+`git fetch`, then `git merge --no-ff origin/next` (5fb3911: WP-123 desk
+sections, WP-127/128 queued) into `wp/102-import`, as the merge alone:
+merge commit 5ddf80b.
+
+- **Status:** no conflicts. The only file both sides changed is
+  `docs/TESTING.md`. It auto-merged; my `import_task.rs` row is there once
+  and no conflict markers are left.
+- **What next brought:** plugin, `docs/SPEC-PLUGIN.md`,
+  `docs/KEYBINDINGS.md`, plugin tests and work files. None of it touches
+  the engine, the specs or the guides this WP changed.
+- **Check:** `flock /tmp/seldon-check.lock just check` on 5ddf80b →
+  **exit 0, `check: ok`**:
+  - fmt, clippy, all engine tests (default and `watch`; 84 test binaries
+    ok, none failed);
+  - packaging, install, deploy, schema-validate;
+  - docs-check (465 links, 14 translated pages, 46 commands);
+  - `omarchy plugin validate`, qmllint (46 files after WP-123's removals),
+    plugin tests.
+
+  Log: `engine/target/check-wp102-merge1.log` (dev host, not committed).
+
+102b is not started; it waits for WP-127 (`cases[].source`).
