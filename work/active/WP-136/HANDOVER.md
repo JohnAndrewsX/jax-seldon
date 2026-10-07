@@ -170,7 +170,12 @@ The 20 ms base is the two `omarchy` stub calls at ~10 ms each — the same
   first-party clone's HEAD would only sit in the cursor (no event reads
   it).
 - No network: `protocol.allow=never`, `GIT_NO_LAZY_FETCH=1`, only
-  `rev-parse`, `rev-list`, `log`; the tests run offline.
+  `rev-parse`, `rev-list`, `log`; the tests run offline. **Corrected in
+  round 2:** `protocol.allow=never` is only the default for protocols the
+  config does not name, and a clone's own `protocol.ext.allow=always`
+  beats it. In round 1 only `GIT_NO_LAZY_FETCH=1` stopped a lazy fetch.
+  Round 2 adds `--no-lazy-fetch` and `GIT_ALLOW_PROTOCOL=none`, and a
+  test proves the fetch command never runs.
 - `git diff next...HEAD` added lines grep'd for `/home/`: none.
 
 ## Not done
@@ -193,3 +198,147 @@ The 20 ms base is the two `omarchy` stub calls at ~10 ms each — the same
    on `next`)?
 3. When WP-113 merges: attach the commits to its tree-change update as
    described under Overlap (a few lines in `diff()`).
+
+## Round 2
+
+Stage-1 review `WP-136-review-1.md` sent it back for B1 plus N1–N4. Base
+is unchanged (`next` e9851606). Commits: 421ac6c9 (engine) and 73071a12
+(docs, mutants runner).
+
+### What changed
+
+- **B1, stderr flood from grafts.**
+  - `GIT_GRAFT_FILE=/dev/null` is set after the repository variables are
+    removed, so the clone's `info/grafts` is never read.
+  - New `sys::run_command_capped(cmd, timeout, cap) -> (Run, bool)`. It
+    keeps at most `cap` bytes of each pipe; the drain thread reads 8 KiB
+    chunks and drops the rest, so the writer never blocks and memory
+    never grows. The flag says whether stdout was cut.
+  - The plugins `Git` runner uses it with 64 KiB. A cut stdout is no
+    answer: the event has no commits and keeps its version detail.
+  - Every other caller keeps `run_command` and the whole output, because
+    a package list or a dossier query may be large. That answers the
+    review's question 3: the cap is opt-in in `sys.rs`, used here only.
+- **N1, lazy fetch through `ext::`.**
+  - `--no-lazy-fetch` is now in argv on every query, and
+    `GIT_ALLOW_PROTOCOL=none` is set. `none` is no protocol's name, and
+    the variable overrides any configuration.
+  - The code comments (`GIT_OPTIONS`, `GIT_ENV`) and SPEC-ENGINE §4 now
+    say what each setting stops, including that `protocol.allow=never`
+    is only a default.
+  - On git older than 2.44, git refuses the option. Every query then
+    fails closed: no commit list, and no git-derived short version (a
+    version-less clone keeps its last version). See open question 1.
+- **N2, reading outside the clone.** New `GitDir` with three values:
+  `None`, `Contained` and `Outside`.
+  - `Contained` means `.git` is a real directory per `symlink_metadata`,
+    there is no `objects/info/alternates`, no `commondir`, and no
+    `[include` / `[includeIf` section (a plain, case-insensitive scan) in
+    `config` or `config.worktree`.
+  - A config that cannot be read (a link, a FIFO, not UTF-8, over 1 MiB)
+    counts as `Outside`.
+  - For `Outside`, nothing is read: no HEAD from files, no git, no git
+    version. The `plugin-update` keeps its version step and appends
+    `commit history not read (the repository points outside the plugin
+    folder)` (`plugins::OUTSIDE`).
+  - That answers the review's question 2: a linked worktree or a
+    symlinked `.git` is refused. A plugin directory that is itself a link
+    to a checkout still works, because its `.git` inside is a real
+    directory.
+  - The FIFO `include.path` case from N4 is gone too: such a config is
+    `Outside`, so git is never started for it.
+- **N3/N4.**
+  - Subjects: U+2028 and U+2029 now become spaces, like control
+    characters.
+  - `-c i18n.logOutputEncoding=UTF-8` is passed, and output that is not
+    UTF-8 is read lossily (as `sys` always did).
+  - Tests now kill R1 (the fake git's child is killed with it), R2 (the
+    timeout is pinned at 2 s) and R7 (U+2066–U+2069 dropped).
+
+### Tests added
+
+All probes are Rust tests. The one temporary probe file
+(`engine/tests/wp136_probe.rs`) was deleted by its explicit path and
+never committed.
+
+- `plugin_commits::a_grafts_file_is_not_read`: a graft line that makes
+  the new HEAD a root (with grafts read, the pull would read as a
+  reset), plus 200 000 bad lines. The capture completes in time and the
+  event names the pull "C\nB\nA".
+- `plugin_commits::a_partial_clone_never_fetches`: a partial clone with
+  `extensions.partialClone`, a promisor `remote.origin.url =
+  ext::<script that writes a marker>`, the clone's own
+  `protocol.ext.allow=always`, and the old HEAD's object removed. The
+  marker is never written, and the event has no `meta.git` or
+  `meta.commits`. With the three lazy-fetch guards removed, git runs the
+  script and this test fails (mutant `R2-N1 lazy fetch guards off`).
+- `plugin_commits::a_repository_pointing_outside_names_no_commits`: one
+  fresh clone per case — a linked `.git`, a `gitdir:` file,
+  `objects/info/alternates`, `commondir`, `include.path`, `includeIf`.
+  Each gives detail `<from> → 2.0.0, commit history not read (…)`, no
+  `meta.git` and no `head` in the cursor.
+- `plugin_commits::the_log_is_utf8_whatever_the_clone_says`: the clone's
+  `i18n.logOutputEncoding=UTF-16` changes nothing. A Latin-1 subject
+  comes out as git converts it ("Café au lait"; git itself re-encodes
+  that byte).
+- Unit tests:
+  - `sys::tests::a_capped_run_keeps_the_head_of_a_flood_and_reads_the_rest`:
+    16 MiB to stderr and 1 MiB to stdout; 64 KiB kept of each, and the
+    cut is flagged.
+  - `a_flooding_git_is_no_answer_and_costs_no_memory`: 32 MiB to stderr.
+  - `a_slow_git_is_killed_with_what_it_started`: `sleep 3 & … wait`; the
+    child is gone within 1 s.
+  - `the_timeout_is_two_seconds_and_the_program_git`.
+  - `bytes_that_are_not_utf8_are_read_lossily`: a fake git prints `\351`.
+  - `a_git_dir_that_points_outside_is_not_read`: every `GitDir` case, and
+    git is never asked.
+  - Subject cleaning: isolates and the line and paragraph separators.
+- The argv/env literal test now covers `--no-lazy-fetch`,
+  `i18n.logOutputEncoding`, `GIT_GRAFT_FILE` and `GIT_ALLOW_PROTOCOL`.
+
+### Mutants
+
+`python3 work/active/WP-136/mutants.py` (target `engine/target/mutants`)
+runs 36 mutants: 34 killed, 2 survive as in round 1 (the double count
+bound; a first-party clone's HEAD is cursor-only).
+
+- **Runner fix:** the round 1 runner did not pass `--no-fail-fast`, so
+  whenever a unit test killed a mutant, the integration tests never ran.
+  The round 1 kills stand; the runner now reports every failing test.
+- **Behaviour tests that fail with their guard removed:** grafts (B1),
+  the `ext::` fetch (N1), the outside cases (N2), the log encoding (N4).
+- **Single-layer mutants:** removing only `GIT_ALLOW_PROTOCOL`, or only
+  the lazy-fetch pair, is caught by the literal argv/env test alone. The
+  other layer still blocks the fetch; that is the intended defence in
+  depth.
+
+### Capture cost (re-measured)
+
+Same test, `--profile bench`, dev host.
+
+| plugins capture | median |
+|---|---|
+| 8 plugins, no clone | 20.62 ms |
+| 8 plugins, 8 clones | 20.76 ms |
+| delta | +138 µs per capture, ~17 µs per clone |
+| one update with commits | 41.6 ms |
+
+The delta was +66 µs in round 1. The difference is the `GitDir` check,
+which stats three paths and reads `config` once per clone per capture.
+
+### Verification
+
+`flock /tmp/seldon-check.lock just check` on 73071a12 (dev host, host steps included): `check: ok`, exit 0 (log `check-wp136-r2.log`, outside the repository). `git diff` added lines grep'd for `/home/`: none.
+
+### Open questions (round 2)
+
+1. Should `packaging/PKGBUILD` depend on `git>=2.44` (for
+   `--no-lazy-fetch` and `GIT_NO_LAZY_FETCH`)? Without it, an older git
+   fails closed (no commit lists, no git-derived versions), which is
+   safe but quiet.
+2. Review question 1, the guard and the probes: this round ran every
+   probe as a Rust test that sets the environment from Rust. No guard
+   block occurred.
+3. Round 1's open questions 1–3 stand: the index clip of
+   `meta.commits`, the schema description of `git`/`commits`, and
+   attaching the commits to WP-113's tree-change update.
