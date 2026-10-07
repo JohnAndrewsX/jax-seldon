@@ -342,3 +342,45 @@ which stats three paths and reads `config` once per clone per capture.
 3. Round 1's open questions 1–3 stand: the index clip of
    `meta.commits`, the schema description of `git`/`commits`, and
    attaching the commits to WP-113's tree-change update.
+
+## Round 3
+
+Fable stage 2 confirmed rounds 1–2 and asked for one small round: S1
+and P7. Commit 918c0de7.
+
+- **S1, an `[include]` hidden from the scan.** `includes()` used to look
+  at the start of each line. It now looks for `[include` anywhere in the
+  config text, case-insensitive. A line scan misses what git's parser
+  reads as a section header:
+  - after a UTF-8 BOM (git skips EF BB BF; `trim_start` does not);
+  - after a lone CR (white space to git; `lines` does not end a line
+    there);
+  - after another header on the same line (`[core] [include]`);
+  - on the line after a value continued with a backslash.
+
+  CRLF lines were already safe (`lines` strips `\r\n`) and are now
+  tested.
+- **Decision: no explicit BOM strip.** The brief asked to strip a
+  leading U+FEFF before `.lines()`. The whole-text scan needs no special
+  case, so a strip line would be dead code: its mutant survived. I left
+  it out.
+- **Accepted cost:** `[include` inside a comment or a value now refuses
+  a clone that does not need refusing (no commit list). The error only
+  ever goes toward not reading.
+- **P7, links inside `.git`.** A symlink at `.git/objects`, `.git/refs`,
+  `.git/packed-refs` or `.git/HEAD` makes the clone `Outside`: no HEAD,
+  no git, and the update says why.
+- **Tests:**
+  - `a_git_dir_that_points_outside_is_not_read` adds the BOM, lone CR,
+    CRLF, same-line and continuation configs, and a link at each of the
+    four paths, each undone and checked back to `Contained`.
+  - `a_repository_pointing_outside_names_no_commits` adds two cases: a
+    BOM before `[include]`, and a linked `.git/objects`.
+- **SPEC-ENGINE §4** names the four link paths and the parser edge cases
+  next to the include sentence. TESTING.md is updated.
+- **Mutants:** `R3-S1 the round 2 line scan` and
+  `R3-P7 links in .git not checked` are both killed, by the unit test
+  and by the integration test. The whole list is now 38 mutants: 36
+  killed, and the same 2 survivors by design.
+- **Verification:** `flock /tmp/seldon-check.lock just check` on 918c0de7 —
+  `check: ok`, exit 0 (log `check-wp136-r3.log`, outside the repository). `git diff` added lines grep'd for `/home/`: none.
