@@ -273,3 +273,49 @@ conflicts.
   `/home/` but the `/home/user` fixture placeholder. (`git diff
   c1ee5d27 HEAD` also shows three `/home/<user>`-style placeholder lines
   from other WPs' handovers that came in with `next`.)
+
+## Round 3
+
+From the Fable stage 2 (round 2 confirmed; one small round).
+
+### Done
+
+- **Reserved words.** `pkgcmd::unwrap_command` reads past `if`, `then`,
+  `elif`, `else`, `do`, `while`, `until`, `!` and `{` in the same loop as
+  the leading assignments (`RESERVED_BEFORE_COMMAND`), before the wrapper
+  lookup. So `for p in a b; do sudo lpadmin -x $p; done` and `if ! sudo
+  lpadmin -x X; then echo no; fi` are one privileged `lpadmin`/`sudo`
+  record each, `for p in a; do sudo pacman -S $p; done` is red `pacman`
+  (also `if ! pacman -S x; …`), and `do`, `if`, `!`, `{`, `then fi`, `do
+  done` record nothing. It applies to every class, since every class reads
+  `command_argv`. Test `hook::tests::reserved_words_are_read_past` (8
+  privileged forms incl. `while`, `until`, `elif`, `else`, `{ …; }`);
+  mutant (no skip) killed.
+- **SPEC-ENGINE §8:** after "is re-parsed": "a shell reserved word before
+  a command (`do`, `if`, `!`, `{`; also `then`, `elif`, `else`, `while`,
+  `until`) is read past".
+- **ADR-0039:** a *Limits* paragraph at the end of §1 (the text of the
+  brief), and the stdin bullet of §2 ends "The check reads the same
+  commands as the classification: a `sudo -S` inside `$(…)` is not seen."
+
+### Guard
+
+The guard hook blocked one read-only `grep` whose Bash command text named
+a wrapper (finding the ADR lines to edit). Not reworded; the lines were
+read with the Read tool and edited with Edit.
+
+### Merge of next
+
+`next` moved to 00d5f73e (WP-127 merged: ADR-0038, index details; work
+files WP-140..148). Merged as b67b3ae3; one conflict, DECISIONS.md
+(ADR-0038 row, then ADR-0039). No engine conflict.
+
+### Check (round 3)
+
+- `flock /tmp/seldon-check.lock just check` on 783d5f4d (before the
+  merge): `check: ok` (log `target/check-wp129-r3-1.log`).
+- The same on b67b3ae3 (after the merge): `check: ok` (log
+  `target/check-wp129-r3-2.log`).
+- `check-perf` not re-run: the change adds a 9-entry slice lookup per
+  word read past in `unwrap_command`; round 2's numbers (worst 4.73 ms)
+  stand.
