@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Engine
 
+- The agent hooks record every command an agent runs with `sudo`,
+  `doas`, `pkexec` or `run0`, also a program Seldon does not know: an
+  agent's `pkexec lpadmin …` printer setup is now one red `agent/command`
+  event with `meta.wrapper: pkexec` and the redacted line as its text, on
+  the active case or without one. A command another hook class records
+  (`pkexec pacman -S x`) is recorded once, as before; probes (`sudo -l`,
+  `sudo -n true`, `pkexec --version`, `command -v sudo`) record nothing;
+  a wrapper of `sh -c '…'` holds for the commands inside. These records
+  are not drift yet: their attention class waits for a contract decision
+  (ADR-0039, proposed; WP-129).
 - `seldon import task <FILE>…` turns your own Markdown task files into
   cases: one queued case per open `- [ ]` item (title from its first
   sentence, Intent from the item, its indented lines and its heading),

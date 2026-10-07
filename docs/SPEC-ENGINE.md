@@ -2059,7 +2059,27 @@ line stays when commands follow it, so the record reads as the same
 commands; `<<` inside `((…))`, `$((…))` and `$[…]` is a shift, not a
 heredoc (WP-071). Redaction runs before the
 4096-character cut. Green events per ADR-0019 only while a case is set.
-Non-mutating commands produce no event. A command line that names a path
+Non-mutating commands produce no event.
+**Privileged commands (ADR-0039, WP-129):** a simple command that runs
+under `sudo`, `doas`, `pkexec` or `run0` — its own wrapper, or the one of
+the `sh -c`/`eval` it was opened from (`pkexec sh -c 'lpadmin …'`) — a
+program that is no probe is recorded even when no class above names it.
+Probes record nothing: the wrappers' own (`sudo -l|-v|-K|-V`, `pkexec
+--version|--help`, `run0 --help`, `doas -C|-L`, `command -v|-V`) and
+`true`, `false`, `:`, `id`, `whoami`, `test`, `[` (`sudo -n true`). No
+privileged record when a class records the command by itself (a record
+that needs no case, or a snapshot command); a green record that would
+need a case (`sudo tee /etc/x`) gives way to it. One per line, for its
+first privileged command, beside the line's class record when another
+command has one (`pkexec pacman -S cups && pkexec lpadmin …`: two events
+of one tool call). The record: `agent/command`, subject the program's
+last path component (`lpadmin`), zone red, `detail` and `meta.command`
+the redacted line as above, `meta.wrapper` the first wrapper it runs
+under (only privileged records carry the key); with or without a case,
+linked to the active one. A privileged `snapper` command is no snapshot
+command for §5's case notes. It is not drift: `drift[].source` admits no
+`agent` (ADR-0039 §3 proposes the attention row and names the contract
+decision it needs). A command line that names a path
 `[redaction] skipPaths` matches (§7) is recorded as `<program>
 ‹redacted›` (the event's subject), as an `Edit` of such a file is
 recorded as `Edit ‹redacted›`; the line is read for such paths more

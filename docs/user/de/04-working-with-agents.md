@@ -305,6 +305,17 @@ nicht aufgezeichnet.
 | yellow | Schreibzugriffe in beobachtete Pfade: `cp`, `mv`, `tee`, `sed -i`, `rm`, Umleitungen sowie die Werkzeuge Edit und Write von Claude Code |
 | green | jeder andere ändernde Befehl (`npm install`, `git push`, Dateien anderswo), nur solange ein Case aktiv ist |
 
+Jeder Befehl, den ein Agent mit `sudo`, `doas`, `pkexec` oder `run0`
+ausführt, wird ebenfalls aufgezeichnet, rot und mit oder ohne Case, auch
+wenn Seldon das Programm nicht kennt. Richtet ein Agent mit `pkexec
+lpadmin -p Office … -E` einen Drucker ein, zeigt der Eintrag `lpadmin`
+als Gegenstand, die Befehlszeile (ohne Geheimnisse) als Text und
+`pkexec` als Wrapper. Ein Befehl, den die Tabelle oben schon aufzeichnet
+(`pkexec pacman -S cups`), wird wie bisher einmal aufgezeichnet.
+Prüfungen, die nichts ändern (`sudo -l`, `sudo -n true`, `pkexec
+--version`, `command -v sudo`), zeichnen nichts auf. Ein solcher Eintrag
+steht im Case und im Changelog; als Drift wird er nicht gelistet.
+
 Ein Hook zeichnet die Befehlszeile und den Pfad auf. Er zeichnet nie die
 Ausgabe eines Befehls oder den Inhalt einer Datei auf. Vor dem Schreiben
 entfernt die Engine Passwörter und Tokens, die sie erkennt (siehe
