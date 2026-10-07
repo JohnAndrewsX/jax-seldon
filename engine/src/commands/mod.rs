@@ -21,6 +21,7 @@ pub mod rules;
 pub mod setup;
 pub mod skills;
 pub mod status;
+pub mod triage;
 pub mod watch;
 
 use std::io::Write as _;
