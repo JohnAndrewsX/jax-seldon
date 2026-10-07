@@ -545,3 +545,20 @@ Fable stage 2 approved 124b at `2bed8a3` on two small edits.
   `a4c78ab` (2264 Rust tests passed, 0 failed; model.test.js 154;
   service-states 328/0; desk-view 1541/0; bar-view 194/0; docs-check
   ok). Log `check-wp124b-r5.log`.
+
+## Merge of next (124b)
+
+- `git fetch`; `git merge origin/next` (at `af0a4bb6`: main with the
+  0.1.4 versions, engineMin 0.1.4, the WP-117/118 texts, the WP-130
+  guard, the RSS bound; WP-136): merge commit `eb0bc80` (a real merge,
+  two parents). One conflict, `CHANGELOG.md`: next cut a `[0.1.4]`
+  section and moved WP-127's plugin entry to `[Unreleased] › Plugin`; the
+  WP-124 plugin entry goes beside it there (the 0.1.4 section is next's,
+  unchanged). The engine entry was already under `[Unreleased] › Engine`.
+  Everything else auto-merged.
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `eb0bc80` (2270 Rust tests passed, 0 failed; model.test.js 158;
+  service-states 342/0; desk-view 1556/0; bar-view 194/0; docs-check ok).
+  Log `check-wp124b-merge3.log`. One docs-check warning, not from this
+  WP: `de/06-configuration.md` names an older source commit than the
+  English page's last change on next.
