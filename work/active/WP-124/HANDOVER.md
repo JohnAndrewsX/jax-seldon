@@ -422,3 +422,101 @@ fast-forward amend, by the orchestrator's choice).
   this session's doing; red zone, not touched. My commits use
   `JohnAndrewsX` per command (`git -c user.name=… -c user.email=…`), as
   the branch's earlier ones.
+
+## 124b round 2
+
+From the stage-1 review (SEND BACK) and the orchestrator's brief.
+`next` merged first (`da29250`: main and WP-136; a real merge commit,
+checked before its message was amended).
+
+### Blocking
+
+- **B1 — Apply bound to the proposal the user opened.** The Changelog
+  stores the id when the user opens the proposal (its row, or *Review the
+  new proposal*): `seenProposalId`, passed to `TriageDetail.seenId`.
+  `Model.triageSeen(index, seenId)` says current / replaced / gone.
+  Replaced: the bar's hint reads "Replaced by a newer proposal by <actor>
+  at <at> — review it", the actions are *Review the new proposal* with
+  Apply and Discard off, the items are not shown (so no crisis button).
+  Gone: "Proposal <id> is not there any more …" with the last answer
+  about it (R4: the pane no longer closes itself when the index drops the
+  proposal). Apply, each crisis and Discard pass `seenId`; the service's
+  guard (`triageCall`) now compares a real input with the index. Only the
+  answer about `seenId` is shown (Q4). Harness `triage-swap`: a capture
+  brings a newer proposal (agent:codex) while the first is open — the
+  bar says replaced, clicks on Apply and Discard do nothing, the service
+  asked directly for the old id refuses it (`service:` step, Q3), Review
+  opens the new one; `argv.log` holds only the capture.
+- **B2 — the head line in the bar**: the DetailPane hint is
+  `proposal.head` ("N items proposed by <actor> at <at>, C crises held
+  back — apply each below"), plain text, wrapping; the body copy is gone.
+  While Discard is armed the hint is the arm's.
+
+### Decisions applied
+
+1. **Discard arms twice**: "Confirm discard", hint "Discard proposal <id>?
+   Click Confirm discard. The logbook does not change."
+2. **Every author in the label** (engine, `Found::by` and the Plan label in
+   `triage.rs`): `by agent:claude-code, human · …`; test (the B4 test's
+   labels), mutant M35. SPEC-ENGINE §5 says it. ADR-0036 is not edited
+   (accepted, immutable); its "by <author>" wording covers the list per the
+   orchestrator's decision. The desk marks any label naming `agent:` or
+   `unknown`.
+3. **The residual line**: "Apply re-reads every reference; what it writes
+   may differ from this text if the file was changed."
+4. Live check: the orchestrator's, after the merge.
+5. B2 literal, as above.
+
+### Also
+
+- **R1** `parseProposal` follows `proposal.schema.json`: only its
+  properties at every level, `logbook` present and non-empty, `at` and
+  `applied` RFC 3339 date-times (`applied` null or one), title ≤ 256,
+  intent ≤ 4096, text ≤ 256, ref ≤ 64, a link without title/intent, an
+  explanation without a case, ≤ 200 items, 1–10 refs; more than 4 MiB of
+  text is not parsed. 17 refusal cases in `model.test.js`.
+- **R2** the items sit in a Loader active only while the pane is shown,
+  and asynchronous. Measured (harness, offscreen, dev host): a 200 × 10
+  proposal of 256-character texts — desk created in 76–80 ms; opening the
+  detail took 1518 ms synchronously before the change, 2 ms now (the
+  list builds in slices afterwards).
+- **R3** `.overflow` expects at 1920 (the triage detail) and on the
+  200 × 10 proposal at 1920, 960 and 700 px: nothing outside its box; an
+  evidence text wraps anywhere (`WrapAtWordBoundaryOrAnywhere`, a long
+  path breaks too). A static check in `model.test.js`: every `Text` of
+  `TriageDetail.qml` is `PlainText`, no other text format, no `elide`.
+- **The rest**: `evidenceAuthor` anchored (tests with text before
+  "by …"), `itemOutcome` with refused items (tested).
+
+### Verified
+
+- `model.test.js` 154 passed.
+- Plugin mutants (`python3 work/active/WP-124/plugin_mutants.py`, files
+  restored, the harness ones on a temp copy of the triage block): **12 of
+  12 killed** — Q3 (the service guard as `if (false)`), Q4 (a result shown
+  for any id), Q5 (`StyledText`), Q6 (a left elide), the unanchored author
+  regex, `itemOutcome` without refused, the opened id not kept, a replaced
+  proposal keeping its bar, Discard in one click, unknown properties
+  accepted, no size limit, and the items built while hidden (this one
+  survived the first run: the scenario now also selects an event after
+  the proposal and expects the items dropped). Log
+  `plugin-mutants-wp124b-r2.log`. Engine mutant M35 killed.
+- The triage scenarios alone: 208 passed, 0 failed, twice.
+- `omarchy plugin validate plugin/` ok and `just qmllint` exit 0 before
+  each plugin commit.
+- `flock /tmp/seldon-check.lock just check` → `check: ok`, exit 0, at
+  `4210e02` (2264 Rust tests passed, 0 failed; model.test.js 154;
+  service-states 328/0; desk-view 1541/0; bar-view 194/0; docs-check
+  ok). Log `check-wp124b-r4.log`. Run r3 before it ended in exit 101:
+  `rustc` was killed (SIGKILL) while building `tests/rebuild.rs` with
+  other WPs' builds beside it on the host; nothing failed in a test.
+  `next` had nothing new to merge (fetched at `4210e02`).
+
+### Open
+
+- The live check on the test host: the orchestrator's, after the merge.
+- ADR-0036 keeps its words ("by <author>"); the list of authors is the
+  orchestrator's reading of §2, written in SPEC-ENGINE §5 (an accepted
+  ADR is not edited).
+- Host note (unchanged): the global git identity reads `t
+  <t@example.com>`; my commits name `JohnAndrewsX` per command.
