@@ -56,11 +56,11 @@ plugin/
 │   │                   JournalField, NewCaseSheet, NewDecisionForm
 │   ├── overlay/        the Prime Radiant's charts (§6): Heatmap, Series, DriftBars,
 │   │                   RiskDonut, Timeline, ThePlan, OverlaySlot, ChartCanvas
+│   ├── graph/          GraphCanvas: the graph's canvas, layout ticks, pointer, card (§5.4)
 │   └── Banner.qml  MaskIcon.qml (the 0.1 tab components are ported and deleted:
 │                       WP-122 Today, Changelog, Work; WP-123 Decisions, System, Memory)
 ├── sections/           Today, Changelog, Work, Decisions, System, Memory, Radiant, Graph,
-│                       Settings; ReadingSection (the frame of Decisions, System, Memory);
-│                       SectionStub for the sections not built yet
+│                       Settings; ReadingSection (the frame of Decisions, System, Memory)
 ├── README.md  LICENSE  SECURITY.md  preview.png  assets/
 └── fixtures -> ../fixtures (NOT a symlink in the plugin folder; copied in CI for dev builds)
 ```
@@ -295,8 +295,8 @@ icons only; the search is then reached by widening it).
 | `Esc` | in this order: the section's own state (an inline form), the search filter, the stacked detail, then close |
 | `c` | capture now |
 | `n`, `+` | Today's note field, Work's new case (sections 1 and 3 take them) |
-| `←`/`→` | the current section's (the Prime Radiant's periods) |
-| other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them; sections 1–3 and 4–6 in §5.4; `h`/`l` the Prime Radiant's periods, §6) |
+| `←`/`→` | the current section's (the Prime Radiant's periods, the graph's day) |
+| other letters | the current section's (`i`, `e`, `a`, `r`, `f`/`F`, `x`, `d` as ADR-0034 §2 lists them; sections 1–3 and 4–6 in §5.4; `h`/`l` the Prime Radiant's periods, §6; the graph's `p`, `0`, `-`, `=`, §5.4) |
 
 Every character goes to the current section first (`Section.textKey`);
 the desk takes `c`, `n`, `+` only when the section did not. A focused
@@ -331,8 +331,8 @@ up (ADR-0034 §3); lists are `ListView`s.
 | 8 | Graph | WP-125 (ADR-0034 §5) |
 | `,` | Settings | WP-121 (§5.5) |
 
-Until a section is built it is a stub (`SectionStub.qml`): its title and
-"Coming in WP-12x." in the list and the detail.
+Every section is built (the stubs of WP-121, `SectionStub.qml`, went
+with WP-125).
 
 In every section the **selection is the cursor**: ↑/↓ (`k`/`j`) move it
 and the detail follows; it is an id, so it stays on its item when a new
@@ -574,6 +574,112 @@ and no action runs.
   logbook folder (`seldon open logbook --editor --json`) until the engine
   gains a memory target; `e` the same; nothing from the index reaches the
   argument list.
+
+**Graph (8; WP-125, ADR-0034 §5).** Solo. The machine's memory as a
+network, from the index alone; `sections/Graph.qml` with
+`components/graph/GraphCanvas.qml`.
+
+- **Data.** `Service.graph` = `Model.graphBuild(index, GRAPH_CAP)`
+  (empty while the index means nothing in the status), built only for a
+  shown section 8: an index change marks it dirty (`graphDirty`), and the
+  section calls `graphRefresh()` when it is shown and when the graph gets
+  dirty while it is shown (`graphBuilds` counts the builds). A build
+  costs about 5 ms of QV4 on 500 events, which no capture pays while the
+  graph is not on screen. Ids are looked up in maps without a prototype,
+  and a case reference (`event.case`, `drift.proposedCase`,
+  `decisions[].cases`) must match `CASE_ID` before it links: a foreign
+  index's `constructor` or `ADR-0003` as a case links nothing. Nodes: the logbook's areas (`system.areas`, and any area a case
+  names that the list lacks), the cases of all four lists, the decisions,
+  and the events whose kind is a change (`Model.GRAPH_CHANGE_KINDS` and
+  `plugin-*`; not case lifecycle, notes, corrections, resolutions, state
+  loss): the index's events, then open drift items it no longer lists
+  among them. A change is a crisis when its id is in `drift[]` with
+  `crisis: true`. Edges, once each (a solid one wins over a dashed one):
+  `event.case` → case, `case.area` → area, `decisions[].cases` → case
+  (contract 2; an index without the field has none), `drift.proposedCase`
+  → case dashed. Day index: an event's date (`ts`), a case's `created`
+  (else `started`, `closed`, today), a decision's `date` (else today); an
+  area takes its earliest neighbour's day, one without a neighbour the
+  first day; days count from the earliest. **Cap 400** (`GRAPH_CAP`):
+  beyond it changes fold into cluster nodes ("+N") — by day and source,
+  else by day, ISO week, month: the finest level that fits, the biggest
+  groups first and only as many as the cap needs. Areas, cases, decisions
+  and crises never fold. A cluster carries its members' links; its card
+  lists up to 12 of its changes, newest first. **More fixed nodes than
+  the cap** (areas, cases, decisions and crises together over 400):
+  `build.still` — a still picture in node order (the start layout: a
+  node beside a placed neighbour, else on the spiral), no force step and
+  no tick ever (ADR-0034 §5's static escalation), the caption says "A
+  still picture: N areas, cases, decisions and crises are more than the
+  400 nodes the layout moves"; hover, drag (the node moves at once),
+  pan, zoom and the replay's cut still work.
+- **Layout.** `Model.graphState(build, prev)` (plain arrays: QV4 reads
+  them faster than typed ones; positions kept by id across index
+  updates; a new node starts beside a placed neighbour, else on a
+  sunflower spiral; deterministic) and `Model.graphStep(state,
+  budgetMs)`: one force iteration — repulsion (each pair exactly up to
+  160 visible nodes, a Barnes–Hut quadtree with θ 0.9 above), a pull to
+  the centre, springs along the edges, all scaled by alpha, which decays
+  from 1 to 0.001 over 200 ticks; then the layout sleeps (the state
+  counts which repulsion ran, `exactSteps` and `treeSteps`: the tests
+  hold 400 nodes to the tree). `graphWarm`
+  runs the functions on a six-node graph once, so the first real tick
+  is not interpreted. The service keeps the layout (`graphLayout`): a
+  reopened desk shows it settled, without a tick.
+- **The shell thread** (ADR-0034 §5's budget). A Timer of 34 ms (≤ 30
+  Hz) steps the layout only while section 8 is shown in the open desk
+  and the layout is awake. A tick is one `graphStep` plus the drawing
+  calls of its paint: `tickMs` = `stepMs` + `drawMs`, at most 8 ms;
+  every tick is timed (`tickMsMax`, `ticksOver`, the first five slow ones
+  in `slowTicks`). The Canvas rasterises on its own thread
+  (`Canvas.Threaded`; `paintMs` until the picture is there), one path per
+  node (one path with 400 antialiased discs took 20 ms to fill, 400
+  paths 2 ms), and a paint allocates nothing on the JS heap but the
+  focus's neighbour set. Dragging a node and the replay wake the layout
+  (alpha at least 0.3, the tick count from zero). ADR-0034 §5's "drag,
+  pan, zoom, hover and replay wake it" is read as: pan, zoom and hover
+  repaint (the layout stays asleep) — they move no node, so a tick would
+  change nothing. TESTING.md has the measurements.
+- **Screen.** Row 1: "Graph", the caption, *Play growth* (*Pause* while
+  playing), the date slider (the cut-off day: nodes of later days are
+  hidden and take no part in the layout) and "YYYY-MM-DD · N nodes [of
+  M]". Row 2: the legend — Case (accent disc; closed cases at 50 %), Area
+  (a foreground ring), Decision (a square, foreground at 72 %), Change (a
+  dot, foreground at 42 %, larger with more links), Crisis (the urgent
+  spindle), Folded (a ringed dot, only when something folded) — and the
+  keys while there is room. Then the canvas, and the footer: "Newest N
+  events · M completed cases in the index", with " · older ones are only
+  in the logbook" once the index is at its limits (500 events, 50
+  completed cases), and " · K changes folded into G". Until the view is
+  panned or zoomed (or a node dragged) it fits the visible nodes; `0` or
+  a fit returns to that. A node keeps a few pixels on screen however far
+  out the zoom is. Labels: areas and crises always; cases, decisions and
+  folded groups from zoom 0.5 once the layout rests; at most 40, by that
+  priority; a change only with the focus. A label that would leave the
+  canvas at the right goes to the left of its node; labels stay inside
+  it vertically.
+- **Pointer and card.** Hover lights a node and its links (the rest at
+  25 %) and shows its card at the top right: the title, "Kind · since
+  YYYY-MM-DD · day N · M links", status · risk · area (a case) or source
+  · kind (a change), a folded group's changes, and *Open case* for a case
+  or a change linked to one (Work with the case selected). The card stays
+  on the last hovered node while the pointer travels to it; a click on
+  the background or Esc lets it go; a click on a node keeps it, as
+  `select <id>` does. Dragging a node holds it at the pointer and the
+  rest follows; dragging the background pans; the wheel zooms at the
+  pointer (0.15–4).
+- **Replay.** *Play growth*, Space, Enter or `p` play from the first day
+  (or on from the cut when it is before the last day) in about 50 steps
+  120 ms apart; a node that appears starts beside a visible neighbour;
+  again pauses. `←`/`→` move the cut one day, the slider sets it. The
+  slider's knob does not animate while playing (a running QML animation
+  throttles the shell thread to the display's frames). `-` and `=` zoom
+  out and in. Esc: pause, then let a kept card go, then the desk's order.
+- Without an index: "No index to show"; with nothing to draw: "Nothing to
+  draw yet: no areas, cases, decisions or changes in the index". The
+  plugin reads only the index (§3, AGENTS.md §3); a `seldon graph --json`
+  export over the whole logbook is deferred (ADR-0034 §5), so the footer
+  says what the index holds.
 
 ### 5.5 Settings
 
@@ -881,7 +987,11 @@ All charts are drawn with `Canvas` or `Shape` from arrays prepared by
 ## 7. Theming
 
 Every colour from `Style` / the bar's palette; charts use `accent`,
-`foreground` at opacities, `Color.urgent` for crises and R3. Font from the bar. Test with
+`foreground` at opacities, `Color.urgent` for crises and R3. The graph
+(§5.4) has no token for the prototype's area and decision colours: an
+area is a foreground ring, a decision a foreground square, a change a
+foreground dot (shape and opacity tell them apart, as the Timeline's A12
+markers do); a case is accent, a crisis urgent. Font from the bar. Test with
 at least three Omarchy themes incl. a light one.
 
 ## 8. Keybinding and IPC
@@ -921,7 +1031,18 @@ loaded. Routes the plugin honours:
   7 shown, `view`'s `sectionView` holds period, window, caption, grid mode
   and area, `scrolls`, the aggregation passes (`service`, `section`) and
   the six slots (counts, window geometry, chart summary, numbers, empty,
-  hover, paints, paintMs, plot size). WP-125 adds the graph's read-outs.
+  hover, paints, paintMs, plot size). Once section 8 has been visited,
+`view`'s `graph` holds the graph's read-out — also while another
+section is shown, so a check can see that nothing ticks there (null
+before): nodes, edges, folded, clusters, numbers, visible, cut, span,
+date, ticks (all), run (since the last wake), alpha, sleeping, timer,
+stepMs, drawMs, paintMs, tickMs, tickMsMax, tickSamples, slowTicks,
+ticksOver, flipped (labels the last paint drew left of their node), over
+(steps over the budget), stepMsMax, paints, wakes,
+playing, replay (the visible count after each step of the last replay),
+hovered, pinned, cardNode, card, view `{ x, y, k, fit }`. `select <id>`
+with section 8 shown keeps that node's card ("not found" for an unknown
+id).
 - The shim: `IpcHandler` target **`jax.seldon.panel`**, owned by the bar
   widget, kept for one minor release (removed in 0.3.0, announced in the
   CHANGELOG; ADR-0034 §7). It forwards through the plugin's facade:
