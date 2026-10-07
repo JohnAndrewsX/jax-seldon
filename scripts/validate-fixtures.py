@@ -159,6 +159,10 @@ EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 ALWAYS_RED_PATHS = ["~/.config/systemd/user/**", "~/.config/omarchy/hooks/**", "~/.config/autostart/**",
                     "~/.config/environment.d/**", "~/.config/uwsm/**", "~/.profile", "~/.bash_profile",
                     "~/.ssh/authorized_keys", "~/.ssh/authorized_keys2"]
+# WP-141: a file pacman left beside one of these is a crisis (engine: class.rs PACNEW_RED)
+PACNEW_RED = ["/etc/mkinitcpio.conf", "/etc/mkinitcpio.conf.d", "/etc/mkinitcpio.d", "/etc/default/limine",
+              "/etc/limine*", "/boot/limine*", "/etc/systemd", "/etc/pam.d", "/etc/security"]
+PACNEW_SUFFIXES = (".pacnew", ".pacsave", ".pacorig")
 CLASS_ORDER = {"routine": 0, "attention": 1, "crisis": 2}
 THEME_CODE = {"alacritty.toml", "foot.ini", "ghostty.conf", "kitty.conf", "vscode.json"}
 OMARCHY_LOOKBACK = dt.timedelta(days=31)
@@ -285,6 +289,7 @@ class Classifier:
     def __init__(self, events):
         self.routine_paths = path_globs(ROUTINE_PATHS)
         self.red_paths = path_globs(ALWAYS_RED_PATHS)
+        self.pacnew_red = path_globs(PACNEW_RED)
         self.events = events
         self.explicit = {}
         self.omarchy = []
@@ -302,6 +307,10 @@ class Classifier:
         """(class, rule), or None for a dependency of a named transaction (it follows)."""
         src, kind, subject = e["source"], e["kind"], e["subject"]
         meta = e.get("meta", {})
+        if src == "pacman" and kind == "note":
+            # a file pacman left (WP-141): its own item, never routine
+            file = next((subject[:-len(x)] for x in PACNEW_SUFFIXES if subject.endswith(x)), subject)
+            return ("crisis", "pacnew-red") if path_match(self.pacnew_red, file) else ("attention", "pacnew")
         if src == "pacman":
             red = always_red(subject)
             if plain_full_upgrade(cmd):
@@ -1697,9 +1706,9 @@ VARIANTS = {
     # explained lines carry none; this folds C-2026-002 onto btop (index only, the logbook is not
     # touched), so the row reads "explained · C-2026-002: …".
     "drift-explained-case": [
-        {"op": "test", "path": "/events/70/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
-        {"op": "test", "path": "/events/70/resolution", "value": "explained"},
-        {"op": "add", "path": "/events/70/case", "value": "C-2026-002"},
+        {"op": "test", "path": "/events/71/id", "value": "01M1MB2M1GWZYF485HTGVZ1KS3"},
+        {"op": "test", "path": "/events/71/resolution", "value": "explained"},
+        {"op": "add", "path": "/events/71/case", "value": "C-2026-002"},
     ],
     # ADR-0020: the index lists at most 200 open drift items, the summary counts all of them. The
     # list stays the sample's six, so the plugin shows "+244 more open drift items not listed here".
@@ -1727,9 +1736,9 @@ VARIANTS = {
     # the mesa downgrade group keeps `members: 3`, so the drift sheet lists two and asks `seldon drift show`.
     "drift-members-capped": [
         {"op": "test", "path": "/drift/5/members", "value": 3},
-        {"op": "test", "path": "/events/48/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
-        {"op": "test", "path": "/events/48/subject", "value": "lib32-mesa"},
-        {"op": "remove", "path": "/events/48"},
+        {"op": "test", "path": "/events/49/id", "value": "01M3H6M8184NVTFDTEGPD71P5H"},
+        {"op": "test", "path": "/events/49/subject", "value": "lib32-mesa"},
+        {"op": "remove", "path": "/events/49"},
     ],
 }
 

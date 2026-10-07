@@ -7,7 +7,7 @@ Stand: 2026-10-01 · letztes Ereignis 17:00 · Omarchy 4.0.7-1 · Theme tokyo-ni
 ## Overview
 - Aktive Cases: 2 · in Prüfung: 1 · geplant: 3
 - Offene Drift: 6, davon Krise: 2
-- Ereignisse heute: 32 · letzte 7 Tage: 53
+- Ereignisse heute: 33 · letzte 7 Tage: 54
 
 ## Active cases
 - [[C-2026-003]] Omarchy auf 4.0.7 aktualisieren — red/R3 — 4/5 Schritte — agent:claude-code
