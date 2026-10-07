@@ -567,7 +567,7 @@ done
 expect today 2 "[$tv.selected, $tv.shown, $tv.detail.cls] | join(\",\")" "$UNIT,event,crisis"
 expect today 2 "$tv.detail.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 shows today 2 "Why loud?"
-shows today 2 "The path runs code at login, at boot or from a hook, and no open case planned the change."
+shows today 2 "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
 shows today 2 "~/.config/systemd/user/ollama.service"
 expect today 3 "$tv.selected" "$HOOK_EVENT"
 expect today 4 "[$tv.cursor, $tv.selected, $tv.shown] | map(tostring) | join(\",\")" "6,toggle,overview"
@@ -587,7 +587,7 @@ run today-resolve "" 1920x1080 "summon;key:Down;key:Return;type:hook test;key:Re
 expect today-resolve 3 "[$tv.detail.form.shown, $tv.detail.form.action, .view.keys] | map(tostring) | join(\",\")" "true,explain,false"
 expect today-resolve 8 "[$tv.selected, $tv.shown, ($tv.needs | join(\"+\")), $tv.headline] | join(\",\")" "$UNIT,event,$HOOK_EVENT,Seldon is recording. 1 change needs you."
 expect today-resolve 8 "[$tv.detail.form.result, ($tv.detail.actions | join(\"+\")), .view.keys] | map(tostring) | join(\",\")" "Explained 1 event · created C-2026-009,Open case,true"
-argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift explain $UNIT --json -- "hook test")")"
+argv_check today-resolve "$work/home-today-resolve" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift explain $UNIT --json -- "hook test")")"
 clean_log today-resolve
 
 # The sidebar search filters Today's crises and entries (yesterday's too).
@@ -602,7 +602,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$sample" >"$work/after.json"
 mkdir -p "$work/home-today-live"
 run today-live "" 1920x1080 \
-  "summon;text:n;type:--help 2;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;text:2;text:e;text:c;wait:sectionView.chips.5=all 74;settle" \
+  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;text:2;text:e;text:c;wait:sectionView.chips.5=all 74;settle" \
   HOME="$work/home-today-live" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/today-live.record"
 tj="$tv.journal"
@@ -610,7 +610,7 @@ expect today-live 1 "[$tj.enabled, $tj.cases, $tj.editing] | map(tostring) | joi
 shows today-live 1 "Note for today's journal, Enter saves"
 shows today-live 1 "No case"
 expect today-live 2 "[$tj.editing, .view.keys] | map(tostring) | join(\",\")" "true,false"
-expect today-live 3 "[$tj.text, .view.section] | join(\",\")" "--help 2,today"
+expect today-live 3 "[$tj.text, .view.section] | join(\",\")" "  --help 2 ,today"
 expect today-live 5 "$tj.result" "Saved to the journal · 01M3W1FAKE0000000000000NTE"
 expect today-live 5 "$tj.text" ""
 shows today-live 5 "Saved to the journal · 01M3W1FAKE0000000000000NTE"
@@ -624,11 +624,11 @@ expect today-live 18 "[$tj.editing, .view.keys, .view.opened] | map(tostring) | 
 expect today-live 20 .view.section changelog
 expect today-live 22 "$tv.capturing" true
 shows today-live 22 "Capturing"
-expect today-live 23 "$tv.chips | join(\",\")" "open 8,crisis 2,attention 6,routine 30,case 36,all 74"
+expect today-live 23 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 30,case 36,all 74"
 expect today-live 24 "$tv.captureResult" "1 new event"
 shows today-live 24 "Last capture: 1 new event"
 argv_check today-live "$work/home-today-live" "$(printf '%s\n' "$startup" \
-  "$(q log --json -- "--help 2")" "$(q log --case C-2026-004 --json -- "for the case")" \
+  "$(q log --json -- "  --help 2 ")" "$(q log --case C-2026-004 --json -- "for the case")" \
   "$(q open journal --editor --json)" "$(q open ledger --editor --json)" \
   "$(q capture --all --json --quiet)" "$(q status --json)")"
 check "today-live: editor paths" "$(cat "$work/today-live.record" 2>/dev/null | tr '\n' '|')" \
@@ -646,7 +646,7 @@ shows today-refuse 11 "unknown case C-2026-004"
 expect today-refuse 11 .view.lastError ""
 clean_log today-refuse
 
-intent='Install tool X. It needs --help $(id) and one package'
+intent='Install tool X. It needs --help $(id) and one package '
 mkdir -p "$work/home-today-new"
 run today-new "" 1920x1080 "summon;text:i;type:$intent;key:Return;settle;key:Escape" \
   HOME="$work/home-today-new" FAKE_SELDON_FIXTURE="$sample"
@@ -669,21 +669,26 @@ clean_log today-new
 run changelog "$sample" 1920x1080 \
   "summon:$cl;text:f;text:F;text:F;select:$MESA;key:Return;key:Escape;shim:filter:pacman;key:Escape;shim:resolve:$LIB32;key:Return;key:Escape;shim:resolve:crisis;select:$THEME;click:Hide;text:f;click:Show"
 expect changelog 1 "[.view.section, $tv.chip] | join(\",\")" "changelog,open"
-expect changelog 1 "$tv.chips | join(\",\")" "open 8,crisis 2,attention 6,routine 29,case 36,all 73"
-expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "8,0"
+expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 29,case 36,all 73"
+expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "6,0"
+# One count everywhere (B2): the open chip = the sidebar's Changelog count,
+# crisis = the header's crises, attention = the header's attention = the
+# quiet line; a group counts once.
+expect changelog 1 "[.view.counts.changelog.text, (.view.kpis | map(select(startswith(\"crises \") or startswith(\"attention \"))) | join(\"+\")), $tv.attention] | join(\",\")" \
+  "6,crises 2+attention 4,4 changes without a case"
 expect changelog 1 "$tv.selected" "$THEME"
 expect changelog 1 "$tv.stripes | join(\",\")" \
-  "tokyo-night attention,~/.config/systemd/user/ollama.service crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh crisis,~/.config/hypr/monitors.conf attention,vulkan-radeon attention,lib32-mesa attention,mesa attention"
+  "tokyo-night attention,~/.config/systemd/user/ollama.service crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh crisis,~/.config/hypr/monitors.conf attention,mesa attention"
 expect changelog 1 "$tv.badges | join(\",\")" "mesa +2"
 expect changelog 1 "[$tv.attention, $tv.attentionDim, $tv.triageSlot] | map(tostring) | join(\",\")" "4 changes without a case,true,false"
 expect changelog 1 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Hide"
 expect changelog 1 "[$td.heading, $td.cls, $td.whyLoud] | join(\",\")" "theme · theme-set,attention,"
 expect changelog 1 "$td.kv | join(\" | \")" \
-  "When: 2026-10-01 15:30 | Who: human | What: kanagawa → tokyo-night | Case: proposed: C-2026-005 | Rule: attention · open, no case; quiet until you say something | Source: Omarchy's current theme | Zone: yellow | Event: $THEME"
+  "When: 2026-10-01 15:30 | Who: human | What: kanagawa → tokyo-night | Case: proposed: C-2026-005 | Rule: attention · planned by C-2026-005, not linked; quiet until you say something | Source: Omarchy's current theme | Zone: yellow | Event: $THEME"
 expect changelog 1 "[$tf.shown, $tf.action, $tf.caseId, $tf.hint] | map(tostring) | join(\",\")" "false,link,C-2026-005,Dev mode is read-only"
 expect changelog 1 "$tf.cases | join(\",\")" "C-2026-005,C-2026-003,C-2026-004,C-2026-008,C-2026-006,C-2026-007"
-for text in "8 events · newest first" "4 changes without a case" "proposed for C-2026-005" "TODAY" "TUE 29 SEP" \
-  "tokyo-night" "mesa +2" "27 Sep 12:30" "open 8" "in case 36" "Ledger" "Capture now"; do
+for text in "6 changes · newest first" "4 changes without a case" "proposed for C-2026-005" "TODAY" "TUE 29 SEP" \
+  "tokyo-night" "mesa +2" "27 Sep 12:30" "open 6" "in case 36" "Ledger" "Capture now"; do
   shows changelog 1 "$text"
 done
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
@@ -707,10 +712,11 @@ expect changelog 14 "[.call, $tv.chip, $tv.selected] | join(\",\")" "ok,all,$THE
 expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,73"
 expect changelog 15 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Show"
 shows changelog 15 "attention · hidden this session"
-expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,7,$UNIT"
-expect changelog 16 "$tv.chips[0]" "open 7"
+expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,5,$UNIT"
+expect changelog 16 "$tv.chips[0]" "open 5"
 shows changelog 16 "1 change hidden this session"
-expect changelog 17 "[$tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "0,8"
+expect changelog 16 "[$tv.hidden, ($tv.chips[0:3] | join(\"+\")), .view.counts.changelog.text] | map(tostring) | join(\",\")" "1,open 5+crisis 2+attention 3,6"
+expect changelog 17 "[$tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "0,6"
 for i in 1 5 6 10 16; do expect changelog $i '.overflow | join(" | ")' ""; done
 clean_log changelog
 
@@ -742,9 +748,9 @@ expect quiet-crisis 1 "[$tv.state, $tv.headline, .pill.text] | join(\",\")" "cri
 expect quiet-crisis 1 "$tv.needs | join(\",\")" "$UNIT"
 expect quiet-crisis 2 "[$tv.attention, $tv.attentionDim] | map(tostring) | join(\",\")" "5 changes without a case,true"
 expect quiet-crisis 2 "$tv.stripes | join(\",\")" \
-  "tokyo-night attention,$HOOK crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh attention,~/.config/hypr/monitors.conf attention,vulkan-radeon attention,lib32-mesa attention,mesa attention"
+  "tokyo-night attention,$HOOK crisis,ollama attention,~/.config/omarchy/hooks/post-update.d/backup-dotfiles.sh attention,~/.config/hypr/monitors.conf attention,mesa attention"
 expect quiet-crisis 3 "[$td.cls, $tf.crisis, $tf.zone, $tf.explainZone] | map(tostring) | join(\",\")" "crisis,true,yellow,yellow"
-expect quiet-crisis 3 "$td.whyLoud" "The path runs code at login, at boot or from a hook, and no open case planned the change."
+expect quiet-crisis 3 "$td.whyLoud" "The engine classed this config change as a crisis; \`seldon drift show $UNIT\` names the rule. No open case plans it, and no case is linked."
 expect quiet-crisis 3 "$td.actions | join(\",\")" "Link to case…,Explain…,Dismiss…"
 expect quiet-crisis 4 "[$td.cls, $tf.crisis, $tf.zone, $td.whyLoud] | map(tostring) | join(\",\")" "attention,false,red,"
 expect quiet-crisis 4 '[.texts[] | select(. == "Why loud?")] | length' 0
@@ -767,7 +773,7 @@ clean_log quiet-active
 
 mkdir -p "$work/home-drift"
 run drift-live "" 1920x1080 \
-  "summon:$cl;key:Return;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle;click:Open case;text:2;key:Down;click:Explain…;type:--help;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle;select:$MESA;click:Dismiss…;type:routine update;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle;text:3" \
+  "summon:$cl;key:Return;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle;click:Open case;text:2;key:Down;click:Explain…;type: --help ;key:Return;key:Tab;key:Tab;key:Right;key:Return;key:Tab;type:dev-env;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle;select:$MESA;click:Dismiss…;type:routine update  ;key:Return;key:Return;wait:sectionView.detail.form.isOpen=false;settle;text:3" \
   HOME="$work/home-drift" FAKE_SELDON_FIXTURE="$sample"
 expect drift-live 1 "$tv.selected" "$THEME"
 expect drift-live 2 "[$tf.shown, $tf.editing, $tf.action, $tf.caseId] | map(tostring) | join(\",\")" "true,true,link,C-2026-005"
@@ -775,7 +781,7 @@ shows drift-live 2 "LINK TO A CASE"
 expect drift-live 3 "[$tf.armed, $tf.hint] | map(tostring) | join(\",\")" "true,Press Enter again: Link tokyo-night to C-2026-005"
 shows drift-live 3 "Press Enter again: Link tokyo-night to C-2026-005"
 expect drift-live 6 "[$tf.isOpen, $tf.result, $tf.resolution] | map(tostring) | join(\",\")" "false,Linked 1 event to C-2026-005,linked to C-2026-005"
-expect drift-live 6 "[$tv.selected, $tv.cursor, $tv.rows, $tf.shown, .view.keys] | map(tostring) | join(\",\")" "$THEME,-1,7,false,true"
+expect drift-live 6 "[$tv.selected, $tv.cursor, $tv.rows, $tf.shown, .view.keys] | map(tostring) | join(\",\")" "$THEME,-1,5,false,true"
 expect drift-live 6 "$td.actions | join(\",\")" "Open case"
 expect drift-live 6 .pill.text "2 · 2"
 shows drift-live 6 "Resolved: linked to C-2026-005"
@@ -783,7 +789,7 @@ expect drift-live 7 "[.view.section, .view.selected] | join(\",\")" "work,C-2026
 expect drift-live 8 "[.view.section, $tv.selected] | join(\",\")" "changelog,$THEME"
 expect drift-live 9 "$tv.selected" "$UNIT"
 expect drift-live 10 "[$tf.shown, $tf.action, $tf.explainZone, .view.keys] | map(tostring) | join(\",\")" "true,explain,red,false"
-expect drift-live 11 "$tf.intent" "--help"
+expect drift-live 11 "$tf.intent" " --help "
 expect drift-live 11 .view.section changelog
 expect drift-live 12 "$tf.armed" true
 expect drift-live 14 "$tf.armed" true
@@ -794,7 +800,7 @@ expect drift-live 22 "[$tf.result, $tf.resolution] | join(\",\")" "Explained 1 e
 expect drift-live 22 "[.pill.text, ($td.actions | join(\"+\"))] | join(\",\")" "2 · 1,Open case"
 expect drift-live 23 "$tv.selected" "$MESA"
 expect drift-live 24 "[$tf.shown, $tf.action] | map(tostring) | join(\",\")" "true,dismiss"
-expect drift-live 25 "$tf.reason" "routine update"
+expect drift-live 25 "$tf.reason" "routine update  "
 expect drift-live 26 "$tf.hint" "Press Enter again: Dismiss mesa and 2 more"
 expect drift-live 29 "$tf.result" "Dismissed 3 events"
 expect drift-live 29 "$tv.stripes | join(\",\")" \
@@ -803,8 +809,9 @@ expect drift-live 29 "[($tv.badges | length), ($td.actions | length), .pill.text
 expect drift-live 30 "$tv.groups | join(\",\")" "active 2,verification 1,queued 3,completed 3"
 expect drift-live 30 "$tv.ids | index(\"C-2026-009\") >= 6" true
 argv_check drift-live "$work/home-drift" "$(printf '%s\n' "$startup" \
-  "$(q drift link $THEME C-2026-005 --json)" "$(q drift explain $UNIT --risk R2 --area dev-env --json -- --help)" \
-  "$(q drift dismiss $MESA --json -- "routine update")")"
+  "$(q drift link $THEME C-2026-005 --json)" "$(q drift show $UNIT --json)" \
+  "$(q drift explain $UNIT --risk R2 --area dev-env --json -- " --help ")" \
+  "$(q drift dismiss $MESA --json -- "routine update  ")")"
 clean_log drift-live
 
 mkdir -p "$work/home-drift-only"
@@ -915,22 +922,22 @@ clean_log work-reopened
 mkdir -p "$work/home-work"
 echo "C-2026-008 active" >"$work/home-work/cases"
 run work-live "" 1920x1080 \
-  "summon:$wk;text:+;type:--help;key:Tab;key:Right;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Left;key:Return;key:Tab;type:Dev;key:Return;key:Backspace*3;type:dev-env;key:Return;settle;wait:sectionView.selected=C-2026-009;select:C-2026-005;key:Return;key:Return;settle;wait:sectionView.case.status=active;click:To verification;click:Confirm to verification;settle;wait:sectionView.case.status=verification;key:Return;key:Return;settle;wait:sectionView.case.status=completed;text:e;settle;select:C-2026-008;key:Return;key:Left;key:Return;key:Return;settle;select:C-2026-004;text:x;text:x;settle;wait:sectionView.case.status=dropped;text:e;settle" \
+  "summon:$wk;text:+;type: --help;key:Tab;key:Right;key:Return;key:Tab;key:Right;key:Return;key:Tab;key:Left;key:Return;key:Tab;type:Dev;key:Return;key:Backspace*3;type:dev-env;key:Return;settle;wait:sectionView.selected=C-2026-009;select:C-2026-005;key:Return;key:Return;settle;wait:sectionView.case.status=active;key:Return;key:Return;settle;wait:sectionView.case.status=verification;key:Return;key:Return;settle;wait:sectionView.case.status=completed;text:e;settle;select:C-2026-008;key:Return;key:Left;key:Return;key:Return;settle;select:C-2026-004;text:x;text:x;settle;wait:sectionView.case.status=dropped;text:e;settle" \
   HOME="$work/home-work" FAKE_SELDON_FIXTURE="$sample" HARNESS_RECORD="$work/work-live.record"
 expect work-live 1 "$tc.hint" ""
 expect work-live 2 "[$ts.open, $ts.editing, $ts.zone, $ts.risk, $ts.priority, .view.keys] | map(tostring) | join(\",\")" "true,true,yellow,R1,normal,false"
 shows work-live 2 "Title, Enter creates the case"
 shows work-live 2 "NEW CASE"
-expect work-live 3 "[$ts.title, .view.section] | join(\",\")" "--help,work"
+expect work-live 3 "[$ts.title, .view.section] | join(\",\")" " --help,work"
 expect work-live 6 "$ts.zone" red
 expect work-live 9 "$ts.risk" R2
 expect work-live 12 "$ts.priority" high
 expect work-live 14 "$ts.area" Dev
 shows work-live 14 "Area: lowercase letters, digits and -, starting with a letter or digit"
-expect work-live 15 "[$ts.result, $ts.open, $ts.title] | map(tostring) | join(\",\")" "Area must be a lowercase slug: letters, digits and -,true,--help"
+expect work-live 15 "[$ts.result, $ts.open, $ts.title] | map(tostring) | join(\",\")" "Area must be a lowercase slug: letters, digits and -,true, --help"
 expect work-live 17 "$ts.area" dev-env
 expect work-live 20 "[$ts.open, $ts.editing, $ts.title, $ts.zone, .view.keys] | map(tostring) | join(\",\")" "false,false,,yellow,true"
-expect work-live 20 "[$tv.result, ($tv.groups | join(\"+\")), $tc.id] | join(\",\")" "Created C-2026-009 · --help · new area dev-env,active 2+verification 1+queued 4+completed 2,C-2026-009"
+expect work-live 20 "[$tv.result, ($tv.groups | join(\"+\")), $tc.id] | join(\",\")" "Created C-2026-009 ·  --help · new area dev-env,active 2+verification 1+queued 4+completed 2,C-2026-009"
 expect work-live 20 "[$tc.kv[] | select(startswith(\"Zone\") or startswith(\"Risk\") or startswith(\"Area\") or startswith(\"Priority\"))] | join(\",\")" "Risk: R2,Zone: red,Area: dev-env,Priority: high"
 expect work-live 22 "[$tc.armed, $tc.hint] | join(\",\")" "start,Start C-2026-005? Press Enter again or click Confirm."
 shows work-live 22 "Confirm start"
@@ -952,7 +959,7 @@ shows work-live 43 "Confirm drop"
 expect work-live 46 "[$tv.result, $tv.wip, ($tc.actions | join(\"+\"))] | join(\",\")" "C-2026-004: active → dropped,1 / 3 active,Open in editor"
 expect work-live 46 "$tv.groups | join(\",\")" "active 1,verification 1,queued 3,completed 4"
 argv_check work-live "$work/home-work" "$(printf '%s\n' "$startup" \
-  "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- --help)" \
+  "$(q plan new --zone red --risk R2 --area dev-env --priority high --json -- " --help")" \
   "$(q plan start C-2026-005 --json)" "$(q plan verify C-2026-005 --json)" "$(q plan done C-2026-005 --json)" \
   "$(q open C-2026-005 --editor --json)" "$(q plan done C-2026-008 --json)" "$(q plan drop C-2026-004 --json)" \
   "$(q open C-2026-004 --editor --json)")"
@@ -964,17 +971,19 @@ clean_log work-live
 mkdir -p "$work/home-agent"
 echo "C-2026-004 queued" >"$work/home-agent/cases"
 run work-agent "" 1920x1080 \
-  "summon:$wk;select:C-2026-005;text:a;select:C-2026-003;text:a;key:Down;key:Up;text:a;text:a;settle;select:C-2026-004;click:Hand to agent;click:Confirm hand to agent;settle" \
+  "summon:$wk;select:C-2026-005;text:a;select:C-2026-003;text:a;key:Return;key:Down;key:Up;text:a;text:a;settle;select:C-2026-004;click:Hand to agent;click:Confirm hand to agent;settle" \
   HOME="$work/home-agent" FAKE_SELDON_FIXTURE="$sample"
 expect work-agent 3 "$tc.armed" ""
-expect work-agent 5 "[$tc.armed, $tc.hint] | join(\",\")" "agent,Hand to agent C-2026-003? Press a or Enter again or click Confirm."
+expect work-agent 5 "[$tc.armed, $tc.hint] | join(\",\")" "agent,Hand to agent C-2026-003? Press a again or click Confirm."
 shows work-agent 5 "Confirm hand to agent"
-expect work-agent 6 "[$tv.selected, $tc.armed] | join(\",\")" "C-2026-004,"
-expect work-agent 10 "[$tv.result, $tv.resultOk, $tc.armed] | map(tostring) | join(\",\")" "Agent started on C-2026-003 · launcher default (omarchy),true,"
-shows work-agent 10 "Agent started on C-2026-003 · launcher default (omarchy)"
-expect work-agent 12 "$tc.armed" agent
+# Enter never launches: after `a` it arms To verification instead (0.1's habit)
+expect work-agent 6 "[$tc.armed, $tc.hint] | join(\",\")" "verify,To verification C-2026-003? Press Enter again or click Confirm."
+expect work-agent 7 "[$tv.selected, $tc.armed] | join(\",\")" "C-2026-004,"
+expect work-agent 11 "[$tv.result, $tv.resultOk, $tc.armed] | map(tostring) | join(\",\")" "Agent started on C-2026-003 · launcher default (omarchy),true,"
+shows work-agent 11 "Agent started on C-2026-003 · launcher default (omarchy)"
+expect work-agent 13 "$tc.armed" agent
 refusal='C-2026-004 is queued; start it first: `seldon plan start C-2026-004`'
-expect work-agent 14 "[$tv.result, $tv.resultOk, .view.lastError] | map(tostring) | join(\",\")" "$refusal,false,"
+expect work-agent 15 "[$tv.result, $tv.resultOk, .view.lastError] | map(tostring) | join(\",\")" "$refusal,false,"
 argv_check work-agent "$work/home-agent" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" "$(q agent start C-2026-004 --json)")"
 clean_log work-agent
 
@@ -989,14 +998,14 @@ expect work-locked 7 "$tv.groups | join(\",\")" "active 2,verification 1,queued 
 expect work-locked 8 "[$ts.open, $ts.title] | map(tostring) | join(\",\")" "true,keep me"
 clean_log work-locked
 
-intent='Install tool X. It needs --help $(id) and one package'
+intent=' Install tool X. It needs --help $(id) and one package'
 mkdir -p "$work/home-run"
 run work-run "" 1920x1080 "summon:$wk;text:i;type:$intent;key:Return;settle;wait:sectionView.selected=C-2026-009;key:Escape;view" \
   HOME="$work/home-run" FAKE_SELDON_FIXTURE="$sample"
 expect work-run 2 "[$tv.intentEditing, .view.keys] | map(tostring) | join(\",\")" "true,false"
 expect work-run 3 "$tv.intent" "$intent"
 expect work-run 7 "[$tv.result, $tv.resultOk, $tv.intent, $tc.status] | map(tostring) | join(\",\")" \
-  "Created C-2026-009 · Install tool X · agent started · launcher default (omarchy),true,,active"
+  "Created C-2026-009 ·  Install tool X · agent started · launcher default (omarchy),true,,active"
 expect work-run 7 "$tv.groups | join(\",\")" "active 3,verification 1,queued 3,completed 2"
 expect work-run 8 "[.view.keys, .view.opened] | map(tostring) | join(\",\")" "true,true"
 check "work-run: agent start --new, the sentence one argument after --" "$(grep '^agent' "$work/home-run/argv.log" 2>/dev/null)" \
@@ -1034,7 +1043,7 @@ run tab-focus "" 1920x1080 \
 expect tab-focus 2 "[$tv.journal.editing, .view.keys] | map(tostring) | join(\",\")" "true,false"
 expect tab-focus 4 "[.view.section, .view.keys, .view.editing] | map(tostring) | join(\",\")" "work,true,false"
 expect tab-focus 5 "$tv.selected" C-2026-004
-expect tab-focus 6 "$tv.case.armed" agent
+expect tab-focus 6 "$tv.case.armed" verify
 expect tab-focus 8 "[.view.section, $tv.journal.text, $tv.journal.result] | join(\",\")" "today,abc,"
 expect tab-focus 9 "[$tv.journal.editing, $tv.journal.text] | map(tostring) | join(\",\")" "true,abc"
 expect tab-focus 11 "[.view.section, $tv.sheet.editing] | map(tostring) | join(\",\")" "work,true"
@@ -1044,7 +1053,7 @@ expect tab-focus 14 "$tv.cursor" 1
 expect tab-focus 16 "[.view.section, $tv.sheet.open, $tv.sheet.title, $tv.result] | map(tostring) | join(\",\")" "work,true,xyz,"
 expect tab-focus 18 "$tv.journal.editing" true
 expect tab-focus 21 "[.view.section, .view.keys, .view.editing] | map(tostring) | join(\",\")" "work,true,false"
-argv_check tab-focus "$work/home-tab-focus" "$startup"
+argv_check tab-focus "$work/home-tab-focus" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)")"
 clean_log tab-focus
 
 jq '.events = [
@@ -1125,6 +1134,80 @@ expect sections-uninit 4 "$tv.sheet.open" false
 expect sections-uninit 5 "[.view.opened, .view.keys] | map(tostring) | join(\",\")" "true,true"
 for i in 1 2 3; do expect sections-uninit $i '.overflow | join(" | ")' ""; done
 clean_log sections-uninit
+
+# 8f. Review round 2 (WP-122): the "why loud" callout from the engine's
+#     rule (`seldon drift show`, live) — a path, a planned crisis whose
+#     callout agrees with the Case and Rule rows, `attention = "all"`, a
+#     pacman group from a member; Open case for a case the index no longer
+#     lists; key/values wrap at word boundaries at 50 %.
+expected_warnings="$expected_warnings|jax\\.seldon: seldon open exit 1: unknown case C-2026-001\$"
+
+# B1: the callout from the engine's rule (`drift show`), live.
+mkdir -p "$work/home-why"
+run why-loud "" 1920x1080 \
+  "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths;select:$HOOK_EVENT;wait:sectionView.detail.rule=known always-red-paths;text:1;key:Down" \
+  HOME="$work/home-why" FAKE_SELDON_FIXTURE="$sample"
+expect why-loud 2 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked."
+expect why-loud 2 "[$td.kv[] | select(startswith(\"Case\") or startswith(\"Rule\"))] | join(\" | \")" "Case: — | Rule: crisis · rule always-red-paths · no case"
+shows why-loud 2 "Why loud?"
+expect why-loud 4 "[$td.id, $td.rule] | join(\",\")" "$HOOK_EVENT,known always-red-paths"
+expect why-loud 6 "[$tv.shown, $tv.detail.rule] | join(\",\")" "event,known always-red-paths"
+argv_check why-loud "$work/home-why" "$(printf '%s\n' "$startup" "$(q drift show $UNIT --json)" "$(q drift show $HOOK_EVENT --json)")"
+clean_log why-loud
+
+# … when an open case's plan names the crisis: the callout, the Case and
+# the Rule rows say the same.
+jq --arg u "$UNIT" '.drift |= map(if .eventId == $u then .proposedCase = "C-2026-003" else . end)' "$sample" >"$work/planned-crisis.json"
+mkdir -p "$work/home-why-planned"
+run why-loud-planned "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths" \
+  HOME="$work/home-why-planned" FAKE_SELDON_FIXTURE="$work/planned-crisis.json"
+expect why-loud-planned 2 "$td.whyLoud" "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). C-2026-003 plans it (its plan names this change); nothing has linked it yet."
+expect why-loud-planned 2 "[$td.kv[] | select(startswith(\"Case\") or startswith(\"Rule\"))] | join(\" | \")" "Case: proposed: C-2026-003 | Rule: crisis · rule always-red-paths · planned by C-2026-003, not linked"
+expect why-loud-planned 2 "$td.actions[0]" "Link to C-2026-003…"
+clean_log why-loud-planned
+
+# … under `[drift] attention = "all"`: a crisis is a red-zone change.
+mkdir -p "$work/home-why-all"
+run why-loud-all "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.rule=known attention-all" \
+  HOME="$work/home-why-all" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_ATTENTION_ALL=1
+expect why-loud-all 2 "$td.whyLoud" "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone. No open case plans it, and no case is linked."
+clean_log why-loud-all
+
+# … a pacman group in crisis, from a member: the leader's rule.
+jq --arg m "$MESA" '.summary.crisis = 3 | .drift |= map(if .eventId == $m then .crisis = true else . end)' "$sample" >"$work/group-crisis.json"
+mkdir -p "$work/home-why-group"
+run why-loud-group "" 1920x1080 "summon:$(sel $LIB32);wait:sectionView.detail.rule=known always-red" \
+  HOME="$work/home-why-group" FAKE_SELDON_FIXTURE="$work/group-crisis.json"
+expect why-loud-group 2 "[$td.cls, ($td.whyLoud | startswith(\"A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml)\"))] | map(tostring) | join(\",\")" "crisis,true"
+argv_check why-loud-group "$work/home-why-group" "$(printf '%s\n' "$startup" "$(q drift show $MESA --json)")"
+clean_log why-loud-group
+
+# B2 after a Hide: the mesa group (three events) is one change hidden.
+run hide-group "$sample" 1920x1080 "summon:$(sel $MESA);click:Hide"
+expect hide-group 2 "[$tv.hidden, $tv.rows, ($tv.chips[0:3] | join(\"+\")), .view.counts.changelog.text] | map(tostring) | join(\",\")" \
+  "1,5,open 5+crisis 2+attention 3,6"
+shows hide-group 2 "1 change hidden this session"
+clean_log hide-group
+
+# N5: Open case for a case the index no longer lists: the line, and Open
+# in editor asks the engine, whose answer replaces it.
+C1_NOTE=01M1F161B0EJ8KHDPZAK9M0GTD
+jq '.cases.completed |= map(select(.id != "C-2026-001"))' "$sample" >"$work/case-gone.json"
+mkdir -p "$work/home-case-gone"
+run case-gone "" 1920x1080 \
+  "summon:{\"section\":\"changelog\",\"filter\":\"case\",\"select\":\"$C1_NOTE\"};click:Open case;click:Open in editor;settle" \
+  HOME="$work/home-case-gone" FAKE_SELDON_FIXTURE="$work/case-gone.json" FAKE_SELDON_UNKNOWN_CASE=C-2026-001
+expect case-gone 2 "[.view.section, $td.caseMissing] | join(\",\")" "changelog,C-2026-001 is not in the index any more (it keeps the last 50 completed cases)."
+shows case-gone 2 "Open in editor"
+expect case-gone 4 "$td.caseMissing" "unknown case C-2026-001"
+argv_check case-gone "$work/home-case-gone" "$(printf '%s\n' "$startup" "$(q open C-2026-001 --editor --json)")"
+clean_log case-gone "jax\\.seldon: seldon open exit 1: "
+
+# N4: key/values wrap at word boundaries; at 50 % nothing leaves the desk.
+run kv-wrap "$sample" 1920x1080 "summon:$wk;width:50;shot:kv-wrap-50"
+expect kv-wrap 2 '.overflow | join(" | ")' ""
+expect kv-wrap 2 "[.texts[] | select(startswith(\"R3 · every step\"))] | length" 1
+clean_log kv-wrap
 
 # ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live

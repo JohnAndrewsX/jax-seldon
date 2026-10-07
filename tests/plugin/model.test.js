@@ -1943,13 +1943,16 @@ test("rowAge: the time today, else day and month (the year when it differs)", ()
   assert.strictEqual(M.rowAge("", "", "2026-10-01"), "")
 })
 
-test("changelogView and changelogChips: chips, search, Hide (attention only)", () => {
+test("changelogView and changelogChips: chips, search, Hide (attention only), a group once", () => {
   const p = M.deskChangelog(M.parseIndex(sample).index)
   same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
-    ["open 8", "crisis 2", "attention 6", "routine 29", "case 36", "all 73"])
-  assert.strictEqual(M.changelogView(p, "open", {}, "").length, 8)
-  assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 8)
+    ["open 6", "crisis 2", "attention 4", "routine 29", "case 36", "all 73"])
+  // the drift chips list a group as its leader; "all" lists every event
+  same(M.changelogView(p, "open", {}, "").map(r => r.title).slice(-1), ["mesa +2"])
+  assert.strictEqual(M.changelogView(p, "open", {}, "").length, 6)
+  assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 6)
   assert.strictEqual(M.changelogView(p, "all", {}, "").length, 73)
+  assert.ok(M.changelogView(p, "all", {}, "").some(r => r.id === LIB32))
   // the search matches subject, meta, detail and actor, case-insensitive
   same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
   same(M.changelogView(p, "crisis", {}, "codex").map(r => r.id), [UNIT])
@@ -1958,8 +1961,29 @@ test("changelogView and changelogChips: chips, search, Hide (attention only)", (
   assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
   assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
   assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 73)
-  assert.strictEqual(M.hiddenCount(p, hidden), 3)
+  assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
+})
+
+test("one count everywhere: chips, sidebar, header, the quiet line, hidden (B2)", () => {
+  const idx = M.parseIndex(sample).index
+  const p = M.deskChangelog(idx)
+  const chips = {}
+  for (const c of M.changelogChips(p, {})) chips[c.id] = c.count
+  const kpis = {}
+  for (const k of M.deskKpis(idx)) kpis[k.id] = k.value
+  assert.strictEqual(chips.open, Number(M.deskCounts(idx).changelog.text))
+  assert.strictEqual(chips.open, M.counts(idx).drift)
+  assert.strictEqual(chips.crisis, kpis.crises)
+  assert.strictEqual(chips.attention, kpis.attention)
+  assert.strictEqual(M.attentionText(idx), chips.attention + " changes without a case")
+  same([chips.open, chips.crisis, chips.attention], [6, 2, 4])
+  // Hide the mesa group (from a member): one change hidden, the chips one
+  // less; the sidebar and the header count the index, which Hide leaves
+  const hidden = { [M.changelogRow(p, LIB32).hideKey]: true }
+  assert.strictEqual(M.hiddenCount(p, hidden), 1)
+  same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
+  assert.strictEqual(M.deskCounts(idx).changelog.text, "6")
 })
 
 test("cycleChip wraps both ways", () => {
@@ -1969,7 +1993,7 @@ test("cycleChip wraps both ways", () => {
   assert.strictEqual(M.cycleChip("bogus", 1), "crisis")
 })
 
-test("eventDetail: heading, class, why loud and the key/values", () => {
+test("eventDetail: heading, class, the key/values; why loud from the engine's rule only (B1)", () => {
   const idx = M.parseIndex(sample).index
   const p = M.deskChangelog(idx)
   const theme = M.eventDetail(idx, p, THEME)
@@ -1977,19 +2001,57 @@ test("eventDetail: heading, class, why loud and the key/values", () => {
     ["theme · theme-set", "tokyo-night", "attention", true, "C-2026-005", ""])
   same(theme.kv.map(r => r[0]), ["When", "Who", "What", "Case", "Rule", "Source", "Zone", "Event"])
   same(theme.kv[3], ["Case", "proposed: C-2026-005"])
+  same(theme.kv[4], ["Rule", "attention · planned by C-2026-005, not linked; quiet until you say something"])
+  // no rule yet: the class and the source, never a cause
   const unit = M.eventDetail(idx, p, UNIT)
-  assert.strictEqual(unit.whyLoud, "The path runs code at login, at boot or from a hook, and no open case planned the change.")
+  assert.strictEqual(unit.whyLoud, "The engine classed this config change as a crisis; `seldon drift show " + UNIT
+    + "` names the rule. No open case plans it, and no case is linked.")
+  same(unit.kv[4], ["Rule", "crisis · no case"])
   same(unit.kv[0], ["When", "2026-10-01 14:03"])
+  const pending = M.eventDetail(idx, p, UNIT, { state: "pending" })
+  assert.ok(pending.whyLoud.startsWith("The engine classed this config change as a crisis; asking it for the rule."))
+  same(pending.kv[4], ["Rule", "crisis · rule: asking the engine · no case"])
+  // the engine's rule, per rule
+  const known = rule => M.eventDetail(idx, p, UNIT, { state: "known", rule: rule, cls: "crisis" })
+  assert.strictEqual(known("always-red-paths").whyLoud,
+    "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml). No open case plans it, and no case is linked.")
+  assert.ok(known("always-red").whyLoud.startsWith("A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml)"))
+  assert.ok(known("attention-all").whyLoud.startsWith("[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."))
+  assert.ok(known("future-rule").whyLoud.startsWith("The engine's rule: future-rule."))
+  same(known("always-red-paths").kv[4], ["Rule", "crisis · rule always-red-paths · no case"])
+  // a crisis an open case plans: the callout and the Case and Rule rows agree
+  const planned = JSON.parse(sample)
+  planned.drift.find(d => d.eventId === UNIT).proposedCase = "C-2026-003"
+  const pp = M.deskChangelog(planned)
+  const d = M.eventDetail(planned, pp, UNIT, { state: "known", rule: "always-red-paths", cls: "crisis" })
+  assert.ok(d.whyLoud.endsWith("C-2026-003 plans it (its plan names this change); nothing has linked it yet."))
+  assert.strictEqual(d.whyLoud.indexOf("No open case"), -1)
+  same([d.kv[3], d.kv[4]], [["Case", "proposed: C-2026-003"], ["Rule", "crisis · rule always-red-paths · planned by C-2026-003, not linked"]])
+  same(M.eventActions(d, {}).map(a => a.label)[0], "Link to C-2026-003…")
   // a member shows the group's proposal and rule
   assert.ok(M.eventDetail(idx, p, LIB32).kv[4][1].indexOf("one pacman transaction (ADR-0013)") !== -1)
   assert.strictEqual(M.eventDetail(idx, p, "nope"), null)
-  // a resolved event says how
   const folded = p.rows.find(r => r.resolution !== "")
   assert.ok(M.eventDetail(idx, p, folded.id).kv.some(r => r[0] === "Resolved"))
-  // why loud by source
-  same([M.whyLoud({ cls: "crisis", source: "pacman" }), M.whyLoud({ cls: "crisis", source: "plugins" }), M.whyLoud({ cls: "attention", source: "config" })],
-    ["A package that can stop boot or login changed by name, and no open case planned it.",
-     "It can affect boot, login or the shell, and no open case planned it.", ""])
+  assert.strictEqual(M.whyLoud({ cls: "attention", source: "config" }, "", { state: "known", rule: "always-red-paths" }), "")
+})
+
+test("driftRuleInfo and driftShowResult: the rule from `drift show`", () => {
+  same(M.driftRuleInfo({ [UNIT]: { rule: "always-red-paths", cls: "crisis" } }, null, UNIT),
+    { state: "known", rule: "always-red-paths", cls: "crisis" })
+  same(M.driftRuleInfo({}, { eventId: UNIT, pending: true }, UNIT).state, "pending")
+  same(M.driftRuleInfo({}, { eventId: MESA, pending: true }, UNIT).state, "unknown")
+  same(M.driftRuleInfo(null, null, UNIT).state, "unknown")
+  const r = M.driftShowResult(0, JSON.stringify({ open: true, class: "crisis", rule: "always-red", members: [] }), "")
+  same([r.ok, r.rule, r.cls], [true, "always-red", "crisis"])
+  same([M.driftShowResult(0, "{}", "").rule, M.driftShowResult(1, "", "boom").ok], ["", false])
+  // kept while the item is an open crisis
+  const idx = M.parseIndex(sample).index
+  const rules = { [UNIT]: { rule: "always-red-paths", cls: "crisis" }, [THEME]: { rule: "other", cls: "attention" } }
+  same(Object.keys(M.keptDriftRules(rules, idx)), [UNIT])
+  const kept = { [UNIT]: rules[UNIT] }
+  assert.strictEqual(M.keptDriftRules(kept, idx), kept)
+  same(M.keptDriftRules(kept, null), {})
 })
 
 test("eventActions: open drift, Hide only for attention, Open case, routine none; Ask agent first when there", () => {
@@ -2040,20 +2102,25 @@ test("deskWork and workView: groups in order, labels, the By agent filter, searc
   same(M.workView(M.deskWork(null), "", "").rows, [])
 })
 
-test("caseDeskActions by status; hints and verbs", () => {
-  const ids = st => M.caseDeskActions({ status: st, actionable: true }).map(a => a.id + (a.arm ? "!" : "") + (a.primary ? "*" : ""))
-  same(ids("queued"), ["start!*", "drop!", "open"])
-  same(ids("active"), ["agent!*", "verify!", "drop!", "open"])
-  same(ids("verification"), ["done!*", "drop!", "open"])
-  same(ids("completed"), ["reopen*", "open"])
-  same(ids("dropped"), ["open*"])
+test("caseDeskActions by status; Enter never launches; hints and verbs", () => {
+  const ids = st => M.caseDeskActions({ status: st, actionable: true }).map(a => a.id + (a.arm ? "!" : "") + (a.primary ? "*" : "") + (a.enter ? "^" : ""))
+  same(ids("queued"), ["start!*^", "drop!", "open"])
+  same(ids("active"), ["agent!*", "verify!^", "drop!", "open"])
+  same(ids("verification"), ["done!*^", "drop!", "open"])
+  same(ids("completed"), ["reopen*^", "open"])
+  same(ids("dropped"), ["open*^"])
   same(M.caseDeskActions({ status: "active", actionable: false }), [])
+  // Enter on any status never takes an action that launches something
+  for (const st of ["queued", "active", "verification", "completed", "dropped"]) {
+    const enter = M.caseEnterAction({ status: st, actionable: true })
+    assert.ok(enter && !enter.launches, st)
+  }
+  assert.strictEqual(M.caseEnterAction({ status: "active", actionable: true }).id, "verify")
   const active = { status: "active", actionable: true }
-  assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "agent"), "C-2026-003"), "Hand to agent C-2026-003? Press a or Enter again or click Confirm.")
+  assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "agent"), "C-2026-003"), "Hand to agent C-2026-003? Press a again or click Confirm.")
+  assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "verify"), "C-2026-003"), "To verification C-2026-003? Press Enter again or click Confirm.")
   assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "drop"), "C-2026-003"), "Drop C-2026-003? Press x again or click Confirm. This is final.")
-  assert.strictEqual(M.caseArmHint(M.caseDeskAction(active, "verify"), "C-2026-003"), "To verification C-2026-003? Click Confirm.")
   same(["start", "verify", "done", "drop", "reopen", "agent", "open"].map(M.caseActionVerb), ["start", "verify", "done", "drop", "reopen", "", ""])
-  // every verb still builds a CONTRACT.md argv
   for (const verb of ["start", "verify", "done", "drop", "reopen"])
     assert.strictEqual(M.validateArgs(M.planArgs(verb, "C-2026-003").args), "", verb)
 })
@@ -2074,6 +2141,23 @@ test("caseDetail: key/values, plan, log and linked changes from the index", () =
   const d2 = M.caseDetail(copy, M.deskWork(copy), "C-2026-004")
   assert.strictEqual(d2.linkedMore, "+1 older change the index no longer lists")
   assert.strictEqual(M.caseDetail(idx, p, "C-2026-999"), null)
+})
+
+test("free text goes exactly as typed, surrounding blanks included (N3)", () => {
+  const text = "  two  spaces around  "
+  same(M.logArgs(text, "").args.slice(-1), [text])
+  same(M.logArgs(text, "C-2026-004").args.slice(-1), [text])
+  same(M.agentNewArgs(text).args.slice(-1), [text])
+  same(M.planArgs("new", { title: text }).args.slice(-1), [text])
+  same(M.driftArgs("explain", { eventId: UNIT, text: text }).args.slice(-1), [text])
+  same(M.driftArgs("dismiss", { eventId: UNIT, text: text }).args.slice(-1), [text])
+  // blank alone is refused, never trimmed into something
+  for (const blank of ["", "   "]) {
+    assert.ok(M.logArgs(blank, "").error)
+    assert.ok(M.agentNewArgs(blank).error)
+    assert.ok(M.planArgs("new", { title: blank }).error)
+    assert.ok(M.driftArgs("dismiss", { eventId: UNIT, text: blank }).error)
+  }
 })
 
 console.log("model.test.js: " + passed + " passed" + (process.exitCode ? ", some FAILED" : ""))
