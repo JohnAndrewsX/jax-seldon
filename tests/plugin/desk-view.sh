@@ -2126,6 +2126,8 @@ expect triage 7 "$ttd.regular[0].evidence | join(\" | \")" \
   'Plan of C-2026-005: by human · - [ ] `omarchy theme set tokyo-night` | Journal 2026-10-01 17:00: by human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.'
 expect triage 7 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "false,false,false"
 shows triage 7 "$head"
+expect triage 7 "$ttd.hint" "$head"
+expect triage 7 '.overflow | join(" | ")' ""
 shows triage 7 'by human · - [ ] `omarchy theme set tokyo-night`'
 shows triage 7 "by system · config-change ~/.config/hypr/monitors.conf: sha256 40ab1178 → 6d81c412"
 shows triage 7 "Apply this crisis"
@@ -2163,13 +2165,17 @@ clean_log triage-refused "jax\\.seldon: seldon agent exit 1: no default agent"
 # detail go, the logbook is untouched (only the three calls).
 mkdir -p "$work/home-triage-ask"
 run triage-ask "" 1920x1080 \
-  "summon:$(sel $UNIT);click:Ask agent;settle;view;text:3;select:C-2026-004;click:Ask agent;settle;view;text:2;clickName:proposalRow;click:Discard;settle;wait:sectionView.triage.row=;view" \
+  "summon:$(sel $UNIT);click:Ask agent;settle;view;text:3;select:C-2026-004;click:Ask agent;settle;view;text:2;clickName:proposalRow;click:Discard;click:Confirm discard;settle;wait:sectionView.triage.row=;view" \
   HOME="$work/home-triage-ask" FAKE_SELDON_FIXTURE="$sample"
 expect triage-ask 4 "[$td.ask, ($td.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
   "Agent asked about $UNIT; it answers in its window · launcher default (omarchy),Ask agent+Link to case…+Explain…+Dismiss…"
 expect triage-ask 9 "[$tc.ask, ($tc.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
   "Agent asked about C-2026-004; it answers in its window · launcher default (omarchy),Hand to agent+To verification+Drop+Open in editor+Ask agent"
-expect triage-ask 15 "[$tt.row, $tt.shown, $tt.button] | map(tostring) | join(\",\")" ",false,Agent sorts 6 open changes"
+expect triage-ask 12 "[($ttd.actions | join(\"+\")), $ttd.hint] | join(\",\")" \
+  "Apply proposals (2)+Confirm discard,Discard proposal $PROPOSAL? Click Confirm discard. The logbook does not change."
+expect triage-ask 16 "[$tt.row, $tt.shown, $tt.button, $ttd.seen, $ttd.result] | map(tostring) | join(\",\")" \
+  ",true,Agent sorts 6 open changes,gone,Proposal discarded; nothing in the logbook changed"
+shows triage-ask 16 "Proposal $PROPOSAL is not there any more: applied and replaced, or discarded."
 argv_check triage-ask "$work/home-triage-ask" "$(printf '%s\n' "$startup" "$(q agent ask drift $UNIT --json)" \
   "$(q agent ask case C-2026-004 --json)" "$(q drift discard $PROPOSAL --json)")"
 clean_log triage-ask
@@ -2192,9 +2198,68 @@ run triage-dev "$fx_work/flag/index.json" 1920x1080 "summon:$cl;clickName:propos
 expect triage-dev 3 "[$tt.button, $tt.shown, ($ttd.actions | join(\"+\"))] | map(tostring) | join(\",\")" \
   ",true,Apply proposals (2) (off)+Discard (off)"
 expect triage-dev 3 "[$ttd.regular[].flagged, $ttd.crises[].flagged] | map(tostring) | join(\",\")" "true,true,false"
-shows triage-dev 3 "Read twice: some evidence is an agent's words or has no known author."
+shows triage-dev 3 "Read twice: some evidence names an agent or an unknown author."
 shows triage-dev 3 "by agent:codex · the theme switch was mine, a test of the new palette, part of the Zed setup in C-2026-004 and nothing else"
 clean_log triage-dev
+
+# B1 (WP-124b round 2): the proposal the user opened is the one Apply
+# names. A capture brings a newer proposal (agent:codex) while the detail
+# shows the first: the pane says so, Apply, the crises and Discard are off,
+# and the service refuses the first id when asked directly; only Review
+# opens the new one. Nothing reaches the engine.
+SWAP=01M3W10000000000000000000S
+mkdir -p "$fx_work/swap/proposals"
+jq --arg id "$SWAP" '.triage.id = $id | .triage.path = "proposals/\($id).json" | .triage.actor = "agent:codex"
+    | .triage.at = "2026-10-01T17:30:00+02:00"' "$sample" >"$fx_work/swap/index.json"
+jq --arg id "$SWAP" '.id = $id | .actor = "agent:codex" | .at = "2026-10-01T17:30:00+02:00"' \
+  "$fx/proposals/$PROPOSAL.json" >"$fx_work/swap/proposals/$SWAP.json"
+mkdir -p "$work/home-triage-swap"
+run triage-swap "" 1920x1080 \
+  "summon:$cl;clickName:proposalRow;view;text:c;wait:sectionView.triage.detail.seen=replaced;click:Apply proposals;click:Discard;service:applyProposal:$PROPOSAL;click:Review the new proposal;view" \
+  HOME="$work/home-triage-swap" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$fx_work/swap/index.json"
+expect triage-swap 3 "[$ttd.id, $ttd.seen] | join(\",\")" "$PROPOSAL,current"
+replaced='Replaced by a newer proposal by agent:codex at 2026-10-01 17:30 — review it'
+expect triage-swap 5 "[$ttd.id, $ttd.seen, $ttd.hint, ($ttd.actions | join(\"+\")), ($ttd.regular | length)] | map(tostring) | join(\",\")" \
+  "$PROPOSAL,replaced,$replaced,Review the new proposal+Apply proposals (off)+Discard (off),0"
+shows triage-swap 5 "$replaced"
+expect triage-swap 8 "[.call, $ttd.result, $ttd.resultOk] | map(tostring) | join(\",\")" \
+  "false,This proposal is not the current one any more; review what the Changelog shows now,false"
+expect triage-swap 10 "[$ttd.id, $ttd.seen, ($ttd.actions | join(\"+\")), $ttd.result] | map(tostring) | join(\",\")" \
+  "$SWAP,current,Apply proposals (2)+Discard,"
+expect triage-swap 10 "$ttd.hint" "3 items proposed by agent:codex at 2026-10-01 17:30, 1 crisis held back — apply each below"
+argv_check triage-swap "$work/home-triage-swap" "$(printf '%s\n' "$startup" "$(q capture --all --json --quiet)" "$(q status --json)")"
+clean_log triage-swap
+
+# R2, R3: a proposal of 200 items × 10 refs of 256 characters (dev mode,
+# read-only). The items are built only when the detail shows; the desk
+# opens and the detail opens in time; a 256-character text wraps on a
+# 960 px desk and the stacked 700 px one with nothing outside its box.
+mkdir -p "$fx_work/big/proposals"
+cp "$sample" "$fx_work/big/index.json"
+long="by human · $(printf 'ollama.service/%.0s' $(seq 1 20))"
+long=${long:0:256}
+node -e '
+  const [id, text] = process.argv.slice(1)
+  const ev = Array.from({ length: 10 }, (_, j) => ({ kind: "journal", ref: "2026-10-01 14:" + String(10 + j), text }))
+  const ids = Array.from({ length: 200 }, (_, i) => "01M3W2" + String(i).padStart(20, "0"))
+  const items = ids.map((e, i) => i === 0
+    ? { eventId: "01M3VNJ9JGZ9169T01XCW16FT0", action: "explain", title: "t", intent: "i", crisis: true, evidence: ev }
+    : { eventId: e, action: "link", caseId: "C-2026-004", crisis: false, evidence: ev })
+  console.log(JSON.stringify({ id, at: "2026-10-01T17:02:00+02:00", actor: "agent:claude-code", logbook: "/home/user/Seldon",
+    applied: null, items }))' "$PROPOSAL" "$long" >"$fx_work/big/proposals/$PROPOSAL.json"
+check "triage-big: the text is 256 characters" "${#long}" 256
+run triage-big "$fx_work/big/index.json" 1920x1080 \
+  "fresh:$cl;view;timedClickName:proposalRow;wait:sectionView.triage.detail.built=true;resize:960x900;pause:300;resize:700x900;pause:300"
+expect triage-big 2 "[$ttd.built, $tt.shown, (.firstFrame.createMs < 1500)] | map(tostring) | join(\",\")" "false,false,true"
+# the click returns before the items are built (incubated in slices)
+expect triage-big 3 "(.call | tonumber) < 200" true
+expect triage-big 4 "[$ttd.built, ($ttd.regular | length), ($ttd.crises | length)] | map(tostring) | join(\",\")" \
+  "true,199,1"
+expect triage-big 4 "$ttd.regular[0].evidence[0]" "Journal 2026-10-01 14:10: $long"
+for i in 4 6 8; do expect triage-big $i '.overflow | join(" | ")' ""; done
+clean_log triage-big
+echo "     triage-big: desk created in $(sed -n 2p "$work/triage-big.steps" | jq -r '.firstFrame.createMs') ms," \
+  "the click took $(sed -n 3p "$work/triage-big.steps" | jq -r '.call') ms"
 
 # ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
