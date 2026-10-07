@@ -93,6 +93,9 @@ import qs.Ui
 //                                        with v; a step holds no `;`)
 //                       shot:<name>      save the window as
 //                                        $HARNESS_SHOTS/<name>.png
+//                       touch:<name>     create $HOME/<name> (a-z and -):
+//                                        lets a held fake engine call go
+//                                        (FAKE_SELDON_HOLD_OPEN)
 //                       view             no action, just report
 ShellRoot {
   id: root
@@ -409,6 +412,10 @@ ShellRoot {
         to: to ? { x: Math.round(to.x), y: Math.round(to.y) } : null })
     } else if (verb === "leave") {
       driver.mouseMove(win.contentItem, 0, 0)
+    } else if (verb === "touch") {
+      // a file the fake engine waits for (FAKE_SELDON_HOLD_OPEN)
+      if (/^[a-z-]+$/.test(arg)) Quickshell.execDetached(["touch", Quickshell.env("HOME") + "/" + arg])
+      else console.log("HARNESS error touch: " + arg)
     } else if (verb === "hide") {
       fakeShell.hide("jax.seldon")
     } else if (verb === "toggle") {

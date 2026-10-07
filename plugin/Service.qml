@@ -133,11 +133,12 @@ Item {
   // The engine has `agent ask` (Ask agent in an event's or a case's bar):
   // WP-124b sets this; no engine has it yet.
   readonly property bool askAgentAvailable: false
-  // WP-156: the agents `seldon agent start` launched that still run, by
-  // case ({ <caseId>: { pid, actor } }, Model.sessionsResult), from `seldon
-  // agent sessions --json` in its own process beside the queue; asked when
-  // the desk opens, after every agent or open answer, when the index
-  // changes and every Model.SESSIONS_POLL_MS while the desk is open.
+  // WP-156: the agents `seldon agent start` launched whose window is open
+  // (or that are starting), by case ({ <caseId>: { starting, workspace,
+  // actor } }, Model.sessionsResult), from `seldon agent sessions --json` in
+  // its own process beside the queue; asked when the desk opens, after
+  // every agent or open answer, when the index changes and every
+  // Model.SESSIONS_POLL_MS while the desk is open.
   property var agentSessions: ({})
   property bool sessionsAgain: false
   // The last successful `open` ({ what, atMs }): the same target is not
@@ -714,8 +715,9 @@ Item {
     // Updated rules: ask doctor again, so the banner goes.
     if (args[0] === "rules") root.checkRules(true)
     if (args[0] === "open" && result && result.ok) root.lastOpen = { what: args[1], atMs: Date.now() }
-    // An agent started, refused as already working, or gone: ask again.
-    if (args[0] === "agent") root.refreshSessions()
+    // An agent started, refused as already working, or gone, an editor
+    // opened or focused: ask again (SPEC-PLUGIN §5.4).
+    if (args[0] === "agent" || args[0] === "open") root.refreshSessions()
     root.finished(args, exitCode, out)
     // The window it opened comes up in front (WP-156).
     if (Model.opensWindow(args, result)) root.stepAside()

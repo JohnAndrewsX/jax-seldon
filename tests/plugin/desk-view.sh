@@ -52,7 +52,7 @@ cp -r "$root/plugin" "$plugin"
 cp "$root/tests/plugin/harness/DeskWindow.qml" "$plugin/components/desk/DeskWindow.qml"
 
 # Tools for the fake engine, and the fake engine; never a real seldon.
-for tool in bash env cat sed date mkdir mv sleep basename grep jq; do
+for tool in bash env cat sed date mkdir mv sleep basename grep jq rm touch; do
   ln -s "$(command -v "$tool")" "$work/bin/$tool"
 done
 install -m 755 "$root/tests/plugin/fake-seldon" "$work/bin/seldon"
@@ -1321,7 +1321,7 @@ expect aside 5 "$sv.sessions | join(\",\")" "C-2026-003"
 # opened again: Focus in place of a second Hand to agent
 expect aside 6 "[$tv.selected, ($tc.actions | join(\",\")), $tc.meta, $tc.working] | map(tostring) | join(\"|\")" \
   "C-2026-003|Focus,To verification,Drop,Open in editor|agent working · C-2026-003 · R3|true"
-expect aside 6 "$tc.kv[] | select(startswith(\"Agent:\"))" "Agent: working now · agent:default · pid 4242"
+expect aside 6 "$tc.kv[] | select(startswith(\"Agent:\"))" "Agent: working now · agent:default · workspace 2"
 expect aside 6 "$tv.working | join(\",\")" "C-2026-003"
 # the row's aside and the bar's meta
 expect aside 6 '[.texts[] | select(startswith("agent working · "))] | length' 2
@@ -1351,7 +1351,7 @@ echo C-2026-003 >"$work/home-aside-stale/sessions"
 run aside-stale "" 1920x1080 "summon:$w3;pause:600;text:a;text:a;settle;pause:800" \
   HOME="$work/home-aside-stale" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SESSIONS_LATE=1
 expect aside-stale 2 "$tc.actions[0]" "Hand to agent"
-already='an agent is already working on C-2026-003 (pid 4242); focus it with `seldon agent focus C-2026-003`, or start another with `seldon agent start C-2026-003 --again`; nothing was launched'
+already='an agent is already working on C-2026-003 (window 0xf0c5 on workspace 2); focus it with `seldon agent focus C-2026-003`, or start another with `seldon agent start C-2026-003 --again`; nothing was launched'
 expect aside-stale 5 "[.view.opened, $sv.stepAsides, $tv.resultOk] | map(tostring) | join(\",\")" "true,0,false"
 expect aside-stale 5 "$tv.result" "$already"
 shows aside-stale 5 "$already"
@@ -1365,32 +1365,71 @@ echo C-2026-003 >"$work/home-aside-gone/sessions"
 run aside-gone "" 1920x1080 "summon:$w3;pause:600;text:a;settle;pause:800" \
   HOME="$work/home-aside-gone" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FOCUS_GONE=1
 expect aside-gone 2 "$tc.actions[0]" "Focus"
-gone='no agent is working on C-2026-003: none that `seldon agent start` launched still runs; start one with `seldon agent start C-2026-003`'
+gone='no agent is working on C-2026-003: no window of an agent `seldon agent start` launched on it is open; start one with `seldon agent start C-2026-003`'
 expect aside-gone 4 "[.view.opened, $sv.stepAsides, $tv.result] | map(tostring) | join(\",\")" "true,0,$gone"
 expect aside-gone 5 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor"
 clean_log aside-gone 'agent exit 1: no agent is working on C-2026-003'
 
 # Double presses: one agent start, one open; the same open again within
-# 2 s sends nothing (the desk stays), after 2 s it is sent.
+# 2 s sends nothing (the desk stays), after 2 s it is sent. The fake holds
+# each open until `touch:release-open` (FAKE_SELDON_HOLD_OPEN), so "in
+# flight" is a state of the case, not a race (round 2, N4).
 mkdir -p "$work/home-aside-double"
 run aside-double "" 1920x1080 \
-  "summon:$w3;text:a*4;settle;summon:$w4;text:e*3;settle;summon:$w4;text:e;settle;pause:2100;text:e;settle;summon:{\"section\":\"today\"};text:e*3;settle" \
-  HOME="$work/home-aside-double" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_SESSION=1 HARNESS_RECORD="$work/aside-double.record"
+  "summon:$w3;text:a*4;settle;summon:$w4;text:e*3;touch:release-open;settle;summon:$w4;text:e;settle;pause:2100;text:e;touch:release-open;settle;summon:{\"section\":\"today\"};text:e*3;touch:release-open;settle" \
+  HOME="$work/home-aside-double" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_SESSION=1 FAKE_SELDON_HOLD_OPEN=1 \
+  HARNESS_RECORD="$work/aside-double.record"
 expect aside-double 2 "[$sv.planPending, $tc.actions[0]] | map(tostring) | join(\",\")" "true,Starting…"
 expect aside-double 3 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,1"
 expect aside-double 5 "[$sv.openPending, $tc.actions[-1], $tc.enabled[-1]] | map(tostring) | join(\",\")" "true,Opening…,false"
 shows aside-double 5 "Opening…"
-expect aside-double 6 "[.view.opened, $sv.stepAsides, $sv.open] | map(tostring) | join(\",\")" \
+expect aside-double 7 "[.view.opened, $sv.stepAsides, $sv.open] | map(tostring) | join(\",\")" \
   "false,2,Opened $work/home-aside-double/Seldon/work/active/C-2026-004.md in omarchy-launch-editor"
-expect aside-double 8 "[.view.opened, $sv.openPending] | map(tostring) | join(\",\")" "true,false"
-expect aside-double 9 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "true,2"
-expect aside-double 12 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,3"
+expect aside-double 9 "[.view.opened, $sv.openPending] | map(tostring) | join(\",\")" "true,false"
+expect aside-double 10 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "true,2"
+expect aside-double 12 "[.view.opened, $sv.openPending] | map(tostring) | join(\",\")" "true,true"
+expect aside-double 14 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,3"
 # Today's `e` has no guard of its own: the service's one open at a time
-expect aside-double 14 "[$sv.openPending, $sv.busyRefusals] | map(tostring) | join(\",\")" "true,2"
-expect aside-double 15 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,4"
+expect aside-double 16 "[$sv.openPending, $sv.busyRefusals] | map(tostring) | join(\",\")" "true,2"
+expect aside-double 18 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,4"
 argv_check aside-double "$work/home-aside-double" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" \
   "$(q open C-2026-004 --editor --json)" "$(q open C-2026-004 --editor --json)" "$(q open journal --editor --json)")"
 clean_log aside-double
+
+# No Hyprland to ask (FAKE_SELDON_NO_TRACKING): the engine tracks nothing,
+# so the desk keeps Hand to agent and a second hand-off launches again;
+# the busy state and the 2 s floor stay (round 2).
+mkdir -p "$work/home-aside-nowindow"
+run aside-nowindow "" 1920x1080 "summon:$w3;text:a;text:a;settle;pause:800;summon:$w3;text:a;text:a;settle" \
+  HOME="$work/home-aside-nowindow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_TRACKING=1
+expect aside-nowindow 4 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,1"
+expect aside-nowindow 5 "$sv.sessions | length" 0
+expect aside-nowindow 6 "[$tc.actions[0], $tc.working] | map(tostring) | join(\",\")" "Hand to agent,false"
+expect aside-nowindow 9 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,2"
+argv_check aside-nowindow "$work/home-aside-nowindow" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" \
+  "$(q agent start C-2026-003 --json)")"
+clean_log aside-nowindow
+
+# An index change while the desk is open asks for the sessions again: the
+# first answer has none, a capture rewrites the index, the second shows the
+# agent's window (round 2, N3/P1).
+mkdir -p "$work/home-aside-index"
+echo C-2026-003 >"$work/home-aside-index/sessions"
+run aside-index "" 1920x1080 "summon:$w3;pause:600;text:c;settle;pause:800" \
+  HOME="$work/home-aside-index" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_SESSIONS_LATE=1
+expect aside-index 2 "$tc.actions[0]" "Hand to agent"
+expect aside-index 5 "$tc.actions | join(\",\")" "Focus,To verification,Drop,Open in editor"
+clean_log aside-index
+
+# A failed open is no open: the same target again is sent at once (round 2,
+# N3/P5: the 2 s rule starts only from a successful open).
+mkdir -p "$work/home-aside-openfail"
+run aside-openfail "" 1920x1080 "summon:$w4;text:e;settle;text:e;settle" \
+  HOME="$work/home-aside-openfail" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_UNKNOWN_CASE=C-2026-004
+expect aside-openfail 3 "[.view.opened, $sv.stepAsides, $sv.open] | map(tostring) | join(\",\")" "true,0,unknown case C-2026-004"
+argv_check aside-openfail "$work/home-aside-openfail" "$(printf '%s\n' "$startup" "$(q open C-2026-004 --editor --json)" \
+  "$(q open C-2026-004 --editor --json)")"
+clean_log aside-openfail 'open exit 1: unknown case C-2026-004'
 
 # An editor the engine opened on the file before: focused, nothing
 # launched, the desk steps aside.
