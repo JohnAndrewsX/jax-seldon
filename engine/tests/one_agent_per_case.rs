@@ -23,6 +23,7 @@ use common::{Env, Snapper, json, read, stderr, stdout};
 const T0: &str = "2026-10-01T15:30:00+02:00";
 const T5: &str = "2026-10-01T15:30:05+02:00";
 const T11: &str = "2026-10-01T15:30:11+02:00";
+const T20: &str = "2026-10-01T15:30:20+02:00";
 const AGENT: &str = "org.omarchy.agent";
 
 /// A program on the host's PATH (the engine's PATH is the stub directory).
@@ -344,7 +345,8 @@ fn a_launch_counts_for_ten_seconds_without_a_window() {
     let out = env.at(T11, &["agent", "start", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(calls(&calls_file), 3);
-    let kept = read(&env.home.join(".local/state/seldon/launches.json"));
+    let launches = env.home.join(".local/state/seldon/launches.json");
+    let kept = read(&launches);
     assert!(
         !kept.contains("15:30:00"),
         "records past the grace go: {kept}"
@@ -353,6 +355,12 @@ fn a_launch_counts_for_ten_seconds_without_a_window() {
         kept.contains("C-2026-002") && kept.contains("15:30:11"),
         "{kept}"
     );
+    // C-2026-002's record (T5) is past the grace at T20: the next write drops it
+    let out = env.at(T20, &["agent", "start", "C-2026-001", "--again", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let kept = read(&launches);
+    assert!(!kept.contains("C-2026-002"), "{kept}");
+    assert!(kept.contains("15:30:20"), "{kept}");
 }
 
 /// Without hyprctl nothing is tracked: nothing is refused.
