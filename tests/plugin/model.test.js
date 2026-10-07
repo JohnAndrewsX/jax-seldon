@@ -1953,10 +1953,10 @@ test("deskWidthPreview and preset labels", () => {
 test("deskChangelog: every event once, by class, with title, meta, age and stripe", () => {
   const idx = M.parseIndex(sample).index
   const p = M.deskChangelog(idx)
-  assert.strictEqual(p.rows.length, 73)
+  assert.strictEqual(p.rows.length, 75)
   const byCls = {}
   for (const r of p.rows) byCls[r.cls] = (byCls[r.cls] || 0) + 1
-  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 36", "crisis 2", "routine 29"])
+  same(Object.keys(byCls).sort().map(k => k + " " + byCls[k]), ["attention 6", "case 37", "crisis 2", "routine 30"])
   const unit = M.changelogRow(p, UNIT)
   same([unit.title, unit.listMeta, unit.age, unit.stripe, unit.cls], ["ollama.service", "config · config-add", "14:03", "crisis", "crisis"])
   const mesa = M.changelogRow(p, MESA)
@@ -1977,12 +1977,12 @@ test("rowAge: the time today, else day and month (the year when it differs)", ()
 test("changelogView and changelogChips: chips, search, Hide (attention only), a group once", () => {
   const p = M.deskChangelog(M.parseIndex(sample).index)
   same(M.changelogChips(p, {}).map(c => c.id + " " + c.count),
-    ["open 6", "crisis 2", "attention 4", "routine 29", "case 36", "all 73"])
+    ["open 6", "crisis 2", "attention 4", "routine 30", "case 37", "all 75"])
   // the drift chips list a group as its leader; "all" lists every event
   same(M.changelogView(p, "open", {}, "").map(r => r.title).slice(-1), ["mesa +2"])
   assert.strictEqual(M.changelogView(p, "open", {}, "").length, 6)
   assert.strictEqual(M.changelogView(p, "bogus", {}, "").length, 6)
-  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 73)
+  assert.strictEqual(M.changelogView(p, "all", {}, "").length, 75)
   assert.ok(M.changelogView(p, "all", {}, "").some(r => r.id === LIB32))
   // the search matches subject, meta, detail and actor, case-insensitive
   same(M.changelogView(p, "open", {}, "OLLAMA").map(r => r.title), ["ollama.service", "ollama"])
@@ -1991,7 +1991,7 @@ test("changelogView and changelogChips: chips, search, Hide (attention only), a 
   const hidden = { [MESA]: true, [UNIT]: true }
   assert.strictEqual(M.changelogView(p, "open", hidden, "").length, 5)
   assert.strictEqual(M.changelogView(p, "crisis", hidden, "").length, 2)
-  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 73)
+  assert.strictEqual(M.changelogView(p, "all", hidden, "").length, 75)
   assert.strictEqual(M.hiddenCount(p, hidden), 1)
   same(M.changelogChips(p, hidden).slice(0, 3).map(c => c.count), [5, 2, 3])
 })
@@ -2065,6 +2065,13 @@ test("eventDetail: heading, class, the key/values; why loud from the engine's ru
   const folded = p.rows.find(r => r.resolution !== "")
   assert.ok(M.eventDetail(idx, p, folded.id).kv.some(r => r[0] === "Resolved"))
   assert.strictEqual(M.whyLoud({ cls: "attention", source: "config" }, "", { state: "known", rule: "always-red-paths" }), "")
+  // contract 2: a detail the index clipped (event meta.truncated, a drift item's truncated) says so
+  const clippedEvent = p.rows.find(r => (M.findEvent(idx, r.id).meta || {}).truncated === true)
+  assert.ok(M.eventDetail(idx, p, clippedEvent.id).kv[2][1].endsWith(" (clipped in the index; the ledger has it in full)"))
+  assert.ok(!M.eventDetail(idx, p, THEME).kv[2][1].includes("clipped"))
+  const cut = JSON.parse(sample)
+  cut.drift.find(d => d.eventId === UNIT).truncated = true
+  assert.ok(M.eventDetail(cut, M.deskChangelog(cut), UNIT).kv[2][1].endsWith("(clipped in the index; the ledger has it in full)"))
 })
 
 test("driftRuleInfo and driftShowResult: the rule from `drift show`", () => {
@@ -2104,7 +2111,7 @@ test("deskToday and todayRows: needs you, journal, yesterday, the overview", () 
   const idx = M.parseIndex(sample).index
   const t = M.deskToday(idx, M.deskChangelog(idx))
   same([t.title, t.state.id, t.headline], ["Thursday, 1 Oct 2026", "crisis", "Seldon is recording. 2 changes need you."])
-  same(t.tiles.map(x => x.label + " " + x.value), ["events today 30", "7 days 51"])
+  same(t.tiles.map(x => x.label + " " + x.value), ["events today 32", "7 days 53"])
   same(t.needs.map(r => r.id), [UNIT, HOOK])
   same(t.cases.map(c => c.id + " " + c.text), ["C-2026-003 4/5 steps · claude-code", "C-2026-004 2/4 steps · claude-code"])
   same(M.todayRows(t, false).map(r => r.type), ["crisis", "crisis", "entry", "entry", "entry", "entry", "toggle"])
@@ -2164,7 +2171,7 @@ test("caseDetail: key/values, plan, log and linked changes from the index", () =
   same(d.kv.map(r => r[0]), ["Status", "Risk", "Zone", "Area", "Priority", "Agent", "Rollback", "Dates", "File"])
   same(d.log.map(r => r[1]), [
     "note · human · Zed fühlt sich gut an. Theme-Sync fehlt noch, siehe Inbox.",
-    "case-started · human", "case-created · human"].slice(0, d.log.length))
+    "case-started · human · R2", "case-created · human"].slice(0, d.log.length))
   assert.ok(d.linked.length >= 1 && d.linkedMore === "")
   // ids the index no longer lists are counted
   const copy = JSON.parse(sample)
@@ -2172,6 +2179,8 @@ test("caseDetail: key/values, plan, log and linked changes from the index", () =
   const d2 = M.caseDetail(copy, M.deskWork(copy), "C-2026-004")
   assert.strictEqual(d2.linkedMore, "+1 older change the index no longer lists")
   assert.strictEqual(M.caseDetail(idx, p, "C-2026-999"), null)
+  // contract 2: the case-updated event carries the risk into the log
+  same(M.caseDetail(idx, p, "C-2026-003").log.map(r => r[1]).filter(t => t.startsWith("case-updated")).length, 1)
 })
 
 test("free text goes exactly as typed, surrounding blanks included (N3)", () => {

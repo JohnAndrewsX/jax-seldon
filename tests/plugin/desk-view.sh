@@ -554,14 +554,14 @@ sel() { printf '{"section":"changelog","select":"%s"}' "$1"; }
 run today "$sample" 1920x1080 "summon;key:Down;key:Down;key:Down*5;key:Return;key:Down;click:Zed als zweiten Editor installieren"
 expect today 1 .view.section today
 expect today 1 "$tv.state" crisis
-expect today 1 "$tv.tiles | join(\",\")" "events today 30,7 days 51"
+expect today 1 "$tv.tiles | join(\",\")" "events today 32,7 days 53"
 expect today 1 "$tv.needs | join(\",\")" "$UNIT,$HOOK_EVENT"
 expect today 1 "[$tv.entries, $tv.yesterday, $tv.rows] | map(tostring) | join(\",\")" "4,1,7"
 expect today 1 "[$tv.selected, $tv.shown] | join(\",\")" ",overview"
 expect today 1 "$tv.cases | join(\",\")" "C-2026-003,C-2026-004"
 for text in "Thursday, 1 Oct 2026" "Seldon is recording. 2 changes need you." "NEEDS YOU" "JOURNAL" "ollama.service" \
   "09:25 · claude-code · C-2026-003" "▸ Yesterday · 1 entry" "ACTIVE CASES" "C-2026-003 · R3" "4/5 steps · claude-code" \
-  "NEW CASE" "Dev mode is read-only" "events today" "30"; do
+  "NEW CASE" "Dev mode is read-only" "events today" "32"; do
   shows today 1 "$text"
 done
 expect today 2 "[$tv.selected, $tv.shown, $tv.detail.cls] | join(\",\")" "$UNIT,event,crisis"
@@ -602,7 +602,7 @@ jq '.events = [{id: "01M3W2NEWEVENT000000000000", ts: "2026-10-01T18:30:00+02:00
   "$sample" >"$work/after.json"
 mkdir -p "$work/home-today-live"
 run today-live "" 1920x1080 \
-  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;text:2;text:e;text:c;wait:sectionView.chips.5=all 74;settle" \
+  "summon;text:n;type:  --help 2 ;key:Return;settle;type:   ;key:Return;key:Backspace*3;key:Tab;key:Down;key:Down;key:Down;key:Return;key:Backtab;type:for the case;key:Return;settle;key:Escape;text:e;text:2;text:e;text:c;wait:sectionView.chips.5=all 76;settle" \
   HOME="$work/home-today-live" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after.json" \
   FAKE_SELDON_WRITTEN=1 HARNESS_RECORD="$work/today-live.record"
 tj="$tv.journal"
@@ -624,7 +624,7 @@ expect today-live 18 "[$tj.editing, .view.keys, .view.opened] | map(tostring) | 
 expect today-live 20 .view.section changelog
 expect today-live 22 "$tv.capturing" true
 shows today-live 22 "Capturing"
-expect today-live 23 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 30,case 36,all 74"
+expect today-live 23 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 31,case 37,all 76"
 expect today-live 24 "$tv.captureResult" "1 new event"
 shows today-live 24 "Last capture: 1 new event"
 argv_check today-live "$work/home-today-live" "$(printf '%s\n' "$startup" \
@@ -669,7 +669,7 @@ clean_log today-new
 run changelog "$sample" 1920x1080 \
   "summon:$cl;text:f;text:F;text:F;select:$MESA;key:Return;key:Escape;shim:filter:pacman;key:Escape;shim:resolve:$LIB32;key:Return;key:Escape;shim:resolve:crisis;select:$THEME;click:Hide;text:f;click:Show"
 expect changelog 1 "[.view.section, $tv.chip] | join(\",\")" "changelog,open"
-expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 29,case 36,all 73"
+expect changelog 1 "$tv.chips | join(\",\")" "open 6,crisis 2,attention 4,routine 30,case 37,all 75"
 expect changelog 1 "[$tv.rows, $tv.cursor] | map(tostring) | join(\",\")" "6,0"
 # One count everywhere (B2): the open chip = the sidebar's Changelog count,
 # crisis = the header's crises, attention = the header's attention = the
@@ -688,12 +688,12 @@ expect changelog 1 "$td.kv | join(\" | \")" \
 expect changelog 1 "[$tf.shown, $tf.action, $tf.caseId, $tf.hint] | map(tostring) | join(\",\")" "false,link,C-2026-005,Dev mode is read-only"
 expect changelog 1 "$tf.cases | join(\",\")" "C-2026-005,C-2026-003,C-2026-004,C-2026-008,C-2026-006,C-2026-007"
 for text in "6 changes · newest first" "4 changes without a case" "proposed for C-2026-005" "TODAY" "TUE 29 SEP" \
-  "tokyo-night" "mesa +2" "27 Sep 12:30" "open 6" "in case 36" "Ledger" "Capture now"; do
+  "tokyo-night" "mesa +2" "27 Sep 12:30" "open 6" "in case 37" "Ledger" "Capture now"; do
   shows changelog 1 "$text"
 done
 expect changelog 2 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "crisis,2,$UNIT"
 expect changelog 3 "$tv.chip" open
-expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,73"
+expect changelog 4 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "all,75"
 expect changelog 5 "[.call, $tv.selected, $tf.subject, $tf.badge] | join(\",\")" "ok,$MESA,mesa,+2"
 expect changelog 5 "$tf.members | join(\" | \")" \
   "· downgrade mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade lib32-mesa  1:26.2.0-2 → 1:26.1.0-1 | · downgrade vulkan-radeon  1:26.2.0-2 → 1:26.1.0-1"
@@ -704,12 +704,12 @@ shows changelog 6 "Only mesa"
 shows changelog 6 "EXPLAIN"
 expect changelog 7 "[$tf.shown, $tf.editing, .view.keys, .view.opened] | map(tostring) | join(\",\")" "false,false,true,true"
 expect changelog 8 "[.call, $tv.chip, .view.search.text, $tv.rows] | map(tostring) | join(\",\")" "ok,all,pacman,16"
-expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",73,true"
+expect changelog 9 "[.view.search.text, $tv.rows, .view.opened] | map(tostring) | join(\",\")" ",75,true"
 expect changelog 10 "[$tv.selected, $tf.eventId, $tf.subject] | join(\",\")" "$LIB32,$LIB32,mesa"
 shows changelog 11 "Only lib32-mesa"
 expect changelog 13 "[$tv.chip, $tv.rows] | map(tostring) | join(\",\")" "crisis,2"
 expect changelog 14 "[.call, $tv.chip, $tv.selected] | join(\",\")" "ok,all,$THEME"
-expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,73"
+expect changelog 15 "[$td.hidden, $tv.hidden, $tv.rows] | map(tostring) | join(\",\")" "true,1,75"
 expect changelog 15 "$td.actions | join(\",\")" "Link to C-2026-005…,Explain…,Dismiss…,Show"
 shows changelog 15 "attention · hidden this session"
 expect changelog 16 "[$tv.chip, $tv.rows, $tv.selected] | map(tostring) | join(\",\")" "open,5,$UNIT"
@@ -890,10 +890,10 @@ expect work 1 "[$tv.wip, $tv.selected, $tc.heading] | join(\",\")" "2 / 3 active
 expect work 1 "$tc.actions | join(\",\")" "Hand to agent,To verification,Drop,Open in editor"
 expect work 1 "$tc.kv | join(\" | \")" \
   "Status: active | Risk: R3 · every step that can break boot needs your go | Zone: red | Area: shell | Priority: high | Agent: agent:claude-code | Rollback: snapshot 111 | Dates: created 2026-09-26 · started 2026-10-01 | File: work/active/C-2026-003-omarchy-407.md"
-expect work 1 "[$tc.plan, $tc.log, $tc.linked, $tc.hint] | map(tostring) | join(\",\")" "4 of 5 steps done,2,5,Dev mode is read-only"
+expect work 1 "[$tc.plan, $tc.log, $tc.linked, $tc.hint] | map(tostring) | join(\",\")" "4 of 5 steps done,3,5,Dev mode is read-only"
 for text in "ACTIVE · 2" "VERIFICATION · 1" "QUEUED · 3" "COMPLETED · 2" "2 / 3 active" "C-2026-005 · R1 · themes · 1 proposed" \
   "4/5" "Run" "New case" "By agent" "Dev mode is read-only" "PLAN" "LOG" "LINKED CHANGES · 5" "C-2026-003 · R3" \
-  "4 of 5 steps done. The steps, the Intent and the Result are in the case file." "case-started · human" \
+  "4 of 5 steps done. The steps, the Intent and the Result are in the case file." "case-started · human · R3" "case-updated · human · R3" \
   "Omarchy auf 4.0.7 aktualisieren" "Hand to agent" "To verification"; do
   shows work 1 "$text"
 done
@@ -1064,11 +1064,11 @@ jq '.events = [
   ] + .events' "$sample" >"$work/after-two.json"
 mkdir -p "$work/home-cursor-follow"
 run cursor-follow "" 1920x1080 \
-  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=75;key:Return;key:Escape;text:F' \
+  'summon:{"section":"changelog","filter":"all"};key:Down*4;text:c;wait:sectionView.rows=77;key:Return;key:Escape;text:F' \
   HOME="$work/home-cursor-follow" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_FIXTURE_AFTER="$work/after-two.json"
 expect cursor-follow 1 "[$tv.chip, $tv.cursor] | map(tostring) | join(\",\")" "all,0"
 expect cursor-follow 2 "[$tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "4,$THEME"
-expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "75,6,$THEME"
+expect cursor-follow 4 "[$tv.rows, $tv.cursor, $tv.selected] | map(tostring) | join(\",\")" "77,6,$THEME"
 expect cursor-follow 5 "[$tv.detail.form.shown, $tv.detail.form.eventId] | map(tostring) | join(\",\")" "true,$THEME"
 expect cursor-follow 7 "[$tv.chip, $tv.cursor, $tv.selected != \"$THEME\"] | map(tostring) | join(\",\")" "case,0,true"
 clean_log cursor-follow
@@ -1202,6 +1202,19 @@ shows case-gone 2 "Open in editor"
 expect case-gone 4 "$td.caseMissing" "unknown case C-2026-001"
 argv_check case-gone "$work/home-case-gone" "$(printf '%s\n' "$startup" "$(q open C-2026-001 --editor --json)")"
 clean_log case-gone "jax\\.seldon: seldon open exit 1: "
+
+# Contract 2 (ADR-0035 §3): a detail the index clipped says so in the
+# What row (the sample's note with meta.truncated; a drift item's
+# truncated, on the crisis, also through its `drift show` rule, live).
+run clipped "$sample" 1920x1080 "summon:{\"section\":\"changelog\",\"select\":\"01M2ACN5Q043TW9W44NJEZ4K9S\"}"
+expect clipped 1 "[$td.kv[] | select(startswith(\"What: \"))] | .[0] | endswith(\" (clipped in the index; the ledger has it in full)\")" true
+clean_log clipped
+jq --arg u "$UNIT" '.drift |= map(if .eventId == $u then .truncated = true else . end)' "$sample" >"$work/drift-truncated.json"
+mkdir -p "$work/home-why-truncated"
+run why-loud-truncated "" 1920x1080 "summon:$(sel $UNIT);wait:sectionView.detail.rule=known always-red-paths" \
+  HOME="$work/home-why-truncated" FAKE_SELDON_FIXTURE="$work/drift-truncated.json"
+expect why-loud-truncated 2 "[($td.kv[] | select(startswith(\"What: \")) | endswith(\"(clipped in the index; the ledger has it in full)\")), ($td.whyLoud | startswith(\"The path matches your crisis list\"))] | map(tostring) | join(\",\")" "true,true"
+clean_log why-loud-truncated
 
 # N4: key/values wrap at word boundaries; at 50 % nothing leaves the desk.
 run kv-wrap "$sample" 1920x1080 "summon:$wk;width:50;shot:kv-wrap-50"

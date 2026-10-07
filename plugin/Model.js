@@ -3554,10 +3554,16 @@ function eventDetail(index, prepared, id, info) {
     : row.cls === "case" ? "in case · recorded for " + row.caseId
     : "routine · history, nothing to do"
   if (row.txId !== "" || row.groupLeader !== "") rule += " · one pacman transaction (ADR-0013)"
+  // Contract 2 (ADR-0035 §3): a detail the index clipped says so; the
+  // ledger line has it in full.
+  var item = row.drift ? driftItemFor(index, row.id) : null
+  var lead = item && index && Array.isArray(index.drift)
+    ? index.drift.filter(function(d) { return isObject(d) && d.eventId === item.leaderId })[0] : null
+  var clipped = (isObject(e.meta) && e.meta.truncated === true) || (isObject(lead) && lead.truncated === true)
   var kv = [
     ["When", stamp(e.ts)],
     ["Who", str(e.actor) !== "" ? str(e.actor) : "—"],
-    ["What", row.detail !== "" ? row.detail : "—"],
+    ["What", (row.detail !== "" ? row.detail : "—") + (clipped ? " (clipped in the index; the ledger has it in full)" : "")],
     ["Case", row.caseId !== "" ? row.caseId : proposed !== "" ? "proposed: " + proposed : "—"],
     ["Rule", rule],
     ["Source", SOURCE_TEXTS[row.source] !== undefined ? SOURCE_TEXTS[row.source] : row.source]
@@ -3864,7 +3870,9 @@ function caseDetail(index, prepared, id) {
     if (typeof e.id === "string") byId[e.id] = e
     if (e.case !== id) continue
     if (e.source !== "seldon" && e.kind !== "note" && e.kind !== "correction") continue
-    log.push([stamp(e.ts), [str(e.kind), str(e.actor), e.kind === "note" || e.kind === "correction" ? str(e.detail) : ""]
+    log.push([stamp(e.ts), [str(e.kind), str(e.actor),
+      isObject(e.meta) && RISKS.indexOf(e.meta.risk) !== -1 ? e.meta.risk : "",
+      e.kind === "note" || e.kind === "correction" ? str(e.detail) : ""]
       .filter(function(p) { return p !== "" }).join(" · ")])
   }
   var ids = Array.isArray(raw.events) ? raw.events : []
