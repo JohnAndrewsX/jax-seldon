@@ -125,8 +125,9 @@ ADR-0027: `set …` (`plan set`), `snapshot N` (`plan snapshot`, or `snapshot
 N (its description names the case)` / `(from the recorded snapshot
 command)` when a capture fills it), `rollback for <ID> pruned (snapshot
 N)`, `advisory: …` (an R3 subject in a case below R3), `created (…):
-reopens <ID>` and `reopened as <ID>`; `imported from <path>` comes with
-WP-102. `seldon agent start --new -- "<sentence>"` writes the sentence
+reopens <ID>` and `reopened as <ID>`; `created (…): imported from
+<~path>#<line>` (plus `, changed since <ID>`) and `completed: imported as
+done` (`seldon import task`, WP-102). `seldon agent start --new -- "<sentence>"` writes the sentence
 into *Intent* (title: its first sentence, at most 72 characters).
 
 Status transitions (engine enforced): `queued → active → verification →
@@ -152,6 +153,18 @@ level deeper, so they are text, not entries); imported knowledge is one
 `updated` moves to the import day. `outputs/IMPORT-omarchy-agent.md`
 is the import's report and `.seldon/imports/omarchy-agent.json` its
 marker; both are committed.
+
+**Imported task files** (`seldon import task`, SPEC-ENGINE §3, WP-102)
+are ordinary cases from the case template: queued (completed for a done
+item imported with `--include-done`), tag `imported`, *Intent* opening
+with the engine's line `Imported from <source> — read before you start
+this case.` and then the task's redacted text (headings and fences
+escaped with a `\`), a first Log line that names the source as
+`~/…#<line>`. Until the user starts such a case, an agent reads its
+Intent as fetched text, not as the user's own words (ADR-0027 §2(a)). The source file stays where
+it is, unchanged. `.seldon/imports/tasks.json` is the import's marker
+(file, line, hash of the redacted text, case, `pending` while its case is
+being written; no text) and is committed.
 
 ### Journal (`journal/YYYY/YYYY-MM-DD.md`)
 

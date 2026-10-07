@@ -135,7 +135,8 @@ enum Command {
     /// Refresh the generated fences of system/*.md from read-only queries
     Dossier(commands::dossier::DossierArgs),
 
-    /// Import an earlier logbook (dry run unless --apply)
+    /// Import an earlier logbook (dry run unless --apply) or your Markdown
+    /// task files as cases
     Import(commands::import::ImportArgs),
 
     /// The agent rules in the logbook's AGENTS.md: update
