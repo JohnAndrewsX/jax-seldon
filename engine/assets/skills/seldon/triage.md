@@ -77,6 +77,6 @@ SELDON_PROPOSAL
   wrong, naming it (exit 1): fix or drop that item, then send it again. A
   new proposal replaces one the user has not applied.
 - Then stop. Tell the user in one or two lines how many items you proposed,
-  how many are crises, and that they apply it in Seldon's Changelog. Never
-  apply it yourself: `seldon drift apply <ID>` is the user's, and the engine
-  refuses an agent.
+  how many are crises, the proposal's id, and that they apply it in
+  Seldon's Changelog or with `seldon drift apply <ID>`. Never apply it
+  yourself: that is the user's, and the engine refuses an agent.

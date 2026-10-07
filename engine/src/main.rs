@@ -120,10 +120,10 @@ enum Command {
     /// Agent hooks: record commands, print session context, install into or uninstall from a harness
     Hook(commands::hook::HookArgs),
 
-    /// List open drift; link, explain, dismiss or show a drift event
+    /// List open drift; link, explain, dismiss or show a drift event; propose, apply or discard a triage proposal
     Drift(commands::drift::DriftArgs),
 
-    /// Start an agent on an active case
+    /// Start an agent on an active case, or ask one about the open changes, a change or a case
     Agent(commands::agent::AgentArgs),
 
     /// Write outputs/REBUILD.md: the steps to rebuild this machine
