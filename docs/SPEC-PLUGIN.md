@@ -410,30 +410,49 @@ selects that chip.
 The proposal (`TriageDetail.qml`, WP-124b): the file `index.triage.path`
 names, next to `index.json` (CONTRACT.md rule 1; exactly
 `proposals/<id>.json`, `Model.triagePath`), read by a FileView and checked
-like its schema (`Model.parseProposal`; a file off in any part is not
-shown: "could not be read as the engine writes it"). The sticky bar:
+against `proposal.schema.json` (`Model.parseProposal`: only its
+properties, `logbook` present, `at` and `applied` date-times, the length
+limits, a link without title or intent and an explanation without a case,
+at most 4 MiB of text; a file off in any part is not shown: "could not be
+read as the engine writes it"). **Bound to the proposal the user opened**
+(round 2): its row (or *Review the new proposal*) stores that id
+(`Changelog.seenProposalId`), and Apply and Discard name it. When the
+index names another proposal by then, the bar says "Replaced by a newer
+proposal by <actor> at <at> — review it", offers *Review the new
+proposal* and has Apply and Discard off, the items are not shown, and the
+service refuses the old id even when asked directly
+(`Model.triageSeen`, `Service.triageCall`); a proposal that is gone
+("Proposal <id> is not there any more …") keeps the last answer about it
+shown. Only the answer about the opened id is shown. The sticky bar:
 *Apply proposals (N)* (N the items Apply takes that are still open; one
-click, `drift apply <index.triage.id> --json`; enabled also with nothing
-open, so a second run says what it skipped) and *Discard* (one click,
-`drift discard <id> --json`; nothing in the logbook changes). Apply and
-Discard name the id the detail shows, and the service refuses the call
-when the index names another proposal by then. Under the bar the line
+click, `drift apply <id> --json`; enabled also with nothing open, so a
+second run says what it skipped) and *Discard* (it removes the agent's
+unapplied work, so it arms: "Confirm discard", hint "Discard proposal
+<id>? Click Confirm discard. The logbook does not change.", then `drift
+discard <id> --json`); **under its buttons, as the bar's hint, the line
 "N items proposed by <actor> at <at>, C crises held back — apply each
-below", the state ("<actor> · proposal, nothing written yet", or "Applied
-<at>. That marks the run, not every item: what is still open shows
-below."), the last run's answer ("Applied N · skipped S · refused R"; a
-gone proposal: "… The proposal is gone; the list shows what is open now"
-— refresh, never retry); then **CRISES — EACH ON ITS OWN**: every item
-that is a crisis by the file's flag or the index's class, with *Apply this
-crisis* (`drift apply <id> --item <eventId> --json`, one per run); then
-**WHAT APPLY TAKES**. Each item: the change's subject (from
-`index.events`), "Link to C-…" or "Explain: <title>" with the intent, the
-outcome of the last run (Done, Skipped: <reason>, Refused: <reason>, the
-engine's words) or "No longer open: nothing to apply.", and every evidence
-ref — its kind and ref, then the engine's text with "by <author> ·" first,
-wrapped, never clipped; an item with evidence by an agent, by `unknown`,
-or a Plan "worked by agent:…" is marked "Read twice: …" and that text in
-the accent colour. Every text is plain text (CONTRACT.md rule 6).
+below"** (plain text, wraps). Below the bar: the state ("<actor> ·
+proposal, nothing written yet", or "Applied <at>. That marks the run, not
+every item: what is still open shows below."), the last run's answer
+("Applied N · skipped S · refused R"; a gone proposal: "… The proposal is
+gone; the list shows what is open now" — refresh, never retry), the line
+"Apply re-reads every reference; what it writes may differ from this
+text if the file was changed."; then **CRISES — EACH ON ITS OWN**: every
+item that is a crisis by the file's flag or the index's class, with
+*Apply this crisis* (`drift apply <id> --item <eventId> --json`, one per
+run); then **WHAT APPLY TAKES**. The items are built only while the pane
+is shown, by an asynchronous Loader (a 200 × 10 proposal: the click
+returns at once, the list builds in slices). Each item: the change's
+subject (from `index.events`), "Link to C-…" or "Explain: <title>" with
+the intent, the outcome of the last run (Done, Skipped: <reason>,
+Refused: <reason>, the engine's words) or "No longer open: nothing to
+apply.", and every evidence ref — its kind and ref, then the engine's text
+with "by <authors> ·" first (every author, ADR-0036 §2), wrapped (also
+inside a long path), never clipped; an item with evidence that names an
+agent or `unknown` among its authors (a Plan "worked by agent:…" too) is
+marked "Read twice: some evidence names an agent or an unknown author."
+and that text drawn in the accent colour. Every text is plain text
+(CONTRACT.md rule 6; `model.test.js` checks every `Text` of the file).
 
 The detail (`EventDetail.qml`; prototype `eventDetail`): the sticky bar
 (`Model.eventActions`) — open drift: *Ask agent* first while the engine can

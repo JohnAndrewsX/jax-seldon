@@ -469,7 +469,14 @@ index); `parseProposal` (every schema part, the file off → null);
 index's crisis counts whatever the file says —, the authors, the marks,
 the outcomes of this proposal's last run, applied ≠ done); `askResult`,
 `applyResult` (done/skipped/refused, `markedApplied`, `gone`),
-`discardResult`.
+`discardResult`. Round 2: `parseProposal` against every rule of
+`proposal.schema.json` (unknown properties at each level, `logbook`,
+date-times, lengths, link/explain exclusions, item and ref counts) and
+the 4 MiB limit; `triageSeen` (none, current, replaced, gone);
+`evidenceAuthor` anchored at the start and with several authors;
+`evidenceFlagged` for any `agent:` or `unknown` author; `itemOutcome`
+with refused items; a static check that every `Text` of
+`TriageDetail.qml` is `PlainText` and nothing is elided.
 For the desk's sections 4–6 (WP-123): `deskFilter` (every word, any
 field, case-insensitive); `decisionDetail` (Accept only while proposed,
 nothing enabled for a malformed id, the notes); `decisionCases` (the
@@ -722,7 +729,10 @@ summon a new one, as the loader does from closed; the report's
 `firstFrame` holds the aggregation passes and paints sampled on its first
 swapped frames and the frame by which every chart has painted),
 `hoverItem:<slot>:<i>` (the pointer onto item i of that chart,
-`chart.locate`) and `leave`; for the graph (WP-125) `graphPlay`,
+`chart.locate`) and `leave`; for bulk triage (WP-124b) `service:<method>:<arg>`
+(a Service method called directly, to reach a guard behind a disabled
+button; its result in `call`) and `timedClickName:<objectName>` (a click;
+`call` holds the milliseconds its handlers took); for the graph (WP-125) `graphPlay`,
 `graphCut:<day>`, `graphHover:<id>` (the pointer onto that node) and
 `graphDrag:<id|empty>:<dx>,<dy>` (press on a node, or on a point with
 no node near, move, release; `call` holds the node's window point
@@ -775,8 +785,14 @@ button and `agent ask triage`, the proposal row and detail with every
 evidence text author first, Apply → done/done and the crisis skipped, the
 crisis by its own button, a second Apply that skips all three, exact argv;
 a refused launch and a refused item shown; Ask agent on an event and a
-case and Discard; no button with nothing open; dev mode read-only with
-the marks for an agent's and an unknown author's evidence); Work on the sample (groups, the case
+case and Discard (armed twice, the gone answer kept); no button with
+nothing open; dev mode read-only with the marks for an agent's and an
+unknown author's evidence; round 2: a newer proposal arriving while the
+first is open — the bar says "Replaced …", Apply and Discard are off, the
+service refuses the old id asked directly (`service:` step), nothing
+reaches the engine, Review opens the new one; a 200 × 10 proposal of
+256-character texts — items built only when shown and in the background,
+the click under 200 ms, nothing outside its box at 1920, 960 and 700 px); Work on the sample (groups, the case
 detail, the bar by status, dev mode's refusal, By agent, a reopen) and
 live (the new-case sheet by keys, start → to verification → complete,
 each armed then run, Open in editor, the engine's refusal, `x x`, hand to
