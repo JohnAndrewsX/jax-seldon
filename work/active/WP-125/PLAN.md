@@ -119,7 +119,7 @@ patterns), `sections/Radiant.qml` (a solo section), `Service.qml`,
     under that load single ticks of the 67-node sample measured 9–16 ms
     (their normal is 1–3 ms), so a strict every-tick gate would fail the
     shared `just check` at random. `slowTicks` prints them. The strict
-    every-tick statement is the test host's (below: none over).
+    every-tick statement is the test host's (HANDOVER.md: none over).
 16. **`view().graph`** at the top level of the desk's view, not in
     `sectionView`, so a check sees the graph while another section is
     shown.
