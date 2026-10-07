@@ -9,16 +9,16 @@ Open: WP-042 marketplace submission (after the operator's release setup),
 WP-038 (engine attributes its own installs), WP-033 and WP-043 (operator
 decisions).
 **Contract version:** 1 (draft)
-**Last updated:** 2026-10-07 (tick 112)
+**Last updated:** 2026-10-07 (tick 113)
 
 ## Active work packages
 | WP | Title | Role | Worker | Worktree | Since |
 |---|---|---|---|---|---|
-| WP-130 | guard: stop false positives on text, keep every real block | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
-| WP-120 | contract v2 (ADR-0035 proposed), target `next` | Engine | `engine-120` (opus) | `wt/WP-120` · `wp/120-contract-v2` | 2026-10-06 |
-| WP-122 | desk sections Today, Changelog, Work, target `next` | Plugin | `plugin-122` (opus) | `wt/WP-122` · `wp/122-sections-today` | 2026-10-07 |
-| WP-123 | desk sections Decisions, System, Memory; Prime Radiant in the desk, target `next` | Plugin | `plugin-123` (opus) | `wt/WP-123` · `wp/123-sections-system` | 2026-10-07 |
-| WP-113 | code the collectors cannot see (plugin trees, toggles, opt-in authorized_keys), target `next` | Engine | `engine-113` (opus) | `wt/WP-113` · `wp/113-collector-hashes` | 2026-10-07 |
+| WP-130 | guard: stop false positives on text, keep every real block — Fable approved; waits for the operator's look at the table | Engine | `engine-130` (opus) | `wt/WP-130` · `wp/130-guard` | 2026-10-06 |
+| WP-113 | code the collectors cannot see, target `next` — three review rounds done; waits for the operator's acceptance of ADR-0037 | Engine | `engine-113` (opus) | `wt/WP-113` · `wp/113-collector-hashes` | 2026-10-07 |
+| WP-124 | bulk triage, stage 124a (engine: agent ask, drift propose/apply, ADR-0036), target `next` | Engine | `engine-124` (opus) | `wt/WP-124` · `wp/124-triage` | 2026-10-07 |
+| WP-102 | import Markdown task files as cases, stage 102a (engine), target `next` | Engine | `engine-102` (opus) | `wt/WP-102` · `wp/102-import` | 2026-10-07 |
+| WP-125 | the graph (desk section 8), target `next` | Plugin | `plugin-125` (opus) | `wt/WP-125` · `wp/125-graph` | 2026-10-07 |
 
 ## Queued (next up)
 
@@ -55,6 +55,18 @@ submission). (see `work/queued/`)
 (none)
 
 ## Recently completed
+- 2026-10-07 On `next` (0.2.0): WP-120 contract v2 (ADR-0035 accepted by
+  the orchestrator under the operator's 2026-10-06 decisions; Opus ×2,
+  Fable stage 2 with a round 3: state files only as regular files ≤ 4 MiB,
+  the engine decides a crisis at apply time; WP-127 filed for optional
+  desk fields), WP-122 desk sections Today, Changelog, Work (why loud from
+  the engine's rule, one count, Enter never launches an agent), WP-123
+  sections Decisions, System, Memory and the Prime Radiant in the desk.
+  Each gated on an archive copy (gate-120/122/123 exit 0).
+- 2026-10-07 0.1.4 gates green on main: main check 145, CI, release dry
+  run (fixes 16e889d fake engine version, 2cd9f3a release.yml rsync,
+  3e3aa2c workflow-pins mutation). The tag waits for the fresh-host live
+  test.
 - 2026-10-07 WP-121 (on `next`) the desk shell: an overlay surface on
   the focused monitor, width 50–100 % of the screen (default 100) written
   to the plugin's own shell.json entry only on release, sidebar 1–8 and
