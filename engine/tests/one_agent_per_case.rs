@@ -1,22 +1,29 @@
-//! One agent per case, and one editor per file (WP-156): `agent start`
-//! refuses while the session it launched on the case lives (found by its
-//! `SELDON_CASE`/`SELDON_LOGBOOK` marker), `--again` starts another, `agent
-//! sessions` lists them, `agent focus` brings the window to the front
-//! through `hyprctl`; `open --editor` focuses the editor it opened on the
-//! same path instead of starting a second one.
+//! One agent per case, and one editor per file (WP-156, ADR-0041): a
+//! session is a Hyprland window of an Omarchy launcher class whose process
+//! or a descendant carries the marker. `agent start` refuses while one is
+//! open (or a launch of the case is less than 10 s old), `--again` starts
+//! another, `agent sessions` lists them, `agent focus` brings the window to
+//! the front; `open --editor` focuses the terminal window it opened on the
+//! same path. Without `hyprctl` nothing is tracked.
 //!
-//! The launchers here are stubs that stay alive (`exec sleep`), so their
-//! markers are real processes in `/proc`; [`Live`] kills them (each is the
-//! leader of its own process group) when a test ends, also on a failure.
+//! The "windows" here are real processes the test starts (each the leader
+//! of its own process group, killed by [`Live`] when the test ends, also on
+//! a failure) and a stub `hyprctl` that lists them from
+//! `<tmp>/clients.json`.
 
 mod common;
 
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{Env, Snapper, json, read, stderr};
+use common::{Env, Snapper, json, read, stderr, stdout};
 
 const T0: &str = "2026-10-01T15:30:00+02:00";
+const T5: &str = "2026-10-01T15:30:05+02:00";
+const T11: &str = "2026-10-01T15:30:11+02:00";
+const AGENT: &str = "org.omarchy.agent";
 
 /// A program on the host's PATH (the engine's PATH is the stub directory).
 fn host(name: &str) -> PathBuf {
@@ -28,35 +35,47 @@ fn host(name: &str) -> PathBuf {
         .unwrap_or_else(|| panic!("{name} on the host"))
 }
 
-/// The stubs' pids, written one per line to `file`; killed on drop.
+/// Processes this test started, by process group; killed on drop.
+#[derive(Default)]
 struct Live {
-    file: PathBuf,
+    groups: std::cell::RefCell<Vec<u32>>,
 }
 
 impl Live {
-    fn pids(&self) -> Vec<String> {
-        std::fs::read_to_string(&self.file)
-            .unwrap_or_default()
-            .lines()
-            .map(String::from)
-            .collect()
+    /// Starts `sh -c script` with exactly `vars` in its environment, the
+    /// leader of its own process group. Its pid.
+    fn spawn(&self, script: &str, vars: &[(&str, &str)]) -> u32 {
+        let mut cmd = Command::new(host("sh"));
+        cmd.args(["-c", script])
+            .env_clear()
+            .envs(vars.iter().copied())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0);
+        let pid = cmd.spawn().expect("spawn").id();
+        self.groups.borrow_mut().push(pid);
+        pid
     }
 
-    /// Kills every stub that still runs (by its process group), waits
-    /// until `/proc` no longer lists them, and forgets them: a pid is never
-    /// signalled after its process is gone.
+    /// Kills every group that still runs and waits until it is gone; a
+    /// pid is never signalled after its process is gone.
     fn kill(&self) {
-        let pids: Vec<String> = self.pids().into_iter().filter(|p| alive(p)).collect();
-        for pid in &pids {
-            let _ = std::process::Command::new(host("kill"))
+        let groups: Vec<u32> = self
+            .groups
+            .borrow_mut()
+            .drain(..)
+            .filter(|p| alive(*p))
+            .collect();
+        for pid in &groups {
+            let _ = Command::new(host("kill"))
                 .args(["--", &format!("-{pid}")])
                 .status();
         }
         let deadline = Instant::now() + Duration::from_secs(5);
-        while pids.iter().any(|p| alive(p)) && Instant::now() < deadline {
+        while groups.iter().any(|p| alive(*p)) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(20));
         }
-        let _ = std::fs::remove_file(&self.file);
     }
 }
 
@@ -66,8 +85,8 @@ impl Drop for Live {
     }
 }
 
-/// Alive and not a zombie.
-fn alive(pid: &str) -> bool {
+/// Alive and not a zombie (a spawned child is never waited for here).
+fn alive(pid: u32) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| {
         s.rsplit_once(')')
             .and_then(|(_, rest)| rest.split_whitespace().next().map(String::from))
@@ -75,49 +94,88 @@ fn alive(pid: &str) -> bool {
     })
 }
 
-/// A stub `name` that counts its calls in `<tmp>/<name>.calls`, writes its
-/// pid to `<tmp>/<name>.pids` and stays alive.
-fn live_stub(env: &Env, name: &str) -> (Live, PathBuf) {
-    let base = env.tmp.path().join(name);
-    let (calls, pids) = (base.with_extension("calls"), base.with_extension("pids"));
-    env.stub(
-        name,
-        &format!(
-            "echo call >> '{}'; echo $$ >> '{}'; exec '{}' 30",
-            calls.display(),
-            pids.display(),
-            host("sleep").display()
-        ),
-    );
-    (Live { file: pids }, calls)
+/// The marker `agent start` gives an agent on `case` in `root`.
+fn marker<'a>(case: &'a str, root: &'a Path) -> Vec<(&'a str, &'a str)> {
+    vec![
+        ("SELDON_CASE", case),
+        ("SELDON_LOGBOOK", root.to_str().unwrap()),
+        ("SELDON_ACTOR", "agent:default"),
+    ]
 }
 
-/// A stub `hyprctl`: `clients -j` lists one window `address` for the first
-/// pid in `pids` (none when `address` is empty); `dispatch` appends its
-/// arguments to `<tmp>/hyprctl.dispatch` (one call per line, the
-/// arguments joined by `|`) and answers `lua` for the Lua form, `ok` for
-/// the legacy one.
-fn hyprctl(env: &Env, pids: &Path, address: &str, lua: &str) -> PathBuf {
+/// A process that carries `vars` and stays alive (a window's own process).
+fn marked(live: &Live, vars: &[(&str, &str)]) -> u32 {
+    live.spawn(&format!("exec '{}' 30", host("sleep").display()), vars)
+}
+
+/// A process without a marker whose child carries `vars` (a terminal and
+/// the agent it runs). The parent's pid (the window's).
+fn marked_child(live: &Live, vars: &[(&str, &str)]) -> u32 {
+    let assign: String = vars.iter().map(|(k, v)| format!("{k}='{v}' ")).collect();
+    let pid = live.spawn(
+        &format!("{assign}'{}' 30 & wait", host("sleep").display()),
+        &[],
+    );
+    // the child exists once the shell has forked it
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children"))
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    pid
+}
+
+/// One window for `hyprctl clients -j`; `pid` "PPID" is the caller's parent
+/// (the engine that asks).
+fn window(address: &str, pid: &str, class: &str) -> String {
+    format!(
+        r#"{{"address":"{address}","pid":{pid},"class":"{class}","title":"t","workspace":{{"id":3,"name":"3"}}}}"#
+    )
+}
+
+/// A stub `hyprctl`: `clients -j` prints `<tmp>/clients.json` (the word
+/// PPID replaced by its parent's pid); `dispatch` appends its arguments to
+/// `<tmp>/hyprctl.dispatch` (one call per line, joined by `|`) and answers
+/// `lua` for the Lua form, `ok` for the legacy one.
+fn hyprctl(env: &Env, windows: &[String], lua: &str) -> PathBuf {
+    set_windows(env, windows);
+    let clients = env.tmp.path().join("clients.json");
     let log = env.tmp.path().join("hyprctl.dispatch");
-    let clients = if address.is_empty() {
-        "echo '[]'".to_string()
-    } else {
-        format!(
-            "read pid < '{}'; printf '[{{\"address\":\"%s\",\"pid\":%s,\"class\":\"org.omarchy.agent\",\
-             \"title\":\"t\",\"workspace\":{{\"id\":3,\"name\":\"3\"}}}}]\\n' '{address}' \"$pid\"",
-            pids.display()
-        )
-    };
     env.stub(
         "hyprctl",
         &format!(
-            "if [ \"$1\" = clients ]; then {clients}; exit 0; fi\n\
+            "if [ \"$1\" = clients ]; then '{sed}' \"s/PPID/$PPID/\" '{clients}'; exit 0; fi\n\
              (IFS='|'; echo \"$*\") >> '{log}'\n\
              case \"$2\" in hl.dsp.*) echo '{lua}';; *) echo ok;; esac",
+            sed = host("sed").display(),
+            clients = clients.display(),
             log = log.display()
         ),
     );
     log
+}
+
+fn set_windows(env: &Env, windows: &[String]) {
+    std::fs::write(
+        env.tmp.path().join("clients.json"),
+        format!("[{}]", windows.join(",")),
+    )
+    .unwrap();
+}
+
+/// A stub launcher `omarchy` that counts its calls and returns at once.
+fn launcher(env: &Env) -> PathBuf {
+    let calls = env.tmp.path().join("omarchy.calls");
+    env.stub("omarchy", &format!("echo call >> '{}'", calls.display()));
+    calls
+}
+
+fn calls(path: &Path) -> usize {
+    std::fs::read_to_string(path).map_or(0, |t| t.lines().count())
 }
 
 /// A logbook with C-2026-001 and C-2026-002, both active.
@@ -145,75 +203,190 @@ fn message(out: &std::process::Output) -> String {
         .to_string()
 }
 
+fn sessions(env: &Env, at: &str) -> serde_json::Value {
+    let out = env.at(at, &["agent", "sessions", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    json(&out)
+}
+
 #[test]
-fn a_second_start_is_refused_while_the_first_agent_works() {
+fn an_open_agent_window_refuses_a_second_start() {
     let env = Env::new(Snapper::Missing);
     let root = logbook(&env);
-    let (live, calls) = live_stub(&env, "omarchy");
+    let live = Live::default();
+    let calls_file = launcher(&env);
+    let pid = marked(&live, &marker("C-2026-001", &root));
+    hyprctl(&env, &[window("0xa1", &pid.to_string(), AGENT)], "ok");
 
-    let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let first = live.pids()[0].clone();
-    assert!(alive(&first));
-
-    // another case becomes the active one; the refusal must not touch it
-    env.at(T0, &["agent", "start", "C-2026-002", "--json"]);
     assert_eq!(active_case(&root), "C-2026-002");
     let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert_eq!(
         message(&out),
-        format!(
-            "an agent is already working on C-2026-001 (pid {first}); focus it with `seldon \
-             agent focus C-2026-001`, or start another with `seldon agent start C-2026-001 \
-             --again`; nothing was launched"
-        )
+        "an agent is already working on C-2026-001 (window 0xa1 on workspace 3); focus it with \
+         `seldon agent focus C-2026-001`, or start another with `seldon agent start \
+         C-2026-001 --again`; nothing was launched"
     );
-    assert_eq!(read(&calls), "call\ncall\n", "no third launch");
+    assert_eq!(calls(&calls_file), 0, "nothing launched");
     assert_eq!(
         active_case(&root),
         "C-2026-002",
         "the active case untouched"
     );
 
-    // the list: one entry per case, oldest pid first
-    let v = json(&env.at(T0, &["agent", "sessions", "--json"]));
-    let sessions = v["sessions"].as_array().unwrap();
-    assert_eq!(sessions.len(), 2, "{v}");
-    assert_eq!(sessions[0]["case"], "C-2026-001");
+    let v = sessions(&env, T0);
+    assert_eq!(v["tracking"], true);
     assert_eq!(
-        sessions[0]["pids"],
-        serde_json::json!([first.parse::<u32>().unwrap()])
+        v["sessions"],
+        serde_json::json!([{ "case": "C-2026-001", "starting": false,
+            "window": { "address": "0xa1", "workspace": "3", "pid": pid },
+            "pids": [pid], "actor": "agent:default" }])
     );
-    assert_eq!(sessions[0]["actor"], "agent:default");
-    assert_eq!(sessions[1]["case"], "C-2026-002");
 
     // --again starts another anyway
     let out = env.at(T0, &["agent", "start", "C-2026-001", "--again", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert_eq!(read(&calls).lines().count(), 3);
+    assert_eq!(calls(&calls_file), 1);
     assert_eq!(active_case(&root), "C-2026-001");
-    let v = json(&env.at(T0, &["agent", "sessions", "--json"]));
-    assert_eq!(v["sessions"][0]["pids"].as_array().unwrap().len(), 2, "{v}");
 
-    // the sessions end: nothing listed, and a start launches again
+    // the window closed (and the grace of that launch over): free again
     live.kill();
-    let out = env.at(T0, &["agent", "sessions"]);
-    assert_eq!(out.status.code(), Some(0));
+    set_windows(&env, &[]);
+    let out = env.at(T11, &["agent", "sessions"]);
     assert_eq!(
-        common::stdout(&out).trim(),
-        "No agent that `seldon agent start` launched is running."
+        stdout(&out).trim(),
+        "No window of an agent that `seldon agent start` launched is open."
     );
+    let out = env.at(T11, &["agent", "start", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(calls(&calls_file), 2);
+}
+
+/// The terminal's own process has no marker; the agent it runs does.
+#[test]
+fn a_marked_descendant_makes_the_window_a_session() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    let live = Live::default();
+    let calls_file = launcher(&env);
+    let pid = marked_child(&live, &marker("C-2026-001", &root));
+    hyprctl(&env, &[window("0xa2", &pid.to_string(), AGENT)], "ok");
+    let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(message(&out).contains("(window 0xa2 on workspace 3)"));
+    assert_eq!(calls(&calls_file), 0);
+    let v = sessions(&env, T0);
+    assert_eq!(v["sessions"][0]["window"]["pid"], pid);
+    assert_ne!(
+        v["sessions"][0]["pids"][0], pid,
+        "the marked one is the child"
+    );
+}
+
+/// An orphan the agent left behind (a daemon) carries the marker but has no
+/// window: no session; nor is a marked window of another class one.
+#[test]
+fn a_marked_process_without_an_agent_window_is_no_session() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    let live = Live::default();
+    let calls_file = launcher(&env);
+    let _orphan = marked(&live, &marker("C-2026-001", &root));
+    let foot = marked(&live, &marker("C-2026-001", &root));
+    hyprctl(&env, &[window("0xf0", &foot.to_string(), "foot")], "ok");
+    assert_eq!(sessions(&env, T0)["sessions"], serde_json::json!([]));
     let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert_eq!(read(&calls).lines().count(), 4);
+    assert_eq!(calls(&calls_file), 1);
+    let out = env.at(T11, &["agent", "focus", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        message(&out),
+        "no agent is working on C-2026-001: no window of an agent `seldon agent start` \
+         launched on it is open; start one with `seldon agent start C-2026-001`"
+    );
+}
+
+/// A launch counts as a session for 10 s while its window is not mapped.
+#[test]
+fn a_launch_counts_for_ten_seconds_without_a_window() {
+    let env = Env::new(Snapper::Missing);
+    logbook(&env);
+    let calls_file = launcher(&env);
+    let log = hyprctl(&env, &[], "ok");
+    let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+
+    let out = env.at(T5, &["agent", "start", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert_eq!(
+        message(&out),
+        "an agent was started on C-2026-001 5 s ago and its window is not open yet; focus it \
+         with `seldon agent focus C-2026-001`, or start another with `seldon agent start \
+         C-2026-001 --again`; nothing was launched"
+    );
+    assert_eq!(
+        sessions(&env, T5)["sessions"],
+        serde_json::json!([{ "case": "C-2026-001", "starting": true, "window": null,
+            "pids": [], "actor": null }])
+    );
+    let out = env.at(T5, &["agent", "focus", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(
+        json(&out),
+        serde_json::json!({ "focused": false, "starting": true, "case": "C-2026-001" })
+    );
+    assert!(!log.exists(), "nothing dispatched");
+    // another case is not held up
+    let out = env.at(T5, &["agent", "start", "C-2026-002", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+
+    let out = env.at(T11, &["agent", "start", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(calls(&calls_file), 3);
+    let kept = read(&env.home.join(".local/state/seldon/launches.json"));
+    assert!(
+        !kept.contains("15:30:00"),
+        "records past the grace go: {kept}"
+    );
+    assert!(
+        kept.contains("C-2026-002") && kept.contains("15:30:11"),
+        "{kept}"
+    );
+}
+
+/// Without hyprctl nothing is tracked: nothing is refused.
+#[test]
+fn without_hyprctl_nothing_is_tracked() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    let live = Live::default();
+    let calls_file = launcher(&env);
+    marked(&live, &marker("C-2026-001", &root));
+    for _ in 0..2 {
+        let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    }
+    assert_eq!(calls(&calls_file), 2);
+    let v = sessions(&env, T0);
+    assert_eq!(v["tracking"], false);
+    assert_eq!(v["sessions"], serde_json::json!([]));
+    let out = env.at(T0, &["agent", "sessions"]);
+    assert!(
+        stdout(&out).starts_with("Not tracked: hyprctl not found"),
+        "{}",
+        stdout(&out)
+    );
+    let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(message(&out).starts_with("cannot focus the agent on C-2026-001: hyprctl not found"));
 }
 
 #[test]
 fn again_is_for_a_case_id_only() {
     let env = Env::new(Snapper::Missing);
     logbook(&env);
-    let (_live, calls) = live_stub(&env, "omarchy");
+    let calls_file = launcher(&env);
     let out = env.at(
         T0,
         &[
@@ -221,7 +394,7 @@ fn again_is_for_a_case_id_only() {
         ],
     );
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(!calls.exists(), "nothing launched");
+    assert_eq!(calls(&calls_file), 0);
 }
 
 /// `--new` makes a new case, which no agent works on yet: never refused.
@@ -231,7 +404,8 @@ fn a_new_case_is_never_refused() {
     logbook(&env);
     std::fs::create_dir_all(env.home.join(".config/omarchy/defaults")).unwrap();
     std::fs::write(env.home.join(".config/omarchy/defaults/agent"), "claude\n").unwrap();
-    let (_live, calls) = live_stub(&env, "omarchy");
+    let calls_file = launcher(&env);
+    hyprctl(&env, &[], "ok");
     for (i, case) in ["C-2026-003", "C-2026-004"].iter().enumerate() {
         let out = env.at(
             T0,
@@ -239,35 +413,67 @@ fn a_new_case_is_never_refused() {
         );
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         assert_eq!(json(&out)["case"], *case);
-        assert_eq!(read(&calls).lines().count(), i + 1);
+        assert_eq!(calls(&calls_file), i + 1);
     }
 }
 
-/// A case id is unique per logbook: another logbook's session on the same
-/// id is not this one's.
+/// Only this logbook's marker with a case id counts; an actor that does
+/// not read as one is not reported.
 #[test]
-fn another_logbooks_session_does_not_count() {
-    let a = Env::new(Snapper::Missing);
-    let b = Env::new(Snapper::Missing);
-    logbook(&a);
-    logbook(&b);
-    let (_live_a, _) = live_stub(&a, "omarchy");
-    let (_live_b, calls_b) = live_stub(&b, "omarchy");
-    let out = a.at(T0, &["agent", "start", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let out = b.at(T0, &["agent", "start", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert_eq!(read(&calls_b), "call\n");
-    let v = json(&b.at(T0, &["agent", "sessions", "--json"]));
-    assert_eq!(v["sessions"].as_array().unwrap().len(), 1, "{v}");
+fn only_this_logbooks_case_markers_count() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    let live = Live::default();
+    let other = marked(&live, &marker("C-2026-001", Path::new("/elsewhere")));
+    let bogus = marked(&live, &marker("not-a-case", &root));
+    let evil = marked(
+        &live,
+        &[
+            ("SELDON_CASE", "C-2026-002"),
+            ("SELDON_LOGBOOK", root.to_str().unwrap()),
+            ("SELDON_ACTOR", "agent:Evil Name"),
+        ],
+    );
+    hyprctl(
+        &env,
+        &[
+            window("0x1", &other.to_string(), AGENT),
+            window("0x2", &bogus.to_string(), AGENT),
+            window("0x3", &evil.to_string(), AGENT),
+        ],
+        "ok",
+    );
+    let v = sessions(&env, T0);
+    let found = v["sessions"].as_array().unwrap();
+    assert_eq!(found.len(), 1, "{v}");
+    assert_eq!(found[0]["case"], "C-2026-002");
+    assert_eq!(found[0]["actor"], serde_json::Value::Null);
 }
 
-/// `agent ask` hands the agent no case: it is no session of one.
+/// The engine's own process is no session, even inside a marked window.
+#[test]
+fn the_engine_itself_is_no_session() {
+    let env = Env::new(Snapper::Missing);
+    let root = logbook(&env);
+    hyprctl(&env, &[window("0x5e1f", "PPID", AGENT)], "ok");
+    let out = env
+        .command(&["agent", "sessions", "--json"])
+        .env("SELDON_NOW", T0)
+        .env("SELDON_CASE", "C-2026-001")
+        .env("SELDON_LOGBOOK", &root)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(json(&out)["sessions"], serde_json::json!([]));
+}
+
+/// `agent ask` hands the agent no case: no session.
 #[test]
 fn an_ask_is_no_session() {
     let env = Env::new(Snapper::Missing);
     logbook(&env);
-    let (_live, calls) = live_stub(&env, "omarchy");
+    let calls_file = launcher(&env);
+    hyprctl(&env, &[], "ok");
     std::fs::create_dir_all(env.home.join(".config/omarchy/defaults")).unwrap();
     std::fs::write(env.home.join(".config/omarchy/defaults/agent"), "claude\n").unwrap();
     std::fs::create_dir_all(env.home.join(".claude/skills")).unwrap();
@@ -275,43 +481,21 @@ fn an_ask_is_no_session() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let out = env.at(T0, &["agent", "ask", "case", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let v = json(&env.at(T0, &["agent", "sessions", "--json"]));
-    assert_eq!(v["sessions"], serde_json::json!([]));
+    assert_eq!(sessions(&env, T0)["sessions"], serde_json::json!([]));
     let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert_eq!(read(&calls).lines().count(), 2);
+    assert_eq!(calls(&calls_file), 2);
 }
 
 #[test]
 fn focus_brings_the_agents_window_to_the_front() {
     let env = Env::new(Snapper::Missing);
-    logbook(&env);
-
-    // no session yet
-    let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert_eq!(
-        message(&out),
-        "no agent is working on C-2026-001: none that `seldon agent start` launched still \
-         runs; start one with `seldon agent start C-2026-001`"
-    );
-
-    let (live, _) = live_stub(&env, "omarchy");
-    let out = env.at(T0, &["agent", "start", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let pid = live.pids()[0].clone();
-
-    // no hyprctl: said, not guessed
-    let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert!(
-        message(&out).contains("hyprctl not found"),
-        "{}",
-        message(&out)
-    );
+    let root = logbook(&env);
+    let live = Live::default();
+    let pid = marked(&live, &marker("C-2026-001", &root));
 
     // the Lua dispatcher, Omarchy's first choice
-    let log = hyprctl(&env, &live.file, "0x5a1d", "ok");
+    let log = hyprctl(&env, &[window("0x5a1d", &pid.to_string(), AGENT)], "ok");
     let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let v = json(&out);
@@ -319,7 +503,7 @@ fn focus_brings_the_agents_window_to_the_front() {
     assert_eq!(v["case"], "C-2026-001");
     assert_eq!(v["address"], "0x5a1d");
     assert_eq!(v["workspace"], "3");
-    assert_eq!(v["pid"].to_string(), pid);
+    assert_eq!(v["pid"], pid);
     assert_eq!(
         read(&log),
         "dispatch|hl.dsp.focus({ window = \"address:0x5a1d\" })\n"
@@ -327,7 +511,11 @@ fn focus_brings_the_agents_window_to_the_front() {
 
     // a Hyprland without it: the legacy dispatcher
     std::fs::remove_file(&log).unwrap();
-    hyprctl(&env, &live.file, "0x5a1d", "error: unknown dispatcher");
+    hyprctl(
+        &env,
+        &[window("0x5a1d", &pid.to_string(), AGENT)],
+        "error: unknown dispatcher",
+    );
     let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(
@@ -336,19 +524,9 @@ fn focus_brings_the_agents_window_to_the_front() {
          dispatch|focuswindow|address:0x5a1d\n"
     );
 
-    // no window of it
-    std::fs::remove_file(&log).unwrap();
-    hyprctl(&env, &live.file, "", "ok");
-    let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert_eq!(
-        message(&out),
-        format!("an agent is working on C-2026-001 (pid {pid}), but Hyprland has no window of it")
-    );
-    assert!(!log.exists(), "nothing dispatched");
-
     // an address that is not one never reaches a dispatch
-    hyprctl(&env, &live.file, "0x1g", "ok");
+    std::fs::remove_file(&log).unwrap();
+    hyprctl(&env, &[window("0x1g", &pid.to_string(), AGENT)], "ok");
     let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(
@@ -357,53 +535,42 @@ fn focus_brings_the_agents_window_to_the_front() {
         message(&out)
     );
     assert!(!log.exists(), "nothing dispatched");
-
-    // the session ends
-    live.kill();
-    let out = env.at(T0, &["agent", "focus", "C-2026-001", "--json"]);
-    assert_eq!(out.status.code(), Some(1));
-    assert!(message(&out).starts_with("no agent is working on C-2026-001"));
 }
 
 #[test]
-fn opening_the_same_file_twice_focuses_the_first_editor() {
+fn opening_the_same_file_twice_focuses_its_terminal_window() {
     let env = Env::new(Snapper::Missing);
     let root = env.init_logbook();
-    let (live, calls) = live_stub(&env, "omarchy-launch-editor");
+    let live = Live::default();
+    let calls_file = env.tmp.path().join("editor.calls");
+    env.stub(
+        "omarchy-launch-editor",
+        &format!("echo call >> '{}'", calls_file.display()),
+    );
+    let status = root.join("STATUS.md");
+    let editor = marked(&live, &[("SELDON_OPEN", status.to_str().unwrap())]);
 
-    let out = env.at(T0, &["open", "status", "--editor", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert_eq!(json(&out)["editor"]["launched"], true);
-
-    // no hyprctl (not a Hyprland session): opened again, as before
+    // no hyprctl (not a Hyprland session): opened as before
     let out = env.at(T0, &["open", "status", "--editor", "--json"]);
     assert_eq!(json(&out)["editor"]["launched"], true, "{}", stderr(&out));
-    assert_eq!(read(&calls).lines().count(), 2);
-    live.kill();
-    std::fs::remove_file(&calls).unwrap();
 
+    // a GUI editor's window: opened as before
+    let log = hyprctl(&env, &[window("0xc0de", &editor.to_string(), "code")], "ok");
     let out = env.at(T0, &["open", "status", "--editor", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    let pid: u32 = live.pids()[0].parse().unwrap();
+    assert_eq!(json(&out)["editor"]["launched"], true, "{}", stderr(&out));
+    assert_eq!(calls(&calls_file), 2);
 
-    // its window is not there yet: nothing started
-    let log = hyprctl(&env, &live.file, "", "ok");
-    let out = env.at(T0, &["open", "status", "--editor", "--json"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert_eq!(
-        json(&out)["editor"],
-        serde_json::json!({ "launched": false, "running": true, "pid": pid,
-            "program": "omarchy-launch-editor" })
+    // Omarchy's terminal window of it: focused, nothing started
+    set_windows(
+        &env,
+        &[window("0xed17", &editor.to_string(), "org.omarchy.nvim")],
     );
-
-    // its window: focused
-    hyprctl(&env, &live.file, "0xed17", "ok");
     let out = env.at(T0, &["open", "status", "--editor", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(
         json(&out)["editor"],
-        serde_json::json!({ "launched": false, "focused": true, "address": "0xed17", "pid": pid,
-            "program": "omarchy-launch-editor" })
+        serde_json::json!({ "launched": false, "focused": true, "address": "0xed17",
+            "pid": editor, "program": "omarchy-launch-editor" })
     );
     assert_eq!(
         read(&log),
@@ -411,16 +578,16 @@ fn opening_the_same_file_twice_focuses_the_first_editor() {
     );
     let out = env.at(T0, &["open", "status", "--editor"]);
     assert_eq!(
-        common::stdout(&out).trim(),
+        stdout(&out).trim(),
         format!(
             "{} (already open; focused its window 0xed17)",
-            root.join("STATUS.md").display()
+            status.display()
         )
     );
-    assert_eq!(read(&calls), "call\n", "one editor for the file");
+    assert_eq!(calls(&calls_file), 2, "one editor for the file");
 
     // another file opens its own
     let out = env.at(T0, &["open", "logbook", "--editor", "--json"]);
     assert_eq!(json(&out)["editor"]["launched"], true, "{}", stderr(&out));
-    assert_eq!(read(&calls).lines().count(), 2);
+    assert_eq!(calls(&calls_file), 3);
 }

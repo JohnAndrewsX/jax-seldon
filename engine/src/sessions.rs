@@ -1,24 +1,31 @@
-//! The windows the engine opened and that still live (WP-156): an agent
-//! `seldon agent start` launched, an editor `seldon open --editor` started.
+//! The windows the engine opened and that are still open (WP-156,
+//! ADR-0041): an agent `seldon agent start` launched, an editor `seldon
+//! open --editor` started.
 //!
-//! No launcher tells us its window or the pid that ends up owning it:
-//! `omarchy-launch-tui` runs `setsid`, which forks because the engine
-//! starts the launcher as a process-group leader, and the terminal is a
-//! pid the engine never saw. What survives the whole chain is the
-//! environment the engine gave the launcher (ADR-0030 §1: `SELDON_CASE`,
-//! `SELDON_LOGBOOK`; `SELDON_OPEN` for an editor). So a session is found
-//! by its marker in `/proc/<pid>/environ` — readable for the user's own
-//! processes only; every other one is skipped — and only the keys asked
-//! for are compared; nothing else of any environment is kept. No state
-//! file: the marker dies with the session.
+//! A session is a **Hyprland window** of an Omarchy launcher class whose
+//! process, or one of its descendants, carries the engine's marker in its
+//! environment (`SELDON_CASE` + `SELDON_LOGBOOK` for an agent,
+//! `SELDON_OPEN` for an editor; ADR-0030 §1). No launcher reports its
+//! window or a pid that survives (`omarchy-launch-tui` runs `setsid`, which
+//! forks), but the environment survives the whole chain into the terminal
+//! and what runs in it. Starting from the windows means a process the
+//! agent left behind without a window (a daemon, an ssh master) is no
+//! session, and only the processes of those windows are read: never the
+//! whole process table.
 //!
-//! Its window is the Hyprland client whose pid is a marked process, else
-//! the nearest ancestor of one (`hyprctl clients -j`, read-only), focused
-//! the way `omarchy-launch-or-focus` does: `hl.dsp.focus({ window =
-//! "address:…" })`, then the legacy `focuswindow address:…`. The address
-//! goes into that expression only after it is checked as `0x` and hex.
+//! Windows come from `hyprctl clients -j` (read-only); without it there is
+//! no session tracking. For each window of a matching class the engine
+//! walks the window's process and its descendants
+//! (`/proc/<pid>/task/<tid>/children`, at most [`TREE_MAX`] processes) and
+//! reads each one's `/proc/<pid>/environ` — the user's own processes only;
+//! others fail and are skipped — at most [`ENVIRON_MAX`] bytes, keeping
+//! only the keys asked for. A window is focused the way
+//! `omarchy-launch-or-focus` does it: `hl.dsp.focus({ window = "address:…"
+//! })`, then the legacy `focuswindow address:…`; the address goes into that
+//! expression only after it is checked as `0x` and hex.
 
 use std::ffi::OsStr;
+use std::io::Read as _;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::Path;
 use std::time::Duration;
@@ -31,71 +38,24 @@ use crate::sys::{self, Run};
 pub const PROC: &str = "/proc";
 
 /// Set to the path for an editor `open --editor` started without a
-/// terminal: the marker by which a second open of the same file finds it.
+/// terminal: the marker by which a second open of the same path finds it.
 pub const OPEN_ENV: &str = "SELDON_OPEN";
+
+/// The class of every agent window `omarchy agent` opens.
+pub const AGENT_CLASS: &str = "org.omarchy.agent";
+
+/// The class prefix of the terminal windows `omarchy-launch-tui` opens
+/// (`org.omarchy.<program>`, e.g. `org.omarchy.nvim`).
+pub const TUI_CLASS_PREFIX: &str = "org.omarchy.";
+
+/// How much of one process's environment is read.
+pub const ENVIRON_MAX: u64 = 64 * 1024;
+
+/// How many processes of one window's tree are looked at.
+pub const TREE_MAX: usize = 256;
 
 /// How long a `hyprctl` call may take.
 const HYPRCTL_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// A live process that carries the marker.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Marked {
-    pub pid: u32,
-    /// The values of the `report` keys it carries, in their order.
-    pub values: Vec<Option<String>>,
-}
-
-/// The processes under `proc` (other than this one) whose environment
-/// holds every `(key, value)` of `want`, with the values of `report`.
-/// Oldest (lowest pid) first.
-pub fn marked(proc: &Path, want: &[(&str, &OsStr)], report: &[&str]) -> Vec<Marked> {
-    let me = std::process::id();
-    let Ok(entries) = std::fs::read_dir(proc) else {
-        return Vec::new();
-    };
-    let mut out: Vec<Marked> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| e.file_name().to_str()?.parse::<u32>().ok())
-        .filter(|&pid| pid != me)
-        .filter_map(|pid| {
-            // gone, or another user's: not ours to see
-            let environ = std::fs::read(proc.join(pid.to_string()).join("environ")).ok()?;
-            let all = want
-                .iter()
-                .all(|(k, v)| value(&environ, k) == Some(v.as_bytes()));
-            all.then(|| Marked {
-                pid,
-                values: report
-                    .iter()
-                    .map(|k| value(&environ, k).map(|v| String::from_utf8_lossy(v).into_owned()))
-                    .collect(),
-            })
-        })
-        .collect();
-    out.sort_by_key(|m| m.pid);
-    out
-}
-
-/// The value of `key` in a NUL-separated environment block (the first
-/// entry wins, as `getenv` reads it).
-fn value<'a>(environ: &'a [u8], key: &str) -> Option<&'a [u8]> {
-    environ.split(|b| *b == 0).find_map(|entry| {
-        entry
-            .strip_prefix(key.as_bytes())
-            .and_then(|rest| rest.strip_prefix(b"="))
-    })
-}
-
-/// The parent of `pid` (`/proc/<pid>/stat`, the field after the command
-/// name in parentheses, which may itself hold `)` and spaces).
-pub fn parent(proc: &Path, pid: u32) -> Option<u32> {
-    let stat = std::fs::read(proc.join(pid.to_string()).join("stat")).ok()?;
-    let close = stat.iter().rposition(|b| *b == b')')?;
-    let rest = std::str::from_utf8(&stat[close + 1..]).ok()?;
-    let mut fields = rest.split_whitespace();
-    fields.next()?; // state
-    fields.next()?.parse().ok().filter(|&p| p > 1)
-}
 
 /// One Hyprland window, as `hyprctl clients -j` lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -114,7 +74,8 @@ pub struct Workspace {
     pub name: String,
 }
 
-/// The windows Hyprland has (`hyprctl clients -j`). `Err` says why not.
+/// The windows Hyprland has (`hyprctl clients -j`). `Err` says why not:
+/// then nothing is tracked.
 pub fn windows() -> Result<Vec<Window>, String> {
     match sys::run("hyprctl", &["clients", "-j"], None, HYPRCTL_TIMEOUT) {
         Run::Exited {
@@ -123,42 +84,121 @@ pub fn windows() -> Result<Vec<Window>, String> {
             ..
         } => serde_json::from_str(&stdout)
             .map_err(|e| format!("hyprctl clients -j gave no window list ({e})")),
-        Run::NotFound => Err("hyprctl not found: focusing a window needs Hyprland".into()),
+        Run::NotFound => Err("hyprctl not found: windows are Hyprland's".into()),
         other => Err(format!("hyprctl clients -j failed: {}", failure(&other))),
     }
 }
 
-/// The window of the first of `pids` that has one, else of the nearest
-/// ancestor of one that has one (a terminal that runs the marked process
-/// as its child). Several windows of one pid (a terminal server): the
-/// one of class `prefer`, else the first.
-pub fn window_of<'a>(
+/// A window whose tree carries the marker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marked {
+    pub window: Window,
+    /// The marked processes of its tree, oldest (by start time) first.
+    pub pids: Vec<u32>,
+    /// The values of the `report` keys the oldest one carries.
+    pub values: Vec<Option<String>>,
+}
+
+/// The windows of `windows` whose class `class` accepts and whose process
+/// or a descendant (other than this process) carries every `(key, value)`
+/// of `want`, with the `report` values of the oldest marked process.
+pub fn marked_windows(
     proc: &Path,
-    windows: &'a [Window],
-    pids: &[u32],
-    prefer: &str,
-) -> Option<&'a Window> {
-    let of = |pid: u32| {
-        let mine: Vec<&Window> = windows.iter().filter(|w| w.pid == i64::from(pid)).collect();
-        mine.iter()
-            .find(|w| w.class == prefer)
-            .or_else(|| mine.first())
-            .copied()
-    };
-    if let Some(w) = pids.iter().find_map(|&p| of(p)) {
-        return Some(w);
-    }
-    pids.iter().find_map(|&p| {
-        let mut at = p;
-        // a loop in a hand-made /proc must not hang the engine
-        for _ in 0..64 {
-            at = parent(proc, at)?;
-            if let Some(w) = of(at) {
-                return Some(w);
+    windows: &[Window],
+    class: impl Fn(&str) -> bool,
+    want: &[(&str, &OsStr)],
+    report: &[&str],
+) -> Vec<Marked> {
+    let me = std::process::id();
+    windows
+        .iter()
+        .filter(|w| class(&w.class))
+        .filter_map(|w| {
+            let root = u32::try_from(w.pid).ok().filter(|&p| p > 1)?;
+            let mut found: Vec<(u64, u32, Vec<u8>)> = tree(proc, root, TREE_MAX)
+                .into_iter()
+                .filter(|&pid| pid != me)
+                .filter_map(|pid| {
+                    let environ = environ(proc, pid)?;
+                    want.iter()
+                        .all(|(k, v)| value(&environ, k) == Some(v.as_bytes()))
+                        .then(|| (start_time(proc, pid).unwrap_or(u64::MAX), pid, environ))
+                })
+                .collect();
+            found.sort_by_key(|(start, pid, _)| (*start, *pid));
+            let (_, _, oldest) = found.first()?;
+            let values = report
+                .iter()
+                .map(|k| value(oldest, k).map(|v| String::from_utf8_lossy(v).into_owned()))
+                .collect();
+            Some(Marked {
+                window: w.clone(),
+                pids: found.iter().map(|(_, pid, _)| *pid).collect(),
+                values,
+            })
+        })
+        .collect()
+}
+
+/// `root` and its descendants, breadth first, at most `max`.
+pub fn tree(proc: &Path, root: u32, max: usize) -> Vec<u32> {
+    let mut out = vec![root];
+    let mut i = 0;
+    while i < out.len() && out.len() < max {
+        let pid = out[i];
+        i += 1;
+        let Ok(tasks) = std::fs::read_dir(proc.join(pid.to_string()).join("task")) else {
+            continue;
+        };
+        for task in tasks.filter_map(|t| t.ok()) {
+            let Ok(text) = std::fs::read_to_string(task.path().join("children")) else {
+                continue;
+            };
+            for child in text
+                .split_whitespace()
+                .filter_map(|c| c.parse::<u32>().ok())
+            {
+                if out.len() >= max {
+                    break;
+                }
+                // a hand-made /proc with a loop must not run forever
+                if !out.contains(&child) {
+                    out.push(child);
+                }
             }
         }
-        None
+    }
+    out
+}
+
+/// The first [`ENVIRON_MAX`] bytes of `pid`'s environment; `None` when it
+/// is gone or not the user's.
+fn environ(proc: &Path, pid: u32) -> Option<Vec<u8>> {
+    let file = std::fs::File::open(proc.join(pid.to_string()).join("environ")).ok()?;
+    let mut bytes = Vec::new();
+    file.take(ENVIRON_MAX).read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// The value of `key` in a NUL-separated environment block (the first
+/// entry wins, as `getenv` reads it).
+fn value<'a>(environ: &'a [u8], key: &str) -> Option<&'a [u8]> {
+    environ.split(|b| *b == 0).find_map(|entry| {
+        entry
+            .strip_prefix(key.as_bytes())
+            .and_then(|rest| rest.strip_prefix(b"="))
     })
+}
+
+/// When `pid` started, in clock ticks after boot (`/proc/<pid>/stat` field
+/// 22, read past the command name in parentheses, which may itself hold
+/// `)` and spaces).
+pub fn start_time(proc: &Path, pid: u32) -> Option<u64> {
+    let stat = std::fs::read(proc.join(pid.to_string()).join("stat")).ok()?;
+    let close = stat.iter().rposition(|b| *b == b')')?;
+    let rest = std::str::from_utf8(&stat[close + 1..]).ok()?;
+    // field 3 (state) is the first after the name: field 22 is the 20th
+    rest.split_whitespace().nth(19)?.parse().ok()
 }
 
 /// Whether `address` is a Hyprland window address: `0x` and 1–16 hex
@@ -239,87 +279,41 @@ mod tests {
         }
     }
 
-    /// A hand-made `/proc`: `(pid, ppid, environ entries)`.
-    fn proc_tree(tag: &str, procs: &[(u32, u32, &[&str])]) -> Proc {
+    /// A hand-made `/proc`: `(pid, start time, children, environ)`.
+    fn proc_tree(tag: &str, procs: &[(u32, u64, &[u32], &[&str])]) -> Proc {
         let dir = std::env::temp_dir().join(format!(
             "seldon-sessions-{tag}-{}-{}",
             std::process::id(),
             sys::random_hex(4)
         ));
-        for (pid, ppid, env) in procs {
+        for (pid, start, children, env) in procs {
             let p = dir.join(pid.to_string());
-            std::fs::create_dir_all(&p).unwrap();
+            std::fs::create_dir_all(p.join("task").join(pid.to_string())).unwrap();
             let mut block = Vec::new();
             for e in *env {
                 block.extend_from_slice(e.as_bytes());
                 block.push(0);
             }
             std::fs::write(p.join("environ"), block).unwrap();
-            std::fs::write(p.join("stat"), format!("{pid} (a ) b) S {ppid} 1 1 0 -1")).unwrap();
+            let kids: Vec<String> = children.iter().map(|c| c.to_string()).collect();
+            std::fs::write(
+                p.join("task").join(pid.to_string()).join("children"),
+                kids.join(" ") + " ",
+            )
+            .unwrap();
+            // fields 3..22: state, then 18 numbers, then the start time
+            let middle = vec!["0"; 18].join(" ");
+            std::fs::write(
+                p.join("stat"),
+                format!("{pid} (a ) b) S {middle} {start} 0 0"),
+            )
+            .unwrap();
         }
-        std::fs::create_dir_all(dir.join("self")).unwrap();
         Proc(dir)
     }
 
     fn os(s: &str) -> &OsStr {
         OsStr::new(s)
-    }
-
-    #[test]
-    fn a_session_needs_every_marker_key() {
-        let p = proc_tree(
-            "keys",
-            &[
-                (
-                    10,
-                    1,
-                    &[
-                        "SELDON_CASE=C-2026-005",
-                        "SELDON_LOGBOOK=/l",
-                        "SELDON_ACTOR=agent:default",
-                    ],
-                ),
-                (11, 10, &["SELDON_CASE=C-2026-005", "SELDON_LOGBOOK=/other"]),
-                (12, 10, &["SELDON_CASE=C-2026-0050", "SELDON_LOGBOOK=/l"]),
-                (13, 10, &["XSELDON_CASE=C-2026-005", "SELDON_LOGBOOK=/l"]),
-                (14, 10, &["SELDON_LOGBOOK=/l", "SELDON_CASE=C-2026-005"]),
-                (15, 10, &[]),
-            ],
-        );
-        let want = [
-            ("SELDON_CASE", os("C-2026-005")),
-            ("SELDON_LOGBOOK", os("/l")),
-        ];
-        let got = marked(&p.0, &want, &["SELDON_ACTOR"]);
-        assert_eq!(
-            got,
-            [
-                Marked {
-                    pid: 10,
-                    values: vec![Some("agent:default".into())]
-                },
-                Marked {
-                    pid: 14,
-                    values: vec![None]
-                },
-            ]
-        );
-        assert!(marked(&p.0.join("missing"), &want, &[]).is_empty());
-    }
-
-    #[test]
-    fn the_first_entry_of_a_key_wins() {
-        assert_eq!(value(b"A=1\0A=2\0", "A"), Some(&b"1"[..]));
-        assert_eq!(value(b"AB=1\0A=\0", "A"), Some(&b""[..]));
-        assert_eq!(value(b"A\0", "A"), None);
-    }
-
-    #[test]
-    fn the_parent_reads_past_a_name_with_parentheses() {
-        let p = proc_tree("stat", &[(20, 7, &[]), (21, 1, &[])]);
-        assert_eq!(parent(&p.0, 20), Some(7));
-        assert_eq!(parent(&p.0, 21), None, "pid 1 is no parent to follow");
-        assert_eq!(parent(&p.0, 99), None);
     }
 
     fn window(address: &str, pid: i64, class: &str) -> Window {
@@ -331,31 +325,110 @@ mod tests {
         }
     }
 
+    const MARK: [&str; 3] = [
+        "SELDON_CASE=C-2026-005",
+        "SELDON_LOGBOOK=/l",
+        "SELDON_ACTOR=agent:default",
+    ];
+
+    fn want() -> [(&'static str, &'static OsStr); 2] {
+        [
+            ("SELDON_CASE", os("C-2026-005")),
+            ("SELDON_LOGBOOK", os("/l")),
+        ]
+    }
+
     #[test]
-    fn the_window_is_the_marked_pid_or_its_nearest_ancestor() {
-        let p = proc_tree("win", &[(30, 20, &[]), (20, 10, &[]), (10, 5, &[])]);
+    fn a_window_counts_by_its_own_marker_or_a_descendants() {
+        let p = proc_tree(
+            "tree",
+            &[
+                (10, 500, &[11], &[]),
+                (
+                    11,
+                    600,
+                    &[12],
+                    &["SELDON_LOGBOOK=/l", "SELDON_CASE=C-2026-005"],
+                ),
+                (12, 550, &[], &MARK),
+                (20, 100, &[], &MARK),
+                (30, 100, &[], &MARK),
+                (
+                    40,
+                    100,
+                    &[],
+                    &["SELDON_CASE=C-2026-005", "SELDON_LOGBOOK=/other"],
+                ),
+            ],
+        );
         let ws = [
-            window("0x1", 10, "org.omarchy.terminal"),
-            window("0x2", 20, "foot"),
-            window("0x3", 20, "org.omarchy.agent"),
-            window("0x4", 99, "x"),
+            window("0x1", 10, AGENT_CLASS),
+            window("0x2", 20, AGENT_CLASS),
+            window("0x3", 30, "foot"),
+            window("0x4", 40, AGENT_CLASS),
+            window("0x5", 99, AGENT_CLASS),
         ];
-        let addr = |pids: &[u32]| {
-            window_of(&p.0, &ws, pids, "org.omarchy.agent").map(|w| w.address.clone())
-        };
-        assert_eq!(addr(&[99]).as_deref(), Some("0x4"));
+        let got = marked_windows(&p.0, &ws, |c| c == AGENT_CLASS, &want(), &["SELDON_ACTOR"]);
+        let short: Vec<(String, Vec<u32>, Vec<Option<String>>)> = got
+            .iter()
+            .map(|m| (m.window.address.clone(), m.pids.clone(), m.values.clone()))
+            .collect();
         assert_eq!(
-            addr(&[30]).as_deref(),
-            Some("0x3"),
-            "the parent, of the preferred class"
+            short,
+            [
+                // 12 started before 11 although its pid is higher: oldest first
+                (
+                    "0x1".into(),
+                    vec![12, 11],
+                    vec![Some("agent:default".into())]
+                ),
+                ("0x2".into(), vec![20], vec![Some("agent:default".into())]),
+            ]
         );
-        assert_eq!(addr(&[10]).as_deref(), Some("0x1"));
-        assert_eq!(
-            addr(&[30, 99]).as_deref(),
-            Some("0x4"),
-            "a marked pid before an ancestor"
+    }
+
+    #[test]
+    fn the_environment_is_read_up_to_its_cap() {
+        let pad = format!("PAD={}", "x".repeat(ENVIRON_MAX as usize));
+        let early: Vec<&str> = MARK.iter().copied().chain([pad.as_str()]).collect();
+        let late: Vec<&str> = [pad.as_str()].into_iter().chain(MARK).collect();
+        let p = proc_tree("cap", &[(10, 1, &[], &early), (20, 1, &[], &late)]);
+        let ws = [
+            window("0x1", 10, AGENT_CLASS),
+            window("0x2", 20, AGENT_CLASS),
+        ];
+        let got = marked_windows(&p.0, &ws, |_| true, &want(), &[]);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].window.address, "0x1");
+    }
+
+    #[test]
+    fn the_tree_is_capped_and_survives_a_loop() {
+        let p = proc_tree(
+            "loop",
+            &[
+                (10, 1, &[11, 12], &[]),
+                (11, 1, &[10], &[]),
+                (12, 1, &[], &[]),
+            ],
         );
-        assert_eq!(addr(&[77]), None);
+        assert_eq!(tree(&p.0, 10, 10), [10, 11, 12]);
+        assert_eq!(tree(&p.0, 10, 2), [10, 11]);
+        assert_eq!(tree(&p.0, 77, 10), [77], "a pid that is gone");
+    }
+
+    #[test]
+    fn the_start_time_reads_past_a_name_with_parentheses() {
+        let p = proc_tree("stat", &[(20, 4242, &[], &[])]);
+        assert_eq!(start_time(&p.0, 20), Some(4242));
+        assert_eq!(start_time(&p.0, 99), None);
+    }
+
+    #[test]
+    fn the_first_entry_of_a_key_wins() {
+        assert_eq!(value(b"A=1\0A=2\0", "A"), Some(&b"1"[..]));
+        assert_eq!(value(b"AB=1\0A=\0", "A"), Some(&b""[..]));
+        assert_eq!(value(b"A\0", "A"), None);
     }
 
     #[test]

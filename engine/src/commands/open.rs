@@ -9,9 +9,9 @@
 //! detached ([`launch_detached`]), because the launcher stays in the
 //! foreground while a terminal editor runs (WP-012, decision 1). That
 //! launch carries `SELDON_OPEN=<path>` ([`sessions::OPEN_ENV`]); a second
-//! open of the same path while that editor lives focuses its window
-//! instead of starting another, or, while the window is not there yet,
-//! starts nothing (WP-156).
+//! open of the same path while a terminal window Omarchy opened for it
+//! (class `org.omarchy.*`) is open focuses that window instead of starting
+//! another (WP-156, ADR-0041). A GUI editor launches as before.
 
 use std::io::IsTerminal as _;
 use std::os::unix::process::CommandExt as _;
@@ -64,10 +64,6 @@ pub fn run(ctx: &Context, args: OpenArgs) -> Result<Output> {
                 path.display()
             )
         }
-        Some(How::Running { pid }) => format!(
-            "{} (already opening in the editor, pid {pid}; its window is not there yet)",
-            path.display()
-        ),
         _ => path.display().to_string(),
     };
     Ok(Output::ok(
@@ -143,12 +139,9 @@ pub struct Editor {
 pub enum How {
     /// Started.
     Launched,
-    /// An editor this engine started on the path lives: its window was
-    /// focused.
-    Focused { address: String, pid: u32 },
-    /// … lives, but Hyprland has no window of it yet (it is starting):
-    /// nothing was started.
-    Running { pid: u32 },
+    /// A terminal window of an editor this engine started on the path is
+    /// open: it was focused.
+    Focused { address: String, pid: i64 },
 }
 
 /// Opens `path` in the editor (see the module comment).
@@ -186,30 +179,26 @@ fn launched(program: String) -> Editor {
     }
 }
 
-/// The editor an earlier `open --editor` started on `path`, if it lives
-/// (its marker, [`sessions::marked`]): its window focused, or `Running`
-/// while Hyprland lists none. `None` (launch as usual) when none lives, or
-/// when Hyprland cannot be asked (no `hyprctl`: not a Hyprland session).
+/// The terminal window of an editor an earlier `open --editor` started
+/// on `path`, focused ([`sessions::marked_windows`]: class `org.omarchy.*`,
+/// the marker in its tree). `None` (launch as usual) when there is none,
+/// when Hyprland cannot be asked, or when the focus fails.
 fn already_open(path: &Path) -> Option<Editor> {
-    let proc = Path::new(sessions::PROC);
-    let found = sessions::marked(proc, &[(sessions::OPEN_ENV, path.as_os_str())], &[]);
-    let pids: Vec<u32> = found.iter().map(|m| m.pid).collect();
-    let first = *pids.first()?;
     let windows = sessions::windows().ok()?;
-    let program = OMARCHY_EDITOR.to_string();
-    let Some(window) = sessions::window_of(proc, &windows, &pids, "") else {
-        return Some(Editor {
-            program,
-            how: How::Running { pid: first },
-        });
-    };
-    // a window that will not take the focus: open another, as before
+    let found = sessions::marked_windows(
+        Path::new(sessions::PROC),
+        &windows,
+        |c| c.starts_with(sessions::TUI_CLASS_PREFIX) && c != sessions::AGENT_CLASS,
+        &[(sessions::OPEN_ENV, path.as_os_str())],
+        &[],
+    );
+    let window = &found.first()?.window;
     sessions::focus(&window.address).ok()?;
     Some(Editor {
-        program,
+        program: OMARCHY_EDITOR.to_string(),
         how: How::Focused {
             address: window.address.clone(),
-            pid: u32::try_from(window.pid).unwrap_or(first),
+            pid: window.pid,
         },
     })
 }
@@ -282,9 +271,8 @@ fn outcome(program: &str, run: Run) -> Result<String, String> {
 }
 
 /// `{"launched": true, "program": …}`; an editor already open on the path:
-/// `{"launched": false, "focused": true, "address", "pid", "program"}` or
-/// `{"launched": false, "running": true, "pid", "program"}`; a failure
-/// `{"launched": false, "error": …}`.
+/// `{"launched": false, "focused": true, "address", "pid", "program"}`; a
+/// failure `{"launched": false, "error": …}`.
 pub fn editor_json(result: &Result<Editor, String>) -> Value {
     match result {
         Ok(Editor {
@@ -297,10 +285,6 @@ pub fn editor_json(result: &Result<Editor, String>) -> Value {
         }) => json!({
             "launched": false, "focused": true, "address": address, "pid": pid, "program": program
         }),
-        Ok(Editor {
-            program,
-            how: How::Running { pid },
-        }) => json!({ "launched": false, "running": true, "pid": pid, "program": program }),
         Err(e) => json!({ "launched": false, "error": e }),
     }
 }
