@@ -156,11 +156,15 @@ marker; both are committed.
 
 **Imported task files** (`seldon import task`, SPEC-ENGINE §3, WP-102)
 are ordinary cases from the case template: queued (completed for a done
-item imported with `--include-done`), tag `imported`, the task's redacted
-text in *Intent* (headings and fences escaped with a `\`), a first Log
-line that names the source as `~/…#<line>`. The source file stays where
+item imported with `--include-done`), tag `imported`, *Intent* opening
+with the engine's line `Imported from <source> — read before you start
+this case.` and then the task's redacted text (headings and fences
+escaped with a `\`), a first Log line that names the source as
+`~/…#<line>`. Until the user starts such a case, an agent reads its
+Intent as fetched text, not as the user's own words (ADR-0027 §2(a)). The source file stays where
 it is, unchanged. `.seldon/imports/tasks.json` is the import's marker
-(file, line, hash of the redacted text, case; no text) and is committed.
+(file, line, hash of the redacted text, case, `pending` while its case is
+being written; no text) and is committed.
 
 ### Journal (`journal/YYYY/YYYY-MM-DD.md`)
 

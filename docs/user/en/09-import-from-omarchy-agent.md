@@ -157,7 +157,14 @@ The dry run lists what it would create and writes nothing. Without
 
 Your task file is only read: never changed, moved or run. Its text goes
 through the same redaction as a note, so a token in it does not reach
-the logbook.
+the logbook — also one on a continued line.
+
+Imported cases stay queued. Each *Intent* starts with `Imported from
+<file> — read before you start this case.` Read it before you start the
+case: once you start a case, an agent may act on its *Intent* without
+asking, and the text came from a file, not from you. Until you start
+it, an agent treats that text like a web page it fetched and never
+starts the case itself.
 
 Running the import again is safe. Seldon remembers each item in
 `.seldon/imports/tasks.json` and skips what it already imported (the
