@@ -8,8 +8,9 @@ is a window, not a process")
 
 > Adds rows to CONTRACT.md's "Commands the plugin may run" (`agent focus
 > <caseId> --json`, `agent sessions --json`) and a shape to `open --editor
-> --json` (`focused`), under the rule of ADR-0040 that a new plugin command
-> needs an ADR. The index's shape does not change: `contractVersion` stays
+> --json` (`focused`), as ADR-0040 (WP-135) did for `decide accept`: a new
+> row in CONTRACT.md's "Commands the plugin may run" needs an ADR. The
+> index's shape does not change: `contractVersion` stays
 > 2, no schema or fixture changes. Builds on ADR-0030 §1 (the launch
 > marker `SELDON_CASE`), ADR-0034 §1–§3 (the desk) and WP-022/WP-101
 > (`agent start`). Adds one read of `/proc` the engine did not do before
@@ -62,11 +63,17 @@ the environment of every process the user owns.
    record is `<state>/launches.json`: `[{case, logbook, at}]`, written
    under the lock after a successful launch; records older than 10 s are
    dropped on the next write. It holds ids and a path, nothing else, and
-   is read only while tracking is on.
+   is read only while tracking is on. The file is 0600 in the 0700 state
+   directory; a record that does not parse, or lies in the future, counts
+   as no launch (fail open).
 3. **The `/proc` read is narrowed to those windows.** For each window of a
    matching class, the engine walks the window's process and its
    descendants (`/proc/<pid>/task/<tid>/children`, at most 256
-   processes). It reads each one's `/proc/<pid>/environ`, at most 64 KiB:
+   processes). It reads each one's `/proc/<pid>/environ`, at most 64 KiB.
+   The whole block is read into memory and discarded after the
+   comparison; it may hold the agent's credentials. This covers every
+   window of the class, including agents Seldon did not start. The read
+   follows these rules:
    - the kernel serves the user's own processes only; others fail and are
      skipped;
    - only `SELDON_CASE`, `SELDON_LOGBOOK`, `SELDON_OPEN` are compared,
@@ -142,6 +149,10 @@ the environment of every process the user owns.
   - an environment above 64 KiB whose markers sit past the cap is not
     seen; the session is then not tracked (fail open: a second agent can
     start).
+  - a process of the same user can plant the marker under a window of
+    class `org.omarchy.agent` and hold the case while that window is open;
+    closing it or `--again` ends it. Same-user processes are inside the
+    trust boundary (ADR-0030).
 
 ## Alternatives considered
 
