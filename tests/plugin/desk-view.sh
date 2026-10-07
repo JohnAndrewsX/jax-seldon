@@ -1374,7 +1374,7 @@ clean_log aside-gone 'agent exit 1: no agent is working on C-2026-003'
 # 2 s sends nothing (the desk stays), after 2 s it is sent.
 mkdir -p "$work/home-aside-double"
 run aside-double "" 1920x1080 \
-  "summon:$w3;text:a*4;settle;summon:$w4;text:e*3;settle;summon:$w4;text:e;settle;pause:2100;text:e;settle" \
+  "summon:$w3;text:a*4;settle;summon:$w4;text:e*3;settle;summon:$w4;text:e;settle;pause:2100;text:e;settle;summon:{\"section\":\"today\"};text:e*3;settle" \
   HOME="$work/home-aside-double" FAKE_SELDON_FIXTURE="$sample" FAKE_SELDON_NO_SESSION=1 HARNESS_RECORD="$work/aside-double.record"
 expect aside-double 2 "[$sv.planPending, $tc.actions[0]] | map(tostring) | join(\",\")" "true,Starting…"
 expect aside-double 3 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,1"
@@ -1385,8 +1385,11 @@ expect aside-double 6 "[.view.opened, $sv.stepAsides, $sv.open] | map(tostring) 
 expect aside-double 8 "[.view.opened, $sv.openPending] | map(tostring) | join(\",\")" "true,false"
 expect aside-double 9 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "true,2"
 expect aside-double 12 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,3"
+# Today's `e` has no guard of its own: the service's one open at a time
+expect aside-double 14 "[$sv.openPending, $sv.busyRefusals] | map(tostring) | join(\",\")" "true,2"
+expect aside-double 15 "[.view.opened, $sv.stepAsides] | map(tostring) | join(\",\")" "false,4"
 argv_check aside-double "$work/home-aside-double" "$(printf '%s\n' "$startup" "$(q agent start C-2026-003 --json)" \
-  "$(q open C-2026-004 --editor --json)" "$(q open C-2026-004 --editor --json)")"
+  "$(q open C-2026-004 --editor --json)" "$(q open C-2026-004 --editor --json)" "$(q open journal --editor --json)")"
 clean_log aside-double
 
 # An editor the engine opened on the file before: focused, nothing
