@@ -123,7 +123,8 @@ the plugin reads it next to the index, also in its `SELDON_INDEX` dev
 mode. `counts` are the file's items and the items it marks `crisis`, as
 proposed. `applied` is `null` until `seldon drift apply` marks it, then
 its time. A file that fails its schema, whose name is not its id, or
-that belongs to another logbook is skipped with a load warning.
+that cannot be read is skipped with a build warning; one that belongs to
+another logbook is skipped silently (it is not this logbook's).
 
 The file is contract too, since the plugin reads it:
 **`schema/proposal.schema.json`** — `{id, at, actor, logbook, applied,
