@@ -2478,8 +2478,9 @@ test("graphSetCut: visible = day ≤ cut, monotonic over the days, growth beside
 test("graphStep: alpha decays, sleeps after 200 ticks, wakes, holds the pinned node", () => {
   const b = M.graphBuild(graphSample, 400)
   const s = M.graphState(b, null)
+  // Bounded: a layout that never sleeps fails here instead of hanging.
   let ticks = 0
-  while (M.graphStep(s, 8)) ticks++
+  while (ticks < M.GRAPH_TICKS_MAX + 50 && M.graphStep(s, 8)) ticks++
   assert.strictEqual(ticks, M.GRAPH_TICKS_MAX)
   assert.ok(s.sleeping && s.alpha <= M.GRAPH_ALPHA_MIN * 1.0001, String(s.alpha))
   assert.strictEqual(M.graphStep(s, 8), false)
@@ -2508,6 +2509,86 @@ test("graphStep: alpha decays, sleeps after 200 ticks, wakes, holds the pinned n
   const slow = M.graphState(b, null)
   M.graphStep(slow, -1)
   assert.ok(slow.lastMs >= 0 && slow.maxMs >= slow.lastMs)
+})
+
+test("graphStep: exact pairs up to 160 visible nodes, the quadtree above", () => {
+  const small = M.graphState(M.graphBuild(graphSample, 400), null)
+  M.graphStep(small, 1000)
+  same([small.exactSteps, small.treeSteps], [1, 0])
+  const big = M.graphState(M.graphBuild(graphBig, 400), null)
+  for (let t = 0; t < 3; t++) M.graphStep(big, 1000)
+  same([big.visCount, big.exactSteps, big.treeSteps], [400, 0, 3])
+  // the replay's early days are small again: exact
+  M.graphSetCut(big, 0, false)
+  M.graphWake(big, 0.5)
+  M.graphStep(big, 1000)
+  assert.ok(big.visCount <= M.GRAPH_EXACT_MAX && big.exactSteps === 1, String(big.visCount))
+})
+
+test("graphBuild: case references that are prototype keys link nothing and throw nothing", () => {
+  const odd = JSON.parse(JSON.stringify(graphSample))
+  const keys = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]
+  odd.events.filter((e) => M.graphIsChange(e.kind)).slice(0, keys.length).forEach((e, i) => { e.case = keys[i] })
+  odd.drift.forEach((d, i) => { d.proposedCase = keys[i % keys.length] })
+  odd.decisions.forEach((d, i) => { d.cases = [keys[i % keys.length], "C-2026-001"] })
+  odd.cases.queued[0].area = "constructor"
+  const b = M.graphBuild(odd, 400)
+  assert.strictEqual(b.empty, false)
+  for (const e of b.edges) assert.ok(b.nodes[e.a] && b.nodes[e.b])
+  assert.ok(b.nodes.every((n) => typeof n.caseId === "string" && (n.caseId === "" || /^C-[0-9]{4}-[0-9]{3,}$/.test(n.caseId))))
+  // the area named "constructor" is a real area of its case
+  assert.ok(edgeIds(b).includes(odd.cases.queued[0].id + " - area:constructor"))
+  // a case reference that names another node (a decision, an area) links
+  // nothing and offers no "Open case"
+  const other = JSON.parse(JSON.stringify(graphSample))
+  const changes = other.events.filter((e) => M.graphIsChange(e.kind))
+  changes[0].case = "ADR-0003"
+  changes[1].case = "area:themes"
+  other.drift[0].proposedCase = "ADR-0004"
+  other.decisions[0].cases = ["area:shell"]
+  const bo = M.graphBuild(other, 400)
+  const kinds = (e) => [bo.nodes[e.a].kind, bo.nodes[e.b].kind].sort().join("-")
+  assert.ok(!bo.edges.some((e) => ["change-decision", "area-change", "crisis-decision", "area-decision"].includes(kinds(e))),
+    bo.edges.map(kinds).join(" "))
+  for (const id of [changes[0].id, changes[1].id]) assert.strictEqual(nodeOf(bo, id).caseId, "")
+  // an event id that is a prototype key is a node like any other
+  const odd2 = JSON.parse(JSON.stringify(graphSample))
+  odd2.events.find((e) => M.graphIsChange(e.kind)).id = "__proto__"
+  const b2 = M.graphBuild(odd2, 400)
+  assert.strictEqual(b2.nodes.filter((n) => n.id === "__proto__").length, 1)
+  const s = M.graphState(b2, null)
+  assert.strictEqual(s.at["constructor"], undefined)
+  assert.strictEqual(typeof s.at["__proto__"], "number")
+})
+
+test("graphBuild: more fixed nodes than the cap → a still picture that never ticks", () => {
+  const many = JSON.parse(JSON.stringify(graphSample))
+  for (let i = 0; i < 2000; i++) many.system.areas.push({ name: "area-" + i, hasAgentsMd: false, cases: 0 })
+  const b = M.graphBuild(many, 400)
+  assert.strictEqual(b.still, true)
+  assert.strictEqual(b.numbers.areas, 2006)
+  // every change folds as far as it goes (month level), crises stay
+  assert.strictEqual(b.foldLevel, "month")
+  assert.strictEqual(b.numbers.crises, 2)
+  const s = M.graphState(b, null)
+  assert.ok(s.still && s.sleeping && s.alpha === 0)
+  assert.strictEqual(M.graphStep(s, 8), false)
+  M.graphWake(s, 1)
+  assert.strictEqual(s.sleeping, true)
+  M.graphSetCut(s, 3, true)
+  M.graphWake(s, 0.5)
+  assert.strictEqual(M.graphStep(s, 8), false)
+  // a drag still moves the node itself, at once
+  const i = s.visList[0]
+  M.graphPin(s, i, 77, -5)
+  same([s.x[i], s.y[i]], [77, -5])
+  // nothing overlaps on the spiral
+  let close = 0
+  for (let p = 0; p < 300; p++) for (let q = p + 1; q < 300; q++) if (Math.hypot(s.x[p] - s.x[q], s.y[p] - s.y[q]) < 4) close++
+  assert.strictEqual(close, 0)
+  // the cap holds again: live
+  assert.strictEqual(M.graphBuild(graphSample, 400).still, false)
+  assert.strictEqual(M.graphBuild(graphBig, 400).still, false)
 })
 
 test("graphRepelTree approximates the exact repulsion (Barnes–Hut, θ 0.9)", () => {

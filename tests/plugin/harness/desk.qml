@@ -327,7 +327,8 @@ ShellRoot {
     console.log("HARNESS step " + String(tag).replace(/\s/g, "_") + " " + JSON.stringify({
       view: root.viewObject(), calls: fakeShell.calls, writes: fakeShell.writes, entry: root.entry,
       call: root.lastCall, bare: root.bare, firstFrame: root.firstFrame,
-      graphWanted: root.service ? root.service.graphWanted : null,
+      graphBuilds: root.service ? root.service.graphBuilds : null,
+      graphDirty: root.service ? root.service.graphDirty : null,
       graphNodes: root.service && root.service.graph ? root.service.graph.nodes.length : null,
       pill: root.widget ? JSON.parse(root.widget.pillReadout()) : null,
       deskCalls: root.widget ? root.widget.deskCalls : 0,
@@ -377,7 +378,9 @@ ShellRoot {
       if (hp) driver.mouseMove(win.contentItem, hp.x, hp.y)
       else console.log("HARNESS nothing to hover: " + arg)
     } else if (verb === "graphDrag") {
-      var gparts = arg.split(":")
+      // The id may hold ":" (area:<name>, fold:…): the delta is after the last.
+      var gcut = arg.lastIndexOf(":")
+      var gparts = [arg.slice(0, gcut), arg.slice(gcut + 1)]
       var gd = root.graph()
       var from = !gd ? null : gparts[0] === "empty" ? gd.emptyPoint() : gd.nodePoint(gparts[0])
       if (!from) {

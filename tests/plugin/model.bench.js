@@ -121,6 +121,12 @@ if (build.nodes.length !== 400) {
   console.error(`model.bench: the graph index gives ${build.nodes.length} nodes, not the cap of 400`)
   failed = true
 }
+// Node is too fast to see exact pairs at 400 nodes (0.3 ms), QV4 is not
+// (10 ms): hold the step to the quadtree by its path counter.
+if (state.exactSteps !== 0 || state.treeSteps === 0) {
+  console.error(`model.bench: graphStep at 400 nodes ran exact pairs (${state.exactSteps}) instead of the quadtree`)
+  failed = true
+}
 if (tick.best > GRAPH_BUDGET_MS) {
   console.error(`model.bench: graphStep over the ${GRAPH_BUDGET_MS} ms budget (fastest run ${tick.best.toFixed(2)} ms)`)
   failed = true

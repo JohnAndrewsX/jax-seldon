@@ -1802,32 +1802,52 @@ done
 # 11. The graph, section 8 (ADR-0034 §5, SPEC-PLUGIN §5.4; WP-125): the
 #     machine's memory as a network from the index alone, laid out by
 #     Model.graphStep on a Timer. On the sample: it settles and sleeps
-#     within the budget (every tick's tickMs ≤ 8, step plus drawing calls on
-#     the shell thread), nothing ticks while another section is shown or
-#     the desk is closed, a reopened desk keeps the settled layout, the
-#     service builds the graph only once the section was opened; the
+#     within the budget (each reported tickMs ≤ 8, step plus drawing calls
+#     on the shell thread; graph_tick_ok below), nothing ticks while another
+#     section is shown or the desk is closed, a reopened desk keeps the
+#     settled layout, the service builds the graph only for a shown section
+#     8 and again only after the index changed; the
 #     replay adds nodes monotonically; hover, the card and Open case; drag
 #     wakes the layout, pan and zoom only repaint; `select` keeps a card.
 #     A busy index (tests/plugin/graph-index.js, 400 nodes after folding)
 #     draws within the budget too, but on a shared build host its ticks
 #     are reported, not gated one by one (see 11f). No index, an empty
-#     index; a narrow desk.
+#     index; a narrow desk (labels flip at the edge); a still picture above
+#     400 fixed nodes.
 # graph_tick_ok <case> <step>: the tick the view reports is within the
 # budget (tickMs ≤ 8: Model.graphStep plus the drawing calls, both on the
 # shell thread), and so are all ticks so far but at most two of them. The
 # dev host builds other work packages at the same time: a compile that
-# takes the core preempts a tick now and then (seen: 9–16 ms on the
-# 67-node sample, whose ticks take 1–3 ms). slowTicks names them in the log.
+# takes the core preempts a tick now and then (seen: 9–25 ms on the
+# 67-node sample, whose ticks take 1–3 ms, in bursts under a load of 7).
+# So a case that misses runs once more (graph_run keeps its arguments)
+# and must pass then; a slower graph misses twice. slowTicks names the
+# ticks in the log either way.
+declare -A graph_args=() graph_retried=()
+graph_run() {
+  graph_args[$1]=$(printf '%q ' "$@")
+  run "$@"
+}
+graph_ticks() {
+  sed -n "${2}p" "$work/$1.steps" | jq -r '[.view.graph.tickMs <= 8, .view.graph.ticksOver <= 2] | map(tostring) | join(",")' 2>/dev/null
+}
 graph_tick_ok() {
-  expect "$1" "$2" '[.view.graph.tickMs <= 8, .view.graph.ticksOver <= 2] | map(tostring) | join(",")' "true,true"
   local slow
   slow=$(sed -n "${2}p" "$work/$1.steps" | jq -c '.view.graph.slowTicks // []')
   [[ $slow == "[]" ]] || echo "     $1 #$2: ticks over the budget: $slow"
+  if [[ $(graph_ticks "$1" "$2") != "true,true" && -n ${graph_args[$1]:-} && -z ${graph_retried[$1]:-} ]]; then
+    graph_retried[$1]=1
+    echo "     $1: runs once more (a loaded host?)"
+    eval "run ${graph_args[$1]}"
+    slow=$(sed -n "${2}p" "$work/$1.steps" | jq -c '.view.graph.slowTicks // []')
+    [[ $slow == "[]" ]] || echo "     $1 #$2 (again): ticks over the budget: $slow"
+  fi
+  expect "$1" "$2" '[.view.graph.tickMs <= 8, .view.graph.ticksOver <= 2] | map(tostring) | join(",")' "true,true"
 }
 
 # 11a. Settle and sleep: 200 ticks at most, then the Timer stops; no tick
 #      and no paint after that; the legend, the date, the footer.
-run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
+graph_run graph-settle "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;pause:300;pause:1000"
 expect graph-settle 2 .view.section graph
 expect graph-settle 2 '[.view.graph.nodes, .view.graph.edges, .view.graph.visible, .view.graph.folded] | map(tostring) | join(",")' "67,26,67,0"
 expect graph-settle 2 '[.view.graph.sleeping, .view.graph.timer] | map(tostring) | join(",")' "false,true"
@@ -1849,10 +1869,10 @@ clean_log graph-settle
 #      tick count stands still), coming back resumes to sleep; a closed and
 #      reopened desk (the loader makes a new one) shows the settled layout
 #      from the service without a tick.
-run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
-# The service builds the graph only once section 8 has been opened.
-expect graph-hidden 1 '[.graphWanted, .graphNodes, .view.graph] | map(tostring) | join(",")' "false,0,null"
-expect graph-hidden 2 '[.graphWanted, .graphNodes] | map(tostring) | join(",")' "true,67"
+graph_run graph-hidden "$sample" 1920x1080 "summon;text:8;pause:300;text:1;pause:1500;text:8;wait:graph.sleeping=true;hide;summon;pause:800"
+# The service builds the graph only for a shown section 8.
+expect graph-hidden 1 '[.graphBuilds, .graphNodes, .view.graph] | map(tostring) | join(",")' "0,0,null"
+expect graph-hidden 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "1,67"
 t4=$(sed -n 4p "$work/graph-hidden.steps" | jq .view.graph.ticks)
 expect graph-hidden 3 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "graph,true"
 expect graph-hidden 4 '[.view.section, .view.graph.timer] | map(tostring) | join(",")' "today,false"
@@ -1868,9 +1888,22 @@ done
 expect graph-hidden 10 '.view.graph.paints <= 2' true
 clean_log graph-hidden
 
+# 11b'. The build waits for the section (live, the fake engine rewrites
+#      the index on each capture): two captures while the Prime Radiant is
+#      shown leave the graph dirty and unbuilt; showing section 8 builds
+#      once, and the same nodes keep their settled layout (no tick).
+run graph-dirty "" 1920x1080 "summon;settle;text:8;wait:graph.sleeping=true;text:7;text:c;settle;pause:500;text:c;settle;pause:500;text:8;pause:300" \
+  HOME="$work/home-graph-dirty" FAKE_SELDON_FIXTURE="$sample"
+expect graph-dirty 2 '[.graphBuilds, .graphNodes] | map(tostring) | join(",")' "0,0"
+expect graph-dirty 4 '[.graphBuilds, .graphDirty, .view.graph.sleeping, .view.graph.ticks] | map(tostring) | join(",")' "1,false,true,200"
+expect graph-dirty 11 '[.view.section, .graphBuilds, .graphDirty] | map(tostring) | join(",")' "radiant,1,true"
+expect graph-dirty 12 '[.view.section, .graphBuilds, .graphDirty, .graphNodes] | map(tostring) | join(",")' "graph,2,false,67"
+expect graph-dirty 12 '[.view.graph.sleeping, .view.graph.ticks, .view.graph.timer] | map(tostring) | join(",")' "true,200,false"
+clean_log graph-dirty
+
 # 11c. Replay: Play from day 0 to the last day adds nodes monotonically and
 #      ends with all of them; the slider's day (graphCut) and ←/→; Space.
-run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
+graph_run graph-replay "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphPlay;wait:graph.playing=false;graphCut:0;key:Right;key:Space;pause:300;key:Escape;wait:graph.sleeping=true"
 expect graph-replay 4 '[.view.graph.playing, .view.graph.cut] | map(tostring) | join(",")' "true,0"
 expect graph-replay 5 '.view.graph.replay | (. == sort) and (length > 10) and (.[0] < .[-1]) and (.[-1] == 67)' true
 expect graph-replay 5 '[.view.graph.playing, .view.graph.cut, .view.graph.visible] | map(tostring) | join(",")' "false,30,67"
@@ -1904,7 +1937,7 @@ clean_log graph-hover
 # 11e. Drag a node: it follows the pointer, the layout wakes (and sleeps
 #      again), the view stops fitting; a drag beside the nodes pans, the
 #      wheel zooms, neither ticks; 0 fits again.
-run graph-drag "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphDrag:C-2026-004:160,90;wait:graph.sleeping=true;graphDrag:empty:-100,40;wheel:graphCanvas:120;text:0"
+graph_run graph-drag "$sample" 1920x1080 "summon;text:8;wait:graph.sleeping=true;graphDrag:C-2026-004:160,90;wait:graph.sleeping=true;graphDrag:empty:-100,40;wheel:graphCanvas:120;text:0"
 expect graph-drag 4 '(.call | fromjson | (.to.x - .from.x - 160 | fabs) <= 8 and (.to.y - .from.y - 90 | fabs) <= 8)' true
 expect graph-drag 4 '[.view.graph.sleeping, .view.graph.wakes > 0, .view.graph.view.fit] | map(tostring) | join(",")' "false,true,false"
 expect graph-drag 5 '[.view.graph.sleeping, .view.graph.run <= 200] | map(tostring) | join(",")' "true,true"
@@ -1954,11 +1987,30 @@ clean_log graph-nothing
 
 # 11h. Narrow desks: 50 % on 1366 (the 960 px floor) and the stacked
 #      window; nothing leaves its box, the desk or the window.
-run graph-narrow "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sleeping=true;resize:700x900;pause:300"
+graph_run graph-narrow "$sample" 1366x900 "summon;width:50;text:8;wait:graph.sleeping=true;resize:700x900;pause:300"
 expect graph-narrow 4 '.overflow | join(" | ")' ""
 expect graph-narrow 6 '.overflow | join(" | ")' ""
 graph_tick_ok graph-narrow 4
+# A label at the right edge goes to the left of its node (the sample's
+# backup-dotfiles.sh crisis at 50 %), not past the canvas.
+expect graph-narrow 4 '.view.graph.flipped >= 1' true
 clean_log graph-narrow
+
+# 11i. More fixed nodes than the cap (2000 more areas: 2022 nodes): a still
+#      picture in node order — no tick, ever (no Timer; a cut and a drag do
+#      not wake it), the caption says why; hover and drag still work (the
+#      dragged node moves at once), drawing stays in the budget.
+jq '.system.areas += [range(2000) | {name: ("area-" + tostring), hasAgentsMd: false, cases: 0}]' "$sample" >"$work/graph-many.json"
+run graph-many "$work/graph-many.json" 1920x1080 "summon;text:8;pause:1500;graphHover:area:area-5;graphDrag:area:area-7:80,40;graphCut:3;pause:500"
+expect graph-many 3 '[.view.sectionView.still, .view.graph.nodes, .view.graph.ticks, .view.graph.timer, .view.graph.sleeping] | map(tostring) | join(",")' "true,2022,0,false,true"
+expect graph-many 3 .view.sectionView.caption "A still picture: 2020 areas, cases, decisions and crises are more than the 400 nodes the layout moves"
+expect graph-many 4 .view.graph.hovered area:area-5
+expect graph-many 5 '(.call | fromjson | (.to.x - .from.x - 80 | fabs) <= 2 and (.to.y - .from.y - 40 | fabs) <= 2)' true
+for i in 5 6 7; do
+  expect graph-many $i '[.view.graph.ticks, .view.graph.timer, .view.graph.drawMs <= 8] | map(tostring) | join(",")' "0,false,true"
+done
+expect graph-many 6 .view.graph.cut 3
+clean_log graph-many
 
 # ---------------------------------------------------------------------------
 # Offscreen renders in three themes (only with DESK_SHOTS; not live
