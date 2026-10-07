@@ -226,3 +226,36 @@ killed; plugin mutants P1–P12 all killed (trimmed desk-view 85/85);
 deploy-test-host 190, docs-check ok, qmllint ok 46 files, model.test.js
 145, real-home-guard 11, service-states 328, desk-view 1517, bar-view
 194). Only this handover changed after that commit.
+
+## Round 3
+
+Fable stage 2 approved ba486b68 and advised accepting ADR-0040 after
+one wording edit; the orchestrator asked for that and two small changes.
+Commit e9c235e8. ADR-0040 stays **proposed** until the operator accepts
+it.
+
+1. **ADR-0040 §4** gains "What this stops, and what it does not" in the
+   orchestrator's words: it stops an agent in the session Seldon
+   launched (which carries `SELDON_ACTOR`), not a process of the same
+   user that unsets or overrides the variable, nor a hand edit; `decide
+   accept` adds a ledger line, not power; the desk's Accept runs from
+   the shell process.
+2. **An ambiguous id is refused.** `Logbook::decision_files_of` returns
+   every file of an id (`decision_file`, which `seldon open` uses, is its
+   first, unchanged). `decide accept` with two or more → exit 1 "ADR-NNNN
+   is ambiguous: <file> and <file> carry it; keep one of them, then
+   accept it again", nothing written. ADR-0040 §3 and SPEC-ENGINE §3 say
+   so; `refuses_a_decision_that_is_not_proposed` tests it; mutant M18
+   (take the first file) killed.
+3. **The message.** `session_actor_for_user_act` reads the variable
+   itself: "<what> is not done: SELDON_ACTOR (the session's actor): <why>.
+   …: fix or unset SELDON_ACTOR" — no "(the actor when none is named)"
+   when `--actor` is given; the test asserts the text and its absence.
+
+Verified: fmt and clippy clean; `decide_accept` 6, `triage` 26,
+`commands` 11 passed; engine mutants M1–M18 all killed; docs-check ok.
+`flock /tmp/seldon-check.lock just check` on e9c235e8: **exit 0**
+(`check: ok`; install.test 209, deploy-test-host 190, docs-check ok,
+qmllint ok 46 files, model.test.js 145, real-home-guard 11,
+service-states 328, desk-view 1517, bar-view 194). Only this handover
+changed after that commit.
