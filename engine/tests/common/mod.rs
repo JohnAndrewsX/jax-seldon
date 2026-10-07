@@ -433,6 +433,27 @@ pub fn index_errors(instance: &serde_json::Value) -> Vec<String> {
         .collect()
 }
 
+/// Errors of `instance` against `schema/proposal.schema.json` (WP-124),
+/// formats checked.
+pub fn proposal_errors(instance: &serde_json::Value) -> Vec<String> {
+    let files = ["proposal.schema.json", "event.schema.json"]
+        .map(|name| {
+            let s = schema(name);
+            (s["$id"].as_str().unwrap().to_string(), s)
+        })
+        .into_iter()
+        .collect();
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .with_retriever(SchemaFiles(files))
+        .build(&schema("proposal.schema.json"))
+        .expect("proposal schema compiles");
+    validator
+        .iter_errors(instance)
+        .map(|e| format!("{e} at {}", e.instance_path()))
+        .collect()
+}
+
 /// Panics unless `instance` validates against `schema/index.schema.json`.
 pub fn assert_valid_index(instance: &serde_json::Value) {
     let errors = index_errors(instance);
