@@ -19,6 +19,11 @@
 //! (SPEC-ENGINE §5 rule 7, WP-038, WP-074).
 //! The steps after the layout report failures; they never undo the
 //! logbook ([`super::setup`]).
+//!
+//! The result is a few aligned rows (Logbook, Config, Recording, Agents,
+//! History, Snapshots), then "Next steps" only when something is left to
+//! do, else [`NOTHING_TO_DO`]; the optional snapshot grant comes last
+//! (WP-118). `--json` keeps every detail.
 
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
@@ -235,74 +240,123 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
         (ThemeHook::NotRequested, None)
     };
 
-    let mut next = vec!["seldon doctor".to_string()];
-    for h in harnesses
-        .iter()
-        .filter(|h| !h.done && matches!(h.name.as_str(), "claude-code" | "skills"))
-    {
-        next.push(format!("seldon hook install {}", h.name));
-    }
-    if !capture.ran {
-        next.push("seldon capture --all".to_string());
-    }
-    if !dossier.ran {
-        next.push("seldon dossier".to_string());
-    }
-    if let Some((open, _)) = capture.open_after.filter(|(open, _)| *open > 0) {
-        next.push(format!(
-            "seldon drift   # {open} open drift item(s) to link, explain or dismiss"
-        ));
-    }
-    if let Some(fix) = theme_hook.fix() {
-        next.push(format!("{fix}   # optional: the theme hook"));
-    }
-    if let Some(fix) = &snapper.fix {
-        next.push(if snapper.status == Status::Degraded {
-            format!("{fix}   # optional: snapshots in the timeline (ADR-0026)")
-        } else {
-            format!("{fix}   # recommended: a read grant instead of the snapper opt-in (ADR-0026)")
-        });
-    }
-
-    let shown_root = ctx.dirs.display(&root);
-    let mut human = format!(
-        "Logbook created at {shown_root} (machine {machine_id}, language {}, {} files).\nConfig: {}\n{}\n",
-        choices.language,
-        files.len(),
-        ctx.dirs.display(&config_file),
-        setup::SKIP_PATHS_HINT,
-    );
-    for h in &harnesses {
-        human.push_str(&format!("Harness {}: {}\n", h.name, h.human));
-    }
-    human.push_str(&format!(
-        "Git: {}\nSnapper: {} — {}\nFirst capture: {}\nDossier: {}\n",
-        git.describe(),
-        snapper.status.as_str(),
-        snapper.message,
-        capture.human,
-        dossier.human,
-    ));
-    if let Some(t) = theme_hook.human(&ctx.dirs) {
-        human.push_str(&format!("Theme hook: {t}\n"));
-    }
-    if let Some(Err(e)) = &own_hook {
-        human.push_str(&format!("Theme hook: {}\n", setup::own_writes_warning(e)));
+    // the result: one row per topic, then only what is left to do (WP-118)
+    let mut summary = Summary::default();
+    let mut logbook_row = format!("{} ({}", ctx.dirs.display(&root), choices.language.name());
+    match &git {
+        GitOutcome::Committed => logbook_row.push_str(", git repository"),
+        GitOutcome::InitialisedOnly => {
+            logbook_row.push_str(", git repository, not committed (--no-commit)")
+        }
+        GitOutcome::Skipped => logbook_row.push_str(", no git"),
+        GitOutcome::Failed(e) => {
+            logbook_row.push_str(", no git");
+            summary.step(format!("seldon doctor   # git is not set up: {e}"));
+        }
     }
     if choices.obsidian {
-        human.push_str("Obsidian: open the folder as a vault.\n");
+        logbook_row.push_str("; open it in Obsidian as a vault");
     }
-    human.push_str("Next steps:\n");
-    for step in &next {
-        human.push_str(&format!("  {step}\n"));
+    logbook_row.push(')');
+    summary.row("Logbook", logbook_row);
+    summary.row(
+        "Config",
+        format!(
+            "{}; {}",
+            ctx.dirs.display(&config_file),
+            setup::SKIP_PATHS_HINT
+        ),
+    );
+
+    let recording: Vec<&str> = Collectors::NAMES
+        .iter()
+        .filter(|n| choices.collectors.get(n) == Some(true))
+        .map(|n| collector_label(n))
+        .collect();
+    let mut recording = if recording.is_empty() {
+        "nothing (every collector is off)".to_string()
+    } else {
+        recording.join(", ")
+    };
+    if matches!(
+        theme_hook,
+        ThemeHook::Installed { .. } | ThemeHook::AlreadyInstalled { .. }
+    ) {
+        recording.push_str("; theme switches instantly (Omarchy hook)");
     }
+    summary.row("Recording", recording);
+    if let ThemeHook::Failed { error, .. } = &theme_hook {
+        summary.more(format!("the theme hook is not installed: {error}"));
+    }
+    if let Some(Err(e)) = &own_hook {
+        summary.more(format!("theme hook: {}", setup::own_writes_warning(e)));
+    }
+    if let Some(fix) = theme_hook.fix() {
+        summary.step(format!("{fix}   # optional: the theme hook"));
+    }
+
+    if !harnesses.is_empty() {
+        let done: Vec<String> = harnesses
+            .iter()
+            .filter(|h| h.done)
+            .map(agent_result)
+            .collect();
+        summary.row(
+            "Agents",
+            if done.is_empty() {
+                "nothing set up".to_string()
+            } else {
+                done.join(", ")
+            },
+        );
+        for h in harnesses.iter().filter(|h| !h.done) {
+            summary.more(format!("{}: {}", harness_label(&h.name), h.human));
+            if matches!(h.name.as_str(), "claude-code" | "skills") {
+                summary.step(format!("seldon hook install {}", h.name));
+            }
+        }
+    }
+
+    summary.row("History", capture.row.clone());
+    for step in &capture.steps {
+        summary.step(step.clone());
+    }
+    if let Some(step) = &dossier.step {
+        summary.step(step.clone());
+    }
+
+    if !choices.collectors.snapper {
+        summary.row("Snapshots", "off (the snapper collector is off)");
+    } else {
+        match (&snapper.status, &snapper.fix) {
+            (Status::Degraded, Some(fix)) => {
+                summary.row(
+                    "Snapshots",
+                    "not readable yet; optional, Seldon works without them",
+                );
+                summary.optional(SNAPPER_OPTIONAL, fix.clone());
+            }
+            (_, Some(fix)) => {
+                summary.row(
+                    "Snapshots",
+                    "recorded, through snapper's ALLOW_USERS opt-in",
+                );
+                summary.optional(SNAPPER_RECOMMENDED, fix.clone());
+            }
+            (Status::Ok, None) => summary.row("Snapshots", "recorded"),
+            (_, None) => summary.row("Snapshots", snapper.message.clone()),
+        }
+    }
+    let human = summary.human();
+    let next = summary.steps.clone();
+    let optional: Vec<&String> = summary.optional.iter().map(|(_, fix)| fix).collect();
 
     let mut theme_hook_json = theme_hook.json();
     if let Some(r) = &own_hook {
         theme_hook_json["ownWrites"] = setup::own_writes_json(r);
     }
     Ok(Output::ok(
-        human.trim_end(),
+        human,
         json!({
             "logbook": root,
             "config": config_file,
@@ -324,6 +378,7 @@ pub fn run(ctx: &Context, args: InitArgs) -> Result<Output> {
             "dossier": dossier.json,
             "themeHook": theme_hook_json,
             "nextSteps": next,
+            "optionalSteps": optional,
         }),
     ))
 }
@@ -362,9 +417,10 @@ pub fn remove_theme_hook(ctx: &Context) -> Result<Output> {
 /// What the first capture step did.
 struct CaptureStep {
     ran: bool,
-    /// Open drift items and crises after the step (baseline included).
-    open_after: Option<(usize, usize)>,
-    human: String,
+    /// The summary's History row.
+    row: String,
+    /// What is left to do after it (`nextSteps`).
+    steps: Vec<String>,
     json: Value,
 }
 
@@ -373,11 +429,12 @@ struct CaptureStep {
 /// now that the drift count is known), then commits both. Failures are
 /// reported, never fatal: the logbook exists.
 fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> CaptureStep {
+    let capture_all = || vec!["seldon capture --all".to_string()];
     if !choices.capture {
         return CaptureStep {
             ran: false,
-            open_after: None,
-            human: "skipped (--no-capture)".into(),
+            row: "nothing recorded yet (--no-capture)".into(),
+            steps: capture_all(),
             json: json!({ "ran": false, "reason": "--no-capture" }),
         };
     }
@@ -394,8 +451,8 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
         Err(e) => {
             return CaptureStep {
                 ran: false,
-                open_after: None,
-                human: format!("failed: {e}"),
+                row: format!("nothing recorded: the first capture failed: {e}"),
+                steps: capture_all(),
                 json: json!({ "ran": false, "error": e.to_string() }),
             };
         }
@@ -404,22 +461,24 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
     let mut json = out.json;
     json["ran"] = json!(true);
     json["since"] = json!(since);
-    let mut human = format!("{written} event(s)");
-    if let Some(s) = &since {
-        human.push_str(&format!(" since {s}"));
-    }
+    let mut steps = Vec::new();
+    let mut row = match choices.since {
+        Some(t) => format!("{written} event(s) since {}", shown_since(t)),
+        None => format!("from now on; the first capture recorded {written} event(s)"),
+    };
+    // snapper has the Snapshots row of its own
     let degraded: Vec<&str> = json["collectors"]
         .as_array()
         .into_iter()
         .flatten()
         .filter(|c| c["ran"] == true && c["ok"] == false)
         .filter_map(|c| c["name"].as_str())
+        .filter(|name| *name != "snapper")
         .collect();
     if !degraded.is_empty() {
-        human.push_str(&format!(
-            "; degraded: {} (see seldon doctor)",
-            degraded.join(", ")
-        ));
+        let names = degraded.join(", ");
+        row.push_str(&format!("; {names} degraded"));
+        steps.push(format!("seldon doctor   # degraded: {names}"));
     }
 
     let open = setup::open_drift(ctx);
@@ -435,10 +494,12 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
     if choices.baseline == Some(true) {
         match setup::baseline(ctx) {
             Ok(b) => {
-                human.push_str(&format!(
-                    "; {} drift item(s) ({} event(s)) dismissed as \"{BASELINE_REASON}\"",
-                    b.items, b.events
-                ));
+                if b.items > 0 {
+                    row.push_str(&format!(
+                        "; {} drift item(s) marked as the {BASELINE_REASON}",
+                        b.items
+                    ));
+                }
                 json["baseline"] = json!({
                     "reason": BASELINE_REASON, "items": b.items, "events": b.events,
                 });
@@ -446,13 +507,21 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
                 open_after = setup::open_drift(ctx);
             }
             Err(e) => {
-                human.push_str(&format!("; baseline failed: {e}"));
+                row.push_str(&format!("; the baseline failed: {e}"));
                 json["baseline"] = json!({ "reason": BASELINE_REASON, "error": e.to_string() });
             }
         }
     }
     if let Some((items, crisis)) = open_after {
-        human.push_str(&format!("; {items} open drift item(s), {crisis} crisis"));
+        if items > 0 {
+            row.push_str(&format!("; {items} open drift item(s)"));
+            if crisis > 0 {
+                row.push_str(&format!(", {crisis} crisis"));
+            }
+            steps.push(format!(
+                "seldon drift   # {items} open drift item(s) to link, explain or dismiss"
+            ));
+        }
         json["openDrift"] = json!(items);
         json["crisis"] = json!(crisis);
     }
@@ -468,20 +537,32 @@ fn first_capture(ctx: &Context, choices: &mut Choices, interactive: bool) -> Cap
         }
         Err(e) => Commit::Failed(e.to_string()),
     };
-    human.push_str(&commit.human().replace('\n', "; "));
+    if let Commit::Failed(e) = &commit {
+        row.push_str(&format!("; not committed: {e}"));
+    }
     json["git"] = commit.json();
     CaptureStep {
         ran: true,
-        open_after,
-        human,
+        row,
+        steps,
         json,
+    }
+}
+
+/// A backfill start for the summary: the date when it is local midnight
+/// (what `--since YYYY-MM-DD` gives), else the RFC 3339 time.
+fn shown_since(t: DateTime<FixedOffset>) -> String {
+    if t.time() == chrono::NaiveTime::MIN {
+        t.format("%Y-%m-%d").to_string()
+    } else {
+        t.to_rfc3339()
     }
 }
 
 /// What the first `seldon dossier` did.
 struct DossierStep {
-    ran: bool,
-    human: String,
+    /// What is left to do (`nextSteps`); `None` after a clean run.
+    step: Option<String>,
     json: Value,
 }
 
@@ -491,29 +572,23 @@ struct DossierStep {
 fn first_dossier(ctx: &Context, capture: &CaptureStep) -> DossierStep {
     if !capture.ran {
         return DossierStep {
-            ran: false,
-            human: "skipped (no first capture)".into(),
+            step: Some("seldon dossier".into()),
             json: json!({ "ran": false, "reason": "no first capture" }),
         };
     }
     match dossier::run(ctx, DossierArgs::default()) {
         Ok(out) => {
-            let mut human = out.human.lines().next().unwrap_or_default().to_string();
             let warnings = out.json["warnings"].as_array().map_or(0, Vec::len);
-            if warnings > 0 {
-                human.push_str(&format!("; {warnings} warning(s) (see seldon dossier)"));
-            }
             let mut json = out.json;
             json["ran"] = json!(true);
             DossierStep {
-                ran: true,
-                human,
+                step: (warnings > 0)
+                    .then(|| format!("seldon dossier   # the first run had {warnings} warning(s)")),
                 json,
             }
         }
         Err(e) => DossierStep {
-            ran: false,
-            human: format!("failed: {e}"),
+            step: Some(format!("seldon dossier   # the first run failed: {e}")),
             json: json!({ "ran": false, "error": e.to_string() }),
         },
     }
@@ -521,17 +596,26 @@ fn first_dossier(ctx: &Context, capture: &CaptureStep) -> DossierStep {
 
 /// The wizard's baseline question, asked once the count is known.
 fn ask_baseline(items: usize, crisis: usize) -> bool {
-    eprintln!(
-        "The backfill opened {items} drift item(s) ({crisis} crisis): changes from before \
-         Seldon, none of them in a case."
-    );
+    eprintln!("{}", baseline_note(items, crisis));
     Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!(
-            "Mark them as the pre-Seldon baseline (dismissed, reason \"{BASELINE_REASON}\")?"
-        ))
+        .with_prompt(prompts::BASELINE)
         .default(true)
         .interact()
         .unwrap_or(false)
+}
+
+/// The line above the baseline question.
+fn baseline_note(items: usize, crisis: usize) -> String {
+    let crisis = if crisis > 0 {
+        format!(" ({crisis} crisis)")
+    } else {
+        String::new()
+    };
+    format!(
+        "The backfill opened {items} drift item(s){crisis}:\n\
+         changes from before Seldon. The baseline dismisses them with the\n\
+         reason \"{BASELINE_REASON}\"."
+    )
 }
 
 /// Flags, else the existing config, else built-in defaults.
@@ -602,7 +686,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
             .collect();
         items.push("custom path…".into());
         let pick = Select::with_theme(&theme)
-            .with_prompt("Where should the logbook live?")
+            .with_prompt(prompts::PATH)
             .items(&items)
             .default(0)
             .interact()
@@ -611,7 +695,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
             Some(o) => o.path.clone(),
             None => {
                 let typed: String = Input::with_theme(&theme)
-                    .with_prompt("Logbook path")
+                    .with_prompt(prompts::CUSTOM_PATH)
                     .interact_text()
                     .map_err(prompt_err)?;
                 ctx.dirs.expand(typed.trim())
@@ -629,7 +713,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
             .position(|l| *l == c.language)
             .unwrap_or(0);
         let pick = Select::with_theme(&theme)
-            .with_prompt("Language of the logbook prose")
+            .with_prompt(prompts::LANGUAGE)
             .items(&items)
             .default(default)
             .interact()
@@ -639,7 +723,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
 
     if !args.obsidian {
         c.obsidian = Confirm::with_theme(&theme)
-            .with_prompt("Add Obsidian settings (.obsidian/)?")
+            .with_prompt(prompts::OBSIDIAN)
             .default(false)
             .interact()
             .map_err(prompt_err)?;
@@ -650,7 +734,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
         .map(|n| c.collectors.get(n).unwrap_or(true))
         .collect();
     let picked = MultiSelect::with_theme(&theme)
-        .with_prompt("Collectors (space toggles, enter confirms)")
+        .with_prompt(prompts::COLLECTORS)
         .items(Collectors::NAMES)
         .defaults(&checked)
         .interact()
@@ -660,14 +744,14 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
 
     if c.collectors.config {
         let keep = MultiSelect::with_theme(&theme)
-            .with_prompt("Watched config paths")
+            .with_prompt(prompts::WATCH_PATHS)
             .items(&c.watch_paths)
             .defaults(&vec![true; c.watch_paths.len()])
             .interact()
             .map_err(prompt_err)?;
         let mut paths: Vec<String> = keep.iter().map(|i| c.watch_paths[*i].clone()).collect();
         let extra: String = Input::with_theme(&theme)
-            .with_prompt("More paths, comma-separated, relative to your home (empty for none)")
+            .with_prompt(prompts::MORE_PATHS)
             .allow_empty(true)
             .interact_text()
             .map_err(prompt_err)?;
@@ -676,39 +760,28 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
     }
 
     if args.harnesses.is_empty() {
-        let checked: Vec<bool> = HARNESSES
+        // the kit is a private template, offered only where it is installed
+        let items = harness_items(setup::kit_dir(&ctx.dirs).is_dir());
+        let checked: Vec<bool> = items
             .iter()
-            .map(|h| c.harnesses.iter().any(|x| x == h))
+            .map(|(name, _)| c.harnesses.iter().any(|x| x == name))
             .collect();
-        let kit = setup::kit_dir(&ctx.dirs);
-        let kit_label = format!(
-            "Omarchy-Agent kit: guard and skills into .claude/ (omarchy-agent; {} {})",
-            if kit.is_dir() { "from" } else { "not found at" },
-            ctx.dirs.display(&kit)
-        );
+        let labels: Vec<&str> = items.iter().map(|(_, label)| *label).collect();
         let picked = MultiSelect::with_theme(&theme)
-            .with_prompt("Agent harnesses (space toggles, enter confirms)")
-            .items(&[
-                "Claude Code hooks into ~/.claude/settings.json (user-wide; Seldon records only \
-                 logbook sessions and those it launches; claude-code)"
-                    .to_string(),
-                kit_label,
-                "Seldon agent skill for every agent: into the agent skill folders that exist \
-                 (~/.claude/skills, ~/.agents/skills, …; skills)"
-                    .to_string(),
-            ])
+            .with_prompt(prompts::HARNESSES)
+            .items(&labels)
             .defaults(&checked)
             .interact()
             .map_err(prompt_err)?;
-        c.harnesses = picked.iter().map(|i| HARNESSES[*i].to_string()).collect();
+        c.harnesses = picked.iter().map(|i| items[*i].0.to_string()).collect();
     }
 
     if !args.theme_hook {
+        // the explanation above a short question: a prompt that wraps is
+        // drawn twice by dialoguer
+        eprintln!("{THEME_HOOK_NOTE}");
         c.theme_hook = Confirm::with_theme(&theme)
-            .with_prompt(
-                "Record theme switches the moment they happen? \
-                 (runs `omarchy hook install theme-set`; without it the next capture finds them)",
-            )
+            .with_prompt(prompts::THEME_HOOK)
             .default(false)
             .interact()
             .map_err(prompt_err)?;
@@ -716,7 +789,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
 
     if args.git.is_none() {
         c.git = Confirm::with_theme(&theme)
-            .with_prompt("Make the logbook a git repository with a first commit?")
+            .with_prompt(prompts::GIT)
             .default(c.git)
             .interact()
             .map_err(prompt_err)?;
@@ -725,7 +798,7 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
     if c.capture && args.since.is_none() {
         eprintln!("{BACKFILL_NOTE}");
         let typed: String = Input::with_theme(&theme)
-            .with_prompt("Backfill since (YYYY-MM-DD; empty: record from now on)")
+            .with_prompt(prompts::BACKFILL)
             .allow_empty(true)
             .validate_with(|s: &String| -> std::result::Result<(), String> {
                 if s.trim().is_empty() {
@@ -749,15 +822,189 @@ fn wizard(ctx: &Context, args: &InitArgs, existing: Option<&Config>) -> Result<C
     Ok(c)
 }
 
-/// What the wizard says before it asks for a backfill (WP-013 FINDINGS
-/// §2.2: a backfill opens with a red pill).
-const BACKFILL_NOTE: &str = "\
-A new logbook records changes from now on. A backfill also records older
-changes (the package log, snapshots). None of them belongs to a case, so
-each one opens as drift: the bar pill starts red, often with crises.
-After the capture you can mark the backfill as the pre-Seldon baseline:
-every open item is dismissed with the reason \"pre-Seldon baseline\";
-the events stay in the ledger.";
+/// The wizard's questions (WP-118). Each is drawn on one line of a
+/// 70-column terminal, dialoguer's marks included ([`rendered_width`]):
+/// a prompt or list item that wraps is drawn twice, because dialoguer
+/// clears one line per logical line. Omarchy's presentation terminal is
+/// wider (about 120 columns); 70 leaves room for a narrow window.
+/// Explanations go above a question as plain lines ([`THEME_HOOK_NOTE`],
+/// [`BACKFILL_NOTE`], [`baseline_note`]).
+pub mod prompts {
+    pub const PATH: &str = "Where should the logbook live?";
+    pub const CUSTOM_PATH: &str = "Logbook path";
+    pub const LANGUAGE: &str = "Language of the logbook prose";
+    pub const OBSIDIAN: &str = "Add Obsidian settings (.obsidian/)?";
+    pub const COLLECTORS: &str = "Collectors (space toggles, enter confirms)";
+    pub const WATCH_PATHS: &str = "Watched config paths";
+    pub const MORE_PATHS: &str = "More paths, comma-separated (empty for none)";
+    pub const HARNESSES: &str = "Agent setup (space toggles, enter confirms)";
+    pub const THEME_HOOK: &str = "Record theme switches instantly?";
+    pub const GIT: &str = "Keep the logbook in git, with a first commit?";
+    pub const BACKFILL: &str = "Backfill since (YYYY-MM-DD; empty for none)";
+    pub const BASELINE: &str = "Mark them as the pre-Seldon baseline?";
+}
+
+/// The terminal width every wizard line fits in ([`prompts`]).
+pub const WIZARD_COLUMNS: usize = 70;
+
+/// How dialoguer's `ColorfulTheme` draws a question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptKind {
+    /// `? <prompt> (y/n) › yes`
+    Confirm,
+    /// `? <prompt> › <answer>`, with an answer of `answer` columns
+    Input { answer: usize },
+    /// `? <prompt> ›` above `❯ <item>` / `⬚ <item>` lines
+    List,
+}
+
+/// Columns the line of a question takes on screen, dialoguer's marks
+/// included (dialoguer 0.12, `ColorfulTheme`).
+pub fn rendered_width(kind: PromptKind, prompt: &str) -> usize {
+    let text = prompt.chars().count();
+    match kind {
+        PromptKind::Confirm => "? ".len() + text + " (y/n) › yes".chars().count(),
+        PromptKind::Input { answer } => "? ".len() + text + " › ".chars().count() + answer,
+        PromptKind::List => "? ".len() + text + " ›".chars().count(),
+    }
+}
+
+/// Columns a list item takes on screen (`⬚ <item>`).
+pub fn rendered_item_width(item: &str) -> usize {
+    "⬚ ".chars().count() + item.chars().count()
+}
+
+/// What the wizard says before it asks for the theme hook.
+pub const THEME_HOOK_NOTE: &str = "\
+The next capture records a theme switch anyway. Yes installs
+Omarchy's theme-set hook (`omarchy hook install theme-set`), which
+records it the moment it happens.";
+
+/// What the wizard says before it asks for a backfill. Under ADR-0028
+/// most of an older history is routine; what is left opens as drift and
+/// can be marked as the baseline right after the capture.
+pub const BACKFILL_NOTE: &str = "\
+A new logbook records changes from now on. A backfill also records
+older changes (the package log, snapshots). Most of them are routine
+history; the rest you can mark as the pre-Seldon baseline in one step
+after the capture. The events stay in the ledger either way.";
+
+/// The wizard's agent items, in [`HARNESSES`] order, as (name, label).
+/// The Omarchy-Agent kit is a private template, not Omarchy's agent: it
+/// is offered only when its directory exists (`kit_present`).
+pub fn harness_items(kit_present: bool) -> Vec<(&'static str, &'static str)> {
+    HARNESSES
+        .iter()
+        .filter(|name| **name != "omarchy-agent" || kit_present)
+        .map(|name| {
+            let label = match *name {
+                "claude-code" => "Claude Code hooks (user-wide)",
+                "omarchy-agent" => "Omarchy-Agent kit (private template)",
+                "skills" => "Seldon agent skill (into existing skill folders)",
+                other => other,
+            };
+            (*name, label)
+        })
+        .collect()
+}
+
+/// A harness in the summary.
+fn harness_label(name: &str) -> &str {
+    match name {
+        "claude-code" => "Claude Code hooks",
+        "omarchy-agent" => "Omarchy-Agent kit",
+        "skills" => "Seldon agent skill",
+        other => other,
+    }
+}
+
+/// A harness that is set up, for the summary's Agents row.
+fn agent_result(h: &setup::HarnessReport) -> String {
+    match h.name.as_str() {
+        "claude-code" => "Claude Code hooks (user-wide)".into(),
+        // done without a folder: nothing to put the skill in yet
+        "skills" if h.json["dirs"].as_array().is_some_and(Vec::is_empty) => {
+            "Seldon agent skill (no agent skill folder yet)".into()
+        }
+        other => harness_label(other).into(),
+    }
+}
+
+/// A collector in the summary's Recording row.
+fn collector_label(name: &str) -> &str {
+    match name {
+        "snapper" => "snapshots",
+        "pacman" => "packages",
+        "omarchy" => "Omarchy updates",
+        "plugins" => "plugins",
+        "theme" => "themes",
+        "config" => "config files",
+        other => other,
+    }
+}
+
+/// The lines above the read grant when snapshots are not readable.
+pub const SNAPPER_OPTIONAL: &str = "\
+Optional, snapshots in the timeline: read access to the snapshot list
+and info files, nothing else. Asks for your password once:";
+
+/// The lines above the revert and the read grant for a user in snapper's
+/// `ALLOW_USERS` (ADR-0026).
+pub const SNAPPER_RECOMMENDED: &str = "\
+Recommended: a read grant instead of the snapper opt-in. It empties
+ALLOW_USERS, turns SYNC_ACL off and asks for your password once:";
+
+/// The result `init` prints: a few aligned rows, then what is left to do
+/// (or that nothing is), then the optional steps.
+#[derive(Debug, Default)]
+struct Summary {
+    rows: Vec<(&'static str, String)>,
+    steps: Vec<String>,
+    optional: Vec<(&'static str, String)>,
+}
+
+impl Summary {
+    fn row(&mut self, label: &'static str, value: impl Into<String>) {
+        self.rows.push((label, value.into()));
+    }
+
+    /// One more line under the last row.
+    fn more(&mut self, value: String) {
+        self.rows.push(("", value));
+    }
+
+    fn step(&mut self, step: String) {
+        self.steps.push(step);
+    }
+
+    fn optional(&mut self, intro: &'static str, command: String) {
+        self.optional.push((intro, command));
+    }
+
+    fn human(&self) -> String {
+        let mut out: Vec<String> = self
+            .rows
+            .iter()
+            .map(|(label, value)| format!("{label:<12}{value}"))
+            .collect();
+        out.push(String::new());
+        if self.steps.is_empty() {
+            out.push(NOTHING_TO_DO.into());
+        } else {
+            out.push("Next steps:".into());
+            out.extend(self.steps.iter().map(|s| format!("  {s}")));
+        }
+        for (intro, command) in &self.optional {
+            out.push(String::new());
+            out.push((*intro).into());
+            out.push(format!("  {command}"));
+        }
+        out.join("\n")
+    }
+}
+
+/// The last line of a clean `init`.
+pub const NOTHING_TO_DO: &str = "Seldon is recording. Nothing else to do.";
 
 /// Undoes a layout that failed: removes what `init` created for the
 /// logbook (`created`, the highest folder that was not there; else the
@@ -818,19 +1065,6 @@ enum GitOutcome {
 }
 
 impl GitOutcome {
-    fn describe(&self) -> String {
-        match self {
-            GitOutcome::Skipped => "skipped (--no-git)".into(),
-            GitOutcome::Committed => {
-                "repository initialised, first commit \"seldon: init logbook\"".into()
-            }
-            GitOutcome::InitialisedOnly => {
-                "repository initialised, not committed (--no-commit)".into()
-            }
-            GitOutcome::Failed(e) => format!("not set up: {e}"),
-        }
-    }
-
     fn json(&self) -> serde_json::Value {
         let (repository, committed, error) = match self {
             GitOutcome::Skipped => (false, false, None),
@@ -882,6 +1116,153 @@ mod tests {
         std::fs::remove_dir_all(home.join("src")).unwrap();
         assert_eq!(path_options(&dirs).len(), 2);
         std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    /// WP-118: the wizard's texts, pinned, each drawn on one line of a
+    /// 70-column terminal with dialoguer's marks; the notes say nothing
+    /// about a red pill.
+    #[test]
+    fn wizard_texts_fit_and_say_what_0_1_4_does() {
+        use PromptKind::{Confirm, Input, List};
+        // a date for the backfill, a short answer for the rest
+        let questions = [
+            (prompts::PATH, List),
+            (prompts::CUSTOM_PATH, Input { answer: 20 }),
+            (prompts::LANGUAGE, List),
+            (prompts::OBSIDIAN, Confirm),
+            (prompts::COLLECTORS, List),
+            (prompts::WATCH_PATHS, List),
+            (prompts::MORE_PATHS, Input { answer: 20 }),
+            (prompts::HARNESSES, List),
+            (prompts::THEME_HOOK, Confirm),
+            (prompts::GIT, Confirm),
+            (prompts::BACKFILL, Input { answer: 10 }),
+            (prompts::BASELINE, Confirm),
+        ];
+        // one column short of the edge: a line that fills it puts the
+        // cursor past it on some terminals
+        for (prompt, kind) in questions {
+            assert!(
+                rendered_width(kind, prompt) < WIZARD_COLUMNS,
+                "{prompt}: {} columns",
+                rendered_width(kind, prompt)
+            );
+        }
+        // dialoguer's marks, counted as on screen
+        assert_eq!(rendered_width(Confirm, prompts::THEME_HOOK), 46);
+        assert_eq!(
+            rendered_width(Confirm, "x"),
+            "? x (y/n) › yes".chars().count()
+        );
+        assert_eq!(rendered_width(List, "x"), "? x ›".chars().count());
+        assert_eq!(
+            rendered_width(Input { answer: 1 }, "x"),
+            "? x › a".chars().count()
+        );
+        let items: Vec<&str> = harness_items(true).into_iter().map(|(_, l)| l).collect();
+        let watch = Config::default().watch_paths;
+        for item in items
+            .iter()
+            .copied()
+            .chain(Collectors::NAMES)
+            .chain(watch.iter().map(String::as_str))
+        {
+            assert!(rendered_item_width(item) < WIZARD_COLUMNS, "{item}");
+        }
+        for note in [
+            THEME_HOOK_NOTE,
+            BACKFILL_NOTE,
+            SNAPPER_OPTIONAL,
+            SNAPPER_RECOMMENDED,
+            &baseline_note(123_456, 123_456),
+        ] {
+            for line in note.lines() {
+                assert!(line.chars().count() < WIZARD_COLUMNS, "{line}");
+            }
+        }
+        assert_eq!(prompts::THEME_HOOK, "Record theme switches instantly?");
+        assert_eq!(
+            THEME_HOOK_NOTE,
+            "The next capture records a theme switch anyway. Yes installs\n\
+             Omarchy's theme-set hook (`omarchy hook install theme-set`), which\n\
+             records it the moment it happens."
+        );
+        assert_eq!(
+            BACKFILL_NOTE,
+            "A new logbook records changes from now on. A backfill also records\n\
+             older changes (the package log, snapshots). Most of them are routine\n\
+             history; the rest you can mark as the pre-Seldon baseline in one step\n\
+             after the capture. The events stay in the ledger either way."
+        );
+        assert!(!BACKFILL_NOTE.contains("red") && !BACKFILL_NOTE.contains("crises"));
+        assert_eq!(
+            prompts::GIT,
+            "Keep the logbook in git, with a first commit?"
+        );
+        assert_eq!(prompts::BASELINE, "Mark them as the pre-Seldon baseline?");
+        assert_eq!(
+            baseline_note(40, 0),
+            "The backfill opened 40 drift item(s):\n\
+             changes from before Seldon. The baseline dismisses them with the\n\
+             reason \"pre-Seldon baseline\"."
+        );
+        assert!(baseline_note(5, 2).starts_with("The backfill opened 5 drift item(s) (2 crisis):"));
+    }
+
+    /// WP-118: the kit is a private template; without its directory the
+    /// wizard does not offer it.
+    #[test]
+    fn the_kit_item_shows_only_with_the_kit() {
+        assert_eq!(
+            harness_items(false),
+            [
+                ("claude-code", "Claude Code hooks (user-wide)"),
+                ("skills", "Seldon agent skill (into existing skill folders)"),
+            ]
+        );
+        assert_eq!(
+            harness_items(true),
+            [
+                ("claude-code", "Claude Code hooks (user-wide)"),
+                ("omarchy-agent", "Omarchy-Agent kit (private template)"),
+                ("skills", "Seldon agent skill (into existing skill folders)"),
+            ]
+        );
+    }
+
+    /// WP-118: a clean run ends with one line and no next steps; the
+    /// optional grant comes after it.
+    #[test]
+    fn the_summary_lists_next_steps_only_when_some_are_left() {
+        let mut s = Summary::default();
+        s.row("Logbook", "~/Seldon (English, git repository)");
+        s.row("Snapshots", "recorded");
+        assert_eq!(
+            s.human(),
+            "Logbook     ~/Seldon (English, git repository)\n\
+             Snapshots   recorded\n\
+             \n\
+             Seldon is recording. Nothing else to do."
+        );
+        s.optional(
+            SNAPPER_OPTIONAL,
+            "sudo setfacl -m u:$USER:rx /.snapshots".into(),
+        );
+        assert!(s.human().ends_with(&format!(
+            "Nothing else to do.\n\n{SNAPPER_OPTIONAL}\n  sudo setfacl -m u:$USER:rx /.snapshots"
+        )));
+        s.more("Claude Code hooks: not set up".into());
+        s.step("seldon hook install claude-code".into());
+        let text = s.human();
+        assert!(
+            text.contains("\n            Claude Code hooks: not set up\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("\n\nNext steps:\n  seldon hook install claude-code\n\n"),
+            "{text}"
+        );
+        assert!(!text.contains(NOTHING_TO_DO), "{text}");
     }
 
     #[test]

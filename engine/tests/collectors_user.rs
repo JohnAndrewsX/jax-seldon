@@ -2491,7 +2491,8 @@ mod capture {
         assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
         // the first run says where noisy files go (F-250)
         assert!(
-            common::stdout(&out).contains("list them in [redaction] skipPaths"),
+            common::stdout(&out)
+                .contains("list noisy or secret files in its [redaction] skipPaths"),
             "{}",
             common::stdout(&out)
         );

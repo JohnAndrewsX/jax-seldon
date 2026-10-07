@@ -14,11 +14,12 @@ root. It must exit 0 before a handover (AGENTS.md §5).
 | Packaging | `check-packaging` | `bash -n` and (when installed) `shellcheck` on `packaging/PKGBUILD` and its scripts, `packaging/check-srcinfo.sh` (`.SRCINFO` in step with the PKGBUILD), `bash tests/release/release-notes.test.sh` (the release body from `CHANGELOG.md`: the real `0.1.0` section, a middle and a last section, outer blank lines trimmed; missing, empty and prefix-only versions, malformed input exit 1) | yes |
 | Install script | `check-install` | `bash tests/install/install.test.sh`: `install.sh` against a mock of the release layout served as `file://` URLs, scratch `HOME` and prefixes, no network — latest via the API with and without `jq`, a re-run changes nothing (bytes and mtimes), update and downgrade, `--unit` (the unit byte-identical for `~/.local`, `ExecStart` rewritten for other prefixes, never enabled), refusals before the first write (checksum mismatch, no `SHA256SUMS` line, wrong binary version, missing release, bad arguments, a foreign `jax-seldon`), the script piped to `bash` and truncated, `--uninstall` (only matching files; refused while the unit is enabled), the man page and the completions (WP-049: the fake binary answers `completions`/`mangen`; a scratch `/usr/share` via `SELDON_INSTALL_SHARE` has the bash-completion, fish and zsh directories, and fake `fish`/`zsh` in a PATH dir decide which shells exist (the host's zsh and fish are left off PATH): zsh's directory without `zsh` installs nothing, a fake `zsh` adds its completion and the `fpath` hint, `fish` without its directory installs nothing; a release without the commands skips them; a foreign completion is kept unless `--force`; a completion of a shell that is gone stays in the manifest and `--uninstall` removes it), the build-provenance check (WP-080: the host's `gh` is left off PATH; `gh` stubs that verify against the mock releases' attestations, fail on their own, are not logged in, too old or missing an option, or absent, each with and without `--require-verified`, plus `--skip-provenance`; a tampered release, one attested only for a branch, one from a self-hosted runner, one before attestations (v0.1.1), a `GH_HOST` of another server, the exact `gh` argv), no `sudo`/`systemctl` call, the real `~/.local/bin`, `~/.config/systemd/user`, completions and man page untouched; `shellcheck` when installed | yes (`shellcheck` in the release workflow's container) |
 | Deploy script | `check-deploy` | `bash tests/deploy/deploy-test-host.test.sh` (WP-098): `scripts/deploy-test-host.sh` in a scratch git repository with a bare origin, against a fake test host — an `ssh` stub runs the remote scripts here under `env -i` with a scratch `HOME` and a `PATH` of stubs (`omarchy-shell`, `omarchy-restart-shell`, `omarchy`, `curl`, `git clone`) plus single linked tools, so the host's real `omarchy-*`, `quickshell`, `hyprctl` and `systemctl` are out of reach; a `cargo` stub builds a fake engine. Refusals before any build or change (no or unlisted host, a machine-id that does not match the pin (one ssh call, no id printed), no pin or no pin file (with the hint; a commented pin does not count), a prefix or comment word of a listed one, an ssh option as host, no host list, the host is this machine, not on `main`, a modified or untracked file, HEAD not pushed, a check log missing, not ending in `exit 0`, without a first line `head <full sha>`, with a short, unknown or other-branch sha, or with `engine/`, `plugin/`, `schema/` or the script changed since that sha — a docs-only commit passes —, Windows line endings, bad arguments, a symlinked plugin dir, a missing remote tool); dry run (no build, the host unchanged); first deploy (marked build with `--features watch` into the repo's target dir, `ssh -G` and the engine found in the dry run, a host without an engine, `ping` before the restart, `seldon.prev`, the release clone moved out of the plugins dir, HEAD's plugin files plus `.seldon-dev-build`, one restart, smoke, log line); an engine-only change (no restart, unchanged plugin files keep their mtime, an exported `CARGO_TARGET_DIR` ignored); the settle wait; removed and added plugin files; each locked state and an unreadable lock status (restart pending, caught up by the next deploy on an unlocked session); a restart notice while the restart is pending (a note); a failing restart, doctor, capture, service version, restart notice, host-side validation, build, a build without the marker, and no graphical session (named in the summary); an active `seldon-watch.service` restarted on the new binary, an inactive one left alone, a failed unit restart (exit 2); `--release` (install.sh with `--force`, the watcher restarted on the release binary, the clone at the tag, the dev copy moved aside), a clone that fails validation, a checksum mismatch and a missing release; the real `~/.local/bin/seldon`, plugin dir and `~/.local/state/seldon-dev` untouched; `shellcheck` when installed | yes |
+| Dev-host guard | `check-guard` | The PreToolUse guard hook `scripts/guard.sh` (WP-130; it runs `scripts/guard.py`, a bash parser that decides on the command position): `bash scripts/guard-test.sh`, the expectation table (one row per allowed or blocked case, a fixed fake `HOME` and working directory, nothing is executed), then `python3 scripts/guard-mutants.py`: each mutant drops one rule of `guard.py` and the table must fail for every one; `shellcheck` when installed | yes |
 | Contract | `schema-validate` | `bash scripts/validate-fixtures.sh` (WP-002); skipped with a notice while the script does not exist | yes |
 | User guide | `docs-check` | `bash scripts/docs-check.sh` (WP-045): builds the engine (debug), then checks `docs/user/`: relative links, images (with alt text) and anchors resolve; every language folder has the same pages as `en/` with the same heading levels, code blocks, tables and images; every translated page has its `<!-- source: en/<page> @ <commit> -->` line (a source commit older than the English page's last change is a warning; a commit missing from a shallow clone is a notice); every `seldon …` in a code span or a `sh` block names commands and options that `--help` lists (`PLANNED` in the script holds commands the guide names as planned); the help blocks of `05-cli-reference.md` equal `seldon <command> --help` with the global options left out. The front pages (`FRONT_PAGES`: `README.md`, `plugin/README.md`, `plugin/SECURITY.md`, `docs/DEVELOPMENT.md`, `llms.txt`, WP-046) get the same link, anchor and `seldon …` checks; a page under `plugin/` may link or embed only files inside `plugin/` by relative path (it is published on its own by `git subtree split`); an absolute link into the public repositories (`github.com/JohnAndrewsX/jax-seldon[-plugin]` blob/tree/main, `raw.githubusercontent.com`, the repository root, a workflow badge) must name a file and heading that exist here; every image is at most 1 MB. Other URLs are not fetched. `--write` regenerates the help blocks. `SELDON_BIN` skips the build | yes |
 | Plugin manifest | `plugin-validate` | `omarchy plugin validate plugin/` | **no** (dev host) |
 | QML lint | `qmllint` | `qmllint` on `plugin/*.qml`, `plugin/components/*.qml` and `plugin/components/overlay/*.qml` against `$OMARCHY_PATH/shell`, then the token check `tests/plugin/check-tokens.py` | **no** (dev host) |
-| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
+| Plugin logic | `plugin-test` | `node tests/plugin/model.test.js`, `node tests/plugin/model.bench.js`, `bash tests/plugin/terminal-scripts.sh`, `bash tests/plugin/service-states.sh`, `bash tests/plugin/desk-view.sh`, `bash tests/plugin/bar-view.sh` (see "Plugin") | **no** (dev host) |
 
 Other recipes: `just check-rss` (the `seldon watch` memory bound on an
 optimised build; not in `check`, not in CI, required before the handover
@@ -253,9 +254,9 @@ only under `$S`. Never pass `--theme-hook` on the dev host: it runs
 ```
 $B init --non-interactive --path $S/logbook --language de \
    --harness claude-code --harness omarchy-agent --since "$(date -d '-7 days' +%F)"
-#   First capture: N event(s) since …; M open drift item(s), M crisis  (dev host
+#   History     N event(s) since …; M open drift item(s), M crisis  (dev host
 #   2026-10-01: 1230 events, 22 items, all crises — WP-013 FINDINGS §2.2)
-#   Harness omarchy-agent: no kit at $S/data/seldon/harness/omarchy-agent; nothing copied …
+#               Omarchy-Agent kit: no kit at $S/data/seldon/harness/omarchy-agent; nothing copied …
 rm -rf $S/logbook $S/state $S/config
 $B --json init --non-interactive --path $S/logbook --since "$(date -d '-7 days' +%F)" --baseline
 #   capture.baseline {"items": 22, "events": 1230, "reason": "pre-Seldon baseline"}, openDrift 0
@@ -277,10 +278,10 @@ export SELDON_OMARCHY=$S/omarchy-stub    # a script that only records "$*"
 (sleep 1; for k in '\r' '\r' '\r' '\r' '\r' ' ' '\r' '\r' '\r'; do printf "$k"; sleep 0.4; done
  printf "$(date -d '-3 days' +%F)\r"; sleep 4; printf '\r'; sleep 3) \
   | script -qec "$B init --path $S/logbook" /dev/null
-# language, Obsidian, collectors, watched paths, more paths, harnesses (Space:
-# claude-code), theme hook (no), git (yes), backfill date, then after the
-# capture: "The backfill opened N drift item(s) … Mark them as the pre-Seldon
-# baseline?" (Enter: yes)
+# language, Obsidian, collectors, watched paths, more paths, agent setup
+# (Space: claude-code; the kit item only with the kit), theme hook (no), git
+# (yes), backfill date, then after the capture: "The backfill opened N drift
+# item(s) …" and "Mark them as the pre-Seldon baseline?" (Enter: yes)
 ```
 
 Why the guard: on 2026-10-01 a wizard run with only `HOME` overridden
@@ -310,7 +311,7 @@ file takes ~12 s; the timing assertions allow 4 s of slack for a loaded
 machine. `Watch::start` consumes the `watching` line and the rebuild at
 start, so each test sees only the rebuilds its own writes cause.
 
-**Memory bound (PLAN.md: RSS < 10 MB).** The test runs the watcher on the
+**Memory bound (PLAN.md: RSS < 10 MB; 11 MB since 2026-10-07).** The test runs the watcher on the
 ×10 fixture (`tests/common/scale.rs`) with the state lock held (so the
 rebuild at start waits), reads the idle size, releases the lock, lets the
 rebuild at start and one change-triggered rebuild run (500 events in the
@@ -322,7 +323,10 @@ growth of the heap (`RssAnon`) over the idle watcher is bounded (< 6 MB;
 information only: most of them are the debug binary's file-mapped pages,
 whose idle share moves by up to ~0.8 MB between builds of the same code
 (WP-091 round 3). `just check-rss` runs
-the test under `--profile bench`, where the peak must stay under 10 MB.
+the test under `--profile bench`, where the peak must stay under 11 MB
+(operator decision 2026-10-07: the 10 MB peak was exceeded by 0.3–0.6 MB
+of the binary's own pages on the dev host before any 0.2.0 change; the
+heap-growth bound above stays the real limit).
 It is not part of `just check` and CI does not run it; run it before the
 handover of any WP that touches `engine/src/index/` or
 `engine/src/commands/watch.rs`. To measure another binary, e.g. the musl release build with the
@@ -413,8 +417,25 @@ command forms of CONTRACT.md (free text one non-empty argument after `--`,
 `drift show <id> --json`, `[--only]`), the `XDG_STATE_HOME` index path, and
 the tab helpers against the fixture: 62 Changelog rows, one "+2" group (3 members), 7
 folded resolution details, 6 snapshot rows, the source filter, the crisis
-strip text, the snapper banner, the Today view and the System sections with
-every field optional. For the panel actions (WP-012): the case picker lists
+strip text, the snapper banner, the Today view ("1 event today") and the
+System sections with every field optional. The banners' terminal scripts
+(WP-117) are pinned verbatim; each shows its command as Copy copies it and
+runs it, bash parses each, and a hostile index (quotes, `$(…)`, `rm -rf`
+in the snapper message and the contract version) changes none of them.
+`bash tests/plugin/terminal-scripts.sh` runs every script inside the
+presentation launcher's own `omarchy-show-logo; …; omarchy-show-done` line,
+in a session of its own (`setsid`), with stub `sudo`, `curl`, `seldon`,
+`omarchy` and `gum` (and the real gum, for its flags), scratch HOME: the
+green line and the follow-up `seldon capture` or `seldon status` only on
+success, the red line on a refused password, a failed download
+(pipefail), a failed installer or an empty USER (no `sudo` call), one more
+capture when the lock is held, "Read access granted" instead of
+"recorded" when both captures fail, and "Done" after each; Ctrl+C (a stub
+sends SIGINT to the process group and dies of it, or catches it and
+exits 1, or it comes during the announce lines) gives the "Cancelled"
+line as the last output, no follow-up, no command started after it, and
+no "Done" (status 130). `terminalArgv` returns the launcher argv only for
+one of the five scripts; a forged banner gets null. For the panel actions (WP-012): the case picker lists
 the open cases only, active first, with ids checked; `logArgs` keeps the
 note one argument after `--` (`--help`, quotes, a newline, `$(…)`) and
 refuses blank text and a malformed case id; `openArgs` takes journal,
@@ -574,14 +595,17 @@ replace (temp file + rename), an engine installed while running ("Check
 again"), the live loop without the dev override (capture, then status
 writes the index; calls never overlap), engine exit 3, the exact argv of
 the banner fixes (fake `wl-copy` and terminal launcher record it), the
-crisis strip text, `index-variants/snapper-degraded.json` with the argv of
-its *Copy* and *Run in terminal*, its three actions and the hint after
-*Run in terminal*, which a reload of the unchanged index keeps (WP-054);
-live, the hint after *Run in terminal*, then *Check again* running the
+crisis strip text, the engine-missing banner urgent with an index and
+accent without one (WP-117), `index-variants/snapper-degraded.json` with
+the argv of its *Copy* (the plain grant) and *Grant* (the grant script),
+its three actions and its one-sentence detail with the engine's message on
+hover; the index replaced after *Grant*, as the script's capture does, and
+the banner gone without a click; live, *Grant* changing nothing in the
+panel, then *Check again* running the
 same `capture` and `status` as *Capture now* (`["fix", action, banner]`
 and `["snapshot"]` in `HARNESS_ACTIONS`): with snapper fixed the banner
-is gone, still failing it stays with the new message and without the
-hint; `XDG_STATE_HOME` (absolute and the
+is gone, still failing it stays with the new message on hover;
+`XDG_STATE_HOME` (absolute and the
 ignored relative form), and dev mode never running the engine.
 `tests/plugin/fake-seldon` stands in for the engine.
 

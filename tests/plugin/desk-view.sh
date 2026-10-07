@@ -422,34 +422,59 @@ clean_log stacked
 # ---------------------------------------------------------------------------
 # 7. The notices under the header (today's banners, with their fixes) and
 #    the header's chip.
-# 7a. Snapper not readable (ADR-0026, WP-054): the notice with Run in
-#     terminal and Check again; after the click, the hint under the buttons.
-#     On a narrow desk the chip's title does not fit beside the KPI strip:
-#     it says "1 notice".
-run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 "summon;click:Run in terminal;resize:1000x900" \
+# 7a. Snapper not readable (ADR-0026, WP-054): the notice with Grant, Copy
+#     and Check again (WP-117): one sentence, the plain command; the
+#     engine's message and what the grant gives on hover. Grant opens the
+#     terminal script and adds no hint. On a narrow desk the chip's title
+#     does not fit beside the KPI strip: it says "1 notice".
+run snapper "$fx/index-variants/snapper-degraded.json" 1920x1080 \
+  "summon;click:Grant;hover:Read snapshots (optional);wait:snapperTip.shown=true;view;resize:1000x900" \
   HARNESS_RECORD="$work/snapper.record"
-expect snapper 1 '.view.notices | join(",")' "Snapshots not readable"
-expect snapper 1 .view.chip "Snapshots not readable"
+expect snapper 1 '.view.notices | join(",")' "Read snapshots (optional)"
+expect snapper 1 .view.chip "Read snapshots (optional)"
 shows snapper 1 'sudo setfacl -m u:$USER:rx /.snapshots'
+shows snapper 1 "A one-time read grant on /.snapshots; it asks for your password once, and Seldon works without it."
+shows snapper 1 "Grant"
+shows snapper 1 "Copy"
 shows snapper 1 "Check again"
-expect snapper 1 '[.texts[] | select(. == "When the command has finished, press Check again")] | length' 0
-shows snapper 2 "When the command has finished, press Check again"
-expect snapper 1 .view.chipShown "▾ Snapshots not readable"
-expect snapper 3 .view.chipShown "▾ 1 notice"
-expect snapper 3 '.overflow | join(" | ")' ""
+expect snapper 1 '[.texts[] | select(. == "Run in terminal")] | length' 0
+expect snapper 1 '[.texts[] | select(contains("snapshot directory listing"))] | length' 0
+expect snapper 2 '[.texts[] | select(startswith("When the command has finished"))] | length' 0
+snapper_grants="The command below grants your user read access to the snapshot directory listing and the snapshot info files (files inside a snapshot keep their own permissions), nothing else: no snapshot creation, change or deletion."
+snapper_message=$(jq -r '.state.collectors[] | select(.name == "snapper") | .message' "$fx/index-variants/snapper-degraded.json")
+expect snapper 1 .view.snapperTip.shown false
+expect snapper 5 .view.snapperTip.text "$snapper_message"$'\n'"$snapper_grants"
+expect snapper 5 .view.snapperTip.shown true
+expect snapper 5 .view.snapperTip.fits true
+# the launcher's argv is the grant script, verbatim (model.test.js pins its text)
+script=$(node -e '
+  const fs = require("fs"), vm = require("vm"), M = {}
+  vm.createContext(M)
+  vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), M)
+  process.stdout.write(M.SNAPPER_FIX_SCRIPT)' "$root/plugin/Model.js")
+deadline=$((SECONDS + 15))
+until [[ -s $work/snapper.record ]] || ((SECONDS >= deadline)); do sleep 0.2; done
+check "snapper: Grant opened the terminal with the grant script" \
+  "$(cat "$work/snapper.record" 2>/dev/null || true)" \
+  "$(printf '%s\n' omarchy-launch-floating-terminal-with-presentation "$script" --)"
+expect snapper 1 .view.chipShown "▾ Read snapshots (optional)"
+expect snapper 6 .view.chipShown "▾ 1 notice"
+expect snapper 6 '.overflow | join(" | ")' ""
 clean_log snapper
 
 # 7b. Not initialised: the status notice with its pictogram's fix, no KPI
 #     figures, no counts; the chip folds and unfolds the notices.
 run uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon;clickName:deskChip;clickName:deskChip"
 expect uninit 1 .view.status notInitialised
-expect uninit 1 '.view.notices | join(",")' "Logbook not initialised"
+expect uninit 1 '.view.notices | join(",")' "Create your logbook"
 expect uninit 1 '.view.kpis | length' 0
 expect uninit 1 '[.view.counts[] | .text] | join("")' ""
-shows uninit 1 "Create your logbook once with seldon init."
+shows uninit 1 "Sets up your logbook and starts recording; the terminal asks a few questions, no password."
+shows uninit 1 "seldon init"
+shows uninit 1 "Create"
 expect uninit 2 .view.noticesFolded true
-expect uninit 2 '[.texts[] | select(. == "Create your logbook once with seldon init.")] | length' 0
-shows uninit 2 "▸ Logbook not initialised"
+expect uninit 2 '[.texts[] | select(. == "Sets up your logbook and starts recording; the terminal asks a few questions, no password.")] | length' 0
+shows uninit 2 "▸ Create your logbook"
 expect uninit 3 .view.noticesFolded false
 clean_log uninit
 
@@ -464,7 +489,7 @@ expect restart-same 1 .view.chip ""
 clean_log restart-same
 run restart-updated "$fx/index-variants/not-initialised.json" 1920x1080 "summon;click:Restart shell;click:Restart shell" \
   HARNESS_MANIFEST="$(jq -c '.version = "99.0.0"' <<<"$manifest")" HARNESS_RECORD="$work/restart-updated.record"
-expect restart-updated 1 '.view.notices | join(",")' "Restart the shell to finish the update,Logbook not initialised"
+expect restart-updated 1 '.view.notices | join(",")' "Restart the shell to finish the update,Create your logbook"
 expect restart-updated 1 .view.chip "Restart the shell to finish the update +1"
 shows restart-updated 1 "Seldon 99.0.0 is installed, but the shell still runs $(jq -r .version <<<"$manifest"). The shell loads new plugin code only when it restarts."
 deadline=$((SECONDS + 15))
@@ -584,6 +609,14 @@ shows today 6 "Snapshots aufgeräumt, 108 und 109 gelöscht."
 expect today 7 "[.view.section, .view.selected] | join(\",\")" "work,C-2026-004"
 for i in 1 2 5 7; do expect today $i '.overflow | join(" | ")' ""; done
 clean_log today
+
+# 8a'. One event today: the tile's singular (WP-117, panel 4b).
+jq '.summary.eventsToday = 1' "$sample" >"$work/one-event.json"
+run one-event "$work/one-event.json" 1920x1080 "summon"
+expect one-event 1 "$tv.tiles | join(\",\")" "event today 1,7 days 53"
+shows one-event 1 "event today"
+expect one-event 1 '[.texts[] | select(. == "events today")] | length' 0
+clean_log one-event
 
 # A crisis resolved from Today stays shown with the engine's answer after
 # it leaves NEEDS YOU (live).
@@ -1530,7 +1563,7 @@ clean_log radiant-reflow
 # 9f. A logbook that is not initialised (overlay scenario 7): the desk's
 #     notice (7b); every chart in its empty state, nothing painted, no hover.
 run radiant-uninit "$fx/index-variants/not-initialised.json" 1920x1080 "summon:$radiant;call:hover:heatmap 0.5,0.5;call:hover:timeline 0.5,0.5"
-expect radiant-uninit 1 '.view.notices | join(",")' "Logbook not initialised"
+expect radiant-uninit 1 '.view.notices | join(",")' "Create your logbook"
 rfits radiant-uninit 1
 rcounts radiant-uninit 1 90 "0,0,0,0,0,0"
 expect radiant-uninit 1 '[.view.sectionView.slots[] | .chart.empty] | all' true

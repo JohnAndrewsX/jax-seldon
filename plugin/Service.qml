@@ -11,7 +11,8 @@ import "Model.js" as Model
 // shell thread; the contract keeps it under 1 MB.
 //
 // The engine is only ever started with an argument list from CONTRACT.md,
-// checked by Model.validateArgs; fix commands are constants from Model.js.
+// checked by Model.validateArgs; fix commands and the terminal scripts
+// behind them are constants from Model.js.
 //
 // The index lives at ${XDG_STATE_HOME:-$HOME/.local/state}/seldon/index.json
 // (CONTRACT.md rule 1). The engine is probed once at start and again only on
@@ -92,17 +93,14 @@ Item {
       indexContractVersion: indexContractVersion,
       parseError: parsed ? parsed.error : "",
       generatedAt: index ? index.generatedAt : "",
-      nowMs: nowMs
+      nowMs: nowMs,
+      indexExists: fileState === "loaded" || fileState === "invalid"
     })
   // What the index itself reports, shown under the status banner on every tab
   // (SPEC-PLUGIN §5), only while its counts mean something.
   readonly property bool indexShown: index !== null && Model.showsCounts(status)
   readonly property string crisisText: indexShown ? Model.crisisText(index) : ""
-  // The index text when the snapper banner's Run in terminal was clicked;
-  // empty when not. The banner's hint shows until an index with other
-  // content arrives (WP-054).
-  property string snapperHintIndex: ""
-  readonly property var snapperBanner: indexShown ? Model.snapperBanner(index, snapperHintIndex !== "") : null
+  readonly property var snapperBanner: indexShown ? Model.snapperBanner(index) : null
   // The Prime Radiant's windows, series rows, slot counts and chart data for
   // every period (Model.periodTable: one pass per series, then the charts),
   // computed when the index changes: the overlay is created anew on each
@@ -293,7 +291,6 @@ Item {
   // ---- Index.
 
   function ingest(text) {
-    if (root.snapperHintIndex !== "" && text !== root.snapperHintIndex) root.snapperHintIndex = ""
     var result = Model.parseIndex(text)
     // A rule holds while its item is still an open crisis; a rewritten
     // index drops the others (resolved, or reclassified), which are asked
@@ -309,7 +306,6 @@ Item {
   }
 
   function ingestFailure(error) {
-    root.snapperHintIndex = ""
     root.parsed = null
     root.fileState = error === FileViewError.FileNotFound ? "missing" : "invalid"
   }
@@ -812,8 +808,10 @@ Item {
   }
 
   // ---- Banner fixes (AGENTS.md §7: every non-ok state has a one-click fix).
-  // bannerId picks the banner whose constant command copy/terminal use:
-  // "status" (default) or "snapper" (ADR-0026). "restart" is the restart
+  // bannerId picks the banner whose constants copy and terminal use:
+  // "status" (default) or "snapper" (ADR-0026). Copy puts the plain command
+  // on the clipboard; terminal opens the banner's terminal script (WP-117),
+  // only one of Model.TERMINAL_SCRIPTS (Model.terminalArgv). "restart" is the restart
   // notice's own action (WP-090): the fixed argv, only while it shows, and
   // only once per service (restartStarted).
   function fix(actionId, bannerId) {
@@ -832,12 +830,12 @@ Item {
     }
     var source = bannerId === "snapper" ? root.snapperBanner : root.banner
     var command = source ? source.command : ""
+    var terminal = Model.terminalArgv(source)
     if (actionId === "copy" && command !== "") {
       Quickshell.execDetached(["wl-copy", "--", command])
-    } else if (actionId === "terminal" && command !== "") {
-      // Opens on the explicit click only (ADR-0004); `command` is a constant.
-      Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", command])
-      if (bannerId === "snapper") root.snapperHintIndex = indexFile.text()
+    } else if (actionId === "terminal" && terminal) {
+      // Opens on the explicit click only (ADR-0004); the script is a constant.
+      Quickshell.execDetached(terminal)
     } else if (actionId === "recheck") {
       root.probeEngine()
       root.reloadIndex()
@@ -896,11 +894,14 @@ Item {
       tone: Model.pillTone(root.counts),
       tooltip: Model.tooltipText(root.status, root.counts, root.lastCapture, root.nowMs),
       banner: root.banner ? root.banner.title : "",
+      bannerTone: root.banner ? root.banner.tone : "",
+      bannerDetail: root.banner ? root.banner.detail : "",
+      bannerActions: root.banner ? root.banner.actions.map(function(a) { return a.id + ":" + a.label }) : [],
       crisis: root.crisisText,
       snapper: root.snapperBanner ? root.snapperBanner.title : "",
       snapperDetail: root.snapperBanner ? root.snapperBanner.detail : "",
       snapperActions: root.snapperBanner ? root.snapperBanner.actions.map(function(a) { return a.id + ":" + a.label }) : [],
-      snapperHint: root.snapperBanner ? root.snapperBanner.hint : "",
+      snapperFull: root.snapperBanner ? root.snapperBanner.full : "",
       rules: root.rulesBanner ? root.rulesBanner.title : "",
       rulesResult: root.rulesResult,
       rulesNotice: root.rulesNotice ? root.rulesNotice.title : ""
