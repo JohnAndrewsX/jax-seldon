@@ -872,9 +872,11 @@ Start an agent on an active case, or ask one about the open changes, a change or
 Usage: seldon agent [OPTIONS] <COMMAND>
 
 Commands:
-  start  Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
-  ask    Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
-  help   Print this message or the help of the given subcommand(s)
+  start     Launch an agent on an active case, with the case as the active case and a prompt that names the case and the logbook; with --new, create and start the case from one sentence first
+  ask       Ask an agent about the open changes, one change or one case: the prompt holds ids only and names the skill's guide; nothing in the logbook changes (ADR-0036)
+  focus     Bring the window of the agent `agent start` launched on a case to the front (Hyprland)
+  sessions  List the agents `agent start` launched that still run, one per case
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
 ```
@@ -917,6 +919,7 @@ Options:
       --risk <RISK>      With --new: R0 to R3 [default: R1]
       --area <AREA>      With --new: area slug; created under areas/ on first use
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+      --again            Start another agent although one already works on the case
 
 Examples:
   seldon agent start C-2026-004
@@ -995,6 +998,40 @@ Arguments:
 
 Options:
       --launcher <NAME>  A launcher from `[agent.launchers]` in config.toml; `omarchy` is the built-in one (default: `[agent] launcher`)
+```
+<!-- /help -->
+
+**Ein Agent pro Case.** `agent start <ID>` lehnt ab, solange ein Agent,
+den es auf dem Case gestartet hat, noch läuft, und nennt `seldon agent
+focus <ID>`; `--again` startet trotzdem einen weiteren. `agent focus` holt
+das Fenster dieses Agenten nach vorn (Hyprland); `agent sessions` listet
+die noch laufenden Agenten, einen pro Case. Die Engine erkennt sie an den
+Variablen `SELDON_CASE` und `SELDON_LOGBOOK` in ihrer Umgebung; nichts
+wird gespeichert.
+
+<!-- help: seldon agent focus -->
+```text
+Bring the window of the agent `agent start` launched on a case to the front (Hyprland)
+
+Usage: seldon agent focus [OPTIONS] <ID>
+
+Arguments:
+  <ID>  The case
+
+Options:
+
+Example:
+  seldon agent focus C-2026-004
+```
+<!-- /help -->
+
+<!-- help: seldon agent sessions -->
+```text
+List the agents `agent start` launched that still run, one per case
+
+Usage: seldon agent sessions [OPTIONS]
+
+Options:
 ```
 <!-- /help -->
 
