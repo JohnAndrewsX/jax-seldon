@@ -86,6 +86,11 @@ M = [
      "    let session = session_actor_for_user_act(&format!(\"`seldon drift {what}` refused\"))?;",
      "    let session = session_actor_for_user_act(&format!(\"`seldon drift {what}` refused\")).ok().flatten();",
      ["--test", "triage"], "apply_and_discard_are_the_user_s_and_check_the_file"),
+    # round 3
+    ("M18 an ambiguous id takes the first file", D,
+     "    let path = match logbook.decision_files_of(&id)?.as_slice() {",
+     "    let path = match logbook.decision_files_of(&id)?.get(..1).unwrap_or_default() {",
+     T, "refuses_a_decision_that_is_not_proposed"),
 ]
 
 

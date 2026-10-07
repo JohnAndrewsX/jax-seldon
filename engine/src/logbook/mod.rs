@@ -106,17 +106,27 @@ impl Logbook {
         md_files(&self.path("decisions"), "ADR-")
     }
 
-    /// The file of decision `id` (`decisions/<id>-*.md` or `<id>.md`), the
-    /// first in sorted order; `None` when there is none.
-    pub fn decision_file(&self, id: &str) -> anyhow::Result<Option<PathBuf>> {
+    /// Every file of decision `id` (`decisions/<id>-*.md` or `<id>.md`),
+    /// sorted; more than one is a hand-made duplicate.
+    pub fn decision_files_of(&self, id: &str) -> anyhow::Result<Vec<PathBuf>> {
         let prefix = format!("{id}-");
         let exact = format!("{id}.md");
-        Ok(self.decision_files()?.into_iter().find(|p| {
-            p.file_name().is_some_and(|n| {
-                let n = n.to_string_lossy();
-                n.starts_with(&prefix) || n == exact
+        Ok(self
+            .decision_files()?
+            .into_iter()
+            .filter(|p| {
+                p.file_name().is_some_and(|n| {
+                    let n = n.to_string_lossy();
+                    n.starts_with(&prefix) || n == exact
+                })
             })
-        }))
+            .collect())
+    }
+
+    /// The file of decision `id`, the first in sorted order; `None` when
+    /// there is none.
+    pub fn decision_file(&self, id: &str) -> anyhow::Result<Option<PathBuf>> {
+        Ok(self.decision_files_of(id)?.into_iter().next())
     }
 
     /// Journal files `journal/YYYY/*.md`, sorted.

@@ -167,9 +167,19 @@ fn accept(ctx: &Context, args: AcceptArgs) -> Result<Output> {
     let actor = user_actor(args.actor, &id)?;
     let (config, logbook) = ctx.open_logbook()?;
     let lock = ctx.lock()?;
-    let path = logbook
-        .decision_file(&id)?
-        .ok_or_else(|| Error::user(format!("unknown decision {id}")))?;
+    // two files with one id (a hand-made copy): which one the user means is
+    // not for the engine to guess (round 3)
+    let path = match logbook.decision_files_of(&id)?.as_slice() {
+        [] => return Err(Error::user(format!("unknown decision {id}"))),
+        [one] => one.clone(),
+        many => {
+            let names: Vec<String> = many.iter().map(|p| cases::relative(&logbook, p)).collect();
+            return Err(Error::user(format!(
+                "{id} is ambiguous: {} carry it; keep one of them, then accept it again",
+                names.join(" and ")
+            )));
+        }
+    };
     let rel = cases::relative(&logbook, &path);
     let (mut decision, mut doc) =
         model::load::<Decision>(&path).map_err(|e| Error::user(format!("{e:#}")))?;

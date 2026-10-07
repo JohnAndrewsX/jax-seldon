@@ -217,6 +217,30 @@ fn refuses_a_decision_that_is_not_proposed() {
     );
     assert!(tree(&root) == files);
 
+    // two files with one id: ambiguous, both named, nothing written (round 3)
+    std::fs::write(
+        &path,
+        read(&path).replace("id: [ADR-0001\n", "id: ADR-0001\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("decisions/ADR-0001-copy.md"),
+        read(&path).replace("Zed statt VS Code", "Copy"),
+    )
+    .unwrap();
+    let files = tree(&root);
+    let out = env.at(T1, &["decide", "accept", "ADR-0001"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains(
+            "ADR-0001 is ambiguous: decisions/ADR-0001-copy.md and \
+             decisions/ADR-0001-zed-statt-vs-code.md carry it"
+        ),
+        "{}",
+        stderr(&out)
+    );
+    assert!(tree(&root) == files);
+
     // ids are checked by the parser; --json reports it as JSON
     let out = env.at(T1, &["decide", "accept", "ADR-1", "--json"]);
     assert_eq!(out.status.code(), Some(1));
@@ -261,7 +285,8 @@ fn an_agent_never_accepts() {
         (
             vec!["decide", "accept", "ADR-0001", "--actor", "human"],
             vec![("SELDON_ACTOR", "agent:Not Valid")],
-            "ADR-0001 is not accepted: SELDON_ACTOR",
+            "ADR-0001 is not accepted: SELDON_ACTOR (the session's actor): `agent:Not Valid` is \
+             not an actor",
         ),
         (
             vec!["decide", "accept", "ADR-0001", "--actor", "human"],
@@ -283,6 +308,11 @@ fn an_agent_never_accepts() {
         assert_eq!(out.status.code(), Some(1), "{args:?} {vars:?}");
         assert!(
             stderr(&out).contains(want),
+            "{args:?} {vars:?}: {}",
+            stderr(&out)
+        );
+        assert!(
+            !stderr(&out).contains("the actor when none is named"),
             "{args:?} {vars:?}: {}",
             stderr(&out)
         );

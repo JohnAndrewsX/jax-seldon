@@ -246,8 +246,8 @@ seldon decide accept <ADR-NNNN> [--actor A]    # WP-135, ADR-0040: a proposed de
 # adds a second note — the plan step's pattern); the `decisions.index` fence of
 # DECISIONS.md, autocommit `seldon: ADR-NNNN accepted`, index rebuilt.
 # Accepted already: exit 0, nothing written (`already: true`). Superseded, an
-# unknown id, a file that does not read or whose frontmatter names another id:
-# exit 1, nothing written. The user's act (as `drift apply`, WP-124, and an
+# unknown id, a file that does not read or whose frontmatter names another id,
+# two or more files with the id (ambiguous; both named): exit 1, nothing written. The user's act (as `drift apply`, WP-124, and an
 # imported case's start, WP-102): an agent `--actor`, an agent SELDON_ACTOR
 # without `--actor`, `--actor human` in an agent's session, and a SELDON_ACTOR
 # that is set but does not read (whatever `--actor` says: the session may be

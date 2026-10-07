@@ -50,13 +50,24 @@ inside an agent's session does not get around it.
 3. **Only a proposed decision is accepted.** An accepted one: exit 0,
    `already: true`, nothing written (idempotent). A superseded one, an
    unknown id, a file whose frontmatter does not read or names another
-   id: exit 1, nothing written.
+   id: exit 1, nothing written. More than one file in `decisions/` with
+   the id (a hand-made copy) is ambiguous: exit 1 naming both files,
+   nothing written; which one the user means is not the engine's guess.
 4. **The user's act.** An agent `--actor`, an agent `$SELDON_ACTOR`
    without `--actor`, `--actor human` in an agent's session, and a
    `$SELDON_ACTOR` that is set but does not read (with any `--actor`: the
    session may be an agent's; `drift apply|discard` follow the same rule)
    are refused with exit 1 before anything is read; each message names the
    conflict and the way out (the desk, or the user's own terminal).
+
+   **What this stops, and what it does not.** It stops an agent in the
+   session Seldon launched, which carries `SELDON_ACTOR`. It does not stop
+   a process of the same user that unsets or overrides the variable, nor
+   a hand edit of the file: the engine runs as that user and has no
+   stronger proof of who is at the keyboard. Such a process could already
+   set `status: accepted` in the file; `decide accept` adds a ledger line,
+   not power. The desk's Accept runs from the shell process, never from an
+   agent session.
 5. **The plugin** runs exactly `seldon decide accept <ADR-NNNN> --json`
    (id checked against `^ADR-[0-9]{4}$`) after the button is pressed
    twice (the arm-twice rule of every writing action). The new row in
