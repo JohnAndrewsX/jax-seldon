@@ -2978,8 +2978,8 @@ mod privileged {
     }
 
     /// Recorded without a case too (it is red, ADR-0019 does not drop it).
-    /// Not drift yet: `drift[].source` admits no `agent` (ADR-0039 §3, a
-    /// contract question); the event is in the index's events.
+    /// Not drift: `drift[].source` admits no `agent` in contract 2
+    /// (ADR-0039 §3); the event is in the index's events.
     #[test]
     fn recorded_without_a_case() {
         let h = Hooks::new();
@@ -3191,6 +3191,25 @@ mod privileged {
         let index = read(&h.home().join(".local/state/seldon/index.json"));
         assert!(index.contains("lpadmin ‹redacted›"), "{index}");
         assert!(!index.contains("hunter2"), "{index}");
+    }
+
+    /// Round 2, N4: a privileged `alwaysRed` subject in a case below R3
+    /// raises the index build's R3 advisory, as any red `alwaysRed` change.
+    #[test]
+    fn an_always_red_subject_raises_the_r3_advisory() {
+        let h = Hooks::new();
+        let case = h.active_case();
+        bash(&h, "sudo mkinitcpio -P", "toolu_mkinitcpio");
+        let events = h.commands();
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0]["case"], case.as_str());
+        let out = h.run(&["status", "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let warnings = json(&out)["warnings"].to_string();
+        assert!(
+            warnings.contains(&case) && warnings.contains("mkinitcpio"),
+            "{warnings}"
+        );
     }
 
     /// Round 2, N2: without a case the green write is dropped and the

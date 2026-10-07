@@ -306,15 +306,20 @@ nicht aufgezeichnet.
 | green | jeder andere ändernde Befehl (`npm install`, `git push`, Dateien anderswo), nur solange ein Case aktiv ist |
 
 Jeder Befehl, den ein Agent mit `sudo`, `doas`, `pkexec` oder `run0`
-ausführt, wird ebenfalls aufgezeichnet, rot und mit oder ohne Case, auch
-wenn Seldon das Programm nicht kennt. Richtet ein Agent mit `pkexec
-lpadmin -p Office … -E` einen Drucker ein, zeigt der Eintrag `lpadmin`
-als Gegenstand, die Befehlszeile (ohne Geheimnisse) als Text und
-`pkexec` als Wrapper. Ein Befehl, den die Tabelle oben schon aufzeichnet
-(`pkexec pacman -S cups`), wird wie bisher einmal aufgezeichnet.
-Prüfungen, die nichts ändern (`sudo -l`, `sudo -n true`, `pkexec
---version`, `command -v sudo`), zeichnen nichts auf. Ein solcher Eintrag
-steht im Case und im Changelog; als Drift wird er nicht gelistet.
+ausführen will, wird ebenfalls aufgezeichnet, rot und mit oder ohne
+Case, auch wenn Seldon das Programm nicht kennt. Richtet ein Agent mit
+`pkexec lpadmin -p Office … -E` einen Drucker ein, zeigt der Eintrag
+`lpadmin` als Gegenstand, die Befehlszeile (bekannte Geheimnis-Formen
+entfernt) als Text und `pkexec` als Wrapper. Ein Befehl, den die Tabelle
+oben schon aufzeichnet (`pkexec pacman -S cups`), wird wie bisher einmal
+aufgezeichnet. Prüfungen, die nichts ändern (`sudo -l`, `sudo -n true`,
+`pkexec --version`, `command -v sudo`), zeichnen nichts auf. Der Hook
+läuft vor dem Befehl, deshalb sagt der Eintrag „asked to run“: Er steht
+auch dann da, wenn du den Passwortdialog abbrichst. Eine Zeile, die ein
+Passwort an `sudo -S` weiterreicht, wird nur als Programm und
+`‹redacted›` aufgezeichnet. Ein solcher Eintrag steht im Case und im
+Changelog; als Drift wird er nicht gelistet (die Änderung, die er
+bewirkt, schon, durch den Collector, der sie sieht).
 
 Ein Hook zeichnet die Befehlszeile und den Pfad auf. Er zeichnet nie die
 Ausgabe eines Befehls oder den Inhalt einer Datei auf. Vor dem Schreiben

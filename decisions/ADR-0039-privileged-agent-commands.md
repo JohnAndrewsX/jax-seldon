@@ -1,16 +1,15 @@
 # ADR-0039 — The hook records an agent's privileged commands
 
 **Status:** proposed (WP-129; operator decision 2026-10-07 E14 a: "ja,
-als kleines Paket für 0.2.0"). §1 and §2 are implemented on `next` by
-WP-129; §3 waits for the contract decision it names.
+als kleines Paket für 0.2.0"). §1 and §2 are implemented by WP-129;
+§3 is option (b), the orchestrator's decision of 2026-10-07 for 0.2.0.
 **Date:** 2026-10-07
 
 > Amends SPEC-ENGINE §8 (a new hook record class), ADR-0019 §1 (a green
-> record gives way to it), ADR-0014 §2 (its zone) and, once §3 is
-> decided, ADR-0028 §2 (a new row) and ADR-0012 §6 / ADR-0014 §5 (hook
-> `command` events are never drift). ADR-0031 stands: this ADR records
-> what Omarchy's route runs; it changes nothing about how the agent asks
-> for privilege.
+> record gives way to it) and ADR-0014 §2 (its zone). §3 leaves ADR-0028
+> §2 and ADR-0012 §6 / ADR-0014 §5 (hook `command` events are never
+> drift) as they are. ADR-0031 stands: this ADR records what Omarchy's
+> route runs; it changes nothing about how the agent asks for privilege.
 
 ## Context
 
@@ -66,10 +65,21 @@ tool call).
   kind would be a schema change); the class is told by `meta.wrapper`,
   which only privileged records carry.
 - `subject`: the program's last path component (`lpadmin`).
-- `detail` and `meta.command`: the command line, heredoc bodies cut,
-  redacted (SPEC-ENGINE §7) before it is cut to 4096 characters; the index
-  clips both (ADR-0025). Lines that name a `[redaction] skipPaths` path are
-  `<program> ‹redacted›`, as for every hook record.
+- `meta.command`: the command line, heredoc bodies cut, redacted
+  (SPEC-ENGINE §7) before it is cut to 4096 characters; `detail` the same
+  after `asked to run: `. The hook runs at PreToolUse, before the password
+  prompt, and nothing later confirms that the command ran: the record says
+  what the agent asked to run. The index clips both (ADR-0025). Lines
+  that name a `[redaction] skipPaths` path are `<program> ‹redacted›`, as
+  for every hook record.
+- **A password on the wrapper's stdin** (round 2): a line in which any
+  command has sudo read the password from stdin (`-S`, `--stdin` or an
+  abbreviation getopt takes, `--st`…; also in a cluster such as `-Su`, and
+  beside a probe: `echo PW | sudo -S -v && …`) holds the password in a
+  form no §7 rule knows. Every record of that line is `<program>
+  ‹redacted›`, as for `skipPaths`. `doas` asks on the terminal, `pkexec`
+  and `run0` through the polkit agent: none of them reads a password from
+  stdin.
 - `meta.wrapper`: `sudo`, `doas`, `pkexec` or `run0` — the first one the
   command runs under.
 - `zone: red`: the command acts on the system as another user, root by
@@ -82,35 +92,25 @@ tool call).
 - A privileged `snapper` command (`sudo snapper delete 5`) is never a
   snapshot command for SPEC-ENGINE §5's case notes.
 
-### 3. Its class under ADR-0028 (needs a contract decision)
+### 3. Its class: not drift in contract 2 (option b)
 
-Proposed row for ADR-0028 §2:
+The reason test of ADR-0028 would make the record **attention** (rule
+`privileged-command`; never routine, never a crisis by itself). It
+cannot be drift today: `index.schema.json` limits `drift[].source` to
+`pacman`, `omarchy`, `plugins`, `theme`, `config` ("only system-changing
+collectors produce drift", ADR-0012 §6), and contract 2's pre-tag window
+(CONTRACT.md, ADR-0035 §6) admits new optional fields only, not a wider
+enum.
 
-| Event | Class | Rule |
-|---|---|---|
-| hook `command` with `meta.wrapper` (privileged command), no case | **attention** | `privileged-command`: reason test — a root change "why is this here?" must answer; never routine (nothing Omarchy's UI does runs through the agent hook); never a crisis by itself (the harm test belongs to what it changed: an `alwaysRed` package or a persistence path is a crisis through its own event) |
-
-This needs the event to be **drift-eligible**, and today it cannot be:
-`index.schema.json` limits `drift[].source` to `pacman`, `omarchy`,
-`plugins`, `theme`, `config` ("only system-changing collectors produce
-drift", ADR-0012 §6). An `agent` item would fail `index --check`. The
-pre-tag window of contract 2 (CONTRACT.md, ADR-0035 §6) admits new
-optional fields only, not a wider enum. So the operator decides one of:
-
-- **(a) Widen contract 2 before 0.2.0 is tagged** (recommended): an
-  amendment of ADR-0035 §6 (or CONTRACT.md's window rule) lets
-  `drift[].source` admit `agent` for privileged commands; the engine makes
-  them drift-eligible (`linkable`, rule 3 proposals, rule 9, `drift
-  link|explain|dismiss`, `series.drift`, the session-start list), class
-  attention, rule `privileged-command`; `scripts/validate-fixtures.py`
-  ports it; the fixture gains one such item. The plugin needs no code: it
-  treats a drift row's `source` as a label and already has a glyph for
-  `agent` (`Model.js` `SOURCE_GLYPHS`); an older plugin cannot meet this
-  engine anyway (contract 2). One small engine WP.
-- **(b) Defer to contract 3.** The record (§1, §2) stands as implemented;
-  the event is in the Changelog and the case, but never open drift.
-
-Until then the engine does (b).
+**Decided for 0.2.0 (orchestrator, 2026-10-07): no `agent` drift
+source.** The record is an event: red, in the Changelog, on the case
+when one is open. The system change it causes is attention drift through
+its own collector — the printer configuration through WP-131's hashes,
+packages, units and watched paths through theirs. Contract 3 is the place
+for an `agent` drift source if the live week shows a need: the plugin
+treats a drift row's `source` as a label and already has an `agent`
+glyph, so the change would be the schema, eligibility in the index build
+and reconciliation, `validate-fixtures.py` and one fixture item.
 
 ## Consequences
 
@@ -121,8 +121,20 @@ Until then the engine does (b).
 - More command lines reach the ledger than before: every privileged
   command, reads included (`sudo cat /etc/…`). The redaction rules of §7
   apply; a program that takes a secret as a plain positional argument
-  (`nmcli … password X`) is not covered by them today (WP-129 handover,
-  open question).
+  (`nmcli … password X`, `wifi-sec.psk X`, `htpasswd -b`, `usermod -p`)
+  is not covered by them today; those forms are WP-140's follow-up. A
+  password on the wrapper's own stdin is never written (§2).
+- A privileged read (`sudo cat /etc/…`) counts as the case's first red
+  change for `plan snapshot`'s order check: accepted noise, rare, and
+  each use was asked for with a password.
+- A privileged subject in `[drift] alwaysRed` (`sudo mkinitcpio -P`)
+  in a case below R3 raises the index build's R3 advisory warning
+  (SPEC-ENGINE §5, §6), as any red `alwaysRed` change does: intended. The
+  case's advisory Log line is written by a capture for the events it
+  writes, so a hook record gets the warning, not the Log line.
+- The record is written when the agent asks (PreToolUse): a refused or
+  cancelled password prompt still leaves a red record that says "asked to
+  run".
 - A command whose class already records it is unchanged (`pkexec pacman
   -S x` is one package record, without `meta.wrapper`).
 - Sessions outside the hooks' scope (ADR-0030 §1: not in the logbook, not

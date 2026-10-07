@@ -38,6 +38,6 @@
 | ADR-0034 | The plugin is a desk: one wide panel with sidebar, list and detail; Prime Radiant and the graph live inside | accepted |
 | ADR-0035 | Contract v2: the case's risk in the ledger (`case-updated`, `meta.risk`), the autocommit result, `meta.truncated`, the `state-loss` kind, `decisions[].cases`, the triage proposal | accepted |
 | ADR-0036 | Agent prompts carry identifiers, never logbook text; proposals are evidence or nothing (`agent ask`, `drift propose|apply|discard`) | accepted |
-| ADR-0039 | The hook records an agent's privileged commands (`sudo`, `doas`, `pkexec`, `run0`); their attention class waits for a contract decision | proposed |
+| ADR-0039 | The hook records an agent's privileged commands (`sudo`, `doas`, `pkexec`, `run0`); events, not drift, in contract 2 | proposed |
 
 ADR files live in `decisions/`. New ADR: copy `decisions/ADR-0000-template.md`.
