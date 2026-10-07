@@ -1722,7 +1722,7 @@ function driftShowResult(exitCode, stdoutText, stderrText) {
     if (isObject(m) && typeof m.id === "string" && EVENT_ID.test(m.id))
       members.push({ id: m.id, kind: str(m.kind), subject: str(m.subject), detail: str(m.detail) })
   }
-  return { ok: true, text: "", members: members }
+  return { ok: true, text: "", members: members, rule: data ? str(data.rule) : "", cls: data ? str(data["class"]) : "" }
 }
 
 // The member lines the sheet shows: at most DRIFT_MEMBERS_SHOWN, then
@@ -3413,8 +3413,16 @@ function isHidden(row, hidden) {
   return row.cls === "attention" && isObject(hidden) && hidden[row.hideKey] === true
 }
 
+// One count everywhere (the sidebar, the header, the quiet line): open
+// drift counts a group once. The drift chips (open, crisis, attention)
+// list and count changes — a pacman group as its leader ("mesa +2"; its
+// members are in the leader's detail); routine, in case and all list and
+// count ledger events, one row each, group members included.
+var DRIFT_CHIPS = ["open", "crisis", "attention"]
+
 function chipHas(chip, row, hidden) {
   if (chip === "all") return true
+  if (DRIFT_CHIPS.indexOf(chip) !== -1 && row.groupLeader !== "") return false
   if (chip === "open") return row.cls === "crisis" || (row.cls === "attention" && !isHidden(row, hidden))
   if (chip === "attention") return row.cls === "attention" && !isHidden(row, hidden)
   return row.cls === chip
@@ -3442,11 +3450,12 @@ function changelogChips(prepared, hidden) {
   })
 }
 
-// How many rows Hide keeps out of the open list this session.
+// How many changes Hide keeps out of the open list this session (a group
+// once).
 function hiddenCount(prepared, hidden) {
   var rows = prepared && Array.isArray(prepared.rows) ? prepared.rows : []
   var n = 0
-  for (var i = 0; i < rows.length; i++) if (isHidden(rows[i], hidden)) n++
+  for (var i = 0; i < rows.length; i++) if (rows[i].groupLeader === "" && isHidden(rows[i], hidden)) n++
   return n
 }
 
@@ -3463,24 +3472,72 @@ var SOURCE_TEXTS = {
   seldon: "Seldon itself"
 }
 
-// Why a crisis is loud (§2's callout), from what the index carries: the
-// item's class and its source (ADR-0028: a write to a path that runs code
-// at login, boot or from a hook; a named change of a package that can stop
-// boot or login). "" for anything that is not a crisis.
-function whyLoud(row) {
+// The engine's rule for an open drift item, from `seldon drift show <id>
+// --json` (`rule`, `class`; engine/src/commands/drift.rs), which the
+// index does not carry. `rules`: Service.driftRules ({ <id>: { rule,
+// cls } }, the answers for this index); `shown`: Service.driftShown (the
+// call in flight). { state: "known", rule, cls }, or state "pending"
+// (asked, no answer yet) or "unknown" (not asked, or not answerable: dev
+// mode, no engine, a refusal).
+function driftRuleInfo(rules, shown, eventId) {
+  var known = isObject(rules) && isObject(rules[eventId]) ? rules[eventId] : null
+  if (known && str(known.rule) !== "") return { state: "known", rule: str(known.rule), cls: str(known.cls) }
+  if (isObject(shown) && shown.eventId === eventId && shown.pending) return { state: "pending", rule: "", cls: "" }
+  return { state: "unknown", rule: "", cls: "" }
+}
+
+// The rules to keep for a new index: those whose item it still lists as
+// an open crisis (by the item's event id, a group's leader). A copy; the
+// same object when nothing goes, so an unchanged index changes nothing.
+function keptDriftRules(rules, index) {
+  var r = isObject(rules) ? rules : {}
+  var keys = Object.keys(r)
+  if (keys.length === 0) return r
+  var crises = {}
+  var list = index && Array.isArray(index.drift) ? index.drift : []
+  for (var i = 0; i < list.length; i++)
+    if (isObject(list[i]) && list[i].crisis === true && typeof list[i].eventId === "string") crises[list[i].eventId] = true
+  var out = {}
+  var dropped = false
+  for (var k = 0; k < keys.length; k++) {
+    if (crises[keys[k]] === true) out[keys[k]] = r[keys[k]]
+    else dropped = true
+  }
+  return dropped ? out : r
+}
+
+// The crisis rules (engine/src/index/class.rs, SPEC-ENGINE §5): what each
+// says, naming the user's lists rather than what they are meant to hold.
+var CRISIS_RULE_TEXTS = {
+  "always-red": "A package on your crisis list ([drift] alwaysRed in ~/.config/seldon/config.toml) was installed, removed or downgraded by name in this transaction.",
+  "always-red-paths": "The path matches your crisis list ([drift] alwaysRedPaths in ~/.config/seldon/config.toml).",
+  "attention-all": "[drift] attention = \"all\" is set: every change without a case is open drift, and a crisis is a change in the red zone."
+}
+
+// Why a crisis is loud (§2's callout): the engine's rule when `drift
+// show` has answered (`info`, driftRuleInfo), else only what the index
+// proves — the class and the source, never a cause; then whether an open
+// case's plan names it (`proposedCase`, SPEC-ENGINE §5), which the Case
+// row says too. "" for anything that is not a crisis.
+function whyLoud(row, proposedCase, info) {
   if (!row || row.cls !== "crisis") return ""
-  if (row.source === "config")
-    return "The path runs code at login, at boot or from a hook, and no open case planned the change."
-  if (row.source === "pacman")
-    return "A package that can stop boot or login changed by name, and no open case planned it."
-  return "It can affect boot, login or the shell, and no open case planned it."
+  var i = isObject(info) ? info : { state: "unknown" }
+  var cause = i.state === "known"
+    ? (CRISIS_RULE_TEXTS[i.rule] !== undefined ? CRISIS_RULE_TEXTS[i.rule] : "The engine's rule: " + i.rule + ".")
+    : "The engine classed this " + row.source + " change as a crisis"
+      + (i.state === "pending" ? "; asking it for the rule." : "; `seldon drift show " + row.id + "` names the rule.")
+  var plan = proposedCase !== ""
+    ? proposedCase + " plans it (its plan names this change); nothing has linked it yet."
+    : "No open case plans it, and no case is linked."
+  return cause + " " + plan
 }
 
 // One event as the detail shows it (prototype `eventDetail`): heading
 // "source · kind", the full subject, the class, the callout, and the
 // key/value rows When · Who · What · Case · Rule · Source (· Zone ·
-// Resolved · Event). null when the index has no such event.
-function eventDetail(index, prepared, id) {
+// Resolved · Event). `info`: the engine's rule (driftRuleInfo). null when
+// the index has no such event.
+function eventDetail(index, prepared, id, info) {
   var row = changelogRow(prepared, id)
   if (!row) return null
   var e = findEvent(index, row.id) || {}
@@ -3489,8 +3546,11 @@ function eventDetail(index, prepared, id) {
     var leader = changelogRow(prepared, row.groupLeader)
     if (leader) proposed = leader.proposedCase
   }
-  var rule = row.cls === "crisis" ? "crisis · open, no case"
-    : row.cls === "attention" ? "attention · open, no case; quiet until you say something"
+  var r = isObject(info) ? info : { state: "unknown" }
+  var ruleName = r.state === "known" ? "rule " + r.rule : r.state === "pending" ? "rule: asking the engine" : ""
+  var caseState = proposed !== "" ? "planned by " + proposed + ", not linked" : "no case"
+  var rule = row.cls === "crisis" ? ["crisis", ruleName, caseState].filter(function(p) { return p !== "" }).join(" · ")
+    : row.cls === "attention" ? "attention · " + caseState + "; quiet until you say something"
     : row.cls === "case" ? "in case · recorded for " + row.caseId
     : "routine · history, nothing to do"
   if (row.txId !== "" || row.groupLeader !== "") rule += " · one pacman transaction (ADR-0013)"
@@ -3515,7 +3575,7 @@ function eventDetail(index, prepared, id) {
     caseId: row.caseId,
     proposedCase: proposed,
     hideKey: row.hideKey,
-    whyLoud: whyLoud(row),
+    whyLoud: whyLoud(row, proposed, r),
     kv: kv
   }
 }
@@ -3701,10 +3761,14 @@ function findWorkRow(prepared, id) {
 // completed → Reopen; every case → Open in editor, last. `arm`: the first
 // press or click arms, the second runs (Arm.qml); `final`: Drop, whose
 // hint says so; Reopen runs at once (it creates a case and destroys
-// nothing, WP-101). The first is primary (Enter).
+// nothing, WP-101). The first is primary (drawn selected, the
+// prototype's); Enter takes the first that launches nothing (`enter`):
+// Enter never starts an agent (operator decision, WP-122 round 2), so on
+// an active case Enter twice is To verification, as in 0.1, and only `a`
+// or a click hands it to the agent.
 var CASE_DESK_ACTIONS = {
   start: { id: "start", label: "Start", write: true, arm: true, key: "Enter" },
-  agent: { id: "agent", label: "Hand to agent", write: true, arm: true, key: "a" },
+  agent: { id: "agent", label: "Hand to agent", write: true, arm: true, key: "a", launches: true },
   verify: { id: "verify", label: "To verification", write: true, arm: true, key: "" },
   done: { id: "done", label: "Complete", write: true, arm: true, key: "Enter" },
   drop: { id: "drop", label: "Drop", write: true, arm: true, key: "x", final: true },
@@ -3721,11 +3785,23 @@ var CASE_DESK_BY_STATUS = {
 
 function caseDeskActions(c) {
   if (!c || !c.actionable || CASE_DESK_BY_STATUS[c.status] === undefined) return []
-  return CASE_DESK_BY_STATUS[c.status].map(function(id, i) {
+  var ids = CASE_DESK_BY_STATUS[c.status]
+  var enter = ""
+  for (var k = 0; k < ids.length && enter === ""; k++) if (CASE_DESK_ACTIONS[ids[k]].launches !== true) enter = ids[k]
+  return ids.map(function(id, i) {
     var a = CASE_DESK_ACTIONS[id]
+    var isEnter = id === enter && a.arm
     return { id: a.id, label: a.label, write: a.write, arm: a.arm, final: a.final === true, primary: i === 0,
-      key: i === 0 && a.arm ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
+      enter: id === enter, launches: a.launches === true,
+      key: isEnter ? (a.key !== "" && a.key !== "Enter" ? a.key + " or Enter" : "Enter") : a.key }
   })
+}
+
+// The action Enter takes on a case: the first that launches nothing.
+function caseEnterAction(c) {
+  var list = caseDeskActions(c)
+  for (var i = 0; i < list.length; i++) if (list[i].enter) return list[i]
+  return null
 }
 
 function caseDeskAction(c, id) {

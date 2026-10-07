@@ -26,7 +26,19 @@ DetailPane {
   readonly property var service: root.section ? root.section.service : null
   readonly property var indexData: root.section ? root.section.index : null
   readonly property var prepared: root.service ? root.service.deskChangelog : null
-  readonly property var detail: Model.eventDetail(root.indexData, root.prepared, root.eventId)
+  // The item's rule comes from `seldon drift show` (the index has none),
+  // asked for a selected crisis — for a group, of its leader — once per
+  // index; until it answers the callout says only what the index proves.
+  readonly property string ruleId: form.item ? form.item.leaderId : root.eventId
+  readonly property var ruleInfo: Model.driftRuleInfo(root.service ? root.service.driftRules : null,
+    root.service ? root.service.driftShown : null, root.ruleId)
+  property string ruleAsked: ""
+  // Open case named a case Work does not list (the index keeps the last 50
+  // completed cases): its id, for the line under the bar.
+  property string caseMissing: ""
+  // *Open in editor* was asked for that case: the engine's answer shows.
+  property bool caseEditorAsked: false
+  readonly property var detail: Model.eventDetail(root.indexData, root.prepared, root.eventId, root.ruleInfo)
   readonly property bool hidden: !!root.detail && !!root.service && root.service.deskHidden[root.detail.hideKey] === true
   readonly property alias form: form
   readonly property bool editing: form.editing
@@ -56,6 +68,13 @@ DetailPane {
     return true
   }
 
+  function askRule() {
+    if (!root.service || !root.detail || root.detail.cls !== "crisis" || root.ruleInfo.state !== "unknown") return
+    var key = root.ruleId + "@" + (root.indexData ? root.indexData.generatedAt : "")
+    if (root.ruleAsked === key) return
+    if (root.service.driftShow(root.ruleId)) root.ruleAsked = key
+  }
+
   function trigger(id) {
     if (id === "link" || id === "explain" || id === "dismiss") {
       form.showForm(id)
@@ -70,6 +89,11 @@ DetailPane {
       var desk = root.section ? root.section.desk : null
       if (!desk || !root.detail) return
       var caseId = root.detail.caseId
+      if (!Model.findWorkRow(root.service ? root.service.deskWork : null, caseId)) {
+        root.caseMissing = caseId
+        root.caseEditorAsked = false
+        return
+      }
       desk.section("work")
       desk.select(caseId)
     }
@@ -82,9 +106,11 @@ DetailPane {
       heading: root.detail ? root.detail.heading : "",
       cls: root.detail ? root.detail.cls : "",
       whyLoud: root.detail ? root.detail.whyLoud : "",
+      rule: root.ruleInfo.state + (root.ruleInfo.rule !== "" ? " " + root.ruleInfo.rule : ""),
       kv: root.detail ? root.detail.kv.map(function(r) { return r[0] + ": " + r[1] }) : [],
       actions: root.actions.map(function(a) { return a.label }),
       hidden: root.hidden,
+      caseMissing: missingLine.visible ? missingText.text : "",
       bar: { y: Math.round(root.actionBar.mapToItem(root, 0, 0).y), sceneY: Math.round(root.actionBar.mapToItem(null, 0, 0).y),
         h: Math.round(root.actionBar.height), visible: root.actionBar.visible },
       scroll: { y: Math.round(root.flickable.contentY), h: Math.round(root.flickable.contentHeight), view: Math.round(root.flickable.height) },
@@ -117,8 +143,23 @@ DetailPane {
     }
   }
 
-  onEventIdChanged: form.openFor(root.eventId)
-  Component.onCompleted: form.openFor(root.eventId)
+  onEventIdChanged: {
+    root.caseMissing = ""
+    form.openFor(root.eventId)
+    Qt.callLater(root.askRule)
+  }
+  Component.onCompleted: {
+    form.openFor(root.eventId)
+    Qt.callLater(root.askRule)
+  }
+
+  // Another call held the one drift-show slot, or a new index cleared the
+  // rules: ask again.
+  Connections {
+    target: root.service
+    function onDriftShownChanged() { Qt.callLater(root.askRule) }
+    function onDriftRulesChanged() { Qt.callLater(root.askRule) }
+  }
   onActionTriggered: function(id) { root.trigger(id) }
 
   Text {
@@ -196,6 +237,51 @@ DetailPane {
           wrapMode: Text.Wrap
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
+        }
+      }
+    }
+
+    // Open case for a case the index no longer lists: say so; the case
+    // file may still be there, which only the engine can tell (the plugin
+    // reads only the index), so Open in editor asks it and shows its answer.
+    Item {
+      id: missingLine
+      objectName: "caseMissing"
+      width: parent.width
+      visible: root.caseMissing !== "" && !!root.detail && root.detail.caseId === root.caseMissing
+      implicitHeight: Math.max(missingText.implicitHeight, missingButton.implicitHeight)
+
+      Text {
+        id: missingText
+        anchors.left: parent.left
+        anchors.right: missingButton.left
+        anchors.rightMargin: Style.spacing.md
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: root.caseEditorAsked && root.service && root.service.openResult && !root.service.openResult.pending
+          ? root.service.openResult.text
+          : root.caseMissing + " is not in the index any more (it keeps the last 50 completed cases)."
+        color: root.caseEditorAsked && root.service && root.service.openResult && !root.service.openResult.ok
+          ? Color.urgent : Color.muted
+        wrapMode: Text.Wrap
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Button {
+        id: missingButton
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Open in editor"
+        tooltipText: "The case file, if the logbook still has it"
+        bordered: true
+        foreground: root.foregroundColor
+        fontFamily: root.fontFamily
+        fontSize: Style.font.caption
+        verticalPadding: Style.spacing.xs
+        onClicked: if (root.service) {
+          root.caseEditorAsked = true
+          root.service.openInEditor(root.caseMissing)
         }
       }
     }

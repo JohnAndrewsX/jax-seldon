@@ -215,9 +215,13 @@ Item {
   readonly property var rulesNotice: Model.rulesNotice(root.rulesResult)
   property var driftResult: null
   property var decideResult: null
-  // The drift sheet's `seldon drift show` answer: { eventId, pending, ok,
-  // text, members } — a group's members beyond what index.events lists.
+  // The drift form's `seldon drift show` answer: { eventId, pending, ok,
+  // text, members, rule, cls } — a group's members beyond what index.events
+  // lists, and the item's rule (WP-122: the "why loud" callout).
   property var driftShown: null
+  // The rules `drift show` named: { <eventId>: { rule, cls } }, kept while
+  // the item is an open crisis (Model.keptDriftRules).
+  property var driftRules: ({})
 
   // Emitted after every engine call, for panels that wait on a result.
   signal finished(var args, int exitCode, string output)
@@ -246,6 +250,10 @@ Item {
   function ingest(text) {
     if (root.snapperHintIndex !== "" && text !== root.snapperHintIndex) root.snapperHintIndex = ""
     var result = Model.parseIndex(text)
+    // A rule holds while its item is still an open crisis; a rewritten
+    // index drops the others (resolved, or reclassified), which are asked
+    // again if they are selected as a crisis.
+    root.driftRules = Model.keptDriftRules(root.driftRules, result.ok ? result.index : null)
     if (root.engineNotInitialised && result.ok
         && Model.timeMs(result.index.generatedAt) > root.notInitialisedAtMs)
       root.engineNotInitialised = false
@@ -517,6 +525,12 @@ Item {
     } else if (args[0] === "drift" && args[1] === "show") {
       result.eventId = args[2]
       if (result.members === undefined) result.members = []
+      if (result.ok && result.rule) {
+        var rules = ({})
+        for (var k in root.driftRules) rules[k] = root.driftRules[k]
+        rules[args[2]] = { rule: result.rule, cls: result.cls }
+        root.driftRules = rules
+      }
       root.driftShown = result
     } else if (args[0] === "decide") {
       if (result.decisionId === undefined) result.decisionId = ""
