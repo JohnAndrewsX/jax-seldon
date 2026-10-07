@@ -1261,6 +1261,27 @@ mod tests {
                 "registry-login-password",
                 "docker login -p fakeG1 r -pfakeG2",
             ),
+            // nmcli: a second secret property for each literal (WP-140)
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y 802-1x.password fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x 802-1x.password fakeH1 y wifi-sec.psk fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y vpn.secrets fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y wireguard.private-key fakeH2",
+            ),
+            (
+                "nmcli-secret",
+                "nmcli c m x wifi-sec.psk fakeH1 y gsm.pin fakeH2",
+            ),
         ] {
             let rules = builtin_rules();
             let rule = rules.iter().find(|r| r.name == name).unwrap();
