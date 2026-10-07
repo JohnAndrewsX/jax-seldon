@@ -60,24 +60,43 @@ pub fn record(
 }
 
 /// `git.autocommit` from the record, when `git` is present, autocommit is
-/// on and the record belongs to `root`. A missing or unreadable record is
-/// no field.
-pub fn attach(git: &mut Option<GitInfo>, dirs: &Dirs, config: &Config, root: &Path) {
-    let Some(git) = git.as_mut() else {
-        return;
-    };
+/// on and the record belongs to `root`. A missing record, or one of
+/// another logbook, is no field; a record that is not a regular file of at
+/// most 4 MiB (a FIFO, a link, a device: never opened), cannot be read or
+/// is not a record is no field and a build warning, returned for the
+/// caller's warnings (WP-120 round 3).
+#[must_use]
+pub fn attach(
+    git: &mut Option<GitInfo>,
+    dirs: &Dirs,
+    config: &Config,
+    root: &Path,
+) -> Option<String> {
+    let git = git.as_mut()?;
     git.autocommit = None;
     if !config.git.autocommit {
-        return;
+        return None;
     }
-    let Ok(text) = std::fs::read_to_string(file(dirs)) else {
-        return;
+    let path = file(dirs);
+    let skipped = |why: &str| {
+        Some(format!(
+            "{}: {why}; logbook.git.autocommit left out",
+            dirs.display(&path).escape_debug()
+        ))
+    };
+    let text = match crate::sys::read_small_file(&path, crate::sys::STATE_FILE_MAX) {
+        Ok(Some(text)) => text,
+        Ok(None) => return None,
+        Err(why) => return skipped(&format!("not read ({why})")),
     };
     let Ok(record) = serde_json::from_str::<Record>(&text) else {
-        return;
+        return skipped("not an autocommit record");
     };
-    if record.logbook != canonical(root) || DateTime::parse_from_rfc3339(&record.at).is_err() {
-        return;
+    if record.logbook != canonical(root) {
+        return None;
+    }
+    if DateTime::parse_from_rfc3339(&record.at).is_err() {
+        return skipped("not an autocommit record");
     }
     git.autocommit = Some(AutocommitInfo {
         ok: record.ok,
@@ -85,17 +104,25 @@ pub fn attach(git: &mut Option<GitInfo>, dirs: &Dirs, config: &Config, root: &Pa
         // once more through today's redaction, as collector messages
         message: shown(&ShownMessages::new(Some(config)), &record.message),
     });
+    None
 }
 
-/// `message` as the index carries it: its first non-empty line, trimmed,
-/// redacted, at most [`MESSAGE_MAX`] characters.
+/// `message` as the index carries it: its first non-empty line, every
+/// control character (ESC, BEL, TAB, …) a space (WP-120 round 3: git's
+/// colour codes and a hook's bell are no text), trimmed, redacted, at most
+/// [`MESSAGE_MAX`] characters.
 fn shown(shown: &ShownMessages, message: &str) -> String {
-    let line = message
+    let line: String = message
         .lines()
-        .map(str::trim)
+        .map(|l| {
+            l.chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .collect::<String>()
+        })
+        .map(|l| l.trim().to_string())
         .find(|l| !l.is_empty())
         .unwrap_or_default();
-    let line = shown.show(line);
+    let line = shown.show(&line);
     match line.char_indices().nth(MESSAGE_MAX - 1) {
         Some((i, _)) if line.chars().count() > MESSAGE_MAX => format!("{}…", &line[..i]),
         _ => line,
@@ -140,6 +167,18 @@ mod tests {
         assert!(r.message.contains("‹redacted›"), "{}", r.message);
         assert!(!r.message.contains("second line"));
         assert_eq!(r.at, "2026-10-06T10:00:00+02:00");
+    }
+
+    /// WP-120 round 3: control characters are spaces before the clip.
+    #[test]
+    fn control_characters_are_spaces() {
+        let config = Config::default();
+        let s = ShownMessages::new(Some(&config));
+        let got = shown(&s, "fatal: \x1b[31mred\x1b[0m\ttab \x07bell");
+        assert_eq!(got, "fatal:  [31mred [0m tab  bell");
+        assert!(!got.chars().any(char::is_control), "{got:?}");
+        // a line of control characters alone is no line
+        assert_eq!(shown(&s, "\x1b\x07\t\nsecond"), "second");
     }
 
     #[test]

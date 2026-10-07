@@ -101,12 +101,12 @@ pub(crate) fn rebuild_with<T>(
     }
     let extra = before_index(&config, &logbook, &files);
     built.index.logbook.git = index::git_info(&logbook.root);
-    index::autocommit::attach(
+    built.warnings.extend(index::autocommit::attach(
         &mut built.index.logbook.git,
         &ctx.dirs,
         &config,
         &logbook.root,
-    );
+    ));
 
     let valid = if validate {
         let instance = serde_json::to_value(&built.index).map_err(anyhow::Error::from)?;

@@ -146,9 +146,19 @@ engine-resolved evidence (user content, at most 256 characters); the
 plugin escapes it and never evaluates it (CONTRACT.md rule 6). Writing
 proposals (`drift propose`) and applying them (`drift apply`) are
 WP-124's and ADR-0036's; this ADR fixes only the shape the index points
-to. Until 0.2.0 is tagged no released engine or plugin speaks v2, so
-ADR-0036 may refine the proposal file with its fixture in the same
-contract version.
+to. A proposal's `crisis` is what the agent saw. `drift apply` decides a
+crisis by the engine's classification at apply time, never by the
+file's flag; the plugin's crisis block is a convenience, the engine
+is the guard.
+A proposal is read only when it is a regular file of at most 4 MiB;
+anything else is skipped with a build warning.
+
+Until 0.2.0 is tagged no released engine or plugin speaks v2. Until
+then a later accepted ADR on `next` may refine `proposal.schema.json`
+or add **optional** fields to the v2 schemas in the same contract
+version — nothing required added, nothing removed or changed in
+meaning, fixtures, the reference derive and both sides in one PR,
+CONTRACT.md rule 9 extended.
 
 ### 7. Plugin
 
@@ -162,8 +172,9 @@ banner (both numbers, "Update the plugin") — the existing rule 3.
 
 - Breaking: a 0.1.x plugin shows the mismatch banner against a 0.2.0
   engine and vice versa (CHANGELOG **Breaking**). A 0.1.x engine reading
-  a ledger with `case-updated` or `state-loss` lines refuses those lines
-  as unknown kinds (its torn-line warning) — a downgrade is not supported.
+  a ledger with `case-updated` or `state-loss` lines skips each such line
+  with its "not a valid event" warning, doctor reports the ledger
+  degraded, nothing is lost — a downgrade is not supported.
 - The harm guard becomes second-precise and immune to Log edits for every
   case created by a v2 engine; old cases behave exactly as under WP-115.
 - `fixtures/`: the sample logbook gains a `case-updated` line (the raise

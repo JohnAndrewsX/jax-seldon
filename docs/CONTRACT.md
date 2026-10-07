@@ -82,6 +82,17 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      evidence: [{kind, ref, text?}]}`; every text in it is user content
      (rule 6), and a crisis item is applied only one by one (ADR-0028 §3,
      ADR-0034 §6). The plugin reads the file; it never writes it.
+     A proposal's `crisis` is what the agent saw. `drift apply` decides a
+     crisis by the engine's classification at apply time, never by the
+     file's flag; the plugin's crisis block is a convenience, the engine
+     is the guard. A proposal is read only when it is a regular file of
+     at most 4 MiB; anything else is skipped with a build warning.
+   - Until 0.2.0 is tagged, a later accepted ADR on `next` may add
+     **optional** fields to the v2 schemas or refine
+     `proposal.schema.json` within contract 2 (ADR-0035 §6): nothing
+     required added, nothing removed or changed in meaning; fixtures,
+     the reference derive and both sides in one PR, and this rule
+     extended with the field.
 
 ## Changing the contract
 

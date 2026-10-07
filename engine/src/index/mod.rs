@@ -368,12 +368,12 @@ fn try_rebuild(ctx: &Context, probe: GitProbe) -> Result<Vec<String>> {
         GitProbe::Full => git_info(&logbook.root),
         GitProbe::HeadOnly => git_head_fast(&logbook.root),
     };
-    autocommit::attach(
+    built.warnings.extend(autocommit::attach(
         &mut built.index.logbook.git,
         &ctx.dirs,
         &config,
         &logbook.root,
-    );
+    ));
     write(&ctx.dirs.index_file(), &built.index)?;
     Ok(built.warnings)
 }

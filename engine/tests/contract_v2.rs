@@ -480,3 +480,125 @@ fn a_failed_autocommit_is_redacted_everywhere() {
     let m = index(&env)["logbook"]["git"]["autocommit"]["message"].clone();
     assert_eq!(m, json!("not committed: token=‹redacted›"), "{m}");
 }
+
+/// `seldon args… --json` at `now`, killed after `limit`: `None` when it
+/// did not finish (a reader blocked on a FIFO would hang the build).
+fn run_within(env: &Env, now: &str, args: &[&str], limit: std::time::Duration) -> Option<Output> {
+    let mut all = args.to_vec();
+    all.push("--json");
+    let mut child = env
+        .command(&all)
+        .env("SELDON_NOW", now)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    while start.elapsed() < limit {
+        if child.try_wait().unwrap().is_some() {
+            return Some(child.wait_with_output().unwrap());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+/// A FIFO at `path`, made by `mkfifo` (no shell string; the test is
+/// skipped where there is none).
+fn mkfifo(path: &Path) -> bool {
+    ["/usr/bin/mkfifo", "/bin/mkfifo"]
+        .iter()
+        .find(|p| Path::new(p).exists())
+        .is_some_and(|p| {
+            std::process::Command::new(p)
+                .arg(path)
+                .status()
+                .is_ok_and(|s| s.success())
+        })
+}
+
+/// WP-120 round 3 (ADR-0035 §6, SPEC-ENGINE §2): the index reads a
+/// proposal or `autocommit.json` only when it is a regular file of at most
+/// 4 MiB. A FIFO (never opened: it would block), a symbolic link (here to
+/// `/dev/zero`) and a 5 MiB file are each skipped with a warning, and the
+/// build completes promptly with a valid index.
+#[test]
+fn state_files_that_are_no_regular_small_files_are_skipped() {
+    let env = Env::new(Snapper::Missing);
+    if !env.has_git {
+        return;
+    }
+    let root = env.init_logbook();
+    ok(&env, T0, &["log", "--", "a commit for the record"]);
+    let dir = state(&env).join("proposals");
+    std::fs::create_dir_all(&dir).unwrap();
+    const FIFO: &str = "01K6Y0000000000000000000F1";
+    const LINK: &str = "01K6Y0000000000000000000F2";
+    const BIG: &str = "01K6Y0000000000000000000F3";
+    const GOOD: &str = "01K6Y0000000000000000000A1";
+    std::fs::write(
+        dir.join(format!("{GOOD}.json")),
+        proposal(GOOD, &root, None, false).to_string(),
+    )
+    .unwrap();
+    if !mkfifo(&dir.join(format!("{FIFO}.json"))) {
+        eprintln!("skipped: no mkfifo");
+        return;
+    }
+    std::os::unix::fs::symlink("/dev/zero", dir.join(format!("{LINK}.json"))).unwrap();
+    let mut big = proposal(BIG, &root, None, false);
+    big["items"][0]["evidence"][0]["text"] = json!("x".repeat(200));
+    let mut text = big.to_string();
+    text.push_str(&" ".repeat(5 * 1024 * 1024));
+    std::fs::write(dir.join(format!("{BIG}.json")), text).unwrap();
+
+    let limit = std::time::Duration::from_secs(20);
+    let out = run_within(&env, T1, &["index", "--check"], limit).expect("index finished");
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let ix = json(&out);
+    assert_eq!(ix["valid"], json!(true), "{ix}");
+    let warnings = ix["warnings"].to_string();
+    for (id, why) in [
+        (FIFO, "not a regular file"),
+        (LINK, "a symbolic link"),
+        (BIG, "more than 4194304"),
+    ] {
+        let w: Vec<String> = ix["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|w| w.as_str())
+            .filter(|w| w.contains(&format!("{id}.json: not read (")))
+            .map(String::from)
+            .collect();
+        assert!(w.len() == 1 && w[0].contains(why), "{id}: {warnings}");
+    }
+    // the valid one older than all three is still found
+    assert_eq!(index(&env)["triage"]["id"], json!(GOOD));
+
+    // the same guard for autocommit.json
+    let record = state(&env).join("autocommit.json");
+    for (case, why) in [
+        ("fifo", "not a regular file"),
+        ("link", "a symbolic link"),
+        ("big", "more than 4194304"),
+    ] {
+        std::fs::remove_file(&record).unwrap();
+        match case {
+            "fifo" => assert!(mkfifo(&record)),
+            "link" => std::os::unix::fs::symlink("/dev/zero", &record).unwrap(),
+            _ => std::fs::write(&record, " ".repeat(5 * 1024 * 1024)).unwrap(),
+        }
+        let out = run_within(&env, T2, &["index"], limit).expect("index finished");
+        assert_eq!(out.status.code(), Some(0), "{case}: {}", stderr(&out));
+        let w = json(&out)["warnings"].to_string();
+        assert!(w.contains("autocommit.json: "), "{case}: {w}");
+        assert!(w.contains(why), "{case}: {w}");
+        assert!(
+            index(&env)["logbook"]["git"].get("autocommit").is_none(),
+            "{case}"
+        );
+    }
+}

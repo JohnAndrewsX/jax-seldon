@@ -71,8 +71,10 @@ pub fn read(dirs: &Dirs, root: &Path, warnings: &mut Vec<String>) -> Option<Tria
     for id in ids {
         let path = dir.join(format!("{id}.json"));
         let shown = dirs.display(&path);
-        let value: Value = match std::fs::read_to_string(&path)
-            .map_err(|e| e.to_string())
+        // a regular file of at most 4 MiB, never a FIFO, a device or a
+        // link (ADR-0035 §6, WP-120 round 3)
+        let value: Value = match crate::sys::read_small_file(&path, crate::sys::STATE_FILE_MAX)
+            .and_then(|t| t.ok_or_else(|| "gone while reading".to_string()))
             .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
         {
             Ok(v) => v,
