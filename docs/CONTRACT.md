@@ -55,6 +55,9 @@ The contract is `schema/index.schema.json` (with `event.schema.json` and
      The panel marks the case and filters the Completed column by it.
    - `reopens:<caseId>` — `seldon plan reopen <caseId>` made this case.
    - `imported` — `seldon import task` made this case (WP-102).
+   - `proposed-by:agent:<name>` — `seldon drift apply` made this completed
+     case from that agent's proposed explanation (ADR-0036 §3): the words
+     are the agent's, though the user applied them.
    A user's own tag with one of these values means the same to the plugin.
 9. Contract 2 (ADR-0035). The index adds, all written by the engine:
    - kinds `case-updated` (`seldon plan set`: zone, risk or area changed;

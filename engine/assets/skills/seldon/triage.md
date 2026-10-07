@@ -44,7 +44,7 @@ itself:
 The engine writes each ref's author into its text (`by human · …`,
 `by agent:codex · …`) and refuses a ref you wrote yourself: your own
 journal note, an event you caused, a case you created or closed, the Plan
-of a case you worked. An agent's note is not the user's word, whoever
+of a case you worked, a case the user applied from your own proposal. An agent's note is not the user's word, whoever
 wrote it; never write a note in order to cite it, under any name.
 
 The engine checks that each ref exists, not that it proves anything; that

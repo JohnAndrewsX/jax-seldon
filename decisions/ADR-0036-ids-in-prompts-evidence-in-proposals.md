@@ -4,7 +4,9 @@
 2026-10-06 that ADR-0034 §6 ships in 0.2.0 — "all as recommended" — to be
 accepted by the orchestrator after the stage-2 review)
 **Date:** 2026-10-07 (round 2 after the stage-1 review: §1 paths, §2
-authors, §3 open drift only, §4 the limit stated)
+authors, §3 open drift only, §4 the limit stated; round 3 after the
+stage-2 review: an applied explanation keeps its proposer's name, one
+crisis per run)
 
 > Implements ADR-0034 §6 (bulk triage) and the "Ask agent" of WP-095,
 > which ADR-0034 superseded and whose ADR this is. Builds on ADR-0027 §2
@@ -80,10 +82,10 @@ redacted, on one line, at most 256 characters in all.
 | kind | ref | resolves to | author |
 |---|---|---|---|
 | `journal` | `YYYY-MM-DD HH:MM` | the journal entry with that heading time | the entry's actor |
-| `event` | an event id | a ledger event that is no resolution and not part of the change itself: `kind subject: detail` | the event's actor |
+| `event` | an event id | a ledger event that is no resolution and not part of the change itself (any event of its package transaction): `kind subject: detail` | the event's actor; a `case-*` line by the case's authors |
 | `snapshot` | a number | the newest snapper `snapshot` event of that number: its description | the event's actor |
-| `case` | a case id | the case's title | its creator (`case-created`), else `unknown`; also whoever completed or dropped it |
-| `plan` | a case id | the first line of the case's *Plan* naming the change's subject as a whole word (ADR-0015 §4) | as `case`, and every agent in the case's `agents` (a Plan line carries no author; the agents that worked the case write it) |
+| `case` | a case id | the case's title | its creator; for a case `drift apply` created, the proposing agent first, then the applier (`case-created`, else `unknown`); also whoever completed or dropped it |
+| `plan` | a case id | the first line of the case's *Plan* naming the change's subject as a whole word (ADR-0015 §4) | as `case`, and every agent in the case's `agents` (a Plan line carries no author; the agents that worked the case write it); shown as `by <creator> (worked by <agents>)` |
 
 **An agent cannot cite itself.** A ref one of whose authors is the
 proposing agent does not resolve ("<agent> wrote it; an agent's own text
@@ -93,7 +95,11 @@ holds at propose and again at apply, against the proposal's `actor`.
 What it cannot stop, said plainly: an agent that writes under another
 name (`seldon log --actor human`, another `agent:` name) — the same uid
 may write anything the user may. The author in every text is the answer
-there: the user sees who wrote each piece of evidence before applying.
+there, and an applied explanation keeps its proposer's name: the user sees
+who wrote each piece of evidence before applying. A case `drift apply`
+made knows its proposer twice — the tag `proposed-by:<agent>` and the
+`proposed by <agent> — …` detail of its resolution lines, which no edit of
+the case file removes.
 
 An item whose change is not open drift, that repeats a change, whose link
 names no case, whose explanation lacks a one-line title or intent, that
@@ -126,7 +132,9 @@ this logbook's) and then decides each item again from the ledger:
   does. For a group, the named event (the leader) must be open, and of its
   members only the open ones are written;
 - a **crisis** — the engine's classification now **or** the file's flag —
-  is applied only when named by `--item`, one by one. This **refines**
+  is applied only when named by `--item`, one by one: one crisis per run
+  (a run whose `--item`s name two or more crises is refused whole, exit 1,
+  nothing written), so each is read and applied on its own. This **refines**
   ADR-0035 §6 ("never by the file's flag"): the flag can hold an item back
   and never let one through; the engine's classification is the guard
   (ADR-0028 §3);
@@ -137,7 +145,8 @@ this logbook's) and then decides each item again from the ledger:
   (group fan-out, the case's `events:`, a completed retroactive case with
   the proposal's title and intent) with the resolution detail `proposed by
   agent:<name> — <kind> <ref> "<text>"; …` — the engine's text, each at
-  most 120 characters, the whole at most 1024.
+  most 120 characters, the whole at most 1024. The retroactive case
+  carries the tag `proposed-by:agent:<name>` (CONTRACT.md rule 8).
 
 A run without `--item` marks the proposal `applied` (the first time
 stays); a run with `--item` does not. One autocommit, one index rebuild.
@@ -197,6 +206,13 @@ shows every text escaped (CONTRACT.md rule 6).
   logbook (no `SELDON_CASE`, ADR-0030 §1); it is meant to read and
   propose. What it changes on the machine is still recorded by the
   collectors.
+- "The change itself is no evidence" counts every event of the change,
+  also a member the open-only filter drops or the engine resolved, and
+  every event of its package transaction.
+- `applied` marks the run, not the items: a run without `--item` sets it
+  even when every item was skipped or refused. `--json` says whether this
+  run set it (`markedApplied`); what was done is `done`, `skipped` and
+  `refused`.
 - `drift apply` derives the index once per written item: about 200 ×
   one derive in the worst case (seconds), once a week in practice.
 - Risk accepted: an agent that writes evidence under another name (§2),

@@ -205,11 +205,14 @@ seldon drift discard <PROPOSAL> [--actor A] [--json]       # removes the proposa
 # replaced: [{id, applied}]}; the human output says "Replaced the unapplied
 # proposal <id>." when one was unapplied.
 # apply, discard: the user's (actor human: an agent actor, and `--actor human`
-# in an agent's session, exit 1). apply --json → {proposal, applied, done:
-# [{eventId, action, resolved, case, events}], skipped: [{eventId, reason}],
-# refused: [{eventId, reason}], git}; exit 0 when the proposal was read, exit 1
-# before any write for an unknown, unreadable, invalid or foreign proposal or
-# an --item that is none of its items. discard --json → {discarded, applied}.
+# in an agent's session, exit 1). apply --json → {proposal, applied,
+# markedApplied (this run set `applied`; it marks the run, not the items),
+# done: [{eventId, action, resolved, case, events, warning}], skipped:
+# [{eventId, reason}], refused: [{eventId, reason}], git}; exit 0 when the
+# proposal was read, exit 1 before any write for an unknown, unreadable,
+# invalid or foreign proposal, an --item that is none of its items, or
+# --items naming two or more crises (one crisis per run). discard --json →
+# {discarded, applied}.
 # resolving commands: one lock, one ledger write (one `resolution` line per open
 # member of the group, same ts/actor/detail/case, meta.txId on fan-out), case
 # `events:` updated oldest-first, autocommit `seldon: drift <verb>: N event(s)`,
@@ -1614,14 +1617,19 @@ with none.
 against the logbook as it is, to words and their authors: `journal`
 `YYYY-MM-DD HH:MM` — an entry with that heading time in that day's journal
 file, its text, by the entry's actor; `event` `<ULID>` — a ledger event that
-is no resolution and no member of the item itself, `<kind> <subject>[:
-<detail>]`, by its actor; `snapshot` `<N>` — the newest `snapper/snapshot`
+is no resolution and not part of the change itself (no linkable member of
+the item, no event of its package transaction), `<kind> <subject>[:
+<detail>]`, by its actor, a `case-*` line by its case's authors; `snapshot` `<N>` — the newest `snapper/snapshot`
 event with subject N, its detail (else `snapshot N`), by its actor; `case`
-`<ID>` — the case's title, by its creator (the actor of its `case-created`
-line, else `unknown`) and whoever completed or dropped it; `plan` `<ID>` —
+`<ID>` — the case's title, by its authors: first the agents whose
+proposal `drift apply` made it from (its tags `proposed-by:<agent>` and the
+`proposed by <agent> — …` details of its resolution lines), then its
+creator (the actor of its `case-created` line, else `unknown`) and
+whoever completed or dropped it; `plan` `<ID>` —
 the first non-blank line of the case's `## Plan` that names a member's
 subject as a whole word (ADR-0015 §4), by the case's authors and every
-agent in its `agents` (a Plan line carries no author of its own). A ref
+agent in its `agents` (a Plan line carries no author of its own; shown as
+`by <first case author> (worked by <agents>)`). A ref
 one of whose authors is the proposing agent does not resolve ("<agent>
 wrote it; an agent's own text is no evidence for its proposal"). Refs
 longer than 64 characters, malformed refs and an empty result do not
@@ -1635,7 +1643,8 @@ routine again, or resolved by the engine (rules 7–9) — is skipped with the
 reason (`no longer open drift: …`) and nothing is written; of a group only
 the members that are open drift are written; a crisis — the class now
 **or** the file's flag (ADR-0036 §3 refines ADR-0035 §6: the flag only
-holds back) — is skipped unless named by `--item`; each ref is resolved
+holds back) — is skipped unless named by `--item`, and `--item`s naming two
+or more crises refuse the run (exit 1, nothing written); each ref is resolved
 again against the proposal's `actor` (the file's `text` is never read),
 and one that does not resolve refuses the item; a link to a case that is
 gone, an explanation of an event that became routine, and a write the
@@ -1643,7 +1652,8 @@ case store refuses before the ledger refuse it too. Nothing is written
 before a refusal. Otherwise the item is written as `drift link` or `drift
 explain` (a completed retroactive case with the proposal's title as title
 and its intent as *Intent* and as the `case-created` detail; zone from the
-item, risk R1) by `human`, every resolution line's detail `proposed by
+item, risk R1, tag `proposed-by:<agent>`) by `human`, every resolution
+line's detail `proposed by
 <agent> — <kind> <ref> "<text>"; …` (each text ≤ 120 characters, the whole
 ≤ 1024). When the case file cannot follow the written lines, the item is
 `done` with a `warning`; `drift link|explain` alone then commit and
